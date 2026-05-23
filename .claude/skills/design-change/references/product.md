@@ -14,7 +14,7 @@
 进入产品设计前，先确认以下输入是否可用：
 
 - 用户或 clarify 阶段提供的原始意图。
-- `.workflow/decisions.md` 中相关的原始决策。
+- `.workflow/intents.md` 中相关的原始决策。
 - 现有 `docs/` 中相关的产品文档、调研、ADR。
 - 项目已有的业务术语和概念定义。
 
