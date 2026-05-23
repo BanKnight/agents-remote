@@ -1,0 +1,71 @@
+# .workflow 治理规则模板
+
+本文件定义 `.workflow/` 的运行态与流程态治理规则。
+
+## 定位
+
+- `.workflow/` 是运行态区域，用于保存尚未归档的意图池、活跃 roadmap、当前 changes、执行证据与归档上下文。
+- `.workflow/roadmap.md` 是 workflow big picture，用于理解当前 versions/changes 和接活方式。
+- 项目认知 big picture 放在 `docs/project.md`，不要放在 `.workflow/`。
+- `.workflow/` 不保存长期知识基线；长期规格、长期设计、架构、ADR、runbooks 等应在验证后沉淀到 `docs/`。
+- 需要理解项目 big picture 时，不要只读单个文件，应按需读取 `docs/`、`.workflow/roadmap.md`、`.workflow/changes/` 与 `.workflow/archive/`。
+
+## 固定结构
+
+```text
+.workflow/
+├── AGENTS.md                           # .workflow 治理规则，进入 .workflow 前必须读取
+├── intents.md                          # 尚未进入 roadmap 的原始意图池
+├── roadmap.md                          # 当前活跃 versions/changes 索引
+├── templates/                          # 运行态模板文件
+│   ├── intents.md
+│   ├── roadmap.md
+│   └── changes/
+│       ├── intents.md                  # change 来源记录模板
+│       ├── specs/
+│       │   └── spec.md                 # change spec 模板
+│       ├── design/                     # change design 子域模板
+│       ├── plan.md                     # change plan 模板
+│       └── tasks.md                    # change tasks 模板
+├── changes/                            # 当前未归档 changes
+│   └── <change-id>/                    # 语义化变更标识，不是数字编号
+│       ├── intents.md                  # 本 change 的来源意图或规划来源
+│       ├── specs/                      # 本 change 的行为契约增量
+│       ├── design/                     # 本 change 的 how 设计材料
+│       ├── plan.md                     # 本 change 的实现计划
+│       ├── tasks.md                    # 本 change 的实施清单
+│       ├── verify.md                   # 本 change 的一致性证据
+│       └── artifacts/                  # 截图、基准、测试证据等
+└── archive/                            # 已归档 version 与 change 上下文
+    ├── roadmap.md                      # 已归档 versions 索引
+    └── changes/                        # 已归档 changes 的完整上下文
+```
+
+## 结构职责
+
+- `intents.md` 只作为进入 roadmap 前的意图池。
+- `roadmap.md` 只作为当前活跃 versions/changes 的索引，不是历史总账。
+- `templates/` 保存运行态产物模板，命令生成文件时应优先使用项目本地模板。
+- `changes/<change-id>/` 保存单个未归档 change 的完整运行态上下文。
+- `archive/` 保存已归档 version 与 change 上下文。
+- `<change-id>` 必须是语义化变更标识，不是数字编号。
+
+## 阶段产物规则
+
+- `describe-project` 可在任意阶段更新 `docs/project.md`，用于补全项目认知 big picture。
+- `clarify-intents` 只更新 `.workflow/intents.md`。
+- `plan-roadmap` 更新 `.workflow/roadmap.md`，建立或更新 `.workflow/changes/<change-id>/intents.md`，并从 `.workflow/intents.md` 移出已分配意图。
+- `specify-change` 只更新 `.workflow/changes/<change-id>/specs/`，用于明确 what。
+- `design-change` 只更新 `.workflow/changes/<change-id>/design/`，用于明确 how。
+- `plan-change` 补齐 `.workflow/changes/<change-id>/plan.md` 与 `tasks.md`，其中 `plan.md` 必须提供实现上下文，并按需说明长期 docs 使用情况。
+- `implement-change`、`verify-change` 分别补齐实现状态与 verify 证据。
+- `distill-change` 才能把已验证的 change specs、design、implementation 经验沉淀到 `docs/specs/`、`docs/design/`、`docs/architecture/` 与 `docs/runbooks/`。
+- `archive-version` 以 version 为单位归档，归档后从活跃 roadmap 移入 archive。
+
+## 禁止事项
+
+- 不要把长期知识直接写进 `.workflow/`。
+- 不要在未进入 roadmap 的情况下创建 change 产物。
+- 不要把 how、任务或实现细节写入 spec。
+- 不要在 verify 前把运行态 design 直接复制进 `docs/` 当作长期结论。
+- 不要用数字编号作为 change-id。

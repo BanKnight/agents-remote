@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun .claude/hooks/workflow-guard.ts"
+          },
+          {
+            "type": "command",
+            "command": "bun .claude/hooks/docs-guard.ts"
+          }
+        ]
+      }
+    ]
+  }
+}
