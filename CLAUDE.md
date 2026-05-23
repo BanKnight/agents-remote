@@ -3,6 +3,9 @@
 ## 行为规范
 - @GUIDLINES.mds
 
+## 项目目标
+- 实现一个优化版本的 hapi，使用户可以通过网页控制服务器上的 agent，包括 Codex 和 Claude。
+
 <!-- WORKFLOW:GOVERNANCE:START -->
 ## 治理文档导入
 

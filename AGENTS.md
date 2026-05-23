@@ -2,9 +2,8 @@
 
 This file is managed in part by `setup`.
 
-## 工作流背景
-- 当前项目用于构建自有工作流，参考对象包括 `mattpocock/skills` 与 `Fission-AI/OpenSpec`。
-- 工作流目标：规范化开发流程，并提升每个流程环节的工作质量。
+## 项目目标
+- 实现一个优化版本的 hapi，使用户可以通过网页控制服务器上的 agent，包括 Codex 和 Claude。
 
 <!-- WORKFLOW:GOVERNANCE:START -->
 ## 治理文档导入
