@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待计划
-- 下一步技能：plan-change
+- 当前阶段：待实现
+- 下一步技能：implement-change
 - 阻塞项：无
 
 ## 阶段流转
@@ -32,3 +32,4 @@
 - 已完成 `specs/agent-access-research/spec.md`。
 - 已完成 `design/overview.md`、`design/architecture.md`、`design/api.md`、`design/risks.md`。
 - 已沉淀阶段性研究材料到 `docs/research/agent-access-options.md`，后续 plan-change 应将研究/设计结论转为可执行 plan 与 tasks。
+- 已完成 `plan.md` 与 `tasks.md`，当前可进入 `implement-change` 执行研究收口、handoff 和 verify checklist 任务。
