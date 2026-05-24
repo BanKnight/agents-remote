@@ -104,6 +104,29 @@ Intent → Roadmap → Specify → Design → Build → Verify → Distill → A
 
 本模板借鉴并整理了多个 workflow / spec / skill 项目的实践，目标不是替代项目自身工程规范，而是提供一个可复制、可演进的 Claude Code 协作骨架。
 
+## 本地服务与部署路径
+
+本项目第一轮保留 `web` 与 `api` 两个本机服务边界：
+
+- `web`：前端控制台服务，开发端口默认 `3000`。
+- `api`：后端控制面服务，开发端口默认 `3001`。
+- 对外统一入口由部署层提供，应用自身不创建或管理 Cloudflare Tunnel、域名或外部认证资源。
+
+推荐的同域路径转发形态：
+
+```text
+/api/*  -> http://127.0.0.1:3001/api/*
+/*      -> http://127.0.0.1:3000/*
+```
+
+WebSocket 也走 `/api` 前缀，部署层需要支持 upgrade 转发：
+
+```text
+/api/ws/* -> ws://127.0.0.1:3001/api/ws/*
+```
+
+开发环境中，`web` 通过 Vite dev proxy 将 `/api` HTTP 与 WebSocket 请求转发到本机 `api`，因此前端代码默认使用相对 `/api` 路径，不要求普通用户手动输入 API 地址。
+
 ## License
 
 请根据你的组织或项目需要补充许可证。

@@ -1,0 +1,23 @@
+{
+  "name": "agents-remote",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web",
+    "api",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel --filter @agents-remote/api --filter @agents-remote/web dev",
+    "dev:api": "bun run --filter @agents-remote/api dev",
+    "dev:web": "bun run --filter @agents-remote/web dev",
+    "build": "bun run --sequential --workspaces build",
+    "typecheck": "bun run --sequential --workspaces typecheck",
+    "test": "bun run --sequential --workspaces test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.4",
+    "typescript": "^5.9.3"
+  }
+}

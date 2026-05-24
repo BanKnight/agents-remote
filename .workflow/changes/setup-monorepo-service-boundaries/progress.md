@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待实现
-- 下一步技能：implement-change
+- 当前阶段：待验证
+- 下一步技能：verify-change
 - 阻塞项：无
 
 ## 阶段流转
@@ -34,3 +34,4 @@
 - 已补充 specify-change：`workspace-foundation` 增加 TanStack/Jotai 前端基础与基础测试命令入口约束，E2E 细节仍归属 `setup-e2e-quality-baseline`。
 - 已完成 design-change：创建 `design/overview.md`、`design/architecture.md`、`design/frontend.md`、`design/api.md`、`design/risks.md`；当前可进入 `plan-change`。
 - 已完成 plan-change：创建 `plan.md` 与 `tasks.md`，当前可进入 `implement-change`。
+- 已完成 implement-change：创建 Bun workspace、`packages/shared` 类型包、`api` smoke 服务、`web` React/Vite/Tailwind/TanStack/Jotai 基础，补齐基础测试和部署路径说明；`tasks.md` 全部任务完成，根 `typecheck`、`build`、`test` 通过，当前可进入 `verify-change`。
