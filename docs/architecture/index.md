@@ -8,4 +8,4 @@
 
 ## 文档
 
-- （无）
+- [agent-runtime.md](./agent-runtime.md) — 定义 Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。

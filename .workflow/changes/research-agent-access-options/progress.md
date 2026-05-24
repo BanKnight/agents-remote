@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待实现
-- 下一步技能：implement-change
+- 当前阶段：已完成
+- 下一步技能：archive-version
 - 阻塞项：无
 
 ## 阶段流转
@@ -33,3 +33,6 @@
 - 已完成 `design/overview.md`、`design/architecture.md`、`design/api.md`、`design/risks.md`。
 - 已沉淀阶段性研究材料到 `docs/research/agent-access-options.md`，后续 plan-change 应将研究/设计结论转为可执行 plan 与 tasks。
 - 已完成 `plan.md` 与 `tasks.md`，当前可进入 `implement-change` 执行研究收口、handoff 和 verify checklist 任务。
+- 已完成 implement-change：补齐 `artifacts/spec-coverage-matrix.md`、`artifacts/source-evidence.md`、`artifacts/evidence-grading.md`、`artifacts/verification-checklist.md`、`artifacts/downstream-handoff.md`，并完成 `tasks.md` 全部实现任务；当前可进入 `verify-change`。
+- 已完成 verify-change：创建 `verify.md`，验证结论通过，无 CRITICAL/WARNING；当前可进入 `distill-change`。
+- 已完成 distill-change：更新 `docs/research/agent-access-options.md`，新增 `docs/specs/agent-access/spec.md`、`docs/design/agent-session-model.md`、`docs/architecture/agent-runtime.md`、`docs/architecture/adr/ADR-20260524-first-usable-cli-passthrough.md`，并同步相关索引；当前可随 version 进入 `archive-version`。

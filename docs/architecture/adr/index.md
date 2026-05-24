@@ -8,4 +8,4 @@
 
 ## 文档
 
-- （无）
+- [ADR-20260524-first-usable-cli-passthrough.md](./ADR-20260524-first-usable-cli-passthrough.md) — 记录第一轮真实 CLI passthrough 与长期 provider-neutral Agent protocol 分离的架构决策。
