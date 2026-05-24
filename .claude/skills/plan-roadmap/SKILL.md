@@ -1,18 +1,20 @@
 ---
 name: plan-roadmap
-description: 基于 `.workflow/intents.md` 规划或更新 `.workflow/roadmap.md`，并将意图分配到 roadmap。用户要求规划路线图、安排优先级、决定下一批 change 时使用。
+description: 基于 `.workflow/intents.md` 规划或更新 `.workflow/roadmap.md` 队列，并将完整来源意图与进度状态写入各 change 本地文件。用户要求规划路线图、安排优先级、决定下一批 change 时使用。
 ---
 
 # plan-roadmap 技能
 
 ## 定位
 
-`plan-roadmap` 用于把 `.workflow/intents.md` 中“待分配”的用户原始意图，编排进当前开发路线图 `.workflow/roadmap.md`。
+`plan-roadmap` 用于把 `.workflow/intents.md` 中“待分配”的用户原始意图，编排进当前开发路线图 `.workflow/roadmap.md`，并为对应 change 建立本地来源与进度文件。
 
-`roadmap.md` 是当前活跃 versions 和 changes 的索引：
+`roadmap.md` 是当前活跃 versions 和 changes 队列的索引：
 
 - 一个 version 对应多个 change。
 - 每个 roadmap 中的 change 必须对应 `.workflow/changes/<change-id>/`。
+- roadmap 只记录全局队列、依赖和当前焦点；单个 change 的阶段状态、下一步和局部阻塞写在 `.workflow/changes/<change-id>/progress.md`。
+- roadmap 不保存活跃 change 的原始意图全文；完整来源意图和规划来源写在 `.workflow/changes/<change-id>/intents.md`。
 - 已归档 version 不保留在 `.workflow/roadmap.md`，而是进入 `.workflow/archive/roadmap.md`。
 
 `plan-roadmap` 不只是被动消费 intents。面对不懂技术或只表达业务目标的用户时，Agent 需要主动补齐实现路径中的必要工程工作。
@@ -49,6 +51,8 @@ description: 基于 `.workflow/intents.md` 规划或更新 `.workflow/roadmap.md
 .workflow/intents.md
 .workflow/roadmap.md
 .workflow/templates/roadmap.md
+.workflow/templates/changes/intents.md
+.workflow/templates/changes/progress.md
 .workflow/changes/
 ```
 
@@ -64,7 +68,7 @@ docs/
 
 - 读取 `.workflow/intents.md` 时，优先从“待分配”底部往上读。
 - 先处理最近追加的待分配意图。
-- `.workflow/roadmap.md` 是主要写入目标，只记录活跃 versions/changes。
+- `.workflow/roadmap.md` 是主要写入目标，只记录活跃 versions/changes 队列和当前焦点。
 - `.workflow/archive/roadmap.md` 和 `.workflow/archive/changes/` 只在需要历史追溯、避免重复规划或理解已完成版本时按需读取。
 
 ## 不负责
@@ -88,16 +92,17 @@ docs/
    - 新建 version。
    - 重排 version 顺序。
    - 插入 change。
-   - 更新 change 所属 version、状态、优先级或下一步。
+   - 更新 change 所属 version、目标、依赖或优先级。
    - 删除、暂缓或放弃不再需要的 roadmap 条目。
-5. 为新增或变更的 change 建立/更新骨架，骨架模板来自 `.workflow/templates/changes/intents.md`：
+5. 为新增或变更的 change 建立/更新骨架，模板来自 `.workflow/templates/changes/`：
    - `.workflow/changes/<change-id>/intents.md`
+   - `.workflow/changes/<change-id>/progress.md`
 6. 写入 roadmap 时，必须为每个 version/change 明确以下字段：
-   - version：状态、目标、范围。
-   - change：change-id、状态、来源、来源意图或规划原因、路径、下一步。
-7. 保证 `.workflow/roadmap.md` 中每个活跃 change 都对应到 `.workflow/changes/<change-id>/`。
-8. 从 `.workflow/intents.md` 的“待分配”中移除已经处理的意图；进入 roadmap 的写入对应 change 的来源意图，暂缓或放弃的写入 roadmap 的“暂缓 / 放弃”。
-9. 更新 `.workflow/roadmap.md` 的“当前焦点”和“下一步”。
+   - version：目标、范围。
+   - change：change-id、一句话目标、来源、路径、intents 路径、progress 路径、依赖。
+7. 保证 `.workflow/roadmap.md` 中每个活跃 change 都对应到 `.workflow/changes/<change-id>/`，且至少包含 `intents.md` 与 `progress.md`。
+8. 从 `.workflow/intents.md` 的“待分配”中移除已经处理的意图；进入 roadmap 的完整来源意图写入对应 change 的 `intents.md`，暂缓或放弃的写入 roadmap 的“暂缓 / 放弃”。
+9. 更新 `.workflow/roadmap.md` 的“当前焦点”和“下一步”；具体阶段和下一步技能只写入当前 change 的 `progress.md`。
 10. 不读取全部 archive；归档内容只按需读取。
 
 ## Agent 主动规划规则
@@ -235,7 +240,6 @@ distill-change
 每个活跃 version 至少包含：
 
 - version 名称。
-- 状态：规划中 / 进行中 / 待归档。
 - 目标：本 version 要达成的阶段性结果。
 - 范围：明确做什么、不做什么。
 - changes：本 version 下的 change 清单。
@@ -245,26 +249,20 @@ distill-change
 每个活跃 change 至少包含：
 
 - change-id。
-- 状态。
+- 目标：一句话说明这个 change 要改变什么。
 - 来源：用户意图 / 主动规划。
-- 来源意图：如果来自 `.workflow/intents.md`，保留编号和原始意图。
-- 规划原因：说明这个 change 为什么应该存在。
 - 路径：`.workflow/changes/<change-id>/`。
-- 下一步：指向下一个 workflow 技能。
+- intents：`.workflow/changes/<change-id>/intents.md`。
+- progress：`.workflow/changes/<change-id>/progress.md`。
+- 依赖：无 / change-id 列表。
 
-### Change 状态到下一步技能
+### 不写入 roadmap 的字段
 
-| Change 状态 | 下一步技能 |
-|---|---|
-| 待创建 | plan-roadmap |
-| 待规格 | specify-change |
-| 待设计 | design-change |
-| 待计划 | plan-change |
-| 待实现 | implement-change |
-| 待验证 | verify-change |
-| 待沉淀 | distill-change |
-| 已完成 | archive-version |
-| 阻塞 | 先处理阻塞项 |
+以下内容不得写入 roadmap：
+
+- 原始意图全文：只写入 change 的 `intents.md`。
+- change 当前阶段、状态、下一步技能、局部阻塞：只写入 change 的 `progress.md`。
+- spec/design/plan/tasks/verify 的中间过程：只写入对应 change 目录。
 
 ## change 骨架
 
@@ -272,7 +270,8 @@ distill-change
 
 ```text
 .workflow/changes/<change-id>/
-└── intents.md
+├── intents.md
+└── progress.md
 ```
 
 `intents.md` 使用模板：
@@ -281,9 +280,17 @@ distill-change
 .workflow/templates/changes/intents.md
 ```
 
-该文件记录 change 承接的原始意图；如果 change 不是直接来自用户意图，则记录规划原因、前置关系和它支撑的后续目标。
+该文件记录 change 承接的完整原始意图；如果 change 不是直接来自用户意图，则记录规划原因、前置关系和它支撑的后续目标。
 
-如果 change 已存在，只补齐或更新骨架，不覆盖已有内容。
+`progress.md` 使用模板：
+
+```text
+.workflow/templates/changes/progress.md
+```
+
+该文件记录 change 当前阶段、下一步技能、局部阻塞和进展记录。新增 change 默认阶段通常是 `待规格`，下一步技能通常是 `specify-change`；如果已存在 spec/design/plan 等产物，应按现有产物设置到实际阶段。
+
+如果 change 已存在，只补齐缺失骨架或必要字段，不覆盖已有内容。
 
 ## roadmap 写入规则
 
@@ -293,19 +300,20 @@ distill-change
 .workflow/roadmap.md
 .workflow/intents.md
 .workflow/changes/<change-id>/intents.md
+.workflow/changes/<change-id>/progress.md
 ```
 
-`.workflow/roadmap.md` 只记录活跃 versions/changes。
+`.workflow/roadmap.md` 只记录活跃 versions/changes 队列、依赖和当前焦点。
 
 写入规则：
 
 - 使用 `.workflow/templates/roadmap.md` 的字段结构。
 - 进入活跃 roadmap 的意图，必须从 `.workflow/intents.md` 移出。
-- 进入 roadmap 的用户意图，必须写入对应 change 的“来源意图”。
+- 进入 roadmap 的用户意图，必须完整写入对应 change 的 `intents.md`；roadmap 只引用 `intents.md` 路径，不复制原始意图全文。
 - 暂缓或放弃的意图，也必须从 `.workflow/intents.md` 移出，并写入 roadmap 的“暂缓 / 放弃”。
-- 主动规划出的 change，必须写明“来源：主动规划”和“规划原因”。
-- 每个活跃 change 必须有明确状态和下一步技能。
-- 当前最应推进的 version/change 必须同步写入“当前焦点”和“下一步”。
+- 主动规划出的 change，必须在 change 的 `intents.md` 写明规划来源和分配说明。
+- 新增或更新 change 时，必须创建或更新 `progress.md`，记录当前阶段、下一步技能和局部阻塞。
+- roadmap 不写 change 状态或下一步技能；当前最应推进的 version/change 只同步写入“当前焦点”和“下一步”。
 
 ## 与 archive 的关系
 
@@ -332,7 +340,7 @@ distill-change
 
 - 新处理的意图已进入活跃 roadmap、暂缓或放弃。
 - `.workflow/roadmap.md` 有清晰的活跃 versions 与 changes。
-- `.workflow/roadmap.md` 有明确当前焦点和下一步。
+- `.workflow/roadmap.md` 有明确当前焦点和下一步入口；具体阶段由当前 change 的 `progress.md` 决定。
 - roadmap 中每个活跃 change 都能对应到 `.workflow/changes/<change-id>/`。
-- 新增或更新的 change 至少包含 `intents.md` 骨架。
+- 新增或更新的 change 至少包含 `intents.md` 与 `progress.md` 骨架。
 - `.workflow/intents.md` 只保留仍待讨论或待分配的意图。
