@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 下一步技能：specify-change
+- 当前阶段：待计划
+- 下一步技能：plan-change
 - 阻塞项：无
 
 ## 阶段流转
@@ -30,3 +30,6 @@
 ## 进展记录
 
 - 已进入 roadmap，完整来源见 `intents.md`。
+- 已完成 specify-change：创建 `specs/workspace-foundation/spec.md` 与 `specs/service-access-boundary/spec.md`；当前可进入 `design-change`。
+- 已补充 specify-change：`workspace-foundation` 增加 TanStack/Jotai 前端基础与基础测试命令入口约束，E2E 细节仍归属 `setup-e2e-quality-baseline`。
+- 已完成 design-change：创建 `design/overview.md`、`design/architecture.md`、`design/frontend.md`、`design/api.md`、`design/risks.md`；当前可进入 `plan-change`。
