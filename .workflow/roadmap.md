@@ -1,420 +1,152 @@
 # roadmap
 
-本文件是当前开发路线图：只记录仍在开发队列中的 versions，以及每个 version 对应的 changes。
+本文件是当前开发路线图：只记录仍在开发队列中的 versions、changes 队列和当前焦点。
 
 已归档 version 不写在这里；归档后移动到 `.workflow/archive/roadmap.md`。
 
 ## 当前焦点
 
-<!-- 当前正在推进的 version/change，用于让 Agent 快速知道当前工作入口。 -->
+<!-- 当前正在推进的 version/change，用于让 Agent 快速知道当前工作入口。具体阶段和下一步读取 change 自己的 progress.md。 -->
 
 - 当前 version：v0.1-foundation-and-agent-research
 - 当前 change：research-agent-access-options
 - change 路径：.workflow/changes/research-agent-access-options/
-- 下一步命令：specify-change
+- progress：.workflow/changes/research-agent-access-options/progress.md
 
 ## 活跃 Versions
 
 <!--
 每个 version 表示当前要开发的一组 changes。
 roadmap 中列出的每个 change 都必须对应 `.workflow/changes/<change-id>/`。
+roadmap 不保存活跃 change 的原始意图全文、不维护 change 阶段状态；完整来源见 change 的 intents.md，阶段状态见 change 的 progress.md。
 -->
 
 ### version: v0.1-foundation-and-agent-research
 
-- 状态：规划中
 - 目标：先确定 Agent 接入路线，并建立第一轮 `web/api/shared`、配置、认证与同域部署路径等基础边界。
 - 范围：
   - 做：Agent 接入方式调研；monorepo 与 `web/api/packages/shared` 边界；Bun、Tailwind、同域 `/api` 与 Vite proxy 基础；个人部署配置、单密码与 token 访问保护。
   - 不做：真实 Claude/Codex Agent Runtime 完整接入；多个 server/hub 管理；Cloudflare Tunnel 自动管理；文件/Git 工具与精细 UI 打磨。
 - changes：
   - change-id：research-agent-access-options
-    状态：待规格
+    目标：调研 Agent 接入路线，并把结论转化为后续 Agent Runtime/API 设计约束。
     来源：用户意图
-    来源意图：
-      - 编号：65
-        原始意图：用户希望在实现 Agent Runtime provider 前，研究 hapi 如何发现、列出、恢复 Claude/Codex 历史会话，并把可复用的做法转化到本项目。
-      - 编号：66
-        原始意图：用户希望未来将 CLI 能力对接到 React UI 表现时，也研究 hapi 的实现方式，而不仅仅研究历史会话读取。
-      - 编号：67
-        原始意图：用户希望把 Codex 官方远程对接协议纳入接口设计考虑，因为它会显著影响 Agent Runtime 和控制面 API 的设计。
-      - 编号：68
-        原始意图：用户希望现在先把 Codex 官方远程对接协议作为接口设计约束来研究和预留抽象边界；第一轮仍可用 CLI/tmux 跑通，但不要设计出未来无法接入该协议的 Agent Runtime/API。
-      - 编号：69
-        原始意图：用户认为由于技术演进，第一轮实现前必须先完成 Agent 接入方式调研，不能默认 `CLI/tmux/hapi` 思路就是最佳或最容易实现的路线。
-      - 编号：70
-        原始意图：用户希望在锁定 Agent Runtime/API 设计前，对比研究 `CLI/tmux`、hapi 实现、Claude 相关官方能力、Codex 官方远程对接协议等路径。
-      - 编号：71
-        原始意图：用户希望 Agent 接入调研重点比较不同路线对交互式体验、历史会话恢复、React UI 化、远程控制协议、实现复杂度和长期演进的影响。
-      - 编号：72
-        原始意图：用户希望调研结论反过来指导第一轮 Agent Runtime/API 设计，而不是只作为背景资料。
-    规划原因：这是后续 Agent Runtime/API 和 Claude/Codex provider 适配的前置技术验证，必须先完成以避免第一轮架构选型过早固化。
     路径：.workflow/changes/research-agent-access-options/
-    下一步：specify-change
+    intents：.workflow/changes/research-agent-access-options/intents.md
+    progress：.workflow/changes/research-agent-access-options/progress.md
+    依赖：无
   - change-id：setup-monorepo-service-boundaries
-    状态：待规格
+    目标：建立 `web/api/packages/shared` 的 monorepo、服务边界和同域 `/api` 部署约束。
     来源：用户意图
-    来源意图：
-      - 编号：2
-        原始意图：用户希望项目采用 monorepo 结构，至少包含 `web`、`api` 和共享类型区域，以便前后端和共享模型分层管理。
-      - 编号：3
-        原始意图：用户希望系统对外呈现统一入口，不要求使用者理解或手动配置 `web` 与 `api` 两个服务。
-      - 编号：10
-        原始意图：用户希望后端服务统一命名为 `api`，不要命名为 `agent`，避免和 Claude/Codex 这类 AI Agent 混淆。
-      - 编号：34
-        原始意图：用户希望 `web` 和 `api` 在服务边界上保持拆分，对外访问通过部署层统一入口；这样未来可以将前端单独分离，演进成类似 hub 的形态。
-      - 编号：35
-        原始意图：用户希望实际部署时 `web` 和 `api` 作为两个本机服务分别启动，对外通过 Cloudflare Tunnel 公开访问，而不是要求 `api` 托管 `web` 或强制同源 `/api`。
-      - 编号：36
-        原始意图：用户希望第一步不让普通用户手动输入 API 地址；api 地址由 web 的构建配置或运行配置固定，Cloudflare Tunnel 负责把两个本机服务公开出来。
-      - 编号：37
-        原始意图：用户希望现在只保留 `web/api` 服务边界和部署可分离性，不做多个 server 连接管理；hub 化作为后续方向，不要污染第一轮产品复杂度。
-      - 编号：38
-        原始意图：用户希望固定使用 Tailwind CSS，以支持移动端优先和深色界面的快速布局与状态样式迭代。
-      - 编号：39
-        原始意图：用户希望 Bun 同时作为 monorepo 的包管理器、脚本运行器和 `api` 运行时；`web` 也使用 Bun 管理依赖和启动开发流程，但前端本身仍是 React + TypeScript 应用。
-      - 编号：40
-        原始意图：用户希望第一步 `packages/shared` 主要放 `web` 和 `api` 共用的类型定义，例如 `Project`、`AgentSession`、`TerminalSession`、状态枚举和 API DTO；共享工具函数谨慎添加，先不要把业务逻辑放进去。
-      - 编号：129
-        原始意图：用户希望本项目完全不管理 Cloudflare Tunnel；项目只提供 `web/api` 本机服务和可配置地址，Tunnel 的创建、域名和认证属于 Cloudflare/外部部署工作。
-      - 编号：130
-        原始意图：用户希望对外访问时 `web` 和 `api` 理应位于同一个域名之下，避免第一步引入跨域/CORS 复杂度。
-      - 编号：131
-        原始意图：用户希望对外同域名下 `api` 使用 `/api` 前缀，`web` 页面走普通前端路由；Cloudflare Tunnel 或部署层负责把 `/api` 转到 `api` 服务，其余页面转到 `web` 服务。
-      - 编号：132
-        原始意图：用户希望 WebSocket 也使用 `/api` 前缀，例如 `/api/projects/:project/terminals/:session/stream`，方便同域名部署层统一转发。
-      - 编号：133
-        原始意图：用户希望开发环境也模拟生产同域路径：`web` 通过 `/api` 访问 `api`；可以使用 Vite 作为 `web` 开发服务器，并通过 Vite dev proxy 将 `/api` 和 WebSocket stream 转发到本机 `api` 服务，同时继续使用 Bun 作为包管理器和脚本运行器。
-      - 编号：134
-        原始意图：用户希望项目提供 Cloudflare Tunnel/部署层路径转发的示例说明，说明 `/api` 转到 `api` 本机端口，其余路径转到 `web` 本机端口；但不负责自动管理 Cloudflare。
-    规划原因：先建立服务边界、包管理、共享类型与同域路径约束，后续前后端/API/WebSocket 设计才有稳定落点。
     路径：.workflow/changes/setup-monorepo-service-boundaries/
-    下一步：specify-change
+    intents：.workflow/changes/setup-monorepo-service-boundaries/intents.md
+    progress：.workflow/changes/setup-monorepo-service-boundaries/progress.md
+    依赖：无
   - change-id：configure-personal-app-settings
-    状态：待规格
+    目标：建立个人私有部署所需的配置、认证、token 访问保护和运行目录规则。
     来源：用户意图
-    来源意图：
-      - 编号：5
-        原始意图：用户希望系统使用单密码登录，不需要用户名、注册、OAuth、2FA 或手动输入 API 地址。
-      - 编号：32
-        原始意图：用户希望第一步面向个人私有部署；安全重点是单密码访问、token 保护 HTTP/WebSocket、路径不能逃逸 `PROJECTS_ROOT`，以及危险操作要有确认；暂不做多用户、角色权限或团队协作。
-      - 编号：83
-        原始意图：用户希望第一步 token 简单本地签发即可，能保护 HTTP 和 WebSocket 请求；不需要复杂刷新机制、设备管理或会话列表。
-      - 编号：84
-        原始意图：用户希望默认在手机/PWA 上记住登录状态一段时间，避免频繁输入密码；但如果 token 失效或服务端重启导致无效，应回到登录页重新登录。
-      - 编号：85
-        原始意图：用户希望登录成功后，后续 HTTP 和 WebSocket 访问都自动带上认证状态；用户不需要理解或手动处理 token、WebSocket 认证等细节。
-      - 编号：86
-        原始意图：用户希望登录失败时在登录页直接提示密码错误；认证过期或后端认为 token 无效时，当前页面跳回登录页，登录后是否回到原本位置可以后续再做。
-      - 编号：87
-        原始意图：用户希望第一步必要配置包括 `APP_PASSWORD`、`PROJECTS_ROOT`、`web/api` 的本机端口，以及 `web` 访问 `api` 的配置；其他配置先不引入。
-      - 编号：115
-        原始意图：用户希望允许通过环境变量配置 runtime dir，例如 `AGENTS_REMOTE_RUN_DIR`，默认使用 `/run/agents-remote`；这样既符合 Linux 运行态目录规范，也方便无权限环境运行。
-      - 编号：116
-        原始意图：用户希望 `api` 启动时自动创建 runtime dir；如果权限不足或创建失败，应给出明确错误提示。
-      - 编号：117
-        原始意图：用户希望静态/持久化数据放在 `~/.agents-remote` 下，而不是放在 `/run/agents-remote/`。
-      - 编号：118
-        原始意图：用户希望第一步 `~/.agents-remote` 主要放应用自身的持久化配置或轻量状态，例如固定配置、未来 hub/server 连接信息、非敏感偏好；不要放项目文件或 Agent 输出完整历史。
-      - 编号：119
-        原始意图：用户希望 `APP_PASSWORD` 等应用配置可以写入 `~/.agents-remote` 下的配置文件，以降低个人部署复杂度；不强制只通过环境变量配置。
-      - 编号：120
-        原始意图：用户希望 `api` 在创建或更新 `~/.agents-remote` 配置文件时尽量设置为仅当前用户可读写（例如 `0600`）；如果权限不安全，应给出警告或自动修正。
-      - 编号：121
-        原始意图：用户希望配置文件作为个人部署的默认方式；环境变量可以覆盖配置文件，方便临时调试、CI 或容器部署。
-      - 编号：122
-        原始意图：用户希望第一步可以先在 `api` 启动时检查配置；缺少必要配置时给出清晰错误和示例配置路径/内容。后续再做网页初始化配置或 CLI init。
-      - 编号：123
-        原始意图：用户希望 `PROJECTS_ROOT` 也放在 `~/.agents-remote` 配置文件里作为默认配置；环境变量仍可临时覆盖。
-      - 编号：124
-        原始意图：用户希望 `web/api` 端口和 `web` 访问 `api` 的地址也可以放在 `~/.agents-remote` 配置文件里；环境变量仍可覆盖，以适配 Cloudflare Tunnel 或本地调试。
-      - 编号：125
-        原始意图：用户希望 `~/.agents-remote` 下的配置文件第一步使用 TOML 格式，重点是易读、易手改、权限安全。
-      - 编号：126
-        原始意图：用户希望使用 `~/.agents-remote/config.toml` 作为默认配置文件路径。
-      - 编号：127
-        原始意图：用户希望首次启动没有 `config.toml` 时，`api` 可以自动生成带示例值/注释的模板文件，然后提示用户填写必要配置后重启；不要用不安全的默认密码直接启动。
-      - 编号：128
-        原始意图：用户希望 `projects_root` 要求使用绝对路径；如果配置成相对路径，`api` 启动时报错并提示改成绝对路径，避免不同启动目录导致项目根目录变化。
-    规划原因：个人私有部署的配置、认证和运行目录规则是所有 HTTP/WebSocket/API 功能的安全前置。
     路径：.workflow/changes/configure-personal-app-settings/
-    下一步：specify-change
+    intents：.workflow/changes/configure-personal-app-settings/intents.md
+    progress：.workflow/changes/configure-personal-app-settings/progress.md
+    依赖：setup-monorepo-service-boundaries
 
 ### version: v0.2-project-console-shell
 
-- 状态：规划中
 - 目标：交付登录后的 Project 列表、Project 创建/进入、安全路径解析，以及响应式 PWA 控制台外壳。
 - 范围：
   - 做：`PROJECTS_ROOT` 一级目录 project 模型；新建/读取 project；project 路由参数；移动端优先的深色 PWA 控制台；原型优先的布局与信息架构。
   - 不做：真实 Agent Runtime 接入；文件编辑/上传/删除；Git 写操作；多 server/hub；精细动效和像素级还原。
 - changes：
   - change-id：implement-project-model-and-safe-paths
-    状态：待规格
+    目标：定义 Project 目录模型，并提供所有 project 内能力共享的 `PROJECTS_ROOT` 安全路径解析。
     来源：用户意图
-    来源意图：
-      - 编号：4
-        原始意图：用户希望 `api` 启动时可以通过参数或环境变量指定 `PROJECTS_ROOT`，并把其一级子目录识别为 project。
-      - 编号：6
-        原始意图：用户希望登录成功后进入 Project 列表页，并能从 `PROJECTS_ROOT` 读取和展示 project 列表。
-      - 编号：7
-        原始意图：用户希望 `project` 被定义为 `PROJECTS_ROOT` 下的一级真实目录，而不是需要额外数据库建模的复杂工作空间对象。
-      - 编号：8
-        原始意图：用户希望新建 Project 时只输入路径或文件夹名称，Project 名称自动由最终文件夹名决定。
-      - 编号：9
-        原始意图：用户希望 Project 列表卡片展示项目名称、路径，并可逐步展示 Git 分支、Agent Session 数量、Terminal Session 数量和最近打开时间。
-      - 编号：33
-        原始意图：用户希望所有涉及 project、文件、Git、tmux 启动目录的路径都统一走同一个 `PROJECTS_ROOT` 下的安全解析逻辑，避免每个模块各写一套路径拼接和校验。
-      - 编号：78
-        原始意图：用户希望第一步新建 project 只创建目录或使用已存在目录，不做 git clone、模板初始化或脚手架；这些可以以后作为 project 创建增强。
-      - 编号：79
-        原始意图：用户希望新建 project 时，如果路径在 `PROJECTS_ROOT` 内且目录已存在，就直接把它作为 project 使用；如果不存在则创建；如果是文件或越界路径则报错。
-      - 编号：80
-        原始意图：用户希望由于 project 只来自 `PROJECTS_ROOT` 的一级子目录，第一步不支持嵌套 project，因此 project 名称由一级目录名唯一约束，不需要额外支持不同路径同名 project。
-      - 编号：81
-        原始意图：用户希望最近打开时间可以后续再做；第一步 Project 列表优先展示名称、路径、Agent Session 数量、Terminal Session 数量，Git 分支可按实现成本决定是否显示。
-      - 编号：108
-        原始意图：用户希望第一步可以用 project 的一级目录名作为 URL 参数，但所有 API 内部必须通过 `PROJECTS_ROOT` 安全解析到真实路径；如果名称包含特殊字符，前端负责 URL encode/decode。
-    规划原因：Project 是文件、Git、Terminal 和 Agent Session 的共同作用域，必须先定义目录模型与安全解析边界。
     路径：.workflow/changes/implement-project-model-and-safe-paths/
-    下一步：specify-change
+    intents：.workflow/changes/implement-project-model-and-safe-paths/intents.md
+    progress：.workflow/changes/implement-project-model-and-safe-paths/progress.md
+    依赖：configure-personal-app-settings
   - change-id：build-responsive-pwa-console-shell
-    状态：待规格
+    目标：建立移动端优先的深色 PWA 控制台外壳，并为 Agent/Terminal/Git/Files 入口提供信息架构。
     来源：用户意图
-    来源意图：
-      - 编号：1
-        原始意图：我想先实现一个网页入口，可以从浏览器或手机启动 Claude/Codex agent 会话，查看 agent 是否还在运行、看到当前输出，并在需要时发起或继续一个任务；这个入口应是响应式的并支持 PWA。网页入口的核心价值是远程可达和随时可观察，而不只是把终端命令搬到浏览器里。
-      - 编号：30
-        原始意图：用户希望 PWA 第一优先是可以安装到手机桌面，并以接近 App 的全屏/独立窗口方式打开；离线能力不是重点，因为核心数据依赖服务器实时状态。
-      - 编号：31
-        原始意图：用户认为通知可以作为后续增强，不是第一步必须；第一步先保证打开网页/PWA 后能快速看到哪些 Agent 在运行、哪些需要用户输入。
-      - 编号：41
-        原始意图：用户希望第一步只做深色界面，因为产品是服务器控制台和终端/Agent 使用场景，深色更符合主要使用预期；浅色/深色切换可以以后再考虑。
-      - 编号：42
-        原始意图：用户希望第一步尽量贴近原型的暗色移动端控制台气质，包括顶部项目上下文、会话卡片、状态标签和底部输入区域；但动效、精细图标和像素级还原可以后续再打磨。
-      - 编号：43
-        原始意图：用户希望 PC 端第一步可用并利用更宽屏幕，例如左侧 Sidebar 或双栏布局；不需要为 PC 重新设计一套独立产品逻辑，移动端体验仍是主导。
-      - 编号：74
-        原始意图：用户希望在 Agent 接入调研完成前，前端可以先做 Agent Session 的信息架构和列表/详情占位结构，但真实 Agent Runtime 接入等调研后再定。
-      - 编号：75
-        原始意图：用户希望前端实现 Agent 相关结构时，在不违背技术调研结论和架构边界的情况下，以 `docs/design/prototype.png` 原型为准。
-      - 编号：76
-        原始意图：用户希望产品布局和视觉交互细节以原型为优先；领域命名、范围边界、安全和部署约束以文本文档/澄清意图为优先。
-      - 编号：77
-        原始意图：用户希望如果原型和文本文档/澄清意图之间的冲突影响实现，应先提出，而不是自行猜测。
-      - 编号：82
-        原始意图：用户希望进入 project 后默认聚焦 Agent Sessions 区域，因为产品的主目标是远程控制 AI Agent；Terminal、Git、Files 是辅助入口。
-    规划原因：先建立远程可达、可观察、移动端优先的控制台外壳，后续各能力才能在统一信息架构中接入。
     路径：.workflow/changes/build-responsive-pwa-console-shell/
-    下一步：specify-change
+    intents：.workflow/changes/build-responsive-pwa-console-shell/intents.md
+    progress：.workflow/changes/build-responsive-pwa-console-shell/progress.md
+    依赖：setup-monorepo-service-boundaries, implement-project-model-and-safe-paths
 
 ### version: v0.3-session-runtime-quality
 
-- 状态：规划中
 - 目标：跑通 Terminal/Agent Session 的运行态语义、移动端交互、Claude/Codex provider 入口，并建立覆盖 `web + api + runtime` 的 E2E 质量基线。
 - 范围：
   - 做：Agent Session 与 Terminal Session 分层；tmux/xterm/WebSocket 第一轮链路；运行态 metadata；重连和关闭语义；移动端输入/快捷键；Claude/Codex provider 表达；真实 Terminal smoke E2E。
   - 不做：跨服务器重启恢复；完整 React 原生 Agent UI 化；Terminal 完整日志持久化；快捷键配置界面；真实 AI CLI 依赖的 E2E。
 - changes：
   - change-id：design-session-runtime-boundaries
-    状态：待规格
+    目标：定义 Agent Session 与 Terminal Session 的运行态边界、生命周期、metadata 和重连/关闭语义。
     来源：用户意图
-    来源意图：
-      - 编号：11
-        原始意图：用户希望明确区分 Agent Session 和 Terminal Session：前者是 Claude/Codex 交互式会话，后者是普通 shell 终端会话。
-      - 编号：12
-        原始意图：用户希望采用迭代式开发：第一轮先用 `tmux + xterm.js + WebSocket` 承载真实 CLI 来跑通 Agent/Terminal 交互流程；后续迭代再逐步做 React 原生 Agent UI 化。
-      - 编号：13
-        原始意图：用户希望第一轮优先真实可用，同时在命名和接口上保留稳定抽象，避免把 `xterm.js/tmux` 细节泄漏到所有业务概念里，方便后续替换或增强 UI。
-      - 编号：17
-        原始意图：用户希望从早期就明确区分 Agent Session 与 Terminal Session 的产品体验；即使底层复用 `tmux/xterm/WebSocket` 能力，也应在信息架构、路由、文案、状态命名和视觉语义上保持区分。
-      - 编号：22
-        原始意图：用户接受早期先粗略区分 `running / closed / error`，但希望 Agent Session 尽早能表达 `idle / 等待输入`，因为手机端关键价值是判断当前是否需要用户介入。
-      - 编号：23
-        原始意图：用户希望优先支持回到仍存在的 tmux 会话：重新打开网页后能进入已有 Agent/Terminal Session，看到当前终端内容并继续输入；暂不要求跨服务器重启后的完整任务恢复。
-      - 编号：24
-        原始意图：用户希望关闭 Agent Session 或 Terminal Session 表示真正终止对应的 tmux 会话/进程，而不是仅从列表隐藏。
-      - 编号：25
-        原始意图：用户希望关闭 Agent/Terminal Session 前弹出确认，并明确提示“会话中的进程将被终止”；不需要输入 session 名称做二次确认。
-      - 编号：57
-        原始意图：用户希望第一步假设服务器上已经安装并登录好 Claude/Codex CLI；本系统负责在 project 目录下启动和连接交互式会话，不负责管理 Claude/Codex 的账号登录、模型配置或 CLI 安装。
-      - 编号：58
-        原始意图：用户希望如果底层 tmux session 已不存在，系统可以直接从 Agent Session 或 Terminal Session 列表移除对应运行实例，不需要用户手动清理或处理。
-      - 编号：59
-        原始意图：用户希望文档、UI 和 API 表述中明确区分 `Agent Session` 与 `Terminal Session`，避免用泛泛的 `Session` 混淆两类不同实例。
-      - 编号：62
-        原始意图：用户希望 Terminal Session 第一阶段只表示当前活着的普通 shell 实例；如果底层 tmux 不存在就从列表移除，不需要像 Claude/Codex 那样读取历史会话。
-      - 编号：73
-        原始意图：用户认为 Terminal Session 可以先按 `tmux + xterm.js + WebSocket` 确定，因为普通 shell 交互没有 Claude/Codex 协议不确定性；它适合作为第一条端到端集成和 E2E 链路。
-      - 编号：88
-        原始意图：用户希望 Agent/Terminal WebSocket 断开时，详情页明确显示连接已断开，并提供重新连接入口；不要静默失败。
-      - 编号：89
-        原始意图：用户希望如果底层 tmux 会话仍存在，重新连接后回到该 Agent/Terminal Session 的当前终端内容，并允许继续输入；不需要提示用户重新创建会话。
-      - 编号：90
-        原始意图：用户希望如果详情页重连时发现底层 tmux 会话已不存在，应提示会话已结束，并提供返回列表入口；列表随后不再展示这个运行实例。
-      - 编号：91
-        原始意图：用户希望第一步终端区域支持滚动查看历史输出，并尽量自动跟随最新输出；不需要复杂搜索、过滤或持久化完整日志。
-      - 编号：92
-        原始意图：用户希望刷新或重新进入会话后能看到 tmux 当前屏幕/缓冲内容；但第一步不要求系统自己额外保存完整历史日志。
-      - 编号：109
-        原始意图：用户希望第一步使用稳定的内部 session id 作为 Agent/Terminal Session 的 URL 参数，页面里再显示用户可读名称；避免名称变化或特殊字符影响路由。
-      - 编号：110
-        原始意图：用户希望 Session 路由使用 `project + session id` 定位；展示名称自动生成给用户看；底层 tmux session name 包含 project、session 类型、provider 和短 id，方便服务器侧区分和恢复，但不直接暴露为用户名称。
-      - 编号：111
-        原始意图：用户希望底层 tmux session name 不直接使用原始 project 名，而使用安全 slug/hash；UI 仍显示原始 project 名，服务端保存映射或通过 session metadata 关联。
-      - 编号：112
-        原始意图：用户希望系统维护 session id、project、类型、provider、展示名称和底层 tmux name 之间的映射，运行态 metadata 可以存放在 `/run/agents-remote/` 下。
-      - 编号：113
-        原始意图：用户接受 `/run/agents-remote/` 作为运行态 metadata 存储目录；这些数据不需要跨机器重启恢复，重启后丢失是符合预期的。
-      - 编号：114
-        原始意图：用户希望 `/run/agents-remote/` 只用于当前运行实例、session metadata、socket/lock 等运行态信息，不用于长期配置、历史或项目数据。
-    规划原因：Session Runtime 是远程控制的核心抽象，需要在 Terminal 先行可用的同时保护 Agent provider 后续演进空间。
     路径：.workflow/changes/design-session-runtime-boundaries/
-    下一步：specify-change
+    intents：.workflow/changes/design-session-runtime-boundaries/intents.md
+    progress：.workflow/changes/design-session-runtime-boundaries/progress.md
+    依赖：research-agent-access-options, implement-project-model-and-safe-paths, configure-personal-app-settings
   - change-id：implement-agent-provider-experience
-    状态：待规格
+    目标：在统一 Agent Session 语义下表达 Claude/Codex provider 入口、运行实例和历史会话恢复方向。
     来源：用户意图
-    来源意图：
-      - 编号：18
-        原始意图：用户希望 Claude 和 Codex 在界面上明确显示为不同 Agent provider，并提供分别新建 Claude Session / Codex Session 的入口；但它们都属于 Agent Session，基础能力如列表、进入、关闭和状态展示使用同一套 Agent Session 语义表达。
-      - 编号：19
-        原始意图：用户希望 Claude/Codex 的差异在 Agent Runtime 层适配到统一 Agent Session 语义，而不是把供应商差异扩散到控制面各处。
-      - 编号：20
-        原始意图：用户希望从一开始就在 `api` 中显式保留 Agent Runtime 边界，哪怕实现很薄。
-      - 编号：21
-        原始意图：用户希望 Agent Runtime 负责 provider 适配、启动命令、会话生命周期和 tmux 绑定，使控制面 API 不直接关心 Claude/Codex 的细节。
-      - 编号：60
-        原始意图：用户希望 `Agent Session` 不只支持新建空白会话，也需要能列出已有 Agent 会话历史；例如 Claude 需要读取 Claude 配置中的会话历史，让用户选择某个历史会话并将其打开为当前可交互的 Agent Session 实例。
-      - 编号：61
-        原始意图：用户希望“读取 Claude/Codex 历史会话并恢复为可交互 Agent Session 实例”作为 Agent Session 体系的重要设计意图现在记录清楚；实现上可以分阶段，先支持新建和列出当前运行实例，再支持历史会话恢复。
-      - 编号：63
-        原始意图：用户希望 Agent Session 历史会话读取能力目标上同时支持 Claude 和 Codex，并可参考 hapi 实现；但实现顺序可以先从 Claude provider 开始，再扩展到 Codex。
-      - 编号：64
-        原始意图：用户认为历史会话读取只是 Agent Runtime provider 适配的一部分，后续 provider 适配还会包含更多内容，不应把适配范围只理解为历史读取。
-    规划原因：Claude/Codex 是产品主目标，但实现必须消费 `research-agent-access-options` 的结论，避免把 provider 差异泄漏到控制面。
     路径：.workflow/changes/implement-agent-provider-experience/
-    下一步：specify-change
+    intents：.workflow/changes/implement-agent-provider-experience/intents.md
+    progress：.workflow/changes/implement-agent-provider-experience/progress.md
+    依赖：research-agent-access-options, design-session-runtime-boundaries
   - change-id：implement-mobile-session-interaction
-    状态：待规格
+    目标：实现 Agent/Terminal 详情页的移动端终端显示、输入辅助层、快捷键和底部区域展开收起体验。
     来源：用户意图
-    来源意图：
-      - 编号：14
-        原始意图：用户不反对移动端使用底部 Tab；限制点是 Agent/AI 配合沟通界面不应使用底部 Tab，以免误触并挤占输入与快捷键区域。
-      - 编号：15
-        原始意图：用户希望 Agent/Terminal 交互详情页的底部区域优先服务输入、快捷键和展开/收起，而不是全局导航。
-      - 编号：16
-        原始意图：用户希望 Agent Session 详情页中，`xterm.js` 负责真实显示和承载 CLI 会话；底部输入框是更适合手机输入的辅助输入层，可编辑多行内容后发送到 `xterm/tmux` 会话，而不是完全依赖手机软键盘直接操作终端。
-      - 编号：44
-        原始意图：用户希望底部常用快捷键可以根据 Agent/Terminal 场景自定义或排序，而不是只提供完全固定的一组按钮。
-      - 编号：45
-        原始意图：用户希望第一步不做快捷键配置界面；先在代码里为 Agent Session 和 Terminal Session 分别定义默认快捷键集合与排序，后续再考虑用户自定义。
-      - 编号：46
-        原始意图：用户希望底部输入框更像手机友好的终端输入辅助层：可以多行编辑，点击发送后把内容一次性发送到会话；Enter 默认换行，发送用按钮触发，避免手机上误提交。
-      - 编号：93
-        原始意图：用户希望第一步针对手机设置可读的等宽字体、字号和行高，并允许终端区域自适应屏幕宽度；不需要一开始提供复杂的字体/主题设置。
-      - 编号：94
-        原始意图：用户希望第一步以手机竖屏为主，但横屏不能坏；横屏可以自然获得更多终端宽度，不需要单独设计复杂布局。
-      - 编号：95
-        原始意图：用户希望 Agent/Terminal 详情页默认展开底部输入区，方便立即输入；用户需要查看更多终端内容时，可以一键收起，再一键展开。
-      - 编号：96
-        原始意图：用户希望底部输入区收起后保留一个明显的小按钮或浮动入口用于展开；第一步不依赖手势恢复，避免用户找不到输入区。
-      - 编号：97
-        原始意图：用户希望快捷键按钮直接向终端/会话发送对应按键，例如 Ctrl+C、Esc、Tab、方向键；普通文本才通过输入框编辑后发送。
-    规划原因：移动端输入体验是本项目区别于普通 Web Terminal 的核心，需要与 Session Runtime 同步设计和验证。
     路径：.workflow/changes/implement-mobile-session-interaction/
-    下一步：specify-change
+    intents：.workflow/changes/implement-mobile-session-interaction/intents.md
+    progress：.workflow/changes/implement-mobile-session-interaction/progress.md
+    依赖：design-session-runtime-boundaries, build-responsive-pwa-console-shell
   - change-id：setup-e2e-quality-baseline
-    状态：待规格
+    目标：建立覆盖登录、Project、Terminal Session、WebSocket/终端交互的真实依赖 E2E 质量基线。
     来源：用户意图
-    来源意图：
-      - 编号：47
-        原始意图：用户认为项目包含多个子服务，尽早整合并跑通端到端流程比单点功能打磨更重要。
-      - 编号：48
-        原始意图：用户希望尽早建立自动化 E2E 测试，作为后续集成和人工测试的基础。
-      - 编号：49
-        原始意图：用户希望 E2E 测试覆盖 `web + api + session runtime` 的核心联通，而不只是前端页面静态测试。
-      - 编号：50
-        原始意图：用户希望 E2E 测试作为持续性质量基线贯穿项目演进，而不是某个阶段的一次性任务。
-      - 编号：51
-        原始意图：用户认可第一条 smoke/e2e 链路可以覆盖登录 → Project 列表 → 进入 Project → 创建 Terminal Session → 连接终端并看到可交互输出，用来证明 `web/api/tmux/WebSocket` 基础链路已打通。
-      - 编号：52
-        原始意图：用户希望 E2E 尽量使用真实依赖，至少 Terminal Session 链路要真实启动 `tmux/shell` 并通过 WebSocket 交互。
-      - 编号：53
-        原始意图：用户接受 Claude/Codex Agent 链路先用可控的假 provider 或测试命令替代，避免 E2E 依赖真实 AI CLI。
-      - 编号：54
-        原始意图：用户现在不固定具体 E2E 工具；只要求它能自动启动 `web/api`、准备临时 `PROJECTS_ROOT`、驱动浏览器，并验证 WebSocket/终端链路。具体工具选择留给后续技术研究或设计阶段。
-      - 编号：55
-        原始意图：用户希望 E2E 形成清晰的测试报告或失败截图/日志，让人工测试可以快速知道哪条链路失败。
-      - 编号：56
-        原始意图：用户希望后续人工测试重点补充移动端真实手感、PWA 安装和终端输入体验。
-    规划原因：第一轮是多服务集成产品，E2E 需要在 Terminal Runtime 链路可用后尽早成为持续质量基线。
     路径：.workflow/changes/setup-e2e-quality-baseline/
-    下一步：specify-change
+    intents：.workflow/changes/setup-e2e-quality-baseline/intents.md
+    progress：.workflow/changes/setup-e2e-quality-baseline/progress.md
+    依赖：design-session-runtime-boundaries
 
 ### version: v0.4-project-inspection-tools
 
-- 状态：规划中
 - 目标：在 Project 内提供只读文件浏览/预览和只读 Git diff 查看能力，让远程观察不仅限于会话输出。
 - 范围：
   - 做：目录浏览、文本预览、图片预览、文件大小限制、隐藏文件展示、工作区/staged diff 文件列表与单文件 unified diff。
   - 不做：文件编辑、删除、重命名、上传、下载；Git 写操作；复杂 diff 筛选；PC 双栏 diff 增强。
 - changes：
   - change-id：implement-file-browser-preview
-    状态：待规格
+    目标：提供 Project 内只读目录浏览、文本预览和手机适配图片预览。
     来源：用户意图
-    来源意图：
-      - 编号：27
-        原始意图：用户希望文件功能第一步支持在 project 内浏览目录、查看文本文件内容，并支持查看图片文件。
-      - 编号：28
-        原始意图：用户明确不需要第一步支持文件编辑、删除、重命名、上传、下载。
-      - 编号：29
-        原始意图：用户希望图片查看适配手机：能在文件查看页显示图片，并支持基本缩放或适应屏幕；不需要复杂标注、裁剪或图库管理。
-      - 编号：98
-        原始意图：用户希望第一步文本文件查看可以先做纯文本等宽显示，保证移动端可读和路径安全；语法高亮、行号和搜索可以后续增强。
-      - 编号：99
-        原始意图：用户希望第一步目录浏览可以显示隐藏文件/目录，因为这是面向个人开发者的服务器项目控制台；但文件功能只读，避免误操作。
-      - 编号：100
-        原始意图：用户希望第一步文件查看设置大小上限，超过上限提示文件过大暂不预览；不需要一开始做流式读取或分页。
-      - 编号：101
-        原始意图：用户希望第一步图片查看支持常见 Web 图片格式，例如 PNG、JPEG、GIF、WebP、SVG；其他格式可以提示暂不支持预览。
-      - 编号：102
-        原始意图：用户希望第一步目录浏览按文件夹在前、文件在后，并按名称排序；不需要复杂的最近修改、大小或类型排序。
-    规划原因：文件浏览是 Project 观察能力的一部分，但必须复用统一 `PROJECTS_ROOT` 安全解析且保持只读。
     路径：.workflow/changes/implement-file-browser-preview/
-    下一步：specify-change
+    intents：.workflow/changes/implement-file-browser-preview/intents.md
+    progress：.workflow/changes/implement-file-browser-preview/progress.md
+    依赖：implement-project-model-and-safe-paths, build-responsive-pwa-console-shell
   - change-id：implement-git-diff-viewer
-    状态：待规格
+    目标：提供 Project 内工作区和 staged 变更文件列表，以及单文件 unified diff 只读查看。
     来源：用户意图
-    来源意图：
-      - 编号：26
-        原始意图：用户希望 Git 功能只查看已经修改文件的 diff，暂不需要完整 Git 操作或更宽泛的 Git 管理能力。
-      - 编号：103
-        原始意图：用户希望 Git diff 功能第一步先展示变更文件列表，用户点选某个文件后查看该文件 diff；不需要一次展示所有 diff。
-      - 编号：104
-        原始意图：用户希望第一步 Git diff 覆盖工作区和 staged 的已修改文件，让用户知道当前项目有哪些未提交变化；但不提供任何 Git 写操作。
-      - 编号：105
-        原始意图：用户希望如果 project 不是 Git 仓库，Git 页面明确提示当前项目不是 Git 仓库；不要报错成系统异常。
-      - 编号：106
-        原始意图：用户希望第一步手机端优先使用 unified diff 文本展示，因为左右并排不适合窄屏；PC 端以后可以增强为并排对比。
-      - 编号：107
-        原始意图：用户希望第一步变更文件列表应显示文件路径和基本状态类型，例如 modified、added、deleted、renamed；不需要复杂筛选。
-    规划原因：Git diff 是只读观察能力，适合作为 Project 工具区能力单独验证，避免引入写操作风险。
     路径：.workflow/changes/implement-git-diff-viewer/
-    下一步：specify-change
+    intents：.workflow/changes/implement-git-diff-viewer/intents.md
+    progress：.workflow/changes/implement-git-diff-viewer/progress.md
+    依赖：implement-project-model-and-safe-paths, build-responsive-pwa-console-shell
 
 ## 暂缓 / 放弃
 
-<!-- 记录从待分配意图中判断为暂缓或放弃的内容，以及原因。 -->
+<!--
+记录已从 `.workflow/intents.md` 处理、但不进入活跃 roadmap 的意图。
+这些意图不再留在 `.workflow/intents.md`。
+-->
 
 - （无）
 
 ## 阻塞项
 
-<!-- 记录影响活跃 versions/changes 推进的问题。 -->
+<!-- 只记录跨 change / 跨 version 的全局阻塞；单个 change 的阻塞写入该 change 的 progress.md。 -->
 
 - Agent Runtime/API 的最终形态不能在 `research-agent-access-options` 完成前锁定；后续 `design-session-runtime-boundaries` 中的 Agent provider 部分和 `implement-agent-provider-experience` 必须消费该调研结论。
 
 ## 下一步
 
-<!-- 当前最应该推进的下一步，通常指向某个 version/change。 -->
+<!-- 当前全局最应该推进的 change；具体阶段和命令读取该 change 的 progress.md。 -->
 
-- 执行 `specify-change`，为 `.workflow/changes/research-agent-access-options/` 写出可验证的调研规格与交付标准。
+- 继续推进 `.workflow/changes/research-agent-access-options/`；具体阶段和下一步技能见 `.workflow/changes/research-agent-access-options/progress.md`。
