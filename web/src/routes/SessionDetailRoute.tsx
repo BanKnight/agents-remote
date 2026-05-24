@@ -16,7 +16,13 @@ import {
   getTerminalSession,
   sessionStreamUrl,
 } from "../api/client";
-import { sessionStatusLabel } from "./console-model";
+import {
+  canSendToSession,
+  normalizeSessionTextInput,
+  sessionQuickKeys,
+  sessionStatusLabel,
+  type SessionQuickKey,
+} from "./console-model";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -60,6 +66,7 @@ function SessionDetail({ projectName, sessionId, sessionType }: SessionDetailPro
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [output, setOutput] = useState("");
   const [input, setInput] = useState("");
+  const [inputPanelOpen, setInputPanelOpen] = useState(true);
 
   const detail = useQuery<SessionDetailResponse>({
     queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
@@ -170,165 +177,115 @@ function SessionDetail({ projectName, sessionId, sessionType }: SessionDetailPro
   const sendMessage = (message: SessionStreamClientMessage) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
       setStreamError("Session stream is not connected.");
-      return;
+      return false;
     }
 
     socketRef.current.send(JSON.stringify(message));
     setStreamError(null);
+    return true;
   };
+
+  const canSend = canSendToSession(connectionStatus, closeSession.isPending);
+  const quickKeys = sessionQuickKeys(sessionType);
 
   const handleInputSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const command = input.length > 0 && !input.endsWith("\n") ? `${input}\n` : input;
+    const command = normalizeSessionTextInput(input);
 
-    if (command.length === 0) {
+    if (!command || !canSend) {
       return;
     }
 
-    sendMessage({ type: "input", data: command });
-    setInput("");
+    if (sendMessage({ type: "input", data: command })) {
+      setInput("");
+    }
+  };
+
+  const sendQuickKey = (quickKey: SessionQuickKey) => {
+    if (!canSend) {
+      return;
+    }
+
+    sendMessage({ type: "input", data: quickKey.sequence });
   };
 
   const title = session?.displayName ?? `${sessionType === "agent" ? "Agent" : "Terminal"} Session`;
   const statusLabel = sessionStatus ?? (session ? sessionStatusLabel(session.status) : "Loading");
+  const isEnded = connectionStatus === "ended" || sessionStatus === "closed";
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-4 py-4 text-slate-100 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <header className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
-          <Link className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300" to="/">
-            Agents Remote
-          </Link>
-          <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                {projectName} · {sessionType === "agent" ? "Agent Session" : "Terminal Session"}
-              </p>
-              <h1 className="mt-2 break-words text-3xl font-semibold tracking-tight sm:text-4xl">
-                {title}
-              </h1>
-              <p className="mt-2 break-all font-mono text-xs text-slate-500">{sessionId}</p>
-            </div>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-3 pb-32 pt-3 text-slate-100 sm:px-6 sm:pb-36 lg:px-8 lg:py-6">
+      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col gap-3 lg:min-h-[calc(100vh-3rem)] lg:gap-4">
+        <header className="rounded-[1.5rem] border border-white/10 bg-slate-900/85 p-4 shadow-xl shadow-black/20 backdrop-blur sm:rounded-[2rem] sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Link
+              className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300"
+              params={{ projectName }}
+              to="/projects/$projectName"
+            >
+              Back to Project
+            </Link>
             <div className="flex flex-wrap gap-2">
               <StatusPill label="Runtime" value={statusLabel} />
               <StatusPill label="Stream" value={connectionStatus} />
             </div>
           </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                {projectName} · {sessionType === "agent" ? "Agent Session" : "Terminal Session"}
+              </p>
+              <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight sm:text-4xl">
+                {title}
+              </h1>
+              <p className="mt-2 break-all font-mono text-[0.7rem] leading-5 text-slate-500 sm:text-xs">
+                {sessionId}
+              </p>
+            </div>
+            <SessionControls
+              closePending={closeSession.isPending}
+              onClose={() => {
+                if (window.confirm("Close this session? The running process will be terminated.")) {
+                  closeSession.mutate();
+                }
+              }}
+              onReconnect={() => setReconnectKey((value) => value + 1)}
+              onResize={() => sendMessage({ type: "resize", cols: 120, rows: 40 })}
+              resizeDisabled={!canSend}
+            />
+          </div>
+          {session && "provider" in session ? (
+            <p className="mt-3 inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-100">
+              Provider · {session.provider}
+            </p>
+          ) : null}
         </header>
 
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 sm:p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Runtime stream</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  WebSocket reconnects attach to the same Project-scoped runtime until the session
-                  is closed.
-                </p>
-              </div>
-              <button
-                className="rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100"
-                type="button"
-                onClick={() => setReconnectKey((value) => value + 1)}
-              >
-                Reconnect
-              </button>
-            </div>
+        {detail.error instanceof Error ? (
+          <Notice tone="danger">{detail.error.message}</Notice>
+        ) : null}
+        {streamError ? <Notice tone="danger">{streamError}</Notice> : null}
+        {isEnded ? (
+          <Notice>Runtime ended. Return to the Project console to create another session.</Notice>
+        ) : null}
+        {closeSession.error instanceof Error ? (
+          <Notice tone="danger">{closeSession.error.message}</Notice>
+        ) : null}
 
-            {detail.error instanceof Error ? (
-              <Notice tone="danger">{detail.error.message}</Notice>
-            ) : null}
-            {streamError ? <Notice tone="danger">{streamError}</Notice> : null}
-            {connectionStatus === "ended" ? (
-              <Notice>
-                Runtime ended. Return to the Project console to create another session.
-              </Notice>
-            ) : null}
-
-            <pre className="mt-5 min-h-[24rem] overflow-auto rounded-3xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-200 shadow-inner shadow-black/30">
-              {output || "Waiting for session output..."}
-            </pre>
-
-            <form className="mt-4 grid gap-3" onSubmit={handleInputSubmit}>
-              <label className="text-sm font-medium text-slate-200" htmlFor="session-input">
-                Send input
-              </label>
-              <textarea
-                className="min-h-24 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20"
-                id="session-input"
-                placeholder={sessionType === "agent" ? "Type a prompt..." : "pwd"}
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                  disabled={connectionStatus !== "connected" || input.length === 0}
-                  type="submit"
-                >
-                  Send
-                </button>
-                <button
-                  className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={connectionStatus !== "connected"}
-                  type="button"
-                  onClick={() => sendMessage({ type: "resize", cols: 120, rows: 40 })}
-                >
-                  Resize 120×40
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <aside className="grid content-start gap-4">
-            <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20">
-              <h2 className="text-lg font-semibold">Session controls</h2>
-              <dl className="mt-4 grid gap-3 text-sm">
-                <InfoRow label="Project" value={projectName} />
-                <InfoRow label="Type" value={sessionType} />
-                {session && "provider" in session ? (
-                  <InfoRow label="Provider" value={session.provider} />
-                ) : null}
-                <InfoRow label="Session id" value={sessionId} />
-              </dl>
-              <div className="mt-5 grid gap-2">
-                <Link
-                  className="rounded-2xl border border-slate-700 px-4 py-3 text-center text-sm font-semibold text-slate-200"
-                  params={{ projectName }}
-                  to="/projects/$projectName"
-                >
-                  Back to Project console
-                </Link>
-                <button
-                  className="rounded-2xl border border-rose-300/40 px-4 py-3 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={closeSession.isPending}
-                  type="button"
-                  onClick={() => {
-                    if (
-                      window.confirm("Close this session? The running process will be terminated.")
-                    ) {
-                      closeSession.mutate();
-                    }
-                  }}
-                >
-                  {closeSession.isPending ? "Closing..." : "Close session"}
-                </button>
-              </div>
-              {closeSession.error instanceof Error ? (
-                <Notice tone="danger">{closeSession.error.message}</Notice>
-              ) : null}
-            </section>
-
-            <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20">
-              <h2 className="text-lg font-semibold">Connection semantics</h2>
-              <p className="mt-3 text-sm leading-6 text-slate-400">
-                Closing this browser tab only disconnects the stream. Use Close session to terminate
-                the server runtime.
-              </p>
-            </section>
-          </aside>
-        </section>
+        <TerminalOutput output={output} />
       </div>
+
+      <MobileInputPanel
+        canSend={canSend}
+        input={input}
+        isOpen={inputPanelOpen}
+        quickKeys={quickKeys}
+        sessionType={sessionType}
+        onInputChange={setInput}
+        onQuickKey={sendQuickKey}
+        onSubmit={handleInputSubmit}
+        onToggle={() => setInputPanelOpen((value) => !value)}
+      />
     </main>
   );
 }
@@ -340,23 +297,178 @@ type StatusPillProps = {
 
 function StatusPill({ label, value }: StatusPillProps) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3">
-      <p className="text-xs text-slate-500">{label}</p>
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 sm:px-4 sm:py-3">
+      <p className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-semibold capitalize text-slate-100">{value}</p>
     </div>
   );
 }
 
-type InfoRowProps = {
-  label: string;
-  value: string;
+type SessionControlsProps = {
+  closePending: boolean;
+  onClose: () => void;
+  onReconnect: () => void;
+  onResize: () => void;
+  resizeDisabled: boolean;
 };
 
-function InfoRow({ label, value }: InfoRowProps) {
+function SessionControls({
+  closePending,
+  onClose,
+  onReconnect,
+  onResize,
+  resizeDisabled,
+}: SessionControlsProps) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="mt-1 break-all text-slate-200">{value}</dd>
+    <div className="flex flex-wrap gap-2 lg:justify-end">
+      <button
+        className="rounded-full border border-cyan-300/40 px-3 py-2 text-xs font-semibold text-cyan-100"
+        type="button"
+        onClick={onReconnect}
+      >
+        Reconnect
+      </button>
+      <button
+        className="rounded-full border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={resizeDisabled}
+        type="button"
+        onClick={onResize}
+      >
+        Resize 120×40
+      </button>
+      <button
+        className="rounded-full border border-rose-300/40 px-3 py-2 text-xs font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={closePending}
+        type="button"
+        onClick={onClose}
+      >
+        {closePending ? "Closing..." : "Close"}
+      </button>
+    </div>
+  );
+}
+
+type TerminalOutputProps = {
+  output: string;
+};
+
+function TerminalOutput({ output }: TerminalOutputProps) {
+  return (
+    <section className="flex min-h-0 flex-1 flex-col rounded-[1.5rem] border border-white/10 bg-slate-900/85 p-3 shadow-xl shadow-black/20 sm:rounded-[2rem] sm:p-4">
+      <div className="flex items-center justify-between gap-3 px-1 pb-3">
+        <div>
+          <h2 className="text-lg font-semibold">Runtime stream</h2>
+          <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+            Browser reconnects attach to the same Project-scoped runtime until the session is
+            closed.
+          </p>
+        </div>
+      </div>
+      <pre className="min-h-[45vh] flex-1 overflow-auto rounded-2xl border border-slate-800 bg-slate-950 p-3 font-mono text-[0.82rem] leading-6 text-slate-200 shadow-inner shadow-black/30 sm:min-h-[32rem] sm:p-4 sm:text-sm">
+        {output || "Waiting for session output..."}
+      </pre>
+    </section>
+  );
+}
+
+type MobileInputPanelProps = {
+  canSend: boolean;
+  input: string;
+  isOpen: boolean;
+  quickKeys: SessionQuickKey[];
+  sessionType: SessionType;
+  onInputChange: (value: string) => void;
+  onQuickKey: (quickKey: SessionQuickKey) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onToggle: () => void;
+};
+
+function MobileInputPanel({
+  canSend,
+  input,
+  isOpen,
+  quickKeys,
+  sessionType,
+  onInputChange,
+  onQuickKey,
+  onSubmit,
+  onToggle,
+}: MobileInputPanelProps) {
+  return (
+    <aside className="fixed inset-x-3 bottom-3 z-20 mx-auto max-w-4xl rounded-[1.75rem] border border-cyan-300/20 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur sm:bottom-4 sm:p-4">
+      <button
+        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-left"
+        type="button"
+        onClick={onToggle}
+      >
+        <span>
+          <span className="block text-sm font-semibold text-slate-100">
+            {sessionType === "agent" ? "Agent input" : "Terminal input"}
+          </span>
+          <span className="mt-1 block text-xs text-slate-500">
+            {isOpen
+              ? "Enter adds a newline. Use Send or quick keys to write to the stream."
+              : "Show input and quick keys."}
+          </span>
+        </span>
+        <span className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300">
+          {isOpen ? "Hide" : "Show"}
+        </span>
+      </button>
+
+      {isOpen ? (
+        <form className="mt-3 grid gap-3" onSubmit={onSubmit}>
+          <label className="sr-only" htmlFor="session-input">
+            Send input
+          </label>
+          <textarea
+            className="max-h-48 min-h-24 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono text-base leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+            disabled={!canSend}
+            id="session-input"
+            placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
+            value={input}
+            onChange={(event) => onInputChange(event.target.value)}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              disabled={!canSend || input.trim().length === 0}
+              type="submit"
+            >
+              Send
+            </button>
+            <span className="text-xs text-slate-500">
+              {canSend ? "Connected" : "Input disabled until the stream is connected."}
+            </span>
+          </div>
+          <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
+        </form>
+      ) : null}
+    </aside>
+  );
+}
+
+type QuickKeyBarProps = {
+  canSend: boolean;
+  quickKeys: SessionQuickKey[];
+  onQuickKey: (quickKey: SessionQuickKey) => void;
+};
+
+function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Session quick keys">
+      {quickKeys.map((quickKey) => (
+        <button
+          aria-label={quickKey.ariaLabel}
+          className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!canSend}
+          key={quickKey.id}
+          type="button"
+          onClick={() => onQuickKey(quickKey)}
+        >
+          {quickKey.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -372,7 +484,7 @@ function Notice({ children, tone = "default" }: NoticeProps) {
       ? "border-rose-300/30 bg-rose-300/10 text-rose-100"
       : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100";
 
-  return <p className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${classes}`}>{children}</p>;
+  return <p className={`rounded-2xl border px-4 py-3 text-sm ${classes}`}>{children}</p>;
 }
 
 function parseStreamMessage(data: unknown) {

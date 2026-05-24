@@ -1,0 +1,3 @@
+$ bun run --filter @agents-remote/api dev
+@agents-remote/api dev: api listening on http://localhost:3211
+@agents-remote/api dev: api runtime dir /tmp/agents-remote-mobile-7ZDDgd/run

@@ -19,7 +19,8 @@
 - Tailwind CSS 是移动端优先和深色控制台样式的默认工具。
 - TanStack Router 承接路由树、URL 参数和页面入口。
 - TanStack Query 或 Router loader 承接服务端状态/API 数据获取。
-- Jotai 承接本地 UI 状态，例如底部输入区展开、临时选中、局部偏好和非持久化 UI 状态。
+- Jotai 承接跨组件或跨页面复用的本地 UI 状态，例如 shell-level 底部区域展开、临时选中、局部偏好和非持久化 UI 状态。
+- 只影响单个 route/page instance 的 UI 状态优先保留为组件本地 state；不要为了单页展开/收起引入全局 atom。
 - 第一轮 PWA shell 采用静态 manifest、icons 和 HTML meta/link 接入；离线缓存和 service worker lifecycle 不属于默认前端基础。
 - Bun test 提供基础测试入口；浏览器组件测试和 E2E 由后续质量 change 细化。
 
@@ -45,3 +46,5 @@
 - verify 证据：`.workflow/changes/setup-monorepo-service-boundaries/verify.md`
 - change：build-responsive-pwa-console-shell
 - verify 证据：`.workflow/changes/build-responsive-pwa-console-shell/verify.md`
+- change：implement-mobile-session-interaction
+- verify 证据：`.workflow/changes/implement-mobile-session-interaction/verify.md`

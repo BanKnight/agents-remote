@@ -1,4 +1,10 @@
-import type { AgentSession, Project, TerminalSession } from "@agents-remote/shared";
+import type {
+  AgentSession,
+  Project,
+  SessionType,
+  TerminalSession,
+  TransportStatus,
+} from "@agents-remote/shared";
 
 export type ConsoleSection = "agents" | "terminal" | "git" | "files";
 
@@ -8,6 +14,15 @@ export type ConsoleSectionDefinition = {
   description: string;
   status: string;
 };
+
+export type SessionQuickKey = {
+  id: string;
+  label: string;
+  ariaLabel: string;
+  sequence: string;
+};
+
+export type SessionSendStatus = "connecting" | TransportStatus;
 
 export const consoleSections: ConsoleSectionDefinition[] = [
   {
@@ -52,6 +67,42 @@ export function sessionDetailPath(
 
 export function sectionForId(sectionId: ConsoleSection) {
   return consoleSections.find((section) => section.id === sectionId) ?? consoleSections[0];
+}
+
+export const sessionQuickKeys = (sessionType: SessionType): SessionQuickKey[] => {
+  if (sessionType === "agent") {
+    return [
+      { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "" },
+      { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
+      { id: "tab", label: "Tab", ariaLabel: "Send tab", sequence: "\t" },
+      { id: "enter", label: "Enter", ariaLabel: "Send enter", sequence: "\n" },
+      { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "[A" },
+      { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "[B" },
+    ];
+  }
+
+  return [
+    { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "" },
+    { id: "eof", label: "Ctrl+D", ariaLabel: "Send end of file", sequence: "" },
+    { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
+    { id: "tab", label: "Tab", ariaLabel: "Send tab", sequence: "\t" },
+    { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "[A" },
+    { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "[B" },
+    { id: "left", label: "←", ariaLabel: "Send arrow left", sequence: "[D" },
+    { id: "right", label: "→", ariaLabel: "Send arrow right", sequence: "[C" },
+  ];
+};
+
+export function normalizeSessionTextInput(input: string) {
+  if (input.trim().length === 0) {
+    return undefined;
+  }
+
+  return input.endsWith("\n") ? input : `${input}\n`;
+}
+
+export function canSendToSession(status: SessionSendStatus, isClosing = false) {
+  return status === "connected" && !isClosing;
 }
 
 export function projectSummary(project: Project) {
