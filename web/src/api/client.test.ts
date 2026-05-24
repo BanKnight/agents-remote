@@ -1,5 +1,66 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
+import { createProject, getProject, listProjects } from "./client";
 
-test("web api client uses same-origin /api paths", () => {
-  expect("/api/health".startsWith("/api")).toBe(true);
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+test("web api client uses same-origin /api paths", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ projects: [] });
+  }) as typeof fetch;
+
+  await listProjects();
+
+  expect(calls[0][0]).toBe("/api/projects");
+});
+
+test("web api client creates projects with JSON body", async () => {
+  let body = "";
+  globalThis.fetch = (async (_input, init) => {
+    body = init?.body?.toString() ?? "";
+    return Response.json({
+      project: {
+        name: "demo",
+        path: "/projects/demo",
+        agentSessionCount: 0,
+        terminalSessionCount: 0,
+      },
+    });
+  }) as typeof fetch;
+
+  const response = await createProject("demo");
+
+  expect(JSON.parse(body)).toEqual({ path: "demo" });
+  expect(response.project.name).toBe("demo");
+});
+
+test("web api client encodes project detail names", async () => {
+  let path = "";
+  globalThis.fetch = (async (input) => {
+    path = input.toString();
+    return Response.json({
+      project: {
+        name: "hello world 中文",
+        path: "/projects/hello world 中文",
+        agentSessionCount: 0,
+        terminalSessionCount: 0,
+      },
+    });
+  }) as typeof fetch;
+
+  await getProject("hello world 中文");
+
+  expect(path).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87");
+});
+
+test("web api client throws on project response errors", async () => {
+  globalThis.fetch = (async () =>
+    Response.json({ error: { code: "PROJECT_NOT_FOUND" } }, { status: 404 })) as typeof fetch;
+
+  await expect(getProject("missing")).rejects.toThrow("Project detail failed: 404");
 });

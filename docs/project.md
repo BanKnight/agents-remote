@@ -24,6 +24,8 @@
 
 - **Web Control Plane**：浏览器端与服务端控制 API 组成的控制层，负责任务发起、状态可视化与操作入口。
 - **Agent Runtime**：服务器上的 Agent 执行环境，负责会话生命周期、任务执行与结果回传；当前重点对接 Codex 与 Claude。
+- **Project**：`PROJECTS_ROOT` 下的一级真实目录，是控制台、Files、Git、Terminal Session 和 Agent Session 的统一作用域；第一轮不需要数据库注册。
+- **PROJECTS_ROOT**：个人部署配置中的绝对路径，是当前服务器内 Project 能力和 project-scoped 路径访问的根信任边界。
 
 ## 技术与架构概览
 
@@ -31,6 +33,7 @@
 
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度与执行稳定性。
 - 控制层与执行层通过统一的 Agent 控制接口协作，避免将 Codex/Claude 差异暴露到用户操作层。
+- Project 模块位于 `api` 内，统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；`packages/shared` 只承载跨边界 DTO/type。
 
 ## 开发准则
 

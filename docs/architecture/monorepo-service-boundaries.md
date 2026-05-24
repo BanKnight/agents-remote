@@ -18,7 +18,7 @@
 ## 边界与职责
 
 - `web` 负责浏览器/PWA 控制面、前端路由、UI 状态和对 `/api` 的调用。
-- `api` 负责后端控制面入口，后续承接 auth、Project API、Session Runtime 和 stream endpoint。
+- `api` 负责后端控制面入口，承接 auth、Project API、Session Runtime 和 stream endpoint。
 - `packages/shared` 只放跨边界类型、状态枚举和 API DTO，不放业务流程、provider adapter、路径解析或 runtime 控制逻辑。
 - 部署层负责同域路径转发和 Cloudflare Tunnel/反向代理配置；应用不创建、认证、运行或管理 Cloudflare Tunnel。
 
@@ -40,6 +40,7 @@
 ## 风险与演进
 
 - `packages/shared` 容易膨胀为业务逻辑共享层，后续新增内容必须先判断是否真的是跨边界类型或 DTO。
+- Project path resolver 是 `api` runtime 边界内的安全能力，不能为了复用下放到 `packages/shared`。
 - `/api/health` 与 `/api/ws/echo` 是当前 smoke endpoint，不代表长期业务 API。
 - 只接入 Oxlint/Oxfmt 基础 harness，不代表已经启用 TypeScript 语义 lint；如需 type-aware lint，应单独评估。
 - 未来若前端独立部署或 hub 化，需要保持当前 `web/api/shared` 边界不被运行时耦合破坏。
@@ -48,3 +49,5 @@
 
 - change：setup-monorepo-service-boundaries
 - verify 证据：`.workflow/changes/setup-monorepo-service-boundaries/verify.md`
+- change：implement-project-model-and-safe-paths
+- verify 证据：`.workflow/changes/implement-project-model-and-safe-paths/verify.md`
