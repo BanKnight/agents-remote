@@ -26,3 +26,20 @@
     归档路径：.workflow/archive/changes/configure-personal-app-settings/
     verify：条件通过；无 CRITICAL，Web/PWA 登录体验作为后续 UI/PWA change 输入。
     distill：已沉淀 `docs/specs/personal-app-config/spec.md`、`docs/specs/private-access-auth/spec.md`、`docs/runbooks/personal-deployment-configuration.md`。
+
+### version: v0.2-project-console-shell
+
+- 归档时间：2026-05-25
+- 完成结果：完成 Project 目录模型、安全路径解析、登录后 Project 列表/创建/进入，以及移动端优先的深色 PWA 控制台外壳；相关长期 WHAT/HOW 已沉淀到 docs。
+- version 目标：交付登录后的 Project 列表、Project 创建/进入、安全路径解析，以及响应式 PWA 控制台外壳。
+- verify 结论摘要：两个 changes 均有 `verify.md`，结论通过，无未解决 CRITICAL/WARNING。
+- distill 结论摘要：已沉淀 Project 模型、安全路径、PWA console shell、Project console navigation、console shell/frontend stack/project big picture 等长期文档。
+- 包含 changes：
+  - change-id：implement-project-model-and-safe-paths
+    归档路径：.workflow/archive/changes/implement-project-model-and-safe-paths/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/project-model/spec.md`、`docs/specs/project-safe-paths/spec.md`、`docs/architecture/project-boundary.md`、`docs/architecture/monorepo-service-boundaries.md`、`docs/project.md`。
+  - change-id：build-responsive-pwa-console-shell
+    归档路径：.workflow/archive/changes/build-responsive-pwa-console-shell/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/pwa-console-shell/spec.md`、`docs/specs/project-console-navigation/spec.md`、`docs/design/console-shell.md`，并更新 `docs/design/frontend-stack.md`、`docs/project.md`、`docs/specs/index.md` 与 `docs/design/index.md`。

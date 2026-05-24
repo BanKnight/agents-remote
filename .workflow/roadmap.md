@@ -21,28 +21,6 @@ roadmap 中列出的每个 change 都必须对应 `.workflow/changes/<change-id>
 roadmap 不保存活跃 change 的原始意图全文、不维护 change 阶段状态；完整来源见 change 的 intents.md，阶段状态见 change 的 progress.md。
 -->
 
-### version: v0.2-project-console-shell
-
-- 目标：交付登录后的 Project 列表、Project 创建/进入、安全路径解析，以及响应式 PWA 控制台外壳。
-- 范围：
-  - 做：`PROJECTS_ROOT` 一级目录 project 模型；新建/读取 project；project 路由参数；移动端优先的深色 PWA 控制台；原型优先的布局与信息架构。
-  - 不做：真实 Agent Runtime 接入；文件编辑/上传/删除；Git 写操作；多 server/hub；精细动效和像素级还原。
-- changes：
-  - change-id：implement-project-model-and-safe-paths
-    目标：定义 Project 目录模型，并提供所有 project 内能力共享的 `PROJECTS_ROOT` 安全路径解析。
-    来源：用户意图
-    路径：.workflow/changes/implement-project-model-and-safe-paths/
-    intents：.workflow/changes/implement-project-model-and-safe-paths/intents.md
-    progress：.workflow/changes/implement-project-model-and-safe-paths/progress.md
-    依赖：configure-personal-app-settings
-  - change-id：build-responsive-pwa-console-shell
-    目标：建立移动端优先的深色 PWA 控制台外壳，并为 Agent/Terminal/Git/Files 入口提供信息架构。
-    来源：用户意图
-    路径：.workflow/changes/build-responsive-pwa-console-shell/
-    intents：.workflow/changes/build-responsive-pwa-console-shell/intents.md
-    progress：.workflow/changes/build-responsive-pwa-console-shell/progress.md
-    依赖：setup-monorepo-service-boundaries, implement-project-model-and-safe-paths
-
 ### version: v0.3-session-runtime-quality
 
 - 目标：跑通 Terminal/Agent Session 的运行态语义、移动端交互、Claude/Codex provider 入口，并建立覆盖 `web + api + runtime` 的 E2E 质量基线。
