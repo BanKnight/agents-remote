@@ -31,7 +31,7 @@
 ├── changes/                            # 当前未归档 changes
 │   └── <change-id>/                    # 语义化变更标识，不是数字编号
 │       ├── intents.md                  # 本 change 的来源意图或规划来源，保存完整原始意图
-│       ├── progress.md                 # 本 change 的阶段、下一步和局部阻塞
+│       ├── progress.md                 # 本 change 的阶段、局部阻塞和进展记录
 │       ├── specs/                      # 本 change 的行为契约增量
 │       ├── design/                     # 本 change 的 how 设计材料
 │       ├── plan.md                     # 本 change 的实现计划
@@ -48,8 +48,8 @@
 - `intents.md` 只作为进入 roadmap 前的意图池。
 - `roadmap.md` 只作为当前活跃 versions/changes 的索引和当前焦点入口，不是历史总账，也不是 change 状态表。
 - `changes/<change-id>/intents.md` 保存完整原始意图和规划来源；roadmap 只引用该路径，不复制原文。
-- `changes/<change-id>/progress.md` 保存该 change 当前阶段、下一步技能和局部阻塞；roadmap 不维护这些字段。
-- `step-change` 是推荐的 change 推进入口：它读取 roadmap 当前焦点或指定 change 的 `progress.md`，调用对应阶段技能，并在产物检查通过后推进 `progress.md`。
+- `changes/<change-id>/progress.md` 保存该 change 当前阶段、局部阻塞和进展记录；不保存下一步技能。
+- `step-change` 是推荐的 change 推进入口：它读取 roadmap 当前焦点或指定 change 的 `progress.md`，独占维护“当前阶段 → 阶段技能”的路由，并在产物检查通过后推进 `progress.md`。
 - `templates/` 保存运行态产物模板，命令生成文件时应优先使用项目本地模板。
 - `changes/<change-id>/` 保存单个未归档 change 的完整运行态上下文。
 - `archive/` 保存已归档 version 与 change 上下文。
@@ -75,4 +75,4 @@
 - 不要把 how、任务或实现细节写入 spec。
 - 不要在 verify 前把运行态 design 直接复制进 `docs/` 当作长期结论。
 - 不要用数字编号作为 change-id。
-- 不要绕过 `progress.md` 在 roadmap 中维护单个 change 的阶段状态或下一步技能。
+- 不要绕过 `progress.md` 在 roadmap 中维护单个 change 的阶段状态；不要在 `progress.md`、roadmap 或阶段技能中重复维护下一步技能。

@@ -13,7 +13,7 @@ description: 基于 `.workflow/intents.md` 规划或更新 `.workflow/roadmap.md
 
 - 一个 version 对应多个 change。
 - 每个 roadmap 中的 change 必须对应 `.workflow/changes/<change-id>/`。
-- roadmap 只记录全局队列、依赖和当前焦点；单个 change 的阶段状态、下一步和局部阻塞写在 `.workflow/changes/<change-id>/progress.md`。
+- roadmap 只记录全局队列、依赖和当前焦点；单个 change 的当前阶段、局部阻塞和进展记录写在 `.workflow/changes/<change-id>/progress.md`，阶段到技能的路由由 `step-change` 维护。
 - roadmap 不保存活跃 change 的原始意图全文；完整来源意图和规划来源写在 `.workflow/changes/<change-id>/intents.md`。
 - 已归档 version 不保留在 `.workflow/roadmap.md`，而是进入 `.workflow/archive/roadmap.md`。
 
@@ -102,7 +102,7 @@ docs/
    - change：change-id、一句话目标、来源、路径、intents 路径、progress 路径、依赖。
 7. 保证 `.workflow/roadmap.md` 中每个活跃 change 都对应到 `.workflow/changes/<change-id>/`，且至少包含 `intents.md` 与 `progress.md`。
 8. 从 `.workflow/intents.md` 的“待分配”中移除已经处理的意图；进入 roadmap 的完整来源意图写入对应 change 的 `intents.md`，暂缓或放弃的写入 roadmap 的“暂缓 / 放弃”。
-9. 更新 `.workflow/roadmap.md` 的“当前焦点”和“下一步”；具体阶段和下一步技能只写入当前 change 的 `progress.md`。
+9. 更新 `.workflow/roadmap.md` 的“当前焦点”和“下一步”入口；具体阶段只写入当前 change 的 `progress.md`，阶段到技能的路由由 `step-change` 决定。
 10. 不读取全部 archive；归档内容只按需读取。
 
 ## Agent 主动规划规则
@@ -261,7 +261,7 @@ distill-change
 以下内容不得写入 roadmap：
 
 - 原始意图全文：只写入 change 的 `intents.md`。
-- change 当前阶段、状态、下一步技能、局部阻塞：只写入 change 的 `progress.md`。
+- change 当前阶段、局部阻塞：只写入 change 的 `progress.md`。
 - spec/design/plan/tasks/verify 的中间过程：只写入对应 change 目录。
 
 ## change 骨架
@@ -288,7 +288,7 @@ distill-change
 .workflow/templates/changes/progress.md
 ```
 
-该文件记录 change 当前阶段、下一步技能、局部阻塞和进展记录。新增 change 默认阶段通常是 `待规格`，下一步技能通常是 `specify-change`；如果已存在 spec/design/plan 等产物，应按现有产物设置到实际阶段。
+该文件记录 change 当前阶段、局部阻塞和进展记录；阶段到技能的路由由 `step-change` 根据当前阶段决定。新增 change 默认阶段通常是 `待规格`；如果已存在 spec/design/plan 等产物，应按现有产物设置到实际阶段。
 
 如果 change 已存在，只补齐缺失骨架或必要字段，不覆盖已有内容。
 
@@ -312,8 +312,8 @@ distill-change
 - 进入 roadmap 的用户意图，必须完整写入对应 change 的 `intents.md`；roadmap 只引用 `intents.md` 路径，不复制原始意图全文。
 - 暂缓或放弃的意图，也必须从 `.workflow/intents.md` 移出，并写入 roadmap 的“暂缓 / 放弃”。
 - 主动规划出的 change，必须在 change 的 `intents.md` 写明规划来源和分配说明。
-- 新增或更新 change 时，必须创建或更新 `progress.md`，记录当前阶段、下一步技能和局部阻塞。
-- roadmap 不写 change 状态或下一步技能；当前最应推进的 version/change 只同步写入“当前焦点”和“下一步”。
+- 新增或更新 change 时，必须创建或更新 `progress.md`，记录当前阶段、局部阻塞和进展记录。
+- roadmap 不写 change 状态或下一步技能；当前最应推进的 version/change 只同步写入“当前焦点”和“下一步”入口，阶段到技能的路由由 `step-change` 决定。
 
 ## 与 archive 的关系
 
