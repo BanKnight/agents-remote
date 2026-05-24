@@ -40,7 +40,7 @@ description: 在 change 验证后，将长期 WHAT/HOW/设计/架构/ADR/runbook
 
 - change-id
 - 所属 version / roadmap 阶段
-- 当前状态 / 下一步
+- 当前阶段 / 下一步技能（来自 `progress.md`）
 - change 路径
 - verify 结论（如可读取）
 
@@ -66,6 +66,7 @@ description: 在 change 验证后，将长期 WHAT/HOW/设计/架构/ADR/runbook
 
 ```text
 .workflow/roadmap.md
+.workflow/changes/<change-id>/progress.md
 .workflow/changes/<change-id>/intents.md
 .workflow/changes/<change-id>/specs/
 .workflow/changes/<change-id>/design/
@@ -125,7 +126,7 @@ git diff / git status
 3. `design/` 是否存在，或是否有充分理由不需要 HOW 沉淀。
 4. `verify.md` 是否存在。
 5. `verify.md` 是否存在未解决 CRITICAL。
-6. roadmap 中该 change 是否处于 verify 之后、archive 之前。
+6. `progress.md` 中当前阶段 / 下一步技能是否为 `待沉淀` / `distill-change`，或 verify 证据是否显示已经处于可沉淀阶段。
 7. `docs/` 中是否已有相关长期 specs/design/architecture/project 文档。
 
 根据状态处理：
@@ -299,6 +300,18 @@ docs/project.md
 | Runbook | `docs/templates/runbook.md` | `docs/runbooks/<topic>.md` |
 
 如果项目本地模板不存在，可以按相同结构创建最小文档；但应在完成后提示用户补齐 `docs/templates/`。
+
+## progress.md 更新规则
+
+`progress.md` 是 change 阶段状态的权威来源。
+
+完成 `distill-change` 后：
+
+- 如果长期 docs 已按需沉淀，或明确无需沉淀，将 `progress.md` 更新为：`当前阶段：已完成`，`下一步技能：archive-version`。
+- 在“产物检查”中把 distill 标记为已完成。
+- 在“进展记录”追加本次更新的长期 docs 路径，或记录无需沉淀的理由。
+- 如果发现 verify 证据不足、docs 冲突或仍有未解决 CRITICAL，将当前阶段写为 `阻塞` 或回到合适阶段，并记录建议回流技能。
+- 如果本技能由 `step-change` 调用且 `step-change` 会统一更新 progress，也必须保证 distill 结论可被检查，并在汇报中说明是否可随 version 归档。
 
 ## 完成后输出
 

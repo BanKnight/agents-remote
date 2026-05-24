@@ -49,6 +49,7 @@
 - `roadmap.md` 只作为当前活跃 versions/changes 的索引和当前焦点入口，不是历史总账，也不是 change 状态表。
 - `changes/<change-id>/intents.md` 保存完整原始意图和规划来源；roadmap 只引用该路径，不复制原文。
 - `changes/<change-id>/progress.md` 保存该 change 当前阶段、下一步技能和局部阻塞；roadmap 不维护这些字段。
+- `step-change` 是推荐的 change 推进入口：它读取 roadmap 当前焦点或指定 change 的 `progress.md`，调用对应阶段技能，并在产物检查通过后推进 `progress.md`。
 - `templates/` 保存运行态产物模板，命令生成文件时应优先使用项目本地模板。
 - `changes/<change-id>/` 保存单个未归档 change 的完整运行态上下文。
 - `archive/` 保存已归档 version 与 change 上下文。
@@ -59,6 +60,7 @@
 - `describe-project` 可在任意阶段更新 `docs/project.md`，用于补全项目认知 big picture。
 - `clarify-intents` 只更新 `.workflow/intents.md`。
 - `plan-roadmap` 更新 `.workflow/roadmap.md`，建立或更新 `.workflow/changes/<change-id>/intents.md` 与 `progress.md`，并从 `.workflow/intents.md` 移出已分配意图。
+- `step-change` 读取 roadmap 当前焦点或指定 change 的 `progress.md`，只负责判断当前阶段、调用对应阶段技能、检查产物并更新 `progress.md`；不直接编写 spec/design/plan/tasks/verify/docs 正文。
 - `specify-change` 只更新 `.workflow/changes/<change-id>/specs/`，用于明确 what。
 - `design-change` 只更新 `.workflow/changes/<change-id>/design/`，用于明确 how。
 - `plan-change` 补齐 `.workflow/changes/<change-id>/plan.md` 与 `tasks.md`，其中 `plan.md` 必须提供实现上下文，并按需说明长期 docs 使用情况。
@@ -73,3 +75,4 @@
 - 不要把 how、任务或实现细节写入 spec。
 - 不要在 verify 前把运行态 design 直接复制进 `docs/` 当作长期结论。
 - 不要用数字编号作为 change-id。
+- 不要绕过 `progress.md` 在 roadmap 中维护单个 change 的阶段状态或下一步技能。

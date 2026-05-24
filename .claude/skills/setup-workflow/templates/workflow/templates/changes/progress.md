@@ -14,6 +14,22 @@
 - 下一步技能：specify-change
 - 阻塞项：无
 
+## 推进规则
+
+- 本文件是 change 阶段状态、下一步技能和局部阻塞的权威来源。
+- `roadmap.md` 只引用本文件，不维护本 change 的阶段状态。
+- 推荐使用 `step-change` 推进本 change；它会读取本文件并调用对应阶段技能。
+- 专业阶段技能完成后，应更新本文件；如果由 `step-change` 调用，则由 `step-change` 检查产物并同步推进状态。
+
+## 产物检查
+
+- specs：未完成
+- design：未完成
+- plan/tasks：未完成
+- implementation：未完成
+- verify：未完成
+- distill：未完成
+
 ## 阶段流转
 
 | 阶段 | 下一步技能 | 完成标志 |
