@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/re
 import { AuthGate } from "./AuthGate";
 import { HomeRoute } from "./HomeRoute";
 import { ProjectConsoleRoute } from "./ProjectConsoleRoute";
+import { AgentSessionDetailRoute, TerminalSessionDetailRoute } from "./SessionDetailRoute";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -23,7 +24,24 @@ const projectConsoleRoute = createRoute({
   component: ProjectConsoleRoute,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectConsoleRoute]);
+const agentSessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectName/agent-sessions/$sessionId",
+  component: AgentSessionDetailRoute,
+});
+
+const terminalSessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectName/terminal-sessions/$sessionId",
+  component: TerminalSessionDetailRoute,
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  projectConsoleRoute,
+  agentSessionDetailRoute,
+  terminalSessionDetailRoute,
+]);
 
 export const router = createRouter({ routeTree });
 

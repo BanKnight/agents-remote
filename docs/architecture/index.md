@@ -11,3 +11,4 @@
 - [agent-runtime.md](./agent-runtime.md) — 定义 Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。
 - [monorepo-service-boundaries.md](./monorepo-service-boundaries.md) — 定义 `web`、`api`、`packages/shared` 的工程结构、服务边界与同域 `/api` 部署路径约定。
 - [project-boundary.md](./project-boundary.md) — 定义 Project 模块、安全路径解析和下游 project-scoped 能力的长期架构边界。
+- [session-runtime.md](./session-runtime.md) — 定义 SessionRegistry、runtime metadata、tmux adapter、Project-scoped HTTP/WS session runtime 和 stream transport 的长期架构边界。

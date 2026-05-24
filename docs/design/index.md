@@ -11,5 +11,6 @@
 - [agent-session-model.md](./agent-session-model.md) — 定义 AgentSession、TerminalSession、transportSession、conversationThread 与 turn/run 的长期设计边界。
 - [console-shell.md](./console-shell.md) — 定义登录后 Project Console Shell 的信息架构、Agent 默认焦点、占位边界、响应式布局和第一轮 PWA 外壳设计。
 - [frontend-stack.md](./frontend-stack.md) — 定义 `web` 前端栈、路由/服务端状态/本地 UI 状态职责边界和 `/api` 调用接入规则。
+- [session-runtime-boundaries.md](./session-runtime-boundaries.md) — 定义 Agent Session、Terminal Session、transport connection 和 runtime lifecycle 的长期设计边界。
 - [工作流和技能的大纲设计.md](./工作流和技能的大纲设计.md) — 定义工作流阶段链路、技能职责、运行态与长期沉淀目录结构。
 - [prototype.png](./prototype.png) — Server Agent Console 的移动端深色界面原型图，用于理解产品布局和交互意图。

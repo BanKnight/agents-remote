@@ -38,10 +38,12 @@
 - 不决定 Codex adapter 是否先做 PoC 或直接进入正式 API。
 - 不决定 Claude Code adapter 与 Claude API/Agent SDK adapter 的最终取舍。
 - 不定义多客户端 attach/resume 的 writer/observer/抢占规则。
-- 不替代后续 `design-session-runtime-boundaries` 对具体生命周期、状态和 API 的设计。
+- Session runtime lifecycle、metadata、close/reconnect 规则见 `docs/design/session-runtime-boundaries.md`。
 
 ## 来源
 
 - change：research-agent-access-options
 - verify 证据：`.workflow/changes/research-agent-access-options/verify.md`
 - 研究材料：`docs/research/agent-access-options.md`
+- change：design-session-runtime-boundaries
+- verify 证据：`.workflow/changes/design-session-runtime-boundaries/verify.md`

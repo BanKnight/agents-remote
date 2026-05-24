@@ -28,6 +28,10 @@ export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
 
 export type TerminalSessionStatus = "running" | "closed" | "error";
 
+export type SessionType = "agent" | "terminal";
+
+export type TransportStatus = "connected" | "disconnected" | "ended" | "error";
+
 export type AgentSession = {
   id: string;
   projectName: string;
@@ -42,6 +46,89 @@ export type TerminalSession = {
   displayName: string;
   status: TerminalSessionStatus;
 };
+
+export type ListAgentSessionsResponse = {
+  sessions: AgentSession[];
+};
+
+export type CreateAgentSessionRequest = {
+  provider?: AgentProvider;
+  displayName?: string;
+};
+
+export type CreateAgentSessionResponse = {
+  session: AgentSession;
+};
+
+export type AgentSessionDetailResponse = {
+  session: AgentSession;
+};
+
+export type CloseAgentSessionResponse = {
+  session: AgentSession;
+};
+
+export type ListTerminalSessionsResponse = {
+  sessions: TerminalSession[];
+};
+
+export type CreateTerminalSessionRequest = {
+  displayName?: string;
+};
+
+export type CreateTerminalSessionResponse = {
+  session: TerminalSession;
+};
+
+export type TerminalSessionDetailResponse = {
+  session: TerminalSession;
+};
+
+export type CloseTerminalSessionResponse = {
+  session: TerminalSession;
+};
+
+export type SessionStreamClientMessage =
+  | {
+      type: "input";
+      data: string;
+    }
+  | {
+      type: "resize";
+      cols: number;
+      rows: number;
+    }
+  | {
+      type: "ping";
+    };
+
+export type SessionStreamServerMessage =
+  | {
+      type: "connected";
+      sessionId: string;
+      sessionType: SessionType;
+      status: AgentSessionStatus | TerminalSessionStatus;
+    }
+  | {
+      type: "snapshot";
+      data: string;
+    }
+  | {
+      type: "output";
+      data: string;
+    }
+  | {
+      type: "status";
+      status: AgentSessionStatus | TerminalSessionStatus | TransportStatus;
+    }
+  | {
+      type: "ended";
+    }
+  | {
+      type: "error";
+      code: ApiErrorCode;
+      message: string;
+    };
 
 export type HealthResponse = {
   ok: true;
@@ -59,7 +146,14 @@ export type ApiErrorCode =
   | "PROJECT_TARGET_INVALID"
   | "PROJECT_PATH_OUTSIDE_ROOT"
   | "PROJECT_CONFLICT"
-  | "PROJECT_FS_ERROR";
+  | "PROJECT_FS_ERROR"
+  | "SESSION_NOT_FOUND"
+  | "SESSION_RUNTIME_MISSING"
+  | "SESSION_RUNTIME_ERROR"
+  | "SESSION_PROVIDER_UNAVAILABLE"
+  | "SESSION_TYPE_INVALID"
+  | "SESSION_STATE_CONFLICT"
+  | "SESSION_METADATA_ERROR";
 
 export type ApiErrorResponse = {
   error: {

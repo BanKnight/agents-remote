@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：必须消费 `research-agent-access-options` 结论后才能锁定 Agent provider 相关设计；TerminalSession 规格可先推进。
+- 当前阶段：已完成
+- 阻塞项：（无）
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`specs/session-runtime/spec.md`）
+- design：已完成（`design/overview.md`、`design/product.md`、`design/architecture.md`、`design/api.md`、`design/data.md`、`design/business-rules.md`、`design/error-handling.md`、`design/risks.md`）
+- plan/tasks：已完成（`plan.md`、`tasks.md`）
+- implementation：已完成（shared/api/web session runtime 实现、自动化测试、质量门禁与 tmux/agent-browser E2E）
+- verify：已完成（`verify.md`，结论：通过，无未解决 CRITICAL）
+- distill：已完成（`docs/specs/session-runtime/spec.md`、`docs/design/session-runtime-boundaries.md`、`docs/architecture/session-runtime.md`、`docs/project.md`）
 
 ## 阶段流转
 
@@ -45,3 +45,8 @@
 ## 进展记录
 
 - 已进入 roadmap，完整来源见 `intents.md`。
+- 2026-05-25：`specify-change` 完成，创建 `specs/session-runtime/spec.md`；已消费 `research-agent-access-options` 的长期调研结论和 Agent Runtime 长期设计边界，下一阶段为 `待设计`。
+- 2026-05-25：`design-change` 完成，创建 `design/overview.md`、`design/product.md`、`design/architecture.md`、`design/api.md`、`design/data.md`、`design/business-rules.md`、`design/error-handling.md`、`design/risks.md`；定义 Agent/Terminal/transport/runtime metadata、HTTP/WS、reconnect 和 close 边界，下一阶段为 `待计划`。
+- 2026-05-25：`implement-change` 完成，shared/api/web 已接入 Agent/Terminal session contract、metadata registry、Project-scoped HTTP API、Terminal tmux/WebSocket stream、Agent provider seam、Project console 与 session detail UI；`bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build` 通过；tmux + agent-browser E2E 验证登录、Project、Terminal 创建、stream 输入、刷新重连与 close 清理，证据见 `artifacts/terminal-session-stream.png`、`artifacts/terminal-session-closed-console.png`、`artifacts/e2e-api.log`、`artifacts/e2e-web.log`；下一阶段为 `待验证`。
+- 2026-05-25：`verify-change` 完成，创建 `verify.md`；Trace/Delta/Scenario/Evidence 均通过，自动化测试、完整质量门禁、tmux + agent-browser E2E 和 close confirmation retest 均有证据，无未解决 CRITICAL，下一阶段为 `待沉淀`。
+- 2026-05-25：`distill-change` 完成，长期 WHAT 沉淀到 `docs/specs/session-runtime/spec.md`，长期 HOW 沉淀到 `docs/design/session-runtime-boundaries.md` 与 `docs/architecture/session-runtime.md`，并更新 `docs/project.md`、`docs/specs/index.md`、`docs/design/index.md`、`docs/architecture/index.md`；当前 change 已完成，可随 version 归档。

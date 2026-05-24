@@ -5,14 +5,18 @@ import { tmpdir } from "node:os";
 import { AuthService } from "./auth";
 import { createFetchHandler } from "./index";
 import { ProjectService } from "./projects";
+import { SessionRegistry } from "./session-registry";
 let root: string;
+let runDir: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "agents-remote-api-projects-"));
+  runDir = await mkdtemp(join(tmpdir(), "agents-remote-api-run-"));
 });
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
+  await rm(runDir, { recursive: true, force: true });
 });
 
 const createTestHandler = () => {
@@ -21,10 +25,17 @@ const createTestHandler = () => {
     tokenSecret: "test-secret",
     now: () => new Date("2026-05-24T00:00:00.000Z"),
   });
+  const sessionRegistry = new SessionRegistry({
+    runDir,
+    now: () => new Date("2026-05-25T00:00:00.000Z"),
+    createId: (type) => (type === "agent" ? "agent_test123456" : "terminal_test123456"),
+  });
+  const projectService = new ProjectService(root, sessionRegistry);
 
   return {
     auth,
-    handler: createFetchHandler(auth, { projectService: new ProjectService(root) }),
+    sessionRegistry,
+    handler: createFetchHandler(auth, { projectService, projectsRoot: root, sessionRegistry }),
   };
 };
 
@@ -152,6 +163,142 @@ test("createFetchHandler creates projects and returns details", async () => {
   expect(createBody.project.name).toBe("hello world 中文");
   expect(detailResponse.status).toBe(200);
   expect(detailBody.project.path).toBe(join(root, "hello world 中文"));
+});
+
+test("createFetchHandler supports Project-scoped Agent and Terminal session APIs", async () => {
+  await mkdir(join(root, "hello world 中文"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+  const projectPath = "hello%20world%20%E4%B8%AD%E6%96%87";
+
+  const createAgent = await handler(
+    new Request(`http://localhost/api/projects/${projectPath}/agent-sessions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ provider: "claude" }),
+    }),
+    { upgrade: () => false },
+  );
+  const agentBody = await createAgent.json();
+  const createTerminal = await handler(
+    new Request(`http://localhost/api/projects/${projectPath}/terminal-sessions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ displayName: "Project shell" }),
+    }),
+    { upgrade: () => false },
+  );
+  const terminalBody = await createTerminal.json();
+  const listAgents = await handler(
+    new Request(`http://localhost/api/projects/${projectPath}/agent-sessions`, { headers }),
+    { upgrade: () => false },
+  );
+  const listTerminals = await handler(
+    new Request(`http://localhost/api/projects/${projectPath}/terminal-sessions`, { headers }),
+    { upgrade: () => false },
+  );
+  const agentDetail = await handler(
+    new Request(`http://localhost/api/projects/${projectPath}/agent-sessions/agent_test123456`, {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  const terminalDetail = await handler(
+    new Request(
+      `http://localhost/api/projects/${projectPath}/terminal-sessions/terminal_test123456`,
+      {
+        headers,
+      },
+    ),
+    { upgrade: () => false },
+  );
+  const projectDetail = await handler(
+    new Request(`http://localhost/api/projects/${projectPath}`, { headers }),
+    { upgrade: () => false },
+  );
+
+  expect(createAgent.status).toBe(200);
+  expect(agentBody.session).toMatchObject({
+    id: "agent_test123456",
+    projectName: "hello world 中文",
+    provider: "claude",
+    status: "running",
+  });
+  expect(createTerminal.status).toBe(200);
+  expect(terminalBody.session).toMatchObject({
+    id: "terminal_test123456",
+    projectName: "hello world 中文",
+    displayName: "Project shell",
+    status: "running",
+  });
+  expect((await listAgents.json()).sessions).toHaveLength(1);
+  expect((await listTerminals.json()).sessions).toHaveLength(1);
+  expect((await agentDetail.json()).session.provider).toBe("claude");
+  expect((await terminalDetail.json()).session.displayName).toBe("Project shell");
+  expect((await projectDetail.json()).project).toMatchObject({
+    agentSessionCount: 1,
+    terminalSessionCount: 1,
+  });
+});
+
+test("createFetchHandler protects session APIs and maps session errors", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const blocked = await handler(
+    new Request("http://localhost/api/projects/demo/terminal-sessions", { method: "POST" }),
+    { upgrade: () => false },
+  );
+  const invalidProvider = await handler(
+    new Request("http://localhost/api/projects/demo/agent-sessions", {
+      method: "POST",
+      headers: authHeader(auth),
+      body: JSON.stringify({ provider: "unknown" }),
+    }),
+    { upgrade: () => false },
+  );
+  const missing = await handler(
+    new Request("http://localhost/api/projects/demo/terminal-sessions/missing", {
+      headers: authHeader(auth),
+    }),
+    { upgrade: () => false },
+  );
+
+  expect(blocked.status).toBe(401);
+  expect((await blocked.json()).error.code).toBe("UNAUTHENTICATED");
+  expect(invalidProvider.status).toBe(400);
+  expect((await invalidProvider.json()).error.code).toBe("SESSION_PROVIDER_UNAVAILABLE");
+  expect(missing.status).toBe(404);
+  expect((await missing.json()).error.code).toBe("SESSION_NOT_FOUND");
+});
+
+test("createFetchHandler closes sessions through Project-scoped action routes", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  await handler(
+    new Request("http://localhost/api/projects/demo/terminal-sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+    { upgrade: () => false },
+  );
+  const close = await handler(
+    new Request("http://localhost/api/projects/demo/terminal-sessions/terminal_test123456/close", {
+      method: "POST",
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  const list = await handler(
+    new Request("http://localhost/api/projects/demo/terminal-sessions", { headers }),
+    { upgrade: () => false },
+  );
+
+  expect(close.status).toBe(200);
+  expect((await close.json()).session.status).toBe("closed");
+  expect((await list.json()).sessions).toEqual([]);
 });
 
 test("createFetchHandler maps project errors", async () => {

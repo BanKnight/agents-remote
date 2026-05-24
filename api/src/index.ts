@@ -9,16 +9,37 @@ import { AuthService } from "./auth";
 import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-auth";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
+import { handleSessionRoutes } from "./session-routes";
+import { SessionRegistry } from "./session-registry";
+import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
+import { TmuxRuntime } from "./tmux-runtime";
 import { loadSettings, StartupError } from "./settings";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
-  upgrade(request: Request): boolean;
+  upgrade(request: Request, options?: { data?: WebSocketData }): boolean;
 };
 
 type FetchHandlerOptions = {
   projectService?: ProjectService;
+  projectsRoot?: string;
+  sessionRegistry?: SessionRegistry;
 };
+
+type WebSocketData =
+  | {
+      kind: "echo";
+    }
+  | {
+      kind: "session-stream";
+      sessionType: "agent" | "terminal";
+      projectName: string;
+      sessionId: string;
+      tmuxSessionName: string;
+      status: "running" | "idle" | "closed" | "error";
+    };
+
+const echoWebSocketData: WebSocketData = { kind: "echo" };
 
 export const createFetchHandler =
   (auth: AuthService, options: FetchHandlerOptions = {}) =>
@@ -43,7 +64,7 @@ export const createFetchHandler =
         return jsonError("UNAUTHENTICATED", "Authentication required", 401);
       }
 
-      if (server.upgrade(request)) {
+      if (server.upgrade(request, { data: echoWebSocketData })) {
         return undefined;
       }
 
@@ -55,6 +76,31 @@ export const createFetchHandler =
 
       if (authFailure) {
         return authFailure;
+      }
+    }
+
+    if (options.projectsRoot && options.sessionRegistry) {
+      const streamUpgrade = await handleSessionStreamUpgrade(
+        request,
+        url,
+        options.projectsRoot,
+        options.sessionRegistry,
+        server,
+      );
+
+      if (streamUpgrade.matched) {
+        return streamUpgrade.response;
+      }
+
+      const sessionResponse = await handleSessionRoutes(
+        request,
+        url,
+        options.projectsRoot,
+        options.sessionRegistry,
+      );
+
+      if (sessionResponse) {
+        return sessionResponse;
       }
     }
 
@@ -149,13 +195,35 @@ export const startApi = async () => {
   const settings = await loadSettings();
   const runtimePaths = await ensureRuntimeDir(resolveRuntimePaths());
   const auth = new AuthService({ appPassword: settings.appPassword });
-  const projectService = new ProjectService(settings.projectsRoot);
-  const server = Bun.serve({
+  const runtime = new TmuxRuntime();
+  const streamController = new SessionStreamController(runtime);
+  const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
+  const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
+  const server = Bun.serve<WebSocketData>({
     port: settings.apiPort,
-    fetch: createFetchHandler(auth, { projectService }),
+    fetch: createFetchHandler(auth, {
+      projectService,
+      projectsRoot: settings.projectsRoot,
+      sessionRegistry,
+    }),
     websocket: {
+      open(ws) {
+        if (ws.data?.kind === "session-stream") {
+          void streamController.open(ws);
+        }
+      },
       message(ws, message) {
+        if (ws.data?.kind === "session-stream") {
+          void streamController.message(ws, message);
+          return;
+        }
+
         ws.send(message);
+      },
+      close(ws) {
+        if (ws.data?.kind === "session-stream") {
+          streamController.close(ws);
+        }
       },
     },
   });

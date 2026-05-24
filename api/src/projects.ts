@@ -8,6 +8,15 @@ import {
   validateProjectName,
 } from "./project-paths";
 
+type ProjectSessionCounts = {
+  agentSessionCount: number;
+  terminalSessionCount: number;
+};
+
+type ProjectSessionCounter = {
+  countSessions(projectName: string): Promise<ProjectSessionCounts>;
+};
+
 type ProjectServiceErrorCode = Extract<
   ApiErrorCode,
   | "PROJECT_NAME_INVALID"
@@ -29,7 +38,10 @@ export class ProjectServiceError extends Error {
 }
 
 export class ProjectService {
-  constructor(private readonly projectsRoot: string) {}
+  constructor(
+    private readonly projectsRoot: string,
+    private readonly sessionCounter?: ProjectSessionCounter,
+  ) {}
 
   async listProjects(): Promise<Project[]> {
     const rootPath = await this.resolveRoot();
@@ -94,11 +106,16 @@ export class ProjectService {
   private async projectFromName(projectName: string): Promise<Project> {
     try {
       const project = await resolveProjectPath(this.projectsRoot, projectName);
+      const counts = (await this.sessionCounter?.countSessions(project.name)) ?? {
+        agentSessionCount: 0,
+        terminalSessionCount: 0,
+      };
+
       return {
         name: project.name,
         path: project.path,
-        agentSessionCount: 0,
-        terminalSessionCount: 0,
+        agentSessionCount: counts.agentSessionCount,
+        terminalSessionCount: counts.terminalSessionCount,
       };
     } catch (error) {
       if (error instanceof ProjectPathError) {

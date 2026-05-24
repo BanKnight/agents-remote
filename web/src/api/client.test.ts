@@ -1,5 +1,18 @@
 import { afterEach, expect, test } from "bun:test";
-import { createProject, getAuthStatus, getProject, listProjects, login } from "./client";
+import {
+  closeAgentSession,
+  closeTerminalSession,
+  createAgentSession,
+  createProject,
+  createTerminalSession,
+  getAuthStatus,
+  getProject,
+  listAgentSessions,
+  listProjects,
+  listTerminalSessions,
+  login,
+  sessionStreamUrl,
+} from "./client";
 
 const originalFetch = globalThis.fetch;
 
@@ -90,9 +103,77 @@ test("web api client encodes project detail names", async () => {
   expect(path).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87");
 });
 
-test("web api client throws on project response errors", async () => {
-  globalThis.fetch = (async () =>
-    Response.json({ error: { code: "PROJECT_NOT_FOUND" } }, { status: 404 })) as typeof fetch;
+test("web api client calls Project-scoped Agent session routes", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
 
-  await expect(getProject("missing")).rejects.toThrow("Project detail failed: 404");
+    if (init?.method === "POST") {
+      return Response.json({
+        session: {
+          id: "agent_123",
+          projectName: "hello world 中文",
+          provider: "claude",
+          displayName: "Claude Agent 123",
+          status: "running",
+        },
+      });
+    }
+
+    return Response.json({ sessions: [] });
+  }) as typeof fetch;
+
+  await listAgentSessions("hello world 中文");
+  await createAgentSession("hello world 中文", "claude");
+  await closeAgentSession("hello world 中文", "agent_123");
+
+  expect(calls[0][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/agent-sessions");
+  expect(JSON.parse(calls[1][1]?.body?.toString() ?? "{}")).toEqual({ provider: "claude" });
+  expect(calls[2][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/agent-sessions/agent_123/close",
+  );
+});
+
+test("web api client calls Project-scoped Terminal session routes", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+
+    if (init?.method === "POST") {
+      return Response.json({
+        session: {
+          id: "terminal_123",
+          projectName: "demo",
+          displayName: "Project shell",
+          status: "running",
+        },
+      });
+    }
+
+    return Response.json({ sessions: [] });
+  }) as typeof fetch;
+
+  await listTerminalSessions("demo");
+  await createTerminalSession("demo", "Project shell");
+  await closeTerminalSession("demo", "terminal_123");
+
+  expect(calls[0][0]).toBe("/api/projects/demo/terminal-sessions");
+  expect(JSON.parse(calls[1][1]?.body?.toString() ?? "{}")).toEqual({
+    displayName: "Project shell",
+  });
+  expect(calls[2][0]).toBe("/api/projects/demo/terminal-sessions/terminal_123/close");
+});
+
+test("web api client builds same-origin session stream URLs", () => {
+  const originalLocation = globalThis.location;
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: { protocol: "https:", host: "example.test" },
+  });
+
+  expect(sessionStreamUrl("hello world 中文", "terminal", "terminal_123")).toBe(
+    "wss://example.test/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/terminal-sessions/terminal_123/stream",
+  );
+
+  Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
 });

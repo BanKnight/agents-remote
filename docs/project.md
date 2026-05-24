@@ -23,8 +23,9 @@
 <!-- 项目中反复出现、影响讨论和设计的领域概念。 -->
 
 - **Web Control Plane**：浏览器端与服务端控制 API 组成的控制层，负责任务发起、状态可视化与操作入口。
-- **Console Shell**：登录后的 Web/PWA 控制台外壳，以 Project 为作用域，默认聚焦 Agent Sessions，并提供 Terminal、Git、Files 的辅助入口；第一轮只承载信息架构、空状态和 PWA 外壳，不等同于真实 Agent/Terminal Runtime。
-- **Agent Runtime**：服务器上的 Agent 执行环境，负责会话生命周期、任务执行与结果回传；当前重点对接 Codex 与 Claude。
+- **Console Shell**：登录后的 Web/PWA 控制台外壳，以 Project 为作用域，默认聚焦 Agent Sessions，并提供 Terminal、Git、Files 的辅助入口；当前已接入 Agent/Terminal Session 运行态入口，Files/Git 仍是后续只读观察能力。
+- **Session Runtime**：Project-scoped Agent Session 与 Terminal Session 的运行态能力；使用 internal session id、runtime metadata 和明确的 reconnect/close 语义连接浏览器控制面与服务器运行实例。
+- **Agent Runtime**：服务器上的 Agent 执行环境，负责 Agent Session 生命周期、provider CLI/adapter 启动与结果回传；当前重点对接 Codex 与 Claude。
 - **Project**：`PROJECTS_ROOT` 下的一级真实目录，是控制台、Files、Git、Terminal Session 和 Agent Session 的统一作用域；第一轮不需要数据库注册。
 - **PROJECTS_ROOT**：个人部署配置中的绝对路径，是当前服务器内 Project 能力和 project-scoped 路径访问的根信任边界。
 
@@ -36,6 +37,7 @@
 - 控制层与执行层通过统一的 Agent 控制接口协作，避免将 Codex/Claude 差异暴露到用户操作层。
 - Project 模块位于 `api` 内，统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；`packages/shared` 只承载跨边界 DTO/type。
 - `web` 提供移动端优先的深色 PWA Console Shell；第一轮 PWA 只承诺静态 manifest/icons/meta 和 standalone 外壳，离线缓存、通知和 service worker lifecycle 以后续设计为准。
+- Session Runtime 由 `api` 内的 SessionRegistry、runtime metadata、tmux adapter 和 Project-scoped HTTP/WebSocket stream 组成；`packages/shared` 只保存 session DTO、状态、stream envelope 与错误码。
 
 ## 开发准则
 

@@ -12,6 +12,7 @@
 - [project-safe-paths](./project-safe-paths/spec.md) — 定义 Project 名称和 project-relative path 统一安全解析，以及 `PROJECTS_ROOT` 路径边界契约。
 - [pwa-console-shell](./pwa-console-shell/spec.md) — 定义第一轮 PWA 控制台外壳的安装能力、深色移动端优先体验、响应式可用性和通知延后边界。
 - [service-access-boundary](./service-access-boundary/spec.md) — 定义 `web`/`api` 服务拆分、统一同域入口、`/api` HTTP/WebSocket 路径和部署层职责边界。
+- [session-runtime](./session-runtime/spec.md) — 定义 Agent/Terminal Session 的身份分层、runtime metadata、tmux resource、reconnect、close 和 Project-scoped shell/provider 会话行为契约。
 - [workspace-foundation](./workspace-foundation/spec.md) — 定义第一轮 monorepo 工作区、Bun 命令面、前端基础、共享类型边界和基础质量入口。
 
 ## 文档

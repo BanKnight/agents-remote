@@ -1,15 +1,24 @@
-import type { Project } from "@agents-remote/shared";
+import type { AgentProvider, AgentSession, Project, TerminalSession } from "@agents-remote/shared";
 import { Link, useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtom } from "jotai";
 import type { ReactNode } from "react";
-import { getProject } from "../api/client";
+import {
+  closeAgentSession,
+  closeTerminalSession,
+  createAgentSession,
+  createTerminalSession,
+  getProject,
+  listAgentSessions,
+  listTerminalSessions,
+} from "../api/client";
 import { activeConsoleSectionAtom, inputPanelOpenAtom } from "../state/ui";
 import {
   consoleSections,
   projectSummary,
   runtimeInputEnabled,
   sectionForId,
+  sessionStatusLabel,
 } from "./console-model";
 
 export function ProjectConsoleRoute() {
@@ -66,10 +75,43 @@ type ProjectConsoleProps = {
 };
 
 function ProjectConsole({ project }: ProjectConsoleProps) {
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useAtom(activeConsoleSectionAtom);
   const [inputPanelOpen, setInputPanelOpen] = useAtom(inputPanelOpenAtom);
   const selectedSection = sectionForId(activeSection);
   const summary = projectSummary(project);
+  const agentSessions = useQuery({
+    queryKey: ["projects", project.name, "agent-sessions"],
+    queryFn: () => listAgentSessions(project.name),
+  });
+  const terminalSessions = useQuery({
+    queryKey: ["projects", project.name, "terminal-sessions"],
+    queryFn: () => listTerminalSessions(project.name),
+  });
+  const invalidateSessions = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", project.name] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", project.name, "agent-sessions"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", project.name, "terminal-sessions"] }),
+    ]);
+  };
+  const createAgent = useMutation({
+    mutationFn: (provider: AgentProvider) => createAgentSession(project.name, provider),
+    onSuccess: invalidateSessions,
+  });
+  const createTerminal = useMutation({
+    mutationFn: () => createTerminalSession(project.name),
+    onSuccess: invalidateSessions,
+  });
+  const closeAgent = useMutation({
+    mutationFn: (sessionId: string) => closeAgentSession(project.name, sessionId),
+    onSuccess: invalidateSessions,
+  });
+  const closeTerminal = useMutation({
+    mutationFn: (sessionId: string) => closeTerminalSession(project.name, sessionId),
+    onSuccess: invalidateSessions,
+  });
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-4 py-4 text-slate-100 sm:px-6 lg:px-8">
@@ -115,8 +157,8 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   Agent Sessions
                 </h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                  Agent work is the default focus. Runtime data is not connected yet, so this shell
-                  reserves the observation space without pretending sessions exist.
+                  Agent and Terminal sessions now use stable internal session ids while keeping
+                  provider and shell semantics separate.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -128,9 +170,28 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           </header>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-            <AgentPanel />
+            <AgentPanel
+              projectName={project.name}
+              sessions={agentSessions.data?.sessions ?? []}
+              isLoading={agentSessions.isLoading}
+              isCreating={createAgent.isPending}
+              createError={createAgent.error}
+              closeError={closeAgent.error}
+              onCreate={(provider) => createAgent.mutate(provider)}
+              onClose={(sessionId) => closeAgent.mutate(sessionId)}
+            />
             <section className="grid gap-4">
-              <SectionDetail section={selectedSection} />
+              <SectionDetail
+                projectName={project.name}
+                section={selectedSection}
+                terminalSessions={terminalSessions.data?.sessions ?? []}
+                terminalLoading={terminalSessions.isLoading}
+                terminalCreating={createTerminal.isPending}
+                terminalCreateError={createTerminal.error}
+                terminalCloseError={closeTerminal.error}
+                onCreateTerminal={() => createTerminal.mutate()}
+                onCloseTerminal={(sessionId) => closeTerminal.mutate(sessionId)}
+              />
               <ProjectSignals gitBranch={summary.gitBranch} />
             </section>
           </div>
@@ -144,11 +205,9 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           onClick={() => setInputPanelOpen((value) => !value)}
         >
           <span>
-            <span className="block text-sm font-semibold text-slate-100">
-              Runtime input pending
-            </span>
+            <span className="block text-sm font-semibold text-slate-100">Runtime input ready</span>
             <span className="mt-1 block text-xs text-slate-500">
-              Input will unlock when Agent/Terminal runtime is connected.
+              Open a session detail page to send input over the runtime stream.
             </span>
           </span>
           <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
@@ -158,7 +217,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
         {inputPanelOpen ? (
           <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-500">
             {runtimeInputEnabled
-              ? "Runtime input enabled."
+              ? "Input is sent only from Agent or Terminal session detail pages."
               : "Disabled · no Agent or Terminal input is sent in this shell slice."}
           </div>
         ) : null}
@@ -181,7 +240,27 @@ function SummaryBadge({ label, value }: SummaryBadgeProps) {
   );
 }
 
-function AgentPanel() {
+type AgentPanelProps = {
+  projectName: string;
+  sessions: AgentSession[];
+  isLoading: boolean;
+  isCreating: boolean;
+  createError: Error | null;
+  closeError: Error | null;
+  onCreate: (provider: AgentProvider) => void;
+  onClose: (sessionId: string) => void;
+};
+
+function AgentPanel({
+  projectName,
+  sessions,
+  isLoading,
+  isCreating,
+  createError,
+  closeError,
+  onCreate,
+  onClose,
+}: AgentPanelProps) {
   return (
     <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -189,44 +268,58 @@ function AgentPanel() {
           <h3 className="text-xl font-semibold">Agent Sessions</h3>
           <p className="mt-1 text-sm text-slate-400">Default focus for remote AI work.</p>
         </div>
-        <span className="w-fit rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-medium text-amber-100">
-          No runtime connected
-        </span>
-      </div>
-      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
-        <p className="text-lg font-semibold text-slate-100">No Agent Sessions yet</p>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          Claude and Codex sessions will appear here with running, waiting, stopped, and latest
-          output summaries after the session runtime change lands.
-        </p>
-        <div className="mt-5 grid gap-2 sm:grid-cols-3">
-          <PlaceholderMetric label="Running" />
-          <PlaceholderMetric label="Waiting for input" />
-          <PlaceholderMetric label="Latest output" />
+        <div className="flex gap-2">
+          <CreateButton disabled={isCreating} onClick={() => onCreate("claude")}>
+            Claude
+          </CreateButton>
+          <CreateButton disabled={isCreating} onClick={() => onCreate("codex")}>
+            Codex
+          </CreateButton>
         </div>
       </div>
+      <ErrorText error={createError ?? closeError} />
+      <SessionList isLoading={isLoading} empty="No Agent Sessions yet">
+        {sessions.map((session) => (
+          <SessionCard
+            key={session.id}
+            title={session.displayName}
+            subtitle={`${session.provider} · ${session.id}`}
+            status={sessionStatusLabel(session.status)}
+            detailTo="/projects/$projectName/agent-sessions/$sessionId"
+            detailParams={{ projectName, sessionId: session.id }}
+            onClose={() => onClose(session.id)}
+          />
+        ))}
+      </SessionList>
     </section>
   );
 }
 
-type PlaceholderMetricProps = {
-  label: string;
-};
-
-function PlaceholderMetric({ label }: PlaceholderMetricProps) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 px-3 py-3 text-xs text-slate-400">
-      {label}: pending
-    </div>
-  );
-}
-
 type SectionDetailProps = {
+  projectName: string;
   section: (typeof consoleSections)[number];
+  terminalSessions: TerminalSession[];
+  terminalLoading: boolean;
+  terminalCreating: boolean;
+  terminalCreateError: Error | null;
+  terminalCloseError: Error | null;
+  onCreateTerminal: () => void;
+  onCloseTerminal: (sessionId: string) => void;
 };
 
-function SectionDetail({ section }: SectionDetailProps) {
+function SectionDetail({
+  projectName,
+  section,
+  terminalSessions,
+  terminalLoading,
+  terminalCreating,
+  terminalCreateError,
+  terminalCloseError,
+  onCreateTerminal,
+  onCloseTerminal,
+}: SectionDetailProps) {
   const isAgent = section.id === "agents";
+  const isTerminal = section.id === "terminal";
 
   return (
     <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20">
@@ -237,13 +330,34 @@ function SectionDetail({ section }: SectionDetailProps) {
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-medium ${
-            isAgent ? "bg-cyan-300/10 text-cyan-100" : "bg-slate-800 text-slate-300"
+            isAgent || isTerminal ? "bg-cyan-300/10 text-cyan-100" : "bg-slate-800 text-slate-300"
           }`}
         >
           {section.status}
         </span>
       </div>
-      {!isAgent ? (
+      {isTerminal ? (
+        <div className="mt-5">
+          <CreateButton disabled={terminalCreating} onClick={onCreateTerminal}>
+            New Terminal Session
+          </CreateButton>
+          <ErrorText error={terminalCreateError ?? terminalCloseError} />
+          <SessionList isLoading={terminalLoading} empty="No Terminal Sessions yet">
+            {terminalSessions.map((session) => (
+              <SessionCard
+                key={session.id}
+                title={session.displayName}
+                subtitle={session.id}
+                status={sessionStatusLabel(session.status)}
+                detailTo="/projects/$projectName/terminal-sessions/$sessionId"
+                detailParams={{ projectName, sessionId: session.id }}
+                onClose={() => onCloseTerminal(session.id)}
+              />
+            ))}
+          </SessionList>
+        </div>
+      ) : null}
+      {!isAgent && !isTerminal ? (
         <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-500">
           Placeholder only. This entry does not read files, run Git, or start sessions in this
           change.
@@ -251,6 +365,116 @@ function SectionDetail({ section }: SectionDetailProps) {
       ) : null}
     </section>
   );
+}
+
+type SessionListProps = {
+  children: ReactNode;
+  empty: string;
+  isLoading: boolean;
+};
+
+function SessionList({ children, empty, isLoading }: SessionListProps) {
+  if (isLoading) {
+    return <p className="mt-5 text-sm text-slate-400">Loading sessions...</p>;
+  }
+
+  if (!Array.isArray(children) || children.length === 0) {
+    return (
+      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+        <p className="text-lg font-semibold text-slate-100">{empty}</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+          Create a session to open a project-scoped runtime stream.
+        </p>
+      </div>
+    );
+  }
+
+  return <div className="mt-5 grid gap-3">{children}</div>;
+}
+
+type SessionCardProps = {
+  title: string;
+  subtitle: string;
+  status: string;
+  detailTo:
+    | "/projects/$projectName/agent-sessions/$sessionId"
+    | "/projects/$projectName/terminal-sessions/$sessionId";
+  detailParams: { projectName: string; sessionId: string };
+  onClose: () => void;
+};
+
+function SessionCard({
+  detailParams,
+  detailTo,
+  onClose,
+  status,
+  subtitle,
+  title,
+}: SessionCardProps) {
+  return (
+    <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold text-slate-100">{title}</p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
+        </div>
+        <span className="rounded-full bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
+          {status}
+        </span>
+      </div>
+      <div className="mt-4 flex gap-2">
+        <Link
+          className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
+          params={detailParams}
+          to={detailTo}
+        >
+          Open stream
+        </Link>
+        <button
+          className="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
+          type="button"
+          onClick={() => {
+            if (window.confirm("Close this session? The running process will be terminated.")) {
+              onClose();
+            }
+          }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type CreateButtonProps = {
+  children: ReactNode;
+  disabled: boolean;
+  onClick: () => void;
+};
+
+function CreateButton({ children, disabled, onClick }: CreateButtonProps) {
+  return (
+    <button
+      className="rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={disabled}
+      type="button"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+type ErrorTextProps = {
+  error: Error | null;
+};
+
+function ErrorText({ error }: ErrorTextProps) {
+  if (!error) {
+    return null;
+  }
+
+  return <p className="mt-3 text-sm text-rose-200">{error.message}</p>;
 }
 
 type ProjectSignalsProps = {
@@ -268,7 +492,7 @@ function ProjectSignals({ gitBranch }: ProjectSignalsProps) {
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
           <dt className="text-slate-500">Scope</dt>
-          <dd className="mt-1 text-slate-200">Project-scoped shell, read-only placeholders</dd>
+          <dd className="mt-1 text-slate-200">Project-scoped Agent and Terminal sessions</dd>
         </div>
       </dl>
     </section>
