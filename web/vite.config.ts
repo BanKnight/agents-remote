@@ -11,8 +11,8 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: apiTarget,
-        ws: true
-      }
-    }
-  }
+        ws: true,
+      },
+    },
+  },
 });

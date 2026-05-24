@@ -18,7 +18,8 @@
 - 先建立根 workspace 和共享 TypeScript 基础，再创建 `packages/shared` 类型包，避免 `web` 与 `api` 后续各自定义 DTO。
 - 再创建 `api` 的 Bun HTTP/WebSocket 服务骨架，服务命名保持为 `api`，并提供最小 `/api/health` 与 `/api/ws/echo` 级别的边界验证能力；这些只用于服务和代理 smoke，不代表业务 API。
 - 然后创建 `web` 的 React + TypeScript + Vite + Tailwind 基础，使用相对 `/api` 路径和 Vite dev proxy 访问 `api`，不暴露普通用户手动填写 API 地址的入口。
-- 最后补齐根脚本、类型检查、基础测试/质量入口和部署路径说明，验证 workspace、依赖方向、HTTP proxy、WebSocket proxy 和 shared 类型边界。
+- 最后补齐根脚本、类型检查、Oxc lint/format harness、基础测试/质量入口和部署路径说明，验证 workspace、依赖方向、HTTP proxy、WebSocket proxy、shared 类型边界和静态代码质量入口。
+- Oxc 是工具链集合而不只是 lint；当前 change 只接入 Oxlint 与 Oxfmt 作为基础 harness，不接入 transformer/minifier/codegen，也不启用 type-aware lint。
 - 具体依赖版本在实现阶段需要遵守 design 中的供应链约束：不要直接锁定发布不足 7 天的 npm latest；如确需最新版本需用户确认。
 
 ## 任务顺序依据
@@ -66,7 +67,7 @@
 
 ## 风险与验证重点
 
-- 供应链风险：实现时必须避免直接锁定发布不足 7 天的 Vite/Tailwind/TanStack/Vitest latest，除非用户确认。
+- 供应链风险：实现时必须避免直接锁定发布不足 7 天的 Vite/Tailwind/TanStack/Vitest/Oxlint/Oxfmt latest，除非用户确认。
 - 边界风险：`packages/shared` 只能放类型、状态枚举和 DTO，不能放路径解析、provider adapter、runtime control 或业务流程。
 - 代理风险：开发环境必须通过 `/api` 相对路径访问 api，并验证 HTTP 与 WebSocket proxy；不要默认启用 `rewriteWsOrigin`。
 - 命名风险：后端服务和包名必须使用 `api`，不要引入 `agent` 作为服务名。
@@ -74,6 +75,7 @@
 
 ## 不做事项
 
+- 只接入 Oxlint/Oxfmt 作为基础质量 harness；不启用 `oxlint --type-aware`，不引入 `oxlint-tsgolint`，后续若需要 type-aware lint 再单独评估。
 - 不实现登录、token、配置文件、端口配置、runtime dir 或 Cloudflare 管理。
 - 不实现 Project、AgentSession、TerminalSession、Files、Git 的业务 API。
 - 不实现 PWA 页面、响应式控制台 UI、具体路由页面或组件库。

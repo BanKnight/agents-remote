@@ -2,22 +2,26 @@
   "name": "agents-remote",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "workspaces": [
     "web",
     "api",
     "packages/*"
   ],
+  "type": "module",
   "scripts": {
     "dev": "bun run --parallel --filter @agents-remote/api --filter @agents-remote/web dev",
     "dev:api": "bun run --filter @agents-remote/api dev",
     "dev:web": "bun run --filter @agents-remote/web dev",
     "build": "bun run --sequential --workspaces build",
     "typecheck": "bun run --sequential --workspaces typecheck",
+    "lint": "oxlint package.json tsconfig.json tsconfig.base.json api packages web --deny-warnings",
+    "format:check": "oxfmt --check package.json tsconfig.json tsconfig.base.json api packages web",
     "test": "bun run --sequential --workspaces test"
   },
   "devDependencies": {
     "@types/bun": "^1.3.4",
+    "oxfmt": "0.50.0",
+    "oxlint": "1.65.0",
     "typescript": "^5.9.3"
   }
 }

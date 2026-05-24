@@ -25,8 +25,8 @@ const server = Bun.serve({
   websocket: {
     message(ws, message) {
       ws.send(message);
-    }
-  }
+    },
+  },
 });
 
 console.log(`api listening on http://localhost:${server.port}`);

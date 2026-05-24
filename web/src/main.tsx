@@ -20,5 +20,5 @@ createRoot(root).render(
         <RouterProvider router={router} />
       </JotaiProvider>
     </QueryClientProvider>
-  </StrictMode>
+  </StrictMode>,
 );

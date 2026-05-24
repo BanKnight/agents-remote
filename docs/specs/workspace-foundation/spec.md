@@ -1,20 +1,12 @@
 # workspace-foundation spec
 
-本文件记录单个 change 对 `workspace-foundation` 的行为契约增量。
+本文件记录 `workspace-foundation` 的长期行为契约。它是主线 WHAT，不记录实现方案、任务拆解或单次 change 过程。
 
-## Change 来源
+## Purpose
 
-- change-id：setup-monorepo-service-boundaries
-- 来源意图：
-  - 编号：2：项目采用 monorepo 结构，至少包含 `web`、`api` 和共享类型区域。
-  - 编号：10：后端服务统一命名为 `api`，避免和 Claude/Codex 这类 AI Agent 混淆。
-  - 编号：38：固定使用 Tailwind CSS 支持移动端优先和深色界面迭代。
-  - 编号：39：Bun 同时作为 monorepo 包管理器、脚本运行器和 `api` 运行时；`web` 使用 Bun 管理依赖和开发流程，前端应用仍是 React + TypeScript。
-  - 编号：40：`packages/shared` 第一轮主要放 `web` 和 `api` 共用类型定义，谨慎添加共享工具，不放业务逻辑。
-  - 补充约束：第一轮前端工程基础固定使用 TanStack 与 Jotai；当前 change 只定义工程入口与依赖边界，不承接 E2E 链路细节。
-- 规划来源：服务边界、包结构、共享类型和前端样式基础需要在功能开发前稳定。
+- 定义第一轮工程工作区、包管理入口、前端基础、共享类型边界和基础质量命令入口，使后续 Project、Session Runtime、Files、Git 与 E2E changes 能在同一 monorepo 基础上推进。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Repository exposes the first-round workspace areas
 
@@ -88,7 +80,7 @@
 #### Scenario: E2E scope is reviewed
 
 - **WHEN** 需要定义登录、Project、Terminal Session 或 WebSocket 端到端链路
-- **THEN** 这些具体 E2E 行为仍归属 `setup-e2e-quality-baseline`，而不是当前 workspace foundation spec
+- **THEN** 这些具体 E2E 行为仍归属 `setup-e2e-quality-baseline`，而不是 workspace foundation spec
 
 ### Requirement: Workspace exposes baseline Oxc quality harnesses
 
@@ -118,10 +110,11 @@
 - **WHEN** 新增逻辑需要放入共享区域
 - **THEN** 业务流程、provider 适配、路径解析或运行态控制逻辑不会因为复用便利而放入 `packages/shared`
 
-## MODIFIED Requirements
+## Notes
 
-- （无）
+- 具体 E2E 链路、浏览器组件测试和真实 Terminal Session 测试由后续质量 change 定义。
 
-## REMOVED Requirements
+## 来源
 
-- （无）
+- change：setup-monorepo-service-boundaries
+- verify 证据：`.workflow/changes/setup-monorepo-service-boundaries/verify.md`

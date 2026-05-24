@@ -2,13 +2,13 @@ import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/re
 import { HomeRoute } from "./HomeRoute";
 
 const rootRoute = createRootRoute({
-  component: () => <Outlet />
+  component: () => <Outlet />,
 });
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomeRoute
+  component: HomeRoute,
 });
 
 const routeTree = rootRoute.addChildren([indexRoute]);

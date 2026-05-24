@@ -8,7 +8,7 @@ export function HomeRoute() {
   const [inputPanelOpen, setInputPanelOpen] = useAtom(inputPanelOpenAtom);
   const health = useQuery<HealthResponse>({
     queryKey: ["api", "health"],
-    queryFn: getApiHealth
+    queryFn: getApiHealth,
   });
 
   const status = health.data
@@ -25,8 +25,8 @@ export function HomeRoute() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Server control plane</h1>
         <p className="text-sm leading-6 text-slate-300">
-          TanStack Router owns URL state, TanStack Query owns server state, and Jotai
-          owns local UI state.
+          TanStack Router owns URL state, TanStack Query owns server state, and Jotai owns local UI
+          state.
         </p>
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 font-mono text-sm">
           {status}

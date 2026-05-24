@@ -78,17 +78,19 @@
 
 ### 3. 集成与验证任务
 
-- [x] 3.1 补齐根脚本、基础测试/质量入口和 workspace 验证
+- [x] 3.1 补齐根脚本、基础测试/Oxc 质量入口和 workspace 验证
   - 验收标准：
-    - 根目录可通过 Bun 命令运行各 workspace 的基础开发、构建、类型检查和测试/质量检查入口。
+    - 根目录可通过 Bun 命令运行各 workspace 的基础开发、构建、类型检查、lint、format check 和测试/质量检查入口。
     - shared 类型包、api 和 web 的 typecheck/build 至少有可执行入口；如果某类检查因工具未引入而暂缓，需在任务实现记录中说明。
     - 基础测试入口存在，但不定义登录/Project/Terminal/WebSocket E2E 场景。
-  - 依据：`plan.md` 的“执行策略”和“风险与验证重点”；`specs/workspace-foundation/spec.md` 的 test entrypoints requirement；`design/risks.md` 的验证建议。
+    - Oxlint 和 Oxfmt 作为 Oxc 体系基础 harness 接入，并排除生成产物目录；不启用 type-aware lint。
+  - 依据：`plan.md` 的“执行策略”和“风险与验证重点”；`specs/workspace-foundation/spec.md` 的 test/Oxc entrypoints requirement；`design/risks.md` 的验证建议。
   - 必读上下文：`plan.md`、`specs/workspace-foundation/spec.md`、`design/risks.md`。
-  - 修改范围：根脚本、各 workspace scripts、基础测试配置或占位测试文件。
+  - 修改范围：根脚本、各 workspace scripts、Oxc 配置、基础测试配置或占位测试文件。
   - 依赖：2.1、2.2、2.3。
   - 并行：否（需要所有 workspace 入口稳定后验证）。
-  - 实现记录：已为 shared、api、web 添加 Bun test 基础入口；根 `bun run typecheck`、`bun run build`、`bun run test` 均通过。
+  - 实现记录：已为 shared、api、web 添加 Bun test 基础入口；已安装 `oxlint@1.65.0` 与 `oxfmt@0.50.0`，避免采用发布不足 7 天的 latest；根 `bun run lint`、`bun run format:check`、`bun run typecheck`、`bun run build`、`bun run test` 均通过。
+
 
 - [x] 3.2 验证 `/api` HTTP 与 WebSocket dev proxy
   - 验收标准：

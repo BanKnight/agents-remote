@@ -9,5 +9,6 @@
 ## 文档
 
 - [agent-session-model.md](./agent-session-model.md) — 定义 AgentSession、TerminalSession、transportSession、conversationThread 与 turn/run 的长期设计边界。
+- [frontend-stack.md](./frontend-stack.md) — 定义 `web` 前端栈、路由/服务端状态/本地 UI 状态职责边界和 `/api` 调用接入规则。
 - [工作流和技能的大纲设计.md](./工作流和技能的大纲设计.md) — 定义工作流阶段链路、技能职责、运行态与长期沉淀目录结构。
 - [prototype.png](./prototype.png) — Server Agent Console 的移动端深色界面原型图，用于理解产品布局和交互意图。
