@@ -1,10 +1,42 @@
 import { afterEach, expect, test } from "bun:test";
-import { createProject, getProject, listProjects } from "./client";
+import { createProject, getAuthStatus, getProject, listProjects, login } from "./client";
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+test("web api client checks auth status", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ authenticated: true });
+  }) as typeof fetch;
+
+  await expect(getAuthStatus()).resolves.toBe(true);
+
+  expect(calls[0][0]).toBe("/api/auth/me");
+});
+
+test("web api client treats unauthenticated status as false", async () => {
+  globalThis.fetch = (async () =>
+    Response.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 })) as typeof fetch;
+
+  await expect(getAuthStatus()).resolves.toBe(false);
+});
+
+test("web api client logs in with JSON body", async () => {
+  let body = "";
+  globalThis.fetch = (async (_input, init) => {
+    body = init?.body?.toString() ?? "";
+    return Response.json({ ok: true, token: "token", expiresAt: "2026-05-25T00:00:00.000Z" });
+  }) as typeof fetch;
+
+  const response = await login("secret");
+
+  expect(JSON.parse(body)).toEqual({ password: "secret" });
+  expect(response.ok).toBe(true);
 });
 
 test("web api client uses same-origin /api paths", async () => {

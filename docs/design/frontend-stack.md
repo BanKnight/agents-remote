@@ -20,6 +20,7 @@
 - TanStack Router 承接路由树、URL 参数和页面入口。
 - TanStack Query 或 Router loader 承接服务端状态/API 数据获取。
 - Jotai 承接本地 UI 状态，例如底部输入区展开、临时选中、局部偏好和非持久化 UI 状态。
+- 第一轮 PWA shell 采用静态 manifest、icons 和 HTML meta/link 接入；离线缓存和 service worker lifecycle 不属于默认前端基础。
 - Bun test 提供基础测试入口；浏览器组件测试和 E2E 由后续质量 change 细化。
 
 ## 关键规则
@@ -28,6 +29,7 @@
 - 不因为单个页面需要而引入额外全局状态库。
 - API 数据请求不散落到展示组件中，应通过统一 `/api` client 或 route/data layer 接入。
 - `/api` 前缀不得被前端路由吞掉，应由 dev proxy 或部署层转发到 `api`。
+- PWA installability 的第一轮静态资源属于 `web` 边界；只有需要离线、预缓存、更新提示或更完整 PWA lifecycle 时，才重新评估 PWA 插件或 service worker。
 - 可复用组件只封装真实复用的 UI 或交互，不提前抽象。
 - TanStack Table/Form、组件库、图标库等只在后续需求明确时增量引入。
 
@@ -41,3 +43,5 @@
 
 - change：setup-monorepo-service-boundaries
 - verify 证据：`.workflow/changes/setup-monorepo-service-boundaries/verify.md`
+- change：build-responsive-pwa-console-shell
+- verify 证据：`.workflow/changes/build-responsive-pwa-console-shell/verify.md`

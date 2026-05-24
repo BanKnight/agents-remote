@@ -1,7 +1,10 @@
 import type {
+  AuthMeResponse,
   CreateProjectRequest,
   CreateProjectResponse,
   HealthResponse,
+  LoginRequest,
+  LoginResponse,
   ProjectDetailResponse,
   ProjectListResponse,
 } from "@agents-remote/shared";
@@ -14,6 +17,29 @@ export async function getApiHealth(): Promise<HealthResponse> {
   }
 
   return response.json();
+}
+
+export async function getAuthStatus(): Promise<boolean> {
+  const response = await fetch("/api/auth/me");
+
+  if (response.status === 401) {
+    return false;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Auth check failed: ${response.status}`);
+  }
+
+  const body = (await response.json()) as AuthMeResponse;
+  return body.authenticated;
+}
+
+export async function login(password: string): Promise<LoginResponse> {
+  return fetchJson("/api/auth/login", "Login failed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password } satisfies LoginRequest),
+  });
 }
 
 export async function listProjects(): Promise<ProjectListResponse> {
