@@ -80,6 +80,7 @@ docs/runbooks/
 - `progress.md` 是阶段状态权威来源。
 - roadmap 只用于确定当前焦点、全局队列和依赖，不读取其中不存在的 change 状态。
 - `step-change` 调用专业阶段技能前，只做必要状态判断，不代替该技能读取全部上下文。
+- `step-change` 不重排 roadmap；只在目标 change 完成且 roadmap 当前焦点仍指向该 change 时，按活跃队列选择下一个合适焦点并同步“当前焦点 / 下一步”。
 - 如果 `progress.md` 与实际产物冲突，先按实际产物提出校正建议；除非校正明显且安全，否则询问用户。
 
 ## 阶段分发规则
@@ -92,7 +93,7 @@ docs/runbooks/
 | 待实现 | 调用 `implement-change <change-id>` |
 | 待验证 | 调用 `verify-change <change-id>` |
 | 待沉淀 | 调用 `distill-change <change-id>` |
-| 已完成 | 不自动归档；提示可按 version 执行 `archive-version` |
+| 已完成 | 不自动归档；若 roadmap 当前焦点仍指向本 change，则更新当前焦点到下一个合适 change；若无可推进 change，提示可按 version 执行 `archive-version` |
 | 阻塞 | 汇报阻塞，不调用阶段技能 |
 
 `step-change` 一次 invocation 默认只推进一个阶段。如果专业阶段技能本身只完成了部分工作或进入阻塞，`step-change` 不继续调用后续阶段。
@@ -112,7 +113,7 @@ docs/runbooks/
 
 更新时：
 
-- 只修改目标 change 的 `progress.md`。
+- 阶段进度更新只修改目标 change 的 `progress.md`；完成后的焦点同步按“roadmap 焦点更新规则”处理。
 - 不把阶段状态写回 `roadmap.md`。
 - 在“进展记录”追加一条简短记录，说明本轮完成的技能、产物和下一阶段。
 - 如果遇到阻塞，把当前阶段改为 `阻塞`，并在阻塞项中记录原因。
@@ -138,7 +139,26 @@ docs/runbooks/
 5. 根据阶段分发规则调用对应专业 skill。
 6. 专业 skill 返回后，检查本阶段完成标志和关键 artifact。
 7. 更新 `progress.md` 到下一阶段，或记录阻塞/部分完成。
-8. 简短汇报本轮推进结果和下一步。
+8. 如果目标 change 已完成且仍是 roadmap 当前焦点，按“roadmap 焦点更新规则”同步 `.workflow/roadmap.md` 的当前焦点和下一步。
+9. 简短汇报本轮推进结果和下一步。
+
+## roadmap 焦点更新规则
+
+当 `step-change` 将目标 change 推进到 `已完成`，或进入时发现目标 change 已经是 `已完成`，必须检查 `.workflow/roadmap.md` 的“当前焦点”。
+
+如果当前焦点仍指向该已完成 change，则更新 `.workflow/roadmap.md`：
+
+1. 在同一 version 内优先选择下一个未完成且依赖已满足或当前阶段可先推进的 change。
+2. 同一 version 没有可推进 change 时，按 roadmap 顺序选择后续 version 中第一个未完成且可推进的 change。
+3. 若存在未完成 change 但依赖未满足，选择最应该先解除依赖的 change，并在“下一步”写明阻塞关系。
+4. 若所有活跃 changes 均已完成，将当前焦点标记为无活跃 change，并在“下一步”提示可按 version 执行 `archive-version`。
+
+更新边界：
+
+- 只更新 `.workflow/roadmap.md` 的“当前焦点”和“下一步”入口。
+- 不在 roadmap 写入单个 change 的阶段状态；阶段仍以各 change 的 `progress.md` 为准。
+- 不移动、删除或归档 change；归档仍由 `archive-version` 负责。
+- 如果用户显式指定已完成 change，只做焦点校正和下一步提示，不继续自动调用新焦点的阶段技能。
 
 ## 依赖检查规则
 
