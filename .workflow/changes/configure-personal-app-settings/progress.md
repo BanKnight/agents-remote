@@ -10,9 +10,9 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 下一步技能：specify-change
-- 阻塞项：依赖 `setup-monorepo-service-boundaries` 明确 web/api/service boundary 后再实现；规格阶段可先推进。
+- 当前阶段：待实现
+- 下一步技能：implement-change
+- 阻塞项：依赖 `setup-monorepo-service-boundaries` 明确 web/api/service boundary 后再实现；该依赖已完成，可进入实现。
 
 ## 阶段流转
 
@@ -30,3 +30,6 @@
 ## 进展记录
 
 - 已进入 roadmap，完整来源见 `intents.md`。
+- 已完成 specify-change：创建 `specs/personal-app-config/spec.md` 与 `specs/private-access-auth/spec.md`；当前可进入 `design-change`。
+- 已完成 design-change：创建 `design/overview.md`、`design/architecture.md`、`design/api.md`、`design/data.md`、`design/error-handling.md`、`design/risks.md`；当前可进入 `plan-change`。
+- 已完成 plan-change：创建 `plan.md` 与 `tasks.md`；当前可进入 `implement-change`。
