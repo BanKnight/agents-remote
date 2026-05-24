@@ -8,4 +8,5 @@
 
 ## 文档
 
+- [e2e-quality-baseline.md](./e2e-quality-baseline.md) — 说明如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
 - [personal-deployment-configuration.md](./personal-deployment-configuration.md) — 说明个人私有部署下首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。

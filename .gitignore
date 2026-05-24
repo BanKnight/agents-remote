@@ -2,6 +2,7 @@ node_modules/
 .bun/
 dist/
 *.tsbuildinfo
+test-results/
 .env
 .env.*
 !.env.example
