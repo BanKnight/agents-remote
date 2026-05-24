@@ -1,94 +1,50 @@
 # plan
 
-## 上下文清单
+## Change 目标
 
-<!-- implement-change 启动前应读取这些路径。必须具体到文件或目录，不要只写“参考 docs”。 -->
-
-### 运行态上下文
-
-- `.workflow/changes/<change-id>/intents.md`：
-- `.workflow/changes/<change-id>/specs/`：
-- `.workflow/changes/<change-id>/design/`：
-- `.workflow/changes/<change-id>/tasks.md`：
-
-### 长期文档上下文
-
-<!-- 按需列出本 change 实现需要遵循的长期 docs；如果无需读取，写明理由。 -->
-
-- 是否需要读取长期 docs：是/否
-- 读取或不读取理由：
-- `docs/specs/...`：
-- `docs/design/...`：
-- `docs/architecture/...`：
-- `docs/runbooks/...`：
-
-### 代码上下文
-
-<!-- 列出实现前必须阅读的关键代码目录或文件。 -->
-
-- `src/...`：
-
-## Change 概览
-
-- change-id：
-- 所属 version：
-- 当前阶段：plan-change
-
-## 输入依据
-
-### Change 来源
-
-- `.workflow/changes/<change-id>/intents.md`：
-
-### 行为契约
-
-- `.workflow/changes/<change-id>/specs/`：
-
-### 设计依据
-
-- `.workflow/changes/<change-id>/design/`：
-- 如果没有 design，原因：
-
-## 长期文档使用
-
-<!-- 按需列出具体路径；如果无需读取长期 docs，写明原因。 -->
-
-- 是否需要读取长期 docs：是/否
-- 读取或不读取理由：
-- `docs/specs/...`：
-- `docs/design/...`：
-- `docs/architecture/...`：
-- `docs/runbooks/...`：
-
-## 实现约束
-
-<!-- 从 specs/design/docs 中提炼会影响实现的约束。 -->
+<!-- 用 1-3 句话说明本 change 要达成什么，以及完成后解锁什么。不要粘贴 intents/spec 全文。 -->
 
 - 
 
-## 依赖分析
+## 局部 big picture
+
+<!-- 说明本 change 在当前 version / 后续 changes / 系统演进中的位置。关注为什么现在做、与上下游的关系。 -->
+
+- 
+
+## 执行策略
+
+<!-- 说明从 specs/design 走到实现或收口的策略、关键路径和边界。 -->
+
+- 
+
+## 任务顺序依据
+
+<!-- 说明 tasks.md 为什么这样排序：哪些任务阻塞后续，哪些可以后置，为什么。 -->
+
+- 
+
+## 额外上下文
+
+<!--
+同一 change 目录内的 intents.md、progress.md、specs/、design/、plan.md、tasks.md 是默认上下文，不要在这里逐项罗列。
+这里只写默认 change 目录之外需要额外读取的长期 docs、外部仓库、本地源码、代码入口、环境/权限/人工确认等。
+如果没有额外上下文，写：无额外上下文；默认读取本 change 目录产物。
+-->
+
+- 
+
+## 依赖与阻塞
 
 ### 阶段依赖
-
-<!-- 哪些阶段必须先完成，哪些可以后置。 -->
 
 - 
 
 ### 任务依赖
 
-<!-- 哪些任务依赖其他任务、spec、design 或长期 docs。 -->
-
 - 
 
 ### 外部依赖
-
-<!-- 第三方服务、配置、权限、数据、人工确认等。 -->
-
-- 
-
-## 实现策略
-
-<!-- 说明实现顺序、关键路径、模块边界和依赖。 -->
 
 - 
 
@@ -98,13 +54,7 @@
 
 - 
 
-## 任务拆解依据
-
-<!-- 说明 tasks.md 为什么这样拆，如何覆盖 specs/design/docs。 -->
-
-- 
-
-## 风险与验证关注点
+## 风险与验证重点
 
 - 
 
