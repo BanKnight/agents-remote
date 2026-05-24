@@ -8,4 +8,4 @@
 
 ## 文档
 
-- （无）
+- [agent-access-options.md](./agent-access-options.md) — 汇总 hapi、remodex、Codex、Claude 与社区反馈对 Agent 接入路线和统一协议设计的调研结论。
