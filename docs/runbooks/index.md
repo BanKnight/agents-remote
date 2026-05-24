@@ -8,4 +8,4 @@
 
 ## 文档
 
-- （无）
+- [personal-deployment-configuration.md](./personal-deployment-configuration.md) — 说明个人私有部署下首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。
