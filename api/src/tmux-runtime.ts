@@ -1,10 +1,5 @@
 import { spawn } from "node:child_process";
-import type { AgentProvider } from "@agents-remote/shared";
-import {
-  SessionRegistryError,
-  type RuntimeResources,
-  type SessionMetadata,
-} from "./session-registry";
+import type { RuntimeResources, SessionMetadata } from "./session-registry";
 
 export class TmuxRuntime implements RuntimeResources {
   async exists(tmuxSessionName: string) {
@@ -13,30 +8,22 @@ export class TmuxRuntime implements RuntimeResources {
   }
 
   async startTerminal(metadata: SessionMetadata) {
-    await this.startSession(metadata, shellCommand());
+    await this.startCommand(metadata, shellCommand());
   }
 
-  async startAgent(metadata: SessionMetadata) {
-    const command = providerCommand(metadata.provider);
+  async startCommand(metadata: SessionMetadata, command: string) {
+    const result = await runTmux([
+      "new-session",
+      "-d",
+      "-s",
+      metadata.tmuxSessionName,
+      "-c",
+      metadata.projectPath,
+      command,
+    ]);
 
-    if (!command) {
-      throw new SessionRegistryError(
-        "SESSION_PROVIDER_UNAVAILABLE",
-        "Agent provider is unavailable",
-      );
-    }
-
-    try {
-      await this.startSession(metadata, command);
-    } catch (error) {
-      if (error instanceof TmuxRuntimeError) {
-        throw new SessionRegistryError(
-          "SESSION_PROVIDER_UNAVAILABLE",
-          "Agent provider is unavailable",
-        );
-      }
-
-      throw error;
+    if (result.exitCode !== 0) {
+      throw new TmuxRuntimeError("Unable to start terminal session", result.stderr);
     }
   }
 
@@ -81,22 +68,6 @@ export class TmuxRuntime implements RuntimeResources {
 
     return result.stdout;
   }
-
-  private async startSession(metadata: SessionMetadata, command: string) {
-    const result = await runTmux([
-      "new-session",
-      "-d",
-      "-s",
-      metadata.tmuxSessionName,
-      "-c",
-      metadata.projectPath,
-      command,
-    ]);
-
-    if (result.exitCode !== 0) {
-      throw new TmuxRuntimeError("Unable to start terminal session", result.stderr);
-    }
-  }
 }
 
 export class TmuxRuntimeError extends Error {
@@ -110,18 +81,6 @@ export class TmuxRuntimeError extends Error {
 }
 
 const shellCommand = () => process.env.SHELL ?? "/bin/bash";
-
-const providerCommand = (provider: AgentProvider | undefined) => {
-  if (provider === "claude") {
-    return "claude";
-  }
-
-  if (provider === "codex") {
-    return "codex";
-  }
-
-  return undefined;
-};
 
 const runTmux = (args: string[]) =>
   new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {

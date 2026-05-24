@@ -5,12 +5,13 @@ import type {
   ProjectDetailResponse,
   ProjectListResponse,
 } from "@agents-remote/shared";
+import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
 import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-auth";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
-import { SessionRegistry } from "./session-registry";
+import { SessionRegistry, type RuntimeResources } from "./session-registry";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadSettings, StartupError } from "./settings";
@@ -195,8 +196,18 @@ export const startApi = async () => {
   const settings = await loadSettings();
   const runtimePaths = await ensureRuntimeDir(resolveRuntimePaths());
   const auth = new AuthService({ appPassword: settings.appPassword });
-  const runtime = new TmuxRuntime();
-  const streamController = new SessionStreamController(runtime);
+  const tmuxRuntime = new TmuxRuntime();
+  const agentRuntime = new AgentRuntime(tmuxRuntime);
+  const runtime: RuntimeResources = {
+    exists: (tmuxSessionName) => tmuxRuntime.exists(tmuxSessionName),
+    close: (tmuxSessionName) => tmuxRuntime.close(tmuxSessionName),
+    startAgent: (metadata) => agentRuntime.startAgent(metadata),
+    startTerminal: (metadata) => tmuxRuntime.startTerminal(metadata),
+    write: (tmuxSessionName, data) => tmuxRuntime.write(tmuxSessionName, data),
+    resize: (tmuxSessionName, cols, rows) => tmuxRuntime.resize(tmuxSessionName, cols, rows),
+    capture: (tmuxSessionName) => tmuxRuntime.capture(tmuxSessionName),
+  };
+  const streamController = new SessionStreamController(tmuxRuntime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const server = Bun.serve<WebSocketData>({

@@ -48,6 +48,18 @@ test("SessionRegistry creates Agent and Terminal metadata with separate DTO sema
   expect(metadata.tmuxSessionName).not.toContain("中文");
 });
 
+test("SessionRegistry uses provider profiles for default Agent display names", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_display123456",
+  });
+
+  const agent = await registry.createAgentSession({ project, provider: "codex" });
+
+  expect(agent.displayName).toBe("Codex Agent displa");
+});
+
 test("createTmuxSessionName keeps original project names out of runtime resource names", () => {
   const name = createTmuxSessionName(
     "hello world 中文",

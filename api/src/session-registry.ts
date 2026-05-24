@@ -10,6 +10,7 @@ import type {
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { ResolvedProjectPath } from "./project-paths";
 
 export type SessionMetadata = {
@@ -351,7 +352,8 @@ const defaultDisplayName = (
   const suffix = sessionId.split("_").at(-1)?.slice(0, 6) ?? sessionId.slice(0, 6);
 
   if (type === "agent") {
-    return `${provider === "codex" ? "Codex" : "Claude"} Agent ${suffix}`;
+    const profile = getAgentProviderProfile(provider);
+    return `${profile?.displayNamePrefix ?? "Claude Agent"} ${suffix}`;
   }
 
   return `Terminal ${suffix}`;
