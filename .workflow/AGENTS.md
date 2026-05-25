@@ -49,7 +49,7 @@
 - `roadmap.md` 只作为当前活跃 versions/changes 的索引和当前焦点入口，不是历史总账，也不是 change 状态表。
 - `changes/<change-id>/intents.md` 保存完整原始意图和规划来源；roadmap 只引用该路径，不复制原文。
 - `changes/<change-id>/progress.md` 保存该 change 当前阶段、局部阻塞和进展记录；不保存下一步技能。
-- `step-change` 是推荐的 change 推进入口：它读取 roadmap 当前焦点或指定 change 的 `progress.md`，独占维护“当前阶段 → 阶段技能”的路由，并在产物检查通过后推进 `progress.md`；当当前焦点 change 完成后，只同步更新 roadmap 的“当前焦点 / 下一步”入口到下一个合适 change，不在 roadmap 维护单个 change 阶段状态。
+- `step-change` 是推荐的 change 推进入口：它读取 roadmap 当前焦点或指定 change 的 `progress.md`，独占维护“当前阶段 → 阶段技能”的路由，并在产物检查通过后推进 `progress.md`；当当前焦点 change 完成后，同步更新 roadmap 的“当前焦点 / 下一步”入口到下一个合适 change；如果该 change 是所在 version 的最后一个已完成 change，应触发 `archive-version` 做整版本归档检查，不在 roadmap 维护单个 change 阶段状态。
 - `templates/` 保存运行态产物模板，命令生成文件时应优先使用项目本地模板。
 - `changes/<change-id>/` 保存单个未归档 change 的完整运行态上下文。
 - `archive/` 保存已归档 version 与 change 上下文。
@@ -60,11 +60,11 @@
 - `describe-project` 可在任意阶段更新 `docs/project.md`，用于补全项目认知 big picture。
 - `clarify-intents` 只更新 `.workflow/intents.md`。
 - `plan-roadmap` 更新 `.workflow/roadmap.md`，建立或更新 `.workflow/changes/<change-id>/intents.md` 与 `progress.md`，并从 `.workflow/intents.md` 移出已分配意图。
-- `step-change` 读取 roadmap 当前焦点或指定 change 的 `progress.md`，只负责判断当前阶段、调用对应阶段技能、检查产物并更新 `progress.md`；如果目标 change 完成且仍是 roadmap 当前焦点，可同步更新 roadmap 的“当前焦点 / 下一步”；不直接编写 spec/design/plan/tasks/verify/docs 正文。
+- `step-change` 读取 roadmap 当前焦点或指定 change 的 `progress.md`，只负责判断当前阶段、调用对应阶段技能、检查产物并更新 `progress.md`；如果目标 change 完成且仍是 roadmap 当前焦点，可同步更新 roadmap 的“当前焦点 / 下一步”；如果同一 version 下所有 changes 已完成，应主动触发 `archive-version`，不要只停留在“可归档”提示；不直接编写 spec/design/plan/tasks/verify/docs 正文。
 - `specify-change` 只更新 `.workflow/changes/<change-id>/specs/`，用于明确 what。
 - `design-change` 只更新 `.workflow/changes/<change-id>/design/`，用于明确 how。
 - `plan-change` 补齐 `.workflow/changes/<change-id>/plan.md` 与 `tasks.md`，其中 `plan.md` 必须提供实现上下文，并按需说明长期 docs 使用情况。
-- `implement-change`、`verify-change` 分别补齐实现状态与 verify 证据。
+- `implement-change`、`verify-change` 分别补齐实现状态与 verify 证据；涉及 UI、浏览器、CLI/TUI、终端式交互、实时流、可视化报表或其他用户可见能力时，`verify-change` 必须主动采集截图、trace、日志、录屏、自动化测试报告或等价 artifact，并在 `verify.md` 中记录路径或跳过理由。
 - `distill-change` 才能把已验证的 change specs、design、implementation 经验沉淀到 `docs/specs/`、`docs/design/`、`docs/architecture/` 与 `docs/runbooks/`。
 - `archive-version` 以 version 为单位归档，归档后从活跃 roadmap 移入 archive。
 

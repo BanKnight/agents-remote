@@ -15,7 +15,7 @@ description: 在 change 验证后，将长期 WHAT/HOW/设计/架构/ADR/runbook
 - 长期 design：`docs/design/`
 - 长期 HOW / architecture / ADR：`docs/architecture/`
 - runbook：`docs/runbooks/`
-- project big picture：按需更新 `docs/project.md`
+- project big picture：必须评估并按需更新 `docs/project.md`
 
 `distill-change` 不是归档技能。它只负责让长期知识变成主线文档，归档由后续 `archive-version` 处理。
 
@@ -71,6 +71,7 @@ description: 在 change 验证后，将长期 WHAT/HOW/设计/架构/ADR/runbook
 .workflow/changes/<change-id>/specs/
 .workflow/changes/<change-id>/design/
 .workflow/changes/<change-id>/verify.md
+docs/project.md
 ```
 
 按需读取：
@@ -79,7 +80,6 @@ description: 在 change 验证后，将长期 WHAT/HOW/设计/架构/ADR/runbook
 .workflow/changes/<change-id>/plan.md
 .workflow/changes/<change-id>/tasks.md
 .workflow/changes/<change-id>/artifacts/
-docs/project.md
 docs/specs/
 docs/design/
 docs/architecture/
@@ -127,7 +127,8 @@ git diff / git status
 4. `verify.md` 是否存在。
 5. `verify.md` 是否存在未解决 CRITICAL。
 6. `progress.md` 中当前阶段是否为 `待沉淀`，或 verify 证据是否显示已经处于可沉淀阶段。
-7. `docs/` 中是否已有相关长期 specs/design/architecture/project 文档。
+7. `docs/project.md` 是否需要补充项目结构、技术栈、架构边界、易错点、开发/验证准则或长期术语。
+8. `docs/` 中是否已有相关长期 specs/design/architecture/project 文档。
 
 根据状态处理：
 
@@ -144,9 +145,10 @@ git diff / git status
 3. 读取 specs/design/verify，以及必要的 plan/tasks/artifacts/代码变更。
 4. 读取相关长期 docs，判断哪些知识需要沉淀。
 5. 分别处理 WHAT / HOW / runbook / project knowledge。
-6. 更新对应 `docs/` 文件。
-7. 更新对应目录的 `index.md`。
-8. 汇报更新了哪些长期文档、哪些内容无需沉淀、哪些内容仍阻塞。
+6. 必须评估 `docs/project.md` 是否需要补充项目级 big picture；如果不更新，记录无需更新的具体理由。
+7. 更新对应 `docs/` 文件。
+8. 更新对应目录的 `index.md`。
+9. 汇报更新了哪些长期文档、哪些内容无需沉淀、哪些内容仍阻塞。
 
 ## 模板映射规则
 
@@ -272,9 +274,14 @@ docs/project.md
 - 关键用户场景变化。
 - 领域概念或术语变化。
 - 长期工程原则变化。
+- 项目结构、主要目录职责、模块边界或跨模块协作规则。
+- 技术栈、运行时、质量门禁、测试/E2E harness 或常驻进程管理准则。
+- 开发中容易反复犯错的稳定边界，例如路径安全、只读/写入边界、状态归属、workflow 归档规则、verify artifact 要求。
 - 对后续 roadmap/design/implementation 有持续影响的项目级事实。
 
 不要把单次实现细节或临时任务状态写入 `docs/project.md`。
+
+如果本次不更新 `docs/project.md`，必须在 distill 输出或 progress 记录中说明“不更新”的理由，不能静默跳过。
 
 ## docs 索引规则
 
@@ -335,7 +342,7 @@ docs/project.md
 - 已检查 WHAT / HOW / runbook / project knowledge 是否需要长期沉淀。
 - 需要沉淀的 specs 已合并到 `docs/specs/`。
 - 需要沉淀的 design/architecture/ADR/runbook 已写入 `docs/design/`、`docs/architecture/` 或 `docs/runbooks/`。
-- 如影响 project big picture，`docs/project.md` 已更新。
+- 如影响 project big picture，`docs/project.md` 已更新；如不影响，已记录无需更新的理由。
 - 对应 docs 索引已同步维护。
 - 没有只留在 `.workflow/changes/<change-id>/` 中、但未来仍需要复用的知识。
 - 下一步可以进入 `archive-version`。

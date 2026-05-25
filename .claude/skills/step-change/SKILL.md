@@ -93,7 +93,7 @@ docs/runbooks/
 | 待实现 | 调用 `implement-change <change-id>` |
 | 待验证 | 调用 `verify-change <change-id>` |
 | 待沉淀 | 调用 `distill-change <change-id>` |
-| 已完成 | 不自动归档；若 roadmap 当前焦点仍指向本 change，则更新当前焦点到下一个合适 change；若无可推进 change，提示可按 version 执行 `archive-version` |
+| 已完成 | 检查是否为所在 version 的最后一个未归档 change；如果是，触发 `archive-version <version>`；否则若 roadmap 当前焦点仍指向本 change，则更新焦点到下一个合适 change |
 | 阻塞 | 汇报阻塞，不调用阶段技能 |
 
 `step-change` 一次 invocation 默认只推进一个阶段。如果专业阶段技能本身只完成了部分工作或进入阻塞，`step-change` 不继续调用后续阶段。
@@ -127,7 +127,7 @@ docs/runbooks/
 - 直接编写 specs/design/plan/tasks/verify/docs 正文。
 - 直接修改代码实现。
 - 代替专业阶段技能做领域判断。
-- 自动归档 version。
+- 自动归档未完成或未确认可归档的 version。
 - 在阻塞未解除时强行推进。
 
 ## 执行规则
@@ -140,7 +140,8 @@ docs/runbooks/
 6. 专业 skill 返回后，检查本阶段完成标志和关键 artifact。
 7. 更新 `progress.md` 到下一阶段，或记录阻塞/部分完成。
 8. 如果目标 change 已完成且仍是 roadmap 当前焦点，按“roadmap 焦点更新规则”同步 `.workflow/roadmap.md` 的当前焦点和下一步。
-9. 简短汇报本轮推进结果和下一步。
+9. 如果目标 change 已完成，按“version 完成归档触发规则”检查是否应调用 `archive-version`。
+10. 简短汇报本轮推进结果和下一步。
 
 ## roadmap 焦点更新规则
 
@@ -159,6 +160,24 @@ docs/runbooks/
 - 不在 roadmap 写入单个 change 的阶段状态；阶段仍以各 change 的 `progress.md` 为准。
 - 不移动、删除或归档 change；归档仍由 `archive-version` 负责。
 - 如果用户显式指定已完成 change，只做焦点校正和下一步提示，不继续自动调用新焦点的阶段技能。
+
+## version 完成归档触发规则
+
+当 `step-change` 将目标 change 推进到 `已完成`，或进入时发现目标 change 已经是 `已完成`，必须判断它所在 version 是否已经全部完成。
+
+触发条件：
+
+1. 读取 `.workflow/roadmap.md`，确认目标 change 所属 version。
+2. 读取同一 version 下所有 change 的 `progress.md`。
+3. 若所有 change 都是 `已完成`，且没有未解决阻塞，则立即调用 `archive-version <version>`。
+4. 若存在未完成 change，则不归档，只按 roadmap 焦点规则切到下一个可推进 change。
+5. 若归档前检查发现缺少 verify/distill/tasks 证据，停止归档并汇报应回到哪个阶段技能修正。
+
+边界：
+
+- 归档仍由 `archive-version` 执行，`step-change` 只负责识别“最后一个 change 已完成”的触发点。
+- 不要只提示用户“可以归档”后结束；在 version 已满足归档条件时应主动触发归档。
+- 如果用户显式只要求推进单个 change 且不要归档，尊重用户指令，只报告归档已就绪。
 
 ## 依赖检查规则
 

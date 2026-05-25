@@ -13,4 +13,4 @@
 ## 文档
 
 - [AGENTS.md](./AGENTS.md) — 定义 `docs/` 的长期文档治理规则。
-- [project.md](./project.md) — 项目认知 big picture，记录项目定位、用户场景、领域概念与长期准则。
+- [project.md](./project.md) — 项目认知 big picture，记录项目定位、用户场景、领域概念、项目结构、技术栈、易错边界与长期准则。

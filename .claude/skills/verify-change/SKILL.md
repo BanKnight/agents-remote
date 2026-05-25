@@ -106,6 +106,7 @@ git diff / git status
 - docs 是长期约束来源。
 - artifacts 是验证证据存放位置。
 - 如果某类 artifact 缺失，允许降级验证，但必须在 `verify.md` 中记录跳过原因。
+- 涉及 UI、浏览器、CLI/TUI、文件/内容查看器、diff viewer、终端式交互、实时流、可视化报表或任何用户可见交互时，必须主动保存截图、trace、日志、录屏、自动化测试报告或等价 artifact；如果无法保存，必须在 `verify.md` 中写明原因。
 
 ## 不负责
 
@@ -133,7 +134,8 @@ git diff / git status
 6. `tasks.md` 是否存在。
 7. `verify.md` 是否已存在。
 8. `artifacts/` 是否存在；不存在则按需创建。
-9. `progress.md` 中当前阶段是否为 `待验证`，或是否已有实现结果可验证。
+9. 如果 change 涉及 UI、浏览器、CLI/TUI、终端式交互、实时流、可视化报表或其他用户可见行为，确认本轮将保存截图、trace、日志、录屏、自动化测试报告或等价 artifact。
+10. `progress.md` 中当前阶段是否为 `待验证`，或是否已有实现结果可验证。
 
 根据状态处理：
 
@@ -215,7 +217,7 @@ harness 必须尽量做到：快、稳、准、可复现、可追踪。
 - 失败路径。
 - 用户可见行为。
 
-涉及 UI 时，应优先使用浏览器或 e2e harness 验证，而不仅是类型检查或单元测试。
+涉及 UI、浏览器、CLI/TUI、终端式交互、实时流、可视化报表或其他用户可见行为时，应优先使用真实交互 harness 验证，而不仅是类型检查或单元测试。交互式能力的 Scenario 必须至少记录一种可审查 artifact：截图、trace、video、自动化测试报告、交互日志、浏览器 console 日志、服务日志或等价证据；没有 artifact 的交互式 verify 只能写成证据不足或明确说明为什么无法采集。
 
 ### 5. Evidence 验证
 
@@ -224,6 +226,7 @@ harness 必须尽量做到：快、稳、准、可复现、可追踪。
 - 测试技能与结果。
 - e2e/手动操作步骤。
 - 截图、日志、trace、benchmark。
+- 交互式验证 artifact：截图、trace、video、自动化测试报告、交互日志、浏览器 console 日志、服务日志或等价证据。
 - 关键代码引用。
 - artifacts 路径。
 
@@ -298,6 +301,7 @@ CRITICAL → WARNING → SUGGESTION
 - Delta 验证结论。
 - Scenario 验证结论。
 - Evidence 清单。
+- 交互式 artifact 清单；如果不适用或无法采集，记录理由。
 - Completeness / Correctness / Coherence 评分表。
 - CRITICAL / WARNING / SUGGESTION 问题清单。
 - 回流建议。
@@ -321,6 +325,7 @@ CRITICAL → WARNING → SUGGESTION
 
 - 目标 change。
 - 使用了哪些 harness。
+- 采集了哪些截图、trace、日志或其他 artifact；如未采集，说明原因。
 - `verify.md` 创建或更新位置。
 - 当前结论：通过 / 条件通过 / 不通过 / 证据不足。
 - 如不通过，建议回到哪个技能。
