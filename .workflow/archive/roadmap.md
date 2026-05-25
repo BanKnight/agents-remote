@@ -68,3 +68,20 @@
     归档路径：.workflow/archive/changes/setup-e2e-quality-baseline/
     verify：通过；无 CRITICAL/WARNING。
     distill：已沉淀 `docs/specs/e2e-quality-baseline/spec.md`、`docs/architecture/e2e-quality-baseline.md`、`docs/runbooks/e2e-quality-baseline.md`。
+
+### version: v0.4-project-inspection-tools
+
+- 归档时间：2026-05-25
+- 完成结果：完成 Project 内只读文件浏览/预览和只读 Git diff 查看能力，让远程观察不仅限于会话输出；相关长期 WHAT/HOW/architecture 已沉淀到 docs。
+- version 目标：在 Project 内提供只读文件浏览/预览和只读 Git diff 查看能力，让远程观察不仅限于会话输出。
+- verify 结论摘要：两个 changes 均有 `verify.md`，结论通过，无未解决 CRITICAL/WARNING。
+- distill 结论摘要：已沉淀 File Browser preview 与 Git diff viewer 的长期 specs/design/architecture 文档，并同步 docs 索引。
+- 包含 changes：
+  - change-id：implement-file-browser-preview
+    归档路径：.workflow/archive/changes/implement-file-browser-preview/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/file-browser-preview/spec.md`、`docs/design/file-browser-preview.md`、`docs/architecture/file-browser-preview.md`。
+  - change-id：implement-git-diff-viewer
+    归档路径：.workflow/archive/changes/implement-git-diff-viewer/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/git-diff-viewer/spec.md`、`docs/design/git-diff-viewer.md`、`docs/architecture/git-diff-viewer.md`。
