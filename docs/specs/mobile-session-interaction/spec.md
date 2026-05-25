@@ -9,9 +9,57 @@
 
 ## Requirements
 
-### Requirement: Session detail provides a compact returnable mobile console header
+### Requirement: Agent and Terminal details use terminal-first workspace structure
 
-系统 SHALL 在手机视口中为 Agent/Terminal Session detail 提供节省高度的顶部上下文，并提供返回 Project 工作区的明确入口。
+系统 SHALL 将 Agent Session detail 与 Terminal Session detail 呈现为 terminal-first 工作区，把可读输出和当前 session 输入作为页面主体，而不是 metadata dashboard。
+
+#### Scenario: User opens an Agent Session detail
+
+- **WHEN** 用户从 Project Agent workspace 打开某个 Agent instance detail
+- **THEN** 页面顶部以紧凑方式展示返回入口、provider 标记或等价 Agent 上下文、displayName、runtime status 和 transport status
+- **AND** 页面主体优先展示可滚动 terminal output / stream 内容
+- **AND** 底部或等价输入区域服务当前 Agent Session 输入和快捷键
+- **AND** 大块 metadata、说明文案或辅助资源入口不得挤占 terminal output 主区域
+
+#### Scenario: User opens a Terminal Session detail
+
+- **WHEN** 用户从 Project Terminal workspace、Agent detail 派生入口或其他允许入口打开某个 Terminal Session detail
+- **THEN** 页面顶部以紧凑方式展示返回入口、Terminal 上下文、displayName、runtime status 和 transport status
+- **AND** 页面主体优先展示可滚动 shell output / stream 内容
+- **AND** 底部或等价输入区域服务当前 Terminal Session 输入和快捷键
+- **AND** Terminal detail 不被呈现为 Claude/Codex Agent 会话或 metadata dashboard
+
+### Requirement: Agent detail exposes contextual tools without displacing terminal work
+
+系统 SHALL 在 Agent Session detail 中提供 Files、Git、+Terminal 和 Meta 等上下文入口，同时保持 terminal-first 主工作区。
+
+#### Scenario: User scans Agent detail tools
+
+- **WHEN** 用户打开 Agent Session detail
+- **THEN** 页面提供 Files 和 Git 入口，用于查看当前 Agent/Project 上下文中的资源或变更
+- **AND** 页面提供创建或进入 Terminal 的入口，用于从 Agent context 派生 shell 工作
+- **AND** 页面提供 Meta 入口，用于查看 provider、Project、session id、status 等 metadata
+- **AND** 这些入口是辅助操作，不替代 terminal output 和输入主区域
+
+#### Scenario: User opens Agent metadata
+
+- **WHEN** 用户触发 Meta 入口
+- **THEN** metadata 以浮窗、弹层或等价轻量 overlay 呈现
+- **AND** 用户可以关闭该 metadata 呈现并回到同一 terminal-first detail
+- **AND** metadata 呈现只展示已有真实 session/project/provider/status/stream 字段，不伪造 provider-native metadata
+
+### Requirement: Terminal detail remains a focused shell detail
+
+系统 SHALL 让 Terminal Session detail 保持 focused shell，不展示 Agent-only Files、Git、+Terminal 或 Meta 工具组。
+
+#### Scenario: User scans Terminal detail header
+
+- **WHEN** 用户打开 Terminal Session detail
+- **THEN** header 只展示返回、Terminal 标记或等价上下文、status、close/reconnect/resize 等与当前 shell 直接相关的操作
+- **AND** 不展示 Agent detail 专属的 Files、Git、+Terminal 快捷入口
+- **AND** 不展示 provider metadata 或 Agent-only Meta 浮窗入口
+
+
 
 #### Scenario: User opens a session detail on mobile
 

@@ -166,6 +166,46 @@
 - **AND** 页面底部不显示 Project 二级导航
 - **AND** 底部区域优先服务当前详情页内容或 runtime input
 
+### Requirement: Instance detail return targets preserve source context
+
+系统 SHALL 让 Agent/Terminal instance detail 的返回路径保留 Project workspace 或来源 Agent context，使用户离开 detail 后仍处于可理解的 Project scope。
+
+#### Scenario: User returns from an Agent detail
+
+- **WHEN** 用户从 Agent Session detail 点击顶部返回
+- **THEN** 系统回到同一 Project 的 Agent workspace 或等价来源上下文
+- **AND** Agent workspace active 状态仍可通过 URL-visible route/search 或等价机制恢复
+
+#### Scenario: User returns from a direct Terminal detail
+
+- **WHEN** 用户从 Project Terminal workspace 打开 Terminal Session detail 并点击顶部返回
+- **THEN** 系统回到同一 Project 的 Terminal workspace 或等价来源上下文
+- **AND** 返回行为不要求用户经过 Home 或丢失 Project scope
+
+#### Scenario: User enters Terminal detail from Agent detail
+
+- **WHEN** 用户从 Agent Session detail 使用 +Terminal 创建或进入 Terminal detail
+- **THEN** Terminal detail 保留回到来源 Agent detail 的顶部返回入口或等价来源上下文
+- **AND** Terminal detail 不显示 Project 二级底部导航或 Agent-only Files/Git/+Terminal 工具组
+
+### Requirement: Agent detail contextual resource entries remain contextual
+
+系统 SHALL 让 Agent Session detail 中的 Files、Git 和 +Terminal 保持为当前 Agent context 派生入口，而不是把 Project 二级导航搬进 detail 页面。
+
+#### Scenario: User opens Files from Agent detail
+
+- **WHEN** 用户从 Agent Session detail 进入 Files contextual view
+- **THEN** 页面保留顶部返回到 Agent detail 或 stream 的入口
+- **AND** 手机视口不显示 Project 二级底部导航
+- **AND** Files 内容仍遵守 Project-safe path 和只读 inspection 边界
+
+#### Scenario: User opens Git from Agent detail
+
+- **WHEN** 用户从 Agent Session detail 进入 Git contextual view
+- **THEN** 页面保留顶部返回到 Agent detail 或 stream 的入口
+- **AND** 手机视口不显示 Project 二级底部导航
+- **AND** Git 内容仍遵守只读 status/diff inspection 边界
+
 ### Requirement: Route-visible workspace state is not stored only in shell-local state
 
 系统 SHALL 让用户可感知的页面层级和需要返回/刷新恢复的 workspace 状态由路由或等价 URL-visible 机制承载，而不是只保存在 Jotai atom 或组件本地状态中。

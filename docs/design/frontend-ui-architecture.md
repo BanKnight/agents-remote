@@ -30,6 +30,11 @@
 - Project Agent workspace 是 Project 默认运行态二级页；顶部提供 `+ Claude` / `+ Codex` provider 创建入口，主体优先展示当前 Agent instances。
 - 当前 Agent instances 与 provider history / future restore 必须分区展示；provider history API 未完成前只能显示 staged/empty/future 说明，不提供恢复操作或伪造历史数据。
 - Agent workspace 只展示真实 `AgentSession` DTO 支持的 provider、displayName、status、id 和进入/关闭行为；不要为了贴近 prototype 伪造 task summary、recent output 或 relative time。
+- Agent/Terminal instance detail 是深层/contextual runtime detail：共享 terminal-first 主体、紧凑顶部返回、运行状态、主输出区和底部 input drawer；移动端不显示 Project 二级底部导航。
+- Agent detail 可以提供 Files、Git、+Terminal、Meta contextual tools；这些是 Agent context 派生入口，不是 Project 二级导航，也不应替代 terminal output/input 主任务。
+- Terminal detail 保持 focused shell：不显示 Agent-only Files/Git/+Terminal/Meta，不展示 provider metadata，只保留 shell 相关返回、状态、close/reconnect/resize 和输入控制。
+- Agent-derived Terminal detail 应保留来源 Agent context 的返回路径；直接从 Project Terminal workspace 打开的 Terminal detail 默认回 Terminal workspace。
+- Agent detail Meta 使用本地 overlay 展示真实 project/session/provider/status/stream 字段，不新增 API，不伪造 provider-native metadata。
 - 已验证的共享 UI primitive 边界是轻量的 nav item、icon marker、status pill、action button 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成通用组件库。
 
 ## 关键规则
@@ -73,6 +78,6 @@
 - change：align-home-project-entry
 - verify 证据：`.workflow/changes/align-home-project-entry/verify.md`
 - 运行态验证证据：`.workflow/changes/align-home-project-entry/artifacts/browser-home-entry/home-entry-check.log` 与同目录 desktop/mobile Home entry 截图
-- change：align-project-agent-workspace
-- verify 证据：`.workflow/changes/align-project-agent-workspace/verify.md`
-- 运行态验证证据：`.workflow/changes/align-project-agent-workspace/artifacts/browser-agent-workspace/agent-workspace-check.log` 与同目录 desktop/mobile Agent workspace 截图
+- change：align-instance-detail-workspaces
+- verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
+- 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图

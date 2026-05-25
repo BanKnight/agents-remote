@@ -25,6 +25,9 @@
 - Agent Session 与 Terminal Session 使用不同默认 quick key 集合和排序，但共享渲染与发送模式；Agent 默认集合必须覆盖上/下方向键和 Enter，以支持 CLI 选择项导航；第一轮不提供用户配置、排序持久化或 provider capability API。
 - 发送入口由 transport/runtime 可交互状态控制：stream 未 connected、runtime ended 或 close pending 时，textarea/Send/quick keys 应禁用或表达不可发送状态，同时保留 reconnect/back 等恢复路径。
 - 重新进入或刷新 Session detail 时，前端应先呈现 connecting/recovering 状态并尝试恢复 stream；只有恢复失败后才显示错误和重连入口。
+- Agent detail 的 Files、Git、+Terminal、Meta 是 header contextual tools；移动端可换行或使用短标签，但不得撑破 header，也不得变成底部 Project 二级导航。
+- Terminal detail 是 focused shell；移动端不展示 Agent-only Files/Git/+Terminal/Meta，也不展示 provider metadata。
+- Agent-derived Terminal detail 可以通过 route/search 或等价来源状态保留回 Agent detail 的顶部返回；这不改变 Terminal detail 的 focused shell 边界。
 - 第一轮继续使用现有 terminal-like text stream 容器，通过等宽字体、可读字号/行高、滚动和 viewport 高度约束保障手机可读性；完整 xterm/ANSI/TUI 支持留给后续技术设计。
 
 ## 关键规则
@@ -50,6 +53,6 @@
 - change：implement-mobile-session-interaction
 - verify 证据：`.workflow/changes/implement-mobile-session-interaction/verify.md`
 - 运行态验证证据：`.workflow/changes/implement-mobile-session-interaction/artifacts/mobile-session-detail.png`、`.workflow/changes/implement-mobile-session-interaction/artifacts/mobile-smoke-api.log`、`.workflow/changes/implement-mobile-session-interaction/artifacts/mobile-smoke-web.log`
-- change：rework-session-mobile-console
-- verify 证据：`.workflow/changes/rework-session-mobile-console/verify.md`
-- 运行态验证证据：`.workflow/changes/rework-session-mobile-console/artifacts/mobile-session-detail.png`
+- change：align-instance-detail-workspaces
+- verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
+- 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图

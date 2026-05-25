@@ -37,6 +37,12 @@ const agentSessionDetailRoute = createRoute({
 const terminalSessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName/terminal-sessions/$sessionId",
+  validateSearch: (search: Record<string, unknown>) => ({
+    fromAgentSession:
+      typeof search.fromAgentSession === "string" && search.fromAgentSession.length > 0
+        ? search.fromAgentSession
+        : undefined,
+  }),
   component: TerminalSessionDetailRoute,
 });
 

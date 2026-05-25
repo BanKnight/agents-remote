@@ -47,6 +47,7 @@ agents-remote/
 - Monorepo 使用 Bun workspaces：根包编排 `web`、`api` 与 `packages/*`。
 - 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS；Project 直接二级 workspace active 状态属于 URL-visible route/search 状态，不应只放在 Jotai。
 - Home / Projects 是一级 Project entry：默认优先展示可扫读 Project 列表和进入行为，Create/adopt Project 是低频入口，只有无 Project、提交中或错误时才提升为可恢复主路径。
+- Agent/Terminal Session detail 是 runtime 深层工作台：共享 terminal-first 主输出和底部 input drawer；Agent detail 可提供 Files/Git/+Terminal/Meta contextual tools，Terminal detail 保持 focused shell，不混入 Agent-only tools。
 - Project Agent workspace 是默认运行态二级页：优先展示 `+ Claude` / `+ Codex` 创建入口和当前 Agent instances；provider history / future restore 在真实 API 完成前只作为 staged 辅助区，不混入当前实例列表。
 - TanStack Query 负责服务端状态；Jotai 只用于 shell 级共享 UI 状态；文件选择、当前路径、当前 diff 文件等局部 section 状态优先留在组件内。
 - 服务端运行在 Bun 上，Project-scoped 能力优先使用 Web 标准 `Request` / `Response` 边界和 shared DTO。
@@ -97,7 +98,8 @@ agents-remote/
 2. 手机竖屏优先：检查首屏密度、返回路径、主要内容滚动区、输入区是否遮挡输出、长文本是否导致横向溢出。
 3. Home / Projects 首屏优先服务打开已有 Project；不要用大块说明、厚卡片或常驻创建表单挤占 Project 列表。
 4. Project Agent workspace 首屏优先服务创建、扫描和进入当前 Agent instances；不要用假历史、假摘要或过多 metadata 替代真实 `AgentSession` 字段。
-5. Files/Git inspection 优先展示 compact row 列表和内容本身，减少大块说明文案、厚卡片和重复 metadata。
+5. Agent/Terminal Session detail 首屏优先服务查看 runtime output 和发送输入；Agent contextual tools 只能辅助进入 Files/Git/+Terminal/Meta，不能挤占 terminal-first 主区或污染 Terminal focused shell。
+6. Files/Git inspection 优先展示 compact row 列表和内容本身，减少大块说明文案、厚卡片和重复 metadata。
 6. Agent/Terminal Session detail 使用紧凑 header、主输出区、非遮挡输入区和 quick keys；输入行为要用真实浏览器路径验证。
 
 ### 测试与质量门禁

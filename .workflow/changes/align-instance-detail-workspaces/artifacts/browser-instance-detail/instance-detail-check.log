@@ -1,0 +1,12 @@
+desktop: Agent detail shows terminal-first stream, Agent-only tools, quick keys, and no Project secondary nav
+desktop: Agent Meta popover opens with real project/session/provider/status fields and closes
+desktop: Agent Files contextual view is read-only and stays inside the detail context
+desktop: Agent Git contextual view is read-only and does not expose write actions
+desktop: Agent +Terminal uses the terminal creation flow, preserves Agent source context, and navigates to focused Terminal detail
+mobile: Agent detail shows terminal-first stream, Agent-only tools, quick keys, and no Project secondary nav
+mobile: Agent Meta popover opens with real project/session/provider/status fields and closes
+mobile: Agent Files contextual view is read-only and stays inside the detail context
+mobile: Agent Git contextual view is read-only and does not expose write actions
+mobile: Agent +Terminal uses the terminal creation flow, preserves Agent source context, and navigates to focused Terminal detail
+desktop: Terminal detail remains a focused shell with no Agent tools and a recoverable input drawer
+mobile: Terminal detail remains a focused shell with no Agent tools and a recoverable input drawer

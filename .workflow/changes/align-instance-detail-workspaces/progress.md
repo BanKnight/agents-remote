@@ -10,7 +10,7 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
+- 当前阶段：已完成
 - 阻塞项：无
 
 ## 推进规则
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/align-instance-detail-workspaces/specs/mobile-session-interaction/spec.md`、`specs/project-console-navigation/spec.md`）
+- design：已完成（`.workflow/changes/align-instance-detail-workspaces/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`；明确 terminal-first detail、Agent contextual tools、Terminal focused shell、移动端 input drawer 与 contextual resource 边界）
+- plan/tasks：已完成（`.workflow/changes/align-instance-detail-workspaces/plan.md`、`tasks.md`；明确 terminal-first chrome、Agent tools/Meta/+Terminal、contextual Files/Git、mobile drawer 和 browser verification 任务顺序）
+- implementation：已完成（`web/src/routes/SessionDetailRoute.tsx` 已完成 terminal-first detail、Agent-only tools/Meta/+Terminal、contextual Files/Git、mobile drawer；浏览器证据位于 `.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/`）
+- verify：已完成（`.workflow/changes/align-instance-detail-workspaces/verify.md`；web 门禁与 browser instance detail artifacts 通过，无 CRITICAL/WARNING）
+- distill：已完成（已更新 `docs/specs/mobile-session-interaction/spec.md`、`docs/specs/project-console-navigation/spec.md`、`docs/design/frontend-ui-architecture.md`、`docs/design/mobile-session-interaction.md`、`docs/project.md`）
 
 ## 阶段流转
 
@@ -46,3 +46,9 @@
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，等待共享 UI shell foundation 和 Agent workspace 对齐。
 - 2026-05-26：前置 `align-ui-shell-foundation` 与 `align-project-agent-workspace` 已完成，解除局部阻塞；下一阶段进入待规格。
+- 2026-05-26：通过 specify-change 创建 `specs/mobile-session-interaction/spec.md` 与 `specs/project-console-navigation/spec.md`，明确 Agent/Terminal detail 的 terminal-first 工作区、Agent contextual tools/Meta、Terminal focused shell、移动端 input drawer/quick keys 与深层 detail 返回模型；下一阶段进入待设计。
+- 2026-05-26：通过 design-change 创建 `design/overview.md`、`design/ui-ux.md` 和 `design/frontend.md`，明确 `SessionDetailRoute` 的 terminal-first chrome、Agent-only Files/Git/+Terminal/Meta tools、Terminal focused shell、移动端 drawer 和不扩展后端协议的前端边界；下一阶段进入待计划。
+- 2026-05-26：通过 plan-change 创建 `plan.md` 与 `tasks.md`，将实现拆为 terminal-first detail chrome、Agent-only tools/Meta/+Terminal、contextual Files/Git、mobile drawer/quick keys 和 browser verification；下一阶段进入待实现。
+- 2026-05-26：通过 implement-change 完成全部实现任务：terminal-first detail chrome、Agent-only Files/Git/+Terminal/Meta、contextual Files/Git 只读视图、mobile drawer/quick keys，并运行 web 门禁与浏览器检查；下一阶段进入待验证。
+- 2026-05-26：通过 verify-change 创建 `verify.md`，确认 web 门禁、桌面/移动浏览器截图、Agent tools、Meta、Files/Git、+Terminal source context、Terminal focused shell 与 drawer 场景均通过；下一阶段进入待沉淀。
+- 2026-05-26：通过 distill-change 将 instance detail deep page、Agent contextual tools、Terminal focused shell、source return 和 mobile drawer 规则沉淀到长期 specs/design/project docs；change 已完成。
