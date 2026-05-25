@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Project Git Prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080b10;
+        --line: #263245;
+        --text: #eef4ff;
+        --muted: #8d99aa;
+        --soft: #c1cad8;
+        --accent: #7dd3fc;
+        --accent-2: #a78bfa;
+        --good: #34d399;
+        --warn: #fbbf24;
+        --danger: #fb7185;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 18% 8%, rgba(125, 211, 252, 0.16), transparent 30%),
+          radial-gradient(circle at 86% 10%, rgba(167, 139, 250, 0.14), transparent 28%),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .page {
+        width: min(1480px, 100%);
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .intro { margin-bottom: 22px; }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 { margin: 8px 0; font-size: 28px; }
+
+      .intro p {
+        margin: 0;
+        max-width: 920px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .stage-grid {
+        display: grid;
+        grid-template-columns: minmax(800px, 1fr) 390px;
+        gap: 28px;
+        align-items: start;
+      }
+
+      .frame-label {
+        margin-bottom: 10px;
+        color: var(--soft);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .desktop-shell,
+      .phone-shell {
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(15, 21, 32, 0.92);
+        box-shadow: 0 26px 80px rgba(0, 0, 0, 0.38);
+      }
+
+      .desktop-shell {
+        min-height: 760px;
+        border-radius: 28px;
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr);
+      }
+
+      .level-two-rail {
+        padding: 18px 14px;
+        border-right: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(20, 27, 40, 0.92), rgba(10, 14, 22, 0.96));
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .project-chip {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 18px;
+        padding: 12px;
+        margin-bottom: 18px;
+        background: rgba(20, 27, 40, 0.7);
+      }
+
+      .project-chip h2 { margin: 0 0 4px; font-size: 15px; }
+
+      .project-chip p {
+        margin: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .nav-list { display: grid; gap: 8px; }
+
+      .nav-item,
+      .bottom-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .nav-item { border-radius: 14px; padding: 10px 12px; }
+
+      .nav-item.active {
+        background: rgba(125, 211, 252, 0.12);
+        color: var(--text);
+      }
+
+      .nav-icon,
+      .file-mark,
+      .diff-mark {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(125, 211, 252, 0.32);
+        background: rgba(125, 211, 252, 0.1);
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .nav-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 760px;
+      }
+
+      .workspace-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid var(--line);
+        padding: 18px 20px;
+      }
+
+      .context-line {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      h3 { margin: 3px 0 0; font-size: 22px; }
+
+      .branch-pill,
+      .filter-pill,
+      .change-kind {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+        font-weight: 800;
+      }
+
+      .branch-pill {
+        padding: 8px 10px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .git-workspace {
+        display: grid;
+        grid-template-columns: 330px minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .status-panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        border-right: 1px solid var(--line);
+        background: rgba(10, 14, 22, 0.42);
+      }
+
+      .status-summary {
+        display: grid;
+        gap: 10px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 14px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .summary-card {
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 14px;
+        padding: 9px;
+        background: rgba(20, 27, 40, 0.58);
+      }
+
+      .summary-card strong { display: block; font-size: 18px; }
+      .summary-card span { color: var(--muted); font-size: 10px; }
+
+      .filter-row { display: flex; gap: 7px; flex-wrap: wrap; }
+      .filter-pill { padding: 5px 8px; font-size: 11px; }
+      .filter-pill.active { color: var(--accent); border-color: rgba(125, 211, 252, 0.34); }
+
+      .change-list {
+        display: grid;
+        align-content: start;
+        gap: 6px;
+        overflow: hidden;
+        padding: 8px;
+      }
+
+      .change-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 14px;
+        padding: 9px 10px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.48);
+      }
+
+      .change-row.active {
+        border-color: rgba(125, 211, 252, 0.26);
+        background: rgba(125, 211, 252, 0.1);
+      }
+
+      .file-mark,
+      .diff-mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 11px;
+        font-size: 11px;
+      }
+
+      .file-mark.added {
+        color: var(--good);
+        border-color: rgba(52, 211, 153, 0.32);
+        background: rgba(52, 211, 153, 0.09);
+      }
+
+      .file-mark.deleted {
+        color: var(--danger);
+        border-color: rgba(251, 113, 133, 0.32);
+        background: rgba(251, 113, 133, 0.09);
+      }
+
+      .change-row p {
+        margin: 0;
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .change-row small {
+        display: block;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .change-kind { padding: 4px 7px; font-size: 10px; }
+      .change-kind.added { color: var(--good); border-color: rgba(52, 211, 153, 0.28); }
+      .change-kind.deleted { color: var(--danger); border-color: rgba(251, 113, 133, 0.28); }
+      .change-kind.modified { color: var(--warn); border-color: rgba(251, 191, 36, 0.28); }
+
+      .diff-panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        background: rgba(5, 8, 13, 0.45);
+      }
+
+      .diff-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 14px 16px;
+      }
+
+      .diff-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .diff-title h4 {
+        margin: 0 0 3px;
+        overflow: hidden;
+        font-size: 15px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .diff-title p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .diff-body {
+        min-height: 0;
+        overflow: hidden;
+        padding: 16px;
+      }
+
+      .diff-code {
+        height: 100%;
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 18px;
+        padding: 12px;
+        background: #05070b;
+        color: #d6e4f7;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 11px;
+        line-height: 1.62;
+      }
+
+      .line { white-space: pre-wrap; }
+      .muted { color: #728197; }
+      .add { color: var(--good); background: rgba(52, 211, 153, 0.07); }
+      .del { color: var(--danger); background: rgba(251, 113, 133, 0.07); }
+      .hunk { color: var(--accent); }
+
+      .mobile-stack {
+        display: grid;
+        gap: 18px;
+      }
+
+      .phone-shell {
+        width: 390px;
+        border-radius: 38px;
+        position: relative;
+      }
+
+      .phone-shell.list-state { min-height: 690px; }
+      .phone-shell.diff-state { min-height: 640px; }
+
+      .phone-status {
+        height: 28px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      }
+
+      .mobile-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        padding: 11px 12px;
+      }
+
+      .mobile-top.direct {
+        padding-left: 14px;
+      }
+
+      .back-button {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .mobile-title { min-width: 0; }
+
+      .mobile-title h2 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 15px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mobile-title p {
+        margin: 2px 0 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mobile-git {
+        padding: 10px 10px 84px;
+      }
+
+      .mobile-git .summary-grid {
+        margin-bottom: 8px;
+      }
+
+      .mobile-git .change-list {
+        gap: 6px;
+        padding: 0;
+      }
+
+      .mobile-git .change-row {
+        padding: 9px;
+      }
+
+      .bottom-nav {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        border-top: 1px solid var(--line);
+        background: rgba(10, 14, 22, 0.96);
+        padding: 8px 8px 12px;
+      }
+
+      .bottom-item {
+        display: grid;
+        justify-items: center;
+        gap: 4px;
+        font-size: 11px;
+      }
+
+      .bottom-item.active { color: var(--accent); }
+      .bottom-item .nav-icon { width: 30px; height: 30px; }
+
+      .mobile-diff {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 612px;
+      }
+
+      .mobile-diff-body {
+        min-height: 0;
+        overflow: hidden;
+        padding: 10px;
+        background: rgba(5, 8, 13, 0.44);
+      }
+
+      .mobile-diff-body .diff-code {
+        height: 500px;
+        font-size: 10px;
+        line-height: 1.55;
+      }
+
+      @media (max-width: 980px) {
+        .stage-grid { grid-template-columns: 1fr; }
+        .phone-shell { width: min(390px, 100%); }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="intro">
+        <div class="eyebrow">Level 2 page</div>
+        <h1>Project Git / Read-only Diff Inspection</h1>
+        <p>Git 二级页首版聚焦只读 inspection：展示 branch、status 摘要、变更文件列表和单文件 unified diff。移动端直接 Git 页保留带 Back 的底部二级导航，点文件进入 diff 详情后隐藏二级导航。</p>
+      </section>
+
+      <section class="stage-grid">
+        <div>
+          <div class="frame-label">Desktop: left level-2 navigation + status list + unified diff</div>
+          <div class="desktop-shell">
+            <aside class="level-two-rail">
+              <div class="back-link">← Projects</div>
+              <div class="project-chip">
+                <h2>agents-remote</h2>
+                <p>/home/deploy/workspace/agents-remote</p>
+              </div>
+              <nav class="nav-list" aria-label="Level 2 navigation">
+                <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
+                <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
+                <div class="nav-item active"><span class="nav-icon">G</span><span>Git</span></div>
+                <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+              </nav>
+            </aside>
+
+            <section class="workspace">
+              <header class="workspace-head">
+                <div>
+                  <p class="context-line">Project / agents-remote / Git</p>
+                  <h3>Read-only status & diff</h3>
+                </div>
+                <span class="branch-pill">main · 6 changed · read-only</span>
+              </header>
+
+              <section class="git-workspace">
+                <aside class="status-panel">
+                  <div class="status-summary">
+                    <div class="summary-grid">
+                      <div class="summary-card"><strong>4</strong><span>modified</span></div>
+                      <div class="summary-card"><strong>1</strong><span>added</span></div>
+                      <div class="summary-card"><strong>1</strong><span>deleted</span></div>
+                    </div>
+                    <div class="filter-row">
+                      <span class="filter-pill active">All</span>
+                      <span class="filter-pill">Modified</span>
+                      <span class="filter-pill">Added</span>
+                      <span class="filter-pill">Deleted</span>
+                    </div>
+                  </div>
+
+                  <div class="change-list">
+                    <article class="change-row active"><span class="file-mark">M</span><div><p>docs/design/prototype/git.html</p><small>new Git inspection prototype</small></div><span class="change-kind modified">M</span></article>
+                    <article class="change-row"><span class="file-mark added">A</span><div><p>docs/design/prototype/terminal.html</p><small>Terminal list prototype</small></div><span class="change-kind added">A</span></article>
+                    <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/overview.html</p><small>prototype overview links</small></div><span class="change-kind modified">M</span></article>
+                    <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/guidelines.md</p><small>navigation rules</small></div><span class="change-kind modified">M</span></article>
+                    <article class="change-row"><span class="file-mark deleted">D</span><div><p>docs/design/scratch/old-flow.html</p><small>removed stale scratch</small></div><span class="change-kind deleted">D</span></article>
+                  </div>
+                </aside>
+
+                <section class="diff-panel">
+                  <header class="diff-head">
+                    <div class="diff-title">
+                      <span class="diff-mark">M</span>
+                      <div>
+                        <h4>docs/design/prototype/git.html</h4>
+                        <p>unified diff · read-only · unstaged</p>
+                      </div>
+                    </div>
+                    <span class="filter-pill active">+42 / -8</span>
+                  </header>
+                  <div class="diff-body">
+                    <div class="diff-code">
+                      <div class="line muted">diff --git a/docs/design/prototype/git.html b/docs/design/prototype/git.html</div>
+                      <div class="line muted">index 0000000..42b7f4a</div>
+                      <div class="line hunk">@@ -0,0 +1,42 @@</div>
+                      <div class="line add">+&lt;section class=&quot;git-workspace&quot;&gt;</div>
+                      <div class="line add">+  &lt;aside class=&quot;status-panel&quot;&gt;</div>
+                      <div class="line add">+    &lt;div class=&quot;summary-grid&quot;&gt;</div>
+                      <div class="line add">+      &lt;div&gt;4 modified&lt;/div&gt;</div>
+                      <div class="line add">+      &lt;div&gt;1 added&lt;/div&gt;</div>
+                      <div class="line add">+      &lt;div&gt;1 deleted&lt;/div&gt;</div>
+                      <div class="line add">+    &lt;/div&gt;</div>
+                      <div class="line add">+  &lt;/aside&gt;</div>
+                      <div class="line add">+  &lt;section class=&quot;diff-panel&quot;&gt;</div>
+                      <div class="line del">-    &lt;button&gt;Commit&lt;/button&gt;</div>
+                      <div class="line del">-    &lt;button&gt;Stage&lt;/button&gt;</div>
+                      <div class="line add">+    &lt;p&gt;Read-only unified diff preview&lt;/p&gt;</div>
+                      <div class="line add">+  &lt;/section&gt;</div>
+                      <div class="line add">+&lt;/section&gt;</div>
+                    </div>
+                  </div>
+                </section>
+              </section>
+            </section>
+          </div>
+        </div>
+
+        <div class="mobile-stack">
+          <div>
+            <div class="frame-label">Mobile Git list: direct level-2 page with bottom navigation</div>
+            <div class="phone-shell direct-state list-state">
+              <div class="phone-status"></div>
+              <header class="mobile-top direct">
+                <div class="mobile-title">
+                  <h2>main · 6 changed</h2>
+                  <p>read-only status inspection</p>
+                </div>
+              </header>
+              <section class="mobile-git">
+                <div class="summary-grid">
+                  <div class="summary-card"><strong>4</strong><span>modified</span></div>
+                  <div class="summary-card"><strong>1</strong><span>added</span></div>
+                  <div class="summary-card"><strong>1</strong><span>deleted</span></div>
+                </div>
+                <div class="change-list">
+                  <article class="change-row active"><span class="file-mark">M</span><div><p>docs/design/prototype/git.html</p><small>tap to inspect diff</small></div><span>›</span></article>
+                  <article class="change-row"><span class="file-mark added">A</span><div><p>docs/design/prototype/terminal.html</p><small>new prototype</small></div><span>›</span></article>
+                  <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/overview.html</p><small>overview links</small></div><span>›</span></article>
+                  <article class="change-row"><span class="file-mark deleted">D</span><div><p>docs/design/scratch/old-flow.html</p><small>deleted scratch</small></div><span>›</span></article>
+                </div>
+              </section>
+              <nav class="bottom-nav" aria-label="Level 2 navigation">
+                <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
+                <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
+                <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
+                <div class="bottom-item active"><span class="nav-icon">G</span><span>Git</span></div>
+                <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+              </nav>
+            </div>
+          </div>
+
+          <div>
+            <div class="frame-label">Mobile diff detail: top back, no level-2 navigation</div>
+            <div class="phone-shell diff-state">
+              <div class="phone-status"></div>
+              <section class="mobile-diff">
+                <header class="mobile-top">
+                  <div class="back-button">←</div>
+                  <div class="mobile-title">
+                    <h2>git.html</h2>
+                    <p>+42 / -8 · read-only diff</p>
+                  </div>
+                </header>
+                <div class="mobile-diff-body">
+                  <div class="diff-code">
+                    <div class="line muted">diff --git a/docs/design/prototype/git.html b/docs/design/prototype/git.html</div>
+                    <div class="line hunk">@@ -0,0 +1,42 @@</div>
+                    <div class="line add">+&lt;section class=&quot;git-workspace&quot;&gt;</div>
+                    <div class="line add">+  &lt;aside class=&quot;status-panel&quot;&gt;</div>
+                    <div class="line add">+    &lt;div&gt;4 modified&lt;/div&gt;</div>
+                    <div class="line add">+    &lt;div&gt;1 added&lt;/div&gt;</div>
+                    <div class="line add">+    &lt;div&gt;1 deleted&lt;/div&gt;</div>
+                    <div class="line del">-    &lt;button&gt;Stage&lt;/button&gt;</div>
+                    <div class="line del">-    &lt;button&gt;Commit&lt;/button&gt;</div>
+                    <div class="line add">+    &lt;p&gt;Read-only unified diff preview&lt;/p&gt;</div>
+                    <div class="line add">+  &lt;/aside&gt;</div>
+                    <div class="line add">+&lt;/section&gt;</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

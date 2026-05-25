@@ -41,6 +41,7 @@
 - **创建 Agent 实例**：在 Agent 页顶部提供 `+ Claude` / `+ Codex` 等 provider 入口。
 - **Files 二级页**：首版定位为只读浏览/预览，不提供新建、编辑、删除、上传或 Agent 关联。目录列表按文件夹优先 + 名称排序；预览类型覆盖文本/代码、图片和 HTML，其他二进制、大文件或未知类型展示轻量不可预览状态。直接从二级导航进入 Files 时，移动端顶部只显示当前路径，列表区域不重复路径说明，底部保留带 Back 的二级导航；如果从 Agent instance 打开 Files，则左上角显示返回按钮，底部不显示二级导航。文件夹行右侧用箭头表示可进入下级目录；进入文件 preview 后隐藏底部二级导航，只保留顶部返回和文件上下文。
 - **Terminal 二级页**：参考 Agent 页的实例列表模型，展示多个 Terminal instance，支持进入、新建和关闭。移动端直接从二级导航进入 Terminal 时，不显示左上返回，底部保留带 Back 的二级导航。
+- **Git 二级页**：首版定位为只读 status/diff inspection，不提供 stage、commit、checkout、reset 或其他写操作。桌面端使用变更文件列表 + unified diff 预览结构；移动端直接从二级导航进入 Git 时，不显示左上返回，底部保留带 Back 的二级导航；进入单文件 diff 详情后隐藏底部二级导航，只保留顶部返回和文件 diff 上下文。
 - **Terminal instance 详情**：参考 Agent instance 的 terminal-first 结构，保留顶部返回、状态、关闭动作、中间终端面板和底部输入抽屉；顶部不提供 Files/Git/Terminal 快捷入口。
 - **Session history**：使用图标 + 一句话摘要 + 相对时间，例如 `12 min ago`；未来用于恢复上下文和查看历史输出。
 - **Agent session 详情**：从 Agent 实例进入后，第一版优先呈现 terminal-first 工作区；metadata 和工具详情通过按钮打开小浮窗，不常驻占据主输出区。移动端中间是可滚动、可输入的终端面板，底部输入抽屉可收起为快捷键栏，快捷键应围绕 `Shift+Tab`、`Esc`、`Ctrl+C`、方向键等真实终端操作。右上角 Files/Git 打开上下文详情页，右上角 `+ Terminal` 可立即新建 Terminal instance 并进入对应详情页；这些从 Agent instance 派生进入的 Files/Terminal 页面都使用顶部返回且不显示二级导航。
@@ -68,6 +69,7 @@
 - [agent-session-detail.html](./agent-session-detail.html) — 展示从 Agent 实例列表进入后的 terminal-first Agent instance 详情页，包含可滚动/可输入终端、顶部 Files/Git 快捷入口、Meta 浮窗和移动端可收起输入抽屉。
 - [home.html](./home.html) — 展示一级首页在桌面端左侧导航 + 工作区、移动端底部一级导航 + 工作区的布局；Project 列表引入图标，创建/采用入口降级为轻量按钮。
 - [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验，包含直接二级 Files 和从 Agent instance 打开的 contextual Files 两种移动端形态，以及文本/代码、图片、HTML 和不可预览状态。
+- [git.html](./git.html) — 展示 Project Git 的只读 status/diff inspection 体验，包含桌面端变更列表 + unified diff，以及移动端直接 Git 列表和单文件 diff 详情两种形态。
 - [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端底部二级导航含 Back 返回一级入口；工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
 - [terminal.html](./terminal.html) — 展示 Terminal 二级页的实例列表体验：支持进入、新建、关闭 Terminal instance，并沿用带 Back 的移动端二级导航。
 - [terminal-instance-detail.html](./terminal-instance-detail.html) — 展示单个 Terminal instance 详情页，采用 terminal-first 输出与输入布局，但顶部不显示 Files/Git/Terminal 快捷入口。
@@ -77,5 +79,6 @@
 
 - Files、Git、Terminal 的二级页应沿用 Project 详情页的二级导航模型。
 - Files/Git 可以复用图标体系和“资源列表 + 内容/详情”的工作区结构。
+- Git 首版只承担只读 inspection：status、changed files、unified diff 和详情查看；写入类 Git 操作应等后续规格明确后再进入原型。
 - Terminal 可以复用 Agent 页的实例/会话列表思路，但内容区应更强调实时输出和输入控制。
 - 如果新增原型页面，应同步更新本文件的“原型页面说明”，并同步维护本目录 `index.md`。
