@@ -11,7 +11,7 @@
 ## 当前进度
 
 - 当前阶段：待规格
-- 阻塞项：等待 align-ui-shell-foundation 和 align-project-agent-workspace 完成。
+- 阻塞项：无
 
 ## 推进规则
 
@@ -45,3 +45,4 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，等待共享 UI shell foundation 和 Agent workspace 对齐。
+- 2026-05-26：前置 `align-ui-shell-foundation` 与 `align-project-agent-workspace` 已完成，解除局部阻塞；下一阶段进入待规格。

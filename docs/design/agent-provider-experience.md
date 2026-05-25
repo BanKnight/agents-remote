@@ -20,6 +20,8 @@
 - provider command 差异由 API 内部 AgentRuntime/provider profile 处理；Project console、SessionRegistry 以外的通用控制面不需要知道 provider CLI command。
 - provider profile 是实现层 seam，不进入 shared contract；当前 profile 可包含 provider id、label、默认 command、display name prefix 和 staged capability 标记。
 - active Agent Session list 只展示当前仍存在的运行实例；provider history summary 应作为后续 ProviderAdapter capability 单独设计。
+- Project Agent workspace 中的 `+ Claude` / `+ Codex` 是 provider-specific create action，但创建结果、列表进入和关闭仍使用统一 Agent Session 语义。
+- Project Agent workspace 可以保留 lightweight session history / future restore 区域；在 provider history API 未完成前，该区域只表达 staged capability，不展示假历史条目或恢复按钮。
 - provider-native id、history id、thread id、transcript path 和 resume key 只进入 adapter/internal metadata，不作为本项目 URL/API 主键。
 
 ## 关键规则
@@ -43,3 +45,6 @@
 - verify 证据：`.workflow/changes/implement-agent-provider-experience/verify.md`
 - related spec：`docs/specs/agent-provider-experience/spec.md`
 - related architecture：`docs/architecture/agent-runtime.md`
+- change：align-project-agent-workspace
+- verify 证据：`.workflow/changes/align-project-agent-workspace/verify.md`
+- 运行态验证证据：`.workflow/changes/align-project-agent-workspace/artifacts/browser-agent-workspace/agent-workspace-check.log`

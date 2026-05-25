@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：等待 align-ui-shell-foundation 完成共享 shell、导航、路由和视觉基础。
+- 当前阶段：已完成
+- 阻塞项：无
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/align-project-agent-workspace/specs/project-console-navigation/spec.md`、`specs/agent-provider-experience/spec.md`）
+- design：已完成（`.workflow/changes/align-project-agent-workspace/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`；显式引用 `docs/design/frontend-ui-architecture.md` 与 provider 长期 specs/design）
+- plan/tasks：已完成（`.workflow/changes/align-project-agent-workspace/plan.md`、`tasks.md`；均显式要求读取 `docs/design/frontend-ui-architecture.md`、provider 长期 specs/design 与 prototype `project-detail.html`）
+- implementation：已完成（`tasks.md` 中 1.1、2.1、2.2、3.1 已完成；format/lint/web typecheck/test/build 与 browser Agent workspace artifacts 已生成）
+- verify：已完成（`.workflow/changes/align-project-agent-workspace/verify.md`；format/lint/web typecheck/test/build 与 desktop/mobile browser Agent workspace harness 通过）
+- distill：已完成（已更新 `docs/specs/project-console-navigation/spec.md`、`docs/specs/agent-provider-experience/spec.md`、`docs/design/frontend-ui-architecture.md`、`docs/design/agent-provider-experience.md`、`docs/project.md` 及相关 index）
 
 ## 阶段流转
 
@@ -45,3 +45,9 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，等待共享 UI shell foundation。
+- 2026-05-26：前置 `align-ui-shell-foundation` 已完成，解除局部阻塞；通过 specify-change 创建 `specs/project-console-navigation/spec.md` 与 `specs/agent-provider-experience/spec.md`，明确 Agent instances 主工作区、Claude/Codex 创建入口、provider-aware 当前实例列表、轻量 session history 与移动端直接二级页密度要求；下一阶段进入待设计。
+- 2026-05-26：通过 design-change 创建 `design/overview.md`、`design/ui-ux.md` 和 `design/frontend.md`，明确 Agent workspace 的当前实例列表、provider 创建入口、staged history 呈现、真实 DTO 边界和移动端密度规则；下一阶段进入待计划。
+- 2026-05-26：通过 plan-change 创建 `plan.md` 与 `tasks.md`，将实现拆为 provider 创建入口、当前 Agent instance list/row、轻量 staged history 和 web/browser 验证四个顺序任务；下一阶段进入待实现。
+- 2026-05-26：完成 implement-change，调整 `web/src/routes/ProjectConsoleRoute.tsx` 的 Agent workspace：顶部展示 `+ Claude` / `+ Codex`，当前 Agent instances 使用真实 provider/displayName/status/id 字段，新增 staged session history 区并避免伪造 provider history；完成 `tasks.md` 1.1、2.1、2.2、3.1，并生成 browser artifacts；下一阶段进入待验证。
+- 2026-05-26：完成 verify-change，创建 `.workflow/changes/align-project-agent-workspace/verify.md`，确认 format/lint/web typecheck/test/build 与 desktop/mobile browser harness 均通过，Agent instances、provider 创建 pending、staged history 和 Project 二级导航证据完整；下一阶段进入待沉淀。
+- 2026-05-26：完成 distill-change，将 Project Agent workspace 的 provider create、current instances、staged history 和真实 DTO 边界沉淀到长期 specs/design/project 文档，并更新 docs index；本 change 已完成。

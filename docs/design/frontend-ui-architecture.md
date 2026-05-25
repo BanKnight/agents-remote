@@ -27,6 +27,9 @@
 - 已验证的 shell foundation 当前采用 `?workspace=agents|files|git|terminal` 承载 Project 直接二级 workspace active 状态；无效 workspace 值回退 Agent。
 - Home / Projects 是一级应用 shell 的 Project entry；默认主任务是扫描并打开已有 Project，而不是展示通用 dashboard。
 - Home 的 Create/adopt Project 是低频入口；默认不应挤占 Project 列表首屏，但在无 Project、提交中或错误状态下可以提升为可恢复主路径。
+- Project Agent workspace 是 Project 默认运行态二级页；顶部提供 `+ Claude` / `+ Codex` provider 创建入口，主体优先展示当前 Agent instances。
+- 当前 Agent instances 与 provider history / future restore 必须分区展示；provider history API 未完成前只能显示 staged/empty/future 说明，不提供恢复操作或伪造历史数据。
+- Agent workspace 只展示真实 `AgentSession` DTO 支持的 provider、displayName、status、id 和进入/关闭行为；不要为了贴近 prototype 伪造 task summary、recent output 或 relative time。
 - 已验证的共享 UI primitive 边界是轻量的 nav item、icon marker、status pill、action button 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成通用组件库。
 
 ## 关键规则
@@ -70,3 +73,6 @@
 - change：align-home-project-entry
 - verify 证据：`.workflow/changes/align-home-project-entry/verify.md`
 - 运行态验证证据：`.workflow/changes/align-home-project-entry/artifacts/browser-home-entry/home-entry-check.log` 与同目录 desktop/mobile Home entry 截图
+- change：align-project-agent-workspace
+- verify 证据：`.workflow/changes/align-project-agent-workspace/verify.md`
+- 运行态验证证据：`.workflow/changes/align-project-agent-workspace/artifacts/browser-agent-workspace/agent-workspace-check.log` 与同目录 desktop/mobile Agent workspace 截图

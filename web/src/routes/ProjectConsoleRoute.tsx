@@ -338,37 +338,179 @@ function AgentPanel({
   onClose,
 }: AgentPanelProps) {
   return (
-    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 sm:p-5 lg:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h3 className="text-xl font-semibold">Agent Sessions</h3>
-          <p className="mt-1 text-sm text-slate-400">Default focus for remote AI work.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+            Agent workspace
+          </p>
+          <h3 className="mt-2 text-xl font-semibold">Agent instances</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-400">
+            Current Claude and Codex sessions scoped to this Project.
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <CreateButton disabled={isCreating} onClick={() => onCreate("claude")}>
-            Claude
+            + Claude
           </CreateButton>
           <CreateButton disabled={isCreating} onClick={() => onCreate("codex")}>
-            Codex
+            + Codex
           </CreateButton>
         </div>
       </div>
       <ErrorText error={createError ?? closeError} />
-      <SessionList isLoading={isLoading} empty="No Agent Sessions yet">
-        {sessions.map((session) => (
-          <SessionCard
-            key={session.id}
-            title={session.displayName}
-            subtitle={`${session.provider} · ${session.id}`}
-            status={sessionStatusLabel(session.status)}
-            detailTo="/projects/$projectName/agent-sessions/$sessionId"
-            detailParams={{ projectName, sessionId: session.id }}
-            onClose={() => onClose(session.id)}
-          />
-        ))}
-      </SessionList>
+      <AgentInstanceList
+        projectName={projectName}
+        sessions={sessions}
+        isLoading={isLoading}
+        onClose={onClose}
+      />
+      <AgentHistoryPanel />
     </section>
   );
+}
+
+type AgentInstanceListProps = {
+  projectName: string;
+  sessions: AgentSession[];
+  isLoading: boolean;
+  onClose: (sessionId: string) => void;
+};
+
+function AgentInstanceList({ projectName, sessions, isLoading, onClose }: AgentInstanceListProps) {
+  if (isLoading) {
+    return <p className="mt-5 text-sm text-slate-400">Loading Agent instances...</p>;
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-5 text-center">
+        <p className="text-lg font-semibold text-slate-100">No Agent instances yet</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+          Create a Claude or Codex session to open a project-scoped Agent stream.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-5 grid max-h-[26rem] gap-2 overflow-y-auto pr-1"
+      aria-label="Agent instances"
+    >
+      {sessions.map((session) => (
+        <AgentInstanceRow
+          key={session.id}
+          projectName={projectName}
+          session={session}
+          onClose={() => onClose(session.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+type AgentInstanceRowProps = {
+  projectName: string;
+  session: AgentSession;
+  onClose: () => void;
+};
+
+function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 transition hover:border-slate-600 sm:p-4">
+      <div className="flex min-w-0 items-start gap-3">
+        <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
+          {providerMarker(session.provider)}
+        </IconMarker>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h4 className="truncate font-semibold text-slate-100">{session.displayName}</h4>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                {providerLabel(session.provider)} · {session.id}
+              </p>
+            </div>
+            <StatusPill
+              tone={sessionStatusTone(session.status)}
+              value={sessionStatusLabel(session.status)}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
+              params={{ projectName, sessionId: session.id }}
+              search={{ workspace: "agents" }}
+              to="/projects/$projectName/agent-sessions/$sessionId"
+            >
+              Open stream
+            </Link>
+            <button
+              className="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
+              type="button"
+              onClick={() => {
+                if (window.confirm("Close this session? The running process will be terminated.")) {
+                  onClose();
+                }
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AgentHistoryPanel() {
+  return (
+    <section
+      className="mt-4 min-w-0 rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
+      aria-label="Session history"
+    >
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-slate-100">Session history</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Future restore will live here when provider history is available.
+          </p>
+        </div>
+        <StatusPill tone="muted" value="Staged" />
+      </div>
+      <div className="mt-3 flex min-w-0 items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+        <IconMarker tone="muted">HS</IconMarker>
+        <p className="min-w-0 text-sm leading-6 text-slate-400">
+          Current Agent instances stay above. Provider-native history and resume are not mixed into
+          the running session list until a real adapter exposes them.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function providerMarker(provider: AgentProvider) {
+  return provider === "codex" ? "CX" : "CL";
+}
+
+function providerLabel(provider: AgentProvider) {
+  return provider === "codex" ? "Codex" : "Claude";
+}
+
+function sessionStatusTone(status: AgentSession["status"] | TerminalSession["status"]) {
+  if (status === "running") {
+    return "success";
+  }
+
+  if (status === "idle") {
+    return "warning";
+  }
+
+  if (status === "error") {
+    return "danger";
+  }
+
+  return "muted";
 }
 
 type TerminalPanelProps = {

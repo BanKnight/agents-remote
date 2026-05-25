@@ -107,6 +107,43 @@
 - **THEN** Home / Projects 仍展示对应错误、禁用、加载或恢复状态
 - **AND** 不因视觉对齐移除已有安全提示或失败反馈
 
+### Requirement: Project Agent workspace prioritizes current Agent instances
+
+系统 SHALL 将 Project 的默认 Agent workspace 呈现为 Agent instances 工作区，优先展示当前 Project 下的 Agent Session 运行实例、provider 创建入口和轻量 history/future restore 区域。
+
+#### Scenario: User opens a Project Agent workspace
+
+- **WHEN** 用户从 Home 进入某个 Project 或在 Project 二级导航选择 Agent workspace
+- **THEN** Agent workspace 是当前 active Project workspace
+- **AND** 页面主体优先展示 Agent instances 列表或空状态
+- **AND** Claude/Codex 创建入口位于 Agent workspace 主要操作区域
+- **AND** Files、Git、Terminal 仍作为同一 Project scope 的二级导航入口存在，但不挤占 Agent instances 主工作区
+
+#### Scenario: Agent sessions are loading or unavailable
+
+- **WHEN** Agent Sessions 数据处于加载、错误或空状态
+- **THEN** Agent workspace 保留对应加载、错误或空态反馈
+- **AND** 不伪造不存在的 Agent instance
+- **AND** 用户仍可识别 Claude/Codex 创建入口是否可用
+
+### Requirement: Agent workspace separates current instances from staged history
+
+系统 SHALL 让 Agent workspace 明确区分当前运行 Agent instances 与 provider history / future restore 呈现区域，且 history 未实现前不得暗示已有真实可恢复数据。
+
+#### Scenario: User scans active Agent instances
+
+- **WHEN** Project 下存在一个或多个 Agent Sessions
+- **THEN** 每个 Agent instance 条目展示 provider 标记或图标位置
+- **AND** 每个条目展示 display name、运行状态、internal session id 和进入 Agent Session detail 的行为
+- **AND** 长 session id、provider metadata 或 displayName 不造成页面横向溢出
+
+#### Scenario: Provider history is not fully implemented
+
+- **WHEN** 系统还不能读取 Claude/Codex provider history 或 resume summary
+- **THEN** Agent workspace 可以展示 future capability 的轻量占位、空状态或说明
+- **AND** 当前运行实例列表与 session history 区域在视觉上可区分
+- **AND** 不暗示 provider history 已经可恢复或拥有真实数据
+
 ### Requirement: Mobile direct secondary pages return through secondary bottom navigation
 
 系统 SHALL 让移动端 Project 直接二级页通过底部二级导航中的 Back 项返回一级页面，而不是在左上角重复显示返回入口。
@@ -289,3 +326,6 @@
 - change：align-home-project-entry
 - verify 证据：`.workflow/changes/align-home-project-entry/verify.md`
 - 运行态验证证据：`.workflow/changes/align-home-project-entry/artifacts/browser-home-entry/home-entry-check.log` 与同目录 desktop/mobile Home entry 截图
+- change：align-project-agent-workspace
+- verify 证据：`.workflow/changes/align-project-agent-workspace/verify.md`
+- 运行态验证证据：`.workflow/changes/align-project-agent-workspace/artifacts/browser-agent-workspace/agent-workspace-check.log` 与同目录 desktop/mobile Agent workspace 截图

@@ -15,16 +15,19 @@
 
 #### Scenario: User creates an Agent Session for a provider
 
-- **WHEN** 用户在 Project 控制台选择新建 Claude Agent Session 或 Codex Agent Session
+- **WHEN** 用户在 Project Agent workspace 选择新建 Claude Agent Session 或 Codex Agent Session
 - **THEN** 系统创建 Project-scoped Agent Session
 - **AND** Agent Session metadata 和 DTO 记录所选 provider
 - **AND** 列表和详情页仍使用 Agent Session 的统一进入、状态、重连和关闭语义
+- **AND** 创建中、创建失败或 provider unavailable 时展示用户可理解的反馈
 
 #### Scenario: Provider is shown without splitting the core concept
 
 - **WHEN** Project 下同时存在 Claude 和 Codex Agent Sessions
 - **THEN** UI 能区分每个 Agent Session 的 provider
+- **AND** 当前运行实例列表展示 provider、displayName、status、internal session id 和 detail 入口
 - **AND** 不把 Claude Session / Codex Session 表达成与 Agent Session 平级的第三类 runtime 概念
+- **AND** 不把 provider history 条目混入当前运行实例列表
 
 ### Requirement: Agent Runtime owns provider adaptation
 
@@ -103,8 +106,12 @@
 
 - 当前主线只承诺 Claude/Codex provider union；新增 provider 需要更新 shared contract、spec 和实现。
 - 当前 provider history capability 是 staged direction，不代表已提供 provider history API、resume payload 或 provider-native event stream。
+- Project Agent workspace 可以保留 lightweight session history / future restore 区域，但在 provider history API 未完成前只能表达 staged/empty/future，不提供恢复按钮或伪造历史条目。
 
 ## 来源
 
 - change：implement-agent-provider-experience
 - verify 证据：`.workflow/changes/implement-agent-provider-experience/verify.md`
+- change：align-project-agent-workspace
+- verify 证据：`.workflow/changes/align-project-agent-workspace/verify.md`
+- 运行态验证证据：`.workflow/changes/align-project-agent-workspace/artifacts/browser-agent-workspace/agent-workspace-check.log`
