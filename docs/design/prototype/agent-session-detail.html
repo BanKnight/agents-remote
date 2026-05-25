@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Instance Terminal Prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080b10;
+        --panel: #0f1520;
+        --panel-2: #141b28;
+        --line: #263245;
+        --text: #eef4ff;
+        --muted: #8d99aa;
+        --soft: #c1cad8;
+        --accent: #7dd3fc;
+        --accent-2: #a78bfa;
+        --good: #34d399;
+        --warn: #fbbf24;
+        --danger: #fb7185;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 18% 8%, rgba(125, 211, 252, 0.16), transparent 30%),
+          radial-gradient(circle at 86% 10%, rgba(167, 139, 250, 0.14), transparent 28%),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .page {
+        width: min(1480px, 100%);
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .intro { margin-bottom: 22px; }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 { margin: 8px 0; font-size: 28px; }
+
+      .intro p {
+        margin: 0;
+        max-width: 900px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .stage-grid {
+        display: grid;
+        grid-template-columns: minmax(760px, 1fr) 390px;
+        gap: 28px;
+        align-items: start;
+      }
+
+      .frame-label {
+        margin-bottom: 10px;
+        color: var(--soft);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .desktop-shell,
+      .phone-shell {
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(15, 21, 32, 0.92);
+        box-shadow: 0 26px 80px rgba(0, 0, 0, 0.38);
+      }
+
+      .desktop-shell {
+        position: relative;
+        min-height: 740px;
+        border-radius: 28px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+
+      .session-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid var(--line);
+        padding: 14px 18px;
+        background: rgba(10, 14, 22, 0.76);
+      }
+
+      .head-left,
+      .head-actions,
+      .window-dots,
+      .term-status,
+      .quick-row,
+      .input-strip,
+      .mobile-actions,
+      .mobile-drawer-head {
+        display: flex;
+        align-items: center;
+      }
+
+      .head-left {
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .head-actions {
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .back-button,
+      .provider-mark,
+      .tool-button,
+      .quick-key,
+      .mini-action,
+      .mobile-icon-button {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(125, 211, 252, 0.32);
+        background: rgba(125, 211, 252, 0.1);
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .back-button {
+        width: 36px;
+        height: 36px;
+        border-radius: 13px;
+        color: var(--soft);
+        border-color: rgba(148, 163, 184, 0.22);
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .provider-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 15px;
+      }
+
+      .session-title { min-width: 0; }
+
+      .session-title h2 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 17px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .session-title p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .status-pill,
+      .tool-button,
+      .mini-action {
+        border-radius: 999px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status-pill {
+        border: 1px solid rgba(52, 211, 153, 0.3);
+        color: var(--good);
+        background: rgba(52, 211, 153, 0.08);
+      }
+
+      .tool-button,
+      .mini-action {
+        border-color: rgba(148, 163, 184, 0.2);
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .tool-button.primary {
+        border-color: rgba(125, 211, 252, 0.38);
+        color: var(--accent);
+        background: rgba(125, 211, 252, 0.12);
+      }
+
+      .meta-popover {
+        position: absolute;
+        top: 70px;
+        right: 18px;
+        z-index: 4;
+        width: 260px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 18px;
+        padding: 12px;
+        background: rgba(13, 19, 30, 0.96);
+        box-shadow: 0 22px 70px rgba(0, 0, 0, 0.44);
+      }
+
+      .meta-popover h3 {
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+
+      .meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        padding: 7px 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .meta-row:last-child { border-bottom: 0; }
+      .meta-row strong { color: var(--soft); font-weight: 800; }
+
+      .terminal-wrap {
+        min-height: 0;
+        padding: 16px;
+        background: rgba(5, 8, 13, 0.52);
+      }
+
+      .terminal-window {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 100%;
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 20px;
+        background: #05070b;
+      }
+
+      .terminal-titlebar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 10px 12px;
+        background: rgba(20, 27, 40, 0.74);
+      }
+
+      .window-dots { gap: 6px; }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--danger);
+      }
+
+      .dot:nth-child(2) { background: var(--warn); }
+      .dot:nth-child(3) { background: var(--good); }
+
+      .term-title {
+        min-width: 0;
+        color: var(--soft);
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+
+      .term-status {
+        gap: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .term-chip {
+        border: 1px solid rgba(125, 211, 252, 0.24);
+        border-radius: 999px;
+        padding: 4px 7px;
+        color: var(--accent);
+        background: rgba(125, 211, 252, 0.08);
+      }
+
+      .terminal-screen {
+        overflow-y: auto;
+        padding: 16px;
+        color: #d6e4f7;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.65;
+        scrollbar-color: rgba(125, 211, 252, 0.5) transparent;
+      }
+
+      .terminal-line { min-height: 20px; white-space: pre-wrap; }
+      .muted { color: #728197; }
+      .accent { color: var(--accent); }
+      .good { color: var(--good); }
+      .warn { color: var(--warn); }
+      .danger { color: var(--danger); }
+      .prompt { color: var(--accent); }
+      .selection { color: #041019; background: var(--accent); }
+
+      .terminal-input {
+        display: inline-flex;
+        min-width: 190px;
+        border-bottom: 1px solid rgba(125, 211, 252, 0.52);
+        color: var(--text);
+      }
+
+      .cursor {
+        display: inline-block;
+        width: 8px;
+        height: 1.1em;
+        margin-left: 2px;
+        background: var(--accent);
+        vertical-align: -2px;
+      }
+
+      .composer {
+        border-top: 1px solid var(--line);
+        padding: 10px 14px 12px;
+        background: rgba(10, 14, 22, 0.94);
+      }
+
+      .quick-row {
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .quick-key {
+        border-color: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 6px 9px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.74);
+        font-size: 11px;
+      }
+
+      .quick-key.important {
+        border-color: rgba(251, 191, 36, 0.34);
+        color: var(--warn);
+        background: rgba(251, 191, 36, 0.08);
+      }
+
+      .input-strip {
+        gap: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 16px;
+        padding: 10px 12px;
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .input-prefix {
+        color: var(--accent);
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+
+      .input-text {
+        flex: 1;
+        min-width: 0;
+        color: var(--soft);
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+
+      .input-note {
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .phone-shell {
+        width: 390px;
+        min-height: 820px;
+        border-radius: 38px;
+        position: relative;
+      }
+
+      .phone-status {
+        height: 28px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      }
+
+      .mobile-session {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-height: 792px;
+      }
+
+      .mobile-session .session-head {
+        padding: 10px 11px;
+      }
+
+      .mobile-session .back-button {
+        width: 32px;
+        height: 32px;
+        border-radius: 12px;
+      }
+
+      .mobile-session .provider-mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 12px;
+        font-size: 12px;
+      }
+
+      .mobile-session .session-title h2 { font-size: 14px; }
+      .mobile-session .session-title p { font-size: 10px; }
+
+      .mobile-actions {
+        gap: 5px;
+      }
+
+      .mobile-icon-button {
+        width: 32px;
+        height: 32px;
+        border-color: rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+        font-size: 10px;
+      }
+
+      .mobile-icon-button.primary {
+        color: var(--accent);
+        border-color: rgba(125, 211, 252, 0.34);
+        background: rgba(125, 211, 252, 0.1);
+      }
+
+      .mobile-terminal-wrap {
+        min-height: 0;
+        padding: 10px;
+        background: rgba(5, 8, 13, 0.42);
+      }
+
+      .mobile-terminal-wrap .terminal-window {
+        border-radius: 18px;
+      }
+
+      .mobile-terminal-wrap .terminal-titlebar {
+        padding: 8px 9px;
+      }
+
+      .mobile-terminal-wrap .term-title,
+      .mobile-terminal-wrap .term-status {
+        font-size: 10px;
+      }
+
+      .mobile-terminal-wrap .term-status span:not(.term-chip) {
+        display: none;
+      }
+
+      .mobile-terminal-wrap .terminal-screen {
+        padding: 12px;
+        font-size: 11px;
+        line-height: 1.58;
+      }
+
+      .mobile-composer {
+        border-top: 1px solid var(--line);
+        padding: 8px 9px calc(10px + env(safe-area-inset-bottom));
+        background: rgba(10, 14, 22, 0.98);
+      }
+
+      .mobile-drawer-head {
+        justify-content: space-between;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .mobile-drawer-head strong {
+        color: var(--soft);
+      }
+
+      .collapse-pill {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 4px 7px;
+        color: var(--muted);
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .mobile-composer .quick-row {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 5px;
+        margin-bottom: 7px;
+      }
+
+      .mobile-composer .quick-key {
+        padding: 6px 3px;
+        font-size: 9px;
+        white-space: nowrap;
+      }
+
+      .mobile-input-strip {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 7px;
+        align-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 14px;
+        padding: 8px 9px;
+        background: rgba(20, 27, 40, 0.74);
+      }
+
+      .mobile-input-strip .input-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+      }
+
+      .mobile-input-strip .mini-action {
+        padding: 5px 7px;
+        font-size: 10px;
+      }
+
+      @media (max-width: 980px) {
+        .stage-grid { grid-template-columns: 1fr; }
+        .phone-shell { width: min(390px, 100%); }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="intro">
+        <div class="eyebrow">Agent instance detail</div>
+        <h1>Terminal-first Agent Instance</h1>
+        <p>第一版 Agent instance 详情页优先复用终端形态：中间是可滚动、可输入的 terminal panel；metadata 通过按钮打开小浮窗；Files/Git 作为顶部快捷入口，移动端底部输入抽屉可收起为快捷键栏。</p>
+      </section>
+
+      <section class="stage-grid">
+        <div>
+          <div class="frame-label">Desktop: terminal workspace + header quick tools + meta popover</div>
+          <div class="desktop-shell">
+            <header class="session-head">
+              <div class="head-left">
+                <div class="back-button">←</div>
+                <div class="provider-mark">CL</div>
+                <div class="session-title">
+                  <h2>Claude · Terminal agent</h2>
+                  <p>agents-remote / main · running · last output 8 sec ago</p>
+                </div>
+              </div>
+              <div class="head-actions">
+                <span class="status-pill">live</span>
+                <span class="tool-button primary">Files</span>
+                <span class="tool-button primary">Git</span>
+                <span class="tool-button">Meta</span>
+                <span class="tool-button">Pause</span>
+              </div>
+            </header>
+
+            <aside class="meta-popover">
+              <h3>Session meta</h3>
+              <div class="meta-row"><span>Provider</span><strong>Claude</strong></div>
+              <div class="meta-row"><span>Project</span><strong>agents-remote</strong></div>
+              <div class="meta-row"><span>Branch</span><strong>main</strong></div>
+              <div class="meta-row"><span>Mode</span><strong>terminal</strong></div>
+            </aside>
+
+            <section class="terminal-wrap">
+              <div class="terminal-window">
+                <div class="terminal-titlebar">
+                  <div class="window-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+                  <div class="term-title">/home/deploy/workspace/agents-remote · claude</div>
+                  <div class="term-status"><span class="term-chip">scrollback</span><span>↑↓ history · Shift+Tab selection</span></div>
+                </div>
+                <div class="terminal-screen">
+                  <div class="terminal-line muted">$ claude --session ui-alignment</div>
+                  <div class="terminal-line good">Connected to provider runtime · cwd verified by Project-safe resolver</div>
+                  <div class="terminal-line"></div>
+                  <div class="terminal-line accent">Claude</div>
+                  <div class="terminal-line">I can inspect the current prototype and turn the terminal-first mobile behavior into small implementation intents.</div>
+                  <div class="terminal-line"></div>
+                  <div class="terminal-line muted">$ bun run format:check</div>
+                  <div class="terminal-line good">✓ formatting passed</div>
+                  <div class="terminal-line muted">$ git diff -- docs/design/prototype</div>
+                  <div class="terminal-line">diff --git a/docs/design/prototype/agent-session-detail.html</div>
+                  <div class="terminal-line warn">@@ terminal-first mobile instance detail @@</div>
+                  <div class="terminal-line">+ top actions: <span class="selection">Files</span> / Git / Meta</div>
+                  <div class="terminal-line">+ bottom drawer: Shift+Tab, Esc, Ctrl+C, ↑, ↓</div>
+                  <div class="terminal-line"></div>
+                  <div class="terminal-line muted">Selection conflict note:</div>
+                  <div class="terminal-line">↑↓ normally walk shell history; after Shift+Tab switches mode, ↑↓ move terminal selection instead.</div>
+                  <div class="terminal-line"></div>
+                  <div class="terminal-line"><span class="prompt">agent@remote</span>:<span class="accent">~/agents-remote</span>$ <span class="terminal-input">continue refining mobile terminal input</span><span class="cursor"></span></div>
+                </div>
+              </div>
+            </section>
+
+            <form class="composer">
+              <div class="quick-row">
+                <span class="quick-key important">Shift + Tab · mode</span>
+                <span class="quick-key">Esc · cancel</span>
+                <span class="quick-key">Ctrl + C · interrupt</span>
+                <span class="quick-key">Ctrl + D · EOF</span>
+                <span class="quick-key">↑ / ↓ · history</span>
+              </div>
+              <div class="input-strip">
+                <span class="input-prefix">$</span>
+                <span class="input-text">Input mirrors the active terminal prompt; Enter sends directly to the terminal.</span>
+                <span class="input-note">no oversized send button</span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div>
+          <div class="frame-label">Mobile: terminal panel + collapsible shortcut/input drawer</div>
+          <div class="phone-shell">
+            <div class="phone-status"></div>
+            <section class="mobile-session">
+              <header class="session-head">
+                <div class="head-left">
+                  <div class="back-button">←</div>
+                  <div class="provider-mark">CL</div>
+                  <div class="session-title">
+                    <h2>Claude terminal</h2>
+                    <p>live · scrollback available</p>
+                  </div>
+                </div>
+                <div class="mobile-actions">
+                  <span class="mobile-icon-button primary">Files</span>
+                  <span class="mobile-icon-button primary">Git</span>
+                  <span class="mobile-icon-button">i</span>
+                </div>
+              </header>
+
+              <section class="mobile-terminal-wrap">
+                <div class="terminal-window">
+                  <div class="terminal-titlebar">
+                    <div class="window-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+                    <div class="term-title">~/agents-remote</div>
+                    <div class="term-status"><span class="term-chip">input</span><span>Shift+Tab selection</span></div>
+                  </div>
+                  <div class="terminal-screen">
+                    <div class="terminal-line muted">$ claude --session mobile-agent</div>
+                    <div class="terminal-line good">✓ terminal session resumed</div>
+                    <div class="terminal-line"></div>
+                    <div class="terminal-line accent">Claude</div>
+                    <div class="terminal-line">Mobile detail should behave like a real terminal first, not a metadata dashboard.</div>
+                    <div class="terminal-line"></div>
+                    <div class="terminal-line muted">$ inspect prototype</div>
+                    <div class="terminal-line">middle panel keeps scrollback and active prompt together</div>
+                    <div class="terminal-line">bottom drawer can collapse to shortcuts only</div>
+                    <div class="terminal-line">top Files/Git buttons open quick inspectors without leaving this instance</div>
+                    <div class="terminal-line"></div>
+                    <div class="terminal-line warn">↑↓ conflict: shell history vs terminal selection</div>
+                    <div class="terminal-line">Shift+Tab toggles mode before arrows are reused for selection.</div>
+                    <div class="terminal-line"></div>
+                    <div class="terminal-line"><span class="prompt">remote</span>$ <span class="terminal-input">run tests for terminal drawer</span><span class="cursor"></span></div>
+                  </div>
+                </div>
+              </section>
+
+              <form class="mobile-composer">
+                <div class="mobile-drawer-head">
+                  <strong>Input drawer expanded</strong>
+                  <span class="collapse-pill">tap ▾ to collapse to shortcuts</span>
+                </div>
+                <div class="quick-row">
+                  <span class="quick-key important">Shift+Tab</span>
+                  <span class="quick-key">Esc</span>
+                  <span class="quick-key">Ctrl+C</span>
+                  <span class="quick-key">↑</span>
+                  <span class="quick-key">↓</span>
+                </div>
+                <div class="mobile-input-strip">
+                  <span class="input-prefix">$</span>
+                  <span class="input-text">continue in terminal prompt...</span>
+                  <span class="mini-action">⏎</span>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

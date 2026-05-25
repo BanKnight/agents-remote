@@ -62,6 +62,7 @@ agents-remote/
 - 不要为了移动端布局隐藏问题而只加全局 `overflow-hidden`；应检查动态视口高度、局部滚动区、`min-w-0`、长文本截断/换行和固定区域是否挤占内容。
 - 不要在 Project 工作区常驻固定底部 runtime input；真实输入应进入 Agent/Terminal Session detail 后出现，并且输入区不能遮挡输出。
 - 不要反复启动新的 web/api 端口来验证问题；开发和验证时优先复用或重启明确命名的 tmux session，保留日志和可追踪进程。
+- 开发/验证用 tmux session 统一使用 `ar-<purpose>` 命名，例如 `ar-dev`、`ar-e2e`、`ar-debug`；不要使用 `agents-remote-*`，避免和 Claude Code 当前会话或其他任务会话混淆，并便于 `tmux list-sessions | grep '^ar-'` 搜索、复用和关闭。
 - 不要把 `packages/shared` 当成通用垃圾桶；shared 只表达跨 web/api 的协议、状态和错误码，不放业务流程实现、服务端资源句柄或前端组件细节。
 
 ## 开发准则
@@ -102,7 +103,7 @@ agents-remote/
 3. 改 web：运行相关 `web/src/**/*.test.ts`，并用浏览器验证对应页面的 golden path 和错误/空状态。
 4. 改 Project/Session/Terminal/WebSocket：运行 `bun run e2e` 或对应 E2E 子路径，确认真实浏览器、tmux 和 stream 行为。
 5. 收尾前按风险运行根级质量门禁：`bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build`；如果改动影响端到端用户路径，再加 `bun run e2e`。
-6. 需要长驻 web/api 服务时，用 tmux 管理并固定 session 名；查看日志、重启、关闭都通过同一 session 完成，避免孤儿进程和端口漂移。
+6. 需要长驻 web/api 服务时，用 `ar-<purpose>` 命名的 tmux session 管理，例如 `ar-dev`；查看日志、重启、关闭都通过同一 session 完成，避免孤儿进程和端口漂移。
 
 ## 重要文档列表
 

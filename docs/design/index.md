@@ -4,7 +4,7 @@
 
 ## 子目录
 
-- （无）
+- [prototype](./prototype/index.md) — 保存首页一级导航与 Project 二级导航的 HTML 原型，用于对齐桌面/移动端布局。
 
 ## 文档
 

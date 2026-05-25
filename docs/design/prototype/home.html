@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Home Prototype - Level 1 Navigation</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080b10;
+        --panel: #0f1520;
+        --panel-2: #141b28;
+        --line: #263245;
+        --text: #eef4ff;
+        --muted: #8d99aa;
+        --soft: #c1cad8;
+        --accent: #7dd3fc;
+        --accent-2: #a78bfa;
+        --good: #34d399;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 18% 12%, rgba(125, 211, 252, 0.14), transparent 28%),
+          radial-gradient(circle at 85% 5%, rgba(167, 139, 250, 0.16), transparent 28%),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .page {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .intro {
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 8px 0 8px;
+        font-size: 28px;
+      }
+
+      .intro p {
+        margin: 0;
+        max-width: 760px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .stage-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 390px;
+        gap: 22px;
+        align-items: start;
+      }
+
+      .frame-label {
+        margin-bottom: 10px;
+        color: var(--soft);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .desktop-shell,
+      .phone-shell {
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(15, 21, 32, 0.92);
+        box-shadow: 0 26px 80px rgba(0, 0, 0, 0.38);
+      }
+
+      .desktop-shell {
+        min-height: 660px;
+        border-radius: 28px;
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .level-one-rail {
+        padding: 22px 16px;
+        border-right: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(20, 27, 40, 0.92), rgba(10, 14, 22, 0.96));
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 24px;
+        font-weight: 800;
+      }
+
+      .brand-mark,
+      .project-icon,
+      .nav-icon,
+      .action-icon {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(125, 211, 252, 0.32);
+        background: rgba(125, 211, 252, 0.1);
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 14px;
+        padding: 10px 12px;
+        color: var(--muted);
+      }
+
+      .nav-item.active {
+        background: rgba(125, 211, 252, 0.12);
+        color: var(--text);
+      }
+
+      .nav-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+
+      .workspace {
+        padding: 20px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      .context-line {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      h2 {
+        margin: 2px 0 4px;
+        font-size: 24px;
+      }
+
+      .primary-action,
+      .small-action {
+        border: 0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #041019;
+        font-weight: 800;
+      }
+
+      .primary-action {
+        padding: 11px 14px;
+      }
+
+      .small-action {
+        width: 38px;
+        height: 38px;
+        font-size: 22px;
+      }
+
+      .project-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .project-card {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 20px;
+        padding: 14px;
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .project-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 15px;
+        color: var(--good);
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(52, 211, 153, 0.1);
+      }
+
+      .project-card h3 {
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+
+      .project-card p {
+        margin: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .pill {
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 999px;
+        padding: 4px 8px;
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      .open-link {
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .phone-shell {
+        width: 390px;
+        min-height: 780px;
+        border-radius: 38px;
+        position: relative;
+      }
+
+      .phone-status {
+        height: 28px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      }
+
+      .mobile-main {
+        min-height: 672px;
+        padding: 16px 14px 92px;
+      }
+
+      .mobile-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .mobile-topbar h2 {
+        font-size: 20px;
+      }
+
+      .mobile-topbar p {
+        max-width: 260px;
+      }
+
+      .bottom-nav {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-top: 1px solid var(--line);
+        background: rgba(10, 14, 22, 0.96);
+        padding: 8px 10px 12px;
+      }
+
+      .bottom-item {
+        display: grid;
+        justify-items: center;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .bottom-item.active {
+        color: var(--accent);
+      }
+
+      .bottom-item .nav-icon {
+        width: 30px;
+        height: 30px;
+      }
+
+      @media (max-width: 980px) {
+        .stage-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .phone-shell {
+          width: min(390px, 100%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="intro">
+        <div class="eyebrow">Level 1 page</div>
+        <h1>Home / Projects</h1>
+        <p>一级页面遵循“导航 + 工作区”。桌面端是左侧一级导航 + 右侧工作区；移动端是底部一级导航 + 主工作区，顶部只保留一句话级上下文和低频操作入口。</p>
+      </section>
+
+      <section class="stage-grid">
+        <div>
+          <div class="frame-label">Desktop: left level-1 navigation + workspace</div>
+          <div class="desktop-shell">
+            <aside class="level-one-rail">
+              <div class="brand"><span class="brand-mark">AR</span><span>Agents Remote</span></div>
+              <nav class="nav-list" aria-label="Level 1 navigation">
+                <div class="nav-item active"><span class="nav-icon">P</span><span>Projects</span></div>
+                <div class="nav-item"><span class="nav-icon">S</span><span>Sessions</span></div>
+                <div class="nav-item"><span class="nav-icon">C</span><span>Config</span></div>
+                <div class="nav-item"><span class="nav-icon">H</span><span>Help</span></div>
+              </nav>
+            </aside>
+            <section class="workspace">
+              <div class="topbar">
+                <div>
+                  <p class="context-line">Open a server Project to continue with Agent, Files, Git, or Terminal.</p>
+                  <h2>Projects</h2>
+                </div>
+                <button class="primary-action">New / Adopt</button>
+              </div>
+              <div class="project-list">
+                <article class="project-card">
+                  <span class="project-icon">P</span>
+                  <div>
+                    <h3>agents-remote</h3>
+                    <p>/home/deploy/workspace/agents-remote</p>
+                    <div class="status-row"><span class="pill">Agent 0</span><span class="pill">Terminal 1</span><span class="pill">main</span></div>
+                  </div>
+                  <span class="open-link">Open</span>
+                </article>
+                <article class="project-card">
+                  <span class="project-icon">P</span>
+                  <div>
+                    <h3>claude-template</h3>
+                    <p>/home/deploy/workspace/claude-template</p>
+                    <div class="status-row"><span class="pill">Agent 2</span><span class="pill">Terminal 0</span><span class="pill">clean</span></div>
+                  </div>
+                  <span class="open-link">Open</span>
+                </article>
+                <article class="project-card">
+                  <span class="project-icon">P</span>
+                  <div>
+                    <h3>novels</h3>
+                    <p>/home/deploy/workspace/novels</p>
+                    <div class="status-row"><span class="pill">Agent 1</span><span class="pill">Terminal 1</span><span class="pill">pending</span></div>
+                  </div>
+                  <span class="open-link">Open</span>
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div>
+          <div class="frame-label">Mobile: workspace + bottom level-1 navigation</div>
+          <div class="phone-shell">
+            <div class="phone-status"></div>
+            <section class="mobile-main">
+              <div class="mobile-topbar">
+                <div>
+                  <p class="context-line">Open a Project to continue.</p>
+                  <h2>Projects</h2>
+                </div>
+                <button class="small-action" aria-label="Create or adopt project">+</button>
+              </div>
+              <div class="project-list">
+                <article class="project-card">
+                  <span class="project-icon">P</span>
+                  <div>
+                    <h3>agents-remote</h3>
+                    <p>/home/deploy/workspace/agents-remote</p>
+                    <div class="status-row"><span class="pill">Agent 0</span><span class="pill">Terminal 1</span></div>
+                  </div>
+                  <span class="open-link">Open</span>
+                </article>
+                <article class="project-card">
+                  <span class="project-icon">P</span>
+                  <div>
+                    <h3>claude-template</h3>
+                    <p>/home/deploy/workspace/claude-template</p>
+                    <div class="status-row"><span class="pill">Agent 2</span><span class="pill">clean</span></div>
+                  </div>
+                  <span class="open-link">Open</span>
+                </article>
+                <article class="project-card">
+                  <span class="project-icon">P</span>
+                  <div>
+                    <h3>novels</h3>
+                    <p>/home/deploy/workspace/novels</p>
+                    <div class="status-row"><span class="pill">Agent 1</span><span class="pill">pending</span></div>
+                  </div>
+                  <span class="open-link">Open</span>
+                </article>
+              </div>
+            </section>
+            <nav class="bottom-nav" aria-label="Level 1 navigation">
+              <div class="bottom-item active"><span class="nav-icon">P</span><span>Projects</span></div>
+              <div class="bottom-item"><span class="nav-icon">S</span><span>Sessions</span></div>
+              <div class="bottom-item"><span class="nav-icon">C</span><span>Config</span></div>
+              <div class="bottom-item"><span class="nav-icon">H</span><span>Help</span></div>
+            </nav>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
