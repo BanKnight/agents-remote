@@ -85,3 +85,28 @@
     归档路径：.workflow/archive/changes/implement-git-diff-viewer/
     verify：通过；无 CRITICAL/WARNING。
     distill：已沉淀 `docs/specs/git-diff-viewer/spec.md`、`docs/design/git-diff-viewer.md`、`docs/architecture/git-diff-viewer.md`。
+
+### version: v0.5-mobile-ux-polish
+
+- 归档时间：2026-05-25
+- 完成结果：完成移动端 App-like shell、Project 工作区、Session detail 控制台和 Files/Git 只读 inspection 信息密度优化，使控制台更接近移动端 App 使用体验；相关长期 WHAT/HOW/project knowledge 已沉淀到 docs。
+- version 目标：把人工 QA 后暴露的核心 UI/UX 问题收敛为移动端优先、接近原生 App 的控制台体验，并保持后续平板/桌面适配方向。
+- verify 结论摘要：四个 changes 均有 `verify.md`，结论通过，无未解决 CRITICAL/WARNING。
+- distill 结论摘要：已沉淀 PWA console shell、Project console navigation、mobile session interaction、Files/Git compact inspection、console shell、Files/Git design 和 project big picture 等长期文档。
+- 包含 changes：
+  - change-id：align-mobile-app-shell
+    归档路径：.workflow/archive/changes/align-mobile-app-shell/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/pwa-console-shell/spec.md`、`docs/design/console-shell.md`、`docs/project.md`。
+  - change-id：rework-project-mobile-workspace
+    归档路径：.workflow/archive/changes/rework-project-mobile-workspace/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/project-console-navigation/spec.md`、`docs/design/console-shell.md`、`docs/project.md` 及相关 index。
+  - change-id：rework-session-mobile-console
+    归档路径：.workflow/archive/changes/rework-session-mobile-console/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/mobile-session-interaction/spec.md`、`docs/design/mobile-session-interaction.md`、`docs/project.md` 及相关 index。
+  - change-id：compact-inspection-mobile-views
+    归档路径：.workflow/archive/changes/compact-inspection-mobile-views/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/specs/file-browser-preview/spec.md`、`docs/specs/git-diff-viewer/spec.md`、`docs/design/file-browser-preview.md`、`docs/design/git-diff-viewer.md`、`docs/project.md` 及相关 index。
