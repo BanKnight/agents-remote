@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { AuthService } from "./auth";
 import { createFetchHandler } from "./index";
 import { ProjectFilesService } from "./project-files";
+import { ProjectGitDiffService } from "./project-git-diff";
 import { ProjectService } from "./projects";
 import { SessionRegistry } from "./session-registry";
 let root: string;
@@ -33,12 +34,14 @@ const createTestHandler = () => {
   });
   const projectService = new ProjectService(root, sessionRegistry);
   const projectFilesService = new ProjectFilesService(root);
+  const projectGitDiffService = new ProjectGitDiffService(root);
 
   return {
     auth,
     sessionRegistry,
     handler: createFetchHandler(auth, {
       projectFilesService,
+      projectGitDiffService,
       projectService,
       projectsRoot: root,
       sessionRegistry,
@@ -352,6 +355,101 @@ test("createFetchHandler serves Project-scoped file browsing and preview", async
   expect((await escape.json()).error.code).toBe("PROJECT_PATH_OUTSIDE_ROOT");
 });
 
+test("createFetchHandler serves Project-scoped Git diff routes", async () => {
+  const projectPath = join(root, "demo");
+  await mkdir(projectPath);
+  await git(projectPath, ["init"]);
+  await git(projectPath, ["config", "user.email", "test@example.com"]);
+  await git(projectPath, ["config", "user.name", "Test User"]);
+  await writeFile(join(projectPath, "tracked.txt"), "initial\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await writeFile(join(projectPath, "tracked.txt"), "changed\n");
+  await writeFile(join(projectPath, "staged.txt"), "staged\n");
+  await git(projectPath, ["add", "staged.txt"]);
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const list = await handler(
+    new Request("http://localhost/api/projects/demo/git/diff", { headers }),
+    {
+      upgrade: () => false,
+    },
+  );
+  const listBody = await list.json();
+  const worktreeDiff = await handler(
+    new Request(
+      "http://localhost/api/projects/demo/git/diff/file?scope=worktree&path=tracked.txt",
+      {
+        headers,
+      },
+    ),
+    { upgrade: () => false },
+  );
+  const stagedDiff = await handler(
+    new Request("http://localhost/api/projects/demo/git/diff/file?scope=staged&path=staged.txt", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  const invalidScope = await handler(
+    new Request("http://localhost/api/projects/demo/git/diff/file?scope=bad&path=tracked.txt", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+
+  expect(list.status).toBe(200);
+  expect(listBody.files).toEqual([
+    { path: "staged.txt", status: "added", scope: "staged" },
+    { path: "tracked.txt", status: "modified", scope: "worktree" },
+  ]);
+  expect(worktreeDiff.status).toBe(200);
+  expect(await worktreeDiff.json()).toMatchObject({
+    path: "tracked.txt",
+    scope: "worktree",
+    status: "modified",
+    diff: expect.stringContaining("+changed"),
+  });
+  expect(stagedDiff.status).toBe(200);
+  expect(await stagedDiff.json()).toMatchObject({
+    path: "staged.txt",
+    scope: "staged",
+    status: "added",
+    diff: expect.stringContaining("+staged"),
+  });
+  expect(invalidScope.status).toBe(400);
+  expect((await invalidScope.json()).error.code).toBe("PROJECT_GIT_SCOPE_INVALID");
+});
+
+test("createFetchHandler returns non-Git repository state", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const list = await handler(
+    new Request("http://localhost/api/projects/demo/git/diff", { headers }),
+    {
+      upgrade: () => false,
+    },
+  );
+  const file = await handler(
+    new Request("http://localhost/api/projects/demo/git/diff/file?scope=worktree&path=file.txt", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+
+  expect(list.status).toBe(200);
+  expect(await list.json()).toEqual({
+    repository: false,
+    projectName: "demo",
+    reason: "not_git_repository",
+  });
+  expect(file.status).toBe(400);
+  expect((await file.json()).error.code).toBe("PROJECT_GIT_NOT_REPOSITORY");
+});
+
 test("createFetchHandler maps project errors", async () => {
   await writeFile(join(root, "file"), "content");
   const { auth, handler } = createTestHandler();
@@ -395,3 +493,22 @@ test("createFetchHandler maps project errors", async () => {
   expect(missingDetail.status).toBe(404);
   expect((await missingDetail.json()).error.code).toBe("PROJECT_NOT_FOUND");
 });
+
+const git = async (projectPath: string, args: string[]) => {
+  const process = Bun.spawn({
+    cmd: ["git", "-C", projectPath, ...args],
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${stderr || stdout}`);
+  }
+
+  return stdout;
+};

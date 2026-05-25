@@ -25,12 +25,13 @@ test("authenticated user can browse Project files and preview text and images", 
   const rootNames = await files
     .locator("button .font-semibold")
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
-  expect(rootNames.slice(0, 5)).toEqual([
+  expect(rootNames.slice(0, 6)).toEqual([
     ".config",
+    ".git",
     "src",
     ".env.example",
     "logo.svg",
-    "README.md",
+    "notes.txt",
   ]);
 
   await files.getByRole("button", { name: /src/ }).click();

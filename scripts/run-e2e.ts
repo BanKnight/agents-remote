@@ -26,6 +26,21 @@ const main = async () => {
     join(projectPath, "logo.svg"),
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40"><text x="4" y="24">file-browser-e2e-image-ok</text></svg>',
   );
+  await git(projectPath, ["init"]);
+  await git(projectPath, ["config", "user.email", "e2e@example.com"]);
+  await git(projectPath, ["config", "user.name", "E2E User"]);
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await writeFile(
+    join(projectPath, "README.md"),
+    "# Demo\n\nfile-browser-e2e-text-ok\n\ngit-diff-e2e-worktree-ok\n",
+  );
+  await writeFile(
+    join(projectPath, "src", "index.ts"),
+    "export const fileBrowserE2e = true;\nexport const gitDiffE2eStaged = true;\n",
+  );
+  await git(projectPath, ["add", "src/index.ts"]);
+  await writeFile(join(projectPath, "notes.txt"), "git-diff-e2e-untracked-ok\n");
   await mkdir(runtimeDir, { recursive: true });
 
   const apiPort = await freePort();
@@ -84,6 +99,23 @@ const main = async () => {
     web.kill();
     await Promise.allSettled([api.exited, web.exited]);
     await rm(tempRoot, { force: true, recursive: true });
+  }
+};
+
+const git = async (projectPath: string, args: string[]) => {
+  const process = Bun.spawn({
+    cmd: ["git", "-C", projectPath, ...args],
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${stderr || stdout}`);
   }
 };
 

@@ -40,8 +40,8 @@ export const consoleSections: ConsoleSectionDefinition[] = [
   {
     id: "git",
     label: "Git",
-    description: "Read-only diff and branch context land after the console shell.",
-    status: "Coming soon",
+    description: "Read-only worktree and staged diff viewer.",
+    status: "Read-only",
   },
   {
     id: "files",

@@ -7,8 +7,10 @@ import {
   createTerminalSession,
   getAuthStatus,
   getProject,
+  getProjectGitFileDiff,
   listAgentSessions,
   listProjectFiles,
+  listProjectGitDiff,
   listProjects,
   listTerminalSessions,
   login,
@@ -137,6 +139,38 @@ test("web api client calls Project file routes with encoded paths", async () => 
   expect(calls[1][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/files?path=src");
   expect(calls[2][0]).toBe(
     "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/files/preview?path=src%2Fhello%20world.ts",
+  );
+});
+
+test("web api client calls Project Git diff routes with encoded paths", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+
+    if (input.toString().includes("/file")) {
+      return Response.json({
+        repository: true,
+        projectName: "hello world 中文",
+        path: "src/hello world.ts",
+        scope: "worktree",
+        status: "modified",
+        diff: "diff --git a/src/hello world.ts b/src/hello world.ts",
+      });
+    }
+
+    return Response.json({ repository: true, projectName: "hello world 中文", files: [] });
+  }) as typeof fetch;
+
+  await listProjectGitDiff("hello world 中文");
+  await getProjectGitFileDiff("hello world 中文", "worktree", "src/hello world.ts");
+  await getProjectGitFileDiff("hello world 中文", "staged", "README.md");
+
+  expect(calls[0][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/git/diff");
+  expect(calls[1][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/git/diff/file?scope=worktree&path=src%2Fhello%20world.ts",
+  );
+  expect(calls[2][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/git/diff/file?scope=staged&path=README.md",
   );
 });
 

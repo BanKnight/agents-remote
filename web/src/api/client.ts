@@ -10,6 +10,9 @@ import type {
   CreateProjectResponse,
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
+  GitDiffListResponse,
+  GitDiffScope,
+  GitFileDiffResponse,
   HealthResponse,
   ListAgentSessionsResponse,
   ListTerminalSessionsResponse,
@@ -83,6 +86,21 @@ export async function previewProjectFile(
   path: string,
 ): Promise<ProjectFilePreviewResponse> {
   return fetchJson(projectFilePreviewPath(projectName, path), "Project file preview failed");
+}
+
+export async function listProjectGitDiff(projectName: string): Promise<GitDiffListResponse> {
+  return fetchJson(projectGitDiffPath(projectName), "Project Git diff failed");
+}
+
+export async function getProjectGitFileDiff(
+  projectName: string,
+  scope: GitDiffScope,
+  path: string,
+): Promise<GitFileDiffResponse> {
+  return fetchJson(
+    projectGitFileDiffPath(projectName, scope, path),
+    "Project Git file diff failed",
+  );
 }
 
 export async function listAgentSessions(projectName: string): Promise<ListAgentSessionsResponse> {
@@ -183,6 +201,12 @@ const projectFilesPath = (projectName: string, path: string) =>
 
 const projectFilePreviewPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/preview`, path);
+
+const projectGitDiffPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/git/diff`;
+
+const projectGitFileDiffPath = (projectName: string, scope: GitDiffScope, path: string) =>
+  `${projectGitDiffPath(projectName)}/file?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(path)}`;
 
 const withPathQuery = (basePath: string, path: string) => {
   if (path.length === 0) {

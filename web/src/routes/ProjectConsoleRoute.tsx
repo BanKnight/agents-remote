@@ -1,6 +1,9 @@
 import type {
   AgentProvider,
   AgentSession,
+  GitDiffFileSummary,
+  GitDiffScope,
+  GitFileDiffResponse,
   Project,
   ProjectFileEntry,
   ProjectFilePreviewResponse,
@@ -17,8 +20,10 @@ import {
   createAgentSession,
   createTerminalSession,
   getProject,
+  getProjectGitFileDiff,
   listAgentSessions,
   listProjectFiles,
+  listProjectGitDiff,
   listTerminalSessions,
   previewProjectFile,
 } from "../api/client";
@@ -331,6 +336,7 @@ function SectionDetail({
   const isAgent = section.id === "agents";
   const isTerminal = section.id === "terminal";
   const isFiles = section.id === "files";
+  const isGit = section.id === "git";
 
   return (
     <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20">
@@ -368,8 +374,9 @@ function SectionDetail({
           </SessionList>
         </div>
       ) : null}
+      {isGit ? <GitDiffPanel projectName={projectName} /> : null}
       {isFiles ? <FilesPanel projectName={projectName} /> : null}
-      {!isAgent && !isTerminal && !isFiles ? (
+      {!isAgent && !isTerminal && !isFiles && !isGit ? (
         <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-500">
           Placeholder only. This entry does not read files, run Git, or start sessions in this
           change.
@@ -378,6 +385,228 @@ function SectionDetail({
     </section>
   );
 }
+
+type SelectedGitFile = {
+  path: string;
+  scope: GitDiffScope;
+};
+
+type GitDiffPanelProps = {
+  projectName: string;
+};
+
+function GitDiffPanel({ projectName }: GitDiffPanelProps) {
+  const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
+  const diff = useQuery({
+    queryKey: ["projects", projectName, "git", "diff"],
+    queryFn: () => listProjectGitDiff(projectName),
+  });
+  const fileDiff = useQuery({
+    enabled: selectedFile !== undefined,
+    queryKey: ["projects", projectName, "git", "diff", selectedFile?.scope, selectedFile?.path],
+    queryFn: () =>
+      getProjectGitFileDiff(
+        projectName,
+        selectedFile?.scope ?? "worktree",
+        selectedFile?.path ?? "",
+      ),
+  });
+
+  return (
+    <div className="mt-5 grid gap-4">
+      <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Git status</p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Read-only worktree and staged changes for this Project.
+            </p>
+          </div>
+          <button
+            className="rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100"
+            type="button"
+            onClick={() => {
+              setSelectedFile(undefined);
+              void diff.refetch();
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+
+      {diff.isLoading ? (
+        <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+          Loading Git changes...
+        </p>
+      ) : null}
+
+      {diff.error ? (
+        <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+          <p className="font-semibold text-rose-100">Unable to load Git changes.</p>
+          <p className="mt-2 text-sm leading-6 text-rose-200/80">{diff.error.message}</p>
+        </div>
+      ) : null}
+
+      {diff.data?.repository === false ? (
+        <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+          <p className="text-lg font-semibold text-slate-100">Not a Git repository</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            This Project directory does not have Git metadata.
+          </p>
+        </div>
+      ) : null}
+
+      {diff.data?.repository === true ? (
+        <>
+          <GitFileList
+            files={diff.data.files}
+            selectedFile={selectedFile}
+            onSelectFile={setSelectedFile}
+          />
+          <GitFileDiffPanel
+            error={fileDiff.error}
+            isLoading={fileDiff.isLoading}
+            fileDiff={fileDiff.data}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+type GitFileListProps = {
+  files: GitDiffFileSummary[];
+  selectedFile: SelectedGitFile | undefined;
+  onSelectFile: (file: SelectedGitFile) => void;
+};
+
+function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
+  if (files.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+        <p className="text-lg font-semibold text-slate-100">No changes</p>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          Worktree and staged changes will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-2" aria-label="Git changed files">
+      {files.map((file) => {
+        const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
+        return (
+          <button
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              selected
+                ? "border-cyan-300/60 bg-cyan-300/10"
+                : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
+            }`}
+            key={`${file.scope}:${file.path}`}
+            type="button"
+            onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
+          >
+            <span className="flex items-start justify-between gap-3">
+              <span>
+                <span className="block break-all font-semibold text-slate-100">{file.path}</span>
+                {file.previousPath ? (
+                  <span className="mt-1 block break-all font-mono text-xs text-slate-500">
+                    from {file.previousPath}
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <span className="rounded-full bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
+                  {scopeLabel(file.scope)}
+                </span>
+                <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
+                  {statusLabel(file.status)}
+                </span>
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type GitFileDiffPanelProps = {
+  error: Error | null;
+  fileDiff: GitFileDiffResponse | undefined;
+  isLoading: boolean;
+};
+
+function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps) {
+  if (isLoading) {
+    return (
+      <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+        Loading diff...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+        <p className="font-semibold text-rose-100">Unable to open this diff.</p>
+        <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
+      </div>
+    );
+  }
+
+  if (!fileDiff) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+        <p className="text-lg font-semibold text-slate-100">Select a changed file</p>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          Unified diff output is shown read-only.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <section
+      className="rounded-3xl border border-slate-800 bg-slate-950/80 p-4"
+      aria-label="Git file diff"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="break-all text-lg font-semibold text-slate-100">{fileDiff.path}</h4>
+          {fileDiff.previousPath ? (
+            <p className="mt-1 break-all font-mono text-xs text-slate-500">
+              from {fileDiff.previousPath}
+            </p>
+          ) : null}
+        </div>
+        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+          {scopeLabel(fileDiff.scope)} · {statusLabel(fileDiff.status)}
+        </span>
+      </div>
+      <pre className="mt-4 max-h-[65vh] overflow-auto whitespace-pre rounded-2xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
+        {fileDiff.diff}
+      </pre>
+    </section>
+  );
+}
+
+const scopeLabel = (scope: GitDiffScope) => (scope === "staged" ? "Staged" : "Worktree");
+
+const statusLabel = (status: GitDiffFileSummary["status"]) => {
+  switch (status) {
+    case "added":
+      return "Added";
+    case "deleted":
+      return "Deleted";
+    case "renamed":
+      return "Renamed";
+    case "modified":
+      return "Modified";
+  }
+};
 
 type FilesPanelProps = {
   projectName: string;

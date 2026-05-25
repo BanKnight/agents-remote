@@ -9,6 +9,7 @@ import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
 import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-auth";
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
+import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
@@ -24,6 +25,7 @@ type UpgradeServer = {
 
 type FetchHandlerOptions = {
   projectFilesService?: ProjectFilesService;
+  projectGitDiffService?: ProjectGitDiffService;
   projectService?: ProjectService;
   projectsRoot?: string;
   sessionRegistry?: SessionRegistry;
@@ -113,6 +115,7 @@ export const createFetchHandler =
         url,
         options.projectService,
         options.projectFilesService,
+        options.projectGitDiffService,
       );
 
       if (projectResponse) {
@@ -128,6 +131,7 @@ const handleProjects = async (
   url: URL,
   projectService: ProjectService,
   projectFilesService?: ProjectFilesService,
+  projectGitDiffService?: ProjectGitDiffService,
 ) => {
   try {
     if (url.pathname === "/api/projects" && request.method === "GET") {
@@ -145,6 +149,19 @@ const handleProjects = async (
       const response: CreateProjectResponse = {
         project: await projectService.createProject(body.path),
       };
+      return Response.json(response);
+    }
+
+    const projectGitDiffMatch = matchProjectGitDiffPath(url.pathname);
+
+    if (projectGitDiffMatch && request.method === "GET" && projectGitDiffService) {
+      const response = projectGitDiffMatch.file
+        ? await projectGitDiffService.fileDiff(
+            projectGitDiffMatch.projectName,
+            url.searchParams.get("scope"),
+            url.searchParams.get("path"),
+          )
+        : await projectGitDiffService.listDiff(projectGitDiffMatch.projectName);
       return Response.json(response);
     }
 
@@ -177,6 +194,10 @@ const handleProjects = async (
       return Response.json(response);
     }
   } catch (error) {
+    if (error instanceof ProjectGitDiffError) {
+      return projectGitDiffErrorResponse(error);
+    }
+
     if (error instanceof ProjectFilesError) {
       return projectFilesErrorResponse(error);
     }
@@ -205,6 +226,43 @@ const decodeProjectName = (encodedName: string) => {
   } catch {
     return undefined;
   }
+};
+
+type ProjectGitDiffPathMatch = {
+  projectName: string;
+  file: boolean;
+};
+
+const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | undefined => {
+  const prefix = "/api/projects/";
+
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+
+  const suffix = pathname.slice(prefix.length);
+  const diffSuffix = "/git/diff";
+  const fileSuffix = "/git/diff/file";
+  const encodedName = suffix.endsWith(fileSuffix)
+    ? suffix.slice(0, -fileSuffix.length)
+    : suffix.endsWith(diffSuffix)
+      ? suffix.slice(0, -diffSuffix.length)
+      : undefined;
+
+  if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
+    return undefined;
+  }
+
+  const projectName = decodeProjectName(encodedName);
+
+  if (!projectName) {
+    return undefined;
+  }
+
+  return {
+    projectName,
+    file: suffix.endsWith(fileSuffix),
+  };
 };
 
 type ProjectFilesPathMatch = {
@@ -242,6 +300,22 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
     projectName,
     preview: suffix.endsWith(previewSuffix),
   };
+};
+
+const projectGitDiffErrorResponse = (error: ProjectGitDiffError) => {
+  if (error.code === "PROJECT_NOT_FOUND") {
+    return jsonError(error.code, error.message, 404);
+  }
+
+  if (error.code === "PROJECT_GIT_NOT_REPOSITORY") {
+    return jsonError(error.code, error.message, 400);
+  }
+
+  if (error.code === "PROJECT_GIT_UNAVAILABLE" || error.code === "PROJECT_FS_ERROR") {
+    return jsonError(error.code, error.message, 500);
+  }
+
+  return jsonError(error.code, error.message, 400);
 };
 
 const projectFilesErrorResponse = (error: ProjectFilesError) => {
@@ -291,10 +365,12 @@ export const startApi = async () => {
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);
+  const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);
   const server = Bun.serve<WebSocketData>({
     port: settings.apiPort,
     fetch: createFetchHandler(auth, {
       projectFilesService,
+      projectGitDiffService,
       projectService,
       projectsRoot: settings.projectsRoot,
       sessionRegistry,

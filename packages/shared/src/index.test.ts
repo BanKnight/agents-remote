@@ -10,6 +10,8 @@ import type {
   CreateProjectResponse,
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
+  GitDiffListResponse,
+  GitFileDiffResponse,
   HealthResponse,
   ListAgentSessionsResponse,
   ListTerminalSessionsResponse,
@@ -110,6 +112,42 @@ test("Project Files DTOs describe directory listings and preview states", () => 
   expect(unsupported.reason).toBe("unsupported_type");
   expect(tooLarge.limitBytes).toBe(262_144);
   expect(error.error.code).toBe("PROJECT_FILE_NOT_DIRECTORY");
+});
+
+test("Git diff DTOs describe repository states and file diffs", () => {
+  const list: GitDiffListResponse = {
+    repository: true,
+    projectName: "demo",
+    files: [
+      { path: "src/index.ts", status: "modified", scope: "worktree" },
+      { path: "README.md", previousPath: "README.old.md", status: "renamed", scope: "staged" },
+    ],
+  };
+  const nonRepository: GitDiffListResponse = {
+    repository: false,
+    projectName: "demo",
+    reason: "not_git_repository",
+  };
+  const diff: GitFileDiffResponse = {
+    repository: true,
+    projectName: "demo",
+    path: "src/index.ts",
+    scope: "worktree",
+    status: "modified",
+    diff: "diff --git a/src/index.ts b/src/index.ts",
+  };
+  const error: ApiErrorResponse = {
+    error: {
+      code: "PROJECT_GIT_FILE_NOT_CHANGED",
+      message: "Git file is not changed",
+    },
+  };
+
+  expect(list.repository).toBe(true);
+  expect(list.files[1].previousPath).toBe("README.old.md");
+  expect(nonRepository.reason).toBe("not_git_repository");
+  expect(diff.diff).toContain("diff --git");
+  expect(error.error.code).toBe("PROJECT_GIT_FILE_NOT_CHANGED");
 });
 
 test("Session API DTOs keep Agent and Terminal semantics separate", () => {

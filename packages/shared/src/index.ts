@@ -75,6 +75,39 @@ export type ProjectFilePreviewResponse =
   | ProjectUnsupportedFilePreview
   | ProjectTooLargeFilePreview;
 
+export type GitDiffScope = "worktree" | "staged";
+
+export type GitDiffFileStatus = "modified" | "added" | "deleted" | "renamed";
+
+export type GitDiffFileSummary = {
+  path: string;
+  previousPath?: string;
+  status: GitDiffFileStatus;
+  scope: GitDiffScope;
+};
+
+export type GitDiffListResponse =
+  | {
+      repository: true;
+      projectName: string;
+      files: GitDiffFileSummary[];
+    }
+  | {
+      repository: false;
+      projectName: string;
+      reason: "not_git_repository";
+    };
+
+export type GitFileDiffResponse = {
+  repository: true;
+  projectName: string;
+  path: string;
+  previousPath?: string;
+  scope: GitDiffScope;
+  status: GitDiffFileStatus;
+  diff: string;
+};
+
 export type ProjectListResponse = {
   projects: Project[];
 };
@@ -218,6 +251,10 @@ export type ApiErrorCode =
   | "PROJECT_FILE_NOT_FOUND"
   | "PROJECT_FILE_NOT_DIRECTORY"
   | "PROJECT_FILE_NOT_FILE"
+  | "PROJECT_GIT_NOT_REPOSITORY"
+  | "PROJECT_GIT_SCOPE_INVALID"
+  | "PROJECT_GIT_FILE_NOT_CHANGED"
+  | "PROJECT_GIT_UNAVAILABLE"
   | "PROJECT_FS_ERROR"
   | "SESSION_NOT_FOUND"
   | "SESSION_RUNTIME_MISSING"

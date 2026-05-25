@@ -24,11 +24,11 @@ test("Agent Sessions are the default console focus", () => {
   expect(sectionForId("agents").label).toBe("Agent Sessions");
 });
 
-test("Git remains deferred while Files is read-only", () => {
+test("Git and Files are read-only project inspection sections", () => {
   const git = sectionForId("git");
   const files = sectionForId("files");
 
-  expect(git.status).toBe("Coming soon");
+  expect(git.status).toBe("Read-only");
   expect(files.status).toBe("Read-only");
 });
 

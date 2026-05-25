@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：依赖 `implement-project-model-and-safe-paths` 与 `build-responsive-pwa-console-shell`；规格阶段可先推进只读 Git diff 能力约束。
+- 当前阶段：已完成
+- 阻塞项：（无）
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`specs/git-diff-viewer/spec.md`）
+- design：已完成（`design/overview.md`、`design/architecture.md`、`design/api.md`、`design/frontend.md`、`design/ui-ux.md`、`design/error-handling.md`）
+- plan/tasks：已完成（`plan.md`、`tasks.md`）
+- implementation：已完成
+- verify：已完成（`verify.md`，结论：通过；无 CRITICAL/WARNING）
+- distill：已完成（`docs/specs/git-diff-viewer/spec.md`、`docs/design/git-diff-viewer.md`、`docs/architecture/git-diff-viewer.md`）
 
 ## 阶段流转
 
@@ -45,3 +45,9 @@
 ## 进展记录
 
 - 已进入 roadmap，完整来源见 `intents.md`。
+- 2026-05-25：`specify-change` 完成，创建 `specs/git-diff-viewer/spec.md`；明确 Git diff viewer 第一轮为只读观察入口，覆盖非 Git 仓库提示、worktree/staged 变更文件列表、modified/added/deleted/renamed 状态、单文件 unified diff、移动端文本布局和 Project-scoped 安全边界，下一阶段为 `待设计`。
+- 2026-05-25：`design-change` 完成，创建 `design/overview.md`、`design/architecture.md`、`design/api.md`、`design/frontend.md`、`design/ui-ux.md` 和 `design/error-handling.md`；确定 Git diff viewer 作为 Project console 只读观察入口，使用 Project-safe path、Git CLI 只读命令、worktree/staged DTO、单文件 unified diff、移动端列表+同页 diff panel 和非 Git 仓库/错误恢复语义，下一阶段为 `待计划`。
+- 2026-05-25：`plan-change` 完成，创建 `plan.md`、`tasks.md`；实现顺序为 shared Git diff DTO/error codes、API Git diff service/route、web API client、Project console Git diff UI、Git diff E2E 和质量门禁，下一阶段为 `待实现`。
+- 2026-05-25：`implement-change` 完成；实现 shared Git diff DTO/error codes、ProjectGitDiffService 与 HTTP route、web API client、Project console Git diff UI 和 Playwright E2E 覆盖；focused tests、`bun run e2e`、`bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build` 均通过，下一阶段为 `待验证`。
+- 2026-05-25：`verify-change` 完成，创建 `verify.md`；Trace/Delta/Scenario/Evidence 覆盖只读 Git diff viewer、非 Git 仓库、worktree/staged/untracked 列表、basic status、single-file unified diff、Project-safe access 和 UI/E2E 回归，focused tests、`bun run e2e`、完整质量门禁均通过，无 CRITICAL/WARNING，下一阶段为 `待沉淀`。
+- 2026-05-25：`distill-change` 完成，新增 `docs/specs/git-diff-viewer/spec.md`、`docs/specs/git-diff-viewer/index.md`、`docs/design/git-diff-viewer.md` 和 `docs/architecture/git-diff-viewer.md`，并更新 `docs/specs/index.md`、`docs/design/index.md`、`docs/architecture/index.md`；长期 WHAT/HOW 已按 verify 证据沉淀，本 change 当前阶段为 `已完成`。
