@@ -1,0 +1,14 @@
+desktop: Home keeps primary navigation and Project entry list aligned to prototype
+desktop: Project Agent workspace keeps secondary navigation, live Agent list, and staged history boundary
+desktop: Agent detail is terminal-first, hides Project secondary nav, and contains Agent-only contextual tools
+desktop: Terminal detail stays a focused shell with no Agent-only tools or Project secondary nav
+desktop: Files workspace is read-only and mobile preview uses deep detail navigation
+desktop: Git workspace is read-only and mobile file diff uses deep detail navigation
+desktop: Terminal workspace lists instances, supports create/close, and keeps runtime input out of the direct workspace
+mobile: Home keeps primary navigation and Project entry list aligned to prototype
+mobile: Project Agent workspace keeps secondary navigation, live Agent list, and staged history boundary
+mobile: Agent detail is terminal-first, hides Project secondary nav, and contains Agent-only contextual tools
+mobile: Terminal detail stays a focused shell with no Agent-only tools or Project secondary nav
+mobile: Files workspace is read-only and mobile preview uses deep detail navigation
+mobile: Git workspace is read-only and mobile file diff uses deep detail navigation
+mobile: Terminal workspace lists instances, supports create/close, and keeps runtime input out of the direct workspace

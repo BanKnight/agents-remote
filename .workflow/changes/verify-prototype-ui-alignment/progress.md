@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：等待本 version 的页面/工作区对齐 changes 完成。
+- 当前阶段：已完成
+- 阻塞项：无
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/verify-prototype-ui-alignment/specs/prototype-ui-alignment/spec.md`）
+- design：已完成（`.workflow/changes/verify-prototype-ui-alignment/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`）
+- plan/tasks：已完成（`.workflow/changes/verify-prototype-ui-alignment/plan.md`、`tasks.md`）
+- implementation：已完成（新增 `.workflow/changes/verify-prototype-ui-alignment/artifacts/prototype-ui-alignment-check.ts` 与 `artifacts/prototype-ui-alignment/` 截图/日志）
+- verify：已完成（`.workflow/changes/verify-prototype-ui-alignment/verify.md`；web 门禁与 prototype alignment browser harness 均通过）
+- distill：已完成（已更新 `docs/design/frontend-ui-architecture.md`，沉淀最终 prototype alignment 验证规则和证据来源；docs index 无需变更）
 
 ## 阶段流转
 
@@ -45,3 +45,5 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，作为 v0.8 prototype UI alignment 的收口验证 change。
+- 2026-05-26：前置 Home、Project Agent workspace、instance detail 和 resource pages changes 均已完成，解除局部阻塞；补齐 specs/design/plan/tasks，下一阶段进入待实现。
+- 2026-05-26：完成最终 prototype alignment browser harness，生成 Home、Project Agent workspace、Agent/Terminal detail、Files/Git/Terminal resource workspaces 的 desktop/mobile 截图与 web/mock API/harness logs；web format/lint/typecheck/test/build 与 harness 均通过，`verify.md` 结论通过；沉淀验证规则到 `docs/design/frontend-ui-architecture.md`，本 change 收口为已完成。

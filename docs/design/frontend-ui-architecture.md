@@ -54,6 +54,8 @@
 - 如果某个状态影响浏览器返回、刷新恢复或深链，不应长期只保留为 Jotai atom 或组件 state。
 - UI alignment 后必须保留现有加载、空、错误、禁用和危险确认行为。
 - 涉及用户可见 UI 的实现必须用真实浏览器验证桌面端和移动端，不能只靠 typecheck。
+- Prototype alignment 收口验证采用结构断言 + 可审查截图，而不是 pixel diff；至少覆盖 Home、Project Agent workspace、Agent/Terminal detail、Files/Git/Terminal resource workspaces 的 desktop/mobile 路径。
+- 最终 alignment 证据必须保存 browser harness log、web log、mock/API log 和截图，并明确可接受差异、阻塞结构偏差和是否存在 CRITICAL。
 
 ## 视觉与密度基线
 
@@ -88,3 +90,6 @@
 - change：align-resource-inspection-pages
 - verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
 - 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/resource-inspection-check.log` 与同目录 Files/Git/Terminal desktop/mobile 截图
+- change：verify-prototype-ui-alignment
+- verify 证据：`.workflow/changes/verify-prototype-ui-alignment/verify.md`
+- 运行态验证证据：`.workflow/changes/verify-prototype-ui-alignment/artifacts/prototype-ui-alignment/prototype-ui-alignment-check.log` 与同目录最终 desktop/mobile alignment 截图、web log、mock API log
