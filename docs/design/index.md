@@ -4,7 +4,7 @@
 
 ## 子目录
 
-- [prototype](./prototype/index.md) — 保存首页一级导航与 Project 二级导航的 HTML 原型，用于对齐桌面/移动端布局。
+- [prototype](./prototype/index.md) — 保存导航结构 HTML 原型和浏览器截图，用于对齐首页一级导航、Project 二级导航、实例详情页与桌面/移动端布局。
 
 ## 文档
 
@@ -17,4 +17,3 @@
 - [mobile-session-interaction.md](./mobile-session-interaction.md) — 定义 Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 直发、选择输入和恢复状态规则。
 - [session-runtime-boundaries.md](./session-runtime-boundaries.md) — 定义 Agent Session、Terminal Session、transport connection 和 runtime lifecycle 的长期设计边界。
 - [工作流和技能的大纲设计.md](./工作流和技能的大纲设计.md) — 定义工作流阶段链路、技能职责、运行态与长期沉淀目录结构。
-- [prototype.png](./prototype.png) — Server Agent Console 的移动端深色界面原型图，用于理解产品布局和交互意图。

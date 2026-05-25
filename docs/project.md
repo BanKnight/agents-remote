@@ -109,7 +109,9 @@ agents-remote/
 
 ### 原型与产品体验
 
-- [移动端原型图](./design/prototype.png) — Server Agent Console 的移动端深色界面原型，用于确认整体视觉方向和信息密度。
+- [导航结构 HTML 原型](./design/prototype/index.md) — 当前 UI/UX 对齐的主入口，覆盖首页一级导航、Project 二级导航、Agent/Files/Git/Terminal 页面、terminal-first instance detail，以及桌面端/移动端布局形态。
+- [Prototype 设计规范](./design/prototype/guidelines.md) — 定义 prototype 页面的导航、布局、组件、配色、间距和移动端直接二级页/深层详情页返回规则。
+- [Prototype 截图索引](./design/prototype/screenshots/index.md) — 保存各独立原型页的桌面端和移动端浏览器渲染截图，用于评审、对齐和回归对比。
 - [Console Shell 设计](./design/console-shell.md) — 登录后 Project Console 的信息架构、移动 Project 工作区顺序、输入职责边界和 PWA 外壳设计。
 - [移动端 Session 交互设计](./design/mobile-session-interaction.md) — Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 和恢复状态规则。
 - [前端栈设计](./design/frontend-stack.md) — `web` 前端路由、服务端状态、本地 UI 状态和 `/api` 调用职责边界。
