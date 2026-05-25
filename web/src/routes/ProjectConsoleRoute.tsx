@@ -12,7 +12,7 @@ import type {
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -93,6 +93,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate({ from: "/projects/$projectName" });
   const { workspace: activeSection } = useSearch({ from: "/projects/$projectName" });
+  const [resourceDeepDetailOpen, setResourceDeepDetailOpen] = useState(false);
   const selectedSection = sectionForId(activeSection);
   const summary = projectSummary(project);
   const agentSessions = useQuery({
@@ -128,10 +129,16 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     onSuccess: invalidateSessions,
   });
 
-  const selectWorkspace = (workspace: (typeof consoleSections)[number]["id"]) =>
+  const selectWorkspace = (workspace: (typeof consoleSections)[number]["id"]) => {
+    setResourceDeepDetailOpen(false);
     void navigate({
       search: { workspace },
     });
+  };
+
+  useEffect(() => {
+    setResourceDeepDetailOpen(false);
+  }, [activeSection]);
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-3 pb-24 pt-3 text-slate-100 sm:px-6 sm:py-4 lg:px-8">
@@ -160,6 +167,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
               sessions={terminalSessions.data?.sessions ?? []}
               isLoading={terminalSessions.isLoading}
               isCreating={createTerminal.isPending}
+              isClosing={closeTerminal.isPending}
               createError={createTerminal.error}
               closeError={closeTerminal.error}
               onCreate={() => createTerminal.mutate()}
@@ -168,14 +176,23 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           ) : null}
 
           {activeSection === "files" || activeSection === "git" ? (
-            <SectionDetail projectName={project.name} section={selectedSection} />
+            <SectionDetail
+              projectName={project.name}
+              section={selectedSection}
+              onDeepDetailChange={setResourceDeepDetailOpen}
+            />
           ) : null}
 
           <ProjectSignals gitBranch={summary.gitBranch} />
         </div>
       </div>
 
-      <ProjectSecondaryBottomNav activeSection={activeSection} onSelectSection={selectWorkspace} />
+      {!resourceDeepDetailOpen ? (
+        <ProjectSecondaryBottomNav
+          activeSection={activeSection}
+          onSelectSection={selectWorkspace}
+        />
+      ) : null}
     </main>
   );
 }
@@ -518,6 +535,7 @@ type TerminalPanelProps = {
   sessions: TerminalSession[];
   isLoading: boolean;
   isCreating: boolean;
+  isClosing: boolean;
   createError: Error | null;
   closeError: Error | null;
   onCreate: () => void;
@@ -529,48 +547,143 @@ function TerminalPanel({
   sessions,
   isLoading,
   isCreating,
+  isClosing,
   createError,
   closeError,
   onCreate,
   onClose,
 }: TerminalPanelProps) {
   return (
-    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 sm:p-5 lg:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h3 className="text-xl font-semibold">Terminal Sessions</h3>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+            Terminal workspace
+          </p>
+          <h3 className="mt-2 text-xl font-semibold">Terminal instances</h3>
           <p className="mt-1 text-sm leading-6 text-slate-400">
-            Project-scoped shell sessions for direct server work.
+            Project-scoped shell sessions. Runtime input opens in the Terminal detail.
           </p>
         </div>
         <CreateButton disabled={isCreating} onClick={onCreate}>
-          New Terminal
+          {isCreating ? "Creating..." : "New Terminal"}
         </CreateButton>
       </div>
       <ErrorText error={createError ?? closeError} />
-      <SessionList isLoading={isLoading} empty="No Terminal Sessions yet">
-        {sessions.map((session) => (
-          <SessionCard
-            key={session.id}
-            title={session.displayName}
-            subtitle={session.id}
-            status={sessionStatusLabel(session.status)}
-            detailTo="/projects/$projectName/terminal-sessions/$sessionId"
-            detailParams={{ projectName, sessionId: session.id }}
-            onClose={() => onClose(session.id)}
-          />
-        ))}
-      </SessionList>
+      {isClosing ? (
+        <p className="mt-3 text-sm text-amber-100">Closing Terminal session...</p>
+      ) : null}
+      <TerminalInstanceList
+        projectName={projectName}
+        sessions={sessions}
+        isLoading={isLoading}
+        onClose={onClose}
+      />
     </section>
   );
 }
 
+type TerminalInstanceListProps = {
+  projectName: string;
+  sessions: TerminalSession[];
+  isLoading: boolean;
+  onClose: (sessionId: string) => void;
+};
+
+function TerminalInstanceList({
+  projectName,
+  sessions,
+  isLoading,
+  onClose,
+}: TerminalInstanceListProps) {
+  if (isLoading) {
+    return <p className="mt-5 text-sm text-slate-400">Loading Terminal instances...</p>;
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-5 text-center">
+        <p className="text-lg font-semibold text-slate-100">No Terminal instances yet</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+          Create a Terminal to open a focused project shell detail.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-5 grid max-h-[26rem] gap-2 overflow-y-auto pr-1"
+      aria-label="Terminal instances"
+    >
+      {sessions.map((session) => (
+        <TerminalInstanceRow
+          key={session.id}
+          projectName={projectName}
+          session={session}
+          onClose={() => onClose(session.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+type TerminalInstanceRowProps = {
+  projectName: string;
+  session: TerminalSession;
+  onClose: () => void;
+};
+
+function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstanceRowProps) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 transition hover:border-slate-600 sm:p-4">
+      <div className="flex min-w-0 items-start gap-3">
+        <IconMarker tone="accent">TM</IconMarker>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h4 className="truncate font-semibold text-slate-100">{session.displayName}</h4>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">{session.id}</p>
+            </div>
+            <StatusPill
+              tone={sessionStatusTone(session.status)}
+              value={sessionStatusLabel(session.status)}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
+              params={{ projectName, sessionId: session.id }}
+              search={{ fromAgentSession: undefined }}
+              to="/projects/$projectName/terminal-sessions/$sessionId"
+            >
+              Open detail
+            </Link>
+            <button
+              className="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
+              type="button"
+              onClick={() => {
+                if (window.confirm("Close this Terminal? The running shell will be terminated.")) {
+                  onClose();
+                }
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 type SectionDetailProps = {
+  onDeepDetailChange: (open: boolean) => void;
   projectName: string;
   section: (typeof consoleSections)[number];
 };
 
-function SectionDetail({ projectName, section }: SectionDetailProps) {
+function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDetailProps) {
   const isFiles = section.id === "files";
   const isGit = section.id === "git";
 
@@ -585,11 +698,38 @@ function SectionDetail({ projectName, section }: SectionDetailProps) {
         </div>
         <StatusPill tone="accent" value={section.status} />
       </div>
-      {isGit ? <GitDiffPanel projectName={projectName} /> : null}
-      {isFiles ? <FilesPanel projectName={projectName} /> : null}
+      {isGit ? (
+        <GitDiffPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
+      ) : null}
+      {isFiles ? (
+        <FilesPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
+      ) : null}
     </section>
   );
 }
+
+function MobileDetailHeader({ backLabel, label, onBack, title }: MobileDetailHeaderProps) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3 sm:hidden">
+      <button
+        className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1.5 text-xs font-semibold text-cyan-100"
+        type="button"
+        onClick={onBack}
+      >
+        ← {backLabel}
+      </button>
+      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">{label}</p>
+      <h3 className="mt-1 break-all font-mono text-sm font-semibold text-slate-100">{title}</h3>
+    </div>
+  );
+}
+
+type MobileDetailHeaderProps = {
+  backLabel: string;
+  label: string;
+  onBack: () => void;
+  title: string;
+};
 
 type SelectedGitFile = {
   path: string;
@@ -597,10 +737,11 @@ type SelectedGitFile = {
 };
 
 type GitDiffPanelProps = {
+  onDeepDetailChange: (open: boolean) => void;
   projectName: string;
 };
 
-function GitDiffPanel({ projectName }: GitDiffPanelProps) {
+function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
   const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
   const diff = useQuery({
     queryKey: ["projects", projectName, "git", "diff"],
@@ -617,63 +758,109 @@ function GitDiffPanel({ projectName }: GitDiffPanelProps) {
       ),
   });
 
-  return (
-    <div className="mt-3 grid gap-3">
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Git status</p>
-            <p className="mt-1 truncate text-xs text-slate-400">
-              Read-only worktree and staged changes.
-            </p>
-          </div>
-          <ActionButton
-            tone="accent"
-            onClick={() => {
-              setSelectedFile(undefined);
-              void diff.refetch();
-            }}
-          >
-            Retry
-          </ActionButton>
-        </div>
-      </div>
+  useEffect(() => {
+    onDeepDetailChange(selectedFile !== undefined);
+    return () => onDeepDetailChange(false);
+  }, [onDeepDetailChange, selectedFile]);
 
-      {diff.isLoading ? (
-        <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
-          Loading Git changes...
-        </p>
-      ) : null}
+  const clearDiff = () => setSelectedFile(undefined);
 
-      {diff.error ? (
-        <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
-          <p className="font-semibold text-rose-100">Unable to load Git changes.</p>
-          <p className="mt-2 text-sm leading-6 text-rose-200/80">{diff.error.message}</p>
-        </div>
-      ) : null}
-
-      {diff.data?.repository === false ? (
-        <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
-          <p className="text-lg font-semibold text-slate-100">Not a Git repository</p>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            This Project directory does not have Git metadata.
+  const statusToolbar = (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Git status</p>
+          <p className="mt-1 truncate text-xs text-slate-400">
+            Read-only worktree and staged changes.
           </p>
         </div>
-      ) : null}
+        <ActionButton
+          tone="accent"
+          onClick={() => {
+            setSelectedFile(undefined);
+            void diff.refetch();
+          }}
+        >
+          Retry
+        </ActionButton>
+      </div>
+    </div>
+  );
 
+  const loadingState = diff.isLoading ? (
+    <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+      Loading Git changes...
+    </p>
+  ) : null;
+
+  const errorState = diff.error ? (
+    <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+      <p className="font-semibold text-rose-100">Unable to load Git changes.</p>
+      <p className="mt-2 text-sm leading-6 text-rose-200/80">{diff.error.message}</p>
+    </div>
+  ) : null;
+
+  const notRepositoryState =
+    diff.data?.repository === false ? (
+      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+        <p className="text-lg font-semibold text-slate-100">Not a Git repository</p>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          This Project directory does not have Git metadata.
+        </p>
+      </div>
+    ) : null;
+
+  const changedFileList =
+    diff.data?.repository === true ? (
+      <GitFileList
+        files={diff.data.files}
+        selectedFile={selectedFile}
+        onSelectFile={setSelectedFile}
+      />
+    ) : null;
+
+  const diffPanel = (
+    <GitFileDiffPanel
+      error={fileDiff.error}
+      isLoading={fileDiff.isLoading}
+      fileDiff={fileDiff.data}
+    />
+  );
+
+  if (selectedFile !== undefined) {
+    return (
+      <div className="mt-3 min-w-0">
+        <div className="grid gap-3 sm:hidden">
+          <MobileDetailHeader
+            label="Git diff"
+            title={selectedFile.path}
+            backLabel="Back to changed files"
+            onBack={clearDiff}
+          />
+          {diffPanel}
+        </div>
+        <div className="hidden gap-3 sm:grid">
+          {statusToolbar}
+          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+            {changedFileList}
+            {diffPanel}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 grid min-w-0 gap-3">
+      {statusToolbar}
+      {loadingState}
+      {errorState}
+      {notRepositoryState}
       {diff.data?.repository === true ? (
-        <>
-          <GitFileList
-            files={diff.data.files}
-            selectedFile={selectedFile}
-            onSelectFile={setSelectedFile}
-          />
-          <GitFileDiffPanel
-            error={fileDiff.error}
-            isLoading={fileDiff.isLoading}
-            fileDiff={fileDiff.data}
-          />
-        </>
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+          {changedFileList}
+          {diffPanel}
+        </div>
       ) : null}
     </div>
   );
@@ -805,10 +992,11 @@ const statusLabel = (status: GitDiffFileSummary["status"]) => {
 };
 
 type FilesPanelProps = {
+  onDeepDetailChange: (open: boolean) => void;
   projectName: string;
 };
 
-function FilesPanel({ projectName }: FilesPanelProps) {
+function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
   const [currentPath, setCurrentPath] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
   const files = useQuery({
@@ -826,53 +1014,91 @@ function FilesPanel({ projectName }: FilesPanelProps) {
     setSelectedFilePath(undefined);
   };
 
-  return (
-    <div className="mt-3 grid gap-3">
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current path</p>
-            <p className="mt-1 truncate font-mono text-sm text-slate-100">
-              {currentPath.length > 0 ? currentPath : "/"}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-            <button
-              className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200"
-              type="button"
-              onClick={() => goToPath("")}
-            >
-              Root
-            </button>
-            <button
-              className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={parentPath === null}
-              type="button"
-              onClick={() => parentPath !== null && goToPath(parentPath)}
-            >
-              Up
-            </button>
-            <ActionButton tone="accent" onClick={() => void files.refetch()}>
-              Retry
-            </ActionButton>
+  useEffect(() => {
+    onDeepDetailChange(selectedFilePath !== undefined);
+    return () => onDeepDetailChange(false);
+  }, [onDeepDetailChange, selectedFilePath]);
+
+  const clearPreview = () => setSelectedFilePath(undefined);
+
+  const pathToolbar = (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current path</p>
+          <p className="mt-1 truncate font-mono text-sm text-slate-100">
+            {currentPath.length > 0 ? currentPath : "/"}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <button
+            className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200"
+            type="button"
+            onClick={() => goToPath("")}
+          >
+            Root
+          </button>
+          <button
+            className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={parentPath === null}
+            type="button"
+            onClick={() => parentPath !== null && goToPath(parentPath)}
+          >
+            Up
+          </button>
+          <ActionButton tone="accent" onClick={() => void files.refetch()}>
+            Retry
+          </ActionButton>
+        </div>
+      </div>
+    </div>
+  );
+
+  const fileList = (
+    <FileEntryList
+      entries={files.data?.entries ?? []}
+      error={files.error}
+      isLoading={files.isLoading}
+      selectedFilePath={selectedFilePath}
+      onOpenDirectory={goToPath}
+      onPreviewFile={setSelectedFilePath}
+    />
+  );
+
+  const previewPanel = (
+    <FilePreviewPanel error={preview.error} isLoading={preview.isLoading} preview={preview.data} />
+  );
+
+  if (selectedFilePath !== undefined) {
+    return (
+      <div className="mt-3 min-w-0">
+        <div className="grid gap-3 sm:hidden">
+          <MobileDetailHeader
+            label="Files preview"
+            title={selectedFilePath}
+            backLabel="Back to Files list"
+            onBack={clearPreview}
+          />
+          {previewPanel}
+        </div>
+        <div className="hidden gap-3 sm:grid">
+          {pathToolbar}
+          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+            {fileList}
+            {previewPanel}
           </div>
         </div>
       </div>
+    );
+  }
 
-      <FileEntryList
-        entries={files.data?.entries ?? []}
-        error={files.error}
-        isLoading={files.isLoading}
-        selectedFilePath={selectedFilePath}
-        onOpenDirectory={goToPath}
-        onPreviewFile={setSelectedFilePath}
-      />
-
-      <FilePreviewPanel
-        error={preview.error}
-        isLoading={preview.isLoading}
-        preview={preview.data}
-      />
+  return (
+    <div className="mt-3 grid min-w-0 gap-3">
+      {pathToolbar}
+      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+        {fileList}
+        {previewPanel}
+      </div>
     </div>
   );
 }
@@ -1065,84 +1291,6 @@ const formatBytes = (bytes: number) => {
 
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 };
-type SessionListProps = {
-  children: ReactNode;
-  empty: string;
-  isLoading: boolean;
-};
-
-function SessionList({ children, empty, isLoading }: SessionListProps) {
-  if (isLoading) {
-    return <p className="mt-5 text-sm text-slate-400">Loading sessions...</p>;
-  }
-
-  if (!Array.isArray(children) || children.length === 0) {
-    return (
-      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
-        <p className="text-lg font-semibold text-slate-100">{empty}</p>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          Create a session to open a project-scoped runtime stream.
-        </p>
-      </div>
-    );
-  }
-
-  return <div className="mt-5 grid max-h-80 gap-3 overflow-y-auto pr-1">{children}</div>;
-}
-
-type SessionCardProps = {
-  title: string;
-  subtitle: string;
-  status: string;
-  detailTo:
-    | "/projects/$projectName/agent-sessions/$sessionId"
-    | "/projects/$projectName/terminal-sessions/$sessionId";
-  detailParams: { projectName: string; sessionId: string };
-  onClose: () => void;
-};
-
-function SessionCard({
-  detailParams,
-  detailTo,
-  onClose,
-  status,
-  subtitle,
-  title,
-}: SessionCardProps) {
-  return (
-    <div className="min-w-0 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate font-semibold text-slate-100">{title}</p>
-          <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
-        </div>
-        <StatusPill tone="success" value={status} />
-      </div>
-      <div className="mt-4 flex gap-2">
-        <Link
-          className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
-          params={detailParams}
-          search={{ workspace: detailTo.includes("terminal-sessions") ? "terminal" : "agents" }}
-          to={detailTo}
-        >
-          Open stream
-        </Link>
-        <button
-          className="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
-          type="button"
-          onClick={() => {
-            if (window.confirm("Close this session? The running process will be terminated.")) {
-              onClose();
-            }
-          }}
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
-
 type CreateButtonProps = {
   children: ReactNode;
   disabled: boolean;

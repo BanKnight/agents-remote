@@ -18,7 +18,8 @@
 
 - Git section 保持在 Project console route 内，不新增独立 Git route；选中文件是单页本地 state。
 - 变更列表和单文件 diff 由 TanStack Query 管理 server state，query key 包含 projectName、scope 和 path。
-- Git UI 使用“紧凑 repository state / summary + compact row changed file list + 内容优先同页 diff panel”的移动端优先结构；手机窄屏下应减少说明文案、重复 metadata 和过厚容器占位。
+- Git UI 使用“紧凑 repository state / summary + compact row changed-file list + 内容优先同页 diff panel”的结构；桌面端可保留 changed-file list + diff 同页扫读，手机窄屏选择文件后切换为 content-first diff detail。
+- 移动端 Git 直接二级页和单文件 diff 深层 detail 使用不同导航层级：changed-file list 页保留 Project 二级底部导航，diff detail 使用顶部返回 changed files 并隐藏 Project 二级底部导航。
 - worktree 与 staged 在同一列表中展示，通过文字 badge 区分 scope，避免第一轮引入 tab/filter。
 - 文件条目展示 path、scope、status；renamed 条目展示 previousPath。
 - 单文件 diff panel header 展示当前 path、scope 和 status，避免用户忘记正在查看哪个变更。
@@ -29,6 +30,7 @@
 
 - `web` 只通过同源 `/api` client 访问 Git diff API，不接收或传递任意 Git command args。
 - 只影响 Git section 的 selected file state 保留为本地 state，不引入 Jotai atom。
+- Diff deep detail 的返回只清除本地 selected file state，不新增 route；如后续需要刷新恢复或分享链接，应重新设计 route/search。
 - 页面不得出现 commit、stage、unstage、checkout、reset、merge、rebase、push、pull 等 Git 写操作 affordance。
 - 状态表达必须有文字说明，不只依赖颜色；scope/status badge 应能在移动端读懂。
 - Git compact row 中主信息是 project-relative path，scope/status 是短文字 badge；长 path 和 previousPath 使用 `min-w-0`、truncate、break-all/break-words 或局部滚动避免页面级横向溢出。
@@ -49,4 +51,6 @@
 - verify 证据：`.workflow/changes/implement-git-diff-viewer/verify.md`
 - change：compact-inspection-mobile-views
 - verify 证据：`.workflow/changes/compact-inspection-mobile-views/verify.md`
-- 运行态验证证据：`.workflow/changes/compact-inspection-mobile-views/artifacts/mobile-git-compact.png`
+- change：align-resource-inspection-pages
+- verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
+- 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/git-direct-mobile.png`、`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/git-diff-mobile.png`

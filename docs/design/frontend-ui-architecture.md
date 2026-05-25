@@ -35,6 +35,10 @@
 - Terminal detail 保持 focused shell：不显示 Agent-only Files/Git/+Terminal/Meta，不展示 provider metadata，只保留 shell 相关返回、状态、close/reconnect/resize 和输入控制。
 - Agent-derived Terminal detail 应保留来源 Agent context 的返回路径；直接从 Project Terminal workspace 打开的 Terminal detail 默认回 Terminal workspace。
 - Agent detail Meta 使用本地 overlay 展示真实 project/session/provider/status/stream 字段，不新增 API，不伪造 provider-native metadata。
+- Project resource workspace 的已验证边界：Files、Git、Terminal 都是 Project 直接二级 workspace；Files/Git 保持只读 inspection，Terminal workspace 展示 live Terminal instances 并提供 create/open/close 入口。
+- 移动端 Files preview 与 Git single-file diff 是同 route 内的深层 inspection detail：顶部返回当前 list，上层 Project 二级底部导航隐藏；Files/Git 的 selected file/diff state 仍是组件本地状态，不进入 route/search。
+- 桌面端 Files/Git 可以保留同页 compact list + preview/diff 结构，以提高扫读效率；移动端 direct secondary 默认展示列表和当前 workspace context，进入内容 detail 后 content-first。
+- Terminal workspace 不承载 shell input、quick keys 或 runtime output；这些属于 Terminal instance detail。Terminal direct secondary 在移动端仍显示 Project 二级底部导航。
 - 已验证的共享 UI primitive 边界是轻量的 nav item、icon marker、status pill、action button 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成通用组件库。
 
 ## 关键规则
@@ -81,3 +85,6 @@
 - change：align-instance-detail-workspaces
 - verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
 - 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图
+- change：align-resource-inspection-pages
+- verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
+- 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/resource-inspection-check.log` 与同目录 Files/Git/Terminal desktop/mobile 截图

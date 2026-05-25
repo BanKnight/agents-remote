@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：等待 align-ui-shell-foundation 完成共享 shell、导航、路由和视觉基础。
+- 当前阶段：已完成
+- 阻塞项：无
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/align-resource-inspection-pages/specs/file-browser-preview/spec.md`、`specs/git-diff-viewer/spec.md`、`specs/session-runtime/spec.md`）
+- design：已完成（`.workflow/changes/align-resource-inspection-pages/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`；明确 Files/Git/Terminal 直接二级页、mobile deep preview/diff、只读边界和 Terminal list/detail 分离）
+- plan/tasks：已完成（`.workflow/changes/align-resource-inspection-pages/plan.md`、`tasks.md`；明确 resource deep shell 状态、Files/Git mobile deep detail、Terminal workspace 和 browser verification 顺序）
+- implementation：已完成（完成 `tasks.md` 1.1、2.1、2.2、2.3、3.1；新增 resource workspace browser harness 与截图/日志 artifacts）
+- verify：已完成（`.workflow/changes/align-resource-inspection-pages/verify.md`；web 门禁与 resource browser harness 均通过，截图/日志 artifacts 已保存）
+- distill：已完成（已更新 `docs/specs/file-browser-preview/spec.md`、`docs/specs/git-diff-viewer/spec.md`、`docs/specs/session-runtime/spec.md`、`docs/design/frontend-ui-architecture.md`、`docs/design/file-browser-preview.md`、`docs/design/git-diff-viewer.md`、`docs/design/console-shell.md`、`docs/project.md` 与相关 index）
 
 ## 阶段流转
 
@@ -45,3 +45,7 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，等待共享 UI shell foundation。
+- 2026-05-26：前置 `align-ui-shell-foundation` 已完成，解除局部阻塞；下一阶段进入待规格。
+- 2026-05-26：通过 specify-change 创建 Files、Git、Terminal workspace 三个 spec 增量，明确直接二级页、深层 preview/diff/detail、只读边界和移动端导航模型；下一阶段进入待设计。
+- 2026-05-26：通过 design-change 创建 `design/overview.md`、`design/ui-ux.md` 和 `design/frontend.md`，明确直接二级 resource workspace、mobile preview/diff deep detail、Terminal instances list 与不扩展 API/DTO 的前端边界；下一阶段进入待计划。
+- 2026-05-26：通过 distill-change 将已验证的 resource workspace 行为沉淀到长期 specs/design/project docs；本 change 已完成，可随 version 归档。

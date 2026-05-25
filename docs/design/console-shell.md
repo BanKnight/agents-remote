@@ -21,6 +21,7 @@
 - 移动端根入口优先展示已有 Project 或工作上下文，创建/采用 Project 是低频入口，应保持可发现但不作为已有 Project 场景下的首屏大块常驻表单。
 - Project console route 使用 Project 名称作为 URL 参数；URL-sensitive 名称必须通过 encode/decode 进入 `/api/projects/:projectName`。
 - 移动端 Project console 是工作区主界面：顶部显示返回 Projects 与当前 Project 上下文，主体优先展示 Files/Git 功能区，然后展示 Agent Sessions 与 Terminal Sessions 区域。
+- Project console 的直接二级 workspace 包括 Agent、Files、Git、Terminal；移动端直接二级页使用 Project 二级底部导航，深层/contextual detail 使用顶部返回并隐藏该底部导航。
 - Project console 保持 Agent Sessions 作为主要运行态区域；Terminal Sessions 是独立运行态区域，Files/Git 是 Project 级只读检查入口。
 - Agent/Terminal 区域展示真实 session 数据、创建入口、空状态和错误状态；不要用 mock session 填充工作区。
 - Project 工作区不常驻 shell-level 底部 runtime input；真实输入、快捷键、重连恢复和发送状态归属于具体 Agent/Terminal Session detail。
@@ -31,7 +32,7 @@
 
 - `web` 只通过同域 `/api` client 访问 Project 和后续 runtime 能力，不直接依赖 `api` 内部模块。
 - 不把未验证的 AgentSession、TerminalSession 或 provider-native 字段推进 `packages/shared`；真实 session 语义由 runtime design 决定。
-- Terminal/Git/Files 入口在真实能力完成前只能展示占位、空状态或 coming soon；当前 Files/Git 已接入只读浏览、预览和 diff 查看，但仍不得执行文件写入或 Git 写操作。
+- Terminal/Git/Files 入口展示真实能力、明确空状态或错误状态；Terminal workspace 列出 live Terminal instances 并提供 create/open/close，但 runtime input 只在 Terminal detail 中出现；Files/Git 保持只读 inspection。
 - 状态表达不能只依赖颜色；应结合文字标签，如 Default focus、Coming soon、No runtime connected、Disabled。
 - 移动端是布局基准；Project 工作区默认使用单列顺序：Project context / Files-Git 功能区 / Agent Sessions / Terminal Sessions；桌面可以增强为多列，但不能让移动端依赖侧栏发现一级入口。
 - Project 工作区不渲染固定底部 runtime input panel，也不要通过 CSS 隐藏真实输入面板来满足移动布局；输入控制必须进入 Session detail 后出现。
@@ -57,3 +58,6 @@
 - change：rework-project-mobile-workspace
 - verify 证据：`.workflow/changes/rework-project-mobile-workspace/verify.md`
 - 运行态验证证据：`.workflow/changes/rework-project-mobile-workspace/artifacts/mobile-project-workspace.png`
+- change：align-resource-inspection-pages
+- verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
+- 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/resource-inspection-check.log` 与同目录 Files/Git/Terminal desktop/mobile 截图

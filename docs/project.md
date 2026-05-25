@@ -49,6 +49,7 @@ agents-remote/
 - Home / Projects 是一级 Project entry：默认优先展示可扫读 Project 列表和进入行为，Create/adopt Project 是低频入口，只有无 Project、提交中或错误时才提升为可恢复主路径。
 - Agent/Terminal Session detail 是 runtime 深层工作台：共享 terminal-first 主输出和底部 input drawer；Agent detail 可提供 Files/Git/+Terminal/Meta contextual tools，Terminal detail 保持 focused shell，不混入 Agent-only tools。
 - Project Agent workspace 是默认运行态二级页：优先展示 `+ Claude` / `+ Codex` 创建入口和当前 Agent instances；provider history / future restore 在真实 API 完成前只作为 staged 辅助区，不混入当前实例列表。
+- Project Files/Git/Terminal 是直接二级 resource workspaces：Files/Git 保持只读 inspection，Terminal workspace 只列 live Terminal instances 并提供 create/open/close；Files preview 和 Git single-file diff 在移动端是顶部返回的深层 detail，不显示 Project 二级底部导航。
 - TanStack Query 负责服务端状态；Jotai 只用于 shell 级共享 UI 状态；文件选择、当前路径、当前 diff 文件等局部 section 状态优先留在组件内。
 - 服务端运行在 Bun 上，Project-scoped 能力优先使用 Web 标准 `Request` / `Response` 边界和 shared DTO。
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度、tmux/CLI adapter 和执行稳定性。
@@ -99,8 +100,8 @@ agents-remote/
 3. Home / Projects 首屏优先服务打开已有 Project；不要用大块说明、厚卡片或常驻创建表单挤占 Project 列表。
 4. Project Agent workspace 首屏优先服务创建、扫描和进入当前 Agent instances；不要用假历史、假摘要或过多 metadata 替代真实 `AgentSession` 字段。
 5. Agent/Terminal Session detail 首屏优先服务查看 runtime output 和发送输入；Agent contextual tools 只能辅助进入 Files/Git/+Terminal/Meta，不能挤占 terminal-first 主区或污染 Terminal focused shell。
-6. Files/Git inspection 优先展示 compact row 列表和内容本身，减少大块说明文案、厚卡片和重复 metadata。
-6. Agent/Terminal Session detail 使用紧凑 header、主输出区、非遮挡输入区和 quick keys；输入行为要用真实浏览器路径验证。
+6. Files/Git/Terminal resource workspaces 应优先服务 inspection 和 instance list 本身；Files/Git 不出现写操作，Terminal direct secondary 不出现 runtime input，移动端 preview/diff deep detail 必须用顶部返回并隐藏 Project 二级底部导航。
+7. Agent/Terminal Session detail 使用紧凑 header、主输出区、非遮挡输入区和 quick keys；输入行为要用真实浏览器路径验证。
 
 ### 测试与质量门禁
 

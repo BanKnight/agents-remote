@@ -1,0 +1,6 @@
+desktop: Files direct secondary page is compact and read-only, and file preview uses mobile deep detail without Project bottom nav
+mobile: Files direct secondary page is compact and read-only, and file preview uses mobile deep detail without Project bottom nav
+desktop: Git direct secondary page is compact and read-only, and file diff uses mobile deep detail without Project bottom nav
+mobile: Git direct secondary page is compact and read-only, and file diff uses mobile deep detail without Project bottom nav
+desktop: Terminal direct secondary page lists instances, supports create success and close confirm, keeps mobile bottom nav, and exposes no runtime input
+mobile: Terminal direct secondary page lists instances, supports create success and close confirm, keeps mobile bottom nav, and exposes no runtime input

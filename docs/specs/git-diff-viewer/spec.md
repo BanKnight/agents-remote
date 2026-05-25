@@ -123,6 +123,25 @@
 - **THEN** 页面不展示 commit、stage、unstage、checkout、reset、merge、rebase、push、pull 或其他 Git 写操作入口
 - **AND** 紧凑布局不通过隐藏菜单引入任何 Git 写操作
 
+### Requirement: Git mobile direct page and diff detail use distinct navigation levels
+
+系统 SHALL 在移动端区分 Git 直接二级页和单文件 diff 深层 detail：changed-file list 属于 Project 直接二级 workspace，单文件 diff 属于同 route 内的深层 inspection detail。
+
+#### Scenario: User views Git as a mobile direct secondary page
+
+- **WHEN** 用户在手机视口打开 Project Git workspace
+- **THEN** 页面底部展示 Project 二级导航或等价 Back/Agent/Files/Git/Terminal 结构
+- **AND** 页面顶部不重复显示返回一级页面的 Back 控件
+- **AND** changed-file list 保持紧凑可扫读，并明确展示 scope/status
+
+#### Scenario: User opens a single-file diff on mobile
+
+- **WHEN** 用户从 changed-file list 选择一个文件
+- **THEN** 页面顶部展示返回 changed files 的入口
+- **AND** 页面底部不显示 Project 二级导航
+- **AND** unified diff 内容占据主要可用空间
+- **AND** 页面不出现任何 Git 写操作或隐藏写操作菜单
+
 ## Notes
 
 - Git diff viewer 与 Files viewer 同属 Project-scoped read-only inspection tools。
@@ -135,4 +154,6 @@
 - verify 证据：`.workflow/changes/implement-git-diff-viewer/verify.md`
 - change：compact-inspection-mobile-views
 - verify 证据：`.workflow/changes/compact-inspection-mobile-views/verify.md`
-- 运行态验证证据：`.workflow/changes/compact-inspection-mobile-views/artifacts/mobile-git-compact.png`
+- change：align-resource-inspection-pages
+- verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
+- 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/git-direct-mobile.png`、`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/git-diff-mobile.png`

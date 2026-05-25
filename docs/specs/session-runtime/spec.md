@@ -155,6 +155,27 @@
 - **THEN** Project 的 Terminal Session 列表展示该普通 shell 实例
 - **AND** 如果底层 runtime 已不存在，列表不要求展示历史记录
 
+### Requirement: Terminal workspace presents live Terminal instances as a Project direct secondary page
+
+系统 SHALL 将 Project Terminal workspace 呈现为 Project 直接二级页中的 Terminal instances 列表，支持查看、创建、进入和关闭当前 Project 下的 Terminal Session，但不在该直接二级页中常驻 runtime input。
+
+#### Scenario: User opens Terminal workspace from Project navigation
+
+- **WHEN** 用户在 Project 二级导航中打开 Terminal workspace
+- **THEN** 页面保留当前 Project 上下文
+- **AND** 页面展示当前 Terminal Session 列表或明确空状态
+- **AND** 用户可以创建新的 Project-scoped Terminal Session
+- **AND** 用户可以进入某个 Terminal Session detail
+- **AND** 用户可以关闭当前 Terminal Session，且关闭仍保留危险确认
+
+#### Scenario: User views Terminal workspace on mobile
+
+- **WHEN** 用户在手机视口打开 Project Terminal 直接二级页
+- **THEN** 页面底部展示 Project 二级导航或等价 Back/Agent/Files/Git/Terminal 结构
+- **AND** 页面顶部不重复显示返回一级页面的 Back 控件
+- **AND** Terminal instance 列表保持紧凑可扫读，长 displayName 或 session id 不造成横向溢出
+- **AND** 当前 session 输入和 quick keys 只在 Terminal Session detail 中出现
+
 ### Requirement: AgentSession represents an interactive provider session launched in project scope
 
 系统 SHALL 将 Agent Session 定义为在 Project 目录下启动并连接的 Claude/Codex 交互式 provider 会话，且不负责管理 provider CLI 安装、登录或模型配置。
@@ -173,7 +194,6 @@
 - **AND** 不在本 capability 范围内提供 provider 账号登录、安装或模型配置管理
 
 ## Notes
-
 - 当前长期契约允许第一轮 stream 使用 terminal-like envelope；provider-native Agent thread/turn/event schema 由后续 Agent provider experience 设计承接。
 - 当前长期契约不要求跨服务器重启恢复 session runtime metadata。
 
@@ -181,3 +201,6 @@
 
 - change：design-session-runtime-boundaries
 - verify 证据：`.workflow/changes/design-session-runtime-boundaries/verify.md`
+- change：align-resource-inspection-pages
+- verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
+- 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/terminal-direct-mobile.png`

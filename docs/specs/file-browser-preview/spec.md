@@ -154,6 +154,25 @@
 - **THEN** 页面不展示编辑、删除、重命名、上传或下载入口
 - **AND** 紧凑布局不通过隐藏菜单引入任何文件写操作
 
+### Requirement: Files mobile direct page and preview detail use distinct navigation levels
+
+系统 SHALL 在移动端区分 Files 直接二级页和文件预览深层 detail：目录列表属于 Project 直接二级 workspace，文件预览属于同 route 内的深层 inspection detail。
+
+#### Scenario: User views Files as a mobile direct secondary page
+
+- **WHEN** 用户在手机视口打开 Project Files workspace
+- **THEN** 页面底部展示 Project 二级导航或等价 Back/Agent/Files/Git/Terminal 结构
+- **AND** 页面顶部不重复显示返回一级页面的 Back 控件
+- **AND** 文件/目录列表保持紧凑可扫读
+
+#### Scenario: User opens a file preview on mobile
+
+- **WHEN** 用户从 Files 列表选择文件预览
+- **THEN** 页面顶部展示返回 Files list 或当前目录的入口
+- **AND** 页面底部不显示 Project 二级导航
+- **AND** 预览内容占据主要可用空间
+- **AND** 文件上下文和不可预览/过大状态不伪装成编辑能力
+
 ## Notes
 
 - 第一轮文本预览上限为 256 KiB，图片预览上限为 5 MiB。
@@ -166,4 +185,6 @@
 - verify 证据：`.workflow/changes/implement-file-browser-preview/verify.md`
 - change：compact-inspection-mobile-views
 - verify 证据：`.workflow/changes/compact-inspection-mobile-views/verify.md`
-- 运行态验证证据：`.workflow/changes/compact-inspection-mobile-views/artifacts/mobile-files-compact.png`
+- change：align-resource-inspection-pages
+- verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
+- 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/files-direct-mobile.png`、`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/files-preview-mobile.png`
