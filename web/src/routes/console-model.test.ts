@@ -5,7 +5,6 @@ import {
   defaultConsoleSection,
   normalizeSessionTextInput,
   projectConsolePath,
-  runtimeInputEnabled,
   sectionForId,
   sessionDetailPath,
   sessionQuickKeys,
@@ -18,9 +17,14 @@ test("Project console path encodes URL-sensitive names", () => {
   );
 });
 
-test("Agent Sessions are the default console focus", () => {
+test("Files and Git lead the Project workspace actions", () => {
   expect(defaultConsoleSection).toBe("agents");
-  expect(consoleSections[0]?.id).toBe("agents");
+  expect(consoleSections.map((section) => section.id)).toEqual([
+    "files",
+    "git",
+    "agents",
+    "terminal",
+  ]);
   expect(sectionForId("agents").label).toBe("Agent Sessions");
 });
 
@@ -30,10 +34,6 @@ test("Git and Files are read-only project inspection sections", () => {
 
   expect(git.status).toBe("Read-only");
   expect(files.status).toBe("Read-only");
-});
-
-test("runtime input is enabled once session runtime exists", () => {
-  expect(runtimeInputEnabled).toBe(true);
 });
 
 test("session detail path uses project and internal session id", () => {

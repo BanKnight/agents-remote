@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：依赖 `align-mobile-app-shell` 明确移动端 App-like shell 与视口基线。
+- 当前阶段：已完成
+- 阻塞项：无
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/rework-project-mobile-workspace/specs/project-console-navigation/spec.md`）
+- design：已完成（`.workflow/changes/rework-project-mobile-workspace/design/overview.md`、`product.md`、`ui-ux.md`、`frontend.md`）
+- plan/tasks：已完成（`.workflow/changes/rework-project-mobile-workspace/plan.md`、`tasks.md`）
+- implementation：已完成（`tasks.md` 中实现任务已勾选；质量门禁通过：`bun run format:check`、`bun run lint`、`bun run typecheck`、`bun run test`）
+- verify：已完成（`.workflow/changes/rework-project-mobile-workspace/verify.md`；结论：通过；artifact：`artifacts/mobile-project-workspace.png`、`artifacts/e2e/`）
+- distill：已完成（更新 `docs/specs/project-console-navigation/spec.md`、`docs/design/console-shell.md`、`docs/project.md` 及相关 index）
 
 ## 阶段流转
 
@@ -45,3 +45,10 @@
 ## 进展记录
 
 - 2026-05-25：plan-roadmap 创建 change，承接 Project 详情页移动端工作区重排与常驻内容收敛意图。
+- 2026-05-25：step-change 确认依赖 `align-mobile-app-shell` 已完成并清除本地阻塞；继续待规格阶段。
+- 2026-05-25：specify-change 创建 `specs/project-console-navigation/spec.md`，明确移动端 Project 工作区主界面、返回入口、功能区/Agent/Terminal 顺序、去除常驻 runtime input 和视口撑满要求；下一阶段进入待设计。
+- 2026-05-25：design-change 创建 `design/overview.md`、`design/product.md`、`design/ui-ux.md`、`design/frontend.md`，明确 Project 移动工作区信息架构、UI 区域顺序和前端重组边界；下一阶段进入待计划。
+- 2026-05-25：plan-change 创建 `plan.md` 与 `tasks.md`，明确以 `ProjectConsoleRoute.tsx` 为主重组移动工作区、移除常驻 runtime input、保留现有 session 行为；下一阶段进入待实现。
+- 2026-05-25：implement-change 完成 `tasks.md` 中 1.1、2.1、2.2、2.3、3.1、4.1；重组 Project console 移动工作区，移除常驻 runtime input，并通过 format/lint/typecheck/test；下一阶段进入待验证。
+- 2026-05-25：verify-change 创建 `verify.md`，通过 format/lint/typecheck/test/build/e2e/mobile smoke，采集 `artifacts/mobile-project-workspace.png` 与 e2e artifact；下一阶段进入待沉淀。
+- 2026-05-25：distill-change 将 Project console 移动工作区 WHAT/HOW 与输入职责边界沉淀到 `docs/specs/project-console-navigation/spec.md`、`docs/design/console-shell.md`、`docs/project.md`，并更新 `docs/specs/index.md`、`docs/design/index.md`；本 change 已完成。

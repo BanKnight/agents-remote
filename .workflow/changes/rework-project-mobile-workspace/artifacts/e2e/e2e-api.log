@@ -1,0 +1,2 @@
+@agents-remote/api dev: api listening on http://localhost:42809
+@agents-remote/api dev: api runtime dir /tmp/agents-remote-e2e-3QIvf1/run

@@ -26,6 +26,18 @@ export type SessionSendStatus = "connecting" | TransportStatus;
 
 export const consoleSections: ConsoleSectionDefinition[] = [
   {
+    id: "files",
+    label: "Files",
+    description: "Read-only project browsing and file preview.",
+    status: "Read-only",
+  },
+  {
+    id: "git",
+    label: "Git",
+    description: "Read-only worktree and staged diff viewer.",
+    status: "Read-only",
+  },
+  {
     id: "agents",
     label: "Agent Sessions",
     description: "Claude and Codex work sessions scoped to this Project.",
@@ -36,18 +48,6 @@ export const consoleSections: ConsoleSectionDefinition[] = [
     label: "Terminal",
     description: "Project-scoped shell sessions backed by the session runtime.",
     status: "Runtime ready",
-  },
-  {
-    id: "git",
-    label: "Git",
-    description: "Read-only worktree and staged diff viewer.",
-    status: "Read-only",
-  },
-  {
-    id: "files",
-    label: "Files",
-    description: "Read-only project browsing and file preview.",
-    status: "Read-only",
   },
 ];
 
@@ -131,5 +131,3 @@ export function sessionStatusLabel(status: AgentSession["status"] | TerminalSess
 
   return "Error";
 }
-
-export const runtimeInputEnabled = true;

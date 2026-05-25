@@ -9,12 +9,11 @@ test("authenticated user can create and interact with a Terminal Session", async
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
 
-  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
   await page.getByRole("link", { name: projectName }).click();
 
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
-  await page.getByRole("button", { name: /Terminal/ }).click();
-  await page.getByRole("button", { name: "New Terminal Session" }).click();
+  await page.getByRole("button", { name: "New Terminal" }).click();
   await page
     .getByRole("link", { name: /Open stream/i })
     .first()
