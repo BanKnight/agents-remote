@@ -110,3 +110,40 @@
     归档路径：.workflow/archive/changes/compact-inspection-mobile-views/
     verify：通过；无 CRITICAL/WARNING。
     distill：已沉淀 `docs/specs/file-browser-preview/spec.md`、`docs/specs/git-diff-viewer/spec.md`、`docs/design/file-browser-preview.md`、`docs/design/git-diff-viewer.md`、`docs/project.md` 及相关 index。
+
+### version: v0.8-prototype-ui-alignment
+
+- 归档时间：2026-05-26
+- 完成结果：完成真实 Web UI 与 `docs/design/prototype/` 原型体系的结构对齐，覆盖 frontend UI architecture、共享 shell、Home/Project entry、Project Agent workspace、Agent/Terminal detail、Files/Git/Terminal resource pages，并用最终 browser harness 收口 desktop/mobile 证据。
+- version 目标：让真实 Web UI 的导航层级、路由结构、页面布局、组件边界、响应式规则和视觉基线与 `docs/design/prototype/` 原型体系一致，并为后续页面实现提供共享 UI architecture 上下文。
+- verify 结论摘要：七个 changes 均有 `verify.md`，结论通过，无未解决 CRITICAL/WARNING；最终 `verify-prototype-ui-alignment` 覆盖 Home、Project Agent workspace、Agent/Terminal detail、Files/Git/Terminal resource workspaces 的 desktop/mobile browser evidence。
+- distill 结论摘要：已沉淀 `docs/design/frontend-ui-architecture.md`、Home/Project/resource/session 相关长期 specs/design/project knowledge，以及最终 prototype alignment 验证规则和证据来源。
+- 包含 changes：
+  - change-id：design-frontend-ui-architecture
+    归档路径：.workflow/archive/changes/design-frontend-ui-architecture/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 `docs/design/frontend-ui-architecture.md`，作为后续 UI/UX 对齐 changes 的共享设计基线。
+  - change-id：align-ui-shell-foundation
+    归档路径：.workflow/archive/changes/align-ui-shell-foundation/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 URL-visible Project workspace state、shell primitive、mobile navigation 与 UI shell foundation 相关长期文档。
+  - change-id：align-home-project-entry
+    归档路径：.workflow/archive/changes/align-home-project-entry/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 Home / Project entry 的长期 spec/design/project knowledge。
+  - change-id：align-project-agent-workspace
+    归档路径：.workflow/archive/changes/align-project-agent-workspace/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 Project Agent workspace 的 provider 创建入口、Agent instances 和 staged history 边界。
+  - change-id：align-instance-detail-workspaces
+    归档路径：.workflow/archive/changes/align-instance-detail-workspaces/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 Agent/Terminal instance detail 的 terminal-first layout、Agent-only tools、Terminal focused shell 与 mobile detail 边界。
+  - change-id：align-resource-inspection-pages
+    归档路径：.workflow/archive/changes/align-resource-inspection-pages/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀 Files/Git/Terminal resource workspaces 的只读 inspection、mobile preview/diff deep detail 和 Terminal instances list 边界。
+  - change-id：verify-prototype-ui-alignment
+    归档路径：.workflow/archive/changes/verify-prototype-ui-alignment/
+    verify：通过；无 CRITICAL/WARNING。
+    distill：已沉淀最终 prototype alignment 验证规则和 `.workflow/archive/changes/verify-prototype-ui-alignment/artifacts/prototype-ui-alignment/` 证据来源。
