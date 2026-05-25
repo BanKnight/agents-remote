@@ -17,12 +17,12 @@ test("Project console path encodes URL-sensitive names", () => {
   );
 });
 
-test("Files and Git lead the Project workspace actions", () => {
+test("Agent leads the Project secondary workspace navigation", () => {
   expect(defaultConsoleSection).toBe("agents");
   expect(consoleSections.map((section) => section.id)).toEqual([
+    "agents",
     "files",
     "git",
-    "agents",
     "terminal",
   ]);
   expect(sectionForId("agents").label).toBe("Agent Sessions");

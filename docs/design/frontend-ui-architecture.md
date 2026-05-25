@@ -24,6 +24,8 @@
 - Project workspace 不承载 shell-level runtime input；真实输入归 Agent/Terminal instance detail。
 - Files/Git 是 Project-scoped 只读 inspection；Agent/Terminal 是 runtime session。两类页面共享 Project scope，但不共享输入语义。
 - 后续实现应先收敛 route/workspace 与共享 shell，再对齐具体页面，避免每个页面各自创建导航、状态、列表和操作结构。
+- 已验证的 shell foundation 当前采用 `?workspace=agents|files|git|terminal` 承载 Project 直接二级 workspace active 状态；无效 workspace 值回退 Agent。
+- 已验证的共享 UI primitive 边界是轻量的 nav item、icon marker、status pill、action button 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成通用组件库。
 
 ## 关键规则
 
@@ -33,6 +35,8 @@
 - Workspace header 只展示当前 scope 上下文和低频操作，不渲染大块说明或运行时输入。
 - List row、status pill、icon marker、terminal panel、input drawer 等 shared UI primitive 只在真实跨页面复用时抽取，不提前建立泛化组件库。
 - 服务端状态继续使用 TanStack Query；route 层级状态优先进入 TanStack Router route/search；非 URL-critical 的 shell UI 状态才使用 Jotai；单页局部状态保留在组件内。
+- Project 直接二级 workspace active 状态使用 URL-visible route/search 承载；Jotai 不应作为该状态的唯一来源。
+- Home/一级 shell、Project 二级 shell 与 Session detail chrome 的底部导航互斥：同一移动端页面状态只显示当前层级的底部导航或 detail 输入区。
 - 如果某个状态影响浏览器返回、刷新恢复或深链，不应长期只保留为 Jotai atom 或组件 state。
 - UI alignment 后必须保留现有加载、空、错误、禁用和危险确认行为。
 - 涉及用户可见 UI 的实现必须用真实浏览器验证桌面端和移动端，不能只靠 typecheck。
@@ -58,3 +62,6 @@
 - change：design-frontend-ui-architecture
 - verify 证据：`.workflow/changes/design-frontend-ui-architecture/verify.md`
 - 运行态设计材料：`.workflow/changes/design-frontend-ui-architecture/design/overview.md`、`.workflow/changes/design-frontend-ui-architecture/design/ui-ux.md`、`.workflow/changes/design-frontend-ui-architecture/design/frontend.md`
+- change：align-ui-shell-foundation
+- verify 证据：`.workflow/changes/align-ui-shell-foundation/verify.md`
+- 运行态验证证据：`.workflow/changes/align-ui-shell-foundation/artifacts/browser-structure/structure-check.log` 与同目录 desktop/mobile 截图

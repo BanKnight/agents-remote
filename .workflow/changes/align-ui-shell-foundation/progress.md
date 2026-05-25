@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：等待 design-frontend-ui-architecture 完成共享 UI architecture 设计上下文。
+- 当前阶段：已完成
+- 阻塞项：无
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/align-ui-shell-foundation/specs/project-console-navigation/spec.md`）
+- design：已完成（`.workflow/changes/align-ui-shell-foundation/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`；显式引用 `docs/design/frontend-ui-architecture.md`）
+- plan/tasks：已完成（`.workflow/changes/align-ui-shell-foundation/plan.md`、`tasks.md`；均显式要求读取 `docs/design/frontend-ui-architecture.md`）
+- implementation：已完成（`tasks.md` 中 1.1、2.1、2.2、3.1 已完成；web typecheck/test/build 与 E2E/browser structure artifacts 已生成）
+- verify：已完成（`.workflow/changes/align-ui-shell-foundation/verify.md`；结论通过，无 CRITICAL）
+- distill：已完成（已合并长期 WHAT 到 `docs/specs/project-console-navigation/spec.md`，更新 `docs/design/frontend-ui-architecture.md`、`docs/specs/index.md`、`docs/design/index.md` 与 `docs/project.md`）
 
 ## 阶段流转
 
@@ -45,3 +45,7 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，等待前置 UI architecture 设计上下文。
+- 2026-05-25：前置 `design-frontend-ui-architecture` 已完成，解除本 change 的局部阻塞；继续进入待规格。
+- 2026-05-25：通过 specify-change 创建 `specs/project-console-navigation/spec.md`，明确共享 navigation shell、路由层级、移动端返回模型和基础视觉组件语言的可验证 WHAT；下一阶段进入待设计。
+- 2026-05-25：通过 design-change 创建 `design/overview.md`、`design/ui-ux.md` 和 `design/frontend.md`，显式以 `docs/design/frontend-ui-architecture.md` 作为先导上下文，明确 shell foundation 的 UI/UX 与前端设计；下一阶段进入待计划。
+- 2026-05-26：完成 distill-change，将 shell foundation 的长期 WHAT 合并到 `docs/specs/project-console-navigation/spec.md`，将已验证的 URL-visible workspace state 与 shared primitive 边界补充到 `docs/design/frontend-ui-architecture.md`，并更新 `docs/specs/index.md`、`docs/design/index.md` 和 `docs/project.md`；本 change 已完成。

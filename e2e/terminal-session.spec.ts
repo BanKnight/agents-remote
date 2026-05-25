@@ -13,6 +13,7 @@ test("authenticated user can create and interact with a Terminal Session", async
   await page.getByRole("link", { name: projectName }).click();
 
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  await page.getByRole("button", { name: /^Terminal/ }).click();
   await page.getByRole("button", { name: "New Terminal" }).click();
   await page
     .getByRole("link", { name: /Open stream/i })

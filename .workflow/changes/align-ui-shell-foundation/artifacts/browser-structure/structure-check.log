@@ -1,0 +1,8 @@
+desktop: Home primary shell visible
+desktop: Project secondary Agent workspace visible with URL workspace=agents
+desktop: Project secondary Git workspace visible with URL workspace=git
+desktop: Session detail uses top return and no Project secondary nav
+mobile: Home primary shell visible
+mobile: Project secondary Agent workspace visible with URL workspace=agents
+mobile: Project secondary Git workspace visible with URL workspace=git
+mobile: Session detail uses top return and no Project secondary nav

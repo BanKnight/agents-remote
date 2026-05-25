@@ -23,7 +23,7 @@ test("authenticated user can browse Project files and preview text and images", 
   await expect(files.getByRole("button", { name: /README\.md/ })).toBeVisible();
 
   const rootNames = await files
-    .locator("button .font-semibold")
+    .locator("[data-list-row-title]")
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
   expect(rootNames.slice(0, 6)).toEqual([
     ".config",

@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
+import { consoleSectionFromSearch } from "./console-model";
 import { HomeRoute } from "./HomeRoute";
 import { ProjectConsoleRoute } from "./ProjectConsoleRoute";
 import { AgentSessionDetailRoute, TerminalSessionDetailRoute } from "./SessionDetailRoute";
@@ -21,6 +22,9 @@ const indexRoute = createRoute({
 const projectConsoleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName",
+  validateSearch: (search: Record<string, unknown>) => ({
+    workspace: consoleSectionFromSearch(search.workspace),
+  }),
   component: ProjectConsoleRoute,
 });
 

@@ -17,12 +17,14 @@ import {
   sessionStreamUrl,
 } from "../api/client";
 import {
+  defaultConsoleSection,
   canSendToSession,
   normalizeSessionTextInput,
   sessionQuickKeys,
   sessionStatusLabel,
   type SessionQuickKey,
 } from "./console-model";
+import { ActionButton, StatusPill } from "./shell-primitives";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -102,7 +104,11 @@ function SessionDetail({ projectName, sessionId, sessionType }: SessionDetailPro
           queryKey: ["projects", projectName, "terminal-sessions"],
         }),
       ]);
-      await navigate({ to: "/projects/$projectName", params: { projectName } });
+      await navigate({
+        to: "/projects/$projectName",
+        params: { projectName },
+        search: { workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection },
+      });
     },
   });
 
@@ -221,6 +227,9 @@ function SessionDetail({ projectName, sessionId, sessionType }: SessionDetailPro
             <Link
               className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300"
               params={{ projectName }}
+              search={{
+                workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection,
+              }}
               to="/projects/$projectName"
             >
               Back to Project
@@ -291,20 +300,6 @@ function SessionDetail({ projectName, sessionId, sessionType }: SessionDetailPro
   );
 }
 
-type StatusPillProps = {
-  label: string;
-  value: string;
-};
-
-function StatusPill({ label, value }: StatusPillProps) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 sm:px-4 sm:py-3">
-      <p className="text-[0.65rem] uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold capitalize text-slate-100">{value}</p>
-    </div>
-  );
-}
-
 type SessionControlsProps = {
   closePending: boolean;
   onClose: () => void;
@@ -322,29 +317,15 @@ function SessionControls({
 }: SessionControlsProps) {
   return (
     <div className="flex flex-wrap gap-2 lg:justify-end">
-      <button
-        className="rounded-full border border-cyan-300/40 px-3 py-2 text-xs font-semibold text-cyan-100"
-        type="button"
-        onClick={onReconnect}
-      >
+      <ActionButton tone="accent" onClick={onReconnect}>
         Reconnect
-      </button>
-      <button
-        className="rounded-full border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={resizeDisabled}
-        type="button"
-        onClick={onResize}
-      >
+      </ActionButton>
+      <ActionButton disabled={resizeDisabled} onClick={onResize}>
         Resize 120×40
-      </button>
-      <button
-        className="rounded-full border border-rose-300/40 px-3 py-2 text-xs font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={closePending}
-        type="button"
-        onClick={onClose}
-      >
+      </ActionButton>
+      <ActionButton disabled={closePending} tone="danger" onClick={onClose}>
         {closePending ? "Closing..." : "Close"}
-      </button>
+      </ActionButton>
     </div>
   );
 }

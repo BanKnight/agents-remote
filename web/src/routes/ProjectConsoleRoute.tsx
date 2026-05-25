@@ -9,9 +9,8 @@ import type {
   ProjectFilePreviewResponse,
   TerminalSession,
 } from "@agents-remote/shared";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAtom } from "jotai";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import {
@@ -27,8 +26,15 @@ import {
   listTerminalSessions,
   previewProjectFile,
 } from "../api/client";
-import { activeConsoleSectionAtom } from "../state/ui";
-import { consoleSections, projectSummary, sectionForId, sessionStatusLabel } from "./console-model";
+import {
+  consoleSections,
+  projectSummary,
+  sectionForId,
+  sessionStatusLabel,
+  type ConsoleSection,
+  type ConsoleSectionDefinition,
+} from "./console-model";
+import { ActionButton, IconMarker, ListRow, NavItemContent, StatusPill } from "./shell-primitives";
 
 export function ProjectConsoleRoute() {
   const { projectName } = useParams({ from: "/projects/$projectName" });
@@ -85,7 +91,8 @@ type ProjectConsoleProps = {
 
 function ProjectConsole({ project }: ProjectConsoleProps) {
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useAtom(activeConsoleSectionAtom);
+  const navigate = useNavigate({ from: "/projects/$projectName" });
+  const { workspace: activeSection } = useSearch({ from: "/projects/$projectName" });
   const selectedSection = sectionForId(activeSection);
   const summary = projectSummary(project);
   const agentSessions = useQuery({
@@ -121,66 +128,169 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     onSuccess: invalidateSessions,
   });
 
+  const selectWorkspace = (workspace: (typeof consoleSections)[number]["id"]) =>
+    void navigate({
+      search: { workspace },
+    });
+
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-3 py-3 text-slate-100 sm:px-6 sm:py-4 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100dvh-1.5rem)] w-full max-w-7xl min-w-0 flex-col gap-4 sm:min-h-[calc(100dvh-2rem)]">
-        <WorkspaceHeader project={project} summary={summary} />
+    <main className="min-h-dvh overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-3 pb-24 pt-3 text-slate-100 sm:px-6 sm:py-4 lg:px-8">
+      <div className="mx-auto grid min-h-[calc(100dvh-1.5rem)] w-full max-w-7xl min-w-0 gap-4 sm:min-h-[calc(100dvh-2rem)] lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <ProjectSecondaryNav activeSection={activeSection} onSelectSection={selectWorkspace} />
 
-        <WorkspaceActionGrid activeSection={activeSection} onSelectSection={setActiveSection} />
+        <div className="flex min-w-0 flex-col gap-4">
+          <WorkspaceHeader project={project} section={selectedSection} summary={summary} />
 
-        {activeSection === "files" || activeSection === "git" ? (
-          <SectionDetail projectName={project.name} section={selectedSection} />
-        ) : null}
+          {activeSection === "agents" ? (
+            <AgentPanel
+              projectName={project.name}
+              sessions={agentSessions.data?.sessions ?? []}
+              isLoading={agentSessions.isLoading}
+              isCreating={createAgent.isPending}
+              createError={createAgent.error}
+              closeError={closeAgent.error}
+              onCreate={(provider) => createAgent.mutate(provider)}
+              onClose={(sessionId) => closeAgent.mutate(sessionId)}
+            />
+          ) : null}
 
-        <div className="grid min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <AgentPanel
-            projectName={project.name}
-            sessions={agentSessions.data?.sessions ?? []}
-            isLoading={agentSessions.isLoading}
-            isCreating={createAgent.isPending}
-            createError={createAgent.error}
-            closeError={closeAgent.error}
-            onCreate={(provider) => createAgent.mutate(provider)}
-            onClose={(sessionId) => closeAgent.mutate(sessionId)}
-          />
-          <TerminalPanel
-            projectName={project.name}
-            sessions={terminalSessions.data?.sessions ?? []}
-            isLoading={terminalSessions.isLoading}
-            isCreating={createTerminal.isPending}
-            createError={createTerminal.error}
-            closeError={closeTerminal.error}
-            onCreate={() => createTerminal.mutate()}
-            onClose={(sessionId) => closeTerminal.mutate(sessionId)}
-          />
+          {activeSection === "terminal" ? (
+            <TerminalPanel
+              projectName={project.name}
+              sessions={terminalSessions.data?.sessions ?? []}
+              isLoading={terminalSessions.isLoading}
+              isCreating={createTerminal.isPending}
+              createError={createTerminal.error}
+              closeError={closeTerminal.error}
+              onCreate={() => createTerminal.mutate()}
+              onClose={(sessionId) => closeTerminal.mutate(sessionId)}
+            />
+          ) : null}
+
+          {activeSection === "files" || activeSection === "git" ? (
+            <SectionDetail projectName={project.name} section={selectedSection} />
+          ) : null}
+
+          <ProjectSignals gitBranch={summary.gitBranch} />
         </div>
-
-        <ProjectSignals gitBranch={summary.gitBranch} />
       </div>
+
+      <ProjectSecondaryBottomNav activeSection={activeSection} onSelectSection={selectWorkspace} />
     </main>
   );
 }
 
+type ProjectSecondaryNavProps = {
+  activeSection: ConsoleSection;
+  onSelectSection: (section: ConsoleSection) => void;
+};
+
+function ProjectSecondaryNav({ activeSection, onSelectSection }: ProjectSecondaryNavProps) {
+  return (
+    <aside className="hidden min-h-0 min-w-0 rounded-[2rem] border border-white/10 bg-slate-950/80 p-3 shadow-2xl shadow-black/30 lg:flex lg:flex-col">
+      <Link
+        className="mb-4 rounded-2xl border border-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300 hover:border-cyan-300/50"
+        to="/"
+      >
+        Back to Projects
+      </Link>
+      <nav className="grid gap-2" aria-label="Project workspace navigation">
+        {consoleSections.map((section) => (
+          <button
+            key={section.id}
+            className="min-w-0"
+            type="button"
+            onClick={() => onSelectSection(section.id)}
+          >
+            <NavItemContent
+              active={activeSection === section.id}
+              description={section.status}
+              label={section.label}
+              marker={
+                <IconMarker tone={activeSection === section.id ? "accent" : "muted"}>
+                  {sectionMarker(section.id)}
+                </IconMarker>
+              }
+            />
+          </button>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+function ProjectSecondaryBottomNav({ activeSection, onSelectSection }: ProjectSecondaryNavProps) {
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-slate-950/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-2xl shadow-black/40 backdrop-blur lg:hidden"
+      aria-label="Project mobile workspace navigation"
+    >
+      <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+        <Link className="min-w-0" to="/">
+          <NavItemContent label="Back" marker={<IconMarker tone="muted">BK</IconMarker>} />
+        </Link>
+        {consoleSections.map((section) => (
+          <button
+            key={section.id}
+            className="min-w-0"
+            type="button"
+            onClick={() => onSelectSection(section.id)}
+          >
+            <NavItemContent
+              active={activeSection === section.id}
+              label={shortSectionLabel(section.id)}
+              marker={
+                <IconMarker tone={activeSection === section.id ? "accent" : "muted"}>
+                  {sectionMarker(section.id)}
+                </IconMarker>
+              }
+            />
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function sectionMarker(section: ConsoleSection) {
+  switch (section) {
+    case "agents":
+      return "AG";
+    case "files":
+      return "FL";
+    case "git":
+      return "GT";
+    case "terminal":
+      return "TM";
+  }
+}
+
+function shortSectionLabel(section: ConsoleSection) {
+  return section === "agents" ? "Agent" : sectionForId(section).label;
+}
+
 type WorkspaceHeaderProps = {
   project: Project;
+  section: ConsoleSectionDefinition;
   summary: ReturnType<typeof projectSummary>;
 };
 
-function WorkspaceHeader({ project, summary }: WorkspaceHeaderProps) {
+function WorkspaceHeader({ project, section, summary }: WorkspaceHeaderProps) {
   return (
     <header className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-950/80 p-4 shadow-2xl shadow-black/30 backdrop-blur sm:p-5 lg:p-6">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Link className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300" to="/">
-            Back to Projects
-          </Link>
-          <p className="mt-4 text-xs uppercase tracking-[0.2em] text-slate-500">Current Project</p>
-          <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-            {project.name}
-          </h1>
-          <p className="mt-2 break-all font-mono text-xs leading-5 text-slate-500">
-            {project.path}
-          </p>
+        <div className="flex min-w-0 items-start gap-3">
+          <IconMarker tone="accent">{sectionMarker(section.id)}</IconMarker>
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current Project</p>
+            <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+              {project.name}
+            </h1>
+            <p className="mt-1 truncate text-sm font-semibold text-cyan-100">{section.label}</p>
+            <p className="mt-2 break-all font-mono text-xs leading-5 text-slate-500">
+              {project.path}
+            </p>
+          </div>
         </div>
         <div className="hidden shrink-0 grid-cols-3 gap-2 sm:grid">
           <SummaryBadge label="Agents" value={summary.agentCount} />
@@ -197,59 +307,13 @@ function WorkspaceHeader({ project, summary }: WorkspaceHeaderProps) {
   );
 }
 
-type WorkspaceActionGridProps = {
-  activeSection: (typeof consoleSections)[number]["id"];
-  onSelectSection: (section: (typeof consoleSections)[number]["id"]) => void;
-};
-
-function WorkspaceActionGrid({ activeSection, onSelectSection }: WorkspaceActionGridProps) {
-  const actionSections = [sectionForId("files"), sectionForId("git")];
-
-  return (
-    <section className="grid min-w-0 gap-3 sm:grid-cols-2" aria-label="Project workspace actions">
-      {actionSections.map((section) => {
-        const selected = activeSection === section.id;
-        return (
-          <button
-            className={`min-w-0 rounded-[1.5rem] border p-4 text-left shadow-xl shadow-black/20 transition sm:p-5 ${
-              selected
-                ? "border-cyan-300/60 bg-cyan-300/10 text-cyan-50"
-                : "border-white/10 bg-slate-900/80 text-slate-200 hover:border-slate-600"
-            }`}
-            key={section.id}
-            type="button"
-            onClick={() => onSelectSection(section.id)}
-          >
-            <span className="flex items-start justify-between gap-3">
-              <span className="min-w-0">
-                <span className="block text-lg font-semibold">{section.label}</span>
-                <span className="mt-2 block text-sm leading-6 text-slate-400">
-                  {section.description}
-                </span>
-              </span>
-              <span className="shrink-0 rounded-full bg-slate-950/70 px-3 py-1 text-xs font-medium text-cyan-100">
-                {section.status}
-              </span>
-            </span>
-          </button>
-        );
-      })}
-    </section>
-  );
-}
-
 type SummaryBadgeProps = {
   label: string;
   value: number | string;
 };
 
 function SummaryBadge({ label, value }: SummaryBadgeProps) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-100">{value}</p>
-    </div>
-  );
+  return <StatusPill label={label} tone="muted" value={value} />;
 }
 
 type AgentPanelProps = {
@@ -377,9 +441,7 @@ function SectionDetail({ projectName, section }: SectionDetailProps) {
           </p>
           <p className="mt-1 truncate text-xs text-slate-500">{section.description}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300">
-          {section.status}
-        </span>
+        <StatusPill tone="accent" value={section.status} />
       </div>
       {isGit ? <GitDiffPanel projectName={projectName} /> : null}
       {isFiles ? <FilesPanel projectName={projectName} /> : null}
@@ -423,16 +485,15 @@ function GitDiffPanel({ projectName }: GitDiffPanelProps) {
               Read-only worktree and staged changes.
             </p>
           </div>
-          <button
-            className="shrink-0 rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100"
-            type="button"
+          <ActionButton
+            tone="accent"
             onClick={() => {
               setSelectedFile(undefined);
               void diff.refetch();
             }}
           >
             Retry
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -499,37 +560,24 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
       {files.map((file) => {
         const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
         return (
-          <button
-            className={`min-w-0 rounded-2xl border px-3 py-2.5 text-left transition ${
-              selected
-                ? "border-cyan-300/60 bg-cyan-300/10"
-                : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
-            }`}
+          <ListRow
             key={`${file.scope}:${file.path}`}
-            type="button"
+            marker={<IconMarker tone="accent">GT</IconMarker>}
+            meta={
+              <>
+                <StatusPill tone="accent" value={scopeLabel(file.scope)} />
+                <StatusPill tone="muted" value={statusLabel(file.status)} />
+              </>
+            }
+            selected={selected}
+            subtitle={
+              file.previousPath ? (
+                <span className="font-mono">from {file.previousPath}</span>
+              ) : undefined
+            }
+            title={<span className="font-mono">{file.path}</span>}
             onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
-          >
-            <span className="flex min-w-0 items-center justify-between gap-2">
-              <span className="min-w-0">
-                <span className="block truncate font-mono text-sm font-semibold text-slate-100">
-                  {file.path}
-                </span>
-                {file.previousPath ? (
-                  <span className="mt-0.5 block truncate font-mono text-xs text-slate-500">
-                    from {file.previousPath}
-                  </span>
-                ) : null}
-              </span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded-full bg-cyan-300/10 px-2 py-0.5 text-[0.68rem] font-semibold text-cyan-100">
-                  {scopeLabel(file.scope)}
-                </span>
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[0.68rem] text-slate-300">
-                  {statusLabel(file.status)}
-                </span>
-              </span>
-            </span>
-          </button>
+          />
         );
       })}
     </div>
@@ -587,9 +635,10 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
             </p>
           ) : null}
         </div>
-        <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
-          {scopeLabel(fileDiff.scope)} · {statusLabel(fileDiff.status)}
-        </span>
+        <StatusPill
+          tone="muted"
+          value={`${scopeLabel(fileDiff.scope)} · ${statusLabel(fileDiff.status)}`}
+        />
       </div>
       <pre className="mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
         {fileDiff.diff}
@@ -661,13 +710,9 @@ function FilesPanel({ projectName }: FilesPanelProps) {
             >
               Up
             </button>
-            <button
-              className="rounded-full border border-cyan-300/40 px-2.5 py-1.5 text-xs font-semibold text-cyan-100"
-              type="button"
-              onClick={() => void files.refetch()}
-            >
+            <ActionButton tone="accent" onClick={() => void files.refetch()}>
               Retry
-            </button>
+            </ActionButton>
           </div>
         </div>
       </div>
@@ -738,31 +783,25 @@ function FileEntryList({
       {entries.map((entry) => {
         const selected = entry.path === selectedFilePath;
         return (
-          <button
-            className={`min-w-0 rounded-2xl border px-3 py-2.5 text-left transition ${
-              selected
-                ? "border-cyan-300/60 bg-cyan-300/10"
-                : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
-            }`}
+          <ListRow
             key={`${entry.type}:${entry.path}`}
-            type="button"
+            marker={
+              <IconMarker tone={entry.type === "directory" ? "accent" : "muted"}>
+                {entry.type === "directory" ? "DR" : "FL"}
+              </IconMarker>
+            }
+            meta={
+              <StatusPill tone="muted" value={entry.type === "directory" ? "Open" : "Preview"} />
+            }
+            selected={selected}
+            subtitle={`${entry.type === "directory" ? "Folder" : formatBytes(entry.size ?? 0)}${
+              entry.hidden ? " · hidden" : ""
+            }`}
+            title={entry.name}
             onClick={() =>
               entry.type === "directory" ? onOpenDirectory(entry.path) : onPreviewFile(entry.path)
             }
-          >
-            <span className="flex min-w-0 items-center justify-between gap-2">
-              <span className="min-w-0">
-                <span className="block truncate font-semibold text-slate-100">{entry.name}</span>
-                <span className="mt-0.5 block truncate text-xs text-slate-500">
-                  {entry.type === "directory" ? "Folder" : formatBytes(entry.size ?? 0)}
-                  {entry.hidden ? " · hidden" : ""}
-                </span>
-              </span>
-              <span className="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-[0.68rem] text-slate-300">
-                {entry.type === "directory" ? "Open" : "Preview"}
-              </span>
-            </span>
-          </button>
+          />
         );
       })}
     </div>
@@ -816,9 +855,7 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
           </h4>
           <p className="mt-0.5 truncate font-mono text-xs text-slate-500">{preview.path}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
-          {preview.type} · {formatBytes(preview.size)}
-        </span>
+        <StatusPill tone="muted" value={`${preview.type} · ${formatBytes(preview.size)}`} />
       </div>
       <PreviewBody preview={preview} />
     </section>
@@ -937,14 +974,13 @@ function SessionCard({
           <p className="truncate font-semibold text-slate-100">{title}</p>
           <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
         </div>
-        <span className="rounded-full bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
-          {status}
-        </span>
+        <StatusPill tone="success" value={status} />
       </div>
       <div className="mt-4 flex gap-2">
         <Link
           className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
           params={detailParams}
+          search={{ workspace: detailTo.includes("terminal-sessions") ? "terminal" : "agents" }}
           to={detailTo}
         >
           Open stream
@@ -973,14 +1009,9 @@ type CreateButtonProps = {
 
 function CreateButton({ children, disabled, onClick }: CreateButtonProps) {
   return (
-    <button
-      className="rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
-      disabled={disabled}
-      type="button"
-      onClick={onClick}
-    >
+    <ActionButton disabled={disabled} tone="accent" onClick={onClick}>
       {children}
-    </button>
+    </ActionButton>
   );
 }
 

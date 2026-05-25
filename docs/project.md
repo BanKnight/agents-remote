@@ -45,7 +45,7 @@ agents-remote/
 ## 技术与架构概览
 
 - Monorepo 使用 Bun workspaces：根包编排 `web`、`api` 与 `packages/*`。
-- 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS。
+- 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS；Project 直接二级 workspace active 状态属于 URL-visible route/search 状态，不应只放在 Jotai。
 - TanStack Query 负责服务端状态；Jotai 只用于 shell 级共享 UI 状态；文件选择、当前路径、当前 diff 文件等局部 section 状态优先留在组件内。
 - 服务端运行在 Bun 上，Project-scoped 能力优先使用 Web 标准 `Request` / `Response` 边界和 shared DTO。
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度、tmux/CLI adapter 和执行稳定性。
@@ -123,7 +123,7 @@ agents-remote/
 - [Private Access Auth 规格](./specs/private-access-auth/spec.md) — 单密码登录、本地 token、HTTP/WebSocket 认证和个人私有部署安全范围。
 - [Project Model 规格](./specs/project-model/spec.md) — `PROJECTS_ROOT` 一级目录 Project 模型、Project identity、列表摘要和创建/采用行为。
 - [Project Safe Paths 规格](./specs/project-safe-paths/spec.md) — Project 名称与 project-relative path 的统一安全解析契约。
-- [Project Console Navigation 规格](./specs/project-console-navigation/spec.md) — Project 控制台外壳、Files/Git 功能区、Agent/Terminal 工作区和输入职责边界。
+- [Project Console Navigation 规格](./specs/project-console-navigation/spec.md) — 定义一级应用 shell、Project 二级 workspace、URL-visible workspace 状态、移动端返回模型和输入职责边界。
 - [Session Runtime 规格](./specs/session-runtime/spec.md) — Agent/Terminal Session 身份分层、runtime metadata、tmux resource、reconnect 和 close 行为契约。
 - [Agent Provider Experience 规格](./specs/agent-provider-experience/spec.md) — Claude/Codex provider 入口、统一 Agent Session 语义和 provider-aware list/detail 边界。
 - [Files 规格](./specs/file-browser-preview/spec.md) — 只读浏览、安全路径、隐藏条目、文本/图片预览、错误状态和移动端紧凑 inspection 要求。

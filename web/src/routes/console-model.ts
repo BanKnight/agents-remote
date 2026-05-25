@@ -26,6 +26,12 @@ export type SessionSendStatus = "connecting" | TransportStatus;
 
 export const consoleSections: ConsoleSectionDefinition[] = [
   {
+    id: "agents",
+    label: "Agent Sessions",
+    description: "Claude and Codex work sessions scoped to this Project.",
+    status: "Default focus",
+  },
+  {
     id: "files",
     label: "Files",
     description: "Read-only project browsing and file preview.",
@@ -38,12 +44,6 @@ export const consoleSections: ConsoleSectionDefinition[] = [
     status: "Read-only",
   },
   {
-    id: "agents",
-    label: "Agent Sessions",
-    description: "Claude and Codex work sessions scoped to this Project.",
-    status: "Default focus",
-  },
-  {
     id: "terminal",
     label: "Terminal",
     description: "Project-scoped shell sessions backed by the session runtime.",
@@ -52,6 +52,12 @@ export const consoleSections: ConsoleSectionDefinition[] = [
 ];
 
 export const defaultConsoleSection: ConsoleSection = "agents";
+
+export function consoleSectionFromSearch(value: unknown): ConsoleSection {
+  return consoleSections.some((section) => section.id === value)
+    ? (value as ConsoleSection)
+    : defaultConsoleSection;
+}
 
 export function projectConsolePath(projectName: string) {
   return `/projects/${encodeURIComponent(projectName)}`;
