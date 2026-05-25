@@ -10,7 +10,7 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
+- 当前阶段：已完成
 - 阻塞项：无
 
 ## 推进规则
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/design-frontend-ui-architecture/specs/frontend-ui-architecture/spec.md`）
+- design：已完成（`.workflow/changes/design-frontend-ui-architecture/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`）
+- plan/tasks：已完成（`.workflow/changes/design-frontend-ui-architecture/plan.md`、`tasks.md`）
+- implementation：已完成（`tasks.md` 中 1.1、2.1、3.1 已完成）
+- verify：已完成（`.workflow/changes/design-frontend-ui-architecture/verify.md`，结论：通过，无 CRITICAL）
+- distill：已完成（无需更新长期 docs；本 change 是整轮 prototype UI alignment 的先导 workflow-local 设计上下文，长期沉淀应在后续实际 UI 对齐和最终 verification 完成后统一处理）
 
 ## 阶段流转
 
@@ -45,3 +45,9 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，作为 v0.8 prototype UI alignment 的当前焦点。
+- 2026-05-25：通过 specify-change 创建 `specs/frontend-ui-architecture/spec.md`，明确 prototype alignment design context 的可验证 WHAT；下一阶段进入待设计。
+- 2026-05-25：通过 design-change 创建 `design/overview.md`、`design/ui-ux.md` 和 `design/frontend.md`，明确 prototype alignment 的 UI/UX 与前端设计上下文；下一阶段进入待计划。
+- 2026-05-25：通过 plan-change 创建 `plan.md` 与 `tasks.md`，拆解设计上下文 artifact 的实现收口任务；下一阶段进入待实现。
+- 2026-05-25：通过 implement-change 完成 tasks 1.1、2.1、3.1，确认 spec/design 覆盖范围和下游引用可用性；下一阶段进入待验证。
+- 2026-05-25：通过 verify-change 创建 `verify.md`，文档一致性审查通过且无 CRITICAL；下一阶段进入待沉淀。
+- 2026-05-25：通过 distill-change 判定无需更新长期 docs；本 change 作为整轮 UI 对齐先导上下文保留在 workflow，待实际 UI 对齐和最终 verification 后再统一沉淀；change 已完成。
