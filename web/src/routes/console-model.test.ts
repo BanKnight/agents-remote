@@ -55,11 +55,11 @@ test("session quick keys differ by session type and keep stable control sequence
 
   expect(agentKeys.map((key) => key.id)).toEqual([
     "interrupt",
-    "escape",
-    "tab",
-    "enter",
     "up",
     "down",
+    "enter",
+    "escape",
+    "tab",
   ]);
   expect(terminalKeys.map((key) => key.id)).toEqual([
     "interrupt",

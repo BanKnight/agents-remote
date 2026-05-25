@@ -73,11 +73,11 @@ export const sessionQuickKeys = (sessionType: SessionType): SessionQuickKey[] =>
   if (sessionType === "agent") {
     return [
       { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "" },
-      { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
-      { id: "tab", label: "Tab", ariaLabel: "Send tab", sequence: "\t" },
-      { id: "enter", label: "Enter", ariaLabel: "Send enter", sequence: "\n" },
       { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "[A" },
       { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "[B" },
+      { id: "enter", label: "Enter", ariaLabel: "Send enter", sequence: "\n" },
+      { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
+      { id: "tab", label: "Tab", ariaLabel: "Send tab", sequence: "\t" },
     ];
   }
 

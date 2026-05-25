@@ -17,17 +17,20 @@
 
 ## 设计结论
 
-- Session detail 应采用移动端优先的运行态工作台结构：顶部显示 Project/session/status 上下文，中间终端输出占据主要可视空间，底部固定输入面板承载文本输入和快捷键。
+- Session detail 应采用移动端优先的运行态工作台结构：顶部紧凑显示 Project/session/status 上下文和返回入口，中间终端输出占据主要可视空间，底部输入控制区参与页面布局并承载文本输入和快捷键。
 - 底部 input panel 默认展开；用户需要查看更多输出时可以一键收起，收起后必须保留明显的恢复入口，不依赖手势作为唯一恢复方式。
+- 输入控制区不得 fixed/floating 覆盖终端输出；它应与 header、输出区一起参与全高 flex 布局，让输出区根据剩余空间滚动。
 - 普通文本输入使用多行 textarea；Enter 保持换行，只有显式 Send 才把内容写入当前 stream。非空输入按 CLI/shell 直觉保留内容并按需补末尾换行，全空白输入不发送。
-- Quick keys 是即时控制动作：按钮点击直接向 stream 发送对应 control sequence，不写入 textarea，也不等待用户再点 Send。
-- Agent Session 与 Terminal Session 使用不同默认 quick key 集合和排序，但共享渲染与发送模式；第一轮不提供用户配置、排序持久化或 provider capability API。
+- Quick keys 是即时控制动作：按钮点击直接向 stream 发送对应 control sequence，不写入 textarea，也不等待用户再点 Send；移动端展示时放在 textarea 上方。
+- Agent Session 与 Terminal Session 使用不同默认 quick key 集合和排序，但共享渲染与发送模式；Agent 默认集合必须覆盖上/下方向键和 Enter，以支持 CLI 选择项导航；第一轮不提供用户配置、排序持久化或 provider capability API。
 - 发送入口由 transport/runtime 可交互状态控制：stream 未 connected、runtime ended 或 close pending 时，textarea/Send/quick keys 应禁用或表达不可发送状态，同时保留 reconnect/back 等恢复路径。
+- 重新进入或刷新 Session detail 时，前端应先呈现 connecting/recovering 状态并尝试恢复 stream；只有恢复失败后才显示错误和重连入口。
 - 第一轮继续使用现有 terminal-like text stream 容器，通过等宽字体、可读字号/行高、滚动和 viewport 高度约束保障手机可读性；完整 xterm/ANSI/TUI 支持留给后续技术设计。
 
 ## 关键规则
 
 - 不在 Agent/Terminal Session detail 底部放全局 Tab；该区域属于当前会话输入、快捷键和展开/收起。
+- Session detail 输入区不使用 fixed/floating 遮挡模式；全高布局中输出区和输入区应共同参与页面高度计算。
 - 页面必须同时显示 runtime status 与 transport status，状态表达不能只依赖颜色。
 - Bottom panel collapsed 状态不得关闭 WebSocket、不得清空 textarea；它只改变可视区域。
 - Quick key sequence 应写在可单测的前端 model/helper 中，并通过测试固定集合、排序和控制序列。
@@ -47,3 +50,6 @@
 - change：implement-mobile-session-interaction
 - verify 证据：`.workflow/changes/implement-mobile-session-interaction/verify.md`
 - 运行态验证证据：`.workflow/changes/implement-mobile-session-interaction/artifacts/mobile-session-detail.png`、`.workflow/changes/implement-mobile-session-interaction/artifacts/mobile-smoke-api.log`、`.workflow/changes/implement-mobile-session-interaction/artifacts/mobile-smoke-web.log`
+- change：rework-session-mobile-console
+- verify 证据：`.workflow/changes/rework-session-mobile-console/verify.md`
+- 运行态验证证据：`.workflow/changes/rework-session-mobile-console/artifacts/mobile-session-detail.png`

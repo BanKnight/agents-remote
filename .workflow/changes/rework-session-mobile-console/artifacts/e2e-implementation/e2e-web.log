@@ -1,0 +1,10 @@
+@agents-remote/web dev: 
+@agents-remote/web dev:   VITE v8.0.13  ready in 548 ms
+@agents-remote/web dev: 
+@agents-remote/web dev:   ➜  Local:   http://127.0.0.1:42557/
+@agents-remote/web dev: 1:49:51 PM [vite] ws proxy error:
+@agents-remote/web dev: Error: read ECONNRESET
+@agents-remote/web dev:     at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+@agents-remote/web dev: 1:49:51 PM [vite] ws proxy socket error:
+@agents-remote/web dev: Error: read ECONNRESET
+@agents-remote/web dev:     at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
