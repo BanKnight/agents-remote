@@ -19,6 +19,12 @@
 - **THEN** 控制台进入该 Project 的作用域页面
 - **AND** 页面可见区域展示当前 Project 名称或等价上下文
 
+#### Scenario: User enters a Project from Home
+
+- **WHEN** 已认证用户从 Home / Projects 打开某个 Project
+- **THEN** 控制台默认进入该 Project 的 Agent workspace
+- **AND** Project workspace active 状态可以通过路由、search 或等价 URL-visible 机制恢复
+
 #### Scenario: Project identity contains URL-sensitive characters
 
 - **WHEN** 用户进入名称包含需要 URL 编码字符的 Project
@@ -41,6 +47,65 @@
 - **THEN** 一级页面使用底部一级导航
 - **AND** Project 直接二级页使用底部二级导航
 - **AND** 两种底部导航不会同时出现在同一个页面状态中
+
+### Requirement: Home Projects entry prioritizes opening a Project
+
+系统 SHALL 将登录后的 Home / Projects 呈现为一级应用 shell 中的 Projects 工作区，并优先服务用户选择已有 Project 进入控制台。
+
+#### Scenario: User views Home on desktop
+
+- **WHEN** 已认证用户在桌面端打开 Home / Projects
+- **THEN** 页面展示一级导航与 Projects 工作区结构
+- **AND** Projects 是当前 active 一级入口
+- **AND** Project 列表是主工作区的主要内容
+
+#### Scenario: User views Home on mobile
+
+- **WHEN** 已认证用户在手机视口打开 Home / Projects
+- **THEN** 页面底部展示一级导航
+- **AND** Projects 是当前 active 一级入口
+- **AND** 主工作区优先展示 Projects 内容而不是大段介绍文案
+
+### Requirement: Home Project rows support recognition, status, and direct entry
+
+系统 SHALL 让 Home / Projects 中的 Project 条目以可扫读列表行呈现，并为每个 Project 提供图标、名称、简短路径或状态和进入行为。
+
+#### Scenario: User scans available Projects
+
+- **WHEN** Home / Projects 加载出一个或多个 Project
+- **THEN** 每个 Project 条目展示一致的 Project 图标或标记位置
+- **AND** 每个 Project 条目展示 Project 名称
+- **AND** 每个 Project 条目展示简短路径、状态摘要或等价辅助信息
+- **AND** 每个 Project 条目提供进入对应 Project 控制台的行为
+
+#### Scenario: Project path is long
+
+- **WHEN** Project 的路径或辅助信息超过当前可视宽度
+- **THEN** Project 条目不会造成页面横向溢出
+- **AND** 主要 Project 名称和进入行为仍可识别
+
+### Requirement: Home create or adopt Project remains a low-frequency action
+
+系统 SHALL 将创建或采用 Project 的入口保留为 Home / Projects 中的低频操作，而不是让它占据主工作区或遮挡 Project 列表。
+
+#### Scenario: User can create or adopt a Project
+
+- **WHEN** 已认证用户在 Home / Projects 查看 Project 入口
+- **THEN** 创建或采用 Project 的入口可被发现
+- **AND** 该入口不作为大块表单常驻占据 Project 列表首屏
+- **AND** 该入口在移动端不遮挡底部一级导航或 Project 列表内容
+
+#### Scenario: No Project exists yet
+
+- **WHEN** 当前没有可进入的 Project
+- **THEN** Home / Projects 可以将创建或采用 Project 作为空态主行动
+- **AND** 空态仍明确说明创建或采用 Project 是为了进入控制台 shell
+
+#### Scenario: Project creation fails or is unavailable
+
+- **WHEN** 用户尝试创建或采用 Project 但操作失败、被禁用或仍在提交中
+- **THEN** Home / Projects 仍展示对应错误、禁用、加载或恢复状态
+- **AND** 不因视觉对齐移除已有安全提示或失败反馈
 
 ### Requirement: Mobile direct secondary pages return through secondary bottom navigation
 
@@ -221,3 +286,6 @@
 - change：align-ui-shell-foundation
 - verify 证据：`.workflow/changes/align-ui-shell-foundation/verify.md`
 - 运行态验证证据：`.workflow/changes/align-ui-shell-foundation/artifacts/browser-structure/structure-check.log` 与同目录 desktop/mobile 截图
+- change：align-home-project-entry
+- verify 证据：`.workflow/changes/align-home-project-entry/verify.md`
+- 运行态验证证据：`.workflow/changes/align-home-project-entry/artifacts/browser-home-entry/home-entry-check.log` 与同目录 desktop/mobile Home entry 截图

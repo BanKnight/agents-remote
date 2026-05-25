@@ -1,10 +1,10 @@
 import type { Project } from "@agents-remote/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { createProject, listProjects } from "../api/client";
 import { defaultConsoleSection } from "./console-model";
-import { IconMarker, NavItemContent, StatusPill } from "./shell-primitives";
+import { ActionButton, IconMarker, NavItemContent, StatusPill } from "./shell-primitives";
 
 const primaryNavItems = [
   { id: "projects", label: "Projects", marker: "PJ", description: "Project console" },
@@ -12,6 +12,7 @@ const primaryNavItems = [
   { id: "config", label: "Config", marker: "CF", description: "Coming soon" },
   { id: "help", label: "Help", marker: "HP", description: "Coming soon" },
 ];
+
 export function HomeRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -57,23 +58,28 @@ export function HomeRoute() {
         <PrimaryNav />
 
         <div className="flex min-w-0 flex-col gap-4">
-          <header className="rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-4 shadow-2xl shadow-black/30 backdrop-blur sm:rounded-[2rem] sm:p-5">
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
-                  Agents Remote
-                </p>
-                <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Projects</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Open a Project to control Agent Sessions, Terminal, Files, and Git from one dark
-                  mobile console.
-                </p>
-              </div>
-              <StatusPill tone="accent" value="Primary shell" />
+          <header className="flex min-w-0 flex-col gap-3 rounded-[1.75rem] border border-white/10 bg-slate-950/70 px-4 py-4 shadow-2xl shadow-black/25 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:rounded-[2rem] sm:px-5">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+                Projects
+              </p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+                Open a server Project
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                Choose a Project to continue with Agent Sessions, Terminal, Files, or Git.
+              </p>
             </div>
+            <ActionButton
+              className="w-fit shrink-0 self-start sm:self-center"
+              tone="accent"
+              onClick={() => setSetupOpen(true)}
+            >
+              {setupVisible ? "Setup open" : "New / Adopt"}
+            </ActionButton>
           </header>
 
-          <section className="grid min-w-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <section className="grid min-w-0 flex-1 gap-4">
             <ProjectListCard
               error={projects.error}
               isLoading={projects.isLoading}
@@ -81,59 +87,16 @@ export function HomeRoute() {
               onCreateProject={() => setSetupOpen(true)}
             />
 
-            <aside className="min-w-0 rounded-[1.75rem] border border-white/10 bg-slate-900/75 p-4 shadow-xl shadow-black/20 sm:rounded-[2rem] sm:p-5 lg:self-start">
-              <button
-                aria-expanded={setupVisible}
-                className="flex w-full items-start justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-left transition hover:border-cyan-300/50"
-                type="button"
-                onClick={() => setSetupOpen((value) => !value)}
-              >
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-slate-100">
-                    Create or adopt a Project
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-slate-500">
-                    Low-frequency setup under PROJECTS_ROOT.
-                  </span>
-                </span>
-                <StatusPill tone="muted" value={setupVisible ? "Hide" : "Open"} />
-              </button>
-
-              {setupVisible ? (
-                <form className="mt-4" onSubmit={handleSubmit}>
-                  <label className="block text-sm font-medium text-slate-200" htmlFor={inputId}>
-                    Project folder
-                  </label>
-                  <input
-                    className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20"
-                    id={inputId}
-                    placeholder="demo-project"
-                    value={projectPath}
-                    onChange={(event) => setProjectPath(event.target.value)}
-                  />
-                  <button
-                    className="mt-3 w-full rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                    disabled={projectPath.trim().length === 0 || create.isPending}
-                    type="submit"
-                  >
-                    {create.isPending ? "Creating Project..." : "Create and enter"}
-                  </button>
-                  <p className="mt-3 text-xs leading-5 text-slate-500">
-                    Enter a folder name or first-level path. Existing folders are adopted.
-                  </p>
-                  {create.error instanceof Error ? (
-                    <p className="mt-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
-                      {create.error.message}
-                    </p>
-                  ) : null}
-                </form>
-              ) : (
-                <p className="mt-4 text-sm leading-6 text-slate-500">
-                  Most visits should start by opening an existing Project. Use setup only when you
-                  need a new server folder.
-                </p>
-              )}
-            </aside>
+            {setupVisible ? (
+              <ProjectSetupPanel
+                createError={create.error instanceof Error ? create.error : null}
+                inputId={inputId}
+                isPending={create.isPending}
+                projectPath={projectPath}
+                onProjectPathChange={setProjectPath}
+                onSubmit={handleSubmit}
+              />
+            ) : null}
           </section>
         </div>
       </div>
@@ -205,16 +168,14 @@ type ProjectListCardProps = {
 function ProjectListCard({ error, isLoading, onCreateProject, projects }: ProjectListCardProps) {
   return (
     <section className="min-w-0 rounded-[1.75rem] border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 sm:rounded-[2rem] sm:p-5">
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-xl font-semibold">Your Projects</h2>
+          <h2 className="text-xl font-semibold">Projects</h2>
           <p className="mt-1 text-sm leading-6 text-slate-400">
-            Project-scoped workspaces for Agent Sessions, Terminal, Files, and Git.
+            Open a Project to enter its Agent, Files, Git, and Terminal workspaces.
           </p>
         </div>
-        <span className="w-fit">
-          <StatusPill tone="muted" value={`${projects.length} available`} />
-        </span>
+        <StatusPill tone="muted" value={`${projects.length} available`} />
       </div>
 
       {isLoading ? <StatusPanel label="Loading Projects..." /> : null}
@@ -235,35 +196,121 @@ function ProjectListCard({ error, isLoading, onCreateProject, projects }: Projec
         </div>
       ) : null}
 
-      <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-2">
+      <div className="mt-5 grid min-w-0 gap-3">
         {projects.map((project) => (
-          <Link
-            className="group min-w-0 rounded-3xl border border-slate-800 bg-slate-950/80 p-4 transition hover:border-cyan-300/60 hover:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
-            key={project.name}
-            params={{ projectName: project.name }}
-            search={{ workspace: defaultConsoleSection }}
-            to="/projects/$projectName"
-          >
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <IconMarker tone="accent">PJ</IconMarker>
-                <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold text-slate-100 group-hover:text-cyan-100">
-                    {project.name}
-                  </h3>
-                  <p className="mt-1 truncate font-mono text-xs text-slate-500">{project.path}</p>
-                </div>
-              </div>
-              <StatusPill tone="accent" value="Open" />
-            </div>
-            <div className="mt-4 flex min-w-0 flex-wrap gap-2 text-xs text-slate-300">
-              <StatusPill tone="muted" value={`Agents ${project.agentSessionCount}`} />
-              <StatusPill tone="muted" value={`Terminals ${project.terminalSessionCount}`} />
-              <StatusPill tone="muted" value={project.gitBranch ?? "Git branch pending"} />
-            </div>
-          </Link>
+          <ProjectEntryRow key={project.name} project={project} />
         ))}
       </div>
+    </section>
+  );
+}
+
+type ProjectEntryRowProps = {
+  project: Project;
+};
+
+function ProjectEntryRow({ project }: ProjectEntryRowProps) {
+  return (
+    <Link
+      className="group block min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-3 transition hover:border-cyan-300/60 hover:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-300/30 sm:px-4"
+      params={{ projectName: project.name }}
+      search={{ workspace: defaultConsoleSection }}
+      to="/projects/$projectName"
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <IconMarker tone="success">PJ</IconMarker>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold text-slate-100 group-hover:text-cyan-100">
+            {project.name}
+          </span>
+          <span className="mt-1 block truncate font-mono text-xs text-slate-500">
+            {project.path}
+          </span>
+          <span className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+            <ProjectMetaPill>Agents {project.agentSessionCount}</ProjectMetaPill>
+            <ProjectMetaPill>Terminals {project.terminalSessionCount}</ProjectMetaPill>
+            <ProjectMetaPill>{project.gitBranch ?? "Git branch pending"}</ProjectMetaPill>
+          </span>
+        </span>
+        <span className="shrink-0 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-100">
+          Open
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+type ProjectMetaPillProps = {
+  children: ReactNode;
+};
+
+function ProjectMetaPill({ children }: ProjectMetaPillProps) {
+  return (
+    <span className="max-w-full truncate rounded-full border border-slate-800 bg-slate-950/80 px-2.5 py-1 text-[0.7rem] font-semibold text-slate-300">
+      {children}
+    </span>
+  );
+}
+
+type ProjectSetupPanelProps = {
+  createError: Error | null;
+  inputId: string;
+  isPending: boolean;
+  projectPath: string;
+  onProjectPathChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+};
+
+function ProjectSetupPanel({
+  createError,
+  inputId,
+  isPending,
+  onProjectPathChange,
+  onSubmit,
+  projectPath,
+}: ProjectSetupPanelProps) {
+  return (
+    <section className="min-w-0 rounded-[1.75rem] border border-white/10 bg-slate-950/75 p-4 shadow-xl shadow-black/20 sm:rounded-[2rem] sm:p-5">
+      <div className="flex min-w-0 items-start gap-3">
+        <IconMarker tone="muted">+</IconMarker>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-slate-100">Create or adopt a Project</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Use this low-frequency setup only when you need a new server folder under PROJECTS_ROOT.
+          </p>
+        </div>
+      </div>
+
+      <form
+        className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+        onSubmit={onSubmit}
+      >
+        <label className="min-w-0 text-sm font-medium text-slate-200" htmlFor={inputId}>
+          Project folder
+          <input
+            className="mt-2 w-full min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20"
+            id={inputId}
+            placeholder="demo-project"
+            value={projectPath}
+            onChange={(event) => onProjectPathChange(event.target.value)}
+          />
+        </label>
+        <button
+          className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+          disabled={projectPath.trim().length === 0 || isPending}
+          type="submit"
+        >
+          {isPending ? "Creating..." : "Create and enter"}
+        </button>
+      </form>
+      <p className="mt-3 text-xs leading-5 text-slate-500">
+        Enter a folder name or first-level path. Existing folders are adopted.
+      </p>
+      {createError ? (
+        <p className="mt-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+          {createError.message}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：等待 align-ui-shell-foundation 完成共享 shell、导航、路由和视觉基础。
+- 当前阶段：已完成
+- 阻塞项：无
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`.workflow/changes/align-home-project-entry/specs/project-console-navigation/spec.md`）
+- design：已完成（`.workflow/changes/align-home-project-entry/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`；显式引用 `docs/design/frontend-ui-architecture.md`）
+- plan/tasks：已完成（`.workflow/changes/align-home-project-entry/plan.md`、`tasks.md`；均显式要求读取 `docs/design/frontend-ui-architecture.md`、prototype guidelines 与 `home.html`）
+- implementation：已完成（`tasks.md` 中 1.1、2.1、3.1 已完成；format/lint/web typecheck/test/build 与 browser Home entry artifacts 已生成）
+- verify：已完成（`.workflow/changes/align-home-project-entry/verify.md`；结论通过，无 CRITICAL）
+- distill：已完成（已合并长期 WHAT 到 `docs/specs/project-console-navigation/spec.md`，更新 `docs/design/frontend-ui-architecture.md`、`docs/specs/index.md`、`docs/design/index.md` 与 `docs/project.md`）
 
 ## 阶段流转
 
@@ -45,3 +45,9 @@
 ## 进展记录
 
 - 2026-05-25：通过 plan-roadmap 创建 change 骨架，等待共享 UI shell foundation。
+- 2026-05-26：前置 `align-ui-shell-foundation` 已完成，解除局部阻塞；通过 specify-change 创建 `specs/project-console-navigation/spec.md`，明确 Home / Project entry 一级 shell、克制顶部文案、Project 图标列表、低频创建/采用入口和默认进入 Agent workspace 的可验证 WHAT；下一阶段进入待设计。
+- 2026-05-26：通过 design-change 创建 `design/overview.md`、`design/ui-ux.md` 和 `design/frontend.md`，以 `docs/design/frontend-ui-architecture.md`、prototype guidelines 和 `home.html` 为上下文，明确 Home / Project entry 的信息层级、响应式结构、前端状态边界和实现约束；下一阶段进入待计划。
+- 2026-05-26：通过 plan-change 创建 `plan.md` 与 `tasks.md`，将实现拆为 Home 一级 Projects workspace 信息层级、Project entry/低频 Create-adopt 入口和 web/browser 验证三个顺序任务；下一阶段进入待实现。
+- 2026-05-26：完成 implement-change，调整 `web/src/routes/HomeRoute.tsx` 使 Home Project entry 更贴近 prototype：Project 列表优先、顶部文案更克制、Create/adopt 降级为低频面板、Project entry 默认进入 Agent workspace；完成 `tasks.md` 1.1、2.1、3.1，并生成 browser artifacts；下一阶段进入待验证。
+- 2026-05-26：完成 verify-change，创建 `verify.md` 并记录 format/lint/web typecheck/test/build、browser Home entry harness、桌面端与移动端截图证据；结论通过，无 CRITICAL；下一阶段进入待沉淀。
+- 2026-05-26：完成 distill-change，将 Home / Project entry 的长期 WHAT 合并到 `docs/specs/project-console-navigation/spec.md`，将 Project entry 列表优先与低频 Create/adopt 规则补充到 `docs/design/frontend-ui-architecture.md` 与 `docs/project.md`，并更新 specs/design 索引；本 change 已完成。

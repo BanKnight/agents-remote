@@ -25,6 +25,8 @@
 - Files/Git 是 Project-scoped 只读 inspection；Agent/Terminal 是 runtime session。两类页面共享 Project scope，但不共享输入语义。
 - 后续实现应先收敛 route/workspace 与共享 shell，再对齐具体页面，避免每个页面各自创建导航、状态、列表和操作结构。
 - 已验证的 shell foundation 当前采用 `?workspace=agents|files|git|terminal` 承载 Project 直接二级 workspace active 状态；无效 workspace 值回退 Agent。
+- Home / Projects 是一级应用 shell 的 Project entry；默认主任务是扫描并打开已有 Project，而不是展示通用 dashboard。
+- Home 的 Create/adopt Project 是低频入口；默认不应挤占 Project 列表首屏，但在无 Project、提交中或错误状态下可以提升为可恢复主路径。
 - 已验证的共享 UI primitive 边界是轻量的 nav item、icon marker、status pill、action button 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成通用组件库。
 
 ## 关键规则
@@ -65,3 +67,6 @@
 - change：align-ui-shell-foundation
 - verify 证据：`.workflow/changes/align-ui-shell-foundation/verify.md`
 - 运行态验证证据：`.workflow/changes/align-ui-shell-foundation/artifacts/browser-structure/structure-check.log` 与同目录 desktop/mobile 截图
+- change：align-home-project-entry
+- verify 证据：`.workflow/changes/align-home-project-entry/verify.md`
+- 运行态验证证据：`.workflow/changes/align-home-project-entry/artifacts/browser-home-entry/home-entry-check.log` 与同目录 desktop/mobile Home entry 截图
