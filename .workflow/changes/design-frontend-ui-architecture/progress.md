@@ -27,7 +27,7 @@
 - plan/tasks：已完成（`.workflow/changes/design-frontend-ui-architecture/plan.md`、`tasks.md`）
 - implementation：已完成（`tasks.md` 中 1.1、2.1、3.1 已完成）
 - verify：已完成（`.workflow/changes/design-frontend-ui-architecture/verify.md`，结论：通过，无 CRITICAL）
-- distill：已完成（无需更新长期 docs；本 change 是整轮 prototype UI alignment 的先导 workflow-local 设计上下文，长期沉淀应在后续实际 UI 对齐和最终 verification 完成后统一处理）
+- distill：已完成（已沉淀 `docs/design/frontend-ui-architecture.md`，并更新 `docs/design/index.md` 与 `docs/project.md` 入口）
 
 ## 阶段流转
 
@@ -50,4 +50,4 @@
 - 2026-05-25：通过 plan-change 创建 `plan.md` 与 `tasks.md`，拆解设计上下文 artifact 的实现收口任务；下一阶段进入待实现。
 - 2026-05-25：通过 implement-change 完成 tasks 1.1、2.1、3.1，确认 spec/design 覆盖范围和下游引用可用性；下一阶段进入待验证。
 - 2026-05-25：通过 verify-change 创建 `verify.md`，文档一致性审查通过且无 CRITICAL；下一阶段进入待沉淀。
-- 2026-05-25：通过 distill-change 判定无需更新长期 docs；本 change 作为整轮 UI 对齐先导上下文保留在 workflow，待实际 UI 对齐和最终 verification 后再统一沉淀；change 已完成。
+- 2026-05-25：通过 distill-change 将已验证的 UI architecture 基线沉淀到 `docs/design/frontend-ui-architecture.md`，并更新 `docs/design/index.md` 与 `docs/project.md` 入口；change 已完成。

@@ -13,6 +13,7 @@
 - [console-shell.md](./console-shell.md) — 定义登录后 Project Console Shell 的信息架构、移动 Project 工作区顺序、输入职责边界、响应式布局和第一轮 PWA 外壳设计。
 - [file-browser-preview.md](./file-browser-preview.md) — 定义 Project console Files 的移动端紧凑浏览/同页预览结构、前端状态边界和只读交互规则。
 - [frontend-stack.md](./frontend-stack.md) — 定义 `web` 前端栈、路由/服务端状态/本地 UI 状态职责边界和 `/api` 调用接入规则。
+- [frontend-ui-architecture.md](./frontend-ui-architecture.md) — 定义 UI/UX prototype alignment 的来源优先级、三层页面模型、移动端返回规则、共享 UI 边界和视觉密度基线。
 - [git-diff-viewer.md](./git-diff-viewer.md) — 定义 Project console Git diff viewer 的移动端紧凑列表、同页 unified diff panel、状态处理和只读交互规则。
 - [mobile-session-interaction.md](./mobile-session-interaction.md) — 定义 Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 直发、选择输入和恢复状态规则。
 - [session-runtime-boundaries.md](./session-runtime-boundaries.md) — 定义 Agent Session、Terminal Session、transport connection 和 runtime lifecycle 的长期设计边界。
