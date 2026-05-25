@@ -1,93 +1,144 @@
 # project
 
-本文件记录项目认知 big picture。它帮助新成员或 Agent 理解项目是什么、服务谁、有哪些基本领域概念与长期准则。
+本文件记录项目认知 big picture。它帮助新成员或 Agent 在开始局部工作前，快速理解项目是什么、服务谁、核心边界在哪里，以及应该优先加载哪些参考文档。
 
-本文件是渐进式补全的，不要求一次写完整。只写已经确认或可以从项目事实可靠推导的内容。
+本文件只写已经确认或可以从项目事实可靠推导的内容；不记录单次需求、任务状态或临时实现过程。
 
 ## 项目定位
 
-<!-- 项目是什么，解决什么问题，为什么存在。 -->
-
 - 构建一个优化版本的 hapi，提供网页控制平面，用于管理与控制服务器上的 Agent 会话与执行。
 - 首期必须支持至少两类 Agent：Codex 与 Claude，并为后续扩展其他 Agent 保留统一接入面。
+- 产品优先面向个人私有部署和小团队远程操作：浏览器是主要入口，服务器侧负责真实运行 Agent、Terminal、Git 和文件检查能力。
 
 ## 用户与场景
 
-<!-- 项目服务的用户、角色、使用场景和核心目标。 -->
-
-- 主要用户是需要远程调度与观察 Agent 的操作者（个人开发者或小团队）。
-- 核心场景是在浏览器中发起、控制与查看服务器 Agent 任务，而不依赖本地终端常驻操作。
+- 主要用户是需要远程调度与观察 Agent 的操作者，包括个人开发者和小团队成员。
+- 核心场景是在浏览器中进入某个服务器 Project，发起、控制、查看和恢复 Agent/Terminal Session，而不依赖本地终端常驻操作。
+- 移动端是首轮体验重点：登录后应能在手机竖屏里完成 Project 选择、会话查看、输入发送、文件预览和 Git diff inspection。
 
 ## 核心领域概念
 
-<!-- 项目中反复出现、影响讨论和设计的领域概念。 -->
-
 - **Web Control Plane**：浏览器端与服务端控制 API 组成的控制层，负责任务发起、状态可视化与操作入口。
-- **Console Shell**：登录后的 Web/PWA 控制台外壳，以 Project 为作用域，默认聚焦 Agent Sessions，并提供 Terminal、Git、Files 的辅助入口；当前已接入 Agent/Terminal Session 运行态入口、只读 Files 浏览/预览和只读 Git diff 查看。
-- **Session Runtime**：Project-scoped Agent Session 与 Terminal Session 的运行态能力；使用 internal session id、runtime metadata 和明确的 reconnect/close 语义连接浏览器控制面与服务器运行实例。
-- **Agent Runtime**：服务器上的 Agent 执行环境，负责 Agent Session 生命周期、provider CLI/adapter 启动与结果回传；当前重点对接 Codex 与 Claude。
+- **Console Shell**：登录后的 Web/PWA 控制台外壳，以 Project 为作用域，默认聚焦 Agent Sessions，并提供 Terminal、Git、Files 的辅助入口。
 - **Project**：`PROJECTS_ROOT` 下的一级真实目录，是控制台、Files、Git、Terminal Session 和 Agent Session 的统一作用域；第一轮不需要数据库注册。
 - **PROJECTS_ROOT**：个人部署配置中的绝对路径，是当前服务器内 Project 能力和 project-scoped 路径访问的根信任边界。
+- **Session Runtime**：Project-scoped Agent Session 与 Terminal Session 的运行态能力；使用 internal session id、runtime metadata 和明确的 reconnect/close 语义连接浏览器控制面与服务器运行实例。
+- **Agent Runtime**：服务器上的 Agent 执行环境，负责 Agent Session 生命周期、provider CLI/adapter 启动与结果回传；当前重点对接 Codex 与 Claude。
+- **Provider**：Agent Runtime 背后的具体 Agent CLI 或执行器，例如 Claude 与 Codex；用户操作层应尽量看到统一会话语义，而不是 provider 内部差异。
 
 ## 代码与文档结构
 
-<!-- 开发期需要先建立的目录结构认知。 -->
+```text
+agents-remote/
+├── web/              # 前端控制台：页面、交互、浏览器侧 /api client、PWA 静态资源从这里开始找
+├── api/              # Bun 服务端：认证、配置、Project、Files/Git、Session、Agent runtime API 从这里开始找
+├── packages/shared/  # web/api 共享协议：DTO、状态 union、错误码；跨边界类型先看这里
+├── e2e/              # Playwright 端到端测试：真实浏览器用户路径从这里开始找
+├── scripts/          # 开发与验证脚本：E2E harness、临时环境编排等从这里开始找
+├── docs/             # 长期参考文档：specs/design/architecture/runbooks/research 按任务类型加载
+├── .workflow/        # 工作流运行态：由 workflow 技能维护，业务开发通常只读取当前 change 上下文
+└── package.json      # Bun workspace 与根级质量门禁入口
+```
 
-- `web/` 是 React + Vite 前端控制台，负责路由、PWA 外壳、Project Console、Agent/Terminal/Files/Git 等用户可见交互。
-- `api/` 是 Bun 服务端，负责认证、个人配置、Project 模型、安全路径解析、Session Runtime、Files API、Git diff API 和 provider/runtime 入口。
-- `packages/shared/` 保存跨 `web`/`api` 边界共享的 DTO、状态 union 和错误码；不要把服务端实现细节或前端组件状态放进 shared。
-- `e2e/` 与 `scripts/run-e2e.ts` 维护端到端质量基线：临时 `PROJECTS_ROOT`/runtime dir、自动启动 web/api、真实浏览器路径和真实 tmux/WebSocket Terminal smoke。
-- `.workflow/` 是运行态工作区：intents、roadmap、active changes、progress、tasks、verify artifacts 和 archive；它不是长期知识库。
-- `docs/` 是长期沉淀区：项目 big picture、长期 specs、design、architecture、ADR、runbooks 和 research；已验证且可复用的知识应在 distill 后进入这里。
+本节只提供探索入口，不维护源码文件清单；需要具体实现位置时，优先从对应目录的命名、测试文件和相关长期文档继续搜索。
 
 ## 技术与架构概览
 
-<!-- 技术栈、系统边界、关键模块、集成关系等基本认知。 -->
-
-- Monorepo 使用 Bun workspaces：根包编排 `web`、`api` 与 `packages/*`，常用质量门禁是 `bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build`。
-- 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS；TanStack Query 负责服务端状态，Jotai 只用于 shell 级共享 UI 状态，局部 section 状态优先留在组件内。
-- 服务端运行在 Bun 上，Project-scoped 能力优先使用 Web 标准 `Request` / `Response` 边界和 shared DTO；需要执行系统命令时使用 argv 数组调用 `Bun.spawn`，避免 shell 字符串拼接。
-- 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度与执行稳定性。
-- 控制层与执行层通过统一的 Agent 控制接口协作，避免将 Codex/Claude 差异暴露到用户操作层。
-- Project 模块位于 `api` 内，统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；Files、Git、Terminal 和 Agent 等下游能力必须复用 Project-safe 解析。
-- `web` 提供移动端优先的深色 PWA Console Shell；第一轮 PWA 只承诺静态 manifest/icons/meta 和 standalone 外壳，离线缓存、通知和 service worker lifecycle 以后续设计为准；登录后移动端首页以 Project 进入路径为主，Create/Adopt Project 是低频次级入口；Project 工作区移动端以返回/Project 上下文、Files/Git 功能区、Agent Sessions、Terminal Sessions 的顺序组织，不常驻 shell-level runtime input；Files/Git 只读 inspection 在移动端采用紧凑列表与内容优先详情，减少说明文案和重复 metadata 占位；Agent/Terminal Session detail 使用紧凑 header、主输出区和非遮挡式输入控制区承载真实输入与快捷键。
-- Session Runtime 由 `api` 内的 SessionRegistry、runtime metadata、tmux adapter 和 Project-scoped HTTP/WebSocket stream 组成；`packages/shared` 只保存 session DTO、状态、stream envelope 与错误码。
+- Monorepo 使用 Bun workspaces：根包编排 `web`、`api` 与 `packages/*`。
+- 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS。
+- TanStack Query 负责服务端状态；Jotai 只用于 shell 级共享 UI 状态；文件选择、当前路径、当前 diff 文件等局部 section 状态优先留在组件内。
+- 服务端运行在 Bun 上，Project-scoped 能力优先使用 Web 标准 `Request` / `Response` 边界和 shared DTO。
+- 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度、tmux/CLI adapter 和执行稳定性。
+- Project 模块统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；Files、Git、Terminal 和 Agent 等下游能力必须复用 Project-safe 解析。
+- 当前 Files/Git inspection 是只读能力；Agent/Terminal Session 是真实运行态能力；二者在 UI 中都属于 Project Console 的辅助工作区。
+- 第一轮 PWA 只承诺静态 manifest/icons/meta 和 standalone 外壳；离线缓存、通知和 service worker lifecycle 以后续设计为准。
+- 当前没有独立数据库模型；Project identity 来自 `PROJECTS_ROOT` 下一级目录，session runtime metadata 存在 runtime dir 边界内。
 
 ## 容易犯错的边界
 
-<!-- 开发中反复容易出错、需要先提醒自己的稳定约束。 -->
-
-- `roadmap.md` 只保存活跃 version/change 索引和当前焦点；单个 change 的阶段状态只看 `progress.md`，原始意图只看 change 自己的 `intents.md`。
-- `docs/project.md` 必须作为开发期 big picture 入口主动维护；当 change 暴露出项目结构、技术栈、运行约束、易错边界或 workflow 准则时，distill 阶段不能只更新 capability docs，还要判断是否补充本文件。
-- 一个 change 完成 distill 后，如果它是所在 version 的最后一个未完成 change，应立即触发 version 归档检查；不要让已完成 version 长时间停留在活跃 roadmap。
-- UI 或浏览器可见能力的 verify 不能只记录测试通过；应保存截图、trace、日志或 Playwright artifact，并把 artifact 路径写入 `verify.md`。
-- 移动端登录后页面应以动态视口高度、明确局部滚动区域、`min-w-0`、长文本截断/换行和克制固定区域避免页面级横向溢出；不要只靠全局隐藏 overflow 掩盖不可达内容。Project 工作区尤其不要常驻固定底部 runtime input；真实输入应进入 Agent/Terminal Session detail 后出现。Files/Git inspection 在移动端应优先展示 compact row 列表和预览/diff 内容，不要用大块说明文案、过厚卡片或重复 metadata 挤占首屏。Session detail 的输入控制区也不应 fixed/floating 遮挡输出，应参与全高布局，并把 quick keys 放在文本输入框上方。
-- 开发和验证时不要反复启动新的 web/api 端口；长驻服务必须优先复用或重启明确命名的 tmux session，避免端口递增、孤儿进程和日志丢失。
-- Project-scoped API 不得信任客户端传入路径；涉及文件系统、Git、Terminal 或 Agent 工作目录时，必须通过 `PROJECTS_ROOT` 和 Project-safe resolver 收敛到 Project 边界内。
-- Files/Git inspection 当前都是只读能力；不要在这些入口中引入 edit/delete/upload/download/stage/reset/checkout/commit/push/pull/rebase/merge 等写操作。
+- 不要把客户端传入的 project name、relative path、Git path 或 shell working directory 当作可信输入；所有 Project-scoped 文件系统能力都必须先经过 Project-safe resolver。
+- 不要用 shell 字符串拼接执行 Git、tmux 或 provider CLI；系统命令必须使用 argv 数组，并在调用前完成 Project/path/provider 输入校验。
+- 不要把 provider 差异直接泄漏成用户必须理解的控制面模型；Claude/Codex 差异应收敛在 provider profile、adapter 或 capability 边界内。
+- 不要为了移动端布局隐藏问题而只加全局 `overflow-hidden`；应检查动态视口高度、局部滚动区、`min-w-0`、长文本截断/换行和固定区域是否挤占内容。
+- 不要在 Project 工作区常驻固定底部 runtime input；真实输入应进入 Agent/Terminal Session detail 后出现，并且输入区不能遮挡输出。
+- 不要反复启动新的 web/api 端口来验证问题；开发和验证时优先复用或重启明确命名的 tmux session，保留日志和可追踪进程。
+- 不要把 `packages/shared` 当成通用垃圾桶；shared 只表达跨 web/api 的协议、状态和错误码，不放业务流程实现、服务端资源句柄或前端组件细节。
 
 ## 开发准则
 
-<!-- 代码风格、API、UI、数据、测试、安全、文档等长期准则。 -->
+### 通用执行顺序
 
-- 业务实现与工作流优化并行推进：每个业务 change 应明确对应的 workflow 改进点或复用经验。
-- 先保证可控性与可观测性，再扩展能力：涉及 Agent 控制的功能应优先提供状态可见、操作可回溯。
-- 跨 Agent 能力优先抽象到统一控制语义，尽量避免把供应商特性直接固化到控制面交互。
-- 新增跨边界 API 时，先定义 shared DTO/error，再实现 api service/route/test，最后接入 web client/UI/e2e；shared 只表达协议，不承载业务实现。
-- 前端 section 的 server state 优先用 TanStack Query；文件选择、当前路径、当前 diff 文件等局部交互状态优先用组件 state，不要扩大到全局状态。
-- Git、tmux、provider CLI 等系统命令必须使用 argv 数组执行，并将 Project path、scope、file path 等输入先做边界校验。
-- 开发和验证过程中，长驻服务进程应优先使用 `tmux` 管理，例如 `web`、`api`、E2E 依赖服务或调试用 runtime；用明确的 tmux session 名区分不同服务，便于后台常驻、查看日志、重启和有序关闭，避免依赖临时 shell 或用杀进程方式清理。该准则只约束开发/验证工作流，不等同于产品内 Agent/Terminal Session 的 runtime 设计决策。
+1. 先读 `docs/project.md`，再按任务类型加载下方“重要文档列表”里的相关 specs/design/architecture/runbooks。
+2. 明确本次改动属于哪一层：shared 协议、api 能力、web 交互、runtime adapter、E2E/质量基线，避免跨层随手重构。
+3. 优先做最小闭环：先定义或确认行为契约，再改最少代码让该行为可运行、可观察、可测试。
+4. 每次改动后运行与改动层级匹配的最小验证；收尾前再运行必要的完整质量门禁。
 
-## 文档与知识沉淀规则
+### 新增或修改跨边界 API
 
-<!-- 哪些内容需要沉淀到 docs，change 完成后如何提炼长期认知。 -->
+1. 在 `packages/shared/src/index.ts` 定义或调整 DTO、status union、error code。
+2. 在 `api/src/*` 实现 service/route，并补充或更新同层单元测试。
+3. 在 `web/src/api/client.ts` 接入 client 方法，保持错误处理和返回类型与 shared 协议一致。
+4. 在 `web/src/routes/*` 接入 UI；server state 使用 TanStack Query，局部选择/展开/输入状态留在组件内。
+5. 对用户可见路径补 E2E 或手动浏览器验证；涉及移动端时检查窄屏布局。
 
-- change 完成并通过 verify 后，应检查是否有长期项目认知需要提炼到本文件；如果不更新 `docs/project.md`，应在 distill 输出或 progress 记录中说明原因。
-- `docs/project.md` 应优先沉淀跨 change 复用的 big picture：项目结构、技术栈、架构边界、易错点、开发/验证准则和长期术语。
-- 不把单次实现细节、临时问题或任务状态写入本文件。
+### 新增或修改 Project-scoped 能力
 
-## 待补充
+1. 先确认输入是否包含 project name、relative path、working directory 或 provider 参数。
+2. 所有路径先通过 Project-safe resolver 收敛到 `PROJECTS_ROOT` 内，再传给 Files/Git/Terminal/Agent 下游逻辑。
+3. Git/tmux/provider CLI 调用使用 argv 数组，禁止 shell 字符串拼接。
+4. 测试至少覆盖合法路径、越界路径、缺失 Project、非预期文件类型或非 Git 目录等边界。
 
-<!-- 明确记录还缺哪些项目认知，不伪装成已知。 -->
+### 前端与移动端开发
 
-- （待补充）
+1. 先从 design/prototype 和对应能力 spec 理解目标信息架构，不要只根据当前组件外观猜测布局。
+2. 手机竖屏优先：检查首屏密度、返回路径、主要内容滚动区、输入区是否遮挡输出、长文本是否导致横向溢出。
+3. Files/Git inspection 优先展示 compact row 列表和内容本身，减少大块说明文案、厚卡片和重复 metadata。
+4. Agent/Terminal Session detail 使用紧凑 header、主输出区、非遮挡输入区和 quick keys；输入行为要用真实浏览器路径验证。
+
+### 测试与质量门禁
+
+1. 改 shared 协议：运行 `bun run --filter @agents-remote/shared test` 和相关 typecheck。
+2. 改 api：运行目标 `api/src/*.test.ts` 覆盖的测试；涉及路由或 runtime 时补充集成路径验证。
+3. 改 web：运行相关 `web/src/**/*.test.ts`，并用浏览器验证对应页面的 golden path 和错误/空状态。
+4. 改 Project/Session/Terminal/WebSocket：运行 `bun run e2e` 或对应 E2E 子路径，确认真实浏览器、tmux 和 stream 行为。
+5. 收尾前按风险运行根级质量门禁：`bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build`；如果改动影响端到端用户路径，再加 `bun run e2e`。
+6. 需要长驻 web/api 服务时，用 tmux 管理并固定 session 名；查看日志、重启、关闭都通过同一 session 完成，避免孤儿进程和端口漂移。
+
+## 重要文档列表
+
+### 原型与产品体验
+
+- [移动端原型图](./design/prototype.png) — Server Agent Console 的移动端深色界面原型，用于确认整体视觉方向和信息密度。
+- [Console Shell 设计](./design/console-shell.md) — 登录后 Project Console 的信息架构、移动 Project 工作区顺序、输入职责边界和 PWA 外壳设计。
+- [移动端 Session 交互设计](./design/mobile-session-interaction.md) — Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 和恢复状态规则。
+- [前端栈设计](./design/frontend-stack.md) — `web` 前端路由、服务端状态、本地 UI 状态和 `/api` 调用职责边界。
+
+### 行为规格与能力契约
+
+- [Workspace Foundation 规格](./specs/workspace-foundation/spec.md) — monorepo、Bun 命令面、前端基础、共享类型边界和基础质量入口。
+- [Private Access Auth 规格](./specs/private-access-auth/spec.md) — 单密码登录、本地 token、HTTP/WebSocket 认证和个人私有部署安全范围。
+- [Project Model 规格](./specs/project-model/spec.md) — `PROJECTS_ROOT` 一级目录 Project 模型、Project identity、列表摘要和创建/采用行为。
+- [Project Safe Paths 规格](./specs/project-safe-paths/spec.md) — Project 名称与 project-relative path 的统一安全解析契约。
+- [Project Console Navigation 规格](./specs/project-console-navigation/spec.md) — Project 控制台外壳、Files/Git 功能区、Agent/Terminal 工作区和输入职责边界。
+- [Session Runtime 规格](./specs/session-runtime/spec.md) — Agent/Terminal Session 身份分层、runtime metadata、tmux resource、reconnect 和 close 行为契约。
+- [Agent Provider Experience 规格](./specs/agent-provider-experience/spec.md) — Claude/Codex provider 入口、统一 Agent Session 语义和 provider-aware list/detail 边界。
+- [Files 规格](./specs/file-browser-preview/spec.md) — 只读浏览、安全路径、隐藏条目、文本/图片预览、错误状态和移动端紧凑 inspection 要求。
+- [Git Diff 规格](./specs/git-diff-viewer/spec.md) — 只读 Git status/diff、非 Git 状态、worktree/staged 列表、单文件 unified diff 和移动端 inspection 要求。
+- [E2E Quality Baseline 规格](./specs/e2e-quality-baseline/spec.md) — 登录到 Terminal Session 真实 tmux/WebSocket 输入输出的自动化 E2E baseline 要求。
+
+### 架构、接口与运行边界
+
+- [Monorepo Service Boundaries](./architecture/monorepo-service-boundaries.md) — `web`、`api`、`packages/shared` 的工程结构、服务边界与同域 `/api` 部署路径约定。
+- [Project Boundary](./architecture/project-boundary.md) — Project 模块、安全路径解析和下游 project-scoped 能力的长期架构边界。
+- [Session Runtime 架构](./architecture/session-runtime.md) — SessionRegistry、runtime metadata、tmux adapter、HTTP/WS stream 和 transport 边界。
+- [Agent Runtime 架构](./architecture/agent-runtime.md) — Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。
+- [Files 架构](./architecture/file-browser-preview.md) — Files API、safe path 复用、只读 preview union 和文件系统读取边界。
+- [Git Diff 架构](./architecture/git-diff-viewer.md) — Git diff API、Project-safe resolver 复用、只读 Git CLI 命令和 Git DTO 边界。
+- [E2E Quality Baseline 架构](./architecture/e2e-quality-baseline.md) — Playwright + Bun E2E harness、临时环境、真实 tmux/WebSocket smoke 和 artifact 边界。
+
+### 数据、配置与运维
+
+- [个人部署配置 Runbook](./runbooks/personal-deployment-configuration.md) — 首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。
+- [E2E Quality Baseline Runbook](./runbooks/e2e-quality-baseline.md) — 如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
+- [Agent 接入调研](./research/agent-access-options.md) — hapi/remodex/Codex/Claude 接入路线、证据追溯和统一协议可能性调研。
+- 数据库参考：当前没有独立数据库 schema；Project 数据模型以 `PROJECTS_ROOT` 目录和 runtime metadata 为主，优先参考 Project/Session 相关规格与架构文档。
