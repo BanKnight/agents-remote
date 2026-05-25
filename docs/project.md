@@ -50,7 +50,7 @@
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度与执行稳定性。
 - 控制层与执行层通过统一的 Agent 控制接口协作，避免将 Codex/Claude 差异暴露到用户操作层。
 - Project 模块位于 `api` 内，统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；Files、Git、Terminal 和 Agent 等下游能力必须复用 Project-safe 解析。
-- `web` 提供移动端优先的深色 PWA Console Shell；第一轮 PWA 只承诺静态 manifest/icons/meta 和 standalone 外壳，离线缓存、通知和 service worker lifecycle 以后续设计为准。
+- `web` 提供移动端优先的深色 PWA Console Shell；第一轮 PWA 只承诺静态 manifest/icons/meta 和 standalone 外壳，离线缓存、通知和 service worker lifecycle 以后续设计为准；登录后移动端首页以 Project 进入路径为主，Create/Adopt Project 是低频次级入口。
 - Session Runtime 由 `api` 内的 SessionRegistry、runtime metadata、tmux adapter 和 Project-scoped HTTP/WebSocket stream 组成；`packages/shared` 只保存 session DTO、状态、stream envelope 与错误码。
 
 ## 容易犯错的边界
@@ -61,6 +61,7 @@
 - `docs/project.md` 必须作为开发期 big picture 入口主动维护；当 change 暴露出项目结构、技术栈、运行约束、易错边界或 workflow 准则时，distill 阶段不能只更新 capability docs，还要判断是否补充本文件。
 - 一个 change 完成 distill 后，如果它是所在 version 的最后一个未完成 change，应立即触发 version 归档检查；不要让已完成 version 长时间停留在活跃 roadmap。
 - UI 或浏览器可见能力的 verify 不能只记录测试通过；应保存截图、trace、日志或 Playwright artifact，并把 artifact 路径写入 `verify.md`。
+- 移动端登录后页面应以动态视口高度、明确局部滚动区域、`min-w-0`、长文本截断/换行和克制固定区域避免页面级横向溢出；不要只靠全局隐藏 overflow 掩盖不可达内容。
 - 开发和验证时不要反复启动新的 web/api 端口；长驻服务必须优先复用或重启明确命名的 tmux session，避免端口递增、孤儿进程和日志丢失。
 - Project-scoped API 不得信任客户端传入路径；涉及文件系统、Git、Terminal 或 Agent 工作目录时，必须通过 `PROJECTS_ROOT` 和 Project-safe resolver 收敛到 Project 边界内。
 - Files/Git inspection 当前都是只读能力；不要在这些入口中引入 edit/delete/upload/download/stage/reset/checkout/commit/push/pull/rebase/merge 等写操作。

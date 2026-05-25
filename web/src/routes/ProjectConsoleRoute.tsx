@@ -72,7 +72,7 @@ type ConsoleFrameProps = {
 
 function ConsoleFrame({ children, subtitle, title }: ConsoleFrameProps) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
+    <main className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-slate-950 px-4 text-slate-100">
       <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/30">
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
           Agents Remote
@@ -129,8 +129,8 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   });
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-4 py-4 text-slate-100 sm:px-6 lg:px-8">
-      <div className="mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+    <main className="min-h-dvh overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-3 py-3 text-slate-100 sm:px-6 sm:py-4 lg:px-8">
+      <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="rounded-[2rem] border border-white/10 bg-slate-950/75 p-4 shadow-2xl shadow-black/30 backdrop-blur lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
           <Link className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300" to="/">
             Agents Remote
@@ -161,8 +161,8 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           </nav>
         </aside>
 
-        <section className="flex min-h-[calc(100vh-2rem)] flex-col gap-4 pb-28 lg:pb-4">
-          <header className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
+        <section className="flex min-h-[calc(100dvh-1.5rem)] min-w-0 flex-col gap-4 pb-28 sm:min-h-[calc(100dvh-2rem)] lg:pb-4">
+          <header className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
@@ -184,7 +184,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
             </div>
           </header>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <AgentPanel
               projectName={project.name}
               sessions={agentSessions.data?.sessions ?? []}

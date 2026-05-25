@@ -18,6 +18,7 @@
 ## 设计结论
 
 - 根入口展示 Project 列表和创建/采用入口；Project API 数据属于 TanStack Query 管理的 server state。
+- 移动端根入口优先展示已有 Project 或工作上下文，创建/采用 Project 是低频入口，应保持可发现但不作为已有 Project 场景下的首屏大块常驻表单。
 - Project console route 使用 Project 名称作为 URL 参数；URL-sensitive 名称必须通过 encode/decode 进入 `/api/projects/:projectName`。
 - Project console 默认聚焦 Agent Sessions；Terminal、Git、Files 是同一 Project scope 下的辅助入口。
 - Agent 区域在 runtime 未接入时展示明确空状态和未来状态摘要位置，不展示难以区分真假的 mock session。
@@ -32,6 +33,8 @@
 - Terminal/Git/Files 入口在真实能力完成前只能展示占位、空状态或 coming soon，不执行文件写入、Git 写操作或 session runtime 操作。
 - 状态表达不能只依赖颜色；应结合文字标签，如 Default focus、Coming soon、No runtime connected、Disabled。
 - 移动端是布局基准；桌面可以使用侧栏/双栏，但必须保持 Agent 默认焦点和 Project 上下文可见。
+- 登录后页面应采用动态视口高度、`min-w-0`、长文本截断/换行和局部滚动区域来避免页面级横向溢出；不能只依赖全局隐藏 overflow 掩盖不可达内容。
+- `docs/design/prototype.png` 只作为暗色移动端控制台气质、密度和层级参考；最终用户可见术语必须映射到 Project、Agent Sessions、Terminal、Files、Git 等项目领域概念。
 - PWA manifest 至少包含应用名、short name、start URL、standalone display、theme/background color、192 和 512 PNG icons。
 
 ## 不适用场景
@@ -46,3 +49,6 @@
 - change：build-responsive-pwa-console-shell
 - verify 证据：`.workflow/changes/build-responsive-pwa-console-shell/verify.md`
 - 运行态验证证据：`.workflow/changes/build-responsive-pwa-console-shell/artifacts/console-desktop.png`、`.workflow/changes/build-responsive-pwa-console-shell/artifacts/console-mobile.png`
+- change：align-mobile-app-shell
+- verify 证据：`.workflow/changes/align-mobile-app-shell/verify.md`
+- 运行态验证证据：`.workflow/changes/align-mobile-app-shell/artifacts/mobile-home.png`

@@ -34,11 +34,35 @@
 - **THEN** 页面以深色控制台视觉展示主要内容
 - **AND** 关键状态、列表和操作入口在移动端首屏可识别
 
+#### Scenario: User opens the authenticated console on a mobile viewport
+
+- **WHEN** 已认证用户在手机尺寸视口打开控制台
+- **THEN** 页面呈现深色、全高、App-like 的控制台布局
+- **AND** 主要入口使用本项目术语表达 Project、Agent Sessions、Terminal、Files、Git 等能力
+- **AND** 页面不以传统网站大页头、大营销文案或大面积介绍块作为移动端首屏主视觉
+
 #### Scenario: User looks for theme switching
 
 - **WHEN** 用户在第一轮控制台中查找浅色/深色切换
 - **THEN** 系统不要求提供主题切换入口
 - **AND** 深色主题仍保持主要信息可读
+
+### Requirement: Mobile console pages avoid viewport-level overflow by default
+
+系统 SHALL 让登录后移动端页面默认收敛在设备视口内，除明确需要滚动的内容区域外，不产生页面级横向溢出或因固定区域叠加导致的不可达内容。
+
+#### Scenario: User opens primary console pages on a narrow mobile viewport
+
+- **WHEN** 用户在窄手机视口打开 Project 列表、Project 控制台、Session 详情、Files 或 Git 页面
+- **THEN** 页面主体不会超出视口宽度形成横向页面滚动
+- **AND** 顶部、主体、底部导航或操作区共同占用的高度不会让核心内容被永久遮挡
+- **AND** 需要滚动的列表、终端输出或详情内容在自己的可滚动区域内可访问
+
+#### Scenario: Dynamic content is longer than the visible area
+
+- **WHEN** 会话列表、文件列表、Git diff 或终端输出超过当前可视高度
+- **THEN** 超出的内容通过明确的滚动区域访问
+- **AND** 页面级 shell 仍保持当前 Project 或页面上下文可识别
 
 ### Requirement: Console shell remains usable on wider desktop viewports
 
@@ -58,12 +82,13 @@
 
 ### Requirement: Prototype visual hierarchy is the default product reference
 
-系统 SHALL 在不违背文本文档、澄清意图、安全边界和长期架构约束的前提下，以 `docs/design/prototype.png` 的暗色移动端控制台气质作为第一轮布局和视觉层级参考。
+系统 SHALL 在不违背文本文档、澄清意图、安全边界和长期架构约束的前提下，以 `docs/design/prototype.png` 的暗色移动端控制台气质作为第一轮布局密度和视觉层级参考，但所有用户可见元素命名、页面概念与操作文案必须映射到本项目自己的 Project、Agent Session、Terminal、Files、Git 等领域术语。
 
 #### Scenario: Implementer chooses shell layout details
 
 - **WHEN** 实现者需要决定顶部项目上下文、会话卡片、状态标签或底部输入区域的呈现优先级
 - **THEN** 默认参考 `docs/design/prototype.png` 的信息层级和暗色控制台气质
+- **AND** 不把原型中的通用页面元素、占位命名或示例文案直接带入最终产品
 
 #### Scenario: Prototype conflicts with written constraints
 
@@ -85,8 +110,11 @@
 
 - 第一轮 PWA shell 已验证采用静态 manifest、icons 和 HTML meta/link，不注册 service worker，不承诺离线能力。
 - 后续如需离线缓存、安装提示、更新提示或 push notification，应单独设计缓存、认证和实时数据边界。
+- 移动端 shell 已验证采用 Project 主路径优先、低频 Create/Adopt Project 次级入口、动态视口高度和页面级横向不溢出基线。
 
 ## 来源
 
 - change：build-responsive-pwa-console-shell
 - verify 证据：`.workflow/changes/build-responsive-pwa-console-shell/verify.md`
+- change：align-mobile-app-shell
+- verify 证据：`.workflow/changes/align-mobile-app-shell/verify.md`
