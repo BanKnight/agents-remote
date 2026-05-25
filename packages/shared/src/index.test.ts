@@ -14,6 +14,8 @@ import type {
   ListAgentSessionsResponse,
   ListTerminalSessionsResponse,
   ProjectDetailResponse,
+  ProjectFileListResponse,
+  ProjectFilePreviewResponse,
   ProjectListResponse,
   SessionStreamClientMessage,
   SessionStreamServerMessage,
@@ -50,6 +52,64 @@ test("Project API DTOs describe project requests and responses", () => {
   expect(created.project.path).toBe("/projects/demo");
   expect(detail.project.agentSessionCount).toBe(0);
   expect(error.error.code).toBe("PROJECT_PATH_OUTSIDE_ROOT");
+});
+
+test("Project Files DTOs describe directory listings and preview states", () => {
+  const list: ProjectFileListResponse = {
+    projectName: "demo",
+    path: "src",
+    parentPath: "",
+    entries: [
+      { name: ".config", path: "src/.config", type: "directory", hidden: true, size: null },
+      { name: "index.ts", path: "src/index.ts", type: "file", hidden: false, size: 120 },
+    ],
+  };
+  const text: ProjectFilePreviewResponse = {
+    type: "text",
+    projectName: "demo",
+    path: "README.md",
+    name: "README.md",
+    size: 42,
+    content: "hello",
+  };
+  const image: ProjectFilePreviewResponse = {
+    type: "image",
+    projectName: "demo",
+    path: "logo.png",
+    name: "logo.png",
+    size: 12,
+    mediaType: "image/png",
+    dataUrl: "data:image/png;base64,abc",
+  };
+  const unsupported: ProjectFilePreviewResponse = {
+    type: "unsupported",
+    projectName: "demo",
+    path: "archive.zip",
+    name: "archive.zip",
+    size: 100,
+    reason: "unsupported_type",
+  };
+  const tooLarge: ProjectFilePreviewResponse = {
+    type: "too_large",
+    projectName: "demo",
+    path: "large.txt",
+    name: "large.txt",
+    size: 300_000,
+    limitBytes: 262_144,
+  };
+  const error: ApiErrorResponse = {
+    error: {
+      code: "PROJECT_FILE_NOT_DIRECTORY",
+      message: "Project file path must be a directory",
+    },
+  };
+
+  expect(list.entries[0].hidden).toBe(true);
+  expect(text.type).toBe("text");
+  expect(image.mediaType).toBe("image/png");
+  expect(unsupported.reason).toBe("unsupported_type");
+  expect(tooLarge.limitBytes).toBe(262_144);
+  expect(error.error.code).toBe("PROJECT_FILE_NOT_DIRECTORY");
 });
 
 test("Session API DTOs keep Agent and Terminal semantics separate", () => {

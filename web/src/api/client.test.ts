@@ -8,9 +8,11 @@ import {
   getAuthStatus,
   getProject,
   listAgentSessions,
+  listProjectFiles,
   listProjects,
   listTerminalSessions,
   login,
+  previewProjectFile,
   sessionStreamUrl,
 } from "./client";
 
@@ -101,6 +103,41 @@ test("web api client encodes project detail names", async () => {
   await getProject("hello world 中文");
 
   expect(path).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87");
+});
+
+test("web api client calls Project file routes with encoded paths", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+
+    if (input.toString().includes("preview")) {
+      return Response.json({
+        type: "text",
+        projectName: "hello world 中文",
+        path: "src/hello world.ts",
+        name: "hello world.ts",
+        size: 5,
+        content: "hello",
+      });
+    }
+
+    return Response.json({
+      projectName: "hello world 中文",
+      path: "src",
+      parentPath: "",
+      entries: [],
+    });
+  }) as typeof fetch;
+
+  await listProjectFiles("hello world 中文");
+  await listProjectFiles("hello world 中文", "src");
+  await previewProjectFile("hello world 中文", "src/hello world.ts");
+
+  expect(calls[0][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/files");
+  expect(calls[1][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/files?path=src");
+  expect(calls[2][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/files/preview?path=src%2Fhello%20world.ts",
+  );
 });
 
 test("web api client calls Project-scoped Agent session routes", async () => {

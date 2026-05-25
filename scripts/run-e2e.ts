@@ -17,6 +17,15 @@ const main = async () => {
   const runtimeDir = join(tempRoot, "run");
   const projectPath = join(projectsRoot, "demo");
   await mkdir(projectPath, { recursive: true });
+  await mkdir(join(projectPath, "src"), { recursive: true });
+  await mkdir(join(projectPath, ".config"), { recursive: true });
+  await writeFile(join(projectPath, "README.md"), "# Demo\n\nfile-browser-e2e-text-ok\n");
+  await writeFile(join(projectPath, "src", "index.ts"), "export const fileBrowserE2e = true;\n");
+  await writeFile(join(projectPath, ".env.example"), "APP_ENV=demo\n");
+  await writeFile(
+    join(projectPath, "logo.svg"),
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40"><text x="4" y="24">file-browser-e2e-image-ok</text></svg>',
+  );
   await mkdir(runtimeDir, { recursive: true });
 
   const apiPort = await freePort();

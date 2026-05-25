@@ -6,6 +6,75 @@ export type Project = {
   gitBranch?: string;
 };
 
+export type ProjectFileEntryType = "directory" | "file";
+
+export type ProjectFileEntry = {
+  name: string;
+  path: string;
+  type: ProjectFileEntryType;
+  hidden: boolean;
+  size: number | null;
+};
+
+export type ProjectFileListResponse = {
+  projectName: string;
+  path: string;
+  parentPath: string | null;
+  entries: ProjectFileEntry[];
+};
+
+export type ProjectFilePreviewMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/gif"
+  | "image/webp"
+  | "image/svg+xml";
+
+export type ProjectUnsupportedFilePreviewReason = "unsupported_type" | "binary_text";
+
+export type ProjectTextFilePreview = {
+  type: "text";
+  projectName: string;
+  path: string;
+  name: string;
+  size: number;
+  content: string;
+};
+
+export type ProjectImageFilePreview = {
+  type: "image";
+  projectName: string;
+  path: string;
+  name: string;
+  size: number;
+  mediaType: ProjectFilePreviewMediaType;
+  dataUrl: string;
+};
+
+export type ProjectUnsupportedFilePreview = {
+  type: "unsupported";
+  projectName: string;
+  path: string;
+  name: string;
+  size: number;
+  reason: ProjectUnsupportedFilePreviewReason;
+};
+
+export type ProjectTooLargeFilePreview = {
+  type: "too_large";
+  projectName: string;
+  path: string;
+  name: string;
+  size: number;
+  limitBytes: number;
+};
+
+export type ProjectFilePreviewResponse =
+  | ProjectTextFilePreview
+  | ProjectImageFilePreview
+  | ProjectUnsupportedFilePreview
+  | ProjectTooLargeFilePreview;
+
 export type ProjectListResponse = {
   projects: Project[];
 };
@@ -146,6 +215,9 @@ export type ApiErrorCode =
   | "PROJECT_TARGET_INVALID"
   | "PROJECT_PATH_OUTSIDE_ROOT"
   | "PROJECT_CONFLICT"
+  | "PROJECT_FILE_NOT_FOUND"
+  | "PROJECT_FILE_NOT_DIRECTORY"
+  | "PROJECT_FILE_NOT_FILE"
   | "PROJECT_FS_ERROR"
   | "SESSION_NOT_FOUND"
   | "SESSION_RUNTIME_MISSING"

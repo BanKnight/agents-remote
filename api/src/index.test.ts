@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AuthService } from "./auth";
 import { createFetchHandler } from "./index";
+import { ProjectFilesService } from "./project-files";
 import { ProjectService } from "./projects";
 import { SessionRegistry } from "./session-registry";
 let root: string;
@@ -31,11 +32,17 @@ const createTestHandler = () => {
     createId: (type) => (type === "agent" ? "agent_test123456" : "terminal_test123456"),
   });
   const projectService = new ProjectService(root, sessionRegistry);
+  const projectFilesService = new ProjectFilesService(root);
 
   return {
     auth,
     sessionRegistry,
-    handler: createFetchHandler(auth, { projectService, projectsRoot: root, sessionRegistry }),
+    handler: createFetchHandler(auth, {
+      projectFilesService,
+      projectService,
+      projectsRoot: root,
+      sessionRegistry,
+    }),
   };
 };
 
@@ -299,6 +306,50 @@ test("createFetchHandler closes sessions through Project-scoped action routes", 
   expect(close.status).toBe(200);
   expect((await close.json()).session.status).toBe("closed");
   expect((await list.json()).sessions).toEqual([]);
+});
+
+test("createFetchHandler serves Project-scoped file browsing and preview", async () => {
+  await mkdir(join(root, "demo", "src"), { recursive: true });
+  await mkdir(join(root, "demo", ".config"));
+  await writeFile(join(root, "demo", "src", "index.ts"), "console.log('ok')\n");
+  await writeFile(join(root, "demo", "image.png"), Buffer.from([1, 2, 3]));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const list = await handler(new Request("http://localhost/api/projects/demo/files", { headers }), {
+    upgrade: () => false,
+  });
+  const listBody = await list.json();
+  const nested = await handler(
+    new Request("http://localhost/api/projects/demo/files?path=src", { headers }),
+    { upgrade: () => false },
+  );
+  const text = await handler(
+    new Request("http://localhost/api/projects/demo/files/preview?path=src%2Findex.ts", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  const image = await handler(
+    new Request("http://localhost/api/projects/demo/files/preview?path=image.png", { headers }),
+    { upgrade: () => false },
+  );
+  const escape = await handler(
+    new Request("http://localhost/api/projects/demo/files?path=..%2Fother", { headers }),
+    { upgrade: () => false },
+  );
+
+  expect(list.status).toBe(200);
+  expect(listBody.entries.map((entry: { name: string }) => entry.name)).toEqual([
+    ".config",
+    "src",
+    "image.png",
+  ]);
+  expect((await nested.json()).parentPath).toBe("");
+  expect(await text.json()).toMatchObject({ type: "text", content: "console.log('ok')\n" });
+  expect(await image.json()).toMatchObject({ type: "image", mediaType: "image/png" });
+  expect(escape.status).toBe(400);
+  expect((await escape.json()).error.code).toBe("PROJECT_PATH_OUTSIDE_ROOT");
 });
 
 test("createFetchHandler maps project errors", async () => {

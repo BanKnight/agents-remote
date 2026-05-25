@@ -16,6 +16,8 @@ import type {
   LoginRequest,
   LoginResponse,
   ProjectDetailResponse,
+  ProjectFileListResponse,
+  ProjectFilePreviewResponse,
   ProjectListResponse,
   TerminalSessionDetailResponse,
 } from "@agents-remote/shared";
@@ -67,6 +69,20 @@ export async function createProject(path: string): Promise<CreateProjectResponse
 
 export async function getProject(projectName: string): Promise<ProjectDetailResponse> {
   return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "Project detail failed");
+}
+
+export async function listProjectFiles(
+  projectName: string,
+  path = "",
+): Promise<ProjectFileListResponse> {
+  return fetchJson(projectFilesPath(projectName, path), "Project files failed");
+}
+
+export async function previewProjectFile(
+  projectName: string,
+  path: string,
+): Promise<ProjectFilePreviewResponse> {
+  return fetchJson(projectFilePreviewPath(projectName, path), "Project file preview failed");
 }
 
 export async function listAgentSessions(projectName: string): Promise<ListAgentSessionsResponse> {
@@ -161,6 +177,20 @@ export function createEchoSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${protocol}//${window.location.host}/api/ws/echo`);
 }
+
+const projectFilesPath = (projectName: string, path: string) =>
+  withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files`, path);
+
+const projectFilePreviewPath = (projectName: string, path: string) =>
+  withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/preview`, path);
+
+const withPathQuery = (basePath: string, path: string) => {
+  if (path.length === 0) {
+    return basePath;
+  }
+
+  return `${basePath}?path=${encodeURIComponent(path)}`;
+};
 
 const agentSessionsPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/agent-sessions`;

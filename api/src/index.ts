@@ -8,6 +8,7 @@ import type {
 import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
 import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-auth";
+import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
@@ -22,6 +23,7 @@ type UpgradeServer = {
 };
 
 type FetchHandlerOptions = {
+  projectFilesService?: ProjectFilesService;
   projectService?: ProjectService;
   projectsRoot?: string;
   sessionRegistry?: SessionRegistry;
@@ -106,7 +108,12 @@ export const createFetchHandler =
     }
 
     if (options.projectService) {
-      const projectResponse = await handleProjects(request, url, options.projectService);
+      const projectResponse = await handleProjects(
+        request,
+        url,
+        options.projectService,
+        options.projectFilesService,
+      );
 
       if (projectResponse) {
         return projectResponse;
@@ -116,7 +123,12 @@ export const createFetchHandler =
     return Response.json({ error: "Not found" }, { status: 404 });
   };
 
-const handleProjects = async (request: Request, url: URL, projectService: ProjectService) => {
+const handleProjects = async (
+  request: Request,
+  url: URL,
+  projectService: ProjectService,
+  projectFilesService?: ProjectFilesService,
+) => {
   try {
     if (url.pathname === "/api/projects" && request.method === "GET") {
       const response: ProjectListResponse = { projects: await projectService.listProjects() };
@@ -136,6 +148,21 @@ const handleProjects = async (request: Request, url: URL, projectService: Projec
       return Response.json(response);
     }
 
+    const projectFilesMatch = matchProjectFilesPath(url.pathname);
+
+    if (projectFilesMatch && request.method === "GET" && projectFilesService) {
+      const response = projectFilesMatch.preview
+        ? await projectFilesService.previewFile(
+            projectFilesMatch.projectName,
+            url.searchParams.get("path") ?? "",
+          )
+        : await projectFilesService.listFiles(
+            projectFilesMatch.projectName,
+            url.searchParams.get("path") ?? "",
+          );
+      return Response.json(response);
+    }
+
     if (url.pathname.startsWith("/api/projects/") && request.method === "GET") {
       const encodedName = url.pathname.slice("/api/projects/".length);
       const projectName = decodeProjectName(encodedName);
@@ -150,6 +177,10 @@ const handleProjects = async (request: Request, url: URL, projectService: Projec
       return Response.json(response);
     }
   } catch (error) {
+    if (error instanceof ProjectFilesError) {
+      return projectFilesErrorResponse(error);
+    }
+
     if (error instanceof ProjectServiceError) {
       return projectErrorResponse(error);
     }
@@ -174,6 +205,55 @@ const decodeProjectName = (encodedName: string) => {
   } catch {
     return undefined;
   }
+};
+
+type ProjectFilesPathMatch = {
+  projectName: string;
+  preview: boolean;
+};
+
+const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefined => {
+  const prefix = "/api/projects/";
+
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+
+  const suffix = pathname.slice(prefix.length);
+  const filesSuffix = "/files";
+  const previewSuffix = "/files/preview";
+  const encodedName = suffix.endsWith(previewSuffix)
+    ? suffix.slice(0, -previewSuffix.length)
+    : suffix.endsWith(filesSuffix)
+      ? suffix.slice(0, -filesSuffix.length)
+      : undefined;
+
+  if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
+    return undefined;
+  }
+
+  const projectName = decodeProjectName(encodedName);
+
+  if (!projectName) {
+    return undefined;
+  }
+
+  return {
+    projectName,
+    preview: suffix.endsWith(previewSuffix),
+  };
+};
+
+const projectFilesErrorResponse = (error: ProjectFilesError) => {
+  if (error.code === "PROJECT_NOT_FOUND" || error.code === "PROJECT_FILE_NOT_FOUND") {
+    return jsonError(error.code, error.message, 404);
+  }
+
+  if (error.code === "PROJECT_FS_ERROR") {
+    return jsonError(error.code, error.message, 500);
+  }
+
+  return jsonError(error.code, error.message, 400);
 };
 
 const projectErrorResponse = (error: ProjectServiceError) => {
@@ -210,9 +290,11 @@ export const startApi = async () => {
   const streamController = new SessionStreamController(tmuxRuntime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
+  const projectFilesService = new ProjectFilesService(settings.projectsRoot);
   const server = Bun.serve<WebSocketData>({
     port: settings.apiPort,
     fetch: createFetchHandler(auth, {
+      projectFilesService,
       projectService,
       projectsRoot: settings.projectsRoot,
       sessionRegistry,

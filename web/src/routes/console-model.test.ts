@@ -24,15 +24,12 @@ test("Agent Sessions are the default console focus", () => {
   expect(sectionForId("agents").label).toBe("Agent Sessions");
 });
 
-test("deferred sections keep Git and Files as placeholders while Terminal is runtime-ready", () => {
-  const terminal = sectionForId("terminal");
-  const deferredSections = consoleSections.filter(
-    (section) => section.id === "git" || section.id === "files",
-  );
+test("Git remains deferred while Files is read-only", () => {
+  const git = sectionForId("git");
+  const files = sectionForId("files");
 
-  expect(terminal.status).toBe("Runtime ready");
-  expect(deferredSections.map((section) => section.id)).toEqual(["git", "files"]);
-  expect(deferredSections.every((section) => section.status === "Coming soon")).toBe(true);
+  expect(git.status).toBe("Coming soon");
+  expect(files.status).toBe("Read-only");
 });
 
 test("runtime input is enabled once session runtime exists", () => {

@@ -10,8 +10,8 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
-- 阻塞项：依赖 `implement-project-model-and-safe-paths` 与 `build-responsive-pwa-console-shell`；规格阶段可先推进只读文件能力约束。
+- 当前阶段：已完成
+- 阻塞项：（无）
 
 ## 推进规则
 
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成（`specs/file-browser-preview/spec.md`）
+- design：已完成（`design/overview.md`、`design/architecture.md`、`design/api.md`、`design/frontend.md`、`design/ui-ux.md`、`design/error-handling.md`）
+- plan/tasks：已完成（`plan.md`、`tasks.md`）
+- implementation：已完成（shared Files DTO/error codes、API Files service/routes、web API client、Project console Files UI、Files E2E fixture/spec、质量门禁）
+- verify：已完成（`verify.md`，结论：通过；无 CRITICAL/WARNING）
+- distill：已完成（`docs/specs/file-browser-preview/spec.md`、`docs/design/file-browser-preview.md`、`docs/architecture/file-browser-preview.md`）
 
 ## 阶段流转
 
@@ -45,3 +45,9 @@
 ## 进展记录
 
 - 已进入 roadmap，完整来源见 `intents.md`。
+- 2026-05-25：`specify-change` 完成，创建 `specs/file-browser-preview/spec.md`；明确 Files 第一轮为只读目录浏览、project-safe 相对路径、隐藏条目展示、目录优先和名称排序、文本大小上限与移动端纯文本预览、常见 Web 图片格式预览和不支持类型/过大提示，下一阶段为 `待设计`。
+- 2026-05-25：`design-change` 完成，创建 `design/overview.md`、`design/architecture.md`、`design/api.md`、`design/frontend.md`、`design/ui-ux.md` 和 `design/error-handling.md`；确定 Files 作为 Project console 只读观察入口，复用 Project safe path resolver，新增目录列表/预览 API、shared DTO、移动端列表+同页预览、bounded text/image preview 和错误恢复语义，下一阶段为 `待计划`。
+- 2026-05-25：`plan-change` 完成，创建 `plan.md`、`tasks.md`；实现顺序为 shared DTO/error code、API Files service/route、web API client、Project console Files UI、Files E2E 和质量门禁，下一阶段为 `待实现`.
+- 2026-05-25：`implement-change` 完成，新增 shared Files DTO/error codes、`api/src/project-files.ts` 与测试、Project Files HTTP routes、web Files API client、Project console Files UI、E2E fixture/spec；`bun run e2e` 通过，`bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build` 通过，下一阶段为 `待验证`。
+- 2026-05-25：`verify-change` 完成，创建 `verify.md`；Trace/Delta/Scenario/Evidence 覆盖只读浏览、Project-safe path、hidden entries、目录优先和名称排序、bounded text/image preview、unsupported/too-large/error states 与 Project console integration，`bun run e2e` 和完整质量门禁均通过，无 CRITICAL/WARNING，下一阶段为 `待沉淀`。
+- 2026-05-25：`distill-change` 完成，新增 `docs/specs/file-browser-preview/spec.md`、`docs/specs/file-browser-preview/index.md`、`docs/design/file-browser-preview.md` 和 `docs/architecture/file-browser-preview.md`，并更新 `docs/specs/index.md`、`docs/design/index.md`、`docs/architecture/index.md`；长期 WHAT/HOW/architecture 已按 verify 证据沉淀，本 change 当前阶段为 `已完成`。

@@ -46,8 +46,8 @@ export const consoleSections: ConsoleSectionDefinition[] = [
   {
     id: "files",
     label: "Files",
-    description: "Read-only project browsing and preview will reuse this entry point.",
-    status: "Coming soon",
+    description: "Read-only project browsing and file preview.",
+    status: "Read-only",
   },
 ];
 
