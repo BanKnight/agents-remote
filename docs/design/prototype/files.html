@@ -435,6 +435,7 @@
       }
 
       .phone-shell.list-state { min-height: 670px; }
+      .phone-shell.context-state { min-height: 590px; }
       .phone-shell.preview-state { min-height: 620px; }
 
       .phone-status {
@@ -448,6 +449,10 @@
         gap: 10px;
         border-bottom: 1px solid var(--line);
         padding: 11px 12px;
+      }
+
+      .mobile-top.direct {
+        padding-left: 14px;
       }
 
       .back-button {
@@ -509,7 +514,7 @@
         bottom: 0;
         left: 0;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         border-top: 1px solid var(--line);
         background: rgba(10, 14, 22, 0.96);
         padding: 8px 8px 12px;
@@ -652,8 +657,7 @@
             <div class="frame-label">Mobile list: bottom level-2 navigation stays on Files</div>
             <div class="phone-shell list-state">
               <div class="phone-status"></div>
-              <header class="mobile-top">
-                <div class="back-button">←</div>
+              <header class="mobile-top direct">
                 <div class="mobile-title path-only">
                   <h2>/docs/design/prototype</h2>
                 </div>
@@ -670,11 +674,34 @@
                 </div>
               </section>
               <nav class="bottom-nav" aria-label="Level 2 navigation">
+                <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
                 <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
                 <div class="bottom-item active"><span class="nav-icon">F</span><span>Files</span></div>
                 <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
                 <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
               </nav>
+            </div>
+          </div>
+
+          <div>
+            <div class="frame-label">Mobile contextual Files: opened from Agent instance, no level-2 navigation</div>
+            <div class="phone-shell context-state">
+              <div class="phone-status"></div>
+              <header class="mobile-top">
+                <div class="back-button">←</div>
+                <div class="mobile-title path-only">
+                  <h2>/docs/design/prototype</h2>
+                </div>
+              </header>
+              <section class="mobile-files">
+                <div class="file-list">
+                  <article class="file-row"><span class="file-icon folder">DIR</span><p>architecture</p><span>›</span></article>
+                  <article class="file-row"><span class="file-icon folder">DIR</span><p>prototype</p><span>›</span></article>
+                  <article class="file-row"><span class="file-icon">MD</span><p>guidelines.md</p><span>text</span></article>
+                  <article class="file-row active"><span class="file-icon">HTML</span><p>home.html</p><span>html</span></article>
+                  <article class="file-row"><span class="file-icon image">IMG</span><p>prototype.png</p><span>image</span></article>
+                </div>
+              </section>
             </div>
           </div>
 

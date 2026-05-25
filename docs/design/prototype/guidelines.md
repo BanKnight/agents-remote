@@ -23,13 +23,13 @@
 
 - 进入 Project 后出现二级导航：Agent、Files、Git、Terminal。
 - 桌面端使用左侧二级导航 + 右侧 Project 工作区。
-- 移动端一级底部导航消失，左上角出现返回按钮，底部切换为二级导航。
+- 移动端进入 Project 后，底部切换为二级导航，并在二级导航中提供返回一级页面的 Back 项。直接通过二级导航进入的 Agent、Files、Git、Terminal 页面不在左上角重复返回。
 - 二级页面拥有自己的工作区布局，不需要继承一级页面的底部导航结构。
 
 ## 布局规范
 
 - 桌面端优先使用左右结构，给工作区足够横向空间。
-- 移动端优先使用上下结构：顶部返回/上下文，中间主工作区，底部当前层级导航。
+- 移动端优先使用上下结构：顶部显示当前直接二级页上下文，中间主工作区，底部当前层级导航；从 Agent instance 等深层上下文打开的 Files/Terminal 属于上下文详情页，不显示底部二级导航，使用顶部返回回到来源。
 - 页面外层使用大圆角深色面板，表达独立应用 shell。
 - 卡片应服务可扫读性，不要为了展示 metadata 牺牲首屏密度。
 - 历史记录这类辅助内容应轻量呈现，适合用表格行或列表行，而不是厚卡片堆叠。
@@ -39,11 +39,13 @@
 - **Project 入口**：使用 Project 图标 + 项目名 + 简短路径/状态 + Open 行为，避免重复 metadata。
 - **Agent 实例卡片**：展示 provider 图标、实例名称、当前任务摘要、运行状态、少量 metadata、最近输出摘要和操作入口。
 - **创建 Agent 实例**：在 Agent 页顶部提供 `+ Claude` / `+ Codex` 等 provider 入口。
-- **Files 二级页**：首版定位为只读浏览/预览，不提供新建、编辑、删除、上传或 Agent 关联。目录列表按文件夹优先 + 名称排序；预览类型覆盖文本/代码、图片和 HTML，其他二进制、大文件或未知类型展示轻量不可预览状态。移动端列表态顶部只显示当前路径，列表区域不重复路径说明，文件夹行右侧用箭头表示可进入下级目录；进入文件 preview 后隐藏底部二级导航，只保留顶部返回和文件上下文。
+- **Files 二级页**：首版定位为只读浏览/预览，不提供新建、编辑、删除、上传或 Agent 关联。目录列表按文件夹优先 + 名称排序；预览类型覆盖文本/代码、图片和 HTML，其他二进制、大文件或未知类型展示轻量不可预览状态。直接从二级导航进入 Files 时，移动端顶部只显示当前路径，列表区域不重复路径说明，底部保留带 Back 的二级导航；如果从 Agent instance 打开 Files，则左上角显示返回按钮，底部不显示二级导航。文件夹行右侧用箭头表示可进入下级目录；进入文件 preview 后隐藏底部二级导航，只保留顶部返回和文件上下文。
+- **Terminal 二级页**：参考 Agent 页的实例列表模型，展示多个 Terminal instance，支持进入、新建和关闭。移动端直接从二级导航进入 Terminal 时，不显示左上返回，底部保留带 Back 的二级导航。
+- **Terminal instance 详情**：参考 Agent instance 的 terminal-first 结构，保留顶部返回、状态、关闭动作、中间终端面板和底部输入抽屉；顶部不提供 Files/Git/Terminal 快捷入口。
 - **Session history**：使用图标 + 一句话摘要 + 相对时间，例如 `12 min ago`；未来用于恢复上下文和查看历史输出。
-- **Agent session 详情**：从 Agent 实例进入后，第一版优先呈现 terminal-first 工作区；metadata 和工具详情通过按钮打开小浮窗，不常驻占据主输出区。移动端中间是可滚动、可输入的终端面板，底部输入抽屉可收起为快捷键栏，快捷键应围绕 `Shift+Tab`、`Esc`、`Ctrl+C`、方向键等真实终端操作。
+- **Agent session 详情**：从 Agent 实例进入后，第一版优先呈现 terminal-first 工作区；metadata 和工具详情通过按钮打开小浮窗，不常驻占据主输出区。移动端中间是可滚动、可输入的终端面板，底部输入抽屉可收起为快捷键栏，快捷键应围绕 `Shift+Tab`、`Esc`、`Ctrl+C`、方向键等真实终端操作。右上角 Files/Git 打开上下文详情页，右上角 `+ Terminal` 可立即新建 Terminal instance 并进入对应详情页；这些从 Agent instance 派生进入的 Files/Terminal 页面都使用顶部返回且不显示二级导航。
 - **底部导航项**：包含图标和短标签，当前项高亮，避免长文案。
-- **返回按钮**：移动端二级页左上角固定语义为返回上一级 Project 列表或上一级页面。
+- **返回按钮**：移动端直接二级页（Agent、Files、Git、Terminal）不在左上角放返回按钮；回到一级页面的动作放在底部二级导航的 Back 项。层层深入的详情页，例如 Agent instance detail 或文件 preview，才在顶部保留返回。
 
 ## 配色规范
 
@@ -65,9 +67,11 @@
 
 - [agent-session-detail.html](./agent-session-detail.html) — 展示从 Agent 实例列表进入后的 terminal-first Agent instance 详情页，包含可滚动/可输入终端、顶部 Files/Git 快捷入口、Meta 浮窗和移动端可收起输入抽屉。
 - [home.html](./home.html) — 展示一级首页在桌面端左侧导航 + 工作区、移动端底部一级导航 + 工作区的布局；Project 列表引入图标，创建/采用入口降级为轻量按钮。
-- [files.html](./files.html) — 展示 Project Files 二级页的只读浏览/预览体验，包含文件夹优先 + 名称排序的目录列表，以及文本/代码、图片、HTML 和不可预览状态；移动端 preview 态隐藏底部二级导航。
-- [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端左上返回 + 底部二级导航；工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
-- [overview.html](./overview.html) — 汇总展示首页、Project 详情页、Files 页与 Agent session 详情页，便于并排检查导航模型和跨页面一致性。
+- [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验，包含直接二级 Files 和从 Agent instance 打开的 contextual Files 两种移动端形态，以及文本/代码、图片、HTML 和不可预览状态。
+- [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端底部二级导航含 Back 返回一级入口；工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
+- [terminal.html](./terminal.html) — 展示 Terminal 二级页的实例列表体验：支持进入、新建、关闭 Terminal instance，并沿用带 Back 的移动端二级导航。
+- [terminal-instance-detail.html](./terminal-instance-detail.html) — 展示单个 Terminal instance 详情页，采用 terminal-first 输出与输入布局，但顶部不显示 Files/Git/Terminal 快捷入口。
+- [overview.html](./overview.html) — 汇总展示首页、Project 详情页、Files 页、Terminal 页与实例详情页，便于并排检查导航模型和跨页面一致性。
 
 ## 后续扩展约定
 

@@ -116,7 +116,7 @@
       <div class="header-inner">
         <div class="eyebrow">Prototype overview</div>
         <h1>Agents Remote navigation model</h1>
-        <p>本页汇总一级首页与 Project 二级页面：桌面端使用左侧导航 + 右侧工作区；移动端一级页面使用底部一级导航，进入 Project 二级页面后左上角返回，底部切换为二级导航；文件预览这类详情页可临时隐藏底部导航，把空间让给内容。</p>
+        <p>本页汇总一级首页与 Project 二级页面：桌面端使用左侧导航 + 右侧工作区；移动端一级页面使用底部一级导航，进入 Project 后底部切换为带 Back 项的二级导航；直接二级页不在左上角重复返回，从 Agent instance 派生进入的 Files/Terminal 和更深层详情页使用顶部返回且不显示二级导航。</p>
       </div>
     </header>
 
@@ -148,10 +148,26 @@
 
         <article class="prototype-card">
           <div class="card-head">
+            <h2>Project Terminal / Instances</h2>
+            <a href="./terminal.html">Open standalone</a>
+          </div>
+          <iframe src="./terminal.html" title="Project Terminal prototype"></iframe>
+        </article>
+
+        <article class="prototype-card">
+          <div class="card-head">
             <h2>Agent instance detail / Terminal workspace</h2>
             <a href="./agent-session-detail.html">Open standalone</a>
           </div>
           <iframe src="./agent-session-detail.html" title="Agent session detail prototype"></iframe>
+        </article>
+
+        <article class="prototype-card">
+          <div class="card-head">
+            <h2>Terminal instance detail / Focused shell</h2>
+            <a href="./terminal-instance-detail.html">Open standalone</a>
+          </div>
+          <iframe src="./terminal-instance-detail.html" title="Terminal instance detail prototype"></iframe>
         </article>
       </section>
     </main>

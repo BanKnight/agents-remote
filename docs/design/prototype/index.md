@@ -11,6 +11,8 @@
 - [guidelines.md](./guidelines.md) — 说明 prototype HTML 页面的整体设计规范，包括导航、布局、组件、配色和间距。
 - [agent-session-detail.html](./agent-session-detail.html) — 展示从 Agent 实例列表进入后的 terminal-first Agent instance 详情页，包含可滚动/可输入终端、顶部 Files/Git 快捷入口、Meta 浮窗和移动端可收起输入抽屉。
 - [home.html](./home.html) — 展示一级首页在桌面端左侧导航 + 工作区、移动端底部一级导航 + 工作区的布局。
-- [files.html](./files.html) — 展示 Project Files 二级页的只读浏览/预览体验：桌面端文件列表 + preview 分栏，移动端列表态保留二级导航、preview 态隐藏底部导航。
-- [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端左上返回 + 底部二级导航，工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
-- [overview.html](./overview.html) — 汇总展示首页、Project 详情页、Files 页与 Agent session 详情页，便于并排检查导航模型。
+- [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验：桌面端文件列表 + preview 分栏，移动端区分直接二级 Files 与从 Agent instance 打开的 contextual Files。
+- [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端底部二级导航含 Back 返回一级入口，工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
+- [terminal.html](./terminal.html) — 展示 Terminal 二级页的实例列表体验：支持进入、新建、关闭 Terminal instance，移动端直接二级页使用带 Back 的底部二级导航。
+- [terminal-instance-detail.html](./terminal-instance-detail.html) — 展示单个 Terminal instance 详情页，沿用 terminal-first 输出和输入结构，但顶部不提供 Files/Git/Terminal 快捷入口。
+- [overview.html](./overview.html) — 汇总展示首页、Project 详情页、Files 页、Terminal 页与实例详情页，便于并排检查导航模型。
