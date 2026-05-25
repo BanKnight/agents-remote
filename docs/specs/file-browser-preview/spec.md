@@ -128,12 +128,42 @@
 - **THEN** 页面展示可理解的错误或空状态
 - **AND** 用户可以返回上级目录、Project 根目录或 Project console
 
+### Requirement: Files mobile inspection uses compact content-first layout
+
+系统 SHALL 在手机窄屏 Project workspace 中以紧凑、可扫读的目录列表和内容优先的文件预览展示 Files 只读 inspection，减少说明文案、重复 metadata 和过厚容器占用的空间。
+
+#### Scenario: User reviews a directory on mobile
+
+- **WHEN** 用户在手机窄屏打开 Project Files 并浏览目录
+- **THEN** 系统展示紧凑的文件/目录列表行
+- **AND** 每个条目仍能区分文件夹和文件
+- **AND** 长文件名或长路径不会导致页面级横向溢出
+- **AND** 用户不需要先滚过大块说明文本才能看到目录条目
+
+#### Scenario: User previews a file on mobile
+
+- **WHEN** 用户在手机窄屏从 Files 列表选择文件
+- **THEN** 页面展示紧凑的所选文件上下文
+- **AND** 文本或图片预览内容占据主要可用空间
+- **AND** 用户可以返回目录列表或选择其他文件
+- **AND** 预览内容不被无关说明、装饰或过大的 metadata 区域挤压
+
+#### Scenario: User inspects compact Files view
+
+- **WHEN** 用户在手机窄屏查看 Files 列表或文件预览
+- **THEN** 页面不展示编辑、删除、重命名、上传或下载入口
+- **AND** 紧凑布局不通过隐藏菜单引入任何文件写操作
+
 ## Notes
 
 - 第一轮文本预览上限为 256 KiB，图片预览上限为 5 MiB。
 - 文件浏览能力属于只读观察入口；任何写操作都必须通过后续 change 重新定义 WHAT 与安全边界。
+- 移动端 Files inspection 应优先保证目录列表和预览内容可见，避免用大块说明文案或重复 metadata 挤占首屏。
 
 ## 来源
 
 - change：implement-file-browser-preview
 - verify 证据：`.workflow/changes/implement-file-browser-preview/verify.md`
+- change：compact-inspection-mobile-views
+- verify 证据：`.workflow/changes/compact-inspection-mobile-views/verify.md`
+- 运行态验证证据：`.workflow/changes/compact-inspection-mobile-views/artifacts/mobile-files-compact.png`

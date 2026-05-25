@@ -369,13 +369,15 @@ function SectionDetail({ projectName, section }: SectionDetailProps) {
   const isGit = section.id === "git";
 
   return (
-    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20">
-      <div className="flex items-start justify-between gap-3">
+    <section className="min-w-0 rounded-[1.5rem] border border-white/10 bg-slate-900/80 p-3 shadow-xl shadow-black/20 sm:rounded-[2rem] sm:p-4">
+      <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold">{section.label}</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-400">{section.description}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+            {section.label}
+          </p>
+          <p className="mt-1 truncate text-xs text-slate-500">{section.description}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300">
+        <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300">
           {section.status}
         </span>
       </div>
@@ -412,17 +414,17 @@ function GitDiffPanel({ projectName }: GitDiffPanelProps) {
   });
 
   return (
-    <div className="mt-5 grid gap-4">
-      <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <div className="mt-3 grid gap-3">
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Git status</p>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Read-only worktree and staged changes for this Project.
+            <p className="mt-1 truncate text-xs text-slate-400">
+              Read-only worktree and staged changes.
             </p>
           </div>
           <button
-            className="rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100"
+            className="shrink-0 rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100"
             type="button"
             onClick={() => {
               setSelectedFile(undefined);
@@ -493,12 +495,12 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
   }
 
   return (
-    <div className="grid gap-2" aria-label="Git changed files">
+    <div className="grid gap-1.5" aria-label="Git changed files">
       {files.map((file) => {
         const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
         return (
           <button
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
+            className={`min-w-0 rounded-2xl border px-3 py-2.5 text-left transition ${
               selected
                 ? "border-cyan-300/60 bg-cyan-300/10"
                 : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
@@ -507,20 +509,22 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
             type="button"
             onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
           >
-            <span className="flex items-start justify-between gap-3">
-              <span>
-                <span className="block break-all font-semibold text-slate-100">{file.path}</span>
+            <span className="flex min-w-0 items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block truncate font-mono text-sm font-semibold text-slate-100">
+                  {file.path}
+                </span>
                 {file.previousPath ? (
-                  <span className="mt-1 block break-all font-mono text-xs text-slate-500">
+                  <span className="mt-0.5 block truncate font-mono text-xs text-slate-500">
                     from {file.previousPath}
                   </span>
                 ) : null}
               </span>
-              <span className="flex shrink-0 flex-col items-end gap-1">
-                <span className="rounded-full bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
+              <span className="flex shrink-0 items-center gap-1.5">
+                <span className="rounded-full bg-cyan-300/10 px-2 py-0.5 text-[0.68rem] font-semibold text-cyan-100">
                   {scopeLabel(file.scope)}
                 </span>
-                <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
+                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[0.68rem] text-slate-300">
                   {statusLabel(file.status)}
                 </span>
               </span>
@@ -569,23 +573,25 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
   return (
     <section
-      className="rounded-3xl border border-slate-800 bg-slate-950/80 p-4"
+      className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3"
       aria-label="Git file diff"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h4 className="break-all text-lg font-semibold text-slate-100">{fileDiff.path}</h4>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
+            {fileDiff.path}
+          </h4>
           {fileDiff.previousPath ? (
-            <p className="mt-1 break-all font-mono text-xs text-slate-500">
+            <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
               from {fileDiff.previousPath}
             </p>
           ) : null}
         </div>
-        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+        <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
           {scopeLabel(fileDiff.scope)} · {statusLabel(fileDiff.status)}
         </span>
       </div>
-      <pre className="mt-4 max-h-[65vh] overflow-auto whitespace-pre rounded-2xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
+      <pre className="mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
         {fileDiff.diff}
       </pre>
     </section>
@@ -630,33 +636,33 @@ function FilesPanel({ projectName }: FilesPanelProps) {
   };
 
   return (
-    <div className="mt-5 grid gap-4">
-      <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <div className="mt-3 grid gap-3">
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current path</p>
-            <p className="mt-2 break-all font-mono text-sm text-slate-100">
+            <p className="mt-1 truncate font-mono text-sm text-slate-100">
               {currentPath.length > 0 ? currentPath : "/"}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
             <button
-              className="rounded-full border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200"
+              className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200"
               type="button"
               onClick={() => goToPath("")}
             >
               Root
             </button>
             <button
-              className="rounded-full border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={parentPath === null}
               type="button"
               onClick={() => parentPath !== null && goToPath(parentPath)}
             >
-              Up one level
+              Up
             </button>
             <button
-              className="rounded-full border border-cyan-300/40 px-3 py-1.5 text-xs font-semibold text-cyan-100"
+              className="rounded-full border border-cyan-300/40 px-2.5 py-1.5 text-xs font-semibold text-cyan-100"
               type="button"
               onClick={() => void files.refetch()}
             >
@@ -728,12 +734,12 @@ function FileEntryList({
   }
 
   return (
-    <div className="grid gap-2" aria-label="Project files">
+    <div className="grid gap-1.5" aria-label="Project files">
       {entries.map((entry) => {
         const selected = entry.path === selectedFilePath;
         return (
           <button
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
+            className={`min-w-0 rounded-2xl border px-3 py-2.5 text-left transition ${
               selected
                 ? "border-cyan-300/60 bg-cyan-300/10"
                 : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
@@ -744,15 +750,15 @@ function FileEntryList({
               entry.type === "directory" ? onOpenDirectory(entry.path) : onPreviewFile(entry.path)
             }
           >
-            <span className="flex items-start justify-between gap-3">
-              <span>
-                <span className="block break-all font-semibold text-slate-100">{entry.name}</span>
-                <span className="mt-1 block text-xs text-slate-500">
+            <span className="flex min-w-0 items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block truncate font-semibold text-slate-100">{entry.name}</span>
+                <span className="mt-0.5 block truncate text-xs text-slate-500">
                   {entry.type === "directory" ? "Folder" : formatBytes(entry.size ?? 0)}
                   {entry.hidden ? " · hidden" : ""}
                 </span>
               </span>
-              <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
+              <span className="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-[0.68rem] text-slate-300">
                 {entry.type === "directory" ? "Open" : "Preview"}
               </span>
             </span>
@@ -800,15 +806,17 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
 
   return (
     <section
-      className="rounded-3xl border border-slate-800 bg-slate-950/80 p-4"
+      className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3"
       aria-label="File preview"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h4 className="break-all text-lg font-semibold text-slate-100">{preview.name}</h4>
-          <p className="mt-1 break-all font-mono text-xs text-slate-500">{preview.path}</p>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
+            {preview.name}
+          </h4>
+          <p className="mt-0.5 truncate font-mono text-xs text-slate-500">{preview.path}</p>
         </div>
-        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+        <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
           {preview.type} · {formatBytes(preview.size)}
         </span>
       </div>
@@ -824,7 +832,7 @@ type PreviewBodyProps = {
 function PreviewBody({ preview }: PreviewBodyProps) {
   if (preview.type === "text") {
     return (
-      <pre className="mt-4 max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-800 bg-slate-950 p-4 font-mono text-sm leading-6 text-slate-100">
+      <pre className="mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
         {preview.content}
       </pre>
     );
@@ -832,7 +840,7 @@ function PreviewBody({ preview }: PreviewBodyProps) {
 
   if (preview.type === "image") {
     return (
-      <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3">
+      <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950 p-2">
         <img
           className="mx-auto h-auto max-w-full rounded-xl"
           src={preview.dataUrl}
@@ -844,14 +852,14 @@ function PreviewBody({ preview }: PreviewBodyProps) {
 
   if (preview.type === "too_large") {
     return (
-      <p className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-950/20 p-4 text-sm leading-6 text-amber-100">
+      <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-950/20 p-3 text-sm leading-6 text-amber-100">
         File is too large to preview. Limit: {formatBytes(preview.limitBytes)}.
       </p>
     );
   }
 
   return (
-    <p className="mt-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-sm leading-6 text-slate-300">
+    <p className="mt-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm leading-6 text-slate-300">
       This file type is not supported for preview yet.
     </p>
   );
