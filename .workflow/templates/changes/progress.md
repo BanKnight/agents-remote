@@ -1,12 +1,12 @@
 # progress
 
-本文件记录单个 change 的当前阶段、局部阻塞和进展记录。`roadmap.md` 只指向当前 change，不维护这些状态；阶段到技能的路由由 `step-change` 独占维护。
+本文件记录单个 change 的当前阶段、局部阻塞和进展记录。`.workflow/versions/index.md` 只指向当前 change，不维护这些状态；阶段到技能的路由由 `step-change` 独占维护。
 
 ## Change
 
 - change-id：（待补充）
 - 所属 version：（待补充）
-- change 路径：.workflow/changes/<change-id>/
+- change 路径：.workflow/versions/<version>/changes/<change-id>/
 
 ## 当前进度
 
@@ -17,7 +17,7 @@
 
 - 本文件是 change 当前阶段、局部阻塞和进展记录的权威来源。
 - 本文件不保存“下一步技能”；推荐使用 `step-change` 推进本 change，由它根据当前阶段调用对应阶段技能。
-- `roadmap.md` 只引用本文件，不维护本 change 的阶段状态。
+- `.workflow/versions/index.md` 只引用本文件，不维护本 change 的阶段状态。
 - 专业阶段技能完成后，应只更新当前阶段、产物检查、阻塞项和进展记录；如果由 `step-change` 调用，则由 `step-change` 检查产物并同步推进阶段。
 
 ## 产物检查

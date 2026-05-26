@@ -1,8 +1,8 @@
-# roadmap
+# versions index
 
-本文件是当前开发路线图：只记录仍在开发队列中的 versions、changes 队列和当前焦点。
+本文件是当前活跃开发路线图入口：只记录仍在开发队列中的 versions、changes 队列、当前焦点、暂缓/放弃和全局阻塞。
 
-已归档 version 不写在这里；归档后移动到 `.workflow/archive/roadmap.md`。
+已归档 version 不写在这里；归档后进入 `.workflow/archive/versions/`。旧归档结构如已存在，保持不改。
 
 ## 当前焦点
 
@@ -11,14 +11,16 @@
 - 当前 version：无活跃 version
 - 当前 change：无活跃 change
 - change 路径：无
+- context：无
 - progress：无
 
 ## 活跃 Versions
 
 <!--
 每个 version 表示当前要开发的一组 changes。
-roadmap 中列出的每个 change 都必须对应 `.workflow/changes/<change-id>/`。
-roadmap 不保存活跃 change 的原始意图全文、不维护 change 阶段状态；完整来源见 change 自己的 intents.md，阶段状态见 change 的 progress.md。
+本文件中列出的每个 change 都必须对应 `.workflow/versions/<version>/changes/<change-id>/`。
+本文件不保存活跃 change 的完整上下文、不维护 change 阶段状态；完整看板上下文见 change 的 context.md，阶段状态见 change 的 progress.md。
+version 内多个 changes 需要共享的运行态材料放在 `.workflow/versions/<version>/shared/`。
 -->
 
 - （无）

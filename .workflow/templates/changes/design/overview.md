@@ -9,7 +9,7 @@
 
 ## 输入依据
 
-- intents：（待补充）
+- context：（待补充）
 - specs：（待补充）
 - 相关长期 docs：（待补充）
 

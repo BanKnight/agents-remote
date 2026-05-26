@@ -5,8 +5,8 @@
 已经分配到 roadmap 的意图，不在本文件长期保留；需要 big picture 时，AI 应从当前项目状态中读取：
 
 - `docs/` 的长期沉淀
-- `.workflow/roadmap.md`
-- `.workflow/changes/` 中正在进行的变更
+- `.workflow/versions/index.md`
+- `.workflow/versions/<version>/changes/` 中正在进行的变更
 - `.workflow/archive/` 中已经归档的变更
 
 ## 状态说明
