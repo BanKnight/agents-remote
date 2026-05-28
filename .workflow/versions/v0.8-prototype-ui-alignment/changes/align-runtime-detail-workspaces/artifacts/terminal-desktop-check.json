@@ -1,0 +1,18 @@
+{
+  "hasBack": true,
+  "hasClose": true,
+  "hasFiles": false,
+  "hasGit": false,
+  "hasMeta": false,
+  "hasProviderMarker": false,
+  "hasReconnect": true,
+  "hasResize": true,
+  "hasRuntimeStatus": true,
+  "hasStreamStatus": true,
+  "hasTerminalTool": false,
+  "noHorizontalOverflow": true,
+  "projectBottomNav": false,
+  "route": "/projects/agents-remote/terminal-sessions/terminal_9393d4379b8b4bfb",
+  "terminalFirst": true,
+  "viewport": "1440x1000"
+}

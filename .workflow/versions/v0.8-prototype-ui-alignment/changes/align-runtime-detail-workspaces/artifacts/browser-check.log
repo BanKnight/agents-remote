@@ -1,0 +1,98 @@
+# Runtime detail browser check log
+
+Change: align-runtime-detail-workspaces
+Date: 2026-05-29
+
+## Environment
+
+- Managed dev session: tmux `ar-dev`
+- API: http://127.0.0.1:43011
+- Web: http://127.0.0.1:43012
+- PROJECTS_ROOT: /home/deploy/workspace
+- Runtime dir: /tmp/agents-remote-manual-run
+- Browser tool: agent-browser
+- Viewports: desktop 1440x1000, mobile 390x844
+
+## Real runtime fixtures
+
+- Agent detail used existing real Agent session: `agent_952626c227e4495e` in project `agents-remote`.
+- Terminal detail used a temporary real Terminal session: `terminal_9393d4379b8b4bfb`, created through the authenticated API for screenshots and closed after capture.
+- No fake runtime output, provider-native history, provider-native metadata, Files write capability, or Git write capability was added for artifacts.
+
+## Screenshot artifacts
+
+- `agent-detail-prototype-desktop.png`
+- `agent-detail-prototype-mobile.png`
+- `terminal-detail-prototype-desktop.png`
+- `terminal-detail-prototype-mobile.png`
+- `agent-detail-app-desktop.png`
+- `agent-detail-app-mobile.png`
+- `terminal-detail-app-desktop.png`
+- `terminal-detail-app-mobile.png`
+
+## Structure checks
+
+### Agent detail desktop
+
+Source: `agent-desktop-check.json`
+
+- Top return: present.
+- Provider/session marker: present via real provider marker.
+- Runtime status: present.
+- Stream status: present.
+- Contextual tools: Files, Git, +T, Meta present.
+- Terminal-first output: present and dominant.
+- Project secondary bottom nav: absent.
+- Horizontal overflow: none observed.
+
+### Agent detail mobile
+
+Source: `agent-mobile-check.json`
+
+- Top return: present.
+- Contextual tools: Files, Git, +T, Meta present.
+- Project secondary bottom nav: absent.
+- Terminal-first output: present.
+- Input drawer: present and below output, not overlaying it.
+- Quick keys: Ctrl+C, ↑, ↓, Enter, Esc, Tab.
+- Horizontal overflow: none observed.
+
+### Terminal detail desktop
+
+Source: `terminal-desktop-check.json`
+
+- Top return: present.
+- Terminal marker/displayName/status: present.
+- Runtime status: present.
+- Stream status: present.
+- Controls: Reconnect, Resize, Close present.
+- Agent-only Files/Git/+Terminal/Meta/provider metadata: absent.
+- Terminal-first output: present and dominant.
+- Project secondary bottom nav: absent.
+- Horizontal overflow: none observed.
+
+### Terminal detail mobile
+
+Source: `terminal-mobile-check.json`
+
+- Top return: present.
+- Terminal controls: Reconnect, Resize, Close present.
+- Agent-only Files/Git/+Terminal/Meta/provider metadata: absent.
+- Project secondary bottom nav: absent.
+- Terminal-first output: present.
+- Input drawer: present and below output, not overlaying it.
+- Quick keys: Ctrl+C, Ctrl+D, Esc, Tab, ↑, ↓, ←, →.
+- Horizontal overflow: none observed.
+
+## Interaction checks
+
+- Input drawer participates in the page grid layout; mobile checks confirmed drawer top is below output bottom.
+- Disabled quick-key semantics remain driven by `canSendToSession`; unit coverage is in `web/src/routes/console-model.test.ts`.
+- Close confirmation remains in route handler; screenshot Terminal fixture was closed through the API after capture.
+- Reconnect and Resize controls remain wired to existing stream reconnect key and resize message; no lifecycle or protocol change was made.
+
+## Differences and gaps
+
+- Prototype sample output/history/branch/mode/recent-output text is intentionally not reproduced because the current app only shows real stream/session fields.
+- Prototype Shift+Tab quick key is not implemented in the current model; this is existing first-round capability scope, not faked in UI.
+- No blocking differences found in the checked runtime detail boundaries.

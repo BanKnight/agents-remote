@@ -1,0 +1,15 @@
+{
+  "hasBack": true,
+  "hasFiles": true,
+  "hasGit": true,
+  "hasMeta": true,
+  "hasProviderMarker": true,
+  "hasRuntimeStatus": true,
+  "hasStreamStatus": true,
+  "hasTerminalTool": true,
+  "noHorizontalOverflow": true,
+  "projectBottomNav": false,
+  "route": "/projects/agents-remote/agent-sessions/agent_952626c227e4495e",
+  "terminalFirst": true,
+  "viewport": "1440x1000"
+}

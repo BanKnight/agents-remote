@@ -23,6 +23,7 @@
 - 普通文本输入使用多行 textarea；Enter 保持换行，只有显式 Send 才把内容写入当前 stream。非空输入按 CLI/shell 直觉保留内容并按需补末尾换行，全空白输入不发送。
 - Quick keys 是即时控制动作：按钮点击直接向 stream 发送对应 control sequence，不写入 textarea，也不等待用户再点 Send；移动端展示时放在 textarea 上方。
 - Agent Session 与 Terminal Session 使用不同默认 quick key 集合和排序，但共享渲染与发送模式；Agent 默认集合必须覆盖上/下方向键和 Enter，以支持 CLI 选择项导航；第一轮不提供用户配置、排序持久化或 provider capability API。
+- 原型中出现但当前真实 stream/control model 不支持的 mode/selection 类快捷键不得伪造成可用按钮；应登记为后续 terminal interaction 能力，并等协议、capability discovery 或前端 model 明确后再展示。
 - 发送入口由 transport/runtime 可交互状态控制：stream 未 connected、runtime ended 或 close pending 时，textarea/Send/quick keys 应禁用或表达不可发送状态，同时保留 reconnect/back 等恢复路径。
 - 重新进入或刷新 Session detail 时，前端应先呈现 connecting/recovering 状态并尝试恢复 stream；只有恢复失败后才显示错误和重连入口。
 - Agent detail 的 Files、Git、+Terminal、Meta 是 header contextual tools；移动端可换行或使用短标签，但不得撑破 header，也不得变成底部 Project 二级导航。
@@ -56,3 +57,6 @@
 - change：align-instance-detail-workspaces
 - verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
 - 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图
+- change：align-runtime-detail-workspaces
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/browser-check.log` 与同目录 Agent/Terminal detail prototype/app desktop/mobile 截图

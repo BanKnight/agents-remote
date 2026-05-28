@@ -9,10 +9,10 @@
 <!-- 当前正在推进的 version/change，用于让 Agent 快速知道当前工作入口。具体阶段读取 change 自己的 progress.md；技能路由由 step-change 决定。 -->
 
 - 当前 version：v0.8-prototype-ui-alignment
-- 当前 change：align-home-project-shell
-- change 路径：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/
-- context：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/context.md
-- progress：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/progress.md
+- 当前 change：align-resource-inspection-workspaces
+- change 路径：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/
+- context：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/context.md
+- progress：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/progress.md
 
 ## 活跃 Versions
 
@@ -86,4 +86,4 @@ version 内多个 changes 需要共享的运行态材料放在 `.workflow/versio
 
 <!-- 当前全局最应该推进的 change；具体阶段读取该 change 的 progress.md，技能路由由 step-change 决定。 -->
 
-- 使用 `step-change` 推进当前焦点 `align-home-project-shell`，在已完成的 shared 基线基础上补齐 Home/Project shell 页面还原规格。
+- 使用 `step-change` 推进当前焦点 `align-resource-inspection-workspaces`，在已完成的 shared 基线、Home/Project shell 与 runtime detail 基础上补齐 Files/Git/Terminal workspace 页面还原规格。

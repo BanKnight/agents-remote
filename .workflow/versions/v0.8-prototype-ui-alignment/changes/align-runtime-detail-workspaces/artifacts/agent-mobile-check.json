@@ -1,0 +1,22 @@
+{
+  "drawerBelowOutput": true,
+  "drawerPresent": true,
+  "hasBack": true,
+  "hasFiles": true,
+  "hasGit": true,
+  "hasMeta": true,
+  "hasProvider": false,
+  "hasTerminalTool": true,
+  "noHorizontalOverflow": true,
+  "projectBottomNav": false,
+  "quickKeys": [
+    "Ctrl+C",
+    "↑",
+    "↓",
+    "Enter",
+    "Esc",
+    "Tab"
+  ],
+  "route": "/projects/agents-remote/agent-sessions/agent_952626c227e4495e",
+  "terminalFirst": true
+}

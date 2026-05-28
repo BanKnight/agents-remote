@@ -38,4 +38,13 @@
 
 ## Current Gaps
 
-- （无）
+### GAP-20260529-runtime-shift-tab-mode
+
+- 来源 change：align-runtime-detail-workspaces
+- 页面 / 原型：Agent/Terminal runtime detail；`agent-session-detail.html`、`terminal-instance-detail.html`
+- 缺口类型：future-enhancement
+- 观察：原型 quick keys 包含 `Shift+Tab` mode/selection 切换语义；当前真实 `sessionQuickKeys` 只提供 Ctrl+C、Ctrl+D、Esc、Tab、Enter 和方向键等已支持 control sequence，没有 mode/selection 状态或 provider capability discovery。
+- 为什么本 version 不解决：需要独立设计 terminal selection/mode 语义、stream control sequence 和可能的 provider/terminal capability 边界；本 change 不修改 runtime 协议或新增 quick key 配置模型。
+- 当前表达方式：not-rendered
+- 建议后续处理方式：后续 terminal interaction change 设计 Shift+Tab mode/selection 能力，再更新 `console-model.ts` 与对应测试。
+- 状态：open

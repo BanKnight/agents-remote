@@ -40,7 +40,8 @@
 - 桌面端 Files/Git 可以保留同页 compact list + preview/diff 结构，以提高扫读效率；移动端 direct secondary 默认展示列表和当前 workspace context，进入内容 detail 后 content-first。
 - Terminal workspace 不承载 shell input、quick keys 或 runtime output；这些属于 Terminal instance detail。Terminal direct secondary 在移动端仍显示 Project 二级底部导航。
 - 已验证的共享 UI component 边界是 `web/src/components/shell/` 中的轻量 shell 组件库入口：`shell-layout.tsx` 承载连续桌面 shell、sidebar、workspace header 和 panel surface，`shell-navigation.tsx` 承载一级/二级 desktop 与 mobile bottom navigation，`shell-primitives.tsx` 承载 nav item、icon marker、status pill、action button、input 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成泛化设计系统。
-- Prototype alignment 的设计语言必须同时横向和纵向抽象：横向让 Home、Project、Agent、Files、Git、Terminal 共享同一套 shell 视觉语言，纵向用 shell/sidebar/workspace/header/bottom nav/raised/dashed/inset/code/danger/warning 等 surface roles 管理层级，不允许 route 为单页观感私自调另一套深浅。
+- Agent/Terminal runtime detail 已验证的共享 surface roles 包括 runtime header、runtime body、runtime composer 和 terminal titlebar；这些 role 属于 shell primitive 色阶，不应在 route 中为单页重新散写一套 header/body/input/output 深浅。
+- Prototype alignment 的设计语言必须同时横向和纵向抽象：横向让 Home、Project、Agent、Files、Git、Terminal 共享同一套 shell 视觉语言，纵向用 shell/sidebar/workspace/header/bottom nav/runtime header/runtime body/runtime composer/terminal titlebar/raised/dashed/inset/code/danger/warning 等 surface roles 管理层级，不允许 route 为单页观感私自调另一套深浅。
 - 可点击 affordance 是共享组件契约的一部分；导航、列表行和 action button 的 cursor、hover/selected surface、active 宽度、focus/disabled 状态与 safe-area 行为应由 shared shell components 管理，不能只抽 icon/label 内容。
 - Prototype alignment 过程中发现的重复漂移必须回写到项目说明、version shared 或长期 design；不能只在当前页面代码里修完就结束。
 - shadcn/ui 在本项目中是本地 source component 基础层，不是 route 直接消费层；当前已验证 wrapper 关系包括 `Button` -> action/navigation/list row，`Badge` -> status pill，`Card` -> shell surface，`Input` -> shell input。
@@ -92,6 +93,9 @@
 - change：align-home-project-shell
 - verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/verify.md`
 - 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/browser-check.log` 与同目录 Home/Project Agent workspace prototype/app desktop/mobile 截图
+- change：align-runtime-detail-workspaces
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/browser-check.log` 与同目录 Agent/Terminal detail prototype/app desktop/mobile 截图
 - change：align-instance-detail-workspaces
 - verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
 - 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图
