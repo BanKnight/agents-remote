@@ -28,19 +28,84 @@ description: 初始化或更新本工作流模板项目的 `.workflow/` 与 `doc
 - [docs-indexing.md](references/docs-indexing.md) — 老项目接入时的 docs 索引重建规则。
 - [template-redundancy.md](references/template-redundancy.md) — 技能模板源与项目本地模板副本的关系。
 
+## 输入契约
+
+### 标准输入
+
+每次执行都需要理解这些输入：
+
+```text
+当前项目根目录
+.claude/skills/setup-workflow/templates/workflow/
+.claude/skills/setup-workflow/templates/docs/
+```
+
+标准输入规则：
+
+- 先检查目标项目是否已有 `.workflow/`、`docs/`、`CLAUDE.md`、`AGENTS.md`。
+- 使用本 skill 的 bundled templates 作为种子，不根据文件名猜测治理内容。
+- 修改文本文件时优先使用内置 Read/Edit/Write 工具；保留用户已有内容，做最小编辑。
+
+### 条件输入
+
+根据目标项目现状按需读取：
+
+- 如果已有 `.workflow/AGENTS.md`、`docs/AGENTS.md` 或本地 templates，先读取现有内容再补齐缺失规则。
+- 如果已有 `docs/` 文档，按 [docs-indexing.md](references/docs-indexing.md) 逐层读取并判断是否需要重建索引。
+- 如果用户要求启用 hook guardrails，读取 `.claude/settings.json`、已有 `.claude/hooks/` 与 `.claude/scripts/`，并读取 `templates/claude-code/`。
+- 如果用户要求同步或重置模板，读取 [template-redundancy.md](references/template-redundancy.md) 判断哪些模板源和项目本地副本需要更新。
+
+## 输出契约
+
+### 标准输出
+
+setup 完成后，目标项目至少具备：
+
+```text
+.workflow/AGENTS.md
+.workflow/intents.md
+.workflow/templates/
+.workflow/versions/index.md
+docs/AGENTS.md
+docs/project.md
+docs/index.md
+docs/templates/
+CLAUDE.md 或 AGENTS.md 中的治理加载区块
+```
+
+标准输出规则：
+
+- `.workflow/` 使用 versioned workflow 结构：活跃 roadmap 入口是 `.workflow/versions/index.md`，change 骨架位于 `.workflow/versions/<version>/changes/<change-id>/`。
+- change 模板使用 `context.md`，不再使用 `intents.md` 作为单个 change 的来源文件。
+- 归档目标结构是 `.workflow/archive/versions/`；旧归档结构如已存在，保持不改。
+
+### 条件输出
+
+根据用户要求或项目现状，按需产生：
+
+- `.workflow/templates/versions/index.md` 与 `.workflow/templates/changes/context.md` 等项目本地模板。
+- `.workflow/versions/<version>/shared/` 目录只在规划出具体 version 或模板需要时创建；setup 默认只保证 versions index 可用。
+- `.claude/settings.json`、`.claude/hooks/`、`.claude/scripts/` 的 hook guardrails；仅在用户明确要求启用或项目治理明确要求时创建/合并。
+- 重建后的 `docs/**/index.md`；只有老项目已有 docs 且索引缺失或过期时执行。
+
 ## 模板源
 
-setup 使用 本 skill 的 `templates/` 目录作为模板源：
+setup 使用本 skill 的 `templates/` 目录作为模板源：
 
 ```text
 templates/
 ├── workflow/
 │   ├── AGENTS.md
 │   ├── intents.md
-│   ├── roadmap.md
 │   ├── templates/
-│   ├── changes/
+│   │   ├── intents.md
+│   │   ├── versions/
+│   │   │   └── index.md
+│   │   └── changes/
+│   ├── versions/
+│   │   └── index.md
 │   └── archive/
+│       └── versions/
 ├── docs/
 │   ├── AGENTS.md
 │   ├── project.md
@@ -102,10 +167,11 @@ CLAUDE.md
 .workflow/
 ├── AGENTS.md
 ├── intents.md
-├── roadmap.md
 ├── templates/
-├── changes/
+├── versions/
+│   └── index.md
 └── archive/
+    └── versions/
 ```
 
 ### 3. 初始化或更新 `docs/`
@@ -203,7 +269,7 @@ Claude Code hook guardrails 默认不随 setup 自动启用。只有用户明确
 - `.workflow/AGENTS.md` 存在。
 - `docs/project.md` 存在。
 - `.workflow/intents.md` 存在。
-- `.workflow/roadmap.md` 存在。
+- `.workflow/versions/index.md` 存在。
 - `.workflow/templates/` 存在。
 - `docs/AGENTS.md` 存在。
 - `docs/index.md` 存在。

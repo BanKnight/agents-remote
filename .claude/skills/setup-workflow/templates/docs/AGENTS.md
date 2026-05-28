@@ -36,14 +36,14 @@ docs/
 ### `docs/specs/`
 
 - 保存长期 WHAT，即系统能力的主线行为契约。
-- 由 `distill-change` 从 `.workflow/changes/<change-id>/specs/` 回写。
+- 由 `distill-change` 从 `.workflow/versions/<version>/changes/<change-id>/specs/` 回写。
 - 不存放实现方案、任务拆解或临时 change 过程。
 
 ### `docs/design/`
 
 - 保存长期 design 内容，即从已验证 change design 中提炼出的可复用设计结论。
 - 由 `distill-change` 从 change design、实现结果和 verify 证据中提炼。
-- 不直接复制未验证的 `.workflow/changes/<change-id>/design/`。
+- 不直接复制未验证的 `.workflow/versions/<version>/changes/<change-id>/design/`。
 
 ### `docs/architecture/`
 
@@ -89,7 +89,7 @@ docs/
 
 ## 与 .workflow 的关系
 
-- `.workflow/` 负责运行态：intents、roadmap、changes、tasks、verify、archive。
+- `.workflow/` 负责运行态：intents、versions index、version shared、changes、tasks、verify、archive。
 - `docs/` 负责长期态：project big picture、主线 spec、长期 design、architecture、runbooks。
 - 从 `.workflow/` 进入 `docs/` 的内容必须经过对应命令：`distill-change` 或 `describe-project`。
 - 归档材料保留在 `.workflow/archive/`，不要为了历史追溯把完整 archive 复制到 `docs/`。

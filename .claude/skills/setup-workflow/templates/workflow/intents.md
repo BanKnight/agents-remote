@@ -5,9 +5,9 @@
 已经分配到 roadmap 的意图，不在本文件长期保留；需要 big picture 时，AI 应从当前项目状态中读取：
 
 - `docs/` 的长期沉淀
-- `.workflow/roadmap.md`
-- `.workflow/changes/` 中正在进行的变更
-- `.workflow/archive/` 中已经归档的变更
+- `.workflow/versions/index.md`
+- `.workflow/versions/` 中正在进行的 versions / changes
+- `.workflow/archive/versions/` 中已经归档的 versions / changes
 
 ## 状态说明
 
@@ -18,7 +18,7 @@
 
 <!--
 clarify-intents 负责在这里追加还不够清楚的用户原始意图。
-AI 需要处理意图时，应优先从本节底部往上读取。
+AI 需要处理意图时，应全量理解本文件，避免遗漏意图之间的关系、重复规划或错误分配。
 -->
 
 - 编号：1

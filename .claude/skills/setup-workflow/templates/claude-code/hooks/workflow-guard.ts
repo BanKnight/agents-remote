@@ -7,13 +7,13 @@ const candidates = collectStrings(payload).map(normalizePathText);
 if (candidates.some(mentionsWorkflow)) {
   const reminders = new Set<string>();
 
-  reminders.add("`.workflow/` 是运行态区域；修改前请确认目标 change 已进入 roadmap，且当前阶段匹配对应 artifact。");
+  reminders.add("`.workflow/` 是运行态区域；修改前请确认目标 change 已进入 `.workflow/versions/index.md`，且当前阶段匹配对应 artifact。");
 
-  if (candidates.some((value) => value.includes(".workflow/changes/") && value.includes("/specs/"))) {
+  if (candidates.some((value) => value.includes(".workflow/versions/") && value.includes("/changes/") && value.includes("/specs/"))) {
     reminders.add("specs 只写 WHAT / 行为契约，不写 HOW、任务拆解或实现细节。");
   }
 
-  if (candidates.some((value) => value.includes(".workflow/changes/") && value.includes("/design/"))) {
+  if (candidates.some((value) => value.includes(".workflow/versions/") && value.includes("/changes/") && value.includes("/design/"))) {
     reminders.add("design 写 HOW；通过 verify 前不要把运行态 design 当作长期 docs 结论。");
   }
 

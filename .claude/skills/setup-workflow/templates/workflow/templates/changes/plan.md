@@ -27,7 +27,7 @@
 ## 额外上下文
 
 <!--
-同一 change 目录内的 intents.md、progress.md、specs/、design/、plan.md、tasks.md 是默认上下文，不要在这里逐项罗列。
+同一 change 目录内的 context.md、progress.md、specs/、design/、plan.md、tasks.md 是默认上下文，不要在这里逐项罗列。
 这里只写默认 change 目录之外需要额外读取的长期 docs、外部仓库、本地源码、代码入口、环境/权限/人工确认等。
 如果没有额外上下文，写：无额外上下文；默认读取本 change 目录产物。
 -->
