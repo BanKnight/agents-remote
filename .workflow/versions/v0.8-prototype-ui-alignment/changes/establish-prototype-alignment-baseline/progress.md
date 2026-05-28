@@ -10,7 +10,7 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
+- 当前阶段：待计划
 - 阻塞项：无
 
 ## 推进规则
@@ -22,8 +22,8 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
+- specs：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/specs/prototype-ui-alignment-baseline/spec.md
+- design：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/design/overview.md；design/ui-ux.md；design/frontend.md；design/risks.md
 - plan/tasks：未完成
 - implementation：未完成
 - verify：未完成
@@ -45,3 +45,5 @@
 ## 进展记录
 
 - 2026-05-28：由 `plan-versions` 创建为当前焦点 change，用于先产出跨 change 共享的 prototype alignment contract 与 design system note。
+- 2026-05-28：`specify-change` 已创建规格 `.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/specs/prototype-ui-alignment-baseline/spec.md`，当前阶段推进到待设计。
+- 2026-05-28：`design-change` 已创建设计 `.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`、`design/risks.md`，当前阶段推进到待计划。
