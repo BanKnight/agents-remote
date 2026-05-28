@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, type LinkProps } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
 import { IconMarker, NavItemContent, shellSurfaceClasses } from "./shell-primitives";
@@ -39,11 +39,43 @@ export function ShellNavigationButton({
       <NavItemContent
         active={active}
         description={description}
+        interactive
         label={label}
         marker={marker}
         meta={meta}
       />
     </Button>
+  );
+}
+
+type ShellNavigationLinkProps = {
+  active?: boolean;
+  description?: ReactNode;
+  label: ReactNode;
+  marker: ReactNode;
+  meta?: ReactNode;
+  to: LinkProps["to"];
+};
+
+export function ShellNavigationLink({
+  active = false,
+  description,
+  label,
+  marker,
+  meta,
+  to,
+}: ShellNavigationLinkProps) {
+  return (
+    <Link className="block w-full min-w-0 cursor-pointer" to={to}>
+      <NavItemContent
+        active={active}
+        description={description}
+        interactive
+        label={label}
+        marker={marker}
+        meta={meta}
+      />
+    </Link>
   );
 }
 
@@ -88,7 +120,7 @@ export function ShellMobileBottomNavigation({
 }: ShellMobileBottomNavigationProps) {
   return (
     <nav
-      className={`fixed inset-x-0 bottom-0 z-20 min-h-[calc(4.25rem+env(safe-area-inset-bottom))] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden ${shellSurfaceClasses.bottomNav}`}
+      className={`fixed inset-x-0 bottom-0 z-20 min-h-[calc(var(--shell-mobile-bottom-nav-height)+env(safe-area-inset-bottom))] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden ${shellSurfaceClasses.bottomNav}`}
       aria-label={ariaLabel}
     >
       <div className={`mx-auto grid w-full max-w-md gap-1 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
@@ -100,16 +132,26 @@ export function ShellMobileBottomNavigation({
 
 type ShellMobileNavItemContentProps = {
   active?: boolean;
+  interactive?: boolean;
   label: ReactNode;
   marker: ReactNode;
 };
 
 export function ShellMobileNavItemContent({
   active = false,
+  interactive = false,
   label,
   marker,
 }: ShellMobileNavItemContentProps) {
-  return <NavItemContent active={active} label={label} marker={marker} orientation="vertical" />;
+  return (
+    <NavItemContent
+      active={active}
+      interactive={interactive}
+      label={label}
+      marker={marker}
+      orientation="vertical"
+    />
+  );
 }
 
 export type ShellNavigationItem = {
@@ -119,6 +161,7 @@ export type ShellNavigationItem = {
   description?: ReactNode;
   meta?: ReactNode;
   mobileLabel?: ReactNode;
+  to?: LinkProps["to"];
 };
 
 type PrimaryShellNavigationProps = {
@@ -134,16 +177,28 @@ export function PrimaryShellNavigation({ activeItemId, brand, items }: PrimarySh
         {brand}
       </div>
       <ShellNavigationList ariaLabel="Primary navigation">
-        {items.map((item) => (
-          <ShellNavigationStaticItem
-            key={item.id}
-            active={item.id === activeItemId}
-            description={item.description}
-            label={item.label}
-            marker={item.marker}
-            meta={item.meta}
-          />
-        ))}
+        {items.map((item) =>
+          item.to ? (
+            <ShellNavigationLink
+              key={item.id}
+              active={item.id === activeItemId}
+              description={item.description}
+              label={item.label}
+              marker={item.marker}
+              meta={item.meta}
+              to={item.to}
+            />
+          ) : (
+            <ShellNavigationStaticItem
+              key={item.id}
+              active={item.id === activeItemId}
+              description={item.description}
+              label={item.label}
+              marker={item.marker}
+              meta={item.meta}
+            />
+          ),
+        )}
       </ShellNavigationList>
     </>
   );
@@ -160,15 +215,26 @@ export function PrimaryShellBottomNavigation({
 }: PrimaryShellBottomNavigationProps) {
   return (
     <ShellMobileBottomNavigation ariaLabel="Primary mobile navigation" columns={4}>
-      {items.map((item) => (
-        <div key={item.id} className="min-w-0">
-          <ShellMobileNavItemContent
-            active={item.id === activeItemId}
-            label={item.mobileLabel ?? item.label}
-            marker={item.marker}
-          />
-        </div>
-      ))}
+      {items.map((item) =>
+        item.to ? (
+          <Link key={item.id} className="min-w-0 cursor-pointer" to={item.to}>
+            <ShellMobileNavItemContent
+              active={item.id === activeItemId}
+              interactive
+              label={item.mobileLabel ?? item.label}
+              marker={item.marker}
+            />
+          </Link>
+        ) : (
+          <div key={item.id} className="min-w-0">
+            <ShellMobileNavItemContent
+              active={item.id === activeItemId}
+              label={item.mobileLabel ?? item.label}
+              marker={item.marker}
+            />
+          </div>
+        ),
+      )}
     </ShellMobileBottomNavigation>
   );
 }
@@ -237,6 +303,7 @@ export function ProjectShellBottomNavigation({
     <ShellMobileBottomNavigation ariaLabel="Project mobile workspace navigation" columns={5}>
       <Link className="min-w-0 cursor-pointer" to="/">
         <ShellMobileNavItemContent
+          interactive
           label="Back"
           marker={<IconMarker size="sm" tone="accent">←</IconMarker>}
         />
@@ -251,6 +318,7 @@ export function ProjectShellBottomNavigation({
         >
           <ShellMobileNavItemContent
             active={activeItemId === item.id}
+            interactive
             label={item.mobileLabel ?? item.label}
             marker={item.marker}
           />

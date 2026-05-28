@@ -75,6 +75,7 @@ export function IconMarker({ children, size = "md", tone = "default" }: IconMark
 type NavItemContentProps = {
   active?: boolean;
   description?: ReactNode;
+  interactive?: boolean;
   label: ReactNode;
   marker: ReactNode;
   meta?: ReactNode;
@@ -84,6 +85,7 @@ type NavItemContentProps = {
 export function NavItemContent({
   active = false,
   description,
+  interactive = false,
   label,
   marker,
   meta,
@@ -97,14 +99,19 @@ export function NavItemContent({
     orientation === "vertical"
       ? active
         ? "text-cyan-300"
-        : "text-slate-400 hover:text-slate-100"
+        : interactive
+          ? "text-slate-400 hover:text-slate-100"
+          : "text-slate-500"
       : active
         ? "bg-cyan-300/10 text-slate-100"
-        : "text-slate-400 hover:bg-slate-800/45 hover:text-slate-100";
+        : interactive
+          ? "text-slate-400 hover:bg-slate-800/45 hover:text-slate-100"
+          : "text-slate-500";
   const shapeClass = orientation === "vertical" ? "" : "rounded-[0.875rem]";
+  const interactionClass = interactive ? "cursor-pointer" : "";
 
   return (
-    <span className={`w-full min-w-0 transition ${layoutClass} ${stateClass} ${shapeClass}`}>
+    <span className={`w-full min-w-0 transition ${layoutClass} ${stateClass} ${shapeClass} ${interactionClass}`}>
       {marker}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.68rem] font-bold sm:text-sm">{label}</span>

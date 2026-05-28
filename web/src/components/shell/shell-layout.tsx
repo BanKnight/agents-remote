@@ -7,15 +7,15 @@ import { shellSurfaceClasses } from "./shell-primitives";
 type ShellLayoutVariant = "home" | "project";
 
 const shellMainClasses: Record<ShellLayoutVariant, string> = {
-  home: "h-dvh overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(125,211,252,0.14),transparent_28rem),radial-gradient(circle_at_85%_5%,rgba(167,139,250,0.16),transparent_28rem),#080b10] text-slate-100 sm:h-auto sm:min-h-dvh sm:px-6 sm:pb-24 sm:pt-5 lg:p-7",
+  home: "h-dvh overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(125,211,252,0.14),transparent_28rem),radial-gradient(circle_at_85%_5%,rgba(167,139,250,0.16),transparent_28rem),#080b10] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem] sm:h-auto sm:min-h-dvh sm:px-6 sm:pb-24 sm:pt-5 lg:p-7",
   project:
-    "h-dvh overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(125,211,252,0.16),transparent_30rem),radial-gradient(circle_at_82%_12%,rgba(167,139,250,0.14),transparent_28rem),#080b10] text-slate-100 sm:h-auto sm:min-h-dvh sm:px-6 sm:py-4 lg:p-7",
+    "h-dvh overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(125,211,252,0.16),transparent_30rem),radial-gradient(circle_at_82%_12%,rgba(167,139,250,0.14),transparent_28rem),#080b10] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem] sm:h-auto sm:min-h-dvh sm:px-6 sm:py-4 lg:p-7",
 };
 
 const shellGridClasses: Record<ShellLayoutVariant, string> = {
-  home: "mx-auto grid h-[calc(100dvh-4.25rem-env(safe-area-inset-bottom))] w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-8rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.75rem_minmax(0,1fr)]",
+  home: "mx-auto grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-8rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.75rem_minmax(0,1fr)]",
   project:
-    "mx-auto grid h-[calc(100dvh-4.25rem-env(safe-area-inset-bottom))] w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-7.5rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.125rem_minmax(0,1fr)]",
+    "mx-auto grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-7.5rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.125rem_minmax(0,1fr)]",
 };
 
 const shellHeaderClasses: Record<ShellLayoutVariant, string> = {
@@ -41,7 +41,7 @@ export function ShellLayout({ bottomNavigation, children, sidebar, variant }: Sh
     <main className={shellMainClasses[variant]}>
       <div className={`${shellGridClasses[variant]} ${shellSurfaceClasses.shell}`}>
         {sidebar}
-        <div className="flex min-w-0 flex-col gap-0 lg:min-h-0">{children}</div>
+        <div className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden">{children}</div>
       </div>
       {bottomNavigation}
     </main>
@@ -80,7 +80,7 @@ export function ShellPanel({
   const densityClass =
     density === "compact" ? "p-3 py-3 sm:p-4 sm:py-4" : "p-4 py-4 sm:p-5 sm:py-5 lg:p-6 lg:py-6";
   const dockedClass = docked
-    ? "flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 overflow-y-auto"
+    ? "min-h-0 flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 overflow-y-auto"
     : "";
   const size = density === "compact" ? "sm" : "default";
 

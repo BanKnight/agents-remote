@@ -12,7 +12,7 @@ import {
 import { ActionButton, IconMarker, ShellInput, shellSurfaceClasses } from "../components/shell/shell-primitives";
 
 const primaryNavItems = [
-  { id: "projects", label: "Projects", marker: "P", mobileLabel: "Projects" },
+  { id: "projects", label: "Projects", marker: "P", mobileLabel: "Projects", to: "/" as const },
   { id: "sessions", label: "Sessions", marker: "S", mobileLabel: "Sessions" },
   { id: "config", label: "Config", marker: "C", mobileLabel: "Config" },
   { id: "help", label: "Help", marker: "H", mobileLabel: "Help" },
