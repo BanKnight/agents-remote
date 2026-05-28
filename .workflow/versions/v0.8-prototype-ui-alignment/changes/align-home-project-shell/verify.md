@@ -47,7 +47,7 @@
 
 - 时间：2026-05-29
 - 验证范围：响应 mobile/desktop 复查，修正 shared bottom navigation vertical 分支、一级/二级 navigation active 宽度契约、移动端响应式 shell/safe-area、Home mobile topbar 文案、Project mobile 直接顶部栏、Project 卡片短状态 pill、capture script 的 viewport-aware heading 断言，并回写 version shared / implement references。
-- 使用 harness：`bun run --cwd web typecheck`、`bun run --cwd web test`、`bun test web/src/routes/console-model.test.ts`、`bun run --cwd web build`、`bun .workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/capture-home-project-shell.ts`、manual mobile screenshot inspection
+- 使用 harness：`bun run --cwd web typecheck`、`bun run --cwd web test`、`bun test web/src/routes/console-model.test.ts`、`bun run --cwd web build`、`bun .workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/capture-home-project-shell.ts`、manual mobile screenshot inspection、post-capture process/listener cleanup check
 - 本轮结论：通过，无 CRITICAL/WARNING；desktop screenshot 显示一级/二级导航 active 宽度已统一由 shared component 撑满导航列，mobile screenshots 显示工作区响应式贴边铺满并延伸到 fixed bottom navigation 顶部，bottom navigation 覆盖 safe area 且由 shared component 统一为原型的 icon+label 表达，Project mobile 顶部为项目名 + Agent 状态，不再显示桌面版 heading/path。
 - 后续动作：保持已完成，可随 version 归档。
 

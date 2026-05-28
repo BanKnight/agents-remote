@@ -67,9 +67,7 @@ const main = async () => {
     logLines.push("acceptable differences: real app uses live Project data, no fake provider history/output, and React DOM differs from static prototype HTML");
     await writeFile(browserLogPath, `${logLines.join("\n")}\n`);
   } finally {
-    api.kill();
-    web.kill();
-    await Promise.allSettled([api.exited, web.exited]);
+    await Promise.allSettled([killProcessTree(api), killProcessTree(web)]);
     await rm(tempRoot, { force: true, recursive: true });
   }
 };
@@ -160,7 +158,31 @@ const git = async (projectPath: string, args: string[]) => {
 };
 
 const spawnLogged = (cmd: string[], logPath: string, env: Record<string, string>) =>
-  Bun.spawn({ cmd, cwd: repoRoot, env: { ...process.env, ...env }, stderr: Bun.file(logPath), stdout: Bun.file(logPath) });
+  Bun.spawn({
+    cmd,
+    cwd: repoRoot,
+    detached: true,
+    env: { ...process.env, ...env },
+    stderr: Bun.file(logPath),
+    stdout: Bun.file(logPath),
+  });
+
+const killProcessTree = async (process: ReturnType<typeof Bun.spawn>) => {
+  try {
+    process.kill();
+    process.kill("SIGTERM");
+    globalThis.process.kill(-process.pid, "SIGTERM");
+  } catch {
+    // The process may already have exited.
+  }
+  await Promise.race([process.exited, Bun.sleep(2_000)]);
+  try {
+    globalThis.process.kill(-process.pid, "SIGKILL");
+  } catch {
+    // The process group may already be gone.
+  }
+  await Promise.allSettled([process.exited]);
+};
 
 const waitForUrl = async (url: string, label: string) => {
   const startedAt = Date.now();
