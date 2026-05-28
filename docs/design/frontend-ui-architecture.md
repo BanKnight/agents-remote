@@ -40,6 +40,9 @@
 - 桌面端 Files/Git 可以保留同页 compact list + preview/diff 结构，以提高扫读效率；移动端 direct secondary 默认展示列表和当前 workspace context，进入内容 detail 后 content-first。
 - Terminal workspace 不承载 shell input、quick keys 或 runtime output；这些属于 Terminal instance detail。Terminal direct secondary 在移动端仍显示 Project 二级底部导航。
 - 已验证的共享 UI component 边界是 `web/src/components/shell/` 中的轻量 shell 组件库入口：`shell-layout.tsx` 承载连续桌面 shell、sidebar、workspace header 和 panel surface，`shell-navigation.tsx` 承载一级/二级 desktop 与 mobile bottom navigation，`shell-primitives.tsx` 承载 nav item、icon marker、status pill、action button、input 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成泛化设计系统。
+- Prototype alignment 的设计语言必须同时横向和纵向抽象：横向让 Home、Project、Agent、Files、Git、Terminal 共享同一套 shell 视觉语言，纵向用 shell/sidebar/workspace/header/bottom nav/raised/dashed/inset/code/danger/warning 等 surface roles 管理层级，不允许 route 为单页观感私自调另一套深浅。
+- 可点击 affordance 是共享组件契约的一部分；导航、列表行和 action button 的 cursor、hover/selected surface、active 宽度、focus/disabled 状态与 safe-area 行为应由 shared shell components 管理，不能只抽 icon/label 内容。
+- Prototype alignment 过程中发现的重复漂移必须回写到项目说明、version shared 或长期 design；不能只在当前页面代码里修完就结束。
 - shadcn/ui 在本项目中是本地 source component 基础层，不是 route 直接消费层；当前已验证 wrapper 关系包括 `Button` -> action/navigation/list row，`Badge` -> status pill，`Card` -> shell surface，`Input` -> shell input。
 
 ## 关键规则
@@ -53,6 +56,7 @@
 - Project 直接二级 workspace active 状态使用 URL-visible route/search 承载；Jotai 不应作为该状态的唯一来源。
 - Home/一级 shell、Project 二级 shell 与 Session detail chrome 的底部导航互斥：同一移动端页面状态只显示当前层级的底部导航或 detail 输入区。
 - 如果某个状态影响浏览器返回、刷新恢复或深链，不应长期只保留为 Jotai atom 或组件 state。
+- Prototype alignment 实现中必须先读 prototype HTML，再按结构/样式批次持续对照 prototype 与 app 截图；最终 verify 不能替代实现过程中的对照回路。
 - UI alignment 后必须保留现有加载、空、错误、禁用和危险确认行为。
 - 涉及用户可见 UI 的实现必须用真实浏览器验证桌面端和移动端，不能只靠 typecheck。
 - Prototype alignment 收口验证采用结构断言 + 可审查截图，而不是 pixel diff；至少覆盖 Home、Project Agent workspace、Agent/Terminal detail、Files/Git/Terminal resource workspaces 的 desktop/mobile 路径。

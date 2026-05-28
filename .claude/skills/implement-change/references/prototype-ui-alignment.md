@@ -21,6 +21,7 @@ If these inputs are absent from `plan.md`, `tasks.md`, specs, design, docs, or v
 3. Preserve real data, permissions, runtime state, and API boundaries even when the prototype shows unavailable capability.
 4. Implement only the states committed by the current task; record missing states or APIs in the task-defined follow-up artifact.
 5. Use browser verification for user-visible changes; type checks and unit tests are not enough for visual alignment.
+6. Preserve lessons that affect repeated prototype work in the task-defined shared artifact or project instructions, not only in the local code diff.
 
 ## During-implementation comparison loop
 
@@ -48,6 +49,13 @@ If repeated comparison shows the task target is underspecified, pause and return
 - Map typography by hierarchy: route title, section title, row title, metadata, badges, buttons, and terminal/code text.
 - Match density, spacing, radius, and shadow only within the task scope; avoid broad theme rewrites unless the task explicitly commits them.
 - Avoid adding decorative effects that are not present in the prototype.
+
+## Design-language abstraction checks
+
+- Check horizontal reuse: pages or workspaces that share the same prototype language should consume the same layout, navigation, surface, row, control, status, and typography roles.
+- Check vertical layering: shell, sidebar, workspace, header, bottom navigation, raised rows, dashed empty states, inset toolbars, code/output panels, danger, and warning states should have named roles instead of scattered route-local styling.
+- Interaction affordances such as active width, hover/selected surface, cursor, focus, disabled state, and safe-area behavior are part of prototype parity; treat them as abstraction requirements when shared across levels.
+- If a repeated mismatch appears during implementation, update the shared contract or project instruction before marking the task complete so later changes inherit the correction.
 
 ## Capability boundaries
 
