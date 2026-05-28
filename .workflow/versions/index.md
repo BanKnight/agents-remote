@@ -44,4 +44,4 @@ version 内多个 changes 需要共享的运行态材料放在 `.workflow/versio
 
 <!-- 当前全局最应该推进的 change；具体阶段读取该 change 的 progress.md，技能路由由 step-change 决定。 -->
 
-- 当前没有活跃 change；如有新意图，先使用 `clarify-intents` / `plan-roadmap` 进入下一轮 roadmap。
+- 当前没有活跃 change；如有新意图，先使用 `clarify-intents` / `plan-versions` 进入下一轮 roadmap。

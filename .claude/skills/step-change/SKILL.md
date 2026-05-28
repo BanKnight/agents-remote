@@ -48,7 +48,7 @@ step-change       -> 当前阶段到阶段技能的唯一路由与分发
 - 如果用户只传入 change-id，因为活跃区 change-id 应保持全局唯一，先在 `.workflow/versions/index.md` 中定位该 change；若出现多个匹配，列出候选并要求用户选择。
 - 如果用户没有传入 change，读取 `.workflow/versions/index.md` 的“当前焦点”。
 - 如果当前焦点缺失或对应 change 不存在，读取活跃 versions/changes 和各自 `progress.md`，展示 3-4 个可推进候选并询问用户选择。
-- 如果目标 change 的 `context.md` 或 `progress.md` 缺失，停止并提示先回到 `plan-roadmap` 补齐骨架。
+- 如果目标 change 的 `context.md` 或 `progress.md` 缺失，停止并提示先回到 `plan-versions` 补齐骨架。
 
 ## 输入契约
 

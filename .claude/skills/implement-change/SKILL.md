@@ -220,7 +220,7 @@ description: 按 `.workflow/versions/<version>/changes/<change-id>/tasks.md` 执
 
 根据状态处理：
 
-- 如果缺少 `context.md` 或 `progress.md`，停止并提示先回到 `plan-roadmap` 补齐 change 骨架。
+- 如果缺少 `context.md` 或 `progress.md`，停止并提示先回到 `plan-versions` 补齐 change 骨架。
 - 如果缺少 `plan.md` 或 `tasks.md`，停止并提示先执行 `plan-change`。
 - 如果所有 tasks 已完成，说明无需实现，建议进入 `verify-change`。
 - 如果存在阻塞项，先汇报阻塞并询问是否处理阻塞。

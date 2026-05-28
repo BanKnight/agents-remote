@@ -1,15 +1,15 @@
 ---
-name: plan-roadmap
+name: plan-versions
 description: 基于 `.workflow/intents.md` 全量规划或更新 `.workflow/versions/index.md` 活跃版本队列，并在 `.workflow/versions/<version>/changes/<change-id>/` 下建立 change context/progress。用户要求规划路线图、安排优先级、决定下一批 change、或需要补齐 big picture 前置 change 时使用。
 ---
 
-# plan-roadmap 技能
+# plan-versions 技能
 
 ## 定位
 
-`plan-roadmap` 用于从全局 big picture 视角规划当前活跃 versions 和 changes：全量读取 `.workflow/intents.md`，判断哪些意图可以进入版本编排，哪些需要等待技术铺垫、调研、设计、验证或文档类 change 补齐 big picture，然后更新 `.workflow/versions/index.md` 与对应 change 看板上下文。
+`plan-versions` 用于从全局 big picture 视角规划当前活跃 versions 和 changes：全量读取 `.workflow/intents.md`，判断哪些意图可以进入版本编排，哪些需要等待技术铺垫、调研、设计、验证或文档类 change 补齐 big picture，然后更新 `.workflow/versions/index.md` 与对应 change 看板上下文。
 
-`plan-roadmap` 维护的是 roadmap 层循环：
+`plan-versions` 维护的是 roadmap 层循环：
 
 ```text
 获取意图 → 规划 version/change → 通过 change 实现/验证/补齐 big picture → 沉淀后继续下一轮规划
@@ -26,7 +26,7 @@ description: 基于 `.workflow/intents.md` 全量规划或更新 `.workflow/vers
 
 ## 主动触发
 
-当满足以下情况时，使用 `plan-roadmap`：
+当满足以下情况时，使用 `plan-versions`：
 
 - `.workflow/intents.md` 中存在待分配意图。
 - 用户确认某个意图已经足够清楚，可以安排进入路线图。
@@ -166,7 +166,7 @@ description: 基于 `.workflow/intents.md` 全量规划或更新 `.workflow/vers
 
 ## 不负责
 
-`plan-roadmap` 不负责：
+`plan-versions` 不负责：
 
 - 继续追问并澄清原始意图。
 - 编写单个 change 的 WHAT/HOW、任务清单、实现、验证证据或长期文档沉淀。
@@ -202,7 +202,7 @@ description: 基于 `.workflow/intents.md` 全量规划或更新 `.workflow/vers
 
 ## Agent 主动规划规则
 
-用户通常只会表达业务目标或体验目标，不一定知道需要哪些技术前置工作。`plan-roadmap` 必须基于项目现状主动识别这些缺口。
+用户通常只会表达业务目标或体验目标，不一定知道需要哪些技术前置工作。`plan-versions` 必须基于项目现状主动识别这些缺口。
 
 当 big picture 不足以有效规划全部 intents 时，优先规划能补齐 big picture 的 changes，例如：
 
@@ -275,7 +275,7 @@ change 应使用描述性语义标识，并保持范围聚焦：
 
 ## index 字段规则
 
-`plan-roadmap` 写入 `.workflow/versions/index.md` 时，必须使用 `.workflow/templates/versions/index.md` 的结构。
+`plan-versions` 写入 `.workflow/versions/index.md` 时，必须使用 `.workflow/templates/versions/index.md` 的结构。
 
 每个活跃 version 至少包含：
 
@@ -346,12 +346,12 @@ change 应使用描述性语义标识，并保持范围聚焦：
 规则：
 
 - `.workflow/archive/versions/` 保存已归档 version 的完整上下文。
-- `plan-roadmap` 平时不主动全量读取 archive，只在需要历史 big picture、追溯或避免重复规划时按需读取。
+- `plan-versions` 平时不主动全量读取 archive，只在需要历史 big picture、追溯或避免重复规划时按需读取。
 - 已经存在的旧归档目录不用迁移或修改。
 
 ## 退出条件
 
-当满足以下条件时，`plan-roadmap` 可以结束：
+当满足以下条件时，`plan-versions` 可以结束：
 
 - 新处理的意图已进入活跃 roadmap、继续保留待分配、暂缓或放弃，并且原因明确。
 - `.workflow/versions/index.md` 有清晰的活跃 versions 与 changes。

@@ -160,7 +160,7 @@ description: 在 verify 与 distill 完成后，将已完成 version 从 `.workf
 工作流层面的直接衔接只有：
 
 - 上游：change 未完成时回到 `step-change`，verify 不足时回到 `verify-change`，distill 不足时回到 `distill-change`。
-- 下游：归档完成后如仍有活跃意图或需要下一轮规划，进入 `plan-roadmap` 或 `step-change`。
+- 下游：归档完成后如仍有活跃意图或需要下一轮规划，进入 `plan-versions` 或 `step-change`。
 
 ## 归档前检查
 
