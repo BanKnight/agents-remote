@@ -61,3 +61,6 @@
 - change：align-resource-inspection-pages
 - verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
 - 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/resource-inspection-check.log` 与同目录 Files/Git/Terminal desktop/mobile 截图
+- change：align-resource-inspection-workspaces
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log` 与同目录 Files/Git/Terminal workspace prototype/app desktop/mobile 截图

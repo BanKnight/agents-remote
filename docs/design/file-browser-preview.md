@@ -53,3 +53,6 @@
 - change：align-resource-inspection-pages
 - verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
 - 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/files-direct-mobile.png`、`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/files-preview-mobile.png`
+- change：align-resource-inspection-workspaces
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log`、`app-files-desktop.png`、`app-files-mobile.png`、`app-files-mobile-preview-detail.png`

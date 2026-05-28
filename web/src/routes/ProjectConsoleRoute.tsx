@@ -39,7 +39,15 @@ import {
   ProjectShellBottomNavigation,
   ProjectShellNavigation,
 } from "../components/shell/shell-navigation";
-import { ActionButton, IconMarker, ListRow, StatusPill, shellSurfaceClasses } from "../components/shell/shell-primitives";
+import {
+  ActionButton,
+  IconMarker,
+  ListRow,
+  StatusPill,
+  actionButtonClasses,
+  shellSurfaceClasses,
+  type ShellTone,
+} from "../components/shell/shell-primitives";
 
 export function ProjectConsoleRoute() {
   const { projectName } = useParams({ from: "/projects/$projectName" });
@@ -419,48 +427,35 @@ type AgentInstanceRowProps = {
 
 function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
   return (
-    <article className={`min-w-0 rounded-[1.25rem] p-3 transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}>
-      <div className="flex min-w-0 items-start gap-3">
-        <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
-          {providerMarker(session.provider)}
-        </IconMarker>
-        <div className="min-w-0 flex-1">
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-            <div className="min-w-0">
-              <h4 className="truncate font-semibold text-slate-100">{session.displayName}</h4>
-              <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                {providerLabel(session.provider)} · {session.id}
-              </p>
-            </div>
-            <StatusPill
-              tone={sessionStatusTone(session.status)}
-              value={sessionStatusLabel(session.status)}
-            />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              className="rounded-xl bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
-              params={{ projectName, sessionId: session.id }}
-              search={{ workspace: "agents" }}
-              to="/projects/$projectName/agent-sessions/$sessionId"
-            >
-              Open
-            </Link>
-            <button
-              className="rounded-xl border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
-              type="button"
-              onClick={() => {
-                if (window.confirm("Close this session? The running process will be terminated.")) {
-                  onClose();
-                }
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </article>
+    <SessionInstanceRow
+      actions={
+        <>
+          <Link
+            className={actionButtonClasses({ tone: "accent" })}
+            params={{ projectName, sessionId: session.id }}
+            search={{ workspace: "agents" }}
+            to="/projects/$projectName/agent-sessions/$sessionId"
+          >
+            Open
+          </Link>
+          <ActionButton
+            tone="danger"
+            onClick={() => {
+              if (window.confirm("Close this session? The running process will be terminated.")) {
+                onClose();
+              }
+            }}
+          >
+            Close
+          </ActionButton>
+        </>
+      }
+      marker={<IconMarker tone={session.provider === "codex" ? "success" : "accent"}>{providerMarker(session.provider)}</IconMarker>}
+      statusTone={sessionStatusTone(session.status)}
+      status={sessionStatusLabel(session.status)}
+      subtitle={`${providerLabel(session.provider)} · ${session.id}`}
+      title={session.displayName}
+    />
   );
 }
 
@@ -488,6 +483,35 @@ function AgentHistoryPanel() {
         </p>
       </div>
     </ShellPanel>
+  );
+}
+
+type SessionInstanceRowProps = {
+  actions: ReactNode;
+  marker: ReactNode;
+  status: ReactNode;
+  statusTone: ShellTone;
+  subtitle: ReactNode;
+  title: ReactNode;
+};
+
+function SessionInstanceRow({ actions, marker, status, statusTone, subtitle, title }: SessionInstanceRowProps) {
+  return (
+    <article className={`min-w-0 rounded-[1.25rem] p-3 transition sm:p-4 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}>
+      <div className="flex min-w-0 items-start gap-3">
+        {marker}
+        <div className="min-w-0 flex-1">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+            <div className="min-w-0">
+              <h4 className="truncate font-semibold text-slate-100">{title}</h4>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
+            </div>
+            <StatusPill tone={statusTone} value={status} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">{actions}</div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -540,23 +564,21 @@ function TerminalPanel({
 }: TerminalPanelProps) {
   return (
     <ShellPanel className="lg:rounded-none" docked>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-            Terminal workspace
-          </p>
-          <h3 className="mt-2 text-xl font-semibold">Terminal instances</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-400">
-            Project-scoped shell sessions. Runtime input opens in the Terminal detail.
-          </p>
-        </div>
-        <CreateButton disabled={isCreating} onClick={onCreate}>
-          {isCreating ? "Creating..." : "New Terminal"}
-        </CreateButton>
-      </div>
+      <ResourceToolbar
+        eyebrow="Terminal workspace"
+        title="Terminal instances"
+        meta="Project-scoped shell sessions. Shell controls open in the Terminal detail."
+        actions={
+          <CreateButton disabled={isCreating} tone="accent" onClick={onCreate}>
+            {isCreating ? "Creating..." : "New Terminal"}
+          </CreateButton>
+        }
+      />
       <ErrorText error={createError ?? closeError} />
       {isClosing ? (
-        <p className="mt-3 text-sm text-amber-100">Closing Terminal session...</p>
+        <div className="mt-3">
+          <ResourceStatePanel tone="warning" message="Closing Terminal session..." />
+        </div>
       ) : null}
       <TerminalInstanceList
         projectName={projectName}
@@ -582,23 +604,27 @@ function TerminalInstanceList({
   onClose,
 }: TerminalInstanceListProps) {
   if (isLoading) {
-    return <p className="mt-5 text-sm text-slate-400">Loading Terminal instances...</p>;
+    return (
+      <div className="mt-5">
+        <ResourceStatePanel tone="inset" message="Loading Terminal instances..." />
+      </div>
+    );
   }
 
   if (sessions.length === 0) {
     return (
-      <div className={`mt-5 rounded-3xl p-5 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">No Terminal instances yet</p>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          Create a Terminal to open a focused project shell detail.
-        </p>
+      <div className="mt-5">
+        <ResourceStatePanel
+          title="No Terminal instances yet"
+          message="Create a Terminal to open a focused project shell detail."
+        />
       </div>
     );
   }
 
   return (
     <div
-      className="mt-5 grid max-h-[26rem] gap-2 overflow-y-auto pr-1"
+      className="mt-5 grid max-h-[26rem] gap-3 overflow-y-auto pr-1 lg:grid-cols-2"
       aria-label="Terminal instances"
     >
       {sessions.map((session) => (
@@ -621,44 +647,35 @@ type TerminalInstanceRowProps = {
 
 function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstanceRowProps) {
   return (
-    <article className={`min-w-0 rounded-2xl p-3 transition sm:p-4 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}>
-      <div className="flex min-w-0 items-start gap-3">
-        <IconMarker tone="accent">TM</IconMarker>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h4 className="truncate font-semibold text-slate-100">{session.displayName}</h4>
-              <p className="mt-1 break-all font-mono text-xs text-slate-500">{session.id}</p>
-            </div>
-            <StatusPill
-              tone={sessionStatusTone(session.status)}
-              value={sessionStatusLabel(session.status)}
-            />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
-              params={{ projectName, sessionId: session.id }}
-              search={{ fromAgentSession: undefined }}
-              to="/projects/$projectName/terminal-sessions/$sessionId"
-            >
-              Open detail
-            </Link>
-            <button
-              className="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
-              type="button"
-              onClick={() => {
-                if (window.confirm("Close this Terminal? The running shell will be terminated.")) {
-                  onClose();
-                }
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </article>
+    <SessionInstanceRow
+      actions={
+        <>
+          <Link
+            className={actionButtonClasses({ tone: "accent" })}
+            params={{ projectName, sessionId: session.id }}
+            search={{ fromAgentSession: undefined }}
+            to="/projects/$projectName/terminal-sessions/$sessionId"
+          >
+            Open detail
+          </Link>
+          <ActionButton
+            tone="danger"
+            onClick={() => {
+              if (window.confirm("Close this Terminal? The running shell will be terminated.")) {
+                onClose();
+              }
+            }}
+          >
+            Close
+          </ActionButton>
+        </>
+      }
+      marker={<IconMarker tone="accent">TM</IconMarker>}
+      statusTone={sessionStatusTone(session.status)}
+      status={sessionStatusLabel(session.status)}
+      subtitle={session.id}
+      title={session.displayName}
+    />
   );
 }
 
@@ -696,15 +713,71 @@ function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDeta
 function MobileDetailHeader({ backLabel, label, onBack, title }: MobileDetailHeaderProps) {
   return (
     <div className={`min-w-0 rounded-2xl p-3 sm:hidden ${shellSurfaceClasses.raised}`}>
-      <button
-        className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1.5 text-xs font-semibold text-cyan-100"
-        type="button"
-        onClick={onBack}
-      >
+      <ActionButton tone="default" onClick={onBack}>
         ← {backLabel}
-      </button>
+      </ActionButton>
       <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">{label}</p>
       <h3 className="mt-1 break-all font-mono text-sm font-semibold text-slate-100">{title}</h3>
+    </div>
+  );
+}
+
+type ResourceToolbarProps = {
+  actions?: ReactNode;
+  eyebrow: string;
+  meta?: ReactNode;
+  title: ReactNode;
+};
+
+function ResourceToolbar({ actions, eyebrow, meta, title }: ResourceToolbarProps) {
+  return (
+    <div className={`min-w-0 rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{eyebrow}</p>
+          <div className="mt-1 min-w-0 truncate font-mono text-sm text-slate-100">{title}</div>
+          {meta ? <div className="mt-2 min-w-0 text-xs text-slate-400">{meta}</div> : null}
+        </div>
+        {actions ? <div className="flex shrink-0 flex-wrap justify-start gap-1.5 sm:justify-end">{actions}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+type ResourceSplitLayoutProps = {
+  detail: ReactNode;
+  list: ReactNode;
+};
+
+function ResourceSplitLayout({ detail, list }: ResourceSplitLayoutProps) {
+  return (
+    <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+      {list}
+      {detail}
+    </div>
+  );
+}
+
+type ResourceStatePanelProps = {
+  children?: ReactNode;
+  message?: ReactNode;
+  title?: ReactNode;
+  tone?: "danger" | "dashed" | "inset" | "warning";
+};
+
+function ResourceStatePanel({ children, message, title, tone = "dashed" }: ResourceStatePanelProps) {
+  const isCompact = tone === "inset" || tone === "danger" || tone === "warning";
+  const surfaceClass = shellSurfaceClasses[tone];
+
+  return (
+    <div className={`min-w-0 rounded-2xl p-4 ${isCompact ? "" : "text-center sm:p-6"} ${surfaceClass}`}>
+      {title ? <p className={`font-semibold ${tone === "danger" ? "text-rose-100" : "text-slate-100"}`}>{title}</p> : null}
+      {message ? (
+        <p className={`mt-2 text-sm leading-6 ${tone === "danger" ? "text-rose-200/80" : tone === "warning" ? "text-amber-100" : "text-slate-400"}`}>
+          {message}
+        </p>
+      ) : null}
+      {children}
     </div>
   );
 }
@@ -749,16 +822,14 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
   }, [onDeepDetailChange, selectedFile]);
 
   const clearDiff = () => setSelectedFile(undefined);
+  const gitSummary = diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
 
   const statusToolbar = (
-    <div className={`rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Git status</p>
-          <p className="mt-1 truncate text-xs text-slate-400">
-            Read-only worktree and staged changes.
-          </p>
-        </div>
+    <ResourceToolbar
+      eyebrow="Git status"
+      title={diff.data?.repository === true ? `${diff.data.files.length} changed files` : "Read-only changes"}
+      meta={gitSummary ? <GitSummaryPills summary={gitSummary} /> : "Worktree and staged files are available for inspection only."}
+      actions={
         <ActionButton
           tone="accent"
           onClick={() => {
@@ -768,31 +839,28 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
         >
           Retry
         </ActionButton>
-      </div>
-    </div>
+      }
+    />
   );
 
   const loadingState = diff.isLoading ? (
-    <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
-      Loading Git changes...
-    </p>
+    <ResourceStatePanel tone="inset" message="Loading Git changes..." />
   ) : null;
 
   const errorState = diff.error ? (
-    <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
-      <p className="font-semibold text-rose-100">Unable to load Git changes.</p>
-      <p className="mt-2 text-sm leading-6 text-rose-200/80">{diff.error.message}</p>
-    </div>
+    <ResourceStatePanel
+      tone="danger"
+      title="Unable to load Git changes."
+      message={diff.error.message}
+    />
   ) : null;
 
   const notRepositoryState =
     diff.data?.repository === false ? (
-      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">Not a Git repository</p>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          This Project directory does not have Git metadata.
-        </p>
-      </div>
+      <ResourceStatePanel
+        title="Not a Git repository"
+        message="This Project directory does not have Git metadata."
+      />
     ) : null;
 
   const changedFileList =
@@ -826,10 +894,7 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
         </div>
         <div className="hidden gap-3 sm:grid">
           {statusToolbar}
-          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-            {changedFileList}
-            {diffPanel}
-          </div>
+          <ResourceSplitLayout list={changedFileList} detail={diffPanel} />
         </div>
       </div>
     );
@@ -842,11 +907,45 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
       {errorState}
       {notRepositoryState}
       {diff.data?.repository === true ? (
-        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-          {changedFileList}
-          {diffPanel}
-        </div>
+        <>
+          <div className="sm:hidden">{changedFileList}</div>
+          <div className="hidden sm:block">
+            <ResourceSplitLayout list={changedFileList} detail={diffPanel} />
+          </div>
+        </>
       ) : null}
+    </div>
+  );
+}
+
+type GitSummary = {
+  added: number;
+  deleted: number;
+  modified: number;
+  renamed: number;
+  staged: number;
+  worktree: number;
+};
+
+function summarizeGitFiles(files: GitDiffFileSummary[]): GitSummary {
+  return files.reduce<GitSummary>(
+    (summary, file) => ({
+      ...summary,
+      [file.scope]: summary[file.scope] + 1,
+      [file.status]: summary[file.status] + 1,
+    }),
+    { added: 0, deleted: 0, modified: 0, renamed: 0, staged: 0, worktree: 0 },
+  );
+}
+
+function GitSummaryPills({ summary }: { summary: GitSummary }) {
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1.5">
+      <StatusPill tone="muted" value={`${summary.worktree} worktree`} />
+      <StatusPill tone="muted" value={`${summary.staged} staged`} />
+      <StatusPill tone="success" value={`${summary.added} added`} />
+      <StatusPill tone="warning" value={`${summary.modified} modified`} />
+      <StatusPill tone="danger" value={`${summary.deleted} deleted`} />
     </div>
   );
 }
@@ -860,12 +959,10 @@ type GitFileListProps = {
 function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
   if (files.length === 0) {
     return (
-      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">No changes</p>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Worktree and staged changes will appear here.
-        </p>
-      </div>
+      <ResourceStatePanel
+        title="No changes"
+        message="Worktree and staged changes will appear here."
+      />
     );
   }
 
@@ -906,30 +1003,25 @@ type GitFileDiffPanelProps = {
 
 function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps) {
   if (isLoading) {
-    return (
-      <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
-        Loading diff...
-      </p>
-    );
+    return <ResourceStatePanel tone="inset" message="Loading diff..." />;
   }
 
   if (error) {
     return (
-      <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
-        <p className="font-semibold text-rose-100">Unable to open this diff.</p>
-        <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
-      </div>
+      <ResourceStatePanel
+        tone="danger"
+        title="Unable to open this diff."
+        message={error.message}
+      />
     );
   }
 
   if (!fileDiff) {
     return (
-      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">Select a changed file</p>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Unified diff output is shown read-only.
-        </p>
-      </div>
+      <ResourceStatePanel
+        title="Select a changed file"
+        message="Unified diff output is shown read-only."
+      />
     );
   }
 
@@ -1007,36 +1099,22 @@ function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
   const clearPreview = () => setSelectedFilePath(undefined);
 
   const pathToolbar = (
-    <div className={`rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current path</p>
-          <p className="mt-1 truncate font-mono text-sm text-slate-100">
-            {currentPath.length > 0 ? currentPath : "/"}
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-          <button
-            className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200"
-            type="button"
-            onClick={() => goToPath("")}
-          >
-            Root
-          </button>
-          <button
-            className="rounded-full border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={parentPath === null}
-            type="button"
-            onClick={() => parentPath !== null && goToPath(parentPath)}
-          >
+    <ResourceToolbar
+      eyebrow="Current path"
+      title={currentPath.length > 0 ? currentPath : "/"}
+      meta="Read-only Project file inspection."
+      actions={
+        <>
+          <ActionButton onClick={() => goToPath("")}>Root</ActionButton>
+          <ActionButton disabled={parentPath === null} onClick={() => parentPath !== null && goToPath(parentPath)}>
             Up
-          </button>
+          </ActionButton>
           <ActionButton tone="accent" onClick={() => void files.refetch()}>
             Retry
           </ActionButton>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 
   const fileList = (
@@ -1068,10 +1146,7 @@ function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
         </div>
         <div className="hidden gap-3 sm:grid">
           {pathToolbar}
-          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-            {fileList}
-            {previewPanel}
-          </div>
+          <ResourceSplitLayout list={fileList} detail={previewPanel} />
         </div>
       </div>
     );
@@ -1080,9 +1155,9 @@ function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
   return (
     <div className="mt-3 grid min-w-0 gap-3">
       {pathToolbar}
-      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-        {fileList}
-        {previewPanel}
+      <div className="sm:hidden">{fileList}</div>
+      <div className="hidden sm:block">
+        <ResourceSplitLayout list={fileList} detail={previewPanel} />
       </div>
     </div>
   );
@@ -1106,28 +1181,25 @@ function FileEntryList({
   selectedFilePath,
 }: FileEntryListProps) {
   if (isLoading) {
-    return (
-      <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
-        Loading files...
-      </p>
-    );
+    return <ResourceStatePanel tone="inset" message="Loading files..." />;
   }
 
   if (error) {
     return (
-      <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
-        <p className="font-semibold text-rose-100">Unable to load this directory.</p>
-        <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
-      </div>
+      <ResourceStatePanel
+        tone="danger"
+        title="Unable to load this directory."
+        message={error.message}
+      />
     );
   }
 
   if (entries.length === 0) {
     return (
-      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">Empty directory</p>
-        <p className="mt-2 text-sm text-slate-400">This Project path has no files or folders.</p>
-      </div>
+      <ResourceStatePanel
+        title="Empty directory"
+        message="This Project path has no files or folders."
+      />
     );
   }
 
@@ -1169,30 +1241,25 @@ type FilePreviewPanelProps = {
 
 function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) {
   if (isLoading) {
-    return (
-      <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
-        Loading preview...
-      </p>
-    );
+    return <ResourceStatePanel tone="inset" message="Loading preview..." />;
   }
 
   if (error) {
     return (
-      <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
-        <p className="font-semibold text-rose-100">Unable to preview this file.</p>
-        <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
-      </div>
+      <ResourceStatePanel
+        tone="danger"
+        title="Unable to preview this file."
+        message={error.message}
+      />
     );
   }
 
   if (!preview) {
     return (
-      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">Select a file to preview</p>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Text and common web images are shown read-only.
-        </p>
-      </div>
+      <ResourceStatePanel
+        title="Select a file to preview"
+        message="Text and common web images are shown read-only."
+      />
     );
   }
 

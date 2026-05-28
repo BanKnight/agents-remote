@@ -4,9 +4,9 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
-type VisualTone = "default" | "accent" | "success" | "warning" | "danger" | "muted";
+export type ShellTone = "default" | "accent" | "success" | "warning" | "danger" | "muted";
 
-const markerToneClasses: Record<VisualTone, string> = {
+const markerToneClasses: Record<ShellTone, string> = {
   default: "border-slate-700 bg-slate-900 text-slate-200",
   accent: "border-cyan-300/30 bg-cyan-300/10 text-cyan-100",
   success: "border-emerald-300/30 bg-emerald-300/10 text-emerald-100",
@@ -15,7 +15,7 @@ const markerToneClasses: Record<VisualTone, string> = {
   muted: "border-slate-800 bg-slate-950/80 text-slate-400",
 };
 
-const pillToneClasses: Record<VisualTone, string> = {
+const pillToneClasses: Record<ShellTone, string> = {
   default: "border-slate-800 bg-slate-950/80 text-slate-100",
   accent: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
   success: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
@@ -24,7 +24,7 @@ const pillToneClasses: Record<VisualTone, string> = {
   muted: "border-slate-800 bg-slate-950/70 text-slate-300",
 };
 
-const buttonToneClasses: Record<VisualTone, string> = {
+const buttonToneClasses: Record<ShellTone, string> = {
   default: "border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500 hover:bg-slate-900/80",
   accent:
     "border-transparent bg-gradient-to-br from-cyan-300 to-violet-400 text-slate-950 shadow-lg shadow-cyan-950/25 hover:from-cyan-200 hover:to-violet-300",
@@ -57,7 +57,7 @@ export const shellSurfaceClasses = {
 type IconMarkerProps = {
   children: ReactNode;
   size?: "sm" | "md";
-  tone?: VisualTone;
+  tone?: ShellTone;
 };
 
 const markerSizeClasses: Record<NonNullable<IconMarkerProps["size"]>, string> = {
@@ -130,7 +130,7 @@ export function NavItemContent({
 
 type StatusPillProps = {
   label?: string;
-  tone?: VisualTone;
+  tone?: ShellTone;
   value: ReactNode;
 };
 
@@ -149,8 +149,20 @@ export function StatusPill({ label, tone = "default", value }: StatusPillProps) 
 }
 
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: VisualTone;
+  tone?: ShellTone;
 };
+
+type ActionButtonClassOptions = {
+  className?: string;
+  tone?: ShellTone;
+};
+
+export function actionButtonClasses({
+  className = "",
+  tone = "default",
+}: ActionButtonClassOptions = {}) {
+  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition ${buttonToneClasses[tone]} ${className}`;
+}
 
 export function ActionButton({
   children,
@@ -162,7 +174,10 @@ export function ActionButton({
   return (
     <Button
       {...props}
-      className={`h-auto cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${buttonToneClasses[tone]} ${className}`}
+      className={actionButtonClasses({
+        tone,
+        className: `disabled:cursor-not-allowed disabled:opacity-50 ${className}`,
+      })}
       size="sm"
       type={type}
       variant="ghost"

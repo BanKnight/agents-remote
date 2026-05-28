@@ -54,3 +54,6 @@
 - change：align-resource-inspection-pages
 - verify 证据：`.workflow/changes/align-resource-inspection-pages/verify.md`
 - 运行态验证证据：`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/git-direct-mobile.png`、`.workflow/changes/align-resource-inspection-pages/artifacts/browser-resource-inspection/git-diff-mobile.png`
+- change：align-resource-inspection-workspaces
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log`、`app-git-desktop.png`、`app-git-mobile.png`、`app-git-mobile-diff-detail.png`
