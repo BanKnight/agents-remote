@@ -6,6 +6,9 @@
 ## 项目目标
 - 实现一个优化版本的 hapi，使用户可以通过网页控制服务器上的 agent，包括 Codex 和 Claude。
 
+## 前端实现约定
+- 执行 React 前端或 prototype UI alignment 的 `implement-change` 时，必须先加载 `vercel-react-best-practices` skill，并把它作为组件编写、重构和代码评审约束。
+
 <!-- WORKFLOW:GOVERNANCE:START -->
 ## 治理文档导入
 
