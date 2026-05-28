@@ -34,6 +34,22 @@ const buttonToneClasses: Record<VisualTone, string> = {
   muted: "border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:bg-slate-900/70",
 };
 
+export const shellSurfaceClasses = {
+  shell: "bg-[#0f1520]/[0.92]",
+  sidebar: "bg-gradient-to-b from-[#141b28]/[0.92] to-[#0a0e16]/[0.96]",
+  workspace: "border border-white/10 bg-[#141b28]/80",
+  header: "border border-white/10 bg-slate-950/80",
+  floatingHeader: "sm:border sm:border-white/10 sm:bg-slate-950/80",
+  bottomNav: "border-t border-slate-700/80 bg-[#0a0e16]",
+  raised: "border border-slate-700/40 bg-[#141b28]/70",
+  raisedHover: "hover:border-cyan-300/60 hover:bg-[#141b28]/90",
+  dashed: "border border-dashed border-slate-700/70 bg-[#141b28]/70",
+  inset: "border border-slate-700/35 bg-[#05080d]/25",
+  code: "border border-slate-700/45 bg-[#05080d]/80",
+  danger: "border border-rose-300/25 bg-rose-950/20",
+  warning: "border border-amber-300/25 bg-amber-950/20",
+};
+
 type IconMarkerProps = {
   children: ReactNode;
   size?: "sm" | "md";
@@ -135,7 +151,7 @@ export function ActionButton({
   return (
     <Button
       {...props}
-      className={`h-auto rounded-xl border px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${buttonToneClasses[tone]} ${className}`}
+      className={`h-auto cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${buttonToneClasses[tone]} ${className}`}
       size="sm"
       type={type}
       variant="ghost"
@@ -177,10 +193,10 @@ export function ListRow({
   return (
     <Button
       {...props}
-      className={`h-auto min-w-0 justify-start rounded-xl border px-3 py-2.5 text-left transition hover:bg-slate-950/80 ${
+      className={`h-auto min-w-0 cursor-pointer justify-start rounded-xl px-3 py-2.5 text-left transition ${
         selected
-          ? "border-cyan-300/60 bg-cyan-300/10"
-          : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
+          ? "border border-cyan-300/60 bg-cyan-300/10"
+          : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
       } ${className}`}
       type={type}
       variant="ghost"

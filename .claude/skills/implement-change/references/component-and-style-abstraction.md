@@ -34,6 +34,7 @@ Do not abstract only because code looks similar. Keep one-off UI local when it h
 ## Style abstraction
 
 - Prefer named roles, variants, tones, density, and surface levels over scattering raw colors and spacing across routes.
+- Treat color roles as part of the abstraction contract. If pages share shell/workspace/list/history/card primitives, they should share the same role classes or tokens instead of independently choosing darker/lighter route-local utilities; cover both horizontal reuse across pages/workspaces and vertical layers such as shell, sidebar, workspace, header, bottom nav, raised rows, dashed empties, inset toolbars, code/output, danger, and warning.
 - Keep global token changes narrow and justified by the task; local wrapper variants are safer for change-specific alignment.
 - Preserve existing project tokens, utility conventions, and generated component contracts.
 - Avoid broad visual rewrites outside the task's prototype, page, or component boundary.

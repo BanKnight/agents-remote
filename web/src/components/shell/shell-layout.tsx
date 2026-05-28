@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
 import { Card } from "../ui/card";
+import { shellSurfaceClasses } from "./shell-primitives";
 
 type ShellLayoutVariant = "home" | "project";
 
@@ -12,15 +13,15 @@ const shellMainClasses: Record<ShellLayoutVariant, string> = {
 };
 
 const shellGridClasses: Record<ShellLayoutVariant, string> = {
-  home: "mx-auto grid h-[calc(100dvh-4.25rem-env(safe-area-inset-bottom))] w-full max-w-7xl min-w-0 overflow-hidden bg-[#0f1520]/[0.92] shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-8rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.75rem_minmax(0,1fr)]",
+  home: "mx-auto grid h-[calc(100dvh-4.25rem-env(safe-area-inset-bottom))] w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-8rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.75rem_minmax(0,1fr)]",
   project:
-    "mx-auto grid h-[calc(100dvh-4.25rem-env(safe-area-inset-bottom))] w-full max-w-7xl min-w-0 overflow-hidden bg-[#0f1520]/[0.92] shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-7.5rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.125rem_minmax(0,1fr)]",
+    "mx-auto grid h-[calc(100dvh-4.25rem-env(safe-area-inset-bottom))] w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-7.5rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.125rem_minmax(0,1fr)]",
 };
 
 const shellHeaderClasses: Record<ShellLayoutVariant, string> = {
   home: "flex-row min-w-0 items-center justify-between gap-3 border-0 bg-transparent p-0 text-slate-100 shadow-none ring-0",
   project:
-    "min-w-0 gap-0 rounded-none border-0 border-b border-slate-700/80 bg-transparent px-4 py-3 text-slate-100 shadow-none ring-0 sm:rounded-[1.5rem] sm:border sm:border-white/10 sm:bg-slate-950/80 sm:px-5 sm:py-4 sm:shadow-2xl sm:shadow-black/30 sm:backdrop-blur lg:rounded-none lg:border-0 lg:border-b lg:border-slate-700/80 lg:bg-transparent lg:px-5 lg:py-4 lg:shadow-none lg:backdrop-blur-0",
+    "min-w-0 gap-0 rounded-none border-0 border-b border-slate-700/80 bg-transparent px-4 py-3 text-slate-100 shadow-none ring-0 sm:rounded-[1.5rem] sm:px-5 sm:py-4 sm:shadow-2xl sm:shadow-black/30 sm:backdrop-blur lg:rounded-none lg:border-0 lg:border-b lg:border-slate-700/80 lg:bg-transparent lg:px-5 lg:py-4 lg:shadow-none lg:backdrop-blur-0",
 };
 
 const shellHeaderTitleClasses: Record<ShellLayoutVariant, string> = {
@@ -38,7 +39,7 @@ type ShellLayoutProps = {
 export function ShellLayout({ bottomNavigation, children, sidebar, variant }: ShellLayoutProps) {
   return (
     <main className={shellMainClasses[variant]}>
-      <div className={shellGridClasses[variant]}>
+      <div className={`${shellGridClasses[variant]} ${shellSurfaceClasses.shell}`}>
         {sidebar}
         <div className="flex min-w-0 flex-col gap-0 lg:min-h-0">{children}</div>
       </div>
@@ -57,7 +58,7 @@ export function ShellSidebar({ children, display = "block" }: ShellSidebarProps)
 
   return (
     <aside className={`hidden min-h-0 min-w-0 overflow-hidden ${displayClass}`}>
-      <Card className="h-full min-h-0 gap-0 rounded-[1.75rem] border border-white/10 bg-slate-950/80 p-3 py-3 text-slate-100 shadow-2xl shadow-black/30 ring-0 lg:rounded-none lg:border-0 lg:border-r lg:border-slate-700/80 lg:bg-gradient-to-b lg:from-[#141b28]/[0.92] lg:to-[#0a0e16]/[0.96] lg:shadow-none">
+      <Card className={`h-full min-h-0 gap-0 rounded-[1.75rem] p-3 py-3 text-slate-100 shadow-2xl shadow-black/30 ring-0 lg:rounded-none lg:border-0 lg:border-r lg:border-slate-700/80 lg:shadow-none ${shellSurfaceClasses.header} ${shellSurfaceClasses.sidebar}`}>
         {children}
       </Card>
     </aside>
@@ -87,7 +88,7 @@ export function ShellPanel({
     <Card
       {...props}
       className={cn(
-        "min-w-0 gap-0 rounded-[1.5rem] border border-white/10 bg-[#141b28]/80 text-slate-100 shadow-xl shadow-black/20 ring-0",
+        `min-w-0 gap-0 rounded-[1.5rem] text-slate-100 shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
         densityClass,
         dockedClass,
         className,
@@ -134,7 +135,7 @@ export function ShellHeaderSurface({
 
   return (
     <header className="min-w-0">
-      <Card className={shellHeaderClasses.project}>
+      <Card className={`${shellHeaderClasses.project} ${shellSurfaceClasses.floatingHeader}`}>
         <div className="flex min-w-0 items-center justify-between gap-3">{headerContent}</div>
         {mobileMeta ? <div className="mt-2 sm:hidden">{mobileMeta}</div> : null}
       </Card>

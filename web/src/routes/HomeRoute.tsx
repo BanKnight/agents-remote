@@ -9,7 +9,7 @@ import {
   PrimaryShellBottomNavigation,
   PrimaryShellNavigation,
 } from "../components/shell/shell-navigation";
-import { ActionButton, IconMarker, ShellInput } from "../components/shell/shell-primitives";
+import { ActionButton, IconMarker, ShellInput, shellSurfaceClasses } from "../components/shell/shell-primitives";
 
 const primaryNavItems = [
   { id: "projects", label: "Projects", marker: "P", mobileLabel: "Projects" },
@@ -147,7 +147,7 @@ function ProjectListCard({ error, isLoading, onCreateProject, projects }: Projec
       {isLoading ? <StatusPanel label="Loading Projects..." /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/50 p-4">
+        <div className={`rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
           <p className="text-lg font-semibold text-slate-100">No Projects yet</p>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             Create or adopt a Project to enter the console shell.
@@ -178,7 +178,7 @@ type ProjectEntryRowProps = {
 function ProjectEntryRow({ project }: ProjectEntryRowProps) {
   return (
     <Link
-      className="group block min-w-0 rounded-[1.25rem] border border-slate-700/40 bg-[#141b28]/70 px-3.5 py-3.5 transition hover:border-cyan-300/60 hover:bg-[#141b28]/90 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
+      className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
       params={{ projectName: project.name }}
       search={{ workspace: defaultConsoleSection }}
       to="/projects/$projectName"
@@ -236,7 +236,7 @@ function ProjectSetupPanel({
   projectPath,
 }: ProjectSetupPanelProps) {
   return (
-    <ShellPanel className="bg-slate-950/75" density="default">
+    <ShellPanel density="default">
       <div className="flex min-w-0 items-start gap-3">
         <IconMarker size="sm" tone="muted">+</IconMarker>
         <div className="min-w-0">
@@ -289,8 +289,8 @@ type StatusPanelProps = {
 function StatusPanel({ label, tone = "default" }: StatusPanelProps) {
   const classes =
     tone === "danger"
-      ? "border-red-400/30 bg-red-400/10 text-red-100"
-      : "border-slate-700 bg-slate-950/80 text-slate-300";
+      ? `${shellSurfaceClasses.danger} text-red-100`
+      : `${shellSurfaceClasses.inset} text-slate-300`;
 
-  return <p className={`mt-5 rounded-2xl border px-4 py-3 text-sm ${classes}`}>{label}</p>;
+  return <p className={`mt-5 rounded-2xl px-4 py-3 text-sm ${classes}`}>{label}</p>;
 }

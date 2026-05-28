@@ -43,7 +43,8 @@ If repeated comparison shows the task target is underspecified, pause and return
 
 ## Visual parity
 
-- Map colors by role: background, surface, border, active navigation, primary action, secondary action, status, muted text, and destructive/warning state.
+- Map colors by role: background, shell surface, sidebar surface, workspace surface, header surface, bottom navigation, raised surface, dashed empty surface, inset surface, code/output surface, border, active navigation, primary action, secondary action, status, muted text, and destructive/warning state.
+- When the prototype uses the same role across pages or navigation levels, reuse the same implementation token/class; do not tune Home and Project separately unless the prototype shows a real role difference.
 - Map typography by hierarchy: route title, section title, row title, metadata, badges, buttons, and terminal/code text.
 - Match density, spacing, radius, and shadow only within the task scope; avoid broad theme rewrites unless the task explicitly commits them.
 - Avoid adding decorative effects that are not present in the prototype.

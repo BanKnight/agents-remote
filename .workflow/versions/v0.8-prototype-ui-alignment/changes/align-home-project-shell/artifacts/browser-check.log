@@ -1,4 +1,4 @@
-app url: http://127.0.0.1:46377
+app url: http://127.0.0.1:45475
 viewports: desktop 1440x1000; mobile 390x844
 home prototype desktop: captured home.html at 1440x1000
 home prototype mobile: captured home.html at 390x844

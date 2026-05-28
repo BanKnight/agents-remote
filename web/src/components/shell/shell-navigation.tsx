@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
-import { IconMarker, NavItemContent } from "./shell-primitives";
+import { IconMarker, NavItemContent, shellSurfaceClasses } from "./shell-primitives";
 
 type ShellNavigationListProps = {
   ariaLabel: string;
@@ -35,7 +35,7 @@ export function ShellNavigationButton({
   onClick,
 }: ShellNavigationButtonProps) {
   return (
-    <Button className="h-auto w-full min-w-0 justify-start bg-transparent p-0" type="button" variant="ghost" onClick={onClick}>
+    <Button className="h-auto w-full min-w-0 cursor-pointer justify-start bg-transparent p-0" type="button" variant="ghost" onClick={onClick}>
       <NavItemContent
         active={active}
         description={description}
@@ -88,7 +88,7 @@ export function ShellMobileBottomNavigation({
 }: ShellMobileBottomNavigationProps) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-20 min-h-[calc(4.25rem+env(safe-area-inset-bottom))] border-t border-slate-700/80 bg-[#0a0e16] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden"
+      className={`fixed inset-x-0 bottom-0 z-20 min-h-[calc(4.25rem+env(safe-area-inset-bottom))] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden ${shellSurfaceClasses.bottomNav}`}
       aria-label={ariaLabel}
     >
       <div className={`mx-auto grid w-full max-w-md gap-1 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
@@ -195,13 +195,13 @@ export function ProjectShellNavigation({
   return (
     <>
       <Link
-        className="mb-4 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-400 hover:text-cyan-200"
+        className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-400 hover:text-cyan-200"
         to="/"
       >
         <IconMarker size="sm" tone="muted">←</IconMarker>
         <span>Projects</span>
       </Link>
-      <div className="mb-4 min-w-0 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+      <div className={`mb-4 min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}>
         <h2 className="truncate text-sm font-semibold text-slate-100">{projectTitle}</h2>
         <p className="mt-1 truncate font-mono text-xs text-slate-500">{projectPath}</p>
       </div>
@@ -235,7 +235,7 @@ export function ProjectShellBottomNavigation({
 }: ProjectShellBottomNavigationProps) {
   return (
     <ShellMobileBottomNavigation ariaLabel="Project mobile workspace navigation" columns={5}>
-      <Link className="min-w-0" to="/">
+      <Link className="min-w-0 cursor-pointer" to="/">
         <ShellMobileNavItemContent
           label="Back"
           marker={<IconMarker size="sm" tone="accent">←</IconMarker>}
@@ -244,7 +244,7 @@ export function ProjectShellBottomNavigation({
       {items.map((item) => (
         <Button
           key={item.id}
-          className="h-auto w-full min-w-0 justify-center bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit"
+          className="h-auto w-full min-w-0 cursor-pointer justify-center bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit"
           type="button"
           variant="ghost"
           onClick={() => onSelectItem(item.id)}

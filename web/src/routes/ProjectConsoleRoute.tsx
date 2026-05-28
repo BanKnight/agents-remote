@@ -39,7 +39,7 @@ import {
   ProjectShellBottomNavigation,
   ProjectShellNavigation,
 } from "../components/shell/shell-navigation";
-import { ActionButton, IconMarker, ListRow, StatusPill } from "../components/shell/shell-primitives";
+import { ActionButton, IconMarker, ListRow, StatusPill, shellSurfaceClasses } from "../components/shell/shell-primitives";
 
 export function ProjectConsoleRoute() {
   const { projectName } = useParams({ from: "/projects/$projectName" });
@@ -77,8 +77,8 @@ type ConsoleFrameProps = {
 
 function ConsoleFrame({ children, subtitle, title }: ConsoleFrameProps) {
   return (
-    <main className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-slate-950 px-4 text-slate-100">
-      <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/30">
+    <main className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-[#080b10] px-4 text-slate-100">
+      <section className={`w-full max-w-md rounded-[2rem] p-6 shadow-2xl shadow-black/30 ${shellSurfaceClasses.workspace}`}>
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
           Agents Remote
         </p>
@@ -385,7 +385,7 @@ function AgentInstanceList({ projectName, sessions, isLoading, onClose }: AgentI
 
   if (sessions.length === 0) {
     return (
-      <div className="mt-4 rounded-2xl border border-dashed border-slate-700 bg-slate-950/70 p-4 text-center">
+      <div className={`mt-4 rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">No Agent instances yet</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
           Create a Claude or Codex session to open a project-scoped Agent stream.
@@ -419,7 +419,7 @@ type AgentInstanceRowProps = {
 
 function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
   return (
-    <article className="min-w-0 rounded-[1.25rem] border border-slate-800 bg-slate-950/70 p-3 transition hover:border-slate-600">
+    <article className={`min-w-0 rounded-[1.25rem] p-3 transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}>
       <div className="flex min-w-0 items-start gap-3">
         <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
           {providerMarker(session.provider)}
@@ -467,7 +467,7 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
 function AgentHistoryPanel() {
   return (
     <ShellPanel
-      className="mt-4 rounded-[1.25rem] border-slate-800 bg-slate-950/60"
+      className={`mt-4 rounded-[1.25rem] ${shellSurfaceClasses.raised}`}
       density="compact"
       aria-label="Session history"
     >
@@ -480,7 +480,7 @@ function AgentHistoryPanel() {
         </div>
         <StatusPill tone="muted" value="Staged" />
       </div>
-      <div className="mt-3 flex min-w-0 items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+      <div className={`mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 ${shellSurfaceClasses.inset}`}>
         <IconMarker size="sm" tone="muted">H</IconMarker>
         <p className="min-w-0 text-sm leading-6 text-slate-400">
           Current Agent instances stay above. Provider-native history and resume are not mixed into
@@ -587,7 +587,7 @@ function TerminalInstanceList({
 
   if (sessions.length === 0) {
     return (
-      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-5 text-center">
+      <div className={`mt-5 rounded-3xl p-5 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">No Terminal instances yet</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
           Create a Terminal to open a focused project shell detail.
@@ -621,7 +621,7 @@ type TerminalInstanceRowProps = {
 
 function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstanceRowProps) {
   return (
-    <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 transition hover:border-slate-600 sm:p-4">
+    <article className={`min-w-0 rounded-2xl p-3 transition sm:p-4 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}>
       <div className="flex min-w-0 items-start gap-3">
         <IconMarker tone="accent">TM</IconMarker>
         <div className="min-w-0 flex-1">
@@ -695,7 +695,7 @@ function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDeta
 
 function MobileDetailHeader({ backLabel, label, onBack, title }: MobileDetailHeaderProps) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3 sm:hidden">
+    <div className={`min-w-0 rounded-2xl p-3 sm:hidden ${shellSurfaceClasses.raised}`}>
       <button
         className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1.5 text-xs font-semibold text-cyan-100"
         type="button"
@@ -751,7 +751,7 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
   const clearDiff = () => setSelectedFile(undefined);
 
   const statusToolbar = (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
+    <div className={`rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Git status</p>
@@ -773,13 +773,13 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
   );
 
   const loadingState = diff.isLoading ? (
-    <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+    <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
       Loading Git changes...
     </p>
   ) : null;
 
   const errorState = diff.error ? (
-    <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+    <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
       <p className="font-semibold text-rose-100">Unable to load Git changes.</p>
       <p className="mt-2 text-sm leading-6 text-rose-200/80">{diff.error.message}</p>
     </div>
@@ -787,7 +787,7 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
 
   const notRepositoryState =
     diff.data?.repository === false ? (
-      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">Not a Git repository</p>
         <p className="mt-2 text-sm leading-6 text-slate-400">
           This Project directory does not have Git metadata.
@@ -860,7 +860,7 @@ type GitFileListProps = {
 function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
   if (files.length === 0) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">No changes</p>
         <p className="mt-2 text-sm leading-6 text-slate-400">
           Worktree and staged changes will appear here.
@@ -907,7 +907,7 @@ type GitFileDiffPanelProps = {
 function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps) {
   if (isLoading) {
     return (
-      <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+      <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
         Loading diff...
       </p>
     );
@@ -915,7 +915,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
   if (error) {
     return (
-      <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+      <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
         <p className="font-semibold text-rose-100">Unable to open this diff.</p>
         <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
       </div>
@@ -924,7 +924,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
   if (!fileDiff) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">Select a changed file</p>
         <p className="mt-2 text-sm leading-6 text-slate-400">
           Unified diff output is shown read-only.
@@ -935,7 +935,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
   return (
     <section
-      className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3"
+      className={`min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}
       aria-label="Git file diff"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -954,7 +954,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
           value={`${scopeLabel(fileDiff.scope)} · ${statusLabel(fileDiff.status)}`}
         />
       </div>
-      <pre className="mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
+      <pre className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}>
         {fileDiff.diff}
       </pre>
     </section>
@@ -1007,7 +1007,7 @@ function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
   const clearPreview = () => setSelectedFilePath(undefined);
 
   const pathToolbar = (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-2.5">
+    <div className={`rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current path</p>
@@ -1107,7 +1107,7 @@ function FileEntryList({
 }: FileEntryListProps) {
   if (isLoading) {
     return (
-      <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+      <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
         Loading files...
       </p>
     );
@@ -1115,7 +1115,7 @@ function FileEntryList({
 
   if (error) {
     return (
-      <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+      <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
         <p className="font-semibold text-rose-100">Unable to load this directory.</p>
         <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
       </div>
@@ -1124,7 +1124,7 @@ function FileEntryList({
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">Empty directory</p>
         <p className="mt-2 text-sm text-slate-400">This Project path has no files or folders.</p>
       </div>
@@ -1170,7 +1170,7 @@ type FilePreviewPanelProps = {
 function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) {
   if (isLoading) {
     return (
-      <p className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
+      <p className={`rounded-3xl p-4 text-sm text-slate-400 ${shellSurfaceClasses.inset}`}>
         Loading preview...
       </p>
     );
@@ -1178,7 +1178,7 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
 
   if (error) {
     return (
-      <div className="rounded-3xl border border-rose-300/20 bg-rose-950/20 p-4">
+      <div className={`rounded-3xl p-4 ${shellSurfaceClasses.danger}`}>
         <p className="font-semibold text-rose-100">Unable to preview this file.</p>
         <p className="mt-2 text-sm leading-6 text-rose-200/80">{error.message}</p>
       </div>
@@ -1187,7 +1187,7 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
 
   if (!preview) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-6 text-center">
+      <div className={`rounded-3xl p-6 text-center ${shellSurfaceClasses.dashed}`}>
         <p className="text-lg font-semibold text-slate-100">Select a file to preview</p>
         <p className="mt-2 text-sm leading-6 text-slate-400">
           Text and common web images are shown read-only.
@@ -1198,7 +1198,7 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
 
   return (
     <section
-      className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/80 p-3"
+      className={`min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}
       aria-label="File preview"
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -1222,7 +1222,7 @@ type PreviewBodyProps = {
 function PreviewBody({ preview }: PreviewBodyProps) {
   if (preview.type === "text") {
     return (
-      <pre className="mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm">
+      <pre className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}>
         {preview.content}
       </pre>
     );
@@ -1230,7 +1230,7 @@ function PreviewBody({ preview }: PreviewBodyProps) {
 
   if (preview.type === "image") {
     return (
-      <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950 p-2">
+      <div className={`mt-3 rounded-2xl p-2 ${shellSurfaceClasses.code}`}>
         <img
           className="mx-auto h-auto max-w-full rounded-xl"
           src={preview.dataUrl}
@@ -1242,14 +1242,14 @@ function PreviewBody({ preview }: PreviewBodyProps) {
 
   if (preview.type === "too_large") {
     return (
-      <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-950/20 p-3 text-sm leading-6 text-amber-100">
+      <p className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-amber-100 ${shellSurfaceClasses.warning}`}>
         File is too large to preview. Limit: {formatBytes(preview.limitBytes)}.
       </p>
     );
   }
 
   return (
-    <p className="mt-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm leading-6 text-slate-300">
+    <p className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-slate-300 ${shellSurfaceClasses.inset}`}>
       This file type is not supported for preview yet.
     </p>
   );

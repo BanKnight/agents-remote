@@ -51,6 +51,14 @@
 - 本轮结论：通过，无 CRITICAL/WARNING；desktop screenshot 显示一级/二级导航 active 宽度已统一由 shared component 撑满导航列，mobile screenshots 显示工作区响应式贴边铺满并延伸到 fixed bottom navigation 顶部，bottom navigation 覆盖 safe area 且由 shared component 统一为原型的 icon+label 表达，Project mobile 顶部为项目名 + Agent 状态，不再显示桌面版 heading/path。
 - 后续动作：保持已完成，可随 version 归档。
 
+### Round 6
+
+- 时间：2026-05-29
+- 验证范围：响应 Project/Home 用色复查，补齐横向与纵向 surface role 抽象；`shellSurfaceClasses` 统一 shell/sidebar/workspace/header/bottom nav/raised/dashed/inset/code/danger/warning，Home Projects、Project Agent、Terminal、Files、Git 共享这些 roles；项目 `CLAUDE.md` 增加原型持续对照、横纵抽象和真实能力边界约束。
+- 使用 harness：`bun run --cwd web typecheck`、`bun run --cwd web test`、`bun test web/src/routes/console-model.test.ts`、`bun run --cwd web build`、`bun .workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/capture-home-project-shell.ts`、manual desktop/mobile screenshot inspection、post-capture process/listener cleanup check。
+- 本轮结论：通过，无 CRITICAL/WARNING；desktop Home 和 Project screenshots 显示 shell/sidebar/workspace/raised/dashed/inset surface 语言统一，Project Agent mobile 仍贴底且 bottom nav 覆盖 safe area；post-capture process check 未发现新的 API/Vite orphan，仅保留人工测试服务 `43011/43012`。
+- 后续动作：保持已完成，可随 version 归档。
+
 ## Harness 清单
 
 - 名称：console model route tests

@@ -35,7 +35,8 @@
 - App background：接近黑色的深色基底，允许轻微冷色渐变增强 console 氛围。
 - Shell surface：大面板深色 surface，用于一级/二级应用框架。
 - Workspace surface：主工作区深色 surface，弱于 shell 边界，突出内容区域。
-- Raised surface：列表行、preview、terminal panel、drawer 等局部 surface。
+- Raised surface：列表行、preview、terminal panel、drawer 等局部 surface；跨页面使用同一 role class，不允许 Home/Project 或一级/二级页面私有化不同深浅。
+- Surface roles 必须同时横向和纵向抽象：横向跨 Home/Project/Agent/Files/Git/Terminal 复用同一设计语言，纵向按 shell、sidebar、workspace、header、bottom nav、raised row、dashed empty、inset toolbar、code/output、danger/warning 等层级命名。
 - Border：低透明灰蓝边框，避免重分割。
 - Text primary：高亮浅色。
 - Text secondary：低饱和灰蓝。
@@ -135,6 +136,7 @@
 
 - 每个 React/prototype UI change 开始改 route JSX 前，必须先对照 prototype HTML 识别可复用的 layout、navigation、surface、control、status、row/input 边界；明显跨页面或跨层级复用的内容应进入 `web/src/components/shell/`，不要停留在 route-local helper。
 - 导航抽象必须覆盖完整形态，不只覆盖图标和文字：一级/二级 navigation 只允许内容、目标和层级语义不同；item wrapper、active 宽度、hover/selected surface、icon marker、label 密度和 mobile bottom item 行为必须由同一 shared component 统一管理。
+- Surface/token 抽象必须覆盖用色 role，不只覆盖组件文件名：shell/sidebar/workspace/header/bottom-nav/raised/dashed/inset/code/danger/warning/active/action/status 等色阶应由 shared primitives 或 shared role classes 管理；route 不应为了单页观感散写另一套深浅。
 - 移动端 shell 是响应式视口约束，不是 `390px` 截图尺寸约束：主工作区必须横向撑满当前 viewport，并在高度上延伸到 fixed bottom navigation 顶部；bottom navigation 自身必须覆盖 `env(safe-area-inset-bottom)`，不得在导航栏下方或工作区与导航之间露出页面背景。
 - 列表行和 status pill 以原型短标签为准；真实状态可以保留，但缺省或等待态文案应使用短词，例如 `pending`，避免长说明挤占移动卡片密度。
 - 如已明确采用 shadcn/ui，implementation 必须说明本轮实际消费哪些 shadcn source components、由哪些 shell wrappers 消费，以及哪些 shadcn components 暂不添加；不能只记录依赖或初始化而不接入组件层。
