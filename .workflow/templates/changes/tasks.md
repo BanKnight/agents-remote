@@ -15,7 +15,8 @@
 
 - [ ] 1.1 任务名称
   - 验收标准：
-  - 依据：`plan.md` / spec / design 路径
+  - 任务承诺清单：
+  - 依据：`plan.md` / spec / design / docs / version shared 路径
   - 必读上下文：
   - 修改范围：
   - 依赖：无
@@ -25,7 +26,8 @@
 
 - [ ] 2.1 任务名称
   - 验收标准：
-  - 依据：`plan.md` / spec / design 路径
+  - 任务承诺清单：
+  - 依据：`plan.md` / spec / design / docs / version shared 路径
   - 必读上下文：
   - 修改范围：
   - 依赖：1.1
@@ -35,7 +37,8 @@
 
 - [ ] 3.1 任务名称
   - 验收标准：
-  - 依据：`plan.md` / spec / design 路径
+  - 任务承诺清单：
+  - 依据：`plan.md` / spec / design / docs / version shared 路径
   - 必读上下文：
   - 修改范围：
   - 依赖：2.1
