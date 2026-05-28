@@ -117,7 +117,12 @@ const captureProjectApp = async (
     const page = await browser.newPage({ viewport: viewport.size });
     await login(page, webUrl);
     await page.getByRole("link", { name: /agents-remote/ }).click();
-    await expect(page.getByRole("heading", { name: "Agent instances", exact: true })).toBeVisible();
+    if (viewport.name === "desktop") {
+      await expect(page.getByRole("heading", { name: "Agent instances", exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "agents-remote", exact: true })).toBeVisible();
+      await expect(page.getByText(/Agent instances · \d+ active/)).toBeVisible();
+    }
     await expect(page.getByRole("button", { name: "+ Claude" })).toBeVisible();
     await expect(page.getByRole("button", { name: "+ Codex" })).toBeVisible();
     await expect(page.getByText("Future restore will live here when provider history is available.")).toBeVisible();

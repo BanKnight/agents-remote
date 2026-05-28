@@ -41,6 +41,7 @@
 - 结构检查只验证行为地标，例如导航层级、当前 workspace、detail 返回入口、terminal-first 输出区、input drawer、Files/Git 只读 inspection、危险动作确认。
 - 不使用 DOM tree、class name 或 pixel-perfect 作为硬性验收标准。
 - 当前实现、长期 docs 与原型冲突时：安全、真实能力、Project-safe path、session/runtime、Files/Git 只读边界优先；纯布局、密度、导航、返回模型、状态表达和 console copy 气质按原型对齐。
+- 移动端 viewport 不等同于 `390x844` 固定尺寸；app 必须在当前移动视口内让主工作区横向撑满、纵向延伸到 fixed bottom navigation 顶部，并让 bottom navigation 覆盖 `env(safe-area-inset-bottom)`。
 
 ## Acceptable Differences
 
@@ -55,6 +56,7 @@
 ## Blocking Differences
 
 - 一级、二级、深层/contextual detail 的导航层级错误。
+- 一级/二级导航在同一原型视觉语言下出现不同 active 宽度、点击外壳、icon marker 或 bottom-nav 行为。
 - 移动端直接二级页和深层 detail 的返回位置错误。
 - detail 页底部 Project 导航与 input drawer、quick keys 或 terminal output 冲突。
 - Agent/Terminal detail 的 terminal-first 输出区被 metadata、说明文案、厚卡片或工具面板挤掉。

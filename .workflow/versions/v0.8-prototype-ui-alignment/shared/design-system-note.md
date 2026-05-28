@@ -134,8 +134,12 @@
 ## Implementation Review Gate
 
 - 每个 React/prototype UI change 开始改 route JSX 前，必须先对照 prototype HTML 识别可复用的 layout、navigation、surface、control、status、row/input 边界；明显跨页面或跨层级复用的内容应进入 `web/src/components/shell/`，不要停留在 route-local helper。
+- 导航抽象必须覆盖完整形态，不只覆盖图标和文字：一级/二级 navigation 只允许内容、目标和层级语义不同；item wrapper、active 宽度、hover/selected surface、icon marker、label 密度和 mobile bottom item 行为必须由同一 shared component 统一管理。
+- 移动端 shell 是响应式视口约束，不是 `390px` 截图尺寸约束：主工作区必须横向撑满当前 viewport，并在高度上延伸到 fixed bottom navigation 顶部；bottom navigation 自身必须覆盖 `env(safe-area-inset-bottom)`，不得在导航栏下方或工作区与导航之间露出页面背景。
+- 列表行和 status pill 以原型短标签为准；真实状态可以保留，但缺省或等待态文案应使用短词，例如 `pending`，避免长说明挤占移动卡片密度。
 - 如已明确采用 shadcn/ui，implementation 必须说明本轮实际消费哪些 shadcn source components、由哪些 shell wrappers 消费，以及哪些 shadcn components 暂不添加；不能只记录依赖或初始化而不接入组件层。
 - Browser verify 必须人工检查 desktop shell structure：左/右是否贴合、右侧 workspace 是否按 prototype 分成 header/content、主操作按钮是否符合 primary action 层级；结构检查日志不能替代这一步。
+- Browser verify 必须人工检查 mobile shell structure：工作区是否响应式撑满、fixed bottom navigation 是否真正贴底并覆盖 safe area、工作区与导航之间是否无背景缝隙、一级/二级 bottom nav 是否使用同一 shared component 形态。
 
 ## Verification Hooks
 

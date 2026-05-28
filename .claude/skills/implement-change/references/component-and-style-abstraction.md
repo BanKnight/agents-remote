@@ -19,6 +19,7 @@ Do not abstract only because code looks similar. Keep one-off UI local when it h
 
 - Routes own data loading, route/search state, product copy, permissions, and page-specific behavior.
 - Shared UI components own layout structure, visual variants, density, navigation patterns, surface treatment, and repeated interaction presentation.
+- Navigation abstractions must include the whole clickable/presentational contract, not only item contents: wrapper width, active fill, icon marker, label density, hover/selected surface, mobile bottom behavior, and safe-area integration belong in the shared boundary when levels share the same visual language.
 - Generated or external source components should stay at the base layer; project semantic wrappers should sit above them when local meaning matters.
 - A design-system wrapper must make the common case easier without preventing one-off page-specific composition.
 

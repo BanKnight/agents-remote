@@ -35,7 +35,7 @@ export function ShellNavigationButton({
   onClick,
 }: ShellNavigationButtonProps) {
   return (
-    <Button className="h-auto min-w-0 justify-start bg-transparent p-0" type="button" variant="ghost" onClick={onClick}>
+    <Button className="h-auto w-full min-w-0 justify-start bg-transparent p-0" type="button" variant="ghost" onClick={onClick}>
       <NavItemContent
         active={active}
         description={description}
@@ -63,7 +63,7 @@ export function ShellNavigationStaticItem({
   meta,
 }: ShellNavigationStaticItemProps) {
   return (
-    <div className="min-w-0">
+    <div className="w-full min-w-0">
       <NavItemContent
         active={active}
         description={description}
@@ -88,10 +88,10 @@ export function ShellMobileBottomNavigation({
 }: ShellMobileBottomNavigationProps) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-slate-950/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-2xl shadow-black/40 backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 min-h-[calc(4.25rem+env(safe-area-inset-bottom))] border-t border-slate-700/80 bg-[#0a0e16] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden"
       aria-label={ariaLabel}
     >
-      <div className={`mx-auto grid max-w-md gap-1 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
+      <div className={`mx-auto grid w-full max-w-md gap-1 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
         {children}
       </div>
     </nav>
@@ -238,13 +238,13 @@ export function ProjectShellBottomNavigation({
       <Link className="min-w-0" to="/">
         <ShellMobileNavItemContent
           label="Back"
-          marker={<IconMarker size="sm" tone="muted">←</IconMarker>}
+          marker={<IconMarker size="sm" tone="accent">←</IconMarker>}
         />
       </Link>
       {items.map((item) => (
         <Button
           key={item.id}
-          className="h-auto min-w-0 bg-transparent p-0"
+          className="h-auto w-full min-w-0 justify-center bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit"
           type="button"
           variant="ghost"
           onClick={() => onSelectItem(item.id)}

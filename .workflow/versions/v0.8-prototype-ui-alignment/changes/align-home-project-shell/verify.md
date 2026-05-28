@@ -43,6 +43,14 @@
 - 本轮结论：通过，无 CRITICAL/WARNING；desktop screenshots 显示 shell 已贴合为连续左右结构，右侧 workspace 已分成 header/content，`New / Adopt` 与 `+ Claude` / `+ Codex` 为 primary cyan-violet action。
 - 后续动作：保持已完成，可随 version 归档；反思结论需回写 shared implementation review gate，避免后续 change 再漏掉 layout/navigation/shadcn 使用边界。
 
+### Round 5
+
+- 时间：2026-05-29
+- 验证范围：响应 mobile/desktop 复查，修正 shared bottom navigation vertical 分支、一级/二级 navigation active 宽度契约、移动端响应式 shell/safe-area、Home mobile topbar 文案、Project mobile 直接顶部栏、Project 卡片短状态 pill、capture script 的 viewport-aware heading 断言，并回写 version shared / implement references。
+- 使用 harness：`bun run --cwd web typecheck`、`bun run --cwd web test`、`bun test web/src/routes/console-model.test.ts`、`bun run --cwd web build`、`bun .workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/capture-home-project-shell.ts`、manual mobile screenshot inspection
+- 本轮结论：通过，无 CRITICAL/WARNING；desktop screenshot 显示一级/二级导航 active 宽度已统一由 shared component 撑满导航列，mobile screenshots 显示工作区响应式贴边铺满并延伸到 fixed bottom navigation 顶部，bottom navigation 覆盖 safe area 且由 shared component 统一为原型的 icon+label 表达，Project mobile 顶部为项目名 + Agent 状态，不再显示桌面版 heading/path。
+- 后续动作：保持已完成，可随 version 归档。
+
 ## Harness 清单
 
 - 名称：console model route tests
@@ -225,7 +233,7 @@
 
 | 维度 | 状态 | 说明 |
 |---|---|---|
-| Completeness | 通过 | tasks 1.1-3.3 均完成；screenshots/log/test/build/typecheck 证据齐全；Round 4 已补验证 desktop docked shell 与 shadcn wrapper 边界。 |
+| Completeness | 通过 | tasks 1.1-3.3 均完成；screenshots/log/test/build/typecheck 证据齐全；Round 5 已补验证 mobile full-width shell、bottom navigation shared component 分支与 mobile direct topbar。 |
 | Correctness | 通过 | Home/Project shell 满足 specs；route/query/session/API 边界未改；无 fake provider history/output。 |
 | Coherence | 通过 | route 文件保留页面组合、数据和行为，跨页面 shell layout/navigation/primitives 已提升到 `web/src/components/shell/`，shadcn source components 位于 `web/src/components/ui/` 并由 shell wrapper 消费，符合 design/frontend 与 shared baseline。 |
 

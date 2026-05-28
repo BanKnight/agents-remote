@@ -41,8 +41,8 @@ type IconMarkerProps = {
 };
 
 const markerSizeClasses: Record<NonNullable<IconMarkerProps["size"]>, string> = {
-  sm: "h-7 w-7 rounded-lg text-[0.65rem]",
-  md: "h-9 w-9 rounded-xl text-xs",
+  sm: "h-7 w-7 rounded-[0.625rem] text-[0.65rem]",
+  md: "h-10 w-10 rounded-[0.9375rem] text-xs",
 };
 
 export function IconMarker({ children, size = "md", tone = "default" }: IconMarkerProps) {
@@ -75,20 +75,23 @@ export function NavItemContent({
 }: NavItemContentProps) {
   const layoutClass =
     orientation === "vertical"
-      ? "grid justify-items-center gap-1 px-1.5 py-1.5 text-center"
-      : "flex items-center gap-3 px-3 py-2.5 text-left";
+      ? "grid justify-items-center gap-1 text-center"
+      : "flex items-center gap-2.5 px-3 py-2.5 text-left";
+  const stateClass =
+    orientation === "vertical"
+      ? active
+        ? "text-cyan-300"
+        : "text-slate-400 hover:text-slate-100"
+      : active
+        ? "bg-cyan-300/10 text-slate-100"
+        : "text-slate-400 hover:bg-slate-800/45 hover:text-slate-100";
+  const shapeClass = orientation === "vertical" ? "" : "rounded-[0.875rem]";
 
   return (
-    <span
-      className={`min-w-0 rounded-xl border transition ${layoutClass} ${
-        active
-          ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-50"
-          : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-600 hover:text-slate-100"
-      }`}
-    >
+    <span className={`w-full min-w-0 transition ${layoutClass} ${stateClass} ${shapeClass}`}>
       {marker}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-semibold sm:text-sm">{label}</span>
+        <span className="block truncate text-[0.68rem] font-bold sm:text-sm">{label}</span>
         {description ? (
           <span className="mt-0.5 block truncate text-xs text-slate-500">{description}</span>
         ) : null}

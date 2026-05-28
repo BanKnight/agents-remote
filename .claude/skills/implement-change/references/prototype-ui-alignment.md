@@ -22,12 +22,24 @@ If these inputs are absent from `plan.md`, `tasks.md`, specs, design, docs, or v
 4. Implement only the states committed by the current task; record missing states or APIs in the task-defined follow-up artifact.
 5. Use browser verification for user-visible changes; type checks and unit tests are not enough for visual alignment.
 
+## During-implementation comparison loop
+
+Do not rely on final verify to discover visual drift. During implementation, repeat this loop for each meaningful structure or style batch:
+
+1. Re-open the relevant prototype HTML section and identify the specific shell, navigation, workspace, list, control, color, spacing, or responsive rule being matched.
+2. Compare against the latest available prototype screenshot and app screenshot for the same viewport.
+3. Make the smallest scoped code change that moves the app toward that target.
+4. Re-check the affected HTML/screenshot area before moving to the next batch.
+5. If a local browser screenshot can be regenerated cheaply, use it mid-implementation for high-risk layout changes such as desktop shell docking, mobile bottom navigation, scroll regions, or panel grouping.
+
+If repeated comparison shows the task target is underspecified, pause and return to `plan-change`; do not continue from memory or aesthetic preference.
+
 ## Structural parity
 
 - Compare layout regions first: shell, navigation, header, content, detail panes, toolbars, lists, sidebars, bottom navigation, and empty/error states.
 - Preserve prototype hierarchy where it affects visual result, interaction, responsiveness, or reuse; do not copy markup structure blindly when React component boundaries make a cleaner equivalent.
 - Check desktop and mobile separately when both forms exist in one prototype file.
-- Treat gaps, docking, panel boundaries, scroll containers, sticky areas, and primary action placement as behavioral layout commitments, not decorative details.
+- Treat gaps, docking, panel boundaries, scroll containers, sticky areas, safe-area behavior, bottom navigation attachment, active nav width, and primary action placement as behavioral layout commitments, not decorative details.
 
 ## Visual parity
 

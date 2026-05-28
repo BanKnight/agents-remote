@@ -164,7 +164,23 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       }
       variant="project"
     >
-      <WorkspaceHeader project={project} section={selectedSection} summary={summary} />
+      <WorkspaceHeader
+        project={project}
+        section={selectedSection}
+        summary={summary}
+        actions={
+          activeSection === "agents" ? (
+            <div className="hidden flex-wrap justify-end gap-2 sm:flex" aria-label="Create Agent instance">
+              <CreateButton disabled={createAgent.isPending} tone="accent" onClick={() => createAgent.mutate("claude")}>
+                + Claude
+              </CreateButton>
+              <CreateButton disabled={createAgent.isPending} onClick={() => createAgent.mutate("codex")}>
+                + Codex
+              </CreateButton>
+            </div>
+          ) : undefined
+        }
+      />
 
       {activeSection === "agents" ? (
         <AgentPanel
@@ -242,9 +258,8 @@ function projectNavigationItems(activeSection: ConsoleSection) {
     id: section.id,
     label: section.label,
     mobileLabel: shortSectionLabel(section.id),
-    description: section.status,
     marker: (
-      <IconMarker size="sm" tone={activeSection === section.id ? "accent" : "muted"}>
+      <IconMarker size="sm" tone="accent">
         {sectionMarker(section.id)}
       </IconMarker>
     ),
@@ -269,24 +284,32 @@ function shortSectionLabel(section: ConsoleSection) {
 }
 
 type WorkspaceHeaderProps = {
+  actions?: ReactNode;
   project: Project;
   section: ConsoleSectionDefinition;
   summary: ReturnType<typeof projectSummary>;
 };
 
-function WorkspaceHeader({ project, section, summary }: WorkspaceHeaderProps) {
+function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeaderProps) {
+  const fallbackActions = (
+    <div className="hidden grid-cols-3 gap-2 sm:grid">
+      <SummaryBadge label="Agents" value={summary.agentCount} />
+      <SummaryBadge label="Terminals" value={summary.terminalCount} />
+      <SummaryBadge label="Runtime" value={summary.runtimeStatus} />
+    </div>
+  );
+
   return (
     <ShellHeaderSurface
-      actions={
-        <div className="hidden grid-cols-3 gap-2 sm:grid">
-          <SummaryBadge label="Agents" value={summary.agentCount} />
-          <SummaryBadge label="Terminals" value={summary.terminalCount} />
-          <SummaryBadge label="Runtime" value={summary.runtimeStatus} />
-        </div>
+      actions={actions ?? fallbackActions}
+      eyebrow={
+        <>
+          <span className="hidden sm:inline">Project / {project.name} / {section.label}</span>
+          <span className="sm:hidden">{section.id === "agents" ? `Agent instances · ${summary.agentCount} active` : section.label}</span>
+        </>
       }
-      eyebrow={`Project / ${project.name} / ${section.label}`}
-      mobileMeta={<p className="truncate font-mono text-xs text-slate-500">{project.path}</p>}
-      title={section.id === "agents" ? "Agent instances" : section.label}
+      mobileMeta={undefined}
+      title={section.id === "agents" ? <><span className="sm:hidden">{project.name}</span><span className="hidden sm:inline">Agent instances</span></> : section.label}
       variant="project"
     />
   );
@@ -323,22 +346,18 @@ function AgentPanel({
   onClose,
 }: AgentPanelProps) {
   return (
-    <ShellPanel density="compact" docked>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h3 className="text-base font-semibold">Active instances</h3>
-          <p className="mt-1 truncate text-xs text-slate-400">
-            {sessions.length} current
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-          <CreateButton disabled={isCreating} onClick={() => onCreate("claude")}>
-            + Claude
-          </CreateButton>
-          <CreateButton disabled={isCreating} onClick={() => onCreate("codex")}>
-            + Codex
-          </CreateButton>
-        </div>
+    <ShellPanel className="px-3.5 pb-4 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
+      <div className="grid grid-cols-2 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
+        <CreateButton disabled={isCreating} tone="accent" onClick={() => onCreate("claude")}>
+          + Claude
+        </CreateButton>
+        <CreateButton disabled={isCreating} onClick={() => onCreate("codex")}>
+          + Codex
+        </CreateButton>
+      </div>
+      <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
+        <h3 className="text-base font-semibold">Active instances</h3>
+        <span className="text-xs text-slate-400">{sessions.length} current</span>
       </div>
       <ErrorText error={createError ?? closeError} />
       <AgentInstanceList
@@ -1260,12 +1279,13 @@ const formatBytes = (bytes: number) => {
 type CreateButtonProps = {
   children: ReactNode;
   disabled: boolean;
+  tone?: "accent" | "default";
   onClick: () => void;
 };
 
-function CreateButton({ children, disabled, onClick }: CreateButtonProps) {
+function CreateButton({ children, disabled, onClick, tone = "default" }: CreateButtonProps) {
   return (
-    <ActionButton disabled={disabled} tone="accent" onClick={onClick}>
+    <ActionButton disabled={disabled} tone={tone} onClick={onClick}>
       {children}
     </ActionButton>
   );

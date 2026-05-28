@@ -9,17 +9,16 @@ import {
   PrimaryShellBottomNavigation,
   PrimaryShellNavigation,
 } from "../components/shell/shell-navigation";
-import { ActionButton, IconMarker, ShellInput, StatusPill } from "../components/shell/shell-primitives";
+import { ActionButton, IconMarker, ShellInput } from "../components/shell/shell-primitives";
 
 const primaryNavItems = [
-  { id: "projects", label: "Projects", marker: "P", description: "Project console" },
-  { id: "sessions", label: "Sessions", marker: "S", description: "Coming soon" },
-  { id: "config", label: "Config", marker: "C", description: "Coming soon" },
-  { id: "help", label: "Help", marker: "H", description: "Coming soon" },
+  { id: "projects", label: "Projects", marker: "P", mobileLabel: "Projects" },
+  { id: "sessions", label: "Sessions", marker: "S", mobileLabel: "Sessions" },
+  { id: "config", label: "Config", marker: "C", mobileLabel: "Config" },
+  { id: "help", label: "Help", marker: "H", mobileLabel: "Help" },
 ].map((item) => ({
   ...item,
-  marker: <IconMarker size="sm" tone={item.id === "projects" ? "accent" : "muted"}>{item.marker}</IconMarker>,
-  meta: item.id === "projects" ? undefined : <StatusPill tone="muted" value="Soon" />,
+  marker: <IconMarker size="sm" tone="accent">{item.marker}</IconMarker>,
 }));
 
 export function HomeRoute() {
@@ -74,7 +73,7 @@ export function HomeRoute() {
               {setupVisible ? "Setup open" : "New / Adopt"}
             </ActionButton>
             <button
-              className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-300 text-xl font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
+              className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-xl font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
               type="button"
               aria-label="Create or adopt Project"
               onClick={() => setSetupOpen(true)}
@@ -83,30 +82,33 @@ export function HomeRoute() {
             </button>
           </>
         }
-        eyebrow="Open a server Project to continue with Agent, Files, Git, or Terminal."
+        eyebrow={
+          <>
+            <span className="hidden sm:inline">Open a server Project to continue with Agent, Files, Git, or Terminal.</span>
+            <span className="sm:hidden">Open a Project to continue.</span>
+          </>
+        }
         title="Projects"
         variant="home"
       />
 
-      <section className="grid min-w-0 flex-1 gap-4">
-        <ProjectListCard
-          error={projects.error}
-          isLoading={projects.isLoading}
-          projects={projectItems}
-          onCreateProject={() => setSetupOpen(true)}
-        />
+      <ProjectListCard
+        error={projects.error}
+        isLoading={projects.isLoading}
+        projects={projectItems}
+        onCreateProject={() => setSetupOpen(true)}
+      />
 
-        {setupVisible ? (
-          <ProjectSetupPanel
-            createError={create.error instanceof Error ? create.error : null}
-            inputId={inputId}
-            isPending={create.isPending}
-            projectPath={projectPath}
-            onProjectPathChange={setProjectPath}
-            onSubmit={handleSubmit}
-          />
-        ) : null}
-      </section>
+      {setupVisible ? (
+        <ProjectSetupPanel
+          createError={create.error instanceof Error ? create.error : null}
+          inputId={inputId}
+          isPending={create.isPending}
+          projectPath={projectPath}
+          onProjectPathChange={setProjectPath}
+          onSubmit={handleSubmit}
+        />
+      ) : null}
     </ShellLayout>
   );
 }
@@ -141,27 +143,17 @@ type ProjectListCardProps = {
 
 function ProjectListCard({ error, isLoading, onCreateProject, projects }: ProjectListCardProps) {
   return (
-    <ShellPanel className="rounded-[1.75rem] sm:rounded-[2rem] lg:rounded-none" density="compact" docked>
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold">Project list</h2>
-          <p className="mt-1 truncate text-xs text-slate-400">
-            Open a Project to enter its workspaces.
-          </p>
-        </div>
-        <StatusPill tone="muted" value={`${projects.length} available`} />
-      </div>
-
+    <ShellPanel className="px-4 pb-5 pt-0 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
       {isLoading ? <StatusPanel label="Loading Projects..." /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
-        <div className="mt-4 rounded-2xl border border-dashed border-slate-700 bg-slate-950/70 p-4">
+        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/50 p-4">
           <p className="text-lg font-semibold text-slate-100">No Projects yet</p>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             Create or adopt a Project to enter the console shell.
           </p>
           <button
-            className="mt-4 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950"
+            className="mt-4 rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 px-4 py-2 text-sm font-semibold text-slate-950"
             type="button"
             onClick={onCreateProject}
           >
@@ -170,7 +162,7 @@ function ProjectListCard({ error, isLoading, onCreateProject, projects }: Projec
         </div>
       ) : null}
 
-      <div className="mt-4 grid min-w-0 gap-3">
+      <div className="grid min-w-0 gap-3">
         {projects.map((project) => (
           <ProjectEntryRow key={project.name} project={project} />
         ))}
@@ -186,7 +178,7 @@ type ProjectEntryRowProps = {
 function ProjectEntryRow({ project }: ProjectEntryRowProps) {
   return (
     <Link
-      className="group block min-w-0 rounded-[1.25rem] border border-slate-800 bg-slate-950/75 px-3 py-3 transition hover:border-cyan-300/60 hover:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-300/30 sm:px-4"
+      className="group block min-w-0 rounded-[1.25rem] border border-slate-700/40 bg-[#141b28]/70 px-3.5 py-3.5 transition hover:border-cyan-300/60 hover:bg-[#141b28]/90 focus:outline-none focus:ring-2 focus:ring-cyan-300/30"
       params={{ projectName: project.name }}
       search={{ workspace: defaultConsoleSection }}
       to="/projects/$projectName"
@@ -194,19 +186,19 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
         <IconMarker tone="success">P</IconMarker>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-semibold text-slate-100 group-hover:text-cyan-100">
+          <span className="block truncate text-[0.95rem] font-semibold text-slate-100 group-hover:text-cyan-100">
             {project.name}
           </span>
-          <span className="mt-1 block truncate font-mono text-xs text-slate-500">
+          <span className="mt-1 block truncate font-mono text-xs text-slate-400">
             {project.path}
           </span>
-          <span className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+          <span className="mt-2 flex min-w-0 flex-wrap gap-2">
             <ProjectMetaPill>Agent {project.agentSessionCount}</ProjectMetaPill>
             <ProjectMetaPill>Terminal {project.terminalSessionCount}</ProjectMetaPill>
-            <ProjectMetaPill>{project.gitBranch ?? "Git branch pending"}</ProjectMetaPill>
+            <ProjectMetaPill>{project.gitBranch ?? "pending"}</ProjectMetaPill>
           </span>
         </span>
-        <span className="shrink-0 text-xs font-semibold text-cyan-200">
+        <span className="shrink-0 text-xs font-extrabold text-cyan-300">
           Open
         </span>
       </span>
@@ -220,7 +212,7 @@ type ProjectMetaPillProps = {
 
 function ProjectMetaPill({ children }: ProjectMetaPillProps) {
   return (
-    <span className="max-w-full truncate rounded-full border border-slate-800 bg-slate-950/80 px-2.5 py-1 text-[0.7rem] font-semibold text-slate-300">
+    <span className="max-w-full truncate rounded-full border border-slate-700/45 px-2 py-1 text-[0.68rem] font-medium text-slate-300">
       {children}
     </span>
   );
