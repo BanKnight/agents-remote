@@ -20,13 +20,13 @@
 ## Technology Baseline
 
 - 当前 web stack：React `19.2.6`、Vite `8.0.13`、Tailwind CSS `4.3.0`、`@tailwindcss/vite` `4.3.0`、TanStack Router/Query、Jotai、Bun workspace。
-- 当前未初始化 shadcn/ui：未发现 `components.json` 或 shadcn 生成组件约定。
-- 当前未引入 `lucide-react`：后续页面实现如需图标，必须先做 npm metadata 与供应链检查。
+- 当前已初始化 shadcn/ui source setup：`web/components.json` 使用 Vite + Radix + Nova + lucide preset，生成组件放在 `web/src/components/ui/`，当前最小组件为 `Button`、`Badge`、`Card`、`Input`。
+- 当前已引入并精确固定 `shadcn@4.7.0` 与 `lucide-react@1.16.0`；后续页面如需新增 shadcn 组件或 lucide 图标，仍必须重新检查 npm metadata 与 7 天安全规则。
 - React 前端或 prototype UI alignment 的 `implement-change` 开始编码或 review 前，必须加载并参考已安装的 `vercel-react-best-practices` skill。
 - shadcn/ui 只通过标准 CLI 初始化或添加组件；只添加当前页面 change 实际需要的最小组件集。
-- shadcn/ui setup 若要求 `@` alias、`components.json`、CSS variables 或 `web/src/styles/index.css` 集成，必须在对应页面 change 的 plan/implementation 中明确修改范围。
-- 2026-05-28 的技术设计记录显示 `shadcn@4.8.2` 与 `lucide-react@1.17.0` 均在 7 天安全窗口内；任何后续安装、升级或版本选择都必须重新检查 npm metadata，默认不选择发布未满 7 天的版本，除非用户明确确认。
-- shadcn 相关依赖可能包括 Radix packages、`class-variance-authority`、`clsx`、`tailwind-merge`、`tw-animate-css`；最终依赖集由实际添加的最小组件决定。
+- shadcn/ui setup 已要求 `@` alias、`components.json`、CSS variables、`tw-animate-css`、`shadcn/tailwind.css` 和 `web/src/styles/index.css` 集成；默认 shadcn light tokens 必须改为项目 dark-only shell 基线，不能让 `body` 回到浅色背景。
+- 2026-05-28 重新检查显示 `shadcn@4.8.2` 与 `lucide-react@1.17.0` 均在 7 天安全窗口内；后续安装、升级或版本选择必须重新检查 npm metadata。若 latest 发布未满 7 天，不应直接阻塞依赖采用，应优先选择已发布超过 7 天且兼容当前 React/Vite/Tailwind 栈的上一稳定版本；若没有安全窗口外的兼容版本，才记录阻塞或请求用户确认。本次采用回退版本：`shadcn@4.7.0`（2026-05-05 发布）与 `lucide-react@1.16.0`（2026-05-14 发布）。
+- shadcn 相关依赖包括 Radix packages、`class-variance-authority`、`clsx`、`tailwind-merge`、`tw-animate-css` 和 Geist font package；最终依赖集由实际添加的最小组件决定。
 
 ## Tokens
 
@@ -93,14 +93,14 @@
 - Quick key：即时发送 control sequence 的小型操作按钮。
 - Contextual tool button：Agent detail 的 Files/Git/+Terminal/Meta 等来源上下文工具。
 
-这些 primitive 只有在跨页面真实复用并提升原型一致性时才抽取；单页组合和文案保留在页面内。
+这些 primitive 只有在跨页面真实复用并提升原型一致性时才抽取；已跨 Home、Project workspace、Session detail 复用的 shell primitives、shell layout 和 shell navigation 应放在 `web/src/components/shell/` 作为轻量组件库边界，单页组合和文案保留在页面内。`ActionButton`、`StatusPill`、`ShellPanel`、`ShellHeaderSurface`、`ShellSidebar`、`ShellInput`、`ListRow` 等 shell component 可以包装 `web/src/components/ui/` 的 shadcn source component，但 route 文件不直接散用 shadcn 组件。
 
 ## shadcn/ui Boundary
 
 - 使用 shadcn/ui 的目的：获取可访问交互语义、Radix 行为和基础组件源码，而不是继承默认 dashboard 视觉。
 - shadcn/ui components 应作为 CLI 生成的本地 source components 管理，不手写复制上游源码，不提前添加未使用组件。
-- 视觉层由 project tokens、variants、className 和 wrapper primitives 接管。
-- 如果 shadcn 默认结构与原型交互冲突，优先保留交互语义并局部封装；只有默认抽象阻碍原型语义时才不用该组件。
+- 视觉层由 project tokens、variants、className 和 wrapper primitives 接管；当前 shell layer 通过 wrapper 消费 shadcn source：`ActionButton`/navigation buttons/`ListRow` 包装 `Button`，`StatusPill` 包装 `Badge`，shell surfaces 包装 `Card`，`ShellInput` 包装 `Input`，并保留原型所需的深色 console 视觉。
+- 如果 shadcn 默认结构、tokens 或 light theme 与原型交互/视觉冲突，优先保留交互语义并局部封装或改写 token；只有默认抽象阻碍原型语义时才不用该组件。
 - 每个页面 change 在 plan/implementation 中选择最小组件集，并记录版本安全检查结果。
 
 ## Icon Boundary
@@ -130,6 +130,12 @@
 - route/search 状态逻辑。
 - provider/runtime/session 语义。
 - 为了贴近某个页面原型而存在的局部顺序、局部 copy 或局部 empty/future 文案。
+
+## Implementation Review Gate
+
+- 每个 React/prototype UI change 开始改 route JSX 前，必须先对照 prototype HTML 识别可复用的 layout、navigation、surface、control、status、row/input 边界；明显跨页面或跨层级复用的内容应进入 `web/src/components/shell/`，不要停留在 route-local helper。
+- 如已明确采用 shadcn/ui，implementation 必须说明本轮实际消费哪些 shadcn source components、由哪些 shell wrappers 消费，以及哪些 shadcn components 暂不添加；不能只记录依赖或初始化而不接入组件层。
+- Browser verify 必须人工检查 desktop shell structure：左/右是否贴合、右侧 workspace 是否按 prototype 分成 header/content、主操作按钮是否符合 primary action 层级；结构检查日志不能替代这一步。
 
 ## Verification Hooks
 

@@ -29,7 +29,7 @@ import {
   sessionStatusLabel,
   type SessionQuickKey,
 } from "./console-model";
-import { ActionButton, IconMarker, StatusPill } from "./shell-primitives";
+import { ActionButton, IconMarker, StatusPill } from "../components/shell/shell-primitives";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({

@@ -1,0 +1,12 @@
+app url: http://127.0.0.1:46323
+viewports: desktop 1440x1000; mobile 390x844
+home prototype desktop: captured home.html at 1440x1000
+home prototype mobile: captured home.html at 390x844
+project-detail prototype desktop: captured project-detail.html at 1440x1000
+project-detail prototype mobile: captured project-detail.html at 390x844
+home app desktop: Projects heading, Project row, and primary nav visible
+home app mobile: Projects heading, Project row, and primary nav visible
+project app desktop: Agent heading, Claude/Codex create buttons, staged history, and secondary nav visible
+project app mobile: Agent heading, Claude/Codex create buttons, staged history, and secondary nav visible
+blocking differences: none found in automated structural checks
+acceptable differences: real app uses live Project data, no fake provider history/output, and React DOM differs from static prototype HTML

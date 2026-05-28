@@ -34,7 +34,12 @@ import {
   type ConsoleSection,
   type ConsoleSectionDefinition,
 } from "./console-model";
-import { ActionButton, IconMarker, ListRow, NavItemContent, StatusPill } from "./shell-primitives";
+import { ShellHeaderSurface, ShellLayout, ShellPanel, ShellSidebar } from "../components/shell/shell-layout";
+import {
+  ProjectShellBottomNavigation,
+  ProjectShellNavigation,
+} from "../components/shell/shell-navigation";
+import { ActionButton, IconMarker, ListRow, StatusPill } from "../components/shell/shell-primitives";
 
 export function ProjectConsoleRoute() {
   const { projectName } = useParams({ from: "/projects/$projectName" });
@@ -141,59 +146,61 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   }, [activeSection]);
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#123140_0,#020617_34rem)] px-3 pb-24 pt-3 text-slate-100 sm:px-6 sm:py-4 lg:px-8">
-      <div className="mx-auto grid min-h-[calc(100dvh-1.5rem)] w-full max-w-7xl min-w-0 gap-4 sm:min-h-[calc(100dvh-2rem)] lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <ProjectSecondaryNav activeSection={activeSection} onSelectSection={selectWorkspace} />
-
-        <div className="flex min-w-0 flex-col gap-4">
-          <WorkspaceHeader project={project} section={selectedSection} summary={summary} />
-
-          {activeSection === "agents" ? (
-            <AgentPanel
-              projectName={project.name}
-              sessions={agentSessions.data?.sessions ?? []}
-              isLoading={agentSessions.isLoading}
-              isCreating={createAgent.isPending}
-              createError={createAgent.error}
-              closeError={closeAgent.error}
-              onCreate={(provider) => createAgent.mutate(provider)}
-              onClose={(sessionId) => closeAgent.mutate(sessionId)}
-            />
-          ) : null}
-
-          {activeSection === "terminal" ? (
-            <TerminalPanel
-              projectName={project.name}
-              sessions={terminalSessions.data?.sessions ?? []}
-              isLoading={terminalSessions.isLoading}
-              isCreating={createTerminal.isPending}
-              isClosing={closeTerminal.isPending}
-              createError={createTerminal.error}
-              closeError={closeTerminal.error}
-              onCreate={() => createTerminal.mutate()}
-              onClose={(sessionId) => closeTerminal.mutate(sessionId)}
-            />
-          ) : null}
-
-          {activeSection === "files" || activeSection === "git" ? (
-            <SectionDetail
-              projectName={project.name}
-              section={selectedSection}
-              onDeepDetailChange={setResourceDeepDetailOpen}
-            />
-          ) : null}
-
-          <ProjectSignals gitBranch={summary.gitBranch} />
-        </div>
-      </div>
-
-      {!resourceDeepDetailOpen ? (
-        <ProjectSecondaryBottomNav
+    <ShellLayout
+      bottomNavigation={
+        !resourceDeepDetailOpen ? (
+          <ProjectSecondaryBottomNav
+            activeSection={activeSection}
+            onSelectSection={selectWorkspace}
+          />
+        ) : null
+      }
+      sidebar={
+        <ProjectSecondaryNav
           activeSection={activeSection}
+          project={project}
           onSelectSection={selectWorkspace}
         />
+      }
+      variant="project"
+    >
+      <WorkspaceHeader project={project} section={selectedSection} summary={summary} />
+
+      {activeSection === "agents" ? (
+        <AgentPanel
+          projectName={project.name}
+          sessions={agentSessions.data?.sessions ?? []}
+          isLoading={agentSessions.isLoading}
+          isCreating={createAgent.isPending}
+          createError={createAgent.error}
+          closeError={closeAgent.error}
+          onCreate={(provider) => createAgent.mutate(provider)}
+          onClose={(sessionId) => closeAgent.mutate(sessionId)}
+        />
       ) : null}
-    </main>
+
+      {activeSection === "terminal" ? (
+        <TerminalPanel
+          projectName={project.name}
+          sessions={terminalSessions.data?.sessions ?? []}
+          isLoading={terminalSessions.isLoading}
+          isCreating={createTerminal.isPending}
+          isClosing={closeTerminal.isPending}
+          createError={createTerminal.error}
+          closeError={closeTerminal.error}
+          onCreate={() => createTerminal.mutate()}
+          onClose={(sessionId) => closeTerminal.mutate(sessionId)}
+        />
+      ) : null}
+
+      {activeSection === "files" || activeSection === "git" ? (
+        <SectionDetail
+          projectName={project.name}
+          section={selectedSection}
+          onDeepDetailChange={setResourceDeepDetailOpen}
+        />
+      ) : null}
+    </ShellLayout>
   );
 }
 
@@ -202,83 +209,58 @@ type ProjectSecondaryNavProps = {
   onSelectSection: (section: ConsoleSection) => void;
 };
 
-function ProjectSecondaryNav({ activeSection, onSelectSection }: ProjectSecondaryNavProps) {
+type ProjectSecondaryDesktopNavProps = ProjectSecondaryNavProps & {
+  project: Project;
+};
+
+function ProjectSecondaryNav({ activeSection, onSelectSection, project }: ProjectSecondaryDesktopNavProps) {
   return (
-    <aside className="hidden min-h-0 min-w-0 rounded-[2rem] border border-white/10 bg-slate-950/80 p-3 shadow-2xl shadow-black/30 lg:flex lg:flex-col">
-      <Link
-        className="mb-4 rounded-2xl border border-slate-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300 hover:border-cyan-300/50"
-        to="/"
-      >
-        Back to Projects
-      </Link>
-      <nav className="grid gap-2" aria-label="Project workspace navigation">
-        {consoleSections.map((section) => (
-          <button
-            key={section.id}
-            className="min-w-0"
-            type="button"
-            onClick={() => onSelectSection(section.id)}
-          >
-            <NavItemContent
-              active={activeSection === section.id}
-              description={section.status}
-              label={section.label}
-              marker={
-                <IconMarker tone={activeSection === section.id ? "accent" : "muted"}>
-                  {sectionMarker(section.id)}
-                </IconMarker>
-              }
-            />
-          </button>
-        ))}
-      </nav>
-    </aside>
+    <ShellSidebar display="flex">
+      <ProjectShellNavigation
+        activeItemId={activeSection}
+        items={projectNavigationItems(activeSection)}
+        projectPath={project.path}
+        projectTitle={project.name}
+        onSelectItem={onSelectSection}
+      />
+    </ShellSidebar>
   );
 }
 
 function ProjectSecondaryBottomNav({ activeSection, onSelectSection }: ProjectSecondaryNavProps) {
   return (
-    <nav
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-slate-950/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-2xl shadow-black/40 backdrop-blur lg:hidden"
-      aria-label="Project mobile workspace navigation"
-    >
-      <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
-        <Link className="min-w-0" to="/">
-          <NavItemContent label="Back" marker={<IconMarker tone="muted">BK</IconMarker>} />
-        </Link>
-        {consoleSections.map((section) => (
-          <button
-            key={section.id}
-            className="min-w-0"
-            type="button"
-            onClick={() => onSelectSection(section.id)}
-          >
-            <NavItemContent
-              active={activeSection === section.id}
-              label={shortSectionLabel(section.id)}
-              marker={
-                <IconMarker tone={activeSection === section.id ? "accent" : "muted"}>
-                  {sectionMarker(section.id)}
-                </IconMarker>
-              }
-            />
-          </button>
-        ))}
-      </div>
-    </nav>
+    <ProjectShellBottomNavigation
+      activeItemId={activeSection}
+      items={projectNavigationItems(activeSection)}
+      onSelectItem={onSelectSection}
+    />
   );
+}
+
+function projectNavigationItems(activeSection: ConsoleSection) {
+  return consoleSections.map((section) => ({
+    id: section.id,
+    label: section.label,
+    mobileLabel: shortSectionLabel(section.id),
+    description: section.status,
+    marker: (
+      <IconMarker size="sm" tone={activeSection === section.id ? "accent" : "muted"}>
+        {sectionMarker(section.id)}
+      </IconMarker>
+    ),
+  }));
 }
 
 function sectionMarker(section: ConsoleSection) {
   switch (section) {
     case "agents":
-      return "AG";
+      return "A";
     case "files":
-      return "FL";
+      return "F";
     case "git":
-      return "GT";
+      return "G";
     case "terminal":
-      return "TM";
+      return "T";
   }
 }
 
@@ -294,33 +276,19 @@ type WorkspaceHeaderProps = {
 
 function WorkspaceHeader({ project, section, summary }: WorkspaceHeaderProps) {
   return (
-    <header className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-950/80 p-4 shadow-2xl shadow-black/30 backdrop-blur sm:p-5 lg:p-6">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <IconMarker tone="accent">{sectionMarker(section.id)}</IconMarker>
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Current Project</p>
-            <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-              {project.name}
-            </h1>
-            <p className="mt-1 truncate text-sm font-semibold text-cyan-100">{section.label}</p>
-            <p className="mt-2 break-all font-mono text-xs leading-5 text-slate-500">
-              {project.path}
-            </p>
-          </div>
-        </div>
-        <div className="hidden shrink-0 grid-cols-3 gap-2 sm:grid">
+    <ShellHeaderSurface
+      actions={
+        <div className="hidden grid-cols-3 gap-2 sm:grid">
           <SummaryBadge label="Agents" value={summary.agentCount} />
           <SummaryBadge label="Terminals" value={summary.terminalCount} />
           <SummaryBadge label="Runtime" value={summary.runtimeStatus} />
         </div>
-      </div>
-      <div className="mt-4 grid grid-cols-3 gap-2 sm:hidden">
-        <SummaryBadge label="Agents" value={summary.agentCount} />
-        <SummaryBadge label="Terms" value={summary.terminalCount} />
-        <SummaryBadge label="Runtime" value={summary.runtimeStatus} />
-      </div>
-    </header>
+      }
+      eyebrow={`Project / ${project.name} / ${section.label}`}
+      mobileMeta={<p className="truncate font-mono text-xs text-slate-500">{project.path}</p>}
+      title={section.id === "agents" ? "Agent instances" : section.label}
+      variant="project"
+    />
   );
 }
 
@@ -355,15 +323,12 @@ function AgentPanel({
   onClose,
 }: AgentPanelProps) {
   return (
-    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 sm:p-5 lg:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <ShellPanel density="compact" docked>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-            Agent workspace
-          </p>
-          <h3 className="mt-2 text-xl font-semibold">Agent instances</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-400">
-            Current Claude and Codex sessions scoped to this Project.
+          <h3 className="text-base font-semibold">Active instances</h3>
+          <p className="mt-1 truncate text-xs text-slate-400">
+            {sessions.length} current
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
@@ -383,7 +348,7 @@ function AgentPanel({
         onClose={onClose}
       />
       <AgentHistoryPanel />
-    </section>
+    </ShellPanel>
   );
 }
 
@@ -401,7 +366,7 @@ function AgentInstanceList({ projectName, sessions, isLoading, onClose }: AgentI
 
   if (sessions.length === 0) {
     return (
-      <div className="mt-5 rounded-3xl border border-dashed border-slate-700 bg-slate-950/70 p-5 text-center">
+      <div className="mt-4 rounded-2xl border border-dashed border-slate-700 bg-slate-950/70 p-4 text-center">
         <p className="text-lg font-semibold text-slate-100">No Agent instances yet</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
           Create a Claude or Codex session to open a project-scoped Agent stream.
@@ -412,7 +377,7 @@ function AgentInstanceList({ projectName, sessions, isLoading, onClose }: AgentI
 
   return (
     <div
-      className="mt-5 grid max-h-[26rem] gap-2 overflow-y-auto pr-1"
+      className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-1 lg:grid-cols-2"
       aria-label="Agent instances"
     >
       {sessions.map((session) => (
@@ -435,13 +400,13 @@ type AgentInstanceRowProps = {
 
 function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
   return (
-    <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 transition hover:border-slate-600 sm:p-4">
+    <article className="min-w-0 rounded-[1.25rem] border border-slate-800 bg-slate-950/70 p-3 transition hover:border-slate-600">
       <div className="flex min-w-0 items-start gap-3">
         <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
           {providerMarker(session.provider)}
         </IconMarker>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
             <div className="min-w-0">
               <h4 className="truncate font-semibold text-slate-100">{session.displayName}</h4>
               <p className="mt-1 break-all font-mono text-xs text-slate-500">
@@ -455,15 +420,15 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              className="rounded-full bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
+              className="rounded-xl bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-slate-950"
               params={{ projectName, sessionId: session.id }}
               search={{ workspace: "agents" }}
               to="/projects/$projectName/agent-sessions/$sessionId"
             >
-              Open stream
+              Open
             </Link>
             <button
-              className="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
+              className="rounded-xl border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100"
               type="button"
               onClick={() => {
                 if (window.confirm("Close this session? The running process will be terminated.")) {
@@ -482,27 +447,28 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
 
 function AgentHistoryPanel() {
   return (
-    <section
-      className="mt-4 min-w-0 rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
+    <ShellPanel
+      className="mt-4 rounded-[1.25rem] border-slate-800 bg-slate-950/60"
+      density="compact"
       aria-label="Session history"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-slate-100">Session history</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500">
+          <h3 className="text-sm font-semibold text-slate-100">Session history</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
             Future restore will live here when provider history is available.
           </p>
         </div>
         <StatusPill tone="muted" value="Staged" />
       </div>
-      <div className="mt-3 flex min-w-0 items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-        <IconMarker tone="muted">HS</IconMarker>
+      <div className="mt-3 flex min-w-0 items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+        <IconMarker size="sm" tone="muted">H</IconMarker>
         <p className="min-w-0 text-sm leading-6 text-slate-400">
           Current Agent instances stay above. Provider-native history and resume are not mixed into
           the running session list until a real adapter exposes them.
         </p>
       </div>
-    </section>
+    </ShellPanel>
   );
 }
 
@@ -554,7 +520,7 @@ function TerminalPanel({
   onClose,
 }: TerminalPanelProps) {
   return (
-    <section className="min-w-0 rounded-[2rem] border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 sm:p-5 lg:p-6">
+    <ShellPanel className="lg:rounded-none" docked>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -579,7 +545,7 @@ function TerminalPanel({
         isLoading={isLoading}
         onClose={onClose}
       />
-    </section>
+    </ShellPanel>
   );
 }
 
@@ -688,7 +654,7 @@ function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDeta
   const isGit = section.id === "git";
 
   return (
-    <section className="min-w-0 rounded-[1.5rem] border border-white/10 bg-slate-900/80 p-3 shadow-xl shadow-black/20 sm:rounded-[2rem] sm:p-4">
+    <ShellPanel className="sm:rounded-[2rem] lg:rounded-none" density="compact" docked>
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -704,7 +670,7 @@ function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDeta
       {isFiles ? (
         <FilesPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
       ) : null}
-    </section>
+    </ShellPanel>
   );
 }
 
@@ -1315,26 +1281,4 @@ function ErrorText({ error }: ErrorTextProps) {
   }
 
   return <p className="mt-3 text-sm text-rose-200">{error.message}</p>;
-}
-
-type ProjectSignalsProps = {
-  gitBranch: string;
-};
-
-function ProjectSignals({ gitBranch }: ProjectSignalsProps) {
-  return (
-    <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20">
-      <h3 className="text-lg font-semibold">Project signals</h3>
-      <dl className="mt-4 grid gap-3 text-sm">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-          <dt className="text-slate-500">Git branch</dt>
-          <dd className="mt-1 text-slate-200">{gitBranch}</dd>
-        </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
-          <dt className="text-slate-500">Scope</dt>
-          <dd className="mt-1 text-slate-200">Project-scoped Agent and Terminal sessions</dd>
-        </div>
-      </dl>
-    </section>
-  );
 }

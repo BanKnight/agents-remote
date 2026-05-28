@@ -25,7 +25,7 @@ test("Agent leads the Project secondary workspace navigation", () => {
     "git",
     "terminal",
   ]);
-  expect(sectionForId("agents").label).toBe("Agent Sessions");
+  expect(sectionForId("agents").label).toBe("Agent");
 });
 
 test("Git and Files are read-only project inspection sections", () => {

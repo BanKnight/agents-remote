@@ -27,9 +27,9 @@ export type SessionSendStatus = "connecting" | TransportStatus;
 export const consoleSections: ConsoleSectionDefinition[] = [
   {
     id: "agents",
-    label: "Agent Sessions",
-    description: "Claude and Codex work sessions scoped to this Project.",
-    status: "Default focus",
+    label: "Agent",
+    description: "Claude and Codex instances scoped to this Project.",
+    status: "Default",
   },
   {
     id: "files",
@@ -47,7 +47,7 @@ export const consoleSections: ConsoleSectionDefinition[] = [
     id: "terminal",
     label: "Terminal",
     description: "Project-scoped shell sessions backed by the session runtime.",
-    status: "Runtime ready",
+    status: "Runtime",
   },
 ];
 

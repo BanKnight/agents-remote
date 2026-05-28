@@ -39,7 +39,8 @@
 - 移动端 Files preview 与 Git single-file diff 是同 route 内的深层 inspection detail：顶部返回当前 list，上层 Project 二级底部导航隐藏；Files/Git 的 selected file/diff state 仍是组件本地状态，不进入 route/search。
 - 桌面端 Files/Git 可以保留同页 compact list + preview/diff 结构，以提高扫读效率；移动端 direct secondary 默认展示列表和当前 workspace context，进入内容 detail 后 content-first。
 - Terminal workspace 不承载 shell input、quick keys 或 runtime output；这些属于 Terminal instance detail。Terminal direct secondary 在移动端仍显示 Project 二级底部导航。
-- 已验证的共享 UI primitive 边界是轻量的 nav item、icon marker、status pill、action button 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成通用组件库。
+- 已验证的共享 UI component 边界是 `web/src/components/shell/` 中的轻量 shell 组件库入口：`shell-layout.tsx` 承载连续桌面 shell、sidebar、workspace header 和 panel surface，`shell-navigation.tsx` 承载一级/二级 desktop 与 mobile bottom navigation，`shell-primitives.tsx` 承载 nav item、icon marker、status pill、action button、input 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成泛化设计系统。
+- shadcn/ui 在本项目中是本地 source component 基础层，不是 route 直接消费层；当前已验证 wrapper 关系包括 `Button` -> action/navigation/list row，`Badge` -> status pill，`Card` -> shell surface，`Input` -> shell input。
 
 ## 关键规则
 
@@ -47,7 +48,7 @@
 - 后续 page-level change 开始前，先判断目标页面属于一级应用 shell、Project 直接二级 workspace，还是深层/contextual detail。
 - Navigation shell 只负责层级切换、active 状态和返回入口，不加载 Project resource 数据。
 - Workspace header 只展示当前 scope 上下文和低频操作，不渲染大块说明或运行时输入。
-- List row、status pill、icon marker、terminal panel、input drawer 等 shared UI primitive 只在真实跨页面复用时抽取，不提前建立泛化组件库。
+- List row、status pill、icon marker、terminal panel、input drawer 等 shared UI primitive 只在真实跨页面复用时抽取；已跨页面复用的 shell primitives、shell layout 和 shell navigation 应进入 `web/src/components/shell/`，但不要提前扩展成泛化设计系统。
 - 服务端状态继续使用 TanStack Query；route 层级状态优先进入 TanStack Router route/search；非 URL-critical 的 shell UI 状态才使用 Jotai；单页局部状态保留在组件内。
 - Project 直接二级 workspace active 状态使用 URL-visible route/search 承载；Jotai 不应作为该状态的唯一来源。
 - Home/一级 shell、Project 二级 shell 与 Session detail chrome 的底部导航互斥：同一移动端页面状态只显示当前层级的底部导航或 detail 输入区。
@@ -84,6 +85,9 @@
 - change：align-home-project-entry
 - verify 证据：`.workflow/changes/align-home-project-entry/verify.md`
 - 运行态验证证据：`.workflow/changes/align-home-project-entry/artifacts/browser-home-entry/home-entry-check.log` 与同目录 desktop/mobile Home entry 截图
+- change：align-home-project-shell
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/browser-check.log` 与同目录 Home/Project Agent workspace prototype/app desktop/mobile 截图
 - change：align-instance-detail-workspaces
 - verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
 - 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图
