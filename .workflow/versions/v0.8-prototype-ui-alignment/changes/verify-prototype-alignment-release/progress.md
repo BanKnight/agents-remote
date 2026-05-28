@@ -11,7 +11,7 @@
 ## 当前进度
 
 - 当前阶段：待规格
-- 阻塞项：依赖本 version 的共享基线与三个页面还原 changes 完成。
+- 阻塞项：无
 
 ## 推进规则
 
@@ -45,3 +45,4 @@
 ## 进展记录
 
 - 2026-05-28：由 `plan-versions` 创建为本 version 收口验证 change，等待所有前置 changes 完成后推进。
+- 2026-05-29：前置 `establish-prototype-alignment-baseline`、`align-home-project-shell`、`align-runtime-detail-workspaces`、`align-resource-inspection-workspaces` 均已完成，局部阻塞解除，可进入 `specify-change`。
