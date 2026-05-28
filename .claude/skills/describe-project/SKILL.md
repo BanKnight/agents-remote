@@ -13,6 +13,60 @@ docs/project.md
 
 `docs/project.md` 是项目级长期上下文，作用类似项目的第二份 `CLAUDE.md`：它不指挥单次任务，而是让人和 Agent 快速理解这个项目是什么、怎么工作、哪些上下文必须优先知道。
 
+## 输入契约
+
+### 标准输入
+
+每次执行都需要理解这些输入：
+
+```text
+用户对项目定位、用户场景、领域概念、工程边界或长期准则的描述
+docs/project.md（如果存在）
+docs/index.md（如果存在）
+```
+
+标准输入规则：
+
+- 如果 `docs/project.md` 已存在，先读取现有内容，做渐进式补全或修正，不整文件重写。
+- 如果 `docs/index.md` 存在，读取本层索引以理解已有长期文档入口。
+- 只把长期稳定、可复用、可评审的 big picture 写入 `docs/project.md`。
+
+### 条件输入
+
+根据用户描述和现有 project 文档缺口，按需读取：
+
+- `docs/specs/`：当需要确认长期 WHAT、能力边界或行为契约时读取。
+- `docs/design/`：当需要确认长期设计、UI/UX、前端或产品体验结论时读取。
+- `docs/architecture/`：当需要确认系统边界、模块关系、运行时、ADR 或工程约束时读取。
+- `docs/runbooks/`：当需要确认运行、部署、排障或人工操作准则时读取。
+- `.workflow/versions/index.md` 或 active change context：只有当用户明确要求把已验证或正在沉淀的 change 背景转成 project big picture，且这些运行态内容会影响长期项目认知时读取。
+- 项目源码、配置或测试：只有当 project big picture 需要验证当前稳定事实时读取；不要把源码文件清单复制进 `docs/project.md`。
+
+## 输出契约
+
+### 标准输出
+
+标准输出是更新后的：
+
+```text
+docs/project.md
+```
+
+输出要求：
+
+- 覆盖或补强项目定位、用户与场景、核心领域概念、结构导航、技术与架构概览、容易犯错的边界、开发准则和重要文档入口。
+- 保持文档面向长期 big picture，不记录单次需求、任务状态、排期、临时计划或当前进度。
+- 对已有内容做最小必要编辑，保留仍正确的项目认知。
+
+### 条件输出
+
+根据实际修改按需输出：
+
+- 如果新增、删除或重命名 `docs/project.md` 入口相关说明，同步更新 `docs/index.md` 中对 `project.md` 的一句话描述。
+- 如果发现用户提供的信息更适合 specs/design/architecture/runbooks，说明应进入对应长期文档，不强行写入 project big picture。
+- 如果缺少足够事实支撑某个 big picture 判断，先询问用户或读取可验证来源；不要把猜测写入 `docs/project.md`。
+- 如果本轮只适合给出建议而不应修改文档，明确说明原因和下一步。
+
 ## 必需内容
 
 `docs/project.md` 必须覆盖以下内容：
