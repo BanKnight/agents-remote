@@ -9,10 +9,10 @@
 <!-- 当前正在推进的 version/change，用于让 Agent 快速知道当前工作入口。具体阶段读取 change 自己的 progress.md；技能路由由 step-change 决定。 -->
 
 - 当前 version：v0.8-prototype-ui-alignment
-- 当前 change：establish-prototype-alignment-baseline
-- change 路径：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/
-- context：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/context.md
-- progress：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/progress.md
+- 当前 change：align-home-project-shell
+- change 路径：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/
+- context：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/context.md
+- progress：.workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/progress.md
 
 ## 活跃 Versions
 
@@ -86,4 +86,4 @@ version 内多个 changes 需要共享的运行态材料放在 `.workflow/versio
 
 <!-- 当前全局最应该推进的 change；具体阶段读取该 change 的 progress.md，技能路由由 step-change 决定。 -->
 
-- 使用 `step-change` 推进当前焦点 `establish-prototype-alignment-baseline`，先补齐共享基线的规格与设计。
+- 使用 `step-change` 推进当前焦点 `align-home-project-shell`，在已完成的 shared 基线基础上补齐 Home/Project shell 页面还原规格。

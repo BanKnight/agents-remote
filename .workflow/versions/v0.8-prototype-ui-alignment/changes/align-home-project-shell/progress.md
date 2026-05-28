@@ -11,7 +11,7 @@
 ## 当前进度
 
 - 当前阶段：待规格
-- 阻塞项：依赖 `establish-prototype-alignment-baseline` 完成共享基线。
+- 阻塞项：无
 
 ## 推进规则
 
@@ -45,3 +45,4 @@
 ## 进展记录
 
 - 2026-05-28：由 `plan-versions` 创建，等待共享基线 change 完成后推进。
+- 2026-05-28：依赖 `establish-prototype-alignment-baseline` 已完成，局部阻塞解除，可进入 `specify-change`。

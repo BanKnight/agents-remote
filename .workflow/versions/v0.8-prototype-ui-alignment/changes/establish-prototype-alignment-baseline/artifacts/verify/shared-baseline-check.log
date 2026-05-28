@@ -1,0 +1,27 @@
+Shared baseline verification check
+Date: 2026-05-28
+Change: establish-prototype-alignment-baseline
+Version: v0.8-prototype-ui-alignment
+
+Scope:
+- Verify version shared Markdown files created by implement-change.
+- Verify alignment-contract.md covers required sections, prototype files, viewports, equivalence, acceptable/blocking differences, artifacts, and gap handling.
+- Verify design-system-note.md covers source priority, current frontend stack, tokens, console primitives, shadcn/ui, lucide-react, state/route boundaries, non-abstraction list, and verification hooks.
+- Verify follow-up-gaps.md is appendable by downstream changes and contains usage rules, template fields, categories, and empty current list.
+
+Harness:
+- Static content inspection with rg over .workflow/versions/v0.8-prototype-ui-alignment/shared.
+- Manual trace against spec/design/tasks commitments.
+
+Signals checked:
+- Required alignment contract headings: Purpose, References, Viewports, Prototype Map, Equivalence Rules, Acceptable Differences, Blocking Differences, Artifact Requirements, Follow-up Gap Rule.
+- Prototype Map entries: home.html, project-detail.html, agent-session-detail.html, terminal-instance-detail.html, files.html, git.html, terminal.html.
+- Required viewports: 1440x1000, 390x844.
+- Required implementation note headings: Purpose, Source Priority, Technology Baseline, Tokens, Console Primitives, shadcn/ui Boundary, Icon Boundary, State and Route Boundary, Non-abstraction List, Verification Hooks.
+- Required technology constraints: vercel-react-best-practices, shadcn/ui, lucide-react, npm 7-day safety rule.
+- Required follow-up registry fields: source change, page/prototype, gap type, observation, why not solved in this version, current expression, suggested follow-up, status.
+
+Result:
+- PASS. All required shared files exist and cover the implementation commitments.
+- No CRITICAL issues found.
+- Browser artifacts are not applicable for this change because it creates workflow Markdown baselines only and does not change user-visible UI.

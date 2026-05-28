@@ -10,7 +10,7 @@
 
 ## 当前进度
 
-- 当前阶段：待实现
+- 当前阶段：已完成
 - 阻塞项：无
 
 ## 推进规则
@@ -25,9 +25,9 @@
 - specs：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/specs/prototype-ui-alignment-baseline/spec.md
 - design：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/design/overview.md；design/ui-ux.md；design/frontend.md；design/risks.md
 - plan/tasks：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/plan.md；.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/tasks.md
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- implementation：已完成：.workflow/versions/v0.8-prototype-ui-alignment/shared/alignment-contract.md；.workflow/versions/v0.8-prototype-ui-alignment/shared/design-system-note.md；.workflow/versions/v0.8-prototype-ui-alignment/shared/follow-up-gaps.md
+- verify：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/verify.md；.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/artifacts/verify/shared-baseline-check.log
+- distill：已完成：无需更新长期 docs；本 change 产出的 shared 基线仍作为 v0.8 运行态材料，待后续页面 changes 与最终 verify 共同验证后再判断长期沉淀。
 
 ## 阶段流转
 
@@ -48,3 +48,6 @@
 - 2026-05-28：`specify-change` 已创建规格 `.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/specs/prototype-ui-alignment-baseline/spec.md`，当前阶段推进到待设计。
 - 2026-05-28：`design-change` 已创建设计 `.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`、`design/risks.md`，当前阶段推进到待计划。
 - 2026-05-28：`plan-change` 已创建 `.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/plan.md` 与 `tasks.md`，当前阶段推进到待实现。
+- 2026-05-28：`implement-change` 已创建 shared 基线 `.workflow/versions/v0.8-prototype-ui-alignment/shared/alignment-contract.md`、`design-system-note.md`、`follow-up-gaps.md`，并完成 tasks.md 中所有实现任务，当前阶段推进到待验证。
+- 2026-05-28：`verify-change` 已创建 `.workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/verify.md`，验证 shared 基线覆盖 spec/design/tasks 且无 CRITICAL，当前阶段推进到待沉淀。
+- 2026-05-28：`distill-change` 已判断本 change 无需更新长期 docs；shared 基线仍作为 v0.8 运行态材料，待后续页面 changes 与最终 verify 共同验证后再判断长期沉淀，当前阶段推进到已完成。
