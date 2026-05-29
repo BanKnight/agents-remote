@@ -293,6 +293,15 @@ function SessionDetail({
     [socketRef],
   );
 
+  // Stable callback for xterm to notify server of terminal resize
+  const sendTerminalResize = useCallback(
+    (cols: number, rows: number) => {
+      sendMessage({ type: "resize", cols, rows });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [socketRef],
+  );
+
   const handleInputSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const command = normalizeSessionTextInput(input);
@@ -373,6 +382,7 @@ function SessionDetail({
               terminalDataRef={terminalDataRef}
               terminalWriteRef={terminalWriteRef}
               title={title}
+              onResize={sendTerminalResize}
               onSendInput={sendTerminalInput}
               onReturnToStream={() => setDetailView("terminal")}
             />
@@ -612,12 +622,14 @@ type DetailWorkspaceProps = {
   terminalWriteRef: React.MutableRefObject<((type: "snapshot" | "output", data: string) => void) | null>;
   terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
   onSendInput: (data: string) => void;
+  onResize: (cols: number, rows: number) => void;
   onReturnToStream: () => void;
 };
 
 function DetailWorkspace({
   detailView,
   onReturnToStream,
+  onResize,
   onSendInput,
   projectName,
   sessionType,
@@ -639,6 +651,7 @@ function DetailWorkspace({
       terminalDataRef={terminalDataRef}
       terminalWriteRef={terminalWriteRef}
       title={title}
+      onResize={onResize}
       onSendInput={onSendInput}
     />
   );
@@ -650,9 +663,10 @@ type TerminalOutputProps = {
   terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
   title: string;
   onSendInput: (data: string) => void;
+  onResize: (cols: number, rows: number) => void;
 };
 
-function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title, onSendInput }: TerminalOutputProps) {
+function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title, onSendInput, onResize }: TerminalOutputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -695,15 +709,24 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
-    fit.fit();
-
-    termRef.current = term;
-    fitRef.current = fit;
 
     // Forward keyboard input to WebSocket
     term.onData((data) => {
       onSendInput(data);
     });
+
+    // Notify server of terminal dimensions so tmux resizes to match xterm.js.
+    // Must be called after every fit.fit() — otherwise tmux stays at its
+    // default 80×24 and content wraps at column 80 regardless of viewport size.
+    const notifyResize = () => {
+      onResize(term.cols, term.rows);
+    };
+
+    fit.fit();
+    notifyResize();
+
+    termRef.current = term;
+    fitRef.current = fit;
 
     // Server sends full tmux pane snapshots (not incremental PTY bytes).
     // Both "snapshot" and "output" are complete pane content, so we must
@@ -728,6 +751,7 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
+        notifyResize();
       } catch {
         // ignore during teardown
       }
@@ -741,9 +765,9 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       termRef.current = null;
       fitRef.current = null;
     };
-    // onSendInput is stable (useCallback); terminalWriteRef/terminalDataRef are refs
+    // onSendInput and onResize are stable (useCallback); terminalWriteRef/terminalDataRef are refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onSendInput]);
+  }, [onSendInput, onResize]);
 
   return (
     <section
