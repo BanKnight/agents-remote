@@ -35,7 +35,12 @@ export function ShellNavigationButton({
   onClick,
 }: ShellNavigationButtonProps) {
   return (
-    <Button className="h-auto w-full min-w-0 cursor-pointer justify-start bg-transparent p-0" type="button" variant="ghost" onClick={onClick}>
+    <Button
+      className="h-auto w-full min-w-0 cursor-pointer justify-start bg-transparent p-0"
+      type="button"
+      variant="ghost"
+      onClick={onClick}
+    >
       <NavItemContent
         active={active}
         description={description}
@@ -123,7 +128,9 @@ export function ShellMobileBottomNavigation({
       className={`fixed inset-x-0 bottom-0 z-20 min-h-[calc(var(--shell-mobile-bottom-nav-height)+env(safe-area-inset-bottom))] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden ${shellSurfaceClasses.bottomNav}`}
       aria-label={ariaLabel}
     >
-      <div className={`mx-auto grid w-full max-w-md gap-1 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
+      <div
+        className={`mx-auto grid w-full max-w-md gap-1 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}
+      >
         {children}
       </div>
     </nav>
@@ -170,7 +177,11 @@ type PrimaryShellNavigationProps = {
   items: ShellNavigationItem[];
 };
 
-export function PrimaryShellNavigation({ activeItemId, brand, items }: PrimaryShellNavigationProps) {
+export function PrimaryShellNavigation({
+  activeItemId,
+  brand,
+  items,
+}: PrimaryShellNavigationProps) {
   return (
     <>
       <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-100">
@@ -264,7 +275,9 @@ export function ProjectShellNavigation({
         className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-400 hover:text-cyan-200"
         to="/"
       >
-        <IconMarker size="sm" tone="muted">←</IconMarker>
+        <IconMarker size="sm" tone="muted">
+          ←
+        </IconMarker>
         <span>Projects</span>
       </Link>
       <div className={`mb-4 min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}>
@@ -305,7 +318,11 @@ export function ProjectShellBottomNavigation({
         <ShellMobileNavItemContent
           interactive
           label="Back"
-          marker={<IconMarker size="sm" tone="accent">←</IconMarker>}
+          marker={
+            <IconMarker size="sm" tone="accent">
+              ←
+            </IconMarker>
+          }
         />
       </Link>
       {items.map((item) => (

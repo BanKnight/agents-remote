@@ -75,29 +75,14 @@ export function sectionForId(sectionId: ConsoleSection) {
   return consoleSections.find((section) => section.id === sectionId) ?? consoleSections[0];
 }
 
-export const sessionQuickKeys = (sessionType: SessionType): SessionQuickKey[] => {
-  if (sessionType === "agent") {
-    return [
-      { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "" },
-      { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "[A" },
-      { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "[B" },
-      { id: "enter", label: "Enter", ariaLabel: "Send enter", sequence: "\n" },
-      { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
-      { id: "tab", label: "Tab", ariaLabel: "Send tab", sequence: "\t" },
-    ];
-  }
-
-  return [
-    { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "" },
-    { id: "eof", label: "Ctrl+D", ariaLabel: "Send end of file", sequence: "" },
-    { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
-    { id: "tab", label: "Tab", ariaLabel: "Send tab", sequence: "\t" },
-    { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "[A" },
-    { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "[B" },
-    { id: "left", label: "←", ariaLabel: "Send arrow left", sequence: "[D" },
-    { id: "right", label: "→", ariaLabel: "Send arrow right", sequence: "[C" },
-  ];
-};
+export const sessionQuickKeys = (_sessionType: SessionType): SessionQuickKey[] => [
+  { id: "shifttab", label: "Shift+Tab", ariaLabel: "Send shift-tab", sequence: "[Z" },
+  { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "" },
+  { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "" },
+  { id: "eof", label: "Ctrl+D", ariaLabel: "Send end of file", sequence: "" },
+  { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "[A" },
+  { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "[B" },
+];
 
 export function normalizeSessionTextInput(input: string) {
   if (input.trim().length === 0) {

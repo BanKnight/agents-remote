@@ -4,12 +4,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { createProject, listProjects } from "../api/client";
 import { defaultConsoleSection } from "./console-model";
-import { ShellHeaderSurface, ShellLayout, ShellPanel, ShellSidebar } from "../components/shell/shell-layout";
+import {
+  ShellHeaderSurface,
+  ShellLayout,
+  ShellPanel,
+  ShellSidebar,
+} from "../components/shell/shell-layout";
 import {
   PrimaryShellBottomNavigation,
   PrimaryShellNavigation,
 } from "../components/shell/shell-navigation";
-import { ActionButton, IconMarker, ShellInput, shellSurfaceClasses } from "../components/shell/shell-primitives";
+import {
+  ActionButton,
+  IconMarker,
+  ShellInput,
+  shellSurfaceClasses,
+} from "../components/shell/shell-primitives";
 
 const primaryNavItems = [
   { id: "projects", label: "Projects", marker: "P", mobileLabel: "Projects", to: "/" as const },
@@ -18,7 +28,11 @@ const primaryNavItems = [
   { id: "help", label: "Help", marker: "H", mobileLabel: "Help" },
 ].map((item) => ({
   ...item,
-  marker: <IconMarker size="sm" tone="accent">{item.marker}</IconMarker>,
+  marker: (
+    <IconMarker size="sm" tone="accent">
+      {item.marker}
+    </IconMarker>
+  ),
 }));
 
 export function HomeRoute() {
@@ -84,7 +98,9 @@ export function HomeRoute() {
         }
         eyebrow={
           <>
-            <span className="hidden sm:inline">Open a server Project to continue with Agent, Files, Git, or Terminal.</span>
+            <span className="hidden sm:inline">
+              Open a server Project to continue with Agent, Files, Git, or Terminal.
+            </span>
             <span className="sm:hidden">Open a Project to continue.</span>
           </>
         }
@@ -120,7 +136,9 @@ function PrimaryNav() {
         activeItemId="projects"
         brand={
           <>
-            <IconMarker size="sm" tone="accent">AR</IconMarker>
+            <IconMarker size="sm" tone="accent">
+              AR
+            </IconMarker>
             <span>Agents Remote</span>
           </>
         }
@@ -198,9 +216,7 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
             <ProjectMetaPill>{project.gitBranch ?? "pending"}</ProjectMetaPill>
           </span>
         </span>
-        <span className="shrink-0 text-xs font-extrabold text-cyan-300">
-          Open
-        </span>
+        <span className="shrink-0 text-xs font-extrabold text-cyan-300">Open</span>
       </span>
     </Link>
   );
@@ -238,7 +254,9 @@ function ProjectSetupPanel({
   return (
     <ShellPanel density="default">
       <div className="flex min-w-0 items-start gap-3">
-        <IconMarker size="sm" tone="muted">+</IconMarker>
+        <IconMarker size="sm" tone="muted">
+          +
+        </IconMarker>
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-slate-100">Create or adopt a Project</h2>
           <p className="mt-1 text-sm leading-6 text-slate-500">

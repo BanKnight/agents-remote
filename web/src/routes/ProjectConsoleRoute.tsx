@@ -34,7 +34,12 @@ import {
   type ConsoleSection,
   type ConsoleSectionDefinition,
 } from "./console-model";
-import { ShellHeaderSurface, ShellLayout, ShellPanel, ShellSidebar } from "../components/shell/shell-layout";
+import {
+  ShellHeaderSurface,
+  ShellLayout,
+  ShellPanel,
+  ShellSidebar,
+} from "../components/shell/shell-layout";
 import {
   ProjectShellBottomNavigation,
   ProjectShellNavigation,
@@ -86,7 +91,9 @@ type ConsoleFrameProps = {
 function ConsoleFrame({ children, subtitle, title }: ConsoleFrameProps) {
   return (
     <main className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-[#080b10] px-4 text-slate-100">
-      <section className={`w-full max-w-md rounded-[2rem] p-6 shadow-2xl shadow-black/30 ${shellSurfaceClasses.workspace}`}>
+      <section
+        className={`w-full max-w-md rounded-[2rem] p-6 shadow-2xl shadow-black/30 ${shellSurfaceClasses.workspace}`}
+      >
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
           Agents Remote
         </p>
@@ -178,11 +185,21 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
         summary={summary}
         actions={
           activeSection === "agents" ? (
-            <div className="hidden flex-wrap justify-end gap-2 sm:flex" aria-label="Create Agent instance">
-              <CreateButton disabled={createAgent.isPending} tone="accent" onClick={() => createAgent.mutate("claude")}>
+            <div
+              className="hidden flex-wrap justify-end gap-2 sm:flex"
+              aria-label="Create Agent instance"
+            >
+              <CreateButton
+                disabled={createAgent.isPending}
+                tone="accent"
+                onClick={() => createAgent.mutate("claude")}
+              >
                 + Claude
               </CreateButton>
-              <CreateButton disabled={createAgent.isPending} onClick={() => createAgent.mutate("codex")}>
+              <CreateButton
+                disabled={createAgent.isPending}
+                onClick={() => createAgent.mutate("codex")}
+              >
                 + Codex
               </CreateButton>
             </div>
@@ -237,7 +254,11 @@ type ProjectSecondaryDesktopNavProps = ProjectSecondaryNavProps & {
   project: Project;
 };
 
-function ProjectSecondaryNav({ activeSection, onSelectSection, project }: ProjectSecondaryDesktopNavProps) {
+function ProjectSecondaryNav({
+  activeSection,
+  onSelectSection,
+  project,
+}: ProjectSecondaryDesktopNavProps) {
   return (
     <ShellSidebar display="flex">
       <ProjectShellNavigation
@@ -261,7 +282,7 @@ function ProjectSecondaryBottomNav({ activeSection, onSelectSection }: ProjectSe
   );
 }
 
-function projectNavigationItems(activeSection: ConsoleSection) {
+function projectNavigationItems(_activeSection: ConsoleSection) {
   return consoleSections.map((section) => ({
     id: section.id,
     label: section.label,
@@ -312,12 +333,27 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
       actions={actions ?? fallbackActions}
       eyebrow={
         <>
-          <span className="hidden sm:inline">Project / {project.name} / {section.label}</span>
-          <span className="sm:hidden">{section.id === "agents" ? `Agent instances · ${summary.agentCount} active` : section.label}</span>
+          <span className="hidden sm:inline">
+            Project / {project.name} / {section.label}
+          </span>
+          <span className="sm:hidden">
+            {section.id === "agents"
+              ? `Agent instances · ${summary.agentCount} active`
+              : section.label}
+          </span>
         </>
       }
       mobileMeta={undefined}
-      title={section.id === "agents" ? <><span className="sm:hidden">{project.name}</span><span className="hidden sm:inline">Agent instances</span></> : section.label}
+      title={
+        section.id === "agents" ? (
+          <>
+            <span className="sm:hidden">{project.name}</span>
+            <span className="hidden sm:inline">Agent instances</span>
+          </>
+        ) : (
+          section.label
+        )
+      }
       variant="project"
     />
   );
@@ -450,7 +486,11 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
           </ActionButton>
         </>
       }
-      marker={<IconMarker tone={session.provider === "codex" ? "success" : "accent"}>{providerMarker(session.provider)}</IconMarker>}
+      marker={
+        <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
+          {providerMarker(session.provider)}
+        </IconMarker>
+      }
       statusTone={sessionStatusTone(session.status)}
       status={sessionStatusLabel(session.status)}
       subtitle={`${providerLabel(session.provider)} · ${session.id}`}
@@ -475,8 +515,12 @@ function AgentHistoryPanel() {
         </div>
         <StatusPill tone="muted" value="Staged" />
       </div>
-      <div className={`mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 ${shellSurfaceClasses.inset}`}>
-        <IconMarker size="sm" tone="muted">H</IconMarker>
+      <div
+        className={`mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 ${shellSurfaceClasses.inset}`}
+      >
+        <IconMarker size="sm" tone="muted">
+          H
+        </IconMarker>
         <p className="min-w-0 text-sm leading-6 text-slate-400">
           Current Agent instances stay above. Provider-native history and resume are not mixed into
           the running session list until a real adapter exposes them.
@@ -495,9 +539,18 @@ type SessionInstanceRowProps = {
   title: ReactNode;
 };
 
-function SessionInstanceRow({ actions, marker, status, statusTone, subtitle, title }: SessionInstanceRowProps) {
+function SessionInstanceRow({
+  actions,
+  marker,
+  status,
+  statusTone,
+  subtitle,
+  title,
+}: SessionInstanceRowProps) {
   return (
-    <article className={`min-w-0 rounded-[1.25rem] p-3 transition sm:p-4 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}>
+    <article
+      className={`min-w-0 rounded-[1.25rem] p-3 transition sm:p-4 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+    >
       <div className="flex min-w-0 items-start gap-3">
         {marker}
         <div className="min-w-0 flex-1">
@@ -738,7 +791,11 @@ function ResourceToolbar({ actions, eyebrow, meta, title }: ResourceToolbarProps
           <div className="mt-1 min-w-0 truncate font-mono text-sm text-slate-100">{title}</div>
           {meta ? <div className="mt-2 min-w-0 text-xs text-slate-400">{meta}</div> : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap justify-start gap-1.5 sm:justify-end">{actions}</div> : null}
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap justify-start gap-1.5 sm:justify-end">
+            {actions}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -765,15 +822,28 @@ type ResourceStatePanelProps = {
   tone?: "danger" | "dashed" | "inset" | "warning";
 };
 
-function ResourceStatePanel({ children, message, title, tone = "dashed" }: ResourceStatePanelProps) {
+function ResourceStatePanel({
+  children,
+  message,
+  title,
+  tone = "dashed",
+}: ResourceStatePanelProps) {
   const isCompact = tone === "inset" || tone === "danger" || tone === "warning";
   const surfaceClass = shellSurfaceClasses[tone];
 
   return (
-    <div className={`min-w-0 rounded-2xl p-4 ${isCompact ? "" : "text-center sm:p-6"} ${surfaceClass}`}>
-      {title ? <p className={`font-semibold ${tone === "danger" ? "text-rose-100" : "text-slate-100"}`}>{title}</p> : null}
+    <div
+      className={`min-w-0 rounded-2xl p-4 ${isCompact ? "" : "text-center sm:p-6"} ${surfaceClass}`}
+    >
+      {title ? (
+        <p className={`font-semibold ${tone === "danger" ? "text-rose-100" : "text-slate-100"}`}>
+          {title}
+        </p>
+      ) : null}
       {message ? (
-        <p className={`mt-2 text-sm leading-6 ${tone === "danger" ? "text-rose-200/80" : tone === "warning" ? "text-amber-100" : "text-slate-400"}`}>
+        <p
+          className={`mt-2 text-sm leading-6 ${tone === "danger" ? "text-rose-200/80" : tone === "warning" ? "text-amber-100" : "text-slate-400"}`}
+        >
           {message}
         </p>
       ) : null}
@@ -822,13 +892,24 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
   }, [onDeepDetailChange, selectedFile]);
 
   const clearDiff = () => setSelectedFile(undefined);
-  const gitSummary = diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
+  const gitSummary =
+    diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
 
   const statusToolbar = (
     <ResourceToolbar
       eyebrow="Git status"
-      title={diff.data?.repository === true ? `${diff.data.files.length} changed files` : "Read-only changes"}
-      meta={gitSummary ? <GitSummaryPills summary={gitSummary} /> : "Worktree and staged files are available for inspection only."}
+      title={
+        diff.data?.repository === true
+          ? `${diff.data.files.length} changed files`
+          : "Read-only changes"
+      }
+      meta={
+        gitSummary ? (
+          <GitSummaryPills summary={gitSummary} />
+        ) : (
+          "Worktree and staged files are available for inspection only."
+        )
+      }
       actions={
         <ActionButton
           tone="accent"
@@ -1008,11 +1089,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
   if (error) {
     return (
-      <ResourceStatePanel
-        tone="danger"
-        title="Unable to open this diff."
-        message={error.message}
-      />
+      <ResourceStatePanel tone="danger" title="Unable to open this diff." message={error.message} />
     );
   }
 
@@ -1046,7 +1123,9 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
           value={`${scopeLabel(fileDiff.scope)} · ${statusLabel(fileDiff.status)}`}
         />
       </div>
-      <pre className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}>
+      <pre
+        className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
+      >
         {fileDiff.diff}
       </pre>
     </section>
@@ -1106,7 +1185,10 @@ function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
       actions={
         <>
           <ActionButton onClick={() => goToPath("")}>Root</ActionButton>
-          <ActionButton disabled={parentPath === null} onClick={() => parentPath !== null && goToPath(parentPath)}>
+          <ActionButton
+            disabled={parentPath === null}
+            onClick={() => parentPath !== null && goToPath(parentPath)}
+          >
             Up
           </ActionButton>
           <ActionButton tone="accent" onClick={() => void files.refetch()}>
@@ -1289,7 +1371,9 @@ type PreviewBodyProps = {
 function PreviewBody({ preview }: PreviewBodyProps) {
   if (preview.type === "text") {
     return (
-      <pre className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}>
+      <pre
+        className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
+      >
         {preview.content}
       </pre>
     );
@@ -1309,14 +1393,18 @@ function PreviewBody({ preview }: PreviewBodyProps) {
 
   if (preview.type === "too_large") {
     return (
-      <p className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-amber-100 ${shellSurfaceClasses.warning}`}>
+      <p
+        className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-amber-100 ${shellSurfaceClasses.warning}`}
+      >
         File is too large to preview. Limit: {formatBytes(preview.limitBytes)}.
       </p>
     );
   }
 
   return (
-    <p className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-slate-300 ${shellSurfaceClasses.inset}`}>
+    <p
+      className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-slate-300 ${shellSurfaceClasses.inset}`}
+    >
       This file type is not supported for preview yet.
     </p>
   );

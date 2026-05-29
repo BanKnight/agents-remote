@@ -26,7 +26,6 @@ import {
   canSendToSession,
   normalizeSessionTextInput,
   sessionQuickKeys,
-  sessionStatusLabel,
   type SessionQuickKey,
 } from "./console-model";
 import {
@@ -97,7 +96,6 @@ function SessionDetail({
   const [input, setInput] = useState("");
   const [inputPanelOpen, setInputPanelOpen] = useState(true);
   const [detailView, setDetailView] = useState<DetailView>("terminal");
-  const [metaOpen, setMetaOpen] = useState(false);
 
   const detail = useQuery<SessionDetailResponse>({
     queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
@@ -108,7 +106,6 @@ function SessionDetail({
   });
   const session = detail.data?.session;
   const title = session?.displayName ?? `${sessionType === "agent" ? "Agent" : "Terminal"} Session`;
-  const statusLabel = sessionStatus ?? (session ? sessionStatusLabel(session.status) : "Loading");
   const isEnded = connectionStatus === "ended" || sessionStatus === "closed";
 
   const closeSession = useMutation({
@@ -276,22 +273,21 @@ function SessionDetail({
 
   return (
     <main className="h-dvh overflow-hidden bg-[radial-gradient(circle_at_18%_8%,rgba(125,211,252,0.16),transparent_30rem),radial-gradient(circle_at_86%_10%,rgba(167,139,250,0.14),transparent_28rem),#080b10] p-3 text-slate-100 sm:p-4 lg:p-7">
-      <div className={`mx-auto grid h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-7xl min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[1.5rem] border border-slate-700/70 shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-[calc(100dvh-2rem)] sm:rounded-[1.75rem] lg:h-[calc(100dvh-3.5rem)] ${shellSurfaceClasses.shell}`}>
+      <div
+        className={`mx-auto grid h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-7xl min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[1.5rem] border border-slate-700/70 shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-[calc(100dvh-2rem)] sm:rounded-[1.75rem] lg:h-[calc(100dvh-3.5rem)] ${shellSurfaceClasses.shell}`}
+      >
         <SessionDetailHeader
           connectionStatus={connectionStatus}
           createTerminalError={createTerminal.error}
           createTerminalPending={createTerminal.isPending}
           detailView={detailView}
-          metaOpen={metaOpen}
           projectName={projectName}
           provider={provider}
           sessionId={sessionId}
           sessionType={sessionType}
           sourceAgentSession={sourceAgentSession}
-          statusLabel={statusLabel}
           title={title}
           closePending={closeSession.isPending}
-          resizeDisabled={!canSend}
           onClose={() => {
             if (window.confirm("Close this session? The running process will be terminated.")) {
               closeSession.mutate();
@@ -299,12 +295,12 @@ function SessionDetail({
           }}
           onCreateTerminal={() => createTerminal.mutate()}
           onReconnect={() => setReconnectKey((value) => value + 1)}
-          onResize={() => sendMessage({ type: "resize", cols: 120, rows: 40 })}
-          onToggleMeta={() => setMetaOpen((value) => !value)}
           onViewChange={setDetailView}
         />
 
-        <div className={`flex min-h-0 min-w-0 flex-col gap-3 p-3 sm:p-4 ${shellSurfaceClasses.runtimeBody}`}>
+        <div
+          className={`flex min-h-0 min-w-0 flex-col gap-3 p-3 sm:p-4 ${shellSurfaceClasses.runtimeBody}`}
+        >
           {detail.error instanceof Error ? (
             <Notice tone="danger">{detail.error.message}</Notice>
           ) : null}
@@ -351,50 +347,42 @@ type SessionDetailHeaderProps = {
   createTerminalError: Error | null;
   createTerminalPending: boolean;
   detailView: DetailView;
-  metaOpen: boolean;
   projectName: string;
   provider: AgentSession["provider"] | undefined;
-  resizeDisabled: boolean;
   sessionId: string;
   sessionType: SessionType;
   sourceAgentSession?: string;
-  statusLabel: string;
   title: string;
   onClose: () => void;
   onCreateTerminal: () => void;
   onReconnect: () => void;
-  onResize: () => void;
-  onToggleMeta: () => void;
   onViewChange: (view: DetailView) => void;
 };
 
 function SessionDetailHeader({
   closePending,
-  connectionStatus,
+  connectionStatus: _connectionStatus,
   createTerminalError,
   createTerminalPending,
   detailView,
-  metaOpen,
   onClose,
   onCreateTerminal,
-  onReconnect,
-  onResize,
-  onToggleMeta,
+  onReconnect: _onReconnect,
   onViewChange,
   projectName,
   provider,
-  resizeDisabled,
   sessionId,
   sessionType,
   sourceAgentSession,
-  statusLabel,
   title,
 }: SessionDetailHeaderProps) {
   const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
   const returnWorkspace = sessionType === "terminal" ? "terminal" : defaultConsoleSection;
 
   return (
-    <header className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}>
+    <header
+      className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
+    >
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           {returnsToAgent ? (
@@ -434,57 +422,23 @@ function SessionDetailHeader({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-2 lg:items-end">
-          <div className="flex min-w-0 flex-wrap gap-1.5 lg:justify-end">
-            <StatusPill label="Runtime" tone={statusTone(statusLabel)} value={statusLabel} />
-            <StatusPill
-              label="Stream"
-              tone={transportTone(connectionStatus)}
-              value={connectionStatus}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {sessionType === "agent" ? (
+            <AgentDetailTools
+              createTerminalPending={createTerminalPending}
+              detailView={detailView}
+              onCreateTerminal={onCreateTerminal}
+              onViewChange={onViewChange}
             />
-            {provider ? (
-              <StatusPill label="Provider" tone="accent" value={providerLabel(provider)} />
-            ) : null}
-          </div>
-          <div className="flex min-w-0 flex-wrap gap-2 lg:justify-end">
-            {sessionType === "agent" ? (
-              <AgentDetailTools
-                createTerminalPending={createTerminalPending}
-                detailView={detailView}
-                metaOpen={metaOpen}
-                onCreateTerminal={onCreateTerminal}
-                onToggleMeta={onToggleMeta}
-                onViewChange={onViewChange}
-              />
-            ) : null}
-            <SessionControls
-              closePending={closePending}
-              resizeDisabled={resizeDisabled}
-              onClose={onClose}
-              onReconnect={onReconnect}
-              onResize={onResize}
-            />
-          </div>
+          ) : null}
+          <ActionButton disabled={closePending} tone="danger" onClick={onClose}>
+            {closePending ? "Closing..." : "Close"}
+          </ActionButton>
           {createTerminalError instanceof Error ? (
-            <p className="max-w-md text-xs leading-5 text-rose-200">
-              {createTerminalError.message}
-            </p>
+            <p className="w-full text-xs leading-5 text-rose-200">{createTerminalError.message}</p>
           ) : null}
         </div>
       </div>
-
-      {metaOpen ? (
-        <SessionMetaPopover
-          connectionStatus={connectionStatus}
-          projectName={projectName}
-          provider={provider}
-          sessionId={sessionId}
-          sessionType={sessionType}
-          statusLabel={statusLabel}
-          title={title}
-          onClose={onToggleMeta}
-        />
-      ) : null}
     </header>
   );
 }
@@ -492,148 +446,33 @@ function SessionDetailHeader({
 type AgentDetailToolsProps = {
   createTerminalPending: boolean;
   detailView: DetailView;
-  metaOpen: boolean;
   onCreateTerminal: () => void;
-  onToggleMeta: () => void;
   onViewChange: (view: DetailView) => void;
 };
 
 function AgentDetailTools({
   createTerminalPending,
   detailView,
-  metaOpen,
   onCreateTerminal,
-  onToggleMeta,
   onViewChange,
 }: AgentDetailToolsProps) {
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5 sm:gap-2" aria-label="Agent detail tools">
+    <div className="flex min-w-0 flex-wrap gap-1.5" aria-label="Agent detail tools">
       <ActionButton
-        className="px-2.5 sm:px-3"
-        tone={detailView === "terminal" ? "accent" : "default"}
-        onClick={() => onViewChange("terminal")}
-      >
-        Stream
-      </ActionButton>
-      <ActionButton
-        className="px-2.5 sm:px-3"
         tone={detailView === "files" ? "accent" : "default"}
         onClick={() => onViewChange("files")}
       >
         Files
       </ActionButton>
       <ActionButton
-        className="px-2.5 sm:px-3"
         tone={detailView === "git" ? "accent" : "default"}
         onClick={() => onViewChange("git")}
       >
         Git
       </ActionButton>
-      <ActionButton
-        className="px-2.5 sm:px-3"
-        disabled={createTerminalPending}
-        tone="accent"
-        onClick={onCreateTerminal}
-      >
+      <ActionButton disabled={createTerminalPending} tone="accent" onClick={onCreateTerminal}>
         {createTerminalPending ? "+T..." : "+T"}
       </ActionButton>
-      <ActionButton className="px-2.5 sm:px-3" tone={metaOpen ? "accent" : "default"} onClick={onToggleMeta}>
-        Meta
-      </ActionButton>
-    </div>
-  );
-}
-
-type SessionControlsProps = {
-  closePending: boolean;
-  onClose: () => void;
-  onReconnect: () => void;
-  onResize: () => void;
-  resizeDisabled: boolean;
-};
-
-function SessionControls({
-  closePending,
-  onClose,
-  onReconnect,
-  onResize,
-  resizeDisabled,
-}: SessionControlsProps) {
-  return (
-    <div className="flex min-w-0 flex-wrap gap-1.5 sm:gap-2 lg:justify-end" aria-label="Session controls">
-      <ActionButton className="px-2.5 sm:px-3" tone="accent" onClick={onReconnect}>
-        Reconnect
-      </ActionButton>
-      <ActionButton className="px-2.5 sm:px-3" disabled={resizeDisabled} onClick={onResize}>
-        Resize
-      </ActionButton>
-      <ActionButton className="px-2.5 sm:px-3" disabled={closePending} tone="danger" onClick={onClose}>
-        {closePending ? "Closing..." : "Close"}
-      </ActionButton>
-    </div>
-  );
-}
-
-type SessionMetaPopoverProps = {
-  connectionStatus: StreamConnectionStatus;
-  projectName: string;
-  provider: AgentSession["provider"] | undefined;
-  sessionId: string;
-  sessionType: SessionType;
-  statusLabel: string;
-  title: string;
-  onClose: () => void;
-};
-
-function SessionMetaPopover({
-  connectionStatus,
-  onClose,
-  projectName,
-  provider,
-  sessionId,
-  sessionType,
-  statusLabel,
-  title,
-}: SessionMetaPopoverProps) {
-  return (
-    <aside
-      className={`absolute right-3 top-[calc(100%-0.75rem)] z-20 w-[min(22rem,calc(100vw-2rem))] rounded-3xl p-4 shadow-2xl shadow-black/50 backdrop-blur ${shellSurfaceClasses.header}`}
-      aria-label="Session meta"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-slate-100">Session meta</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Real session and stream fields only.
-          </p>
-        </div>
-        <ActionButton tone="muted" onClick={onClose}>
-          Close
-        </ActionButton>
-      </div>
-      <dl className="mt-3 grid gap-2 text-xs">
-        <MetaRow label="Project" value={projectName} />
-        <MetaRow label="Session" value={title} />
-        <MetaRow label="Type" value={sessionType === "agent" ? "Agent" : "Terminal"} />
-        {provider ? <MetaRow label="Provider" value={providerLabel(provider)} /> : null}
-        <MetaRow label="Runtime" value={statusLabel} />
-        <MetaRow label="Stream" value={connectionStatus} />
-        <MetaRow label="Internal id" value={sessionId} />
-      </dl>
-    </aside>
-  );
-}
-
-type MetaRowProps = {
-  label: string;
-  value: string;
-};
-
-function MetaRow({ label, value }: MetaRowProps) {
-  return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 border-b border-slate-800/80 pb-2 last:border-b-0 last:pb-0">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="min-w-0 break-all font-mono text-slate-200">{value}</dd>
     </div>
   );
 }
@@ -674,8 +513,12 @@ type TerminalOutputProps = {
 
 function TerminalOutput({ output, sessionType, title }: TerminalOutputProps) {
   return (
-    <section className={`grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.25rem] ${shellSurfaceClasses.code}`}>
-      <div className={`flex min-w-0 items-center justify-between gap-3 px-3 py-2.5 ${shellSurfaceClasses.terminalTitlebar}`}>
+    <section
+      className={`grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.25rem] ${shellSurfaceClasses.code}`}
+    >
+      <div
+        className={`flex min-w-0 items-center justify-between gap-3 px-3 py-2.5 ${shellSurfaceClasses.terminalTitlebar}`}
+      >
         <div className="flex shrink-0 items-center gap-1.5" aria-hidden="true">
           <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
           <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
@@ -710,14 +553,18 @@ function ContextualFilesPanel({ projectName, onReturnToStream }: ContextualPanel
   const entries = files.data?.entries ?? [];
 
   return (
-    <section className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}>
+    <section
+      className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}
+    >
       <ContextualPanelHeader
         eyebrow="Agent context"
         title="Files"
         description="Read-only Project files opened from this Agent detail. Resource-page polish stays in the inspection change."
         onReturnToStream={onReturnToStream}
       />
-      <div className={`mt-3 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
+      <div
+        className={`mt-3 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}
+      >
         <p className="min-w-0 flex-1 truncate font-mono text-sm text-slate-200">
           {currentPath.length > 0 ? currentPath : "/"}
         </p>
@@ -791,7 +638,9 @@ function ContextualGitPanel({ projectName, onReturnToStream }: ContextualPanelPr
   });
 
   return (
-    <section className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}>
+    <section
+      className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}
+    >
       <ContextualPanelHeader
         eyebrow="Agent context"
         title="Git"
@@ -912,28 +761,25 @@ function SessionInputDrawer({
   onToggle,
 }: SessionInputDrawerProps) {
   return (
-    <section className={`min-w-0 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeComposer}`}>
+    <section
+      className={`min-w-0 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeComposer}`}
+    >
       <button
-        className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+        className="flex w-full cursor-pointer items-center justify-between gap-3 py-1 text-left"
         type="button"
         onClick={onToggle}
       >
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold text-slate-100">
-            {sessionType === "agent" ? "Agent input drawer" : "Terminal input drawer"}
-          </span>
-          <span className="mt-1 block text-xs text-slate-500">
-            {isOpen
-              ? "Quick keys send immediately. Enter in the text box adds a newline."
-              : "Collapsed. Quick keys remain available and typed input is preserved."}
-          </span>
+        <span className="text-xs font-semibold text-slate-400">
+          {isOpen
+            ? `${sessionType === "agent" ? "Agent" : "Terminal"} input drawer expanded`
+            : `${sessionType === "agent" ? "Agent" : "Terminal"} input drawer collapsed`}
         </span>
-        <span className="shrink-0 rounded-full border border-slate-700/50 bg-slate-950/50 px-3 py-1 text-xs font-semibold text-slate-300">
-          {isOpen ? "Hide" : "Show"}
+        <span className="shrink-0 rounded-full border border-slate-700/50 bg-slate-950/50 px-2.5 py-0.5 text-[0.65rem] font-semibold text-slate-400">
+          {isOpen ? "tap to collapse" : "tap to expand"}
         </span>
       </button>
 
-      <form className="mt-2 grid gap-2 sm:mt-3 sm:gap-3" onSubmit={onSubmit}>
+      <form className="mt-2 grid gap-2 sm:mt-2.5 sm:gap-2.5" onSubmit={onSubmit}>
         <QuickKeyBar
           canSend={canSend}
           quickKeys={isOpen ? quickKeys : quickKeys.slice(0, 5)}
@@ -953,7 +799,11 @@ function SessionInputDrawer({
               onChange={(event) => onInputChange(event.target.value)}
             />
             <div className="flex flex-wrap items-center gap-2">
-              <ActionButton disabled={!canSend || input.trim().length === 0} tone="accent" type="submit">
+              <ActionButton
+                disabled={!canSend || input.trim().length === 0}
+                tone="accent"
+                type="submit"
+              >
                 Send
               </ActionButton>
               <span className="text-xs text-slate-500">
@@ -962,7 +812,9 @@ function SessionInputDrawer({
             </div>
           </>
         ) : (
-          <p className={`rounded-2xl px-3 py-2 text-xs text-slate-500 ${shellSurfaceClasses.inset}`}>
+          <p
+            className={`rounded-2xl px-3 py-2 text-xs text-slate-500 ${shellSurfaceClasses.inset}`}
+          >
             Drawer collapsed. Tap Show to restore the text input without reconnecting the stream.
           </p>
         )}
@@ -979,14 +831,11 @@ type QuickKeyBarProps = {
 
 function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
   return (
-    <div
-      className="grid min-w-0 grid-cols-5 gap-1.5 sm:flex sm:gap-2 sm:overflow-x-auto sm:pb-1"
-      aria-label="Session quick keys"
-    >
+    <div className="flex min-w-0 flex-wrap gap-1.5" aria-label="Session quick keys">
       {quickKeys.map((quickKey) => (
         <button
           aria-label={quickKey.ariaLabel}
-          className={`min-w-0 rounded-full px-1.5 py-1.5 font-mono text-[0.62rem] font-semibold text-slate-100 transition enabled:cursor-pointer enabled:hover:border-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-40 sm:shrink-0 sm:px-3 sm:py-2 sm:text-xs ${shellSurfaceClasses.raised}`}
+          className={`shrink-0 rounded-full px-2.5 py-1.5 font-mono text-[0.62rem] font-semibold text-slate-100 transition enabled:cursor-pointer enabled:hover:border-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2 sm:text-xs ${shellSurfaceClasses.raised}`}
           disabled={!canSend}
           key={quickKey.id}
           type="button"
@@ -1015,38 +864,6 @@ function Notice({ children, tone = "default" }: NoticeProps) {
 
 function providerMarker(provider: AgentSession["provider"] | undefined) {
   return provider === "codex" ? "CX" : "CL";
-}
-
-function providerLabel(provider: AgentSession["provider"]) {
-  return provider === "codex" ? "Codex" : "Claude";
-}
-
-function transportTone(status: StreamConnectionStatus) {
-  if (status === "connected") {
-    return "success";
-  }
-
-  if (status === "connecting" || status === "disconnected") {
-    return "warning";
-  }
-
-  return "danger";
-}
-
-function statusTone(status: string) {
-  if (status === "Running") {
-    return "success";
-  }
-
-  if (status === "Waiting for input") {
-    return "warning";
-  }
-
-  if (status === "Error" || status === "Closed") {
-    return "danger";
-  }
-
-  return "muted";
 }
 
 const parentProjectPath = (path: string) => {

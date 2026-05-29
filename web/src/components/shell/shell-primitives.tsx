@@ -25,13 +25,18 @@ const pillToneClasses: Record<ShellTone, string> = {
 };
 
 const buttonToneClasses: Record<ShellTone, string> = {
-  default: "border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500 hover:bg-slate-900/80",
+  default:
+    "border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500 hover:bg-slate-900/80",
   accent:
     "border-transparent bg-gradient-to-br from-cyan-300 to-violet-400 text-slate-950 shadow-lg shadow-cyan-950/25 hover:from-cyan-200 hover:to-violet-300",
-  success: "border-emerald-300/40 bg-emerald-300/10 text-emerald-100 hover:border-emerald-200/70 hover:bg-emerald-300/15",
-  warning: "border-amber-300/40 bg-amber-300/10 text-amber-100 hover:border-amber-200/70 hover:bg-amber-300/15",
-  danger: "border-rose-300/40 bg-rose-300/10 text-rose-100 hover:border-rose-200/70 hover:bg-rose-300/15",
-  muted: "border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:bg-slate-900/70",
+  success:
+    "border-emerald-300/40 bg-emerald-300/10 text-emerald-100 hover:border-emerald-200/70 hover:bg-emerald-300/15",
+  warning:
+    "border-amber-300/40 bg-amber-300/10 text-amber-100 hover:border-amber-200/70 hover:bg-amber-300/15",
+  danger:
+    "border-rose-300/40 bg-rose-300/10 text-rose-100 hover:border-rose-200/70 hover:bg-rose-300/15",
+  muted:
+    "border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:bg-slate-900/70",
 };
 
 export const shellSurfaceClasses = {
@@ -115,7 +120,9 @@ export function NavItemContent({
   const interactionClass = interactive ? "cursor-pointer" : "";
 
   return (
-    <span className={`w-full min-w-0 transition ${layoutClass} ${stateClass} ${shapeClass} ${interactionClass}`}>
+    <span
+      className={`w-full min-w-0 transition ${layoutClass} ${stateClass} ${shapeClass} ${interactionClass}`}
+    >
       {marker}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.68rem] font-bold sm:text-sm">{label}</span>
