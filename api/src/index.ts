@@ -165,6 +165,16 @@ const handleProjects = async (
       return Response.json(response);
     }
 
+    const projectFilesRawMatch = matchProjectFilesRawPath(url.pathname);
+
+    if (projectFilesRawMatch && request.method === "GET" && projectFilesService) {
+      const { content, mimeType } = await projectFilesService.rawFile(
+        projectFilesRawMatch.projectName,
+        projectFilesRawMatch.filePath,
+      );
+      return new Response(new Uint8Array(content), { headers: { "Content-Type": mimeType } });
+    }
+
     const projectFilesMatch = matchProjectFilesPath(url.pathname);
 
     if (projectFilesMatch && request.method === "GET" && projectFilesService) {
@@ -300,6 +310,43 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
     projectName,
     preview: suffix.endsWith(previewSuffix),
   };
+};
+
+type ProjectFilesRawPathMatch = {
+  projectName: string;
+  filePath: string;
+};
+
+const matchProjectFilesRawPath = (pathname: string): ProjectFilesRawPathMatch | undefined => {
+  const prefix = "/api/projects/";
+
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+
+  const suffix = pathname.slice(prefix.length);
+  const rawInfix = "/files/raw/";
+  const rawIdx = suffix.indexOf(rawInfix);
+
+  if (rawIdx === -1) {
+    return undefined;
+  }
+
+  const encodedName = suffix.slice(0, rawIdx);
+
+  if (encodedName.length === 0 || encodedName.includes("/")) {
+    return undefined;
+  }
+
+  const projectName = decodeProjectName(encodedName);
+
+  if (!projectName) {
+    return undefined;
+  }
+
+  const filePath = decodeURIComponent(suffix.slice(rawIdx + rawInfix.length));
+
+  return { projectName, filePath };
 };
 
 const projectGitDiffErrorResponse = (error: ProjectGitDiffError) => {

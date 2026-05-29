@@ -1432,7 +1432,7 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
       const dir = preview.path.includes("/")
         ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
         : "";
-      const baseUrl = `${window.location.origin}/api/projects/${encodeURIComponent(preview.projectName)}/files/raw?path=${encodeURIComponent(dir)}`;
+      const baseUrl = `${window.location.origin}/api/projects/${encodeURIComponent(preview.projectName)}/files/raw/${dir}`;
       const injected = preview.content.replace(
         /(<head[^>]*>)/i,
         `$1<base href="${baseUrl}">`,
