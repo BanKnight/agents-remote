@@ -754,14 +754,6 @@ function SectionDetail({ filesPath, onDeepDetailChange, onFilesPathChange, proje
       density="compact"
       docked
     >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-            {section.label}
-          </p>
-          <p className="mt-1 truncate text-xs text-slate-500">{section.description}</p>
-        </div>
-      </div>
       {isGit ? (
         <GitDiffPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
       ) : null}
