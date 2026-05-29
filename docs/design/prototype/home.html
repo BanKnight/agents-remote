@@ -6,6 +6,11 @@
     <title>Home Prototype - Level 1 Navigation</title>
     <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
 
       .brand {
         display: flex;
@@ -63,6 +68,21 @@
         width: 38px;
         height: 38px;
         font-size: 22px;
+      }
+
+      .responsive-shell.project-shell {
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .home-workspace {
+        padding: 22px 24px;
+      }
+
+      .home-head {
+        border-bottom: 0;
       }
 
       .project-list {
@@ -125,141 +145,109 @@
         font-weight: 800;
       }
 
-      .mobile-main {
-        min-height: 672px;
-        padding: 16px 14px 92px;
-      }
+      @media (max-width: 640px) {
+        .workspace {
+          grid-template-rows: auto minmax(0, 1fr) auto;
+        }
 
-      .mobile-topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 14px;
-      }
+        .home-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          border-bottom: 1px solid var(--line);
+        }
 
-      .mobile-topbar h2 {
-        font-size: 20px;
-      }
+        .home-workspace {
+          display: block;
+          min-height: 0;
+          overflow-y: auto;
+          padding: 12px 14px;
+        }
 
-      .mobile-topbar p {
-        max-width: 260px;
-      }
+        h2 {
+          font-size: 20px;
+        }
 
+        .topbar p {
+          max-width: 260px;
+        }
+
+        .project-card {
+          border-radius: 18px;
+          padding: 12px;
+        }
+
+        .project-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 14px;
+        }
+      }
     </style>
   </head>
   <body class="prototype-home prototype-project-shell">
     <main class="page">
-      <section class="intro">
-        <div class="eyebrow">Level 1 page</div>
-        <h1>Home / Projects</h1>
-        <p>一级页面遵循“导航 + 工作区”。桌面端是左侧一级导航 + 右侧工作区；移动端是底部一级导航 + 主工作区，顶部只保留一句话级上下文和低频操作入口。</p>
-      </section>
+      <section class="responsive-shell project-shell">
+        <aside class="level-one-rail">
+          <div class="brand"><span class="brand-mark">AR</span><span>Agents Remote</span></div>
+          <nav class="nav-list" aria-label="Level 1 navigation">
+            <div class="nav-item active"><span class="nav-icon">P</span><span>Projects</span></div>
+            <div class="nav-item"><span class="nav-icon">S</span><span>Sessions</span></div>
+            <div class="nav-item"><span class="nav-icon">C</span><span>Config</span></div>
+            <div class="nav-item"><span class="nav-icon">H</span><span>Help</span></div>
+          </nav>
+        </aside>
 
-      <section class="stage-grid">
-        <div>
-          <div class="frame-label">Desktop: left level-1 navigation + workspace</div>
-          <div class="desktop-shell">
-            <aside class="level-one-rail">
-              <div class="brand"><span class="brand-mark">AR</span><span>Agents Remote</span></div>
-              <nav class="nav-list" aria-label="Level 1 navigation">
-                <div class="nav-item active"><span class="nav-icon">P</span><span>Projects</span></div>
-                <div class="nav-item"><span class="nav-icon">S</span><span>Sessions</span></div>
-                <div class="nav-item"><span class="nav-icon">C</span><span>Config</span></div>
-                <div class="nav-item"><span class="nav-icon">H</span><span>Help</span></div>
-              </nav>
-            </aside>
-            <section class="workspace">
-              <div class="topbar">
-                <div>
-                  <p class="context-line">Open a server Project to continue with Agent, Files, Git, or Terminal.</p>
-                  <h2>Projects</h2>
-                </div>
-                <button class="primary-action">New / Adopt</button>
-              </div>
-              <div class="project-list">
-                <article class="project-card">
-                  <span class="project-icon">P</span>
-                  <div>
-                    <h3>agents-remote</h3>
-                    <p>/home/deploy/workspace/agents-remote</p>
-                    <div class="status-row"><span class="pill">Agent 0</span><span class="pill">Terminal 1</span><span class="pill">main</span></div>
-                  </div>
-                  <span class="open-link">Open</span>
-                </article>
-                <article class="project-card">
-                  <span class="project-icon">P</span>
-                  <div>
-                    <h3>claude-template</h3>
-                    <p>/home/deploy/workspace/claude-template</p>
-                    <div class="status-row"><span class="pill">Agent 2</span><span class="pill">Terminal 0</span><span class="pill">clean</span></div>
-                  </div>
-                  <span class="open-link">Open</span>
-                </article>
-                <article class="project-card">
-                  <span class="project-icon">P</span>
-                  <div>
-                    <h3>novels</h3>
-                    <p>/home/deploy/workspace/novels</p>
-                    <div class="status-row"><span class="pill">Agent 1</span><span class="pill">Terminal 1</span><span class="pill">pending</span></div>
-                  </div>
-                  <span class="open-link">Open</span>
-                </article>
-              </div>
-            </section>
-          </div>
-        </div>
+        <section class="workspace">
+          <header class="workspace-head home-head">
+            <div>
+              <p class="context-line"><span class="desktop-only">Open a server Project to continue with Agent, Files, Git, or Terminal.</span><span class="mobile-only">Open a Project to continue.</span></p>
+              <h2>Projects</h2>
+            </div>
+            <button class="primary-action desktop-only">New / Adopt</button>
+            <button class="small-action mobile-only" aria-label="Create or adopt project">+</button>
+          </header>
 
-        <div>
-          <div class="frame-label">Mobile: workspace + bottom level-1 navigation</div>
-          <div class="phone-shell">
-            <div class="phone-status"></div>
-            <section class="mobile-main">
-              <div class="mobile-topbar">
+          <section class="home-workspace">
+            <div class="project-list">
+              <article class="project-card">
+                <span class="project-icon">P</span>
                 <div>
-                  <p class="context-line">Open a Project to continue.</p>
-                  <h2>Projects</h2>
+                  <h3>agents-remote</h3>
+                  <p>/home/deploy/workspace/agents-remote</p>
+                  <div class="status-row"><span class="pill">Agent 0</span><span class="pill">Terminal 1</span><span class="pill desktop-only">main</span></div>
                 </div>
-                <button class="small-action" aria-label="Create or adopt project">+</button>
-              </div>
-              <div class="project-list">
-                <article class="project-card">
-                  <span class="project-icon">P</span>
-                  <div>
-                    <h3>agents-remote</h3>
-                    <p>/home/deploy/workspace/agents-remote</p>
-                    <div class="status-row"><span class="pill">Agent 0</span><span class="pill">Terminal 1</span></div>
-                  </div>
-                  <span class="open-link">Open</span>
-                </article>
-                <article class="project-card">
-                  <span class="project-icon">P</span>
-                  <div>
-                    <h3>claude-template</h3>
-                    <p>/home/deploy/workspace/claude-template</p>
-                    <div class="status-row"><span class="pill">Agent 2</span><span class="pill">clean</span></div>
-                  </div>
-                  <span class="open-link">Open</span>
-                </article>
-                <article class="project-card">
-                  <span class="project-icon">P</span>
-                  <div>
-                    <h3>novels</h3>
-                    <p>/home/deploy/workspace/novels</p>
-                    <div class="status-row"><span class="pill">Agent 1</span><span class="pill">pending</span></div>
-                  </div>
-                  <span class="open-link">Open</span>
-                </article>
-              </div>
-            </section>
-            <nav class="bottom-nav" aria-label="Level 1 navigation">
-              <div class="bottom-item active"><span class="nav-icon">P</span><span>Projects</span></div>
-              <div class="bottom-item"><span class="nav-icon">S</span><span>Sessions</span></div>
-              <div class="bottom-item"><span class="nav-icon">C</span><span>Config</span></div>
-              <div class="bottom-item"><span class="nav-icon">H</span><span>Help</span></div>
-            </nav>
-          </div>
-        </div>
+                <span class="open-link">Open</span>
+              </article>
+              <article class="project-card">
+                <span class="project-icon">P</span>
+                <div>
+                  <h3>claude-template</h3>
+                  <p>/home/deploy/workspace/claude-template</p>
+                  <div class="status-row"><span class="pill">Agent 2</span><span class="pill">Terminal 0</span><span class="pill desktop-only">clean</span></div>
+                </div>
+                <span class="open-link">Open</span>
+              </article>
+              <article class="project-card">
+                <span class="project-icon">P</span>
+                <div>
+                  <h3>novels</h3>
+                  <p>/home/deploy/workspace/novels</p>
+                  <div class="status-row"><span class="pill">Agent 1</span><span class="pill">Terminal 1</span><span class="pill desktop-only">pending</span></div>
+                </div>
+                <span class="open-link">Open</span>
+              </article>
+            </div>
+          </section>
+
+          <nav class="bottom-nav" aria-label="Level 1 navigation">
+            <div class="bottom-item active"><span class="nav-icon">P</span><span>Projects</span></div>
+            <div class="bottom-item"><span class="nav-icon">S</span><span>Sessions</span></div>
+            <div class="bottom-item"><span class="nav-icon">C</span><span>Config</span></div>
+            <div class="bottom-item"><span class="nav-icon">H</span><span>Help</span></div>
+          </nav>
+        </section>
       </section>
     </main>
   </body>

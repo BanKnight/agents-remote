@@ -63,8 +63,8 @@
 | 等宽字体 | `"SFMono-Regular", Consolas, "Liberation Mono", monospace` | terminal、diff、code、path。 |
 | 页面最大宽度 | `1180px` Home；`1480px` 其他 standalone | 让 desktop frame 与 mobile frame 同屏评审。 |
 | 页面 padding | `28px` | standalone 页面外边距。 |
-| Desktop frame 圆角 | `28px` | `.desktop-shell`。 |
-| Mobile frame 圆角 | `38px` | `.phone-shell`。 |
+| Desktop shell 圆角 | `28px` | overview 评审 frame；standalone 页面本体铺满 viewport 时不额外加外框。 |
+| Mobile shell 圆角 | `38px` | overview 评审 frame；standalone mobile 截图使用真实 `390x844` viewport。 |
 | Shell 阴影 | `0 26px 80px rgba(0, 0, 0, 0.38)` | desktop/mobile frame。 |
 | Mobile 宽度 | `390px` | phone shell 和截图 viewport 对齐。 |
 | Desktop rail 宽度 | `220px` 一级；`210px` 二级 | 左侧导航宽度。 |
@@ -95,21 +95,21 @@
 ## 布局规范
 
 - 桌面端优先使用左右结构，给工作区足够横向空间。
-- 移动端优先使用上下结构：顶部显示当前直接二级页上下文，中间主工作区，底部当前层级导航；从 Agent instance 等深层上下文打开的 Files/Terminal 属于上下文详情页，不显示底部二级导航，使用顶部返回回到来源。
+- 移动端带底部导航的页面统一使用三段式上下结构：`header` 置顶、`bottom nav` 置底、`content` 使用 `minmax(0, 1fr)` 撑满剩余空间；content 内部内容超出时只在 content 区域出现滚动条，页面 body、header 和 bottom nav 不参与滚动。从 Agent instance 等深层上下文打开的 Files/Terminal 属于上下文详情页，不显示底部二级导航，使用顶部返回回到来源。
 - 页面外层使用大圆角深色面板，表达独立应用 shell。
 - 卡片应服务可扫读性，不要为了展示 metadata 牺牲首屏密度。
 - 历史记录这类辅助内容应轻量呈现，适合用表格行或列表行，而不是厚卡片堆叠。
-- 桌面 `.stage-grid` 默认为 `minmax(760px, 1fr) 390px`，resource 页可用 `minmax(800px, 1fr) 390px`，Home 可用 `minmax(0, 1fr) 390px`。
-- `desktop-shell` 和 `phone-shell` 都是固定格式评审框，hover、内容多少和 label 不应改变 frame 宽度。
+- Standalone HTML 不再包含并排 desktop/mobile mockup，也不包含额外说明区域；每个页面只有一个响应式原型本体。
+- Desktop/mobile 并排评审只发生在 `overview.html`：同一个 standalone HTML 被 `1440x1000` 与 `390x844` 两个 iframe viewport 包住，用于观察真实响应式变化。
 
 ## 响应式要求
 
 | 场景 | 导航 | 内容滚动 / 安全区 | 输入职责 |
 |---|---|---|---|
 | Desktop 一级 | 左侧一级 rail + workspace | 工作区内部滚动，shell 保持左右结构 | 不显示 runtime input。 |
-| Mobile 一级 | 底部一级 nav | 主内容底部 padding 预留 bottom nav 和 safe area | 不显示 runtime input。 |
+| Mobile 一级 | header + content + 底部一级 nav | 页面锁定 `100vh`；header 置顶、nav 置底、content 撑满中间，超出时 content 内部滚动 | 不显示 runtime input。 |
 | Desktop Project 二级 | 左侧二级 rail + workspace | Files/Git/Terminal workspace 内部承担列表/详情布局 | Project workspace 不显示 runtime input。 |
-| Mobile direct 二级 | 底部二级 nav 含 Back | 直接二级页不显示左上返回，内容底部预留 bottom nav | Agent/Terminal list 不显示 runtime input。 |
+| Mobile direct 二级 | header + content + 底部二级 nav 含 Back | 直接二级页不显示左上返回；页面锁定 `100vh`，content 超出时只在 content 区域滚动 | Agent/Terminal list 不显示 runtime input。 |
 | Mobile deep/detail | 顶部返回，不显示底部二级 nav | 主内容拿到完整垂直空间，详情区可独立滚动 | Agent/Terminal instance detail 才显示输入抽屉。 |
 | Mobile fixed input | 顶部返回 + 中部 terminal | 输入抽屉 padding 使用 `env(safe-area-inset-bottom)`，不能遮挡 scrollback | 输入只属于 runtime detail。 |
 
@@ -144,8 +144,8 @@
 - 移动端保持紧凑，避免顶部区域、说明文案和低频操作占据首屏。
 - 卡片内部优先使用 `12px` 到 `16px` padding；大容器可以使用 `20px` 到 `28px`。
 - 列表项之间保留明确间隔，但不要让 metadata 行过多导致内容下沉。
-- 底部导航需要预留安全区域和主内容底部 padding，避免遮挡工作区。
-- 固定底部 nav 的主内容 padding 至少覆盖 `84px-92px`；固定输入抽屉使用 safe-area padding。
+- 底部导航不通过覆盖内容实现，而是作为移动端 grid 的第三段固定在底部；content 区域不需要为 nav 额外堆大 padding。
+- 固定输入抽屉使用 safe-area padding；带 bottom nav 的页面由三段式 grid 处理 safe area 和内容滚动边界。
 
 ## 公共 foundation 边界
 
@@ -160,7 +160,7 @@
 - [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端底部二级导航含 Back 返回一级入口；工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
 - [agent-session-detail.html](./agent-session-detail.html) — 展示从 Agent 实例列表进入后的 terminal-first Agent instance 详情页，包含可滚动/可输入终端、顶部 Files/Git 快捷入口、Meta 浮窗和移动端可收起输入抽屉。
 - [terminal-instance-detail.html](./terminal-instance-detail.html) — 展示单个 Terminal instance 详情页，采用 terminal-first 输出与输入布局，但顶部不显示 Files/Git/Terminal 快捷入口。
-- [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验，包含直接二级 Files 和从 Agent instance 打开的 contextual Files 两种移动端形态，以及文本/代码、图片、HTML 和不可预览状态。
+- [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验：standalone 保留一个响应式 direct Files 页面；contextual Files 和文件 preview detail 作为后续状态约束记录在 overview 说明中。
 - [git.html](./git.html) — 展示 Project Git 的只读 status/diff inspection 体验，包含桌面端变更列表 + unified diff，以及移动端直接 Git 列表和单文件 diff 详情两种形态。
 - [terminal.html](./terminal.html) — 展示 Terminal 二级页的实例列表体验：支持进入、新建、关闭 Terminal instance，并沿用带 Back 的移动端二级导航。
 - [overview.html](./overview.html) — 按页面分组展示每个 standalone 页面的一组 desktop/mobile iframe，总览评审用，不作为正式截图来源。

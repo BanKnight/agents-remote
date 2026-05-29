@@ -6,6 +6,18 @@
     <title>Project Terminal Prototype</title>
     <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.project-shell {
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
 
       .nav-icon,
       .terminal-mark {
@@ -17,7 +29,10 @@
         font-weight: 800;
       }
 
-      h3 { margin: 3px 0 0; font-size: 22px; }
+      h3 {
+        margin: 3px 0 0;
+        font-size: 22px;
+      }
 
       .create-button {
         border: 0;
@@ -32,8 +47,8 @@
         display: grid;
         grid-template-rows: minmax(0, 1fr) auto;
         gap: 18px;
-        padding: 22px 24px;
         min-height: 0;
+        padding: 22px 24px;
       }
 
       .section-title {
@@ -44,8 +59,15 @@
         margin-bottom: 12px;
       }
 
-      .section-title h4 { margin: 0; font-size: 15px; }
-      .section-title span { color: var(--muted); font-size: 12px; }
+      .section-title h4 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .section-title span {
+        color: var(--muted);
+        font-size: 12px;
+      }
 
       .terminal-list {
         display: grid;
@@ -68,8 +90,8 @@
       .terminal-top {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 12px;
         align-items: center;
+        gap: 12px;
       }
 
       .terminal-mark {
@@ -90,33 +112,10 @@
         line-height: 1.45;
       }
 
-      .status-pill {
-        border: 1px solid rgba(52, 211, 153, 0.3);
-        border-radius: 999px;
-        padding: 6px 8px;
-        color: var(--good);
-        background: rgba(52, 211, 153, 0.08);
-        font-size: 11px;
-        font-weight: 800;
-        white-space: nowrap;
-      }
-
-      .status-pill.idle {
-        border-color: rgba(148, 163, 184, 0.24);
-        color: var(--soft);
-        background: rgba(148, 163, 184, 0.08);
-      }
-
-      .status-pill.warn {
-        border-color: rgba(251, 191, 36, 0.28);
-        color: var(--warn);
-        background: rgba(251, 191, 36, 0.08);
-      }
-
       .terminal-meta {
         display: flex;
-        gap: 8px;
         flex-wrap: wrap;
+        gap: 8px;
         margin-top: 12px;
       }
 
@@ -134,7 +133,7 @@
         padding: 10px 12px;
         background: rgba(5, 8, 13, 0.55);
         color: #d6e4f7;
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-family: var(--font-mono);
         font-size: 11px;
         line-height: 1.55;
       }
@@ -162,7 +161,6 @@
 
       .history-list {
         display: grid;
-        gap: 0;
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 16px;
@@ -172,183 +170,168 @@
       .history-item {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 10px;
         align-items: center;
+        gap: 10px;
         border-bottom: 1px solid rgba(148, 163, 184, 0.12);
         padding: 10px 11px;
       }
 
-      .history-item:last-child { border-bottom: 0; }
-      .history-item p { margin: 0; color: var(--soft); font-size: 12px; }
-      .history-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
-
-      .mobile-workspace {
-        min-height: 664px;
-        padding: 12px 12px 92px;
-        overflow: hidden;
+      .history-item:last-child {
+        border-bottom: 0;
       }
 
-      .mobile-create { margin-bottom: 12px; }
-      .mobile-create .create-button { width: 100%; }
-      .mobile-workspace .terminal-list { grid-template-columns: 1fr; gap: 10px; }
-      .mobile-workspace .terminal-card { border-radius: 18px; padding: 12px; }
-      .mobile-workspace .terminal-mark { width: 38px; height: 38px; border-radius: 14px; }
-      .mobile-workspace .terminal-output { max-height: 78px; overflow: hidden; }
-      .mobile-workspace .history-panel { margin-top: 12px; border-radius: 18px; }
+      .history-item p {
+        margin: 0;
+        color: var(--soft);
+        font-size: 12px;
+      }
 
+      .history-time {
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 640px) {
+        .workspace {
+          grid-template-rows: auto minmax(0, 1fr) auto;
+        }
+
+        .workspace-head {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+
+        .create-button {
+          width: 100%;
+        }
+
+        .terminal-workspace {
+          display: block;
+          min-height: 0;
+          overflow-y: auto;
+          padding: 12px;
+        }
+
+        .terminal-list {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .terminal-card {
+          border-radius: 18px;
+          padding: 12px;
+        }
+
+        .terminal-mark {
+          width: 38px;
+          height: 38px;
+          border-radius: 14px;
+        }
+
+        .terminal-output {
+          max-height: 78px;
+          overflow: hidden;
+        }
+
+        .history-panel {
+          border-radius: 18px;
+        }
+      }
     </style>
   </head>
   <body class="prototype-terminal-list prototype-project-shell">
     <main class="page">
-      <section class="intro">
-        <div class="eyebrow">Level 2 page</div>
-        <h1>Project Terminal / Instances</h1>
-        <p>Terminal 二级页参考 Agent 的实例列表模型：展示多个 Terminal 实例，支持进入、新建和关闭；移动端作为直接二级页不显示左上返回，底部二级导航提供 Back 回到一级页面。</p>
-      </section>
-
-      <section class="stage-grid">
-        <div>
-          <div class="frame-label">Desktop: left level-2 navigation + Terminal instance workspace</div>
-          <div class="desktop-shell">
-            <aside class="level-two-rail">
-              <div class="back-link">← Projects</div>
-              <div class="project-chip">
-                <h2>agents-remote</h2>
-                <p>/home/deploy/workspace/agents-remote</p>
-              </div>
-              <nav class="nav-list" aria-label="Level 2 navigation">
-                <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
-                <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
-                <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
-                <div class="nav-item active"><span class="nav-icon">T</span><span>Terminal</span></div>
-              </nav>
-            </aside>
-
-            <section class="workspace">
-              <header class="workspace-head">
-                <div>
-                  <p class="context-line">Project / agents-remote / Terminal</p>
-                  <h3>Terminal instances</h3>
-                </div>
-                <button class="create-button" type="button">+ Terminal</button>
-              </header>
-
-              <section class="terminal-workspace">
-                <div>
-                  <div class="section-title"><h4>Active terminals</h4><span>3 running / idle</span></div>
-                  <div class="terminal-list">
-                    <article class="terminal-card">
-                      <div class="terminal-top">
-                        <span class="terminal-mark">T</span>
-                        <div>
-                          <h5>Terminal · dev server</h5>
-                          <p>Watching Bun web/api logs in the project root.</p>
-                        </div>
-                        <span class="status-pill">running</span>
-                      </div>
-                      <div class="terminal-meta"><span class="mini-pill">main</span><span class="mini-pill">ar-dev</span><span class="mini-pill">18m</span></div>
-                      <div class="terminal-output">$ bun run dev<br /><span class="good">✓ web ready on :3000</span><br />→ api ready on :3001</div>
-                      <div class="terminal-actions"><button>Open</button><button>Close</button></div>
-                    </article>
-
-                    <article class="terminal-card">
-                      <div class="terminal-top">
-                        <span class="terminal-mark">T</span>
-                        <div>
-                          <h5>Terminal · test run</h5>
-                          <p>Paused after a focused e2e smoke check.</p>
-                        </div>
-                        <span class="status-pill idle">idle</span>
-                      </div>
-                      <div class="terminal-meta"><span class="mini-pill">feature/ui</span><span class="mini-pill">zsh</span><span class="mini-pill">6m</span></div>
-                      <div class="terminal-output">$ bun run e2e<br />3 passed · trace saved</div>
-                      <div class="terminal-actions"><button>Open</button><button>Close</button></div>
-                    </article>
-
-                    <article class="terminal-card">
-                      <div class="terminal-top">
-                        <span class="terminal-mark">T</span>
-                        <div>
-                          <h5>Terminal · git inspect</h5>
-                          <p>Checking prototype diffs before review.</p>
-                        </div>
-                        <span class="status-pill warn">needs input</span>
-                      </div>
-                      <div class="terminal-meta"><span class="mini-pill">docs</span><span class="mini-pill">bash</span><span class="mini-pill">2m</span></div>
-                      <div class="terminal-output">$ git diff --check<br />waiting for next command...</div>
-                      <div class="terminal-actions"><button>Open</button><button>Close</button></div>
-                    </article>
-                  </div>
-                </div>
-
-                <aside class="history-panel">
-                  <div class="section-title"><h4>Recent terminal sessions</h4><span>lightweight restore</span></div>
-                  <div class="history-list">
-                    <article class="history-item"><span class="terminal-mark">T</span><p>Dev server restarted and logs checked.</p><span class="history-time">8 min ago</span></article>
-                    <article class="history-item"><span class="terminal-mark">T</span><p>Focused e2e smoke completed.</p><span class="history-time">1 h ago</span></article>
-                  </div>
-                </aside>
-              </section>
-            </section>
+      <section class="responsive-shell project-shell">
+        <aside class="level-two-rail">
+          <div class="back-link">← Projects</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
           </div>
-        </div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item active"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </aside>
 
-        <div>
-          <div class="frame-label">Mobile: direct Terminal page + bottom level-2 navigation with back to Projects</div>
-          <div class="phone-shell">
-            <div class="phone-status"></div>
-            <header class="mobile-top">
-              <div class="mobile-title">
-                <h2>agents-remote</h2>
-                <p>Terminal instances · 3 active</p>
-              </div>
-            </header>
-            <section class="mobile-workspace">
-              <div class="mobile-create"><button class="create-button" type="button">+ Terminal</button></div>
+        <section class="workspace">
+          <header class="workspace-head">
+            <div>
+              <p class="context-line"><span class="desktop-only">Project / agents-remote / Terminal</span><span class="mobile-only">agents-remote · 3 active</span></p>
+              <h3>Terminal instances</h3>
+            </div>
+            <button class="create-button" type="button">+ Terminal</button>
+          </header>
+
+          <section class="terminal-workspace">
+            <div>
+              <div class="section-title"><h4>Active terminals</h4><span>3 running / idle</span></div>
               <div class="terminal-list">
                 <article class="terminal-card">
                   <div class="terminal-top">
                     <span class="terminal-mark">T</span>
                     <div>
                       <h5>Terminal · dev server</h5>
-                      <p>Watching Bun web/api logs.</p>
+                      <p><span class="desktop-only">Watching Bun web/api logs in the project root.</span><span class="mobile-only">Watching Bun web/api logs.</span></p>
                     </div>
                     <span class="status-pill">running</span>
                   </div>
-                  <div class="terminal-meta"><span class="mini-pill">main</span><span class="mini-pill">ar-dev</span></div>
-                  <div class="terminal-output">$ bun run dev<br />✓ web ready on :3000</div>
+                  <div class="terminal-meta"><span class="mini-pill">main</span><span class="mini-pill">ar-dev</span><span class="mini-pill desktop-only">18m</span></div>
+                  <div class="terminal-output"><span class="desktop-only">$ bun run dev<br /><span class="good">✓ web ready on :3000</span><br />→ api ready on :3001</span><span class="mobile-only">$ bun run dev<br />✓ web ready on :3000</span></div>
                   <div class="terminal-actions"><button>Open</button><button>Close</button></div>
                 </article>
+
                 <article class="terminal-card">
                   <div class="terminal-top">
                     <span class="terminal-mark">T</span>
                     <div>
                       <h5>Terminal · test run</h5>
-                      <p>Focused e2e smoke is idle.</p>
+                      <p><span class="desktop-only">Paused after a focused e2e smoke check.</span><span class="mobile-only">Focused e2e smoke is idle.</span></p>
                     </div>
                     <span class="status-pill idle">idle</span>
                   </div>
-                  <div class="terminal-meta"><span class="mini-pill">feature/ui</span><span class="mini-pill">6m</span></div>
-                  <div class="terminal-output">$ bun run e2e<br />3 passed</div>
+                  <div class="terminal-meta"><span class="mini-pill">feature/ui</span><span class="mini-pill desktop-only">zsh</span><span class="mini-pill">6m</span></div>
+                  <div class="terminal-output"><span class="desktop-only">$ bun run e2e<br />3 passed · trace saved</span><span class="mobile-only">$ bun run e2e<br />3 passed</span></div>
+                  <div class="terminal-actions"><button>Open</button><button>Close</button></div>
+                </article>
+
+                <article class="terminal-card desktop-only">
+                  <div class="terminal-top">
+                    <span class="terminal-mark">T</span>
+                    <div>
+                      <h5>Terminal · git inspect</h5>
+                      <p>Checking prototype diffs before review.</p>
+                    </div>
+                    <span class="status-pill warn">needs input</span>
+                  </div>
+                  <div class="terminal-meta"><span class="mini-pill">docs</span><span class="mini-pill">bash</span><span class="mini-pill">2m</span></div>
+                  <div class="terminal-output">$ git diff --check<br />waiting for next command...</div>
                   <div class="terminal-actions"><button>Open</button><button>Close</button></div>
                 </article>
               </div>
-              <aside class="history-panel">
-                <div class="section-title"><h4>Recent terminal sessions</h4><span>restore</span></div>
-                <div class="history-list">
-                  <article class="history-item"><span class="terminal-mark">T</span><p>Dev server restarted and logs checked.</p><span class="history-time">8 min ago</span></article>
-                </div>
-              </aside>
-            </section>
-            <nav class="bottom-nav" aria-label="Level 2 navigation">
-              <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
-              <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
-              <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
-              <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
-              <div class="bottom-item active"><span class="nav-icon">T</span><span>Terminal</span></div>
-            </nav>
-          </div>
-        </div>
+            </div>
+
+            <aside class="history-panel">
+              <div class="section-title"><h4>Recent terminal sessions</h4><span><span class="desktop-only">lightweight restore</span><span class="mobile-only">restore</span></span></div>
+              <div class="history-list">
+                <article class="history-item"><span class="terminal-mark">T</span><p>Dev server restarted and logs checked.</p><span class="history-time">8 min ago</span></article>
+                <article class="history-item desktop-only"><span class="terminal-mark">T</span><p>Focused e2e smoke completed.</p><span class="history-time">1 h ago</span></article>
+              </div>
+            </aside>
+          </section>
+
+          <nav class="bottom-nav" aria-label="Level 2 navigation">
+            <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
+            <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="bottom-item active"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </section>
       </section>
     </main>
   </body>

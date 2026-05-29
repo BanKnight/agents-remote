@@ -44,7 +44,7 @@
 
       .header-inner,
       main {
-        width: min(1440px, 100%);
+        width: min(1920px, 100%);
         margin: 0 auto;
       }
 
@@ -76,11 +76,13 @@
       }
 
       .page-list {
-        display: grid;
+        display: flex;
+        flex-direction: column;
         gap: 28px;
       }
 
       .page-section {
+        width: 100%;
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, 0.22);
         border-radius: 24px;
@@ -121,9 +123,18 @@
 
       .preview-grid {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 430px;
+        grid-template-columns: 1440px 390px;
+        align-items: start;
         gap: 16px;
         padding: 16px;
+      }
+
+      .desktop-preview {
+        width: 1440px;
+      }
+
+      .mobile-preview {
+        width: 390px;
       }
 
       .preview-frame {
@@ -158,15 +169,26 @@
       }
 
       .desktop-preview iframe {
-        height: 760px;
+        width: 1440px;
+        height: 1000px;
       }
 
       .mobile-preview iframe {
+        width: 390px;
         height: 844px;
       }
 
-      .mobile-preview {
-        width: min(430px, 100%);
+      .viewport-scroll {
+        overflow: hidden;
+        max-width: 100%;
+      }
+
+      .desktop-preview .viewport-scroll {
+        height: 1000px;
+      }
+
+      .mobile-preview .viewport-scroll {
+        height: 844px;
       }
 
       @media (max-width: 980px) {
@@ -174,8 +196,7 @@
           position: static;
         }
 
-        .section-head,
-        .preview-grid {
+        .section-head {
           grid-template-columns: 1fr;
         }
 
@@ -186,10 +207,6 @@
         .preview-grid {
           display: grid;
         }
-
-        .mobile-preview {
-          width: 100%;
-        }
       }
     </style>
   </head>
@@ -198,7 +215,7 @@
       <div class="header-inner">
         <div class="eyebrow">Prototype review overview</div>
         <h1>Agents Remote prototype map</h1>
-        <p>本页只用于总览评审：按页面分组查看 desktop/mobile 结构关系。正式截图和像素级细节评审应直接打开 standalone HTML，并使用 guidelines 中声明的 desktop 1440x1000 与 mobile 390x844 viewport。</p>
+        <p>本页只用于总览评审：每个页面保留一个 standalone HTML，页面本身不并排维护 desktop/mobile 两份 mockup；下方用 desktop 1440x1000 与 mobile 390x844 两种 iframe viewport 包住同一页面，以观察真实响应式变化。正式截图和像素级细节评审仍应直接打开 standalone HTML，并使用 guidelines 中声明的标准 viewport。</p>
       </div>
     </header>
 
@@ -214,12 +231,12 @@
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: home.html</span></div>
-              <iframe src="./home.html" title="Home desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: home.html</span></div>
+              <div class="viewport-scroll"><iframe src="./home.html" title="Home desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./home.html" title="Home mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./home.html" title="Home mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>
@@ -228,18 +245,18 @@
           <div class="section-head">
             <div>
               <h2>Project Agent workspace / Level 2 navigation</h2>
-              <p>Project Agent 二级页展示 Agent instances、创建入口和轻量 history；移动端使用带 Back 的底部二级导航。</p>
+              <p>Project Agent 二级页展示 Agent instances、创建入口和轻量 history；移动端使用 header/content/bottom nav 三段式，Back 保持在底部二级导航，content 超出时只在中间区域滚动。</p>
             </div>
             <a href="./project-detail.html">Open standalone</a>
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: project-detail.html</span></div>
-              <iframe src="./project-detail.html" title="Project Agent desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: project-detail.html</span></div>
+              <div class="viewport-scroll"><iframe src="./project-detail.html" title="Project Agent desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./project-detail.html" title="Project Agent mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./project-detail.html" title="Project Agent mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>
@@ -254,12 +271,12 @@
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: agent-session-detail.html</span></div>
-              <iframe src="./agent-session-detail.html" title="Agent detail desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: agent-session-detail.html</span></div>
+              <div class="viewport-scroll"><iframe src="./agent-session-detail.html" title="Agent detail desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./agent-session-detail.html" title="Agent detail mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./agent-session-detail.html" title="Agent detail mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>
@@ -274,12 +291,12 @@
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: terminal-instance-detail.html</span></div>
-              <iframe src="./terminal-instance-detail.html" title="Terminal detail desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: terminal-instance-detail.html</span></div>
+              <div class="viewport-scroll"><iframe src="./terminal-instance-detail.html" title="Terminal detail desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./terminal-instance-detail.html" title="Terminal detail mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./terminal-instance-detail.html" title="Terminal detail mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>
@@ -288,18 +305,18 @@
           <div class="section-head">
             <div>
               <h2>Files / Read-only preview</h2>
-              <p>Files 二级页展示只读文件浏览、HTML/text/image/unsupported preview，以及 mobile direct/context/detail 导航差异。</p>
+              <p>Files 二级页展示只读文件浏览、HTML/text/image/unsupported preview；standalone 保留一个响应式 direct Files 页面，原 mobile context/detail 导航差异在本说明中保留为后续状态约束。</p>
             </div>
             <a href="./files.html">Open standalone</a>
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: files.html</span></div>
-              <iframe src="./files.html" title="Files desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: files.html</span></div>
+              <div class="viewport-scroll"><iframe src="./files.html" title="Files desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./files.html" title="Files mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./files.html" title="Files mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>
@@ -308,18 +325,18 @@
           <div class="section-head">
             <div>
               <h2>Git / Read-only diff inspection</h2>
-              <p>Git 二级页展示只读 status、changed files 和 unified diff；移动端 diff detail 使用顶部返回并隐藏底部二级导航。</p>
+              <p>Git 二级页展示只读 status、changed files 和 unified diff；standalone 保留一个响应式 direct Git 页面，mobile diff detail 的顶部返回与隐藏底部二级导航作为后续详情状态约束保留在说明中。</p>
             </div>
             <a href="./git.html">Open standalone</a>
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: git.html</span></div>
-              <iframe src="./git.html" title="Git desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: git.html</span></div>
+              <div class="viewport-scroll"><iframe src="./git.html" title="Git desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./git.html" title="Git mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./git.html" title="Git mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>
@@ -328,18 +345,18 @@
           <div class="section-head">
             <div>
               <h2>Terminal workspace / Instances</h2>
-              <p>Terminal 二级页展示 live Terminal instances、新建和关闭入口；direct workspace 不承载 runtime input。</p>
+              <p>Terminal 二级页展示 live Terminal instances、新建和关闭入口；mobile 使用 header/content/bottom nav 三段式，direct workspace 不承载 runtime input。</p>
             </div>
             <a href="./terminal.html">Open standalone</a>
           </div>
           <div class="preview-grid">
             <div class="preview-frame desktop-preview">
-              <div class="preview-label"><span>Desktop preview</span><span>standalone: terminal.html</span></div>
-              <iframe src="./terminal.html" title="Terminal workspace desktop prototype preview"></iframe>
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: terminal.html</span></div>
+              <div class="viewport-scroll"><iframe src="./terminal.html" title="Terminal workspace desktop prototype preview"></iframe></div>
             </div>
             <div class="preview-frame mobile-preview">
-              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
-              <iframe src="./terminal.html" title="Terminal workspace mobile prototype preview"></iframe>
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./terminal.html" title="Terminal workspace mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>

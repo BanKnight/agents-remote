@@ -6,6 +6,18 @@
     <title>Project Detail Prototype - Agent Instances</title>
     <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.project-shell {
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
 
       .nav-icon,
       .provider-mark,
@@ -25,9 +37,9 @@
 
       .create-actions {
         display: flex;
-        gap: 10px;
         flex-wrap: wrap;
         justify-content: flex-end;
+        gap: 10px;
       }
 
       .create-button,
@@ -50,8 +62,8 @@
         display: grid;
         grid-template-rows: minmax(0, 1fr) auto;
         gap: 18px;
-        padding: 22px 24px;
         min-height: 0;
+        padding: 22px 24px;
       }
 
       .desktop-agent-layout {
@@ -84,7 +96,6 @@
 
       .history-list {
         display: grid;
-        gap: 0;
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 16px;
@@ -106,8 +117,8 @@
       .agent-top {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 12px;
         align-items: center;
+        gap: 12px;
       }
 
       .provider-mark {
@@ -117,9 +128,9 @@
       }
 
       .provider-mark.codex {
-        color: var(--good);
         border-color: rgba(52, 211, 153, 0.34);
         background: rgba(52, 211, 153, 0.1);
+        color: var(--good);
       }
 
       .agent-card h5 {
@@ -134,22 +145,10 @@
         line-height: 1.45;
       }
 
-      .status-pill.idle {
-        border-color: rgba(148, 163, 184, 0.24);
-        color: var(--soft);
-        background: rgba(148, 163, 184, 0.08);
-      }
-
-      .status-pill.warn {
-        border-color: rgba(251, 191, 36, 0.28);
-        color: var(--warn);
-        background: rgba(251, 191, 36, 0.08);
-      }
-
       .agent-meta {
         display: flex;
-        gap: 8px;
         flex-wrap: wrap;
+        gap: 8px;
         margin-top: 12px;
       }
 
@@ -167,7 +166,7 @@
         padding: 10px 12px;
         background: rgba(5, 8, 13, 0.55);
         color: #d6e4f7;
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-family: var(--font-mono);
         font-size: 11px;
         line-height: 1.55;
       }
@@ -196,8 +195,8 @@
       .history-item {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 10px;
         align-items: center;
+        gap: 10px;
         border-bottom: 1px solid rgba(148, 163, 184, 0.12);
         padding: 10px 11px;
       }
@@ -211,11 +210,6 @@
         height: 32px;
         border-radius: 12px;
         font-size: 12px;
-      }
-
-      .history-item h5 {
-        margin: 0 0 4px;
-        font-size: 13px;
       }
 
       .history-item p {
@@ -241,201 +235,165 @@
         line-height: 1.55;
       }
 
-      .mobile-workspace {
-        min-height: 664px;
-        padding: 12px 12px 92px;
-        overflow: hidden;
+      @media (max-width: 640px) {
+        .workspace {
+          grid-template-rows: auto minmax(0, 1fr) auto;
+        }
+
+        .workspace-head {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+
+        .create-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          width: 100%;
+        }
+
+        .agent-workspace {
+          display: block;
+          min-height: 0;
+          overflow-y: auto;
+          padding: 12px;
+        }
+
+        .agent-list {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .agent-card {
+          border-radius: 18px;
+          padding: 12px;
+        }
+
+        .provider-mark {
+          width: 38px;
+          height: 38px;
+          border-radius: 14px;
+        }
+
+        .agent-output {
+          max-height: 72px;
+          overflow: hidden;
+        }
+
+        .history-panel {
+          border-radius: 18px;
+        }
       }
-
-      .mobile-create {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-
-      .mobile-workspace .agent-list { grid-template-columns: 1fr; gap: 10px; }
-      .mobile-workspace .history-list { grid-template-columns: 1fr; }
-      .mobile-workspace .history-item { grid-template-columns: auto minmax(0, 1fr) auto; }
-      .mobile-workspace .agent-card { border-radius: 18px; padding: 12px; }
-      .mobile-workspace .provider-mark { width: 38px; height: 38px; border-radius: 14px; }
-      .mobile-workspace .agent-output { max-height: 72px; overflow: hidden; }
-      .mobile-workspace .history-panel { margin-top: 12px; border-radius: 18px; }
-
     </style>
   </head>
   <body class="prototype-project prototype-project-shell">
     <main class="page">
-      <section class="intro">
-        <div class="eyebrow">Level 2 page</div>
-        <h1>Project Detail / Agent Instances</h1>
-        <p>Agent 二级页展示多个 Agent 实例。顶部提供创建 Claude/Codex 实例入口；主体显示当前实例卡片；旁侧或下方预留未来会话历史记录。Files、Git、Terminal 后续可沿用同样的“实例/资源列表 + 详情/历史”的工作区结构。</p>
-      </section>
-
-      <section class="stage-grid">
-        <div>
-          <div class="frame-label">Desktop: left level-2 navigation + Agent instance workspace</div>
-          <div class="desktop-shell">
-            <aside class="level-two-rail">
-              <div class="back-link">← Projects</div>
-              <div class="project-chip">
-                <h2>agents-remote</h2>
-                <p>/home/deploy/workspace/agents-remote</p>
-              </div>
-              <nav class="nav-list" aria-label="Level 2 navigation">
-                <div class="nav-item active"><span class="nav-icon">A</span><span>Agent</span></div>
-                <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
-                <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
-                <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
-              </nav>
-            </aside>
-            <section class="workspace">
-              <header class="workspace-head">
-                <div>
-                  <p class="context-line">Project / agents-remote / Agent</p>
-                  <h3>Agent instances</h3>
-                </div>
-                <div class="create-actions" aria-label="Create Agent instance">
-                  <button class="create-button primary" type="button">+ Claude</button>
-                  <button class="create-button" type="button">+ Codex</button>
-                </div>
-              </header>
-              <section class="agent-workspace">
-                <div class="desktop-agent-layout">
-                  <div class="section-title"><h4>Active instances</h4><span>3 running / paused</span></div>
-                  <div class="agent-list">
-                    <article class="agent-card">
-                      <div class="agent-top">
-                        <span class="provider-mark">CL</span>
-                        <div>
-                          <h5>Claude · UI alignment</h5>
-                          <p>Reviewing prototype differences and preparing homepage navigation suggestions.</p>
-                        </div>
-                        <span class="status-pill">running</span>
-                      </div>
-                      <div class="agent-meta"><span class="mini-pill">main</span><span class="mini-pill">12m</span><span class="mini-pill">2 files read</span></div>
-                      <div class="agent-output">✓ Loaded docs/project.md<br />→ Next: compare mobile home with prototype</div>
-                      <div class="agent-actions"><button>Open</button><button>Pause</button><button>Close</button></div>
-                    </article>
-
-                    <article class="agent-card">
-                      <div class="agent-top">
-                        <span class="provider-mark codex">CX</span>
-                        <div>
-                          <h5>Codex · API smoke</h5>
-                          <p>Checking Project API shape before wiring a new Agent instance entry point.</p>
-                        </div>
-                        <span class="status-pill warn">waiting</span>
-                      </div>
-                      <div class="agent-meta"><span class="mini-pill">feature/nav</span><span class="mini-pill">4m</span><span class="mini-pill">needs input</span></div>
-                      <div class="agent-output">? Waiting for confirmation: create instance provider defaults</div>
-                      <div class="agent-actions"><button>Open</button><button>Resume</button><button>Close</button></div>
-                    </article>
-
-                    <article class="agent-card">
-                      <div class="agent-top">
-                        <span class="provider-mark">CL</span>
-                        <div>
-                          <h5>Claude · Docs cleanup</h5>
-                          <p>Summarized older console-shell notes and is ready to archive local scratch output.</p>
-                        </div>
-                        <span class="status-pill idle">paused</span>
-                      </div>
-                      <div class="agent-meta"><span class="mini-pill">docs</span><span class="mini-pill">yesterday</span><span class="mini-pill">history saved</span></div>
-                      <div class="agent-output">Last turn: updated long-term navigation notes.</div>
-                      <div class="agent-actions"><button>Open</button><button>Resume</button><button>Close</button></div>
-                    </article>
-                  </div>
-                </div>
-
-                <aside class="history-panel">
-                  <div class="section-title"><h4>Session history</h4><span>future restore entry</span></div>
-                  <div class="history-list">
-                    <article class="history-item">
-                      <span class="history-mark">CL</span>
-                      <p>Homepage UI polish completed and ready for review.</p>
-                      <span class="history-time">12 min ago</span>
-                    </article>
-                    <article class="history-item">
-                      <span class="history-mark">CX</span>
-                      <p>Project API smoke checked provider defaults.</p>
-                      <span class="history-time">1 h ago</span>
-                    </article>
-                    <article class="history-item">
-                      <span class="history-mark">CL</span>
-                      <p>Mobile session console notes were archived.</p>
-                      <span class="history-time">yesterday</span>
-                    </article>
-                  </div>
-                  <p class="history-note">历史记录未来用于恢复上下文、查看过往输出和继续会话；当前页面先保留结构位置，不要求完整实现。</p>
-                </aside>
-              </section>
-            </section>
+      <section class="responsive-shell project-shell">
+        <aside class="level-two-rail">
+          <div class="back-link">← Projects</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
           </div>
-        </div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item active"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </aside>
 
-        <div>
-          <div class="frame-label">Mobile: direct Agent page + bottom level-2 navigation with back to Projects</div>
-          <div class="phone-shell">
-            <div class="phone-status"></div>
-            <header class="mobile-top direct">
-              <div class="mobile-title">
-                <h2>agents-remote</h2>
-                <p>Agent instances · 3 active</p>
-              </div>
-            </header>
-            <section class="mobile-workspace">
-              <div class="mobile-create" aria-label="Create Agent instance">
-                <button class="create-button primary" type="button">+ Claude</button>
-                <button class="create-button" type="button">+ Codex</button>
-              </div>
+        <section class="workspace">
+          <header class="workspace-head">
+            <div>
+              <p class="context-line"><span class="desktop-only">Project / agents-remote / Agent</span><span class="mobile-only">agents-remote · 3 active</span></p>
+              <h3>Agent instances</h3>
+            </div>
+            <div class="create-actions" aria-label="Create Agent instance">
+              <button class="create-button primary" type="button">+ Claude</button>
+              <button class="create-button" type="button">+ Codex</button>
+            </div>
+          </header>
+
+          <section class="agent-workspace">
+            <div class="desktop-agent-layout">
+              <div class="section-title"><h4>Active instances</h4><span>3 running / paused</span></div>
               <div class="agent-list">
                 <article class="agent-card">
                   <div class="agent-top">
                     <span class="provider-mark">CL</span>
                     <div>
                       <h5>Claude · UI alignment</h5>
-                      <p>Comparing prototype with current mobile home.</p>
+                      <p><span class="desktop-only">Reviewing prototype differences and preparing homepage navigation suggestions.</span><span class="mobile-only">Comparing prototype with current mobile home.</span></p>
                     </div>
                     <span class="status-pill">running</span>
                   </div>
-                  <div class="agent-meta"><span class="mini-pill">main</span><span class="mini-pill">12m</span></div>
-                  <div class="agent-output">✓ Loaded project docs<br />→ Next: record navigation intents</div>
+                  <div class="agent-meta"><span class="mini-pill">main</span><span class="mini-pill">12m</span><span class="mini-pill desktop-only">2 files read</span></div>
+                  <div class="agent-output"><span class="desktop-only">✓ Loaded docs/project.md<br />→ Next: compare mobile home with prototype</span><span class="mobile-only">✓ Loaded project docs<br />→ Next: record navigation intents</span></div>
+                  <div class="agent-actions desktop-only"><button>Open</button><button>Pause</button><button>Close</button></div>
                 </article>
+
                 <article class="agent-card">
                   <div class="agent-top">
                     <span class="provider-mark codex">CX</span>
                     <div>
                       <h5>Codex · API smoke</h5>
-                      <p>Waiting for provider defaults.</p>
+                      <p><span class="desktop-only">Checking Project API shape before wiring a new Agent instance entry point.</span><span class="mobile-only">Waiting for provider defaults.</span></p>
                     </div>
                     <span class="status-pill warn">waiting</span>
                   </div>
-                  <div class="agent-meta"><span class="mini-pill">feature/nav</span><span class="mini-pill">4m</span></div>
-                  <div class="agent-output">? Needs input before continuing.</div>
+                  <div class="agent-meta"><span class="mini-pill">feature/nav</span><span class="mini-pill">4m</span><span class="mini-pill desktop-only">needs input</span></div>
+                  <div class="agent-output"><span class="desktop-only">? Waiting for confirmation: create instance provider defaults</span><span class="mobile-only">? Needs input before continuing.</span></div>
+                  <div class="agent-actions desktop-only"><button>Open</button><button>Resume</button><button>Close</button></div>
+                </article>
+
+                <article class="agent-card desktop-only">
+                  <div class="agent-top">
+                    <span class="provider-mark">CL</span>
+                    <div>
+                      <h5>Claude · Docs cleanup</h5>
+                      <p>Summarized older console-shell notes and is ready to archive local scratch output.</p>
+                    </div>
+                    <span class="status-pill idle">paused</span>
+                  </div>
+                  <div class="agent-meta"><span class="mini-pill">docs</span><span class="mini-pill">yesterday</span><span class="mini-pill">history saved</span></div>
+                  <div class="agent-output">Last turn: updated long-term navigation notes.</div>
+                  <div class="agent-actions desktop-only"><button>Open</button><button>Resume</button><button>Close</button></div>
                 </article>
               </div>
-              <aside class="history-panel">
-                <div class="section-title"><h4>Session history</h4><span>future</span></div>
-                <div class="history-list">
-                  <article class="history-item">
-                    <span class="history-mark">CL</span>
-                    <p>Homepage UI polish completed and ready for review.</p>
-                    <span class="history-time">12 min ago</span>
-                  </article>
-                </div>
-                <p class="history-note">未来在这里恢复旧会话或查看历史输出。</p>
-              </aside>
-            </section>
-            <nav class="bottom-nav" aria-label="Level 2 navigation">
-              <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
-              <div class="bottom-item active"><span class="nav-icon">A</span><span>Agent</span></div>
-              <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
-              <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
-              <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
-            </nav>
-          </div>
-        </div>
+            </div>
+
+            <aside class="history-panel">
+              <div class="section-title"><h4>Session history</h4><span><span class="desktop-only">future restore entry</span><span class="mobile-only">future</span></span></div>
+              <div class="history-list">
+                <article class="history-item">
+                  <span class="history-mark">CL</span>
+                  <p>Homepage UI polish completed and ready for review.</p>
+                  <span class="history-time">12 min ago</span>
+                </article>
+                <article class="history-item desktop-only">
+                  <span class="history-mark">CX</span>
+                  <p>Project API smoke checked provider defaults.</p>
+                  <span class="history-time">1 h ago</span>
+                </article>
+                <article class="history-item desktop-only">
+                  <span class="history-mark">CL</span>
+                  <p>Mobile session console notes were archived.</p>
+                  <span class="history-time">yesterday</span>
+                </article>
+              </div>
+              <p class="history-note"><span class="desktop-only">历史记录未来用于恢复上下文、查看过往输出和继续会话；当前页面先保留结构位置，不要求完整实现。</span><span class="mobile-only">未来在这里恢复旧会话或查看历史输出。</span></p>
+            </aside>
+          </section>
+
+          <nav class="bottom-nav" aria-label="Level 2 navigation">
+            <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
+            <div class="bottom-item active"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </section>
       </section>
     </main>
   </body>

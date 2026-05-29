@@ -6,6 +6,18 @@
     <title>Project Git Prototype</title>
     <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.project-shell {
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
 
       .nav-icon,
       .file-mark,
@@ -18,7 +30,10 @@
         font-weight: 800;
       }
 
-      h3 { margin: 3px 0 0; font-size: 22px; }
+      h3 {
+        margin: 3px 0 0;
+        font-size: 22px;
+      }
 
       .branch-pill,
       .filter-pill,
@@ -70,12 +85,31 @@
         background: rgba(20, 27, 40, 0.58);
       }
 
-      .summary-card strong { display: block; font-size: 18px; }
-      .summary-card span { color: var(--muted); font-size: 10px; }
+      .summary-card strong {
+        display: block;
+        font-size: 18px;
+      }
 
-      .filter-row { display: flex; gap: 7px; flex-wrap: wrap; }
-      .filter-pill { padding: 5px 8px; font-size: 11px; }
-      .filter-pill.active { color: var(--accent); border-color: rgba(125, 211, 252, 0.34); }
+      .summary-card span {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .filter-pill {
+        padding: 5px 8px;
+        font-size: 11px;
+      }
+
+      .filter-pill.active {
+        border-color: rgba(125, 211, 252, 0.34);
+        color: var(--accent);
+      }
 
       .change-list {
         display: grid;
@@ -88,8 +122,8 @@
       .change-row {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 10px;
         align-items: center;
+        gap: 10px;
         border: 1px solid rgba(148, 163, 184, 0.12);
         border-radius: 14px;
         padding: 9px 10px;
@@ -111,15 +145,15 @@
       }
 
       .file-mark.added {
-        color: var(--good);
         border-color: rgba(52, 211, 153, 0.32);
         background: rgba(52, 211, 153, 0.09);
+        color: var(--good);
       }
 
       .file-mark.deleted {
-        color: var(--danger);
         border-color: rgba(251, 113, 133, 0.32);
         background: rgba(251, 113, 133, 0.09);
+        color: var(--danger);
       }
 
       .change-row p {
@@ -140,10 +174,25 @@
         white-space: nowrap;
       }
 
-      .change-kind { padding: 4px 7px; font-size: 10px; }
-      .change-kind.added { color: var(--good); border-color: rgba(52, 211, 153, 0.28); }
-      .change-kind.deleted { color: var(--danger); border-color: rgba(251, 113, 133, 0.28); }
-      .change-kind.modified { color: var(--warn); border-color: rgba(251, 191, 36, 0.28); }
+      .change-kind {
+        padding: 4px 7px;
+        font-size: 10px;
+      }
+
+      .change-kind.added {
+        border-color: rgba(52, 211, 153, 0.28);
+        color: var(--good);
+      }
+
+      .change-kind.deleted {
+        border-color: rgba(251, 113, 133, 0.28);
+        color: var(--danger);
+      }
+
+      .change-kind.modified {
+        border-color: rgba(251, 191, 36, 0.28);
+        color: var(--warn);
+      }
 
       .diff-panel {
         display: grid;
@@ -196,226 +245,180 @@
         padding: 12px;
         background: #05070b;
         color: #d6e4f7;
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-family: var(--font-mono);
         font-size: 11px;
         line-height: 1.62;
       }
 
-      .line { white-space: pre-wrap; }
-      .muted { color: #728197; }
-      .add { color: var(--good); background: rgba(52, 211, 153, 0.07); }
-      .del { color: var(--danger); background: rgba(251, 113, 133, 0.07); }
-      .hunk { color: var(--accent); }
-
-      .mobile-stack {
-        display: grid;
-        gap: 18px;
+      .line {
+        white-space: pre-wrap;
       }
 
-      .phone-shell.list-state { min-height: 690px; }
-      .phone-shell.diff-state { min-height: 640px; }
+      @media (max-width: 640px) {
+        .workspace {
+          grid-template-rows: auto minmax(0, 1fr) auto;
+        }
 
-      .mobile-git {
-        padding: 10px 10px 84px;
-      }
+        .workspace-head {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
 
-      .mobile-git .summary-grid {
-        margin-bottom: 8px;
-      }
+        .branch-pill {
+          width: max-content;
+          padding: 6px 9px;
+        }
 
-      .mobile-git .change-list {
-        gap: 6px;
-        padding: 0;
-      }
+        .git-workspace {
+          display: block;
+          min-height: 0;
+        }
 
-      .mobile-git .change-row {
-        padding: 9px;
-      }
+        .status-panel {
+          display: block;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          background: transparent;
+        }
 
-      .mobile-diff {
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
-        min-height: 612px;
-      }
+        .status-summary {
+          border: 1px solid rgba(148, 163, 184, 0.14);
+          border-radius: 16px;
+          margin: 10px;
+          padding: 10px;
+          background: rgba(20, 27, 40, 0.52);
+        }
 
-      .mobile-diff-body {
-        min-height: 0;
-        overflow: hidden;
-        padding: 10px;
-        background: rgba(5, 8, 13, 0.44);
-      }
+        .change-list {
+          gap: 6px;
+          padding: 0 10px 10px;
+        }
 
-      .mobile-diff-body .diff-code {
-        height: 500px;
-        font-size: 10px;
-        line-height: 1.55;
+        .change-row {
+          padding: 9px;
+        }
+
+        .diff-panel {
+          display: block;
+          background: rgba(5, 8, 13, 0.44);
+        }
+
+        .diff-head {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 10px;
+          padding: 11px 12px;
+        }
+
+        .diff-body {
+          padding: 10px;
+        }
+
+        .diff-code {
+          height: auto;
+          max-height: 500px;
+          overflow: hidden;
+          font-size: 10px;
+          line-height: 1.55;
+        }
       }
     </style>
   </head>
   <body class="prototype-resource prototype-project-shell">
     <main class="page">
-      <section class="intro">
-        <div class="eyebrow">Level 2 page</div>
-        <h1>Project Git / Read-only Diff Inspection</h1>
-        <p>Git 二级页首版聚焦只读 inspection：展示 branch、status 摘要、变更文件列表和单文件 unified diff。移动端直接 Git 页保留带 Back 的底部二级导航，点文件进入 diff 详情后隐藏二级导航。</p>
-      </section>
-
-      <section class="stage-grid">
-        <div>
-          <div class="frame-label">Desktop: left level-2 navigation + status list + unified diff</div>
-          <div class="desktop-shell">
-            <aside class="level-two-rail">
-              <div class="back-link">← Projects</div>
-              <div class="project-chip">
-                <h2>agents-remote</h2>
-                <p>/home/deploy/workspace/agents-remote</p>
-              </div>
-              <nav class="nav-list" aria-label="Level 2 navigation">
-                <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
-                <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
-                <div class="nav-item active"><span class="nav-icon">G</span><span>Git</span></div>
-                <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
-              </nav>
-            </aside>
-
-            <section class="workspace">
-              <header class="workspace-head">
-                <div>
-                  <p class="context-line">Project / agents-remote / Git</p>
-                  <h3>Read-only status & diff</h3>
-                </div>
-                <span class="branch-pill">main · 6 changed · read-only</span>
-              </header>
-
-              <section class="git-workspace">
-                <aside class="status-panel">
-                  <div class="status-summary">
-                    <div class="summary-grid">
-                      <div class="summary-card"><strong>4</strong><span>modified</span></div>
-                      <div class="summary-card"><strong>1</strong><span>added</span></div>
-                      <div class="summary-card"><strong>1</strong><span>deleted</span></div>
-                    </div>
-                    <div class="filter-row">
-                      <span class="filter-pill active">All</span>
-                      <span class="filter-pill">Modified</span>
-                      <span class="filter-pill">Added</span>
-                      <span class="filter-pill">Deleted</span>
-                    </div>
-                  </div>
-
-                  <div class="change-list">
-                    <article class="change-row active"><span class="file-mark">M</span><div><p>docs/design/prototype/git.html</p><small>new Git inspection prototype</small></div><span class="change-kind modified">M</span></article>
-                    <article class="change-row"><span class="file-mark added">A</span><div><p>docs/design/prototype/terminal.html</p><small>Terminal list prototype</small></div><span class="change-kind added">A</span></article>
-                    <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/overview.html</p><small>prototype overview links</small></div><span class="change-kind modified">M</span></article>
-                    <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/guidelines.md</p><small>navigation rules</small></div><span class="change-kind modified">M</span></article>
-                    <article class="change-row"><span class="file-mark deleted">D</span><div><p>docs/design/scratch/old-flow.html</p><small>removed stale scratch</small></div><span class="change-kind deleted">D</span></article>
-                  </div>
-                </aside>
-
-                <section class="diff-panel">
-                  <header class="diff-head">
-                    <div class="diff-title">
-                      <span class="diff-mark">M</span>
-                      <div>
-                        <h4>docs/design/prototype/git.html</h4>
-                        <p>unified diff · read-only · unstaged</p>
-                      </div>
-                    </div>
-                    <span class="filter-pill active">+42 / -8</span>
-                  </header>
-                  <div class="diff-body">
-                    <div class="diff-code">
-                      <div class="line muted">diff --git a/docs/design/prototype/git.html b/docs/design/prototype/git.html</div>
-                      <div class="line muted">index 0000000..42b7f4a</div>
-                      <div class="line hunk">@@ -0,0 +1,42 @@</div>
-                      <div class="line add">+&lt;section class=&quot;git-workspace&quot;&gt;</div>
-                      <div class="line add">+  &lt;aside class=&quot;status-panel&quot;&gt;</div>
-                      <div class="line add">+    &lt;div class=&quot;summary-grid&quot;&gt;</div>
-                      <div class="line add">+      &lt;div&gt;4 modified&lt;/div&gt;</div>
-                      <div class="line add">+      &lt;div&gt;1 added&lt;/div&gt;</div>
-                      <div class="line add">+      &lt;div&gt;1 deleted&lt;/div&gt;</div>
-                      <div class="line add">+    &lt;/div&gt;</div>
-                      <div class="line add">+  &lt;/aside&gt;</div>
-                      <div class="line add">+  &lt;section class=&quot;diff-panel&quot;&gt;</div>
-                      <div class="line del">-    &lt;button&gt;Commit&lt;/button&gt;</div>
-                      <div class="line del">-    &lt;button&gt;Stage&lt;/button&gt;</div>
-                      <div class="line add">+    &lt;p&gt;Read-only unified diff preview&lt;/p&gt;</div>
-                      <div class="line add">+  &lt;/section&gt;</div>
-                      <div class="line add">+&lt;/section&gt;</div>
-                    </div>
-                  </div>
-                </section>
-              </section>
-            </section>
+      <section class="responsive-shell project-shell">
+        <aside class="level-two-rail">
+          <div class="back-link">← Projects</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
           </div>
-        </div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item active"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </aside>
 
-        <div class="mobile-stack">
-          <div>
-            <div class="frame-label">Mobile Git list: direct level-2 page with bottom navigation</div>
-            <div class="phone-shell direct-state list-state">
-              <div class="phone-status"></div>
-              <header class="mobile-top direct">
-                <div class="mobile-title">
-                  <h2>main · 6 changed</h2>
-                  <p>read-only status inspection</p>
-                </div>
-              </header>
-              <section class="mobile-git">
+        <section class="workspace">
+          <header class="workspace-head">
+            <div>
+              <p class="context-line"><span class="desktop-only">Project / agents-remote / Git</span><span class="mobile-only">main · 6 changed</span></p>
+              <h3>Read-only status & diff</h3>
+            </div>
+            <span class="branch-pill">main · 6 changed · read-only</span>
+          </header>
+
+          <section class="git-workspace">
+            <aside class="status-panel">
+              <div class="status-summary">
                 <div class="summary-grid">
                   <div class="summary-card"><strong>4</strong><span>modified</span></div>
                   <div class="summary-card"><strong>1</strong><span>added</span></div>
                   <div class="summary-card"><strong>1</strong><span>deleted</span></div>
                 </div>
-                <div class="change-list">
-                  <article class="change-row active"><span class="file-mark">M</span><div><p>docs/design/prototype/git.html</p><small>tap to inspect diff</small></div><span>›</span></article>
-                  <article class="change-row"><span class="file-mark added">A</span><div><p>docs/design/prototype/terminal.html</p><small>new prototype</small></div><span>›</span></article>
-                  <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/overview.html</p><small>overview links</small></div><span>›</span></article>
-                  <article class="change-row"><span class="file-mark deleted">D</span><div><p>docs/design/scratch/old-flow.html</p><small>deleted scratch</small></div><span>›</span></article>
+                <div class="filter-row">
+                  <span class="filter-pill active">All</span>
+                  <span class="filter-pill">Modified</span>
+                  <span class="filter-pill">Added</span>
+                  <span class="filter-pill">Deleted</span>
                 </div>
-              </section>
-              <nav class="bottom-nav" aria-label="Level 2 navigation">
-                <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
-                <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
-                <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
-                <div class="bottom-item active"><span class="nav-icon">G</span><span>Git</span></div>
-                <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
-              </nav>
-            </div>
-          </div>
+              </div>
 
-          <div>
-            <div class="frame-label">Mobile diff detail: top back, no level-2 navigation</div>
-            <div class="phone-shell diff-state">
-              <div class="phone-status"></div>
-              <section class="mobile-diff">
-                <header class="mobile-top">
-                  <div class="back-button">←</div>
-                  <div class="mobile-title">
-                    <h2>git.html</h2>
-                    <p>+42 / -8 · read-only diff</p>
-                  </div>
-                </header>
-                <div class="mobile-diff-body">
-                  <div class="diff-code">
-                    <div class="line muted">diff --git a/docs/design/prototype/git.html b/docs/design/prototype/git.html</div>
-                    <div class="line hunk">@@ -0,0 +1,42 @@</div>
-                    <div class="line add">+&lt;section class=&quot;git-workspace&quot;&gt;</div>
-                    <div class="line add">+  &lt;aside class=&quot;status-panel&quot;&gt;</div>
-                    <div class="line add">+    &lt;div&gt;4 modified&lt;/div&gt;</div>
-                    <div class="line add">+    &lt;div&gt;1 added&lt;/div&gt;</div>
-                    <div class="line add">+    &lt;div&gt;1 deleted&lt;/div&gt;</div>
-                    <div class="line del">-    &lt;button&gt;Stage&lt;/button&gt;</div>
-                    <div class="line del">-    &lt;button&gt;Commit&lt;/button&gt;</div>
-                    <div class="line add">+    &lt;p&gt;Read-only unified diff preview&lt;/p&gt;</div>
-                    <div class="line add">+  &lt;/aside&gt;</div>
-                    <div class="line add">+&lt;/section&gt;</div>
+              <div class="change-list">
+                <article class="change-row active"><span class="file-mark">M</span><div><p>docs/design/prototype/git.html</p><small>new Git inspection prototype</small></div><span class="change-kind modified">M</span></article>
+                <article class="change-row"><span class="file-mark added">A</span><div><p>docs/design/prototype/terminal.html</p><small>Terminal list prototype</small></div><span class="change-kind added">A</span></article>
+                <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/overview.html</p><small>prototype overview links</small></div><span class="change-kind modified">M</span></article>
+                <article class="change-row"><span class="file-mark">M</span><div><p>docs/design/prototype/guidelines.md</p><small>navigation rules</small></div><span class="change-kind modified">M</span></article>
+                <article class="change-row"><span class="file-mark deleted">D</span><div><p>docs/design/scratch/old-flow.html</p><small>removed stale scratch</small></div><span class="change-kind deleted">D</span></article>
+              </div>
+            </aside>
+
+            <section class="diff-panel">
+              <header class="diff-head">
+                <div class="diff-title">
+                  <span class="diff-mark">M</span>
+                  <div>
+                    <h4>docs/design/prototype/git.html</h4>
+                    <p>unified diff · read-only · unstaged</p>
                   </div>
                 </div>
-              </section>
-            </div>
-          </div>
-        </div>
+                <span class="filter-pill active">+42 / -8</span>
+              </header>
+              <div class="diff-body">
+                <div class="diff-code">
+                  <div class="line muted">diff --git a/docs/design/prototype/git.html b/docs/design/prototype/git.html</div>
+                  <div class="line muted">index 0000000..42b7f4a</div>
+                  <div class="line hunk">@@ -0,0 +1,42 @@</div>
+                  <div class="line add">+&lt;section class=&quot;git-workspace&quot;&gt;</div>
+                  <div class="line add">+  &lt;aside class=&quot;status-panel&quot;&gt;</div>
+                  <div class="line add">+    &lt;div class=&quot;summary-grid&quot;&gt;</div>
+                  <div class="line add">+      &lt;div&gt;4 modified&lt;/div&gt;</div>
+                  <div class="line add">+      &lt;div&gt;1 added&lt;/div&gt;</div>
+                  <div class="line add">+      &lt;div&gt;1 deleted&lt;/div&gt;</div>
+                  <div class="line add">+    &lt;/div&gt;</div>
+                  <div class="line add">+  &lt;/aside&gt;</div>
+                  <div class="line add">+  &lt;section class=&quot;diff-panel&quot;&gt;</div>
+                  <div class="line del">-    &lt;button&gt;Commit&lt;/button&gt;</div>
+                  <div class="line del">-    &lt;button&gt;Stage&lt;/button&gt;</div>
+                  <div class="line add">+    &lt;p&gt;Read-only unified diff preview&lt;/p&gt;</div>
+                  <div class="line add">+  &lt;/section&gt;</div>
+                  <div class="line add">+&lt;/section&gt;</div>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <nav class="bottom-nav" aria-label="Level 2 navigation">
+            <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
+            <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="bottom-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="bottom-item active"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </section>
       </section>
     </main>
   </body>

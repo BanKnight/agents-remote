@@ -6,6 +6,18 @@
     <title>Project Files Prototype</title>
     <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.project-shell {
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
 
       .nav-icon,
       .file-icon,
@@ -18,7 +30,10 @@
         font-weight: 800;
       }
 
-      h3 { margin: 3px 0 0; font-size: 22px; }
+      h3 {
+        margin: 3px 0 0;
+        font-size: 22px;
+      }
 
       .sort-pill,
       .type-pill,
@@ -70,6 +85,7 @@
         margin: 0;
         color: var(--muted);
         font-size: 11px;
+        line-height: 1.45;
       }
 
       .file-list {
@@ -83,8 +99,8 @@
       .file-row {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 10px;
         align-items: center;
+        gap: 10px;
         border: 1px solid transparent;
         border-radius: 14px;
         padding: 9px 10px;
@@ -119,16 +135,16 @@
       }
 
       .file-icon.folder {
-        color: var(--warn);
         border-color: rgba(251, 191, 36, 0.32);
         background: rgba(251, 191, 36, 0.09);
+        color: var(--warn);
       }
 
       .file-icon.image,
       .preview-icon.image {
-        color: var(--good);
         border-color: rgba(52, 211, 153, 0.32);
         background: rgba(52, 211, 153, 0.09);
+        color: var(--good);
       }
 
       .preview-panel {
@@ -170,13 +186,20 @@
 
       .type-row {
         display: flex;
-        gap: 7px;
         flex-wrap: wrap;
         justify-content: flex-end;
+        gap: 7px;
       }
 
-      .type-pill { padding: 5px 8px; font-size: 11px; }
-      .type-pill.active { color: var(--accent); border-color: rgba(125, 211, 252, 0.34); }
+      .type-pill {
+        padding: 5px 8px;
+        font-size: 11px;
+      }
+
+      .type-pill.active {
+        border-color: rgba(125, 211, 252, 0.34);
+        color: var(--accent);
+      }
 
       .preview-body {
         min-height: 0;
@@ -235,7 +258,7 @@
         padding: 9px;
         background: rgba(0, 0, 0, 0.36);
         color: #d6e4f7;
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-family: var(--font-mono);
         font-size: 10px;
         line-height: 1.55;
       }
@@ -260,243 +283,184 @@
         text-align: center;
       }
 
-      .mobile-stack {
-        display: grid;
-        gap: 18px;
+      @media (max-width: 640px) {
+        .workspace {
+          grid-template-rows: auto minmax(0, 1fr) auto;
+        }
+
+        .workspace-head {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .sort-pill {
+          width: max-content;
+          padding: 6px 9px;
+        }
+
+        .files-workspace {
+          display: block;
+          min-height: 0;
+        }
+
+        .browser-panel {
+          display: block;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          background: transparent;
+        }
+
+        .path-bar {
+          border: 1px solid rgba(148, 163, 184, 0.14);
+          border-radius: 16px;
+          margin: 10px 10px 8px;
+          padding: 10px;
+          background: rgba(20, 27, 40, 0.52);
+        }
+
+        .file-list {
+          gap: 6px;
+          padding: 0 10px 10px;
+        }
+
+        .file-row {
+          border-color: rgba(148, 163, 184, 0.14);
+          background: rgba(20, 27, 40, 0.52);
+          padding: 9px;
+        }
+
+        .preview-panel {
+          display: block;
+          background: rgba(5, 8, 13, 0.44);
+        }
+
+        .preview-head {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+          padding: 11px 12px;
+        }
+
+        .type-row {
+          justify-content: flex-start;
+        }
+
+        .preview-body {
+          padding: 10px;
+        }
+
+        .html-preview iframe {
+          height: 330px;
+        }
+
+        .preview-note {
+          display: block;
+          line-height: 1.5;
+        }
+
+        .preview-examples {
+          grid-template-columns: 1fr;
+        }
       }
-
-      .phone-shell.list-state { min-height: 670px; }
-      .phone-shell.context-state { min-height: 590px; }
-      .phone-shell.preview-state { min-height: 620px; }
-
-      .mobile-title.path-only h2 {
-        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-        font-size: 13px;
-      }
-
-      .mobile-title.path-only p {
-        display: none;
-      }
-
-      .mobile-files {
-        padding: 10px 10px 84px;
-      }
-
-      .mobile-files .path-bar {
-        border: 1px solid rgba(148, 163, 184, 0.14);
-        border-radius: 16px;
-        margin-bottom: 8px;
-        padding: 10px;
-        background: rgba(20, 27, 40, 0.52);
-      }
-
-      .mobile-files .file-list {
-        gap: 6px;
-        padding: 0;
-      }
-
-      .mobile-files .file-row {
-        border-color: rgba(148, 163, 184, 0.14);
-        background: rgba(20, 27, 40, 0.52);
-        padding: 9px;
-      }
-
-      .mobile-preview {
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
-        min-height: 592px;
-      }
-
-      .mobile-preview-body {
-        min-height: 0;
-        overflow: hidden;
-        padding: 10px;
-        background: rgba(5, 8, 13, 0.44);
-      }
-
-      .mobile-preview .html-preview iframe { height: 350px; }
-      .mobile-preview .preview-note { display: block; line-height: 1.5; }
     </style>
   </head>
   <body class="prototype-resource prototype-project-shell">
     <main class="page">
-      <section class="intro">
-        <div class="eyebrow">Level 2 page</div>
-        <h1>Project Files / Read-only Preview</h1>
-        <p>Files 二级页首版聚焦 Project 内只读浏览与预览：目录列表文件夹优先并按名称排序；支持文本/代码、图片和 HTML 预览；移动端从列表点进 preview 后隐藏二级导航，把空间让给文件内容。</p>
-      </section>
+      <section class="responsive-shell project-shell">
+        <aside class="level-two-rail">
+          <div class="back-link">← Projects</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
+          </div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item active"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </aside>
 
-      <section class="stage-grid">
-        <div>
-          <div class="frame-label">Desktop: left level-2 navigation + file list + preview</div>
-          <div class="desktop-shell">
-            <aside class="level-two-rail">
-              <div class="back-link">← Projects</div>
-              <div class="project-chip">
-                <h2>agents-remote</h2>
-                <p>/home/deploy/workspace/agents-remote</p>
+        <section class="workspace">
+          <header class="workspace-head">
+            <div>
+              <p class="context-line"><span class="desktop-only">Project / agents-remote / Files</span><span class="mobile-only">/docs/design/prototype</span></p>
+              <h3>Read-only file preview</h3>
+            </div>
+            <span class="sort-pill">Folders first · A-Z</span>
+          </header>
+
+          <section class="files-workspace">
+            <aside class="browser-panel">
+              <div class="path-bar">
+                <div class="breadcrumb">agents-remote / docs / design / prototype</div>
+                <p class="path-hint">浏览目录并选择文件预览；首版不提供新建、编辑、删除、上传或 Agent 关联。</p>
               </div>
-              <nav class="nav-list" aria-label="Level 2 navigation">
-                <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
-                <div class="nav-item active"><span class="nav-icon">F</span><span>Files</span></div>
-                <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
-                <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
-              </nav>
+              <div class="file-list">
+                <article class="file-row"><span class="file-icon folder">DIR</span><p>architecture</p><span>folder</span></article>
+                <article class="file-row"><span class="file-icon folder">DIR</span><p>prototype</p><span>folder</span></article>
+                <article class="file-row"><span class="file-icon folder">DIR</span><p>specs</p><span>folder</span></article>
+                <article class="file-row"><span class="file-icon">MD</span><p>guidelines.md</p><span>text</span></article>
+                <article class="file-row active"><span class="file-icon">HTML</span><p>home.html</p><span>html</span></article>
+                <article class="file-row"><span class="file-icon image">IMG</span><p>prototype.png</p><span>image</span></article>
+                <article class="file-row"><span class="file-icon">TS</span><p>router.ts</p><span>code</span></article>
+                <article class="file-row"><span class="file-icon">BIN</span><p>session.trace</p><span>unsupported</span></article>
+              </div>
             </aside>
 
-            <section class="workspace">
-              <header class="workspace-head">
-                <div>
-                  <p class="context-line">Project / agents-remote / Files</p>
-                  <h3>Read-only file preview</h3>
+            <section class="preview-panel">
+              <header class="preview-head">
+                <div class="preview-title">
+                  <span class="preview-icon">HTML</span>
+                  <div>
+                    <h4>home.html</h4>
+                    <p>docs/design/prototype/home.html · sandboxed render preview</p>
+                  </div>
                 </div>
-                <span class="sort-pill">Folders first · A-Z</span>
+                <div class="type-row" aria-label="Preview types">
+                  <span class="type-pill">Text</span>
+                  <span class="type-pill">Image</span>
+                  <span class="type-pill active">HTML</span>
+                </div>
               </header>
 
-              <section class="files-workspace">
-                <aside class="browser-panel">
-                  <div class="path-bar">
-                    <div class="breadcrumb">agents-remote / docs / design / prototype</div>
-                    <p class="path-hint">浏览目录并选择文件预览；首版不提供新建、编辑、删除、上传或 Agent 关联。</p>
-                  </div>
-                  <div class="file-list">
-                    <article class="file-row"><span class="file-icon folder">DIR</span><p>architecture</p><span>folder</span></article>
-                    <article class="file-row"><span class="file-icon folder">DIR</span><p>prototype</p><span>folder</span></article>
-                    <article class="file-row"><span class="file-icon folder">DIR</span><p>specs</p><span>folder</span></article>
-                    <article class="file-row"><span class="file-icon">MD</span><p>guidelines.md</p><span>text</span></article>
-                    <article class="file-row active"><span class="file-icon">HTML</span><p>home.html</p><span>html</span></article>
-                    <article class="file-row"><span class="file-icon image">IMG</span><p>prototype.png</p><span>image</span></article>
-                    <article class="file-row"><span class="file-icon">TS</span><p>router.ts</p><span>code</span></article>
-                    <article class="file-row"><span class="file-icon">BIN</span><p>session.trace</p><span>unsupported</span></article>
-                  </div>
-                </aside>
+              <div class="preview-body">
+                <div class="html-preview">
+                  <iframe
+                    title="Sandboxed HTML preview"
+                    sandbox=""
+                    srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;style&gt;body{margin:0;background:#080b10;color:#eef4ff;font-family:Inter,system-ui;padding:28px}section{border:1px solid #263245;border-radius:22px;background:#111827;padding:24px}p{color:#93a0b2;line-height:1.6}.pill{display:inline-block;border-radius:999px;padding:7px 10px;background:#0f766e;color:#cffafe;font-size:12px;font-weight:800}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;section&gt;&lt;span class='pill'&gt;HTML preview&lt;/span&gt;&lt;h1&gt;Prototype home&lt;/h1&gt;&lt;p&gt;Static HTML is rendered in a sandboxed iframe so the user can inspect visual structure without granting console privileges.&lt;/p&gt;&lt;/section&gt;&lt;/body&gt;&lt;/html&gt;"
+                  ></iframe>
+                  <div class="preview-note"><span>脚本与同源权限默认关闭。</span><span>适合检查静态 prototype 和文档 HTML。</span></div>
+                </div>
 
-                <section class="preview-panel">
-                  <header class="preview-head">
-                    <div class="preview-title">
-                      <span class="preview-icon">HTML</span>
-                      <div>
-                        <h4>home.html</h4>
-                        <p>docs/design/prototype/home.html · sandboxed render preview</p>
-                      </div>
-                    </div>
-                    <div class="type-row" aria-label="Preview types">
-                      <span class="type-pill">Text</span>
-                      <span class="type-pill">Image</span>
-                      <span class="type-pill active">HTML</span>
-                    </div>
-                  </header>
-
-                  <div class="preview-body">
-                    <div class="html-preview">
-                      <iframe
-                        title="Sandboxed HTML preview"
-                        sandbox=""
-                        srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;style&gt;body{margin:0;background:#080b10;color:#eef4ff;font-family:Inter,system-ui;padding:28px}section{border:1px solid #263245;border-radius:22px;background:#111827;padding:24px}p{color:#93a0b2;line-height:1.6}.pill{display:inline-block;border-radius:999px;padding:7px 10px;background:#0f766e;color:#cffafe;font-size:12px;font-weight:800}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;section&gt;&lt;span class='pill'&gt;HTML preview&lt;/span&gt;&lt;h1&gt;Prototype home&lt;/h1&gt;&lt;p&gt;Static HTML is rendered in a sandboxed iframe so the user can inspect visual structure without granting console privileges.&lt;/p&gt;&lt;/section&gt;&lt;/body&gt;&lt;/html&gt;"
-                      ></iframe>
-                      <div class="preview-note"><span>脚本与同源权限默认关闭。</span><span>适合检查静态 prototype 和文档 HTML。</span></div>
-                    </div>
-
-                    <div class="preview-examples">
-                      <article class="example-card">
-                        <h5>Text / code</h5>
-                        <div class="code-sample">export function FilesPage() {<br />  return &lt;Preview /&gt;;<br />}</div>
-                      </article>
-                      <article class="example-card">
-                        <h5>Image</h5>
-                        <div class="image-sample" aria-label="Image preview placeholder"></div>
-                      </article>
-                      <article class="example-card">
-                        <h5>Unsupported</h5>
-                        <div class="unsupported-sample">Cannot preview this file type or size.</div>
-                      </article>
-                    </div>
-                  </div>
-                </section>
-              </section>
+                <div class="preview-examples">
+                  <article class="example-card">
+                    <h5>Text / code</h5>
+                    <div class="code-sample">export function FilesPage() {<br />  return &lt;Preview /&gt;;<br />}</div>
+                  </article>
+                  <article class="example-card">
+                    <h5>Image</h5>
+                    <div class="image-sample" aria-label="Image preview placeholder"></div>
+                  </article>
+                  <article class="example-card">
+                    <h5>Unsupported</h5>
+                    <div class="unsupported-sample">Cannot preview this file type or size.</div>
+                  </article>
+                </div>
+              </div>
             </section>
-          </div>
-        </div>
+          </section>
 
-        <div class="mobile-stack">
-          <div>
-            <div class="frame-label">Mobile list: bottom level-2 navigation stays on Files</div>
-            <div class="phone-shell list-state">
-              <div class="phone-status"></div>
-              <header class="mobile-top direct">
-                <div class="mobile-title path-only">
-                  <h2>/docs/design/prototype</h2>
-                </div>
-              </header>
-              <section class="mobile-files">
-                <div class="file-list">
-                  <article class="file-row"><span class="file-icon folder">DIR</span><p>architecture</p><span>›</span></article>
-                  <article class="file-row"><span class="file-icon folder">DIR</span><p>prototype</p><span>›</span></article>
-                  <article class="file-row"><span class="file-icon folder">DIR</span><p>specs</p><span>›</span></article>
-                  <article class="file-row"><span class="file-icon">MD</span><p>guidelines.md</p><span>text</span></article>
-                  <article class="file-row active"><span class="file-icon">HTML</span><p>home.html</p><span>html</span></article>
-                  <article class="file-row"><span class="file-icon image">IMG</span><p>prototype.png</p><span>image</span></article>
-                  <article class="file-row"><span class="file-icon">TS</span><p>router.ts</p><span>code</span></article>
-                </div>
-              </section>
-              <nav class="bottom-nav" aria-label="Level 2 navigation">
-                <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
-                <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
-                <div class="bottom-item active"><span class="nav-icon">F</span><span>Files</span></div>
-                <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
-                <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
-              </nav>
-            </div>
-          </div>
-
-          <div>
-            <div class="frame-label">Mobile contextual Files: opened from Agent instance, no level-2 navigation</div>
-            <div class="phone-shell context-state">
-              <div class="phone-status"></div>
-              <header class="mobile-top">
-                <div class="back-button">←</div>
-                <div class="mobile-title path-only">
-                  <h2>/docs/design/prototype</h2>
-                </div>
-              </header>
-              <section class="mobile-files">
-                <div class="file-list">
-                  <article class="file-row"><span class="file-icon folder">DIR</span><p>architecture</p><span>›</span></article>
-                  <article class="file-row"><span class="file-icon folder">DIR</span><p>prototype</p><span>›</span></article>
-                  <article class="file-row"><span class="file-icon">MD</span><p>guidelines.md</p><span>text</span></article>
-                  <article class="file-row active"><span class="file-icon">HTML</span><p>home.html</p><span>html</span></article>
-                  <article class="file-row"><span class="file-icon image">IMG</span><p>prototype.png</p><span>image</span></article>
-                </div>
-              </section>
-            </div>
-          </div>
-
-          <div>
-            <div class="frame-label">Mobile preview: no bottom navigation, content gets the space</div>
-            <div class="phone-shell preview-state">
-              <div class="phone-status"></div>
-              <section class="mobile-preview">
-                <header class="mobile-top">
-                  <div class="back-button">←</div>
-                  <div class="mobile-title">
-                    <h2>home.html</h2>
-                    <p>/docs/design/prototype · HTML preview</p>
-                  </div>
-                </header>
-                <div class="mobile-preview-body">
-                  <div class="html-preview">
-                    <iframe
-                      title="Mobile sandboxed HTML preview"
-                      sandbox=""
-                      srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;style&gt;body{margin:0;background:#080b10;color:#eef4ff;font-family:Inter,system-ui;padding:18px}section{border:1px solid #263245;border-radius:18px;background:#111827;padding:18px}p{color:#93a0b2;line-height:1.55}.pill{display:inline-block;border-radius:999px;padding:6px 9px;background:#2563eb;color:#dbeafe;font-size:11px;font-weight:800}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;section&gt;&lt;span class='pill'&gt;Mobile preview&lt;/span&gt;&lt;h2&gt;home.html&lt;/h2&gt;&lt;p&gt;Preview mode hides level-2 navigation so the file content has the full mobile workspace.&lt;/p&gt;&lt;/section&gt;&lt;/body&gt;&lt;/html&gt;"
-                    ></iframe>
-                    <div class="preview-note">移动端 preview 是详情页：只保留顶部返回和文件上下文，不保留底部二级导航。</div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
+          <nav class="bottom-nav" aria-label="Level 2 navigation">
+            <div class="bottom-item"><span class="nav-icon">←</span><span>Back</span></div>
+            <div class="bottom-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="bottom-item active"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="bottom-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="bottom-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </section>
       </section>
     </main>
   </body>

@@ -20,12 +20,8 @@
   --ink-on-accent: #041019;
   --page-max: 1480px;
   --page-pad: 28px;
-  --stage-desktop-min: 760px;
-  --stage-phone-width: 390px;
-  --stage-gap: 28px;
   --desktop-rail-width: 210px;
-  --desktop-shell-min-height: 760px;
-  --phone-min-height: 820px;
+  --responsive-shell-min-height: 760px;
   --bottom-nav-columns: 5;
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -51,30 +47,25 @@ body {
 
 body.prototype-home {
   --page-max: 1180px;
-  --stage-desktop-min: 0px;
-  --stage-gap: 22px;
   --desktop-rail-width: 220px;
-  --desktop-shell-min-height: 660px;
-  --phone-min-height: 780px;
+  --responsive-shell-min-height: 660px;
   --bottom-nav-columns: 4;
 }
 
 body.prototype-project {
-  --desktop-shell-min-height: 700px;
+  --responsive-shell-min-height: 700px;
 }
 
 body.prototype-terminal-list {
-  --desktop-shell-min-height: 720px;
+  --responsive-shell-min-height: 720px;
 }
 
 body.prototype-resource {
-  --stage-desktop-min: 800px;
-  --desktop-shell-min-height: 760px;
+  --responsive-shell-min-height: 760px;
 }
 
 body.prototype-detail {
-  --stage-desktop-min: 760px;
-  --desktop-shell-min-height: 740px;
+  --responsive-shell-min-height: 740px;
 }
 
 .page {
@@ -105,51 +96,6 @@ h1 {
   max-width: var(--intro-max, 920px);
   color: var(--muted);
   line-height: 1.65;
-}
-
-.stage-grid {
-  display: grid;
-  grid-template-columns: minmax(var(--stage-desktop-min), 1fr) var(--stage-phone-width);
-  gap: var(--stage-gap);
-  align-items: start;
-}
-
-.frame-label {
-  margin-bottom: 10px;
-  color: var(--soft);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.desktop-shell,
-.phone-shell {
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: rgba(15, 21, 32, 0.92);
-  box-shadow: var(--shadow-shell);
-}
-
-.desktop-shell {
-  min-height: var(--desktop-shell-min-height);
-  border-radius: var(--radius-shell-desktop);
-}
-
-.prototype-project-shell .desktop-shell {
-  display: grid;
-  grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
-}
-
-.prototype-detail .desktop-shell {
-  position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-
-.phone-shell {
-  width: var(--stage-phone-width);
-  min-height: var(--phone-min-height);
-  border-radius: var(--radius-shell-phone);
-  position: relative;
 }
 
 .level-one-rail,
@@ -238,7 +184,7 @@ h1 {
 .workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  min-height: var(--desktop-shell-min-height);
+  min-height: var(--responsive-shell-min-height);
 }
 
 .workspace-head {
@@ -535,12 +481,96 @@ h1 {
   font-size: 12px;
 }
 
-@media (max-width: 980px) {
-  .stage-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .phone-shell {
-    width: min(var(--stage-phone-width), 100%);
+@media (min-width: 641px) {
+  .mobile-only {
+    display: none !important;
   }
 }
+
+.responsive-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: var(--radius-shell-desktop);
+  background: rgba(15, 21, 32, 0.92);
+  box-shadow: var(--shadow-shell);
+}
+
+.responsive-shell.project-shell {
+  display: grid;
+  grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
+  min-height: var(--responsive-shell-min-height);
+}
+
+.responsive-shell.detail-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: var(--responsive-shell-min-height);
+}
+
+.responsive-shell .bottom-nav {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  body {
+    background: var(--bg);
+  }
+
+  .desktop-only {
+    display: none !important;
+  }
+
+  .page {
+    width: 100%;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  .intro {
+    display: none;
+  }
+
+  .responsive-shell,
+  .responsive-shell.project-shell,
+  .responsive-shell.detail-shell {
+    display: block;
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .responsive-shell .level-one-rail,
+  .responsive-shell .level-two-rail {
+    display: none;
+  }
+
+  .responsive-shell .workspace {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .responsive-shell .workspace:has(> .workspace-head) {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .responsive-shell .workspace:has(> .workspace-head) > :not(.workspace-head):not(.bottom-nav) {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-color: rgba(125, 211, 252, 0.5) transparent;
+    scrollbar-gutter: stable;
+  }
+
+  .responsive-shell .workspace-head {
+    padding: 12px 14px;
+  }
+
+  .responsive-shell .bottom-nav {
+    display: grid;
+  }
+}
+

@@ -6,6 +6,45 @@
     <title>Terminal Instance Detail Prototype</title>
     <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.detail-shell {
+        height: 100vh;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .session-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid var(--line);
+        padding: 14px 16px;
+        background: rgba(10, 14, 22, 0.94);
+      }
+
+      .head-left,
+      .head-actions {
+        display: flex;
+        align-items: center;
+      }
+
+      .head-left {
+        min-width: 0;
+        gap: 10px;
+      }
+
+      .head-actions {
+        justify-content: flex-end;
+        gap: 8px;
+      }
 
       .back-button,
       .terminal-mark,
@@ -20,160 +59,264 @@
         font-weight: 800;
       }
 
-      .terminal-mark { width: 40px; height: 40px; border-radius: 15px; }
-      .session-title { min-width: 0; }
-      .session-title h2 { margin: 0; overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
-      .session-title p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+      .terminal-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 15px;
+      }
 
-      .terminal-wrap { min-height: 0; padding: 16px; background: rgba(5, 8, 13, 0.52); }
+      .session-title {
+        min-width: 0;
+      }
 
-      .mobile-session { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 792px; }
-      .mobile-session .session-head { padding: 10px 11px; }
-      .mobile-session .back-button { width: 32px; height: 32px; border-radius: 12px; }
-      .mobile-session .terminal-mark { width: 32px; height: 32px; border-radius: 12px; font-size: 12px; }
-      .mobile-session .session-title h2 { font-size: 14px; }
-      .mobile-session .session-title p { font-size: 10px; }
-      .mobile-terminal-wrap { min-height: 0; padding: 10px; background: rgba(5, 8, 13, 0.42); }
-      .mobile-terminal-wrap .terminal-window { border-radius: 18px; }
-      .mobile-terminal-wrap .terminal-titlebar { padding: 8px 9px; }
-      .mobile-terminal-wrap .term-title,
-      .mobile-terminal-wrap .term-status { font-size: 10px; }
-      .mobile-terminal-wrap .term-status span:not(.term-chip) { display: none; }
-      .mobile-terminal-wrap .terminal-screen { padding: 12px; font-size: 11px; line-height: 1.58; }
+      .session-title h2 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 17px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
 
-      .collapse-pill { border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 999px; padding: 4px 7px; color: var(--muted); background: rgba(20, 27, 40, 0.72); }
-      .mobile-composer .quick-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 7px; }
-      .mobile-composer .quick-key { padding: 6px 3px; font-size: 9px; white-space: nowrap; }
-      .mobile-input-strip { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 14px; padding: 8px 9px; background: rgba(20, 27, 40, 0.74); }
-      .mobile-input-strip .input-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-      .mobile-input-strip .mini-action { padding: 5px 7px; font-size: 10px; }
+      .session-title p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .tool-button {
+        min-height: 32px;
+        border-color: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+        font-size: 12px;
+      }
+
+      .terminal-wrap {
+        min-height: 0;
+        overflow: hidden;
+        padding: 16px;
+        background: rgba(5, 8, 13, 0.52);
+      }
+
+      .composer {
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px;
+      }
+
+      .composer .quick-row {
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .input-strip {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 16px;
+        padding: 9px 11px;
+        background: rgba(20, 27, 40, 0.74);
+      }
+
+      .input-note {
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .collapse-pill {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 4px 7px;
+        color: var(--muted);
+        background: rgba(20, 27, 40, 0.72);
+      }
+
+      .mobile-drawer-head {
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      @media (max-width: 640px) {
+        .responsive-shell.detail-shell {
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto;
+          height: 100vh;
+          min-height: 100vh;
+          overflow: hidden;
+        }
+
+        .session-head {
+          padding: 10px 11px;
+        }
+
+        .back-button {
+          width: 32px;
+          height: 32px;
+          border-radius: 12px;
+        }
+
+        .terminal-mark {
+          width: 32px;
+          height: 32px;
+          border-radius: 12px;
+          font-size: 12px;
+        }
+
+        .session-title h2 {
+          font-size: 14px;
+        }
+
+        .session-title p {
+          font-size: 10px;
+        }
+
+        .tool-button {
+          min-height: 32px;
+          border-radius: 12px;
+          padding: 0 9px;
+          font-size: 10px;
+        }
+
+        .terminal-wrap {
+          padding: 10px;
+          background: rgba(5, 8, 13, 0.42);
+        }
+
+        .terminal-wrap .terminal-window {
+          border-radius: 18px;
+        }
+
+        .terminal-wrap .terminal-titlebar {
+          padding: 8px 9px;
+        }
+
+        .terminal-wrap .term-title,
+        .terminal-wrap .term-status {
+          font-size: 10px;
+        }
+
+        .terminal-wrap .term-status span:not(.term-chip) {
+          display: none;
+        }
+
+        .terminal-wrap .terminal-screen {
+          padding: 12px;
+          font-size: 11px;
+          line-height: 1.58;
+        }
+
+        .mobile-composer {
+          display: grid;
+          gap: 7px;
+          padding: 8px 9px calc(9px + env(safe-area-inset-bottom));
+        }
+
+        .mobile-composer .quick-row {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 5px;
+        }
+
+        .mobile-composer .quick-key {
+          padding: 6px 3px;
+          font-size: 9px;
+          white-space: nowrap;
+        }
+
+        .input-strip {
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          border-radius: 14px;
+          padding: 8px 9px;
+        }
+
+        .input-strip .input-text {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 11px;
+        }
+
+        .input-note {
+          display: none;
+        }
+
+        .mini-action {
+          border-radius: 999px;
+          padding: 5px 7px;
+          font-size: 10px;
+        }
+      }
     </style>
   </head>
   <body class="prototype-detail">
     <main class="page">
-      <section class="intro">
-        <div class="eyebrow">Terminal instance detail</div>
-        <h1>Terminal Instance Detail</h1>
-        <p>Terminal instance 详情页参考 Agent instance 的 terminal-first 结构，但顶部不提供 Files/Git/Terminal 快捷入口，只保留返回、状态和关闭动作。</p>
-      </section>
-
-      <section class="stage-grid">
-        <div>
-          <div class="frame-label">Desktop: terminal output + compact header + composer</div>
-          <div class="desktop-shell">
-            <header class="session-head">
-              <div class="head-left">
-                <div class="back-button">←</div>
-                <div class="terminal-mark">T</div>
-                <div class="session-title">
-                  <h2>Terminal · dev server</h2>
-                  <p>agents-remote / main · running · last output 4 sec ago</p>
-                </div>
-              </div>
-              <div class="head-actions">
-                <span class="status-pill">live</span>
-                <span class="tool-button">Close</span>
-              </div>
-            </header>
-
-            <section class="terminal-wrap">
-              <div class="terminal-window">
-                <div class="terminal-titlebar">
-                  <div class="window-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-                  <div class="term-title">/home/deploy/workspace/agents-remote · bash</div>
-                  <div class="term-status"><span class="term-chip">scrollback</span><span>↑↓ history · Shift+Tab selection</span></div>
-                </div>
-                <div class="terminal-screen">
-                  <div class="terminal-line muted">$ APP_PASSWORD=dev-password PROJECTS_ROOT=/home/deploy/workspace bun run dev</div>
-                  <div class="terminal-line good">✓ api ready on http://localhost:3001</div>
-                  <div class="terminal-line good">✓ web ready on http://localhost:3000</div>
-                  <div class="terminal-line"></div>
-                  <div class="terminal-line muted">$ git diff --check</div>
-                  <div class="terminal-line good">✓ no whitespace errors</div>
-                  <div class="terminal-line"></div>
-                  <div class="terminal-line warn">Terminal detail has no Files/Git/+Terminal shortcuts in the header.</div>
-                  <div class="terminal-line">It is a focused shell instance with back, status, close, scrollback, input, and quick keys.</div>
-                  <div class="terminal-line"></div>
-                  <div class="terminal-line"><span class="prompt">remote</span>:<span class="accent">~/agents-remote</span>$ <span class="terminal-input">bun run format:check</span><span class="cursor"></span></div>
-                </div>
-              </div>
-            </section>
-
-            <form class="composer">
-              <div class="quick-row">
-                <span class="quick-key important">Shift + Tab · mode</span>
-                <span class="quick-key">Esc · cancel</span>
-                <span class="quick-key">Ctrl + C · interrupt</span>
-                <span class="quick-key">Ctrl + D · EOF</span>
-                <span class="quick-key">↑ / ↓ · history</span>
-              </div>
-              <div class="input-strip">
-                <span class="input-prefix">$</span>
-                <span class="input-text">Type in the active terminal prompt; Enter sends to the terminal.</span>
-                <span class="input-note">focused terminal detail</span>
-              </div>
-            </form>
+      <section class="responsive-shell detail-shell">
+        <header class="session-head">
+          <div class="head-left">
+            <div class="back-button">←</div>
+            <div class="terminal-mark">T</div>
+            <div class="session-title">
+              <h2>Terminal · dev server</h2>
+              <p><span class="desktop-only">agents-remote / main · running · last output 4 sec ago</span><span class="mobile-only">live · scrollback available</span></p>
+            </div>
           </div>
-        </div>
-
-        <div>
-          <div class="frame-label">Mobile: terminal detail with top back and no level-2 navigation</div>
-          <div class="phone-shell">
-            <div class="phone-status"></div>
-            <section class="mobile-session">
-              <header class="session-head">
-                <div class="head-left">
-                  <div class="back-button">←</div>
-                  <div class="terminal-mark">T</div>
-                  <div class="session-title">
-                    <h2>Terminal · dev server</h2>
-                    <p>live · scrollback available</p>
-                  </div>
-                </div>
-                <span class="tool-button">Close</span>
-              </header>
-
-              <section class="mobile-terminal-wrap">
-                <div class="terminal-window">
-                  <div class="terminal-titlebar">
-                    <div class="window-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-                    <div class="term-title">~/agents-remote</div>
-                    <div class="term-status"><span class="term-chip">input</span><span>Shift+Tab selection</span></div>
-                  </div>
-                  <div class="terminal-screen">
-                    <div class="terminal-line muted">$ bun run dev</div>
-                    <div class="terminal-line good">✓ api ready on :3001</div>
-                    <div class="terminal-line good">✓ web ready on :3000</div>
-                    <div class="terminal-line"></div>
-                    <div class="terminal-line">Terminal instance detail keeps the user inside the shell, without level-2 navigation.</div>
-                    <div class="terminal-line">The top-left back returns to the source page, whether it was Terminal list or Agent instance.</div>
-                    <div class="terminal-line"></div>
-                    <div class="terminal-line"><span class="prompt">remote</span>$ <span class="terminal-input">git status --short</span><span class="cursor"></span></div>
-                  </div>
-                </div>
-              </section>
-
-              <form class="mobile-composer">
-                <div class="mobile-drawer-head">
-                  <strong>Input drawer expanded</strong>
-                  <span class="collapse-pill">tap to collapse</span>
-                </div>
-                <div class="quick-row">
-                  <span class="quick-key important">Shift+Tab</span>
-                  <span class="quick-key">Esc</span>
-                  <span class="quick-key">Ctrl+C</span>
-                  <span class="quick-key">↑</span>
-                  <span class="quick-key">↓</span>
-                </div>
-                <div class="mobile-input-strip">
-                  <span class="input-prefix">$</span>
-                  <span class="input-text">continue in terminal prompt...</span>
-                  <span class="mini-action">⏎</span>
-                </div>
-              </form>
-            </section>
+          <div class="head-actions">
+            <span class="status-pill desktop-only">live</span>
+            <span class="tool-button">Close</span>
           </div>
-        </div>
+        </header>
+
+        <section class="terminal-wrap">
+          <div class="terminal-window">
+            <div class="terminal-titlebar">
+              <div class="window-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+              <div class="term-title"><span class="desktop-only">/home/deploy/workspace/agents-remote · bash</span><span class="mobile-only">~/agents-remote</span></div>
+              <div class="term-status"><span class="term-chip"><span class="desktop-only">scrollback</span><span class="mobile-only">input</span></span><span>↑↓ history · Shift+Tab selection</span></div>
+            </div>
+            <div class="terminal-screen">
+              <div class="terminal-line muted">$ APP_PASSWORD=dev-password PROJECTS_ROOT=/home/deploy/workspace bun run dev</div>
+              <div class="terminal-line good">✓ api ready on http://localhost:3001</div>
+              <div class="terminal-line good">✓ web ready on http://localhost:3000</div>
+              <div class="terminal-line"></div>
+              <div class="terminal-line muted">$ git diff --check</div>
+              <div class="terminal-line good">✓ no whitespace errors</div>
+              <div class="terminal-line"></div>
+              <div class="terminal-line warn">Terminal detail has no Files/Git/+Terminal shortcuts in the header.</div>
+              <div class="terminal-line">It is a focused shell instance with back, status, close, scrollback, input, and quick keys.</div>
+              <div class="terminal-line mobile-only">The top-left back returns to the source page, whether it was Terminal list or Agent instance.</div>
+              <div class="terminal-line"></div>
+              <div class="terminal-line"><span class="prompt">remote</span>:<span class="accent">~/agents-remote</span>$ <span class="terminal-input"><span class="desktop-only">bun run format:check</span><span class="mobile-only">git status --short</span></span><span class="cursor"></span></div>
+            </div>
+          </div>
+        </section>
+
+        <form class="composer mobile-composer">
+          <div class="mobile-drawer-head mobile-only">
+            <strong>Input drawer expanded</strong>
+            <span class="collapse-pill">tap to collapse</span>
+          </div>
+          <div class="quick-row">
+            <span class="quick-key important"><span class="desktop-only">Shift + Tab · mode</span><span class="mobile-only">Shift+Tab</span></span>
+            <span class="quick-key">Esc<span class="desktop-only"> · cancel</span></span>
+            <span class="quick-key">Ctrl+C<span class="desktop-only"> · interrupt</span></span>
+            <span class="quick-key desktop-only">Ctrl + D · EOF</span>
+            <span class="quick-key"><span class="desktop-only">↑ / ↓ · history</span><span class="mobile-only">↑</span></span>
+            <span class="quick-key mobile-only">↓</span>
+          </div>
+          <div class="input-strip">
+            <span class="input-prefix">$</span>
+            <span class="input-text"><span class="desktop-only">Type in the active terminal prompt; Enter sends to the terminal.</span><span class="mobile-only">continue in terminal prompt...</span></span>
+            <span class="input-note">focused terminal detail</span>
+            <span class="mini-action mobile-only">⏎</span>
+          </div>
+        </form>
       </section>
     </main>
   </body>
