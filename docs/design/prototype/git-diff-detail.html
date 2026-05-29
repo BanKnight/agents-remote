@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Git Diff Detail Prototype</title>
+    <link rel="stylesheet" href="./prototype-foundation.css" />
+    <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.detail-shell {
+        display: grid;
+        grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        height: 100vh;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .detail-workspace {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .detail-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid var(--line);
+        padding: 14px 16px;
+        background: rgba(10, 14, 22, 0.94);
+      }
+
+      .head-left,
+      .head-actions,
+      .diff-title {
+        display: flex;
+        align-items: center;
+      }
+
+      .head-left,
+      .diff-title {
+        min-width: 0;
+        gap: 10px;
+      }
+
+      .diff-mark,
+      .tool-button,
+      .change-pill {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(125, 211, 252, 0.32);
+        background: rgba(125, 211, 252, 0.1);
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .diff-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 15px;
+        font-size: 12px;
+      }
+
+      .file-title {
+        min-width: 0;
+      }
+
+      .file-title h2 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 17px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-title p {
+        margin: 3px 0 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tool-button,
+      .change-pill {
+        min-height: 32px;
+        border-color: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+        font-size: 12px;
+      }
+
+      .change-pill {
+        border-color: rgba(251, 191, 36, 0.28);
+        color: var(--warn);
+      }
+
+      .diff-workspace {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        overflow: hidden;
+        background: rgba(5, 8, 13, 0.52);
+      }
+
+      .diff-subhead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 12px 16px;
+      }
+
+      .diff-subhead p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .diff-body {
+        min-height: 0;
+        overflow: hidden;
+        padding: 16px;
+      }
+
+      .diff-code {
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 18px;
+        padding: 12px;
+        background: #05070b;
+        color: var(--code-text);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        line-height: 1.62;
+        scrollbar-color: rgba(125, 211, 252, 0.5) transparent;
+      }
+
+      .line {
+        white-space: pre-wrap;
+      }
+
+      @media (max-width: 640px) {
+        .responsive-shell.detail-shell {
+          display: block;
+          height: 100vh;
+          min-height: 100vh;
+          overflow: hidden;
+        }
+
+        .detail-workspace {
+          height: 100vh;
+          min-height: 100vh;
+        }
+
+        .detail-head {
+          padding: 10px 11px;
+        }
+
+        .back-button,
+        .diff-mark {
+          width: 32px;
+          height: 32px;
+          border-radius: 12px;
+        }
+
+        .file-title h2 {
+          font-size: 14px;
+        }
+
+        .file-title p {
+          font-size: 10px;
+        }
+
+        .tool-button,
+        .change-pill {
+          min-height: 32px;
+          border-radius: 12px;
+          padding: 0 9px;
+          font-size: 10px;
+        }
+
+        .diff-subhead {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 8px;
+          padding: 10px 11px;
+        }
+
+        .diff-body {
+          padding: 10px;
+        }
+
+        .diff-code {
+          border-radius: 16px;
+          padding: 10px;
+          font-size: 10px;
+          line-height: 1.55;
+        }
+      }
+    </style>
+  </head>
+  <body class="prototype-detail">
+    <main class="page">
+      <section class="responsive-shell detail-shell">
+        <aside class="level-two-rail desktop-only">
+          <div class="back-link">← Git</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
+          </div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item active"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </aside>
+
+        <section class="detail-workspace">
+          <header class="detail-head">
+            <div class="head-left">
+              <div class="back-button">←</div>
+              <div class="diff-mark">M</div>
+              <div class="file-title">
+                <h2>docs/design/prototype/git.html</h2>
+                <p><span class="desktop-only">unified diff · read-only · unstaged</span><span class="mobile-only">read-only diff</span></p>
+              </div>
+            </div>
+            <div class="head-actions">
+              <span class="tool-button">Close</span>
+            </div>
+          </header>
+
+          <section class="diff-workspace">
+            <header class="diff-subhead">
+              <div>
+                <strong>Unified diff</strong>
+                <p>Inspection only; no stage, commit, checkout, reset, or discard actions.</p>
+              </div>
+              <span class="change-pill">+42 / -8</span>
+            </header>
+
+            <div class="diff-body">
+              <div class="diff-code">
+                <div class="line muted">diff --git a/docs/design/prototype/git.html b/docs/design/prototype/git.html</div>
+                <div class="line muted">index 0000000..42b7f4a</div>
+                <div class="line hunk">@@ -0,0 +1,42 @@</div>
+                <div class="line add">+&lt;section class=&quot;git-workspace&quot;&gt;</div>
+                <div class="line add">+  &lt;aside class=&quot;status-panel&quot;&gt;</div>
+                <div class="line add">+    &lt;div class=&quot;summary-grid&quot;&gt;</div>
+                <div class="line add">+      &lt;div&gt;4 modified&lt;/div&gt;</div>
+                <div class="line add">+      &lt;div&gt;1 added&lt;/div&gt;</div>
+                <div class="line add">+      &lt;div&gt;1 deleted&lt;/div&gt;</div>
+                <div class="line add">+    &lt;/div&gt;</div>
+                <div class="line add">+  &lt;/aside&gt;</div>
+                <div class="line add">+  &lt;section class=&quot;diff-panel&quot;&gt;</div>
+                <div class="line del">-    &lt;button&gt;Commit&lt;/button&gt;</div>
+                <div class="line del">-    &lt;button&gt;Stage&lt;/button&gt;</div>
+                <div class="line add">+    &lt;p&gt;Read-only unified diff preview&lt;/p&gt;</div>
+                <div class="line add">+  &lt;/section&gt;</div>
+                <div class="line add">+&lt;/section&gt;</div>
+                <div class="line"></div>
+                <div class="line hunk">@@ mobile direct Git @@</div>
+                <div class="line add">+ compact list rows open this full-screen detail state</div>
+                <div class="line add">+ bottom level-two nav is hidden while reading the diff</div>
+                <div class="line add">+ top-left back returns to the changed files list</div>
+                <div class="line del">- stacked mobile diff below the file list</div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

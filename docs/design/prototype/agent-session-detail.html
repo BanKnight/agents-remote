@@ -13,11 +13,23 @@
       }
 
       .responsive-shell.detail-shell {
+        display: grid;
+        grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
         height: 100vh;
         min-height: 100vh;
         border: 0;
         border-radius: 0;
         box-shadow: none;
+      }
+
+      .detail-workspace {
+        position: relative;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .session-head {
@@ -102,44 +114,8 @@
         background: rgba(125, 211, 252, 0.12);
       }
 
-      .meta-popover {
-        position: absolute;
-        top: 70px;
-        right: 18px;
-        z-index: 4;
-        width: 260px;
-        border: 1px solid rgba(148, 163, 184, 0.24);
-        border-radius: 18px;
-        padding: 12px;
-        background: rgba(13, 19, 30, 0.96);
-        box-shadow: 0 22px 70px rgba(0, 0, 0, 0.44);
-      }
-
-      .meta-popover h3 {
-        margin: 0 0 8px;
-        font-size: 13px;
-      }
-
-      .meta-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-        padding: 7px 0;
-        color: var(--muted);
-        font-size: 11px;
-      }
-
-      .meta-row:last-child {
-        border-bottom: 0;
-      }
-
-      .meta-row strong {
-        color: var(--soft);
-        font-weight: 800;
-      }
-
       .terminal-wrap {
+        display: grid;
         min-height: 0;
         overflow: hidden;
         padding: 16px;
@@ -155,11 +131,6 @@
         display: grid;
         gap: 8px;
         padding: 10px 12px;
-      }
-
-      .composer .quick-row {
-        gap: 8px;
-        flex-wrap: wrap;
       }
 
       .input-strip {
@@ -196,11 +167,17 @@
 
       @media (max-width: 640px) {
         .responsive-shell.detail-shell {
+          display: block;
+          height: 100vh;
+          min-height: 100vh;
+          overflow: hidden;
+        }
+
+        .detail-workspace {
           display: grid;
           grid-template-rows: auto minmax(0, 1fr) auto;
           height: 100vh;
           min-height: 100vh;
-          overflow: hidden;
         }
 
         .session-head {
@@ -241,10 +218,6 @@
           font-size: 10px;
         }
 
-        .meta-popover {
-          display: none;
-        }
-
         .terminal-wrap {
           padding: 10px;
           background: rgba(5, 8, 13, 0.42);
@@ -280,15 +253,7 @@
         }
 
         .mobile-composer .quick-row {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
           gap: 5px;
-        }
-
-        .mobile-composer .quick-key {
-          padding: 6px 3px;
-          font-size: 9px;
-          white-space: nowrap;
         }
 
         .input-strip {
@@ -319,34 +284,38 @@
   <body class="prototype-detail">
     <main class="page">
       <section class="responsive-shell detail-shell">
-        <header class="session-head">
-          <div class="head-left">
-            <div class="back-button">←</div>
-            <div class="provider-mark">CL</div>
-            <div class="session-title">
-              <h2><span class="desktop-only">Claude · Terminal agent</span><span class="mobile-only">Claude terminal</span></h2>
-              <p><span class="desktop-only">agents-remote / main · running · last output 8 sec ago</span><span class="mobile-only">live · can open Files or create Terminal</span></p>
-            </div>
+        <aside class="level-two-rail desktop-only">
+          <div class="back-link">← Projects</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
           </div>
-          <div class="head-actions">
-            <span class="status-pill desktop-only">live</span>
-            <span class="tool-button primary"><span class="desktop-only">Files</span><span class="mobile-only">Files</span></span>
-            <span class="tool-button primary"><span class="desktop-only">Git</span><span class="mobile-only">Git</span></span>
-            <span class="tool-button primary"><span class="desktop-only">+ Terminal</span><span class="mobile-only">+T</span></span>
-            <span class="tool-button"><span class="desktop-only">Meta</span><span class="mobile-only">i</span></span>
-            <span class="tool-button desktop-only">Pause</span>
-          </div>
-        </header>
-
-        <aside class="meta-popover">
-          <h3>Session meta</h3>
-          <div class="meta-row"><span>Provider</span><strong>Claude</strong></div>
-          <div class="meta-row"><span>Project</span><strong>agents-remote</strong></div>
-          <div class="meta-row"><span>Branch</span><strong>main</strong></div>
-          <div class="meta-row"><span>Mode</span><strong>terminal</strong></div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item active"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
         </aside>
 
-        <section class="terminal-wrap">
+        <section class="detail-workspace">
+          <header class="session-head">
+            <div class="head-left">
+              <div class="back-button">←</div>
+              <div class="provider-mark">CL</div>
+              <div class="session-title">
+                <h2><span class="desktop-only">Claude · Terminal agent</span><span class="mobile-only">Claude terminal</span></h2>
+                <p><span class="desktop-only">agents-remote / main · last output 8 sec ago</span><span class="mobile-only">live · can open Files or create Terminal</span></p>
+              </div>
+            </div>
+            <div class="head-actions">
+              <span class="tool-button primary"><span class="desktop-only">Files</span><span class="mobile-only">Files</span></span>
+              <span class="tool-button primary"><span class="desktop-only">Git</span><span class="mobile-only">Git</span></span>
+              <span class="tool-button primary"><span class="desktop-only">+ Terminal</span><span class="mobile-only">+T</span></span>
+            </div>
+          </header>
+
+          <section class="terminal-wrap">
           <div class="terminal-window">
             <div class="terminal-titlebar">
               <div class="window-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
@@ -378,18 +347,18 @@
           </div>
         </section>
 
-        <form class="composer mobile-composer">
+          <form class="composer mobile-composer">
           <div class="mobile-drawer-head mobile-only">
             <strong>Input drawer expanded</strong>
             <span class="collapse-pill">tap to collapse</span>
           </div>
           <div class="quick-row">
-            <span class="quick-key important"><span class="desktop-only">Shift + Tab · mode</span><span class="mobile-only">Shift+Tab</span></span>
-            <span class="quick-key">Esc<span class="desktop-only"> · cancel</span></span>
-            <span class="quick-key">Ctrl+C<span class="desktop-only"> · interrupt</span></span>
-            <span class="quick-key desktop-only">Ctrl + D · EOF</span>
-            <span class="quick-key"><span class="desktop-only">↑ / ↓ · history</span><span class="mobile-only">↑</span></span>
-            <span class="quick-key mobile-only">↓</span>
+            <span class="quick-key important">Shift+Tab</span>
+            <span class="quick-key">Esc</span>
+            <span class="quick-key">Ctrl+C</span>
+            <span class="quick-key">Ctrl+D</span>
+            <span class="quick-key">↑</span>
+            <span class="quick-key">↓</span>
           </div>
           <div class="input-strip">
             <span class="input-prefix">$</span>
@@ -397,7 +366,8 @@
             <span class="input-note">no oversized send button</span>
             <span class="mini-action mobile-only">⏎</span>
           </div>
-        </form>
+          </form>
+        </section>
       </section>
     </main>
   </body>

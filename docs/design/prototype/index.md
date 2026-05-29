@@ -22,6 +22,8 @@
 - [project-detail.html](./project-detail.html) — 展示进入 Project 后的 Agent 二级页：桌面端左侧二级导航，移动端底部二级导航含 Back 返回一级入口，工作区展示多个 Agent 实例、创建 Claude/Codex 入口和未来会话历史区域。
 - [agent-session-detail.html](./agent-session-detail.html) — 展示从 Agent 实例列表进入后的 terminal-first Agent instance 详情页，包含可滚动/可输入终端、顶部 Files/Git 快捷入口、Meta 浮窗和移动端可收起输入抽屉。
 - [terminal-instance-detail.html](./terminal-instance-detail.html) — 展示单个 Terminal instance 详情页，沿用 terminal-first 输出和输入结构，但顶部不提供 Files/Git/Terminal 快捷入口。
-- [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验：一个 standalone 响应式页面在桌面端呈现文件列表 + preview 分栏，移动端使用 direct Files 的 header/content/bottom-nav 三段式。
-- [git.html](./git.html) — 展示 Project Git 的只读 status/diff inspection 体验：一个 standalone 响应式页面在桌面端呈现变更列表 + unified diff，移动端使用 direct Git 的 header/content/bottom-nav 三段式。
+- [files.html](./files.html) — 展示 Project Files 的只读浏览/预览体验：桌面端呈现文件列表 + preview 分栏，移动端 direct Files 使用紧凑列表，点击文件后进入全屏 preview 详情页。
+- [file-preview-detail.html](./file-preview-detail.html) — 展示从 Files 列表打开文件后的独立 preview 详情页，移动端全屏显示且不保留底部二级导航。
+- [git.html](./git.html) — 展示 Project Git 的只读 status/diff inspection 体验：桌面端呈现变更列表 + unified diff，移动端 direct Git 使用紧凑变更列表，点击文件后进入全屏 diff 详情页。
+- [git-diff-detail.html](./git-diff-detail.html) — 展示从 Git 变更列表打开单文件后的独立 diff 详情页，移动端全屏显示且不保留底部二级导航。
 - [terminal.html](./terminal.html) — 展示 Terminal 二级页的实例列表体验：支持进入、新建、关闭 Terminal instance，移动端直接二级页使用带 Back 的底部二级导航且不承载 runtime input。

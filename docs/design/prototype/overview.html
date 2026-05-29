@@ -265,7 +265,7 @@
           <div class="section-head">
             <div>
               <h2>Agent detail / Terminal-first runtime detail</h2>
-              <p>Agent instance 详情页聚焦 terminal-first 输出、输入抽屉、Files/Git/+Terminal 快捷入口和 Meta 浮窗。</p>
+              <p>Agent instance 详情页聚焦 terminal-first 输出、输入抽屉和 Files/Git/+Terminal 快捷入口；桌面端保留 Project 二级导航，顶部不展示无意义的 live/meta/pause 状态。</p>
             </div>
             <a href="./agent-session-detail.html">Open standalone</a>
           </div>
@@ -285,7 +285,7 @@
           <div class="section-head">
             <div>
               <h2>Terminal detail / Focused shell</h2>
-              <p>Terminal instance 详情页保留 focused shell，不出现 Agent-only Files/Git/+Terminal 快捷入口。</p>
+              <p>Terminal instance 详情页保留 focused shell；桌面端保留 Project 二级导航和左上返回，顶部只显示实例身份与 Close，不出现 Agent-only Files/Git/+Terminal 快捷入口。</p>
             </div>
             <a href="./terminal-instance-detail.html">Open standalone</a>
           </div>
@@ -305,7 +305,7 @@
           <div class="section-head">
             <div>
               <h2>Files / Read-only preview</h2>
-              <p>Files 二级页展示只读文件浏览、HTML/text/image/unsupported preview；standalone 保留一个响应式 direct Files 页面，原 mobile context/detail 导航差异在本说明中保留为后续状态约束。</p>
+              <p>Files 二级页展示只读文件浏览、HTML/text/image/unsupported preview；standalone 桌面端呈现列表 + preview 分栏，移动端 direct Files 只显示紧凑列表，点击文件后进入新的全屏 preview 详情页，不在列表下方堆叠预览。</p>
             </div>
             <a href="./files.html">Open standalone</a>
           </div>
@@ -321,11 +321,31 @@
           </div>
         </article>
 
+        <article class="page-section" data-page="file-preview-detail">
+          <div class="section-head">
+            <div>
+              <h2>File preview detail / Full-screen mobile target</h2>
+              <p>文件 preview 详情页展示从 Files 列表打开后的独立全屏状态：移动端只保留顶部返回和文件上下文，不显示底部二级导航；桌面端保留 Project 二级导航和右侧 preview 工作区。</p>
+            </div>
+            <a href="./file-preview-detail.html">Open standalone</a>
+          </div>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: file-preview-detail.html</span></div>
+              <div class="viewport-scroll"><iframe src="./file-preview-detail.html" title="File preview detail desktop prototype preview"></iframe></div>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./file-preview-detail.html" title="File preview detail mobile prototype preview"></iframe></div>
+            </div>
+          </div>
+        </article>
+
         <article class="page-section" data-page="git">
           <div class="section-head">
             <div>
               <h2>Git / Read-only diff inspection</h2>
-              <p>Git 二级页展示只读 status、changed files 和 unified diff；standalone 保留一个响应式 direct Git 页面，mobile diff detail 的顶部返回与隐藏底部二级导航作为后续详情状态约束保留在说明中。</p>
+              <p>Git 二级页展示只读 status、changed files 和 unified diff；standalone 桌面端呈现变更列表 + unified diff 分栏，移动端 direct Git 只显示紧凑变更列表，点击文件后进入新的全屏 diff 详情页，不在列表下方堆叠 diff。</p>
             </div>
             <a href="./git.html">Open standalone</a>
           </div>
@@ -337,6 +357,26 @@
             <div class="preview-frame mobile-preview">
               <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
               <div class="viewport-scroll"><iframe src="./git.html" title="Git mobile prototype preview"></iframe></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="page-section" data-page="git-diff-detail">
+          <div class="section-head">
+            <div>
+              <h2>Git diff detail / Full-screen mobile target</h2>
+              <p>单文件 diff 详情页展示从 Git 变更列表打开后的独立全屏状态：移动端只保留顶部返回和文件 diff 上下文，不显示底部二级导航；桌面端保留 Project 二级导航和右侧 unified diff 工作区。</p>
+            </div>
+            <a href="./git-diff-detail.html">Open standalone</a>
+          </div>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop viewport · 1440x1000</span><span>source: git-diff-detail.html</span></div>
+              <div class="viewport-scroll"><iframe src="./git-diff-detail.html" title="Git diff detail desktop prototype preview"></iframe></div>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile viewport · 390x844</span><span>same source page</span></div>
+              <div class="viewport-scroll"><iframe src="./git-diff-detail.html" title="Git diff detail mobile prototype preview"></iframe></div>
             </div>
           </div>
         </article>

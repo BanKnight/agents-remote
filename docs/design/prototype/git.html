@@ -278,30 +278,62 @@
         .status-panel {
           display: block;
           border-right: 0;
-          border-bottom: 1px solid var(--line);
           background: transparent;
         }
 
         .status-summary {
-          border: 1px solid rgba(148, 163, 184, 0.14);
-          border-radius: 16px;
-          margin: 10px;
-          padding: 10px;
-          background: rgba(20, 27, 40, 0.52);
+          display: none;
         }
 
         .change-list {
-          gap: 6px;
-          padding: 0 10px 10px;
+          gap: 2px;
+          padding: 6px 8px 8px;
         }
 
         .change-row {
-          padding: 9px;
+          grid-template-columns: 24px minmax(0, 1fr) auto;
+          gap: 8px;
+          border-radius: 10px;
+          padding: 6px 8px;
+        }
+
+        .change-row.active {
+          background: rgba(125, 211, 252, 0.08);
+        }
+
+        .change-row p {
+          font-size: 12px;
+        }
+
+        .change-row small {
+          display: none;
+        }
+
+        .file-mark {
+          width: 24px;
+          height: 24px;
+          border-radius: 8px;
+          font-size: 9px;
+        }
+
+        .change-kind {
+          padding: 3px 6px;
+          font-size: 9px;
+        }
+
+        .change-row::after {
+          content: "›";
+          color: var(--muted);
+          font-size: 17px;
+          line-height: 1;
+        }
+
+        .change-row .change-kind {
+          display: none;
         }
 
         .diff-panel {
-          display: block;
-          background: rgba(5, 8, 13, 0.44);
+          display: none;
         }
 
         .diff-head {

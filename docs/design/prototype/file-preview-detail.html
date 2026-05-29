@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>File Preview Detail Prototype</title>
+    <link rel="stylesheet" href="./prototype-foundation.css" />
+    <style>
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .responsive-shell.detail-shell {
+        display: grid;
+        grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        height: 100vh;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .detail-workspace {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .detail-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid var(--line);
+        padding: 14px 16px;
+        background: rgba(10, 14, 22, 0.94);
+      }
+
+      .head-left,
+      .head-actions,
+      .preview-title {
+        display: flex;
+        align-items: center;
+      }
+
+      .head-left,
+      .preview-title {
+        min-width: 0;
+        gap: 10px;
+      }
+
+      .file-mark,
+      .tool-button {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(125, 211, 252, 0.32);
+        background: rgba(125, 211, 252, 0.1);
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .file-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 15px;
+        font-size: 12px;
+      }
+
+      .file-title {
+        min-width: 0;
+      }
+
+      .file-title h2 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 17px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-title p {
+        margin: 3px 0 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tool-button {
+        min-height: 32px;
+        border-color: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+        font-size: 12px;
+      }
+
+      .preview-workspace {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        overflow: hidden;
+        background: rgba(5, 8, 13, 0.52);
+      }
+
+      .preview-subhead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 12px 16px;
+      }
+
+      .type-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 7px;
+      }
+
+      .type-pill {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 5px 8px;
+        color: var(--soft);
+        background: rgba(20, 27, 40, 0.72);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .type-pill.active {
+        border-color: rgba(125, 211, 252, 0.34);
+        color: var(--accent);
+      }
+
+      .preview-body {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 16px;
+        scrollbar-color: rgba(125, 211, 252, 0.5) transparent;
+      }
+
+      .html-preview {
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 18px;
+        background: #020617;
+      }
+
+      .html-preview iframe {
+        display: block;
+        width: 100%;
+        height: min(56vh, 460px);
+        border: 0;
+        background: white;
+      }
+
+      .preview-note {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-top: 1px solid rgba(148, 163, 184, 0.12);
+        padding: 10px 12px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .preview-examples {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .example-card {
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 16px;
+        padding: 11px;
+        background: rgba(20, 27, 40, 0.64);
+      }
+
+      .example-card h5 {
+        margin: 0 0 8px;
+        font-size: 12px;
+      }
+
+      .code-sample {
+        overflow: hidden;
+        border-radius: 12px;
+        padding: 9px;
+        background: rgba(0, 0, 0, 0.36);
+        color: var(--code-text);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        line-height: 1.55;
+      }
+
+      .image-sample {
+        height: 86px;
+        border-radius: 12px;
+        background:
+          radial-gradient(circle at 30% 25%, rgba(125, 211, 252, 0.9), transparent 18%),
+          radial-gradient(circle at 70% 32%, rgba(167, 139, 250, 0.78), transparent 20%),
+          linear-gradient(145deg, rgba(52, 211, 153, 0.26), rgba(8, 11, 16, 0.9));
+      }
+
+      .unsupported-sample {
+        display: grid;
+        place-items: center;
+        height: 86px;
+        border: 1px dashed rgba(148, 163, 184, 0.28);
+        border-radius: 12px;
+        color: var(--muted);
+        font-size: 11px;
+        text-align: center;
+      }
+
+      @media (max-width: 640px) {
+        .responsive-shell.detail-shell {
+          display: block;
+          height: 100vh;
+          min-height: 100vh;
+          overflow: hidden;
+        }
+
+        .detail-workspace {
+          height: 100vh;
+          min-height: 100vh;
+        }
+
+        .detail-head {
+          padding: 10px 11px;
+        }
+
+        .back-button,
+        .file-mark {
+          width: 32px;
+          height: 32px;
+          border-radius: 12px;
+        }
+
+        .file-title h2 {
+          font-size: 14px;
+        }
+
+        .file-title p {
+          font-size: 10px;
+        }
+
+        .tool-button {
+          min-height: 32px;
+          border-radius: 12px;
+          padding: 0 9px;
+          font-size: 10px;
+        }
+
+        .preview-subhead {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 8px;
+          padding: 10px 11px;
+        }
+
+        .type-row {
+          justify-content: flex-start;
+        }
+
+        .preview-body {
+          padding: 10px;
+        }
+
+        .html-preview iframe {
+          height: 360px;
+        }
+
+        .preview-note {
+          display: block;
+          line-height: 1.5;
+        }
+
+        .preview-examples {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="prototype-detail">
+    <main class="page">
+      <section class="responsive-shell detail-shell">
+        <aside class="level-two-rail desktop-only">
+          <div class="back-link">← Files</div>
+          <div class="project-chip">
+            <h2>agents-remote</h2>
+            <p>/home/deploy/workspace/agents-remote</p>
+          </div>
+          <nav class="nav-list" aria-label="Level 2 navigation">
+            <div class="nav-item"><span class="nav-icon">A</span><span>Agent</span></div>
+            <div class="nav-item active"><span class="nav-icon">F</span><span>Files</span></div>
+            <div class="nav-item"><span class="nav-icon">G</span><span>Git</span></div>
+            <div class="nav-item"><span class="nav-icon">T</span><span>Terminal</span></div>
+          </nav>
+        </aside>
+
+        <section class="detail-workspace">
+          <header class="detail-head">
+            <div class="head-left">
+              <div class="back-button">←</div>
+              <div class="file-mark">HTML</div>
+              <div class="file-title">
+                <h2>home.html</h2>
+                <p><span class="desktop-only">docs/design/prototype/home.html · read-only preview</span><span class="mobile-only">read-only preview</span></p>
+              </div>
+            </div>
+            <div class="head-actions">
+              <span class="tool-button">Close</span>
+            </div>
+          </header>
+
+          <section class="preview-workspace">
+            <header class="preview-subhead">
+              <div class="preview-title">
+                <div>
+                  <strong>Sandboxed HTML</strong>
+                  <p class="context-line">Scripts and same-origin privileges are disabled.</p>
+                </div>
+              </div>
+              <div class="type-row" aria-label="Preview types">
+                <span class="type-pill">Text</span>
+                <span class="type-pill">Image</span>
+                <span class="type-pill active">HTML</span>
+              </div>
+            </header>
+
+            <div class="preview-body">
+              <div class="html-preview">
+                <iframe
+                  title="Sandboxed HTML preview"
+                  sandbox=""
+                  srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;style&gt;body{margin:0;background:#080b10;color:#eef4ff;font-family:Inter,system-ui;padding:28px}section{border:1px solid #263245;border-radius:22px;background:#111827;padding:24px}p{color:#93a0b2;line-height:1.6}.pill{display:inline-block;border-radius:999px;padding:7px 10px;background:#0f766e;color:#cffafe;font-size:12px;font-weight:800}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;section&gt;&lt;span class='pill'&gt;HTML preview&lt;/span&gt;&lt;h1&gt;Prototype home&lt;/h1&gt;&lt;p&gt;Static HTML is rendered in a sandboxed iframe so the user can inspect visual structure without granting console privileges.&lt;/p&gt;&lt;/section&gt;&lt;/body&gt;&lt;/html&gt;"
+                ></iframe>
+                <div class="preview-note"><span>只读预览，不提供保存或下载。</span><span>适合检查静态 prototype 和文档 HTML。</span></div>
+              </div>
+
+              <div class="preview-examples">
+                <article class="example-card">
+                  <h5>Text / code</h5>
+                  <div class="code-sample">export function FilesPage() {<br />  return &lt;Preview /&gt;;<br />}</div>
+                </article>
+                <article class="example-card">
+                  <h5>Image</h5>
+                  <div class="image-sample" aria-label="Image preview placeholder"></div>
+                </article>
+                <article class="example-card">
+                  <h5>Unsupported</h5>
+                  <div class="unsupported-sample">Cannot preview this file type or size.</div>
+                </article>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
