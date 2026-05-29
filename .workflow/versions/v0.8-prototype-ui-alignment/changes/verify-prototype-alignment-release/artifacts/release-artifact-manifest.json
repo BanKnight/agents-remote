@@ -1,0 +1,255 @@
+{
+  "checkedAt": "2026-05-29T00:07:04.629Z",
+  "version": "v0.8-prototype-ui-alignment",
+  "change": "verify-prototype-alignment-release",
+  "result": "passed",
+  "failureCount": 0,
+  "openGaps": [],
+  "prototypeMap": [
+    {
+      "page": "home",
+      "prototype": "home.html",
+      "change": "align-home-project-shell",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/home-prototype-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/home-prototype-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/home-app-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/home-app-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/browser-check.log",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts",
+      "missing": []
+    },
+    {
+      "page": "project-agent-workspace",
+      "prototype": "project-detail.html",
+      "change": "align-home-project-shell",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/project-detail-prototype-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/project-detail-prototype-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/project-agent-app-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/project-agent-app-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/browser-check.log",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts",
+      "missing": []
+    },
+    {
+      "page": "agent-detail",
+      "prototype": "agent-session-detail.html",
+      "change": "align-runtime-detail-workspaces",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/agent-detail-prototype-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/agent-detail-prototype-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/agent-detail-app-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/agent-detail-app-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/browser-check.log",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/agent-desktop-check.json",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/agent-mobile-check.json",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts",
+      "missing": []
+    },
+    {
+      "page": "terminal-detail",
+      "prototype": "terminal-instance-detail.html",
+      "change": "align-runtime-detail-workspaces",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/terminal-detail-prototype-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/terminal-detail-prototype-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/terminal-detail-app-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/terminal-detail-app-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/browser-check.log",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/terminal-desktop-check.json",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/terminal-mobile-check.json",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts",
+      "missing": []
+    },
+    {
+      "page": "files-workspace",
+      "prototype": "files.html",
+      "change": "align-resource-inspection-workspaces",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/prototype-files-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/prototype-files-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-files-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-files-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-files-mobile-preview-detail.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts",
+      "missing": []
+    },
+    {
+      "page": "git-workspace",
+      "prototype": "git.html",
+      "change": "align-resource-inspection-workspaces",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/prototype-git-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/prototype-git-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-git-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-git-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-git-mobile-diff-detail.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts",
+      "missing": []
+    },
+    {
+      "page": "terminal-workspace",
+      "prototype": "terminal.html",
+      "change": "align-resource-inspection-workspaces",
+      "files": [
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/prototype-terminal-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/prototype-terminal-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-terminal-desktop.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/app-terminal-mobile.png",
+          "exists": true
+        },
+        {
+          "path": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log",
+          "exists": true
+        }
+      ],
+      "base": ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts",
+      "missing": []
+    }
+  ],
+  "referencedEvidence": {
+    "sharedFiles": [
+      ".workflow/versions/v0.8-prototype-ui-alignment/shared/alignment-contract.md",
+      ".workflow/versions/v0.8-prototype-ui-alignment/shared/design-system-note.md",
+      ".workflow/versions/v0.8-prototype-ui-alignment/shared/follow-up-gaps.md"
+    ],
+    "verifyFiles": [
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/establish-prototype-alignment-baseline/verify.md",
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/verify.md",
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/verify.md",
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/verify.md"
+    ],
+    "browserLogs": [
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-home-project-shell/artifacts/browser-check.log",
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-runtime-detail-workspaces/artifacts/browser-check.log",
+      ".workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log"
+    ]
+  }
+}

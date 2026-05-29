@@ -99,6 +99,9 @@
 - change：align-resource-inspection-workspaces
 - verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/verify.md`
 - 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/align-resource-inspection-workspaces/artifacts/browser-check.log` 与同目录 Files/Git/Terminal prototype/app desktop/mobile 截图、Files preview/Git diff mobile deep detail 截图
+- change：verify-prototype-alignment-release
+- verify 证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/verify.md`
+- 运行态验证证据：`.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/artifacts/release-browser-check.log`、`release-artifact-manifest.json`、`release-summary.json`
 - change：align-instance-detail-workspaces
 - verify 证据：`.workflow/changes/align-instance-detail-workspaces/verify.md`
 - 运行态验证证据：`.workflow/changes/align-instance-detail-workspaces/artifacts/browser-instance-detail/instance-detail-check.log` 与同目录 Agent/Terminal detail desktop/mobile 截图

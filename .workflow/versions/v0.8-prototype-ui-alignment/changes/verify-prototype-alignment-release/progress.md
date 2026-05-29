@@ -10,7 +10,7 @@
 
 ## 当前进度
 
-- 当前阶段：待规格
+- 当前阶段：已完成
 - 阻塞项：无
 
 ## 推进规则
@@ -22,12 +22,12 @@
 
 ## 产物检查
 
-- specs：未完成
-- design：未完成
-- plan/tasks：未完成
-- implementation：未完成
-- verify：未完成
-- distill：未完成
+- specs：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/specs/prototype-alignment-release/spec.md
+- design：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/design/overview.md；design/ui-ux.md；design/frontend.md；design/risks.md
+- plan/tasks：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/plan.md；.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/tasks.md
+- implementation：已完成：`.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/artifacts/create-release-artifacts.mjs`；`release-artifact-manifest.json`；`release-browser-check.log`；`release-summary.json`
+- verify：已完成：.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/verify.md
+- distill：已完成：docs/design/frontend-ui-architecture.md
 
 ## 阶段流转
 
@@ -46,3 +46,8 @@
 
 - 2026-05-28：由 `plan-versions` 创建为本 version 收口验证 change，等待所有前置 changes 完成后推进。
 - 2026-05-29：前置 `establish-prototype-alignment-baseline`、`align-home-project-shell`、`align-runtime-detail-workspaces`、`align-resource-inspection-workspaces` 均已完成，局部阻塞解除，可进入 `specify-change`。
+- 2026-05-29：`specify-change` 已创建 `.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/specs/prototype-alignment-release/spec.md`，定义 release 级 prototype map artifacts、跨页面导航层级、shared design system consistency、真实能力边界、follow-up gaps 汇总和最终证据包要求，当前阶段推进到待设计。
+- 2026-05-29：`design-change` 已创建 `.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/design/overview.md`、`design/ui-ux.md`、`design/frontend.md`、`design/risks.md`；设计采用前置证据复核 + release 汇总 log + 必要补采浏览器断言，不新增业务 UI 实现，当前阶段推进到待计划。
+- 2026-05-29：`plan-change` 已创建 `.workflow/versions/v0.8-prototype-ui-alignment/changes/verify-prototype-alignment-release/plan.md` 与 `tasks.md`；任务顺序为审计前置证据、生成 release artifacts、写入 verify、更新 progress，当前阶段推进到待实现。
+- 2026-05-29：`implement-change` / `verify-change` 已完成 release 级收口验证；`create-release-artifacts.mjs` 生成 `release-artifact-manifest.json`、`release-browser-check.log`、`release-summary.json`，Prototype Map 7 个条目 artifacts 均存在，前置 browser-log 关键断言均通过，follow-up gaps 无阻塞项；`git diff --check` 通过，`verify.md` 结论通过，当前阶段推进到待沉淀。
+- 2026-05-29：`distill-change` 已将最终 release 收口验证证据追加到 `docs/design/frontend-ui-architecture.md` 来源区；`docs/project.md` 已包含对应 prototype alignment 与调试服务长期规则，无需重复更新；当前阶段推进到已完成。
