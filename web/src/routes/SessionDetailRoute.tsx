@@ -449,36 +449,24 @@ function SessionDetailSidebar({
         <h2 className="truncate text-sm font-semibold text-slate-100">{projectName}</h2>
       </div>
 
-      {sessionType === "agent" ? (
-        <nav className="grid gap-2" aria-label="Agent detail workspace">
-          {(["terminal", "files", "git"] as const).map((view) => {
-            const labels: Record<typeof view, string> = {
-              terminal: "Agent",
-              files: "Files",
-              git: "Git",
-            };
-            const markers: Record<typeof view, string> = {
-              terminal: "AG",
-              files: "FL",
-              git: "GT",
-            };
-            const active = detailView === view;
-            return (
-              <button
-                key={view}
-                className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[0.875rem] px-3 py-2.5 text-left text-sm font-semibold transition ${active ? "bg-cyan-300/10 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-                type="button"
-                onClick={() => onViewChange(view)}
-              >
-                <IconMarker size="sm" tone={active ? "accent" : "muted"}>
-                  {markers[view]}
-                </IconMarker>
-                {labels[view]}
-              </button>
-            );
-          })}
-        </nav>
-      ) : null}
+      <nav className="grid gap-2" aria-label={`${sessionType === "agent" ? "Agent" : "Terminal"} detail workspace`}>
+        {detailNavigationItems(sessionType).map((item) => {
+          const active = detailView === item.view;
+          return (
+            <button
+              key={item.view}
+              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[0.875rem] px-3 py-2.5 text-left text-sm font-semibold transition ${active ? "bg-cyan-300/10 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
+              type="button"
+              onClick={() => onViewChange(item.view)}
+            >
+              <IconMarker size="sm" tone={active ? item.tone : "muted"}>
+                {item.marker}
+              </IconMarker>
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
     </aside>
   );
 }
@@ -500,6 +488,26 @@ type SessionDetailHeaderProps = {
   onReconnect: () => void;
   onViewChange: (view: DetailView) => void;
 };
+
+type DetailNavigationItem = {
+  label: string;
+  marker: string;
+  tone: "accent" | "success";
+  view: DetailView;
+};
+
+const agentDetailNavigationItems: DetailNavigationItem[] = [
+  { view: "terminal", label: "Agent", marker: "AG", tone: "accent" },
+  { view: "files", label: "Files", marker: "FL", tone: "accent" },
+  { view: "git", label: "Git", marker: "GT", tone: "accent" },
+];
+
+const terminalDetailNavigationItems: DetailNavigationItem[] = [
+  { view: "terminal", label: "Terminal", marker: "T", tone: "success" },
+];
+
+const detailNavigationItems = (sessionType: SessionType) =>
+  sessionType === "agent" ? agentDetailNavigationItems : terminalDetailNavigationItems;
 
 function SessionDetailHeader({
   closePending,
@@ -749,8 +757,13 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       term.write("\x1b[2J\x1b[3J\x1b[H" + data);
     };
 
-    terminalWriteRef.current = (_type, data) => {
-      writeSnapshot(data);
+    terminalWriteRef.current = (type, data) => {
+      if (type === "snapshot") {
+        writeSnapshot(data);
+        return;
+      }
+
+      term.write(data);
     };
 
     // Replay any data that arrived before the terminal mounted
@@ -809,7 +822,7 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
           {title} · {sessionType === "agent" ? "agent runtime" : "terminal shell"}
         </div>
       </div>
-      <div ref={containerRef} className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-screen]:h-full" />
+      <div ref={containerRef} className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto" />
     </section>
   );
 }

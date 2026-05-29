@@ -131,7 +131,8 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
     status: "running",
   });
   expect(messages).toContainEqual({ type: "snapshot", data: "ready" });
-  expect(messages).toContainEqual({ type: "output", data: "ready\npwd\n" });
+  expect(messages).toContainEqual({ type: "output", data: "\npwd\n" });
+  expect(messages).toContainEqual({ type: "snapshot", data: "ready\npwd\n" });
   expect(messages).toContainEqual({ type: "status", status: "connected" });
   expect(writes).toEqual(["pwd\n"]);
   expect(resizes).toEqual([[120, 40]]);

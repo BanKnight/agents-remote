@@ -49,7 +49,6 @@ import {
   IconMarker,
   ListRow,
   StatusPill,
-  actionButtonClasses,
   shellSurfaceClasses,
   type ShellTone,
 } from "../components/shell/shell-primitives";
@@ -209,6 +208,19 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   + Codex
                 </CreateButton>
               </div>
+            ) : activeSection === "terminal" ? (
+              <div
+                className="hidden flex-wrap justify-end gap-2 sm:flex"
+                aria-label="Create Terminal instance"
+              >
+                <CreateButton
+                  disabled={createTerminal.isPending}
+                  tone="accent"
+                  onClick={() => createTerminal.mutate()}
+                >
+                  {createTerminal.isPending ? "Creating..." : "New Terminal"}
+                </CreateButton>
+              </div>
             ) : activeSection === "files" || activeSection === "git" ? null : undefined
           }
         />
@@ -351,16 +363,20 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
           <span className="sm:hidden">
             {section.id === "agents"
               ? `Agent instances · ${summary.agentCount} active`
-              : section.label}
+              : section.id === "terminal"
+                ? `Terminal instances · ${summary.terminalCount} active`
+                : section.label}
           </span>
         </>
       }
       mobileMeta={undefined}
       title={
-        section.id === "agents" ? (
+        section.id === "agents" || section.id === "terminal" ? (
           <>
             <span className="sm:hidden">{project.name}</span>
-            <span className="hidden sm:inline">Agent instances</span>
+            <span className="hidden sm:inline">
+              {section.id === "agents" ? "Agent instances" : "Terminal instances"}
+            </span>
           </>
         ) : (
           section.label
@@ -625,23 +641,18 @@ function TerminalPanel({
   onClose,
 }: TerminalPanelProps) {
   return (
-    <ShellPanel className="lg:rounded-none" docked>
-      <ResourceToolbar
-        eyebrow="Terminal workspace"
-        title="Terminal instances"
-        meta="Project-scoped shell sessions. Shell controls open in the Terminal detail."
-        actions={
-          <CreateButton disabled={isCreating} tone="accent" onClick={onCreate}>
-            {isCreating ? "Creating..." : "New Terminal"}
-          </CreateButton>
-        }
-      />
+    <ShellPanel className="px-3.5 pb-4 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
+      <div className="grid gap-2 sm:hidden" aria-label="Create Terminal instance mobile">
+        <CreateButton disabled={isCreating} tone="accent" onClick={onCreate}>
+          {isCreating ? "Creating..." : "+ Terminal"}
+        </CreateButton>
+      </div>
+      <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
+        <h3 className="text-base font-semibold">Active instances</h3>
+        <span className="text-xs text-slate-400">{sessions.length} current</span>
+      </div>
       <ErrorText error={createError ?? closeError} />
-      {isClosing ? (
-        <div className="mt-3">
-          <ResourceStatePanel tone="warning" message="Closing Terminal session..." />
-        </div>
-      ) : null}
+      {isClosing ? <p className="mt-3 text-sm text-amber-200">Closing Terminal session...</p> : null}
       <TerminalInstanceList
         projectName={projectName}
         sessions={sessions}
@@ -666,27 +677,23 @@ function TerminalInstanceList({
   onClose,
 }: TerminalInstanceListProps) {
   if (isLoading) {
-    return (
-      <div className="mt-5">
-        <ResourceStatePanel tone="inset" message="Loading Terminal instances..." />
-      </div>
-    );
+    return <p className="mt-5 text-sm text-slate-400">Loading Terminal instances...</p>;
   }
 
   if (sessions.length === 0) {
     return (
-      <div className="mt-5">
-        <ResourceStatePanel
-          title="No Terminal instances yet"
-          message="Create a Terminal to open a focused project shell detail."
-        />
+      <div className={`mt-4 rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
+        <p className="text-lg font-semibold text-slate-100">No Terminal instances yet</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+          Create a Terminal to open a focused project shell detail.
+        </p>
       </div>
     );
   }
 
   return (
     <div
-      className="mt-5 grid max-h-[26rem] gap-3 overflow-y-auto pr-1 lg:grid-cols-2"
+      className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-1 lg:grid-cols-2"
       aria-label="Terminal instances"
     >
       {sessions.map((session) => (
@@ -709,20 +716,19 @@ type TerminalInstanceRowProps = {
 
 function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstanceRowProps) {
   return (
-    <SessionInstanceRow
-      actions={
-        <>
-          <Link
-            className={actionButtonClasses({ tone: "accent" })}
-            params={{ projectName, sessionId: session.id }}
-            search={{ fromAgentSession: undefined }}
-            to="/projects/$projectName/terminal-sessions/$sessionId"
-          >
-            Open detail
-          </Link>
+    <Link
+      aria-label={`Open stream ${session.displayName}`}
+      className="block"
+      params={{ projectName, sessionId: session.id }}
+      search={{ fromAgentSession: undefined }}
+      to="/projects/$projectName/terminal-sessions/$sessionId"
+    >
+      <SessionInstanceRow
+        actions={
           <ActionButton
             tone="danger"
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
               if (window.confirm("Close this Terminal? The running shell will be terminated.")) {
                 onClose();
               }
@@ -730,14 +736,14 @@ function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstance
           >
             Close
           </ActionButton>
-        </>
-      }
-      marker={<IconMarker tone="accent">TM</IconMarker>}
-      statusTone={sessionStatusTone(session.status)}
-      status={sessionStatusLabel(session.status)}
-      subtitle={session.id}
-      title={session.displayName}
-    />
+        }
+        marker={<IconMarker tone="success">T</IconMarker>}
+        statusTone={sessionStatusTone(session.status)}
+        status={sessionStatusLabel(session.status)}
+        subtitle={session.id}
+        title={session.displayName}
+      />
+    </Link>
   );
 }
 

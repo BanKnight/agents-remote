@@ -137,6 +137,7 @@ export class SessionStreamController {
 
       if (parsed.type === "resize") {
         await this.runtime.resize?.(data.tmuxSessionName, parsed.cols, parsed.rows);
+        await this.sendSnapshot(socket, data);
       }
 
       if (parsed.type === "ping") {
@@ -184,10 +185,18 @@ export class SessionStreamController {
       const snapshot = (await this.runtime.capture?.(data.tmuxSessionName)) ?? "";
       const previous = this.lastSnapshots.get(socket);
 
-      if (snapshot !== previous) {
-        this.lastSnapshots.set(socket, snapshot);
-        send(socket, { type: "output", data: snapshot });
+      if (snapshot === previous) {
+        return;
       }
+
+      this.lastSnapshots.set(socket, snapshot);
+
+      if (previous !== undefined && snapshot.startsWith(previous)) {
+        send(socket, { type: "output", data: snapshot.slice(previous.length) });
+        return;
+      }
+
+      send(socket, { type: "snapshot", data: snapshot });
     } catch {
       send(socket, {
         type: "error",
