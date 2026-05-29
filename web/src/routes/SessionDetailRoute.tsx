@@ -670,6 +670,8 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -704,6 +706,7 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       cursorBlink: true,
       allowTransparency: true,
       scrollback: 5000,
+      convertEol: true,
     });
 
     const fit = new FitAddon();
@@ -715,15 +718,24 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       onSendInput(data);
     });
 
-    // Notify server of terminal dimensions so tmux resizes to match xterm.js.
-    // Must be called after every fit.fit() — otherwise tmux stays at its
-    // default 80×24 and content wraps at column 80 regardless of viewport size.
     const notifyResize = () => {
-      onResize(term.cols, term.rows);
+      const size = { cols: term.cols, rows: term.rows };
+      const previous = lastResizeRef.current;
+
+      if (previous?.cols === size.cols && previous.rows === size.rows) {
+        return;
+      }
+
+      lastResizeRef.current = size;
+      onResize(size.cols, size.rows);
     };
 
-    fit.fit();
-    notifyResize();
+    const fitAndNotifyResize = () => {
+      fit.fit();
+      notifyResize();
+    };
+
+    fitAndNotifyResize();
 
     termRef.current = term;
     fitRef.current = fit;
@@ -734,7 +746,7 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
     // Use ESC[2J ESC[H (clear screen + cursor home) instead of term.reset()
     // so the scrollback buffer is preserved.
     const writeSnapshot = (data: string) => {
-      term.write("\x1b[2J\x1b[H" + data);
+      term.write("\x1b[2J\x1b[3J\x1b[H" + data);
     };
 
     terminalWriteRef.current = (_type, data) => {
@@ -747,23 +759,35 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       writeSnapshot(pending.data);
     }
 
-    // Resize on container size changes
+    // ResizeObserver can fire in response to xterm DOM writes, so coalesce it
+    // into one animation-frame fit and only notify tmux when rows/cols change.
     const ro = new ResizeObserver(() => {
-      try {
-        fit.fit();
-        notifyResize();
-      } catch {
-        // ignore during teardown
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
       }
+
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        try {
+          fitAndNotifyResize();
+        } catch {
+          // ignore during teardown
+        }
+      });
     });
     ro.observe(container);
 
     return () => {
       ro.disconnect();
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
       terminalWriteRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      lastResizeRef.current = null;
     };
     // onSendInput and onResize are stable (useCallback); terminalWriteRef/terminalDataRef are refs
     // eslint-disable-next-line react-hooks/exhaustive-deps

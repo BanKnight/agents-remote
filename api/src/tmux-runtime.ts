@@ -60,7 +60,7 @@ export class TmuxRuntime implements RuntimeResources {
   }
 
   async capture(tmuxSessionName: string) {
-    const result = await runTmux(["capture-pane", "-p", "-J", "-e", "-t", tmuxSessionName]);
+    const result = await runTmux(["capture-pane", "-p", "-e", "-t", tmuxSessionName]);
 
     if (result.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", result.stderr);
