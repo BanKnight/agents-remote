@@ -652,7 +652,9 @@ function TerminalPanel({
         <span className="text-xs text-slate-400">{sessions.length} current</span>
       </div>
       <ErrorText error={createError ?? closeError} />
-      {isClosing ? <p className="mt-3 text-sm text-amber-200">Closing Terminal session...</p> : null}
+      {isClosing ? (
+        <p className="mt-3 text-sm text-amber-200">Closing Terminal session...</p>
+      ) : null}
       <TerminalInstanceList
         projectName={projectName}
         sessions={sessions}
@@ -756,7 +758,14 @@ type SectionDetailProps = {
   section: (typeof consoleSections)[number];
 };
 
-function SectionDetail({ filesPath, onDeepDetailChange, onFilesPathChange, onMobileFilePreviewChange, projectName, section }: SectionDetailProps) {
+function SectionDetail({
+  filesPath,
+  onDeepDetailChange,
+  onFilesPathChange,
+  onMobileFilePreviewChange,
+  projectName,
+  section,
+}: SectionDetailProps) {
   const isFiles = section.id === "files";
   const isGit = section.id === "git";
 
@@ -1172,7 +1181,12 @@ type FilesPanelProps = {
   projectName: string;
 };
 
-function FilesPanel({ initialPath, onPathChange, onMobilePreviewChange, projectName }: FilesPanelProps) {
+function FilesPanel({
+  initialPath,
+  onPathChange,
+  onMobilePreviewChange,
+  projectName,
+}: FilesPanelProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
 
@@ -1265,7 +1279,13 @@ function FilesPanel({ initialPath, onPathChange, onMobilePreviewChange, projectN
           aria-label="Back to files"
         >
           <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
           Back
         </button>
@@ -1293,9 +1313,7 @@ function FilesPanel({ initialPath, onPathChange, onMobilePreviewChange, projectN
         className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFilePath === undefined ? "hidden sm:flex" : "flex"}`}
       >
         {mobilePreviewTopBar}
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-          {previewPanel}
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">{previewPanel}</div>
       </div>
     </div>
   );
@@ -1374,7 +1392,13 @@ type FilePreviewPanelProps = {
   renderToggle: ReactNode;
 };
 
-function FilePreviewPanel({ error, isLoading, preview, renderMode, renderToggle }: FilePreviewPanelProps) {
+function FilePreviewPanel({
+  error,
+  isLoading,
+  preview,
+  renderMode,
+  renderToggle,
+}: FilePreviewPanelProps) {
   if (isLoading) {
     return <ResourceStatePanel tone="inset" message="Loading preview..." />;
   }
@@ -1581,12 +1605,7 @@ function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
         onClick={() => onNavigate("")}
         aria-label="Go to root"
       >
-        <svg
-          className="h-3.5 w-3.5 shrink-0"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
+        <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path
             d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-3.75v-3.75h-3.5V14.5H2.5A.5.5 0 012 14V6.5z"
             stroke="currentColor"

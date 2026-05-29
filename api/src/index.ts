@@ -397,7 +397,7 @@ export const startApi = async () => {
   const settings = await loadSettings();
   const runtimePaths = await ensureRuntimeDir(resolveRuntimePaths());
   const auth = new AuthService({ appPassword: settings.appPassword });
-  const tmuxRuntime = new TmuxRuntime();
+  const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
   const runtime: RuntimeResources = {
     exists: (tmuxSessionName) => tmuxRuntime.exists(tmuxSessionName),
@@ -407,6 +407,8 @@ export const startApi = async () => {
     write: (tmuxSessionName, data) => tmuxRuntime.write(tmuxSessionName, data),
     resize: (tmuxSessionName, cols, rows) => tmuxRuntime.resize(tmuxSessionName, cols, rows),
     capture: (tmuxSessionName) => tmuxRuntime.capture(tmuxSessionName),
+    stream: (tmuxSessionName, onData, onError) =>
+      tmuxRuntime.stream(tmuxSessionName, onData, onError),
   };
   const streamController = new SessionStreamController(tmuxRuntime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });

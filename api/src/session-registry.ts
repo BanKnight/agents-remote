@@ -28,6 +28,10 @@ export type SessionMetadata = {
   lastConnectedAt?: string;
 };
 
+export type RuntimeStream = {
+  close(): Promise<void> | void;
+};
+
 export type RuntimeResources = {
   exists(tmuxSessionName: string): Promise<boolean>;
   close(tmuxSessionName: string): Promise<void>;
@@ -36,6 +40,11 @@ export type RuntimeResources = {
   write?(tmuxSessionName: string, data: string): Promise<void>;
   resize?(tmuxSessionName: string, cols: number, rows: number): Promise<void>;
   capture?(tmuxSessionName: string): Promise<string>;
+  stream?(
+    tmuxSessionName: string,
+    onData: (data: string) => void,
+    onError: (error: Error) => void,
+  ): Promise<RuntimeStream>;
 };
 
 export class SessionRegistryError extends Error {
@@ -401,6 +410,9 @@ const assumeRuntimeExists: RuntimeResources = {
   async resize() {},
   async capture() {
     return "";
+  },
+  async stream() {
+    return { close() {} };
   },
 };
 

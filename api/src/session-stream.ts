@@ -7,7 +7,12 @@ import type {
 } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
-import { SessionRegistry, type RuntimeResources, type SessionMetadata } from "./session-registry";
+import {
+  SessionRegistry,
+  type RuntimeResources,
+  type RuntimeStream,
+  type SessionMetadata,
+} from "./session-registry";
 
 type UpgradeServer = {
   upgrade(request: Request, options?: { data?: SessionWebSocketData }): boolean;
@@ -85,6 +90,8 @@ export const handleSessionStreamUpgrade = async (
 export class SessionStreamController {
   private readonly timers = new WeakMap<StreamSocket, ReturnType<typeof setInterval>>();
   private readonly lastSnapshots = new WeakMap<StreamSocket, string>();
+  private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
+  private readonly writeQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly runtime: RuntimeResources) {}
 
@@ -102,10 +109,7 @@ export class SessionStreamController {
       status: data.status,
     });
     await this.sendSnapshot(socket, data);
-    const timer = setInterval(() => {
-      void this.poll(socket, data);
-    }, 1000);
-    this.timers.set(socket, timer);
+    await this.startStream(socket, data);
     return true;
   }
 
@@ -131,8 +135,7 @@ export class SessionStreamController {
 
     try {
       if (parsed.type === "input") {
-        await this.runtime.write?.(data.tmuxSessionName, parsed.data);
-        await this.poll(socket, data);
+        await this.writeInput(data.tmuxSessionName, parsed.data);
       }
 
       if (parsed.type === "resize") {
@@ -161,6 +164,13 @@ export class SessionStreamController {
       clearInterval(timer);
       this.timers.delete(socket);
     }
+
+    const stream = this.streams.get(socket);
+
+    if (stream) {
+      this.streams.delete(socket);
+      void stream.close();
+    }
   }
 
   private async sendSnapshot(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
@@ -172,6 +182,46 @@ export class SessionStreamController {
     const snapshot = (await this.runtime.capture?.(data.tmuxSessionName)) ?? "";
     this.lastSnapshots.set(socket, snapshot);
     send(socket, { type: "snapshot", data: snapshot });
+  }
+
+  private async writeInput(tmuxSessionName: string, data: string) {
+    const previous = this.writeQueues.get(tmuxSessionName) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await this.runtime.write?.(tmuxSessionName, data);
+      });
+    this.writeQueues.set(tmuxSessionName, next);
+
+    try {
+      await next;
+    } finally {
+      if (this.writeQueues.get(tmuxSessionName) === next) {
+        this.writeQueues.delete(tmuxSessionName);
+      }
+    }
+  }
+
+  private async startStream(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
+    if (this.runtime.stream) {
+      const stream = await this.runtime.stream(
+        data.tmuxSessionName,
+        (output) => send(socket, { type: "output", data: output }),
+        () =>
+          send(socket, {
+            type: "error",
+            code: "SESSION_RUNTIME_ERROR",
+            message: "Terminal stream failed",
+          }),
+      );
+      this.streams.set(socket, stream);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void this.poll(socket, data);
+    }, 1000);
+    this.timers.set(socket, timer);
   }
 
   private async poll(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {

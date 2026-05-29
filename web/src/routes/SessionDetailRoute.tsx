@@ -99,7 +99,9 @@ function SessionDetail({
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const terminalDataRef = useRef<{ type: "snapshot" | "output"; data: string } | null>(null);
-  const terminalWriteRef = useRef<((type: "snapshot" | "output", data: string) => void) | null>(null);
+  const terminalWriteRef = useRef<((type: "snapshot" | "output", data: string) => void) | null>(
+    null,
+  );
   const [input, setInput] = useState("");
   const [detailView, setDetailView] = useState<DetailView>("terminal");
 
@@ -152,7 +154,10 @@ function SessionDetail({
       await navigate({
         to: "/projects/$projectName",
         params: { projectName },
-        search: { workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection, filesPath: "" },
+        search: {
+          workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection,
+          filesPath: "",
+        },
       });
     },
   });
@@ -295,9 +300,7 @@ function SessionDetail({
 
   // Stable callback for xterm to notify server of terminal resize
   const sendTerminalResize = useCallback(
-    (cols: number, rows: number) => {
-      sendMessage({ type: "resize", cols, rows });
-    },
+    (cols: number, rows: number) => sendMessage({ type: "resize", cols, rows }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [socketRef],
   );
@@ -360,7 +363,7 @@ function SessionDetail({
           />
 
           <div
-            className={`flex min-h-0 min-w-0 flex-col gap-2 p-2 sm:p-3 ${shellSurfaceClasses.runtimeBody}`}
+            className={`flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden p-2 sm:p-3 ${shellSurfaceClasses.runtimeBody}`}
           >
             {detail.error instanceof Error ? (
               <Notice tone="danger">{detail.error.message}</Notice>
@@ -382,6 +385,7 @@ function SessionDetail({
               terminalDataRef={terminalDataRef}
               terminalWriteRef={terminalWriteRef}
               title={title}
+              connectionStatus={connectionStatus}
               onResize={sendTerminalResize}
               onSendInput={sendTerminalInput}
               onReturnToStream={() => setDetailView("terminal")}
@@ -449,7 +453,10 @@ function SessionDetailSidebar({
         <h2 className="truncate text-sm font-semibold text-slate-100">{projectName}</h2>
       </div>
 
-      <nav className="grid gap-2" aria-label={`${sessionType === "agent" ? "Agent" : "Terminal"} detail workspace`}>
+      <nav
+        className="grid gap-2"
+        aria-label={`${sessionType === "agent" ? "Agent" : "Terminal"} detail workspace`}
+      >
         {detailNavigationItems(sessionType).map((item) => {
           const active = detailView === item.view;
           return (
@@ -576,6 +583,11 @@ function SessionDetailHeader({
               onViewChange={onViewChange}
             />
           ) : null}
+          {_connectionStatus === "error" ? (
+            <ActionButton tone="accent" onClick={_onReconnect}>
+              Retry
+            </ActionButton>
+          ) : null}
           <ActionButton disabled={closePending} tone="danger" onClick={onClose}>
             {closePending ? "Closing..." : "Close"}
           </ActionButton>
@@ -627,14 +639,18 @@ type DetailWorkspaceProps = {
   projectName: string;
   sessionType: SessionType;
   title: string;
-  terminalWriteRef: React.MutableRefObject<((type: "snapshot" | "output", data: string) => void) | null>;
+  terminalWriteRef: React.MutableRefObject<
+    ((type: "snapshot" | "output", data: string) => void) | null
+  >;
   terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
+  connectionStatus: StreamConnectionStatus;
   onSendInput: (data: string) => void;
-  onResize: (cols: number, rows: number) => void;
+  onResize: (cols: number, rows: number) => boolean;
   onReturnToStream: () => void;
 };
 
 function DetailWorkspace({
+  connectionStatus,
   detailView,
   onReturnToStream,
   onResize,
@@ -655,6 +671,7 @@ function DetailWorkspace({
 
   return (
     <TerminalOutput
+      connectionStatus={connectionStatus}
       sessionType={sessionType}
       terminalDataRef={terminalDataRef}
       terminalWriteRef={terminalWriteRef}
@@ -666,20 +683,54 @@ function DetailWorkspace({
 }
 
 type TerminalOutputProps = {
+  connectionStatus: StreamConnectionStatus;
   sessionType: SessionType;
-  terminalWriteRef: React.MutableRefObject<((type: "snapshot" | "output", data: string) => void) | null>;
+  terminalWriteRef: React.MutableRefObject<
+    ((type: "snapshot" | "output", data: string) => void) | null
+  >;
   terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
   title: string;
   onSendInput: (data: string) => void;
-  onResize: (cols: number, rows: number) => void;
+  onResize: (cols: number, rows: number) => boolean;
 };
 
-function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title, onSendInput, onResize }: TerminalOutputProps) {
+function TerminalOutput({
+  connectionStatus,
+  sessionType,
+  terminalDataRef,
+  terminalWriteRef,
+  title,
+  onSendInput,
+  onResize,
+}: TerminalOutputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
+  const initialFitFramesRef = useRef<number[]>([]);
+  const initialFitTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const writeQueueRef = useRef(Promise.resolve());
+
+  useEffect(() => {
+    if (connectionStatus !== "connected") {
+      return;
+    }
+
+    const pending = pendingResizeRef.current;
+
+    if (!pending) {
+      return;
+    }
+
+    if (onResize(pending.cols, pending.rows)) {
+      lastResizeRef.current = pending;
+      pendingResizeRef.current = null;
+    }
+  }, [connectionStatus, onResize]);
+
+  const overlay = terminalOverlay(connectionStatus);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -734,8 +785,12 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
         return;
       }
 
-      lastResizeRef.current = size;
-      onResize(size.cols, size.rows);
+      if (onResize(size.cols, size.rows)) {
+        lastResizeRef.current = size;
+        pendingResizeRef.current = null;
+      } else {
+        pendingResizeRef.current = size;
+      }
     };
 
     const fitAndNotifyResize = () => {
@@ -743,18 +798,45 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       notifyResize();
     };
 
+    const scheduleInitialFit = () => {
+      const fitAfterFrame = () => {
+        initialFitFramesRef.current.push(
+          requestAnimationFrame(() => {
+            try {
+              fitAndNotifyResize();
+            } catch {
+              // ignore during teardown
+            }
+          }),
+        );
+      };
+
+      fitAfterFrame();
+      initialFitTimersRef.current.push(setTimeout(fitAfterFrame, 50));
+      initialFitTimersRef.current.push(setTimeout(fitAfterFrame, 150));
+      initialFitTimersRef.current.push(setTimeout(fitAfterFrame, 300));
+    };
+
     fitAndNotifyResize();
+    scheduleInitialFit();
 
     termRef.current = term;
     fitRef.current = fit;
 
-    // Server sends full tmux pane snapshots (not incremental PTY bytes).
-    // Both "snapshot" and "output" are complete pane content, so we must
-    // clear the viewport before each write to avoid duplicate content.
-    // Use ESC[2J ESC[H (clear screen + cursor home) instead of term.reset()
-    // so the scrollback buffer is preserved.
+    const write = (data: string) =>
+      new Promise<void>((resolve) => {
+        term.write(data, resolve);
+      });
+
+    const enqueueWrite = (task: () => Promise<void>) => {
+      writeQueueRef.current = writeQueueRef.current.catch(() => undefined).then(task);
+    };
+
     const writeSnapshot = (data: string) => {
-      term.write("\x1b[2J\x1b[3J\x1b[H" + data);
+      enqueueWrite(async () => {
+        term.reset();
+        await write(data);
+      });
     };
 
     terminalWriteRef.current = (type, data) => {
@@ -763,13 +845,15 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
         return;
       }
 
-      term.write(data);
+      enqueueWrite(() => write(data));
     };
 
     // Replay any data that arrived before the terminal mounted
     const pending = terminalDataRef.current;
-    if (pending) {
+    if (pending?.type === "snapshot") {
       writeSnapshot(pending.data);
+    } else if (pending) {
+      enqueueWrite(() => write(pending.data));
     }
 
     // ResizeObserver can fire in response to xterm DOM writes, so coalesce it
@@ -796,6 +880,14 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
         cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
       }
+      for (const frame of initialFitFramesRef.current) {
+        cancelAnimationFrame(frame);
+      }
+      for (const timer of initialFitTimersRef.current) {
+        clearTimeout(timer);
+      }
+      initialFitFramesRef.current = [];
+      initialFitTimersRef.current = [];
       terminalWriteRef.current = null;
       term.dispose();
       termRef.current = null;
@@ -808,7 +900,7 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
 
   return (
     <section
-      className={`grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.25rem] ${shellSurfaceClasses.code}`}
+      className={`relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.25rem] ${shellSurfaceClasses.code}`}
     >
       <div
         className={`flex min-w-0 items-center justify-between gap-3 px-3 py-2.5 ${shellSurfaceClasses.terminalTitlebar}`}
@@ -822,10 +914,50 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
           {title} · {sessionType === "agent" ? "agent runtime" : "terminal shell"}
         </div>
       </div>
-      <div ref={containerRef} className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto" />
+      <div
+        ref={containerRef}
+        className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
+      />
+      {overlay ? (
+        <div className="absolute inset-x-3 bottom-3 top-12 grid place-items-center rounded-[1rem] border border-slate-700/70 bg-slate-950/70 px-4 text-center backdrop-blur-sm">
+          <div>
+            <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
+              {overlay.title}
+            </p>
+            <p className="mt-2 text-sm leading-5 text-slate-300">{overlay.description}</p>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
+
+const terminalOverlay = (status: StreamConnectionStatus) => {
+  if (status === "connecting") {
+    return {
+      title: "Reconnecting",
+      description:
+        "Restoring the live terminal stream. Input resumes when the session is connected.",
+    };
+  }
+
+  if (status === "error") {
+    return {
+      title: "Connection stopped",
+      description: "Automatic reconnect stopped. Use Retry from the header or leave this session.",
+    };
+  }
+
+  if (status === "ended") {
+    return {
+      title: "Session ended",
+      description:
+        "This runtime has closed. Return to the Project console to start another session.",
+    };
+  }
+
+  return undefined;
+};
 
 type ContextualPanelProps = {
   projectName: string;
@@ -1050,11 +1182,7 @@ function SessionInputDrawer({
       className={`min-w-0 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
     >
       <form className="grid gap-1.5" onSubmit={onSubmit}>
-        <QuickKeyBar
-          canSend={canSend}
-          quickKeys={quickKeys}
-          onQuickKey={onQuickKey}
-        />
+        <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
         <div
           className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
         >

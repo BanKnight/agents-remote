@@ -86,6 +86,7 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
   const writes: string[] = [];
   const resizes: Array<[number, number]> = [];
   let snapshot = "ready";
+  let streamOutput: ((data: string) => void) | undefined;
   const runtime: RuntimeResources = {
     async exists() {
       return true;
@@ -97,9 +98,18 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
     async write(_tmuxSessionName, data) {
       writes.push(data);
       snapshot = `ready\n${data}`;
+      streamOutput?.(`\n${data}`);
     },
     async resize(_tmuxSessionName, cols, rows) {
       resizes.push([cols, rows]);
+    },
+    async stream(_tmuxSessionName, onData) {
+      streamOutput = onData;
+      return {
+        close() {
+          streamOutput = undefined;
+        },
+      };
     },
   };
   const messages: unknown[] = [];
