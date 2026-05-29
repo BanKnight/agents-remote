@@ -10,7 +10,10 @@ import type {
 } from "@agents-remote/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -92,7 +95,8 @@ function SessionDetail({
   const [connectionStatus, setConnectionStatus] = useState<StreamConnectionStatus>("connecting");
   const [streamError, setStreamError] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
-  const [output, setOutput] = useState("");
+  const terminalDataRef = useRef<{ type: "snapshot" | "output"; data: string } | null>(null);
+  const terminalWriteRef = useRef<((type: "snapshot" | "output", data: string) => void) | null>(null);
   const [input, setInput] = useState("");
   const [detailView, setDetailView] = useState<DetailView>("terminal");
 
@@ -187,7 +191,8 @@ function SessionDetail({
       }
 
       if (message.type === "snapshot" || message.type === "output") {
-        setOutput(message.data);
+        terminalDataRef.current = { type: message.type, data: message.data };
+        terminalWriteRef.current?.(message.type, message.data);
         return;
       }
 
@@ -247,6 +252,15 @@ function SessionDetail({
   const quickKeys = sessionQuickKeys(sessionType);
   const provider = session && "provider" in session ? session.provider : undefined;
   const terminalViewVisible = sessionType === "terminal" || detailView === "terminal";
+
+  // Stable callback for xterm to send raw input bytes over WebSocket
+  const sendTerminalInput = useCallback(
+    (data: string) => {
+      sendMessage({ type: "input", data });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [socketRef],
+  );
 
   const handleInputSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -326,10 +340,12 @@ function SessionDetail({
 
             <DetailWorkspace
               detailView={detailView}
-              output={output}
               projectName={projectName}
               sessionType={sessionType}
+              terminalDataRef={terminalDataRef}
+              terminalWriteRef={terminalWriteRef}
               title={title}
+              onSendInput={sendTerminalInput}
               onReturnToStream={() => setDetailView("terminal")}
             />
           </div>
@@ -562,19 +578,23 @@ function AgentDetailTools({
 
 type DetailWorkspaceProps = {
   detailView: DetailView;
-  output: string;
   projectName: string;
   sessionType: SessionType;
   title: string;
+  terminalWriteRef: React.MutableRefObject<((type: "snapshot" | "output", data: string) => void) | null>;
+  terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
+  onSendInput: (data: string) => void;
   onReturnToStream: () => void;
 };
 
 function DetailWorkspace({
   detailView,
   onReturnToStream,
-  output,
+  onSendInput,
   projectName,
   sessionType,
+  terminalDataRef,
+  terminalWriteRef,
   title,
 }: DetailWorkspaceProps) {
   if (sessionType === "agent" && detailView === "files") {
@@ -585,16 +605,114 @@ function DetailWorkspace({
     return <ContextualGitPanel projectName={projectName} onReturnToStream={onReturnToStream} />;
   }
 
-  return <TerminalOutput output={output} title={title} sessionType={sessionType} />;
+  return (
+    <TerminalOutput
+      sessionType={sessionType}
+      terminalDataRef={terminalDataRef}
+      terminalWriteRef={terminalWriteRef}
+      title={title}
+      onSendInput={onSendInput}
+    />
+  );
 }
 
 type TerminalOutputProps = {
-  output: string;
   sessionType: SessionType;
+  terminalWriteRef: React.MutableRefObject<((type: "snapshot" | "output", data: string) => void) | null>;
+  terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
   title: string;
+  onSendInput: (data: string) => void;
 };
 
-function TerminalOutput({ output, sessionType, title }: TerminalOutputProps) {
+function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title, onSendInput }: TerminalOutputProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const term = new Terminal({
+      theme: {
+        background: "transparent",
+        foreground: "#d6e4f7",
+        cursor: "#7dd3fc",
+        selectionBackground: "rgba(125,211,252,0.25)",
+        black: "#0f172a",
+        brightBlack: "#334155",
+        red: "#f87171",
+        brightRed: "#fca5a5",
+        green: "#4ade80",
+        brightGreen: "#86efac",
+        yellow: "#fbbf24",
+        brightYellow: "#fde68a",
+        blue: "#60a5fa",
+        brightBlue: "#93c5fd",
+        magenta: "#c084fc",
+        brightMagenta: "#d8b4fe",
+        cyan: "#22d3ee",
+        brightCyan: "#67e8f9",
+        white: "#cbd5e1",
+        brightWhite: "#f1f5f9",
+      },
+      fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
+      fontSize: 13,
+      lineHeight: 1.5,
+      cursorBlink: true,
+      allowTransparency: true,
+      scrollback: 5000,
+    });
+
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(container);
+    fit.fit();
+
+    termRef.current = term;
+    fitRef.current = fit;
+
+    // Forward keyboard input to WebSocket
+    term.onData((data) => {
+      onSendInput(data);
+    });
+
+    // Register write callback so WebSocket messages can push data in
+    terminalWriteRef.current = (type, data) => {
+      if (type === "snapshot") {
+        term.reset();
+      }
+      term.write(data);
+    };
+
+    // Replay any data that arrived before the terminal mounted
+    const pending = terminalDataRef.current;
+    if (pending) {
+      if (pending.type === "snapshot") term.reset();
+      term.write(pending.data);
+    }
+
+    // Resize on container size changes
+    const ro = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {
+        // ignore during teardown
+      }
+    });
+    ro.observe(container);
+
+    return () => {
+      ro.disconnect();
+      terminalWriteRef.current = null;
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+    // onSendInput is stable (useCallback); terminalWriteRef/terminalDataRef are refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onSendInput]);
+
   return (
     <section
       className={`grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.25rem] ${shellSurfaceClasses.code}`}
@@ -610,13 +728,8 @@ function TerminalOutput({ output, sessionType, title }: TerminalOutputProps) {
         <div className="min-w-0 flex-1 truncate text-center font-mono text-[0.72rem] text-slate-300 sm:text-xs">
           {title} · {sessionType === "agent" ? "agent runtime" : "terminal shell"}
         </div>
-        <span className="shrink-0 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-cyan-100">
-          Scrollback
-        </span>
       </div>
-      <pre className="min-h-0 min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[0.72rem] leading-[1.58] text-[#d6e4f7] [scrollbar-color:rgba(125,211,252,0.5)_transparent] sm:p-4 sm:text-sm sm:leading-[1.65]">
-        {output || "Waiting for session output..."}
-      </pre>
+      <div ref={containerRef} className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-screen]:h-full" />
     </section>
   );
 }
