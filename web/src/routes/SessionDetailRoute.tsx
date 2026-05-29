@@ -677,19 +677,23 @@ function TerminalOutput({ sessionType, terminalDataRef, terminalWriteRef, title,
       onSendInput(data);
     });
 
-    // Register write callback so WebSocket messages can push data in
-    terminalWriteRef.current = (type, data) => {
-      if (type === "snapshot") {
-        term.reset();
-      }
-      term.write(data);
+    // Server sends full tmux pane snapshots (not incremental PTY bytes).
+    // Both "snapshot" and "output" are complete pane content, so we must
+    // clear the viewport before each write to avoid duplicate content.
+    // Use ESC[2J ESC[H (clear screen + cursor home) instead of term.reset()
+    // so the scrollback buffer is preserved.
+    const writeSnapshot = (data: string) => {
+      term.write("\x1b[2J\x1b[H" + data);
+    };
+
+    terminalWriteRef.current = (_type, data) => {
+      writeSnapshot(data);
     };
 
     // Replay any data that arrived before the terminal mounted
     const pending = terminalDataRef.current;
     if (pending) {
-      if (pending.type === "snapshot") term.reset();
-      term.write(pending.data);
+      writeSnapshot(pending.data);
     }
 
     // Resize on container size changes
