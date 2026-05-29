@@ -123,9 +123,9 @@
 - **Git 二级页**：首版定位为只读 status/diff inspection，不提供 stage、commit、checkout、reset 或其他写操作。桌面端使用变更文件列表 + unified diff 预览结构；移动端直接从二级导航进入 Git 时，不显示左上返回，底部保留带 Back 的二级导航；变更文件列表应比桌面更紧凑，使用小状态标记、短行高、少 padding，并隐藏次要摘要。点击变更文件后进入新的全屏 diff 详情页，不在列表下方堆叠 diff；详情页隐藏底部二级导航，只保留顶部返回和文件 diff 上下文。
 - **Terminal instance 详情**：参考 Agent instance 的 terminal-first 结构，桌面端保留 Project 二级导航 rail 和左上返回；顶部只保留实例身份与 Close，不展示无意义 live 状态，也不提供 Files/Git/Terminal 快捷入口。中间终端面板撑满剩余空间，底部输入抽屉承载 runtime input。
 - **Session history**：使用图标 + 一句话摘要 + 相对时间，例如 `12 min ago`；未来用于恢复上下文和查看历史输出。
-- **Agent session 详情**：从 Agent 二级页的实例进入后，桌面端仍保留 Project 二级导航 rail；顶部只保留实例身份和 Files/Git/+Terminal 快捷入口，不展示无意义的 live、Meta 或 Pause 状态。移动端作为深层详情页使用顶部返回，不显示底部二级导航；中间是可滚动、可输入的终端面板，底部输入抽屉可收起为快捷键栏，快捷键应围绕 `Shift+Tab`、`Esc`、`Ctrl+C`、方向键等真实终端操作。Files/Git 打开上下文详情页，`+ Terminal` 可立即新建 Terminal instance 并进入对应详情页。
+- **Agent session 详情**：从 Agent 二级页的实例进入后，桌面端仍保留 Project 二级导航 rail；顶部只保留实例身份和 Files/Git/+Terminal 快捷入口，不展示无意义的 live、Meta 或 Pause 状态。移动端作为深层详情页使用顶部返回，不显示底部二级导航；中间是可滚动、可输入的终端面板，底部输入抽屉可收起为快捷键栏，快捷键应围绕 `Shift+Tab`、`Esc`、`Ctrl+C`、方向键等真实终端操作。Files/Git 打开上下文详情页，`+ Terminal` 可立即新建 Terminal instance 并进入对应详情页。移动端 runtime header 的标题身份区必须可收缩，右侧快捷 action 使用内容自适应宽度并保持单行，不按图标按钮压成固定正方形。
 - **底部导航项**：包含图标和短标签，当前项高亮，避免长文案。
-- **返回按钮**：移动端直接二级页（Agent、Files、Git、Terminal）不在左上角放返回按钮；回到一级页面的动作放在底部二级导航的 Back 项。层层深入的详情页，例如 Agent instance detail 或文件 preview，才在顶部保留返回。
+- **返回按钮**：移动端直接二级页（Agent、Files、Git、Terminal）不在左上角放返回按钮；回到一级页面的动作放在底部二级导航的 Back 项。层层深入的详情页，例如 Agent instance detail、Terminal detail、文件 preview 或 diff detail，才在顶部保留返回。顶部返回按钮统一使用 `back-button` primitive：desktop `34px`、mobile `32px`，soft surface，不混用 accent mark 样式。详情页的 shell、header、head actions、identity mark、title、composer/input drawer 等跨页结构必须进入 `prototype-foundation.css`，页面文件只保留 terminal、preview、diff 等内容区特有组合。
 - **Status pill**：状态语义必须有文字参与，不能只靠颜色。running/live 使用 green，waiting/needs input 使用 yellow，idle/paused 使用 soft gray，danger/close 使用 red 且克制。
 - **Terminal/code panel**：terminal-first detail 中，terminal 区域必须撑满 header 和 composer 之间的剩余空间；滚动只发生在 terminal screen 内。terminal window 使用 `#05070b` 背景、`20px` radius、titlebar、window dots、等宽字体 `12px` / `1.65` line-height；移动端可降到 `11px` / `1.58`。快捷键使用简短内容型 pill，例如 `Shift+Tab`、`Esc`、`Ctrl+C`、`Ctrl+D`、`↑`、`↓`；移动端按内容自适应宽度并允许换行，不使用等分列。
 

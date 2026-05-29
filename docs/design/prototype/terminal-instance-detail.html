@@ -12,122 +12,12 @@
         padding: 0;
       }
 
-      .responsive-shell.detail-shell {
-        display: grid;
-        grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
-        grid-template-rows: minmax(0, 1fr);
-        height: 100vh;
-        min-height: 100vh;
-        border: 0;
-        border-radius: 0;
-        box-shadow: none;
-      }
-
-      .detail-workspace {
-        position: relative;
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr) auto;
-        min-width: 0;
-        min-height: 0;
-        overflow: hidden;
-      }
-
-      .session-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        border-bottom: 1px solid var(--line);
-        padding: 14px 16px;
-        background: rgba(10, 14, 22, 0.94);
-      }
-
-      .head-left,
-      .head-actions {
-        display: flex;
-        align-items: center;
-      }
-
-      .head-left {
-        min-width: 0;
-        gap: 10px;
-      }
-
-      .head-actions {
-        justify-content: flex-end;
-        gap: 8px;
-      }
-
-      .back-button,
-      .terminal-mark,
-      .tool-button,
-      .quick-key,
-      .mini-action {
-        display: inline-grid;
-        place-items: center;
-        border: 1px solid rgba(125, 211, 252, 0.32);
-        background: rgba(125, 211, 252, 0.1);
-        color: var(--accent);
-        font-weight: 800;
-      }
-
-      .terminal-mark {
-        width: 40px;
-        height: 40px;
-        border-radius: 15px;
-      }
-
-      .session-title {
-        min-width: 0;
-      }
-
-      .session-title h2 {
-        margin: 0;
-        overflow: hidden;
-        font-size: 17px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .session-title p {
-        margin: 3px 0 0;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .tool-button {
-        min-height: 32px;
-        border-color: rgba(148, 163, 184, 0.2);
-        border-radius: 999px;
-        padding: 6px 10px;
-        color: var(--soft);
-        background: rgba(20, 27, 40, 0.72);
-        font-size: 12px;
-      }
-
       .terminal-wrap {
         display: grid;
         min-height: 0;
         overflow: hidden;
         padding: 16px;
         background: rgba(5, 8, 13, 0.52);
-      }
-
-      .composer {
-        display: grid;
-        gap: 8px;
-        padding: 10px 12px;
-      }
-
-      .input-strip {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 9px;
-        align-items: center;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        border-radius: 16px;
-        padding: 9px 11px;
-        background: rgba(20, 27, 40, 0.74);
       }
 
       .input-note {
@@ -152,52 +42,6 @@
       }
 
       @media (max-width: 640px) {
-        .responsive-shell.detail-shell {
-          display: block;
-          height: 100vh;
-          min-height: 100vh;
-          overflow: hidden;
-        }
-
-        .detail-workspace {
-          display: grid;
-          grid-template-rows: auto minmax(0, 1fr) auto;
-          height: 100vh;
-          min-height: 100vh;
-        }
-
-        .session-head {
-          padding: 10px 11px;
-        }
-
-        .back-button {
-          width: 32px;
-          height: 32px;
-          border-radius: 12px;
-        }
-
-        .terminal-mark {
-          width: 32px;
-          height: 32px;
-          border-radius: 12px;
-          font-size: 12px;
-        }
-
-        .session-title h2 {
-          font-size: 14px;
-        }
-
-        .session-title p {
-          font-size: 10px;
-        }
-
-        .tool-button {
-          min-height: 32px;
-          border-radius: 12px;
-          padding: 0 9px;
-          font-size: 10px;
-        }
-
         .terminal-wrap {
           padding: 10px;
           background: rgba(5, 8, 13, 0.42);
@@ -226,38 +70,6 @@
           line-height: 1.58;
         }
 
-        .mobile-composer {
-          display: grid;
-          gap: 7px;
-          padding: 8px 9px calc(9px + env(safe-area-inset-bottom));
-        }
-
-        .mobile-composer .quick-row {
-          gap: 5px;
-        }
-
-        .input-strip {
-          grid-template-columns: auto minmax(0, 1fr) auto;
-          border-radius: 14px;
-          padding: 8px 9px;
-        }
-
-        .input-strip .input-text {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          font-size: 11px;
-        }
-
-        .input-note {
-          display: none;
-        }
-
-        .mini-action {
-          border-radius: 999px;
-          padding: 5px 7px;
-          font-size: 10px;
-        }
       }
     </style>
   </head>

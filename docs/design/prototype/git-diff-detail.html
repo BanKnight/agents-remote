@@ -12,50 +12,13 @@
         padding: 0;
       }
 
-      .responsive-shell.detail-shell {
-        display: grid;
-        grid-template-columns: var(--desktop-rail-width) minmax(0, 1fr);
-        grid-template-rows: minmax(0, 1fr);
-        height: 100vh;
-        min-height: 100vh;
-        border: 0;
-        border-radius: 0;
-        box-shadow: none;
-      }
-
-      .detail-workspace {
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
-        min-width: 0;
-        min-height: 0;
-        overflow: hidden;
-      }
-
-      .detail-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        border-bottom: 1px solid var(--line);
-        padding: 14px 16px;
-        background: rgba(10, 14, 22, 0.94);
-      }
-
-      .head-left,
-      .head-actions,
       .diff-title {
         display: flex;
         align-items: center;
-      }
-
-      .head-left,
-      .diff-title {
         min-width: 0;
         gap: 10px;
       }
 
-      .diff-mark,
-      .tool-button,
       .change-pill {
         display: inline-grid;
         place-items: center;
@@ -65,35 +28,6 @@
         font-weight: 800;
       }
 
-      .diff-mark {
-        width: 40px;
-        height: 40px;
-        border-radius: 15px;
-        font-size: 12px;
-      }
-
-      .file-title {
-        min-width: 0;
-      }
-
-      .file-title h2 {
-        margin: 0;
-        overflow: hidden;
-        font-size: 17px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .file-title p {
-        margin: 3px 0 0;
-        overflow: hidden;
-        color: var(--muted);
-        font-size: 12px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .tool-button,
       .change-pill {
         min-height: 32px;
         border-color: rgba(148, 163, 184, 0.2);
@@ -158,38 +92,6 @@
       }
 
       @media (max-width: 640px) {
-        .responsive-shell.detail-shell {
-          display: block;
-          height: 100vh;
-          min-height: 100vh;
-          overflow: hidden;
-        }
-
-        .detail-workspace {
-          height: 100vh;
-          min-height: 100vh;
-        }
-
-        .detail-head {
-          padding: 10px 11px;
-        }
-
-        .back-button,
-        .diff-mark {
-          width: 32px;
-          height: 32px;
-          border-radius: 12px;
-        }
-
-        .file-title h2 {
-          font-size: 14px;
-        }
-
-        .file-title p {
-          font-size: 10px;
-        }
-
-        .tool-button,
         .change-pill {
           min-height: 32px;
           border-radius: 12px;
