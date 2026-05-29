@@ -114,6 +114,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   const navigate = useNavigate({ from: "/projects/$projectName" });
   const { workspace: activeSection, filesPath } = useSearch({ from: "/projects/$projectName" });
   const [resourceDeepDetailOpen, setResourceDeepDetailOpen] = useState(false);
+  const [mobileFilePreviewOpen, setMobileFilePreviewOpen] = useState(false);
   const selectedSection = sectionForId(activeSection);
   const summary = projectSummary(project);
   const agentSessions = useQuery({
@@ -158,12 +159,16 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
 
   useEffect(() => {
     setResourceDeepDetailOpen(false);
+    setMobileFilePreviewOpen(false);
   }, [activeSection]);
+
+  // On mobile, when a file is selected in Files panel, hide the WorkspaceHeader and bottom nav
+  const hiddenOnMobileFilePreview = mobileFilePreviewOpen && activeSection === "files";
 
   return (
     <ShellLayout
       bottomNavigation={
-        !resourceDeepDetailOpen ? (
+        !resourceDeepDetailOpen && !hiddenOnMobileFilePreview ? (
           <ProjectSecondaryBottomNav
             activeSection={activeSection}
             onSelectSection={selectWorkspace}
@@ -179,33 +184,35 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       }
       variant="project"
     >
-      <WorkspaceHeader
-        project={project}
-        section={selectedSection}
-        summary={summary}
-        actions={
-          activeSection === "agents" ? (
-            <div
-              className="hidden flex-wrap justify-end gap-2 sm:flex"
-              aria-label="Create Agent instance"
-            >
-              <CreateButton
-                disabled={createAgent.isPending}
-                tone="accent"
-                onClick={() => createAgent.mutate("claude")}
+      <div className={hiddenOnMobileFilePreview ? "sm:contents hidden" : "contents"}>
+        <WorkspaceHeader
+          project={project}
+          section={selectedSection}
+          summary={summary}
+          actions={
+            activeSection === "agents" ? (
+              <div
+                className="hidden flex-wrap justify-end gap-2 sm:flex"
+                aria-label="Create Agent instance"
               >
-                + Claude
-              </CreateButton>
-              <CreateButton
-                disabled={createAgent.isPending}
-                onClick={() => createAgent.mutate("codex")}
-              >
-                + Codex
-              </CreateButton>
-            </div>
-          ) : activeSection === "files" || activeSection === "git" ? null : undefined
-        }
-      />
+                <CreateButton
+                  disabled={createAgent.isPending}
+                  tone="accent"
+                  onClick={() => createAgent.mutate("claude")}
+                >
+                  + Claude
+                </CreateButton>
+                <CreateButton
+                  disabled={createAgent.isPending}
+                  onClick={() => createAgent.mutate("codex")}
+                >
+                  + Codex
+                </CreateButton>
+              </div>
+            ) : activeSection === "files" || activeSection === "git" ? null : undefined
+          }
+        />
+      </div>
 
       {activeSection === "agents" ? (
         <AgentPanel
@@ -243,6 +250,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           onFilesPathChange={(path) =>
             void navigate({ search: (prev) => ({ ...prev, filesPath: path }) })
           }
+          onMobileFilePreviewChange={setMobileFilePreviewOpen}
         />
       ) : null}
     </ShellLayout>
@@ -740,11 +748,12 @@ type SectionDetailProps = {
   filesPath: string;
   onDeepDetailChange: (open: boolean) => void;
   onFilesPathChange: (path: string) => void;
+  onMobileFilePreviewChange: (open: boolean) => void;
   projectName: string;
   section: (typeof consoleSections)[number];
 };
 
-function SectionDetail({ filesPath, onDeepDetailChange, onFilesPathChange, projectName, section }: SectionDetailProps) {
+function SectionDetail({ filesPath, onDeepDetailChange, onFilesPathChange, onMobileFilePreviewChange, projectName, section }: SectionDetailProps) {
   const isFiles = section.id === "files";
   const isGit = section.id === "git";
 
@@ -762,6 +771,7 @@ function SectionDetail({ filesPath, onDeepDetailChange, onFilesPathChange, proje
           initialPath={filesPath}
           projectName={projectName}
           onPathChange={onFilesPathChange}
+          onMobilePreviewChange={onMobileFilePreviewChange}
         />
       ) : null}
     </ShellPanel>
@@ -1155,20 +1165,13 @@ const statusLabel = (status: GitDiffFileSummary["status"]) => {
 type FilesPanelProps = {
   initialPath: string;
   onPathChange: (path: string) => void;
+  onMobilePreviewChange: (open: boolean) => void;
   projectName: string;
 };
 
-function FilesPanel({ initialPath, onPathChange, projectName }: FilesPanelProps) {
+function FilesPanel({ initialPath, onPathChange, onMobilePreviewChange, projectName }: FilesPanelProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
-  // Sync initialPath on first mount only; subsequent changes come from user navigation
-  const didMount = useRef(false);
-  useEffect(() => {
-    if (!didMount.current) {
-      didMount.current = true;
-      return;
-    }
-  }, []);
 
   const files = useQuery({
     queryKey: ["projects", projectName, "files", currentPath],
@@ -1186,7 +1189,45 @@ function FilesPanel({ initialPath, onPathChange, projectName }: FilesPanelProps)
     onPathChange(path);
   };
 
-  const clearPreview = () => setSelectedFilePath(undefined);
+  const selectFile = (path: string) => {
+    setSelectedFilePath(path);
+    onMobilePreviewChange(true);
+  };
+
+  const clearPreview = () => {
+    setSelectedFilePath(undefined);
+    onMobilePreviewChange(false);
+  };
+
+  const previewData = preview.data;
+  const isHtml =
+    previewData?.type === "text" &&
+    (previewData.name.endsWith(".html") || previewData.name.endsWith(".htm"));
+  const [renderMode, setRenderMode] = useState<"source" | "render">("source");
+
+  // Reset render mode when file changes
+  useEffect(() => {
+    setRenderMode("source");
+  }, [selectedFilePath]);
+
+  const renderToggle = isHtml ? (
+    <div className="flex shrink-0 gap-1">
+      {(["source", "render"] as const).map((mode) => (
+        <button
+          key={mode}
+          className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
+            renderMode === mode
+              ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
+              : "border-slate-700/50 bg-slate-950/50 text-slate-400 hover:text-slate-200"
+          }`}
+          type="button"
+          onClick={() => setRenderMode(mode)}
+        >
+          {mode === "source" ? "Source" : "Render"}
+        </button>
+      ))}
+    </div>
+  ) : null;
 
   const browserPanel = (
     <aside
@@ -1202,30 +1243,56 @@ function FilesPanel({ initialPath, onPathChange, projectName }: FilesPanelProps)
           isLoading={files.isLoading}
           selectedFilePath={selectedFilePath}
           onOpenDirectory={goToPath}
-          onPreviewFile={setSelectedFilePath}
+          onPreviewFile={selectFile}
         />
       </div>
     </aside>
   );
 
+  // Mobile-only top bar shown when a file is selected: back | filename | toggle
+  const mobilePreviewTopBar =
+    selectedFilePath !== undefined ? (
+      <div
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden ${shellSurfaceClasses.runtimeBody}`}
+      >
+        <button
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200"
+          type="button"
+          onClick={clearPreview}
+          aria-label="Back to files"
+        >
+          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Back
+        </button>
+        <p className="min-w-0 truncate text-center font-mono text-xs font-semibold text-slate-200">
+          {previewData?.name ?? selectedFilePath.split("/").pop() ?? ""}
+        </p>
+        <div className="shrink-0">{renderToggle ?? <span className="w-[4.5rem]" />}</div>
+      </div>
+    ) : null;
+
   const previewPanel = (
-    <FilePreviewPanel error={preview.error} isLoading={preview.isLoading} preview={preview.data} />
+    <FilePreviewPanel
+      error={preview.error}
+      isLoading={preview.isLoading}
+      preview={previewData}
+      renderMode={isHtml ? renderMode : "source"}
+      renderToggle={renderToggle}
+    />
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col sm:flex-row sm:overflow-hidden sm:rounded-2xl sm:border sm:border-slate-700/50">
       {browserPanel}
       <div
-        className={`min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-4 ${selectedFilePath === undefined ? "hidden sm:block" : "block"}`}
+        className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFilePath === undefined ? "hidden sm:flex" : "flex"}`}
       >
-        {selectedFilePath !== undefined ? (
-          <div className="mb-3 sm:hidden">
-            <ActionButton tone="default" onClick={clearPreview}>
-              ← Back to files
-            </ActionButton>
-          </div>
-        ) : null}
-        {previewPanel}
+        {mobilePreviewTopBar}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+          {previewPanel}
+        </div>
       </div>
     </div>
   );
@@ -1300,13 +1367,11 @@ type FilePreviewPanelProps = {
   error: Error | null;
   isLoading: boolean;
   preview: ProjectFilePreviewResponse | undefined;
+  renderMode: "source" | "render";
+  renderToggle: ReactNode;
 };
 
-function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) {
-  const [renderMode, setRenderMode] = useState<"source" | "render">("source");
-  const isHtml =
-    preview?.type === "text" && (preview.name.endsWith(".html") || preview.name.endsWith(".htm"));
-
+function FilePreviewPanel({ error, isLoading, preview, renderMode, renderToggle }: FilePreviewPanelProps) {
   if (isLoading) {
     return <ResourceStatePanel tone="inset" message="Loading preview..." />;
   }
@@ -1346,26 +1411,10 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
               : "/"}
           </p>
         </div>
-        {isHtml ? (
-          <div className="flex shrink-0 gap-1">
-            {(["source", "render"] as const).map((mode) => (
-              <button
-                key={mode}
-                className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
-                  renderMode === mode
-                    ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
-                    : "border-slate-700/50 bg-slate-950/50 text-slate-400 hover:text-slate-200"
-                }`}
-                type="button"
-                onClick={() => setRenderMode(mode)}
-              >
-                {mode === "source" ? "Source" : "Render"}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        {/* Toggle shown on desktop; on mobile it lives in the top bar */}
+        <div className="hidden sm:block">{renderToggle}</div>
       </div>
-      <PreviewBody preview={preview} renderMode={isHtml ? renderMode : "source"} />
+      <PreviewBody preview={preview} renderMode={renderMode} />
     </section>
   );
 }
@@ -1378,12 +1427,22 @@ type PreviewBodyProps = {
 function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
   if (preview.type === "text") {
     if (renderMode === "render") {
+      // Inject a <base> tag so relative paths (e.g. ./prototype-foundation.css) resolve
+      // against the file's directory on the API server.
+      const dir = preview.path.includes("/")
+        ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
+        : "";
+      const baseUrl = `${window.location.origin}/api/projects/${encodeURIComponent(preview.projectName)}/files/raw?path=${encodeURIComponent(dir)}`;
+      const injected = preview.content.replace(
+        /(<head[^>]*>)/i,
+        `$1<base href="${baseUrl}">`,
+      );
       return (
         <div className={`mt-3 overflow-hidden rounded-2xl ${shellSurfaceClasses.code}`}>
           <iframe
             className="block h-[60vh] w-full border-0"
-            sandbox="allow-same-origin"
-            srcDoc={preview.content}
+            sandbox="allow-scripts allow-same-origin"
+            srcDoc={injected}
             title="Sandboxed HTML render"
           />
         </div>
