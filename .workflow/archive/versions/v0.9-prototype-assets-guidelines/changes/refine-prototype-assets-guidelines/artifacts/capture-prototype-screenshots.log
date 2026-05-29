@@ -1,0 +1,14 @@
+home-desktop.png 1440x1000 home.html
+home-mobile.png 390x844 home.html
+project-detail-desktop.png 1440x1000 project-detail.html
+project-detail-mobile.png 390x844 project-detail.html
+agent-session-detail-desktop.png 1440x1000 agent-session-detail.html
+agent-session-detail-mobile.png 390x844 agent-session-detail.html
+terminal-instance-detail-desktop.png 1440x1000 terminal-instance-detail.html
+terminal-instance-detail-mobile.png 390x844 terminal-instance-detail.html
+files-desktop.png 1440x1000 files.html
+files-mobile.png 390x844 files.html
+git-desktop.png 1440x1000 git.html
+git-mobile.png 390x844 git.html
+terminal-desktop.png 1440x1000 terminal.html
+terminal-mobile.png 390x844 terminal.html

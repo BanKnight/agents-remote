@@ -4,141 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Project Terminal Prototype</title>
+    <link rel="stylesheet" href="./prototype-foundation.css" />
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #080b10;
-        --panel: #0f1520;
-        --line: #263245;
-        --text: #eef4ff;
-        --muted: #8d99aa;
-        --soft: #c1cad8;
-        --accent: #7dd3fc;
-        --accent-2: #a78bfa;
-        --good: #34d399;
-        --warn: #fbbf24;
-      }
-
-      * { box-sizing: border-box; }
-
-      body {
-        margin: 0;
-        min-height: 100vh;
-        background:
-          radial-gradient(circle at 20% 10%, rgba(125, 211, 252, 0.16), transparent 30%),
-          radial-gradient(circle at 82% 12%, rgba(167, 139, 250, 0.14), transparent 28%),
-          var(--bg);
-        color: var(--text);
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-
-      .page {
-        width: min(1480px, 100%);
-        margin: 0 auto;
-        padding: 28px;
-      }
-
-      .intro { margin-bottom: 22px; }
-
-      .eyebrow {
-        color: var(--accent);
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      h1 { margin: 8px 0; font-size: 28px; }
-
-      .intro p {
-        margin: 0;
-        max-width: 920px;
-        color: var(--muted);
-        line-height: 1.65;
-      }
-
-      .stage-grid {
-        display: grid;
-        grid-template-columns: minmax(760px, 1fr) 390px;
-        gap: 28px;
-        align-items: start;
-      }
-
-      .frame-label {
-        margin-bottom: 10px;
-        color: var(--soft);
-        font-size: 13px;
-        font-weight: 700;
-      }
-
-      .desktop-shell,
-      .phone-shell {
-        overflow: hidden;
-        border: 1px solid rgba(148, 163, 184, 0.24);
-        background: rgba(15, 21, 32, 0.92);
-        box-shadow: 0 26px 80px rgba(0, 0, 0, 0.38);
-      }
-
-      .desktop-shell {
-        min-height: 720px;
-        border-radius: 28px;
-        display: grid;
-        grid-template-columns: 210px minmax(0, 1fr);
-      }
-
-      .level-two-rail {
-        padding: 18px 14px;
-        border-right: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(20, 27, 40, 0.92), rgba(10, 14, 22, 0.96));
-      }
-
-      .back-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        margin-bottom: 18px;
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 700;
-      }
-
-      .project-chip {
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 18px;
-        padding: 12px;
-        margin-bottom: 18px;
-        background: rgba(20, 27, 40, 0.7);
-      }
-
-      .project-chip h2 { margin: 0 0 4px; font-size: 15px; }
-
-      .project-chip p {
-        margin: 0;
-        overflow: hidden;
-        color: var(--muted);
-        font-size: 12px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .nav-list { display: grid; gap: 8px; }
-
-      .nav-item,
-      .bottom-item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: var(--muted);
-        font-weight: 700;
-      }
-
-      .nav-item { border-radius: 14px; padding: 10px 12px; }
-
-      .nav-item.active {
-        background: rgba(125, 211, 252, 0.12);
-        color: var(--text);
-      }
 
       .nav-icon,
       .terminal-mark {
@@ -148,34 +15,6 @@
         background: rgba(125, 211, 252, 0.1);
         color: var(--accent);
         font-weight: 800;
-      }
-
-      .nav-icon {
-        width: 30px;
-        height: 30px;
-        border-radius: 10px;
-        font-size: 12px;
-      }
-
-      .workspace {
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
-        min-height: 720px;
-      }
-
-      .workspace-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        border-bottom: 1px solid var(--line);
-        padding: 18px 20px;
-      }
-
-      .context-line {
-        margin: 0;
-        color: var(--muted);
-        font-size: 13px;
       }
 
       h3 { margin: 3px 0 0; font-size: 22px; }
@@ -343,42 +182,6 @@
       .history-item p { margin: 0; color: var(--soft); font-size: 12px; }
       .history-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
-      .phone-shell {
-        width: 390px;
-        min-height: 820px;
-        border-radius: 38px;
-        position: relative;
-      }
-
-      .phone-status {
-        height: 28px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-      }
-
-      .mobile-top {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        border-bottom: 1px solid var(--line);
-        padding: 12px 16px;
-      }
-
-      .mobile-title { min-width: 0; }
-
-      .mobile-title h2 {
-        margin: 0;
-        overflow: hidden;
-        font-size: 16px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .mobile-title p {
-        margin: 2px 0 0;
-        color: var(--muted);
-        font-size: 11px;
-      }
-
       .mobile-workspace {
         min-height: 664px;
         padding: 12px 12px 92px;
@@ -393,35 +196,9 @@
       .mobile-workspace .terminal-output { max-height: 78px; overflow: hidden; }
       .mobile-workspace .history-panel { margin-top: 12px; border-radius: 18px; }
 
-      .bottom-nav {
-        position: absolute;
-        right: 0;
-        bottom: 0;
-        left: 0;
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        border-top: 1px solid var(--line);
-        background: rgba(10, 14, 22, 0.96);
-        padding: 8px 8px 12px;
-      }
-
-      .bottom-item {
-        display: grid;
-        justify-items: center;
-        gap: 4px;
-        font-size: 11px;
-      }
-
-      .bottom-item.active { color: var(--accent); }
-      .bottom-item .nav-icon { width: 30px; height: 30px; }
-
-      @media (max-width: 980px) {
-        .stage-grid { grid-template-columns: 1fr; }
-        .phone-shell { width: min(390px, 100%); }
-      }
     </style>
   </head>
-  <body>
+  <body class="prototype-terminal-list prototype-project-shell">
     <main class="page">
       <section class="intro">
         <div class="eyebrow">Level 2 page</div>

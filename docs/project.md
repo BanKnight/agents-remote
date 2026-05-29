@@ -131,6 +131,7 @@ agents-remote/
 - [Project Model 规格](./specs/project-model/spec.md) — `PROJECTS_ROOT` 一级目录 Project 模型、Project identity、列表摘要和创建/采用行为。
 - [Project Safe Paths 规格](./specs/project-safe-paths/spec.md) — Project 名称与 project-relative path 的统一安全解析契约。
 - [Project Console Navigation 规格](./specs/project-console-navigation/spec.md) — 定义一级应用 shell、Project 二级 workspace、URL-visible workspace 状态、移动端返回模型和输入职责边界。
+- [Prototype Assets Guidelines 规格](./specs/prototype-assets-guidelines/spec.md) — 定义 HTML prototype 资产、overview 总览、截图来源、viewport、guidelines 和跨页面 foundation 的长期行为契约。
 - [Session Runtime 规格](./specs/session-runtime/spec.md) — Agent/Terminal Session 身份分层、runtime metadata、tmux resource、reconnect 和 close 行为契约。
 - [Agent Provider Experience 规格](./specs/agent-provider-experience/spec.md) — Claude/Codex provider 入口、统一 Agent Session 语义和 provider-aware list/detail 边界。
 - [Files 规格](./specs/file-browser-preview/spec.md) — 只读浏览、安全路径、隐藏条目、文本/图片预览、错误状态和移动端紧凑 inspection 要求。

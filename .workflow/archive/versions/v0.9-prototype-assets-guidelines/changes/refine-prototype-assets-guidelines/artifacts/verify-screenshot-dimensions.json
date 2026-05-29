@@ -1,0 +1,146 @@
+{
+  "count": 14,
+  "allMatch": true,
+  "dimensions": [
+    {
+      "file": "agent-session-detail-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "agent-session-detail-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    },
+    {
+      "file": "files-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "files-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    },
+    {
+      "file": "git-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "git-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    },
+    {
+      "file": "home-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "home-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    },
+    {
+      "file": "project-detail-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "project-detail-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    },
+    {
+      "file": "terminal-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "terminal-instance-detail-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "expected": {
+        "width": 1440,
+        "height": 1000
+      },
+      "ok": true
+    },
+    {
+      "file": "terminal-instance-detail-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    },
+    {
+      "file": "terminal-mobile.png",
+      "width": 390,
+      "height": 844,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "ok": true
+    }
+  ]
+}

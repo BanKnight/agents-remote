@@ -3,19 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Navigation Prototype Overview</title>
+    <title>Prototype Review Overview</title>
     <style>
       :root {
         color-scheme: dark;
         --bg: #080b10;
-        --panel: #111827;
-        --line: #273244;
+        --panel: #0f1520;
+        --panel-2: #141b28;
+        --line: #263245;
         --text: #eef4ff;
-        --muted: #93a0b2;
+        --muted: #8d99aa;
+        --soft: #c1cad8;
         --accent: #7dd3fc;
+        --accent-2: #a78bfa;
       }
 
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
 
       body {
         margin: 0;
@@ -37,9 +42,13 @@
         backdrop-filter: blur(16px);
       }
 
-      .header-inner {
-        width: min(1220px, 100%);
+      .header-inner,
+      main {
+        width: min(1440px, 100%);
         margin: 0 auto;
+      }
+
+      .header-inner {
         padding: 20px 24px;
       }
 
@@ -63,119 +72,276 @@
       }
 
       main {
-        width: min(1220px, 100%);
-        margin: 0 auto;
         padding: 24px;
       }
 
-      .overview-grid {
+      .page-list {
         display: grid;
         gap: 28px;
       }
 
-      .prototype-card {
+      .page-section {
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, 0.22);
-        border-radius: 28px;
-        background: rgba(17, 24, 39, 0.78);
+        border-radius: 24px;
+        background: rgba(15, 21, 32, 0.84);
         box-shadow: 0 22px 80px rgba(0, 0, 0, 0.32);
       }
 
-      .card-head {
+      .section-head {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
-        gap: 16px;
+        gap: 18px;
         border-bottom: 1px solid var(--line);
-        padding: 16px 18px;
+        padding: 18px 20px;
       }
 
-      .card-head h2 {
-        margin: 0;
+      .section-head h2 {
+        margin: 0 0 6px;
         font-size: 18px;
       }
 
-      .card-head a {
-        color: var(--accent);
+      .section-head p {
+        max-width: 780px;
         font-size: 13px;
+      }
+
+      .section-head a {
+        flex: 0 0 auto;
+        border: 1px solid rgba(125, 211, 252, 0.32);
+        border-radius: 999px;
+        padding: 8px 11px;
+        color: var(--accent);
+        background: rgba(125, 211, 252, 0.08);
+        font-size: 12px;
         font-weight: 800;
         text-decoration: none;
+      }
+
+      .preview-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 430px;
+        gap: 16px;
+        padding: 16px;
+      }
+
+      .preview-frame {
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 18px;
+        background: rgba(8, 11, 16, 0.92);
+      }
+
+      .preview-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 10px 12px;
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .preview-label span:last-child {
+        color: var(--muted);
+        font-weight: 700;
       }
 
       iframe {
         display: block;
         width: 100%;
-        height: 980px;
         border: 0;
         background: #080b10;
+      }
+
+      .desktop-preview iframe {
+        height: 760px;
+      }
+
+      .mobile-preview iframe {
+        height: 844px;
+      }
+
+      .mobile-preview {
+        width: min(430px, 100%);
+      }
+
+      @media (max-width: 980px) {
+        header {
+          position: static;
+        }
+
+        .section-head,
+        .preview-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          display: grid;
+        }
+
+        .preview-grid {
+          display: grid;
+        }
+
+        .mobile-preview {
+          width: 100%;
+        }
       }
     </style>
   </head>
   <body>
     <header>
       <div class="header-inner">
-        <div class="eyebrow">Prototype overview</div>
-        <h1>Agents Remote navigation model</h1>
-        <p>本页汇总一级首页与 Project 二级页面：桌面端使用左侧导航 + 右侧工作区；移动端一级页面使用底部一级导航，进入 Project 后底部切换为带 Back 项的二级导航；直接二级页不在左上角重复返回，从 Agent instance 派生进入的 Files/Terminal 和更深层详情页使用顶部返回且不显示二级导航。</p>
+        <div class="eyebrow">Prototype review overview</div>
+        <h1>Agents Remote prototype map</h1>
+        <p>本页只用于总览评审：按页面分组查看 desktop/mobile 结构关系。正式截图和像素级细节评审应直接打开 standalone HTML，并使用 guidelines 中声明的 desktop 1440x1000 与 mobile 390x844 viewport。</p>
       </div>
     </header>
 
     <main>
-      <section class="overview-grid">
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Home / Level 1 navigation</h2>
+      <section class="page-list" aria-label="Prototype pages">
+        <article class="page-section" data-page="home">
+          <div class="section-head">
+            <div>
+              <h2>Home / Level 1 navigation</h2>
+              <p>一级首页展示 Projects 工作区：桌面端左侧一级导航，移动端底部一级导航。</p>
+            </div>
             <a href="./home.html">Open standalone</a>
           </div>
-          <iframe src="./home.html" title="Home prototype"></iframe>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: home.html</span></div>
+              <iframe src="./home.html" title="Home desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./home.html" title="Home mobile prototype preview"></iframe>
+            </div>
+          </div>
         </article>
 
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Project detail / Level 2 navigation</h2>
+        <article class="page-section" data-page="project-detail">
+          <div class="section-head">
+            <div>
+              <h2>Project Agent workspace / Level 2 navigation</h2>
+              <p>Project Agent 二级页展示 Agent instances、创建入口和轻量 history；移动端使用带 Back 的底部二级导航。</p>
+            </div>
             <a href="./project-detail.html">Open standalone</a>
           </div>
-          <iframe src="./project-detail.html" title="Project detail prototype"></iframe>
-        </article>
-
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Project Files / Read-only preview</h2>
-            <a href="./files.html">Open standalone</a>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: project-detail.html</span></div>
+              <iframe src="./project-detail.html" title="Project Agent desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./project-detail.html" title="Project Agent mobile prototype preview"></iframe>
+            </div>
           </div>
-          <iframe src="./files.html" title="Project Files prototype"></iframe>
         </article>
 
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Project Git / Read-only diff</h2>
-            <a href="./git.html">Open standalone</a>
-          </div>
-          <iframe src="./git.html" title="Project Git prototype"></iframe>
-        </article>
-
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Project Terminal / Instances</h2>
-            <a href="./terminal.html">Open standalone</a>
-          </div>
-          <iframe src="./terminal.html" title="Project Terminal prototype"></iframe>
-        </article>
-
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Agent instance detail / Terminal workspace</h2>
+        <article class="page-section" data-page="agent-session-detail">
+          <div class="section-head">
+            <div>
+              <h2>Agent detail / Terminal-first runtime detail</h2>
+              <p>Agent instance 详情页聚焦 terminal-first 输出、输入抽屉、Files/Git/+Terminal 快捷入口和 Meta 浮窗。</p>
+            </div>
             <a href="./agent-session-detail.html">Open standalone</a>
           </div>
-          <iframe src="./agent-session-detail.html" title="Agent session detail prototype"></iframe>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: agent-session-detail.html</span></div>
+              <iframe src="./agent-session-detail.html" title="Agent detail desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./agent-session-detail.html" title="Agent detail mobile prototype preview"></iframe>
+            </div>
+          </div>
         </article>
 
-        <article class="prototype-card">
-          <div class="card-head">
-            <h2>Terminal instance detail / Focused shell</h2>
+        <article class="page-section" data-page="terminal-instance-detail">
+          <div class="section-head">
+            <div>
+              <h2>Terminal detail / Focused shell</h2>
+              <p>Terminal instance 详情页保留 focused shell，不出现 Agent-only Files/Git/+Terminal 快捷入口。</p>
+            </div>
             <a href="./terminal-instance-detail.html">Open standalone</a>
           </div>
-          <iframe src="./terminal-instance-detail.html" title="Terminal instance detail prototype"></iframe>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: terminal-instance-detail.html</span></div>
+              <iframe src="./terminal-instance-detail.html" title="Terminal detail desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./terminal-instance-detail.html" title="Terminal detail mobile prototype preview"></iframe>
+            </div>
+          </div>
+        </article>
+
+        <article class="page-section" data-page="files">
+          <div class="section-head">
+            <div>
+              <h2>Files / Read-only preview</h2>
+              <p>Files 二级页展示只读文件浏览、HTML/text/image/unsupported preview，以及 mobile direct/context/detail 导航差异。</p>
+            </div>
+            <a href="./files.html">Open standalone</a>
+          </div>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: files.html</span></div>
+              <iframe src="./files.html" title="Files desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./files.html" title="Files mobile prototype preview"></iframe>
+            </div>
+          </div>
+        </article>
+
+        <article class="page-section" data-page="git">
+          <div class="section-head">
+            <div>
+              <h2>Git / Read-only diff inspection</h2>
+              <p>Git 二级页展示只读 status、changed files 和 unified diff；移动端 diff detail 使用顶部返回并隐藏底部二级导航。</p>
+            </div>
+            <a href="./git.html">Open standalone</a>
+          </div>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: git.html</span></div>
+              <iframe src="./git.html" title="Git desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./git.html" title="Git mobile prototype preview"></iframe>
+            </div>
+          </div>
+        </article>
+
+        <article class="page-section" data-page="terminal">
+          <div class="section-head">
+            <div>
+              <h2>Terminal workspace / Instances</h2>
+              <p>Terminal 二级页展示 live Terminal instances、新建和关闭入口；direct workspace 不承载 runtime input。</p>
+            </div>
+            <a href="./terminal.html">Open standalone</a>
+          </div>
+          <div class="preview-grid">
+            <div class="preview-frame desktop-preview">
+              <div class="preview-label"><span>Desktop preview</span><span>standalone: terminal.html</span></div>
+              <iframe src="./terminal.html" title="Terminal workspace desktop prototype preview"></iframe>
+            </div>
+            <div class="preview-frame mobile-preview">
+              <div class="preview-label"><span>Mobile preview</span><span>review scale</span></div>
+              <iframe src="./terminal.html" title="Terminal workspace mobile prototype preview"></iframe>
+            </div>
+          </div>
         </article>
       </section>
     </main>

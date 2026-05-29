@@ -1,0 +1,60 @@
+{
+  "overviewSections": 7,
+  "overviewIframes": 14,
+  "overviewLinks": 7,
+  "overviewReviewOnly": true,
+  "guidelineTerms": [
+    "Design tokens",
+    "Viewport 标准",
+    "响应式要求",
+    "1440x1000",
+    "390x844",
+    "prototype-foundation.css",
+    "standalone HTML",
+    "overview.html",
+    "Files 二级页",
+    "Git 二级页",
+    "runtime input"
+  ],
+  "protoIndexTerms": [
+    "Standalone HTML",
+    "overview.html",
+    "guidelines.md",
+    "screenshots",
+    "prototype-foundation.css"
+  ],
+  "screenshotIndexSource": true,
+  "screenshotCount": 14,
+  "missingScreenshots": [],
+  "unindexedScreenshots": [],
+  "standaloneRefs": [
+    {
+      "file": "home.html",
+      "foundation": true
+    },
+    {
+      "file": "project-detail.html",
+      "foundation": true
+    },
+    {
+      "file": "agent-session-detail.html",
+      "foundation": true
+    },
+    {
+      "file": "terminal-instance-detail.html",
+      "foundation": true
+    },
+    {
+      "file": "files.html",
+      "foundation": true
+    },
+    {
+      "file": "git.html",
+      "foundation": true
+    },
+    {
+      "file": "terminal.html",
+      "foundation": true
+    }
+  ]
+}
