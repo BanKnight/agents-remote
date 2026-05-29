@@ -94,7 +94,6 @@ function SessionDetail({
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [output, setOutput] = useState("");
   const [input, setInput] = useState("");
-  const [inputPanelOpen, setInputPanelOpen] = useState(true);
   const [detailView, setDetailView] = useState<DetailView>("terminal");
 
   const detail = useQuery<SessionDetailResponse>({
@@ -307,7 +306,7 @@ function SessionDetail({
           />
 
           <div
-            className={`flex min-h-0 min-w-0 flex-col gap-3 p-3 sm:p-4 ${shellSurfaceClasses.runtimeBody}`}
+            className={`flex min-h-0 min-w-0 flex-col gap-2 p-2 sm:p-3 ${shellSurfaceClasses.runtimeBody}`}
           >
             {detail.error instanceof Error ? (
               <Notice tone="danger">{detail.error.message}</Notice>
@@ -339,13 +338,11 @@ function SessionDetail({
             <SessionInputDrawer
               canSend={canSend}
               input={input}
-              isOpen={inputPanelOpen}
               quickKeys={quickKeys}
               sessionType={sessionType}
               onInputChange={setInput}
               onQuickKey={sendQuickKey}
               onSubmit={handleInputSubmit}
-              onToggle={() => setInputPanelOpen((value) => !value)}
             />
           ) : null}
         </div>
@@ -474,7 +471,7 @@ function SessionDetailHeader({
     <header
       className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
     >
-      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-3">
           {returnsToAgent ? (
             <Link
@@ -501,14 +498,9 @@ function SessionDetailHeader({
             {sessionType === "agent" ? (provider ? providerMarker(provider) : "AG") : "T"}
           </IconMarker>
           <div className="min-w-0">
-            <p className="truncate text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              {projectName} · {sessionType === "agent" ? "Agent detail" : "Terminal detail"}
-            </p>
-            <h1 className="mt-1 truncate text-sm font-semibold tracking-tight sm:text-2xl">
-              {title}
-            </h1>
-            <p className="mt-1 break-all font-mono text-[0.65rem] leading-4 text-slate-500 sm:text-xs sm:leading-5">
-              {sessionId}
+            <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
+            <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
+              {projectName} · {sessionId.slice(0, 8)}
             </p>
           </div>
         </div>
@@ -831,84 +823,55 @@ function ContextualState({ children, tone = "default" }: ContextualStateProps) {
 type SessionInputDrawerProps = {
   canSend: boolean;
   input: string;
-  isOpen: boolean;
   quickKeys: SessionQuickKey[];
   sessionType: SessionType;
   onInputChange: (value: string) => void;
   onQuickKey: (quickKey: SessionQuickKey) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onToggle: () => void;
 };
 
 function SessionInputDrawer({
   canSend,
   input,
-  isOpen,
   quickKeys,
   sessionType,
   onInputChange,
   onQuickKey,
   onSubmit,
-  onToggle,
 }: SessionInputDrawerProps) {
   return (
     <section
-      className={`min-w-0 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeComposer}`}
+      className={`min-w-0 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
     >
-      <button
-        className="flex w-full cursor-pointer items-center justify-between gap-3 py-1 text-left"
-        type="button"
-        onClick={onToggle}
-      >
-        <span className="text-xs font-semibold text-slate-400">
-          {isOpen
-            ? `${sessionType === "agent" ? "Agent" : "Terminal"} input drawer expanded`
-            : `${sessionType === "agent" ? "Agent" : "Terminal"} input drawer collapsed`}
-        </span>
-        <span className="shrink-0 rounded-full border border-slate-700/50 bg-slate-950/50 px-2.5 py-0.5 text-[0.65rem] font-semibold text-slate-400">
-          {isOpen ? "tap to collapse" : "tap to expand"}
-        </span>
-      </button>
-
-      <form className="mt-2 grid gap-2 sm:mt-2.5 sm:gap-2.5" onSubmit={onSubmit}>
+      <form className="grid gap-1.5" onSubmit={onSubmit}>
         <QuickKeyBar
           canSend={canSend}
-          quickKeys={isOpen ? quickKeys : quickKeys.slice(0, 5)}
+          quickKeys={quickKeys}
           onQuickKey={onQuickKey}
         />
-        {isOpen ? (
-          <>
-            <label className="sr-only" htmlFor="session-input">
-              Send input
-            </label>
-            <textarea
-              className={`max-h-28 min-h-14 rounded-2xl px-3 py-2 font-mono text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60 sm:max-h-40 sm:min-h-20 sm:py-2.5 ${shellSurfaceClasses.code}`}
-              disabled={!canSend}
-              id="session-input"
-              placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
-              value={input}
-              onChange={(event) => onInputChange(event.target.value)}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <ActionButton
-                disabled={!canSend || input.trim().length === 0}
-                tone="accent"
-                type="submit"
-              >
-                Send
-              </ActionButton>
-              <span className="text-xs text-slate-500">
-                {canSend ? "Connected" : "Input disabled until the stream is connected."}
-              </span>
-            </div>
-          </>
-        ) : (
-          <p
-            className={`rounded-2xl px-3 py-2 text-xs text-slate-500 ${shellSurfaceClasses.inset}`}
+        <div
+          className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
+        >
+          <span className="shrink-0 font-mono text-xs text-slate-500">$</span>
+          <label className="sr-only" htmlFor="session-input">
+            Send input
+          </label>
+          <input
+            className="min-w-0 flex-1 bg-transparent font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSend}
+            id="session-input"
+            placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+          />
+          <button
+            className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!canSend || input.trim().length === 0}
+            type="submit"
           >
-            Drawer collapsed. Tap Show to restore the text input without reconnecting the stream.
-          </p>
-        )}
+            ⏎
+          </button>
+        </div>
       </form>
     </section>
   );

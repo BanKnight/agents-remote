@@ -422,7 +422,6 @@ function AgentPanel({
         isLoading={isLoading}
         onClose={onClose}
       />
-      <AgentHistoryPanel />
     </ShellPanel>
   );
 }
@@ -475,20 +474,18 @@ type AgentInstanceRowProps = {
 
 function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
   return (
-    <SessionInstanceRow
-      actions={
-        <>
-          <Link
-            className={actionButtonClasses({ tone: "accent" })}
-            params={{ projectName, sessionId: session.id }}
-            search={{ workspace: "agents" }}
-            to="/projects/$projectName/agent-sessions/$sessionId"
-          >
-            Open
-          </Link>
+    <Link
+      className="block"
+      params={{ projectName, sessionId: session.id }}
+      search={{ workspace: "agents" }}
+      to="/projects/$projectName/agent-sessions/$sessionId"
+    >
+      <SessionInstanceRow
+        actions={
           <ActionButton
             tone="danger"
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
               if (window.confirm("Close this session? The running process will be terminated.")) {
                 onClose();
               }
@@ -496,18 +493,18 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
           >
             Close
           </ActionButton>
-        </>
-      }
-      marker={
-        <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
-          {providerMarker(session.provider)}
-        </IconMarker>
-      }
-      statusTone={sessionStatusTone(session.status)}
-      status={sessionStatusLabel(session.status)}
-      subtitle={`${providerLabel(session.provider)} · ${session.id}`}
-      title={session.displayName}
-    />
+        }
+        marker={
+          <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
+            {providerMarker(session.provider)}
+          </IconMarker>
+        }
+        statusTone={sessionStatusTone(session.status)}
+        status={sessionStatusLabel(session.status)}
+        subtitle={`${providerLabel(session.provider)} · ${session.id}`}
+        title={session.displayName}
+      />
+    </Link>
   );
 }
 
@@ -1425,24 +1422,76 @@ type PreviewBodyProps = {
 };
 
 function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
+  const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (preview.type !== "text" || renderMode !== "render") {
+      setInlinedHtml(null);
+      return;
+    }
+
+    let cancelled = false;
+    const dir = preview.path.includes("/")
+      ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
+      : "";
+
+    const inlineStylesheets = async () => {
+      // Find all relative <link rel="stylesheet" href="..."> references
+      const linkRe = /<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["'][^>]*>/gi;
+      const matches = [...preview.content.matchAll(linkRe)];
+      const relativeLinks = matches.filter(
+        ([, href]) =>
+          !href.startsWith("http") && !href.startsWith("//") && !href.startsWith("data:"),
+      );
+
+      let html = preview.content;
+
+      await Promise.all(
+        relativeLinks.map(async ([fullTag, href]) => {
+          const cssPath = href.startsWith("./") ? dir + href.slice(2) : dir + href;
+          try {
+            const res = await fetch(
+              `/api/projects/${encodeURIComponent(preview.projectName)}/files/preview?path=${encodeURIComponent(cssPath)}`,
+            );
+            if (!res.ok) return;
+            const data = (await res.json()) as { type: string; content?: string };
+            if (data.type === "text" && data.content) {
+              html = html.replace(fullTag, `<style>${data.content}</style>`);
+            }
+          } catch {
+            // leave the link tag as-is if fetch fails
+          }
+        }),
+      );
+
+      if (!cancelled) {
+        setInlinedHtml(html);
+      }
+    };
+
+    void inlineStylesheets();
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, renderMode]);
+
   if (preview.type === "text") {
     if (renderMode === "render") {
-      // Inject a <base> tag so relative paths (e.g. ./prototype-foundation.css) resolve
-      // against the file's directory on the API server.
-      const dir = preview.path.includes("/")
-        ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
-        : "";
-      const baseUrl = `${window.location.origin}/api/projects/${encodeURIComponent(preview.projectName)}/files/raw/${dir}`;
-      const injected = preview.content.replace(
-        /(<head[^>]*>)/i,
-        `$1<base href="${baseUrl}">`,
-      );
+      if (inlinedHtml === null) {
+        return (
+          <div
+            className={`mt-3 flex items-center justify-center rounded-2xl p-6 ${shellSurfaceClasses.code}`}
+          >
+            <p className="text-sm text-slate-400">Preparing render...</p>
+          </div>
+        );
+      }
       return (
         <div className={`mt-3 overflow-hidden rounded-2xl ${shellSurfaceClasses.code}`}>
           <iframe
             className="block h-[60vh] w-full border-0"
-            sandbox="allow-scripts allow-same-origin"
-            srcDoc={injected}
+            sandbox="allow-scripts"
+            srcDoc={inlinedHtml}
             title="Sandboxed HTML render"
           />
         </div>
