@@ -12,7 +12,7 @@ import type {
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -112,7 +112,7 @@ type ProjectConsoleProps = {
 function ProjectConsole({ project }: ProjectConsoleProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate({ from: "/projects/$projectName" });
-  const { workspace: activeSection } = useSearch({ from: "/projects/$projectName" });
+  const { workspace: activeSection, filesPath } = useSearch({ from: "/projects/$projectName" });
   const [resourceDeepDetailOpen, setResourceDeepDetailOpen] = useState(false);
   const selectedSection = sectionForId(activeSection);
   const summary = projectSummary(project);
@@ -152,7 +152,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   const selectWorkspace = (workspace: (typeof consoleSections)[number]["id"]) => {
     setResourceDeepDetailOpen(false);
     void navigate({
-      search: { workspace },
+      search: (prev) => ({ ...prev, workspace }),
     });
   };
 
@@ -203,7 +203,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                 + Codex
               </CreateButton>
             </div>
-          ) : undefined
+          ) : activeSection === "files" || activeSection === "git" ? null : undefined
         }
       />
 
@@ -236,9 +236,13 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
 
       {activeSection === "files" || activeSection === "git" ? (
         <SectionDetail
+          filesPath={filesPath}
           projectName={project.name}
           section={selectedSection}
           onDeepDetailChange={setResourceDeepDetailOpen}
+          onFilesPathChange={(path) =>
+            void navigate({ search: (prev) => ({ ...prev, filesPath: path }) })
+          }
         />
       ) : null}
     </ShellLayout>
@@ -330,7 +334,7 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
 
   return (
     <ShellHeaderSurface
-      actions={actions ?? fallbackActions}
+      actions={actions !== undefined ? actions : fallbackActions}
       eyebrow={
         <>
           <span className="hidden sm:inline">
@@ -733,17 +737,23 @@ function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstance
 }
 
 type SectionDetailProps = {
+  filesPath: string;
   onDeepDetailChange: (open: boolean) => void;
+  onFilesPathChange: (path: string) => void;
   projectName: string;
   section: (typeof consoleSections)[number];
 };
 
-function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDetailProps) {
+function SectionDetail({ filesPath, onDeepDetailChange, onFilesPathChange, projectName, section }: SectionDetailProps) {
   const isFiles = section.id === "files";
   const isGit = section.id === "git";
 
   return (
-    <ShellPanel className="sm:rounded-[2rem] lg:rounded-none" density="compact" docked>
+    <ShellPanel
+      className="overflow-hidden sm:rounded-[2rem] lg:rounded-none"
+      density="compact"
+      docked
+    >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -751,13 +761,16 @@ function SectionDetail({ onDeepDetailChange, projectName, section }: SectionDeta
           </p>
           <p className="mt-1 truncate text-xs text-slate-500">{section.description}</p>
         </div>
-        <StatusPill tone="accent" value={section.status} />
       </div>
       {isGit ? (
         <GitDiffPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
       ) : null}
       {isFiles ? (
-        <FilesPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
+        <FilesPanel
+          initialPath={filesPath}
+          projectName={projectName}
+          onPathChange={onFilesPathChange}
+        />
       ) : null}
     </ShellPanel>
   );
@@ -1148,13 +1161,23 @@ const statusLabel = (status: GitDiffFileSummary["status"]) => {
 };
 
 type FilesPanelProps = {
-  onDeepDetailChange: (open: boolean) => void;
+  initialPath: string;
+  onPathChange: (path: string) => void;
   projectName: string;
 };
 
-function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
-  const [currentPath, setCurrentPath] = useState("");
+function FilesPanel({ initialPath, onPathChange, projectName }: FilesPanelProps) {
+  const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
+  // Sync initialPath on first mount only; subsequent changes come from user navigation
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
+  }, []);
+
   const files = useQuery({
     queryKey: ["projects", projectName, "files", currentPath],
     queryFn: () => listProjectFiles(projectName, currentPath),
@@ -1164,82 +1187,53 @@ function FilesPanel({ onDeepDetailChange, projectName }: FilesPanelProps) {
     queryKey: ["projects", projectName, "files", "preview", selectedFilePath],
     queryFn: () => previewProjectFile(projectName, selectedFilePath ?? ""),
   });
-  const parentPath = files.data?.parentPath ?? parentProjectPath(currentPath);
+
   const goToPath = (path: string) => {
     setCurrentPath(path);
     setSelectedFilePath(undefined);
+    onPathChange(path);
   };
-
-  useEffect(() => {
-    onDeepDetailChange(selectedFilePath !== undefined);
-    return () => onDeepDetailChange(false);
-  }, [onDeepDetailChange, selectedFilePath]);
 
   const clearPreview = () => setSelectedFilePath(undefined);
 
-  const pathToolbar = (
-    <ResourceToolbar
-      eyebrow="Current path"
-      title={currentPath.length > 0 ? currentPath : "/"}
-      meta="Read-only Project file inspection."
-      actions={
-        <>
-          <ActionButton onClick={() => goToPath("")}>Root</ActionButton>
-          <ActionButton
-            disabled={parentPath === null}
-            onClick={() => parentPath !== null && goToPath(parentPath)}
-          >
-            Up
-          </ActionButton>
-          <ActionButton tone="accent" onClick={() => void files.refetch()}>
-            Retry
-          </ActionButton>
-        </>
-      }
-    />
-  );
-
-  const fileList = (
-    <FileEntryList
-      entries={files.data?.entries ?? []}
-      error={files.error}
-      isLoading={files.isLoading}
-      selectedFilePath={selectedFilePath}
-      onOpenDirectory={goToPath}
-      onPreviewFile={setSelectedFilePath}
-    />
+  const browserPanel = (
+    <aside
+      className={`grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-700/60 sm:w-[19.375rem] sm:shrink-0 ${selectedFilePath !== undefined ? "hidden sm:grid" : "grid"} ${shellSurfaceClasses.runtimeBody}`}
+    >
+      <div className="border-b border-slate-700/40 px-3.5 py-3">
+        <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
+      </div>
+      <div className="min-h-0 overflow-y-auto p-2">
+        <FileEntryList
+          entries={files.data?.entries ?? []}
+          error={files.error}
+          isLoading={files.isLoading}
+          selectedFilePath={selectedFilePath}
+          onOpenDirectory={goToPath}
+          onPreviewFile={setSelectedFilePath}
+        />
+      </div>
+    </aside>
   );
 
   const previewPanel = (
     <FilePreviewPanel error={preview.error} isLoading={preview.isLoading} preview={preview.data} />
   );
 
-  if (selectedFilePath !== undefined) {
-    return (
-      <div className="mt-3 min-w-0">
-        <div className="grid gap-3 sm:hidden">
-          <MobileDetailHeader
-            label="Files preview"
-            title={selectedFilePath}
-            backLabel="Back to Files list"
-            onBack={clearPreview}
-          />
-          {previewPanel}
-        </div>
-        <div className="hidden gap-3 sm:grid">
-          {pathToolbar}
-          <ResourceSplitLayout list={fileList} detail={previewPanel} />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-3 grid min-w-0 gap-3">
-      {pathToolbar}
-      <div className="sm:hidden">{fileList}</div>
-      <div className="hidden sm:block">
-        <ResourceSplitLayout list={fileList} detail={previewPanel} />
+    <div className="flex min-h-0 flex-1 flex-col sm:flex-row sm:overflow-hidden sm:rounded-2xl sm:border sm:border-slate-700/50">
+      {browserPanel}
+      <div
+        className={`min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-4 ${selectedFilePath === undefined ? "hidden sm:block" : "block"}`}
+      >
+        {selectedFilePath !== undefined ? (
+          <div className="mb-3 sm:hidden">
+            <ActionButton tone="default" onClick={clearPreview}>
+              ← Back to files
+            </ActionButton>
+          </div>
+        ) : null}
+        {previewPanel}
       </div>
     </div>
   );
@@ -1297,13 +1291,8 @@ function FileEntryList({
                 {entry.type === "directory" ? "DR" : "FL"}
               </IconMarker>
             }
-            meta={
-              <StatusPill tone="muted" value={entry.type === "directory" ? "Open" : "Preview"} />
-            }
             selected={selected}
-            subtitle={`${entry.type === "directory" ? "Folder" : formatBytes(entry.size ?? 0)}${
-              entry.hidden ? " · hidden" : ""
-            }`}
+            subtitle={entry.hidden ? "hidden" : undefined}
             title={entry.name}
             onClick={() =>
               entry.type === "directory" ? onOpenDirectory(entry.path) : onPreviewFile(entry.path)
@@ -1322,6 +1311,10 @@ type FilePreviewPanelProps = {
 };
 
 function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) {
+  const [renderMode, setRenderMode] = useState<"source" | "render">("source");
+  const isHtml =
+    preview?.type === "text" && (preview.name.endsWith(".html") || preview.name.endsWith(".htm"));
+
   if (isLoading) {
     return <ResourceStatePanel tone="inset" message="Loading preview..." />;
   }
@@ -1355,21 +1348,55 @@ function FilePreviewPanel({ error, isLoading, preview }: FilePreviewPanelProps) 
           <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
             {preview.name}
           </h4>
-          <p className="mt-0.5 truncate font-mono text-xs text-slate-500">{preview.path}</p>
+          <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
+            {preview.path.includes("/")
+              ? preview.path.slice(0, preview.path.lastIndexOf("/"))
+              : "/"}
+          </p>
         </div>
-        <StatusPill tone="muted" value={`${preview.type} · ${formatBytes(preview.size)}`} />
+        {isHtml ? (
+          <div className="flex shrink-0 gap-1">
+            {(["source", "render"] as const).map((mode) => (
+              <button
+                key={mode}
+                className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
+                  renderMode === mode
+                    ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
+                    : "border-slate-700/50 bg-slate-950/50 text-slate-400 hover:text-slate-200"
+                }`}
+                type="button"
+                onClick={() => setRenderMode(mode)}
+              >
+                {mode === "source" ? "Source" : "Render"}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
-      <PreviewBody preview={preview} />
+      <PreviewBody preview={preview} renderMode={isHtml ? renderMode : "source"} />
     </section>
   );
 }
 
 type PreviewBodyProps = {
   preview: ProjectFilePreviewResponse;
+  renderMode: "source" | "render";
 };
 
-function PreviewBody({ preview }: PreviewBodyProps) {
+function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
   if (preview.type === "text") {
+    if (renderMode === "render") {
+      return (
+        <div className={`mt-3 overflow-hidden rounded-2xl ${shellSurfaceClasses.code}`}>
+          <iframe
+            className="block h-[60vh] w-full border-0"
+            sandbox="allow-same-origin"
+            srcDoc={preview.content}
+            title="Sandboxed HTML render"
+          />
+        </div>
+      );
+    }
     return (
       <pre
         className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
@@ -1431,6 +1458,57 @@ const formatBytes = (bytes: number) => {
 
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 };
+
+type PathBreadcrumbProps = {
+  path: string;
+  onNavigate: (path: string) => void;
+};
+
+function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
+  const segments = path.split("/").filter(Boolean);
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-xs font-semibold">
+      <button
+        className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-400 transition hover:bg-slate-700/50 hover:text-cyan-200"
+        type="button"
+        onClick={() => onNavigate("")}
+        aria-label="Go to root"
+      >
+        <svg
+          className="h-3.5 w-3.5 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-3.75v-3.75h-3.5V14.5H2.5A.5.5 0 012 14V6.5z"
+            stroke="currentColor"
+            strokeWidth="1.25"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span>root</span>
+      </button>
+      {segments.map((segment, index) => {
+        const segmentPath = segments.slice(0, index + 1).join("/");
+        const isLast = index === segments.length - 1;
+        return (
+          <span key={segmentPath} className="flex items-center gap-0.5">
+            <span className="text-slate-700">/</span>
+            <button
+              className={`cursor-pointer rounded-md px-1 py-0.5 transition ${isLast ? "text-slate-200" : "text-slate-400 hover:bg-slate-700/50 hover:text-cyan-200"}`}
+              type="button"
+              onClick={() => onNavigate(segmentPath)}
+            >
+              {segment}
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 type CreateButtonProps = {
   children: ReactNode;
   disabled: boolean;

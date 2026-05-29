@@ -7,15 +7,15 @@ import { shellSurfaceClasses } from "./shell-primitives";
 type ShellLayoutVariant = "home" | "project";
 
 const shellMainClasses: Record<ShellLayoutVariant, string> = {
-  home: "h-dvh overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(125,211,252,0.14),transparent_28rem),radial-gradient(circle_at_85%_5%,rgba(167,139,250,0.16),transparent_28rem),#080b10] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem] sm:h-auto sm:min-h-dvh sm:px-6 sm:pb-24 sm:pt-5 lg:p-7",
+  home: "h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem]",
   project:
-    "h-dvh overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(125,211,252,0.16),transparent_30rem),radial-gradient(circle_at_82%_12%,rgba(167,139,250,0.14),transparent_28rem),#080b10] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem] sm:h-auto sm:min-h-dvh sm:px-6 sm:py-4 lg:p-7",
+    "h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem]",
 };
 
 const shellGridClasses: Record<ShellLayoutVariant, string> = {
-  home: "mx-auto grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-8rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.75rem_minmax(0,1fr)]",
+  home: "grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full min-w-0 overflow-hidden lg:h-dvh lg:grid-cols-[13.75rem_minmax(0,1fr)]",
   project:
-    "mx-auto grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full max-w-7xl min-w-0 overflow-hidden shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-auto sm:min-h-[calc(100dvh-7.5rem)] sm:rounded-[1.75rem] sm:border sm:border-slate-700/70 lg:min-h-[calc(100dvh-3.5rem)] lg:grid-cols-[13.125rem_minmax(0,1fr)]",
+    "grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full min-w-0 overflow-hidden lg:h-dvh lg:grid-cols-[13.125rem_minmax(0,1fr)]",
 };
 
 const shellHeaderClasses: Record<ShellLayoutVariant, string> = {

@@ -138,7 +138,7 @@ function SessionDetail({
         await navigate({
           to: "/projects/$projectName/agent-sessions/$sessionId",
           params: { projectName, sessionId: sourceAgentSession },
-          search: { workspace: defaultConsoleSection },
+          search: { workspace: defaultConsoleSection, filesPath: "" },
         });
         return;
       }
@@ -146,11 +146,10 @@ function SessionDetail({
       await navigate({
         to: "/projects/$projectName",
         params: { projectName },
-        search: { workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection },
+        search: { workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection, filesPath: "" },
       });
     },
   });
-
   const createTerminal = useMutation({
     mutationFn: () => createTerminalSession(projectName, `Terminal for ${title}`),
     onSuccess: async (result) => {
@@ -272,72 +271,164 @@ function SessionDetail({
   };
 
   return (
-    <main className="h-dvh overflow-hidden bg-[radial-gradient(circle_at_18%_8%,rgba(125,211,252,0.16),transparent_30rem),radial-gradient(circle_at_86%_10%,rgba(167,139,250,0.14),transparent_28rem),#080b10] p-3 text-slate-100 sm:p-4 lg:p-7">
+    <main className="h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100">
       <div
-        className={`mx-auto grid h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-7xl min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[1.5rem] border border-slate-700/70 shadow-[0_26px_80px_rgba(0,0,0,0.38)] sm:h-[calc(100dvh-2rem)] sm:rounded-[1.75rem] lg:h-[calc(100dvh-3.5rem)] ${shellSurfaceClasses.shell}`}
+        className={`grid h-full min-h-0 w-full min-w-0 overflow-hidden sm:h-dvh lg:grid-cols-[13.125rem_minmax(0,1fr)] ${shellSurfaceClasses.shell}`}
       >
-        <SessionDetailHeader
-          connectionStatus={connectionStatus}
-          createTerminalError={createTerminal.error}
-          createTerminalPending={createTerminal.isPending}
+        <SessionDetailSidebar
           detailView={detailView}
           projectName={projectName}
-          provider={provider}
-          sessionId={sessionId}
           sessionType={sessionType}
           sourceAgentSession={sourceAgentSession}
-          title={title}
-          closePending={closeSession.isPending}
-          onClose={() => {
-            if (window.confirm("Close this session? The running process will be terminated.")) {
-              closeSession.mutate();
-            }
-          }}
-          onCreateTerminal={() => createTerminal.mutate()}
-          onReconnect={() => setReconnectKey((value) => value + 1)}
           onViewChange={setDetailView}
         />
 
-        <div
-          className={`flex min-h-0 min-w-0 flex-col gap-3 p-3 sm:p-4 ${shellSurfaceClasses.runtimeBody}`}
-        >
-          {detail.error instanceof Error ? (
-            <Notice tone="danger">{detail.error.message}</Notice>
-          ) : null}
-          {streamError ? <Notice tone="danger">{streamError}</Notice> : null}
-          {connectionStatus === "connecting" ? <Notice>Recovering session stream...</Notice> : null}
-          {isEnded ? (
-            <Notice>Runtime ended. Return to the Project console to create another session.</Notice>
-          ) : null}
-          {closeSession.error instanceof Error ? (
-            <Notice tone="danger">{closeSession.error.message}</Notice>
-          ) : null}
-
-          <DetailWorkspace
+        <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+          <SessionDetailHeader
+            connectionStatus={connectionStatus}
+            createTerminalError={createTerminal.error}
+            createTerminalPending={createTerminal.isPending}
             detailView={detailView}
-            output={output}
             projectName={projectName}
+            provider={provider}
+            sessionId={sessionId}
             sessionType={sessionType}
+            sourceAgentSession={sourceAgentSession}
             title={title}
-            onReturnToStream={() => setDetailView("terminal")}
+            closePending={closeSession.isPending}
+            onClose={() => {
+              if (window.confirm("Close this session? The running process will be terminated.")) {
+                closeSession.mutate();
+              }
+            }}
+            onCreateTerminal={() => createTerminal.mutate()}
+            onReconnect={() => setReconnectKey((value) => value + 1)}
+            onViewChange={setDetailView}
           />
-        </div>
 
-        {terminalViewVisible ? (
-          <SessionInputDrawer
-            canSend={canSend}
-            input={input}
-            isOpen={inputPanelOpen}
-            quickKeys={quickKeys}
-            sessionType={sessionType}
-            onInputChange={setInput}
-            onQuickKey={sendQuickKey}
-            onSubmit={handleInputSubmit}
-            onToggle={() => setInputPanelOpen((value) => !value)}
-          />
-        ) : null}
+          <div
+            className={`flex min-h-0 min-w-0 flex-col gap-3 p-3 sm:p-4 ${shellSurfaceClasses.runtimeBody}`}
+          >
+            {detail.error instanceof Error ? (
+              <Notice tone="danger">{detail.error.message}</Notice>
+            ) : null}
+            {streamError ? <Notice tone="danger">{streamError}</Notice> : null}
+            {connectionStatus === "connecting" ? (
+              <Notice>Recovering session stream...</Notice>
+            ) : null}
+            {isEnded ? (
+              <Notice>
+                Runtime ended. Return to the Project console to create another session.
+              </Notice>
+            ) : null}
+            {closeSession.error instanceof Error ? (
+              <Notice tone="danger">{closeSession.error.message}</Notice>
+            ) : null}
+
+            <DetailWorkspace
+              detailView={detailView}
+              output={output}
+              projectName={projectName}
+              sessionType={sessionType}
+              title={title}
+              onReturnToStream={() => setDetailView("terminal")}
+            />
+          </div>
+
+          {terminalViewVisible ? (
+            <SessionInputDrawer
+              canSend={canSend}
+              input={input}
+              isOpen={inputPanelOpen}
+              quickKeys={quickKeys}
+              sessionType={sessionType}
+              onInputChange={setInput}
+              onQuickKey={sendQuickKey}
+              onSubmit={handleInputSubmit}
+              onToggle={() => setInputPanelOpen((value) => !value)}
+            />
+          ) : null}
+        </div>
       </div>
     </main>
+  );
+}
+
+type SessionDetailSidebarProps = {
+  detailView: DetailView;
+  projectName: string;
+  sessionType: SessionType;
+  sourceAgentSession?: string;
+  onViewChange: (view: DetailView) => void;
+};
+
+function SessionDetailSidebar({
+  detailView,
+  projectName,
+  sessionType,
+  sourceAgentSession,
+  onViewChange,
+}: SessionDetailSidebarProps) {
+  const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
+
+  return (
+    <aside
+      className={`hidden min-h-0 min-w-0 overflow-hidden border-r border-slate-700/80 px-3.5 py-4 lg:flex lg:flex-col ${shellSurfaceClasses.sidebar}`}
+    >
+      <Link
+        className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-cyan-200"
+        params={{ projectName }}
+        search={{
+          workspace: returnsToAgent
+            ? "agents"
+            : sessionType === "terminal"
+              ? "terminal"
+              : defaultConsoleSection,
+          filesPath: "",
+        }}
+        to="/projects/$projectName"
+      >
+        <IconMarker size="sm" tone="muted">
+          ←
+        </IconMarker>
+        <span>Projects</span>
+      </Link>
+
+      <div className={`mb-4 min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}>
+        <h2 className="truncate text-sm font-semibold text-slate-100">{projectName}</h2>
+      </div>
+
+      {sessionType === "agent" ? (
+        <nav className="grid gap-2" aria-label="Agent detail workspace">
+          {(["terminal", "files", "git"] as const).map((view) => {
+            const labels: Record<typeof view, string> = {
+              terminal: "Agent",
+              files: "Files",
+              git: "Git",
+            };
+            const markers: Record<typeof view, string> = {
+              terminal: "AG",
+              files: "FL",
+              git: "GT",
+            };
+            const active = detailView === view;
+            return (
+              <button
+                key={view}
+                className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[0.875rem] px-3 py-2.5 text-left text-sm font-semibold transition ${active ? "bg-cyan-300/10 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
+                type="button"
+                onClick={() => onViewChange(view)}
+              >
+                <IconMarker size="sm" tone={active ? "accent" : "muted"}>
+                  {markers[view]}
+                </IconMarker>
+                {labels[view]}
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
+    </aside>
   );
 }
 
@@ -390,7 +481,7 @@ function SessionDetailHeader({
               className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
               aria-label="Back to Agent detail"
               params={{ projectName, sessionId: sourceAgentSession }}
-              search={{ workspace: defaultConsoleSection }}
+              search={{ workspace: defaultConsoleSection, filesPath: "" }}
               to="/projects/$projectName/agent-sessions/$sessionId"
             >
               ←
@@ -400,7 +491,7 @@ function SessionDetailHeader({
               className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
               aria-label="Back to Project"
               params={{ projectName }}
-              search={{ workspace: returnWorkspace }}
+              search={{ workspace: returnWorkspace, filesPath: "" }}
               to="/projects/$projectName"
             >
               ←

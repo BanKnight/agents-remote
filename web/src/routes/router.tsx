@@ -24,6 +24,7 @@ const projectConsoleRoute = createRoute({
   path: "/projects/$projectName",
   validateSearch: (search: Record<string, unknown>) => ({
     workspace: consoleSectionFromSearch(search.workspace),
+    filesPath: typeof search.filesPath === "string" ? search.filesPath : "",
   }),
   component: ProjectConsoleRoute,
 });

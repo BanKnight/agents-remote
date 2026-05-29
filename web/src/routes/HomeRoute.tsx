@@ -53,7 +53,7 @@ export function HomeRoute() {
       await navigate({
         to: "/projects/$projectName",
         params: { projectName: response.project.name },
-        search: { workspace: defaultConsoleSection },
+        search: { workspace: defaultConsoleSection, filesPath: "" },
       });
     },
   });
@@ -198,7 +198,7 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
     <Link
       className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
       params={{ projectName: project.name }}
-      search={{ workspace: defaultConsoleSection }}
+      search={{ workspace: defaultConsoleSection, filesPath: "" }}
       to="/projects/$projectName"
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
