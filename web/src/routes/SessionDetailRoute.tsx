@@ -92,8 +92,11 @@ function SessionDetail({
   const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<StreamConnectionStatus>("connecting");
-  const [streamError, setStreamError] = useState<string | null>(null);
+  // Only shown for unrecoverable failures (protocol error, session ended)
+  const [fatalError, setFatalError] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const terminalDataRef = useRef<{ type: "snapshot" | "output"; data: string } | null>(null);
   const terminalWriteRef = useRef<((type: "snapshot" | "output", data: string) => void) | null>(null);
@@ -170,81 +173,109 @@ function SessionDetail({
 
   useEffect(() => {
     setConnectionStatus("connecting");
-    setStreamError(null);
-    const socket = new WebSocket(sessionStreamUrl(projectName, sessionType, sessionId));
-    socketRef.current = socket;
-    let closedByEffect = false;
+    setFatalError(null);
+    reconnectAttemptsRef.current = 0;
 
-    socket.onmessage = (event) => {
-      const message = parseStreamMessage(event.data);
+    const connect = () => {
+      const socket = new WebSocket(sessionStreamUrl(projectName, sessionType, sessionId));
+      socketRef.current = socket;
+      let closedByEffect = false;
 
-      if (!message) {
-        setConnectionStatus("error");
-        setStreamError("Received an invalid stream message.");
-        return;
-      }
+      socket.onmessage = (event) => {
+        const message = parseStreamMessage(event.data);
 
-      if (message.type === "connected") {
-        setConnectionStatus("connected");
-        setSessionStatus(message.status);
-        return;
-      }
-
-      if (message.type === "snapshot" || message.type === "output") {
-        terminalDataRef.current = { type: message.type, data: message.data };
-        terminalWriteRef.current?.(message.type, message.data);
-        return;
-      }
-
-      if (message.type === "status") {
-        if (isTransportStatus(message.status)) {
-          setConnectionStatus(message.status);
-        } else {
-          setSessionStatus(message.status);
+        if (!message) {
+          setConnectionStatus("error");
+          setFatalError("Received an invalid stream message.");
+          return;
         }
-        return;
-      }
 
-      if (message.type === "ended") {
-        setConnectionStatus("ended");
-        setSessionStatus("closed");
-        return;
-      }
+        if (message.type === "connected") {
+          reconnectAttemptsRef.current = 0;
+          setConnectionStatus("connected");
+          setSessionStatus(message.status);
+          return;
+        }
 
-      setConnectionStatus("error");
-      setStreamError(`${message.code}: ${message.message}`);
+        if (message.type === "snapshot" || message.type === "output") {
+          terminalDataRef.current = { type: message.type, data: message.data };
+          terminalWriteRef.current?.(message.type, message.data);
+          return;
+        }
+
+        if (message.type === "status") {
+          if (isTransportStatus(message.status)) {
+            setConnectionStatus(message.status);
+          } else {
+            setSessionStatus(message.status);
+          }
+          return;
+        }
+
+        if (message.type === "ended") {
+          setConnectionStatus("ended");
+          setSessionStatus("closed");
+          return;
+        }
+
+        setConnectionStatus("error");
+        setFatalError(`${message.code}: ${message.message}`);
+      };
+
+      const scheduleReconnect = () => {
+        if (closedByEffect) return;
+        const MAX_ATTEMPTS = 8;
+        const attempt = reconnectAttemptsRef.current;
+        if (attempt >= MAX_ATTEMPTS) {
+          setConnectionStatus("error");
+          setFatalError("Connection lost. Could not reconnect after several attempts.");
+          return;
+        }
+        reconnectAttemptsRef.current += 1;
+        setConnectionStatus("connecting");
+        // Exponential backoff: 1s, 2s, 4s, 8s, capped at 10s
+        const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+        reconnectTimerRef.current = setTimeout(() => {
+          if (!closedByEffect) connect();
+        }, delay);
+      };
+
+      socket.onerror = () => {
+        // onerror is always followed by onclose; handle reconnect there
+      };
+
+      socket.onclose = () => {
+        if (closedByEffect) return;
+        setConnectionStatus((status) => {
+          if (status === "ended" || status === "error") return status;
+          return "connecting";
+        });
+        scheduleReconnect();
+      };
+
+      return () => {
+        closedByEffect = true;
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        socket.close();
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+      };
     };
 
-    socket.onerror = () => {
-      setConnectionStatus("disconnected");
-      setStreamError("Stream disconnected before recovery completed. Use Reconnect to try again.");
-    };
-
-    socket.onclose = () => {
-      if (!closedByEffect) {
-        setConnectionStatus((status) =>
-          status === "ended" || status === "error" ? status : "disconnected",
-        );
-      }
-    };
-
-    return () => {
-      closedByEffect = true;
-      socket.close();
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-    };
+    const cleanup = connect();
+    return cleanup;
   }, [projectName, reconnectKey, sessionId, sessionType]);
 
   const sendMessage = (message: SessionStreamClientMessage) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
-      setStreamError("Session stream is not connected.");
       return false;
     }
 
     socketRef.current.send(JSON.stringify(message));
-    setStreamError(null);
     return true;
   };
 
@@ -325,10 +356,7 @@ function SessionDetail({
             {detail.error instanceof Error ? (
               <Notice tone="danger">{detail.error.message}</Notice>
             ) : null}
-            {streamError ? <Notice tone="danger">{streamError}</Notice> : null}
-            {connectionStatus === "connecting" ? (
-              <Notice>Recovering session stream...</Notice>
-            ) : null}
+            {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
             {isEnded ? (
               <Notice>
                 Runtime ended. Return to the Project console to create another session.
