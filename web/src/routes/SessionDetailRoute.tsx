@@ -823,6 +823,7 @@ function TerminalOutput({
   const initialFitFramesRef = useRef<number[]>([]);
   const initialFitTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const writeQueueRef = useRef(Promise.resolve());
+  const isComposingRef = useRef(false);
 
   useEffect(() => {
     if (connectionStatus !== "connected") {
@@ -874,19 +875,34 @@ function TerminalOutput({
       fontSize: 12,
       lineHeight: 1.35,
       cursorBlink: true,
+      cursorInactiveStyle: "outline",
       allowTransparency: true,
       scrollback: 5000,
+      scrollOnUserInput: false,
+      smoothScrollDuration: 100,
       convertEol: true,
+      customGlyphs: true,
+      rescaleOverlappingGlyphs: true,
+      macOptionIsMeta: true,
+      rightClickSelectsWord: true,
+      logLevel: "warn",
     });
 
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
 
-    // Forward keyboard input to WebSocket
+    // Forward keyboard input to WebSocket, skip during IME composition
     term.onData((data) => {
-      onSendInput(data);
+      if (!isComposingRef.current) {
+        onSendInput(data);
+      }
     });
+
+    const onCompositionStart = () => { isComposingRef.current = true; };
+    const onCompositionEnd = () => { isComposingRef.current = false; };
+    container.addEventListener("compositionstart", onCompositionStart);
+    container.addEventListener("compositionend", onCompositionEnd);
 
     const notifyResize = () => {
       const size = { cols: term.cols, rows: term.rows };
@@ -986,6 +1002,8 @@ function TerminalOutput({
     ro.observe(container);
 
     return () => {
+      container.removeEventListener("compositionstart", onCompositionStart);
+      container.removeEventListener("compositionend", onCompositionEnd);
       ro.disconnect();
       if (resizeFrameRef.current !== null) {
         cancelAnimationFrame(resizeFrameRef.current);
@@ -1013,7 +1031,7 @@ function TerminalOutput({
     <section className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={containerRef}
-        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
+        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport]:touch-pan-y"
       />
       {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
     </section>
