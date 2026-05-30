@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 const apiTarget = process.env.WEB_API_PROXY_TARGET ?? "http://127.0.0.1:3001";
+const allowedHosts = (process.env.WEB_ALLOWED_HOSTS ?? "service-remotes-agent.8811156.xyz")
+  .split(",")
+  .map((host) => host.trim())
+  .filter(Boolean);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -13,6 +17,7 @@ export default defineConfig({
     },
   },
   server: {
+    allowedHosts,
     port: 3000,
     proxy: {
       "/api": {

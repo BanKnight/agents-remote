@@ -1,6 +1,7 @@
 import type {
   AgentProvider,
   AgentSession,
+  GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffScope,
   GitFileDiffResponse,
@@ -161,13 +162,14 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     setMobileFilePreviewOpen(false);
   }, [activeSection]);
 
-  // On mobile, when a file is selected in Files panel, hide the WorkspaceHeader and bottom nav
-  const hiddenOnMobileFilePreview = mobileFilePreviewOpen && activeSection === "files";
+  const hiddenOnMobileResourceDetail =
+    (mobileFilePreviewOpen && activeSection === "files") ||
+    (resourceDeepDetailOpen && activeSection === "git");
 
   return (
     <ShellLayout
       bottomNavigation={
-        !resourceDeepDetailOpen && !hiddenOnMobileFilePreview ? (
+        !resourceDeepDetailOpen && !hiddenOnMobileResourceDetail ? (
           <ProjectSecondaryBottomNav
             activeSection={activeSection}
             onSelectSection={selectWorkspace}
@@ -183,7 +185,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       }
       variant="project"
     >
-      <div className={hiddenOnMobileFilePreview ? "sm:contents hidden" : "contents"}>
+      <div className={hiddenOnMobileResourceDetail ? "sm:contents hidden" : "contents"}>
         <WorkspaceHeader
           project={project}
           section={selectedSection}
@@ -256,6 +258,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       {activeSection === "files" || activeSection === "git" ? (
         <SectionDetail
           filesPath={filesPath}
+          projectBranch={project.gitBranch}
           projectName={project.name}
           section={selectedSection}
           onDeepDetailChange={setResourceDeepDetailOpen}
@@ -378,6 +381,8 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
               {section.id === "agents" ? "Agent instances" : "Terminal instances"}
             </span>
           </>
+        ) : section.id === "git" ? (
+          "Read-only status & diff"
         ) : (
           section.label
         )
@@ -754,6 +759,7 @@ type SectionDetailProps = {
   onDeepDetailChange: (open: boolean) => void;
   onFilesPathChange: (path: string) => void;
   onMobileFilePreviewChange: (open: boolean) => void;
+  projectBranch?: string;
   projectName: string;
   section: (typeof consoleSections)[number];
 };
@@ -763,6 +769,7 @@ function SectionDetail({
   onDeepDetailChange,
   onFilesPathChange,
   onMobileFilePreviewChange,
+  projectBranch,
   projectName,
   section,
 }: SectionDetailProps) {
@@ -776,7 +783,11 @@ function SectionDetail({
       docked
     >
       {isGit ? (
-        <GitDiffPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
+        <GitDiffPanel
+          projectBranch={projectBranch}
+          projectName={projectName}
+          onDeepDetailChange={onDeepDetailChange}
+        />
       ) : null}
       {isFiles ? (
         <FilesPanel
@@ -886,6 +897,22 @@ type MobileDetailHeaderProps = {
   title: string;
 };
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const handleChange = () => setMatches(media.matches);
+
+    handleChange();
+    media.addEventListener("change", handleChange);
+
+    return () => media.removeEventListener("change", handleChange);
+  }, [query]);
+
+  return matches;
+}
+
 type SelectedGitFile = {
   path: string;
   scope: GitDiffScope;
@@ -893,10 +920,12 @@ type SelectedGitFile = {
 
 type GitDiffPanelProps = {
   onDeepDetailChange: (open: boolean) => void;
+  projectBranch?: string;
   projectName: string;
 };
 
-function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
+function GitDiffPanel({ onDeepDetailChange, projectBranch, projectName }: GitDiffPanelProps) {
+  const showDesktopGitLayout = useMediaQuery("(min-width: 640px)");
   const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
   const diff = useQuery({
     queryKey: ["projects", projectName, "git", "diff"],
@@ -921,33 +950,17 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
   const clearDiff = () => setSelectedFile(undefined);
   const gitSummary =
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
+  const changedFileCount = diff.data?.repository === true ? diff.data.files.length : undefined;
 
   const statusToolbar = (
-    <ResourceToolbar
-      eyebrow="Git status"
-      title={
-        diff.data?.repository === true
-          ? `${diff.data.files.length} changed files`
-          : "Read-only changes"
-      }
-      meta={
-        gitSummary ? (
-          <GitSummaryPills summary={gitSummary} />
-        ) : (
-          "Worktree and staged files are available for inspection only."
-        )
-      }
-      actions={
-        <ActionButton
-          tone="accent"
-          onClick={() => {
-            setSelectedFile(undefined);
-            void diff.refetch();
-          }}
-        >
-          Retry
-        </ActionButton>
-      }
+    <GitStatusHeader
+      projectBranch={projectBranch}
+      projectName={projectName}
+      fileCount={changedFileCount}
+      onRetry={() => {
+        setSelectedFile(undefined);
+        void diff.refetch();
+      }}
     />
   );
 
@@ -988,40 +1001,46 @@ function GitDiffPanel({ onDeepDetailChange, projectName }: GitDiffPanelProps) {
     />
   );
 
-  if (selectedFile !== undefined) {
-    return (
-      <div className="mt-3 min-w-0">
-        <div className="grid gap-3 sm:hidden">
-          <MobileDetailHeader
-            label="Git diff"
-            title={selectedFile.path}
-            backLabel="Back to changed files"
-            onBack={clearDiff}
-          />
-          {diffPanel}
-        </div>
-        <div className="hidden gap-3 sm:grid">
-          {statusToolbar}
-          <ResourceSplitLayout list={changedFileList} detail={diffPanel} />
-        </div>
+  const mobileView =
+    selectedFile !== undefined ? (
+      <div className="grid gap-3 sm:hidden">
+        <MobileDetailHeader
+          label="Git diff"
+          title={selectedFile.path}
+          backLabel="Back to changed files"
+          onBack={clearDiff}
+        />
+        {diffPanel}
+      </div>
+    ) : (
+      <div className="sm:hidden">
+        <GitWorkspaceSidebar statusCounts={gitSummary}>{changedFileList}</GitWorkspaceSidebar>
       </div>
     );
-  }
 
   return (
-    <div className="mt-3 grid min-w-0 gap-3">
-      {statusToolbar}
-      {loadingState}
-      {errorState}
-      {notRepositoryState}
-      {diff.data?.repository === true ? (
-        <>
-          <div className="sm:hidden">{changedFileList}</div>
-          <div className="hidden sm:block">
-            <ResourceSplitLayout list={changedFileList} detail={diffPanel} />
-          </div>
-        </>
-      ) : null}
+    <div className="mt-3 min-w-0">
+      <div className="grid gap-3">
+        {selectedFile === undefined ? (
+          statusToolbar
+        ) : (
+          <div className="hidden sm:block">{statusToolbar}</div>
+        )}
+        {loadingState}
+        {errorState}
+        {notRepositoryState}
+        {diff.data?.repository === true ? (
+          showDesktopGitLayout ? (
+            <GitWorkspaceLayout
+              changedFileList={changedFileList}
+              diffPanel={diffPanel}
+              statusCounts={gitSummary}
+            />
+          ) : (
+            mobileView
+          )
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1046,17 +1065,99 @@ function summarizeGitFiles(files: GitDiffFileSummary[]): GitSummary {
   );
 }
 
-function GitSummaryPills({ summary }: { summary: GitSummary }) {
+function GitStatusHeader({
+  fileCount,
+  onRetry,
+  projectBranch,
+  projectName,
+}: {
+  fileCount?: number;
+  onRetry: () => void;
+  projectBranch?: string;
+  projectName: string;
+}) {
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5">
-      <StatusPill tone="muted" value={`${summary.worktree} worktree`} />
-      <StatusPill tone="muted" value={`${summary.staged} staged`} />
-      <StatusPill tone="success" value={`${summary.added} added`} />
-      <StatusPill tone="warning" value={`${summary.modified} modified`} />
-      <StatusPill tone="danger" value={`${summary.deleted} deleted`} />
+    <div className={`min-w-0 rounded-2xl p-3 sm:p-4 ${shellSurfaceClasses.inset}`}>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+            Project / {projectName} / Git
+          </p>
+          <p className="mt-1 text-lg font-semibold text-slate-100 sm:text-[1.35rem]">Git status</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Worktree and staged changes are shown for inspection only.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <StatusPill
+            tone="muted"
+            value={`${projectBranch ?? "main"} · ${fileCount ?? 0} changed · read-only`}
+          />
+          <ActionButton tone="accent" onClick={onRetry}>
+            Retry
+          </ActionButton>
+        </div>
+      </div>
     </div>
   );
 }
+
+function GitSummaryCards({ summary }: { summary: GitSummary | undefined }) {
+  const cards = summary
+    ? [
+        { label: "modified", value: summary.modified, tone: "warning" as const },
+        { label: "added", value: summary.added, tone: "success" as const },
+        { label: "deleted", value: summary.deleted, tone: "danger" as const },
+      ]
+    : [];
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-3">
+      {cards.length > 0 ? (
+        cards.map((card) => (
+          <div
+            key={card.label}
+            className={`rounded-[0.875rem] border px-3 py-2.5 ${summaryCardToneClasses[card.tone]}`}
+          >
+            <strong className="block text-lg font-semibold text-slate-100">{card.value}</strong>
+            <span className="text-[0.65rem] uppercase tracking-[0.16em] text-slate-500">
+              {card.label}
+            </span>
+          </div>
+        ))
+      ) : (
+        <div className="rounded-[0.875rem] border border-slate-700/40 bg-slate-950/60 px-3 py-2.5 text-sm text-slate-400 sm:col-span-3">
+          Summary appears after Git changes load.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GitFilterRow() {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-[0.68rem] font-semibold text-cyan-100">
+        All
+      </span>
+      <span className="rounded-full border border-slate-700/60 bg-slate-950/70 px-3 py-1 text-[0.68rem] font-semibold text-slate-400">
+        Modified
+      </span>
+      <span className="rounded-full border border-slate-700/60 bg-slate-950/70 px-3 py-1 text-[0.68rem] font-semibold text-slate-400">
+        Added
+      </span>
+      <span className="rounded-full border border-slate-700/60 bg-slate-950/70 px-3 py-1 text-[0.68rem] font-semibold text-slate-400">
+        Deleted
+      </span>
+    </div>
+  );
+}
+
+const summaryCardToneClasses: Record<"success" | "warning" | "danger", string> = {
+  success: "border-emerald-300/20 bg-emerald-300/10",
+  warning: "border-amber-300/20 bg-amber-300/10",
+  danger: "border-rose-300/20 bg-rose-300/10",
+};
 
 type GitFileListProps = {
   files: GitDiffFileSummary[];
@@ -1079,24 +1180,35 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
       {files.map((file) => {
         const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
         return (
-          <ListRow
+          <button
             key={`${file.scope}:${file.path}`}
-            marker={<IconMarker tone="accent">GT</IconMarker>}
-            meta={
-              <>
-                <StatusPill tone="accent" value={scopeLabel(file.scope)} />
-                <StatusPill tone="muted" value={statusLabel(file.status)} />
-              </>
-            }
-            selected={selected}
-            subtitle={
-              file.previousPath ? (
-                <span className="font-mono">from {file.previousPath}</span>
-              ) : undefined
-            }
-            title={<span className="font-mono">{file.path}</span>}
+            className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[0.875rem] border px-3 py-2.5 text-left transition ${
+              selected
+                ? "border-cyan-300/60 bg-cyan-300/10"
+                : "border-slate-700/40 bg-[#141b28]/72 hover:border-cyan-300/30 hover:bg-[#141b28]/92"
+            }`}
+            type="button"
             onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
-          />
+          >
+            <IconMarker size="sm" tone={gitStatusTone(file.status)}>
+              {statusShortLabel(file.status)}
+            </IconMarker>
+            <span className="min-w-0">
+              <span className="block truncate font-mono text-[0.82rem] font-semibold text-slate-100">
+                {file.path}
+              </span>
+              {file.previousPath ? (
+                <span className="mt-0.5 block truncate font-mono text-[0.68rem] text-slate-500">
+                  from {file.previousPath}
+                </span>
+              ) : (
+                <span className="mt-0.5 block text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
+                  {scopeLabel(file.scope)}
+                </span>
+              )}
+            </span>
+            <StatusPill tone={gitStatusTone(file.status)} value={statusLabel(file.status)} />
+          </button>
         );
       })}
     </div>
@@ -1107,6 +1219,103 @@ type GitFileDiffPanelProps = {
   error: Error | null;
   fileDiff: GitFileDiffResponse | undefined;
   isLoading: boolean;
+};
+
+function GitWorkspaceLayout({
+  changedFileList,
+  diffPanel,
+  statusCounts,
+}: {
+  changedFileList: ReactNode;
+  diffPanel: ReactNode;
+  statusCounts: GitSummary | undefined;
+}) {
+  return (
+    <section className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+      <aside className="grid min-h-0 gap-3">
+        <GitWorkspaceSidebar statusCounts={statusCounts}>{changedFileList}</GitWorkspaceSidebar>
+      </aside>
+      {diffPanel}
+    </section>
+  );
+}
+
+function GitWorkspaceSidebar({
+  children,
+  statusCounts,
+}: {
+  children: ReactNode;
+  statusCounts: GitSummary | undefined;
+}) {
+  return (
+    <div className={`grid min-h-0 gap-3 rounded-2xl p-3 ${shellSurfaceClasses.inset}`}>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <GitTinyMetric label="modified" value={statusCounts?.modified ?? 0} tone="warning" />
+        <GitTinyMetric label="added" value={statusCounts?.added ?? 0} tone="success" />
+        <GitTinyMetric label="deleted" value={statusCounts?.deleted ?? 0} tone="danger" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <GitScopeChip label="All" active />
+        <GitScopeChip label="Modified" />
+        <GitScopeChip label="Added" />
+        <GitScopeChip label="Deleted" />
+      </div>
+      <div className="min-h-0">{children}</div>
+    </div>
+  );
+}
+
+function GitTinyMetric({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "success" | "warning" | "danger";
+  value: number;
+}) {
+  return (
+    <div className={`rounded-[0.875rem] border px-3 py-2.5 ${summaryCardToneClasses[tone]}`}>
+      <strong className="block text-lg font-semibold text-slate-100">{value}</strong>
+      <span className="text-[0.65rem] uppercase tracking-[0.16em] text-slate-500">{label}</span>
+    </div>
+  );
+}
+
+function GitScopeChip({ label, active = false }: { label: string; active?: boolean }) {
+  return (
+    <span
+      className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${active ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-slate-700/60 bg-slate-950/70 text-slate-400"}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
+  switch (status) {
+    case "added":
+      return "success";
+    case "deleted":
+      return "danger";
+    case "renamed":
+      return "accent";
+    case "modified":
+      return "warning";
+  }
+};
+
+const statusShortLabel = (status: GitDiffFileStatus) => {
+  switch (status) {
+    case "added":
+      return "A";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "modified":
+      return "M";
+  }
 };
 
 function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps) {
@@ -1131,16 +1340,26 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
   return (
     <section
-      className={`min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}
+      className={`grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl ${shellSurfaceClasses.raised}`}
       aria-label="Git file diff"
     >
-      <div className="flex min-w-0 items-center justify-between gap-2">
+      <div className="flex min-w-0 items-start justify-between gap-2 border-b border-slate-700/40 px-3 py-3 sm:px-4">
         <div className="min-w-0">
-          <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
-            {fileDiff.path}
-          </h4>
+          <div className="flex min-w-0 items-center gap-2">
+            <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
+              {statusShortLabel(fileDiff.status)}
+            </IconMarker>
+            <div className="min-w-0">
+              <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-[0.92rem]">
+                {fileDiff.path}
+              </h4>
+              <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
+                unified diff · read-only · {scopeLabel(fileDiff.scope).toLowerCase()}
+              </p>
+            </div>
+          </div>
           {fileDiff.previousPath ? (
-            <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
+            <p className="mt-2 truncate font-mono text-xs text-slate-500">
               from {fileDiff.previousPath}
             </p>
           ) : null}
@@ -1151,7 +1370,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
         />
       </div>
       <pre
-        className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
+        className={`min-h-0 overflow-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-xs leading-5 text-slate-100 sm:px-4 sm:text-sm ${shellSurfaceClasses.code}`}
       >
         {fileDiff.diff}
       </pre>

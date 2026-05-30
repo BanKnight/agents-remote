@@ -233,7 +233,7 @@ function SessionDetail({
         const attempt = reconnectAttemptsRef.current;
         if (attempt >= MAX_ATTEMPTS) {
           setConnectionStatus("error");
-          setFatalError("Connection lost. Could not reconnect after several attempts.");
+          setFatalError("Reconnect stopped.");
           return;
         }
         reconnectAttemptsRef.current += 1;
@@ -369,11 +369,7 @@ function SessionDetail({
               <Notice tone="danger">{detail.error.message}</Notice>
             ) : null}
             {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
-            {isEnded ? (
-              <Notice>
-                Runtime ended. Return to the Project console to create another session.
-              </Notice>
-            ) : null}
+            {isEnded ? <Notice>Runtime ended.</Notice> : null}
             {closeSession.error instanceof Error ? (
               <Notice tone="danger">{closeSession.error.message}</Notice>
             ) : null}
@@ -918,42 +914,56 @@ function TerminalOutput({
         ref={containerRef}
         className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
       />
-      {overlay ? (
-        <div className="absolute inset-x-3 bottom-3 top-12 grid place-items-center rounded-[1rem] border border-slate-700/70 bg-slate-950/70 px-4 text-center backdrop-blur-sm">
-          <div>
-            <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
-              {overlay.title}
-            </p>
-            <p className="mt-2 text-sm leading-5 text-slate-300">{overlay.description}</p>
-          </div>
-        </div>
-      ) : null}
+      {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
     </section>
   );
 }
 
-const terminalOverlay = (status: StreamConnectionStatus) => {
+type TerminalOverlayState = {
+  animated?: boolean;
+  tone: "accent" | "danger" | "muted";
+  title: string;
+};
+
+function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
+  const toneClasses = {
+    accent: "border-cyan-300/25 bg-cyan-300/10 text-cyan-100 shadow-cyan-950/20",
+    danger: "border-rose-300/30 bg-rose-400/10 text-rose-100 shadow-rose-950/20",
+    muted: "border-slate-600/40 bg-slate-950/60 text-slate-300 shadow-black/20",
+  } satisfies Record<TerminalOverlayState["tone"], string>;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-3 top-14 z-10 flex justify-center">
+      <div
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur-md ${toneClasses[overlay.tone]}`}
+      >
+        {overlay.animated ? <TerminalStatusSpinner /> : null}
+        <span>{overlay.title}</span>
+      </div>
+    </div>
+  );
+}
+
+function TerminalStatusSpinner() {
+  return (
+    <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-200" />
+    </span>
+  );
+}
+
+const terminalOverlay = (status: StreamConnectionStatus): TerminalOverlayState | undefined => {
   if (status === "connecting") {
-    return {
-      title: "Reconnecting",
-      description:
-        "Restoring the live terminal stream. Input resumes when the session is connected.",
-    };
+    return { animated: true, title: "Reconnecting", tone: "accent" };
   }
 
   if (status === "error") {
-    return {
-      title: "Connection stopped",
-      description: "Automatic reconnect stopped. Use Retry from the header or leave this session.",
-    };
+    return { title: "Stopped", tone: "danger" };
   }
 
   if (status === "ended") {
-    return {
-      title: "Session ended",
-      description:
-        "This runtime has closed. Return to the Project console to start another session.",
-    };
+    return { title: "Ended", tone: "muted" };
   }
 
   return undefined;
