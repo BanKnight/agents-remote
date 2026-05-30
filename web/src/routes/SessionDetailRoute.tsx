@@ -904,6 +904,20 @@ function TerminalOutput({
     container.addEventListener("compositionstart", onCompositionStart);
     container.addEventListener("compositionend", onCompositionEnd);
 
+    // Prevent soft keyboard from popping up after touch scroll
+    let touchStartY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? 0;
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      const deltaY = Math.abs((e.changedTouches[0]?.clientY ?? 0) - touchStartY);
+      if (deltaY > 8) {
+        term.blur();
+      }
+    };
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchend", onTouchEnd, { passive: true });
+
     const notifyResize = () => {
       const size = { cols: term.cols, rows: term.rows };
       const previous = lastResizeRef.current;
@@ -1004,6 +1018,8 @@ function TerminalOutput({
     return () => {
       container.removeEventListener("compositionstart", onCompositionStart);
       container.removeEventListener("compositionend", onCompositionEnd);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchend", onTouchEnd);
       ro.disconnect();
       if (resizeFrameRef.current !== null) {
         cancelAnimationFrame(resizeFrameRef.current);
