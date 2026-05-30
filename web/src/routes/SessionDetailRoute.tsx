@@ -892,17 +892,21 @@ function TerminalOutput({
     term.loadAddon(fit);
     term.open(container);
 
-    // Forward keyboard input to WebSocket, skip during IME composition
-    term.onData((data) => {
-      if (!isComposingRef.current) {
-        onSendInput(data);
-      }
-    });
+    // Disable GBoard/soft keyboard predictive text and composition wrapping
+    // by switching the hidden textarea to type="password". This is a known
+    // workaround for Android Chrome input corruption (xtermjs/xterm.js#2403).
+    if (term.textarea) {
+      term.textarea.setAttribute("type", "password");
+      term.textarea.setAttribute("autocomplete", "off");
+      term.textarea.setAttribute("autocorrect", "off");
+      term.textarea.setAttribute("autocapitalize", "none");
+      term.textarea.setAttribute("spellcheck", "false");
+    }
 
-    const onCompositionStart = () => { isComposingRef.current = true; };
-    const onCompositionEnd = () => { isComposingRef.current = false; };
-    container.addEventListener("compositionstart", onCompositionStart);
-    container.addEventListener("compositionend", onCompositionEnd);
+    // Forward keyboard input to WebSocket
+    term.onData((data) => {
+      onSendInput(data);
+    });
 
     // Prevent soft keyboard from popping up after touch scroll
     let touchStartY = 0;
@@ -1024,8 +1028,6 @@ function TerminalOutput({
     ro.observe(container);
 
     return () => {
-      container.removeEventListener("compositionstart", onCompositionStart);
-      container.removeEventListener("compositionend", onCompositionEnd);
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchend", onTouchEnd);
       ro.disconnect();
