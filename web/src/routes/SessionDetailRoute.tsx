@@ -892,11 +892,11 @@ function TerminalOutput({
     term.loadAddon(fit);
     term.open(container);
 
-    // Disable GBoard/soft keyboard predictive text and composition wrapping
-    // by switching the hidden textarea to type="password". This is a known
-    // workaround for Android Chrome input corruption (xtermjs/xterm.js#2403).
+    // Suppress predictive text, autocorrect, and composition wrapping on
+    // mobile keyboards without using type="password" (which breaks input on
+    // iOS Safari and triggers unwanted password-manager prompts).
     if (term.textarea) {
-      term.textarea.setAttribute("type", "password");
+      term.textarea.setAttribute("inputmode", "none");
       term.textarea.setAttribute("autocomplete", "off");
       term.textarea.setAttribute("autocorrect", "off");
       term.textarea.setAttribute("autocapitalize", "none");

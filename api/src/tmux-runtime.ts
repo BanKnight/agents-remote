@@ -69,7 +69,7 @@ export class TmuxRuntime implements RuntimeResources {
 
   async capture(tmuxSessionName: string) {
     const [pane, cursor] = await Promise.all([
-      runTmux(["capture-pane", "-p", "-e", "-t", tmuxSessionName]),
+      runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]),
       runTmux(["display-message", "-p", "-t", tmuxSessionName, "#{cursor_x} #{cursor_y}"]),
     ]);
 
