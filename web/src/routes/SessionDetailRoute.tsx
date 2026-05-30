@@ -896,7 +896,6 @@ function TerminalOutput({
     // mobile keyboards without using type="password" (which breaks input on
     // iOS Safari and triggers unwanted password-manager prompts).
     if (term.textarea) {
-      term.textarea.setAttribute("inputmode", "none");
       term.textarea.setAttribute("autocomplete", "off");
       term.textarea.setAttribute("autocorrect", "off");
       term.textarea.setAttribute("autocapitalize", "none");
