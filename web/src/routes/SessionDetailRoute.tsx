@@ -10,6 +10,7 @@ import type {
 } from "@agents-remote/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -104,6 +105,7 @@ function SessionDetail({
   );
   const [input, setInput] = useState("");
   const [detailView, setDetailView] = useState<DetailView>("terminal");
+  const [inputDrawerCollapsed, setInputDrawerCollapsed] = useState(false);
 
   const detail = useQuery<SessionDetailResponse>({
     queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
@@ -363,7 +365,7 @@ function SessionDetail({
           />
 
           <div
-            className={`flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden p-2 sm:p-3 ${shellSurfaceClasses.runtimeBody}`}
+            className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${terminalViewVisible ? "gap-0 p-0" : "gap-2 p-2 sm:p-3"} ${shellSurfaceClasses.runtimeBody}`}
           >
             {detail.error instanceof Error ? (
               <Notice tone="danger">{detail.error.message}</Notice>
@@ -391,9 +393,11 @@ function SessionDetail({
           {terminalViewVisible ? (
             <SessionInputDrawer
               canSend={canSend}
+              collapsed={inputDrawerCollapsed}
               input={input}
               quickKeys={quickKeys}
               sessionType={sessionType}
+              onCollapsedChange={setInputDrawerCollapsed}
               onInputChange={setInput}
               onQuickKey={sendQuickKey}
               onSubmit={handleInputSubmit}
@@ -570,63 +574,177 @@ function SessionDetailHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {sessionType === "agent" ? (
-            <AgentDetailTools
-              createTerminalPending={createTerminalPending}
-              detailView={detailView}
-              onCreateTerminal={onCreateTerminal}
-              onViewChange={onViewChange}
-            />
-          ) : null}
-          {_connectionStatus === "error" ? (
-            <ActionButton tone="accent" onClick={_onReconnect}>
-              Retry
-            </ActionButton>
-          ) : null}
-          <ActionButton disabled={closePending} tone="danger" onClick={onClose}>
-            {closePending ? "Closing..." : "Close"}
-          </ActionButton>
-          {createTerminalError instanceof Error ? (
-            <p className="w-full text-xs leading-5 text-rose-200">{createTerminalError.message}</p>
-          ) : null}
-        </div>
+        <SessionDetailActionsMenu
+          closePending={closePending}
+          connectionStatus={_connectionStatus}
+          createTerminalError={createTerminalError}
+          createTerminalPending={createTerminalPending}
+          detailView={detailView}
+          sessionType={sessionType}
+          onClose={onClose}
+          onCreateTerminal={onCreateTerminal}
+          onReconnect={_onReconnect}
+          onViewChange={onViewChange}
+        />
       </div>
     </header>
   );
 }
 
-type AgentDetailToolsProps = {
+type SessionDetailActionsMenuProps = {
+  closePending: boolean;
+  connectionStatus: StreamConnectionStatus;
+  createTerminalError: Error | null;
   createTerminalPending: boolean;
   detailView: DetailView;
+  sessionType: SessionType;
+  onClose: () => void;
   onCreateTerminal: () => void;
+  onReconnect: () => void;
   onViewChange: (view: DetailView) => void;
 };
 
-function AgentDetailTools({
+function SessionDetailActionsMenu({
+  closePending,
+  connectionStatus,
+  createTerminalError,
   createTerminalPending,
   detailView,
+  onClose,
   onCreateTerminal,
+  onReconnect,
   onViewChange,
-}: AgentDetailToolsProps) {
+  sessionType,
+}: SessionDetailActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  const selectView = (view: DetailView) => {
+    onViewChange(view);
+    setOpen(false);
+  };
+
+  const createTerminal = () => {
+    onCreateTerminal();
+    setOpen(false);
+  };
+
+  const close = () => {
+    onClose();
+    setOpen(false);
+  };
+
+  const reconnect = () => {
+    onReconnect();
+    setOpen(false);
+  };
+
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5" aria-label="Agent detail tools">
-      <ActionButton
-        tone={detailView === "files" ? "accent" : "default"}
-        onClick={() => onViewChange("files")}
+    <div ref={menuRef} className="relative shrink-0">
+      <button
+        className={`inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs font-bold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Session actions"
+        onClick={() => setOpen((value) => !value)}
       >
-        Files
-      </ActionButton>
-      <ActionButton
-        tone={detailView === "git" ? "accent" : "default"}
-        onClick={() => onViewChange("git")}
-      >
-        Git
-      </ActionButton>
-      <ActionButton disabled={createTerminalPending} tone="accent" onClick={onCreateTerminal}>
-        {createTerminalPending ? "+T..." : "+T"}
-      </ActionButton>
+        <MoreVertical className="h-4 w-4" aria-hidden="true" />
+        <span className="hidden sm:inline">Actions</span>
+      </button>
+      {open ? (
+        <div
+          className={`absolute right-0 top-11 z-20 grid w-48 gap-1 rounded-2xl p-2 shadow-2xl shadow-black/40 ${shellSurfaceClasses.header}`}
+          role="menu"
+        >
+          {sessionType === "agent" ? (
+            <>
+              <ActionMenuItem
+                active={detailView === "files"}
+                marker="FL"
+                onClick={() => selectView("files")}
+              >
+                Files
+              </ActionMenuItem>
+              <ActionMenuItem active={detailView === "git"} marker="GT" onClick={() => selectView("git")}>
+                Git
+              </ActionMenuItem>
+              <ActionMenuItem disabled={createTerminalPending} marker="T" onClick={createTerminal}>
+                {createTerminalPending ? "Creating Terminal..." : "Terminal"}
+              </ActionMenuItem>
+            </>
+          ) : null}
+          {connectionStatus === "error" ? (
+            <ActionMenuItem marker="↺" onClick={reconnect}>
+              Retry
+            </ActionMenuItem>
+          ) : null}
+          <ActionMenuItem danger marker="✕" disabled={closePending} onClick={close}>
+            {closePending ? "Closing..." : "Close"}
+          </ActionMenuItem>
+          {createTerminalError instanceof Error ? (
+            <p className="px-2 py-1 text-xs leading-5 text-rose-200">
+              {createTerminalError.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+type ActionMenuItemProps = {
+  active?: boolean;
+  children: string;
+  danger?: boolean;
+  disabled?: boolean;
+  marker?: string;
+  onClick: () => void;
+};
+
+function ActionMenuItem({
+  active = false,
+  children,
+  danger = false,
+  disabled = false,
+  marker,
+  onClick,
+}: ActionMenuItemProps) {
+  const toneClass = danger
+    ? "text-rose-100 hover:bg-rose-300/10"
+    : active
+      ? "bg-cyan-300/10 text-cyan-100"
+      : "text-slate-200 hover:bg-slate-800/70";
+
+  const markerTone = danger ? "danger" : active ? "accent" : "default";
+
+  return (
+    <button
+      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${toneClass}`}
+      disabled={disabled}
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+    >
+      {marker && <IconMarker size="sm" tone={markerTone}>{marker}</IconMarker>}
+      {children}
+    </button>
   );
 }
 
@@ -671,7 +789,6 @@ function DetailWorkspace({
       sessionType={sessionType}
       terminalDataRef={terminalDataRef}
       terminalWriteRef={terminalWriteRef}
-      title={title}
       onResize={onResize}
       onSendInput={onSendInput}
     />
@@ -685,7 +802,6 @@ type TerminalOutputProps = {
     ((type: "snapshot" | "output", data: string) => void) | null
   >;
   terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
-  title: string;
   onSendInput: (data: string) => void;
   onResize: (cols: number, rows: number) => boolean;
 };
@@ -695,7 +811,6 @@ function TerminalOutput({
   sessionType,
   terminalDataRef,
   terminalWriteRef,
-  title,
   onSendInput,
   onResize,
 }: TerminalOutputProps) {
@@ -895,24 +1010,10 @@ function TerminalOutput({
   }, [onSendInput, onResize]);
 
   return (
-    <section
-      className={`relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[1.25rem] ${shellSurfaceClasses.code}`}
-    >
-      <div
-        className={`flex min-w-0 items-center justify-between gap-3 px-3 py-2.5 ${shellSurfaceClasses.terminalTitlebar}`}
-      >
-        <div className="flex shrink-0 items-center gap-1.5" aria-hidden="true">
-          <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-        </div>
-        <div className="min-w-0 flex-1 truncate text-center font-mono text-[0.72rem] text-slate-300 sm:text-xs">
-          {title} · {sessionType === "agent" ? "agent runtime" : "terminal shell"}
-        </div>
-      </div>
+    <section className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={containerRef}
-        className="min-h-0 min-w-0 overflow-hidden p-2 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
+        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
       />
       {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
     </section>
@@ -926,29 +1027,39 @@ type TerminalOverlayState = {
 };
 
 function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
-  const toneClasses = {
+  const pillToneClasses = {
     accent: "border-cyan-300/25 bg-cyan-300/10 text-cyan-100 shadow-cyan-950/20",
     danger: "border-rose-300/30 bg-rose-400/10 text-rose-100 shadow-rose-950/20",
     muted: "border-slate-600/40 bg-slate-950/60 text-slate-300 shadow-black/20",
   } satisfies Record<TerminalOverlayState["tone"], string>;
 
+  if (overlay.animated) {
+    return (
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/70 backdrop-blur-sm">
+        <TerminalStatusSpinner size="lg" />
+        <span className="text-xs font-semibold tracking-wide text-cyan-200">{overlay.title}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="pointer-events-none absolute inset-x-3 top-14 z-10 flex justify-center">
       <div
-        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur-md ${toneClasses[overlay.tone]}`}
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur-md ${pillToneClasses[overlay.tone]}`}
       >
-        {overlay.animated ? <TerminalStatusSpinner /> : null}
         <span>{overlay.title}</span>
       </div>
     </div>
   );
 }
 
-function TerminalStatusSpinner() {
+function TerminalStatusSpinner({ size = "sm" }: { size?: "sm" | "lg" }) {
+  const sizeClass = size === "lg" ? "h-8 w-8" : "h-2.5 w-2.5";
+  const dotClass = size === "lg" ? "h-8 w-8" : "h-2.5 w-2.5";
   return (
-    <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-200" />
+    <span className={`relative flex ${sizeClass}`} aria-hidden="true">
+      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60`} />
+      <span className={`relative inline-flex ${dotClass} rounded-full bg-cyan-200`} />
     </span>
   );
 }
@@ -1170,9 +1281,11 @@ function ContextualState({ children, tone = "default" }: ContextualStateProps) {
 
 type SessionInputDrawerProps = {
   canSend: boolean;
+  collapsed: boolean;
   input: string;
   quickKeys: SessionQuickKey[];
   sessionType: SessionType;
+  onCollapsedChange: (collapsed: boolean) => void;
   onInputChange: (value: string) => void;
   onQuickKey: (quickKey: SessionQuickKey) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1180,9 +1293,11 @@ type SessionInputDrawerProps = {
 
 function SessionInputDrawer({
   canSend,
+  collapsed,
   input,
   quickKeys,
   sessionType,
+  onCollapsedChange,
   onInputChange,
   onQuickKey,
   onSubmit,
@@ -1192,30 +1307,49 @@ function SessionInputDrawer({
       className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
     >
       <form className="grid gap-1.5" onSubmit={onSubmit}>
-        <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
-        <div
-          className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
-        >
-          <span className="shrink-0 font-mono text-xs text-slate-500">$</span>
-          <label className="sr-only" htmlFor="session-input">
-            Send input
-          </label>
-          <input
-            className="min-w-0 flex-1 bg-transparent font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!canSend}
-            id="session-input"
-            placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
-            value={input}
-            onChange={(e) => onInputChange(e.target.value)}
-          />
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
+          </div>
           <button
-            className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={!canSend || input.trim().length === 0}
-            type="submit"
+            className={`inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand input drawer" : "Collapse input drawer"}
+            onClick={() => onCollapsedChange(!collapsed)}
           >
-            ⏎
+            {collapsed ? (
+              <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
         </div>
+        {!collapsed ? (
+          <div
+            className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
+          >
+            <span className="shrink-0 font-mono text-xs text-slate-500">$</span>
+            <label className="sr-only" htmlFor="session-input">
+              Send input
+            </label>
+            <input
+              className="min-w-0 flex-1 bg-transparent font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canSend}
+              id="session-input"
+              placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
+              value={input}
+              onChange={(e) => onInputChange(e.target.value)}
+            />
+            <button
+              className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canSend || input.trim().length === 0}
+              type="submit"
+            >
+              ⏎
+            </button>
+          </div>
+        ) : null}
       </form>
     </section>
   );

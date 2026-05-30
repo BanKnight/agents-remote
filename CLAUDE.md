@@ -18,6 +18,7 @@
 
 - @.workflow/AGENTS.md
 - @docs/AGENTS.md
+- @docs/project.md
 
 必须读取并遵循：
 1. `.workflow/AGENTS.md` 负责运行态、流程态与变更工作区治理。
