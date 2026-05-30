@@ -977,6 +977,14 @@ function TerminalOutput({
       enqueueWrite(async () => {
         term.reset();
         await write(data);
+        // Re-fit after snapshot to ensure scrollback is correctly calculated
+        requestAnimationFrame(() => {
+          try {
+            fit.fit();
+          } catch {
+            // ignore during teardown
+          }
+        });
       });
     };
 
