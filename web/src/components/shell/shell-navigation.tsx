@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
@@ -116,16 +116,19 @@ type ShellMobileBottomNavigationProps = {
   ariaLabel: string;
   children: ReactNode;
   columns: 4 | 5;
+  ref?: Ref<HTMLElement>;
 };
 
 export function ShellMobileBottomNavigation({
   ariaLabel,
   children,
   columns,
+  ref,
 }: ShellMobileBottomNavigationProps) {
   return (
     <nav
-      className={`fixed inset-x-0 bottom-0 z-20 min-h-[calc(var(--shell-mobile-bottom-nav-height)+env(safe-area-inset-bottom))] px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 lg:hidden ${shellSurfaceClasses.bottomNav}`}
+      ref={ref}
+      className={`fixed inset-x-0 bottom-0 z-20 px-2 pb-2 pt-2 lg:hidden ${shellSurfaceClasses.bottomNav}`}
       aria-label={ariaLabel}
     >
       <div
@@ -218,14 +221,16 @@ export function PrimaryShellNavigation({
 type PrimaryShellBottomNavigationProps = {
   activeItemId: string;
   items: ShellNavigationItem[];
+  ref?: Ref<HTMLElement>;
 };
 
 export function PrimaryShellBottomNavigation({
   activeItemId,
   items,
+  ref,
 }: PrimaryShellBottomNavigationProps) {
   return (
-    <ShellMobileBottomNavigation ariaLabel="Primary mobile navigation" columns={4}>
+    <ShellMobileBottomNavigation ref={ref} ariaLabel="Primary mobile navigation" columns={4}>
       {items.map((item) =>
         item.to ? (
           <Link key={item.id} className="min-w-0 cursor-pointer" to={item.to}>
@@ -305,15 +310,21 @@ type ProjectShellBottomNavigationProps = {
   activeItemId: ProjectShellNavigationItem["id"];
   items: ProjectShellNavigationItem[];
   onSelectItem: (itemId: ProjectShellNavigationItem["id"]) => void;
+  ref?: Ref<HTMLElement>;
 };
 
 export function ProjectShellBottomNavigation({
   activeItemId,
   items,
   onSelectItem,
+  ref,
 }: ProjectShellBottomNavigationProps) {
   return (
-    <ShellMobileBottomNavigation ariaLabel="Project mobile workspace navigation" columns={5}>
+    <ShellMobileBottomNavigation
+      ref={ref}
+      ariaLabel="Project mobile workspace navigation"
+      columns={5}
+    >
       <Link className="min-w-0 cursor-pointer" to="/">
         <ShellMobileNavItemContent
           interactive

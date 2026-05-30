@@ -55,7 +55,7 @@ agents-remote/
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度、tmux/CLI adapter 和执行稳定性。
 - Project 模块统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；Files、Git、Terminal 和 Agent 等下游能力必须复用 Project-safe 解析。
 - 当前 Files/Git inspection 是只读能力；Agent/Terminal Session 是真实运行态能力；二者在 UI 中都属于 Project Console 的辅助工作区。
-- 第一轮 PWA 只承诺静态 manifest/icons/meta 和 standalone 外壳；离线缓存、通知和 service worker lifecycle 以后续设计为准。
+- PWA 提供 manifest/icons/meta、standalone 外壳、应用内安装入口和 service worker 静态安装资源缓存；service worker 不缓存导航 HTML、不拦截 `/api`，避免 installed PWA 卡旧页面或伪造离线数据。
 - 当前没有独立数据库模型；Project identity 来自 `PROJECTS_ROOT` 下一级目录，session runtime metadata 存在 runtime dir 边界内。
 
 ## 容易犯错的边界

@@ -1,4 +1,5 @@
-import type { ComponentProps, ReactNode } from "react";
+import { cloneElement, isValidElement, useLayoutEffect, useRef, useState } from "react";
+import type { ComponentProps, CSSProperties, ReactElement, ReactNode, Ref } from "react";
 
 import { cn } from "../../lib/utils";
 import { Card } from "../ui/card";
@@ -7,15 +8,15 @@ import { shellSurfaceClasses } from "./shell-primitives";
 type ShellLayoutVariant = "home" | "project";
 
 const shellMainClasses: Record<ShellLayoutVariant, string> = {
-  home: "h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem]",
+  home: "relative h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100",
   project:
-    "h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100 [--shell-mobile-bottom-nav-height:4.5rem]",
+    "relative h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100",
 };
 
 const shellGridClasses: Record<ShellLayoutVariant, string> = {
-  home: "grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full min-w-0 overflow-hidden lg:h-dvh lg:grid-cols-[13.75rem_minmax(0,1fr)]",
+  home: "grid h-full min-h-0 w-full min-w-0 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[13.75rem_minmax(0,1fr)] lg:p-0",
   project:
-    "grid h-[calc(100dvh-var(--shell-mobile-bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 w-full min-w-0 overflow-hidden lg:h-dvh lg:grid-cols-[13.125rem_minmax(0,1fr)]",
+    "grid h-full min-h-0 w-full min-w-0 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[13.125rem_minmax(0,1fr)] lg:p-0",
 };
 
 const shellHeaderClasses: Record<ShellLayoutVariant, string> = {
@@ -36,14 +37,43 @@ type ShellLayoutProps = {
   variant: ShellLayoutVariant;
 };
 
+type BottomNavigationElement = ReactElement<{ ref?: Ref<HTMLElement> }>;
+
 export function ShellLayout({ bottomNavigation, children, sidebar, variant }: ShellLayoutProps) {
+  const bottomNavigationRef = useRef<HTMLElement>(null);
+  const [bottomNavigationHeight, setBottomNavigationHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const element = bottomNavigationRef.current;
+
+    if (!element) {
+      setBottomNavigationHeight(0);
+      return;
+    }
+
+    const updateHeight = () => setBottomNavigationHeight(element.getBoundingClientRect().height);
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element, { box: "border-box" });
+
+    return () => observer.disconnect();
+  }, [bottomNavigation]);
+
+  const measuredBottomNavigation = isValidElement(bottomNavigation)
+    ? cloneElement(bottomNavigation as BottomNavigationElement, { ref: bottomNavigationRef })
+    : bottomNavigation;
+
   return (
-    <main className={shellMainClasses[variant]}>
+    <main
+      className={shellMainClasses[variant]}
+      style={{ "--shell-mobile-bottom-nav-space": `${bottomNavigationHeight}px` } as CSSProperties}
+    >
       <div className={`${shellGridClasses[variant]} ${shellSurfaceClasses.shell}`}>
         {sidebar}
         <div className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden">{children}</div>
       </div>
-      {bottomNavigation}
+      {measuredBottomNavigation}
     </main>
   );
 }
@@ -80,9 +110,15 @@ export function ShellPanel({
   ...props
 }: ShellPanelProps) {
   const densityClass =
-    density === "compact" ? "p-3 py-3 sm:p-4 sm:py-4" : "p-4 py-4 sm:p-5 sm:py-5 lg:p-6 lg:py-6";
+    density === "compact"
+      ? docked
+        ? "px-3 pt-3 sm:px-4 sm:pt-4"
+        : "p-3 py-3 sm:p-4 sm:py-4"
+      : docked
+        ? "px-4 pt-4 sm:px-5 sm:pt-5 lg:px-6 lg:pt-6"
+        : "p-4 py-4 sm:p-5 sm:py-5 lg:p-6 lg:py-6";
   const dockedClass = docked
-    ? "min-h-0 flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 overflow-y-auto"
+    ? "min-h-0 flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0"
     : "";
   const size = density === "compact" ? "sm" : "default";
 

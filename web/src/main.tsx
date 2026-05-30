@@ -22,3 +22,30 @@ createRoot(root).render(
     </QueryClientProvider>
   </StrictMode>,
 );
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    const registrationPromise = navigator.serviceWorker.register?.("/service-worker.js", {
+      updateViaCache: "none",
+    });
+
+    if (!registrationPromise) {
+      return;
+    }
+
+    void registrationPromise
+      .then((registration) => {
+        let refreshing = false;
+
+        navigator.serviceWorker.addEventListener?.("controllerchange", () => {
+          if (!refreshing && registration.active) {
+            refreshing = true;
+            window.location.reload();
+          }
+        });
+
+        void registration?.update?.();
+      })
+      .catch(() => undefined);
+  });
+}

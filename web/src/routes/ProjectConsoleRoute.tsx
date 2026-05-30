@@ -12,7 +12,7 @@ import type {
 } from "@agents-remote/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   closeAgentSession,
@@ -299,9 +299,18 @@ function ProjectSecondaryNav({
   );
 }
 
-function ProjectSecondaryBottomNav({ activeSection, onSelectSection }: ProjectSecondaryNavProps) {
+type ProjectSecondaryBottomNavProps = ProjectSecondaryNavProps & {
+  ref?: Ref<HTMLElement>;
+};
+
+function ProjectSecondaryBottomNav({
+  activeSection,
+  onSelectSection,
+  ref,
+}: ProjectSecondaryBottomNavProps) {
   return (
     <ProjectShellBottomNavigation
+      ref={ref}
       activeItemId={activeSection}
       items={projectNavigationItems(activeSection)}
       onSelectItem={onSelectSection}
@@ -423,7 +432,7 @@ function AgentPanel({
   onClose,
 }: AgentPanelProps) {
   return (
-    <ShellPanel className="px-3.5 pb-4 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
+    <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
       <div className="grid grid-cols-2 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
         <CreateButton disabled={isCreating} tone="accent" onClick={() => onCreate("claude")}>
           + Claude
@@ -646,7 +655,7 @@ function TerminalPanel({
   onClose,
 }: TerminalPanelProps) {
   return (
-    <ShellPanel className="px-3.5 pb-4 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
+    <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
       <div className="grid gap-2 sm:hidden" aria-label="Create Terminal instance mobile">
         <CreateButton disabled={isCreating} tone="accent" onClick={onCreate}>
           {isCreating ? "Creating..." : "+ Terminal"}
@@ -898,16 +907,23 @@ type MobileDetailHeaderProps = {
 };
 
 function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  const getMatches = () => window.matchMedia?.(query).matches ?? false;
+  const [matches, setMatches] = useState(getMatches);
 
   useEffect(() => {
-    const media = window.matchMedia(query);
+    const media = window.matchMedia?.(query);
+
+    if (!media) {
+      setMatches(false);
+      return;
+    }
+
     const handleChange = () => setMatches(media.matches);
 
     handleChange();
-    media.addEventListener("change", handleChange);
+    media.addEventListener?.("change", handleChange);
 
-    return () => media.removeEventListener("change", handleChange);
+    return () => media.removeEventListener?.("change", handleChange);
   }, [query]);
 
   return matches;

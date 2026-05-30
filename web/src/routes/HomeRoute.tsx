@@ -1,7 +1,7 @@
 import type { Project } from "@agents-remote/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, type ReactNode, type Ref, useId, useState } from "react";
 import { createProject, listProjects } from "../api/client";
 import { defaultConsoleSection } from "./console-model";
 import {
@@ -148,8 +148,8 @@ function PrimaryNav() {
   );
 }
 
-function PrimaryBottomNav() {
-  return <PrimaryShellBottomNavigation activeItemId="projects" items={primaryNavItems} />;
+function PrimaryBottomNav({ ref }: { ref?: Ref<HTMLElement> }) {
+  return <PrimaryShellBottomNavigation ref={ref} activeItemId="projects" items={primaryNavItems} />;
 }
 
 type ProjectListCardProps = {
@@ -161,7 +161,7 @@ type ProjectListCardProps = {
 
 function ProjectListCard({ error, isLoading, onCreateProject, projects }: ProjectListCardProps) {
   return (
-    <ShellPanel className="px-4 pb-5 pt-0 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
+    <ShellPanel className="px-4 pt-0 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
       {isLoading ? <StatusPanel label="Loading Projects..." /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (

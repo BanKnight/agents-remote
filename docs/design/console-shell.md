@@ -26,7 +26,7 @@
 - Agent/Terminal 区域展示真实 session 数据、创建入口、空状态和错误状态；不要用 mock session 填充工作区。
 - Project 工作区不常驻 shell-level 底部 runtime input；真实输入、快捷键、重连恢复和发送状态归属于具体 Agent/Terminal Session detail。
 - 桌面端复用同一产品逻辑，只扩展导航和信息密度；不要为 PC 端创建独立产品路径。
-- 第一轮 PWA 外壳使用静态 manifest、icons 和 HTML meta/link；不注册 service worker，不承诺离线能力。
+- PWA 外壳使用 manifest、icons、HTML meta/link、应用内安装入口和 service worker 静态安装资源缓存；service worker 不缓存导航 HTML、不拦截 `/api`，避免 installed PWA 卡旧页面或伪造离线数据。
 
 ## 关键规则
 
@@ -38,13 +38,13 @@
 - Project 工作区不渲染固定底部 runtime input panel，也不要通过 CSS 隐藏真实输入面板来满足移动布局；输入控制必须进入 Session detail 后出现。
 - 登录后页面应采用动态视口高度、`min-w-0`、长文本截断/换行和局部滚动区域来避免页面级横向溢出；不能只依赖全局隐藏 overflow 掩盖不可达内容。
 - `docs/design/prototype.png` 只作为暗色移动端控制台气质、密度和层级参考；最终用户可见术语必须映射到 Project、Agent Sessions、Terminal、Files、Git 等项目领域概念。
-- PWA manifest 至少包含应用名、short name、start URL、standalone display、theme/background color、192 和 512 PNG icons。
+- PWA manifest 至少包含应用名、short name、start URL、standalone display、theme/background color、192 和 512 PNG icons；service worker 只缓存静态安装资源和构建静态资产，明确跳过导航 HTML 与 `/api`。
 
 ## 不适用场景
 
 - 不定义真实 Agent/Terminal session lifecycle 或 WebSocket stream 协议；Project 工作区只提供创建、列表和进入 detail 的入口。
 - 不定义 Files/Git 写操作行为。
-- 不覆盖离线缓存、service worker 更新策略、push notification 或系统通知。
+- 不覆盖离线业务数据缓存、service worker 更新提示策略、push notification 或系统通知。
 - 不替代后续品牌、图标体系或精细动效设计。
 
 ## 来源

@@ -4,8 +4,8 @@
 
 ## Purpose
 
-- 定义 Web/PWA 控制台外壳在第一轮必须提供的安装能力、深色移动端优先体验和响应式可用性。
-- 确保 PWA 外壳服务于远程可达和随时可观察，而不是提前承诺离线、通知或完整 service worker lifecycle。
+- 定义 Web/PWA 控制台外壳必须提供的安装能力、深色移动端优先体验和响应式可用性。
+- 确保 PWA 外壳服务于远程可达和随时可观察，同时将 service worker 缓存限制在静态安装资源，不伪造远程 API/runtime 数据。
 
 ## Requirements
 
@@ -96,6 +96,22 @@
 - **THEN** 系统 SHALL 优先遵循文本文档、澄清意图、安全边界和部署约束
 - **AND** 冲突应在设计或实现前被显式提出，而不是自行猜测
 
+### Requirement: PWA service worker preserves install assets only
+
+系统 SHALL 注册 PWA service worker 来缓存 manifest、icons 和构建静态资产等安装资源，但不得缓存导航 HTML，也不得缓存或伪造需要实时认证、Project、Agent、Terminal、Files 或 Git 数据的 API 响应。
+
+#### Scenario: Browser installs or revisits the PWA
+
+- **WHEN** 支持 service worker 的浏览器加载控制台
+- **THEN** 系统注册同源 service worker
+- **AND** service worker 缓存 manifest、图标和构建静态资产等安装资源
+
+#### Scenario: User reopens an installed PWA after a frontend update
+
+- **WHEN** 已安装 PWA 的用户重新打开控制台
+- **THEN** 导航 HTML 优先从网络获取，避免继续展示旧 shell 或旧 CSS
+- **AND** 需要 `/api` 的认证、Project 列表、runtime stream、Files 或 Git 数据不被 service worker 用缓存伪造为可用
+
 ### Requirement: Notifications are deferred from the first shell slice
 
 系统 SHALL 不把系统通知作为第一轮 PWA shell 的必备行为；第一轮优先保证用户打开网页或 PWA 后能快速观察运行中和等待输入的会话。
@@ -108,8 +124,9 @@
 
 ## Notes
 
-- 第一轮 PWA shell 已验证采用静态 manifest、icons 和 HTML meta/link，不注册 service worker，不承诺离线能力。
-- 后续如需离线缓存、安装提示、更新提示或 push notification，应单独设计缓存、认证和实时数据边界。
+- PWA shell 提供 manifest、icons、HTML meta/link、应用内安装入口和 service worker 静态安装资源缓存。
+- service worker 不缓存导航 HTML，只缓存静态安装资源和构建静态资产，不拦截 `/api` 响应，也不承诺离线 Project/Agent/Terminal/Files/Git 数据能力。
+- 后续如需更新提示、后台同步或 push notification，应单独设计缓存、认证和实时数据边界。
 - 移动端 shell 已验证采用 Project 主路径优先、低频 Create/Adopt Project 次级入口、动态视口高度和页面级横向不溢出基线。
 
 ## 来源

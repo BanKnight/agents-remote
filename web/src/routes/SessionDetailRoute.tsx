@@ -329,7 +329,7 @@ function SessionDetail({
   return (
     <main className="h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100">
       <div
-        className={`grid h-full min-h-0 w-full min-w-0 overflow-hidden sm:h-dvh lg:grid-cols-[13.125rem_minmax(0,1fr)] ${shellSurfaceClasses.shell}`}
+        className={`grid h-dvh min-h-0 w-full min-w-0 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[13.125rem_minmax(0,1fr)] lg:pt-0 ${shellSurfaceClasses.shell}`}
       >
         <SessionDetailSidebar
           detailView={detailView}
@@ -756,8 +756,8 @@ function TerminalOutput({
         brightWhite: "#f1f5f9",
       },
       fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
-      fontSize: 13,
-      lineHeight: 1.5,
+      fontSize: 12,
+      lineHeight: 1.35,
       cursorBlink: true,
       allowTransparency: true,
       scrollback: 5000,
@@ -1189,7 +1189,7 @@ function SessionInputDrawer({
 }: SessionInputDrawerProps) {
   return (
     <section
-      className={`min-w-0 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
+      className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
     >
       <form className="grid gap-1.5" onSubmit={onSubmit}>
         <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
