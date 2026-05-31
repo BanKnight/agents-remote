@@ -807,22 +807,40 @@ function DetailWorkspace({
   terminalWriteRef,
   title: _title,
 }: DetailWorkspaceProps) {
-  if (sessionType === "agent" && detailView === "files") {
-    return <ContextualFilesPanel projectName={projectName} onReturnToStream={onReturnToStream} />;
-  }
-
-  if (sessionType === "agent" && detailView === "git") {
-    return <ContextualGitPanel projectName={projectName} onReturnToStream={onReturnToStream} />;
-  }
+  const showFiles = sessionType === "agent" && detailView === "files";
+  const showGit = sessionType === "agent" && detailView === "git";
 
   return (
-    <TerminalOutput
-      connectionStatus={connectionStatus}
-      terminalDataRef={terminalDataRef}
-      terminalWriteRef={terminalWriteRef}
-      onResize={onResize}
-      onSendInput={onSendInput}
-    />
+    <div className="relative min-h-0 flex-1 flex flex-col">
+      <TerminalOutput
+        connectionStatus={connectionStatus}
+        terminalDataRef={terminalDataRef}
+        terminalWriteRef={terminalWriteRef}
+        onResize={onResize}
+        onSendInput={onSendInput}
+      />
+      {showFiles ? (
+        <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-700/60 px-4 py-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+                Agent context
+              </p>
+              <h2 className="mt-0.5 text-lg font-semibold text-slate-100">Files</h2>
+            </div>
+            <ActionButton tone="accent" onClick={onReturnToStream}>
+              Back to stream
+            </ActionButton>
+          </div>
+          <div className="min-h-0 flex-1">
+            <FilesPanel initialPath="" projectName={projectName} queryScope="agent-context" />
+          </div>
+        </div>
+      ) : null}
+      {showGit ? (
+        <ContextualGitPanel projectName={projectName} onReturnToStream={onReturnToStream} />
+      ) : null}
+    </div>
   );
 }
 
@@ -1316,29 +1334,6 @@ type ContextualPanelProps = {
   projectName: string;
   onReturnToStream: () => void;
 };
-
-function ContextualFilesPanel({ projectName, onReturnToStream }: ContextualPanelProps) {
-  return (
-    <section
-      className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}
-    >
-      <ContextualPanelHeader
-        eyebrow="Agent context"
-        title="Files"
-        description="Read-only Project files opened from this Agent detail."
-        onReturnToStream={onReturnToStream}
-      />
-      <div className="mt-3 min-h-0 flex-1">
-        <FilesPanel
-          enablePreview={false}
-          initialPath=""
-          projectName={projectName}
-          queryScope="agent-context"
-        />
-      </div>
-    </section>
-  );
-}
 
 function ContextualGitPanel({ projectName, onReturnToStream }: ContextualPanelProps) {
   const diff = useQuery({
