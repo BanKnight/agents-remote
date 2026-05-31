@@ -1027,16 +1027,15 @@ function TerminalOutput({
 
     const writeSnapshot = (data: string) => {
       enqueueWrite(async () => {
+        // Fit before writing so the cursor position sequence in the snapshot
+        // is interpreted against the correct terminal dimensions.
+        try {
+          fit.fit();
+        } catch {
+          // ignore during teardown
+        }
         term.reset();
         await write(data);
-        // Re-fit after snapshot to ensure scrollback is correctly calculated
-        requestAnimationFrame(() => {
-          try {
-            fit.fit();
-          } catch {
-            // ignore during teardown
-          }
-        });
       });
     };
 
