@@ -910,7 +910,7 @@ function XtermOutput({
       allowTransparency: true,
       scrollback: 5000,
       scrollOnUserInput: false,
-      smoothScrollDuration: 100,
+      smoothScrollDuration: 0,
       convertEol: true,
       customGlyphs: true,
       rescaleOverlappingGlyphs: true,
@@ -1081,11 +1081,12 @@ function XtermOutput({
       enqueueWrite(() => write(pending.data));
     }
 
-    // ResizeObserver can fire in response to xterm DOM writes, so coalesce it
-    // into one animation-frame fit and only notify tmux when rows/cols change.
+    // ResizeObserver can fire in response to xterm DOM writes — only schedule
+    // one fit per animation frame so the terminal adapts smoothly during resize
+    // transitions instead of waiting until the transition completes.
     const ro = new ResizeObserver(() => {
       if (resizeFrameRef.current !== null) {
-        cancelAnimationFrame(resizeFrameRef.current);
+        return;
       }
 
       resizeFrameRef.current = requestAnimationFrame(() => {
