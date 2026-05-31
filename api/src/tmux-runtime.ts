@@ -69,7 +69,10 @@ export class TmuxRuntime implements RuntimeResources {
 
   async capture(tmuxSessionName: string) {
     // Capture up to 5000 lines of scrollback so the user sees history on reconnect.
-    const pane = await runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]);
+    const [pane, cursorInfo] = await Promise.all([
+      runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]),
+      runTmux(["display-message", "-t", tmuxSessionName, "-p", "#{cursor_x}"]),
+    ]);
 
     if (pane.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", pane.stderr);
@@ -77,7 +80,23 @@ export class TmuxRuntime implements RuntimeResources {
 
     // capture-pane outputs bare LF. xterm treats \n as line-feed only (moves y,
     // does not reset x), so convert to CRLF so each line starts at column 0.
-    return trimTrailingBlankLines(pane.stdout).replace(/\r?\n/g, "\r\n");
+    const text = trimTrailingBlankLines(pane.stdout).replace(/\r?\n/g, "\r\n");
+
+    // capture-pane text does not include the readline cursor placeholder space.
+    // Pad the last line to the actual cursor column so the terminal cursor
+    // renders at the correct position on reconnect.
+    const cursorX = parseInt(cursorInfo.stdout.trim(), 10);
+    if (!isNaN(cursorX)) {
+      const lastLineStart = text.lastIndexOf("\r\n");
+      const lastLine = lastLineStart === -1 ? text : text.slice(lastLineStart + 2);
+      // Strip ANSI to measure visible length of last line
+      const visibleLen = lastLine.replace(/\[[^a-zA-Z]*[a-zA-Z]/g, "").length;
+      if (cursorX > visibleLen) {
+        return text + " ".repeat(cursorX - visibleLen);
+      }
+    }
+
+    return text;
   }
 
   async stream(

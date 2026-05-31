@@ -1334,7 +1334,12 @@ function GhosttyOutput({
         // background is "transparent" that means rgba(0,0,0,0), turning the
         // canvas black. RIS is processed by the WASM state machine and only
         // clears the buffer; the renderer repaints correctly on the next frame.
-        term.write("\x1bc" + data);
+        term.write("\x1bc" + data, () => {
+          // Re-fit after snapshot so cursor renders at the correct column.
+          // The canvas may not have settled to its final size when the snapshot
+          // arrives, causing the cursor to appear one cell left of the prompt.
+          fit?.fit();
+        });
         term.scrollToBottom();
       };
 
