@@ -1,7 +1,6 @@
 import type {
   AgentSession,
   GitDiffFileSummary,
-  ProjectFileEntry,
   SessionStreamClientMessage,
   SessionStreamServerMessage,
   SessionType,
@@ -23,7 +22,6 @@ import {
   createTerminalSession,
   getAgentSession,
   getTerminalSession,
-  listProjectFiles,
   listProjectGitDiff,
   sessionStreamUrl,
 } from "../api/client";
@@ -41,6 +39,7 @@ import {
   StatusPill,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
+import { FilesPanel } from "../components/files/file-browser";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -1319,14 +1318,6 @@ type ContextualPanelProps = {
 };
 
 function ContextualFilesPanel({ projectName, onReturnToStream }: ContextualPanelProps) {
-  const [currentPath, setCurrentPath] = useState("");
-  const files = useQuery({
-    queryKey: ["projects", projectName, "agent-context", "files", currentPath],
-    queryFn: () => listProjectFiles(projectName, currentPath),
-  });
-  const parentPath = files.data?.parentPath ?? parentProjectPath(currentPath);
-  const entries = files.data?.entries ?? [];
-
   return (
     <section
       className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}
@@ -1334,75 +1325,18 @@ function ContextualFilesPanel({ projectName, onReturnToStream }: ContextualPanel
       <ContextualPanelHeader
         eyebrow="Agent context"
         title="Files"
-        description="Read-only Project files opened from this Agent detail. Resource-page polish stays in the inspection change."
+        description="Read-only Project files opened from this Agent detail."
         onReturnToStream={onReturnToStream}
       />
-      <div
-        className={`mt-3 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}
-      >
-        <p className="min-w-0 flex-1 truncate font-mono text-sm text-slate-200">
-          {currentPath.length > 0 ? currentPath : "/"}
-        </p>
-        <ActionButton onClick={() => setCurrentPath("")}>Root</ActionButton>
-        <ActionButton
-          disabled={parentPath === null}
-          onClick={() => parentPath !== null && setCurrentPath(parentPath)}
-        >
-          Up
-        </ActionButton>
-        <ActionButton tone="accent" onClick={() => void files.refetch()}>
-          Retry
-        </ActionButton>
-      </div>
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        {files.isLoading ? <ContextualState>Loading files...</ContextualState> : null}
-        {files.error instanceof Error ? (
-          <ContextualState tone="danger">{files.error.message}</ContextualState>
-        ) : null}
-        {!files.isLoading && !files.error && entries.length === 0 ? (
-          <ContextualState>This Project path has no files or folders.</ContextualState>
-        ) : null}
-        <div className="grid gap-1.5" aria-label="Agent contextual files">
-          {entries.map((entry) => (
-            <FileContextRow
-              key={`${entry.type}:${entry.path}`}
-              entry={entry}
-              onOpenDirectory={setCurrentPath}
-            />
-          ))}
-        </div>
+      <div className="mt-3 min-h-0 flex-1">
+        <FilesPanel
+          enablePreview={false}
+          initialPath=""
+          projectName={projectName}
+          queryScope="agent-context"
+        />
       </div>
     </section>
-  );
-}
-
-type FileContextRowProps = {
-  entry: ProjectFileEntry;
-  onOpenDirectory: (path: string) => void;
-};
-
-function FileContextRow({ entry, onOpenDirectory }: FileContextRowProps) {
-  const directory = entry.type === "directory";
-
-  return (
-    <button
-      className={`min-w-0 rounded-2xl px-3 py-2.5 text-left transition enabled:hover:border-slate-600 disabled:cursor-default disabled:opacity-80 ${shellSurfaceClasses.raised}`}
-      disabled={!directory}
-      type="button"
-      onClick={() => directory && onOpenDirectory(entry.path)}
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <IconMarker tone={directory ? "accent" : "muted"}>{directory ? "DR" : "FL"}</IconMarker>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-semibold text-slate-100">{entry.name}</span>
-          <span className="mt-0.5 block truncate text-xs text-slate-500">
-            {directory ? "Open directory" : `${formatBytes(entry.size ?? 0)} · read-only`}
-            {entry.hidden ? " · hidden" : ""}
-          </span>
-        </span>
-        <StatusPill tone="muted" value={directory ? "Open" : "File"} />
-      </span>
-    </button>
   );
 }
 
@@ -1641,28 +1575,6 @@ function Notice({ children, tone = "default" }: NoticeProps) {
 function providerMarker(provider: AgentSession["provider"] | undefined) {
   return provider === "codex" ? "CX" : "CL";
 }
-
-const parentProjectPath = (path: string) => {
-  if (path.length === 0) {
-    return null;
-  }
-
-  const parts = path.split("/").filter(Boolean);
-  parts.pop();
-  return parts.length === 0 ? "" : parts.join("/");
-};
-
-const formatBytes = (bytes: number) => {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
 
 const scopeLabel = (scope: GitDiffFileSummary["scope"]) =>
   scope === "staged" ? "Staged" : "Worktree";
