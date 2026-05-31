@@ -1459,7 +1459,7 @@ function SessionInputDrawer({
               disabled={!canSend}
               id="session-input"
               placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
-              rows={1}
+              rows={3}
               spellCheck={false}
               style={{ maxHeight: "calc(3 * 1.35em)" }}
               value={input}
