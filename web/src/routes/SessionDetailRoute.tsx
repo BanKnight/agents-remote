@@ -14,6 +14,7 @@ import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import {
   closeAgentSession,
@@ -922,6 +923,15 @@ function XtermOutput({
 
     const fit = new FitAddon();
     term.loadAddon(fit);
+
+    // Use WebGL renderer for smoother scrolling on mobile. Falls back to the
+    // DOM renderer if WebGL is unavailable.
+    try {
+      term.loadAddon(new WebglAddon());
+    } catch {
+      // WebGL not available, DOM renderer is fine
+    }
+
     term.open(container);
 
     // Suppress predictive text, autocorrect, and composition wrapping on
@@ -1141,7 +1151,7 @@ function XtermOutput({
     <section className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={containerRef}
-        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport]:touch-pan-y"
+        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport]:[-webkit-overflow-scrolling:touch] [&_.xterm-viewport]:overscroll-behavior-y-contain [&_.xterm-viewport]:touch-pan-y"
       />
       {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
     </section>
