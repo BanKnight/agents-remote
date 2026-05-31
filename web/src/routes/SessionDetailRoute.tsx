@@ -851,6 +851,7 @@ function XtermOutput({
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
+  const fittingRef = useRef(false);
   const initialFitFramesRef = useRef<number[]>([]);
   const initialFitTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const writeQueueRef = useRef(Promise.resolve());
@@ -1083,18 +1084,28 @@ function XtermOutput({
 
     // ResizeObserver can fire in response to xterm DOM writes, so coalesce it
     // into one animation-frame fit that only runs after the resize transition
-    // ends. Fitting on every frame during a resize is too expensive.
+    // ends. Ignore RO callbacks triggered by fit() itself to avoid multi-frame
+    // loops where each fit triggers a new RO callback.
     const ro = new ResizeObserver(() => {
+      if (fittingRef.current) {
+        return;
+      }
+
       if (resizeFrameRef.current !== null) {
         cancelAnimationFrame(resizeFrameRef.current);
       }
 
       resizeFrameRef.current = requestAnimationFrame(() => {
         resizeFrameRef.current = null;
+        fittingRef.current = true;
         try {
           fitAndNotifyResize();
         } catch {
           // ignore during teardown
+        } finally {
+          requestAnimationFrame(() => {
+            fittingRef.current = false;
+          });
         }
       });
     });
