@@ -1533,6 +1533,31 @@ function SessionInputDrawer({
   onQuickKey,
   onSubmit,
 }: SessionInputDrawerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [rows, setRows] = useState(1);
+  const prevInputRef = useRef(input);
+
+  // Auto-grow textarea rows (1-3) as content changes. Reset on clear so the
+  // next keystroke starts at 1 row instead of jumping back to 3.
+  useEffect(() => {
+    if (input.length === 0) {
+      setRows(1);
+      return;
+    }
+    // Only measure when input text changes, not on every render
+    if (input === prevInputRef.current) return;
+    prevInputRef.current = input;
+
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    // Temporarily shrink to 1 row so scrollHeight reflects the true content
+    // height, then clamp to [1, 3].
+    textarea.rows = 1;
+    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || textarea.clientHeight;
+    const needed = Math.ceil(textarea.scrollHeight / lineHeight);
+    setRows(Math.min(Math.max(needed, 1), 3));
+  }, [input]);
+
   return (
     <section
       className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
@@ -1558,13 +1583,16 @@ function SessionInputDrawer({
         </div>
         {!collapsed ? (
           <div
-            className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
+            className={`flex min-w-0 items-start gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
           >
-            <span className="shrink-0 font-mono text-xs text-slate-500">$</span>
+            <span className="shrink-0 font-mono text-xs leading-[1.35] text-slate-500 pt-px">
+              $
+            </span>
             <label className="sr-only" htmlFor="session-input">
               Send input
             </label>
             <textarea
+              ref={textareaRef}
               autoCapitalize="none"
               autoComplete="off"
               autoCorrect="off"
@@ -1572,17 +1600,10 @@ function SessionInputDrawer({
               disabled={!canSend}
               id="session-input"
               placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
-              rows={3}
+              rows={rows}
               spellCheck={false}
-              style={{ maxHeight: "calc(3 * 1.35em)" }}
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  e.currentTarget.form?.requestSubmit();
-                }
-              }}
             />
             <button
               className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"

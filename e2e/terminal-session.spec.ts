@@ -37,7 +37,7 @@ test("authenticated user can create and interact with a Terminal Session", async
   });
 
   await page.getByLabel("Send input").fill('printf "e2e-terminal-baseline-ok\\n"');
-  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "⏎" }).click();
 
   // Input clears after send
   await expect(page.getByLabel("Send input")).toHaveValue("", { timeout: 10_000 });
