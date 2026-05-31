@@ -902,6 +902,55 @@ function TerminalOutput({
       term.textarea.setAttribute("spellcheck", "false");
     }
 
+    // xterm 6.0.0 bug (xtermjs/xterm.js#5887): _inputEvent gates insertText on
+    // (!ev.composed || !_keyDownSeen). Third-party IMEs on iOS (Gboard, Sogou…)
+    // report keyCode=229 for every keystroke, keeping _keyDownSeen=true, so
+    // composed input events are silently dropped after the first character.
+    //
+    // Fix: patch _core._inputEvent to emit when composed+_keyDownSeen but not
+    // in a real CJK composition. Also patch _compositionHelper._handleAnyTextareaChanges
+    // to suppress the duplicate send that CompositionHelper.keydown schedules via
+    // setTimeout for the same keyCode=229 path.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const core = (term as any)._core;
+    if (core?._inputEvent) {
+      const origInputEvent = core._inputEvent.bind(core);
+      core._inputEvent = function (ev: InputEvent) {
+        if (
+          ev.data &&
+          ev.inputType === "insertText" &&
+          ev.composed &&
+          core._keyDownSeen &&
+          !core._compositionHelper?._isComposing &&
+          !core._compositionHelper?._isSendingComposition
+        ) {
+          if (!core._keyPressHandled) {
+            core._unprocessedDeadKey = false;
+            core.coreService.triggerDataEvent(ev.data, true);
+            core.cancel(ev);
+            return true;
+          }
+          return false;
+        }
+        return origInputEvent(ev);
+      };
+    }
+
+    // Suppress the duplicate send from CompositionHelper._handleAnyTextareaChanges.
+    // That method is called by CompositionHelper.keydown for keyCode=229 and uses
+    // setTimeout(0) to diff the textarea value — but our _inputEvent patch already
+    // sent the character, so we skip _handleAnyTextareaChanges when not composing.
+    const helper = core?._compositionHelper;
+    if (helper?._handleAnyTextareaChanges) {
+      const origHandleChanges = helper._handleAnyTextareaChanges.bind(helper);
+      helper._handleAnyTextareaChanges = function () {
+        if (!helper._isComposing && !helper._isSendingComposition) {
+          return;
+        }
+        return origHandleChanges();
+      };
+    }
+
     // Forward keyboard input to WebSocket
     term.onData((data) => {
       onSendInput(data);
