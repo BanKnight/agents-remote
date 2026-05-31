@@ -832,7 +832,7 @@ function DetailWorkspace({
               Back to stream
             </ActionButton>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 flex flex-col">
             <FilesPanel initialPath="" projectName={projectName} queryScope="agent-context" />
           </div>
         </div>
