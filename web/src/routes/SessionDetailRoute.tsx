@@ -1002,51 +1002,103 @@ function XtermOutput({
     // the document level, which blocks native browser scroll. The custom
     // scrollbar (SmoothScrollableElement) only handles mouse wheel events,
     // not touch gesture events — so touch scroll is a dead path in v6.
-    // Workaround: track touch deltas and drive term.scrollLines() manually.
-    // We stop propagation of touchmove to prevent the Gesture singleton from
-    // calling preventDefault(), while letting touchstart/touchend through so
-    // tap-to-focus still works.
+    // Workaround: track touch deltas and drive term.scrollLines() manually,
+    // with inertia after release. Scrolling follows the traditional direction:
+    // swipe up → scroll up (older content), swipe down → scroll down (newer).
+    const LINE_HEIGHT_PX = 16.2; // fontSize 12 × lineHeight 1.35
     let touchStartY = 0;
     let touchStartX = 0;
     let touchScrollAccum = 0;
     let touchIsScroll = false;
-    const LINE_HEIGHT_PX = 16.2; // fontSize 12 × lineHeight 1.35
+    let touchVelocities: number[] = [];
+    let touchLastY = 0;
+    let touchLastT = 0;
+    let inertiaFrame: number | null = null;
+
+    const stopInertia = () => {
+      if (inertiaFrame !== null) {
+        cancelAnimationFrame(inertiaFrame);
+        inertiaFrame = null;
+      }
+    };
+
+    const applyScroll = (px: number) => {
+      touchScrollAccum += px;
+      const lines = Math.trunc(touchScrollAccum / LINE_HEIGHT_PX);
+      if (lines !== 0) {
+        term.scrollLines(lines);
+        touchScrollAccum -= lines * LINE_HEIGHT_PX;
+      }
+    };
+
+    const startInertia = (velocityPxMs: number) => {
+      stopInertia();
+      const FRICTION = 0.004; // px/ms² deceleration
+      let speed = Math.abs(velocityPxMs);
+      if (speed < 0.05) return;
+      const sign = velocityPxMs > 0 ? 1 : -1;
+      let lastT = performance.now();
+
+      const tick = () => {
+        const now = performance.now();
+        const dt = now - lastT;
+        lastT = now;
+        speed -= FRICTION * dt;
+        if (speed <= 0) {
+          inertiaFrame = null;
+          return;
+        }
+        const px = sign * speed * dt;
+        applyScroll(px);
+        inertiaFrame = requestAnimationFrame(tick);
+      };
+      inertiaFrame = requestAnimationFrame(tick);
+    };
+
     const onTouchStart = (e: TouchEvent) => {
+      stopInertia();
       touchStartY = e.touches[0]?.clientY ?? 0;
       touchStartX = e.touches[0]?.clientX ?? 0;
       touchScrollAccum = 0;
       touchIsScroll = false;
+      touchVelocities = [];
+      touchLastY = touchStartY;
+      touchLastT = performance.now();
     };
+
     const onTouchMove = (e: TouchEvent) => {
       const currentY = e.touches[0]?.clientY ?? 0;
       const currentX = e.touches[0]?.clientX ?? 0;
+      const now = performance.now();
       const deltaX = Math.abs(currentX - touchStartX);
-      const rawDeltaY = touchStartY - currentY;
-      touchScrollAccum += rawDeltaY;
-      if (!touchIsScroll && (Math.abs(rawDeltaY) > 6 || deltaX > 6)) {
+      const dy = currentY - touchLastY; // positive = finger moved down
+      const dt = now - touchLastT;
+      if (!touchIsScroll && (Math.abs(dy) > 6 || deltaX > 6)) {
         touchIsScroll = true;
       }
       if (touchIsScroll) {
-        const lines = Math.trunc(touchScrollAccum / LINE_HEIGHT_PX);
-        if (lines !== 0) {
-          term.scrollLines(lines);
-          touchScrollAccum -= lines * LINE_HEIGHT_PX;
+        applyScroll(dy);
+        if (dt > 0) {
+          touchVelocities.push(dy / dt);
+          if (touchVelocities.length > 5) touchVelocities.shift();
         }
-        // Stop the xterm.js Gesture from calling preventDefault() on the
-        // document-level listener, which would kill native scroll on any
-        // ancestor. We also preventDefault here so the browser doesn't
-        // start its own native scroll on a parent that has overflow.
         e.preventDefault();
         e.stopPropagation();
       }
-      touchStartY = currentY;
-      touchStartX = currentX;
+      touchLastY = currentY;
+      touchLastT = now;
     };
+
     const onTouchEnd = (_e: TouchEvent) => {
       if (touchIsScroll) {
         term.blur();
+        if (touchVelocities.length > 0) {
+          const avgV = touchVelocities.reduce((a, b) => a + b, 0) / touchVelocities.length;
+          startInertia(avgV);
+        }
       }
     };
+
     container.addEventListener("touchstart", onTouchStart, { passive: true });
     container.addEventListener("touchmove", onTouchMove, { passive: false });
     container.addEventListener("touchend", onTouchEnd, { passive: true });
