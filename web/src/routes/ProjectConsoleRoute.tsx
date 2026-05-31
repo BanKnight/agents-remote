@@ -438,14 +438,14 @@ function AgentPanel({
           disabled={isCreating}
           tone="accent"
           onClick={() => onCreate("claude")}
-          className="py-3 sm:py-1.5"
+          className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
           + Claude
         </CreateButton>
         <CreateButton
           disabled={isCreating}
           onClick={() => onCreate("codex")}
-          className="py-3 sm:py-1.5"
+          className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
           + Codex
         </CreateButton>
@@ -670,7 +670,7 @@ function TerminalPanel({
           disabled={isCreating}
           tone="accent"
           onClick={onCreate}
-          className="py-3 sm:py-1.5"
+          className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
           {isCreating ? "Creating..." : "+ Terminal"}
         </CreateButton>
