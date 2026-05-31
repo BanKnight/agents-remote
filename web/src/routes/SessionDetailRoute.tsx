@@ -16,11 +16,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
-  init as initGhostty,
-  Terminal as GhosttyTerminal,
-  FitAddon as GhosttyFitAddon,
-} from "ghostty-web";
-import {
   closeAgentSession,
   closeTerminalSession,
   createTerminalSession,
@@ -43,9 +38,6 @@ import {
   StatusPill,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
-
-// Lazy singleton — resolved once, reused by all GhosttyOutput instances.
-const ghosttyReady: Promise<void> = initGhostty();
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -102,7 +94,6 @@ function SessionDetail({
   const socketRef = useRef<WebSocket | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const reconnectAttemptsRef = useRef(0);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<StreamConnectionStatus>("connecting");
   // Only shown for unrecoverable failures (protocol error, session ended)
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -186,17 +177,33 @@ function SessionDetail({
     },
   });
 
+  // Each mount (or reconnect) bumps this so stale-socket events are ignored.
+  const connGeneration = useRef(0);
+
   useEffect(() => {
+    const generation = ++connGeneration.current;
+
     setConnectionStatus("connecting");
     setFatalError(null);
     reconnectAttemptsRef.current = 0;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let initialTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const socketIsCurrent = () => connGeneration.current === generation;
 
     const connect = () => {
-      const socket = new WebSocket(sessionStreamUrl(projectName, sessionType, sessionId));
+      if (!socketIsCurrent()) return;
+
+      socket = new WebSocket(sessionStreamUrl(projectName, sessionType, sessionId));
       socketRef.current = socket;
-      let closedByEffect = false;
+
+      socket.onopen = () => {
+        if (!socketIsCurrent()) return;
+      };
 
       socket.onmessage = (event) => {
+        if (!socketIsCurrent()) return;
         const message = parseStreamMessage(event.data);
 
         if (!message) {
@@ -238,7 +245,7 @@ function SessionDetail({
       };
 
       const scheduleReconnect = () => {
-        if (closedByEffect) return;
+        if (!socketIsCurrent()) return;
         const MAX_ATTEMPTS = 8;
         const attempt = reconnectAttemptsRef.current;
         if (attempt >= MAX_ATTEMPTS) {
@@ -248,41 +255,48 @@ function SessionDetail({
         }
         reconnectAttemptsRef.current += 1;
         setConnectionStatus("connecting");
-        // Exponential backoff: 1s, 2s, 4s, 8s, capped at 10s
         const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
-        reconnectTimerRef.current = setTimeout(() => {
-          if (!closedByEffect) connect();
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connect();
         }, delay);
       };
 
       socket.onerror = () => {
-        // onerror is always followed by onclose; handle reconnect there
+        if (!socketIsCurrent()) return;
       };
 
-      socket.onclose = () => {
-        if (closedByEffect) return;
+      socket.onclose = (_e: CloseEvent) => {
+        if (!socketIsCurrent()) return;
         setConnectionStatus((status) => {
           if (status === "ended" || status === "error") return status;
           return "connecting";
         });
         scheduleReconnect();
       };
-
-      return () => {
-        closedByEffect = true;
-        if (reconnectTimerRef.current) {
-          clearTimeout(reconnectTimerRef.current);
-          reconnectTimerRef.current = null;
-        }
-        socket.close();
-        if (socketRef.current === socket) {
-          socketRef.current = null;
-        }
-      };
     };
 
-    const cleanup = connect();
-    return cleanup;
+    // Defer by 0 so StrictMode's synchronous mount→unmount→remount only
+    // creates one WebSocket instead of two rapid-fire connections that mobile
+    // browsers / tunnels may reject.
+    initialTimer = setTimeout(connect, 0);
+
+    return () => {
+      connGeneration.current += 1;
+      if (initialTimer) {
+        clearTimeout(initialTimer);
+        initialTimer = null;
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (socket) {
+        socket.close();
+        socket = null;
+        socketRef.current = null;
+      }
+    };
   }, [projectName, reconnectKey, sessionId, sessionType]);
 
   const sendMessage = (message: SessionStreamClientMessage) => {
@@ -802,7 +816,6 @@ function DetailWorkspace({
   return (
     <TerminalOutput
       connectionStatus={connectionStatus}
-      sessionType={sessionType}
       terminalDataRef={terminalDataRef}
       terminalWriteRef={terminalWriteRef}
       onResize={onResize}
@@ -811,9 +824,8 @@ function DetailWorkspace({
   );
 }
 
-type TerminalOutputProps = {
+type TerminalCoreProps = {
   connectionStatus: StreamConnectionStatus;
-  sessionType: SessionType;
   terminalWriteRef: React.MutableRefObject<
     ((type: "snapshot" | "output", data: string) => void) | null
   >;
@@ -822,37 +834,9 @@ type TerminalOutputProps = {
   onResize: (cols: number, rows: number) => boolean;
 };
 
-function TerminalOutput({
-  connectionStatus,
-  sessionType,
-  terminalDataRef,
-  terminalWriteRef,
-  onSendInput,
-  onResize,
-}: TerminalOutputProps) {
-  if (sessionType === "terminal") {
-    return (
-      <GhosttyOutput
-        connectionStatus={connectionStatus}
-        terminalDataRef={terminalDataRef}
-        terminalWriteRef={terminalWriteRef}
-        onSendInput={onSendInput}
-        onResize={onResize}
-      />
-    );
-  }
-  return (
-    <XtermOutput
-      connectionStatus={connectionStatus}
-      terminalDataRef={terminalDataRef}
-      terminalWriteRef={terminalWriteRef}
-      onSendInput={onSendInput}
-      onResize={onResize}
-    />
-  );
+function TerminalOutput(props: TerminalCoreProps) {
+  return <XtermOutput {...props} />;
 }
-
-type TerminalCoreProps = Omit<TerminalOutputProps, "sessionType">;
 
 function XtermOutput({
   connectionStatus,
@@ -1074,14 +1058,8 @@ function XtermOutput({
 
     const writeSnapshot = (data: string) => {
       enqueueWrite(async () => {
-        // \x1bc is the VT Full Reset (RIS) sequence. Unlike term.reset() which
-        // is a JS API that does NOT clear scrollback, RIS is processed by
-        // xterm's input handler and calls _bufferService.reset(), which wipes
-        // the scrollback buffer. This is necessary because capture-pane -S -5000
-        // can produce thousands of lines; without clearing scrollback first,
-        // the buffer grows to 4000+ lines and scrollToBottom() cannot align
-        // the viewport correctly.
-        await write("\x1bc" + data);
+        // \x1b[3J clears scrollback, \x1b[H homes cursor, \x1b[2J clears screen.
+        await write("\x1b[3J\x1b[H\x1b[2J" + data);
         term.scrollToBottom();
       });
     };
@@ -1153,252 +1131,6 @@ function XtermOutput({
         ref={containerRef}
         className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport]:touch-pan-y"
       />
-      {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
-    </section>
-  );
-}
-
-function GhosttyOutput({
-  connectionStatus,
-  terminalDataRef,
-  terminalWriteRef,
-  onSendInput,
-  onResize,
-}: TerminalCoreProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  const resizeFrameRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (connectionStatus !== "connected") return;
-    const pending = pendingResizeRef.current;
-    if (!pending) return;
-    if (onResize(pending.cols, pending.rows)) {
-      lastResizeRef.current = pending;
-      pendingResizeRef.current = null;
-    }
-  }, [connectionStatus, onResize]);
-
-  const overlay = terminalOverlay(connectionStatus);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    let term: InstanceType<typeof GhosttyTerminal> | null = null;
-    let fit: InstanceType<typeof GhosttyFitAddon> | null = null;
-    let disposed = false;
-
-    ghosttyReady.then(() => {
-      if (disposed) return;
-
-      term = new GhosttyTerminal({
-        theme: {
-          background: "transparent",
-          foreground: "#d6e4f7",
-          cursor: "#7dd3fc",
-          selectionBackground: "rgba(125,211,252,0.25)",
-          black: "#0f172a",
-          brightBlack: "#334155",
-          red: "#f87171",
-          brightRed: "#fca5a5",
-          green: "#4ade80",
-          brightGreen: "#86efac",
-          yellow: "#fbbf24",
-          brightYellow: "#fde68a",
-          blue: "#60a5fa",
-          brightBlue: "#93c5fd",
-          magenta: "#c084fc",
-          brightMagenta: "#d8b4fe",
-          cyan: "#22d3ee",
-          brightCyan: "#67e8f9",
-          white: "#cbd5e1",
-          brightWhite: "#f1f5f9",
-        },
-        fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
-        fontSize: 12,
-        cursorBlink: true,
-        scrollback: 5000,
-        allowTransparency: true,
-      });
-
-      fit = new GhosttyFitAddon();
-      term.loadAddon(fit);
-      term.open(container);
-
-      // contenteditable="true" (set by ghostty-web) causes the browser to show
-      // a native text caret in the container. Hide it — ghostty draws its own.
-      container.style.caretColor = "transparent";
-      container.style.position = "relative";
-
-      if (term.textarea) {
-        term.textarea.setAttribute("autocomplete", "off");
-        term.textarea.setAttribute("autocorrect", "off");
-        term.textarea.setAttribute("autocapitalize", "none");
-        term.textarea.setAttribute("spellcheck", "false");
-      }
-
-      // IME positioning: remove clipPath so the browser uses textarea left/top,
-      // keep focus on textarea (ghostty-web focuses the container div instead),
-      // and sync textarea position to the terminal cursor each frame.
-      //
-      // During composition, make the textarea visible so the browser renders
-      // composing text inside it — this keeps the IME candidate window anchored
-      // to the textarea position instead of drifting as text accumulates.
-      if (term.textarea) {
-        term.textarea.style.clipPath = "";
-        term.textarea.style.color = "#d6e4f7";
-        term.textarea.style.background = "transparent";
-        term.textarea.style.outline = "none";
-        term.textarea.style.caretColor = "#7dd3fc";
-      }
-
-      const ensureTextareaFocus = () => {
-        if (term?.textarea && document.activeElement !== term.textarea) {
-          term.textarea.focus();
-        }
-      };
-      container.addEventListener("focus", ensureTextareaFocus);
-      ensureTextareaFocus();
-
-      if (term.textarea) {
-        term.textarea.addEventListener("compositionstart", () => {
-          const ta = term?.textarea;
-          if (!ta) return;
-          ta.style.opacity = "1";
-          ta.style.width = "auto";
-          ta.style.height = "auto";
-          ta.style.overflow = "visible";
-          ta.style.zIndex = "10";
-        });
-        term.textarea.addEventListener("compositionend", () => {
-          const ta = term?.textarea;
-          if (!ta) return;
-          ta.value = "";
-          ta.style.opacity = "0";
-          ta.style.width = "1px";
-          ta.style.height = "1px";
-          ta.style.overflow = "hidden";
-          ta.style.zIndex = "-1";
-        });
-      }
-
-      let rafId: number;
-      const pollCursor = () => {
-        if (term?.textarea && term.wasmTerm && term.renderer) {
-          const cursor = term.wasmTerm.getCursor();
-          const cw = (term.renderer as any).charWidth as number;
-          const ch = (term.renderer as any).charHeight as number;
-          if (cw && ch) {
-            term.textarea.style.left = `${cursor.x * cw}px`;
-            term.textarea.style.top = `${cursor.y * ch}px`;
-            term.textarea.style.lineHeight = `${ch}px`;
-            term.textarea.style.fontSize = `12px`;
-          }
-        }
-        rafId = requestAnimationFrame(pollCursor);
-      };
-      rafId = requestAnimationFrame(pollCursor);
-
-      term.onData((data) => onSendInput(data));
-
-      const notifyResize = () => {
-        if (!term) return;
-        const size = { cols: term.cols, rows: term.rows };
-        const previous = lastResizeRef.current;
-        if (previous?.cols === size.cols && previous.rows === size.rows) return;
-        if (onResize(size.cols, size.rows)) {
-          lastResizeRef.current = size;
-          pendingResizeRef.current = null;
-        } else {
-          pendingResizeRef.current = size;
-        }
-      };
-
-      const fitAndNotify = () => {
-        fit?.fit();
-        notifyResize();
-      };
-
-      fitAndNotify();
-      // Schedule a few retries so the canvas settles after first paint.
-      const t1 = setTimeout(fitAndNotify, 50);
-      const t2 = setTimeout(fitAndNotify, 150);
-      const t3 = setTimeout(fitAndNotify, 300);
-
-      const writeSnapshot = (data: string) => {
-        if (!term) return;
-        // Use RIS (\x1bc) instead of reset() to clear the buffer. reset() calls
-        // renderer.clear() which fills the canvas with theme.background — when
-        // background is "transparent" that means rgba(0,0,0,0), turning the
-        // canvas black. RIS is processed by the WASM state machine and only
-        // clears the buffer; the renderer repaints correctly on the next frame.
-        term.write("\x1bc" + data, () => {
-          // Re-fit after snapshot so cursor renders at the correct column.
-          // The canvas may not have settled to its final size when the snapshot
-          // arrives, causing the cursor to appear one cell left of the prompt.
-          fit?.fit();
-        });
-        term.scrollToBottom();
-      };
-
-      terminalWriteRef.current = (type, data) => {
-        if (!term) return;
-        if (type === "snapshot") {
-          writeSnapshot(data);
-        } else {
-          term.write(data);
-        }
-      };
-
-      const pending = terminalDataRef.current;
-      if (pending?.type === "snapshot") {
-        writeSnapshot(pending.data);
-      } else if (pending) {
-        term.write(pending.data);
-      }
-
-      const ro = new ResizeObserver(() => {
-        if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current);
-        resizeFrameRef.current = requestAnimationFrame(() => {
-          resizeFrameRef.current = null;
-          fitAndNotify();
-        });
-      });
-      ro.observe(container);
-
-      // Store cleanup in a closure variable so the outer cleanup can call it.
-      cleanup = () => {
-        cancelAnimationFrame(rafId);
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-        ro.disconnect();
-        if (resizeFrameRef.current !== null) {
-          cancelAnimationFrame(resizeFrameRef.current);
-          resizeFrameRef.current = null;
-        }
-        terminalWriteRef.current = null;
-        term?.dispose();
-        term = null;
-        fit = null;
-        lastResizeRef.current = null;
-      };
-    });
-
-    let cleanup: (() => void) | null = null;
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onSendInput, onResize]);
-
-  return (
-    <section className="relative min-h-0 flex-1 overflow-hidden">
-      <div ref={containerRef} className="h-full min-h-0 min-w-0 overflow-hidden" />
       {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
     </section>
   );

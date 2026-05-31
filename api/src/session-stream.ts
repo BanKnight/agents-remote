@@ -108,8 +108,16 @@ export class SessionStreamController {
       sessionType: data.sessionType,
       status: data.status,
     });
-    await this.sendSnapshot(socket, data);
-    await this.startStream(socket, data);
+    try {
+      await this.sendSnapshot(socket, data);
+    } catch (e) {
+      console.error(`[stream] sendSnapshot error ${data.sessionId}`, e);
+    }
+    try {
+      await this.startStream(socket, data);
+    } catch (e) {
+      console.error(`[stream] startStream error ${data.sessionId}`, e);
+    }
     return true;
   }
 
