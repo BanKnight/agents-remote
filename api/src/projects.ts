@@ -50,7 +50,7 @@ export class ProjectService {
       const entries = await readdir(rootPath, { withFileTypes: true });
       const projects = await Promise.all(
         entries
-          .filter((entry) => entry.isDirectory())
+          .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
           .map(async (entry) => this.projectFromName(entry.name)),
       );
 

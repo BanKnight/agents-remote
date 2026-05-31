@@ -49,31 +49,16 @@ test("session status labels distinguish waiting input", () => {
   expect(sessionStatusLabel("error")).toBe("Error");
 });
 
-test("session quick keys differ by session type and keep stable control sequences", () => {
+test("session quick keys are unified across session types and keep stable control sequences", () => {
   const agentKeys = sessionQuickKeys("agent");
   const terminalKeys = sessionQuickKeys("terminal");
 
-  expect(agentKeys.map((key) => key.id)).toEqual([
-    "interrupt",
-    "up",
-    "down",
-    "enter",
-    "escape",
-    "tab",
-  ]);
-  expect(terminalKeys.map((key) => key.id)).toEqual([
-    "interrupt",
-    "eof",
-    "escape",
-    "tab",
-    "up",
-    "down",
-    "left",
-    "right",
-  ]);
-  expect(agentKeys.find((key) => key.id === "interrupt")?.sequence).toBe("");
-  expect(terminalKeys.find((key) => key.id === "eof")?.sequence).toBe("");
-  expect(terminalKeys.find((key) => key.id === "up")?.sequence).toBe("[A");
+  const expectedIds = ["shifttab", "escape", "interrupt", "eof", "up", "down"];
+  expect(agentKeys.map((key) => key.id)).toEqual(expectedIds);
+  expect(terminalKeys.map((key) => key.id)).toEqual(expectedIds);
+  expect(agentKeys.find((key) => key.id === "shifttab")?.sequence).toBe("\x1b[Z");
+  expect(terminalKeys.find((key) => key.id === "eof")?.sequence).toBe("\x04");
+  expect(terminalKeys.find((key) => key.id === "up")?.sequence).toBe("\x1b[A");
 });
 
 test("normalizeSessionTextInput preserves non-empty content and suppresses blank sends", () => {

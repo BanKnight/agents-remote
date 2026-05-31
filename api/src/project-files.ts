@@ -63,6 +63,10 @@ export class ProjectFilesService {
             return [];
           }
 
+          if (entry.name.startsWith(".")) {
+            return [];
+          }
+
           return [this.entryFromDirent(resolved.project.path, resolved.path, entry)];
         }),
       );

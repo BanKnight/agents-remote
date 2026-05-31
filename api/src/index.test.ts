@@ -344,7 +344,6 @@ test("createFetchHandler serves Project-scoped file browsing and preview", async
 
   expect(list.status).toBe(200);
   expect(listBody.entries.map((entry: { name: string }) => entry.name)).toEqual([
-    ".config",
     "src",
     "image.png",
   ]);

@@ -1451,13 +1451,25 @@ function SessionInputDrawer({
             <label className="sr-only" htmlFor="session-input">
               Send input
             </label>
-            <input
-              className="min-w-0 flex-1 bg-transparent font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+            <textarea
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!canSend}
               id="session-input"
               placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
+              rows={1}
+              spellCheck={false}
+              style={{ maxHeight: "calc(3 * 1.35em)" }}
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
             />
             <button
               className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"

@@ -22,7 +22,7 @@ afterEach(async () => {
   await rm(outside, { recursive: true, force: true });
 });
 
-test("listFiles returns hidden entries with directories first and names sorted", async () => {
+test("listFiles excludes hidden entries and returns directories first with names sorted", async () => {
   await mkdir(join(root, "demo", "z-dir"));
   await mkdir(join(root, "demo", ".config"));
   await writeFile(join(root, "demo", "beta.txt"), "beta");
@@ -35,9 +35,7 @@ test("listFiles returns hidden entries with directories first and names sorted",
     path: "",
     parentPath: null,
     entries: [
-      { name: ".config", path: ".config", type: "directory", hidden: true, size: null },
       { name: "z-dir", path: "z-dir", type: "directory", hidden: false, size: null },
-      { name: ".env", path: ".env", type: "file", hidden: true, size: 14 },
       { name: "beta.txt", path: "beta.txt", type: "file", hidden: false, size: 4 },
     ],
   });
