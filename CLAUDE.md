@@ -13,6 +13,9 @@
 - 颜色、间距、圆角、active 宽度、safe-area、bottom navigation、surface 层级等都属于抽象契约；不要在 route 文件里为了单页观感私自散写另一套设计语言。
 - 抽象只服务于还原原型和保持真实能力边界；不得伪造数据、日志、历史、文件/Git 能力或运行态输出让 UI 看起来更完整。
 
+## 调试第三方库 Bug
+- 遇到第三方库 bug 时，正确顺序：① `tvly search` 查库的 issue → ② 找同样使用该库的开源项目参考实战解法（clone 到 `~/repos`）→ ③ 读 `node_modules` 源码验证机制 → ④ 一次性实现。不要靠猜测反复试错。
+
 <!-- WORKFLOW:GOVERNANCE:START -->
 ## 治理文档导入
 
