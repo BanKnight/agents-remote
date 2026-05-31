@@ -566,7 +566,7 @@ function SessionDetailHeader({
         <div className="flex min-w-0 items-center gap-3">
           {returnsToAgent ? (
             <Link
-              className={`inline-flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition sm:h-9 sm:w-9 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+              className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
               aria-label="Back to Agent detail"
               params={{ projectName, sessionId: sourceAgentSession }}
               search={{ workspace: defaultConsoleSection, filesPath: "" }}
@@ -576,7 +576,7 @@ function SessionDetailHeader({
             </Link>
           ) : (
             <Link
-              className={`inline-flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition sm:h-9 sm:w-9 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+              className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
               aria-label="Back to Project"
               params={{ projectName }}
               search={{ workspace: returnWorkspace, filesPath: "" }}
@@ -680,7 +680,7 @@ function SessionDetailActionsMenu({
   return (
     <div ref={menuRef} className="relative shrink-0">
       <button
-        className={`inline-flex h-14 items-center gap-2 rounded-xl border px-2.5 text-xs font-bold transition sm:h-9 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+        className={`inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs font-bold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
@@ -1430,7 +1430,7 @@ function SessionInputDrawer({
             <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
           </div>
           <button
-            className={`inline-flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full transition sm:h-8 sm:w-8 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+            className={`inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
             type="button"
             aria-expanded={!collapsed}
             aria-label={collapsed ? "Expand input drawer" : "Collapse input drawer"}

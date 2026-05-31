@@ -434,10 +434,19 @@ function AgentPanel({
   return (
     <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
       <div className="grid grid-cols-2 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
-        <CreateButton disabled={isCreating} tone="accent" onClick={() => onCreate("claude")}>
+        <CreateButton
+          disabled={isCreating}
+          tone="accent"
+          onClick={() => onCreate("claude")}
+          className="py-3 sm:py-1.5"
+        >
           + Claude
         </CreateButton>
-        <CreateButton disabled={isCreating} onClick={() => onCreate("codex")}>
+        <CreateButton
+          disabled={isCreating}
+          onClick={() => onCreate("codex")}
+          className="py-3 sm:py-1.5"
+        >
           + Codex
         </CreateButton>
       </div>
@@ -657,7 +666,12 @@ function TerminalPanel({
   return (
     <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
       <div className="grid gap-2 sm:hidden" aria-label="Create Terminal instance mobile">
-        <CreateButton disabled={isCreating} tone="accent" onClick={onCreate}>
+        <CreateButton
+          disabled={isCreating}
+          tone="accent"
+          onClick={onCreate}
+          className="py-3 sm:py-1.5"
+        >
           {isCreating ? "Creating..." : "+ Terminal"}
         </CreateButton>
       </div>
@@ -1871,14 +1885,21 @@ function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
 }
 type CreateButtonProps = {
   children: ReactNode;
+  className?: string;
   disabled: boolean;
   tone?: "accent" | "default";
   onClick: () => void;
 };
 
-function CreateButton({ children, disabled, onClick, tone = "default" }: CreateButtonProps) {
+function CreateButton({
+  children,
+  className,
+  disabled,
+  onClick,
+  tone = "default",
+}: CreateButtonProps) {
   return (
-    <ActionButton disabled={disabled} tone={tone} onClick={onClick}>
+    <ActionButton className={className} disabled={disabled} tone={tone} onClick={onClick}>
       {children}
     </ActionButton>
   );
