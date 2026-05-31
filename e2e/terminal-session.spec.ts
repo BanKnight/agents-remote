@@ -20,7 +20,11 @@ test("authenticated user can create and interact with a Terminal Session", async
     .first()
     .click();
 
-  await expect(page.getByRole("heading", { name: "Runtime stream" })).toBeVisible();
+  // Wait for the connection to establish — the "Reconnecting" overlay
+  // should disappear once the terminal is connected.
+  await expect(page.getByText("Reconnecting")).not.toBeVisible({
+    timeout: 10_000,
+  });
 
   const streamError = page.getByText("Session stream connection failed.");
   if (await streamError.isVisible({ timeout: 1_000 }).catch(() => false)) {
