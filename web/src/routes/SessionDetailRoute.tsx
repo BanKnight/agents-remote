@@ -1533,30 +1533,9 @@ function SessionInputDrawer({
   onQuickKey,
   onSubmit,
 }: SessionInputDrawerProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [rows, setRows] = useState(1);
-  const prevInputRef = useRef(input);
-
-  // Auto-grow textarea rows (1-3) as content changes. Reset on clear so the
-  // next keystroke starts at 1 row instead of jumping back to 3.
-  useEffect(() => {
-    if (input.length === 0) {
-      setRows(1);
-      return;
-    }
-    // Only measure when input text changes, not on every render
-    if (input === prevInputRef.current) return;
-    prevInputRef.current = input;
-
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    // Temporarily shrink to 1 row so scrollHeight reflects the true content
-    // height, then clamp to [1, 3].
-    textarea.rows = 1;
-    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || textarea.clientHeight;
-    const needed = Math.ceil(textarea.scrollHeight / lineHeight);
-    setRows(Math.min(Math.max(needed, 1), 3));
-  }, [input]);
+  // Auto-grow from 1 to 3 rows based on explicit newline count.
+  const newlines = (input.match(/\n/g) || []).length;
+  const rows = Math.min(newlines + 1, 3);
 
   return (
     <section
@@ -1592,7 +1571,6 @@ function SessionInputDrawer({
               Send input
             </label>
             <textarea
-              ref={textareaRef}
               autoCapitalize="none"
               autoComplete="off"
               autoCorrect="off"
