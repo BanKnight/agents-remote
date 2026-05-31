@@ -1081,12 +1081,12 @@ function XtermOutput({
       enqueueWrite(() => write(pending.data));
     }
 
-    // ResizeObserver can fire in response to xterm DOM writes — only schedule
-    // one fit per animation frame so the terminal adapts smoothly during resize
-    // transitions instead of waiting until the transition completes.
+    // ResizeObserver can fire in response to xterm DOM writes, so coalesce it
+    // into one animation-frame fit that only runs after the resize transition
+    // ends. Fitting on every frame during a resize is too expensive.
     const ro = new ResizeObserver(() => {
       if (resizeFrameRef.current !== null) {
-        return;
+        cancelAnimationFrame(resizeFrameRef.current);
       }
 
       resizeFrameRef.current = requestAnimationFrame(() => {
