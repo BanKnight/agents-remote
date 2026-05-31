@@ -998,18 +998,57 @@ function XtermOutput({
       onSendInput(data);
     });
 
-    // Prevent soft keyboard from popping up after touch scroll
+    // xterm.js 6.x Gesture class calls preventDefault() on touch events at
+    // the document level, which blocks native browser scroll. The custom
+    // scrollbar (SmoothScrollableElement) only handles mouse wheel events,
+    // not touch gesture events — so touch scroll is a dead path in v6.
+    // Workaround: track touch deltas and drive term.scrollLines() manually.
+    // We stop propagation of touchmove to prevent the Gesture singleton from
+    // calling preventDefault(), while letting touchstart/touchend through so
+    // tap-to-focus still works.
     let touchStartY = 0;
+    let touchStartX = 0;
+    let touchScrollAccum = 0;
+    let touchIsScroll = false;
+    const LINE_HEIGHT_PX = 16.2; // fontSize 12 × lineHeight 1.35
     const onTouchStart = (e: TouchEvent) => {
       touchStartY = e.touches[0]?.clientY ?? 0;
+      touchStartX = e.touches[0]?.clientX ?? 0;
+      touchScrollAccum = 0;
+      touchIsScroll = false;
     };
-    const onTouchEnd = (e: TouchEvent) => {
-      const deltaY = Math.abs((e.changedTouches[0]?.clientY ?? 0) - touchStartY);
-      if (deltaY > 8) {
+    const onTouchMove = (e: TouchEvent) => {
+      const currentY = e.touches[0]?.clientY ?? 0;
+      const currentX = e.touches[0]?.clientX ?? 0;
+      const deltaX = Math.abs(currentX - touchStartX);
+      const rawDeltaY = touchStartY - currentY;
+      touchScrollAccum += rawDeltaY;
+      if (!touchIsScroll && (Math.abs(rawDeltaY) > 6 || deltaX > 6)) {
+        touchIsScroll = true;
+      }
+      if (touchIsScroll) {
+        const lines = Math.trunc(touchScrollAccum / LINE_HEIGHT_PX);
+        if (lines !== 0) {
+          term.scrollLines(lines);
+          touchScrollAccum -= lines * LINE_HEIGHT_PX;
+        }
+        // Stop the xterm.js Gesture from calling preventDefault() on the
+        // document-level listener, which would kill native scroll on any
+        // ancestor. We also preventDefault here so the browser doesn't
+        // start its own native scroll on a parent that has overflow.
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      touchStartY = currentY;
+      touchStartX = currentX;
+    };
+    const onTouchEnd = (_e: TouchEvent) => {
+      if (touchIsScroll) {
         term.blur();
       }
     };
     container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
     container.addEventListener("touchend", onTouchEnd, { passive: true });
 
     const notifyResize = () => {
@@ -1151,7 +1190,7 @@ function XtermOutput({
     <section className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={containerRef}
-        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full [&_.xterm-screen]:touch-pan-y [&_.xterm-screen_canvas]:pointer-events-none [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport]:[-webkit-overflow-scrolling:touch] [&_.xterm-viewport]:overscroll-behavior-y-contain [&_.xterm-viewport]:touch-pan-y"
+        className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full"
       />
       {overlay ? <TerminalStatusOverlay overlay={overlay} /> : null}
     </section>
