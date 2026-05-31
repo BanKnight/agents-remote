@@ -1035,18 +1035,15 @@ function TerminalOutput({
 
     const writeSnapshot = (data: string) => {
       enqueueWrite(async () => {
-        // Fit before writing so the cursor position sequence in the snapshot
-        // is interpreted against the correct terminal dimensions.
-        try {
-          fit.fit();
-        } catch {
-          // ignore during teardown
-        }
-        term.reset();
-        await write(data);
-        // Scroll viewport to the cursor line so it is visible after reconnect.
-        const buf = term.buffer.active;
-        term.scrollToLine(buf.baseY + buf.cursorY);
+        // \x1bc is the VT Full Reset (RIS) sequence. Unlike term.reset() which
+        // is a JS API that does NOT clear scrollback, RIS is processed by
+        // xterm's input handler and calls _bufferService.reset(), which wipes
+        // the scrollback buffer. This is necessary because capture-pane -S -5000
+        // can produce thousands of lines; without clearing scrollback first,
+        // the buffer grows to 4000+ lines and scrollToBottom() cannot align
+        // the viewport correctly.
+        await write("\x1bc" + data);
+        term.scrollToBottom();
       });
     };
 

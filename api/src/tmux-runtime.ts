@@ -68,27 +68,16 @@ export class TmuxRuntime implements RuntimeResources {
   }
 
   async capture(tmuxSessionName: string) {
-    const [pane, info] = await Promise.all([
-      runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]),
-      runTmux([
-        "display-message",
-        "-p",
-        "-t",
-        tmuxSessionName,
-        "#{cursor_x} #{cursor_y} #{pane_height}",
-      ]),
-    ]);
+    // Capture up to 5000 lines of scrollback so the user sees history on reconnect.
+    const pane = await runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]);
 
     if (pane.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", pane.stderr);
     }
 
-    if (info.exitCode !== 0) {
-      throw new TmuxRuntimeError("Unable to capture terminal cursor", info.stderr);
-    }
-
-    const trimmed = trimTrailingBlankLines(pane.stdout);
-    return `${trimmed}${cursorPosition(info.stdout)}`;
+    // capture-pane outputs bare LF. xterm treats \n as line-feed only (moves y,
+    // does not reset x), so convert to CRLF so each line starts at column 0.
+    return trimTrailingBlankLines(pane.stdout).replace(/\r?\n/g, "\r\n");
   }
 
   async stream(
@@ -209,20 +198,6 @@ export class TmuxRuntimeError extends Error {
 const shellCommand = () => process.env.SHELL ?? "/bin/bash";
 
 const trimTrailingBlankLines = (pane: string) => pane.replace(/[ \t\r\n]+$/g, "");
-
-const cursorPosition = (info: string) => {
-  const [x, y, paneHeight] = info.trim().split(" ").map(Number);
-
-  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(paneHeight)) {
-    return "";
-  }
-
-  // After trimTrailingBlankLines the cursor is at the last line of the snapshot.
-  // Move up by (paneHeight - cursor_y - 1) rows, then set the column.
-  const linesUp = paneHeight - y - 1;
-  const moveUp = linesUp > 0 ? `\x1b[${linesUp}A` : "";
-  return `${moveUp}\x1b[${x + 1}G`;
-};
 
 const listen = (server: Server, socketPath: string) =>
   new Promise<void>((resolve, reject) => {
