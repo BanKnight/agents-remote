@@ -68,20 +68,27 @@ export class TmuxRuntime implements RuntimeResources {
   }
 
   async capture(tmuxSessionName: string) {
-    const [pane, cursor] = await Promise.all([
+    const [pane, info] = await Promise.all([
       runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]),
-      runTmux(["display-message", "-p", "-t", tmuxSessionName, "#{cursor_x} #{cursor_y}"]),
+      runTmux([
+        "display-message",
+        "-p",
+        "-t",
+        tmuxSessionName,
+        "#{cursor_x} #{cursor_y} #{pane_height}",
+      ]),
     ]);
 
     if (pane.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", pane.stderr);
     }
 
-    if (cursor.exitCode !== 0) {
-      throw new TmuxRuntimeError("Unable to capture terminal cursor", cursor.stderr);
+    if (info.exitCode !== 0) {
+      throw new TmuxRuntimeError("Unable to capture terminal cursor", info.stderr);
     }
 
-    return `${trimTrailingBlankLines(pane.stdout)}${cursorPosition(cursor.stdout)}`;
+    const trimmed = trimTrailingBlankLines(pane.stdout);
+    return `${trimmed}${cursorPosition(info.stdout)}`;
   }
 
   async stream(
@@ -203,14 +210,18 @@ const shellCommand = () => process.env.SHELL ?? "/bin/bash";
 
 const trimTrailingBlankLines = (pane: string) => pane.replace(/[ \t\r\n]+$/g, "");
 
-const cursorPosition = (cursor: string) => {
-  const [x, y] = cursor.trim().split(" ").map(Number);
+const cursorPosition = (info: string) => {
+  const [x, y, paneHeight] = info.trim().split(" ").map(Number);
 
-  if (!Number.isInteger(x) || !Number.isInteger(y)) {
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(paneHeight)) {
     return "";
   }
 
-  return `\x1b[${y + 1};${x + 1}H`;
+  // After trimTrailingBlankLines the cursor is at the last line of the snapshot.
+  // Move up by (paneHeight - cursor_y - 1) rows, then set the column.
+  const linesUp = paneHeight - y - 1;
+  const moveUp = linesUp > 0 ? `\x1b[${linesUp}A` : "";
+  return `${moveUp}\x1b[${x + 1}G`;
 };
 
 const listen = (server: Server, socketPath: string) =>

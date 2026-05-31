@@ -682,7 +682,11 @@ function SessionDetailActionsMenu({
               >
                 Files
               </ActionMenuItem>
-              <ActionMenuItem active={detailView === "git"} marker="GT" onClick={() => selectView("git")}>
+              <ActionMenuItem
+                active={detailView === "git"}
+                marker="GT"
+                onClick={() => selectView("git")}
+              >
                 Git
               </ActionMenuItem>
               <ActionMenuItem disabled={createTerminalPending} marker="T" onClick={createTerminal}>
@@ -742,7 +746,11 @@ function ActionMenuItem({
       role="menuitem"
       onClick={onClick}
     >
-      {marker && <IconMarker size="sm" tone={markerTone}>{marker}</IconMarker>}
+      {marker && (
+        <IconMarker size="sm" tone={markerTone}>
+          {marker}
+        </IconMarker>
+      )}
       {children}
     </button>
   );
@@ -773,7 +781,7 @@ function DetailWorkspace({
   sessionType,
   terminalDataRef,
   terminalWriteRef,
-  title,
+  title: _title,
 }: DetailWorkspaceProps) {
   if (sessionType === "agent" && detailView === "files") {
     return <ContextualFilesPanel projectName={projectName} onReturnToStream={onReturnToStream} />;
@@ -808,7 +816,7 @@ type TerminalOutputProps = {
 
 function TerminalOutput({
   connectionStatus,
-  sessionType,
+  sessionType: _sessionType,
   terminalDataRef,
   terminalWriteRef,
   onSendInput,
@@ -823,7 +831,7 @@ function TerminalOutput({
   const initialFitFramesRef = useRef<number[]>([]);
   const initialFitTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const writeQueueRef = useRef(Promise.resolve());
-  const isComposingRef = useRef(false);
+  const _isComposingRef = useRef(false);
 
   useEffect(() => {
     if (connectionStatus !== "connected") {
@@ -1036,6 +1044,9 @@ function TerminalOutput({
         }
         term.reset();
         await write(data);
+        // Scroll viewport to the cursor line so it is visible after reconnect.
+        const buf = term.buffer.active;
+        term.scrollToLine(buf.baseY + buf.cursorY);
       });
     };
 
@@ -1149,7 +1160,9 @@ function TerminalStatusSpinner({ size = "sm" }: { size?: "sm" | "lg" }) {
   const dotClass = size === "lg" ? "h-8 w-8" : "h-2.5 w-2.5";
   return (
     <span className={`relative flex ${sizeClass}`} aria-hidden="true">
-      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60`} />
+      <span
+        className={`absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60`}
+      />
       <span className={`relative inline-flex ${dotClass} rounded-full bg-cyan-200`} />
     </span>
   );

@@ -13,7 +13,7 @@ import type {
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode, Ref } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -538,7 +538,7 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
   );
 }
 
-function AgentHistoryPanel() {
+function _AgentHistoryPanel() {
   return (
     <ShellPanel
       className={`mt-4 rounded-[1.25rem] ${shellSurfaceClasses.raised}`}
@@ -829,7 +829,7 @@ type ResourceToolbarProps = {
   title: ReactNode;
 };
 
-function ResourceToolbar({ actions, eyebrow, meta, title }: ResourceToolbarProps) {
+function _ResourceToolbar({ actions, eyebrow, meta, title }: ResourceToolbarProps) {
   return (
     <div className={`min-w-0 rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.inset}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -853,7 +853,7 @@ type ResourceSplitLayoutProps = {
   list: ReactNode;
 };
 
-function ResourceSplitLayout({ detail, list }: ResourceSplitLayoutProps) {
+function _ResourceSplitLayout({ detail, list }: ResourceSplitLayoutProps) {
   return (
     <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
       {list}
@@ -1118,7 +1118,7 @@ function GitStatusHeader({
   );
 }
 
-function GitSummaryCards({ summary }: { summary: GitSummary | undefined }) {
+function _GitSummaryCards({ summary }: { summary: GitSummary | undefined }) {
   const cards = summary
     ? [
         { label: "modified", value: summary.modified, tone: "warning" as const },
@@ -1150,7 +1150,7 @@ function GitSummaryCards({ summary }: { summary: GitSummary | undefined }) {
   );
 }
 
-function GitFilterRow() {
+function _GitFilterRow() {
   return (
     <div className="flex flex-wrap gap-2">
       <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-[0.68rem] font-semibold text-cyan-100">
@@ -1802,7 +1802,7 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
   );
 }
 
-const parentProjectPath = (path: string) => {
+const _parentProjectPath = (path: string) => {
   if (path.length === 0) {
     return null;
   }

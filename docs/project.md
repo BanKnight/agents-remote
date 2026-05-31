@@ -77,6 +77,7 @@ agents-remote/
 2. 明确本次改动属于哪一层：shared 协议、api 能力、web 交互、runtime adapter、E2E/质量基线，避免跨层随手重构。
 3. 优先做最小闭环：先定义或确认行为契约，再改最少代码让该行为可运行、可观察、可测试。
 4. 每次改动后运行与改动层级匹配的最小验证；收尾前再运行必要的完整质量门禁。
+5. **每次 commit 前必须通过完整质量门禁**：`bun run format:check && bun run lint && bun run typecheck && bun run test`。lint 使用 `--deny-warnings`，0 warning 0 error 才算通过；test 必须全部 pass，不允许以"基线就有问题"为由跳过修复。
 
 ### 新增或修改跨边界 API
 
