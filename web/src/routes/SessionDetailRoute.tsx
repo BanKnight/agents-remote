@@ -1239,35 +1239,64 @@ function GhosttyOutput({
         term.textarea.setAttribute("spellcheck", "false");
       }
 
-      // IME candidate window positioning: composition events fire on the
-      // container (contenteditable div), so the browser positions the candidate
-      // window based on the Selection/Range caret inside the container.
-      // We insert a zero-size span that tracks the terminal cursor position,
-      // and on compositionstart we synchronously collapse the Selection into it
-      // so the IME window appears at the cursor — not the top-left corner.
-      const imeAnchor = document.createElement("span");
-      imeAnchor.style.position = "absolute";
-      imeAnchor.style.pointerEvents = "none";
-      imeAnchor.style.opacity = "0";
-      imeAnchor.style.fontSize = "0";
-      imeAnchor.appendChild(document.createTextNode("​")); // zero-width space
-      container.appendChild(imeAnchor);
+      // IME positioning: remove clipPath so the browser uses textarea left/top,
+      // keep focus on textarea (ghostty-web focuses the container div instead),
+      // and sync textarea position to the terminal cursor each frame.
+      //
+      // During composition, make the textarea visible so the browser renders
+      // composing text inside it — this keeps the IME candidate window anchored
+      // to the textarea position instead of drifting as text accumulates.
+      if (term.textarea) {
+        term.textarea.style.clipPath = "";
+        term.textarea.style.color = "#d6e4f7";
+        term.textarea.style.background = "transparent";
+        term.textarea.style.outline = "none";
+        term.textarea.style.caretColor = "#7dd3fc";
+      }
 
-      const updateImeAnchor = () => {
-        if (!term?.wasmTerm || !term.renderer) return;
-        const cursor = term.wasmTerm.getCursor();
-        const cw = (term.renderer as any).charWidth as number;
-        const ch = (term.renderer as any).charHeight as number;
-        if (cw && ch) {
-          imeAnchor.style.left = `${cursor.x * cw}px`;
-          imeAnchor.style.top = `${cursor.y * ch}px`;
+      const ensureTextareaFocus = () => {
+        if (term?.textarea && document.activeElement !== term.textarea) {
+          term.textarea.focus();
         }
       };
+      container.addEventListener("focus", ensureTextareaFocus);
+      ensureTextareaFocus();
 
-      // Keep imeAnchor position in sync via rAF (same cadence as ghostty render loop).
+      if (term.textarea) {
+        term.textarea.addEventListener("compositionstart", () => {
+          const ta = term?.textarea;
+          if (!ta) return;
+          ta.style.opacity = "1";
+          ta.style.width = "auto";
+          ta.style.height = "auto";
+          ta.style.overflow = "visible";
+          ta.style.zIndex = "10";
+        });
+        term.textarea.addEventListener("compositionend", () => {
+          const ta = term?.textarea;
+          if (!ta) return;
+          ta.value = "";
+          ta.style.opacity = "0";
+          ta.style.width = "1px";
+          ta.style.height = "1px";
+          ta.style.overflow = "hidden";
+          ta.style.zIndex = "-1";
+        });
+      }
+
       let rafId: number;
       const pollCursor = () => {
-        updateImeAnchor();
+        if (term?.textarea && term.wasmTerm && term.renderer) {
+          const cursor = term.wasmTerm.getCursor();
+          const cw = (term.renderer as any).charWidth as number;
+          const ch = (term.renderer as any).charHeight as number;
+          if (cw && ch) {
+            term.textarea.style.left = `${cursor.x * cw}px`;
+            term.textarea.style.top = `${cursor.y * ch}px`;
+            term.textarea.style.lineHeight = `${ch}px`;
+            term.textarea.style.fontSize = `12px`;
+          }
+        }
         rafId = requestAnimationFrame(pollCursor);
       };
       rafId = requestAnimationFrame(pollCursor);
