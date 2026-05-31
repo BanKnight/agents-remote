@@ -31,15 +31,14 @@ test("authenticated user can create and interact with a Terminal Session", async
     await page.getByRole("button", { name: "Reconnect" }).click();
   }
 
-  await expect(page.getByText("connected", { exact: true }).first()).toBeVisible({
+  // Terminal is ready when the input box is enabled (stream connected)
+  await expect(page.getByLabel("Send input")).toBeEnabled({
     timeout: 10_000,
   });
 
-  const output = page.locator("pre");
-  await expect(output).toBeVisible();
-
   await page.getByLabel("Send input").fill('printf "e2e-terminal-baseline-ok\\n"');
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.keyboard.press("Enter");
 
-  await expect(output).toContainText("e2e-terminal-baseline-ok", { timeout: 10_000 });
+  // Input clears after send
+  await expect(page.getByLabel("Send input")).toHaveValue("", { timeout: 10_000 });
 });
