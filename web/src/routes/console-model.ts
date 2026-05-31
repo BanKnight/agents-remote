@@ -1,3 +1,4 @@
+import { atom } from "jotai";
 import type {
   AgentSession,
   Project,
@@ -7,6 +8,8 @@ import type {
 } from "@agents-remote/shared";
 
 export type ConsoleSection = "agents" | "terminal" | "git" | "files";
+
+export const inputDrawerCollapsedAtom = atom(false);
 
 export type ConsoleSectionDefinition = {
   id: ConsoleSection;

@@ -12,6 +12,7 @@ import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useAtom } from "jotai";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -29,6 +30,7 @@ import {
 import {
   defaultConsoleSection,
   canSendToSession,
+  inputDrawerCollapsedAtom,
   normalizeSessionTextInput,
   sessionQuickKeys,
   type SessionQuickKey,
@@ -105,7 +107,7 @@ function SessionDetail({
   );
   const [input, setInput] = useState("");
   const [detailView, setDetailView] = useState<DetailView>("terminal");
-  const [inputDrawerCollapsed, setInputDrawerCollapsed] = useState(false);
+  const [inputDrawerCollapsed, setInputDrawerCollapsed] = useAtom(inputDrawerCollapsedAtom);
 
   const detail = useQuery<SessionDetailResponse>({
     queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
