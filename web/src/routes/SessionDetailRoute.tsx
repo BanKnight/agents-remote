@@ -1358,7 +1358,7 @@ const terminalOverlay = (
   t: (key: TranslationKey) => string,
 ): TerminalOverlayState | undefined => {
   if (status === "connecting") {
-    return { animated: true, title: t("status.running"), tone: "accent" };
+    return { animated: true, title: t("status.reconnecting"), tone: "accent" };
   }
 
   if (status === "error") {

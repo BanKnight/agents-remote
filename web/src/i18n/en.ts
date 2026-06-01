@@ -166,6 +166,7 @@ export const en = {
   // ── Session Status ───────────────────────────────────────────
   "status.waitingForInput": "Waiting for input",
   "status.running": "Running",
+  "status.reconnecting": "Reconnecting",
   "status.closed": "Closed",
   "status.error": "Error",
   "status.connected": "Connected",

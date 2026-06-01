@@ -168,6 +168,7 @@ export const zh: Record<TranslationKey, string> = {
   // ── Session Status ───────────────────────────────────────────
   "status.waitingForInput": "等待输入",
   "status.running": "运行中",
+  "status.reconnecting": "重连中",
   "status.closed": "已关闭",
   "status.error": "错误",
   "status.connected": "已连接",
