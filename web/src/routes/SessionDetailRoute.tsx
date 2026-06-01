@@ -32,10 +32,7 @@ import {
   consoleSections,
   type SessionQuickKey,
 } from "./console-model";
-import {
-  IconMarker,
-  shellSurfaceClasses,
-} from "../components/shell/shell-primitives";
+import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellLayout, ShellPanel, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { FilesPanel } from "../components/files/file-browser";
@@ -764,11 +761,7 @@ function DetailWorkspace({
       />
       {showFiles ? (
         <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
-          <ShellPanel
-            className="overflow-hidden !p-0"
-            density="compact"
-            docked
-          >
+          <ShellPanel className="overflow-hidden !p-0" density="compact" docked>
             <div className="px-4 pt-3 mb-3">
               <button
                 className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
@@ -784,11 +777,7 @@ function DetailWorkspace({
       ) : null}
       {showGit ? (
         <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
-          <ShellPanel
-            className="overflow-hidden !p-0"
-            density="compact"
-            docked
-          >
+          <ShellPanel className="overflow-hidden !p-0" density="compact" docked>
             <div className="px-4 pt-3 mb-3">
               <button
                 className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
@@ -798,11 +787,7 @@ function DetailWorkspace({
                 <span aria-hidden="true">←</span> Back to stream
               </button>
             </div>
-            <GitDiffPanel
-              projectName={projectName}
-              queryScope="agent-context"
-              showStatusHeader={false}
-            />
+            <GitDiffPanel projectName={projectName} queryScope="agent-context" />
           </ShellPanel>
         </div>
       ) : null}

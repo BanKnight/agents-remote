@@ -244,7 +244,6 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       {activeSection === "files" || activeSection === "git" ? (
         <SectionDetail
           filesPath={filesPath}
-          projectBranch={project.gitBranch}
           projectName={project.name}
           section={selectedSection}
           onDeepDetailChange={setResourceDeepDetailOpen}
@@ -768,7 +767,6 @@ type SectionDetailProps = {
   onDeepDetailChange: (open: boolean) => void;
   onFilesPathChange: (path: string) => void;
   onMobileFilePreviewChange: (open: boolean) => void;
-  projectBranch?: string;
   projectName: string;
   section: (typeof consoleSections)[number];
 };
@@ -778,7 +776,6 @@ function SectionDetail({
   onDeepDetailChange,
   onFilesPathChange,
   onMobileFilePreviewChange,
-  projectBranch,
   projectName,
   section,
 }: SectionDetailProps) {
@@ -786,17 +783,9 @@ function SectionDetail({
   const isGit = section.id === "git";
 
   return (
-    <ShellPanel
-      className="overflow-hidden !p-0"
-      density="compact"
-      docked
-    >
+    <ShellPanel className="overflow-hidden !p-0" density="compact" docked>
       {isGit ? (
-        <GitDiffPanel
-          projectBranch={projectBranch}
-          projectName={projectName}
-          onDeepDetailChange={onDeepDetailChange}
-        />
+        <GitDiffPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
       ) : null}
       {isFiles ? (
         <FilesPanel

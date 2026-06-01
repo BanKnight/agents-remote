@@ -333,11 +333,7 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
   if (preview.type === "image")
     return (
       <div className="p-3">
-        <img
-          className="mx-auto h-auto max-w-full"
-          src={preview.dataUrl}
-          alt={preview.name}
-        />
+        <img className="mx-auto h-auto max-w-full" src={preview.dataUrl} alt={preview.name} />
       </div>
     );
 
@@ -454,34 +450,33 @@ export function FilesPanel({
     </aside>
   );
 
-  const mobilePreviewTopBar =
-    isPreviewOpen ? (
-      <div
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden ${shellSurfaceClasses.runtimeBody}`}
+  const mobilePreviewTopBar = isPreviewOpen ? (
+    <div
+      className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden ${shellSurfaceClasses.runtimeBody}`}
+    >
+      <button
+        className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200"
+        type="button"
+        onClick={clearPreview}
+        aria-label="Back to files"
       >
-        <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200"
-          type="button"
-          onClick={clearPreview}
-          aria-label="Back to files"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Back
-        </button>
-        <p className="min-w-0 truncate text-center font-mono text-xs font-semibold text-slate-200">
-          {previewData?.name ?? selectedFilePath.split("/").pop() ?? ""}
-        </p>
-        <div className="shrink-0">{renderToggle ?? <span className="w-[4.5rem]" />}</div>
-      </div>
-    ) : null;
+        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M10 3L5 8l5 5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        Back
+      </button>
+      <p className="min-w-0 truncate text-center font-mono text-xs font-semibold text-slate-200">
+        {previewData?.name ?? selectedFilePath.split("/").pop() ?? ""}
+      </p>
+      <div className="shrink-0">{renderToggle ?? <span className="w-[4.5rem]" />}</div>
+    </div>
+  ) : null;
 
   const previewPanel = (
     <FilePreviewPanel

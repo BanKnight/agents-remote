@@ -4,18 +4,10 @@ import type {
   GitDiffScope,
   GitFileDiffResponse,
 } from "@agents-remote/shared";
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
-import {
-  ActionButton,
-  IconMarker,
-  ListRow,
-  StatusPill,
-  shellSurfaceClasses,
-  type ShellTone,
-} from "../shell/shell-primitives";
+import { IconMarker, ListRow, type ShellTone } from "../shell/shell-primitives";
 import { ResourceStatePanel } from "../files/file-browser";
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -61,54 +53,7 @@ const summarizeGitFiles = (files: GitDiffFileSummary[]): GitSummary =>
     { added: 0, deleted: 0, modified: 0, renamed: 0, staged: 0, worktree: 0 },
   );
 
-function useMediaQuery(query: string) {
-  const getMatches = () => window.matchMedia?.(query).matches ?? false;
-  const [matches, setMatches] = useState(getMatches);
-  useEffect(() => {
-    const media = window.matchMedia?.(query);
-    if (!media) return;
-    const handler = () => setMatches(media.matches);
-    media.addEventListener("change", handler);
-    return () => media.removeEventListener("change", handler);
-  }, [query]);
-  return matches;
-}
-
 // ── Sub-components ────────────────────────────────────────────────
-
-type GitStatusHeaderProps = {
-  fileCount?: number;
-  onRetry: () => void;
-  projectBranch?: string;
-  projectName: string;
-};
-
-function GitStatusHeader({ fileCount, onRetry, projectBranch, projectName }: GitStatusHeaderProps) {
-  return (
-    <div className={`min-w-0 rounded-2xl p-3 sm:p-4 ${shellSurfaceClasses.inset}`}>
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-            Project / {projectName} / Git
-          </p>
-          <p className="mt-1 text-lg font-semibold text-slate-100 sm:text-[1.35rem]">Git status</p>
-          <p className="mt-1 text-sm text-slate-400">
-            Worktree and staged changes are shown for inspection only.
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <StatusPill
-            tone="muted"
-            value={`${projectBranch ?? "main"} · ${fileCount ?? 0} changed · read-only`}
-          />
-          <ActionButton tone="accent" onClick={onRetry}>
-            Retry
-          </ActionButton>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 type SelectedGitFile = { path: string; scope: GitDiffScope };
 
@@ -145,14 +90,8 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
               </IconMarker>
             }
             selected={selected}
-            subtitle={
-              file.previousPath
-                ? `from ${file.previousPath}`
-                : undefined
-            }
-            title={
-              <span className="font-mono text-[0.82rem]">{file.path}</span>
-            }
+            subtitle={file.previousPath ? `from ${file.previousPath}` : undefined}
+            title={<span className="font-mono text-[0.82rem]">{file.path}</span>}
             onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
           />
         );
@@ -168,25 +107,42 @@ type GitFileDiffPanelProps = {
 };
 
 function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps) {
-  if (isLoading) return <ResourceStatePanel tone="inset" message="Loading diff..." />;
+  if (isLoading)
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+        <span className="relative flex h-3 w-3" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+        </span>
+        <span className="text-xs font-semibold text-slate-400">Loading diff...</span>
+      </div>
+    );
   if (error)
     return (
-      <ResourceStatePanel tone="danger" title="Unable to open this diff." message={error.message} />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <ResourceStatePanel
+          tone="danger"
+          title="Unable to open this diff."
+          message={error.message}
+        />
+      </div>
     );
   if (!fileDiff)
     return (
-      <ResourceStatePanel
-        title="Select a changed file"
-        message="Unified diff output is shown read-only."
-      />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <ResourceStatePanel
+          title="Select a changed file"
+          message="Unified diff output is shown read-only."
+        />
+      </div>
     );
 
   return (
     <section
-      className={`grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl ${shellSurfaceClasses.raised}`}
+      className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/70"
       aria-label="Git file diff"
     >
-      <div className="flex min-w-0 items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:px-4">
+      <div className="flex min-w-0 items-center gap-2 border-b border-slate-700/40 px-3.5 py-2.5">
         <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
           {statusShortLabel(fileDiff.status)}
         </IconMarker>
@@ -201,12 +157,90 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
           ) : null}
         </div>
       </div>
-      <pre
-        className={`min-h-0 overflow-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-xs leading-5 text-slate-100 sm:px-4 sm:text-sm ${shellSurfaceClasses.code}`}
-      >
-        {fileDiff.diff}
-      </pre>
+      <DiffContent diff={fileDiff.diff} />
     </section>
+  );
+}
+
+type DiffLineType = "header" | "hunk" | "add" | "del" | "context";
+
+type DiffLine = {
+  type: DiffLineType;
+  content: string;
+  oldLine?: number;
+  newLine?: number;
+};
+
+function parseDiff(diff: string): DiffLine[] {
+  const lines = diff.split("\n");
+  const result: DiffLine[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+
+  for (const line of lines) {
+    if (
+      line.startsWith("diff --git") ||
+      line.startsWith("index ") ||
+      line.startsWith("---") ||
+      line.startsWith("+++")
+    ) {
+      result.push({ type: "header", content: line });
+    } else if (line.startsWith("@@")) {
+      const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      if (match) {
+        oldLine = parseInt(match[1], 10) - 1;
+        newLine = parseInt(match[3], 10) - 1;
+      }
+      result.push({ type: "hunk", content: line });
+    } else if (line.startsWith("+")) {
+      newLine++;
+      result.push({ type: "add", content: line, newLine });
+    } else if (line.startsWith("-")) {
+      oldLine++;
+      result.push({ type: "del", content: line, oldLine });
+    } else if (line.startsWith(" ")) {
+      oldLine++;
+      newLine++;
+      result.push({ type: "context", content: line, oldLine, newLine });
+    } else {
+      result.push({ type: "context", content: line });
+    }
+  }
+
+  return result;
+}
+
+const diffLineClasses: Record<DiffLineType, string> = {
+  header: "text-slate-500",
+  hunk: "text-cyan-300/80 bg-cyan-300/5",
+  add: "text-emerald-300 bg-emerald-300/5",
+  del: "text-rose-300 bg-rose-300/5",
+  context: "text-slate-300",
+};
+
+function DiffContent({ diff }: { diff: string }) {
+  const lines = parseDiff(diff);
+
+  return (
+    <div className="min-h-0 flex-1 overflow-auto font-mono text-xs leading-5 sm:text-sm">
+      <table className="w-full border-collapse">
+        <tbody>
+          {lines.map((line, i) => (
+            <tr key={i} className={diffLineClasses[line.type]}>
+              <td className="select-none pr-2 pl-3 text-right w-1 align-top whitespace-nowrap text-slate-600 sm:pl-4 sm:w-12">
+                {line.oldLine !== undefined ? line.oldLine : ""}
+              </td>
+              <td className="select-none pr-2 text-right w-1 align-top whitespace-nowrap text-slate-600 sm:w-12">
+                {line.newLine !== undefined ? line.newLine : ""}
+              </td>
+              <td className="pr-3 align-top whitespace-pre-wrap break-words sm:pr-4">
+                {line.content}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -245,109 +279,20 @@ function GitScopeChip({
   );
 }
 
-function GitWorkspaceSidebar({
-  children,
-  statusCounts,
-}: {
-  children: ReactNode;
-  statusCounts: GitSummary | undefined;
-}) {
-  return (
-    <div className={`grid min-h-0 gap-3 rounded-2xl p-3 ${shellSurfaceClasses.inset}`}>
-      <div className="flex flex-wrap gap-1.5">
-        <GitScopeChip
-          label="All"
-          count={(statusCounts?.staged ?? 0) + (statusCounts?.worktree ?? 0)}
-        />
-        <GitScopeChip
-          label="Modified"
-          shortLabel="M"
-          count={statusCounts?.modified ?? 0}
-          tone="warning"
-        />
-        <GitScopeChip
-          label="Added"
-          shortLabel="A"
-          count={statusCounts?.added ?? 0}
-          tone="success"
-        />
-        <GitScopeChip
-          label="Deleted"
-          shortLabel="D"
-          count={statusCounts?.deleted ?? 0}
-          tone="danger"
-        />
-      </div>
-      <div className="min-h-0">{children}</div>
-    </div>
-  );
-}
-
-function GitWorkspaceLayout({
-  changedFileList,
-  diffPanel,
-  statusCounts,
-}: {
-  changedFileList: ReactNode;
-  diffPanel: ReactNode;
-  statusCounts: GitSummary | undefined;
-}) {
-  return (
-    <section className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
-      <aside className="grid min-h-0 gap-3">
-        <GitWorkspaceSidebar statusCounts={statusCounts}>{changedFileList}</GitWorkspaceSidebar>
-      </aside>
-      {diffPanel}
-    </section>
-  );
-}
-
-function MobileDetailHeader({
-  backLabel,
-  label,
-  onBack,
-  title,
-}: {
-  backLabel: string;
-  label: string;
-  onBack: () => void;
-  title: string;
-}) {
-  return (
-    <div className={`min-w-0 rounded-2xl p-3 sm:hidden ${shellSurfaceClasses.raised}`}>
-      <ActionButton tone="default" onClick={onBack}>
-        ← {backLabel}
-      </ActionButton>
-      <div className="mt-1 min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-        <p className="mt-0.5 truncate font-mono text-sm font-semibold text-slate-100">{title}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────
 
 export type GitDiffPanelProps = {
   projectName: string;
-  projectBranch?: string;
   /** Query-key segment for cache isolation. Default "git". */
   queryScope?: string;
-  /** Show the status/toolbar header. Default true. */
-  showStatusHeader?: boolean;
   onDeepDetailChange?: (open: boolean) => void;
-  onRetry?: () => void;
 };
 
 export function GitDiffPanel({
   projectName,
-  projectBranch,
   queryScope = "git",
-  showStatusHeader = true,
   onDeepDetailChange,
-  onRetry,
 }: GitDiffPanelProps) {
-  const showDesktopGitLayout = useMediaQuery("(min-width: 640px)");
   const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
   const diff = useQuery({
     queryKey: ["projects", projectName, queryScope, "diff"],
@@ -379,47 +324,58 @@ export function GitDiffPanel({
   const clearDiff = () => setSelectedFile(undefined);
   const gitSummary =
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
-  const changedFileCount = diff.data?.repository === true ? diff.data.files.length : undefined;
 
-  const statusToolbar = showStatusHeader ? (
-    <GitStatusHeader
-      projectBranch={projectBranch}
-      projectName={projectName}
-      fileCount={changedFileCount}
-      onRetry={() => {
-        setSelectedFile(undefined);
-        void diff.refetch();
-        onRetry?.();
-      }}
-    />
-  ) : null;
+  if (diff.isLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+        <span className="relative flex h-3 w-3" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+        </span>
+        <span className="text-xs font-semibold text-slate-400">Loading Git changes...</span>
+      </div>
+    );
+  }
 
-  const loadingState = diff.isLoading ? (
-    <ResourceStatePanel tone="inset" message="Loading Git changes..." />
-  ) : null;
-  const errorState = diff.error ? (
-    <ResourceStatePanel
-      tone="danger"
-      title="Unable to load Git changes."
-      message={diff.error.message}
-    />
-  ) : null;
-  const notRepositoryState =
-    diff.data?.repository === false ? (
+  if (diff.error) {
+    return (
+      <ResourceStatePanel
+        tone="danger"
+        title="Unable to load Git changes."
+        message={diff.error.message}
+      />
+    );
+  }
+
+  if (diff.data?.repository === false) {
+    return (
       <ResourceStatePanel
         title="Not a Git repository"
         message="This Project directory does not have Git metadata."
       />
-    ) : null;
+    );
+  }
 
-  const changedFileList =
-    diff.data?.repository === true ? (
-      <GitFileList
-        files={diff.data.files}
-        selectedFile={selectedFile}
-        onSelectFile={setSelectedFile}
+  const changedFiles = diff.data?.files ?? [];
+  const isFileSelected = selectedFile !== undefined;
+
+  const scopeChips = (
+    <div className="flex flex-wrap gap-1.5">
+      <GitScopeChip label="All" count={(gitSummary?.staged ?? 0) + (gitSummary?.worktree ?? 0)} />
+      <GitScopeChip
+        label="Modified"
+        shortLabel="M"
+        count={gitSummary?.modified ?? 0}
+        tone="warning"
       />
-    ) : null;
+      <GitScopeChip label="Added" shortLabel="A" count={gitSummary?.added ?? 0} tone="success" />
+      <GitScopeChip label="Deleted" shortLabel="D" count={gitSummary?.deleted ?? 0} tone="danger" />
+    </div>
+  );
+
+  const fileList = (
+    <GitFileList files={changedFiles} selectedFile={selectedFile} onSelectFile={setSelectedFile} />
+  );
 
   const diffPanel = (
     <GitFileDiffPanel
@@ -429,44 +385,50 @@ export function GitDiffPanel({
     />
   );
 
-  const mobileView =
-    selectedFile !== undefined ? (
-      <div className="grid gap-3 sm:hidden">
-        <MobileDetailHeader
-          label="Git diff"
-          title={selectedFile.path}
-          backLabel="Back to changed files"
-          onBack={clearDiff}
-        />
-        {diffPanel}
-      </div>
-    ) : (
-      <div className="sm:hidden">
-        <GitWorkspaceSidebar statusCounts={gitSummary}>{changedFileList}</GitWorkspaceSidebar>
-      </div>
-    );
-
   return (
-    <div className="grid gap-3">
-      {selectedFile === undefined ? (
-        statusToolbar
-      ) : (
-        <div className="hidden sm:block">{statusToolbar}</div>
-      )}
-      {loadingState}
-      {errorState}
-      {notRepositoryState}
-      {diff.data?.repository === true ? (
-        showDesktopGitLayout ? (
-          <GitWorkspaceLayout
-            changedFileList={changedFileList}
-            diffPanel={diffPanel}
-            statusCounts={gitSummary}
-          />
-        ) : (
-          mobileView
-        )
-      ) : null}
+    <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
+      <div
+        className={`border-b border-slate-700/40 px-3.5 py-3 ${isFileSelected ? "hidden sm:block" : "block"}`}
+      >
+        {scopeChips}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+        <aside
+          className={`min-h-0 sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
+        >
+          <div className="min-h-0 overflow-y-auto p-3">{fileList}</div>
+        </aside>
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFile === undefined ? "hidden sm:flex" : "flex"}`}
+        >
+          {isFileSelected ? (
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden">
+              <button
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200"
+                type="button"
+                onClick={clearDiff}
+                aria-label="Back to changed files"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M10 3L5 8l5 5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                Back
+              </button>
+              <p className="min-w-0 truncate text-center font-mono text-xs font-semibold text-slate-200">
+                {selectedFile?.path.split("/").pop() ?? selectedFile?.path}
+              </p>
+              <span className="w-[4.5rem]" />
+            </div>
+          ) : null}
+          <div className="min-h-0 flex-1 flex flex-col overflow-hidden">{diffPanel}</div>
+        </div>
+      </div>
     </div>
   );
 }
