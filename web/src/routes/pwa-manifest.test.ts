@@ -21,8 +21,8 @@ const manifest = JSON.parse(
 };
 
 test("PWA manifest exposes installable standalone shell fields", () => {
-  expect(manifest.name).toBe("Agents Remote");
-  expect(manifest.short_name).toBe("Agents");
+  expect(manifest.name).toBe("智控 · AI 远程控制台");
+  expect(manifest.short_name).toBe("智控");
   expect(manifest.start_url).toBe("/");
   expect(manifest.display).toBe("standalone");
   expect(manifest.theme_color).toBe("#020617");
