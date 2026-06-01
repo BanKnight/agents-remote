@@ -254,10 +254,12 @@ const scopeChipDefault = "border-slate-700/60 bg-slate-950/70 text-slate-400";
 function GitScopeChip({
   count,
   label,
+  shortLabel,
   tone,
 }: {
   count?: number;
   label: string;
+  shortLabel?: string;
   tone?: "success" | "warning" | "danger";
 }) {
   const colorClass = tone ? scopeChipToneClasses[tone] : scopeChipDefault;
@@ -268,7 +270,8 @@ function GitScopeChip({
       {count !== undefined ? (
         <span className="text-[0.62rem] font-bold tabular-nums opacity-80">{count}</span>
       ) : null}
-      {label}
+      <span className="sm:hidden">{shortLabel ?? label}</span>
+      <span className="hidden sm:inline">{label}</span>
     </span>
   );
 }
@@ -287,9 +290,24 @@ function GitWorkspaceSidebar({
           label="All"
           count={(statusCounts?.staged ?? 0) + (statusCounts?.worktree ?? 0)}
         />
-        <GitScopeChip label="Modified" count={statusCounts?.modified ?? 0} tone="warning" />
-        <GitScopeChip label="Added" count={statusCounts?.added ?? 0} tone="success" />
-        <GitScopeChip label="Deleted" count={statusCounts?.deleted ?? 0} tone="danger" />
+        <GitScopeChip
+          label="Modified"
+          shortLabel="M"
+          count={statusCounts?.modified ?? 0}
+          tone="warning"
+        />
+        <GitScopeChip
+          label="Added"
+          shortLabel="A"
+          count={statusCounts?.added ?? 0}
+          tone="success"
+        />
+        <GitScopeChip
+          label="Deleted"
+          shortLabel="D"
+          count={statusCounts?.deleted ?? 0}
+          tone="danger"
+        />
       </div>
       <div className="min-h-0">{children}</div>
     </div>
