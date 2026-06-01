@@ -262,16 +262,17 @@ function GitScopeChip({
   shortLabel?: string;
   tone?: "success" | "warning" | "danger";
 }) {
+  if (tone && count !== undefined && count === 0) return null;
   const colorClass = tone ? scopeChipToneClasses[tone] : scopeChipDefault;
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${colorClass}`}
     >
+      <span className="sm:hidden">{shortLabel ?? label}</span>
+      <span className="hidden sm:inline">{label}</span>
       {count !== undefined ? (
         <span className="text-[0.62rem] font-bold tabular-nums opacity-80">{count}</span>
       ) : null}
-      <span className="sm:hidden">{shortLabel ?? label}</span>
-      <span className="hidden sm:inline">{label}</span>
     </span>
   );
 }
