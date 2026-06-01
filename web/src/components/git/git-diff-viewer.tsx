@@ -111,7 +111,7 @@ type GitFileDiffPanelProps = {
 function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitFileDiffPanelProps) {
   if (!fileDiff && !isLoading && !error)
     return (
-      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
         <ResourceStatePanel
           title="Select a changed file"
           message="Unified diff output is shown read-only."
@@ -163,7 +163,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <div className="flex-1 flex flex-col items-center gap-3 pt-10 sm:justify-center sm:pt-0">
             <span className="relative flex h-3 w-3" aria-hidden="true">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
               <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
@@ -171,7 +171,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
             <span className="text-xs font-semibold text-slate-400">Loading diff...</span>
           </div>
         ) : error ? (
-          <div className="flex-1 flex items-center justify-center p-4">
+          <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
             <ResourceStatePanel
               tone="danger"
               title="Unable to open this diff."
@@ -351,7 +351,7 @@ export function GitDiffPanel({
 
   if (diff.isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+      <div className="flex-1 flex flex-col items-center gap-3 pt-10 sm:justify-center sm:pt-0">
         <span className="relative flex h-3 w-3" aria-hidden="true">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
           <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
@@ -363,20 +363,24 @@ export function GitDiffPanel({
 
   if (diff.error) {
     return (
-      <ResourceStatePanel
-        tone="danger"
-        title="Unable to load Git changes."
-        message={diff.error.message}
-      />
+      <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
+        <ResourceStatePanel
+          tone="danger"
+          title="Unable to load Git changes."
+          message={diff.error.message}
+        />
+      </div>
     );
   }
 
   if (diff.data?.repository === false) {
     return (
-      <ResourceStatePanel
-        title="Not a Git repository"
-        message="This Project directory does not have Git metadata."
-      />
+      <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
+        <ResourceStatePanel
+          title="Not a Git repository"
+          message="This Project directory does not have Git metadata."
+        />
+      </div>
     );
   }
 
