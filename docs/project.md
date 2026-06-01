@@ -32,6 +32,7 @@
 agents-remote/
 ├── web/              # 前端控制台：页面、交互、浏览器侧 /api client、PWA 静态资源从这里开始找
 │   └── src/i18n/     # 轻量国际化：typed keys、I18nProvider、中英双语、navigator.language 检测
+│   └── src/components/shell/icons/  # SVG 图标资源 + ShellIcon 统一组件
 ├── api/              # Bun 服务端：认证、配置、Project、Files/Git、Session、Agent runtime API 从这里开始找
 ├── packages/shared/  # web/api 共享协议：DTO、状态 union、错误码；跨边界类型先看这里
 ├── e2e/              # Playwright 端到端测试：真实浏览器用户路径从这里开始找
@@ -49,15 +50,16 @@ agents-remote/
 - 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS；Project 直接二级 workspace active 状态属于 URL-visible route/search 状态，不应只放在 Jotai。
 - 国际化使用轻量自研方案（`web/src/i18n/`）：`I18nProvider` + `useT()` hook，无第三方依赖。支持中英双语，默认跟随 `navigator.language`（`zh*` → 中文，其余 → 英文），用户可通过 `localStorage["lang"]` 覆盖。所有面向用户的字符串（~180 条）按域组织为 typed translation key，TypeScript 强制 key 一致性。
 - Home / Projects 是一级 Project entry：默认优先展示可扫读 Project 列表和进入行为，Create/adopt Project 是低频入口，只有无 Project、提交中或错误时才提升为可恢复主路径。
-- Agent/Terminal Session detail 是 runtime 深层工作台：共享 terminal-first 主输出和底部 input drawer；Agent detail 可提供 Files/Git/+Terminal/Meta contextual tools，Terminal detail 保持 focused shell，不混入 Agent-only tools。
+- Agent/Terminal Session detail 是 runtime 深层工作台：共享 terminal-first 主输出和底部 input drawer（折叠状态持久化）；Agent detail header 使用 icon-only action buttons（Files/Git/+Terminal/Close）with native tooltip，Agent detail 可提供 Files/Git/+Terminal contextual tools；Terminal detail 保持 focused shell，不混入 Agent-only tools。
 - Project Agent workspace 是默认运行态二级页：优先展示 `+ Claude` / `+ Codex` 创建入口和当前 Agent instances；provider history / future restore 在真实 API 完成前只作为 staged 辅助区，不混入当前实例列表。
 - Project Files/Git/Terminal 是直接二级 resource workspaces：Files/Git 保持只读 inspection，Terminal workspace 只列 live Terminal instances 并提供 create/open/close；Files preview 和 Git single-file diff 在移动端是顶部返回的深层 detail，不显示 Project 二级底部导航。
-- TanStack Query 负责服务端状态；Jotai 只用于 shell 级共享 UI 状态；文件选择、当前路径、当前 diff 文件等局部 section 状态优先留在组件内。
+- TanStack Query 负责服务端状态；Jotai 只用于 shell 级共享 UI 状态（如 input drawer 折叠状态使用 `atomWithStorage` 持久化到 localStorage）；文件选择、当前路径、当前 diff 文件等局部 section 状态优先留在组件内。
 - 服务端运行在 Bun 上，Project-scoped 能力优先使用 Web 标准 `Request` / `Response` 边界和 shared DTO。
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度、tmux/CLI adapter 和执行稳定性。
 - Project 模块统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；Files、Git、Terminal 和 Agent 等下游能力必须复用 Project-safe 解析。
 - 当前 Files/Git inspection 是只读能力；Agent/Terminal Session 是真实运行态能力；二者在 UI 中都属于 Project Console 的辅助工作区。
-- PWA 提供 manifest/icons/meta、standalone 外壳、应用内安装入口和 service worker 静态安装资源缓存；service worker 不缓存导航 HTML、不拦截 `/api`，避免 installed PWA 卡旧页面或伪造离线数据。
+- PWA 提供 manifest/icons/meta、standalone 外壳、应用内安装入口和 service worker 静态安装资源缓存；service worker 不缓存导航 HTML、不拦截 `/api`，避免 installed PWA 卡旧页面或伪造离线数据。PWA 标题为「智控 · AI 远程控制台」，使用 AI+远程控制结合的 SVG 图标。
+- SVG 图标系统（`web/src/components/shell/icons/`）：一个 `.svg` 资源文件对应一个图标，通过 `<ShellIcon name="...">` 组件统一引用（Vite `?raw` import + `dangerouslySetInnerHTML`）。新增图标只需添加 `.svg` 文件并在 `svgMap` 注册。包括厂商 logo（Anthropic/OpenAI）、导航图标、功能图标（close/refresh/terminal/file/folder）等。
 - 当前没有独立数据库模型；Project identity 来自 `PROJECTS_ROOT` 下一级目录，session runtime metadata 存在 runtime dir 边界内。
 
 ## 容易犯错的边界
@@ -70,6 +72,8 @@ agents-remote/
 - 不要反复启动新的 web/api 端口来验证问题；调试服务必须常驻在明确命名的 tmux session 中，固定使用 API `43011`、Web `43012`，后续测试应复用或重启同一 session，避免端口漂移。
 - **API 和 Web 进程必须在 tmux session 里启动和管理**，不能在 tmux 外直接运行（否则进程变成孤儿进程，无法通过 tmux 控制）。重启 API 的正确方式是：在 `ar-dev:0` 里发 `C-c` 停止当前进程，再重新运行 `bun run --filter @agents-remote/api dev`。如果进程变成孤儿（PPID=1），只能用 `kill <pid>` 清理后再在 tmux 里重启。
 - 开发/验证用 tmux session 统一使用 `ar-<purpose>` 命名，例如 `ar-dev`、`ar-e2e`、`ar-debug`；不要使用 `agents-remote-*`，避免和 Claude Code 当前会话或其他任务会话混淆，并便于 `tmux list-sessions | grep '^ar-'` 搜索、复用和关闭。
+- Session runtime 的 tmux session 命名使用 `createTmuxSessionName()` 生成的 `{prefix}-{type}-{provider}-{projectKey}-{id}` 格式；生产环境默认前缀 `ar-`，E2E 环境通过 `AGENTS_REMOTE_SESSION_PREFIX=e2e-ar` 使用 `e2e-ar-` 前缀，确保 E2E 产生的 tmux session 可通过前缀批量清理，不与生产 session 混淆。
+- E2E harness（`scripts/run-e2e.ts`）在独立临时目录启动 API/Web 进程，`finally` 块必须清理产生的 tmux session（按前缀 kill），避免孤儿 session 积累导致系统负载升高。
 - 不要把 `packages/shared` 当成通用垃圾桶；shared 只表达跨 web/api 的协议、状态和错误码，不放业务流程实现、服务端资源句柄或前端组件细节。
 
 ## 开发准则
