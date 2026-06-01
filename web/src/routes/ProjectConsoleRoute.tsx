@@ -419,7 +419,11 @@ function AgentPanel({
 }: AgentPanelProps) {
   const { t } = useT();
   return (
-    <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
+    <ShellPanel
+      className="flex flex-col px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5"
+      density="compact"
+      docked
+    >
       <div className="grid grid-cols-2 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
         <CreateButton
           disabled={isCreating}
@@ -465,11 +469,13 @@ function AgentInstanceList({ projectName, sessions, isLoading }: AgentInstanceLi
 
   if (sessions.length === 0) {
     return (
-      <div className={`mt-4 rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">{t("project.noAgents")}</p>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          {t("project.noAgentsDesc")}
-        </p>
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <div className={`rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
+            <p className="text-lg font-semibold text-slate-100">{t("project.noAgents")}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">{t("project.noAgentsDesc")}</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -644,7 +650,11 @@ function TerminalPanel({
 }: TerminalPanelProps) {
   const { t } = useT();
   return (
-    <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
+    <ShellPanel
+      className="flex flex-col px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5"
+      density="compact"
+      docked
+    >
       <div className="grid gap-2 sm:hidden" aria-label="Create Terminal instance mobile">
         <CreateButton
           disabled={isCreating}
@@ -696,11 +706,13 @@ function TerminalInstanceList({
 
   if (sessions.length === 0) {
     return (
-      <div className={`mt-4 rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">{t("project.noTerminals")}</p>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          {t("project.noTerminalsDesc")}
-        </p>
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <div className={`rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
+            <p className="text-lg font-semibold text-slate-100">{t("project.noTerminals")}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">{t("project.noTerminalsDesc")}</p>
+          </div>
+        </div>
       </div>
     );
   }

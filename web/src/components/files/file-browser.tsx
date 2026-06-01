@@ -137,7 +137,13 @@ export function FileEntryList({
       <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
     );
   if (entries.length === 0)
-    return <ResourceStatePanel title={t("files.emptyTitle")} message={t("files.emptyDesc")} />;
+    return (
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel title={t("files.emptyTitle")} message={t("files.emptyDesc")} />
+        </div>
+      </div>
+    );
 
   return (
     <div className="grid gap-1.5" aria-label="Project files">
@@ -540,7 +546,7 @@ export function FilesPanel({
     <aside
       className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
-      <div className="min-h-0 overflow-y-auto p-3">
+      <div className="flex min-h-0 flex-col overflow-y-auto p-3">
         <FileEntryList
           entries={files.data?.entries ?? []}
           error={files.error}

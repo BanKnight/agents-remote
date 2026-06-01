@@ -70,8 +70,10 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
 
   if (files.length === 0)
     return (
-      <div className="sm:h-full sm:flex sm:flex-col sm:items-center sm:justify-center">
-        <ResourceStatePanel title={t("git.noChanges")} message={t("git.noChangesDesc")} />
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel title={t("git.noChanges")} message={t("git.noChangesDesc")} />
+        </div>
       </div>
     );
 
