@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
 import { IconMarker, ListRow, type ShellTone } from "../shell/shell-primitives";
+import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
             key={`${file.scope}:${file.path}`}
             marker={
               <IconMarker size="sm" tone="muted">
-                {t("git.fileMarker")}
+                <ShellIcon name="file" className="h-4 w-4" />
               </IconMarker>
             }
             meta={

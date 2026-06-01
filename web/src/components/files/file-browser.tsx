@@ -5,6 +5,7 @@ import { MoreVertical } from "lucide-react";
 import { listProjectFiles, previewProjectFile } from "../../api/client";
 import { useT } from "../../i18n";
 import { IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
+import { ShellIcon } from "../shell/icons";
 
 // ── Utilities ────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ export function FileEntryList({
             key={`${entry.type}:${entry.path}`}
             marker={
               <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
-                {isDirectory ? t("files.dirMarker") : t("files.fileMarker")}
+                <ShellIcon name={isDirectory ? "files-nav" : "file"} className="h-4 w-4" />
               </IconMarker>
             }
             selected={selected}

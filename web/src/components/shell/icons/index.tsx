@@ -1,6 +1,7 @@
 import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
 import closeIcon from "./close.svg?raw";
+import file from "./file.svg?raw";
 import filesNav from "./files-nav.svg?raw";
 import gitNav from "./git-nav.svg?raw";
 import openai from "./openai.svg?raw";
@@ -11,6 +12,7 @@ const svgMap: Record<string, string> = {
   "agent-nav": agentNav,
   anthropic,
   close: closeIcon,
+  file,
   "files-nav": filesNav,
   "git-nav": gitNav,
   openai,
