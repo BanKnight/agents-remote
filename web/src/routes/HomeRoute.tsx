@@ -36,12 +36,7 @@ export function HomeRoute() {
       });
     },
   });
-  const setupVisible =
-    setupOpen ||
-    create.isPending ||
-    create.error instanceof Error ||
-    (!projects.isLoading && !projects.error && projectItems.length === 0);
-  const hasProjects = !projects.isLoading && !projects.error && projectItems.length > 0;
+  const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -90,10 +85,9 @@ export function HomeRoute() {
         error={projects.error}
         isLoading={projects.isLoading}
         projects={projectItems}
-        onCreateProject={() => setSetupOpen(true)}
       />
 
-      {setupVisible && hasProjects ? (
+      {setupVisible ? (
         <ProjectSetupPanel
           createError={create.error instanceof Error ? create.error : null}
           inputId={inputId}
@@ -111,10 +105,9 @@ type ProjectListCardProps = {
   error: Error | null;
   isLoading: boolean;
   projects: Project[];
-  onCreateProject: () => void;
 };
 
-function ProjectListCard({ error, isLoading, onCreateProject, projects }: ProjectListCardProps) {
+function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
   const { t } = useT();
   return (
     <ShellPanel className="px-4 pt-0 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
@@ -125,13 +118,6 @@ function ProjectListCard({ error, isLoading, onCreateProject, projects }: Projec
           <div className={`w-full max-w-sm rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
             <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
             <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
-            <button
-              className="mt-4 rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 px-4 py-2 text-sm font-semibold text-slate-950"
-              type="button"
-              onClick={onCreateProject}
-            >
-              {t("home.emptyButton")}
-            </button>
           </div>
         </div>
       ) : null}
