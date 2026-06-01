@@ -33,7 +33,6 @@ import {
   type SessionQuickKey,
 } from "./console-model";
 import {
-  ActionButton,
   IconMarker,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
@@ -770,10 +769,14 @@ function DetailWorkspace({
             density="compact"
             docked
           >
-            <div className="flex justify-end mb-3">
-              <ActionButton tone="accent" onClick={onReturnToStream}>
-                Back to stream
-              </ActionButton>
+            <div className="mb-3">
+              <button
+                className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
+                type="button"
+                onClick={onReturnToStream}
+              >
+                <span aria-hidden="true">←</span> Back to stream
+              </button>
             </div>
             <FilesPanel initialPath="" projectName={projectName} queryScope="agent-context" />
           </ShellPanel>
@@ -786,10 +789,14 @@ function DetailWorkspace({
             density="compact"
             docked
           >
-            <div className="flex justify-end mb-3">
-              <ActionButton tone="accent" onClick={onReturnToStream}>
-                Back to stream
-              </ActionButton>
+            <div className="mb-3">
+              <button
+                className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
+                type="button"
+                onClick={onReturnToStream}
+              >
+                <span aria-hidden="true">←</span> Back to stream
+              </button>
             </div>
             <GitDiffPanel
               projectName={projectName}

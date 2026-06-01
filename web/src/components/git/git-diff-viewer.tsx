@@ -11,6 +11,7 @@ import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import {
   ActionButton,
   IconMarker,
+  ListRow,
   StatusPill,
   shellSurfaceClasses,
   type ShellTone,
@@ -18,21 +19,6 @@ import {
 import { ResourceStatePanel } from "../files/file-browser";
 
 // ── Helpers ───────────────────────────────────────────────────────
-
-export const scopeLabel = (scope: GitDiffScope) => (scope === "staged" ? "Staged" : "Worktree");
-
-export const statusLabel = (status: GitDiffFileStatus) => {
-  switch (status) {
-    case "added":
-      return "Added";
-    case "deleted":
-      return "Deleted";
-    case "renamed":
-      return "Renamed";
-    case "modified":
-      return "Modified";
-  }
-};
 
 const statusShortLabel = (status: GitDiffFileStatus) => {
   switch (status) {
@@ -146,35 +132,29 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
       {files.map((file) => {
         const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
         return (
-          <button
+          <ListRow
             key={`${file.scope}:${file.path}`}
-            className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[0.875rem] border px-3 py-2.5 text-left transition ${
-              selected
-                ? "border-cyan-300/60 bg-cyan-300/10"
-                : "border-slate-700/40 bg-[#141b28]/72 hover:border-cyan-300/30 hover:bg-[#141b28]/92"
-            }`}
-            type="button"
+            marker={
+              <IconMarker size="sm" tone="muted">
+                FL
+              </IconMarker>
+            }
+            meta={
+              <IconMarker size="sm" tone={gitStatusTone(file.status)}>
+                {statusShortLabel(file.status)}
+              </IconMarker>
+            }
+            selected={selected}
+            subtitle={
+              file.previousPath
+                ? `from ${file.previousPath}`
+                : undefined
+            }
+            title={
+              <span className="font-mono text-[0.82rem]">{file.path}</span>
+            }
             onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
-          >
-            <IconMarker size="sm" tone={gitStatusTone(file.status)}>
-              {statusShortLabel(file.status)}
-            </IconMarker>
-            <span className="min-w-0">
-              <span className="block truncate font-mono text-[0.82rem] font-semibold text-slate-100">
-                {file.path}
-              </span>
-              {file.previousPath ? (
-                <span className="mt-0.5 block truncate font-mono text-[0.68rem] text-slate-500">
-                  from {file.previousPath}
-                </span>
-              ) : (
-                <span className="mt-0.5 block text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
-                  {scopeLabel(file.scope)}
-                </span>
-              )}
-            </span>
-            <StatusPill tone={gitStatusTone(file.status)} value={statusLabel(file.status)} />
-          </button>
+          />
         );
       })}
     </div>
@@ -206,31 +186,20 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
       className={`grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl ${shellSurfaceClasses.raised}`}
       aria-label="Git file diff"
     >
-      <div className="flex min-w-0 items-start justify-between gap-2 border-b border-slate-700/40 px-3 py-3 sm:px-4">
+      <div className="flex min-w-0 items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:px-4">
+        <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
+          {statusShortLabel(fileDiff.status)}
+        </IconMarker>
         <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
-              {statusShortLabel(fileDiff.status)}
-            </IconMarker>
-            <div className="min-w-0">
-              <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-[0.92rem]">
-                {fileDiff.path}
-              </h4>
-              <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
-                unified diff · read-only · {scopeLabel(fileDiff.scope).toLowerCase()}
-              </p>
-            </div>
-          </div>
+          <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
+            {fileDiff.path}
+          </h4>
           {fileDiff.previousPath ? (
-            <p className="mt-2 truncate font-mono text-xs text-slate-500">
-              from {fileDiff.previousPath}
+            <p className="mt-0.5 truncate font-mono text-[0.65rem] text-slate-500">
+              renamed from {fileDiff.previousPath}
             </p>
           ) : null}
         </div>
-        <StatusPill
-          tone="muted"
-          value={`${scopeLabel(fileDiff.scope)} · ${statusLabel(fileDiff.status)}`}
-        />
       </div>
       <pre
         className={`min-h-0 overflow-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-xs leading-5 text-slate-100 sm:px-4 sm:text-sm ${shellSurfaceClasses.code}`}
