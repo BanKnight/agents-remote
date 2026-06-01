@@ -287,7 +287,7 @@ function GitWorkspaceSidebar({
 }) {
   return (
     <div className={`grid min-h-0 gap-3 rounded-2xl p-3 ${shellSurfaceClasses.inset}`}>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-1.5">
         <GitTinyMetric label="modified" value={statusCounts?.modified ?? 0} tone="warning" />
         <GitTinyMetric label="added" value={statusCounts?.added ?? 0} tone="success" />
         <GitTinyMetric label="deleted" value={statusCounts?.deleted ?? 0} tone="danger" />
