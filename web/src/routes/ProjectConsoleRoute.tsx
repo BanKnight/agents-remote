@@ -154,14 +154,6 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
 
   return (
     <ShellLayout
-      bottomNavigation={
-        !resourceDeepDetailOpen && !hiddenOnMobileResourceDetail ? (
-          <ProjectSecondaryBottomNav
-            activeSection={activeSection}
-            onSelectSection={selectWorkspace}
-          />
-        ) : null
-      }
       sidebar={
         <ProjectSecondaryNav
           activeSection={activeSection}
@@ -170,6 +162,14 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
         />
       }
       variant="project"
+      bottomNavigation={
+        !resourceDeepDetailOpen && !hiddenOnMobileResourceDetail ? (
+          <ProjectSecondaryBottomNav
+            activeSection={activeSection}
+            onSelectSection={selectWorkspace}
+          />
+        ) : null
+      }
     >
       <div className={hiddenOnMobileResourceDetail ? "sm:contents hidden" : "contents"}>
         <WorkspaceHeader

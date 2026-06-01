@@ -1,39 +1,20 @@
 import type { Project } from "@agents-remote/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, type Ref, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { createProject, listProjects } from "../api/client";
 import { defaultConsoleSection } from "./console-model";
 import {
   ShellHeaderSurface,
   ShellLayout,
   ShellPanel,
-  ShellSidebar,
 } from "../components/shell/shell-layout";
-import {
-  PrimaryShellBottomNavigation,
-  PrimaryShellNavigation,
-} from "../components/shell/shell-navigation";
 import {
   ActionButton,
   IconMarker,
   ShellInput,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
-
-const primaryNavItems = [
-  { id: "projects", label: "Projects", marker: "P", mobileLabel: "Projects", to: "/" as const },
-  { id: "sessions", label: "Sessions", marker: "S", mobileLabel: "Sessions" },
-  { id: "config", label: "Config", marker: "C", mobileLabel: "Config" },
-  { id: "help", label: "Help", marker: "H", mobileLabel: "Help" },
-].map((item) => ({
-  ...item,
-  marker: (
-    <IconMarker size="sm" tone="accent">
-      {item.marker}
-    </IconMarker>
-  ),
-}));
 
 export function HomeRoute() {
   const navigate = useNavigate();
@@ -75,7 +56,7 @@ export function HomeRoute() {
   };
 
   return (
-    <ShellLayout bottomNavigation={<PrimaryBottomNav />} sidebar={<PrimaryNav />} variant="home">
+    <ShellLayout variant="home">
       <ShellHeaderSurface
         actions={
           <>
@@ -127,29 +108,6 @@ export function HomeRoute() {
       ) : null}
     </ShellLayout>
   );
-}
-
-function PrimaryNav() {
-  return (
-    <ShellSidebar>
-      <PrimaryShellNavigation
-        activeItemId="projects"
-        brand={
-          <>
-            <IconMarker size="sm" tone="accent">
-              AR
-            </IconMarker>
-            <span>Agents Remote</span>
-          </>
-        }
-        items={primaryNavItems}
-      />
-    </ShellSidebar>
-  );
-}
-
-function PrimaryBottomNav({ ref }: { ref?: Ref<HTMLElement> }) {
-  return <PrimaryShellBottomNavigation ref={ref} activeItemId="projects" items={primaryNavItems} />;
 }
 
 type ProjectListCardProps = {

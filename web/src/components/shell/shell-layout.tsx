@@ -32,7 +32,7 @@ const shellHeaderTitleClasses: Record<ShellLayoutVariant, string> = {
 type ShellLayoutProps = {
   bottomNavigation?: ReactNode;
   children: ReactNode;
-  sidebar: ReactNode;
+  sidebar?: ReactNode;
   variant: ShellLayoutVariant;
 };
 
@@ -68,7 +68,7 @@ export function ShellLayout({ bottomNavigation, children, sidebar, variant }: Sh
       className={shellMainClasses[variant]}
       style={{ "--shell-mobile-bottom-nav-space": `${bottomNavigationHeight}px` } as CSSProperties}
     >
-      <div className={`${shellGridClasses[variant]} ${shellSurfaceClasses.shell}`}>
+      <div className={cn(shellGridClasses[variant], !sidebar && "lg:!grid-cols-1", shellSurfaceClasses.shell)}>
         {sidebar}
         <div className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden">{children}</div>
       </div>
