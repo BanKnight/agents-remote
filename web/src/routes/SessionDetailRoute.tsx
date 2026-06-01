@@ -108,6 +108,16 @@ function SessionDetail({
   const [input, setInput] = useState("");
   const [detailView, setDetailView] = useState<DetailView>("terminal");
   const [inputDrawerCollapsed, setInputDrawerCollapsed] = useAtom(inputDrawerCollapsedAtom);
+  const [isDesktop, setIsDesktop] = useState(
+    () => window.matchMedia?.("(min-width: 640px)").matches ?? true,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.("(min-width: 640px)");
+    if (!media) return;
+    const handler = () => setIsDesktop(media.matches);
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
 
   const detail = useQuery<SessionDetailResponse>({
     queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
@@ -443,6 +453,7 @@ function SessionDetail({
           canSend={canSend}
           collapsed={inputDrawerCollapsed}
           input={input}
+          isDesktop={isDesktop}
           quickKeys={quickKeys}
           sessionType={sessionType}
           onCollapsedChange={setInputDrawerCollapsed}
@@ -1282,6 +1293,7 @@ type SessionInputDrawerProps = {
   canSend: boolean;
   collapsed: boolean;
   input: string;
+  isDesktop: boolean;
   quickKeys: SessionQuickKey[];
   sessionType: SessionType;
   onCollapsedChange: (collapsed: boolean) => void;
@@ -1294,6 +1306,7 @@ function SessionInputDrawer({
   canSend,
   collapsed,
   input,
+  isDesktop,
   quickKeys,
   sessionType,
   onCollapsedChange,
@@ -1301,9 +1314,19 @@ function SessionInputDrawer({
   onQuickKey,
   onSubmit,
 }: SessionInputDrawerProps) {
-  // Auto-grow from 1 to 3 rows based on explicit newline count.
+  // Auto-grow from 1 to 3 rows based on explicit newline count (mobile only).
   const newlines = (input.match(/\n/g) || []).length;
-  const rows = Math.min(newlines + 1, 3);
+  const mobileRows = Math.min(newlines + 1, 3);
+  const rows = isDesktop ? 3 : mobileRows;
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isDesktop) return;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const form = e.currentTarget.form;
+      if (form) form.requestSubmit();
+    }
+  };
 
   return (
     <section
@@ -1350,6 +1373,7 @@ function SessionInputDrawer({
               spellCheck={false}
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
             />
             <button
               className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
