@@ -6,12 +6,7 @@ import { createProject, listProjects } from "../api/client";
 import { useT } from "../i18n";
 import { defaultConsoleSection } from "./console-model";
 import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell/shell-layout";
-import {
-  ActionButton,
-  IconMarker,
-  ShellInput,
-  shellSurfaceClasses,
-} from "../components/shell/shell-primitives";
+import { IconMarker, ShellInput, shellSurfaceClasses } from "../components/shell/shell-primitives";
 
 export function HomeRoute() {
   const { t } = useT();
@@ -54,15 +49,15 @@ export function HomeRoute() {
       <ShellHeaderSurface
         actions={
           <>
-            <ActionButton
-              className="hidden w-fit self-start sm:inline-flex sm:self-center"
-              tone="accent"
+            <button
+              className={`hidden h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold text-slate-200 transition sm:inline-flex ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+              type="button"
               onClick={() => setSetupOpen(!setupOpen)}
             >
               {t("home.newAdopt")}
-            </ActionButton>
+            </button>
             <button
-              className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-xl font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
+              className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border text-sm font-semibold text-slate-200 transition sm:hidden ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
               type="button"
               aria-label={t("home.createProjectAria")}
               onClick={() => setSetupOpen(!setupOpen)}
