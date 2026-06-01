@@ -23,6 +23,8 @@ import {
   getTerminalSession,
   sessionStreamUrl,
 } from "../api/client";
+import { useT } from "../i18n";
+import type { TranslationKey } from "../i18n/types";
 import {
   defaultConsoleSection,
   canSendToSession,
@@ -88,6 +90,7 @@ function SessionDetail({
   sessionType,
   sourceAgentSession,
 }: SessionDetailProps) {
+  const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
@@ -123,7 +126,11 @@ function SessionDetail({
         : getTerminalSession(projectName, sessionId),
   });
   const session = detail.data?.session;
-  const title = session?.displayName ?? `${sessionType === "agent" ? "Agent" : "Terminal"} Session`;
+  const title =
+    session?.displayName ??
+    (sessionType === "agent"
+      ? `${t("section.agents")} Session`
+      : `${t("section.terminal")} Session`);
   const isEnded = connectionStatus === "ended" || sessionStatus === "closed";
 
   const closeSession = useMutation({
@@ -217,7 +224,7 @@ function SessionDetail({
 
         if (!message) {
           setConnectionStatus("error");
-          setFatalError("Received an invalid stream message.");
+          setFatalError(t("session.fatalProtocol"));
           return;
         }
 
@@ -259,7 +266,7 @@ function SessionDetail({
         const attempt = reconnectAttemptsRef.current;
         if (attempt >= MAX_ATTEMPTS) {
           setConnectionStatus("error");
-          setFatalError("Reconnect stopped.");
+          setFatalError(t("session.reconnectStopped"));
           return;
         }
         reconnectAttemptsRef.current += 1;
@@ -360,16 +367,18 @@ function SessionDetail({
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
-    label: section.label,
+    label: t(section.labelKey),
     marker: (
       <IconMarker size="sm" tone="accent">
-        {section.id === "agents"
-          ? "A"
-          : section.id === "files"
-            ? "F"
-            : section.id === "git"
-              ? "G"
-              : "T"}
+        {t(
+          section.id === "agents"
+            ? "section.markerAgents"
+            : section.id === "files"
+              ? "section.markerFiles"
+              : section.id === "git"
+                ? "section.markerGit"
+                : "section.markerTerminal",
+        )}
       </IconMarker>
     ),
   }));
@@ -407,7 +416,7 @@ function SessionDetail({
         title={title}
         closePending={closeSession.isPending}
         onClose={() => {
-          if (window.confirm("Close this session? The running process will be terminated.")) {
+          if (window.confirm(t("session.closeConfirm"))) {
             closeSession.mutate();
           }
         }}
@@ -425,7 +434,7 @@ function SessionDetail({
               <Notice tone="danger">{detail.error.message}</Notice>
             ) : null}
             {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
-            {isEnded ? <Notice>Runtime ended.</Notice> : null}
+            {isEnded ? <Notice>{t("session.runtimeEnded")}</Notice> : null}
             {closeSession.error instanceof Error ? (
               <Notice tone="danger">{closeSession.error.message}</Notice>
             ) : null}
@@ -497,6 +506,7 @@ function SessionDetailHeader({
   sourceAgentSession,
   title,
 }: SessionDetailHeaderProps) {
+  const { t } = useT();
   const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
   const returnWorkspace = sessionType === "terminal" ? "terminal" : defaultConsoleSection;
 
@@ -508,28 +518,40 @@ function SessionDetailHeader({
         {returnsToAgent ? (
           <Link
             className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
-            aria-label="Back to Agent detail"
+            aria-label={t("session.backToAgent")}
             params={{ projectName, sessionId: sourceAgentSession }}
             search={{ workspace: defaultConsoleSection, filesPath: "" }}
             to="/projects/$projectName/agent-sessions/$sessionId"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M10 3L5 8l5 5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
-            Back
+            {t("nav.back")}
           </Link>
         ) : (
           <Link
             className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
-            aria-label="Back to Project"
+            aria-label={t("session.backToProject")}
             params={{ projectName }}
             search={{ workspace: returnWorkspace, filesPath: "" }}
             to="/projects/$projectName"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M10 3L5 8l5 5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
-            Back
+            {t("nav.back")}
           </Link>
         )}
         <div className="min-w-0 flex-1 text-center">
@@ -580,6 +602,7 @@ function SessionDetailActions({
   onViewChange,
   sessionType,
 }: SessionDetailActionsMenuProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -620,19 +643,11 @@ function SessionDetailActions({
       <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
         {sessionType === "agent" ? (
           <>
-            <button
-              className={buttonClass}
-              type="button"
-              onClick={() => onViewChange("files")}
-            >
-              Files
+            <button className={buttonClass} type="button" onClick={() => onViewChange("files")}>
+              {t("session.files")}
             </button>
-            <button
-              className={buttonClass}
-              type="button"
-              onClick={() => onViewChange("git")}
-            >
-              Git
+            <button className={buttonClass} type="button" onClick={() => onViewChange("git")}>
+              {t("session.git")}
             </button>
             <button
               className={buttonClass}
@@ -640,13 +655,13 @@ function SessionDetailActions({
               type="button"
               onClick={onCreateTerminal}
             >
-              {createTerminalPending ? "Creating..." : "+ Terminal"}
+              {createTerminalPending ? t("session.creating") : t("session.createTerminal")}
             </button>
           </>
         ) : null}
         {connectionStatus === "error" ? (
           <button className={buttonClass} type="button" onClick={onReconnect}>
-            Retry
+            {t("session.retry")}
           </button>
         ) : null}
         <button
@@ -655,7 +670,7 @@ function SessionDetailActions({
           type="button"
           onClick={onClose}
         >
-          {closePending ? "Closing..." : "Close"}
+          {closePending ? t("session.closing") : t("session.close")}
         </button>
         {createTerminalError instanceof Error ? (
           <p className="text-xs text-rose-200">{createTerminalError.message}</p>
@@ -669,7 +684,7 @@ function SessionDetailActions({
           type="button"
           aria-expanded={open}
           aria-haspopup="menu"
-          aria-label="Session actions"
+          aria-label={t("session.actionsAria")}
           onClick={() => setOpen((value) => !value)}
         >
           <MoreVertical className="h-4 w-4" aria-hidden="true" />
@@ -683,30 +698,34 @@ function SessionDetailActions({
               <>
                 <ActionMenuItem
                   active={detailView === "files"}
-                  marker="FL"
+                  marker={t("files.fileMarker")}
                   onClick={() => selectView("files")}
                 >
-                  Files
+                  {t("session.files")}
                 </ActionMenuItem>
                 <ActionMenuItem
                   active={detailView === "git"}
                   marker="GT"
                   onClick={() => selectView("git")}
                 >
-                  Git
+                  {t("session.git")}
                 </ActionMenuItem>
-                <ActionMenuItem disabled={createTerminalPending} marker="T" onClick={createTerminal}>
-                  {createTerminalPending ? "Creating..." : "Terminal"}
+                <ActionMenuItem
+                  disabled={createTerminalPending}
+                  marker={t("section.markerTerminal")}
+                  onClick={createTerminal}
+                >
+                  {createTerminalPending ? t("session.creating") : t("session.terminal")}
                 </ActionMenuItem>
               </>
             ) : null}
             {connectionStatus === "error" ? (
               <ActionMenuItem marker="↺" onClick={reconnect}>
-                Retry
+                {t("session.retry")}
               </ActionMenuItem>
             ) : null}
             <ActionMenuItem danger marker="✕" disabled={closePending} onClick={close}>
-              {closePending ? "Closing..." : "Close"}
+              {closePending ? t("session.closing") : t("session.close")}
             </ActionMenuItem>
             {createTerminalError instanceof Error ? (
               <p className="px-2 py-1 text-xs leading-5 text-rose-200">
@@ -790,6 +809,7 @@ function DetailWorkspace({
   terminalWriteRef,
   title: _title,
 }: DetailWorkspaceProps) {
+  const { t } = useT();
   const showFiles = sessionType === "agent" && detailView === "files";
   const showGit = sessionType === "agent" && detailView === "git";
 
@@ -814,9 +834,15 @@ function DetailWorkspace({
               onClick={onReturnToStream}
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M10 3L5 8l5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
-              Back to stream
+              {t("session.backToStream")}
             </button>
           </div>
           <div className="min-h-0 flex-1 flex flex-col">
@@ -836,9 +862,15 @@ function DetailWorkspace({
               onClick={onReturnToStream}
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M10 3L5 8l5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
-              Back to stream
+              {t("session.backToStream")}
             </button>
           </div>
           <div className="min-h-0 flex-1 flex flex-col">
@@ -900,7 +932,8 @@ function XtermOutput({
     }
   }, [connectionStatus, onResize]);
 
-  const overlay = terminalOverlay(connectionStatus);
+  const { t } = useT();
+  const overlay = terminalOverlay(connectionStatus, t);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1320,17 +1353,20 @@ function TerminalStatusSpinner({ size = "sm" }: { size?: "sm" | "lg" }) {
   );
 }
 
-const terminalOverlay = (status: StreamConnectionStatus): TerminalOverlayState | undefined => {
+const terminalOverlay = (
+  status: StreamConnectionStatus,
+  t: (key: TranslationKey) => string,
+): TerminalOverlayState | undefined => {
   if (status === "connecting") {
-    return { animated: true, title: "Reconnecting", tone: "accent" };
+    return { animated: true, title: t("status.running"), tone: "accent" };
   }
 
   if (status === "error") {
-    return { title: "Stopped", tone: "danger" };
+    return { title: t("status.error"), tone: "danger" };
   }
 
   if (status === "ended") {
-    return { title: "Ended", tone: "muted" };
+    return { title: t("status.closed"), tone: "muted" };
   }
 
   return undefined;
@@ -1361,6 +1397,7 @@ function SessionInputDrawer({
   onQuickKey,
   onSubmit,
 }: SessionInputDrawerProps) {
+  const { t } = useT();
   // Auto-grow from 1 to 3 rows based on explicit newline count (mobile only).
   const newlines = (input.match(/\n/g) || []).length;
   const mobileRows = Math.min(newlines + 1, 3);
@@ -1406,7 +1443,7 @@ function SessionInputDrawer({
               $
             </span>
             <label className="sr-only" htmlFor="session-input">
-              Send input
+              {t("session.sendInput")}
             </label>
             <textarea
               autoCapitalize="none"
@@ -1415,7 +1452,9 @@ function SessionInputDrawer({
               className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!canSend}
               id="session-input"
-              placeholder={sessionType === "agent" ? "Type a prompt..." : "Type shell input..."}
+              placeholder={
+                sessionType === "agent" ? t("session.typePrompt") : t("session.typeShell")
+              }
               rows={rows}
               spellCheck={false}
               value={input}
@@ -1443,18 +1482,19 @@ type QuickKeyBarProps = {
 };
 
 function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
+  const { t } = useT();
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5" aria-label="Session quick keys">
+    <div className="flex min-w-0 flex-wrap gap-1.5" aria-label={t("session.quickKeys")}>
       {quickKeys.map((quickKey) => (
         <button
-          aria-label={quickKey.ariaLabel}
+          aria-label={t(quickKey.ariaLabelKey)}
           className={`shrink-0 rounded-full px-2.5 py-1.5 font-mono text-[0.62rem] font-semibold text-slate-100 transition enabled:cursor-pointer enabled:hover:border-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2 sm:text-xs ${shellSurfaceClasses.raised}`}
           disabled={!canSend}
           key={quickKey.id}
           type="button"
           onClick={() => onQuickKey(quickKey)}
         >
-          {quickKey.label}
+          {t(quickKey.labelKey)}
         </button>
       ))}
     </div>

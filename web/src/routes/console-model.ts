@@ -6,6 +6,7 @@ import type {
   TerminalSession,
   TransportStatus,
 } from "@agents-remote/shared";
+import type { TranslationKey } from "../i18n/types";
 
 export type ConsoleSection = "agents" | "terminal" | "git" | "files";
 
@@ -13,15 +14,15 @@ export const inputDrawerCollapsedAtom = atom(false);
 
 export type ConsoleSectionDefinition = {
   id: ConsoleSection;
-  label: string;
-  description: string;
-  status: string;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+  statusKey: TranslationKey;
 };
 
 export type SessionQuickKey = {
   id: string;
-  label: string;
-  ariaLabel: string;
+  labelKey: TranslationKey;
+  ariaLabelKey: TranslationKey;
   sequence: string;
 };
 
@@ -30,27 +31,27 @@ export type SessionSendStatus = "connecting" | TransportStatus;
 export const consoleSections: ConsoleSectionDefinition[] = [
   {
     id: "agents",
-    label: "Agent",
-    description: "Claude and Codex instances scoped to this Project.",
-    status: "Default",
+    labelKey: "section.agents",
+    descriptionKey: "section.agentsDesc",
+    statusKey: "section.agentsStatus",
   },
   {
     id: "files",
-    label: "Files",
-    description: "Read-only project browsing and file preview.",
-    status: "Read-only",
+    labelKey: "section.files",
+    descriptionKey: "section.filesDesc",
+    statusKey: "section.filesStatus",
   },
   {
     id: "git",
-    label: "Git",
-    description: "Read-only worktree and staged diff viewer.",
-    status: "Read-only",
+    labelKey: "section.git",
+    descriptionKey: "section.gitDesc",
+    statusKey: "section.gitStatus",
   },
   {
     id: "terminal",
-    label: "Terminal",
-    description: "Project-scoped shell sessions backed by the session runtime.",
-    status: "Runtime",
+    labelKey: "section.terminal",
+    descriptionKey: "section.terminalDesc",
+    statusKey: "section.terminalStatus",
   },
 ];
 
@@ -79,12 +80,27 @@ export function sectionForId(sectionId: ConsoleSection) {
 }
 
 export const sessionQuickKeys = (_sessionType: SessionType): SessionQuickKey[] => [
-  { id: "shifttab", label: "Shift+Tab", ariaLabel: "Send shift-tab", sequence: "\x1b[Z" },
-  { id: "escape", label: "Esc", ariaLabel: "Send escape", sequence: "\x1b" },
-  { id: "interrupt", label: "Ctrl+C", ariaLabel: "Send interrupt", sequence: "\x03" },
-  { id: "eof", label: "Ctrl+D", ariaLabel: "Send end of file", sequence: "\x04" },
-  { id: "up", label: "↑", ariaLabel: "Send arrow up", sequence: "\x1b[A" },
-  { id: "down", label: "↓", ariaLabel: "Send arrow down", sequence: "\x1b[B" },
+  {
+    id: "shifttab",
+    labelKey: "quickKey.shiftTab",
+    ariaLabelKey: "quickKey.shiftTabAria",
+    sequence: "\x1b[Z",
+  },
+  {
+    id: "escape",
+    labelKey: "quickKey.escape",
+    ariaLabelKey: "quickKey.escapeAria",
+    sequence: "\x1b",
+  },
+  {
+    id: "interrupt",
+    labelKey: "quickKey.interrupt",
+    ariaLabelKey: "quickKey.interruptAria",
+    sequence: "\x03",
+  },
+  { id: "eof", labelKey: "quickKey.eof", ariaLabelKey: "quickKey.eofAria", sequence: "\x04" },
+  { id: "up", labelKey: "quickKey.up", ariaLabelKey: "quickKey.upAria", sequence: "\x1b[A" },
+  { id: "down", labelKey: "quickKey.down", ariaLabelKey: "quickKey.downAria", sequence: "\x1b[B" },
 ];
 
 export function normalizeSessionTextInput(input: string) {
@@ -105,23 +121,28 @@ export function projectSummary(project: Project) {
   return {
     agentCount: project.agentSessionCount,
     terminalCount: project.terminalSessionCount,
-    gitBranch: project.gitBranch ?? "Not available in this slice",
-    runtimeStatus: runtimeTotal > 0 ? "Connected" : "Ready",
+    gitBranch: project.gitBranch,
+    runtimeStatus:
+      runtimeTotal > 0
+        ? ("status.connected" as TranslationKey)
+        : ("status.ready" as TranslationKey),
   };
 }
 
-export function sessionStatusLabel(status: AgentSession["status"] | TerminalSession["status"]) {
+export function sessionStatusLabel(
+  status: AgentSession["status"] | TerminalSession["status"],
+): TranslationKey {
   if (status === "idle") {
-    return "Waiting for input";
+    return "status.waitingForInput";
   }
 
   if (status === "running") {
-    return "Running";
+    return "status.running";
   }
 
   if (status === "closed") {
-    return "Closed";
+    return "status.closed";
   }
 
-  return "Error";
+  return "status.error";
 }

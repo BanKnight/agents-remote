@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { getAuthStatus, login } from "../api/client";
+import { useT } from "../i18n";
 
 type BeforeInstallPromptEvent = Event & {
   prompt(): Promise<void>;
@@ -12,6 +13,7 @@ const isStandaloneDisplay = () =>
   ("standalone" in window.navigator && window.navigator.standalone === true);
 
 export function AuthGate({ children }: { children: ReactNode }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installDismissed, setInstallDismissed] = useState(false);
@@ -92,7 +94,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (auth.isLoading) {
     return (
       <>
-        <AuthFrame title="Checking private access" description="Restoring local session." />
+        <AuthFrame title={t("auth.checkingTitle")} description={t("auth.checkingDesc")} />
         {installBanner}
       </>
     );
@@ -101,7 +103,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (auth.error instanceof Error) {
     return (
       <>
-        <AuthFrame title="Unable to check access" description={auth.error.message} />
+        <AuthFrame title={t("auth.errorTitle")} description={auth.error.message} />
         {installBanner}
       </>
     );
@@ -118,13 +120,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <AuthFrame
-        title="Private access"
-        description="Enter the single deployment password to open the Project console."
-      >
+      <AuthFrame title={t("auth.loginTitle")} description={t("auth.loginDesc")}>
         <form className="mt-5" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-slate-200" htmlFor={passwordId}>
-            App password
+            {t("auth.passwordLabel")}
           </label>
           <input
             autoComplete="current-password"
@@ -139,7 +138,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             disabled={password.trim().length === 0 || loginMutation.isPending}
             type="submit"
           >
-            {loginMutation.isPending ? "Unlocking..." : "Unlock console"}
+            {loginMutation.isPending ? t("auth.unlocking") : t("auth.unlock")}
           </button>
           {loginMutation.error instanceof Error ? (
             <p className="mt-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
@@ -159,21 +158,20 @@ type InstallPromptBannerProps = {
 };
 
 function InstallPromptBanner({ onDismiss, onInstall }: InstallPromptBannerProps) {
+  const { t } = useT();
   return (
     <section className="fixed inset-x-3 bottom-3 z-50 rounded-2xl border border-cyan-300/25 bg-slate-950/95 p-3 text-slate-100 shadow-2xl shadow-black/40 backdrop-blur sm:left-auto sm:right-4 sm:w-96">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold">Install Agents Remote</p>
-          <p className="mt-1 text-xs leading-5 text-slate-400">
-            Open this control plane as a standalone app from your device.
-          </p>
+          <p className="text-sm font-semibold">{t("auth.installTitle")}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{t("auth.installDesc")}</p>
         </div>
         <button
           className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-800 hover:text-slate-200"
           type="button"
           onClick={onDismiss}
         >
-          Dismiss
+          {t("auth.dismiss")}
         </button>
       </div>
       <button
@@ -181,7 +179,7 @@ function InstallPromptBanner({ onDismiss, onInstall }: InstallPromptBannerProps)
         type="button"
         onClick={onInstall}
       >
-        Install app
+        {t("auth.installApp")}
       </button>
     </section>
   );
@@ -194,11 +192,12 @@ type AuthFrameProps = {
 };
 
 function AuthFrame({ children, description, title }: AuthFrameProps) {
+  const { t } = useT();
   return (
     <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] px-4 text-slate-100">
       <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900/85 p-6 shadow-2xl shadow-black/30 backdrop-blur">
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
-          Agents Remote
+          {t("auth.brand")}
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">{title}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>

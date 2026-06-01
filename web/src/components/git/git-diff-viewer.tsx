@@ -7,6 +7,7 @@ import type {
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
+import { useT } from "../../i18n";
 import { IconMarker, ListRow, type ShellTone } from "../shell/shell-primitives";
 import { ResourceStatePanel } from "../files/file-browser";
 
@@ -64,13 +65,12 @@ type GitFileListProps = {
 };
 
 function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
+  const { t } = useT();
+
   if (files.length === 0)
     return (
       <div className="sm:h-full sm:flex sm:flex-col sm:items-center sm:justify-center">
-        <ResourceStatePanel
-          title="No changes"
-          message="Worktree and staged changes will appear here."
-        />
+        <ResourceStatePanel title={t("git.noChanges")} message={t("git.noChangesDesc")} />
       </div>
     );
 
@@ -83,7 +83,7 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
             key={`${file.scope}:${file.path}`}
             marker={
               <IconMarker size="sm" tone="muted">
-                FL
+                {t("git.fileMarker")}
               </IconMarker>
             }
             meta={
@@ -92,7 +92,9 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
               </IconMarker>
             }
             selected={selected}
-            subtitle={file.previousPath ? `from ${file.previousPath}` : undefined}
+            subtitle={
+              file.previousPath ? t("git.fromPath", { path: file.previousPath }) : undefined
+            }
             title={<span className="font-mono text-[0.82rem]">{file.path}</span>}
             onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
           />
@@ -111,13 +113,12 @@ type GitFileDiffPanelProps = {
 };
 
 function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitFileDiffPanelProps) {
+  const { t } = useT();
+
   if (!fileDiff && !isLoading && !error)
     return (
       <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-        <ResourceStatePanel
-          title="Select a changed file"
-          message="Unified diff output is shown read-only."
-        />
+        <ResourceStatePanel title={t("git.selectPrompt")} message={t("git.selectDesc")} />
       </div>
     );
 
@@ -134,7 +135,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
           type="button"
           onClick={onBack}
-          aria-label="Back to changed files"
+          aria-label={t("git.backToFiles")}
         >
           <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
@@ -145,7 +146,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
               strokeLinejoin="round"
             />
           </svg>
-          Back
+          {t("nav.back")}
         </button>
         <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
           {displayName.split("/").pop() ?? displayName}
@@ -165,15 +166,11 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
               <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
             </span>
-            <span className="text-xs font-semibold text-slate-400">Loading diff...</span>
+            <span className="text-xs font-semibold text-slate-400">{t("git.loadingDiff")}</span>
           </div>
         ) : error ? (
           <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-            <ResourceStatePanel
-              tone="danger"
-              title="Unable to open this diff."
-              message={error.message}
-            />
+            <ResourceStatePanel tone="danger" title={t("git.fileError")} message={error.message} />
           </div>
         ) : fileDiff ? (
           <DiffContent diff={fileDiff.diff} />
@@ -314,6 +311,7 @@ export function GitDiffPanel({
   queryScope = "git",
   onDeepDetailChange,
 }: GitDiffPanelProps) {
+  const { t } = useT();
   const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
   const diff = useQuery({
     queryKey: ["projects", projectName, queryScope, "diff"],
@@ -353,7 +351,7 @@ export function GitDiffPanel({
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
           <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
         </span>
-        <span className="text-xs font-semibold text-slate-400">Loading Git changes...</span>
+        <span className="text-xs font-semibold text-slate-400">{t("git.loading")}</span>
       </div>
     );
   }
@@ -363,7 +361,7 @@ export function GitDiffPanel({
       <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
         <ResourceStatePanel
           tone="danger"
-          title="Unable to load Git changes."
+          title={t("git.errorTitle")}
           message={diff.error.message}
         />
       </div>
@@ -373,10 +371,7 @@ export function GitDiffPanel({
   if (diff.data?.repository === false) {
     return (
       <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-        <ResourceStatePanel
-          title="Not a Git repository"
-          message="This Project directory does not have Git metadata."
-        />
+        <ResourceStatePanel title={t("git.notRepo")} message={t("git.notRepoDesc")} />
       </div>
     );
   }
@@ -386,15 +381,28 @@ export function GitDiffPanel({
 
   const scopeChips = (
     <div className="flex flex-wrap gap-1.5">
-      <GitScopeChip label="All" count={(gitSummary?.staged ?? 0) + (gitSummary?.worktree ?? 0)} />
       <GitScopeChip
-        label="Modified"
-        shortLabel="M"
+        label={t("git.allLabel")}
+        count={(gitSummary?.staged ?? 0) + (gitSummary?.worktree ?? 0)}
+      />
+      <GitScopeChip
+        label={t("git.modifiedLabel")}
+        shortLabel={t("git.modifiedShort")}
         count={gitSummary?.modified ?? 0}
         tone="warning"
       />
-      <GitScopeChip label="Added" shortLabel="A" count={gitSummary?.added ?? 0} tone="success" />
-      <GitScopeChip label="Deleted" shortLabel="D" count={gitSummary?.deleted ?? 0} tone="danger" />
+      <GitScopeChip
+        label={t("git.addedLabel")}
+        shortLabel={t("git.addedShort")}
+        count={gitSummary?.added ?? 0}
+        tone="success"
+      />
+      <GitScopeChip
+        label={t("git.deletedLabel")}
+        shortLabel={t("git.deletedShort")}
+        count={gitSummary?.deleted ?? 0}
+        tone="danger"
+      />
     </div>
   );
 
@@ -423,7 +431,9 @@ export function GitDiffPanel({
         <aside
           className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
-          <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col">{fileList}</div>
+          <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col">
+            {fileList}
+          </div>
         </aside>
         <div
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFile === undefined ? "hidden sm:flex" : "flex"}`}

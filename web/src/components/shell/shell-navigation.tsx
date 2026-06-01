@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 
+import { useT } from "../../i18n";
 import { Button } from "../ui/button";
 import { IconMarker, NavItemContent, shellSurfaceClasses } from "./shell-primitives";
 
@@ -185,12 +186,13 @@ export function PrimaryShellNavigation({
   brand,
   items,
 }: PrimaryShellNavigationProps) {
+  const { t } = useT();
   return (
     <>
       <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-100">
         {brand}
       </div>
-      <ShellNavigationList ariaLabel="Primary navigation">
+      <ShellNavigationList ariaLabel={t("nav.primaryAria")}>
         {items.map((item) =>
           item.to ? (
             <ShellNavigationLink
@@ -229,8 +231,9 @@ export function PrimaryShellBottomNavigation({
   items,
   ref,
 }: PrimaryShellBottomNavigationProps) {
+  const { t } = useT();
   return (
-    <ShellMobileBottomNavigation ref={ref} ariaLabel="Primary mobile navigation" columns={4}>
+    <ShellMobileBottomNavigation ref={ref} ariaLabel={t("nav.primaryMobileAria")} columns={4}>
       {items.map((item) =>
         item.to ? (
           <Link key={item.id} className="min-w-0 cursor-pointer" to={item.to}>
@@ -274,6 +277,7 @@ export function ProjectShellNavigation({
   projectPath,
   projectTitle,
 }: ProjectShellNavigationProps) {
+  const { t } = useT();
   return (
     <>
       <Link
@@ -282,16 +286,22 @@ export function ProjectShellNavigation({
       >
         <IconMarker size="sm" tone="muted">
           <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </IconMarker>
-        <span>Projects</span>
+        <span>{t("nav.projects")}</span>
       </Link>
       <div className={`mb-4 min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}>
         <h2 className="truncate text-sm font-semibold text-slate-100">{projectTitle}</h2>
         <p className="mt-1 truncate font-mono text-xs text-slate-500">{projectPath}</p>
       </div>
-      <ShellNavigationList ariaLabel="Project workspace navigation">
+      <ShellNavigationList ariaLabel={t("nav.projectWorkspaceAria")}>
         {items.map((item) => (
           <ShellNavigationButton
             key={item.id}
@@ -321,20 +331,23 @@ export function ProjectShellBottomNavigation({
   onSelectItem,
   ref,
 }: ProjectShellBottomNavigationProps) {
+  const { t } = useT();
   return (
-    <ShellMobileBottomNavigation
-      ref={ref}
-      ariaLabel="Project mobile workspace navigation"
-      columns={5}
-    >
+    <ShellMobileBottomNavigation ref={ref} ariaLabel={t("nav.projectMobileAria")} columns={5}>
       <Link className="min-w-0 cursor-pointer" to="/">
         <ShellMobileNavItemContent
           interactive
-          label="Back"
+          label={t("nav.back")}
           marker={
             <IconMarker size="sm" tone="accent">
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M10 3L5 8l5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </IconMarker>
           }

@@ -3,12 +3,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { createProject, listProjects } from "../api/client";
+import { useT } from "../i18n";
 import { defaultConsoleSection } from "./console-model";
-import {
-  ShellHeaderSurface,
-  ShellLayout,
-  ShellPanel,
-} from "../components/shell/shell-layout";
+import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell/shell-layout";
 import {
   ActionButton,
   IconMarker,
@@ -17,6 +14,7 @@ import {
 } from "../components/shell/shell-primitives";
 
 export function HomeRoute() {
+  const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const inputId = useId();
@@ -65,12 +63,12 @@ export function HomeRoute() {
               tone="accent"
               onClick={() => setSetupOpen(true)}
             >
-              {setupVisible ? "Setup open" : "New / Adopt"}
+              {setupVisible ? t("home.setupOpen") : t("home.newAdopt")}
             </ActionButton>
             <button
               className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-xl font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
               type="button"
-              aria-label="Create or adopt Project"
+              aria-label={t("home.createProjectAria")}
               onClick={() => setSetupOpen(true)}
             >
               +
@@ -79,13 +77,11 @@ export function HomeRoute() {
         }
         eyebrow={
           <>
-            <span className="hidden sm:inline">
-              Open a server Project to continue with Agent, Files, Git, or Terminal.
-            </span>
-            <span className="sm:hidden">Open a Project to continue.</span>
+            <span className="hidden sm:inline">{t("home.eyebrowDesktop")}</span>
+            <span className="sm:hidden">{t("home.eyebrowMobile")}</span>
           </>
         }
-        title="Projects"
+        title={t("home.title")}
         variant="home"
       />
 
@@ -118,22 +114,21 @@ type ProjectListCardProps = {
 };
 
 function ProjectListCard({ error, isLoading, onCreateProject, projects }: ProjectListCardProps) {
+  const { t } = useT();
   return (
     <ShellPanel className="px-4 pt-0 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
-      {isLoading ? <StatusPanel label="Loading Projects..." /> : null}
+      {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
         <div className={`rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
-          <p className="text-lg font-semibold text-slate-100">No Projects yet</p>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Create or adopt a Project to enter the console shell.
-          </p>
+          <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
           <button
             className="mt-4 rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 px-4 py-2 text-sm font-semibold text-slate-950"
             type="button"
             onClick={onCreateProject}
           >
-            Create or adopt Project
+            {t("home.emptyButton")}
           </button>
         </div>
       ) : null}
@@ -152,6 +147,7 @@ type ProjectEntryRowProps = {
 };
 
 function ProjectEntryRow({ project }: ProjectEntryRowProps) {
+  const { t } = useT();
   return (
     <Link
       className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
@@ -169,12 +165,18 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
             {project.path}
           </span>
           <span className="mt-2 flex min-w-0 flex-wrap gap-2">
-            <ProjectMetaPill>Agent {project.agentSessionCount}</ProjectMetaPill>
-            <ProjectMetaPill>Terminal {project.terminalSessionCount}</ProjectMetaPill>
-            <ProjectMetaPill>{project.gitBranch ?? "pending"}</ProjectMetaPill>
+            <ProjectMetaPill>
+              {t("home.agentPill", { count: project.agentSessionCount })}
+            </ProjectMetaPill>
+            <ProjectMetaPill>
+              {t("home.terminalPill", { count: project.terminalSessionCount })}
+            </ProjectMetaPill>
+            <ProjectMetaPill>{project.gitBranch ?? t("home.projectPending")}</ProjectMetaPill>
           </span>
         </span>
-        <span className="shrink-0 text-xs font-extrabold text-cyan-300">Open</span>
+        <span className="shrink-0 text-xs font-extrabold text-cyan-300">
+          {t("home.projectOpen")}
+        </span>
       </span>
     </Link>
   );
@@ -209,6 +211,7 @@ function ProjectSetupPanel({
   onSubmit,
   projectPath,
 }: ProjectSetupPanelProps) {
+  const { t } = useT();
   return (
     <ShellPanel density="default">
       <div className="flex min-w-0 items-start gap-3">
@@ -216,10 +219,8 @@ function ProjectSetupPanel({
           +
         </IconMarker>
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-100">Create or adopt a Project</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">
-            Use setup only when you need a new server folder under PROJECTS_ROOT.
-          </p>
+          <h2 className="text-base font-semibold text-slate-100">{t("home.setupTitle")}</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{t("home.setupDesc")}</p>
         </div>
       </div>
 
@@ -228,11 +229,11 @@ function ProjectSetupPanel({
         onSubmit={onSubmit}
       >
         <label className="min-w-0 text-sm font-medium text-slate-200" htmlFor={inputId}>
-          Project folder
+          {t("home.folderLabel")}
           <ShellInput
             className="mt-2"
             id={inputId}
-            placeholder="demo-project"
+            placeholder={t("home.folderPlaceholder")}
             value={projectPath}
             onChange={(event) => onProjectPathChange(event.target.value)}
           />
@@ -242,12 +243,10 @@ function ProjectSetupPanel({
           disabled={projectPath.trim().length === 0 || isPending}
           type="submit"
         >
-          {isPending ? "Creating..." : "Create and enter"}
+          {isPending ? t("home.creating") : t("home.createAndEnter")}
         </button>
       </form>
-      <p className="mt-3 text-xs leading-5 text-slate-500">
-        Enter a folder name or first-level path. Existing folders are adopted.
-      </p>
+      <p className="mt-3 text-xs leading-5 text-slate-500">{t("home.setupHint")}</p>
       {createError ? (
         <p className="mt-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
           {createError.message}

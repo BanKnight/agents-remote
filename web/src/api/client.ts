@@ -24,12 +24,17 @@ import type {
   ProjectListResponse,
   TerminalSessionDetailResponse,
 } from "@agents-remote/shared";
+import type { TranslationKey } from "../i18n/types";
+import { resolveTranslation } from "../i18n/translate";
+
+const fail = (key: TranslationKey, status: number) =>
+  new Error(`${resolveTranslation(key)}: ${status}`);
 
 export async function getApiHealth(): Promise<HealthResponse> {
   const response = await fetch("/api/health");
 
   if (!response.ok) {
-    throw new Error(`Health check failed: ${response.status}`);
+    throw fail("api.healthCheckFailed", response.status);
   }
 
   return response.json();
@@ -43,7 +48,7 @@ export async function getAuthStatus(): Promise<boolean> {
   }
 
   if (!response.ok) {
-    throw new Error(`Auth check failed: ${response.status}`);
+    throw fail("api.authCheckFailed", response.status);
   }
 
   const body = (await response.json()) as AuthMeResponse;
@@ -51,7 +56,7 @@ export async function getAuthStatus(): Promise<boolean> {
 }
 
 export async function login(password: string): Promise<LoginResponse> {
-  return fetchJson("/api/auth/login", "Login failed", {
+  return fetchJson("/api/auth/login", "api.loginFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ password } satisfies LoginRequest),
@@ -59,11 +64,11 @@ export async function login(password: string): Promise<LoginResponse> {
 }
 
 export async function listProjects(): Promise<ProjectListResponse> {
-  return fetchJson("/api/projects", "Project list failed");
+  return fetchJson("/api/projects", "api.projectListFailed");
 }
 
 export async function createProject(path: string): Promise<CreateProjectResponse> {
-  return fetchJson("/api/projects", "Project creation failed", {
+  return fetchJson("/api/projects", "api.projectCreationFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path } satisfies CreateProjectRequest),
@@ -71,25 +76,25 @@ export async function createProject(path: string): Promise<CreateProjectResponse
 }
 
 export async function getProject(projectName: string): Promise<ProjectDetailResponse> {
-  return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "Project detail failed");
+  return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "api.projectDetailFailed");
 }
 
 export async function listProjectFiles(
   projectName: string,
   path = "",
 ): Promise<ProjectFileListResponse> {
-  return fetchJson(projectFilesPath(projectName, path), "Project files failed");
+  return fetchJson(projectFilesPath(projectName, path), "api.projectFilesFailed");
 }
 
 export async function previewProjectFile(
   projectName: string,
   path: string,
 ): Promise<ProjectFilePreviewResponse> {
-  return fetchJson(projectFilePreviewPath(projectName, path), "Project file preview failed");
+  return fetchJson(projectFilePreviewPath(projectName, path), "api.projectFilePreviewFailed");
 }
 
 export async function listProjectGitDiff(projectName: string): Promise<GitDiffListResponse> {
-  return fetchJson(projectGitDiffPath(projectName), "Project Git diff failed");
+  return fetchJson(projectGitDiffPath(projectName), "api.projectGitDiffFailed");
 }
 
 export async function getProjectGitFileDiff(
@@ -99,19 +104,19 @@ export async function getProjectGitFileDiff(
 ): Promise<GitFileDiffResponse> {
   return fetchJson(
     projectGitFileDiffPath(projectName, scope, path),
-    "Project Git file diff failed",
+    "api.projectGitFileDiffFailed",
   );
 }
 
 export async function listAgentSessions(projectName: string): Promise<ListAgentSessionsResponse> {
-  return fetchJson(agentSessionsPath(projectName), "Agent session list failed");
+  return fetchJson(agentSessionsPath(projectName), "api.agentSessionListFailed");
 }
 
 export async function createAgentSession(
   projectName: string,
   provider: AgentProvider,
 ): Promise<CreateAgentSessionResponse> {
-  return fetchJson(agentSessionsPath(projectName), "Agent session creation failed", {
+  return fetchJson(agentSessionsPath(projectName), "api.agentSessionCreationFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ provider } satisfies CreateAgentSessionRequest),
@@ -124,7 +129,7 @@ export async function getAgentSession(
 ): Promise<AgentSessionDetailResponse> {
   return fetchJson(
     `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}`,
-    "Agent session detail failed",
+    "api.agentSessionDetailFailed",
   );
 }
 
@@ -134,7 +139,7 @@ export async function closeAgentSession(
 ): Promise<CloseAgentSessionResponse> {
   return fetchJson(
     `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/close`,
-    "Agent session close failed",
+    "api.agentSessionCloseFailed",
     {
       method: "POST",
     },
@@ -144,14 +149,14 @@ export async function closeAgentSession(
 export async function listTerminalSessions(
   projectName: string,
 ): Promise<ListTerminalSessionsResponse> {
-  return fetchJson(terminalSessionsPath(projectName), "Terminal session list failed");
+  return fetchJson(terminalSessionsPath(projectName), "api.terminalSessionListFailed");
 }
 
 export async function createTerminalSession(
   projectName: string,
   displayName?: string,
 ): Promise<CreateTerminalSessionResponse> {
-  return fetchJson(terminalSessionsPath(projectName), "Terminal session creation failed", {
+  return fetchJson(terminalSessionsPath(projectName), "api.terminalSessionCreationFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ displayName } satisfies CreateTerminalSessionRequest),
@@ -164,7 +169,7 @@ export async function getTerminalSession(
 ): Promise<TerminalSessionDetailResponse> {
   return fetchJson(
     `${terminalSessionsPath(projectName)}/${encodeURIComponent(sessionId)}`,
-    "Terminal session detail failed",
+    "api.terminalSessionDetailFailed",
   );
 }
 
@@ -174,7 +179,7 @@ export async function closeTerminalSession(
 ): Promise<CloseTerminalSessionResponse> {
   return fetchJson(
     `${terminalSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/close`,
-    "Terminal session close failed",
+    "api.terminalSessionCloseFailed",
     {
       method: "POST",
     },
@@ -224,13 +229,13 @@ const terminalSessionsPath = (projectName: string) =>
 
 const fetchJson = async <T>(
   url: string,
-  failureMessage: string,
+  failureKey: TranslationKey,
   init?: RequestInit,
 ): Promise<T> => {
   const response = await fetch(url, init);
 
   if (!response.ok) {
-    throw new Error(`${failureMessage}: ${response.status}`);
+    throw new Error(`${resolveTranslation(failureKey)}: ${response.status}`);
   }
 
   return response.json();

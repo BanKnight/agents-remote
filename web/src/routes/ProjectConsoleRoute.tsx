@@ -12,6 +12,7 @@ import {
   listAgentSessions,
   listTerminalSessions,
 } from "../api/client";
+import { useT } from "../i18n";
 import {
   consoleSections,
   projectSummary,
@@ -41,6 +42,7 @@ import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 
 export function ProjectConsoleRoute() {
+  const { t } = useT();
   const { projectName } = useParams({ from: "/projects/$projectName" });
   const project = useQuery({
     queryKey: ["projects", projectName],
@@ -48,21 +50,21 @@ export function ProjectConsoleRoute() {
   });
 
   if (project.isLoading) {
-    return <ConsoleFrame title="Loading Project..." subtitle="Resolving Project context." />;
+    return <ConsoleFrame title={t("project.loading")} subtitle={t("project.loadingDesc")} />;
   }
 
   if (project.error instanceof Error) {
     return (
-      <ConsoleFrame title="Project unavailable" subtitle={project.error.message}>
+      <ConsoleFrame title={t("project.unavailable")} subtitle={project.error.message}>
         <Link className="text-sm font-semibold text-cyan-200 underline underline-offset-4" to="/">
-          Back to Projects
+          {t("project.backToProjects")}
         </Link>
       </ConsoleFrame>
     );
   }
 
   if (!project.data) {
-    return <ConsoleFrame title="Project unavailable" subtitle="No Project data returned." />;
+    return <ConsoleFrame title={t("project.unavailable")} subtitle={t("project.noData")} />;
   }
 
   return <ProjectConsole project={project.data.project} />;
@@ -75,13 +77,14 @@ type ConsoleFrameProps = {
 };
 
 function ConsoleFrame({ children, subtitle, title }: ConsoleFrameProps) {
+  const { t } = useT();
   return (
     <main className="flex min-h-dvh items-center justify-center overflow-x-hidden bg-[#080b10] px-4 text-slate-100">
       <section
         className={`w-full max-w-md rounded-[2rem] p-6 shadow-2xl shadow-black/30 ${shellSurfaceClasses.workspace}`}
       >
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
-          Agents Remote
+          {t("auth.brand")}
         </p>
         <h1 className="mt-3 text-2xl font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-400">{subtitle}</p>
@@ -96,6 +99,7 @@ type ProjectConsoleProps = {
 };
 
 function ProjectConsole({ project }: ProjectConsoleProps) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const navigate = useNavigate({ from: "/projects/$projectName" });
   const { workspace: activeSection, filesPath } = useSearch({ from: "/projects/$projectName" });
@@ -187,13 +191,13 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   tone="accent"
                   onClick={() => createAgent.mutate("claude")}
                 >
-                  + Claude
+                  {t("project.createClaude")}
                 </CreateButton>
                 <CreateButton
                   disabled={createAgent.isPending}
                   onClick={() => createAgent.mutate("codex")}
                 >
-                  + Codex
+                  {t("project.createCodex")}
                 </CreateButton>
               </div>
             ) : activeSection === "terminal" ? (
@@ -206,7 +210,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   tone="accent"
                   onClick={() => createTerminal.mutate()}
                 >
-                  {createTerminal.isPending ? "Creating..." : "New Terminal"}
+                  {createTerminal.isPending ? t("project.creating") : t("project.newTerminal")}
                 </CreateButton>
               </div>
             ) : activeSection === "files" || activeSection === "git" ? null : undefined
@@ -271,11 +275,12 @@ function ProjectSecondaryNav({
   onSelectSection,
   project,
 }: ProjectSecondaryDesktopNavProps) {
+  const { t } = useT();
   return (
     <ShellSidebar display="flex">
       <ProjectShellNavigation
         activeItemId={activeSection}
-        items={projectNavigationItems(activeSection)}
+        items={projectNavigationItems(t)}
         projectPath={project.path}
         projectTitle={project.name}
         onSelectItem={onSelectSection}
@@ -293,44 +298,36 @@ function ProjectSecondaryBottomNav({
   onSelectSection,
   ref,
 }: ProjectSecondaryBottomNavProps) {
+  const { t } = useT();
   return (
     <ProjectShellBottomNavigation
       ref={ref}
       activeItemId={activeSection}
-      items={projectNavigationItems(activeSection)}
+      items={projectNavigationItems(t)}
       onSelectItem={onSelectSection}
     />
   );
 }
 
-function projectNavigationItems(_activeSection: ConsoleSection) {
+function projectNavigationItems(t: ReturnType<typeof useT>["t"]) {
   return consoleSections.map((section) => ({
     id: section.id,
-    label: section.label,
-    mobileLabel: shortSectionLabel(section.id),
+    label: t(section.labelKey),
+    mobileLabel: section.id === "agents" ? t("section.agents") : t(section.labelKey),
     marker: (
       <IconMarker size="sm" tone="accent">
-        {sectionMarker(section.id)}
+        {t(
+          section.id === "agents"
+            ? "section.markerAgents"
+            : section.id === "files"
+              ? "section.markerFiles"
+              : section.id === "git"
+                ? "section.markerGit"
+                : "section.markerTerminal",
+        )}
       </IconMarker>
     ),
   }));
-}
-
-function sectionMarker(section: ConsoleSection) {
-  switch (section) {
-    case "agents":
-      return "A";
-    case "files":
-      return "F";
-    case "git":
-      return "G";
-    case "terminal":
-      return "T";
-  }
-}
-
-function shortSectionLabel(section: ConsoleSection) {
-  return section === "agents" ? "Agent" : sectionForId(section).label;
 }
 
 type WorkspaceHeaderProps = {
@@ -341,11 +338,13 @@ type WorkspaceHeaderProps = {
 };
 
 function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeaderProps) {
+  const { t } = useT();
+  const sectionLabel = t(section.labelKey);
   const fallbackActions = (
     <div className="hidden grid-cols-3 gap-2 sm:grid">
-      <SummaryBadge label="Agents" value={summary.agentCount} />
-      <SummaryBadge label="Terminals" value={summary.terminalCount} />
-      <SummaryBadge label="Runtime" value={summary.runtimeStatus} />
+      <SummaryBadge label={t("section.agents")} value={summary.agentCount} />
+      <SummaryBadge label={t("section.terminal")} value={summary.terminalCount} />
+      <SummaryBadge label="Runtime" value={t(summary.runtimeStatus)} />
     </div>
   );
 
@@ -355,14 +354,14 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
       eyebrow={
         <>
           <span className="hidden sm:inline">
-            Project / {project.name} / {section.label}
+            {t("project.breadcrumbEyebrow", { name: project.name, section: sectionLabel })}
           </span>
           <span className="sm:hidden">
             {section.id === "agents"
-              ? `Agent instances · ${summary.agentCount} active`
+              ? t("project.mobileEyebrowAgent", { count: summary.agentCount })
               : section.id === "terminal"
-                ? `Terminal instances · ${summary.terminalCount} active`
-                : section.label}
+                ? t("project.mobileEyebrowTerminal", { count: summary.terminalCount })
+                : sectionLabel}
           </span>
         </>
       }
@@ -372,13 +371,13 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
           <>
             <span className="sm:hidden">{project.name}</span>
             <span className="hidden sm:inline">
-              {section.id === "agents" ? "Agent instances" : "Terminal instances"}
+              {section.id === "agents" ? t("section.agents") : t("section.terminal")} instances
             </span>
           </>
         ) : section.id === "git" ? (
-          "Read-only status & diff"
+          t("section.gitStatus")
         ) : (
-          section.label
+          sectionLabel
         )
       }
       variant="project"
@@ -416,6 +415,7 @@ function AgentPanel({
   onCreate,
   onClose,
 }: AgentPanelProps) {
+  const { t } = useT();
   return (
     <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
       <div className="grid grid-cols-2 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
@@ -425,19 +425,21 @@ function AgentPanel({
           onClick={() => onCreate("claude")}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
-          + Claude
+          {t("project.createClaude")}
         </CreateButton>
         <CreateButton
           disabled={isCreating}
           onClick={() => onCreate("codex")}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
-          + Codex
+          {t("project.createCodex")}
         </CreateButton>
       </div>
       <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
-        <h3 className="text-base font-semibold">Active instances</h3>
-        <span className="text-xs text-slate-400">{sessions.length} current</span>
+        <h3 className="text-base font-semibold">{t("project.activeInstances")}</h3>
+        <span className="text-xs text-slate-400">
+          {t("project.agentCount", { count: sessions.length })}
+        </span>
       </div>
       <ErrorText error={createError ?? closeError} />
       <AgentInstanceList
@@ -458,16 +460,17 @@ type AgentInstanceListProps = {
 };
 
 function AgentInstanceList({ projectName, sessions, isLoading, onClose }: AgentInstanceListProps) {
+  const { t } = useT();
   if (isLoading) {
-    return <p className="mt-5 text-sm text-slate-400">Loading Agent instances...</p>;
+    return <p className="mt-5 text-sm text-slate-400">{t("project.loading")}</p>;
   }
 
   if (sessions.length === 0) {
     return (
       <div className={`mt-4 rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">No Agent instances yet</p>
+        <p className="text-lg font-semibold text-slate-100">{t("project.noAgents")}</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          Create a Claude or Codex session to open a project-scoped Agent stream.
+          {t("project.noAgentsDesc")}
         </p>
       </div>
     );
@@ -497,6 +500,7 @@ type AgentInstanceRowProps = {
 };
 
 function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
+  const { t } = useT();
   return (
     <Link
       className="block"
@@ -510,22 +514,22 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
             tone="danger"
             onClick={(e) => {
               e.preventDefault();
-              if (window.confirm("Close this session? The running process will be terminated.")) {
+              if (window.confirm(t("project.closeAgentConfirm"))) {
                 onClose();
               }
             }}
           >
-            Close
+            {t("session.close")}
           </ActionButton>
         }
         marker={
           <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
-            {providerMarker(session.provider)}
+            {providerMarker(t, session.provider)}
           </IconMarker>
         }
         statusTone={sessionStatusTone(session.status)}
-        status={sessionStatusLabel(session.status)}
-        subtitle={`${providerLabel(session.provider)} · ${session.id}`}
+        status={t(sessionStatusLabel(session.status))}
+        subtitle={`${providerLabel(t, session.provider)} · ${session.id}`}
         title={session.displayName}
       />
     </Link>
@@ -533,6 +537,7 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
 }
 
 function _AgentHistoryPanel() {
+  const { t } = useT();
   return (
     <ShellPanel
       className={`mt-4 rounded-[1.25rem] ${shellSurfaceClasses.raised}`}
@@ -542,11 +547,9 @@ function _AgentHistoryPanel() {
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-100">Session history</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Future restore will live here when provider history is available.
-          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{t("project.historyFuture")}</p>
         </div>
-        <StatusPill tone="muted" value="Staged" />
+        <StatusPill tone="muted" value={t("project.historyStaged")} />
       </div>
       <div
         className={`mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 ${shellSurfaceClasses.inset}`}
@@ -554,10 +557,7 @@ function _AgentHistoryPanel() {
         <IconMarker size="sm" tone="muted">
           H
         </IconMarker>
-        <p className="min-w-0 text-sm leading-6 text-slate-400">
-          Current Agent instances stay above. Provider-native history and resume are not mixed into
-          the running session list until a real adapter exposes them.
-        </p>
+        <p className="min-w-0 text-sm leading-6 text-slate-400">{t("project.historyDesc")}</p>
       </div>
     </ShellPanel>
   );
@@ -601,11 +601,11 @@ function SessionInstanceRow({
   );
 }
 
-function providerMarker(provider: AgentProvider) {
-  return provider === "codex" ? "CX" : "CL";
+function providerMarker(t: ReturnType<typeof useT>["t"], provider: AgentProvider) {
+  return provider === "codex" ? t("provider.codex") : t("provider.claude");
 }
 
-function providerLabel(provider: AgentProvider) {
+function providerLabel(t: ReturnType<typeof useT>["t"], provider: AgentProvider) {
   return provider === "codex" ? "Codex" : "Claude";
 }
 
@@ -648,6 +648,7 @@ function TerminalPanel({
   onCreate,
   onClose,
 }: TerminalPanelProps) {
+  const { t } = useT();
   return (
     <ShellPanel className="px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact" docked>
       <div className="grid gap-2 sm:hidden" aria-label="Create Terminal instance mobile">
@@ -657,16 +658,18 @@ function TerminalPanel({
           onClick={onCreate}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
-          {isCreating ? "Creating..." : "+ Terminal"}
+          {isCreating ? t("project.creating") : t("project.newTerminalMobile")}
         </CreateButton>
       </div>
       <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
-        <h3 className="text-base font-semibold">Active instances</h3>
-        <span className="text-xs text-slate-400">{sessions.length} current</span>
+        <h3 className="text-base font-semibold">{t("project.activeInstances")}</h3>
+        <span className="text-xs text-slate-400">
+          {t("project.agentCount", { count: sessions.length })}
+        </span>
       </div>
       <ErrorText error={createError ?? closeError} />
       {isClosing ? (
-        <p className="mt-3 text-sm text-amber-200">Closing Terminal session...</p>
+        <p className="mt-3 text-sm text-amber-200">{t("project.closingTerminal")}</p>
       ) : null}
       <TerminalInstanceList
         projectName={projectName}
@@ -691,16 +694,17 @@ function TerminalInstanceList({
   isLoading,
   onClose,
 }: TerminalInstanceListProps) {
+  const { t } = useT();
   if (isLoading) {
-    return <p className="mt-5 text-sm text-slate-400">Loading Terminal instances...</p>;
+    return <p className="mt-5 text-sm text-slate-400">{t("project.loading")}</p>;
   }
 
   if (sessions.length === 0) {
     return (
       <div className={`mt-4 rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
-        <p className="text-lg font-semibold text-slate-100">No Terminal instances yet</p>
+        <p className="text-lg font-semibold text-slate-100">{t("project.noTerminals")}</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-          Create a Terminal to open a focused project shell detail.
+          {t("project.noTerminalsDesc")}
         </p>
       </div>
     );
@@ -730,6 +734,7 @@ type TerminalInstanceRowProps = {
 };
 
 function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstanceRowProps) {
+  const { t } = useT();
   return (
     <Link
       aria-label={`Open stream ${session.displayName}`}
@@ -744,17 +749,17 @@ function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstance
             tone="danger"
             onClick={(e) => {
               e.preventDefault();
-              if (window.confirm("Close this Terminal? The running shell will be terminated.")) {
+              if (window.confirm(t("project.closeTerminalConfirm"))) {
                 onClose();
               }
             }}
           >
-            Close
+            {t("session.close")}
           </ActionButton>
         }
-        marker={<IconMarker tone="success">T</IconMarker>}
+        marker={<IconMarker tone="success">{t("section.markerTerminal")}</IconMarker>}
         statusTone={sessionStatusTone(session.status)}
-        status={sessionStatusLabel(session.status)}
+        status={t(sessionStatusLabel(session.status))}
         subtitle={session.id}
         title={session.displayName}
       />

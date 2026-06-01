@@ -68,7 +68,13 @@ export function ShellLayout({ bottomNavigation, children, sidebar, variant }: Sh
       className={shellMainClasses[variant]}
       style={{ "--shell-mobile-bottom-nav-space": `${bottomNavigationHeight}px` } as CSSProperties}
     >
-      <div className={cn(shellGridClasses[variant], !sidebar && "lg:!grid-cols-1", shellSurfaceClasses.shell)}>
+      <div
+        className={cn(
+          shellGridClasses[variant],
+          !sidebar && "lg:!grid-cols-1",
+          shellSurfaceClasses.shell,
+        )}
+      >
         {sidebar}
         <div className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden">{children}</div>
       </div>
@@ -172,7 +178,9 @@ export function ShellHeaderSurface({
 
   return (
     <header className="min-w-0">
-      <Card className={`!bg-transparent ${shellHeaderClasses.project} ${shellSurfaceClasses.floatingHeader}`}>
+      <Card
+        className={`!bg-transparent ${shellHeaderClasses.project} ${shellSurfaceClasses.floatingHeader}`}
+      >
         <div className="flex min-w-0 items-center justify-between gap-3">{headerContent}</div>
         {mobileMeta ? <div className="mt-2 sm:hidden">{mobileMeta}</div> : null}
       </Card>

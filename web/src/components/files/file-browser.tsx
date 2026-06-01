@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
 import { listProjectFiles, previewProjectFile } from "../../api/client";
+import { useT } from "../../i18n";
 import { IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
 
 // ── Utilities ────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ type PathBreadcrumbProps = {
 };
 
 export function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
+  const { t } = useT();
   const segments = path.split("/").filter(Boolean);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-xs font-semibold">
@@ -73,7 +75,7 @@ export function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
         className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-400 transition hover:bg-slate-700/50 hover:text-cyan-200"
         type="button"
         onClick={() => onNavigate("")}
-        aria-label="Go to root"
+        aria-label={t("files.goRoot")}
       >
         <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path
@@ -83,7 +85,7 @@ export function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
             strokeLinejoin="round"
           />
         </svg>
-        <span>root</span>
+        <span>{t("files.root")}</span>
       </button>
       {segments.map((segment, index) => {
         const segmentPath = segments.slice(0, index + 1).join("/");
@@ -126,22 +128,15 @@ export function FileEntryList({
   onPreviewFile,
   selectedFilePath,
 }: FileEntryListProps) {
-  if (isLoading) return <ResourceStatePanel tone="inset" message="Loading files..." />;
+  const { t } = useT();
+
+  if (isLoading) return <ResourceStatePanel tone="inset" message={t("files.loading")} />;
   if (error)
     return (
-      <ResourceStatePanel
-        tone="danger"
-        title="Unable to load this directory."
-        message={error.message}
-      />
+      <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
     );
   if (entries.length === 0)
-    return (
-      <ResourceStatePanel
-        title="Empty directory"
-        message="This Project path has no files or folders."
-      />
-    );
+    return <ResourceStatePanel title={t("files.emptyTitle")} message={t("files.emptyDesc")} />;
 
   return (
     <div className="grid gap-1.5" aria-label="Project files">
@@ -154,11 +149,11 @@ export function FileEntryList({
             key={`${entry.type}:${entry.path}`}
             marker={
               <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
-                {isDirectory ? "DR" : "FL"}
+                {isDirectory ? t("files.dirMarker") : t("files.fileMarker")}
               </IconMarker>
             }
             selected={selected}
-            subtitle={entry.hidden ? "hidden" : undefined}
+            subtitle={entry.hidden ? t("files.hidden") : undefined}
             title={<span className="font-mono text-[0.82rem]">{entry.name}</span>}
             onClick={
               clickable
@@ -197,13 +192,12 @@ function FilePreviewPanel({
   onBack,
   onRenderModeChange,
 }: FilePreviewPanelProps) {
+  const { t } = useT();
+
   if (!preview && !isLoading && !error)
     return (
       <div className="flex-1 flex items-center justify-center p-4">
-        <ResourceStatePanel
-          title="Select a file to preview"
-          message="Text and common web images are shown read-only."
-        />
+        <ResourceStatePanel title={t("files.selectPrompt")} message={t("files.selectDesc")} />
       </div>
     );
 
@@ -219,7 +213,7 @@ function FilePreviewPanel({
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
           type="button"
           onClick={onBack}
-          aria-label="Back to files"
+          aria-label={t("files.backToFiles")}
         >
           <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
@@ -230,7 +224,7 @@ function FilePreviewPanel({
               strokeLinejoin="round"
             />
           </svg>
-          Back
+          {t("nav.back")}
         </button>
         <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
           {displayName.split("/").pop() ?? displayName}
@@ -251,13 +245,15 @@ function FilePreviewPanel({
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
               <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
             </span>
-            <span className="text-xs font-semibold text-slate-400">Loading preview...</span>
+            <span className="text-xs font-semibold text-slate-400">
+              {t("files.loadingPreview")}
+            </span>
           </div>
         ) : error ? (
           <div className="flex-1 flex items-center justify-center p-4">
             <ResourceStatePanel
               tone="danger"
-              title="Unable to preview this file."
+              title={t("files.previewError")}
               message={error.message}
             />
           </div>
@@ -276,6 +272,7 @@ type FilePreviewMenuProps = {
 };
 
 function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreviewMenuProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -297,7 +294,7 @@ function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreview
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label="File actions"
+        aria-label={t("files.fileActions")}
         onClick={() => setOpen((v) => !v)}
       >
         <MoreVertical className="h-4 w-4" aria-hidden="true" />
@@ -314,7 +311,7 @@ function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreview
               setOpen(false);
             }}
           >
-            Source
+            {t("files.sourceMode")}
           </FilePreviewMenuItem>
           <FilePreviewMenuItem
             active={renderMode === "render"}
@@ -323,7 +320,7 @@ function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreview
               setOpen(false);
             }}
           >
-            Render
+            {t("files.renderMode")}
           </FilePreviewMenuItem>
         </div>
       ) : null}
@@ -360,6 +357,7 @@ type PreviewBodyProps = {
 };
 
 function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
+  const { t } = useT();
   const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
 
   useEffect(() => {
@@ -415,7 +413,9 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
               <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
             </span>
-            <span className="text-xs font-semibold text-slate-400">Preparing render...</span>
+            <span className="text-xs font-semibold text-slate-400">
+              {t("files.preparingRender")}
+            </span>
           </div>
         );
       return (
@@ -446,15 +446,11 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
   if (preview.type === "too_large")
     return (
       <p className="p-3 text-sm leading-6 text-amber-100">
-        File is too large to preview. Limit: {formatBytes(preview.limitBytes)}.
+        {t("files.tooLarge", { limit: formatBytes(preview.limitBytes) })}
       </p>
     );
 
-  return (
-    <p className="p-3 text-sm leading-6 text-slate-300">
-      This file type is not supported for preview yet.
-    </p>
-  );
+  return <p className="p-3 text-sm leading-6 text-slate-300">{t("files.unsupported")}</p>;
 }
 
 // ── FilesPanel ────────────────────────────────────────────────────
@@ -478,6 +474,7 @@ export function FilesPanel({
   onPathChange,
   onMobilePreviewChange,
 }: FilesPanelProps) {
+  const { t } = useT();
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
 
@@ -531,7 +528,7 @@ export function FilesPanel({
           type="button"
           onClick={() => setRenderMode(mode)}
         >
-          {mode === "source" ? "Source" : "Render"}
+          {mode === "source" ? t("files.sourceMode") : t("files.renderMode")}
         </button>
       ))}
     </div>

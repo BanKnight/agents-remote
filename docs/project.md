@@ -31,6 +31,7 @@
 ```text
 agents-remote/
 ├── web/              # 前端控制台：页面、交互、浏览器侧 /api client、PWA 静态资源从这里开始找
+│   └── src/i18n/     # 轻量国际化：typed keys、I18nProvider、中英双语、navigator.language 检测
 ├── api/              # Bun 服务端：认证、配置、Project、Files/Git、Session、Agent runtime API 从这里开始找
 ├── packages/shared/  # web/api 共享协议：DTO、状态 union、错误码；跨边界类型先看这里
 ├── e2e/              # Playwright 端到端测试：真实浏览器用户路径从这里开始找
@@ -46,6 +47,7 @@ agents-remote/
 
 - Monorepo 使用 Bun workspaces：根包编排 `web`、`api` 与 `packages/*`。
 - 前端栈是 React 19、Vite、TypeScript、TanStack Router、TanStack Query、Jotai、Tailwind CSS；Project 直接二级 workspace active 状态属于 URL-visible route/search 状态，不应只放在 Jotai。
+- 国际化使用轻量自研方案（`web/src/i18n/`）：`I18nProvider` + `useT()` hook，无第三方依赖。支持中英双语，默认跟随 `navigator.language`（`zh*` → 中文，其余 → 英文），用户可通过 `localStorage["lang"]` 覆盖。所有面向用户的字符串（~180 条）按域组织为 typed translation key，TypeScript 强制 key 一致性。
 - Home / Projects 是一级 Project entry：默认优先展示可扫读 Project 列表和进入行为，Create/adopt Project 是低频入口，只有无 Project、提交中或错误时才提升为可恢复主路径。
 - Agent/Terminal Session detail 是 runtime 深层工作台：共享 terminal-first 主输出和底部 input drawer；Agent detail 可提供 Files/Git/+Terminal/Meta contextual tools，Terminal detail 保持 focused shell，不混入 Agent-only tools。
 - Project Agent workspace 是默认运行态二级页：优先展示 `+ Claude` / `+ Codex` 创建入口和当前 Agent instances；provider history / future restore 在真实 API 完成前只作为 staged 辅助区，不混入当前实例列表。

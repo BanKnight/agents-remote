@@ -25,15 +25,15 @@ test("Agent leads the Project secondary workspace navigation", () => {
     "git",
     "terminal",
   ]);
-  expect(sectionForId("agents").label).toBe("Agent");
+  expect(sectionForId("agents").labelKey).toBe("section.agents");
 });
 
 test("Git and Files are read-only project inspection sections", () => {
   const git = sectionForId("git");
   const files = sectionForId("files");
 
-  expect(git.status).toBe("Read-only");
-  expect(files.status).toBe("Read-only");
+  expect(git.statusKey).toBe("section.gitStatus");
+  expect(files.statusKey).toBe("section.filesStatus");
 });
 
 test("session detail path uses project and internal session id", () => {
@@ -43,10 +43,10 @@ test("session detail path uses project and internal session id", () => {
 });
 
 test("session status labels distinguish waiting input", () => {
-  expect(sessionStatusLabel("idle")).toBe("Waiting for input");
-  expect(sessionStatusLabel("running")).toBe("Running");
-  expect(sessionStatusLabel("closed")).toBe("Closed");
-  expect(sessionStatusLabel("error")).toBe("Error");
+  expect(sessionStatusLabel("idle")).toBe("status.waitingForInput");
+  expect(sessionStatusLabel("running")).toBe("status.running");
+  expect(sessionStatusLabel("closed")).toBe("status.closed");
+  expect(sessionStatusLabel("error")).toBe("status.error");
 });
 
 test("session quick keys are unified across session types and keep stable control sequences", () => {

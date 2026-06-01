@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { I18nProvider } from "./i18n";
 import { router } from "./routes/router";
 import "./styles/index.css";
 
@@ -15,11 +16,13 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <JotaiProvider>
-        <RouterProvider router={router} />
-      </JotaiProvider>
-    </QueryClientProvider>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <JotaiProvider>
+          <RouterProvider router={router} />
+        </JotaiProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   </StrictMode>,
 );
 
