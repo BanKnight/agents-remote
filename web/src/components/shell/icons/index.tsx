@@ -6,6 +6,7 @@ import filesNav from "./files-nav.svg?raw";
 import gitNav from "./git-nav.svg?raw";
 import openai from "./openai.svg?raw";
 import plus from "./plus.svg?raw";
+import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
 import terminal from "./terminal.svg?raw";
 
@@ -18,6 +19,7 @@ const svgMap: Record<string, string> = {
   "git-nav": gitNav,
   openai,
   plus,
+  project,
   refresh,
   terminal,
 };

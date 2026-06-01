@@ -60,7 +60,7 @@ export function HomeRoute() {
               tone="accent"
               onClick={() => setSetupOpen(!setupOpen)}
             >
-              <ShellIcon name="files-nav" className="h-3.5 w-3.5" />
+              <ShellIcon name="project" className="h-3.5 w-3.5" />
               {t("home.newAdopt")}
             </ActionButton>
             <button
@@ -152,14 +152,7 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
         <IconMarker tone="success">
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-3.75v-3.75h-3.5V14.5H2.5A.5.5 0 012 14V6.5z"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ShellIcon name="project" className="h-3.5 w-3.5" />
         </IconMarker>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[0.95rem] font-semibold text-slate-100 group-hover:text-cyan-100">
