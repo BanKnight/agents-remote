@@ -127,7 +127,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
       className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/25"
       aria-label="Git file diff"
     >
-      <div className="flex min-w-0 items-center gap-2 border-b border-slate-700/40 px-3.5 py-2.5">
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-slate-700/40 px-3.5 py-2.5">
         <button
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
           type="button"
@@ -145,8 +145,8 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
           </svg>
           Back
         </button>
-        <div className="min-w-0 flex-1">
-          <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-left text-center">
+        <div className="min-w-0 sm:flex sm:flex-col sm:items-start">
+          <h4 className="truncate text-center font-mono text-sm font-semibold text-slate-100 sm:text-left">
             {displayName}
           </h4>
           {fileDiff?.previousPath ? (
@@ -159,7 +159,9 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
           <IconMarker size="sm" tone={gitStatusTone(displayStatus)}>
             {statusShortLabel(displayStatus)}
           </IconMarker>
-        ) : null}
+        ) : (
+          <span className="w-7 sm:w-0" aria-hidden="true" />
+        )}
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
