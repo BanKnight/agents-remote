@@ -125,7 +125,7 @@ export function ShellPanel({
     <Card
       {...props}
       className={cn(
-        `min-w-0 gap-0 rounded-[1.5rem] bg-transparent text-slate-100 shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
+        `min-w-0 gap-0 rounded-[1.5rem] !bg-transparent text-slate-100 shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
         densityClass,
         dockedClass,
         className,
@@ -165,14 +165,14 @@ export function ShellHeaderSurface({
   if (variant === "home") {
     return (
       <header className="min-w-0 px-4 pb-3 pt-4 sm:px-5 sm:pt-5 lg:px-5 lg:pb-4 lg:pt-5">
-        <Card className={shellHeaderClasses.home}>{headerContent}</Card>
+        <Card className={`!bg-transparent ${shellHeaderClasses.home}`}>{headerContent}</Card>
       </header>
     );
   }
 
   return (
     <header className="min-w-0">
-      <Card className={`${shellHeaderClasses.project} ${shellSurfaceClasses.floatingHeader}`}>
+      <Card className={`!bg-transparent ${shellHeaderClasses.project} ${shellSurfaceClasses.floatingHeader}`}>
         <div className="flex min-w-0 items-center justify-between gap-3">{headerContent}</div>
         {mobileMeta ? <div className="mt-2 sm:hidden">{mobileMeta}</div> : null}
       </Card>

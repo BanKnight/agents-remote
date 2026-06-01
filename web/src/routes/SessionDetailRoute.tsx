@@ -670,7 +670,7 @@ function SessionDetailActions({
         </button>
         {open ? (
           <div
-            className={`absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl p-2 shadow-2xl shadow-black/40 ${shellSurfaceClasses.header}`}
+            className="absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl border border-white/10 bg-slate-950/90 p-2 shadow-2xl shadow-black/40"
             role="menu"
           >
             {sessionType === "agent" ? (
