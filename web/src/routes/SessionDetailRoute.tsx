@@ -33,7 +33,7 @@ import {
   type SessionQuickKey,
 } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
-import { ShellLayout, ShellPanel, ShellSidebar } from "../components/shell/shell-layout";
+import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
@@ -419,15 +419,19 @@ function SessionDetail({
       />
 
       <div
-        className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${terminalViewVisible ? "gap-0 p-0" : "gap-2 p-2 sm:p-3"} ${shellSurfaceClasses.runtimeBody}`}
+        className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden gap-0 p-0 ${shellSurfaceClasses.runtimeBody}`}
       >
-        {detail.error instanceof Error ? (
-          <Notice tone="danger">{detail.error.message}</Notice>
-        ) : null}
-        {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
-        {isEnded ? <Notice>Runtime ended.</Notice> : null}
-        {closeSession.error instanceof Error ? (
-          <Notice tone="danger">{closeSession.error.message}</Notice>
+        {detail.error || fatalError || isEnded || closeSession.error ? (
+          <div className="flex shrink-0 flex-col gap-2 p-2 sm:p-3">
+            {detail.error instanceof Error ? (
+              <Notice tone="danger">{detail.error.message}</Notice>
+            ) : null}
+            {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
+            {isEnded ? <Notice>Runtime ended.</Notice> : null}
+            {closeSession.error instanceof Error ? (
+              <Notice tone="danger">{closeSession.error.message}</Notice>
+            ) : null}
+          </div>
         ) : null}
 
         <DetailWorkspace
@@ -760,35 +764,35 @@ function DetailWorkspace({
         onSendInput={onSendInput}
       />
       {showFiles ? (
-        <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
-          <ShellPanel className="overflow-hidden !p-0" density="compact" docked>
-            <div className="px-4 pt-3 mb-3">
-              <button
-                className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
-                type="button"
-                onClick={onReturnToStream}
-              >
-                <span aria-hidden="true">←</span> Back to stream
-              </button>
-            </div>
+        <div className="absolute inset-0 z-20 flex flex-col bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)]">
+          <div className="flex shrink-0 items-center border-b border-slate-700/40 px-3.5 py-2.5">
+            <button
+              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
+              type="button"
+              onClick={onReturnToStream}
+            >
+              <span aria-hidden="true">←</span> Back to stream
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 flex flex-col">
             <FilesPanel initialPath="" projectName={projectName} queryScope="agent-context" />
-          </ShellPanel>
+          </div>
         </div>
       ) : null}
       {showGit ? (
-        <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
-          <ShellPanel className="overflow-hidden !p-0" density="compact" docked>
-            <div className="px-4 pt-3 mb-3">
-              <button
-                className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
-                type="button"
-                onClick={onReturnToStream}
-              >
-                <span aria-hidden="true">←</span> Back to stream
-              </button>
-            </div>
+        <div className="absolute inset-0 z-20 flex flex-col bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)]">
+          <div className="flex shrink-0 items-center border-b border-slate-700/40 px-3.5 py-2.5">
+            <button
+              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
+              type="button"
+              onClick={onReturnToStream}
+            >
+              <span aria-hidden="true">←</span> Back to stream
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 flex flex-col">
             <GitDiffPanel projectName={projectName} queryScope="agent-context" />
-          </ShellPanel>
+          </div>
         </div>
       ) : null}
     </div>

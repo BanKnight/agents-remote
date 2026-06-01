@@ -104,31 +104,12 @@ type GitFileDiffPanelProps = {
   error: Error | null;
   fileDiff: GitFileDiffResponse | undefined;
   isLoading: boolean;
+  fileName?: string;
   onBack: () => void;
 };
 
-function GitFileDiffPanel({ error, fileDiff, isLoading, onBack }: GitFileDiffPanelProps) {
-  if (isLoading)
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3">
-        <span className="relative flex h-3 w-3" aria-hidden="true">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
-        </span>
-        <span className="text-xs font-semibold text-slate-400">Loading diff...</span>
-      </div>
-    );
-  if (error)
-    return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <ResourceStatePanel
-          tone="danger"
-          title="Unable to open this diff."
-          message={error.message}
-        />
-      </div>
-    );
-  if (!fileDiff)
+function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitFileDiffPanelProps) {
+  if (!fileDiff && !isLoading && !error)
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <ResourceStatePanel
@@ -137,6 +118,9 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, onBack }: GitFileDiffPan
         />
       </div>
     );
+
+  const displayName = fileDiff?.path ?? fileName ?? "";
+  const displayStatus = fileDiff?.status;
 
   return (
     <section
@@ -163,19 +147,41 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, onBack }: GitFileDiffPan
         </button>
         <div className="min-w-0 flex-1">
           <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-left text-center">
-            {fileDiff.path}
+            {displayName}
           </h4>
-          {fileDiff.previousPath ? (
+          {fileDiff?.previousPath ? (
             <p className="mt-0.5 truncate font-mono text-[0.65rem] text-slate-500 hidden sm:block">
               renamed from {fileDiff.previousPath}
             </p>
           ) : null}
         </div>
-        <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
-          {statusShortLabel(fileDiff.status)}
-        </IconMarker>
+        {displayStatus ? (
+          <IconMarker size="sm" tone={gitStatusTone(displayStatus)}>
+            {statusShortLabel(displayStatus)}
+          </IconMarker>
+        ) : null}
       </div>
-      <DiffContent diff={fileDiff.diff} />
+      <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+        {isLoading ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <span className="relative flex h-3 w-3" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+            </span>
+            <span className="text-xs font-semibold text-slate-400">Loading diff...</span>
+          </div>
+        ) : error ? (
+          <div className="flex-1 flex items-center justify-center p-4">
+            <ResourceStatePanel
+              tone="danger"
+              title="Unable to open this diff."
+              message={error.message}
+            />
+          </div>
+        ) : fileDiff ? (
+          <DiffContent diff={fileDiff.diff} />
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -400,6 +406,7 @@ export function GitDiffPanel({
       error={fileDiff.error}
       isLoading={fileDiff.isLoading}
       fileDiff={fileDiff.data}
+      fileName={selectedFile?.path.split("/").pop() ?? selectedFile?.path}
       onBack={clearDiff}
     />
   );
@@ -413,7 +420,7 @@ export function GitDiffPanel({
       </div>
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         <aside
-          className={`min-h-0 sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
+          className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
           <div className="min-h-0 overflow-y-auto p-3">{fileList}</div>
         </aside>

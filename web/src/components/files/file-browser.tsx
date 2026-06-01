@@ -181,6 +181,7 @@ type FilePreviewPanelProps = {
   renderMode: "source" | "render";
   renderToggle: ReactNode;
   isHtml: boolean;
+  fileName?: string;
   onBack: () => void;
   onRenderModeChange: (mode: "source" | "render") => void;
 };
@@ -192,30 +193,11 @@ function FilePreviewPanel({
   renderMode,
   renderToggle,
   isHtml,
+  fileName,
   onBack,
   onRenderModeChange,
 }: FilePreviewPanelProps) {
-  if (isLoading)
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3">
-        <span className="relative flex h-3 w-3" aria-hidden="true">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
-        </span>
-        <span className="text-xs font-semibold text-slate-400">Loading preview...</span>
-      </div>
-    );
-  if (error)
-    return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <ResourceStatePanel
-          tone="danger"
-          title="Unable to preview this file."
-          message={error.message}
-        />
-      </div>
-    );
-  if (!preview)
+  if (!preview && !isLoading && !error)
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <ResourceStatePanel
@@ -224,6 +206,9 @@ function FilePreviewPanel({
         />
       </div>
     );
+
+  const displayName = preview?.name ?? fileName ?? "";
+  const displayPath = preview?.path ?? "";
 
   return (
     <section
@@ -250,13 +235,13 @@ function FilePreviewPanel({
         </button>
         <div className="min-w-0 flex-1">
           <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-left text-center">
-            {preview.name}
+            {displayName}
           </h4>
-          <p className="mt-0.5 truncate font-mono text-xs text-slate-500 hidden sm:block">
-            {preview.path.includes("/")
-              ? preview.path.slice(0, preview.path.lastIndexOf("/"))
-              : "/"}
-          </p>
+          {preview ? (
+            <p className="mt-0.5 truncate font-mono text-xs text-slate-500 hidden sm:block">
+              {displayPath.includes("/") ? displayPath.slice(0, displayPath.lastIndexOf("/")) : "/"}
+            </p>
+          ) : null}
         </div>
         <div className="hidden sm:block">{renderToggle}</div>
         <FilePreviewMenu
@@ -266,7 +251,25 @@ function FilePreviewPanel({
         />
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-y-auto">
-        <PreviewBody preview={preview} renderMode={renderMode} />
+        {isLoading ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <span className="relative flex h-3 w-3" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+            </span>
+            <span className="text-xs font-semibold text-slate-400">Loading preview...</span>
+          </div>
+        ) : error ? (
+          <div className="flex-1 flex items-center justify-center p-4">
+            <ResourceStatePanel
+              tone="danger"
+              title="Unable to preview this file."
+              message={error.message}
+            />
+          </div>
+        ) : preview ? (
+          <PreviewBody preview={preview} renderMode={renderMode} />
+        ) : null}
       </div>
     </section>
   );
@@ -543,7 +546,7 @@ export function FilesPanel({
   const isPreviewOpen = selectedFilePath !== undefined && enablePreview;
   const browserPanel = (
     <aside
-      className={`min-h-0 sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
+      className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
       <div className="min-h-0 overflow-y-auto p-3">
         <FileEntryList
@@ -567,6 +570,7 @@ export function FilesPanel({
       renderMode={isHtml ? renderMode : "source"}
       renderToggle={renderToggle}
       isHtml={isHtml}
+      fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
       onBack={clearPreview}
       onRenderModeChange={setRenderMode}
     />
