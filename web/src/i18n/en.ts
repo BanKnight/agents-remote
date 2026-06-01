@@ -210,4 +210,10 @@ export const en = {
   "api.terminalSessionCreationFailed": "Terminal session creation failed",
   "api.terminalSessionDetailFailed": "Terminal session detail failed",
   "api.terminalSessionCloseFailed": "Terminal session close failed",
+
+  // ── Time ───────────────────────────────────────────────────────
+  "time.justNow": "just now",
+  "time.minutesAgo": "{{count}}m ago",
+  "time.hoursAgo": "{{count}}h ago",
+  "time.daysAgo": "{{count}}d ago",
 } as const;

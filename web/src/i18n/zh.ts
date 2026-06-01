@@ -212,4 +212,10 @@ export const zh: Record<TranslationKey, string> = {
   "api.terminalSessionCreationFailed": "Terminal 会话创建失败",
   "api.terminalSessionDetailFailed": "Terminal 会话详情获取失败",
   "api.terminalSessionCloseFailed": "Terminal 会话关闭失败",
+
+  // ── Time ───────────────────────────────────────────────────────
+  "time.justNow": "刚刚",
+  "time.minutesAgo": "{{count}}分钟前",
+  "time.hoursAgo": "{{count}}小时前",
+  "time.daysAgo": "{{count}}天前",
 };
