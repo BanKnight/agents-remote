@@ -156,7 +156,16 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
       to="/projects/$projectName"
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-        <IconMarker tone="success">P</IconMarker>
+        <IconMarker tone="success">
+          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-3.75v-3.75h-3.5V14.5H2.5A.5.5 0 012 14V6.5z"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </IconMarker>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[0.95rem] font-semibold text-slate-100 group-hover:text-cyan-100">
             {project.name}
@@ -167,8 +176,16 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
             <ProjectMetaPill>{project.gitBranch ?? t("home.projectPending")}</ProjectMetaPill>
           </span>
         </span>
-        <span className="shrink-0 text-xs font-extrabold text-cyan-300">
-          {t("home.projectOpen")}
+        <span className="shrink-0 text-cyan-300 opacity-60 transition group-hover:opacity-100 group-hover:translate-x-0.5">
+          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M6 3L11 8l-5 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </span>
       </span>
     </Link>
