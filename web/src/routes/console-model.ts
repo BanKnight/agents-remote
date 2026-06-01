@@ -1,4 +1,4 @@
-import { atom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import type {
   AgentSession,
   Project,
@@ -10,7 +10,7 @@ import type { TranslationKey } from "../i18n/types";
 
 export type ConsoleSection = "agents" | "terminal" | "git" | "files";
 
-export const inputDrawerCollapsedAtom = atom(false);
+export const inputDrawerCollapsedAtom = atomWithStorage("inputDrawerCollapsed", false);
 
 export type ConsoleSectionDefinition = {
   id: ConsoleSection;
