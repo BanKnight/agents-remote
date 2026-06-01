@@ -1,4 +1,4 @@
-const CACHE_NAME = "agents-remote-shell-v3";
+const CACHE_NAME = "agents-remote-shell-v4";
 const APP_SHELL_ASSETS = [
   "/manifest.webmanifest",
   "/icons/icon.svg",
