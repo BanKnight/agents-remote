@@ -118,8 +118,10 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
 
   if (!fileDiff && !isLoading && !error)
     return (
-      <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-        <ResourceStatePanel title={t("git.selectPrompt")} message={t("git.selectDesc")} />
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel title={t("git.selectPrompt")} message={t("git.selectDesc")} />
+        </div>
       </div>
     );
 
@@ -162,7 +164,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
-          <div className="flex-1 flex flex-col items-center gap-3 pt-10 sm:justify-center sm:pt-0">
+          <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 pt-10 lg:justify-center lg:pt-0">
             <span className="relative flex h-3 w-3" aria-hidden="true">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
               <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
@@ -170,8 +172,14 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
             <span className="text-xs font-semibold text-slate-400">{t("git.loadingDiff")}</span>
           </div>
         ) : error ? (
-          <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-            <ResourceStatePanel tone="danger" title={t("git.fileError")} message={error.message} />
+          <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+            <div className="w-full lg:w-auto">
+              <ResourceStatePanel
+                tone="danger"
+                title={t("git.fileError")}
+                message={error.message}
+              />
+            </div>
           </div>
         ) : fileDiff ? (
           <DiffContent diff={fileDiff.diff} />
@@ -347,7 +355,7 @@ export function GitDiffPanel({
 
   if (diff.isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center gap-3 pt-10 sm:justify-center sm:pt-0">
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 pt-10 lg:justify-center lg:pt-0">
         <span className="relative flex h-3 w-3" aria-hidden="true">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
           <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
@@ -359,20 +367,24 @@ export function GitDiffPanel({
 
   if (diff.error) {
     return (
-      <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-        <ResourceStatePanel
-          tone="danger"
-          title={t("git.errorTitle")}
-          message={diff.error.message}
-        />
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel
+            tone="danger"
+            title={t("git.errorTitle")}
+            message={diff.error.message}
+          />
+        </div>
       </div>
     );
   }
 
   if (diff.data?.repository === false) {
     return (
-      <div className="flex-1 flex items-start sm:items-center justify-center p-4 pt-10 sm:pt-4">
-        <ResourceStatePanel title={t("git.notRepo")} message={t("git.notRepoDesc")} />
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel title={t("git.notRepo")} message={t("git.notRepoDesc")} />
+        </div>
       </div>
     );
   }
