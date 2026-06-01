@@ -131,7 +131,11 @@ type ProjectListCardProps = {
 function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
   const { t } = useT();
   return (
-    <ShellPanel className="px-4 pt-0 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
+    <ShellPanel
+      className="flex flex-col px-4 pt-0 sm:px-5 lg:px-5 lg:pb-5"
+      density="compact"
+      docked
+    >
       {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
