@@ -4,6 +4,8 @@
   "description": "AI 智能体远程控制台 — 在浏览器中管理、观察和调度远程 AI Agent 任务。",
   "start_url": "/",
   "scope": "/",
+  "id": "/",
+  "lang": "zh-CN",
   "display": "standalone",
   "theme_color": "#020617",
   "background_color": "#020617",
