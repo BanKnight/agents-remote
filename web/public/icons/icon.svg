@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#020617"/>
+  <g transform="translate(256, 256)">
+    <!-- Signal arcs — remote connectivity -->
+    <path d="M-128 -100 A164 164 0 0 1 128 -100" stroke="#38BDF8" stroke-width="12" stroke-linecap="round" opacity="0.5"/>
+    <path d="M-94 -70 A120 120 0 0 1 94 -70" stroke="#38BDF8" stroke-width="10" stroke-linecap="round" opacity="0.7"/>
+    <path d="M-64 -40 A80 80 0 0 1 64 -40" stroke="#38BDF8" stroke-width="8" stroke-linecap="round"/>
+    <!-- Hexagon — AI core -->
+    <polygon points="0,-68 60,-34 60,34 0,68 -60,34 -60,-34" fill="none" stroke="#38BDF8" stroke-width="10" stroke-linejoin="round"/>
+    <!-- Inner circuit nodes -->
+    <circle cx="0" cy="0" r="18" fill="#38BDF8"/>
+    <circle cx="-22" cy="22" r="14" fill="#38BDF8"/>
+    <circle cx="22" cy="22" r="14" fill="#38BDF8"/>
+    <!-- Connections -->
+    <line x1="0" y1="0" x2="-22" y2="22" stroke="#38BDF8" stroke-width="6" stroke-linecap="round"/>
+    <line x1="0" y1="0" x2="22" y2="22" stroke="#38BDF8" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
