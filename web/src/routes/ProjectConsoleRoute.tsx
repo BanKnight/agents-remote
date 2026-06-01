@@ -501,6 +501,7 @@ type AgentInstanceRowProps = {
 
 function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowProps) {
   const { t } = useT();
+  const providerTone = session.provider === "codex" ? "success" : "accent";
   return (
     <Link
       className="block"
@@ -510,8 +511,10 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
     >
       <SessionInstanceRow
         actions={
-          <ActionButton
-            tone="danger"
+          <button
+            className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-rose-300/30 text-rose-200 transition hover:border-rose-300/60 hover:bg-rose-300/10"
+            type="button"
+            aria-label={t("session.close")}
             onClick={(e) => {
               e.preventDefault();
               if (window.confirm(t("project.closeAgentConfirm"))) {
@@ -519,17 +522,33 @@ function AgentInstanceRow({ projectName, session, onClose }: AgentInstanceRowPro
               }
             }}
           >
-            {t("session.close")}
-          </ActionButton>
+            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M4 4L12 12M12 4L4 12"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         }
         marker={
-          <IconMarker tone={session.provider === "codex" ? "success" : "accent"}>
-            {providerMarker(t, session.provider)}
+          <IconMarker tone={providerTone}>
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M8 1.5A3.5 3.5 0 004.5 5v1.5A2.5 2.5 0 002 9v1a.5.5 0 00.5.5h11a.5.5 0 00.5-.5V9a2.5 2.5 0 00-2.5-2.5V5A3.5 3.5 0 008 1.5z"
+                stroke="currentColor"
+                strokeWidth="1.25"
+                strokeLinejoin="round"
+              />
+              <circle cx="10" cy="5.5" r="1.5" fill="currentColor" opacity="0.5" />
+              <circle cx="6" cy="5.5" r="1.5" fill="currentColor" opacity="0.5" />
+            </svg>
           </IconMarker>
         }
         statusTone={sessionStatusTone(session.status)}
         status={t(sessionStatusLabel(session.status))}
-        subtitle={`${providerLabel(t, session.provider)} · ${session.id}`}
+        subtitle={undefined}
         title={session.displayName}
       />
     </Link>
@@ -568,7 +587,7 @@ type SessionInstanceRowProps = {
   marker: ReactNode;
   status: ReactNode;
   statusTone: ShellTone;
-  subtitle: ReactNode;
+  subtitle?: ReactNode;
   title: ReactNode;
 };
 
@@ -590,7 +609,9 @@ function SessionInstanceRow({
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
             <div className="min-w-0">
               <h4 className="truncate font-semibold text-slate-100">{title}</h4>
-              <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
+              {subtitle ? (
+                <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
+              ) : null}
             </div>
             <StatusPill tone={statusTone} value={status} />
           </div>
@@ -599,14 +620,6 @@ function SessionInstanceRow({
       </div>
     </article>
   );
-}
-
-function providerMarker(t: ReturnType<typeof useT>["t"], provider: AgentProvider) {
-  return provider === "codex" ? t("provider.codex") : t("provider.claude");
-}
-
-function providerLabel(t: ReturnType<typeof useT>["t"], provider: AgentProvider) {
-  return provider === "codex" ? "Codex" : "Claude";
 }
 
 function sessionStatusTone(status: AgentSession["status"] | TerminalSession["status"]) {
