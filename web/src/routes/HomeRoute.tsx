@@ -6,7 +6,13 @@ import { createProject, listProjects } from "../api/client";
 import { useT } from "../i18n";
 import { defaultConsoleSection } from "./console-model";
 import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell/shell-layout";
-import { IconMarker, ShellInput, shellSurfaceClasses } from "../components/shell/shell-primitives";
+import {
+  ActionButton,
+  IconMarker,
+  ShellInput,
+  shellSurfaceClasses,
+} from "../components/shell/shell-primitives";
+import { ShellIcon } from "../components/shell/icons";
 
 export function HomeRoute() {
   const { t } = useT();
@@ -49,15 +55,16 @@ export function HomeRoute() {
       <ShellHeaderSurface
         actions={
           <>
-            <button
-              className={`hidden h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold text-slate-200 transition sm:inline-flex ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-              type="button"
+            <ActionButton
+              className="hidden sm:inline-flex"
+              tone="accent"
               onClick={() => setSetupOpen(!setupOpen)}
             >
+              <ShellIcon name="files-nav" className="h-3.5 w-3.5" />
               {t("home.newAdopt")}
-            </button>
+            </ActionButton>
             <button
-              className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border text-sm font-semibold text-slate-200 transition sm:hidden ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-sm font-bold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
               type="button"
               aria-label={t("home.createProjectAria")}
               onClick={() => setSetupOpen(!setupOpen)}
