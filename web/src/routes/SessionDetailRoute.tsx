@@ -1,6 +1,5 @@
 import type {
   AgentSession,
-  GitDiffFileSummary,
   SessionStreamClientMessage,
   SessionStreamServerMessage,
   SessionType,
@@ -22,7 +21,6 @@ import {
   createTerminalSession,
   getAgentSession,
   getTerminalSession,
-  listProjectGitDiff,
   sessionStreamUrl,
 } from "../api/client";
 import {
@@ -31,15 +29,18 @@ import {
   inputDrawerCollapsedAtom,
   normalizeSessionTextInput,
   sessionQuickKeys,
+  consoleSections,
   type SessionQuickKey,
 } from "./console-model";
 import {
   ActionButton,
   IconMarker,
-  StatusPill,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
+import { ShellLayout, ShellPanel, ShellSidebar } from "../components/shell/shell-layout";
+import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { FilesPanel } from "../components/files/file-browser";
+import { GitDiffPanel } from "../components/git/git-diff-viewer";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -352,153 +353,105 @@ function SessionDetail({
     sendMessage({ type: "input", data: quickKey.sequence });
   };
 
+  const projectNavItems = consoleSections.map((section) => ({
+    id: section.id,
+    label: section.label,
+    marker: (
+      <IconMarker size="sm" tone="accent">
+        {section.id === "agents"
+          ? "A"
+          : section.id === "files"
+            ? "F"
+            : section.id === "git"
+              ? "G"
+              : "T"}
+      </IconMarker>
+    ),
+  }));
+
   return (
-    <main className="h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] text-slate-100">
+    <ShellLayout
+      sidebar={
+        <ShellSidebar display="flex">
+          <ProjectShellNavigation
+            activeItemId={sessionType === "agent" ? "agents" : "terminal"}
+            items={projectNavItems}
+            projectPath={projectName}
+            projectTitle={projectName}
+            onSelectItem={(section) => {
+              void navigate({
+                to: "/projects/$projectName",
+                params: { projectName },
+                search: { workspace: section, filesPath: "" },
+              });
+            }}
+          />
+        </ShellSidebar>
+      }
+      variant="project"
+    >
+      <SessionDetailHeader
+        connectionStatus={connectionStatus}
+        createTerminalError={createTerminal.error}
+        createTerminalPending={createTerminal.isPending}
+        detailView={detailView}
+        projectName={projectName}
+        provider={provider}
+        sessionId={sessionId}
+        sessionType={sessionType}
+        sourceAgentSession={sourceAgentSession}
+        title={title}
+        closePending={closeSession.isPending}
+        onClose={() => {
+          if (window.confirm("Close this session? The running process will be terminated.")) {
+            closeSession.mutate();
+          }
+        }}
+        onCreateTerminal={() => createTerminal.mutate()}
+        onReconnect={() => setReconnectKey((value) => value + 1)}
+        onViewChange={setDetailView}
+      />
+
       <div
-        className={`grid h-dvh min-h-0 w-full min-w-0 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[13.125rem_minmax(0,1fr)] lg:pt-0 ${shellSurfaceClasses.shell}`}
+        className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${terminalViewVisible ? "gap-0 p-0" : "gap-2 p-2 sm:p-3"} ${shellSurfaceClasses.runtimeBody}`}
       >
-        <SessionDetailSidebar
+        {detail.error instanceof Error ? (
+          <Notice tone="danger">{detail.error.message}</Notice>
+        ) : null}
+        {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
+        {isEnded ? <Notice>Runtime ended.</Notice> : null}
+        {closeSession.error instanceof Error ? (
+          <Notice tone="danger">{closeSession.error.message}</Notice>
+        ) : null}
+
+        <DetailWorkspace
           detailView={detailView}
           projectName={projectName}
           sessionType={sessionType}
-          sourceAgentSession={sourceAgentSession}
-          onViewChange={setDetailView}
+          terminalDataRef={terminalDataRef}
+          terminalWriteRef={terminalWriteRef}
+          title={title}
+          connectionStatus={connectionStatus}
+          onResize={sendTerminalResize}
+          onSendInput={sendTerminalInput}
+          onReturnToStream={() => setDetailView("terminal")}
         />
-
-        <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
-          <SessionDetailHeader
-            connectionStatus={connectionStatus}
-            createTerminalError={createTerminal.error}
-            createTerminalPending={createTerminal.isPending}
-            detailView={detailView}
-            projectName={projectName}
-            provider={provider}
-            sessionId={sessionId}
-            sessionType={sessionType}
-            sourceAgentSession={sourceAgentSession}
-            title={title}
-            closePending={closeSession.isPending}
-            onClose={() => {
-              if (window.confirm("Close this session? The running process will be terminated.")) {
-                closeSession.mutate();
-              }
-            }}
-            onCreateTerminal={() => createTerminal.mutate()}
-            onReconnect={() => setReconnectKey((value) => value + 1)}
-            onViewChange={setDetailView}
-          />
-
-          <div
-            className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${terminalViewVisible ? "gap-0 p-0" : "gap-2 p-2 sm:p-3"} ${shellSurfaceClasses.runtimeBody}`}
-          >
-            {detail.error instanceof Error ? (
-              <Notice tone="danger">{detail.error.message}</Notice>
-            ) : null}
-            {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
-            {isEnded ? <Notice>Runtime ended.</Notice> : null}
-            {closeSession.error instanceof Error ? (
-              <Notice tone="danger">{closeSession.error.message}</Notice>
-            ) : null}
-
-            <DetailWorkspace
-              detailView={detailView}
-              projectName={projectName}
-              sessionType={sessionType}
-              terminalDataRef={terminalDataRef}
-              terminalWriteRef={terminalWriteRef}
-              title={title}
-              connectionStatus={connectionStatus}
-              onResize={sendTerminalResize}
-              onSendInput={sendTerminalInput}
-              onReturnToStream={() => setDetailView("terminal")}
-            />
-          </div>
-
-          {terminalViewVisible ? (
-            <SessionInputDrawer
-              canSend={canSend}
-              collapsed={inputDrawerCollapsed}
-              input={input}
-              quickKeys={quickKeys}
-              sessionType={sessionType}
-              onCollapsedChange={setInputDrawerCollapsed}
-              onInputChange={setInput}
-              onQuickKey={sendQuickKey}
-              onSubmit={handleInputSubmit}
-            />
-          ) : null}
-        </div>
-      </div>
-    </main>
-  );
-}
-
-type SessionDetailSidebarProps = {
-  detailView: DetailView;
-  projectName: string;
-  sessionType: SessionType;
-  sourceAgentSession?: string;
-  onViewChange: (view: DetailView) => void;
-};
-
-function SessionDetailSidebar({
-  detailView,
-  projectName,
-  sessionType,
-  sourceAgentSession,
-  onViewChange,
-}: SessionDetailSidebarProps) {
-  const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
-
-  return (
-    <aside
-      className={`hidden min-h-0 min-w-0 overflow-hidden border-r border-slate-700/80 px-3.5 py-4 lg:flex lg:flex-col ${shellSurfaceClasses.sidebar}`}
-    >
-      <Link
-        className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-400 hover:text-cyan-200"
-        params={{ projectName }}
-        search={{
-          workspace: returnsToAgent
-            ? "agents"
-            : sessionType === "terminal"
-              ? "terminal"
-              : defaultConsoleSection,
-          filesPath: "",
-        }}
-        to="/projects/$projectName"
-      >
-        <IconMarker size="sm" tone="muted">
-          ←
-        </IconMarker>
-        <span>Projects</span>
-      </Link>
-
-      <div className={`mb-4 min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}>
-        <h2 className="truncate text-sm font-semibold text-slate-100">{projectName}</h2>
       </div>
 
-      <nav
-        className="grid gap-2"
-        aria-label={`${sessionType === "agent" ? "Agent" : "Terminal"} detail workspace`}
-      >
-        {detailNavigationItems(sessionType).map((item) => {
-          const active = detailView === item.view;
-          return (
-            <button
-              key={item.view}
-              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[0.875rem] px-3 py-2.5 text-left text-sm font-semibold transition ${active ? "bg-cyan-300/10 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-              type="button"
-              onClick={() => onViewChange(item.view)}
-            >
-              <IconMarker size="sm" tone={active ? item.tone : "muted"}>
-                {item.marker}
-              </IconMarker>
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
-    </aside>
+      {terminalViewVisible ? (
+        <SessionInputDrawer
+          canSend={canSend}
+          collapsed={inputDrawerCollapsed}
+          input={input}
+          quickKeys={quickKeys}
+          sessionType={sessionType}
+          onCollapsedChange={setInputDrawerCollapsed}
+          onInputChange={setInput}
+          onQuickKey={sendQuickKey}
+          onSubmit={handleInputSubmit}
+        />
+      ) : null}
+    </ShellLayout>
   );
 }
 
@@ -519,26 +472,6 @@ type SessionDetailHeaderProps = {
   onReconnect: () => void;
   onViewChange: (view: DetailView) => void;
 };
-
-type DetailNavigationItem = {
-  label: string;
-  marker: string;
-  tone: "accent" | "success";
-  view: DetailView;
-};
-
-const agentDetailNavigationItems: DetailNavigationItem[] = [
-  { view: "terminal", label: "Agent", marker: "AG", tone: "accent" },
-  { view: "files", label: "Files", marker: "FL", tone: "accent" },
-  { view: "git", label: "Git", marker: "GT", tone: "accent" },
-];
-
-const terminalDetailNavigationItems: DetailNavigationItem[] = [
-  { view: "terminal", label: "Terminal", marker: "T", tone: "success" },
-];
-
-const detailNavigationItems = (sessionType: SessionType) =>
-  sessionType === "agent" ? agentDetailNavigationItems : terminalDetailNavigationItems;
 
 function SessionDetailHeader({
   closePending,
@@ -821,24 +754,39 @@ function DetailWorkspace({
       />
       {showFiles ? (
         <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
-          <div className="flex shrink-0 items-center justify-between border-b border-slate-700/60 px-4 py-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-                Agent context
-              </p>
-              <h2 className="mt-0.5 text-lg font-semibold text-slate-100">Files</h2>
+          <ShellPanel
+            className="overflow-hidden sm:rounded-[2rem] lg:rounded-none"
+            density="compact"
+            docked
+          >
+            <div className="flex justify-end mb-3">
+              <ActionButton tone="accent" onClick={onReturnToStream}>
+                Back to stream
+              </ActionButton>
             </div>
-            <ActionButton tone="accent" onClick={onReturnToStream}>
-              Back to stream
-            </ActionButton>
-          </div>
-          <div className="min-h-0 flex-1 flex flex-col">
             <FilesPanel initialPath="" projectName={projectName} queryScope="agent-context" />
-          </div>
+          </ShellPanel>
         </div>
       ) : null}
       {showGit ? (
-        <ContextualGitPanel projectName={projectName} onReturnToStream={onReturnToStream} />
+        <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
+          <ShellPanel
+            className="overflow-hidden sm:rounded-[2rem] lg:rounded-none"
+            density="compact"
+            docked
+          >
+            <div className="flex justify-end mb-3">
+              <ActionButton tone="accent" onClick={onReturnToStream}>
+                Back to stream
+              </ActionButton>
+            </div>
+            <GitDiffPanel
+              projectName={projectName}
+              queryScope="agent-context"
+              showStatusHeader={false}
+            />
+          </ShellPanel>
+        </div>
       ) : null}
     </div>
   );
@@ -1330,117 +1278,6 @@ const terminalOverlay = (status: StreamConnectionStatus): TerminalOverlayState |
   return undefined;
 };
 
-type ContextualPanelProps = {
-  projectName: string;
-  onReturnToStream: () => void;
-};
-
-function ContextualGitPanel({ projectName, onReturnToStream }: ContextualPanelProps) {
-  const diff = useQuery({
-    queryKey: ["projects", projectName, "agent-context", "git", "diff"],
-    queryFn: () => listProjectGitDiff(projectName),
-  });
-
-  return (
-    <section
-      className={`flex min-h-0 flex-1 flex-col rounded-[1.25rem] p-3 sm:p-4 ${shellSurfaceClasses.workspace}`}
-    >
-      <ContextualPanelHeader
-        eyebrow="Agent context"
-        title="Git"
-        description="Read-only status opened from this Agent detail. Commit, stage, checkout, and reset stay unavailable."
-        onReturnToStream={onReturnToStream}
-      />
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        {diff.isLoading ? <ContextualState>Loading Git changes...</ContextualState> : null}
-        {diff.error instanceof Error ? (
-          <ContextualState tone="danger">{diff.error.message}</ContextualState>
-        ) : null}
-        {diff.data?.repository === false ? (
-          <ContextualState>This Project directory is not a Git repository.</ContextualState>
-        ) : null}
-        {diff.data?.repository === true && diff.data.files.length === 0 ? (
-          <ContextualState>No worktree or staged changes.</ContextualState>
-        ) : null}
-        {diff.data?.repository === true ? <GitContextFileList files={diff.data.files} /> : null}
-      </div>
-    </section>
-  );
-}
-
-type GitContextFileListProps = {
-  files: GitDiffFileSummary[];
-};
-
-function GitContextFileList({ files }: GitContextFileListProps) {
-  return (
-    <div className="grid gap-1.5" aria-label="Agent contextual Git changes">
-      {files.map((file) => (
-        <article
-          className={`min-w-0 rounded-2xl px-3 py-2.5 ${shellSurfaceClasses.raised}`}
-          key={`${file.scope}:${file.path}`}
-        >
-          <span className="flex min-w-0 items-center gap-3">
-            <IconMarker tone="accent">GT</IconMarker>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono font-semibold text-slate-100">
-                {file.path}
-              </span>
-              {file.previousPath ? (
-                <span className="mt-0.5 block truncate font-mono text-xs text-slate-500">
-                  from {file.previousPath}
-                </span>
-              ) : null}
-            </span>
-            <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
-              <StatusPill tone="accent" value={scopeLabel(file.scope)} />
-              <StatusPill tone="muted" value={gitStatusLabel(file.status)} />
-            </span>
-          </span>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-type ContextualPanelHeaderProps = {
-  description: string;
-  eyebrow: string;
-  title: string;
-  onReturnToStream: () => void;
-};
-
-function ContextualPanelHeader({
-  description,
-  eyebrow,
-  onReturnToStream,
-  title,
-}: ContextualPanelHeaderProps) {
-  return (
-    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">{eyebrow}</p>
-        <h2 className="mt-1 text-lg font-semibold text-slate-100">{title}</h2>
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{description}</p>
-      </div>
-      <ActionButton className="w-fit shrink-0" tone="accent" onClick={onReturnToStream}>
-        Back to stream
-      </ActionButton>
-    </div>
-  );
-}
-
-type ContextualStateProps = {
-  children: string;
-  tone?: "default" | "danger";
-};
-
-function ContextualState({ children, tone = "default" }: ContextualStateProps) {
-  const classes = tone === "danger" ? shellSurfaceClasses.danger : shellSurfaceClasses.dashed;
-
-  return <p className={`mb-2 rounded-3xl p-4 text-sm leading-6 ${classes}`}>{children}</p>;
-}
-
 type SessionInputDrawerProps = {
   canSend: boolean;
   collapsed: boolean;
@@ -1570,22 +1407,6 @@ function Notice({ children, tone = "default" }: NoticeProps) {
 function providerMarker(provider: AgentSession["provider"] | undefined) {
   return provider === "codex" ? "CX" : "CL";
 }
-
-const scopeLabel = (scope: GitDiffFileSummary["scope"]) =>
-  scope === "staged" ? "Staged" : "Worktree";
-
-const gitStatusLabel = (status: GitDiffFileSummary["status"]) => {
-  switch (status) {
-    case "added":
-      return "Added";
-    case "deleted":
-      return "Deleted";
-    case "renamed":
-      return "Renamed";
-    case "modified":
-      return "Modified";
-  }
-};
 
 function parseStreamMessage(data: unknown) {
   if (typeof data !== "string") {
