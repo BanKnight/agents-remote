@@ -259,9 +259,11 @@ function GitTinyMetric({
   value: number;
 }) {
   return (
-    <div className={`rounded-[0.875rem] border px-3 py-2.5 ${summaryCardToneClasses[tone]}`}>
-      <strong className="block text-lg font-semibold text-slate-100">{value}</strong>
-      <span className="text-[0.65rem] uppercase tracking-[0.16em] text-slate-500">{label}</span>
+    <div
+      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 ${summaryCardToneClasses[tone]}`}
+    >
+      <span className="text-xs font-semibold tabular-nums text-slate-100">{value}</span>
+      <span className="text-[0.6rem] uppercase tracking-[0.12em] text-slate-500">{label}</span>
     </div>
   );
 }
