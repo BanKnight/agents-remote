@@ -88,7 +88,7 @@ export function ShellSidebar({ children, display = "block" }: ShellSidebarProps)
   return (
     <aside className={`hidden min-h-0 min-w-0 overflow-hidden ${displayClass}`}>
       <Card
-        className={`h-full min-h-0 gap-0 rounded-[1.75rem] p-3 py-3 text-slate-100 shadow-2xl shadow-black/30 ring-0 lg:rounded-none lg:border-0 lg:border-r lg:border-slate-700/80 lg:shadow-none ${shellSurfaceClasses.header} ${shellSurfaceClasses.sidebar}`}
+        className={`h-full min-h-0 gap-0 rounded-[1.75rem] !bg-transparent p-3 py-3 text-slate-100 shadow-2xl shadow-black/30 ring-0 lg:rounded-none lg:border-0 lg:border-r lg:border-slate-700/80 lg:shadow-none ${shellSurfaceClasses.sidebar}`}
       >
         {children}
       </Card>
@@ -125,7 +125,7 @@ export function ShellPanel({
     <Card
       {...props}
       className={cn(
-        `min-w-0 gap-0 rounded-[1.5rem] text-slate-100 shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
+        `min-w-0 gap-0 rounded-[1.5rem] bg-transparent text-slate-100 shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
         densityClass,
         dockedClass,
         className,
