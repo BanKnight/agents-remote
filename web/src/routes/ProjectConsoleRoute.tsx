@@ -787,7 +787,7 @@ function SectionDetail({
 
   return (
     <ShellPanel
-      className="overflow-hidden sm:rounded-[2rem] lg:rounded-none"
+      className="overflow-hidden !p-0"
       density="compact"
       docked
     >

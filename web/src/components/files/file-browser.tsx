@@ -208,10 +208,10 @@ function FilePreviewPanel({
 
   return (
     <section
-      className={`min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}
+      className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/70"
       aria-label="File preview"
     >
-      <div className="flex min-w-0 items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center justify-between gap-2 px-3.5 py-2.5 border-b border-slate-700/40">
         <div className="min-w-0">
           <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
             {preview.name}
@@ -224,7 +224,9 @@ function FilePreviewPanel({
         </div>
         <div className="hidden sm:block">{renderToggle}</div>
       </div>
-      <PreviewBody preview={preview} renderMode={renderMode} />
+      <div className="min-h-0 flex-1 flex flex-col overflow-y-auto">
+        <PreviewBody preview={preview} renderMode={renderMode} />
+      </div>
     </section>
   );
 }
@@ -287,16 +289,14 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
     if (renderMode === "render") {
       if (inlinedHtml === null)
         return (
-          <div
-            className={`mt-3 flex items-center justify-center rounded-2xl p-6 ${shellSurfaceClasses.code}`}
-          >
+          <div className="flex flex-1 items-center justify-center p-6">
             <p className="text-sm text-slate-400">Preparing render...</p>
           </div>
         );
       return (
-        <div className={`mt-3 overflow-hidden rounded-2xl ${shellSurfaceClasses.code}`}>
+        <div className="flex-1">
           <iframe
-            className="block h-[60vh] w-full border-0"
+            className="w-full h-full border-0"
             sandbox="allow-scripts"
             srcDoc={inlinedHtml}
             title="Sandboxed HTML render"
@@ -306,7 +306,7 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
     }
     return (
       <pre
-        className={`mt-3 max-h-[68vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
+        className={`min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
       >
         {preview.content}
       </pre>
@@ -315,9 +315,9 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
 
   if (preview.type === "image")
     return (
-      <div className={`mt-3 rounded-2xl p-2 ${shellSurfaceClasses.code}`}>
+      <div className="p-3">
         <img
-          className="mx-auto h-auto max-w-full rounded-xl"
+          className="mx-auto h-auto max-w-full"
           src={preview.dataUrl}
           alt={preview.name}
         />
@@ -326,17 +326,13 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
 
   if (preview.type === "too_large")
     return (
-      <p
-        className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-amber-100 ${shellSurfaceClasses.warning}`}
-      >
+      <p className="p-3 text-sm leading-6 text-amber-100">
         File is too large to preview. Limit: {formatBytes(preview.limitBytes)}.
       </p>
     );
 
   return (
-    <p
-      className={`mt-3 rounded-2xl p-3 text-sm leading-6 text-slate-300 ${shellSurfaceClasses.inset}`}
-    >
+    <p className="p-3 text-sm leading-6 text-slate-300">
       This file type is not supported for preview yet.
     </p>
   );
@@ -422,14 +418,12 @@ export function FilesPanel({
     </div>
   ) : null;
 
+  const isPreviewOpen = selectedFilePath !== undefined && enablePreview;
   const browserPanel = (
     <aside
-      className={`grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-700/60 sm:w-[19.375rem] sm:shrink-0 ${selectedFilePath !== undefined && enablePreview ? "hidden sm:grid" : "grid"} ${shellSurfaceClasses.runtimeBody}`}
+      className={`min-h-0 sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
-      <div className="border-b border-slate-700/40 px-3.5 py-3">
-        <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
-      </div>
-      <div className="min-h-0 overflow-y-auto p-2">
+      <div className="min-h-0 overflow-y-auto p-3">
         <FileEntryList
           entries={files.data?.entries ?? []}
           error={files.error}
@@ -444,7 +438,7 @@ export function FilesPanel({
   );
 
   const mobilePreviewTopBar =
-    selectedFilePath !== undefined && enablePreview ? (
+    isPreviewOpen ? (
       <div
         className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden ${shellSurfaceClasses.runtimeBody}`}
       >
@@ -483,16 +477,23 @@ export function FilesPanel({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col sm:flex-row sm:overflow-hidden sm:rounded-2xl sm:border sm:border-slate-700/50">
-      {browserPanel}
-      {enablePreview ? (
-        <div
-          className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFilePath === undefined ? "hidden sm:flex" : "flex"}`}
-        >
-          {mobilePreviewTopBar}
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">{previewPanel}</div>
-        </div>
-      ) : null}
+    <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
+      <div
+        className={`border-b border-slate-700/40 px-3.5 py-3 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
+      >
+        <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+        {browserPanel}
+        {enablePreview ? (
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFilePath === undefined ? "hidden sm:flex" : "flex"}`}
+          >
+            {mobilePreviewTopBar}
+            <div className="min-h-0 flex-1 flex flex-col overflow-hidden">{previewPanel}</div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -765,11 +765,11 @@ function DetailWorkspace({
       {showFiles ? (
         <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
           <ShellPanel
-            className="overflow-hidden sm:rounded-[2rem] lg:rounded-none"
+            className="overflow-hidden !p-0"
             density="compact"
             docked
           >
-            <div className="mb-3">
+            <div className="px-4 pt-3 mb-3">
               <button
                 className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
                 type="button"
@@ -785,11 +785,11 @@ function DetailWorkspace({
       {showGit ? (
         <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 backdrop-blur-sm">
           <ShellPanel
-            className="overflow-hidden sm:rounded-[2rem] lg:rounded-none"
+            className="overflow-hidden !p-0"
             density="compact"
             docked
           >
-            <div className="mb-3">
+            <div className="px-4 pt-3 mb-3">
               <button
                 className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
                 type="button"
