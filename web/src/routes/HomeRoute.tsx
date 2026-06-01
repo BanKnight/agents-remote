@@ -101,15 +101,11 @@ export function HomeRoute() {
 
         {setupVisible ? (
           <div
-            className="absolute inset-0 z-20 flex flex-col items-center justify-start overflow-y-auto bg-slate-950/60 pt-6 backdrop-blur-sm sm:justify-center sm:pt-0"
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center overflow-y-auto bg-slate-950/60 backdrop-blur-sm"
             onClick={() => setSetupOpen(false)}
             aria-hidden="true"
           >
-            <div
-              className="w-full max-w-sm p-4"
-              onClick={(e) => e.stopPropagation()}
-              aria-hidden="true"
-            >
+            <div className="p-4" onClick={(e) => e.stopPropagation()} aria-hidden="true">
               <ProjectSetupPanel
                 createError={create.error instanceof Error ? create.error : null}
                 inputId={inputId}
@@ -139,8 +135,8 @@ function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
       {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
-        <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 sm:justify-center sm:pt-0">
-          <div className={`w-full max-w-sm rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
+        <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+          <div className={`rounded-2xl p-4 w-full lg:w-auto ${shellSurfaceClasses.dashed}`}>
             <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
             <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
           </div>
