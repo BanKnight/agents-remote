@@ -319,7 +319,6 @@ function SessionDetail({
 
   const canSend = canSendToSession(connectionStatus, closeSession.isPending);
   const quickKeys = sessionQuickKeys(sessionType);
-  const provider = session && "provider" in session ? session.provider : undefined;
   const terminalViewVisible = sessionType === "terminal" || detailView === "terminal";
 
   // Stable callback for xterm to send raw input bytes over WebSocket
@@ -402,7 +401,6 @@ function SessionDetail({
         createTerminalPending={createTerminal.isPending}
         detailView={detailView}
         projectName={projectName}
-        provider={provider}
         sessionId={sessionId}
         sessionType={sessionType}
         sourceAgentSession={sourceAgentSession}
@@ -473,7 +471,6 @@ type SessionDetailHeaderProps = {
   createTerminalPending: boolean;
   detailView: DetailView;
   projectName: string;
-  provider: AgentSession["provider"] | undefined;
   sessionId: string;
   sessionType: SessionType;
   sourceAgentSession?: string;
@@ -495,7 +492,6 @@ function SessionDetailHeader({
   onReconnect: _onReconnect,
   onViewChange,
   projectName,
-  provider,
   sessionId,
   sessionType,
   sourceAgentSession,
@@ -508,41 +504,35 @@ function SessionDetailHeader({
     <header
       className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
     >
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-3">
-          {returnsToAgent ? (
-            <Link
-              className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-              aria-label="Back to Agent detail"
-              params={{ projectName, sessionId: sourceAgentSession }}
-              search={{ workspace: defaultConsoleSection, filesPath: "" }}
-              to="/projects/$projectName/agent-sessions/$sessionId"
-            >
-              ←
-            </Link>
-          ) : (
-            <Link
-              className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[0.8125rem] text-sm font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-              aria-label="Back to Project"
-              params={{ projectName }}
-              search={{ workspace: returnWorkspace, filesPath: "" }}
-              to="/projects/$projectName"
-            >
-              ←
-            </Link>
-          )}
-          <IconMarker tone={sessionType === "agent" ? "accent" : "success"}>
-            {sessionType === "agent" ? (provider ? providerMarker(provider) : "AG") : "T"}
-          </IconMarker>
-          <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
-            <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
-              {projectName} · {sessionId.slice(0, 8)}
-            </p>
-          </div>
+      <div className="flex min-w-0 items-center gap-2">
+        {returnsToAgent ? (
+          <Link
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-sm font-semibold text-slate-400 transition hover:text-slate-200"
+            aria-label="Back to Agent detail"
+            params={{ projectName, sessionId: sourceAgentSession }}
+            search={{ workspace: defaultConsoleSection, filesPath: "" }}
+            to="/projects/$projectName/agent-sessions/$sessionId"
+          >
+            ←
+          </Link>
+        ) : (
+          <Link
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-sm font-semibold text-slate-400 transition hover:text-slate-200"
+            aria-label="Back to Project"
+            params={{ projectName }}
+            search={{ workspace: returnWorkspace, filesPath: "" }}
+            to="/projects/$projectName"
+          >
+            ←
+          </Link>
+        )}
+        <div className="min-w-0 flex-1 text-center">
+          <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
+          <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
+            {projectName} · {sessionId.slice(0, 8)}
+          </p>
         </div>
-
-        <SessionDetailActionsMenu
+        <SessionDetailActions
           closePending={closePending}
           connectionStatus={_connectionStatus}
           createTerminalError={createTerminalError}
@@ -572,7 +562,7 @@ type SessionDetailActionsMenuProps = {
   onViewChange: (view: DetailView) => void;
 };
 
-function SessionDetailActionsMenu({
+function SessionDetailActions({
   closePending,
   connectionStatus,
   createTerminalError,
@@ -588,18 +578,11 @@ function SessionDetailActionsMenu({
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
-
+    if (!open) return;
     const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
     };
-
     document.addEventListener("pointerdown", handlePointerDown);
-
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
@@ -623,61 +606,111 @@ function SessionDetailActionsMenu({
     setOpen(false);
   };
 
+  const buttonClass = `inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`;
+
   return (
-    <div ref={menuRef} className="relative shrink-0">
-      <button
-        className={`inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs font-bold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label="Session actions"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <MoreVertical className="h-4 w-4" aria-hidden="true" />
-        <span className="hidden sm:inline">Actions</span>
-      </button>
-      {open ? (
-        <div
-          className={`absolute right-0 top-11 z-20 grid w-48 gap-1 rounded-2xl p-2 shadow-2xl shadow-black/40 ${shellSurfaceClasses.header}`}
-          role="menu"
+    <>
+      {/* Desktop: inline action buttons */}
+      <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+        {sessionType === "agent" ? (
+          <>
+            <button
+              className={buttonClass}
+              type="button"
+              onClick={() => onViewChange("files")}
+            >
+              Files
+            </button>
+            <button
+              className={buttonClass}
+              type="button"
+              onClick={() => onViewChange("git")}
+            >
+              Git
+            </button>
+            <button
+              className={buttonClass}
+              disabled={createTerminalPending}
+              type="button"
+              onClick={onCreateTerminal}
+            >
+              {createTerminalPending ? "Creating..." : "+ Terminal"}
+            </button>
+          </>
+        ) : null}
+        {connectionStatus === "error" ? (
+          <button className={buttonClass} type="button" onClick={onReconnect}>
+            Retry
+          </button>
+        ) : null}
+        <button
+          className={`${buttonClass} border-rose-300/30 text-rose-200 hover:border-rose-300/60 hover:bg-rose-300/10`}
+          disabled={closePending}
+          type="button"
+          onClick={onClose}
         >
-          {sessionType === "agent" ? (
-            <>
-              <ActionMenuItem
-                active={detailView === "files"}
-                marker="FL"
-                onClick={() => selectView("files")}
-              >
-                Files
+          {closePending ? "Closing..." : "Close"}
+        </button>
+        {createTerminalError instanceof Error ? (
+          <p className="text-xs text-rose-200">{createTerminalError.message}</p>
+        ) : null}
+      </div>
+
+      {/* Mobile: dropdown menu */}
+      <div ref={menuRef} className="relative shrink-0 sm:hidden">
+        <button
+          className={buttonClass}
+          type="button"
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label="Session actions"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <MoreVertical className="h-4 w-4" aria-hidden="true" />
+        </button>
+        {open ? (
+          <div
+            className={`absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl p-2 shadow-2xl shadow-black/40 ${shellSurfaceClasses.header}`}
+            role="menu"
+          >
+            {sessionType === "agent" ? (
+              <>
+                <ActionMenuItem
+                  active={detailView === "files"}
+                  marker="FL"
+                  onClick={() => selectView("files")}
+                >
+                  Files
+                </ActionMenuItem>
+                <ActionMenuItem
+                  active={detailView === "git"}
+                  marker="GT"
+                  onClick={() => selectView("git")}
+                >
+                  Git
+                </ActionMenuItem>
+                <ActionMenuItem disabled={createTerminalPending} marker="T" onClick={createTerminal}>
+                  {createTerminalPending ? "Creating..." : "Terminal"}
+                </ActionMenuItem>
+              </>
+            ) : null}
+            {connectionStatus === "error" ? (
+              <ActionMenuItem marker="↺" onClick={reconnect}>
+                Retry
               </ActionMenuItem>
-              <ActionMenuItem
-                active={detailView === "git"}
-                marker="GT"
-                onClick={() => selectView("git")}
-              >
-                Git
-              </ActionMenuItem>
-              <ActionMenuItem disabled={createTerminalPending} marker="T" onClick={createTerminal}>
-                {createTerminalPending ? "Creating Terminal..." : "Terminal"}
-              </ActionMenuItem>
-            </>
-          ) : null}
-          {connectionStatus === "error" ? (
-            <ActionMenuItem marker="↺" onClick={reconnect}>
-              Retry
+            ) : null}
+            <ActionMenuItem danger marker="✕" disabled={closePending} onClick={close}>
+              {closePending ? "Closing..." : "Close"}
             </ActionMenuItem>
-          ) : null}
-          <ActionMenuItem danger marker="✕" disabled={closePending} onClick={close}>
-            {closePending ? "Closing..." : "Close"}
-          </ActionMenuItem>
-          {createTerminalError instanceof Error ? (
-            <p className="px-2 py-1 text-xs leading-5 text-rose-200">
-              {createTerminalError.message}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+            {createTerminalError instanceof Error ? (
+              <p className="px-2 py-1 text-xs leading-5 text-rose-200">
+                {createTerminalError.message}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -1422,10 +1455,6 @@ function Notice({ children, tone = "default" }: NoticeProps) {
       : "border border-cyan-300/20 bg-cyan-300/10 text-cyan-100";
 
   return <p className={`rounded-2xl px-4 py-3 text-sm ${classes}`}>{children}</p>;
-}
-
-function providerMarker(provider: AgentSession["provider"] | undefined) {
-  return provider === "codex" ? "CX" : "CL";
 }
 
 function parseStreamMessage(data: unknown) {
