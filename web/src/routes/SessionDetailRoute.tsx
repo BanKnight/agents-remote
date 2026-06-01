@@ -507,23 +507,29 @@ function SessionDetailHeader({
       <div className="flex min-w-0 items-center gap-2">
         {returnsToAgent ? (
           <Link
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-sm font-semibold text-slate-400 transition hover:text-slate-200"
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
             aria-label="Back to Agent detail"
             params={{ projectName, sessionId: sourceAgentSession }}
             search={{ workspace: defaultConsoleSection, filesPath: "" }}
             to="/projects/$projectName/agent-sessions/$sessionId"
           >
-            ←
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back
           </Link>
         ) : (
           <Link
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-sm font-semibold text-slate-400 transition hover:text-slate-200"
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
             aria-label="Back to Project"
             params={{ projectName }}
             search={{ workspace: returnWorkspace, filesPath: "" }}
             to="/projects/$projectName"
           >
-            ←
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back
           </Link>
         )}
         <div className="min-w-0 flex-1 text-center">
@@ -807,7 +813,10 @@ function DetailWorkspace({
               type="button"
               onClick={onReturnToStream}
             >
-              <span aria-hidden="true">←</span> Back to stream
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Back to stream
             </button>
           </div>
           <div className="min-h-0 flex-1 flex flex-col">
@@ -826,7 +835,10 @@ function DetailWorkspace({
               type="button"
               onClick={onReturnToStream}
             >
-              <span aria-hidden="true">←</span> Back to stream
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Back to stream
             </button>
           </div>
           <div className="min-h-0 flex-1 flex flex-col">
