@@ -17,6 +17,7 @@
     "typecheck": "bun run --sequential --workspaces typecheck && tsc -p tsconfig.e2e.json",
     "lint": "oxlint package.json tsconfig.json tsconfig.base.json tsconfig.e2e.json playwright.config.ts scripts e2e api packages web --deny-warnings",
     "format:check": "oxfmt --check package.json tsconfig.json tsconfig.base.json tsconfig.e2e.json playwright.config.ts scripts e2e api packages web",
+    "prepare": "git config core.hooksPath scripts/githooks",
     "test": "bun run --sequential --workspaces test"
   },
   "devDependencies": {

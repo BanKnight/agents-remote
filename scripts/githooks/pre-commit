@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "pre-commit: running quality gates"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+echo ""
+echo "▶ format:check"
+bun run format:check
+
+echo ""
+echo "▶ lint"
+bun run lint
+
+echo ""
+echo "▶ typecheck"
+bun run typecheck
+
+echo ""
+echo "▶ test"
+bun run test
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "pre-commit: all quality gates passed"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
