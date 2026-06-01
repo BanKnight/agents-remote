@@ -124,7 +124,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
 
   return (
     <section
-      className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/70"
+      className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/25"
       aria-label="Git file diff"
     >
       <div className="flex min-w-0 items-center gap-2 border-b border-slate-700/40 px-3.5 py-2.5">

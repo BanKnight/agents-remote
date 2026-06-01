@@ -63,7 +63,7 @@ body,
 
 html,
 body {
-  background: #000;
+  background: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
 }
 
 body {

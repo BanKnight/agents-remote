@@ -764,7 +764,7 @@ function DetailWorkspace({
         onSendInput={onSendInput}
       />
       {showFiles ? (
-        <div className="absolute inset-0 z-20 flex flex-col bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)]">
+        <div className="absolute inset-0 z-20 flex flex-col">
           <div className="flex shrink-0 items-center border-b border-slate-700/40 px-3.5 py-2.5">
             <button
               className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
@@ -780,7 +780,7 @@ function DetailWorkspace({
         </div>
       ) : null}
       {showGit ? (
-        <div className="absolute inset-0 z-20 flex flex-col bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)]">
+        <div className="absolute inset-0 z-20 flex flex-col">
           <div className="flex shrink-0 items-center border-b border-slate-700/40 px-3.5 py-2.5">
             <button
               className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
