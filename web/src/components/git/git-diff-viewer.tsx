@@ -357,7 +357,7 @@ export function GitDiffPanel({
 
   if (diff.isLoading) {
     return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 pt-10 lg:justify-center lg:pt-0">
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 p-4 pt-10 lg:justify-center lg:pt-0">
         <span className="relative flex h-3 w-3" aria-hidden="true">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
           <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
@@ -369,7 +369,7 @@ export function GitDiffPanel({
 
   if (diff.error) {
     return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
         <div className="w-full lg:w-auto">
           <ResourceStatePanel
             tone="danger"
@@ -383,7 +383,7 @@ export function GitDiffPanel({
 
   if (diff.data?.repository === false) {
     return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
         <div className="w-full lg:w-auto">
           <ResourceStatePanel title={t("git.notRepo")} message={t("git.notRepoDesc")} />
         </div>

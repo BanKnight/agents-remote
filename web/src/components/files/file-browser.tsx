@@ -546,7 +546,7 @@ export function FilesPanel({
     <aside
       className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
-      <div className="flex min-h-0 flex-col overflow-y-auto p-3">
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-3">
         <FileEntryList
           entries={files.data?.entries ?? []}
           error={files.error}
