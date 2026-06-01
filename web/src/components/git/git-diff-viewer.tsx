@@ -75,12 +75,6 @@ const summarizeGitFiles = (files: GitDiffFileSummary[]): GitSummary =>
     { added: 0, deleted: 0, modified: 0, renamed: 0, staged: 0, worktree: 0 },
   );
 
-const summaryCardToneClasses: Record<"success" | "warning" | "danger", string> = {
-  success: "border-emerald-300/20 bg-emerald-300/10",
-  warning: "border-amber-300/20 bg-amber-300/10",
-  danger: "border-rose-300/20 bg-rose-300/10",
-};
-
 function useMediaQuery(query: string) {
   const getMatches = () => window.matchMedia?.(query).matches ?? false;
   const [matches, setMatches] = useState(getMatches);
@@ -249,30 +243,31 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
 
 // ── Layout ────────────────────────────────────────────────────────
 
-function GitTinyMetric({
+const scopeChipToneClasses: Record<"success" | "warning" | "danger", string> = {
+  success: "border-emerald-300/30 bg-emerald-300/10 text-emerald-100",
+  warning: "border-amber-300/30 bg-amber-300/10 text-amber-100",
+  danger: "border-rose-300/30 bg-rose-300/10 text-rose-100",
+};
+
+const scopeChipDefault = "border-slate-700/60 bg-slate-950/70 text-slate-400";
+
+function GitScopeChip({
+  count,
   label,
   tone,
-  value,
 }: {
+  count?: number;
   label: string;
-  tone: "success" | "warning" | "danger";
-  value: number;
+  tone?: "success" | "warning" | "danger";
 }) {
-  return (
-    <div
-      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 ${summaryCardToneClasses[tone]}`}
-    >
-      <span className="text-xs font-semibold tabular-nums text-slate-100">{value}</span>
-      <span className="text-[0.6rem] uppercase tracking-[0.12em] text-slate-500">{label}</span>
-    </div>
-  );
-}
-
-function GitScopeChip({ label, active = false }: { label: string; active?: boolean }) {
+  const colorClass = tone ? scopeChipToneClasses[tone] : scopeChipDefault;
   return (
     <span
-      className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${active ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" : "border-slate-700/60 bg-slate-950/70 text-slate-400"}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${colorClass}`}
     >
+      {count !== undefined ? (
+        <span className="text-[0.62rem] font-bold tabular-nums opacity-80">{count}</span>
+      ) : null}
       {label}
     </span>
   );
@@ -287,16 +282,14 @@ function GitWorkspaceSidebar({
 }) {
   return (
     <div className={`grid min-h-0 gap-3 rounded-2xl p-3 ${shellSurfaceClasses.inset}`}>
-      <div className="grid grid-cols-3 gap-1.5">
-        <GitTinyMetric label="modified" value={statusCounts?.modified ?? 0} tone="warning" />
-        <GitTinyMetric label="added" value={statusCounts?.added ?? 0} tone="success" />
-        <GitTinyMetric label="deleted" value={statusCounts?.deleted ?? 0} tone="danger" />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <GitScopeChip label="All" active />
-        <GitScopeChip label="Modified" />
-        <GitScopeChip label="Added" />
-        <GitScopeChip label="Deleted" />
+      <div className="flex flex-wrap gap-1.5">
+        <GitScopeChip
+          label="All"
+          count={(statusCounts?.staged ?? 0) + (statusCounts?.worktree ?? 0)}
+        />
+        <GitScopeChip label="Modified" count={statusCounts?.modified ?? 0} tone="warning" />
+        <GitScopeChip label="Added" count={statusCounts?.added ?? 0} tone="success" />
+        <GitScopeChip label="Deleted" count={statusCounts?.deleted ?? 0} tone="danger" />
       </div>
       <div className="min-h-0">{children}</div>
     </div>
