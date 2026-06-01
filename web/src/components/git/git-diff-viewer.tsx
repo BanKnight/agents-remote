@@ -104,9 +104,10 @@ type GitFileDiffPanelProps = {
   error: Error | null;
   fileDiff: GitFileDiffResponse | undefined;
   isLoading: boolean;
+  onBack: () => void;
 };
 
-function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps) {
+function GitFileDiffPanel({ error, fileDiff, isLoading, onBack }: GitFileDiffPanelProps) {
   if (isLoading)
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3">
@@ -143,19 +144,36 @@ function GitFileDiffPanel({ error, fileDiff, isLoading }: GitFileDiffPanelProps)
       aria-label="Git file diff"
     >
       <div className="flex min-w-0 items-center gap-2 border-b border-slate-700/40 px-3.5 py-2.5">
-        <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
-          {statusShortLabel(fileDiff.status)}
-        </IconMarker>
-        <div className="min-w-0">
-          <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
+        <button
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
+          type="button"
+          onClick={onBack}
+          aria-label="Back to changed files"
+        >
+          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Back
+        </button>
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-left text-center">
             {fileDiff.path}
           </h4>
           {fileDiff.previousPath ? (
-            <p className="mt-0.5 truncate font-mono text-[0.65rem] text-slate-500">
+            <p className="mt-0.5 truncate font-mono text-[0.65rem] text-slate-500 hidden sm:block">
               renamed from {fileDiff.previousPath}
             </p>
           ) : null}
         </div>
+        <IconMarker size="sm" tone={gitStatusTone(fileDiff.status)}>
+          {statusShortLabel(fileDiff.status)}
+        </IconMarker>
       </div>
       <DiffContent diff={fileDiff.diff} />
     </section>
@@ -382,6 +400,7 @@ export function GitDiffPanel({
       error={fileDiff.error}
       isLoading={fileDiff.isLoading}
       fileDiff={fileDiff.data}
+      onBack={clearDiff}
     />
   );
 
@@ -401,31 +420,6 @@ export function GitDiffPanel({
         <div
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFile === undefined ? "hidden sm:flex" : "flex"}`}
         >
-          {isFileSelected ? (
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden">
-              <button
-                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200"
-                type="button"
-                onClick={clearDiff}
-                aria-label="Back to changed files"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M10 3L5 8l5 5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Back
-              </button>
-              <p className="min-w-0 truncate text-center font-mono text-xs font-semibold text-slate-200">
-                {selectedFile?.path.split("/").pop() ?? selectedFile?.path}
-              </p>
-              <span className="w-[4.5rem]" />
-            </div>
-          ) : null}
           <div className="min-h-0 flex-1 flex flex-col overflow-hidden">{diffPanel}</div>
         </div>
       </div>
