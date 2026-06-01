@@ -83,7 +83,7 @@ export function HomeRoute() {
       />
 
       {setupVisible ? (
-        <div className="flex flex-col items-center justify-start pt-6 sm:justify-center sm:pt-0">
+        <div className="flex flex-1 min-h-0 flex-col items-center justify-start overflow-y-auto pt-6 sm:justify-center sm:pt-0">
           <div className="w-full max-w-sm">
             <ProjectSetupPanel
               createError={create.error instanceof Error ? create.error : null}
@@ -113,7 +113,7 @@ function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
       {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-start pt-6 sm:justify-center sm:pt-0">
+        <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 sm:justify-center sm:pt-0">
           <div className={`w-full max-w-sm rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
             <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
             <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
