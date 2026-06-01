@@ -1,16 +1,20 @@
 import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
+import closeIcon from "./close.svg?raw";
 import filesNav from "./files-nav.svg?raw";
 import gitNav from "./git-nav.svg?raw";
 import openai from "./openai.svg?raw";
+import refresh from "./refresh.svg?raw";
 import terminal from "./terminal.svg?raw";
 
 const svgMap: Record<string, string> = {
   "agent-nav": agentNav,
   anthropic,
+  close: closeIcon,
   "files-nav": filesNav,
   "git-nav": gitNav,
   openai,
+  refresh,
   terminal,
 };
 
@@ -27,7 +31,7 @@ export function ShellIcon({
   if (!raw) return null;
   return (
     <span
-      className={"inline-flex " + className}
+      className={"inline-flex items-center justify-center " + className}
       dangerouslySetInnerHTML={{ __html: raw }}
       aria-hidden="true"
     />

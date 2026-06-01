@@ -637,41 +637,59 @@ function SessionDetailActions({
   };
 
   const buttonClass = `inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`;
+  const iconBtn = `inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`;
 
   return (
     <>
-      {/* Desktop: inline action buttons */}
+      {/* Desktop: inline icon buttons */}
       <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
         {sessionType === "agent" ? (
           <>
-            <button className={buttonClass} type="button" onClick={() => onViewChange("files")}>
-              {t("session.files")}
-            </button>
-            <button className={buttonClass} type="button" onClick={() => onViewChange("git")}>
-              {t("session.git")}
+            <button
+              className={iconBtn}
+              title={t("session.files")}
+              type="button"
+              onClick={() => onViewChange("files")}
+            >
+              <ShellIcon name="files-nav" className="h-4 w-4" />
             </button>
             <button
-              className={buttonClass}
+              className={iconBtn}
+              title={t("session.git")}
+              type="button"
+              onClick={() => onViewChange("git")}
+            >
+              <ShellIcon name="git-nav" className="h-4 w-4" />
+            </button>
+            <button
+              className={iconBtn}
               disabled={createTerminalPending}
+              title={createTerminalPending ? t("session.creating") : t("session.createTerminal")}
               type="button"
               onClick={onCreateTerminal}
             >
-              {createTerminalPending ? t("session.creating") : t("session.createTerminal")}
+              <ShellIcon name="terminal" className="h-4 w-4" />
             </button>
           </>
         ) : null}
         {connectionStatus === "error" ? (
-          <button className={buttonClass} type="button" onClick={onReconnect}>
-            {t("session.retry")}
+          <button
+            className={iconBtn}
+            title={t("session.retry")}
+            type="button"
+            onClick={onReconnect}
+          >
+            <ShellIcon name="refresh" className="h-4 w-4" />
           </button>
         ) : null}
         <button
-          className={`${buttonClass} border-rose-300/30 text-rose-200 hover:border-rose-300/60 hover:bg-rose-300/10`}
+          className={`${iconBtn} border-rose-300/30 text-rose-200 hover:border-rose-300/60 hover:bg-rose-300/10`}
           disabled={closePending}
+          title={closePending ? t("session.closing") : t("session.close")}
           type="button"
           onClick={onClose}
         >
-          {closePending ? t("session.closing") : t("session.close")}
+          <ShellIcon name="close" className="h-4 w-4" />
         </button>
         {createTerminalError instanceof Error ? (
           <p className="text-xs text-rose-200">{createTerminalError.message}</p>
@@ -699,21 +717,21 @@ function SessionDetailActions({
               <>
                 <ActionMenuItem
                   active={detailView === "files"}
-                  marker={t("files.fileMarker")}
+                  marker={<ShellIcon name="files-nav" className="h-4 w-4" />}
                   onClick={() => selectView("files")}
                 >
                   {t("session.files")}
                 </ActionMenuItem>
                 <ActionMenuItem
                   active={detailView === "git"}
-                  marker="GT"
+                  marker={<ShellIcon name="git-nav" className="h-4 w-4" />}
                   onClick={() => selectView("git")}
                 >
                   {t("session.git")}
                 </ActionMenuItem>
                 <ActionMenuItem
                   disabled={createTerminalPending}
-                  marker={<ShellIcon name="terminal" />}
+                  marker={<ShellIcon name="terminal" className="h-4 w-4" />}
                   onClick={createTerminal}
                 >
                   {createTerminalPending ? t("session.creating") : t("session.terminal")}
@@ -721,11 +739,19 @@ function SessionDetailActions({
               </>
             ) : null}
             {connectionStatus === "error" ? (
-              <ActionMenuItem marker="↺" onClick={reconnect}>
+              <ActionMenuItem
+                marker={<ShellIcon name="refresh" className="h-4 w-4" />}
+                onClick={reconnect}
+              >
                 {t("session.retry")}
               </ActionMenuItem>
             ) : null}
-            <ActionMenuItem danger marker="✕" disabled={closePending} onClick={close}>
+            <ActionMenuItem
+              danger
+              marker={<ShellIcon name="close" className="h-4 w-4" />}
+              disabled={closePending}
+              onClick={close}
+            >
               {closePending ? t("session.closing") : t("session.close")}
             </ActionMenuItem>
             {createTerminalError instanceof Error ? (
