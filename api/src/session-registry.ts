@@ -345,7 +345,8 @@ export const createTmuxSessionName = (
 ) => {
   const projectKey = safeProjectKey(projectName);
   const providerPart = type === "agent" ? provider : undefined;
-  return ["ar", type, providerPart, projectKey, sessionId.slice(0, 12)].filter(Boolean).join("-");
+  const prefix = process.env.AGENTS_REMOTE_SESSION_PREFIX ?? "ar";
+  return [prefix, type, providerPart, projectKey, sessionId.slice(0, 12)].filter(Boolean).join("-");
 };
 
 const defaultCreateId = (type: SessionType) => {

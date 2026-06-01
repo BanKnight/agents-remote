@@ -53,6 +53,7 @@ const main = async () => {
     APP_PASSWORD: password,
     PROJECTS_ROOT: projectsRoot,
     AGENTS_REMOTE_RUN_DIR: runtimeDir,
+    AGENTS_REMOTE_SESSION_PREFIX: "e2e-ar",
   });
   const web = spawnLogged(
     [
@@ -98,7 +99,7 @@ const main = async () => {
     api.kill();
     web.kill();
     await Promise.allSettled([api.exited, web.exited]);
-    await cleanupTmuxSessions("demo-2a97516c");
+    await cleanupTmuxSessions("e2e-ar-");
     await rm(tempRoot, { force: true, recursive: true });
   }
 };
@@ -152,7 +153,7 @@ const waitForUrl = async (url: string, label: string) => {
   throw new Error(`${label} did not become ready at ${url}: ${String(lastError)}`);
 };
 
-const cleanupTmuxSessions = async (projectKey: string) => {
+const cleanupTmuxSessions = async (prefix: string) => {
   try {
     const result = Bun.spawn({
       cmd: ["tmux", "list-sessions", "-F", "#{session_name}"],
@@ -160,7 +161,7 @@ const cleanupTmuxSessions = async (projectKey: string) => {
       stderr: "pipe",
     });
     const stdout = await new Response(result.stdout).text();
-    const sessions = stdout.split("\n").filter((name) => name.includes(projectKey));
+    const sessions = stdout.split("\n").filter((name) => name.startsWith(prefix));
     for (const name of sessions) {
       Bun.spawn({ cmd: ["tmux", "kill-session", "-t", name], stderr: "pipe" });
     }
