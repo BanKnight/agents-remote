@@ -153,13 +153,13 @@ export function FileEntryList({
           <ListRow
             key={`${entry.type}:${entry.path}`}
             marker={
-              <IconMarker tone={isDirectory ? "accent" : "muted"}>
+              <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
                 {isDirectory ? "DR" : "FL"}
               </IconMarker>
             }
             selected={selected}
             subtitle={entry.hidden ? "hidden" : undefined}
-            title={entry.name}
+            title={<span className="font-mono text-[0.82rem]">{entry.name}</span>}
             onClick={
               clickable
                 ? () => (isDirectory ? onOpenDirectory(entry.path) : onPreviewFile(entry.path))
@@ -189,21 +189,34 @@ function FilePreviewPanel({
   renderMode,
   renderToggle,
 }: FilePreviewPanelProps) {
-  if (isLoading) return <ResourceStatePanel tone="inset" message="Loading preview..." />;
+  if (isLoading)
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+        <span className="relative flex h-3 w-3" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+        </span>
+        <span className="text-xs font-semibold text-slate-400">Loading preview...</span>
+      </div>
+    );
   if (error)
     return (
-      <ResourceStatePanel
-        tone="danger"
-        title="Unable to preview this file."
-        message={error.message}
-      />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <ResourceStatePanel
+          tone="danger"
+          title="Unable to preview this file."
+          message={error.message}
+        />
+      </div>
     );
   if (!preview)
     return (
-      <ResourceStatePanel
-        title="Select a file to preview"
-        message="Text and common web images are shown read-only."
-      />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <ResourceStatePanel
+          title="Select a file to preview"
+          message="Text and common web images are shown read-only."
+        />
+      </div>
     );
 
   return (
@@ -289,8 +302,12 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
     if (renderMode === "render") {
       if (inlinedHtml === null)
         return (
-          <div className="flex flex-1 items-center justify-center p-6">
-            <p className="text-sm text-slate-400">Preparing render...</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <span className="relative flex h-3 w-3" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+            </span>
+            <span className="text-xs font-semibold text-slate-400">Preparing render...</span>
           </div>
         );
       return (
