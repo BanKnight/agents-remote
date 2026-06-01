@@ -39,7 +39,7 @@ import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
-import { AgentNavIcon, FilesNavIcon, GitNavIcon, TerminalIcon } from "../components/shell/icons";
+import { ShellIcon } from "../components/shell/icons";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -372,13 +372,13 @@ function SessionDetail({
     marker: (
       <IconMarker size="sm" tone="accent">
         {section.id === "agents" ? (
-          <AgentNavIcon />
+          <ShellIcon name="agent-nav" />
         ) : section.id === "files" ? (
-          <FilesNavIcon />
+          <ShellIcon name="files-nav" />
         ) : section.id === "git" ? (
-          <GitNavIcon />
+          <ShellIcon name="git-nav" />
         ) : (
-          <TerminalIcon />
+          <ShellIcon name="terminal" />
         )}
       </IconMarker>
     ),
@@ -713,7 +713,7 @@ function SessionDetailActions({
                 </ActionMenuItem>
                 <ActionMenuItem
                   disabled={createTerminalPending}
-                  marker={<TerminalIcon />}
+                  marker={<ShellIcon name="terminal" />}
                   onClick={createTerminal}
                 >
                   {createTerminalPending ? t("session.creating") : t("session.terminal")}

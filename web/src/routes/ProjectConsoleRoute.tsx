@@ -41,14 +41,7 @@ import {
 } from "../components/shell/shell-primitives";
 import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
-import {
-  AgentNavIcon,
-  AnthropicIcon,
-  FilesNavIcon,
-  GitNavIcon,
-  OpenAIIcon,
-  TerminalIcon,
-} from "../components/shell/icons";
+import { ShellIcon } from "../components/shell/icons";
 
 export function ProjectConsoleRoute() {
   const { t } = useT();
@@ -200,14 +193,14 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   tone="accent"
                   onClick={() => createAgent.mutate("claude")}
                 >
-                  <AnthropicIcon />
+                  <ShellIcon name="anthropic" />
                   {t("project.createClaude")}
                 </CreateButton>
                 <CreateButton
                   disabled={createAgent.isPending}
                   onClick={() => createAgent.mutate("codex")}
                 >
-                  <OpenAIIcon />
+                  <ShellIcon name="openai" />
                   {t("project.createCodex")}
                 </CreateButton>
               </div>
@@ -221,7 +214,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   tone="accent"
                   onClick={() => createTerminal.mutate()}
                 >
-                  <TerminalIcon />
+                  <ShellIcon name="terminal" />
                   {createTerminal.isPending ? t("project.creating") : t("project.newTerminal")}
                 </CreateButton>
               </div>
@@ -328,13 +321,13 @@ function projectNavigationItems(t: ReturnType<typeof useT>["t"]) {
     marker: (
       <IconMarker size="sm" tone="accent">
         {section.id === "agents" ? (
-          <AgentNavIcon />
+          <ShellIcon name="agent-nav" />
         ) : section.id === "files" ? (
-          <FilesNavIcon />
+          <ShellIcon name="files-nav" />
         ) : section.id === "git" ? (
-          <GitNavIcon />
+          <ShellIcon name="git-nav" />
         ) : (
-          <TerminalIcon />
+          <ShellIcon name="terminal" />
         )}
       </IconMarker>
     ),
@@ -434,7 +427,7 @@ function AgentPanel({
           onClick={() => onCreate("claude")}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
-          <AnthropicIcon />
+          <ShellIcon name="anthropic" />
           {t("project.createClaude")}
         </CreateButton>
         <CreateButton
@@ -442,7 +435,7 @@ function AgentPanel({
           onClick={() => onCreate("codex")}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
-          <OpenAIIcon />
+          <ShellIcon name="openai" />
           {t("project.createCodex")}
         </CreateButton>
       </div>
@@ -525,7 +518,11 @@ function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
       <SessionInstanceRow
         marker={
           <IconMarker tone={providerTone}>
-            {session.provider === "codex" ? <OpenAIIcon /> : <AnthropicIcon />}
+            {session.provider === "codex" ? (
+              <ShellIcon name="openai" />
+            ) : (
+              <ShellIcon name="anthropic" />
+            )}
           </IconMarker>
         }
         statusTone={sessionStatusTone(session.status)}
@@ -655,7 +652,7 @@ function TerminalPanel({
           onClick={onCreate}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
-          <TerminalIcon />
+          <ShellIcon name="terminal" />
           {isCreating ? t("project.creating") : t("project.newTerminalMobile")}
         </CreateButton>
       </div>
@@ -757,7 +754,7 @@ function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstance
         }
         marker={
           <IconMarker tone="success">
-            <TerminalIcon />
+            <ShellIcon name="terminal" />
           </IconMarker>
         }
         statusTone={sessionStatusTone(session.status)}
