@@ -21,7 +21,6 @@ export const zh: Record<TranslationKey, string> = {
   "home.eyebrowDesktop": "打开服务器项目以继续使用 Agent、文件、Git 或终端。",
   "home.eyebrowMobile": "打开项目以继续。",
   "home.newAdopt": "新建 / 采用",
-  "home.setupOpen": "设置已打开",
   "home.createProjectAria": "创建或采用项目",
   "home.loading": "正在加载项目...",
   "home.emptyTitle": "暂无项目",

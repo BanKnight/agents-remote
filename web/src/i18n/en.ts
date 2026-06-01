@@ -19,7 +19,6 @@ export const en = {
   "home.eyebrowDesktop": "Open a server Project to continue with Agent, Files, Git, or Terminal.",
   "home.eyebrowMobile": "Open a Project to continue.",
   "home.newAdopt": "New / Adopt",
-  "home.setupOpen": "Setup open",
   "home.createProjectAria": "Create or adopt Project",
   "home.loading": "Loading Projects...",
   "home.emptyTitle": "No Projects yet",

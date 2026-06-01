@@ -41,6 +41,7 @@ export function HomeRoute() {
     create.isPending ||
     create.error instanceof Error ||
     (!projects.isLoading && !projects.error && projectItems.length === 0);
+  const hasProjects = !projects.isLoading && !projects.error && projectItems.length > 0;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -61,15 +62,15 @@ export function HomeRoute() {
             <ActionButton
               className="hidden w-fit self-start sm:inline-flex sm:self-center"
               tone="accent"
-              onClick={() => setSetupOpen(true)}
+              onClick={() => setSetupOpen(!setupOpen)}
             >
-              {setupVisible ? t("home.setupOpen") : t("home.newAdopt")}
+              {t("home.newAdopt")}
             </ActionButton>
             <button
               className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-xl font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
               type="button"
               aria-label={t("home.createProjectAria")}
-              onClick={() => setSetupOpen(true)}
+              onClick={() => setSetupOpen(!setupOpen)}
             >
               +
             </button>
@@ -92,7 +93,7 @@ export function HomeRoute() {
         onCreateProject={() => setSetupOpen(true)}
       />
 
-      {setupVisible ? (
+      {setupVisible && hasProjects ? (
         <ProjectSetupPanel
           createError={create.error instanceof Error ? create.error : null}
           inputId={inputId}
@@ -120,16 +121,18 @@ function ProjectListCard({ error, isLoading, onCreateProject, projects }: Projec
       {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {!isLoading && !error && projects.length === 0 ? (
-        <div className={`rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
-          <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
-          <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
-          <button
-            className="mt-4 rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 px-4 py-2 text-sm font-semibold text-slate-950"
-            type="button"
-            onClick={onCreateProject}
-          >
-            {t("home.emptyButton")}
-          </button>
+        <div className="flex flex-col items-center justify-start pt-6 sm:justify-center sm:pt-0">
+          <div className={`w-full max-w-sm rounded-2xl p-4 ${shellSurfaceClasses.dashed}`}>
+            <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
+            <button
+              className="mt-4 rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 px-4 py-2 text-sm font-semibold text-slate-950"
+              type="button"
+              onClick={onCreateProject}
+            >
+              {t("home.emptyButton")}
+            </button>
+          </div>
         </div>
       ) : null}
 
