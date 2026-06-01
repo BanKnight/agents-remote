@@ -140,6 +140,7 @@ export type AgentSession = {
   provider: AgentProvider;
   displayName: string;
   status: AgentSessionStatus;
+  createdAt: string;
 };
 
 export type TerminalSession = {

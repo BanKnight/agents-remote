@@ -41,6 +41,34 @@ import {
 import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 
+const AnthropicIcon = () => (
+  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+  </svg>
+);
+
+const OpenAIIcon = () => (
+  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" />
+  </svg>
+);
+
+const TerminalIcon = () => (
+  <svg
+    className="h-5 w-5"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M5 8l4 4-4 4" />
+    <path d="M12 16h6" />
+  </svg>
+);
+
 export function ProjectConsoleRoute() {
   const { t } = useT();
   const { projectName } = useParams({ from: "/projects/$projectName" });
@@ -191,12 +219,14 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   tone="accent"
                   onClick={() => createAgent.mutate("claude")}
                 >
+                  <AnthropicIcon />
                   {t("project.createClaude")}
                 </CreateButton>
                 <CreateButton
                   disabled={createAgent.isPending}
                   onClick={() => createAgent.mutate("codex")}
                 >
+                  <OpenAIIcon />
                   {t("project.createCodex")}
                 </CreateButton>
               </div>
@@ -210,6 +240,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   tone="accent"
                   onClick={() => createTerminal.mutate()}
                 >
+                  <TerminalIcon />
                   {createTerminal.isPending ? t("project.creating") : t("project.newTerminal")}
                 </CreateButton>
               </div>
@@ -422,6 +453,7 @@ function AgentPanel({
           onClick={() => onCreate("claude")}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
+          <AnthropicIcon />
           {t("project.createClaude")}
         </CreateButton>
         <CreateButton
@@ -429,6 +461,7 @@ function AgentPanel({
           onClick={() => onCreate("codex")}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
+          <OpenAIIcon />
           {t("project.createCodex")}
         </CreateButton>
       </div>
@@ -484,6 +517,20 @@ type AgentInstanceRowProps = {
   session: AgentSession;
 };
 
+function relativeTime(iso: string): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "";
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
   const { t } = useT();
   const providerTone = session.provider === "codex" ? "success" : "accent";
@@ -497,19 +544,12 @@ function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
       <SessionInstanceRow
         marker={
           <IconMarker tone={providerTone}>
-            {session.provider === "codex" ? (
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" />
-              </svg>
-            ) : (
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
-              </svg>
-            )}
+            {session.provider === "codex" ? <OpenAIIcon /> : <AnthropicIcon />}
           </IconMarker>
         }
         statusTone={sessionStatusTone(session.status)}
         status={t(sessionStatusLabel(session.status))}
+        subtitle={relativeTime(session.createdAt)}
         title={session.displayName}
       />
     </Link>
@@ -634,6 +674,7 @@ function TerminalPanel({
           onClick={onCreate}
           className="py-3 sm:py-1.5 text-sm sm:text-xs"
         >
+          <TerminalIcon />
           {isCreating ? t("project.creating") : t("project.newTerminalMobile")}
         </CreateButton>
       </div>
@@ -733,7 +774,11 @@ function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstance
             {t("session.close")}
           </ActionButton>
         }
-        marker={<IconMarker tone="success">{t("section.markerTerminal")}</IconMarker>}
+        marker={
+          <IconMarker tone="success">
+            <TerminalIcon />
+          </IconMarker>
+        }
         statusTone={sessionStatusTone(session.status)}
         status={t(sessionStatusLabel(session.status))}
         subtitle={session.id}
