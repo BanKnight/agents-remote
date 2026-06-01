@@ -66,10 +66,12 @@ type GitFileListProps = {
 function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
   if (files.length === 0)
     return (
-      <ResourceStatePanel
-        title="No changes"
-        message="Worktree and staged changes will appear here."
-      />
+      <div className="sm:h-full sm:flex sm:flex-col sm:items-center sm:justify-center">
+        <ResourceStatePanel
+          title="No changes"
+          message="Worktree and staged changes will appear here."
+        />
+      </div>
     );
 
   return (
@@ -421,7 +423,7 @@ export function GitDiffPanel({
         <aside
           className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
-          <div className="min-h-0 overflow-y-auto p-3">{fileList}</div>
+          <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col">{fileList}</div>
         </aside>
         <div
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFile === undefined ? "hidden sm:flex" : "flex"}`}
