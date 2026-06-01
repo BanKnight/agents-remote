@@ -1,7 +1,7 @@
 import type { Project } from "@agents-remote/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState, useEffect } from "react";
 import { createProject, listProjects } from "../api/client";
 import { useT } from "../i18n";
 import { defaultConsoleSection } from "./console-model";
@@ -38,6 +38,15 @@ export function HomeRoute() {
     },
   });
   const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
+
+  useEffect(() => {
+    if (!setupOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSetupOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [setupOpen]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -91,29 +100,26 @@ export function HomeRoute() {
         />
 
         {setupVisible ? (
-          <>
+          <div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-start overflow-y-auto bg-slate-950/60 pt-6 backdrop-blur-sm sm:justify-center sm:pt-0"
+            onClick={() => setSetupOpen(false)}
+            aria-hidden="true"
+          >
             <div
-              className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-sm"
-              onClick={() => setSetupOpen(false)}
+              className="w-full max-w-sm p-4"
+              onClick={(e) => e.stopPropagation()}
               aria-hidden="true"
-            />
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-start overflow-y-auto pt-6 sm:justify-center sm:pt-0">
-              <div
-                className="w-full max-w-sm p-4"
-                onClick={(e) => e.stopPropagation()}
-                aria-hidden="true"
-              >
-                <ProjectSetupPanel
-                  createError={create.error instanceof Error ? create.error : null}
-                  inputId={inputId}
-                  isPending={create.isPending}
-                  projectPath={projectPath}
-                  onProjectPathChange={setProjectPath}
-                  onSubmit={handleSubmit}
-                />
-              </div>
+            >
+              <ProjectSetupPanel
+                createError={create.error instanceof Error ? create.error : null}
+                inputId={inputId}
+                isPending={create.isPending}
+                projectPath={projectPath}
+                onProjectPathChange={setProjectPath}
+                onSubmit={handleSubmit}
+              />
             </div>
-          </>
+          </div>
         ) : null}
       </div>
     </ShellLayout>
@@ -265,7 +271,7 @@ function ProjectSetupPanel({
           />
         </label>
         <button
-          className="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+          className="cursor-pointer rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
           disabled={projectPath.trim().length === 0 || isPending}
           type="submit"
         >
