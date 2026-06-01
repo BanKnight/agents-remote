@@ -157,7 +157,7 @@ export const zh: Record<TranslationKey, string> = {
   "section.git": "Git",
   "section.gitDesc": "只读工作区和暂存差异查看器。",
   "section.gitStatus": "只读",
-  "section.terminal": "Terminal",
+  "section.terminal": "终端",
   "section.terminalDesc": "由会话运行时支持的项目范围 Shell 会话。",
   "section.terminalStatus": "运行时",
   "section.markerAgents": "A",
