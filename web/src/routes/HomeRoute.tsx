@@ -161,16 +161,9 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
           <span className="block truncate text-[0.95rem] font-semibold text-slate-100 group-hover:text-cyan-100">
             {project.name}
           </span>
-          <span className="mt-1 block truncate font-mono text-xs text-slate-400">
-            {project.path}
-          </span>
-          <span className="mt-2 flex min-w-0 flex-wrap gap-2">
-            <ProjectMetaPill>
-              {t("home.agentPill", { count: project.agentSessionCount })}
-            </ProjectMetaPill>
-            <ProjectMetaPill>
-              {t("home.terminalPill", { count: project.terminalSessionCount })}
-            </ProjectMetaPill>
+          <span className="mt-1 flex min-w-0 flex-wrap items-center gap-3">
+            <CountBadge count={project.agentSessionCount} tone="success" />
+            <CountBadge count={project.terminalSessionCount} tone="accent" />
             <ProjectMetaPill>{project.gitBranch ?? t("home.projectPending")}</ProjectMetaPill>
           </span>
         </span>
@@ -190,6 +183,21 @@ function ProjectMetaPill({ children }: ProjectMetaPillProps) {
   return (
     <span className="max-w-full truncate rounded-full border border-slate-700/45 px-2 py-1 text-[0.68rem] font-medium text-slate-300">
       {children}
+    </span>
+  );
+}
+
+type CountBadgeProps = {
+  count: number;
+  tone: "success" | "accent";
+};
+
+function CountBadge({ count, tone }: CountBadgeProps) {
+  const dotColor = tone === "success" ? "bg-emerald-300" : "bg-cyan-300";
+  return (
+    <span className="inline-flex items-center gap-1 text-[0.68rem] font-medium text-slate-300">
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
+      {count}
     </span>
   );
 }
