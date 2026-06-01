@@ -214,7 +214,7 @@ function FilePreviewPanel({
       className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/25"
       aria-label="File preview"
     >
-      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-slate-700/40 px-3.5 py-2.5">
+      <div className="relative flex min-w-0 items-center justify-between border-b border-slate-700/40 px-3.5 py-2.5">
         <button
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
           type="button"
@@ -232,10 +232,10 @@ function FilePreviewPanel({
           </svg>
           Back
         </button>
-        <h4 className="truncate text-center font-mono text-sm font-semibold text-slate-100 sm:text-left">
-          {displayName}
+        <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
+          {displayName.split("/").pop() ?? displayName}
         </h4>
-        <div className="flex items-center gap-2 justify-self-end min-w-[4.5rem] sm:min-w-0">
+        <div className="flex items-center gap-2">
           <div className="hidden sm:block">{renderToggle}</div>
           <FilePreviewMenu
             isHtml={isHtml}
