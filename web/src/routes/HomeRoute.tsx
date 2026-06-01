@@ -83,26 +83,39 @@ export function HomeRoute() {
         variant="home"
       />
 
-      <ProjectListCard
-        error={projects.error}
-        isLoading={projects.isLoading}
-        projects={projectItems}
-      />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <ProjectListCard
+          error={projects.error}
+          isLoading={projects.isLoading}
+          projects={projectItems}
+        />
 
-      {setupVisible ? (
-        <div className="flex flex-1 min-h-0 flex-col items-center justify-start overflow-y-auto pt-6 sm:justify-center sm:pt-0">
-          <div className="w-full max-w-sm">
-            <ProjectSetupPanel
-              createError={create.error instanceof Error ? create.error : null}
-              inputId={inputId}
-              isPending={create.isPending}
-              projectPath={projectPath}
-              onProjectPathChange={setProjectPath}
-              onSubmit={handleSubmit}
+        {setupVisible ? (
+          <>
+            <div
+              className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-sm"
+              onClick={() => setSetupOpen(false)}
+              aria-hidden="true"
             />
-          </div>
-        </div>
-      ) : null}
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-start overflow-y-auto pt-6 sm:justify-center sm:pt-0">
+              <div
+                className="w-full max-w-sm p-4"
+                onClick={(e) => e.stopPropagation()}
+                aria-hidden="true"
+              >
+                <ProjectSetupPanel
+                  createError={create.error instanceof Error ? create.error : null}
+                  inputId={inputId}
+                  isPending={create.isPending}
+                  projectPath={projectPath}
+                  onProjectPathChange={setProjectPath}
+                  onSubmit={handleSubmit}
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
     </ShellLayout>
   );
 }
