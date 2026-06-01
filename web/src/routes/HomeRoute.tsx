@@ -83,14 +83,18 @@ export function HomeRoute() {
       />
 
       {setupVisible ? (
-        <ProjectSetupPanel
-          createError={create.error instanceof Error ? create.error : null}
-          inputId={inputId}
-          isPending={create.isPending}
-          projectPath={projectPath}
-          onProjectPathChange={setProjectPath}
-          onSubmit={handleSubmit}
-        />
+        <div className="flex flex-col items-center justify-start pt-6 sm:justify-center sm:pt-0">
+          <div className="w-full max-w-sm">
+            <ProjectSetupPanel
+              createError={create.error instanceof Error ? create.error : null}
+              inputId={inputId}
+              isPending={create.isPending}
+              projectPath={projectPath}
+              onProjectPathChange={setProjectPath}
+              onSubmit={handleSubmit}
+            />
+          </div>
+        </div>
       ) : null}
     </ShellLayout>
   );
