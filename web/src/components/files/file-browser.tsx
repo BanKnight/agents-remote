@@ -1,7 +1,7 @@
 import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remote/shared";
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { MoreVertical } from "lucide-react";
 import { listProjectFiles, previewProjectFile } from "../../api/client";
 import { IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
 
@@ -180,6 +180,9 @@ type FilePreviewPanelProps = {
   preview: ProjectFilePreviewResponse | undefined;
   renderMode: "source" | "render";
   renderToggle: ReactNode;
+  isHtml: boolean;
+  onBack: () => void;
+  onRenderModeChange: (mode: "source" | "render") => void;
 };
 
 function FilePreviewPanel({
@@ -188,6 +191,9 @@ function FilePreviewPanel({
   preview,
   renderMode,
   renderToggle,
+  isHtml,
+  onBack,
+  onRenderModeChange,
 }: FilePreviewPanelProps) {
   if (isLoading)
     return (
@@ -224,23 +230,128 @@ function FilePreviewPanel({
       className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/70"
       aria-label="File preview"
     >
-      <div className="flex min-w-0 items-center justify-between gap-2 px-3.5 py-2.5 border-b border-slate-700/40">
-        <div className="min-w-0">
-          <h4 className="truncate font-mono text-sm font-semibold text-slate-100">
+      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-700/40 px-3.5 py-2.5">
+        <button
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
+          type="button"
+          onClick={onBack}
+          aria-label="Back to files"
+        >
+          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Back
+        </button>
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate font-mono text-sm font-semibold text-slate-100 sm:text-left text-center">
             {preview.name}
           </h4>
-          <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
+          <p className="mt-0.5 truncate font-mono text-xs text-slate-500 hidden sm:block">
             {preview.path.includes("/")
               ? preview.path.slice(0, preview.path.lastIndexOf("/"))
               : "/"}
           </p>
         </div>
         <div className="hidden sm:block">{renderToggle}</div>
+        <FilePreviewMenu
+          isHtml={isHtml}
+          renderMode={renderMode}
+          onRenderModeChange={onRenderModeChange}
+        />
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-y-auto">
         <PreviewBody preview={preview} renderMode={renderMode} />
       </div>
     </section>
+  );
+}
+
+type FilePreviewMenuProps = {
+  isHtml: boolean;
+  renderMode: "source" | "render";
+  onRenderModeChange: (mode: "source" | "render") => void;
+};
+
+function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreviewMenuProps) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  if (!isHtml) return null;
+
+  return (
+    <div ref={menuRef} className="relative shrink-0 sm:hidden">
+      <button
+        className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl border text-xs font-bold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="File actions"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <MoreVertical className="h-4 w-4" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          className={`absolute right-0 top-10 z-20 grid w-36 gap-1 rounded-2xl p-2 shadow-2xl shadow-black/40 ${shellSurfaceClasses.header}`}
+          role="menu"
+        >
+          <FilePreviewMenuItem
+            active={renderMode === "source"}
+            onClick={() => {
+              onRenderModeChange("source");
+              setOpen(false);
+            }}
+          >
+            Source
+          </FilePreviewMenuItem>
+          <FilePreviewMenuItem
+            active={renderMode === "render"}
+            onClick={() => {
+              onRenderModeChange("render");
+              setOpen(false);
+            }}
+          >
+            Render
+          </FilePreviewMenuItem>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type FilePreviewMenuItemProps = {
+  active?: boolean;
+  children: string;
+  onClick: () => void;
+};
+
+function FilePreviewMenuItem({ active = false, children, onClick }: FilePreviewMenuItemProps) {
+  return (
+    <button
+      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+        active ? "bg-cyan-300/10 text-cyan-100" : "text-slate-200 hover:bg-slate-800/70"
+      }`}
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -322,9 +433,7 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
       );
     }
     return (
-      <pre
-        className={`min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm ${shellSurfaceClasses.code}`}
-      >
+      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm bg-[#05080d]/80">
         {preview.content}
       </pre>
     );
@@ -450,34 +559,6 @@ export function FilesPanel({
     </aside>
   );
 
-  const mobilePreviewTopBar = isPreviewOpen ? (
-    <div
-      className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-700/40 px-3 py-2.5 sm:hidden ${shellSurfaceClasses.runtimeBody}`}
-    >
-      <button
-        className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200"
-        type="button"
-        onClick={clearPreview}
-        aria-label="Back to files"
-      >
-        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M10 3L5 8l5 5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        Back
-      </button>
-      <p className="min-w-0 truncate text-center font-mono text-xs font-semibold text-slate-200">
-        {previewData?.name ?? selectedFilePath.split("/").pop() ?? ""}
-      </p>
-      <div className="shrink-0">{renderToggle ?? <span className="w-[4.5rem]" />}</div>
-    </div>
-  ) : null;
-
   const previewPanel = (
     <FilePreviewPanel
       error={preview.error}
@@ -485,6 +566,9 @@ export function FilesPanel({
       preview={previewData}
       renderMode={isHtml ? renderMode : "source"}
       renderToggle={renderToggle}
+      isHtml={isHtml}
+      onBack={clearPreview}
+      onRenderModeChange={setRenderMode}
     />
   );
 
@@ -501,7 +585,6 @@ export function FilesPanel({
           <div
             className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFilePath === undefined ? "hidden sm:flex" : "flex"}`}
           >
-            {mobilePreviewTopBar}
             <div className="min-h-0 flex-1 flex flex-col overflow-hidden">{previewPanel}</div>
           </div>
         ) : null}
