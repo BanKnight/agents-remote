@@ -72,7 +72,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   );
 
   const runtime = useLocalRuntime(adapter);
-  const isRunning = useThread((s) => s.isRunning);
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
@@ -151,14 +150,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
           <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-              <ThreadPrimitive.Messages
-                components={{
-                  UserMessage: UserChatBubble,
-                  AssistantMessage: AssistantChatBubble,
-                }}
-              />
-              {isRunning ? <ThinkingIndicator /> : null}
-              <ThreadPrimitive.ViewportFooter />
+              <ThreadViewportContent />
             </ThreadPrimitive.Viewport>
 
             <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
@@ -296,6 +288,22 @@ function AssistantChatBubble() {
         </MessagePrimitive.Parts>
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function ThreadViewportContent() {
+  const isRunning = useThread((s) => s.isRunning);
+  return (
+    <>
+      <ThreadPrimitive.Messages
+        components={{
+          UserMessage: UserChatBubble,
+          AssistantMessage: AssistantChatBubble,
+        }}
+      />
+      {isRunning ? <ThinkingIndicator /> : null}
+      <ThreadPrimitive.ViewportFooter />
+    </>
   );
 }
 
