@@ -24,6 +24,7 @@ import type {
   ProjectFilePreviewResponse,
   ProjectListResponse,
   TerminalSessionDetailResponse,
+  UploadFileResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -91,6 +92,25 @@ export async function listProjectFiles(
   path = "",
 ): Promise<ProjectFileListResponse> {
   return fetchJson(projectFilesPath(projectName, path), "api.projectFilesFailed");
+}
+
+export async function uploadFile(
+  projectName: string,
+  directoryPath: string,
+  file: File,
+): Promise<UploadFileResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(projectFileUploadPath(projectName, directoryPath), {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(`${resolveTranslation("api.projectFileUploadFailed")}: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 export async function previewProjectFile(
@@ -210,6 +230,9 @@ export function createEchoSocket() {
 
 const projectFilesPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files`, path);
+
+const projectFileUploadPath = (projectName: string, path: string) =>
+  withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/upload`, path);
 
 const projectFilePreviewPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/preview`, path);

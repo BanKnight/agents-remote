@@ -1,10 +1,10 @@
 import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remote/shared";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
-import { listProjectFiles, previewProjectFile } from "../../api/client";
+import { listProjectFiles, previewProjectFile, uploadFile } from "../../api/client";
 import { useT } from "../../i18n";
-import { IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
+import { ActionButton, IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 
 // ── Utilities ────────────────────────────────────────────────────
@@ -517,6 +517,49 @@ export function FilesPanel({
     previewData?.type === "text" &&
     (previewData.name.endsWith(".html") || previewData.name.endsWith(".htm"));
   const [renderMode, setRenderMode] = useState<"source" | "render">("source");
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const upload = useMutation({
+    mutationFn: (file: File) => uploadFile(projectName, currentPath, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectName, queryScope, currentPath],
+      });
+    },
+  });
+
+  const handleFileDrop = useCallback(
+    (file: File) => {
+      if (upload.isPending) return;
+      upload.mutate(file);
+    },
+    [upload],
+  );
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleFileDrop(file);
+    },
+    [handleFileDrop],
+  );
 
   useEffect(() => {
     setRenderMode("source");
@@ -579,9 +622,51 @@ export function FilesPanel({
       <div
         className={`border-b border-slate-700/40 px-3.5 py-3 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
-        <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
+          <div className="flex shrink-0 items-center gap-2">
+            {upload.error instanceof Error ? (
+              <p className="text-xs text-red-300 hidden sm:block">{upload.error.message}</p>
+            ) : null}
+            <input
+              ref={fileInputRef}
+              className="hidden"
+              type="file"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileDrop(file);
+                e.target.value = "";
+              }}
+            />
+            <ActionButton
+              disabled={upload.isPending}
+              tone="accent"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ShellIcon name="plus" className="h-3.5 w-3.5" />
+              <span className="pr-0.5">
+                {upload.isPending ? t("files.uploading") : t("files.upload")}
+              </span>
+            </ActionButton>
+          </div>
+        </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+      <div
+        className={`relative flex min-h-0 flex-1 flex-col sm:flex-row ${dragOver ? "ring-2 ring-cyan-300/40" : ""}`}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
+        {dragOver ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-cyan-300/8 backdrop-blur-[1px]">
+            <p className="rounded-2xl bg-slate-950/90 px-5 py-3 text-sm font-semibold text-cyan-100 shadow-2xl">
+              {t("files.dropZone")}
+            </p>
+          </div>
+        ) : null}
+        {upload.error instanceof Error ? (
+          <p className="text-xs text-red-300 sm:hidden px-3 pt-2">{upload.error.message}</p>
+        ) : null}
         {browserPanel}
         {enablePreview ? (
           <div

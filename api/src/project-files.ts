@@ -6,8 +6,9 @@ import type {
   ProjectFilePreviewMediaType,
   ProjectFilePreviewResponse,
   ProjectUnsupportedFilePreviewReason,
+  UploadFileResponse,
 } from "@agents-remote/shared";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath } from "./project-paths";
 
@@ -19,6 +20,8 @@ export type RawFileResult = {
   mimeType: string;
 };
 
+export const UPLOAD_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
+
 type ProjectFilesErrorCode = Extract<
   ApiErrorCode,
   | "PROJECT_NAME_INVALID"
@@ -28,6 +31,9 @@ type ProjectFilesErrorCode = Extract<
   | "PROJECT_FILE_NOT_FOUND"
   | "PROJECT_FILE_NOT_DIRECTORY"
   | "PROJECT_FILE_NOT_FILE"
+  | "PROJECT_FILE_TARGET_EXISTS"
+  | "PROJECT_FILE_UPLOAD_FAILED"
+  | "PROJECT_FILE_UPLOAD_TOO_LARGE"
   | "PROJECT_FS_ERROR"
 >;
 
@@ -177,6 +183,69 @@ export class ProjectFilesService {
     const mimeType = rawFileMimeType(resolved.path);
 
     return { content, mimeType };
+  }
+
+  async uploadFile(
+    projectName: string,
+    directoryPath: string,
+    fileName: string,
+    content: Buffer,
+  ): Promise<UploadFileResponse> {
+    const resolved = await this.resolvePath(projectName, directoryPath);
+    const dirStat = await this.statPath(resolved.path);
+
+    if (!dirStat.isDirectory()) {
+      throw new ProjectFilesError(
+        "PROJECT_FILE_NOT_DIRECTORY",
+        "Upload target must be a directory",
+      );
+    }
+
+    if (fileName.includes("/") || fileName.includes("\\") || fileName.includes("\0")) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid file name");
+    }
+
+    if (content.length > UPLOAD_FILE_LIMIT_BYTES) {
+      throw new ProjectFilesError(
+        "PROJECT_FILE_UPLOAD_TOO_LARGE",
+        `File exceeds upload size limit of ${UPLOAD_FILE_LIMIT_BYTES / (1024 * 1024)} MiB`,
+      );
+    }
+
+    const targetPath = join(resolved.path, fileName);
+
+    try {
+      const existingStat = await stat(targetPath);
+
+      if (existingStat.isFile()) {
+        throw new ProjectFilesError(
+          "PROJECT_FILE_TARGET_EXISTS",
+          "A file with this name already exists",
+        );
+      }
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+    }
+
+    try {
+      await writeFile(targetPath, content);
+    } catch {
+      throw new ProjectFilesError("PROJECT_FILE_UPLOAD_FAILED", "Unable to write uploaded file");
+    }
+
+    const entryStat = await this.statPath(targetPath);
+
+    return {
+      entry: {
+        name: fileName,
+        path: directoryPath.length > 0 ? `${directoryPath}/${fileName}` : fileName,
+        type: "file",
+        hidden: false,
+        size: entryStat.size,
+      },
+    };
   }
 
   private async entryFromDirent(

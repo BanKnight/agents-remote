@@ -129,6 +129,10 @@ export type DeleteProjectResponse = {
   projectName: string;
 };
 
+export type UploadFileResponse = {
+  entry: ProjectFileEntry;
+};
+
 export type AgentProvider = "claude" | "codex";
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
@@ -257,6 +261,9 @@ export type ApiErrorCode =
   | "PROJECT_FILE_NOT_FOUND"
   | "PROJECT_FILE_NOT_DIRECTORY"
   | "PROJECT_FILE_NOT_FILE"
+  | "PROJECT_FILE_TARGET_EXISTS"
+  | "PROJECT_FILE_UPLOAD_FAILED"
+  | "PROJECT_FILE_UPLOAD_TOO_LARGE"
   | "PROJECT_GIT_NOT_REPOSITORY"
   | "PROJECT_GIT_SCOPE_INVALID"
   | "PROJECT_GIT_FILE_NOT_CHANGED"
