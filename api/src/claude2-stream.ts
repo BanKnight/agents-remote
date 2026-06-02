@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Claude2StreamClientMessage, SessionStreamServerMessage } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
@@ -85,6 +88,46 @@ export const handleClaude2StreamUpgrade = async (
   }
 };
 
+const MAX_HISTORY_MESSAGES = 500;
+
+type ChatMessageFilter = (msg: Record<string, unknown>) => boolean;
+
+const isChatMessage: ChatMessageFilter = (msg) => {
+  const type = msg.type as string | undefined;
+  if (!type) return false;
+  if (type === "user" || type === "assistant" || type === "result") return true;
+  if (type === "system" && msg.subtype === "init") return true;
+  return false;
+};
+
+function claudeJsonlPath(projectPath: string, claudeSessionId: string): string {
+  const projectDir = projectPath.replace(/\//g, "-");
+  return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
+}
+
+async function loadHistoryFromJsonl(filePath: string): Promise<SessionStreamServerMessage[]> {
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const lines = content.trim().split("\n");
+    const messages: SessionStreamServerMessage[] = [];
+
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line) as Record<string, unknown>;
+        if (isChatMessage(msg)) {
+          messages.push(msg as unknown as SessionStreamServerMessage);
+        }
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    return messages;
+  } catch {
+    return [];
+  }
+}
+
 export class Claude2StreamController {
   private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
   private readonly history = new Map<string, SessionStreamServerMessage[]>();
@@ -126,6 +169,26 @@ export class Claude2StreamController {
       status: data.status,
     });
     console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
+
+    // Load and replay history from Claude's JSONL file (persistent)
+    if (metadata?.projectPath && metadata?.claudeSessionId) {
+      const jsonlPath = claudeJsonlPath(metadata.projectPath, metadata.claudeSessionId);
+      console.log(`[claude2-stream] loading history from ${jsonlPath}`);
+      const diskHistory = await loadHistoryFromJsonl(jsonlPath);
+      console.log(`[claude2-stream] loaded ${diskHistory.length} messages from disk`);
+
+      // Merge with in-memory buffer (newer messages may not be flushed to disk yet)
+      const memHistory = this.history.get(data.sessionId) ?? [];
+      const merged = mergeHistories(diskHistory, memHistory);
+      this.history.set(data.sessionId, merged);
+
+      // Replay chat messages (excluding result/ended to avoid premature stop)
+      const replay = merged.filter((m) => m.type !== "result" && m.type !== "ended");
+      console.log(`[claude2-stream] replaying ${replay.length} history messages`);
+      for (const msg of replay) {
+        send(socket, msg);
+      }
+    }
 
     try {
       await this.startStream(socket, data);
@@ -197,6 +260,10 @@ export class Claude2StreamController {
               `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
             );
             sessionHistory!.push(parsed);
+            // Keep memory buffer capped
+            if (sessionHistory!.length > MAX_HISTORY_MESSAGES) {
+              sessionHistory!.splice(0, sessionHistory!.length - MAX_HISTORY_MESSAGES);
+            }
             send(socket, parsed);
             if (parsed.type === "result") {
               send(socket, { type: "ended" });
@@ -263,6 +330,25 @@ const sessionData = (socket: StreamSocket): Claude2WebSocketData | undefined => 
 
   return undefined;
 };
+
+function mergeHistories(
+  disk: SessionStreamServerMessage[],
+  memory: SessionStreamServerMessage[],
+): SessionStreamServerMessage[] {
+  if (memory.length === 0) return disk.slice(-MAX_HISTORY_MESSAGES);
+
+  // Use disk as base, add memory messages that aren't in disk
+  const diskIds = new Set(disk.map((m) => JSON.stringify(m)));
+  const merged = [...disk];
+  for (const msg of memory) {
+    const key = JSON.stringify(msg);
+    if (!diskIds.has(key)) {
+      merged.push(msg);
+    }
+  }
+
+  return merged.slice(-MAX_HISTORY_MESSAGES);
+}
 
 const decodePathSegment = (value: string | undefined) => {
   if (!value) return undefined;
