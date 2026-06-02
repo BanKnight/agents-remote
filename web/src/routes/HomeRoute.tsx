@@ -13,6 +13,7 @@ import {
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
+import { useConfirm } from "../components/shell/confirm-dialog";
 
 export function HomeRoute() {
   const { t } = useT();
@@ -41,6 +42,7 @@ export function HomeRoute() {
     mutationFn: deleteProject,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
   });
+  const { confirm, holder } = useConfirm();
   const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
 
   useEffect(() => {
@@ -98,6 +100,7 @@ export function HomeRoute() {
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <ProjectListCard
+          confirm={confirm}
           deleteError={deleteMutation.error instanceof Error ? deleteMutation.error : null}
           error={projects.error}
           isDeleting={deleteMutation.isPending}
@@ -125,11 +128,13 @@ export function HomeRoute() {
           </div>
         ) : null}
       </div>
+      {holder}
     </ShellLayout>
   );
 }
 
 type ProjectListCardProps = {
+  confirm: ReturnType<typeof useConfirm>["confirm"];
   deleteError: Error | null;
   error: Error | null;
   isDeleting: boolean;
@@ -139,6 +144,7 @@ type ProjectListCardProps = {
 };
 
 function ProjectListCard({
+  confirm,
   deleteError,
   error,
   isDeleting,
@@ -173,6 +179,7 @@ function ProjectListCard({
             {projects.map((project) => (
               <ProjectEntryRow
                 key={project.name}
+                confirm={confirm}
                 isDeleting={isDeleting}
                 project={project}
                 onDelete={() => onDeleteProject(project.name)}
@@ -186,12 +193,13 @@ function ProjectListCard({
 }
 
 type ProjectEntryRowProps = {
+  confirm: ReturnType<typeof useConfirm>["confirm"];
   isDeleting: boolean;
   onDelete: () => void;
   project: Project;
 };
 
-function ProjectEntryRow({ isDeleting, onDelete, project }: ProjectEntryRowProps) {
+function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntryRowProps) {
   const { t } = useT();
   return (
     <Link
@@ -219,12 +227,16 @@ function ProjectEntryRow({ isDeleting, onDelete, project }: ProjectEntryRowProps
             aria-label={t("project.deleteProject")}
             disabled={isDeleting}
             tone="danger"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (window.confirm(t("project.deleteProjectConfirm"))) {
-                onDelete();
-              }
+              const ok = await confirm({
+                confirmLabel: t("project.deleteProject"),
+                message: t("project.deleteProjectConfirm"),
+                title: t("project.deleteProject"),
+                tone: "danger",
+              });
+              if (ok) onDelete();
             }}
           >
             <ShellIcon name="trash" className="h-3.5 w-3.5" />

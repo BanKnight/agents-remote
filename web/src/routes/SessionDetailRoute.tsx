@@ -40,6 +40,7 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
+import { useConfirm } from "../components/shell/confirm-dialog";
 
 export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -179,6 +180,7 @@ function SessionDetail({
       });
     },
   });
+  const { confirm, holder } = useConfirm();
   const createTerminal = useMutation({
     mutationFn: () => createTerminalSession(projectName, `Terminal for ${title}`),
     onSuccess: async (result) => {
@@ -416,10 +418,14 @@ function SessionDetail({
         sourceAgentSession={sourceAgentSession}
         title={title}
         closePending={closeSession.isPending}
-        onClose={() => {
-          if (window.confirm(t("session.closeConfirm"))) {
-            closeSession.mutate();
-          }
+        onClose={async () => {
+          const ok = await confirm({
+            confirmLabel: t("session.close"),
+            message: t("session.closeConfirm"),
+            title: t("session.close"),
+            tone: "danger",
+          });
+          if (ok) closeSession.mutate();
         }}
         onCreateTerminal={() => createTerminal.mutate()}
         onReconnect={() => setReconnectKey((value) => value + 1)}
@@ -470,6 +476,7 @@ function SessionDetail({
           onSubmit={handleInputSubmit}
         />
       ) : null}
+      {holder}
     </ShellLayout>
   );
 }

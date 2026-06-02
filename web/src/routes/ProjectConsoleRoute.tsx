@@ -8,7 +8,6 @@ import {
   closeTerminalSession,
   createAgentSession,
   createTerminalSession,
-  deleteProject,
   getProject,
   listAgentSessions,
   listTerminalSessions,
@@ -43,6 +42,7 @@ import {
 import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
+import { useConfirm } from "../components/shell/confirm-dialog";
 
 export function ProjectConsoleRoute() {
   const { t } = useT();
@@ -142,13 +142,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     mutationFn: (sessionId: string) => closeTerminalSession(project.name, sessionId),
     onSuccess: invalidateSessions,
   });
-  const deleteProjectMutation = useMutation({
-    mutationFn: () => deleteProject(project.name),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      await navigate({ to: "/" });
-    },
-  });
+  const { confirm, holder } = useConfirm();
 
   const selectWorkspace = (workspace: (typeof consoleSections)[number]["id"]) => {
     setResourceDeepDetailOpen(false);
@@ -171,12 +165,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       sidebar={
         <ProjectSecondaryNav
           activeSection={activeSection}
-          deleteError={
-            deleteProjectMutation.error instanceof Error ? deleteProjectMutation.error : null
-          }
-          isDeleting={deleteProjectMutation.isPending}
           project={project}
-          onDeleteProject={() => deleteProjectMutation.mutate()}
           onSelectSection={selectWorkspace}
         />
       }
@@ -257,6 +246,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           isClosing={closeTerminal.isPending}
           createError={createTerminal.error}
           closeError={closeTerminal.error}
+          confirm={confirm}
           onCreate={() => createTerminal.mutate()}
           onClose={(sessionId) => closeTerminal.mutate(sessionId)}
         />
@@ -274,6 +264,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           onMobileFilePreviewChange={setMobileFilePreviewOpen}
         />
       ) : null}
+      {holder}
     </ShellLayout>
   );
 }
@@ -284,52 +275,24 @@ type ProjectSecondaryNavProps = {
 };
 
 type ProjectSecondaryDesktopNavProps = ProjectSecondaryNavProps & {
-  deleteError: Error | null;
-  isDeleting: boolean;
-  onDeleteProject: () => void;
   project: Project;
 };
 
 function ProjectSecondaryNav({
   activeSection,
-  deleteError,
-  isDeleting,
-  onDeleteProject,
   onSelectSection,
   project,
 }: ProjectSecondaryDesktopNavProps) {
   const { t } = useT();
   return (
     <ShellSidebar display="flex">
-      <div className="flex h-full min-h-0 flex-col">
-        <ProjectShellNavigation
-          activeItemId={activeSection}
-          items={projectNavigationItems(t)}
-          projectPath={project.path}
-          projectTitle={project.name}
-          onSelectItem={onSelectSection}
-        />
-        <div className="mt-auto shrink-0 px-3 pb-3">
-          {deleteError ? (
-            <p className="mb-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-100">
-              {deleteError.message}
-            </p>
-          ) : null}
-          <ActionButton
-            className="w-full"
-            disabled={isDeleting}
-            tone="danger"
-            onClick={() => {
-              if (window.confirm(t("project.deleteProjectConfirm"))) {
-                onDeleteProject();
-              }
-            }}
-          >
-            <ShellIcon name="trash" className="h-3.5 w-3.5" />
-            {isDeleting ? t("project.deleting") : t("project.deleteProject")}
-          </ActionButton>
-        </div>
-      </div>
+      <ProjectShellNavigation
+        activeItemId={activeSection}
+        items={projectNavigationItems(t)}
+        projectPath={project.path}
+        projectTitle={project.name}
+        onSelectItem={onSelectSection}
+      />
     </ShellSidebar>
   );
 }
@@ -667,6 +630,7 @@ function sessionStatusTone(status: AgentSession["status"] | TerminalSession["sta
 }
 
 type TerminalPanelProps = {
+  confirm: ReturnType<typeof useConfirm>["confirm"];
   projectName: string;
   sessions: TerminalSession[];
   isLoading: boolean;
@@ -679,6 +643,7 @@ type TerminalPanelProps = {
 };
 
 function TerminalPanel({
+  confirm,
   projectName,
   sessions,
   isLoading,
@@ -718,6 +683,7 @@ function TerminalPanel({
         <p className="mt-3 text-sm text-amber-200">{t("project.closingTerminal")}</p>
       ) : null}
       <TerminalInstanceList
+        confirm={confirm}
         projectName={projectName}
         sessions={sessions}
         isLoading={isLoading}
@@ -728,6 +694,7 @@ function TerminalPanel({
 }
 
 type TerminalInstanceListProps = {
+  confirm: ReturnType<typeof useConfirm>["confirm"];
   projectName: string;
   sessions: TerminalSession[];
   isLoading: boolean;
@@ -735,6 +702,7 @@ type TerminalInstanceListProps = {
 };
 
 function TerminalInstanceList({
+  confirm,
   projectName,
   sessions,
   isLoading,
@@ -766,6 +734,7 @@ function TerminalInstanceList({
       {sessions.map((session) => (
         <TerminalInstanceRow
           key={session.id}
+          confirm={confirm}
           projectName={projectName}
           session={session}
           onClose={() => onClose(session.id)}
@@ -776,12 +745,13 @@ function TerminalInstanceList({
 }
 
 type TerminalInstanceRowProps = {
+  confirm: ReturnType<typeof useConfirm>["confirm"];
   projectName: string;
   session: TerminalSession;
   onClose: () => void;
 };
 
-function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstanceRowProps) {
+function TerminalInstanceRow({ confirm, projectName, session, onClose }: TerminalInstanceRowProps) {
   const { t } = useT();
   return (
     <Link
@@ -795,11 +765,15 @@ function TerminalInstanceRow({ projectName, session, onClose }: TerminalInstance
         actions={
           <ActionButton
             tone="danger"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.preventDefault();
-              if (window.confirm(t("project.closeTerminalConfirm"))) {
-                onClose();
-              }
+              const ok = await confirm({
+                confirmLabel: t("session.close"),
+                message: t("project.closeTerminalConfirm"),
+                title: t("session.close"),
+                tone: "danger",
+              });
+              if (ok) onClose();
             }}
           >
             {t("session.close")}
