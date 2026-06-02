@@ -595,8 +595,8 @@ export const startApi = async () => {
     sessionRegistry,
   );
 
-  claude2Runtime.setOnClaudeSessionId((sessionId, _tmuxSessionName, claudeSessionId) => {
-    void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId);
+  claude2Runtime.setOnSystemInit((sessionId, _tmuxSessionName, claudeSessionId, model) => {
+    void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId, model);
   });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);

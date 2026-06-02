@@ -127,18 +127,6 @@ export class Claude2StreamController {
     });
     console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
 
-    // Replay history for reconnecting clients (skip terminal messages)
-    const messages = this.history.get(data.sessionId);
-    if (messages) {
-      const replay = messages.filter((m) => m.type !== "result" && m.type !== "ended");
-      console.log(
-        `[claude2-stream] replaying ${replay.length} history messages (${messages.length} total)`,
-      );
-      for (const msg of replay) {
-        send(socket, msg);
-      }
-    }
-
     try {
       await this.startStream(socket, data);
     } catch (e) {

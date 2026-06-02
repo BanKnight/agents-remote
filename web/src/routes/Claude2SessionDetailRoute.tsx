@@ -114,8 +114,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     >
       <ChatHeader
         closePending={closeSession.isPending}
+        model={session?.model}
         projectName={projectName}
-        sessionId={sessionId}
         title={title}
         onClose={async () => {
           const ok = await confirm({
@@ -176,13 +176,13 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
 type ChatHeaderProps = {
   closePending: boolean;
+  model?: string;
   projectName: string;
-  sessionId: string;
   title: string;
   onClose: () => void;
 };
 
-function ChatHeader({ closePending, projectName, sessionId, title, onClose }: ChatHeaderProps) {
+function ChatHeader({ closePending, model, projectName, title, onClose }: ChatHeaderProps) {
   const { t } = useT();
 
   return (
@@ -211,7 +211,8 @@ function ChatHeader({ closePending, projectName, sessionId, title, onClose }: Ch
         <div className="min-w-0 flex-1 text-center">
           <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
           <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
-            {projectName} · {sessionId.slice(0, 8)}
+            {projectName}
+            {model ? ` · ${model}` : null}
           </p>
         </div>
         <button

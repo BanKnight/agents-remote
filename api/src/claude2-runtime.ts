@@ -20,19 +20,25 @@ type Claude2SessionState = {
   projectPath: string;
   sessionId: string;
   claudeSessionId?: string;
+  model?: string;
   process: Claude2Process | null;
 };
 
 export class Claude2Runtime implements RuntimeResources {
   private readonly sessions = new Map<string, Claude2SessionState>();
-  private onClaudeSessionId:
-    | ((sessionId: string, tmuxSessionName: string, claudeSessionId: string) => void)
+  private onSystemInit:
+    | ((sessionId: string, tmuxSessionName: string, claudeSessionId: string, model: string) => void)
     | null = null;
 
-  setOnClaudeSessionId(
-    cb: (sessionId: string, tmuxSessionName: string, claudeSessionId: string) => void,
+  setOnSystemInit(
+    cb: (
+      sessionId: string,
+      tmuxSessionName: string,
+      claudeSessionId: string,
+      model: string,
+    ) => void,
   ) {
-    this.onClaudeSessionId = cb;
+    this.onSystemInit = cb;
   }
 
   async exists(sessionName: string): Promise<boolean> {
@@ -227,14 +233,20 @@ export class Claude2Runtime implements RuntimeResources {
   }
 
   private checkClaudeSessionId(sessionName: string, line: string) {
-    if (!this.onClaudeSessionId) return;
+    if (!this.onSystemInit) return;
     try {
       const msg = JSON.parse(line);
       if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
         const state = this.sessions.get(sessionName);
         if (state && !state.claudeSessionId) {
           state.claudeSessionId = msg.session_id;
-          this.onClaudeSessionId(state.sessionId, sessionName, msg.session_id);
+          if (typeof msg.model === "string") state.model = msg.model;
+          this.onSystemInit(
+            state.sessionId,
+            sessionName,
+            msg.session_id,
+            typeof msg.model === "string" ? msg.model : "unknown",
+          );
         }
       }
     } catch {

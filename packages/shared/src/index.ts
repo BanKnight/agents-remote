@@ -177,6 +177,7 @@ export type AgentSession = {
   displayName: string;
   status: AgentSessionStatus;
   createdAt: string;
+  model?: string;
 };
 
 export type TerminalSession = {

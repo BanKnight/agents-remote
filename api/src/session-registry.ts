@@ -27,6 +27,7 @@ export type SessionMetadata = {
   updatedAt: string;
   lastConnectedAt?: string;
   claudeSessionId?: string;
+  model?: string;
 };
 
 export type RuntimeStream = {
@@ -101,10 +102,19 @@ export class SessionRegistry {
     return this.getLiveMetadata(projectName, "agent", sessionId);
   }
 
-  async setClaudeSessionId(sessionId: string, claudeSessionId: string): Promise<void> {
+  async setClaudeSessionId(
+    sessionId: string,
+    claudeSessionId: string,
+    model?: string,
+  ): Promise<void> {
     const metadata = await this.readMetadataFile(`${sessionId}.json`);
     if (!metadata) return;
-    const updated = { ...metadata, claudeSessionId, updatedAt: this.now().toISOString() };
+    const updated: SessionMetadata = {
+      ...metadata,
+      claudeSessionId,
+      updatedAt: this.now().toISOString(),
+    };
+    if (model) updated.model = model;
     await this.writeMetadata(updated);
   }
 
@@ -436,6 +446,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   displayName: metadata.displayName,
   status: metadata.status as AgentSessionStatus,
   createdAt: metadata.createdAt,
+  model: metadata.model,
 });
 
 const terminalSessionFromMetadata = (metadata: SessionMetadata): TerminalSession => ({
