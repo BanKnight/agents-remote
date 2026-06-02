@@ -83,6 +83,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.createTerminal": "+ Terminal",
   "session.creating": "正在创建...",
   "session.retry": "重试",
+  "session.stop": "停止",
   "session.close": "关闭",
   "session.closing": "正在关闭...",
   "session.closeConfirm": "关闭此会话？正在运行的进程将被终止。",

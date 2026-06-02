@@ -177,9 +177,12 @@ function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | n
   }
   if (msg.type === "assistant") {
     const parts = msg.message.content
-      .filter((block) => block.type === "text" || block.type === "tool_use")
+      .filter(
+        (block) => block.type === "text" || block.type === "tool_use" || block.type === "thinking",
+      )
       .map((block) => {
         if (block.type === "text") return { type: "text" as const, text: block.text };
+        if (block.type === "thinking") return { type: "text" as const, text: block.thinking };
         return {
           type: "tool-call" as const,
           toolCallId: block.id,
@@ -187,6 +190,27 @@ function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | n
           args: asReadonlyJSON(block.input),
           argsText: JSON.stringify(block.input),
         };
+      });
+    if (parts.length > 0) {
+      return { content: parts };
+    }
+    return null;
+  }
+  if (msg.type === "user") {
+    const parts = msg.message.content
+      .filter((block) => block.type === "tool_result")
+      .flatMap((block) => {
+        if (block.type !== "tool_result") return [];
+        const texts = block.content
+          .filter((c) => c.type === "text")
+          .map((c) => c.text)
+          .join("\n");
+        return [
+          {
+            type: "text" as const,
+            text: texts || `Tool result`,
+          },
+        ];
       });
     if (parts.length > 0) {
       return { content: parts };
@@ -202,6 +226,6 @@ function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | n
           : ({ type: "incomplete", reason: "error" } as const);
     return { status: resultStatus };
   }
-  // system, user, connected — skip
+  // system, connected — skip
   return null;
 }

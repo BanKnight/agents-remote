@@ -6,8 +6,9 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useComposerRuntime,
   useLocalRuntime,
-  useThread,
+  useMessage,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
@@ -154,16 +155,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
             </ThreadPrimitive.Viewport>
 
             <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-              <ComposerPrimitive.Root className="flex items-end gap-2">
-                <ComposerPrimitive.Input
-                  autoFocus
-                  placeholder={t("claude2.inputPlaceholder")}
-                  className="min-h-[2.5rem] max-h-32 flex-1 resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
-                  rows={1}
-                />
-                <ComposerPrimitive.Send className="shrink-0 rounded-xl bg-cyan-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-40">
-                  {t("session.sendInput")}
-                </ComposerPrimitive.Send>
+              <ComposerPrimitive.Root>
+                <ComposerWithInterrupt />
               </ComposerPrimitive.Root>
             </div>
           </ThreadPrimitive.Root>
@@ -257,43 +250,92 @@ function ToolCallDisplay({
   part: { toolCallId: string; toolName: string; args: Record<string, unknown>; argsText: string };
 }) {
   const [expanded, setExpanded] = useState(false);
+  const argKeys = Object.keys(part.args);
+  const hasArgs = argKeys.length > 0;
+
+  // Format arg values for display
+  const formatArg = (value: unknown): string => {
+    if (typeof value === "string") return value.length > 120 ? value.slice(0, 120) + "…" : value;
+    return JSON.stringify(value).slice(0, 120);
+  };
+
   return (
     <div className="my-2 rounded-lg border border-slate-600/50 bg-slate-900/60 overflow-hidden">
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-cyan-400 text-left hover:bg-slate-800/50 transition"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-800/50 transition"
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="text-slate-500 text-[0.6rem]">{expanded ? "▾" : "▸"}</span>
-        <span>{part.toolName}</span>
+        <span className="text-slate-500 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
+        <svg
+          className="h-3.5 w-3.5 shrink-0 text-cyan-400"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M2 3.5h3l1.5 2h7v7H2v-9z"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="text-xs font-medium text-cyan-400 truncate">{part.toolName}</span>
+        {hasArgs && !expanded ? (
+          <span className="text-[0.6rem] text-slate-500 truncate ml-auto">
+            {argKeys.join(", ")}
+          </span>
+        ) : null}
       </button>
       {expanded && (
-        <pre className="px-3 py-2 text-xs text-slate-400 border-t border-slate-700/50 overflow-x-auto max-h-48 overflow-y-auto">
-          {JSON.stringify(part.args, null, 2)}
-        </pre>
+        <div className="border-t border-slate-700/50 px-3 py-2">
+          {hasArgs ? (
+            <div className="space-y-1.5">
+              {argKeys.map((key) => (
+                <div key={key} className="flex gap-2 text-xs">
+                  <span className="shrink-0 font-medium text-slate-400">{key}:</span>
+                  <span className="text-slate-300 break-all">{formatArg(part.args[key])}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">No arguments</p>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
 function AssistantChatBubble() {
+  const message = useMessage();
+  const isEmpty =
+    !message.content || (Array.isArray(message.content) && message.content.length === 0);
+
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5">
       <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
-        <MessagePrimitive.Parts>
-          {({ part }) => {
-            if (part.type === "text") return <MarkdownText />;
-            if (part.type === "tool-call") return <ToolCallDisplay part={part} />;
-            return null;
-          }}
-        </MessagePrimitive.Parts>
+        {isEmpty ? (
+          <div className="flex items-center gap-1.5 py-1">
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+          </div>
+        ) : (
+          <MessagePrimitive.Parts>
+            {({ part }) => {
+              if (part.type === "text") return <MarkdownText />;
+              if (part.type === "tool-call") return <ToolCallDisplay part={part} />;
+              return null;
+            }}
+          </MessagePrimitive.Parts>
+        )}
       </div>
     </MessagePrimitive.Root>
   );
 }
 
 function ThreadViewportContent() {
-  const isRunning = useThread((s) => s.isRunning);
   return (
     <>
       <ThreadPrimitive.Messages
@@ -302,20 +344,37 @@ function ThreadViewportContent() {
           AssistantMessage: AssistantChatBubble,
         }}
       />
-      {isRunning ? <ThinkingIndicator /> : null}
       <ThreadPrimitive.ViewportFooter />
     </>
   );
 }
 
-function ThinkingIndicator() {
+function ComposerWithInterrupt() {
+  const composer = useComposerRuntime();
+  const canCancel = composer.getState().canCancel;
+  const { t } = useT();
+
   return (
-    <div className="flex justify-start px-3 py-1.5 sm:px-5">
-      <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-3">
-        <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-        <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-        <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-      </div>
+    <div className="flex items-end gap-2">
+      <ComposerPrimitive.Input
+        autoFocus
+        placeholder={t("claude2.inputPlaceholder")}
+        className="min-h-[2.5rem] max-h-32 flex-1 resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
+        rows={1}
+      />
+      {canCancel ? (
+        <button
+          type="button"
+          className="shrink-0 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-rose-500"
+          onClick={() => composer.cancel()}
+        >
+          {t("session.stop")}
+        </button>
+      ) : (
+        <ComposerPrimitive.Send className="shrink-0 rounded-xl bg-cyan-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-40">
+          {t("session.sendInput")}
+        </ComposerPrimitive.Send>
+      )}
     </div>
   );
 }

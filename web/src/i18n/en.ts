@@ -82,6 +82,7 @@ export const en = {
   "session.createTerminal": "+ Terminal",
   "session.creating": "Creating...",
   "session.retry": "Retry",
+  "session.stop": "Stop",
   "session.close": "Close",
   "session.closing": "Closing...",
   "session.closeConfirm": "Close this session? The running process will be terminated.",
