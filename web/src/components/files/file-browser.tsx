@@ -2,6 +2,8 @@ import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remot
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   listProjectFiles,
   previewProjectFile,
@@ -324,6 +326,7 @@ type FilePreviewPanelProps = {
   renderMode: "source" | "render";
   renderToggle: ReactNode;
   isHtml: boolean;
+  isMarkdown: boolean;
   fileName?: string;
   onBack: () => void;
   onRenderModeChange: (mode: "source" | "render") => void;
@@ -336,6 +339,7 @@ function FilePreviewPanel({
   renderMode,
   renderToggle,
   isHtml,
+  isMarkdown,
   fileName,
   onBack,
   onRenderModeChange,
@@ -381,6 +385,7 @@ function FilePreviewPanel({
           <div className="hidden sm:block">{renderToggle}</div>
           <FilePreviewMenu
             isHtml={isHtml}
+            isMarkdown={isMarkdown}
             renderMode={renderMode}
             onRenderModeChange={onRenderModeChange}
           />
@@ -415,11 +420,17 @@ function FilePreviewPanel({
 
 type FilePreviewMenuProps = {
   isHtml: boolean;
+  isMarkdown: boolean;
   renderMode: "source" | "render";
   onRenderModeChange: (mode: "source" | "render") => void;
 };
 
-function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreviewMenuProps) {
+function FilePreviewMenu({
+  isHtml,
+  isMarkdown,
+  renderMode,
+  onRenderModeChange,
+}: FilePreviewMenuProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -433,7 +444,7 @@ function FilePreviewMenu({ isHtml, renderMode, onRenderModeChange }: FilePreview
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
-  if (!isHtml) return null;
+  if (!isHtml && !isMarkdown) return null;
 
   return (
     <div ref={menuRef} className="relative shrink-0 sm:hidden">
@@ -554,6 +565,13 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
 
   if (preview.type === "text") {
     if (renderMode === "render") {
+      if (preview.name.endsWith(".md")) {
+        return (
+          <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6 text-slate-100 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 [&_li]:mb-1 [&_pre]:bg-slate-900/80 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:mb-2 [&_pre]:overflow-x-auto [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_a]:text-cyan-400 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-slate-600 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-slate-600 [&_td]:px-2 [&_td]:py-1 [&_hr]:border-slate-700 [&_hr]:my-3">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{preview.content}</ReactMarkdown>
+          </div>
+        );
+      }
       if (inlinedHtml === null)
         return (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
@@ -657,6 +675,8 @@ export function FilesPanel({
   const isHtml =
     previewData?.type === "text" &&
     (previewData.name.endsWith(".html") || previewData.name.endsWith(".htm"));
+  const isMarkdown = previewData?.type === "text" && previewData.name.endsWith(".md");
+  const showRenderToggle = isHtml || isMarkdown;
   const [renderMode, setRenderMode] = useState<"source" | "render">("source");
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -778,7 +798,7 @@ export function FilesPanel({
     setRenderMode("source");
   }, [selectedFilePath]);
 
-  const renderToggle = isHtml ? (
+  const renderToggle = showRenderToggle ? (
     <div className="flex shrink-0 gap-1">
       {(["source", "render"] as const).map((mode) => (
         <button
@@ -828,9 +848,10 @@ export function FilesPanel({
       error={preview.error}
       isLoading={preview.isLoading}
       preview={previewData}
-      renderMode={isHtml ? renderMode : "source"}
+      renderMode={showRenderToggle ? renderMode : "source"}
       renderToggle={renderToggle}
       isHtml={isHtml}
+      isMarkdown={isMarkdown}
       fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
       onBack={clearPreview}
       onRenderModeChange={setRenderMode}
