@@ -7,6 +7,7 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   useLocalRuntime,
+  useThread,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
@@ -71,6 +72,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   );
 
   const runtime = useLocalRuntime(adapter);
+  const isRunning = useThread((s) => s.isRunning);
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
@@ -155,6 +157,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   AssistantMessage: AssistantChatBubble,
                 }}
               />
+              {isRunning ? <ThinkingIndicator /> : null}
               <ThreadPrimitive.ViewportFooter />
             </ThreadPrimitive.Viewport>
 
@@ -293,5 +296,17 @@ function AssistantChatBubble() {
         </MessagePrimitive.Parts>
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function ThinkingIndicator() {
+  return (
+    <div className="flex justify-start px-3 py-1.5 sm:px-5">
+      <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-3">
+        <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+      </div>
+    </div>
   );
 }

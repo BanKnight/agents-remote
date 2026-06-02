@@ -129,24 +129,24 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
 
       const state = getConnection();
 
-      // Yield new history items since last run() (server-replayed or live messages)
-      for (let i = state.yieldIndex; i < state.history.length; i++) {
-        yield state.history[i];
-      }
-      state.yieldIndex = state.history.length;
-
-      // Then listen for live messages
       try {
         while (true) {
           if (options.abortSignal.aborted) return;
           if (state.closed) return;
 
-          // Check if new messages arrived while we were yielding history
-          if (state.resolveNext) {
-            // Already have a pending resolver — history items were added asynchronously
+          // Yield any un-yielded history items first (replay + race-safe)
+          if (state.yieldIndex < state.history.length) {
+            const result = state.history[state.yieldIndex];
+            state.yieldIndex++;
+            console.log(
+              `[claude2-adapter] yield history[${state.yieldIndex - 1}]: ${JSON.stringify(result).slice(0, 200)}`,
+            );
+            yield result;
+            if ("status" in result && result.status) return;
             continue;
           }
 
+          // Wait for the next live message
           const result = await new Promise<ChatModelRunResult>((resolve) => {
             state.resolveNext = (r: IteratorResult<ChatModelRunResult, void>) => {
               if (!r.done && r.value) resolve(r.value);
@@ -155,9 +155,10 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
           });
 
           if (options.abortSignal.aborted) return;
-          console.log(`[claude2-adapter] yield: ${JSON.stringify(result).slice(0, 200)}`);
+          // Mark messages up to this one as yielded
+          state.yieldIndex = state.history.length;
+          console.log(`[claude2-adapter] yield live: ${JSON.stringify(result).slice(0, 200)}`);
           yield result;
-          // If this is a final status, stop the generator
           if ("status" in result && result.status) return;
         }
       } finally {
