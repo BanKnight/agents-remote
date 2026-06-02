@@ -14,6 +14,7 @@ const asReadonlyJSON = (v: Record<string, unknown>): any => v;
 type ConnectionState = {
   socket: WebSocket;
   history: ChatModelRunResult[];
+  yieldIndex: number;
   resolveNext: Resolver | null;
   aborted: boolean;
   closed: boolean;
@@ -44,6 +45,7 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
     const state: ConnectionState = {
       socket,
       history: [],
+      yieldIndex: 0,
       resolveNext: null,
       aborted: false,
       closed: false,
@@ -127,8 +129,11 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
 
       const state = getConnection();
 
-      // Clear history for this turn (assistant-ui manages conversation state)
-      state.history = [];
+      // Yield new history items since last run() (server-replayed or live messages)
+      for (let i = state.yieldIndex; i < state.history.length; i++) {
+        yield state.history[i];
+      }
+      state.yieldIndex = state.history.length;
 
       // Then listen for live messages
       try {

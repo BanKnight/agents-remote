@@ -87,6 +87,7 @@ export const handleClaude2StreamUpgrade = async (
 
 export class Claude2StreamController {
   private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
+  private readonly history = new Map<string, SessionStreamServerMessage[]>();
 
   constructor(
     private readonly claude2Runtime: Claude2Runtime,
@@ -125,6 +126,18 @@ export class Claude2StreamController {
       status: data.status,
     });
     console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
+
+    // Replay history for reconnecting clients (skip terminal messages)
+    const messages = this.history.get(data.sessionId);
+    if (messages) {
+      const replay = messages.filter((m) => m.type !== "result" && m.type !== "ended");
+      console.log(
+        `[claude2-stream] replaying ${replay.length} history messages (${messages.length} total)`,
+      );
+      for (const msg of replay) {
+        send(socket, msg);
+      }
+    }
 
     try {
       await this.startStream(socket, data);
@@ -181,6 +194,12 @@ export class Claude2StreamController {
 
   private async startStream(socket: StreamSocket, data: NonNullable<Claude2WebSocketData>) {
     if (this.runtime.stream) {
+      let sessionHistory = this.history.get(data.sessionId);
+      if (!sessionHistory) {
+        sessionHistory = [];
+        this.history.set(data.sessionId, sessionHistory);
+      }
+
       const stream = await this.runtime.stream(
         data.tmuxSessionName,
         (line: string) => {
@@ -189,6 +208,7 @@ export class Claude2StreamController {
             console.log(
               `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
             );
+            sessionHistory!.push(parsed);
             send(socket, parsed);
             if (parsed.type === "result") {
               send(socket, { type: "ended" });

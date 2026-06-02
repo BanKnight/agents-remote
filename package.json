@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.160",
+    "@assistant-ui/react-markdown": "^0.14.1",
+    "remark-gfm": "^4.0.1",
     "ws": "^8.21.0"
   },
   "devDependencies": {

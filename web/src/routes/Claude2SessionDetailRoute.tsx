@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -8,6 +8,8 @@ import {
   ThreadPrimitive,
   useLocalRuntime,
 } from "@assistant-ui/react";
+import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import remarkGfm from "remark-gfm";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT } from "../i18n";
 import { useConfirm } from "../components/shell/confirm-dialog";
@@ -244,11 +246,51 @@ function UserChatBubble() {
   );
 }
 
+function MarkdownText() {
+  return (
+    <MarkdownTextPrimitive
+      remarkPlugins={[remarkGfm]}
+      className="text-sm text-slate-100 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 [&_li]:mb-1 [&_pre]:bg-slate-900/80 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:mb-2 [&_pre]:overflow-x-auto [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_a]:text-cyan-400 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-slate-600 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-slate-600 [&_td]:px-2 [&_td]:py-1 [&_hr]:border-slate-700 [&_hr]:my-3"
+    />
+  );
+}
+
+function ToolCallDisplay({
+  part,
+}: {
+  part: { toolCallId: string; toolName: string; args: Record<string, unknown>; argsText: string };
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="my-2 rounded-lg border border-slate-600/50 bg-slate-900/60 overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-cyan-400 text-left hover:bg-slate-800/50 transition"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-slate-500 text-[0.6rem]">{expanded ? "▾" : "▸"}</span>
+        <span>{part.toolName}</span>
+      </button>
+      {expanded && (
+        <pre className="px-3 py-2 text-xs text-slate-400 border-t border-slate-700/50 overflow-x-auto max-h-48 overflow-y-auto">
+          {JSON.stringify(part.args, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function AssistantChatBubble() {
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5">
-      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 text-sm text-slate-100 leading-relaxed">
-        <MessagePrimitive.Parts />
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
+        <MessagePrimitive.Parts>
+          {({ part }) => {
+            if (part.type === "text") return <MarkdownText />;
+            if (part.type === "tool-call") return <ToolCallDisplay part={part} />;
+            return null;
+          }}
+        </MessagePrimitive.Parts>
       </div>
     </MessagePrimitive.Root>
   );
