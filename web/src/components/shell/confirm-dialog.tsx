@@ -4,6 +4,7 @@ import { ActionButton, shellSurfaceClasses } from "./shell-primitives";
 type ConfirmTone = "danger" | "accent" | "default";
 
 type ConfirmConfig = {
+  cancelLabel: string;
   confirmLabel: string;
   message: string;
   title: string;
@@ -39,6 +40,7 @@ export function useConfirm() {
 
   const holder = pending ? (
     <ConfirmDialog
+      cancelLabel={pending.cancelLabel}
       confirmLabel={pending.confirmLabel}
       message={pending.message}
       title={pending.title}
@@ -52,6 +54,7 @@ export function useConfirm() {
 }
 
 function ConfirmDialog({
+  cancelLabel,
   confirmLabel,
   message,
   onCancel,
@@ -78,7 +81,7 @@ function ConfirmDialog({
         <p className="mt-2 text-sm leading-6 text-slate-400">{message}</p>
         <div className="mt-5 flex justify-end gap-3">
           <ActionButton tone="muted" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </ActionButton>
           <ActionButton tone={tone} onClick={onConfirm}>
             {confirmLabel}

@@ -420,6 +420,7 @@ function SessionDetail({
         closePending={closeSession.isPending}
         onClose={async () => {
           const ok = await confirm({
+            cancelLabel: t("cancel"),
             confirmLabel: t("session.close"),
             message: t("session.closeConfirm"),
             title: t("session.close"),

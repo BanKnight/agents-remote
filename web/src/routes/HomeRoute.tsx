@@ -231,6 +231,7 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
               e.preventDefault();
               e.stopPropagation();
               const ok = await confirm({
+                cancelLabel: t("cancel"),
                 confirmLabel: t("project.deleteProject"),
                 message: t("project.deleteProjectConfirm"),
                 title: t("project.deleteProject"),

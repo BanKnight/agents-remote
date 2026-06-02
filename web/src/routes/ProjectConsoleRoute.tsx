@@ -768,6 +768,7 @@ function TerminalInstanceRow({ confirm, projectName, session, onClose }: Termina
             onClick={async (e) => {
               e.preventDefault();
               const ok = await confirm({
+                cancelLabel: t("cancel"),
                 confirmLabel: t("session.close"),
                 message: t("project.closeTerminalConfirm"),
                 title: t("session.close"),

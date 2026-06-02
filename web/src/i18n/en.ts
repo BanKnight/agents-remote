@@ -1,4 +1,7 @@
 export const en = {
+  // ── Shared ────────────────────────────────────────────────────
+  cancel: "Cancel",
+
   // ── Auth ──────────────────────────────────────────────────────
   "auth.brand": "Agents Remote",
   "auth.checkingTitle": "Checking private access",

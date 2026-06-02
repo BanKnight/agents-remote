@@ -1,6 +1,9 @@
 import type { TranslationKey } from "./types";
 
 export const zh: Record<TranslationKey, string> = {
+  // ── Shared ────────────────────────────────────────────────────
+  cancel: "取消",
+
   // ── Auth ──────────────────────────────────────────────────────
   "auth.brand": "Agents Remote",
   "auth.checkingTitle": "正在验证访问权限",
