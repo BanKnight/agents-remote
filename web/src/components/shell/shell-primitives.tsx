@@ -206,6 +206,7 @@ export function ShellInput({ className = "", ...props }: ShellInputProps) {
 }
 
 type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
+  actions?: ReactNode;
   marker?: ReactNode;
   meta?: ReactNode;
   selected?: boolean;
@@ -214,6 +215,7 @@ type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
 };
 
 export function ListRow({
+  actions,
   className = "",
   marker,
   meta,
@@ -226,7 +228,7 @@ export function ListRow({
   return (
     <Button
       {...props}
-      className={`h-auto min-w-0 cursor-pointer justify-start rounded-xl px-3 py-2.5 text-left transition ${
+      className={`h-auto w-full min-w-0 cursor-pointer justify-start rounded-xl px-3 py-2.5 text-left transition ${
         selected
           ? "border border-cyan-300/60 bg-cyan-300/10"
           : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
@@ -234,7 +236,7 @@ export function ListRow({
       type={type}
       variant="ghost"
     >
-      <span className="flex min-w-0 items-center justify-between gap-2">
+      <span className="flex min-w-0 grow items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-3">
           {marker}
           <span className="min-w-0">
@@ -247,6 +249,7 @@ export function ListRow({
           </span>
         </span>
         {meta ? <span className="flex shrink-0 items-center gap-1.5">{meta}</span> : null}
+        {actions ? <span className="flex shrink-0 items-center">{actions}</span> : null}
       </span>
     </Button>
   );

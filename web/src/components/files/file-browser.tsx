@@ -2,10 +2,24 @@ import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remot
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
-import { listProjectFiles, previewProjectFile, uploadFile, createFolder } from "../../api/client";
+import {
+  listProjectFiles,
+  previewProjectFile,
+  uploadFile,
+  createFolder,
+  renameFile,
+  deleteFile,
+} from "../../api/client";
 import { useT } from "../../i18n";
+import { useConfirm } from "../shell/confirm-dialog";
 import { ActionButton, IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 // ── Utilities ────────────────────────────────────────────────────
 
@@ -115,9 +129,16 @@ type FileEntryListProps = {
   error: Error | null;
   filesClickable?: boolean;
   isLoading: boolean;
+  renamingName: string;
+  renamingPath: string | null;
   selectedFilePath: string | undefined;
+  onCancelRename: () => void;
+  onDelete: (path: string) => void;
   onOpenDirectory: (path: string) => void;
   onPreviewFile: (path: string) => void;
+  onRenameSubmit: (path: string, name: string) => void;
+  onRenamingNameChange: (name: string) => void;
+  onStartRename: (path: string, name: string) => void;
 };
 
 export function FileEntryList({
@@ -125,11 +146,68 @@ export function FileEntryList({
   error,
   filesClickable = true,
   isLoading,
+  renamingName,
+  renamingPath,
+  selectedFilePath,
+  onCancelRename,
+  onDelete,
   onOpenDirectory,
   onPreviewFile,
-  selectedFilePath,
+  onRenameSubmit,
+  onRenamingNameChange,
+  onStartRename,
 }: FileEntryListProps) {
   const { t } = useT();
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    name: string;
+    path: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!renamingPath) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancelRename();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [renamingPath, onCancelRename]);
+
+  const renderActions = useCallback(
+    (entry: ProjectFileEntry) => (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition sm:opacity-0 sm:group-hover:opacity-100 ${shellSurfaceClasses.raisedHover}`}
+            type="button"
+            aria-label={`${entry.name} actions`}
+          >
+            <MoreVertical className="h-3.5 w-3.5 text-slate-400" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="bottom">
+          <DropdownMenuItem
+            onClick={(e) => e.stopPropagation()}
+            onSelect={() => onStartRename(entry.path, entry.name)}
+          >
+            <ShellIcon name="edit" className="h-4 w-4" />
+            {t("files.rename")}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={(e) => e.stopPropagation()}
+            onSelect={() => onDelete(entry.path)}
+          >
+            <ShellIcon name="trash" className="h-4 w-4" />
+            {t("files.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ),
+    [t, onDelete, onStartRename],
+  );
 
   if (isLoading) return <ResourceStatePanel tone="inset" message={t("files.loading")} />;
   if (error)
@@ -146,31 +224,94 @@ export function FileEntryList({
     );
 
   return (
-    <div className="grid gap-1.5" aria-label="Project files">
-      {entries.map((entry) => {
-        const selected = entry.path === selectedFilePath;
-        const isDirectory = entry.type === "directory";
-        const clickable = isDirectory || filesClickable;
-        return (
-          <ListRow
-            key={`${entry.type}:${entry.path}`}
-            marker={
-              <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
-                <ShellIcon name={isDirectory ? "files-nav" : "file"} className="h-4 w-4" />
-              </IconMarker>
-            }
-            selected={selected}
-            subtitle={entry.hidden ? t("files.hidden") : undefined}
-            title={<span className="font-mono text-[0.82rem]">{entry.name}</span>}
-            onClick={
-              clickable
-                ? () => (isDirectory ? onOpenDirectory(entry.path) : onPreviewFile(entry.path))
-                : undefined
-            }
-          />
-        );
-      })}
-    </div>
+    <>
+      <div className="grid gap-1.5" aria-label="Project files">
+        {entries.map((entry) => {
+          const selected = entry.path === selectedFilePath;
+          const isDirectory = entry.type === "directory";
+          const clickable = isDirectory || filesClickable;
+          const isRenaming = entry.path === renamingPath;
+
+          const titleContent = isRenaming ? (
+            <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+              <input
+                ref={renameInputRef}
+                className="h-7 w-full min-w-0 rounded-lg border border-cyan-300/60 bg-slate-950/70 px-2 text-[0.82rem] font-semibold text-slate-100 font-mono focus:outline-none"
+                type="text"
+                value={renamingName}
+                autoFocus
+                onFocus={(e) => e.target.select()}
+                onBlur={() => onCancelRename()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onRenameSubmit(entry.path, renamingName);
+                }}
+                onChange={(e) => onRenamingNameChange(e.target.value)}
+              />
+            </span>
+          ) : (
+            <span className="font-mono text-[0.82rem]">{entry.name}</span>
+          );
+
+          return (
+            <ListRow
+              key={`${entry.type}:${entry.path}`}
+              className="group"
+              marker={
+                <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
+                  <ShellIcon name={isDirectory ? "files-nav" : "file"} className="h-4 w-4" />
+                </IconMarker>
+              }
+              selected={selected}
+              subtitle={entry.hidden ? t("files.hidden") : undefined}
+              title={titleContent}
+              onClick={
+                isRenaming
+                  ? undefined
+                  : clickable
+                    ? () => (isDirectory ? onOpenDirectory(entry.path) : onPreviewFile(entry.path))
+                    : undefined
+              }
+              onContextMenu={
+                isRenaming
+                  ? undefined
+                  : (e) => {
+                      e.preventDefault();
+                      setCtxMenu({
+                        name: entry.name,
+                        path: entry.path,
+                        x: e.clientX,
+                        y: e.clientY,
+                      });
+                    }
+              }
+              actions={isRenaming ? undefined : renderActions(entry)}
+            />
+          );
+        })}
+      </div>
+      {ctxMenu ? (
+        <DropdownMenu
+          open
+          onOpenChange={(open) => {
+            if (!open) setCtxMenu(null);
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <div className="fixed size-0" style={{ left: ctxMenu.x, top: ctxMenu.y }} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="bottom">
+            <DropdownMenuItem onSelect={() => onStartRename(ctxMenu.path, ctxMenu.name)}>
+              <ShellIcon name="edit" className="h-4 w-4" />
+              {t("files.rename")}
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onSelect={() => onDelete(ctxMenu.path)}>
+              <ShellIcon name="trash" className="h-4 w-4" />
+              {t("files.delete")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </>
   );
 }
 
@@ -550,6 +691,58 @@ export function FilesPanel({
     mkdir.mutate(name);
   }, [folderNameInput, mkdir]);
 
+  const invalidateFiles = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ["projects", projectName, queryScope, currentPath],
+    });
+  }, [queryClient, projectName, queryScope, currentPath]);
+
+  const rename = useMutation({
+    mutationFn: ({ path, name }: { path: string; name: string }) =>
+      renameFile(projectName, path, name),
+    onSuccess: () => invalidateFiles(),
+  });
+
+  const del = useMutation({
+    mutationFn: (path: string) => deleteFile(projectName, path),
+    onSuccess: () => invalidateFiles(),
+  });
+
+  const { confirm, holder: confirmHolder } = useConfirm();
+
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingName, setRenamingName] = useState("");
+
+  const handleRenameSubmit = useCallback(
+    (path: string, name: string) => {
+      const trimmed = name.trim();
+      if (trimmed.length === 0) return;
+      rename.mutate({ path, name: trimmed });
+      setRenamingPath(null);
+    },
+    [rename],
+  );
+
+  const startRename = useCallback((path: string, name: string) => {
+    setRenamingPath(path);
+    setRenamingName(name);
+  }, []);
+
+  const handleDelete = useCallback(
+    (path: string) => {
+      confirm({
+        title: t("files.delete"),
+        message: t("files.deleteConfirm", { name: path.split("/").pop() ?? path }),
+        cancelLabel: t("cancel"),
+        confirmLabel: t("files.delete"),
+        tone: "danger",
+      }).then((ok) => {
+        if (ok) del.mutate(path);
+      });
+    },
+    [confirm, del, t],
+  );
+
   const handleFileDrop = useCallback(
     (file: File) => {
       if (upload.isPending) return;
@@ -615,9 +808,16 @@ export function FilesPanel({
           error={files.error}
           filesClickable={enablePreview}
           isLoading={files.isLoading}
+          renamingName={renamingName}
+          renamingPath={renamingPath}
           selectedFilePath={selectedFilePath}
+          onCancelRename={() => setRenamingPath(null)}
+          onDelete={handleDelete}
           onOpenDirectory={goToPath}
           onPreviewFile={selectFile}
+          onRenameSubmit={handleRenameSubmit}
+          onRenamingNameChange={setRenamingName}
+          onStartRename={startRename}
         />
       </div>
     </aside>
@@ -744,6 +944,7 @@ export function FilesPanel({
           </div>
         ) : null}
       </div>
+      {confirmHolder}
     </div>
   );
 }

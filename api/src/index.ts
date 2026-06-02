@@ -181,6 +181,49 @@ const handleProjects = async (
     if (
       projectFilesMatch &&
       request.method === "POST" &&
+      projectFilesMatch.rename &&
+      projectFilesService
+    ) {
+      const body = (await request.json()) as { path?: string; name?: string };
+
+      if (typeof body.path !== "string" || body.path.length === 0) {
+        return jsonError("PROJECT_TARGET_INVALID", "File path is required", 400);
+      }
+
+      if (typeof body.name !== "string" || body.name.length === 0) {
+        return jsonError("PROJECT_NAME_INVALID", "File name is required", 400);
+      }
+
+      const response = await projectFilesService.renameFile(
+        projectFilesMatch.projectName,
+        body.path,
+        body.name,
+      );
+      return Response.json(response);
+    }
+
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
+      projectFilesMatch.delete &&
+      projectFilesService
+    ) {
+      const body = (await request.json()) as { path?: string };
+
+      if (typeof body.path !== "string" || body.path.length === 0) {
+        return jsonError("PROJECT_TARGET_INVALID", "File path is required", 400);
+      }
+
+      const response = await projectFilesService.deleteFile(
+        projectFilesMatch.projectName,
+        body.path,
+      );
+      return Response.json(response);
+    }
+
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
       projectFilesMatch.mkdir &&
       projectFilesService
     ) {
@@ -333,9 +376,11 @@ const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | un
 
 type ProjectFilesPathMatch = {
   projectName: string;
-  preview: boolean;
-  upload: boolean;
+  delete: boolean;
   mkdir: boolean;
+  preview: boolean;
+  rename: boolean;
+  upload: boolean;
 };
 
 const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefined => {
@@ -346,19 +391,25 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
   }
 
   const suffix = pathname.slice(prefix.length);
+  const renameSuffix = "/files/rename";
+  const deleteSuffix = "/files/delete";
   const mkdirSuffix = "/files/mkdir";
   const uploadSuffix = "/files/upload";
   const previewSuffix = "/files/preview";
   const filesSuffix = "/files";
-  const encodedName = suffix.endsWith(mkdirSuffix)
-    ? suffix.slice(0, -mkdirSuffix.length)
-    : suffix.endsWith(uploadSuffix)
-      ? suffix.slice(0, -uploadSuffix.length)
-      : suffix.endsWith(previewSuffix)
-        ? suffix.slice(0, -previewSuffix.length)
-        : suffix.endsWith(filesSuffix)
-          ? suffix.slice(0, -filesSuffix.length)
-          : undefined;
+  const encodedName = suffix.endsWith(renameSuffix)
+    ? suffix.slice(0, -renameSuffix.length)
+    : suffix.endsWith(deleteSuffix)
+      ? suffix.slice(0, -deleteSuffix.length)
+      : suffix.endsWith(mkdirSuffix)
+        ? suffix.slice(0, -mkdirSuffix.length)
+        : suffix.endsWith(uploadSuffix)
+          ? suffix.slice(0, -uploadSuffix.length)
+          : suffix.endsWith(previewSuffix)
+            ? suffix.slice(0, -previewSuffix.length)
+            : suffix.endsWith(filesSuffix)
+              ? suffix.slice(0, -filesSuffix.length)
+              : undefined;
 
   if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
     return undefined;
@@ -372,8 +423,10 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
 
   return {
     projectName,
+    delete: suffix.endsWith(deleteSuffix),
     mkdir: suffix.endsWith(mkdirSuffix),
     preview: suffix.endsWith(previewSuffix),
+    rename: suffix.endsWith(renameSuffix),
     upload: suffix.endsWith(uploadSuffix),
   };
 };
@@ -439,7 +492,9 @@ const projectFilesErrorResponse = (error: ProjectFilesError) => {
   if (
     error.code === "PROJECT_FS_ERROR" ||
     error.code === "PROJECT_FILE_UPLOAD_FAILED" ||
-    error.code === "PROJECT_FILE_UPLOAD_TOO_LARGE"
+    error.code === "PROJECT_FILE_UPLOAD_TOO_LARGE" ||
+    error.code === "PROJECT_FILE_RENAME_FAILED" ||
+    error.code === "PROJECT_FILE_DELETE_FAILED"
   ) {
     return jsonError(error.code, error.message, 500);
   }

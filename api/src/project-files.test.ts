@@ -231,3 +231,94 @@ test("createFolder rejects non-directory parent", async () => {
     code: "PROJECT_FILE_NOT_DIRECTORY",
   });
 });
+
+test("renameFile renames a file and returns updated entry", async () => {
+  await writeFile(join(root, "demo", "old.txt"), "hello");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.renameFile("demo", "old.txt", "new.txt")).resolves.toMatchObject({
+    entry: {
+      name: "new.txt",
+      path: "new.txt",
+      type: "file",
+    },
+  });
+});
+
+test("renameFile renames a directory", async () => {
+  await mkdir(join(root, "demo", "old-dir"));
+  const service = new ProjectFilesService(root);
+
+  await expect(service.renameFile("demo", "old-dir", "new-dir")).resolves.toMatchObject({
+    entry: {
+      name: "new-dir",
+      path: "new-dir",
+      type: "directory",
+    },
+  });
+});
+
+test("renameFile rejects path traversal in new name", async () => {
+  await writeFile(join(root, "demo", "file.txt"), "x");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.renameFile("demo", "file.txt", "../escape.txt")).rejects.toMatchObject({
+    code: "PROJECT_NAME_INVALID",
+  });
+});
+
+test("renameFile rejects empty name", async () => {
+  await writeFile(join(root, "demo", "file.txt"), "x");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.renameFile("demo", "file.txt", "")).rejects.toMatchObject({
+    code: "PROJECT_NAME_INVALID",
+  });
+});
+
+test("renameFile rejects existing target name", async () => {
+  await writeFile(join(root, "demo", "a.txt"), "a");
+  await writeFile(join(root, "demo", "b.txt"), "b");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.renameFile("demo", "a.txt", "b.txt")).rejects.toMatchObject({
+    code: "PROJECT_FILE_TARGET_EXISTS",
+  });
+});
+
+test("renameFile rejects missing file", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.renameFile("demo", "missing.txt", "x.txt")).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_FOUND",
+  });
+});
+
+test("deleteFile removes a file and returns confirmation", async () => {
+  await writeFile(join(root, "demo", "remove.txt"), "bye");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.deleteFile("demo", "remove.txt")).resolves.toMatchObject({
+    deleted: true,
+    projectName: "demo",
+    path: "remove.txt",
+  });
+});
+
+test("deleteFile removes a directory recursively", async () => {
+  await mkdir(join(root, "demo", "to-delete"));
+  await writeFile(join(root, "demo", "to-delete", "inner.txt"), "x");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.deleteFile("demo", "to-delete")).resolves.toMatchObject({
+    deleted: true,
+  });
+});
+
+test("deleteFile rejects missing file", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.deleteFile("demo", "ghost.txt")).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_FOUND",
+  });
+});

@@ -2,14 +2,16 @@ import type { Dirent } from "node:fs";
 import type {
   ApiErrorCode,
   CreateFolderResponse,
+  DeleteFileResponse,
   ProjectFileEntry,
   ProjectFileListResponse,
   ProjectFilePreviewMediaType,
   ProjectFilePreviewResponse,
   ProjectUnsupportedFilePreviewReason,
+  RenameFileResponse,
   UploadFileResponse,
 } from "@agents-remote/shared";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath } from "./project-paths";
 
@@ -35,6 +37,8 @@ type ProjectFilesErrorCode = Extract<
   | "PROJECT_FILE_TARGET_EXISTS"
   | "PROJECT_FILE_UPLOAD_FAILED"
   | "PROJECT_FILE_UPLOAD_TOO_LARGE"
+  | "PROJECT_FILE_RENAME_FAILED"
+  | "PROJECT_FILE_DELETE_FAILED"
   | "PROJECT_FS_ERROR"
 >;
 
@@ -300,6 +304,82 @@ export class ProjectFilesService {
         hidden: false,
         size: null,
       },
+    };
+  }
+
+  async renameFile(
+    projectName: string,
+    relativePath: string,
+    newName: string,
+  ): Promise<RenameFileResponse> {
+    const resolved = await this.resolvePath(projectName, relativePath);
+    await this.statPath(resolved.path);
+
+    if (
+      newName.length === 0 ||
+      newName.includes("/") ||
+      newName.includes("\\") ||
+      newName.includes("\0")
+    ) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid file name");
+    }
+
+    const parent = dirname(resolved.path);
+    const targetPath = join(parent, newName);
+
+    try {
+      const existingStat = await stat(targetPath);
+
+      if (existingStat) {
+        throw new ProjectFilesError(
+          "PROJECT_FILE_TARGET_EXISTS",
+          "A file or folder with this name already exists",
+        );
+      }
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+    }
+
+    try {
+      await rename(resolved.path, targetPath);
+    } catch {
+      throw new ProjectFilesError("PROJECT_FILE_RENAME_FAILED", "Unable to rename file");
+    }
+
+    const entryStat = await this.statPath(targetPath);
+    const newRelativePath = dirname(relativePath);
+    const entryPath =
+      newRelativePath === "." || newRelativePath.length === 0
+        ? newName
+        : `${newRelativePath}/${newName}`;
+
+    return {
+      entry: {
+        name: newName,
+        path: entryPath,
+        type: entryStat.isDirectory() ? "directory" : "file",
+        hidden: newName.startsWith("."),
+        size: entryStat.isFile() ? entryStat.size : null,
+      },
+    };
+  }
+
+  async deleteFile(projectName: string, relativePath: string): Promise<DeleteFileResponse> {
+    const resolved = await this.resolvePath(projectName, relativePath);
+    await this.statPath(resolved.path);
+
+    try {
+      await rm(resolved.path, { recursive: true, force: true });
+    } catch {
+      throw new ProjectFilesError("PROJECT_FILE_DELETE_FAILED", "Unable to delete file");
+    }
+
+    return {
+      deleted: true,
+      projectName: resolved.project.name,
+      path: resolved.relativePath,
     };
   }
 

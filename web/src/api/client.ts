@@ -11,6 +11,7 @@ import type {
   CreateProjectResponse,
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
+  DeleteFileResponse,
   DeleteProjectResponse,
   GitDiffListResponse,
   GitDiffScope,
@@ -24,6 +25,7 @@ import type {
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
   ProjectListResponse,
+  RenameFileResponse,
   TerminalSessionDetailResponse,
   UploadFileResponse,
 } from "@agents-remote/shared";
@@ -109,6 +111,26 @@ export async function createFolder(
       body: JSON.stringify({ name }),
     },
   );
+}
+
+export async function renameFile(
+  projectName: string,
+  path: string,
+  name: string,
+): Promise<RenameFileResponse> {
+  return fetchJson(projectFileRenamePath(projectName), "api.projectFileRenameFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, name }),
+  });
+}
+
+export async function deleteFile(projectName: string, path: string): Promise<DeleteFileResponse> {
+  return fetchJson(projectFileDeletePath(projectName), "api.projectFileDeleteFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
 }
 
 export async function uploadFile(
@@ -253,6 +275,12 @@ const projectFileUploadPath = (projectName: string, path: string) =>
 
 const projectFileMkdirPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/mkdir`, path);
+
+const projectFileRenamePath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/files/rename`;
+
+const projectFileDeletePath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/files/delete`;
 
 const projectFilePreviewPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/preview`, path);

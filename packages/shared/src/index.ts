@@ -141,6 +141,25 @@ export type CreateFolderResponse = {
   entry: ProjectFileEntry;
 };
 
+export type RenameFileRequest = {
+  path: string;
+  name: string;
+};
+
+export type RenameFileResponse = {
+  entry: ProjectFileEntry;
+};
+
+export type DeleteFileRequest = {
+  path: string;
+};
+
+export type DeleteFileResponse = {
+  deleted: true;
+  projectName: string;
+  path: string;
+};
+
 export type AgentProvider = "claude" | "codex";
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
@@ -272,6 +291,8 @@ export type ApiErrorCode =
   | "PROJECT_FILE_TARGET_EXISTS"
   | "PROJECT_FILE_UPLOAD_FAILED"
   | "PROJECT_FILE_UPLOAD_TOO_LARGE"
+  | "PROJECT_FILE_RENAME_FAILED"
+  | "PROJECT_FILE_DELETE_FAILED"
   | "PROJECT_GIT_NOT_REPOSITORY"
   | "PROJECT_GIT_SCOPE_INVALID"
   | "PROJECT_GIT_FILE_NOT_CHANGED"
