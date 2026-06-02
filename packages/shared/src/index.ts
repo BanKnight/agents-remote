@@ -133,6 +133,14 @@ export type UploadFileResponse = {
   entry: ProjectFileEntry;
 };
 
+export type CreateFolderRequest = {
+  name: string;
+};
+
+export type CreateFolderResponse = {
+  entry: ProjectFileEntry;
+};
+
 export type AgentProvider = "claude" | "codex";
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";

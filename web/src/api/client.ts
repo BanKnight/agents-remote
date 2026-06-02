@@ -6,6 +6,7 @@ import type {
   CloseTerminalSessionResponse,
   CreateAgentSessionRequest,
   CreateAgentSessionResponse,
+  CreateFolderResponse,
   CreateProjectRequest,
   CreateProjectResponse,
   CreateTerminalSessionRequest,
@@ -92,6 +93,22 @@ export async function listProjectFiles(
   path = "",
 ): Promise<ProjectFileListResponse> {
   return fetchJson(projectFilesPath(projectName, path), "api.projectFilesFailed");
+}
+
+export async function createFolder(
+  projectName: string,
+  parentPath: string,
+  name: string,
+): Promise<CreateFolderResponse> {
+  return fetchJson(
+    projectFileMkdirPath(projectName, parentPath),
+    "api.projectFolderCreationFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+  );
 }
 
 export async function uploadFile(
@@ -233,6 +250,9 @@ const projectFilesPath = (projectName: string, path: string) =>
 
 const projectFileUploadPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/upload`, path);
+
+const projectFileMkdirPath = (projectName: string, path: string) =>
+  withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/mkdir`, path);
 
 const projectFilePreviewPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/preview`, path);

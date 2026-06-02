@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import type {
   ApiErrorCode,
+  CreateFolderResponse,
   ProjectFileEntry,
   ProjectFileListResponse,
   ProjectFilePreviewMediaType,
@@ -8,7 +9,7 @@ import type {
   ProjectUnsupportedFilePreviewReason,
   UploadFileResponse,
 } from "@agents-remote/shared";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath } from "./project-paths";
 
@@ -248,6 +249,60 @@ export class ProjectFilesService {
     };
   }
 
+  async createFolder(
+    projectName: string,
+    parentPath: string,
+    folderName: string,
+  ): Promise<CreateFolderResponse> {
+    const resolved = await this.resolvePath(projectName, parentPath);
+    const dirStat = await this.statPath(resolved.path);
+
+    if (!dirStat.isDirectory()) {
+      throw new ProjectFilesError(
+        "PROJECT_FILE_NOT_DIRECTORY",
+        "Folder parent must be a directory",
+      );
+    }
+
+    if (
+      folderName.length === 0 ||
+      folderName.includes("/") ||
+      folderName.includes("\\") ||
+      folderName.includes("\0")
+    ) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid folder name");
+    }
+
+    if (folderName.startsWith(".")) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Folder name must not start with a dot");
+    }
+
+    const targetPath = join(resolved.path, folderName);
+
+    try {
+      await mkdir(targetPath);
+    } catch (error) {
+      if (isAlreadyExistsError(error)) {
+        throw new ProjectFilesError(
+          "PROJECT_FILE_TARGET_EXISTS",
+          "A file or folder with this name already exists",
+        );
+      }
+
+      throw new ProjectFilesError("PROJECT_FS_ERROR", "Unable to create folder");
+    }
+
+    return {
+      entry: {
+        name: folderName,
+        path: parentPath.length > 0 ? `${parentPath}/${folderName}` : folderName,
+        type: "directory",
+        hidden: false,
+        size: null,
+      },
+    };
+  }
+
   private async entryFromDirent(
     projectPath: string,
     directoryPath: string,
@@ -414,6 +469,9 @@ const tooLargePreview = (
 
 const isNotFoundError = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+
+const isAlreadyExistsError = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 
 const rawFileMimeType = (path: string): string => {
   switch (extname(path).toLowerCase()) {

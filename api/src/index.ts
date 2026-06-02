@@ -181,6 +181,26 @@ const handleProjects = async (
     if (
       projectFilesMatch &&
       request.method === "POST" &&
+      projectFilesMatch.mkdir &&
+      projectFilesService
+    ) {
+      const body = (await request.json()) as { name?: string };
+
+      if (typeof body.name !== "string" || body.name.length === 0) {
+        return jsonError("PROJECT_NAME_INVALID", "Folder name is required", 400);
+      }
+
+      const response = await projectFilesService.createFolder(
+        projectFilesMatch.projectName,
+        url.searchParams.get("path") ?? "",
+        body.name,
+      );
+      return Response.json(response);
+    }
+
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
       projectFilesMatch.upload &&
       projectFilesService
     ) {
@@ -315,6 +335,7 @@ type ProjectFilesPathMatch = {
   projectName: string;
   preview: boolean;
   upload: boolean;
+  mkdir: boolean;
 };
 
 const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefined => {
@@ -325,16 +346,19 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
   }
 
   const suffix = pathname.slice(prefix.length);
+  const mkdirSuffix = "/files/mkdir";
   const uploadSuffix = "/files/upload";
   const previewSuffix = "/files/preview";
   const filesSuffix = "/files";
-  const encodedName = suffix.endsWith(uploadSuffix)
-    ? suffix.slice(0, -uploadSuffix.length)
-    : suffix.endsWith(previewSuffix)
-      ? suffix.slice(0, -previewSuffix.length)
-      : suffix.endsWith(filesSuffix)
-        ? suffix.slice(0, -filesSuffix.length)
-        : undefined;
+  const encodedName = suffix.endsWith(mkdirSuffix)
+    ? suffix.slice(0, -mkdirSuffix.length)
+    : suffix.endsWith(uploadSuffix)
+      ? suffix.slice(0, -uploadSuffix.length)
+      : suffix.endsWith(previewSuffix)
+        ? suffix.slice(0, -previewSuffix.length)
+        : suffix.endsWith(filesSuffix)
+          ? suffix.slice(0, -filesSuffix.length)
+          : undefined;
 
   if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
     return undefined;
@@ -348,6 +372,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
 
   return {
     projectName,
+    mkdir: suffix.endsWith(mkdirSuffix),
     preview: suffix.endsWith(previewSuffix),
     upload: suffix.endsWith(uploadSuffix),
   };

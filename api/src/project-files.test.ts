@@ -170,3 +170,64 @@ test("uploadFile rejects oversized content", async () => {
     code: "PROJECT_FILE_UPLOAD_TOO_LARGE",
   });
 });
+
+test("createFolder creates a directory and returns entry", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFolder("demo", "", "src")).resolves.toMatchObject({
+    entry: {
+      name: "src",
+      path: "src",
+      type: "directory",
+      hidden: false,
+      size: null,
+    },
+  });
+});
+
+test("createFolder creates nested directory", async () => {
+  await mkdir(join(root, "demo", "lib"));
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFolder("demo", "lib", "utils")).resolves.toMatchObject({
+    entry: {
+      name: "utils",
+      path: "lib/utils",
+      type: "directory",
+    },
+  });
+});
+
+test("createFolder rejects dot-prefixed folder name", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFolder("demo", "", ".hidden")).rejects.toMatchObject({
+    code: "PROJECT_NAME_INVALID",
+  });
+});
+
+test("createFolder rejects path traversal in folder name", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFolder("demo", "", "../escape")).rejects.toMatchObject({
+    code: "PROJECT_NAME_INVALID",
+  });
+});
+
+test("createFolder rejects existing folder", async () => {
+  const service = new ProjectFilesService(root);
+  await mkdir(join(root, "demo", "exists"));
+
+  await expect(service.createFolder("demo", "", "exists")).rejects.toMatchObject({
+    code: "PROJECT_FILE_TARGET_EXISTS",
+  });
+});
+
+test("createFolder rejects non-directory parent", async () => {
+  const service = new ProjectFilesService(root);
+  await writeFile(join(root, "demo", "file.txt"), "content");
+
+  await expect(service.createFolder("demo", "file.txt", "sub")).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_DIRECTORY",
+  });
+});

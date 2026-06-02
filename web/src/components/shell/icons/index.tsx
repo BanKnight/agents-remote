@@ -3,6 +3,7 @@ import anthropic from "./anthropic.svg?raw";
 import closeIcon from "./close.svg?raw";
 import file from "./file.svg?raw";
 import filesNav from "./files-nav.svg?raw";
+import folderPlus from "./folder-plus.svg?raw";
 import gitNav from "./git-nav.svg?raw";
 import openai from "./openai.svg?raw";
 import plus from "./plus.svg?raw";
@@ -10,6 +11,7 @@ import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
 import terminal from "./terminal.svg?raw";
 import trash from "./trash.svg?raw";
+import upload from "./upload.svg?raw";
 
 const svgMap: Record<string, string> = {
   "agent-nav": agentNav,
@@ -17,6 +19,7 @@ const svgMap: Record<string, string> = {
   close: closeIcon,
   file,
   "files-nav": filesNav,
+  "folder-plus": folderPlus,
   "git-nav": gitNav,
   openai,
   plus,
@@ -24,6 +27,7 @@ const svgMap: Record<string, string> = {
   refresh,
   terminal,
   trash,
+  upload,
 };
 
 export type ShellIconName = keyof typeof svgMap;

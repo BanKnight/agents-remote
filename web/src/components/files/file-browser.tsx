@@ -2,7 +2,7 @@ import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remot
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
-import { listProjectFiles, previewProjectFile, uploadFile } from "../../api/client";
+import { listProjectFiles, previewProjectFile, uploadFile, createFolder } from "../../api/client";
 import { useT } from "../../i18n";
 import { ActionButton, IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
@@ -530,6 +530,26 @@ export function FilesPanel({
     },
   });
 
+  const [folderNameInput, setFolderNameInput] = useState("");
+  const [showFolderInput, setShowFolderInput] = useState(false);
+
+  const mkdir = useMutation({
+    mutationFn: (name: string) => createFolder(projectName, currentPath, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectName, queryScope, currentPath],
+      });
+      setFolderNameInput("");
+      setShowFolderInput(false);
+    },
+  });
+
+  const handleMkdir = useCallback(() => {
+    const name = folderNameInput.trim();
+    if (name.length === 0 || mkdir.isPending) return;
+    mkdir.mutate(name);
+  }, [folderNameInput, mkdir]);
+
   const handleFileDrop = useCallback(
     (file: File) => {
       if (upload.isPending) return;
@@ -625,8 +645,14 @@ export function FilesPanel({
         <div className="flex min-w-0 items-center justify-between gap-3">
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
           <div className="flex shrink-0 items-center gap-2">
-            {upload.error instanceof Error ? (
-              <p className="text-xs text-red-300 hidden sm:block">{upload.error.message}</p>
+            {upload.error instanceof Error || mkdir.error instanceof Error ? (
+              <p className="text-xs text-red-300 hidden sm:block">
+                {upload.error instanceof Error
+                  ? upload.error.message
+                  : mkdir.error instanceof Error
+                    ? mkdir.error.message
+                    : null}
+              </p>
             ) : null}
             <input
               ref={fileInputRef}
@@ -638,13 +664,49 @@ export function FilesPanel({
                 e.target.value = "";
               }}
             />
+            {showFolderInput ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  className="h-8 w-28 rounded-xl border border-slate-700/60 bg-slate-950/70 px-2.5 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:outline-none"
+                  type="text"
+                  placeholder={t("files.newFolder")}
+                  value={folderNameInput}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleMkdir();
+                    if (e.key === "Escape") {
+                      setShowFolderInput(false);
+                      setFolderNameInput("");
+                    }
+                  }}
+                  onChange={(e) => setFolderNameInput(e.target.value)}
+                />
+                <ActionButton
+                  disabled={mkdir.isPending || folderNameInput.trim().length === 0}
+                  tone="accent"
+                  onClick={handleMkdir}
+                >
+                  <span className="px-0.5 text-xs font-bold">{mkdir.isPending ? "..." : "✓"}</span>
+                </ActionButton>
+              </div>
+            ) : (
+              <ActionButton
+                title={t("files.newFolderTooltip")}
+                tone="muted"
+                onClick={() => setShowFolderInput(true)}
+              >
+                <ShellIcon name="folder-plus" className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline pr-0.5">{t("files.newFolder")}</span>
+              </ActionButton>
+            )}
             <ActionButton
+              title={t("files.uploadTooltip")}
               disabled={upload.isPending}
               tone="accent"
               onClick={() => fileInputRef.current?.click()}
             >
-              <ShellIcon name="plus" className="h-3.5 w-3.5" />
-              <span className="pr-0.5">
+              <ShellIcon name="upload" className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline pr-0.5">
                 {upload.isPending ? t("files.uploading") : t("files.upload")}
               </span>
             </ActionButton>
@@ -664,8 +726,14 @@ export function FilesPanel({
             </p>
           </div>
         ) : null}
-        {upload.error instanceof Error ? (
-          <p className="text-xs text-red-300 sm:hidden px-3 pt-2">{upload.error.message}</p>
+        {upload.error instanceof Error || mkdir.error instanceof Error ? (
+          <p className="text-xs text-red-300 sm:hidden px-3 pt-2">
+            {upload.error instanceof Error
+              ? upload.error.message
+              : mkdir.error instanceof Error
+                ? mkdir.error.message
+                : null}
+          </p>
         ) : null}
         {browserPanel}
         {enablePreview ? (
