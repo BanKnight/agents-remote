@@ -8,6 +8,8 @@ import type {
 } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
+import { Claude2Runtime } from "./claude2-runtime";
+import { Claude2StreamController, handleClaude2StreamUpgrade } from "./claude2-stream";
 import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-auth";
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
@@ -25,6 +27,7 @@ type UpgradeServer = {
 };
 
 type FetchHandlerOptions = {
+  claude2StreamController?: Claude2StreamController;
   projectFilesService?: ProjectFilesService;
   projectGitDiffService?: ProjectGitDiffService;
   projectService?: ProjectService;
@@ -39,6 +42,14 @@ type WebSocketData =
   | {
       kind: "session-stream";
       sessionType: "agent" | "terminal";
+      projectName: string;
+      sessionId: string;
+      tmuxSessionName: string;
+      status: "running" | "idle" | "closed" | "error";
+    }
+  | {
+      kind: "claude2-stream";
+      sessionType: "agent";
       projectName: string;
       sessionId: string;
       tmuxSessionName: string;
@@ -86,6 +97,20 @@ export const createFetchHandler =
     }
 
     if (options.projectsRoot && options.sessionRegistry) {
+      if (options.claude2StreamController) {
+        const claude2Upgrade = await handleClaude2StreamUpgrade(
+          request,
+          url,
+          options.projectsRoot,
+          options.sessionRegistry,
+          server,
+        );
+
+        if (claude2Upgrade.matched) {
+          return claude2Upgrade.response;
+        }
+      }
+
       const streamUpgrade = await handleSessionStreamUpgrade(
         request,
         url,
@@ -528,25 +553,58 @@ export const startApi = async () => {
   const auth = new AuthService({ appPassword: settings.appPassword });
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
+  const claude2Runtime = new Claude2Runtime();
   const runtime: RuntimeResources = {
-    exists: (tmuxSessionName) => tmuxRuntime.exists(tmuxSessionName),
-    close: (tmuxSessionName) => tmuxRuntime.close(tmuxSessionName),
-    startAgent: (metadata) => agentRuntime.startAgent(metadata),
+    exists: async (sessionName) => {
+      if (await claude2Runtime.exists(sessionName)) return true;
+      return tmuxRuntime.exists(sessionName);
+    },
+    close: async (sessionName) => {
+      if (await claude2Runtime.exists(sessionName)) {
+        return claude2Runtime.close(sessionName);
+      }
+      return tmuxRuntime.close(sessionName);
+    },
+    startAgent: (metadata) => {
+      if (metadata.provider === "claude2") {
+        return claude2Runtime.startAgent(metadata);
+      }
+      return agentRuntime.startAgent(metadata);
+    },
     startTerminal: (metadata) => tmuxRuntime.startTerminal(metadata),
-    write: (tmuxSessionName, data) => tmuxRuntime.write(tmuxSessionName, data),
-    resize: (tmuxSessionName, cols, rows) => tmuxRuntime.resize(tmuxSessionName, cols, rows),
-    capture: (tmuxSessionName) => tmuxRuntime.capture(tmuxSessionName),
-    stream: (tmuxSessionName, onData, onError) =>
-      tmuxRuntime.stream(tmuxSessionName, onData, onError),
+    write: async (sessionName, data) => {
+      if (await claude2Runtime.exists(sessionName)) {
+        return claude2Runtime.write(sessionName, data);
+      }
+      return tmuxRuntime.write(sessionName, data);
+    },
+    resize: (sessionName, cols, rows) => tmuxRuntime.resize(sessionName, cols, rows),
+    capture: (sessionName) => tmuxRuntime.capture(sessionName),
+    stream: async (sessionName, onData, onError) => {
+      if (await claude2Runtime.exists(sessionName)) {
+        return claude2Runtime.stream(sessionName, onData, onError);
+      }
+      return tmuxRuntime.stream(sessionName, onData, onError);
+    },
   };
-  const streamController = new SessionStreamController(tmuxRuntime);
+  const streamController = new SessionStreamController(runtime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
+  const claude2StreamController = new Claude2StreamController(
+    claude2Runtime,
+    runtime,
+    sessionRegistry,
+  );
+
+  claude2Runtime.setOnClaudeSessionId((sessionId, _tmuxSessionName, claudeSessionId) => {
+    void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId);
+  });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);
   const server = Bun.serve<WebSocketData>({
     port: settings.apiPort,
     fetch: createFetchHandler(auth, {
+      claude2StreamController,
       projectFilesService,
       projectGitDiffService,
       projectService,
@@ -558,10 +616,17 @@ export const startApi = async () => {
         if (ws.data?.kind === "session-stream") {
           void streamController.open(ws);
         }
+        if (ws.data?.kind === "claude2-stream") {
+          void claude2StreamController.open(ws);
+        }
       },
       message(ws, message) {
         if (ws.data?.kind === "session-stream") {
           void streamController.message(ws, message);
+          return;
+        }
+        if (ws.data?.kind === "claude2-stream") {
+          void claude2StreamController.message(ws, message);
           return;
         }
 
@@ -570,6 +635,9 @@ export const startApi = async () => {
       close(ws) {
         if (ws.data?.kind === "session-stream") {
           streamController.close(ws);
+        }
+        if (ws.data?.kind === "claude2-stream") {
+          claude2StreamController.close(ws);
         }
       },
     },

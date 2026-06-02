@@ -46,6 +46,28 @@ export function AgentSessionDetailRoute() {
   const { projectName, sessionId } = useParams({
     from: "/projects/$projectName/agent-sessions/$sessionId",
   });
+  const navigate = useNavigate();
+
+  const detail = useQuery({
+    queryKey: ["projects", projectName, "agent-sessions", sessionId],
+    queryFn: () => getAgentSession(projectName, sessionId),
+    staleTime: 60_000,
+  });
+
+  // Redirect claude2 sessions to the chat UI
+  useEffect(() => {
+    if (detail.data?.session.provider === "claude2") {
+      void navigate({
+        to: "/projects/$projectName/agent-sessions/$sessionId/claude2",
+        params: { projectName, sessionId },
+        replace: true,
+      });
+    }
+  }, [detail.data, navigate, projectName, sessionId]);
+
+  if (detail.data?.session.provider === "claude2") {
+    return null;
+  }
 
   return <SessionDetail projectName={projectName} sessionId={sessionId} sessionType="agent" />;
 }
@@ -259,8 +281,11 @@ function SessionDetail({
           return;
         }
 
-        setConnectionStatus("error");
-        setFatalError(`${message.code}: ${message.message}`);
+        if (message.type === "error") {
+          setConnectionStatus("error");
+          setFatalError(`${message.code}: ${message.message}`);
+          return;
+        }
       };
 
       const scheduleReconnect = () => {

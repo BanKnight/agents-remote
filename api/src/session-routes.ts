@@ -61,7 +61,7 @@ const handleAgentSessionRoute = async (
   if (!sessionId && request.method === "POST") {
     const body = await readJson<CreateAgentSessionRequest>(request);
 
-    if (body.provider !== "claude" && body.provider !== "codex") {
+    if (body.provider !== "claude" && body.provider !== "codex" && body.provider !== "claude2") {
       return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Agent provider is required", 400);
     }
 

@@ -26,6 +26,7 @@ export type SessionMetadata = {
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
+  claudeSessionId?: string;
 };
 
 export type RuntimeStream = {
@@ -98,6 +99,13 @@ export class SessionRegistry {
 
   async getAgentMetadata(projectName: string, sessionId: string) {
     return this.getLiveMetadata(projectName, "agent", sessionId);
+  }
+
+  async setClaudeSessionId(sessionId: string, claudeSessionId: string): Promise<void> {
+    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    if (!metadata) return;
+    const updated = { ...metadata, claudeSessionId, updatedAt: this.now().toISOString() };
+    await this.writeMetadata(updated);
   }
 
   async countSessions(projectName: string) {
@@ -297,6 +305,10 @@ export class SessionRegistry {
 
   private async keepIfRuntimeExists(metadata: SessionMetadata) {
     if (await this.runtime.exists(metadata.tmuxSessionName)) {
+      return metadata;
+    }
+
+    if (metadata.provider === "claude2" && metadata.claudeSessionId) {
       return metadata;
     }
 

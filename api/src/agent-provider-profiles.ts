@@ -6,7 +6,7 @@ export type AgentProviderProfile = {
   command: string;
   displayNamePrefix: string;
   capabilities: {
-    history: "unsupported";
+    history: "unsupported" | "native";
   };
 };
 
@@ -27,6 +27,15 @@ const profiles = {
     displayNamePrefix: "Codex Agent",
     capabilities: {
       history: "unsupported",
+    },
+  },
+  claude2: {
+    provider: "claude2",
+    label: "Claude 2",
+    command: "claude",
+    displayNamePrefix: "Claude 2 Agent",
+    capabilities: {
+      history: "native",
     },
   },
 } satisfies Record<AgentProvider, AgentProviderProfile>;

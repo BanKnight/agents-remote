@@ -58,6 +58,7 @@ export const zh: Record<TranslationKey, string> = {
   "project.noTerminalsDesc": "创建 Terminal 以打开专注的项目 Shell 详情。",
   "project.createClaude": "+ Claude",
   "project.createCodex": "+ Codex",
+  "project.createClaude2": "+ Claude 2",
   "project.newTerminal": "新建 Terminal",
   "project.newTerminalMobile": "+ Terminal",
   "project.creating": "正在创建...",
@@ -242,4 +243,15 @@ export const zh: Record<TranslationKey, string> = {
   "time.minutesAgo": "{{count}}分钟前",
   "time.hoursAgo": "{{count}}小时前",
   "time.daysAgo": "{{count}}天前",
+
+  // ── Claude2 ────────────────────────────────────────────────────
+  "claude2.inputPlaceholder": "向 Claude 提问...",
+  "claude2.permissionRequired": "需要权限",
+  "claude2.allow": "允许",
+  "claude2.deny": "拒绝",
+  "claude2.toolUse": "工具：{{name}}",
+  "claude2.running": "Claude 正在思考...",
+  "claude2.completed": "已完成（{{turns}} 轮）",
+  "claude2.interrupted": "已中断",
+  "claude2.emptyChat": "向 Claude 提问以开始对话。",
 };

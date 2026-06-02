@@ -56,6 +56,7 @@ export const en = {
   "project.noTerminalsDesc": "Create a Terminal to open a focused project shell detail.",
   "project.createClaude": "+ Claude",
   "project.createCodex": "+ Codex",
+  "project.createClaude2": "+ Claude 2",
   "project.newTerminal": "New Terminal",
   "project.newTerminalMobile": "+ Terminal",
   "project.creating": "Creating...",
@@ -241,4 +242,15 @@ export const en = {
   "time.minutesAgo": "{{count}}m ago",
   "time.hoursAgo": "{{count}}h ago",
   "time.daysAgo": "{{count}}d ago",
+
+  // ── Claude2 ────────────────────────────────────────────────────
+  "claude2.inputPlaceholder": "Ask Claude...",
+  "claude2.permissionRequired": "Permission required",
+  "claude2.allow": "Allow",
+  "claude2.deny": "Deny",
+  "claude2.toolUse": "Tool: {{name}}",
+  "claude2.running": "Claude is thinking...",
+  "claude2.completed": "Completed in {{turns}} turns",
+  "claude2.interrupted": "Interrupted",
+  "claude2.emptyChat": "Ask Claude a question to get started.",
 } as const;

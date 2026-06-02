@@ -205,6 +205,14 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                   <ShellIcon name="openai" />
                   {t("project.createCodex")}
                 </CreateButton>
+                <CreateButton
+                  disabled={createAgent.isPending}
+                  tone="accent"
+                  onClick={() => createAgent.mutate("claude2")}
+                >
+                  <ShellIcon name="anthropic" />
+                  {t("project.createClaude2")}
+                </CreateButton>
               </div>
             ) : activeSection === "terminal" ? (
               <div
@@ -428,7 +436,7 @@ function AgentPanel({
       density="compact"
       docked
     >
-      <div className="grid grid-cols-2 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
+      <div className="grid grid-cols-3 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
         <CreateButton
           disabled={isCreating}
           tone="accent"
@@ -445,6 +453,15 @@ function AgentPanel({
         >
           <ShellIcon name="openai" />
           {t("project.createCodex")}
+        </CreateButton>
+        <CreateButton
+          disabled={isCreating}
+          tone="accent"
+          onClick={() => onCreate("claude2")}
+          className="py-3 sm:py-1.5 text-sm sm:text-xs"
+        >
+          <ShellIcon name="anthropic" />
+          {t("project.createClaude2")}
         </CreateButton>
       </div>
       <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
@@ -518,18 +535,25 @@ function relativeTime(iso: string, t: TranslateFn): string {
 function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
   const { t } = useT();
   const providerTone = session.provider === "codex" ? "success" : "accent";
+  const isClaude2 = session.provider === "claude2";
   return (
     <Link
       className="block"
       params={{ projectName, sessionId: session.id }}
       search={{ workspace: "agents" }}
-      to="/projects/$projectName/agent-sessions/$sessionId"
+      to={
+        isClaude2
+          ? "/projects/$projectName/agent-sessions/$sessionId/claude2"
+          : "/projects/$projectName/agent-sessions/$sessionId"
+      }
     >
       <SessionInstanceRow
         marker={
           <IconMarker tone={providerTone}>
             {session.provider === "codex" ? (
               <ShellIcon name="openai" />
+            ) : session.provider === "claude2" ? (
+              <ShellIcon name="anthropic" />
             ) : (
               <ShellIcon name="anthropic" />
             )}

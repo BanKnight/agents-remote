@@ -160,7 +160,7 @@ export type DeleteFileResponse = {
   path: string;
 };
 
-export type AgentProvider = "claude" | "codex";
+export type AgentProvider = "claude" | "codex" | "claude2";
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
 
@@ -227,6 +227,54 @@ export type CloseTerminalSessionResponse = {
   session: TerminalSession;
 };
 
+// -- Claude2 Stream Messages (Claude CLI --output-format stream-json protocol) --
+
+export type Claude2SystemInit = {
+  type: "system";
+  subtype: "init";
+  session_id: string;
+  model: string;
+  cwd: string;
+  tools: string[];
+  slash_commands: string[];
+};
+
+export type Claude2AssistantContent =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  | { type: "thinking"; thinking: string; signature: string };
+
+export type Claude2AssistantMessage = {
+  type: "assistant";
+  message: {
+    id: string;
+    role: "assistant";
+    content: Claude2AssistantContent[];
+  };
+  session_id: string;
+};
+
+export type Claude2UserMessage = {
+  type: "user";
+  message: {
+    role: "user";
+    content: Array<
+      | { type: "text"; text: string }
+      | { type: "tool_result"; tool_use_id: string; content: Array<{ type: "text"; text: string }> }
+    >;
+  };
+};
+
+export type Claude2Result = {
+  type: "result";
+  subtype: "success" | "error_max_turns" | "error" | "interrupted";
+  session_id: string;
+  num_turns: number;
+  total_cost_usd?: number;
+  duration_ms?: number;
+  result?: string;
+};
+
 export type SessionStreamClientMessage =
   | {
       type: "input";
@@ -239,7 +287,16 @@ export type SessionStreamClientMessage =
     }
   | {
       type: "ping";
-    };
+    }
+  | Claude2StreamClientMessage;
+
+export type Claude2StreamClientMessage = {
+  type: "user";
+  message: {
+    role: "user";
+    content: Array<{ type: "text"; text: string }>;
+  };
+};
 
 export type SessionStreamServerMessage =
   | {
@@ -267,7 +324,11 @@ export type SessionStreamServerMessage =
       type: "error";
       code: ApiErrorCode;
       message: string;
-    };
+    }
+  | Claude2SystemInit
+  | Claude2AssistantMessage
+  | Claude2UserMessage
+  | Claude2Result;
 
 export type HealthResponse = {
   ok: true;
@@ -305,7 +366,8 @@ export type ApiErrorCode =
   | "SESSION_PROVIDER_UNAVAILABLE"
   | "SESSION_TYPE_INVALID"
   | "SESSION_STATE_CONFLICT"
-  | "SESSION_METADATA_ERROR";
+  | "SESSION_METADATA_ERROR"
+  | "SESSION_STREAM_MISMATCH";
 
 export type ApiErrorResponse = {
   error: {

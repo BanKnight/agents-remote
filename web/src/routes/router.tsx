@@ -4,6 +4,7 @@ import { consoleSectionFromSearch } from "./console-model";
 import { HomeRoute } from "./HomeRoute";
 import { ProjectConsoleRoute } from "./ProjectConsoleRoute";
 import { AgentSessionDetailRoute, TerminalSessionDetailRoute } from "./SessionDetailRoute";
+import { Claude2SessionDetailRoute } from "./Claude2SessionDetailRoute";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -35,6 +36,12 @@ const agentSessionDetailRoute = createRoute({
   component: AgentSessionDetailRoute,
 });
 
+const claude2SessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectName/agent-sessions/$sessionId/claude2",
+  component: Claude2SessionDetailRoute,
+});
+
 const terminalSessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName/terminal-sessions/$sessionId",
@@ -51,6 +58,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   projectConsoleRoute,
   agentSessionDetailRoute,
+  claude2SessionDetailRoute,
   terminalSessionDetailRoute,
 ]);
 
