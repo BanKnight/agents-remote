@@ -25,7 +25,12 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
   let conn: ConnectionState | null = null;
 
   const getConnection = (): ConnectionState => {
-    if (conn && conn.socket.readyState === WebSocket.OPEN && !conn.aborted) {
+    if (
+      conn &&
+      (conn.socket.readyState === WebSocket.OPEN ||
+        conn.socket.readyState === WebSocket.CONNECTING) &&
+      !conn.aborted
+    ) {
       return conn;
     }
 
@@ -44,12 +49,19 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
       closed: false,
     };
 
+    socket.onopen = () => {
+      console.log("[claude2-adapter] ws open");
+    };
+
     socket.onmessage = (event) => {
       if (state.aborted) return;
       try {
-        const msg = JSON.parse(event.data as string) as SessionStreamServerMessage;
+        const raw = event.data as string;
+        console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
+        const msg = JSON.parse(raw) as SessionStreamServerMessage;
         const result = convertMessage(msg);
         if (result) {
+          console.log(`[claude2-adapter] converted: ${JSON.stringify(result).slice(0, 200)}`);
           state.history.push(result);
           if (state.resolveNext) {
             const resolve = state.resolveNext;
@@ -63,6 +75,7 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
     };
 
     socket.onclose = () => {
+      console.log("[claude2-adapter] ws close");
       if (state.aborted) return;
       state.closed = true;
       if (state.resolveNext) {
@@ -72,6 +85,10 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
       }
     };
 
+    socket.onerror = (e) => {
+      console.log("[claude2-adapter] ws error", e);
+    };
+
     conn = state;
     return state;
   };
@@ -79,6 +96,7 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
   const sendToSocket = (data: unknown) => {
     const { socket } = getConnection();
     const raw = JSON.stringify(data);
+    console.log(`[claude2-adapter] ws send: ${raw.slice(0, 200)}`);
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(raw);
     } else {
@@ -109,10 +127,8 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
 
       const state = getConnection();
 
-      // Replay history first (messages from before this run())
-      for (const item of state.history) {
-        yield item;
-      }
+      // Clear history for this turn (assistant-ui manages conversation state)
+      state.history = [];
 
       // Then listen for live messages
       try {
@@ -134,7 +150,10 @@ export function createClaude2Adapter(projectName: string, sessionId: string): Ch
           });
 
           if (options.abortSignal.aborted) return;
+          console.log(`[claude2-adapter] yield: ${JSON.stringify(result).slice(0, 200)}`);
           yield result;
+          // If this is a final status, stop the generator
+          if ("status" in result && result.status) return;
         }
       } finally {
         options.abortSignal.removeEventListener("abort", onAbort);

@@ -21,6 +21,10 @@
     "prepare": "git config core.hooksPath scripts/githooks",
     "test": "bun run --sequential --workspaces test"
   },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.160",
+    "ws": "^8.21.0"
+  },
   "devDependencies": {
     "@playwright/test": "1.60.0",
     "@types/bun": "^1.3.4",

@@ -83,6 +83,7 @@ export class Claude2Runtime implements RuntimeResources {
   async write(sessionName: string, data: string): Promise<void> {
     const state = this.sessions.get(sessionName);
     if (!state?.process || state.process.exited) throw new Error("Claude2 process not running");
+    console.log(`[claude2 write] ${sessionName}: ${data.slice(0, 200)}`);
     const stdin = state.process.subprocess.stdin as import("bun").FileSink;
     stdin.write(data);
     await stdin.flush();
@@ -152,6 +153,7 @@ export class Claude2Runtime implements RuntimeResources {
           for (const line of lines) {
             const trimmed = line.trim();
             if (trimmed) {
+              console.log(`[claude2 stdout] ${sessionName}: ${trimmed.slice(0, 200)}`);
               this.checkClaudeSessionId(sessionName, trimmed);
               for (const sub of proc.subscribers) {
                 try {

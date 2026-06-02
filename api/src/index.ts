@@ -617,7 +617,9 @@ export const startApi = async () => {
           void streamController.open(ws);
         }
         if (ws.data?.kind === "claude2-stream") {
-          void claude2StreamController.open(ws);
+          claude2StreamController.open(ws).catch((err) => {
+            console.error("[claude2-stream] open handler error", err);
+          });
         }
       },
       message(ws, message) {

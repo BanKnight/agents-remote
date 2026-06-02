@@ -98,11 +98,17 @@ export class Claude2StreamController {
     const data = sessionData(socket);
 
     if (!data) {
+      console.log("[claude2-stream] open: no session data");
       return;
     }
 
+    console.log(`[claude2-stream] open: sessionId=${data.sessionId} tmux=${data.tmuxSessionName}`);
+
     // Resolve metadata for projectPath and claudeSessionId
     const metadata = await this.sessionRegistry.getAgentMetadata(data.projectName, data.sessionId);
+    console.log(
+      `[claude2-stream] metadata found=${!!metadata} claudeSessionId=${metadata?.claudeSessionId ?? "none"}`,
+    );
 
     // Ensure the Claude2 process is running (respawn with --resume if needed)
     await this.claude2Runtime.ensureRunning(
@@ -118,6 +124,7 @@ export class Claude2StreamController {
       sessionType: data.sessionType,
       status: data.status,
     });
+    console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
 
     try {
       await this.startStream(socket, data);
@@ -152,6 +159,7 @@ export class Claude2StreamController {
 
     try {
       if (parsed.type === "user") {
+        console.log(`[claude2-stream] message user: ${data.tmuxSessionName}`);
         await this.runtime.write?.(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
       }
     } catch {
@@ -178,6 +186,9 @@ export class Claude2StreamController {
         (line: string) => {
           try {
             const parsed = JSON.parse(line) as SessionStreamServerMessage;
+            console.log(
+              `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
+            );
             send(socket, parsed);
             if (parsed.type === "result") {
               send(socket, { type: "ended" });
