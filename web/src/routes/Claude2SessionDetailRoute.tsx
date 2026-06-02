@@ -9,6 +9,7 @@ import {
   useComposerRuntime,
   useLocalRuntime,
   useMessage,
+  useThread,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
@@ -351,7 +352,7 @@ function ThreadViewportContent() {
 
 function ComposerWithInterrupt() {
   const composer = useComposerRuntime();
-  const canCancel = composer.getState().canCancel;
+  const isRunning = useThread((s) => s.isRunning);
   const { t } = useT();
 
   return (
@@ -362,7 +363,7 @@ function ComposerWithInterrupt() {
         className="min-h-[2.5rem] max-h-32 flex-1 resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
         rows={1}
       />
-      {canCancel ? (
+      {isRunning ? (
         <button
           type="button"
           className="shrink-0 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-rose-500"

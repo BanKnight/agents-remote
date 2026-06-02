@@ -171,19 +171,20 @@ export class Claude2StreamController {
     console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
 
     // Load and replay history from Claude's JSONL file (persistent)
-    if (metadata?.projectPath && metadata?.claudeSessionId) {
+    // Only load from disk on first connection (buffer empty). On reconnect,
+    // just replay from in-memory buffer to avoid re-yielding old messages.
+    let sessionHistory = this.history.get(data.sessionId);
+    if (metadata?.projectPath && metadata?.claudeSessionId && !sessionHistory) {
       const jsonlPath = claudeJsonlPath(metadata.projectPath, metadata.claudeSessionId);
       console.log(`[claude2-stream] loading history from ${jsonlPath}`);
       const diskHistory = await loadHistoryFromJsonl(jsonlPath);
       console.log(`[claude2-stream] loaded ${diskHistory.length} messages from disk`);
+      sessionHistory = diskHistory;
+      this.history.set(data.sessionId, sessionHistory);
+    }
 
-      // Merge with in-memory buffer (newer messages may not be flushed to disk yet)
-      const memHistory = this.history.get(data.sessionId) ?? [];
-      const merged = mergeHistories(diskHistory, memHistory);
-      this.history.set(data.sessionId, merged);
-
-      // Replay chat messages (excluding result/ended to avoid premature stop)
-      const replay = merged.filter((m) => m.type !== "result" && m.type !== "ended");
+    if (sessionHistory) {
+      const replay = sessionHistory.filter((m) => m.type !== "result" && m.type !== "ended");
       console.log(`[claude2-stream] replaying ${replay.length} history messages`);
       for (const msg of replay) {
         send(socket, msg);
@@ -330,25 +331,6 @@ const sessionData = (socket: StreamSocket): Claude2WebSocketData | undefined => 
 
   return undefined;
 };
-
-function mergeHistories(
-  disk: SessionStreamServerMessage[],
-  memory: SessionStreamServerMessage[],
-): SessionStreamServerMessage[] {
-  if (memory.length === 0) return disk.slice(-MAX_HISTORY_MESSAGES);
-
-  // Use disk as base, add memory messages that aren't in disk
-  const diskIds = new Set(disk.map((m) => JSON.stringify(m)));
-  const merged = [...disk];
-  for (const msg of memory) {
-    const key = JSON.stringify(msg);
-    if (!diskIds.has(key)) {
-      merged.push(msg);
-    }
-  }
-
-  return merged.slice(-MAX_HISTORY_MESSAGES);
-}
 
 const decodePathSegment = (value: string | undefined) => {
   if (!value) return undefined;
