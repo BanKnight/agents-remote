@@ -222,19 +222,24 @@ export function ListRow({
   selected = false,
   subtitle,
   title,
-  type = "button",
   ...props
 }: ListRowProps) {
   return (
-    <Button
-      {...props}
-      className={`h-auto w-full min-w-0 cursor-pointer justify-start rounded-xl px-3 py-2.5 text-left transition ${
+    <div
+      {...(props as React.HTMLAttributes<HTMLDivElement>)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (e.currentTarget as HTMLDivElement).click();
+        }
+      }}
+      className={`flex h-auto w-full min-w-0 cursor-pointer items-center justify-start rounded-xl px-3 py-2.5 text-left transition ${
         selected
           ? "border border-cyan-300/60 bg-cyan-300/10"
           : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
       } ${className}`}
-      type={type}
-      variant="ghost"
     >
       <span className="flex min-w-0 grow items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-3">
@@ -251,6 +256,6 @@ export function ListRow({
         {meta ? <span className="flex shrink-0 items-center gap-1.5">{meta}</span> : null}
         {actions ? <span className="flex shrink-0 items-center">{actions}</span> : null}
       </span>
-    </Button>
+    </div>
   );
 }
