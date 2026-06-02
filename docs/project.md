@@ -101,6 +101,12 @@ agents-remote/
 3. Git/tmux/provider CLI 调用使用 argv 数组，禁止 shell 字符串拼接。
 4. 测试至少覆盖合法路径、越界路径、缺失 Project、非预期文件类型或非 Git 目录等边界。
 
+### 多语言（i18n）
+
+- 所有面向用户的字符串（按钮、标签、提示、确认对话框、错误信息等）必须通过 `t("key")` 翻译，禁止在组件或 UI 层硬编码任何自然语言文本。
+- 新增 key 时分别在 `web/src/i18n/en.ts` 和 `zh.ts` 补齐两种语言的翻译；`TranslationKey` 类型由 `keyof typeof en` 自动推导，TypeScript 强制 `zh` 与 `en` 的 key 集合完全对应，不允许只写一种语言就提交。
+- 组件中跨页面复用的文本（如 Cancel/取消、Close/关闭）优先使用共享 key（如 `cancel`、`session.close`），不要为每个场景重复定义等价的 key。
+
 ### 前端与移动端开发
 
 1. 先从 design/prototype 和对应能力 spec 理解目标信息架构，不要只根据当前组件外观猜测布局。
