@@ -59,6 +59,10 @@ export const en = {
   "project.closeAgentConfirm": "Close this session? The running process will be terminated.",
   "project.closeTerminalConfirm": "Close this Terminal? The running shell will be terminated.",
   "project.closingTerminal": "Closing Terminal session...",
+  "project.deleteProject": "Delete project",
+  "project.deleteProjectConfirm":
+    "Delete this project? The project directory and all its contents will be permanently removed.",
+  "project.deleting": "Deleting...",
   "project.historyStaged": "Staged",
   "project.historyFuture": "Future restore will live here when provider history is available.",
   "project.historyDesc":
@@ -198,6 +202,7 @@ export const en = {
   "api.projectListFailed": "Project list failed",
   "api.projectCreationFailed": "Project creation failed",
   "api.projectDetailFailed": "Project detail failed",
+  "api.projectDeleteFailed": "Project delete failed",
   "api.projectFilesFailed": "Project files failed",
   "api.projectFilePreviewFailed": "Project file preview failed",
   "api.projectGitDiffFailed": "Project Git diff failed",

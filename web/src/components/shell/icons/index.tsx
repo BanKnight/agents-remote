@@ -9,6 +9,7 @@ import plus from "./plus.svg?raw";
 import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
 import terminal from "./terminal.svg?raw";
+import trash from "./trash.svg?raw";
 
 const svgMap: Record<string, string> = {
   "agent-nav": agentNav,
@@ -22,6 +23,7 @@ const svgMap: Record<string, string> = {
   project,
   refresh,
   terminal,
+  trash,
 };
 
 export type ShellIconName = keyof typeof svgMap;

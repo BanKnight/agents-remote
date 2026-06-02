@@ -99,3 +99,81 @@ test("getProject returns details and reports missing projects", async () => {
   });
   await expect(service.getProject("missing")).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
 });
+
+test("deleteProject removes a project directory", async () => {
+  const service = new ProjectService(root);
+  const projectPath = join(root, "to-delete");
+  await mkdir(projectPath);
+  await writeFile(join(projectPath, "readme.md"), "# todo");
+
+  await expect(service.deleteProject("to-delete")).resolves.toEqual({
+    deleted: true,
+    projectName: "to-delete",
+  });
+  await expect(service.getProject("to-delete")).rejects.toMatchObject({
+    code: "PROJECT_NOT_FOUND",
+  });
+});
+
+test("deleteProject reports missing projects", async () => {
+  const service = new ProjectService(root);
+
+  await expect(service.deleteProject("missing")).rejects.toMatchObject({
+    code: "PROJECT_NOT_FOUND",
+  });
+});
+
+test("deleteProject closes all sessions before removing the directory", async () => {
+  const closedAgent: string[] = [];
+  const closedTerminal: string[] = [];
+
+  const sessionManager = {
+    async countSessions() {
+      return { agentSessionCount: 1, terminalSessionCount: 1 };
+    },
+    async listAgentSessions() {
+      return [
+        {
+          id: "agent-1",
+          displayName: "test",
+          projectName: "to-delete",
+          provider: "claude" as const,
+          status: "running" as const,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    },
+    async listTerminalSessions() {
+      return [
+        {
+          id: "terminal-1",
+          displayName: "test",
+          projectName: "to-delete",
+          status: "running" as const,
+        },
+      ];
+    },
+    async closeAgentSession(_projectName: string, sessionId: string) {
+      closedAgent.push(sessionId);
+      return undefined;
+    },
+    async closeTerminalSession(_projectName: string, sessionId: string) {
+      closedTerminal.push(sessionId);
+      return undefined;
+    },
+  };
+
+  const service = new ProjectService(root, sessionManager);
+  await mkdir(join(root, "to-delete"));
+
+  await expect(service.deleteProject("to-delete")).resolves.toEqual({
+    deleted: true,
+    projectName: "to-delete",
+  });
+  await expect(service.getProject("to-delete")).rejects.toMatchObject({
+    code: "PROJECT_NOT_FOUND",
+  });
+
+  expect(closedAgent).toEqual(["agent-1"]);
+  expect(closedTerminal).toEqual(["terminal-1"]);
+});

@@ -10,6 +10,7 @@ import type {
   CreateProjectResponse,
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
+  DeleteProjectResponse,
   GitDiffListResponse,
   GitDiffScope,
   GitFileDiffResponse,
@@ -77,6 +78,12 @@ export async function createProject(path: string): Promise<CreateProjectResponse
 
 export async function getProject(projectName: string): Promise<ProjectDetailResponse> {
   return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "api.projectDetailFailed");
+}
+
+export async function deleteProject(projectName: string): Promise<DeleteProjectResponse> {
+  return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "api.projectDeleteFailed", {
+    method: "DELETE",
+  });
 }
 
 export async function listProjectFiles(

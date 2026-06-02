@@ -61,6 +61,9 @@ export const zh: Record<TranslationKey, string> = {
   "project.closeAgentConfirm": "关闭此会话？正在运行的进程将被终止。",
   "project.closeTerminalConfirm": "关闭此 Terminal？正在运行的 Shell 将被终止。",
   "project.closingTerminal": "正在关闭 Terminal 会话...",
+  "project.deleteProject": "删除项目",
+  "project.deleteProjectConfirm": "删除此项目？项目目录及其所有内容将被永久移除。",
+  "project.deleting": "正在删除...",
   "project.historyStaged": "暂存",
   "project.historyFuture": "当 provider 历史记录可用时，将来的恢复功能将在此处显示。",
   "project.historyDesc":
@@ -200,6 +203,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.projectListFailed": "项目列表获取失败",
   "api.projectCreationFailed": "项目创建失败",
   "api.projectDetailFailed": "项目详情获取失败",
+  "api.projectDeleteFailed": "项目删除失败",
   "api.projectFilesFailed": "项目文件获取失败",
   "api.projectFilePreviewFailed": "项目文件预览失败",
   "api.projectGitDiffFailed": "项目 Git 差异获取失败",

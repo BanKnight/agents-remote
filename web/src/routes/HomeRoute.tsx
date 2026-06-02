@@ -2,7 +2,7 @@ import type { Project } from "@agents-remote/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useId, useState, useEffect } from "react";
-import { createProject, listProjects } from "../api/client";
+import { createProject, deleteProject, listProjects } from "../api/client";
 import { useT } from "../i18n";
 import { defaultConsoleSection } from "./console-model";
 import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell/shell-layout";
@@ -36,6 +36,10 @@ export function HomeRoute() {
         search: { workspace: defaultConsoleSection, filesPath: "" },
       });
     },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
   });
   const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
 
@@ -94,9 +98,12 @@ export function HomeRoute() {
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <ProjectListCard
+          deleteError={deleteMutation.error instanceof Error ? deleteMutation.error : null}
           error={projects.error}
+          isDeleting={deleteMutation.isPending}
           isLoading={projects.isLoading}
           projects={projectItems}
+          onDeleteProject={(name) => deleteMutation.mutate(name)}
         />
 
         {setupVisible ? (
@@ -123,12 +130,22 @@ export function HomeRoute() {
 }
 
 type ProjectListCardProps = {
+  deleteError: Error | null;
   error: Error | null;
+  isDeleting: boolean;
   isLoading: boolean;
+  onDeleteProject: (projectName: string) => void;
   projects: Project[];
 };
 
-function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
+function ProjectListCard({
+  deleteError,
+  error,
+  isDeleting,
+  isLoading,
+  onDeleteProject,
+  projects,
+}: ProjectListCardProps) {
   const { t } = useT();
   return (
     <ShellPanel
@@ -138,6 +155,11 @@ function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
     >
       {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
+      {deleteError ? (
+        <p className="mb-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+          {deleteError.message}
+        </p>
+      ) : null}
       {!isLoading && !error ? (
         projects.length === 0 ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
@@ -149,7 +171,12 @@ function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
         ) : (
           <div className="grid min-w-0 gap-3">
             {projects.map((project) => (
-              <ProjectEntryRow key={project.name} project={project} />
+              <ProjectEntryRow
+                key={project.name}
+                isDeleting={isDeleting}
+                project={project}
+                onDelete={() => onDeleteProject(project.name)}
+              />
             ))}
           </div>
         )
@@ -159,10 +186,12 @@ function ProjectListCard({ error, isLoading, projects }: ProjectListCardProps) {
 }
 
 type ProjectEntryRowProps = {
+  isDeleting: boolean;
+  onDelete: () => void;
   project: Project;
 };
 
-function ProjectEntryRow({ project }: ProjectEntryRowProps) {
+function ProjectEntryRow({ isDeleting, onDelete, project }: ProjectEntryRowProps) {
   const { t } = useT();
   return (
     <Link
@@ -185,16 +214,32 @@ function ProjectEntryRow({ project }: ProjectEntryRowProps) {
             <ProjectMetaPill>{project.gitBranch ?? t("home.projectPending")}</ProjectMetaPill>
           </span>
         </span>
-        <span className="shrink-0 text-cyan-300 opacity-60 transition group-hover:opacity-100 group-hover:translate-x-0.5">
-          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M6 3L11 8l-5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+        <span className="flex shrink-0 items-center gap-2">
+          <ActionButton
+            aria-label={t("project.deleteProject")}
+            disabled={isDeleting}
+            tone="danger"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (window.confirm(t("project.deleteProjectConfirm"))) {
+                onDelete();
+              }
+            }}
+          >
+            <ShellIcon name="trash" className="h-3.5 w-3.5" />
+          </ActionButton>
+          <span className="text-cyan-300 opacity-60 transition group-hover:opacity-100 group-hover:translate-x-0.5">
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M6 3L11 8l-5 5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
         </span>
       </span>
     </Link>

@@ -1,6 +1,12 @@
-import type { ApiErrorCode, Project } from "@agents-remote/shared";
+import type {
+  AgentSession,
+  ApiErrorCode,
+  DeleteProjectResponse,
+  Project,
+  TerminalSession,
+} from "@agents-remote/shared";
 import { basename, isAbsolute, relative, resolve } from "node:path";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import {
   ProjectPathError,
   resolveProjectPath,
@@ -13,8 +19,15 @@ type ProjectSessionCounts = {
   terminalSessionCount: number;
 };
 
-type ProjectSessionCounter = {
+type ProjectSessionManager = {
   countSessions(projectName: string): Promise<ProjectSessionCounts>;
+  listAgentSessions(projectName: string): Promise<AgentSession[]>;
+  listTerminalSessions(projectName: string): Promise<TerminalSession[]>;
+  closeAgentSession(projectName: string, sessionId: string): Promise<AgentSession | undefined>;
+  closeTerminalSession(
+    projectName: string,
+    sessionId: string,
+  ): Promise<TerminalSession | undefined>;
 };
 
 type ProjectServiceErrorCode = Extract<
@@ -25,6 +38,7 @@ type ProjectServiceErrorCode = Extract<
   | "PROJECT_PATH_OUTSIDE_ROOT"
   | "PROJECT_CONFLICT"
   | "PROJECT_FS_ERROR"
+  | "PROJECT_DELETE_FAILED"
 >;
 
 export class ProjectServiceError extends Error {
@@ -40,7 +54,7 @@ export class ProjectServiceError extends Error {
 export class ProjectService {
   constructor(
     private readonly projectsRoot: string,
-    private readonly sessionCounter?: ProjectSessionCounter,
+    private readonly sessionManager?: ProjectSessionManager,
   ) {}
 
   async listProjects(): Promise<Project[]> {
@@ -103,10 +117,36 @@ export class ProjectService {
     return this.projectFromName(target.name);
   }
 
+  async deleteProject(projectName: string): Promise<DeleteProjectResponse> {
+    const project = await resolveProjectPath(this.projectsRoot, projectName);
+
+    if (this.sessionManager) {
+      const [agentSessions, terminalSessions] = await Promise.all([
+        this.sessionManager.listAgentSessions(project.name),
+        this.sessionManager.listTerminalSessions(project.name),
+      ]);
+
+      await Promise.all([
+        ...agentSessions.map((s) => this.sessionManager!.closeAgentSession(project.name, s.id)),
+        ...terminalSessions.map((s) =>
+          this.sessionManager!.closeTerminalSession(project.name, s.id),
+        ),
+      ]);
+    }
+
+    try {
+      await rm(project.path, { recursive: true, force: true });
+    } catch {
+      throw new ProjectServiceError("PROJECT_DELETE_FAILED", "Unable to delete project directory");
+    }
+
+    return { deleted: true, projectName: project.name };
+  }
+
   private async projectFromName(projectName: string): Promise<Project> {
     try {
       const project = await resolveProjectPath(this.projectsRoot, projectName);
-      const counts = (await this.sessionCounter?.countSessions(project.name)) ?? {
+      const counts = (await this.sessionManager?.countSessions(project.name)) ?? {
         agentSessionCount: 0,
         terminalSessionCount: 0,
       };

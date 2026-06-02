@@ -1,6 +1,7 @@
 import type {
   CreateProjectRequest,
   CreateProjectResponse,
+  DeleteProjectResponse,
   HealthResponse,
   ProjectDetailResponse,
   ProjectListResponse,
@@ -187,6 +188,18 @@ const handleProjects = async (
             projectFilesMatch.projectName,
             url.searchParams.get("path") ?? "",
           );
+      return Response.json(response);
+    }
+
+    if (url.pathname.startsWith("/api/projects/") && request.method === "DELETE") {
+      const encodedName = url.pathname.slice("/api/projects/".length);
+      const projectName = decodeProjectName(encodedName);
+
+      if (!projectName) {
+        return jsonError("PROJECT_NAME_INVALID", "Project name is invalid", 400);
+      }
+
+      const response: DeleteProjectResponse = await projectService.deleteProject(projectName);
       return Response.json(response);
     }
 
@@ -386,7 +399,7 @@ const projectErrorResponse = (error: ProjectServiceError) => {
     return jsonError(error.code, error.message, 409);
   }
 
-  if (error.code === "PROJECT_FS_ERROR") {
+  if (error.code === "PROJECT_FS_ERROR" || error.code === "PROJECT_DELETE_FAILED") {
     return jsonError(error.code, error.message, 500);
   }
 

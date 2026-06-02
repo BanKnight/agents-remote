@@ -124,6 +124,11 @@ export type ProjectDetailResponse = {
   project: Project;
 };
 
+export type DeleteProjectResponse = {
+  deleted: true;
+  projectName: string;
+};
+
 export type AgentProvider = "claude" | "codex";
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
@@ -257,6 +262,7 @@ export type ApiErrorCode =
   | "PROJECT_GIT_FILE_NOT_CHANGED"
   | "PROJECT_GIT_UNAVAILABLE"
   | "PROJECT_FS_ERROR"
+  | "PROJECT_DELETE_FAILED"
   | "SESSION_NOT_FOUND"
   | "SESSION_RUNTIME_MISSING"
   | "SESSION_RUNTIME_ERROR"
