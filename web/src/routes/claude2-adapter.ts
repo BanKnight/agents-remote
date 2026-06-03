@@ -41,6 +41,144 @@ type ConnectionState = {
   closed: boolean;
 };
 
+/**
+ * Convert raw Claude2 JSONL/API messages into ThreadMessageLike[] for
+ * assistant-ui history display.
+ *
+ * Pure function — no side effects, no network. Testable in isolation.
+ *
+ * Key behaviors:
+ * - Groups assistant messages by message.id into a single bubble.
+ * - Matches tool_result to tool-call by tool_use_id, even when separated
+ *   by intervening user text messages ("Continue from where you left off.").
+ * - Skips is_error tool_results (Claude auto-generates these for
+ *   auto-allowed AskUserQuestion without real answers).
+ * - control_request messages are NOT in JSONL history — AskUserQuestion
+ *   in history comes from assistant tool_use blocks directly.
+ */
+export function loadMessagesFromRaw(
+  rawMessages: SessionStreamServerMessage[],
+): ThreadMessageLike[] {
+  const messages: ThreadMessageLike[] = [];
+  let currentParts: NonNullable<ChatModelRunResult["content"]> = [];
+  let lastAssistantMsgId: string | null = null;
+
+  const flushAssistant = () => {
+    if (currentParts.length > 0) {
+      messages.push({ role: "assistant", content: currentParts });
+    }
+    currentParts = [];
+  };
+
+  for (let i = 0; i < rawMessages.length; i++) {
+    const msg = rawMessages[i];
+
+    if (msg.type === "system") continue;
+
+    if (msg.type === "user") {
+      const userTexts: string[] = [];
+
+      for (const block of msg.message.content) {
+        if (block.type === "text" && block.text.trim()) {
+          userTexts.push(block.text);
+        }
+        if (block.type === "tool_result") {
+          if ((block as { is_error?: boolean }).is_error) continue;
+          const texts =
+            typeof block.content === "string"
+              ? block.content
+              : (block.content as Array<{ type: string; text: string }>)
+                  .filter((c) => c.type === "text")
+                  .map((c) => c.text)
+                  .join("\n");
+          const resultText = texts || "Tool result";
+          const toolUseId: string = "tool_use_id" in block ? (block.tool_use_id as string) : "";
+          const matchIdx = currentParts.findIndex(
+            (p) => p.type === "tool-call" && "toolCallId" in p && p.toolCallId === toolUseId,
+          );
+          if (toolUseId && matchIdx >= 0) {
+            currentParts = currentParts.map((p, i) =>
+              i === matchIdx ? { ...p, result: resultText } : p,
+            );
+          } else if (toolUseId) {
+            // Search backwards for the last assistant message that
+            // contains this tool-call. The last message may be a
+            // user text ("Continue from where you left off.") that
+            // was pushed AFTER the assistant was flushed.
+            let found = false;
+            for (let j = messages.length - 1; j >= 0; j--) {
+              const candidate = messages[j];
+              if (candidate.role === "assistant" && Array.isArray(candidate.content)) {
+                const flushedMatchIdx = candidate.content.findIndex(
+                  (p) =>
+                    p.type === "tool-call" &&
+                    "toolCallId" in p &&
+                    (p as { toolCallId: string }).toolCallId === toolUseId,
+                );
+                if (flushedMatchIdx >= 0) {
+                  currentParts = [...candidate.content];
+                  currentParts = currentParts.map((p, i) =>
+                    i === flushedMatchIdx ? { ...p, result: resultText } : p,
+                  );
+                  messages.splice(j, 1);
+                  found = true;
+                  break;
+                }
+              }
+            }
+            if (!found) {
+              // Tool_use_id not found anywhere — possibly from a
+              // different turn. Ignore.
+            }
+          }
+        }
+      }
+
+      if (userTexts.length > 0) {
+        flushAssistant();
+        messages.push({ role: "user", content: userTexts.join("\n") });
+      }
+
+      continue;
+    }
+
+    if (msg.type === "assistant") {
+      const msgId = msg.message?.id as string | undefined;
+      if (msgId && msgId !== lastAssistantMsgId) {
+        flushAssistant();
+        lastAssistantMsgId = msgId;
+      }
+      for (const block of msg.message.content) {
+        if (block.type === "text") {
+          currentParts = [...currentParts, { type: "text" as const, text: block.text }];
+        }
+        if (block.type === "tool_use") {
+          currentParts = [
+            ...currentParts,
+            {
+              type: "tool-call" as const,
+              toolCallId: block.id,
+              toolName: block.name,
+              args: asReadonlyJSON(block.input),
+              argsText: JSON.stringify(block.input),
+            },
+          ];
+        }
+      }
+      continue;
+    }
+
+    if (msg.type === "result") {
+      flushAssistant();
+      lastAssistantMsgId = null;
+      continue;
+    }
+  }
+
+  flushAssistant();
+  return messages;
+}
+
 export function createClaude2Adapters(projectName: string, sessionId: string) {
   const url = claude2StreamUrl(projectName, sessionId);
 
@@ -194,106 +332,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
         // If REST fails (e.g. session not ready), start with empty history.
       }
 
-      const messages: ThreadMessageLike[] = [];
-      let currentParts: NonNullable<ChatModelRunResult["content"]> = [];
-      let lastAssistantMsgId: string | null = null;
-
-      const flushAssistant = () => {
-        if (currentParts.length > 0) {
-          messages.push({ role: "assistant", content: currentParts });
-        }
-        currentParts = [];
-      };
-
-      for (let i = 0; i < rawMessages.length; i++) {
-        const msg = rawMessages[i];
-
-        if (msg.type === "system") continue;
-
-        if (msg.type === "user") {
-          const userTexts: string[] = [];
-
-          for (const block of msg.message.content) {
-            if (block.type === "text" && block.text.trim()) {
-              userTexts.push(block.text);
-            }
-            if (block.type === "tool_result") {
-              // is_error tool_results: Claude auto-generates these when
-              // an AskUserQuestion permission is granted without real
-              // answers. They carry no user input — skip them so we
-              // don't show an unanswered question as "已回答".
-              if ((block as { is_error?: boolean }).is_error) continue;
-              const texts =
-                typeof block.content === "string"
-                  ? block.content
-                  : (block.content as Array<{ type: string; text: string }>)
-                      .filter((c) => c.type === "text")
-                      .map((c) => c.text)
-                      .join("\n");
-              const resultText = texts || "Tool result";
-              const toolUseId: string = "tool_use_id" in block ? (block.tool_use_id as string) : "";
-              const matchIdx = currentParts.findIndex(
-                (p) => p.type === "tool-call" && "toolCallId" in p && p.toolCallId === toolUseId,
-              );
-              if (toolUseId && matchIdx >= 0) {
-                currentParts = currentParts.map((p, i) =>
-                  i === matchIdx ? { ...p, result: resultText } : p,
-                );
-              } else {
-                currentParts = [...currentParts, { type: "text" as const, text: resultText }];
-              }
-            }
-          }
-
-          if (userTexts.length > 0) {
-            flushAssistant();
-            messages.push({ role: "user", content: userTexts.join("\n") });
-          }
-
-          continue;
-        }
-
-        if (msg.type === "assistant") {
-          const msgId = msg.message?.id as string | undefined;
-          // Claude emits multiple assistant messages per turn (thinking
-          // chunk, text chunk, tool_use chunk), all sharing the same
-          // message.id. We group them by id so they render as a single
-          // assistant bubble. "result" messages also trigger a flush and
-          // reset lastAssistantMsgId — but history loaded from JSONL may
-          // not include "result" messages (they're stream-only), so the
-          // id-based grouping is the primary split mechanism for history.
-          if (msgId && msgId !== lastAssistantMsgId) {
-            flushAssistant();
-            lastAssistantMsgId = msgId;
-          }
-          for (const block of msg.message.content) {
-            if (block.type === "text") {
-              currentParts = [...currentParts, { type: "text" as const, text: block.text }];
-            }
-            if (block.type === "tool_use") {
-              currentParts = [
-                ...currentParts,
-                {
-                  type: "tool-call" as const,
-                  toolCallId: block.id,
-                  toolName: block.name,
-                  args: asReadonlyJSON(block.input),
-                  argsText: JSON.stringify(block.input),
-                },
-              ];
-            }
-          }
-          continue;
-        }
-
-        if (msg.type === "result") {
-          flushAssistant();
-          lastAssistantMsgId = null;
-          continue;
-        }
-      }
-
-      flushAssistant();
+      const messages = loadMessagesFromRaw(rawMessages);
 
       getConnection();
 
