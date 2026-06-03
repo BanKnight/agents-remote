@@ -314,24 +314,18 @@ describe("loadMessagesFromRaw", () => {
   });
 });
 
-// ── run() drain-loop integration test ─────────────────────────────────
+// ── run() drain-loop integration tests ───────────────────────────────
 //
-// This test verifies the fix for the race condition where Claude emits
-// multiple messages in rapid succession (tool_result echo → assistant
-// text → result) after a control_response. The old run() generator
-// processed only one item per promise resolution; intervening messages
-// that arrived while resolveNext was null were skipped by the yieldIndex
-// advance loop and never yielded.
-//
-// We use Bun's built-in WebSocket server to simulate Claude and step
-// through the generator collecting every yielded result.
+// These tests use Bun's built-in WebSocket server to verify the run()
+// generator correctly handles live-stream message patterns. Unlike the
+// loadMessagesFromRaw tests (which test history loading), these test the
+// real-time WebSocket → generator pipeline.
 
 describe("chatAdapter.run() drain loop", () => {
   let server: ReturnType<typeof Bun.serve>;
   const originalLocation = globalThis.location;
 
   beforeAll(() => {
-    // Mock globalThis.location for claude2StreamUrl()
     // @ts-expect-error mock
     globalThis.location = { protocol: "http:", host: `localhost:9999` };
   });
@@ -341,10 +335,15 @@ describe("chatAdapter.run() drain loop", () => {
     globalThis.location = originalLocation;
   });
 
-  test("drains all rapid-fire messages without loss", async () => {
-    // We use Bun's WebSocket server to simulate Claude's response
-    // pattern: tool_result echo → assistant text → result, sent in
-    // rapid succession inside the ws open handler.
+  test("drains rapid-fire messages arriving while generator is blocked", async () => {
+    // Simulate the real AskUserQuestion flow:
+    // 1. Generator yields initial messages (text + question card)
+    // 2. Generator blocks waiting for response
+    // 3. Server sends rapid-fire response (tool_result → assistant → result)
+    // All 3 messages must be yielded — none lost.
+    let _clientWs: ReturnType<typeof server> extends { upgrade: any } ? any : any = null;
+    let messageCount = 0;
+
     server = Bun.serve({
       port: 9999,
       fetch(req, srv) {
@@ -353,75 +352,150 @@ describe("chatAdapter.run() drain loop", () => {
       },
       websocket: {
         open(ws) {
-          // Simulate what Claude emits after receiving a control_response:
-          //   1. User message with tool_result (echo of the answer)
-          //   2. Assistant message with text response
-          //   3. Result (turn completion)
-          // These arrive fast enough that the generator is still processing
-          // msg 1 when msgs 2 & 3 land — the old code would lose msg 2.
-          ws.send(
-            JSON.stringify({
-              type: "user",
-              message: {
-                role: "user",
-                content: [{ type: "tool_result", tool_use_id: "tu-1", content: "Red" }],
-              },
-            } satisfies SessionStreamServerMessage),
-          );
-
+          _clientWs = ws;
+          // Send initial assistant message + control_request (AskUserQuestion card)
+          // text before the question
           ws.send(
             JSON.stringify({
               type: "assistant",
               message: {
-                id: "msg-resp",
+                id: "msg-init",
                 role: "assistant",
-                content: [{ type: "text", text: "Got your answer — thanks!" }],
+                content: [{ type: "text", text: "Let me ask you something." }],
               },
             } satisfies SessionStreamServerMessage),
           );
 
+          // control_request that creates the AskUserQuestion card
           ws.send(
             JSON.stringify({
-              type: "result",
-              subtype: "success",
+              type: "control_request",
+              request_id: "req-ask-1",
+              request: {
+                subtype: "can_use_tool",
+                tool_name: "AskUserQuestion",
+                display_name: "AskUserQuestion",
+                input: {
+                  questions: [
+                    {
+                      question: "What is your favorite color?",
+                      header: "Color",
+                      options: [
+                        { label: "Red", description: "The color of passion" },
+                        { label: "Blue", description: "The color of calm" },
+                      ],
+                      multiSelect: false,
+                    },
+                  ],
+                },
+              },
             } satisfies SessionStreamServerMessage),
           );
         },
-        message(_ws, _msg) {
-          // ignore user messages sent by the adapter
+        message(ws, rawMsg) {
+          const msg = JSON.parse(rawMsg as string);
+          // When we receive a control_response or user message, act like Claude
+          // and send a rapid-fire response
+          if (msg.type === "control_response" || msg.type === "user") {
+            messageCount++;
+            // Simulate Claude's response after receiving the answer:
+            // Send 3 messages in rapid succession.
+            // These often arrive before the generator sets resolveNext again.
+            ws.send(
+              JSON.stringify({
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [{ type: "tool_result", tool_use_id: "toolu-ask-1", content: "Red" }],
+                },
+              } satisfies SessionStreamServerMessage),
+            );
+
+            ws.send(
+              JSON.stringify({
+                type: "assistant",
+                message: {
+                  id: "msg-resp",
+                  role: "assistant",
+                  content: [{ type: "text", text: "Got it! You chose Red." }],
+                },
+              } satisfies SessionStreamServerMessage),
+            );
+
+            ws.send(
+              JSON.stringify({
+                type: "result",
+                subtype: "success",
+              } satisfies SessionStreamServerMessage),
+            );
+          }
         },
       },
     });
 
     try {
-      const { chatAdapter } = createClaude2Adapters("test", "test-session");
+      const { chatAdapter, bridge } = createClaude2Adapters("test", "test-session");
 
-      const collected: ChatModelRunResult[] = [];
+      // Start the generator (simulates user sending a message)
       const ac = new AbortController();
-
       const gen = chatAdapter.run({
-        messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+        messages: [{ role: "user", content: [{ type: "text", text: "ask me something" }] }],
         abortSignal: ac.signal,
       } as Parameters<typeof chatAdapter.run>[0]);
 
+      const collected: ChatModelRunResult[] = [];
+
+      // Step 1: consume initial messages (text + AskUserQuestion card)
+      // The generator should yield the assistant text and the question card
       for await (const r of gen) {
         collected.push(r);
+
+        // After the question card is yielded, simulate the user submitting
+        // the answer via the bridge (like clicking "提交回答")
+        if (collected.length === 2) {
+          // Simulate user answering via the card's submit button
+          // (no artificial delay — this fires from a React click handler)
+          bridge.respondToControlRequest("req-ask-1", {
+            questions: [
+              {
+                question: "What is your favorite color?",
+                header: "Color",
+                options: [
+                  { label: "Red", description: "The color of passion" },
+                  { label: "Blue", description: "The color of calm" },
+                ],
+                multiSelect: false,
+              },
+            ],
+            __controlRequestId: "req-ask-1",
+            answers: { "What is your favorite color?": "Red" },
+          });
+
+          // Continue consuming — should now receive:
+          //   3. tool_result echo (tool-result content)
+          //   4. assistant text "Got it! You chose Red."
+          //   5. result → generator returns
+        }
       }
 
-      // We expect at least 3 yields:
-      //   tool_result echo, assistant text, result status
-      expect(collected.length).toBeGreaterThanOrEqual(3);
+      // Verify both messages reached the server:
+      //   1. initial user msg from run()
+      //   2. control_response from bridge.respondToControlRequest()
+      expect(messageCount).toBe(2);
 
-      // All assistant text content should appear across the yielded results
+      // Should have yielded at least 2 initial + 3 response = 5 items
+      expect(collected.length).toBeGreaterThanOrEqual(5);
+
+      // The assistant text from the response MUST be present
       const allTexts = collected
         .flatMap((r) => (Array.isArray(r.content) ? r.content : []))
         .filter((p: { type?: string }) => p.type === "text")
         .map((p: { type?: string; text?: string }) => (p as { text: string }).text);
-      expect(allTexts).toContain("Got your answer — thanks!");
+      expect(allTexts).toContain("Let me ask you something.");
+      expect(allTexts).toContain("Got it! You chose Red.");
 
-      // The final yield should carry the complete status
-      const lastResult = collected.at(-1);
-      expect(lastResult?.status?.type).toBe("complete");
+      // Last item should carry complete status
+      expect(collected.at(-1)?.status?.type).toBe("complete");
     } finally {
       server.stop();
     }
