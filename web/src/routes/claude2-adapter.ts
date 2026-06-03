@@ -26,7 +26,7 @@ export type Claude2Bridge = {
 
 export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
 
-type Resolver = (result: IteratorResult<ChatModelRunResult, void>) => void;
+type Resolver = () => void;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asReadonlyJSON = (v: Record<string, unknown>): any => v;
@@ -249,9 +249,8 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
           console.log(`[claude2-adapter] converted: ${JSON.stringify(result).slice(0, 200)}`);
           state.history.push(result);
           if (state.resolveNext) {
-            const resolve = state.resolveNext;
+            state.resolveNext();
             state.resolveNext = null;
-            resolve({ done: false, value: result });
           }
         }
       } catch {
@@ -264,9 +263,9 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       if (state.aborted) return;
       state.closed = true;
       if (state.resolveNext) {
-        const resolve = state.resolveNext;
+        state.history.push({ status: { type: "incomplete", reason: "error" } });
+        state.resolveNext();
         state.resolveNext = null;
-        resolve({ done: false, value: { status: { type: "incomplete", reason: "error" } } });
       }
     };
 
@@ -376,55 +375,61 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
           if (options.abortSignal.aborted) return;
           if (state.closed) return;
 
-          while (state.yieldIndex < state.history.length) {
-            state.yieldIndex++;
+          // Wait for at least one new item if nothing is pending.
+          // Claude may emit multiple messages in quick succession
+          // (e.g. tool_result echo → assistant text → result) after
+          // a control_response. If we only process one per promise
+          // resolution, intervening messages arrive while resolveNext
+          // is null and get stuck in history — never yielded.
+          if (state.yieldIndex >= state.history.length) {
+            await new Promise<void>((resolve) => {
+              state.resolveNext = () => resolve();
+            });
+            if (options.abortSignal.aborted) return;
           }
 
-          const result = await new Promise<ChatModelRunResult>((resolve) => {
-            state.resolveNext = (r: IteratorResult<ChatModelRunResult, void>) => {
-              if (!r.done && r.value) resolve(r.value);
-              else resolve({ status: { type: "complete", reason: "stop" } });
-            };
-          });
+          // Drain ALL pending items in a tight loop so rapid-fire
+          // messages are all yielded before we block again.
+          while (state.yieldIndex < state.history.length) {
+            const item = state.history[state.yieldIndex];
+            state.yieldIndex++;
 
-          if (options.abortSignal.aborted) return;
-          state.yieldIndex = state.history.length;
+            if (item.content) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const content = item.content as any[];
+              const toolResults = content.filter((p) => p.type === "tool-result");
+              const nonReasoning = content.filter(
+                (p: { type: string }) => p.type !== "reasoning" && p.type !== "tool-result",
+              );
+              const latestReasoning = content
+                .filter((p: { type: string }) => p.type === "reasoning")
+                .at(-1);
 
-          if (result.content) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const content = result.content as any[];
-            const toolResults = content.filter((p) => p.type === "tool-result");
-            const nonReasoning = content.filter(
-              (p: { type: string }) => p.type !== "reasoning" && p.type !== "tool-result",
-            );
-            const latestReasoning = content
-              .filter((p: { type: string }) => p.type === "reasoning")
-              .at(-1);
+              for (const tr of toolResults) {
+                const trPart = tr as { toolCallId: string; result: string };
+                parts = parts.map((p) => {
+                  if (
+                    p.type === "tool-call" &&
+                    "toolCallId" in p &&
+                    (p as { toolCallId: string }).toolCallId === trPart.toolCallId
+                  ) {
+                    return { ...p, result: trPart.result } as typeof p;
+                  }
+                  return p;
+                });
+              }
 
-            for (const tr of toolResults) {
-              const trPart = tr as { toolCallId: string; result: string };
-              parts = parts.map((p) => {
-                if (
-                  p.type === "tool-call" &&
-                  "toolCallId" in p &&
-                  (p as { toolCallId: string }).toolCallId === trPart.toolCallId
-                ) {
-                  return { ...p, result: trPart.result } as typeof p;
-                }
-                return p;
-              });
+              parts = [...parts.filter((p) => p.type !== "reasoning"), ...nonReasoning];
+              if (latestReasoning) parts = [...parts, latestReasoning];
             }
 
-            parts = [...parts.filter((p) => p.type !== "reasoning"), ...nonReasoning];
-            if (latestReasoning) parts = [...parts, latestReasoning];
-          }
+            if ("status" in item && item.status) {
+              yield { content: parts, status: item.status };
+              return;
+            }
 
-          if ("status" in result && result.status) {
-            yield { content: parts, status: result.status };
-            return;
+            yield { content: parts };
           }
-
-          yield { content: parts };
         }
       } finally {
         options.abortSignal.removeEventListener("abort", onAbort);
