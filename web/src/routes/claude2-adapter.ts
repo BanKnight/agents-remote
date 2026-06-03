@@ -410,7 +410,10 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       console.log(
         `[claude2-adapter] bridge.respondToControlRequest requestId=${requestId} hasAnswers=${!!answers}`,
       );
-      // Claude SDK format: control_response wraps in response.response
+      // Claude SDK format: answers go directly into updatedInput,
+      // NOT nested under {answers: {...}}. Claude shallow-merges
+      // updatedInput into the tool's original input. If we nest answers,
+      // the AskUserQuestion handler loses the `questions` array.
       sendToSocket({
         type: "control_response",
         response: {
@@ -418,7 +421,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
           request_id: requestId,
           response: {
             behavior: "allow",
-            updatedInput: answers ? { answers } : {},
+            updatedInput: (answers ?? {}) as Record<string, unknown>,
           },
         },
       });
