@@ -304,12 +304,33 @@ export type Claude2ControlRequest = {
   };
 };
 
+// The control_response format matches Claude SDK's CanUseToolControlResponse:
+//
+//   {"type":"control_response","response":{"subtype":"success","request_id":"uuid",
+//     "response":{"behavior":"allow","updatedInput":{"answers":{...}}}}}
+//
+// Clang requires the nested "response" wrapper — the request_id is NOT at
+// top level. See cli/src/claude/sdk/query.ts handleControlRequest() in hapi
+// for the canonical implementation.
 export type Claude2ControlResponse = {
   type: "control_response";
-  request_id: string;
-  answers?: Record<string, string>;
-  response?: string;
+  response: {
+    subtype: "success" | "error";
+    request_id: string;
+    response?: SDKPermissionResult;
+    error?: string;
+  };
 };
+
+export type SDKPermissionResult =
+  | {
+      behavior: "allow";
+      updatedInput: Record<string, unknown>;
+    }
+  | {
+      behavior: "deny";
+      message: string;
+    };
 
 export type SessionStreamClientMessage =
   | {

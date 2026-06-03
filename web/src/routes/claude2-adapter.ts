@@ -255,7 +255,11 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
             console.log(`[claude2-adapter] auto-allowing control_request: ${toolName}`);
             sendToSocket({
               type: "control_response",
-              request_id: msg.request_id,
+              response: {
+                subtype: "success",
+                request_id: msg.request_id,
+                response: { behavior: "allow", updatedInput: {} },
+              },
             });
             return;
           }
@@ -406,10 +410,17 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       console.log(
         `[claude2-adapter] bridge.respondToControlRequest requestId=${requestId} hasAnswers=${!!answers}`,
       );
+      // Claude SDK format: control_response wraps in response.response
       sendToSocket({
         type: "control_response",
-        request_id: requestId,
-        ...(answers ? { answers } : {}),
+        response: {
+          subtype: "success",
+          request_id: requestId,
+          response: {
+            behavior: "allow",
+            updatedInput: answers ? { answers } : {},
+          },
+        },
       });
     },
 
@@ -417,7 +428,14 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       console.log(`[claude2-adapter] bridge.cancelControlRequest requestId=${requestId}`);
       sendToSocket({
         type: "control_response",
-        request_id: requestId,
+        response: {
+          subtype: "success",
+          request_id: requestId,
+          response: {
+            behavior: "deny",
+            message: "User skipped",
+          },
+        },
       });
     },
 
