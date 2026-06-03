@@ -39,6 +39,12 @@ type ConnectionState = {
   resolveNext: Resolver | null;
   aborted: boolean;
   closed: boolean;
+  /** Buffered assistant message containing AskUserQuestion tool_use.
+   * Held until the matching control_request arrives (which carries the
+   * request_id needed for the bridge). Flushed immediately when the next
+   * non-control_request message arrives (card renders without submit
+   * button — gracefully degraded). */
+  bufferedAssistant: ChatModelRunResult | null;
 };
 
 /**
@@ -207,6 +213,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       resolveNext: null,
       aborted: false,
       closed: false,
+      bufferedAssistant: null,
     };
 
     socket.onopen = () => {
@@ -224,14 +231,24 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
         //
         // --permission-prompt-tool stdio routes permission-type tools
         // (Bash, Write, AskUserQuestion, etc.) as control_request on stdout.
-        // The tool_name is nested under msg.request, NOT at top level.
         //
-        // Bash / Write / Read etc.: auto-allow (send empty control_response).
-        //   Claude executes the tool and emits tool_result + result.
+        // Non-AskUserQuestion tools (Bash, Write, Read, etc.):
+        //   Auto-allow immediately. Claude executes the tool, emits
+        //   tool_result + assistant + result through the normal message
+        //   stream. The tool_use in the assistant message already carries
+        //   the correct tool_use.id for tool_result matching.
         //
-        // AskUserQuestion: do NOT auto-allow. Let it reach convertMessage()
-        //   which creates a question card. The user answers interactively,
-        //   and the answer is sent back via bridge.respondToControlRequest -> control_response.
+        // AskUserQuestion:
+        //   The assistant message with the AskUserQuestion tool_use is
+        //   buffered (see below). When the control_request arrives, we
+        //   inject the request_id into the buffered tool-call's args
+        //   and flush it. This ensures:
+        //
+        //   - Card toolCallId = tool_use.id (matches tool_result echo,
+        //     server-driven state, no optimistic update).
+        //   - request_id lives only in args.__controlRequestId for the
+        //     bridge to send control_response — it's an RPC transient,
+        //     not a persistent message ID.
         if (msg.type === "control_request") {
           const toolName = msg.request?.tool_name;
           if (toolName !== "AskUserQuestion") {
@@ -241,6 +258,80 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
               request_id: msg.request_id,
             });
             return;
+          }
+
+          // AskUserQuestion: inject request_id into buffered assistant.
+          if (state.bufferedAssistant) {
+            const content = state.bufferedAssistant.content;
+            if (Array.isArray(content)) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const updated = content.map((p: any) => {
+                if (
+                  p.type === "tool-call" &&
+                  p.toolName === "AskUserQuestion" &&
+                  (!p.args?.__controlRequestId || p.args.__controlRequestId === "")
+                ) {
+                  return {
+                    ...p,
+                    args: { ...p.args, __controlRequestId: msg.request_id },
+                    argsText: JSON.stringify({
+                      ...p.args,
+                      __controlRequestId: msg.request_id,
+                    }),
+                  };
+                }
+                return p;
+              });
+              state.history.push({ content: updated });
+            }
+            state.bufferedAssistant = null;
+            if (state.resolveNext) {
+              state.resolveNext();
+              state.resolveNext = null;
+            }
+          }
+          return;
+        }
+
+        // ── Buffer assistant messages with AskUserQuestion ─────────
+        //
+        // When an assistant message contains AskUserQuestion tool_use,
+        // hold it until the control_request arrives. The control_request
+        // carries the request_id needed for bridge.respondToControlRequest.
+        // Once injected, a single message is pushed to history — one
+        // bubble, one yield, one card with the correct toolCallId
+        // (= tool_use.id) and __controlRequestId for the bridge.
+        //
+        // If the next message is NOT a control_request (edge case: Claude
+        // running in a mode that doesn't emit control_request), flush the
+        // buffer immediately — card renders without submit button.
+        if (msg.type === "assistant") {
+          const hasAskUserQuestion = msg.message?.content?.some(
+            (b: { type: string; name?: string }) =>
+              b.type === "tool_use" && b.name === "AskUserQuestion",
+          );
+          if (hasAskUserQuestion) {
+            const result = convertMessage(msg);
+            if (result) {
+              console.log(`[claude2-adapter] buffered assistant with AskUserQuestion`);
+              state.bufferedAssistant = result;
+            }
+            return;
+          }
+        }
+
+        // ── Flush stale buffer ─────────────────────────────────────
+        //
+        // If a buffered assistant hasn't been matched by a control_request
+        // yet (unlikely but possible), flush it now so the question text
+        // isn't lost.
+        if (state.bufferedAssistant) {
+          console.log(`[claude2-adapter] flushing stale buffer`);
+          state.history.push(state.bufferedAssistant);
+          state.bufferedAssistant = null;
+          if (state.resolveNext) {
+            state.resolveNext();
+            state.resolveNext = null;
           }
         }
 
@@ -470,64 +561,36 @@ function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | n
     return null;
   }
   if (msg.type === "control_request") {
-    // ── control_request -> tool-call card ──────────────────────────
-    //
-    // Create an assistant-ui tool-call card so AskUserQuestionToolUI
-    // renders the interactive question form. The card's toolCallId is
-    // the control_request's request_id.
-    //
-    // NOTE: this request_id is DIFFERENT from the tool_use.id in the
-    // corresponding assistant message. When Claude echoes the user's
-    // answer as a user-message with tool_result, the tool_use_id there
-    // matches the original tool_use.id — NOT our request_id. Therefore
-    // the stream-echoed tool_result won't auto-match this card. The
-    // AskUserQuestionToolUI handles this with local state (localAnswer).
-    //
-    // __controlRequestId is embedded in args so the tool UI can call
-    // respondToControlRequest / cancelControlRequest with the right id.
-    const input = { ...msg.request.input, __controlRequestId: msg.request_id };
-    return {
-      content: [
-        {
-          type: "tool-call" as const,
-          toolCallId: msg.request_id,
-          toolName: msg.request.tool_name,
-          args: asReadonlyJSON(input),
-          argsText: JSON.stringify(input),
-        },
-      ],
-    };
+    // control_request is handled in onmessage, not here.
+    // For AskUserQuestion: onmessage injects request_id into the buffered
+    // assistant message and pushes a single merged result.
+    // For other tools: onmessage auto-allows.
+    return null;
   }
   if (msg.type === "assistant") {
     const parts = msg.message.content
       .filter(
         (block) => block.type === "text" || block.type === "tool_use" || block.type === "thinking",
       )
-      // ── Dedup: AskUserQuestion arrives via TWO paths in live stream ──
-      //
-      // Path A — assistant message with tool_use block (always emitted).
-      // Path B — control_request (only when --permission-prompt-tool stdio).
-      //
-      // We use Path B as the primary card source for live streaming because
-      // it carries the request_id needed for control_response (the only way
-      // to unblock Claude after --permission-prompt-tool stdio). Filter the
-      // tool_use copy here so we don't render two question cards.
-      //
-      // History path: control_request is NOT persisted to Claude's JSONL
-      // (isChatMessage skips it). The load() function above handles
-      // AskUserQuestion via tool_use from assistant messages directly,
-      // without going through convertMessage(), so this filter does NOT
-      // affect history rendering.
-      .filter((block) => block.type !== "tool_use" || block.name !== "AskUserQuestion")
       .map((block) => {
         if (block.type === "text") return { type: "text" as const, text: block.text };
         if (block.type === "thinking") return { type: "reasoning" as const, text: block.thinking };
+        // tool_use block — toolCallId = tool_use.id matches tool_result.tool_use_id
+        // for server-driven state updates (no optimistic setLocalAnswer).
+        //
+        // AskUserQuestion: __controlRequestId starts as "" placeholder.
+        // The onmessage handler injects the real request_id when the
+        // control_request arrives (before the message is pushed to history).
+        // In loaded history (JSONL), control_request is absent, so the
+        // placeholder stays — but the bridge is unused for history viewing.
+        const isAsk = block.name === "AskUserQuestion";
+        const input = isAsk ? { ...block.input, __controlRequestId: "" } : block.input;
         return {
           type: "tool-call" as const,
           toolCallId: block.id,
           toolName: block.name,
-          args: asReadonlyJSON(block.input),
-          argsText: JSON.stringify(block.input),
+          args: asReadonlyJSON(input),
+          argsText: JSON.stringify(input),
         };
       });
     if (parts.length > 0) {

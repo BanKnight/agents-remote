@@ -215,23 +215,21 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   const resultStr =
     typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
   const hasResult = resultStr.length > 0;
-  const isWaiting = isRunning && !hasResult;
 
-  // ── ID mismatch: control_request.request_id ≠ tool_use.id ──────────
+  // Server-driven state: no optimistic setLocalAnswer.
   //
-  // The card's toolCallId is the control_request's request_id. When Claude
-  // echoes the user's answer back as a user message with tool_result, the
-  // echoed tool_use_id matches the ORIGINAL tool_use.id from the assistant
-  // message — not our request_id. So the stream-echoed tool_result never
-  // auto-matches this card in the run() generator.
+  // Card toolCallId = tool_use.id (from the assistant message). When Claude
+  // echoes the user's answer as a user message with tool_result, the echoed
+  // tool_use_id matches tool_use.id → tool_result auto-matches → result prop
+  // is set → card shows "已回答".
   //
-  // Workaround: set localAnswer immediately on submit/cancel. This gives
-  // instant UI feedback ("已回答" + answer text) without waiting for a
-  // stream update that will never arrive.
-  const [localAnswer, setLocalAnswer] = useState<string | null>(null);
+  // request_id (__controlRequestId) is a transient RPC key:
+  //   - Present: live stream, user can submit via bridge.respondToControlRequest
+  //   - Absent (""): history view, or edge case where control_request didn't fire.
+  //     User can type into the composer.
 
-  // User can answer if: no result from stream yet AND not already submitted.
-  const canAnswer = !hasResult && localAnswer == null;
+  // User can answer while the tool is running AND no tool_result has arrived.
+  const canAnswer = isRunning && !hasResult;
 
   // Track selected option indices and free-text answers per question
   const [selections, setSelections] = useState<Record<number, Set<number>>>({});
@@ -278,33 +276,23 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
 
     if (Object.keys(answers).length === 0) return;
 
-    const answersText = Object.entries(answers)
-      .map(([q, a]) => `${q}: ${a}`)
-      .join("\n");
-
-    // ── Three submit paths (in priority order) ───────────────────────
+    // controlRequestId present: live stream with --permission-prompt-tool stdio.
+    // Send control_response to unblock Claude. The tool_result echo will
+    // match toolCallId (= tool_use.id) and set result → card shows "已回答".
     //
-    // 1. controlRequestId present (live stream, --permission-prompt-tool stdio):
-    //    Send control_response to unblock Claude. This is the ONLY way to
-    //    satisfy the permission prompt — tool_result alone won't work.
+    // No controlRequestId but toolCallId present: live stream without
+    // permission-prompt-tool, or non-permission tool. Send tool_result via stdin.
     //
-    // 2. toolCallId present, no controlRequestId (live stream, tool_use from
-    //    assistant message that wasn't dedup-filtered, or a non-permission
-    //    tool like a regular Bash/Read/Write tool_use):
-    //    Send tool_result via stdin.
-    //
-    // 3. Neither present (history view, or fallback):
-    //    Drop the answer text into the composer input so the user can send
-    //    it as a regular chat message.
+    // Neither present: history view. Drop answer text into composer.
     if (controlRequestId) {
       bridge?.respondToControlRequest(controlRequestId, { ...args, answers });
-      setLocalAnswer(answersText);
     } else if (toolCallId) {
-      bridge?.sendToolResult(toolCallId, answersText);
-      setLocalAnswer(answersText);
+      bridge?.sendToolResult(toolCallId, JSON.stringify(answers));
     } else {
+      const answersText = Object.entries(answers)
+        .map(([q, a]) => `${q}: ${a}`)
+        .join("\n");
       composer.setText(answersText);
-      setLocalAnswer(answersText);
     }
   };
 
@@ -315,7 +303,6 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
     } else if (toolCallId) {
       bridge?.sendToolResult(toolCallId, "Skipped");
     }
-    setLocalAnswer("已跳过");
   };
 
   const hasAnySelection =
@@ -341,15 +328,9 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
           <circle cx="12" cy="17.5" r="0.75" fill="currentColor" />
         </svg>
         <span className="text-xs font-medium text-amber-400 truncate">
-          {localAnswer != null
-            ? "已回答"
-            : isWaiting
-              ? "等待回答…"
-              : hasResult
-                ? "已回答"
-                : "未回答"}
+          {hasResult ? "已回答" : isRunning ? "等待回答…" : "未回答"}
         </span>
-        {isWaiting && localAnswer == null ? (
+        {isRunning && !hasResult ? (
           <span className="ml-auto h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-amber-400/60" />
         ) : null}
       </button>
@@ -446,7 +427,25 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
           </div>
           {canAnswer ? (
             <div className="border-t border-amber-500/20 px-3 py-2 flex items-center gap-2">
-              {toolCallId || controlRequestId ? (
+              {controlRequestId ? (
+                <>
+                  <button
+                    type="button"
+                    className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition bg-amber-500/30 text-amber-200 hover:bg-amber-500/40 disabled:opacity-30 disabled:cursor-default"
+                    disabled={!hasAnySelection}
+                    onClick={handleSubmit}
+                  >
+                    提交回答
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg px-3 py-2 text-xs font-semibold transition border border-slate-500/30 text-slate-400 hover:text-slate-200 hover:border-slate-400/50"
+                    onClick={handleCancel}
+                  >
+                    跳过
+                  </button>
+                </>
+              ) : toolCallId ? (
                 <>
                   <button
                     type="button"
@@ -480,17 +479,17 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
               )}
             </div>
           ) : null}
-          {isWaiting && localAnswer == null ? (
+          {isRunning && !hasResult ? (
             <div className="border-t border-amber-500/20 px-3 py-1.5">
               <p className="text-[0.55rem] text-amber-400/40 text-center">
                 Claude 正在等待你的回答…
               </p>
             </div>
           ) : null}
-          {hasResult || localAnswer != null ? (
+          {hasResult ? (
             <div className="border-t border-amber-500/20 px-3 py-2">
               <p className="text-[0.6rem] text-amber-400/60 mb-1">回答</p>
-              <p className="text-[0.65rem] text-amber-200/70">{localAnswer ?? resultStr}</p>
+              <p className="text-[0.65rem] text-amber-200/70">{resultStr}</p>
             </div>
           ) : null}
         </div>

@@ -337,10 +337,19 @@ describe("chatAdapter.run() drain loop", () => {
 
   test("drains rapid-fire messages arriving while generator is blocked", async () => {
     // Simulate the real AskUserQuestion flow:
-    // 1. Generator yields initial messages (text + question card)
-    // 2. Generator blocks waiting for response
-    // 3. Server sends rapid-fire response (tool_result → assistant → result)
-    // All 3 messages must be yielded — none lost.
+    //
+    // Per the ID model:
+    // - tool_use.id = "toolu-ask-1" → card toolCallId (message persistence)
+    // - request_id = "req-ask-1" → RPC transient (bridge communication)
+    //
+    // Sequence:
+    // 1. Assistant msg with AskUserQuestion tool_use → buffered
+    // 2. control_request arrives → injects request_id, flushes buffer → yield card
+    // 3. User answers via bridge → control_response sent
+    // 4. Server sends rapid-fire response (tool_result echo → assistant → result)
+    //
+    // The tool_result.tool_use_id = "toolu-ask-1" matches toolCallId → card
+    // transitions to "completed" — server-driven, no optimistic update.
     let _clientWs: ReturnType<typeof server> extends { upgrade: any } ? any : any = null;
     let messageCount = 0;
 
@@ -353,20 +362,39 @@ describe("chatAdapter.run() drain loop", () => {
       websocket: {
         open(ws) {
           _clientWs = ws;
-          // Send initial assistant message + control_request (AskUserQuestion card)
-          // text before the question
+          // Step 1: Assistant message with AskUserQuestion tool_use (gets buffered)
           ws.send(
             JSON.stringify({
               type: "assistant",
               message: {
                 id: "msg-init",
                 role: "assistant",
-                content: [{ type: "text", text: "Let me ask you something." }],
+                content: [
+                  { type: "text", text: "Let me ask you something." },
+                  {
+                    type: "tool_use",
+                    id: "toolu-ask-1",
+                    name: "AskUserQuestion",
+                    input: {
+                      questions: [
+                        {
+                          question: "What is your favorite color?",
+                          header: "Color",
+                          options: [
+                            { label: "Red", description: "The color of passion" },
+                            { label: "Blue", description: "The color of calm" },
+                          ],
+                          multiSelect: false,
+                        },
+                      ],
+                    },
+                  },
+                ],
               },
             } satisfies SessionStreamServerMessage),
           );
 
-          // control_request that creates the AskUserQuestion card
+          // Step 2: control_request — flushes buffer with real __controlRequestId
           ws.send(
             JSON.stringify({
               type: "control_request",
@@ -394,13 +422,10 @@ describe("chatAdapter.run() drain loop", () => {
         },
         message(ws, rawMsg) {
           const msg = JSON.parse(rawMsg as string);
-          // When we receive a control_response or user message, act like Claude
-          // and send a rapid-fire response
           if (msg.type === "control_response" || msg.type === "user") {
             messageCount++;
-            // Simulate Claude's response after receiving the answer:
-            // Send 3 messages in rapid succession.
-            // These often arrive before the generator sets resolveNext again.
+            // Step 4: Rapid-fire response from Claude after receiving the answer.
+            // tool_use_id = "toolu-ask-1" matches the card's toolCallId.
             ws.send(
               JSON.stringify({
                 type: "user",
@@ -436,7 +461,6 @@ describe("chatAdapter.run() drain loop", () => {
     try {
       const { chatAdapter, bridge } = createClaude2Adapters("test", "test-session");
 
-      // Start the generator (simulates user sending a message)
       const ac = new AbortController();
       const gen = chatAdapter.run({
         messages: [{ role: "user", content: [{ type: "text", text: "ask me something" }] }],
@@ -444,55 +468,68 @@ describe("chatAdapter.run() drain loop", () => {
       } as Parameters<typeof chatAdapter.run>[0]);
 
       const collected: ChatModelRunResult[] = [];
+      let didRespond = false;
 
-      // Step 1: consume initial messages (text + AskUserQuestion card)
-      // The generator should yield the assistant text and the question card
       for await (const r of gen) {
         collected.push(r);
 
-        // After the question card is yielded, simulate the user submitting
-        // the answer via the bridge (like clicking "提交回答")
-        if (collected.length === 2) {
-          // Simulate user answering via the card's submit button
-          // (no artificial delay — this fires from a React click handler)
-          bridge.respondToControlRequest("req-ask-1", {
-            questions: [
-              {
-                question: "What is your favorite color?",
-                header: "Color",
-                options: [
-                  { label: "Red", description: "The color of passion" },
-                  { label: "Blue", description: "The color of calm" },
-                ],
-                multiSelect: false,
-              },
-            ],
-            __controlRequestId: "req-ask-1",
-            answers: { "What is your favorite color?": "Red" },
-          });
-
-          // Continue consuming — should now receive:
-          //   3. tool_result echo (tool-result content)
-          //   4. assistant text "Got it! You chose Red."
-          //   5. result → generator returns
+        // After the question card (single merged yield from buffer + control_request)
+        // appears, simulate user submitting the answer. Fire only ONCE.
+        if (!didRespond) {
+          const allParts = collected.flatMap((c) =>
+            Array.isArray(c.content) ? c.content : [],
+          ) as Array<{ type: string; toolName?: string; args?: Record<string, unknown> }>;
+          const card = allParts.find(
+            (p) => p.type === "tool-call" && p.toolName === "AskUserQuestion",
+          );
+          if (card?.args?.__controlRequestId === "req-ask-1") {
+            didRespond = true;
+            bridge.respondToControlRequest("req-ask-1", {
+              questions: [
+                {
+                  question: "What is your favorite color?",
+                  header: "Color",
+                  options: [
+                    { label: "Red", description: "The color of passion" },
+                    { label: "Blue", description: "The color of calm" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+              __controlRequestId: "req-ask-1",
+              answers: { "What is your favorite color?": "Red" },
+            });
+          }
         }
       }
 
-      // Verify both messages reached the server:
-      //   1. initial user msg from run()
-      //   2. control_response from bridge.respondToControlRequest()
+      // Server should receive: 1 (initial user) + 1 (control_response) = 2
       expect(messageCount).toBe(2);
 
-      // Should have yielded at least 2 initial + 3 response = 5 items
-      expect(collected.length).toBeGreaterThanOrEqual(5);
+      // Should have yielded at least the buffered card + 3 response messages = 4+
+      expect(collected.length).toBeGreaterThanOrEqual(4);
 
-      // The assistant text from the response MUST be present
       const allTexts = collected
         .flatMap((r) => (Array.isArray(r.content) ? r.content : []))
         .filter((p: { type?: string }) => p.type === "text")
         .map((p: { type?: string; text?: string }) => (p as { text: string }).text);
       expect(allTexts).toContain("Let me ask you something.");
       expect(allTexts).toContain("Got it! You chose Red.");
+
+      // Tool-call card should have toolCallId = tool_use.id (NOT request_id)
+      const allParts = collected.flatMap((c) =>
+        Array.isArray(c.content) ? c.content : [],
+      ) as Array<{
+        type: string;
+        toolName?: string;
+        args?: Record<string, unknown>;
+        toolCallId?: string;
+      }>;
+      const toolCallCard = allParts.find(
+        (p) => p.type === "tool-call" && p.toolName === "AskUserQuestion",
+      );
+      expect(toolCallCard).toBeDefined();
+      expect(toolCallCard?.toolCallId).toBe("toolu-ask-1");
 
       // Last item should carry complete status
       expect(collected.at(-1)?.status?.type).toBe("complete");
