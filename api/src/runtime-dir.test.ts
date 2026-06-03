@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { StartupError } from "./settings";
 
@@ -17,8 +17,15 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-test("resolveRuntimePaths uses default run dir", () => {
-  expect(resolveRuntimePaths({ env: {} })).toEqual({ runDir: "/run/agents-remote" });
+test("resolveRuntimePaths falls back to ~/.local/share when XDG_RUNTIME_DIR is unset", () => {
+  const expected = join(homedir(), ".local/share/agents-remote/run");
+  expect(resolveRuntimePaths({ env: {} })).toEqual({ runDir: expected });
+});
+
+test("resolveRuntimePaths uses XDG_RUNTIME_DIR when set", () => {
+  expect(resolveRuntimePaths({ env: { XDG_RUNTIME_DIR: "/run/user/1000" } })).toEqual({
+    runDir: "/run/user/1000/agents-remote",
+  });
 });
 
 test("resolveRuntimePaths uses AGENTS_REMOTE_RUN_DIR override", () => {
