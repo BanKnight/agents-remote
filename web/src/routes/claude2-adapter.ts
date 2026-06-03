@@ -280,11 +280,29 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
   const sendToSocket = (data: unknown) => {
     const { socket } = getConnection();
     const raw = JSON.stringify(data);
-    console.log(`[claude2-adapter] ws send: ${raw.slice(0, 200)}`);
+    console.log(
+      `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
+    );
     if (socket.readyState === WebSocket.OPEN) {
-      socket.send(raw);
+      try {
+        socket.send(raw);
+      } catch (err) {
+        console.error("[claude2-adapter] ws send error", err);
+      }
+    } else if (socket.readyState === WebSocket.CONNECTING) {
+      socket.addEventListener(
+        "open",
+        () => {
+          try {
+            socket.send(raw);
+          } catch (err) {
+            console.error("[claude2-adapter] ws deferred send error", err);
+          }
+        },
+        { once: true },
+      );
     } else {
-      socket.addEventListener("open", () => socket.send(raw), { once: true });
+      console.error(`[claude2-adapter] ws not open, readyState=${socket.readyState}, cannot send`);
     }
   };
 
@@ -294,6 +312,9 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
     respondToControlRequest: (requestId, updatedInput) => {
       const { __controlRequestId: _, ...rest } = updatedInput as Record<string, unknown>;
       const answers = rest.answers as Record<string, string> | undefined;
+      console.log(
+        `[claude2-adapter] bridge.respondToControlRequest requestId=${requestId} hasAnswers=${!!answers}`,
+      );
       sendToSocket({
         type: "control_response",
         request_id: requestId,
@@ -302,6 +323,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
     },
 
     cancelControlRequest: (requestId) => {
+      console.log(`[claude2-adapter] bridge.cancelControlRequest requestId=${requestId}`);
       sendToSocket({
         type: "control_response",
         request_id: requestId,
