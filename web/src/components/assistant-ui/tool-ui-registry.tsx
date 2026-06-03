@@ -253,7 +253,8 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   const handleSubmit = () => {
     if (!canAnswer) return;
 
-    // Build answers in Claude Code format: Record<questionText, answerString>
+    // Claude SDK expects answers as Record<questionText, answerString>.
+    // Multi-select answers are comma-separated strings per Claude CLI.
     const answers: Record<string, string> = {};
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];

@@ -10,7 +10,8 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   const [expanded, setExpanded] = useState(false);
   const isRunning = status.type === "running";
   const hasArgs = argsText.length > 0 && argsText !== "{}";
-  const resultStr = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+  const resultStr =
+    typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
   const hasResult = resultStr.length > 0 && !isRunning;
 
   return (

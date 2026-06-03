@@ -145,6 +145,9 @@ export class Claude2StreamController {
     const data = sessionData(socket);
 
     if (!data) {
+      console.log(
+        `[claude2-stream] message dropped — no session data, kind=${(socket.data as Record<string, unknown> | null)?.kind ?? "none"} raw=${raw.toString().slice(0, 200)}`,
+      );
       return;
     }
 

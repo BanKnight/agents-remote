@@ -405,15 +405,21 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
   // AskUserQuestionToolUI consumes it with useContext to send answers back.
   const bridge: Claude2Bridge = {
     respondToControlRequest: (requestId, updatedInput) => {
-      const { __controlRequestId: _, ...rest } = updatedInput as Record<string, unknown>;
-      const answers = rest.answers as Record<string, string> | undefined;
+      const {
+        __controlRequestId: _,
+        answers,
+        ...restArgs
+      } = updatedInput as Record<string, unknown>;
       console.log(
-        `[claude2-adapter] bridge.respondToControlRequest requestId=${requestId} hasAnswers=${!!answers}`,
+        `[claude2-adapter] bridge.respondToControlRequest requestId=${requestId} hasAnswers=${!!answers} hasQuestions=${!!restArgs.questions}`,
       );
-      // Claude SDK format: answers go directly into updatedInput,
-      // NOT nested under {answers: {...}}. Claude shallow-merges
-      // updatedInput into the tool's original input. If we nest answers,
-      // the AskUserQuestion handler loses the `questions` array.
+      // Claude SDK replaces (not merges) the tool input with updatedInput.
+      // The AskUserQuestion handler destructures `answers` from the input:
+      //   const { answers, questions } = input;
+      // So updatedInput must include BOTH `questions` (preserved from original
+      // tool_use input) AND `answers` as a nested key (not spread to root).
+      //
+      // Format: { questions: [...], answers: { "question text": "answer" } }
       sendToSocket({
         type: "control_response",
         response: {
@@ -421,7 +427,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
           request_id: requestId,
           response: {
             behavior: "allow",
-            updatedInput: (answers ?? {}) as Record<string, unknown>,
+            updatedInput: { ...restArgs, answers } as Record<string, unknown>,
           },
         },
       });
