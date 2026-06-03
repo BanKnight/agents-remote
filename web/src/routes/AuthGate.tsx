@@ -23,6 +23,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     queryKey: ["auth", "me"],
     queryFn: getAuthStatus,
     retry: false,
+    staleTime: Infinity,
   });
   const loginMutation = useMutation({
     mutationFn: login,
@@ -56,6 +57,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
+
+  useEffect(() => {
+    const handleUnauthenticated = () => {
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    };
+    window.addEventListener("auth:unauthenticated", handleUnauthenticated);
+    return () => window.removeEventListener("auth:unauthenticated", handleUnauthenticated);
+  }, [queryClient]);
 
   const handleInstall = async () => {
     if (!installPrompt) {

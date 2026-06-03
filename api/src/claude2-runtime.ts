@@ -188,12 +188,13 @@ export class Claude2Runtime implements RuntimeResources {
 
   private spawnClaude(projectPath: string, claudeSessionId?: string): Claude2Process {
     const args = [
-      "--print",
       "--output-format",
       "stream-json",
       "--input-format",
       "stream-json",
       "--verbose",
+      "--permission-prompt-tool",
+      "stdio",
     ];
     if (claudeSessionId) {
       args.push("--resume", claudeSessionId);

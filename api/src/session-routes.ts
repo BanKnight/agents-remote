@@ -1,4 +1,8 @@
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
+  AgentSessionMessagesResponse,
   CloseAgentSessionResponse,
   CloseTerminalSessionResponse,
   CreateAgentSessionRequest,
@@ -10,6 +14,7 @@ import type {
   AgentSessionDetailResponse,
   TerminalSessionDetailResponse,
 } from "@agents-remote/shared";
+import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
@@ -85,6 +90,24 @@ const handleAgentSessionRoute = async (
 
       throw error;
     }
+  }
+
+  // /messages must be checked before the generic GET to avoid being captured
+  // by the session-detail handler below.
+  if (sessionId && request.method === "GET" && requestUrlEndsWith(request, "/messages")) {
+    const metadata = await registry.getAgentMetadata(project.name, sessionId);
+
+    if (!metadata) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+
+    if (metadata.provider !== "claude2") {
+      return jsonError("SESSION_STREAM_MISMATCH", "Not a Claude2 session", 400);
+    }
+
+    const messages = await loadClaude2Messages(metadata.projectPath, metadata.claudeSessionId);
+    const response: AgentSessionMessagesResponse = { sessionId: metadata.id, messages };
+    return Response.json(response);
   }
 
   if (sessionId && request.method === "GET") {
@@ -189,6 +212,11 @@ const matchSessionRoute = (pathname: string) => {
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }
 
+  if (segments.length === 6 && segments[5] === "messages") {
+    const sessionId = decodePathSegment(segments[4]);
+    return sessionId ? { projectName, resource, sessionId } : undefined;
+  }
+
   return undefined;
 };
 
@@ -219,6 +247,53 @@ const normalizeDisplayName = (displayName: string | undefined) => {
 
 const requestUrlEndsWith = (request: Request, suffix: string) =>
   new URL(request.url).pathname.endsWith(suffix);
+
+const isChatMessage = (msg: Record<string, unknown>): boolean => {
+  const type = msg.type as string | undefined;
+  if (!type) return false;
+  // Skip system-injected meta messages (skill loading, context injection, etc.)
+  // that use type "user" but are not actual user input.
+  if (msg.isMeta === true) return false;
+  return (
+    type === "user" ||
+    type === "assistant" ||
+    type === "result" ||
+    (type === "system" && msg.subtype === "init")
+  );
+};
+
+const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string => {
+  const projectDir = projectPath.replace(/\//g, "-");
+  return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
+};
+
+const loadClaude2Messages = async (
+  projectPath: string,
+  claudeSessionId: string | undefined,
+): Promise<SessionStreamServerMessage[]> => {
+  if (!claudeSessionId) return [];
+
+  try {
+    const content = await readFile(claudeJsonlPath(projectPath, claudeSessionId), "utf-8");
+    const lines = content.trim().split("\n");
+    const messages: SessionStreamServerMessage[] = [];
+
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line) as Record<string, unknown>;
+        if (isChatMessage(msg)) {
+          messages.push(msg as unknown as SessionStreamServerMessage);
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+
+    return messages;
+  } catch {
+    return [];
+  }
+};
 
 const projectPathErrorResponse = (error: ProjectPathError) => {
   if (error.code === "PROJECT_NOT_FOUND") {

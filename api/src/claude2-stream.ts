@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { Claude2StreamClientMessage, SessionStreamServerMessage } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
@@ -88,49 +85,8 @@ export const handleClaude2StreamUpgrade = async (
   }
 };
 
-const MAX_HISTORY_MESSAGES = 500;
-
-type ChatMessageFilter = (msg: Record<string, unknown>) => boolean;
-
-const isChatMessage: ChatMessageFilter = (msg) => {
-  const type = msg.type as string | undefined;
-  if (!type) return false;
-  if (type === "user" || type === "assistant" || type === "result") return true;
-  if (type === "system" && msg.subtype === "init") return true;
-  return false;
-};
-
-function claudeJsonlPath(projectPath: string, claudeSessionId: string): string {
-  const projectDir = projectPath.replace(/\//g, "-");
-  return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
-}
-
-async function loadHistoryFromJsonl(filePath: string): Promise<SessionStreamServerMessage[]> {
-  try {
-    const content = await readFile(filePath, "utf-8");
-    const lines = content.trim().split("\n");
-    const messages: SessionStreamServerMessage[] = [];
-
-    for (const line of lines) {
-      try {
-        const msg = JSON.parse(line) as Record<string, unknown>;
-        if (isChatMessage(msg)) {
-          messages.push(msg as unknown as SessionStreamServerMessage);
-        }
-      } catch {
-        // skip malformed lines
-      }
-    }
-
-    return messages;
-  } catch {
-    return [];
-  }
-}
-
 export class Claude2StreamController {
   private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
-  private readonly history = new Map<string, SessionStreamServerMessage[]>();
 
   constructor(
     private readonly claude2Runtime: Claude2Runtime,
@@ -162,6 +118,9 @@ export class Claude2StreamController {
       metadata?.claudeSessionId,
     );
 
+    // History is loaded separately via REST endpoint (GET /agent-sessions/:id/messages).
+    // WebSocket is only for live streaming — no history replay here.
+
     send(socket, {
       type: "connected",
       sessionId: data.sessionId,
@@ -169,27 +128,6 @@ export class Claude2StreamController {
       status: data.status,
     });
     console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
-
-    // Load and replay history from Claude's JSONL file (persistent)
-    // Only load from disk on first connection (buffer empty). On reconnect,
-    // just replay from in-memory buffer to avoid re-yielding old messages.
-    let sessionHistory = this.history.get(data.sessionId);
-    if (metadata?.projectPath && metadata?.claudeSessionId && !sessionHistory) {
-      const jsonlPath = claudeJsonlPath(metadata.projectPath, metadata.claudeSessionId);
-      console.log(`[claude2-stream] loading history from ${jsonlPath}`);
-      const diskHistory = await loadHistoryFromJsonl(jsonlPath);
-      console.log(`[claude2-stream] loaded ${diskHistory.length} messages from disk`);
-      sessionHistory = diskHistory;
-      this.history.set(data.sessionId, sessionHistory);
-    }
-
-    if (sessionHistory) {
-      const replay = sessionHistory.filter((m) => m.type !== "result" && m.type !== "ended");
-      console.log(`[claude2-stream] replaying ${replay.length} history messages`);
-      for (const msg of replay) {
-        send(socket, msg);
-      }
-    }
 
     try {
       await this.startStream(socket, data);
@@ -223,8 +161,8 @@ export class Claude2StreamController {
     }
 
     try {
-      if (parsed.type === "user") {
-        console.log(`[claude2-stream] message user: ${data.tmuxSessionName}`);
+      if (parsed.type === "user" || parsed.type === "control_response") {
+        console.log(`[claude2-stream] message ${parsed.type}: ${data.tmuxSessionName}`);
         await this.runtime.write?.(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
       }
     } catch {
@@ -246,12 +184,6 @@ export class Claude2StreamController {
 
   private async startStream(socket: StreamSocket, data: NonNullable<Claude2WebSocketData>) {
     if (this.runtime.stream) {
-      let sessionHistory = this.history.get(data.sessionId);
-      if (!sessionHistory) {
-        sessionHistory = [];
-        this.history.set(data.sessionId, sessionHistory);
-      }
-
       const stream = await this.runtime.stream(
         data.tmuxSessionName,
         (line: string) => {
@@ -260,10 +192,18 @@ export class Claude2StreamController {
             console.log(
               `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
             );
-            sessionHistory!.push(parsed);
-            // Keep memory buffer capped
-            if (sessionHistory!.length > MAX_HISTORY_MESSAGES) {
-              sessionHistory!.splice(0, sessionHistory!.length - MAX_HISTORY_MESSAGES);
+            // Capture claudeSessionId from system.init for history persistence
+            if (
+              parsed.type === "system" &&
+              "subtype" in parsed &&
+              parsed.subtype === "init" &&
+              "session_id" in parsed
+            ) {
+              const captureId = (parsed as { session_id: string }).session_id;
+              if (captureId) {
+                console.log(`[claude2-stream] captured claudeSessionId=${captureId}`);
+                void this.sessionRegistry.setClaudeSessionId(data.sessionId, captureId);
+              }
             }
             send(socket, parsed);
             if (parsed.type === "result") {

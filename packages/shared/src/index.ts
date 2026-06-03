@@ -208,6 +208,11 @@ export type CloseAgentSessionResponse = {
   session: AgentSession;
 };
 
+export type AgentSessionMessagesResponse = {
+  sessionId: string;
+  messages: SessionStreamServerMessage[];
+};
+
 export type ListTerminalSessionsResponse = {
   sessions: TerminalSession[];
 };
@@ -276,6 +281,36 @@ export type Claude2Result = {
   result?: string;
 };
 
+// Claude CLI --permission-prompt-tool stdio routes permission prompts
+// (Bash, Write, AskUserQuestion, etc.) as control_request on stdout.
+// The tool_name and input are nested under "request", not at top level.
+//
+// Actual format from Claude CLI v2.1.160+:
+//   {"type":"control_request","request_id":"uuid",
+//    "request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion",
+//               "display_name":"AskUserQuestion","input":{"questions":[...]}}}
+//
+// Answer with control_response on stdin:
+//   {"type":"control_response","request_id":"uuid"}
+//   {"type":"control_response","request_id":"uuid","answers":{"q":"a"}}
+export type Claude2ControlRequest = {
+  type: "control_request";
+  request_id: string;
+  request: {
+    subtype: string;
+    tool_name: string;
+    display_name: string;
+    input: Record<string, unknown>;
+  };
+};
+
+export type Claude2ControlResponse = {
+  type: "control_response";
+  request_id: string;
+  answers?: Record<string, string>;
+  response?: string;
+};
+
 export type SessionStreamClientMessage =
   | {
       type: "input";
@@ -291,13 +326,15 @@ export type SessionStreamClientMessage =
     }
   | Claude2StreamClientMessage;
 
-export type Claude2StreamClientMessage = {
-  type: "user";
-  message: {
-    role: "user";
-    content: Array<{ type: "text"; text: string }>;
-  };
-};
+export type Claude2StreamClientMessage =
+  | {
+      type: "user";
+      message: {
+        role: "user";
+        content: Array<{ type: "text"; text: string }>;
+      };
+    }
+  | Claude2ControlResponse;
 
 export type SessionStreamServerMessage =
   | {
@@ -329,7 +366,8 @@ export type SessionStreamServerMessage =
   | Claude2SystemInit
   | Claude2AssistantMessage
   | Claude2UserMessage
-  | Claude2Result;
+  | Claude2Result
+  | Claude2ControlRequest;
 
 export type HealthResponse = {
   ok: true;

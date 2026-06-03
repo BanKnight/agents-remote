@@ -1,0 +1,545 @@
+import { useState, useContext } from "react";
+import { useComposerRuntime, type ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { Claude2BridgeContext } from "../../routes/claude2-adapter";
+
+// Icon paths are inline SVG strings for simplicitly
+const Icons = {
+  terminal: '<path d="M4 17L2 15V5l2-2h1l-2 2v10l2 2H4zM8 17h8v-1H8v1z" fill="currentColor"/>',
+  file: '<path d="M4 2h6l4 4v10a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2zm6 1.4V6h2.6L10 3.4zM3 4v12a1 1 0 001 1h8a1 1 0 001-1V7h-4V3H4a1 1 0 00-1 1z" fill="currentColor"/>',
+  edit: '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>',
+  search:
+    '<circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20 20l-3.3-3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  puzzle:
+    '<path d="M4 8h2V6a2 2 0 012-2h1V2h2v2h1a2 2 0 012 2v2h2v2h-2v1a2 2 0 01-2 2h-1v2H9v-2H8a2 2 0 01-2-2v-1H4V8zm3 1H5v4h2v1a1 1 0 001 1h1v2h2v-2h1a1 1 0 001-1v-1h2V9h-2V8a1 1 0 00-1-1h-1V5H9v2H8a1 1 0 00-1 1v1z" fill="currentColor"/>',
+  skill:
+    '<path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M5 15l1 3.5L9.5 19.5 6.5 21 5 24l-1.5-3L0 19.5 3.5 18 5 15z" fill="currentColor" opacity="0.5"/>',
+  webSearch:
+    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 12h17M12 3.5a15 15 0 010 17M12 3.5a15 15 0 000 17" stroke="currentColor" stroke-width="1.5"/>',
+  task: '<path d="M4 5h3l1.5 2h7a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2zm0 1a1 1 0 00-1 1v8a1 1 0 001 1h11a1 1 0 001-1V9a1 1 0 00-1-1H8l-1.5-2H4z" fill="currentColor"/>',
+  code: '<path d="M8 3L3 9l5 6M16 3l5 6-5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  globe:
+    '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20" stroke="currentColor" stroke-width="1.5"/>',
+  read: '<path d="M2 3h6a3 3 0 013 3v12a3 3 0 00-3-3H2V3zm14 0h-6a3 3 0 00-3 3v12a3 3 0 013-3h6V3z" fill="currentColor"/>',
+  write:
+    '<path d="M16 2l4 4-11 11H5v-4L16 2zm0 1.4L7.4 12H6v1.4L14.6 4.8 16 3.4zM3 17v3h3L17.4 8.6 14 5.2 3 17z" fill="currentColor"/>',
+  question:
+    '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17.5" r="0.75" fill="currentColor"/>',
+};
+
+function ToolIcon({ name }: { name: string }) {
+  const d = Icons[name as keyof typeof Icons] ?? Icons.task;
+  return (
+    <svg className="h-3.5 w-3.5 shrink-0 text-cyan-400" viewBox="0 0 24 24" aria-hidden="true">
+      <g dangerouslySetInnerHTML={{ __html: d }} />
+    </svg>
+  );
+}
+
+function makeToolRenderer(config: {
+  icon: string;
+  label?: (args: Record<string, unknown>) => string;
+}): ToolCallMessagePartComponent {
+  const { icon, label } = config;
+  return ({ toolName, argsText, result, status }) => {
+    const [expanded, setExpanded] = useState(false);
+    const isRunning = status.type === "running";
+    const resultStr =
+      typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
+    const hasResult = resultStr.length > 0 && !isRunning;
+    const args = safeParseArgs(argsText);
+    const displayLabel = label ? label(args) : toolName;
+    const hasArgs = argsText.length > 0 && argsText !== "{}";
+
+    return (
+      <div className="my-2 rounded-lg border border-slate-600/50 bg-slate-900/60 overflow-hidden">
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-800/50 transition"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span className="text-slate-500 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
+          <ToolIcon name={icon} />
+          <span className="text-xs font-medium text-cyan-400 truncate">{displayLabel}</span>
+          {isRunning ? (
+            <span className="ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-cyan-400/40 border-t-cyan-400" />
+          ) : null}
+          {hasResult && !expanded ? (
+            <span className="text-[0.6rem] text-slate-500 truncate ml-auto">
+              {resultStr.length > 1024
+                ? `${(resultStr.length / 1024).toFixed(1)}k`
+                : `${resultStr.length} chars`}
+            </span>
+          ) : null}
+        </button>
+        {expanded && (
+          <>
+            {hasArgs ? (
+              <div className="border-t border-slate-700/50 px-3 py-2">
+                {Object.keys(args).length > 0 ? (
+                  <div className="space-y-1.5">
+                    {Object.entries(args).map(([key, value]) => (
+                      <div key={key} className="flex gap-2 text-xs">
+                        <span className="shrink-0 font-medium text-slate-400">{key}:</span>
+                        <span className="text-slate-300 break-all">{formatArg(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <pre className="text-[0.6rem] text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
+                    {argsText}
+                  </pre>
+                )}
+              </div>
+            ) : null}
+            {hasResult ? (
+              <div className="border-t border-slate-700/50 px-3 py-2 max-h-48 overflow-y-auto">
+                <pre className="text-[0.6rem] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+                  {resultStr}
+                </pre>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    );
+  };
+}
+
+// ── Tool-specific renderers ──────────────────────────────────────────
+
+export const BashToolUI = makeToolRenderer({
+  icon: "terminal",
+  label: (args) => {
+    const cmd = typeof args.command === "string" ? args.command : "";
+    return cmd ? `$ ${cmd.slice(0, 80)}` : "Bash";
+  },
+});
+
+export const ReadToolUI = makeToolRenderer({
+  icon: "read",
+  label: (args) => {
+    const path = typeof args.file_path === "string" ? args.file_path : "";
+    return path ? `Read ${path.split("/").pop() ?? path}` : "Read";
+  },
+});
+
+export const WriteToolUI = makeToolRenderer({
+  icon: "write",
+  label: (args) => {
+    const path = typeof args.file_path === "string" ? args.file_path : "";
+    return path ? `Write ${path.split("/").pop() ?? path}` : "Write";
+  },
+});
+
+export const EditToolUI = makeToolRenderer({
+  icon: "edit",
+  label: (args) => {
+    const path = typeof args.file_path === "string" ? args.file_path : "";
+    return path ? `Edit ${path.split("/").pop() ?? path}` : "Edit";
+  },
+});
+
+export const SkillToolUI = makeToolRenderer({
+  icon: "skill",
+  label: (args) => {
+    const name = typeof args.skill === "string" ? args.skill : "";
+    return name ? `Skill: ${name}` : "Skill";
+  },
+});
+
+export const TaskToolUI = makeToolRenderer({
+  icon: "task",
+  label: (args) => {
+    const desc =
+      typeof args.description === "string"
+        ? args.description
+        : typeof args.prompt === "string"
+          ? args.prompt
+          : "";
+    return desc ? desc.slice(0, 80) : "Task";
+  },
+});
+
+export const WebSearchToolUI = makeToolRenderer({
+  icon: "webSearch",
+  label: (args) => {
+    const query = typeof args.query === "string" ? args.query : "";
+    return query ? `Search: ${query.slice(0, 60)}` : "WebSearch";
+  },
+});
+
+export const GlobToolUI = makeToolRenderer({
+  icon: "search",
+  label: (args) => {
+    const pattern = typeof args.pattern === "string" ? args.pattern : "";
+    return pattern ? `Glob: ${pattern}` : "Glob";
+  },
+});
+
+export const GrepToolUI = makeToolRenderer({
+  icon: "search",
+  label: (args) => {
+    const pattern = typeof args.pattern === "string" ? args.pattern : "";
+    return pattern ? `Grep: ${pattern.slice(0, 60)}` : "Grep";
+  },
+});
+
+export const NotebookEditToolUI = makeToolRenderer({
+  icon: "edit",
+  label: () => "Notebook Edit",
+});
+
+type Question = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options?: Array<{ label: string; description?: string }>;
+};
+
+export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
+  toolName: _toolName,
+  argsText,
+  result,
+  status,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ...rest
+}) => {
+  const bridge = useContext(Claude2BridgeContext);
+  const [expanded, setExpanded] = useState(true);
+  const composer = useComposerRuntime();
+  const isRunning = status.type === "running";
+  const toolCallId = (rest as Record<string, unknown>).toolCallId as string | undefined;
+  const args = safeParseArgs(argsText);
+  const questions = (args.questions as Question[]) ?? [];
+  const controlRequestId = (args.__controlRequestId as string) ?? "";
+  const resultStr =
+    typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
+  const hasResult = resultStr.length > 0;
+  const isWaiting = isRunning && !hasResult;
+
+  // ── ID mismatch: control_request.request_id ≠ tool_use.id ──────────
+  //
+  // The card's toolCallId is the control_request's request_id. When Claude
+  // echoes the user's answer back as a user message with tool_result, the
+  // echoed tool_use_id matches the ORIGINAL tool_use.id from the assistant
+  // message — not our request_id. So the stream-echoed tool_result never
+  // auto-matches this card in the run() generator.
+  //
+  // Workaround: set localAnswer immediately on submit/cancel. This gives
+  // instant UI feedback ("已回答" + answer text) without waiting for a
+  // stream update that will never arrive.
+  const [localAnswer, setLocalAnswer] = useState<string | null>(null);
+
+  // User can answer if: no result from stream yet AND not already submitted.
+  const canAnswer = !hasResult && localAnswer == null;
+
+  // Track selected option indices and free-text answers per question
+  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
+  const [freeText, setFreeText] = useState<Record<number, string>>({});
+
+  const toggleOption = (qIdx: number, optIdx: number, multi: boolean) => {
+    if (!canAnswer) return;
+    setSelections((prev) => {
+      const current = new Set(prev[qIdx] ?? []);
+      if (multi) {
+        if (current.has(optIdx)) current.delete(optIdx);
+        else current.add(optIdx);
+      } else {
+        current.clear();
+        current.add(optIdx);
+      }
+      return { ...prev, [qIdx]: current };
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!canAnswer) return;
+
+    // Build answers in Claude Code format: Record<questionText, answerString>
+    const answers: Record<string, string> = {};
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const hasOptions = q.options && q.options.length > 0;
+
+      if (hasOptions) {
+        const sel = selections[i];
+        if (!sel || sel.size === 0) continue;
+        const selectedLabels = Array.from(sel)
+          .map((idx) => q.options?.[idx]?.label ?? "")
+          .filter(Boolean);
+        if (selectedLabels.length > 0) {
+          answers[q.question] = selectedLabels.join(", ");
+        }
+      } else {
+        const text = freeText[i]?.trim();
+        if (text) answers[q.question] = text;
+      }
+    }
+
+    if (Object.keys(answers).length === 0) return;
+
+    const answersText = Object.entries(answers)
+      .map(([q, a]) => `${q}: ${a}`)
+      .join("\n");
+
+    // ── Three submit paths (in priority order) ───────────────────────
+    //
+    // 1. controlRequestId present (live stream, --permission-prompt-tool stdio):
+    //    Send control_response to unblock Claude. This is the ONLY way to
+    //    satisfy the permission prompt — tool_result alone won't work.
+    //
+    // 2. toolCallId present, no controlRequestId (live stream, tool_use from
+    //    assistant message that wasn't dedup-filtered, or a non-permission
+    //    tool like a regular Bash/Read/Write tool_use):
+    //    Send tool_result via stdin.
+    //
+    // 3. Neither present (history view, or fallback):
+    //    Drop the answer text into the composer input so the user can send
+    //    it as a regular chat message.
+    if (controlRequestId) {
+      bridge?.respondToControlRequest(controlRequestId, { ...args, answers });
+      setLocalAnswer(answersText);
+    } else if (toolCallId) {
+      bridge?.sendToolResult(toolCallId, answersText);
+      setLocalAnswer(answersText);
+    } else {
+      composer.setText(answersText);
+      setLocalAnswer(answersText);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!canAnswer) return;
+    if (controlRequestId) {
+      bridge?.cancelControlRequest(controlRequestId);
+    } else if (toolCallId) {
+      bridge?.sendToolResult(toolCallId, "Skipped");
+    }
+    setLocalAnswer("已跳过");
+  };
+
+  const hasAnySelection =
+    Object.values(selections).some((s) => s.size > 0) ||
+    Object.values(freeText).some((t) => t.trim().length > 0);
+
+  return (
+    <div className="my-2 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-amber-500/10 transition"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-amber-400/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
+        <svg className="h-3.5 w-3.5 shrink-0 text-amber-400" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+          <circle cx="12" cy="17.5" r="0.75" fill="currentColor" />
+        </svg>
+        <span className="text-xs font-medium text-amber-400 truncate">
+          {localAnswer != null
+            ? "已回答"
+            : isWaiting
+              ? "等待回答…"
+              : hasResult
+                ? "已回答"
+                : "未回答"}
+        </span>
+        {isWaiting && localAnswer == null ? (
+          <span className="ml-auto h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-amber-400/60" />
+        ) : null}
+      </button>
+      {expanded && (
+        <div className="border-t border-amber-500/20">
+          <div className="px-3 py-2 space-y-3 max-h-72 overflow-y-auto">
+            {questions.map((q, i) => {
+              const multi = q.multiSelect === true;
+              const selected = selections[i] ?? new Set<number>();
+              const hasOptions = q.options && q.options.length > 0;
+              return (
+                <div
+                  key={i}
+                  className="rounded-lg bg-slate-900/40 border border-slate-700/30 p-2.5"
+                >
+                  {q.header ? (
+                    <p className="text-[0.6rem] font-semibold text-amber-300/80 uppercase tracking-wide mb-0.5">
+                      {q.header}
+                    </p>
+                  ) : null}
+                  <p className="text-[0.7rem] text-slate-200 leading-relaxed mb-2">
+                    {q.question}
+                    {multi ? (
+                      <span className="text-[0.55rem] text-amber-400/60 ml-1">(多选)</span>
+                    ) : null}
+                  </p>
+                  {hasOptions ? (
+                    <div className="space-y-1">
+                      {q.options!.map((opt, j) => {
+                        const isSelected = selected.has(j);
+                        return (
+                          <button
+                            key={j}
+                            type="button"
+                            className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
+                              isSelected
+                                ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                                : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                            } ${!canAnswer ? "opacity-40 cursor-default" : ""}`}
+                            disabled={!canAnswer}
+                            onClick={() => toggleOption(i, j, multi)}
+                          >
+                            <span
+                              className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
+                                isSelected
+                                  ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                                  : "border-slate-500 text-slate-500"
+                              }`}
+                            >
+                              {isSelected ? "✓" : j + 1}
+                            </span>
+                            <span className="flex-1">{opt.label}</span>
+                            {opt.description ? (
+                              <span className="text-[0.55rem] text-slate-500 text-right max-w-[40%]">
+                                {opt.description}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">
+                      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-amber-500/10">
+                        <svg
+                          className="h-3 w-3 text-amber-400/60"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M1 4l5 5-5 5"
+                            stroke="currentColor"
+                            strokeWidth="1.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span className="text-[0.55rem] text-amber-400/60">输入你的意见</span>
+                      </div>
+                      <textarea
+                        className="w-full bg-transparent px-2 py-1.5 text-[0.65rem] text-slate-200 placeholder-slate-600 outline-none resize-none"
+                        rows={2}
+                        placeholder="在此输入…"
+                        disabled={!canAnswer}
+                        value={freeText[i] ?? ""}
+                        onChange={(e) => setFreeText((prev) => ({ ...prev, [i]: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {canAnswer ? (
+            <div className="border-t border-amber-500/20 px-3 py-2 flex items-center gap-2">
+              {toolCallId || controlRequestId ? (
+                <>
+                  <button
+                    type="button"
+                    className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition bg-amber-500/30 text-amber-200 hover:bg-amber-500/40 disabled:opacity-30 disabled:cursor-default"
+                    disabled={!hasAnySelection}
+                    onClick={handleSubmit}
+                  >
+                    提交回答
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg px-3 py-2 text-xs font-semibold transition border border-slate-500/30 text-slate-400 hover:text-slate-200 hover:border-slate-400/50"
+                    onClick={handleCancel}
+                  >
+                    跳过
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                    hasAnySelection
+                      ? "bg-amber-500/30 text-amber-200 hover:bg-amber-500/40"
+                      : "bg-amber-500/10 text-amber-400/40 cursor-default"
+                  }`}
+                  disabled={!hasAnySelection}
+                  onClick={handleSubmit}
+                >
+                  填入输入框发送
+                </button>
+              )}
+            </div>
+          ) : null}
+          {isWaiting && localAnswer == null ? (
+            <div className="border-t border-amber-500/20 px-3 py-1.5">
+              <p className="text-[0.55rem] text-amber-400/40 text-center">
+                Claude 正在等待你的回答…
+              </p>
+            </div>
+          ) : null}
+          {hasResult || localAnswer != null ? (
+            <div className="border-t border-amber-500/20 px-3 py-2">
+              <p className="text-[0.6rem] text-amber-400/60 mb-1">回答</p>
+              <p className="text-[0.65rem] text-amber-200/70">{localAnswer ?? resultStr}</p>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Registry ─────────────────────────────────────────────────────────
+
+type ToolRenderer = ToolCallMessagePartComponent;
+
+const toolRegistry = new Map<string, ToolRenderer>();
+
+// Register known tools
+toolRegistry.set("Bash", BashToolUI);
+toolRegistry.set("Read", ReadToolUI);
+toolRegistry.set("Write", WriteToolUI);
+toolRegistry.set("Edit", EditToolUI);
+toolRegistry.set("MultiEdit", EditToolUI);
+toolRegistry.set("Skill", SkillToolUI);
+toolRegistry.set("Task", TaskToolUI);
+toolRegistry.set("WebSearch", WebSearchToolUI);
+toolRegistry.set("Glob", GlobToolUI);
+toolRegistry.set("Grep", GrepToolUI);
+toolRegistry.set("NotebookEdit", NotebookEditToolUI);
+toolRegistry.set("AskUserQuestion", AskUserQuestionToolUI);
+// Codex equivalents (lowercase)
+toolRegistry.set("bash", BashToolUI);
+
+export function getToolRenderer(toolName: string): ToolRenderer | undefined {
+  // Exact match first
+  const exact = toolRegistry.get(toolName);
+  if (exact) return exact;
+  // MCP tools match with prefix
+  if (toolName.startsWith("mcp__")) return undefined; // use ToolFallback
+  return undefined;
+}
+
+function safeParseArgs(argsText: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(argsText);
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function formatArg(value: unknown): string {
+  if (typeof value === "string") return value.length > 120 ? value.slice(0, 120) + "…" : value;
+  return JSON.stringify(value).slice(0, 120);
+}

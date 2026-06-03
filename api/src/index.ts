@@ -14,6 +14,9 @@ import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-au
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectService, ProjectServiceError } from "./projects";
+import { readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { join } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
@@ -550,7 +553,17 @@ const projectErrorResponse = (error: ProjectServiceError) => {
 export const startApi = async () => {
   const settings = await loadSettings();
   const runtimePaths = await ensureRuntimeDir(resolveRuntimePaths());
-  const auth = new AuthService({ appPassword: settings.appPassword });
+
+  const tokenSecretPath = join(runtimePaths.runDir, "token-secret");
+  let tokenSecret: string;
+  try {
+    tokenSecret = await readFile(tokenSecretPath, "utf8");
+  } catch {
+    tokenSecret = randomBytes(32).toString("base64url");
+    await writeFile(tokenSecretPath, tokenSecret, { mode: 0o600 });
+  }
+
+  const auth = new AuthService({ appPassword: settings.appPassword, tokenSecret });
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
   const claude2Runtime = new Claude2Runtime();

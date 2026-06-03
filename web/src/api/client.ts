@@ -26,6 +26,7 @@ import type {
   ProjectFilePreviewResponse,
   ProjectListResponse,
   RenameFileResponse,
+  SessionStreamServerMessage,
   TerminalSessionDetailResponse,
   UploadFileResponse,
 } from "@agents-remote/shared";
@@ -199,6 +200,16 @@ export async function getAgentSession(
   );
 }
 
+export async function getAgentSessionMessages(
+  projectName: string,
+  sessionId: string,
+): Promise<{ sessionId: string; messages: SessionStreamServerMessage[] }> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/messages`,
+    "api.agentSessionDetailFailed",
+  );
+}
+
 export async function closeAgentSession(
   projectName: string,
   sessionId: string,
@@ -316,6 +327,11 @@ const fetchJson = async <T>(
   init?: RequestInit,
 ): Promise<T> => {
   const response = await fetch(url, init);
+
+  if (response.status === 401) {
+    window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
+    throw new Error(`${resolveTranslation(failureKey)}: ${response.status}`);
+  }
 
   if (!response.ok) {
     throw new Error(`${resolveTranslation(failureKey)}: ${response.status}`);
