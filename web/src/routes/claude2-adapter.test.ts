@@ -1,8 +1,10 @@
-import { expect, test, describe } from "bun:test";
+import { afterAll, beforeAll, expect, test, describe } from "bun:test";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { loadMessagesFromRaw } from "./claude2-adapter";
+import type { ChatModelRunResult } from "@assistant-ui/react";
+import { loadMessagesFromRaw, createClaude2Adapters } from "./claude2-adapter";
 
-// Helper to build a minimal Claude2AssistantMessage
+// ── Helpers ────────────────────────────────────────────────────────────
+
 const assistant = (
   id: string,
   blocks: Array<
@@ -15,7 +17,6 @@ const assistant = (
     message: { id, role: "assistant", content: blocks },
   }) as unknown as SessionStreamServerMessage;
 
-// Helper to build a Claude2UserMessage
 const user = (
   blocks: Array<
     | { type: "text"; text: string }
@@ -79,7 +80,6 @@ describe("loadMessagesFromRaw", () => {
       result("success"),
     ];
     const result_msgs = loadMessagesFromRaw(msgs);
-    // 1 user + 1 assistant (both text blocks merged)
     expect(result_msgs.length).toBe(2);
     const content = result_msgs[1].content as Array<{ type: string; text: string }>;
     expect(content.length).toBe(2);
@@ -113,10 +113,8 @@ describe("loadMessagesFromRaw", () => {
     ];
     const result_msgs = loadMessagesFromRaw(msgs);
 
-    // user + assistant (tool-call with result filled) + assistant (text reply)
     expect(result_msgs.length).toBe(3);
 
-    // The first assistant message should have: text + tool-call (with result)
     const assistantContent = result_msgs[1].content as Array<{
       type: string;
       text?: string;
@@ -131,15 +129,6 @@ describe("loadMessagesFromRaw", () => {
   });
 
   test("tool_use + intervening user text + tool_result still matches (the 'Continue' bug)", () => {
-    // This is the critical bug scenario: Claude JSONL contains:
-    //   assistant (with tool_use AskUserQuestion)
-    //   user (text: "Continue from where you left off.")
-    //   user (tool_result for AskUserQuestion)
-    //
-    // The user text between them flushes the assistant message (with
-    // tool-call lacking a result). Then the tool_result arrives, can't
-    // find its match in currentParts, and must pull the flushed
-    // assistant back from messages[].
     const msgs: SessionStreamServerMessage[] = [
       user([{ type: "text", text: "ask me a question" }]),
       assistant("msg-1", [
@@ -150,9 +139,7 @@ describe("loadMessagesFromRaw", () => {
           input: { questions: [{ question: "What color?", options: ["Red", "Blue"] }] },
         },
       ]),
-      // Intervening user text — flushes assistant without tool_result applied
       user([{ type: "text", text: "Continue from where you left off." }]),
-      // Later: tool_result arrives for the AskUserQuestion tool_use
       user([{ type: "tool_result", tool_use_id: "tu-ask", content: "Red" }]),
       assistant("msg-2", [{ type: "text", text: "Thanks for the answer!" }]),
       result("success"),
@@ -160,9 +147,6 @@ describe("loadMessagesFromRaw", () => {
 
     const result_msgs = loadMessagesFromRaw(msgs);
 
-    // Order: user("ask..."), user("Continue..."),
-    //        assistant(tool-call with result), assistant("Thanks...")
-    // The assistant is at index 2 because "Continue" user stays at index 1.
     expect(result_msgs.length).toBe(4);
     expect(result_msgs[0].role).toBe("user");
     expect(result_msgs[1].role).toBe("user");
@@ -192,16 +176,11 @@ describe("loadMessagesFromRaw", () => {
           input: { questions: [{ question: "X?", options: ["A", "B"] }] },
         },
       ]),
-      // is_error tool_result — Claude auto-generates this for auto-allowed
-      // AskUserQuestion without real answers
       user([{ type: "tool_result", tool_use_id: "tu-ask", content: "", is_error: true }]),
       result("success"),
     ];
 
     const result_msgs = loadMessagesFromRaw(msgs);
-
-    // The tool-call should NOT have the is_error result applied — it should
-    // remain unanswered (no result field).
     const assistantContent = result_msgs[1].content as Array<{
       type: string;
       result?: string;
@@ -212,21 +191,16 @@ describe("loadMessagesFromRaw", () => {
   });
 
   test("user message with only tool_result (no text) does not create a user bubble", () => {
-    // When Claude echoes a tool result, it's a user message containing only
-    // tool_result. This should NOT create a user bubble — it should only
-    // apply the result to the matching tool-call.
     const msgs: SessionStreamServerMessage[] = [
       user([{ type: "text", text: "read file" }]),
       assistant("msg-1", [
         { type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "/f" } },
       ]),
-      // Pure tool_result user message (no text)
       user([{ type: "tool_result", tool_use_id: "tu-read", content: "hello world" }]),
       result("success"),
     ];
     const result_msgs = loadMessagesFromRaw(msgs);
 
-    // Only 2 messages: 1 user + 1 assistant (with filled result)
     expect(result_msgs.length).toBe(2);
     const assistantContent = result_msgs[1].content as Array<{
       type: string;
@@ -244,7 +218,6 @@ describe("loadMessagesFromRaw", () => {
       assistant("msg-1", [
         { type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "/f" } },
       ]),
-      // User message with BOTH text and tool_result
       user([
         { type: "text", text: "Continue from where you left off." },
         { type: "tool_result", tool_use_id: "tu-read", content: "file content here" },
@@ -253,11 +226,9 @@ describe("loadMessagesFromRaw", () => {
     ];
     const result_msgs = loadMessagesFromRaw(msgs);
 
-    // 3 messages: user, assistant (with filled result), user ("Continue...")
     expect(result_msgs.length).toBe(3);
     expect(result_msgs[0].role).toBe("user");
 
-    // Assistant has tool-call WITH result (applied before the text flushed it)
     const assistantContent = result_msgs[1].content as Array<{
       type: string;
       toolCallId?: string;
@@ -299,7 +270,6 @@ describe("loadMessagesFromRaw", () => {
       assistant("msg-1", [{ type: "text", text: "empty" }]),
     ];
     const result_msgs = loadMessagesFromRaw(msgs);
-    // Only assistant, no user message for whitespace-only text
     expect(result_msgs.length).toBe(1);
     expect(result_msgs[0].role).toBe("assistant");
   });
@@ -341,5 +311,119 @@ describe("loadMessagesFromRaw", () => {
       result?: string;
     }>;
     expect(assistantContent[0].result).toBe("plain string content");
+  });
+});
+
+// ── run() drain-loop integration test ─────────────────────────────────
+//
+// This test verifies the fix for the race condition where Claude emits
+// multiple messages in rapid succession (tool_result echo → assistant
+// text → result) after a control_response. The old run() generator
+// processed only one item per promise resolution; intervening messages
+// that arrived while resolveNext was null were skipped by the yieldIndex
+// advance loop and never yielded.
+//
+// We use Bun's built-in WebSocket server to simulate Claude and step
+// through the generator collecting every yielded result.
+
+describe("chatAdapter.run() drain loop", () => {
+  let server: ReturnType<typeof Bun.serve>;
+  const originalLocation = globalThis.location;
+
+  beforeAll(() => {
+    // Mock globalThis.location for claude2StreamUrl()
+    // @ts-expect-error mock
+    globalThis.location = { protocol: "http:", host: `localhost:9999` };
+  });
+
+  afterAll(() => {
+    // @ts-expect-error restore
+    globalThis.location = originalLocation;
+  });
+
+  test("drains all rapid-fire messages without loss", async () => {
+    // We use Bun's WebSocket server to simulate Claude's response
+    // pattern: tool_result echo → assistant text → result, sent in
+    // rapid succession inside the ws open handler.
+    server = Bun.serve({
+      port: 9999,
+      fetch(req, srv) {
+        if (srv.upgrade(req)) return;
+        return new Response("not found", { status: 404 });
+      },
+      websocket: {
+        open(ws) {
+          // Simulate what Claude emits after receiving a control_response:
+          //   1. User message with tool_result (echo of the answer)
+          //   2. Assistant message with text response
+          //   3. Result (turn completion)
+          // These arrive fast enough that the generator is still processing
+          // msg 1 when msgs 2 & 3 land — the old code would lose msg 2.
+          ws.send(
+            JSON.stringify({
+              type: "user",
+              message: {
+                role: "user",
+                content: [{ type: "tool_result", tool_use_id: "tu-1", content: "Red" }],
+              },
+            } satisfies SessionStreamServerMessage),
+          );
+
+          ws.send(
+            JSON.stringify({
+              type: "assistant",
+              message: {
+                id: "msg-resp",
+                role: "assistant",
+                content: [{ type: "text", text: "Got your answer — thanks!" }],
+              },
+            } satisfies SessionStreamServerMessage),
+          );
+
+          ws.send(
+            JSON.stringify({
+              type: "result",
+              subtype: "success",
+            } satisfies SessionStreamServerMessage),
+          );
+        },
+        message(_ws, _msg) {
+          // ignore user messages sent by the adapter
+        },
+      },
+    });
+
+    try {
+      const { chatAdapter } = createClaude2Adapters("test", "test-session");
+
+      const collected: ChatModelRunResult[] = [];
+      const ac = new AbortController();
+
+      const gen = chatAdapter.run({
+        messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+        abortSignal: ac.signal,
+      } as Parameters<typeof chatAdapter.run>[0]);
+
+      for await (const r of gen) {
+        collected.push(r);
+      }
+
+      // We expect at least 3 yields:
+      //   tool_result echo, assistant text, result status
+      expect(collected.length).toBeGreaterThanOrEqual(3);
+
+      // All assistant text content should appear across the yielded results
+      const allTexts = collected
+        .flatMap((r) => (Array.isArray(r.content) ? r.content : []))
+        .filter((p: { type?: string }) => p.type === "text")
+        .map((p: { type?: string; text?: string }) => (p as { text: string }).text);
+      expect(allTexts).toContain("Got your answer — thanks!");
+
+      // The final yield should carry the complete status
+      const lastResult = collected.at(-1);
+      expect(lastResult?.status?.type).toBe("complete");
+    } finally {
+      server.stop();
+    }
   });
 });
