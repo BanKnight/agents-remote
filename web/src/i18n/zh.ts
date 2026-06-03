@@ -255,4 +255,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.completed": "已完成（{{turns}} 轮）",
   "claude2.interrupted": "已中断",
   "claude2.emptyChat": "向 Claude 提问以开始对话。",
+  "claude2.switchingModel": "正在切换到 {{model}}...",
+  "claude2.loadOlder": "加载更早消息",
+  "claude2.loadingOlder": "加载中...",
 };

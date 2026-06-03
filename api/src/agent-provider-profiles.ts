@@ -8,9 +8,22 @@ export type AgentProviderProfile = {
   capabilities: {
     history: "unsupported" | "native";
   };
+  availableModels?: string[];
 };
 
-const profiles = {
+const readClaude2Models = (): string[] => {
+  const env = (process.env.CLAUDE2_MODELS ?? "").trim();
+  if (env.length > 0)
+    return env
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+  // Claude Code standard model aliases — these are the portable tier identifiers
+  // that Claude CLI resolves to the latest model version at runtime.
+  return ["sonnet", "opus", "haiku"];
+};
+
+const profiles: Record<AgentProvider, AgentProviderProfile> = {
   claude: {
     provider: "claude",
     label: "Claude",
@@ -37,8 +50,9 @@ const profiles = {
     capabilities: {
       history: "native",
     },
+    availableModels: readClaude2Models(),
   },
-} satisfies Record<AgentProvider, AgentProviderProfile>;
+};
 
 export const getAgentProviderProfile = (provider: AgentProvider | undefined) => {
   if (!provider) {

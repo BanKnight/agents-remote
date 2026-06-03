@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -14,6 +14,7 @@ import {
   useThread,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT } from "../i18n";
@@ -25,7 +26,14 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
-import { Claude2BridgeContext, createClaude2Adapters } from "./claude2-adapter";
+import {
+  Claude2BridgeContext,
+  type Claude2Pagination,
+  createClaude2Adapters,
+  loadMessagesFromRaw,
+} from "./claude2-adapter";
+
+const Claude2PaginationContext = createContext<Claude2Pagination | null>(null);
 
 export function Claude2SessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -33,6 +41,12 @@ export function Claude2SessionDetailRoute() {
   });
 
   return <Claude2Chat projectName={projectName} sessionId={sessionId} />;
+}
+
+function modelDisplayLabel(modelId: string, resolvedName?: string): string {
+  if (resolvedName) return resolvedName;
+  // Fall back to capitalized alias — Claude CLI uses tier names (Sonnet/Opus/Haiku)
+  return modelId.charAt(0).toUpperCase() + modelId.slice(1);
 }
 
 function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionId: string }) {
@@ -47,6 +61,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   });
 
   const session = detail.data?.session;
+  const availableModels = detail.data?.availableModels ?? [];
   const title = session?.displayName ?? `${t("section.agents")} Session`;
 
   const closeSession = useMutation({
@@ -72,7 +87,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     },
   });
 
-  const { chatAdapter, historyAdapter, bridge } = useMemo(
+  const { chatAdapter, historyAdapter, bridge, pagination } = useMemo(
     () => createClaude2Adapters(projectName, sessionId),
     [projectName, sessionId],
   );
@@ -122,7 +137,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     >
       <ChatHeader
         closePending={closeSession.isPending}
-        model={session?.model}
         projectName={projectName}
         title={title}
         onClose={async () => {
@@ -139,47 +153,53 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>
-          <div
-            className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-          >
-            {detail.error instanceof Error ? (
-              <div className="shrink-0 px-3 py-2">
-                <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                  {detail.error.message}
-                </p>
-              </div>
-            ) : null}
-            {closeSession.error instanceof Error ? (
-              <div className="shrink-0 px-3 py-2">
-                <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                  {closeSession.error.message}
-                </p>
-              </div>
-            ) : null}
+          <Claude2PaginationContext.Provider value={pagination}>
+            <div
+              className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+            >
+              {detail.error instanceof Error ? (
+                <div className="shrink-0 px-3 py-2">
+                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                    {detail.error.message}
+                  </p>
+                </div>
+              ) : null}
+              {closeSession.error instanceof Error ? (
+                <div className="shrink-0 px-3 py-2">
+                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                    {closeSession.error.message}
+                  </p>
+                </div>
+              ) : null}
 
-            <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-                <ThreadViewportContent />
-                <ThreadPrimitive.ScrollToBottom className="absolute bottom-20 right-5 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition hover:bg-slate-600/90">
-                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M4 6l4 4 4-4"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+              <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
+                  <ThreadViewportContent />
+                  <ThreadPrimitive.ScrollToBottom className="absolute bottom-16 sm:bottom-24 right-5 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition hover:bg-slate-600/90 cursor-pointer">
+                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="M4 6l4 4 4-4"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </ThreadPrimitive.ScrollToBottom>
+                </ThreadPrimitive.Viewport>
+
+                <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                  <ComposerPrimitive.Root>
+                    <ComposerWithInterrupt
+                      currentModel={undefined}
+                      currentResolved={session?.model}
+                      availableModels={availableModels}
                     />
-                  </svg>
-                </ThreadPrimitive.ScrollToBottom>
-              </ThreadPrimitive.Viewport>
-
-              <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                <ComposerPrimitive.Root>
-                  <ComposerWithInterrupt />
-                </ComposerPrimitive.Root>
-              </div>
-            </ThreadPrimitive.Root>
-          </div>
+                  </ComposerPrimitive.Root>
+                </div>
+              </ThreadPrimitive.Root>
+            </div>
+          </Claude2PaginationContext.Provider>
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
       {holder}
@@ -189,13 +209,12 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
 type ChatHeaderProps = {
   closePending: boolean;
-  model?: string;
   projectName: string;
   title: string;
   onClose: () => void;
 };
 
-function ChatHeader({ closePending, model, projectName, title, onClose }: ChatHeaderProps) {
+function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderProps) {
   const { t } = useT();
 
   return (
@@ -223,10 +242,7 @@ function ChatHeader({ closePending, model, projectName, title, onClose }: ChatHe
         </Link>
         <div className="min-w-0 flex-1 text-center">
           <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
-          <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
-            {projectName}
-            {model ? ` · ${model}` : null}
-          </p>
+          <p className="truncate text-[0.65rem] leading-4 text-slate-500">{projectName}</p>
         </div>
         <button
           type="button"
@@ -379,8 +395,11 @@ function AssistantChatBubble() {
 }
 
 function ThreadViewportContent() {
+  const isLoading = useThread((s) => s.isLoading);
+
   return (
     <>
+      {isLoading ? <ChatSkeleton /> : <LoadOlderMessages />}
       <ThreadPrimitive.Messages
         components={{
           UserMessage: UserChatBubble,
@@ -392,32 +411,268 @@ function ThreadViewportContent() {
   );
 }
 
-function ComposerWithInterrupt() {
+function ChatSkeleton() {
+  const rows = [
+    { align: "end", width: "w-2/3", height: "h-10", bg: "bg-cyan-700/30" },
+    { align: "start", width: "w-3/4", height: "h-12", bg: "bg-slate-800/40" },
+    { align: "end", width: "w-1/2", height: "h-9", bg: "bg-cyan-700/30" },
+    { align: "start", width: "w-5/6", height: "h-14", bg: "bg-slate-800/40" },
+  ];
+  return (
+    <div className="space-y-3 px-3 py-2 animate-pulse" aria-hidden="true">
+      {rows.map((row, i) => (
+        <div key={i} className={`flex ${row.align === "end" ? "justify-end" : "justify-start"}`}>
+          <div className={`${row.height} ${row.width} rounded-2xl ${row.bg} px-4 py-3`}>
+            <div className="h-2.5 w-24 rounded bg-slate-600/40" />
+            <div className="mt-1.5 h-2.5 w-16 rounded bg-slate-600/25" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LoadOlderMessages() {
+  const { t } = useT();
+  const pagination = useContext(Claude2PaginationContext);
+  const [loading, setLoading] = useState(false);
+  const [olderMessages, setOlderMessages] = useState<ReturnType<typeof loadMessagesFromRaw>>([]);
+
+  const hasOlder = pagination?.hasOlder ?? false;
+
+  if (!hasOlder && olderMessages.length === 0) return null;
+
+  const handleLoadOlder = async () => {
+    if (loading || !pagination) return;
+    setLoading(true);
+    try {
+      const older = await pagination.loadOlder();
+      setOlderMessages((prev) => [...older, ...prev]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="px-3 pt-2">
+      {hasOlder ? (
+        <div className="flex justify-center py-1">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleLoadOlder}
+            className="rounded-lg bg-slate-800/60 px-3 py-1.5 text-[0.65rem] text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 transition cursor-pointer disabled:opacity-50"
+          >
+            {loading ? t("claude2.loadingOlder") : t("claude2.loadOlder")}
+          </button>
+        </div>
+      ) : null}
+      {olderMessages.length > 0 ? (
+        <div className="space-y-3 border-b border-slate-700/40 pb-3 mb-3">
+          {olderMessages.map((msg, i) => (
+            <HistoryBubble key={i} message={msg} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ModelSelector({
+  currentModel,
+  currentResolved,
+  availableModels,
+}: {
+  currentModel?: string;
+  currentResolved?: string;
+  availableModels: string[];
+}) {
+  const { t } = useT();
+  const bridge = useContext(Claude2BridgeContext);
+  const [open, setOpen] = useState(false);
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  if (availableModels.length === 0) return null;
+
+  const current = currentModel ?? availableModels[0];
+  const label =
+    currentResolved && (currentModel === current || !currentModel)
+      ? currentResolved
+      : modelDisplayLabel(current);
+
+  if (switchingTo) {
+    return (
+      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-amber-400/80">
+        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+        {t("claude2.switchingModel", { model: modelDisplayLabel(switchingTo) })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-cyan-400/80 hover:text-cyan-300 hover:bg-slate-800/50 transition cursor-pointer"
+        onClick={() => setOpen(!open)}
+      >
+        {label}
+        <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M4 6l4 4 4-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-slate-600/50 bg-slate-800 shadow-xl py-1">
+            {availableModels.map((modelId) => {
+              const isActive = modelId === current;
+              return (
+                <button
+                  key={modelId}
+                  type="button"
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
+                    isActive
+                      ? "text-cyan-400 bg-cyan-500/10 cursor-default"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 cursor-pointer"
+                  }`}
+                  disabled={isActive}
+                  onClick={() => {
+                    setOpen(false);
+                    if (!isActive && bridge) {
+                      setSwitchingTo(modelId);
+                      bridge.switchModel(modelId);
+                      // Auto-clear after reasonable startup time
+                      setTimeout(() => setSwitchingTo(null), 8000);
+                    }
+                  }}
+                >
+                  {isActive ? (
+                    <svg
+                      className="h-3 w-3 shrink-0 text-cyan-400"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M3 8l3.5 3.5L13 5"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <span className="w-3 shrink-0" />
+                  )}
+                  {modelDisplayLabel(modelId)}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ComposerWithInterrupt({
+  currentModel,
+  currentResolved,
+  availableModels,
+}: {
+  currentModel?: string;
+  currentResolved?: string;
+  availableModels: string[];
+}) {
   const composer = useComposerRuntime();
   const isRunning = useThread((s) => s.isRunning);
   const { t } = useT();
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      if (!isRunning) composer.send();
+    }
+  };
+
   return (
-    <div className="flex items-end gap-2">
-      <ComposerPrimitive.Input
-        autoFocus
-        placeholder={t("claude2.inputPlaceholder")}
-        className="min-h-[2.5rem] max-h-32 flex-1 resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
-        rows={1}
-      />
-      {isRunning ? (
-        <button
-          type="button"
-          className="shrink-0 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-rose-500"
-          onClick={() => composer.cancel()}
-        >
-          {t("session.stop")}
-        </button>
-      ) : (
-        <ComposerPrimitive.Send className="shrink-0 rounded-xl bg-cyan-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-40">
-          {t("session.sendInput")}
-        </ComposerPrimitive.Send>
-      )}
+    <div className="flex flex-col gap-2">
+      <div className="relative">
+        <ComposerPrimitive.Input
+          autoFocus
+          placeholder={t("claude2.inputPlaceholder")}
+          className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
+          rows={1}
+          enterKeyHint="send"
+          onKeyDown={handleKeyDown}
+        />
+        {isRunning ? (
+          <div className="absolute inset-0 rounded-xl bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center">
+            <button
+              type="button"
+              className="rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-500 shadow-lg cursor-pointer"
+              onClick={() => composer.cancel()}
+            >
+              {t("session.stop")}
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <ModelSelector
+          currentModel={currentModel}
+          currentResolved={currentResolved}
+          availableModels={availableModels}
+        />
+      </div>
+    </div>
+  );
+}
+
+const HISTORY_MARKDOWN_CLASS =
+  "text-sm text-slate-100 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 [&_li]:mb-1 [&_pre]:relative [&_pre]:bg-slate-950/80 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:pt-7 [&_pre]:mb-2 [&_pre]:overflow-x-auto [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:text-[0.75rem] [&_pre_code]:leading-relaxed [&_a]:text-cyan-400 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-slate-600 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-slate-600 [&_td]:px-2 [&_td]:py-1 [&_hr]:border-slate-700 [&_hr]:my-3";
+
+function HistoryBubble({ message }: { message: ReturnType<typeof loadMessagesFromRaw>[number] }) {
+  const isUser = message.role === "user";
+
+  let text = "";
+  if (typeof message.content === "string") {
+    text = message.content;
+  } else if (Array.isArray(message.content)) {
+    text = message.content
+      .filter(
+        (p): p is { type: "text"; text: string } =>
+          typeof p === "object" && "type" in p && p.type === "text",
+      )
+      .map((p) => p.text)
+      .join("\n");
+  }
+
+  if (!text) return null;
+
+  return (
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} px-3 py-1.5 sm:px-5`}>
+      <div
+        className={`max-w-[90%] rounded-2xl px-4 py-2.5 ${
+          isUser ? "rounded-br-md bg-cyan-700/60" : "rounded-bl-md bg-slate-800/70"
+        }`}
+      >
+        {isUser ? (
+          text
+        ) : (
+          <div className={HISTORY_MARKDOWN_CLASS}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

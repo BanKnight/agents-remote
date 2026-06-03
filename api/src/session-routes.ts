@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -18,6 +18,7 @@ import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
+import { getAgentProviderProfile } from "./agent-provider-profiles";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
@@ -105,8 +106,23 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_STREAM_MISMATCH", "Not a Claude2 session", 400);
     }
 
-    const messages = await loadClaude2Messages(metadata.projectPath, metadata.claudeSessionId);
-    const response: AgentSessionMessagesResponse = { sessionId: metadata.id, messages };
+    const url = new URL(request.url);
+    const limit = Math.min(
+      parseInt(url.searchParams.get("limit") ?? String(MESSAGE_LIMIT), 10) || MESSAGE_LIMIT,
+      1000,
+    );
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+
+    const { messages, hasOlder, nextCursor } = await loadClaude2Messages(
+      metadata.projectPath,
+      metadata.claudeSessionId,
+      { limit, cursor },
+    );
+    const response: AgentSessionMessagesResponse = {
+      sessionId: metadata.id,
+      messages,
+      pagination: { hasOlder, nextCursor },
+    };
     return Response.json(response);
   }
 
@@ -117,7 +133,10 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
     }
 
-    const response: AgentSessionDetailResponse = { session };
+    const response: AgentSessionDetailResponse = {
+      session,
+      availableModels: getAgentProviderProfile(session.provider)?.availableModels,
+    };
     return Response.json(response);
   }
 
@@ -267,31 +286,94 @@ const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string =
   return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
 };
 
+type MessagePaginationParams = {
+  limit: number;
+  cursor?: string;
+};
+
+const decodeCursor = (cursor: string): number | null => {
+  try {
+    return parseInt(Buffer.from(cursor, "base64").toString("utf-8"), 10);
+  } catch {
+    return null;
+  }
+};
+
+const encodeCursor = (lineIndex: number): string =>
+  Buffer.from(lineIndex.toString(), "utf-8").toString("base64");
+
+const MESSAGE_LIMIT = Math.max(parseInt(process.env.CLAUDE2_MESSAGE_LIMIT ?? "200", 10) || 200, 1);
+
 const loadClaude2Messages = async (
   projectPath: string,
   claudeSessionId: string | undefined,
-): Promise<SessionStreamServerMessage[]> => {
-  if (!claudeSessionId) return [];
+  params: MessagePaginationParams = { limit: 200 },
+): Promise<{
+  messages: SessionStreamServerMessage[];
+  hasOlder: boolean;
+  nextCursor: string | null;
+}> => {
+  if (!claudeSessionId) return { messages: [], hasOlder: false, nextCursor: null };
+
+  const filePath = claudeJsonlPath(projectPath, claudeSessionId);
 
   try {
-    const content = await readFile(claudeJsonlPath(projectPath, claudeSessionId), "utf-8");
-    const lines = content.trim().split("\n");
-    const messages: SessionStreamServerMessage[] = [];
-
-    for (const line of lines) {
-      try {
-        const msg = JSON.parse(line) as Record<string, unknown>;
-        if (isChatMessage(msg)) {
-          messages.push(msg as unknown as SessionStreamServerMessage);
-        }
-      } catch {
-        // skip malformed
+    const handle = await openFile(filePath, "r");
+    try {
+      // targetLine: 0-indexed line number to read up to (exclusive).
+      // No cursor → read entire file; cursor → read up to that line.
+      const targetLine = params.cursor ? decodeCursor(params.cursor) : Infinity;
+      if (params.cursor && targetLine === null) {
+        return { messages: [], hasOlder: false, nextCursor: null };
       }
-    }
 
-    return messages;
+      const messages: { lineIndex: number; msg: SessionStreamServerMessage }[] = [];
+      const lineIndices: number[] = []; // track line indices of chat messages
+      let lineIndex = 0;
+
+      for await (const line of handle.readLines()) {
+        if (lineIndex >= targetLine!) break;
+        try {
+          const msg = JSON.parse(line) as Record<string, unknown>;
+          if (isChatMessage(msg)) {
+            messages.push({ lineIndex, msg: msg as unknown as SessionStreamServerMessage });
+            lineIndices.push(lineIndex);
+          }
+        } catch {
+          // skip malformed
+        }
+        lineIndex++;
+      }
+
+      // Return the last `limit` messages from the collected set
+      if (messages.length <= params.limit) {
+        console.log(
+          `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} returned=${messages.length} hasOlder=false`,
+        );
+        return {
+          messages: messages.map((m) => m.msg),
+          hasOlder: false,
+          nextCursor: null,
+        };
+      }
+
+      const sliced = messages.slice(-params.limit);
+      const firstLineIndex = sliced[0]!.lineIndex;
+      const hasOlder = lineIndices[0]! < firstLineIndex;
+      console.log(
+        `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} returned=${sliced.length} hasOlder=${hasOlder} cursorLine=${firstLineIndex}`,
+      );
+
+      return {
+        messages: sliced.map((m) => m.msg),
+        hasOlder,
+        nextCursor: encodeCursor(firstLineIndex),
+      };
+    } finally {
+      await handle.close();
+    }
   } catch {
-    return [];
+    return { messages: [], hasOlder: false, nextCursor: null };
   }
 };
 

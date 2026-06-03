@@ -167,6 +167,34 @@ export class Claude2StreamController {
       if (parsed.type === "user" || parsed.type === "control_response") {
         console.log(`[claude2-stream] message ${parsed.type}: ${data.tmuxSessionName}`);
         await this.runtime.write?.(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
+      } else if (parsed.type === "switch_model") {
+        console.log(`[claude2-stream] switch_model: ${data.tmuxSessionName} → ${parsed.model}`);
+        // Close existing stream before switching
+        const existingStream = this.streams.get(socket);
+        if (existingStream) {
+          existingStream.close();
+          this.streams.delete(socket);
+        }
+        const result = await this.claude2Runtime.switchModel(data.tmuxSessionName, parsed.model);
+        if (result) {
+          // Update session metadata with new model
+          void this.sessionRegistry.setClaudeSessionId(
+            data.sessionId,
+            result.claudeSessionId ?? "",
+            parsed.model,
+          );
+          // Restart stream with new process
+          try {
+            await this.startStream(socket, data);
+          } catch (e) {
+            console.error(`[claude2-stream] restart stream after model switch failed`, e);
+            send(socket, {
+              type: "error",
+              code: "SESSION_RUNTIME_ERROR",
+              message: "Failed to restart stream after model switch",
+            });
+          }
+        }
       }
     } catch {
       send(socket, {
@@ -195,17 +223,23 @@ export class Claude2StreamController {
             console.log(
               `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
             );
-            // Capture claudeSessionId from system.init for history persistence
+            // Capture claudeSessionId and model from system.init
             if (
               parsed.type === "system" &&
               "subtype" in parsed &&
               parsed.subtype === "init" &&
               "session_id" in parsed
             ) {
-              const captureId = (parsed as { session_id: string }).session_id;
-              if (captureId) {
-                console.log(`[claude2-stream] captured claudeSessionId=${captureId}`);
-                void this.sessionRegistry.setClaudeSessionId(data.sessionId, captureId);
+              const init = parsed as { session_id: string; model?: string };
+              if (init.session_id) {
+                console.log(
+                  `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
+                );
+                void this.sessionRegistry.setClaudeSessionId(
+                  data.sessionId,
+                  init.session_id,
+                  init.model,
+                );
               }
             }
             send(socket, parsed);

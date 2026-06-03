@@ -202,6 +202,7 @@ export type CreateAgentSessionResponse = {
 
 export type AgentSessionDetailResponse = {
   session: AgentSession;
+  availableModels?: string[];
 };
 
 export type CloseAgentSessionResponse = {
@@ -211,6 +212,10 @@ export type CloseAgentSessionResponse = {
 export type AgentSessionMessagesResponse = {
   sessionId: string;
   messages: SessionStreamServerMessage[];
+  pagination: {
+    hasOlder: boolean;
+    nextCursor: string | null;
+  };
 };
 
 export type ListTerminalSessionsResponse = {
@@ -355,7 +360,11 @@ export type Claude2StreamClientMessage =
         content: Array<{ type: "text"; text: string }>;
       };
     }
-  | Claude2ControlResponse;
+  | Claude2ControlResponse
+  | {
+      type: "switch_model";
+      model: string;
+    };
 
 export type SessionStreamServerMessage =
   | {

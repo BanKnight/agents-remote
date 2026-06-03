@@ -22,6 +22,14 @@ export type Claude2Bridge = {
   respondToControlRequest: (requestId: string, updatedInput: Record<string, unknown>) => void;
   cancelControlRequest: (requestId: string) => void;
   sendToolResult: (toolUseId: string, content: string) => void;
+  sendMessage: (text: string) => void;
+  switchModel: (model: string) => void;
+};
+
+export type Claude2Pagination = {
+  hasOlder: boolean;
+  nextCursor: string | null;
+  loadOlder: () => Promise<ThreadMessageLike[]>;
 };
 
 export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
@@ -89,7 +97,7 @@ export function loadMessagesFromRaw(
           userTexts.push(block.text);
         }
         if (block.type === "tool_result") {
-          if ((block as { is_error?: boolean }).is_error) continue;
+          const isError = !!(block as { is_error?: boolean }).is_error;
           const texts =
             typeof block.content === "string"
               ? block.content
@@ -104,7 +112,9 @@ export function loadMessagesFromRaw(
           );
           if (toolUseId && matchIdx >= 0) {
             currentParts = currentParts.map((p, i) =>
-              i === matchIdx ? { ...p, result: resultText } : p,
+              i === matchIdx
+                ? { ...p, result: resultText, ...(isError ? { isError: true } : {}) }
+                : p,
             );
           } else if (toolUseId) {
             // Search backwards for the last assistant message that
@@ -124,7 +134,9 @@ export function loadMessagesFromRaw(
                 if (flushedMatchIdx >= 0) {
                   currentParts = [...candidate.content];
                   currentParts = currentParts.map((p, i) =>
-                    i === flushedMatchIdx ? { ...p, result: resultText } : p,
+                    i === flushedMatchIdx
+                      ? { ...p, result: resultText, ...(isError ? { isError: true } : {}) }
+                      : p,
                   );
                   messages.splice(j, 1);
                   found = true;
@@ -457,9 +469,23 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
         },
       } as Record<string, unknown>);
     },
+
+    sendMessage: (text) => {
+      sendToSocket({
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text }] },
+      });
+    },
+
+    switchModel: (model) => {
+      sendToSocket({ type: "switch_model", model });
+    },
   };
 
   // ── History adapter (ThreadHistoryAdapter) ───────────────────────────
+
+  let paginationCursor: string | null = null;
+  let paginationHasOlder = false;
 
   const historyAdapter: ThreadHistoryAdapter = {
     async load() {
@@ -467,6 +493,8 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       try {
         const response = await getAgentSessionMessages(projectName, sessionId);
         rawMessages = response.messages;
+        paginationHasOlder = response.pagination.hasOlder;
+        paginationCursor = response.pagination.nextCursor;
       } catch {
         // If REST fails (e.g. session not ready), start with empty history.
       }
@@ -481,6 +509,30 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
     async append() {
       // CLI handles persistence via JSONL. No client-side write needed.
     },
+  };
+
+  const loadOlder = async (): Promise<ThreadMessageLike[]> => {
+    if (!paginationCursor) return [];
+    try {
+      const response = await getAgentSessionMessages(projectName, sessionId, {
+        cursor: paginationCursor,
+      });
+      paginationHasOlder = response.pagination.hasOlder;
+      paginationCursor = response.pagination.nextCursor;
+      return loadMessagesFromRaw(response.messages);
+    } catch {
+      return [];
+    }
+  };
+
+  const pagination: Claude2Pagination = {
+    get hasOlder() {
+      return paginationHasOlder;
+    },
+    get nextCursor() {
+      return paginationCursor;
+    },
+    loadOlder,
   };
 
   // ── Chat adapter (ChatModelAdapter) ──────────────────────────────────
@@ -546,14 +598,16 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
                 .at(-1);
 
               for (const tr of toolResults) {
-                const trPart = tr as { toolCallId: string; result: string };
+                const trPart = tr as { toolCallId: string; result: string; isError?: boolean };
                 parts = parts.map((p) => {
                   if (
                     p.type === "tool-call" &&
                     "toolCallId" in p &&
                     (p as { toolCallId: string }).toolCallId === trPart.toolCallId
                   ) {
-                    return { ...p, result: trPart.result } as typeof p;
+                    const update: Record<string, unknown> = { result: trPart.result };
+                    if (trPart.isError) update.isError = true;
+                    return { ...p, ...update } as typeof p;
                   }
                   return p;
                 });
@@ -577,7 +631,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
     },
   };
 
-  return { chatAdapter, historyAdapter, bridge };
+  return { chatAdapter, historyAdapter, bridge, pagination };
 }
 
 function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | null {
@@ -639,7 +693,7 @@ function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | n
       .filter((block) => block.type === "tool_result")
       .flatMap((block) => {
         if (block.type !== "tool_result") return [];
-        if ((block as { is_error?: boolean }).is_error) return [];
+        const isError = !!(block as { is_error?: boolean }).is_error;
         const texts =
           typeof block.content === "string"
             ? block.content
@@ -647,13 +701,14 @@ function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | n
                 .filter((c) => c.type === "text")
                 .map((c) => c.text)
                 .join("\n");
-        return [
-          {
-            type: "tool-result" as const,
-            toolCallId: (block as { tool_use_id: string }).tool_use_id,
-            result: texts || `Tool result`,
-          },
-        ];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const part: any = {
+          type: "tool-result" as const,
+          toolCallId: (block as { tool_use_id: string }).tool_use_id,
+          result: texts || (isError ? "Tool error" : "Tool result"),
+        };
+        if (isError) part.isError = true;
+        return [part];
       });
     if (parts.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

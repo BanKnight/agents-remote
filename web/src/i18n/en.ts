@@ -254,4 +254,7 @@ export const en = {
   "claude2.completed": "Completed in {{turns}} turns",
   "claude2.interrupted": "Interrupted",
   "claude2.emptyChat": "Ask Claude a question to get started.",
+  "claude2.switchingModel": "Switching to {{model}}...",
+  "claude2.loadOlder": "Load older messages",
+  "claude2.loadingOlder": "Loading...",
 } as const;

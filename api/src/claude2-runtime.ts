@@ -71,19 +71,44 @@ export class Claude2Runtime implements RuntimeResources {
     projectPath: string,
     sessionId: string,
     claudeSessionId?: string,
+    model?: string,
   ): Promise<void> {
     const existing = this.sessions.get(sessionName);
     if (existing?.process && !existing.process.exited) {
       return;
     }
 
-    const proc = this.spawnClaude(projectPath, claudeSessionId);
+    const proc = this.spawnClaude(projectPath, claudeSessionId, model);
     this.sessions.set(sessionName, {
       projectPath,
       sessionId,
       claudeSessionId,
+      model,
       process: proc,
     });
+  }
+
+  async switchModel(
+    sessionName: string,
+    model: string,
+  ): Promise<{ claudeSessionId?: string; projectPath: string } | null> {
+    const state = this.sessions.get(sessionName);
+    if (!state) return null;
+
+    // Kill the current process
+    if (state.process) {
+      state.process.subprocess.kill();
+      for (const cb of state.process.onCloseCallbacks) cb();
+      state.process.onCloseCallbacks.clear();
+      state.process = null;
+    }
+
+    // Restart with new model and resume
+    const proc = this.spawnClaude(state.projectPath, state.claudeSessionId, model);
+    state.process = proc;
+    state.model = model;
+
+    return { claudeSessionId: state.claudeSessionId, projectPath: state.projectPath };
   }
 
   async write(sessionName: string, data: string): Promise<void> {
@@ -186,7 +211,11 @@ export class Claude2Runtime implements RuntimeResources {
     void readerPromise;
   }
 
-  private spawnClaude(projectPath: string, claudeSessionId?: string): Claude2Process {
+  private spawnClaude(
+    projectPath: string,
+    claudeSessionId?: string,
+    model?: string,
+  ): Claude2Process {
     const args = [
       "--output-format",
       "stream-json",
@@ -196,6 +225,9 @@ export class Claude2Runtime implements RuntimeResources {
       "--permission-prompt-tool",
       "stdio",
     ];
+    if (model) {
+      args.push("--model", model);
+    }
     if (claudeSessionId) {
       args.push("--resume", claudeSessionId);
     }
@@ -239,8 +271,10 @@ export class Claude2Runtime implements RuntimeResources {
       const msg = JSON.parse(line);
       if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
         const state = this.sessions.get(sessionName);
-        if (state && !state.claudeSessionId) {
-          state.claudeSessionId = msg.session_id;
+        if (state) {
+          if (!state.claudeSessionId) {
+            state.claudeSessionId = msg.session_id;
+          }
           if (typeof msg.model === "string") state.model = msg.model;
           this.onSystemInit(
             state.sessionId,

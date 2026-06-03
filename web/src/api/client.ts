@@ -1,6 +1,7 @@
 import type {
   AgentProvider,
   AgentSessionDetailResponse,
+  AgentSessionMessagesResponse,
   AuthMeResponse,
   CloseAgentSessionResponse,
   CloseTerminalSessionResponse,
@@ -26,7 +27,6 @@ import type {
   ProjectFilePreviewResponse,
   ProjectListResponse,
   RenameFileResponse,
-  SessionStreamServerMessage,
   TerminalSessionDetailResponse,
   UploadFileResponse,
 } from "@agents-remote/shared";
@@ -203,11 +203,14 @@ export async function getAgentSession(
 export async function getAgentSessionMessages(
   projectName: string,
   sessionId: string,
-): Promise<{ sessionId: string; messages: SessionStreamServerMessage[] }> {
-  return fetchJson(
-    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/messages`,
-    "api.agentSessionDetailFailed",
-  );
+  params?: { limit?: number; cursor?: string },
+): Promise<AgentSessionMessagesResponse> {
+  const base = `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/messages`;
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", params.limit.toString());
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  const url = qs.toString() ? `${base}?${qs}` : base;
+  return fetchJson(url, "api.agentSessionDetailFailed");
 }
 
 export async function closeAgentSession(

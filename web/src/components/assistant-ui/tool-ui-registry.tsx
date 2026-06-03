@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { useComposerRuntime, type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
 
@@ -15,7 +15,10 @@ const Icons = {
     '<path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M5 15l1 3.5L9.5 19.5 6.5 21 5 24l-1.5-3L0 19.5 3.5 18 5 15z" fill="currentColor" opacity="0.5"/>',
   webSearch:
     '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 12h17M12 3.5a15 15 0 010 17M12 3.5a15 15 0 000 17" stroke="currentColor" stroke-width="1.5"/>',
-  task: '<path d="M4 5h3l1.5 2h7a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2zm0 1a1 1 0 00-1 1v8a1 1 0 001 1h11a1 1 0 001-1V9a1 1 0 00-1-1H8l-1.5-2H4z" fill="currentColor"/>',
+  webFetch:
+    '<circle cx="12" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 13l3 4 3-4M12 8v9M4 20h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  mcp: '<circle cx="5" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="19" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  task: '<circle cx="12" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 21c0-4 3.1-7 7-7s7 3 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   code: '<path d="M8 3L3 9l5 6M16 3l5 6-5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   globe:
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20" stroke="currentColor" stroke-width="1.5"/>',
@@ -26,10 +29,14 @@ const Icons = {
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17.5" r="0.75" fill="currentColor"/>',
 };
 
-function ToolIcon({ name }: { name: string }) {
+function ToolIcon({ name, className }: { name: string; className?: string }) {
   const d = Icons[name as keyof typeof Icons] ?? Icons.task;
   return (
-    <svg className="h-3.5 w-3.5 shrink-0 text-cyan-400" viewBox="0 0 24 24" aria-hidden="true">
+    <svg
+      className={`h-3.5 w-3.5 shrink-0 ${className ?? "text-cyan-400"}`}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
       <g dangerouslySetInnerHTML={{ __html: d }} />
     </svg>
   );
@@ -37,33 +44,43 @@ function ToolIcon({ name }: { name: string }) {
 
 function makeToolRenderer(config: {
   icon: string;
-  label?: (args: Record<string, unknown>) => string;
+  label?: (args: Record<string, unknown>, toolName: string) => string;
 }): ToolCallMessagePartComponent {
   const { icon, label } = config;
-  return ({ toolName, argsText, result, status }) => {
+  return ({ toolName, argsText, result, status, ...rest }) => {
     const [expanded, setExpanded] = useState(false);
     const isRunning = status.type === "running";
+    const isError = (rest as Record<string, unknown>).isError === true;
     const resultStr =
       typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
     const hasResult = resultStr.length > 0 && !isRunning;
     const args = safeParseArgs(argsText);
-    const displayLabel = label ? label(args) : toolName;
+    const displayLabel = label ? label(args, toolName) : toolName;
     const hasArgs = argsText.length > 0 && argsText !== "{}";
 
+    const accentColor = isError ? "text-red-400" : "text-cyan-400";
+    const accentBorder = isError ? "border-red-500/40" : "border-slate-600/50";
+    const accentBg = isError ? "bg-red-500/5" : "bg-slate-900/60";
+    const accentDivider = isError ? "border-red-500/20" : "border-slate-700/50";
+
     return (
-      <div className="my-2 rounded-lg border border-slate-600/50 bg-slate-900/60 overflow-hidden">
+      <div className={`my-2 rounded-lg border ${accentBorder} ${accentBg} overflow-hidden`}>
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-800/50 transition"
+          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-800/50 transition cursor-pointer"
           onClick={() => setExpanded(!expanded)}
         >
           <span className="text-slate-500 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
-          <ToolIcon name={icon} />
-          <span className="text-xs font-medium text-cyan-400 truncate">{displayLabel}</span>
+          <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
+          <span className={`text-xs font-medium truncate ${accentColor}`}>{displayLabel}</span>
           {isRunning ? (
-            <span className="ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-cyan-400/40 border-t-cyan-400" />
+            <span
+              className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
+            />
           ) : null}
-          {hasResult && !expanded ? (
+          {isError && !expanded ? (
+            <span className="text-[0.6rem] text-red-400/70 ml-auto shrink-0">错误</span>
+          ) : hasResult && !expanded ? (
             <span className="text-[0.6rem] text-slate-500 truncate ml-auto">
               {resultStr.length > 1024
                 ? `${(resultStr.length / 1024).toFixed(1)}k`
@@ -74,7 +91,7 @@ function makeToolRenderer(config: {
         {expanded && (
           <>
             {hasArgs ? (
-              <div className="border-t border-slate-700/50 px-3 py-2">
+              <div className={`border-t ${accentDivider} px-3 py-2`}>
                 {Object.keys(args).length > 0 ? (
                   <div className="space-y-1.5">
                     {Object.entries(args).map(([key, value]) => (
@@ -92,8 +109,10 @@ function makeToolRenderer(config: {
               </div>
             ) : null}
             {hasResult ? (
-              <div className="border-t border-slate-700/50 px-3 py-2 max-h-48 overflow-y-auto">
-                <pre className="text-[0.6rem] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+              <div className={`border-t ${accentDivider} px-3 py-2 max-h-48 overflow-y-auto`}>
+                <pre
+                  className={`text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed ${isError ? "text-red-300" : "text-slate-300"}`}
+                >
                   {resultStr}
                 </pre>
               </div>
@@ -168,6 +187,28 @@ export const WebSearchToolUI = makeToolRenderer({
   },
 });
 
+export const WebFetchToolUI = makeToolRenderer({
+  icon: "webFetch",
+  label: (args) => {
+    const url = typeof args.url === "string" ? args.url : "";
+    try {
+      const host = url ? new URL(url).hostname : "";
+      return host ? `Fetch: ${host}` : "WebFetch";
+    } catch {
+      return url ? `Fetch: ${url.slice(0, 60)}` : "WebFetch";
+    }
+  },
+});
+
+export const MCPToolRenderer = makeToolRenderer({
+  icon: "mcp",
+  label: (_args, toolName) => {
+    // Strip mcp__server__ prefix for display: "mcp__context7__query-docs" → "context7/query-docs"
+    const cleaned = toolName.replace(/^mcp__/, "").replace(/__/g, "/");
+    return cleaned;
+  },
+});
+
 export const GlobToolUI = makeToolRenderer({
   icon: "search",
   label: (args) => {
@@ -205,7 +246,6 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   ...rest
 }) => {
   const bridge = useContext(Claude2BridgeContext);
-  const [expanded, setExpanded] = useState(true);
   const composer = useComposerRuntime();
   const isRunning = status.type === "running";
   const toolCallId = (rest as Record<string, unknown>).toolCallId as string | undefined;
@@ -215,6 +255,12 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   const resultStr =
     typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
   const hasResult = resultStr.length > 0;
+  // Default expanded when waiting for answer, collapsed when already answered
+  const [expanded, setExpanded] = useState(!hasResult);
+  // Auto-collapse once answered
+  useEffect(() => {
+    if (hasResult) setExpanded(false);
+  }, [hasResult]);
 
   // Server-driven state: no optimistic setLocalAnswer.
   //
@@ -314,7 +360,7 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
     <div className="my-2 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-amber-500/10 transition"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-amber-500/10 transition cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
         <span className="text-amber-400/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
@@ -514,6 +560,7 @@ toolRegistry.set("MultiEdit", EditToolUI);
 toolRegistry.set("Skill", SkillToolUI);
 toolRegistry.set("Task", TaskToolUI);
 toolRegistry.set("WebSearch", WebSearchToolUI);
+toolRegistry.set("WebFetch", WebFetchToolUI);
 toolRegistry.set("Glob", GlobToolUI);
 toolRegistry.set("Grep", GrepToolUI);
 toolRegistry.set("NotebookEdit", NotebookEditToolUI);
@@ -525,8 +572,8 @@ export function getToolRenderer(toolName: string): ToolRenderer | undefined {
   // Exact match first
   const exact = toolRegistry.get(toolName);
   if (exact) return exact;
-  // MCP tools match with prefix
-  if (toolName.startsWith("mcp__")) return undefined; // use ToolFallback
+  // MCP tools match with prefix — use shared MCP renderer with connector icon
+  if (toolName.startsWith("mcp__")) return MCPToolRenderer;
   return undefined;
 }
 

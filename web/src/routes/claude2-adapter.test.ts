@@ -165,7 +165,7 @@ describe("loadMessagesFromRaw", () => {
     expect(toolCall.result).toBe("Red");
   });
 
-  test("is_error tool_result is skipped (no false match)", () => {
+  test("is_error tool_result sets isError flag and shows error content", () => {
     const msgs: SessionStreamServerMessage[] = [
       user([{ type: "text", text: "hello" }]),
       assistant("msg-1", [
@@ -176,7 +176,14 @@ describe("loadMessagesFromRaw", () => {
           input: { questions: [{ question: "X?", options: ["A", "B"] }] },
         },
       ]),
-      user([{ type: "tool_result", tool_use_id: "tu-ask", content: "", is_error: true }]),
+      user([
+        {
+          type: "tool_result",
+          tool_use_id: "tu-ask",
+          content: "Something went wrong",
+          is_error: true,
+        },
+      ]),
       result("success"),
     ];
 
@@ -184,10 +191,12 @@ describe("loadMessagesFromRaw", () => {
     const assistantContent = result_msgs[1].content as Array<{
       type: string;
       result?: string;
+      isError?: boolean;
     }>;
     const toolCall = assistantContent[0];
     expect(toolCall.type).toBe("tool-call");
-    expect(toolCall.result).toBeUndefined();
+    expect(toolCall.result).toBe("Something went wrong");
+    expect(toolCall.isError).toBe(true);
   });
 
   test("user message with only tool_result (no text) does not create a user bubble", () => {
