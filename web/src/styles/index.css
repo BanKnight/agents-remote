@@ -7,7 +7,6 @@
 
 :root {
   color-scheme: dark;
-  background: #020617;
   color: #e2e8f0;
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
   font-family:
@@ -61,7 +60,11 @@ body,
   overscroll-behavior: none;
 }
 
-html,
+html {
+  background-image: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
+  background-color: #020617;
+}
+
 body {
   background: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
 }
