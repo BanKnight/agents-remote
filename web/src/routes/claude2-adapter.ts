@@ -518,11 +518,12 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     [sendToSocket],
   );
 
-  // onCancel: user interrupted the run
+  // onCancel: user interrupted the run — send proper interrupt via SDK protocol
   const onCancel = useCallback(async () => {
     sendToSocket({
-      type: "user",
-      message: { role: "user", content: [{ type: "text", text: "" }] },
+      type: "control_request",
+      request_id: crypto.randomUUID(),
+      request: { subtype: "interrupt" },
     });
     setIsRunning(false);
   }, [sendToSocket]);

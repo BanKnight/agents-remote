@@ -407,6 +407,13 @@ export type Claude2StreamClientMessage =
   | {
       type: "permission_mode";
       mode: Claude2PermissionMode;
+    }
+  | {
+      type: "control_request";
+      request_id: string;
+      request: {
+        subtype: "interrupt";
+      };
     };
 
 export type SessionStreamServerMessage =

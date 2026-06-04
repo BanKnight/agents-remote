@@ -164,7 +164,11 @@ export class Claude2StreamController {
     }
 
     try {
-      if (parsed.type === "user" || parsed.type === "control_response") {
+      if (
+        parsed.type === "user" ||
+        parsed.type === "control_response" ||
+        parsed.type === "control_request"
+      ) {
         console.log(`[claude2-stream] message ${parsed.type}: ${data.tmuxSessionName}`);
         await this.runtime.write?.(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
       } else if (parsed.type === "switch_model") {
