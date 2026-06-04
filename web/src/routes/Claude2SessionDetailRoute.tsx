@@ -114,7 +114,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   }, [compactStatus]);
 
   // Wire bridge.onCompact after hook returns.
-  // compact_boundary → "start", result after compact → "end".
+  // status:"compacting" or auto compact_boundary → "start"
+  // compact_result or result after compact → "end"
   bridge.onCompact = (phase: "start" | "end") => {
     if (phase === "start") {
       console.log("[claude2-chat] compact started");

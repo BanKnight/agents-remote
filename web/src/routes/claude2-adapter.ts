@@ -183,6 +183,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
   const compactActiveRef = useRef(false);
+  const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const socketRef = useRef<WebSocket | null>(null);
 
   const sendToSocket = useCallback((data: unknown) => {
@@ -302,26 +303,87 @@ export function useClaude2Session(projectName: string, sessionId: string) {
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
 
         // ── compact protocol ────────────────────────────────────────
+        //
+        // Compact lifecycle (manual /compact):
+        //   status:"compacting" → compact_result → [restart] →
+        //   compact_boundary (replay marker) → … → result →
+        //   [restart] → live assistant
+        //
+        // Auto compact (context full):
+        //   compact_boundary (inline, no preceding status) →
+        //   … → result → [restart] → live assistant
+        //
+        // Phase tracking prevents replay markers from re-triggering
+        // the compact indicator and keeps isRunning correct across
+        // the restart → replay → restart → live assistant sequence.
+
+        // Phase: manual compact start (status:"compacting")
+        if (
+          msg.type === "system" &&
+          msg.subtype === "status" &&
+          "status" in msg &&
+          msg.status === "compacting"
+        ) {
+          compactActiveRef.current = true;
+          setIsRunning(true);
+          compactPhaseRef.current = "compacting";
+          if (bridge.onCompact) bridge.onCompact("start");
+          return;
+        }
+
+        // Phase: manual compact finished (compact_result)
+        if (msg.type === "system" && msg.subtype === "status" && "compact_result" in msg) {
+          if (compactActiveRef.current) {
+            compactActiveRef.current = false;
+            if (bridge.onCompact) bridge.onCompact("end");
+          }
+          compactPhaseRef.current = "replay";
+          // isRunning stays true — CLI replays compacted context next
+          return;
+        }
+
+        // Phase: compact_boundary — start if auto compact, skip if replay
         if (
           msg.type === "system" &&
           (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
         ) {
-          compactActiveRef.current = true;
-          setIsRunning(true);
-          if (bridge.onCompact) bridge.onCompact("start");
+          if (compactPhaseRef.current === "none") {
+            // Auto compact — no preceding status:"compacting"
+            compactActiveRef.current = true;
+            setIsRunning(true);
+            compactPhaseRef.current = "compacting";
+            if (bridge.onCompact) bridge.onCompact("start");
+          }
+          // If already in compacting/replay, this is a replay marker — skip
           return;
         }
+
         // ── Track model from system.init ───────────────────────────
         if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
           setResolvedModel((msg as { model: string }).model);
         }
 
         if (msg.type === "result") {
-          setIsRunning(false);
-          if (compactActiveRef.current) {
-            compactActiveRef.current = false;
-            if (bridge.onCompact) bridge.onCompact("end");
+          if (compactPhaseRef.current === "compacting" || compactPhaseRef.current === "replay") {
+            // End of compact or replay phase
+            if (compactActiveRef.current) {
+              compactActiveRef.current = false;
+              if (bridge.onCompact) bridge.onCompact("end");
+            }
+            setIsRunning(false);
+            compactPhaseRef.current = "waiting-live";
+          } else {
+            setIsRunning(false);
           }
+        }
+
+        // Phase: live assistant starts after compact replay
+        if (
+          compactPhaseRef.current === "waiting-live" &&
+          (msg.type === "assistant" || (msg.type === "system" && msg.subtype === "thinking_tokens"))
+        ) {
+          compactPhaseRef.current = "none";
+          setIsRunning(true);
         }
 
         // ── control_request routing ─────────────────────────────────

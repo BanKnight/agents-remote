@@ -264,6 +264,24 @@ export type Claude2CompactBoundary = {
   };
 };
 
+export type Claude2StatusMessage = {
+  type: "system";
+  subtype: "status";
+  status?: string | null;
+  compact_result?: string;
+  session_id: string;
+  uuid: string;
+};
+
+export type Claude2ThinkingTokens = {
+  type: "system";
+  subtype: "thinking_tokens";
+  estimated_tokens: number;
+  estimated_tokens_delta: number;
+  session_id: string;
+  uuid: string;
+};
+
 export type Claude2AssistantContent =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
@@ -420,6 +438,8 @@ export type SessionStreamServerMessage =
     }
   | Claude2SystemInit
   | Claude2CompactBoundary
+  | Claude2StatusMessage
+  | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage
   | Claude2Result
