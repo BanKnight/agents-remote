@@ -271,15 +271,7 @@ const isChatMessage = (msg: Record<string, unknown>): boolean => {
   const type = msg.type as string | undefined;
   if (!type) return false;
   if (msg.isMeta === true) return false;
-  return (
-    type === "user" ||
-    type === "assistant" ||
-    type === "result" ||
-    (type === "system" &&
-      (msg.subtype === "init" ||
-        msg.subtype === "compact_boundary" ||
-        msg.subtype === "microcompact_boundary"))
-  );
+  return type === "user" || type === "assistant" || type === "result" || type === "system";
 };
 
 // Count only visible messages (user/assistant) toward the pagination limit.
