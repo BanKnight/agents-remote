@@ -21,6 +21,7 @@ type Claude2SessionState = {
   sessionId: string;
   claudeSessionId?: string;
   model?: string;
+  permissionMode?: string;
   process: Claude2Process | null;
 };
 
@@ -72,18 +73,20 @@ export class Claude2Runtime implements RuntimeResources {
     sessionId: string,
     claudeSessionId?: string,
     model?: string,
+    permissionMode?: string,
   ): Promise<void> {
     const existing = this.sessions.get(sessionName);
     if (existing?.process && !existing.process.exited) {
       return;
     }
 
-    const proc = this.spawnClaude(projectPath, claudeSessionId, model);
+    const proc = this.spawnClaude(projectPath, claudeSessionId, model, permissionMode);
     this.sessions.set(sessionName, {
       projectPath,
       sessionId,
       claudeSessionId,
       model,
+      permissionMode,
       process: proc,
     });
   }
@@ -95,7 +98,6 @@ export class Claude2Runtime implements RuntimeResources {
     const state = this.sessions.get(sessionName);
     if (!state) return null;
 
-    // Kill the current process
     if (state.process) {
       state.process.subprocess.kill();
       for (const cb of state.process.onCloseCallbacks) cb();
@@ -103,10 +105,35 @@ export class Claude2Runtime implements RuntimeResources {
       state.process = null;
     }
 
-    // Restart with new model and resume
     const proc = this.spawnClaude(state.projectPath, state.claudeSessionId, model);
     state.process = proc;
     state.model = model;
+
+    return { claudeSessionId: state.claudeSessionId, projectPath: state.projectPath };
+  }
+
+  async switchPermissionMode(
+    sessionName: string,
+    permissionMode: string,
+  ): Promise<{ claudeSessionId?: string; projectPath: string } | null> {
+    const state = this.sessions.get(sessionName);
+    if (!state) return null;
+
+    if (state.process) {
+      state.process.subprocess.kill();
+      for (const cb of state.process.onCloseCallbacks) cb();
+      state.process.onCloseCallbacks.clear();
+      state.process = null;
+    }
+
+    const proc = this.spawnClaude(
+      state.projectPath,
+      state.claudeSessionId,
+      state.model,
+      permissionMode,
+    );
+    state.process = proc;
+    state.permissionMode = permissionMode;
 
     return { claudeSessionId: state.claudeSessionId, projectPath: state.projectPath };
   }
@@ -215,6 +242,7 @@ export class Claude2Runtime implements RuntimeResources {
     projectPath: string,
     claudeSessionId?: string,
     model?: string,
+    permissionMode?: string,
   ): Claude2Process {
     const args = [
       "--output-format",
@@ -225,6 +253,9 @@ export class Claude2Runtime implements RuntimeResources {
       "--permission-prompt-tool",
       "stdio",
     ];
+    if (permissionMode) {
+      args.push("--permission-mode", permissionMode);
+    }
     if (model) {
       args.push("--model", model);
     }

@@ -1,5 +1,4 @@
-const CACHE_NAME = "agents-remote-shell-v6";
-const NAVIGATION_TIMEOUT_MS = 3000;
+const CACHE_NAME = "agents-remote-shell-v5";
 
 const APP_SHELL_ASSETS = [
   "/",
@@ -43,7 +42,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstWithCacheFallback(request));
+    event.respondWith(cacheFirstWithNetworkUpdate(request));
     return;
   }
 
@@ -72,23 +71,25 @@ const staleWhileRevalidate = async (request) => {
   return cached ?? (await fetched) ?? Response.error();
 };
 
-const networkFirstWithCacheFallback = async (request) => {
-  try {
-    const networkResponse = await Promise.race([
-      fetch(request),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), NAVIGATION_TIMEOUT_MS),
-      ),
-    ]);
+const cacheFirstWithNetworkUpdate = async (request) => {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
 
-    if (networkResponse.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      void cache.put(request, networkResponse.clone());
-    }
-    return networkResponse;
-  } catch {
-    const cache = await caches.open(CACHE_NAME);
-    const cached = (await cache.match(request)) ?? (await cache.match("/"));
-    return cached ?? Response.error();
+  // Always fetch in background to keep cache warm.
+  const networkPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) {
+        void cache.put(request, response.clone());
+      }
+      return response;
+    })
+    .catch(() => undefined);
+
+  // Return cached immediately if available; otherwise wait for network.
+  if (cached) {
+    return cached;
   }
+
+  const networkResponse = await networkPromise;
+  return networkResponse ?? Response.error();
 };

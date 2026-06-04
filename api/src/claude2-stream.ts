@@ -195,6 +195,29 @@ export class Claude2StreamController {
             });
           }
         }
+      } else if (parsed.type === "permission_mode") {
+        console.log(`[claude2-stream] permission_mode: ${data.tmuxSessionName} → ${parsed.mode}`);
+        const existingStream = this.streams.get(socket);
+        if (existingStream) {
+          existingStream.close();
+          this.streams.delete(socket);
+        }
+        const result = await this.claude2Runtime.switchPermissionMode(
+          data.tmuxSessionName,
+          parsed.mode,
+        );
+        if (result) {
+          try {
+            await this.startStream(socket, data);
+          } catch (e) {
+            console.error(`[claude2-stream] restart stream after permission_mode switch failed`, e);
+            send(socket, {
+              type: "error",
+              code: "SESSION_RUNTIME_ERROR",
+              message: "Failed to restart stream after permission mode switch",
+            });
+          }
+        }
       }
     } catch {
       send(socket, {

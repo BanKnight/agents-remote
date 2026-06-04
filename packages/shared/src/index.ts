@@ -366,6 +366,13 @@ export type SessionStreamClientMessage =
     }
   | Claude2StreamClientMessage;
 
+export type Claude2PermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "plan"
+  | "auto";
+
 export type Claude2StreamClientMessage =
   | {
       type: "user";
@@ -378,6 +385,10 @@ export type Claude2StreamClientMessage =
   | {
       type: "switch_model";
       model: string;
+    }
+  | {
+      type: "permission_mode";
+      mode: Claude2PermissionMode;
     };
 
 export type SessionStreamServerMessage =

@@ -17,6 +17,7 @@ export type Claude2Bridge = {
   sendToolResult: (toolUseId: string, content: string) => void;
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
+  switchPermissionMode: (mode: string) => void;
   onCompact: ((phase: "start" | "end") => void) | null;
 };
 
@@ -176,6 +177,8 @@ export function useClaude2Session(projectName: string, sessionId: string) {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasOlder, setHasOlder] = useState(false);
+  const [resolvedModel, setResolvedModel] = useState<string>();
+  const [permissionMode, setPermissionMode] = useState<string>("default");
 
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
@@ -258,6 +261,10 @@ export function useClaude2Session(projectName: string, sessionId: string) {
       switchModel(model) {
         sendToSocket({ type: "switch_model", model });
       },
+      switchPermissionMode(mode) {
+        setPermissionMode(mode);
+        sendToSocket({ type: "permission_mode", mode });
+      },
       onCompact: null,
     }),
     [sendToSocket],
@@ -300,9 +307,15 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
         ) {
           compactActiveRef.current = true;
+          setIsRunning(true);
           if (bridge.onCompact) bridge.onCompact("start");
           return;
         }
+        // ── Track model from system.init ───────────────────────────
+        if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
+          setResolvedModel((msg as { model: string }).model);
+        }
+
         if (msg.type === "result") {
           setIsRunning(false);
           if (compactActiveRef.current) {
@@ -465,5 +478,5 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     [threadLikeMessages, isRunning, isLoading, onNew, onCancel],
   );
 
-  return { storeAdapter, bridge, hasOlder, loadOlder };
+  return { storeAdapter, bridge, hasOlder, loadOlder, resolvedModel, permissionMode };
 }
