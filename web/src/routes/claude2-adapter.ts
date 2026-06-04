@@ -59,7 +59,33 @@ export function loadMessagesFromRaw(
   for (let i = 0; i < rawMessages.length; i++) {
     const msg = rawMessages[i];
 
-    if (msg.type === "system") continue;
+    if (msg.type === "system") {
+      // compact_boundary is the CLI's persistent compact record
+      if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
+        const meta = (msg as Record<string, unknown>).compactMetadata as
+          | Record<string, unknown>
+          | undefined;
+        const micro = (msg as Record<string, unknown>).microcompactMetadata as
+          | Record<string, unknown>
+          | undefined;
+        const data = meta ?? micro ?? {};
+        flushAssistant();
+        messages.push({
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call" as const,
+              toolCallId: `compact-${i}`,
+              toolName: "compact-result",
+              args: asReadonlyJSON(data as Record<string, unknown>),
+              argsText: JSON.stringify(data),
+            },
+          ],
+        });
+        continue;
+      }
+      continue;
+    }
 
     if (msg.type === "user") {
       const rawContent = msg.message.content as unknown;
@@ -71,8 +97,13 @@ export function loadMessagesFromRaw(
         // CLI command output — render as a tool result (like Bash), not a
         // user bubble. <local-command-caveat> is internal bookkeeping.
         if (content.includes("<local-command-stdout>")) {
-          flushAssistant();
           const text = content.replace(/<\/?local-command-stdout>/g, "").trim();
+          // compact_boundary already provides the persistent compact record;
+          // don't create a redundant card for "Compacted" stdout.
+          if (text === "Compacted" || text.startsWith("Compacted ")) {
+            continue;
+          }
+          flushAssistant();
           messages.push({
             role: "assistant",
             content: [
@@ -168,6 +199,11 @@ export function loadMessagesFromRaw(
     }
 
     if (msg.type === "assistant") {
+      const model = (msg.message as { model?: string } | undefined)?.model;
+      // Synthetic messages are CLI internal (e.g. "no response requested",
+      // compact cancellation notices). Skip them in both live and history.
+      if (model === "<synthetic>") continue;
+
       const msgId = msg.message?.id as string | undefined;
       if (msgId && msgId !== lastAssistantMsgId) {
         flushAssistant();

@@ -547,7 +547,53 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   );
 };
 
-// ── Slash command output (e.g. /compact) ──────────────────────────
+// ── Compact result (persistent chat card matching CompactIndicator) ──
+
+const CompactResultUI: ToolCallMessagePartComponent = ({ argsText }) => {
+  const args = safeParseArgs(argsText);
+  const trigger = (args.trigger as string) ?? "auto";
+  const preTokens = args.preTokens as number | undefined;
+  const postTokens = args.postTokens as number | undefined;
+  const durationMs = args.durationMs as number | undefined;
+
+  const preStr = preTokens ? `${Math.round(preTokens / 1000)}k` : null;
+  const durationStr = durationMs ? `${(durationMs / 1000).toFixed(1)}s` : null;
+  const meta = [preStr ? `~${preStr} tokens` : null, durationStr].filter(Boolean).join(" · ");
+
+  const label = trigger === "manual" ? "上下文已压缩" : "上下文自动压缩";
+  const savings =
+    preTokens && postTokens
+      ? ` (${Math.round(postTokens / 1000)}k, 已清理 ~${Math.round((preTokens - postTokens) / 1000)}k tokens)`
+      : "";
+
+  return (
+    <div className="my-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <svg
+          className="h-3.5 w-3.5 shrink-0 text-emerald-400"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M3 8l3.5 3.5L13 5"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="text-xs font-medium text-emerald-400/90">
+          {label}
+          {savings}
+        </span>
+        {meta ? <span className="text-[0.6rem] text-slate-500 ml-auto">{meta}</span> : null}
+      </div>
+    </div>
+  );
+};
+
+// ── Slash command output (non-compact) ────────────────────────────
 
 const CommandOutputUI = makeToolRenderer({
   icon: "command",
@@ -574,6 +620,8 @@ toolRegistry.set("Glob", GlobToolUI);
 toolRegistry.set("Grep", GrepToolUI);
 toolRegistry.set("NotebookEdit", NotebookEditToolUI);
 toolRegistry.set("AskUserQuestion", AskUserQuestionToolUI);
+// Slash command output (e.g. /compact result via <local-command-stdout>)
+toolRegistry.set("compact-result", CompactResultUI);
 // Slash command output (e.g. /compact result via <local-command-stdout>)
 toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
