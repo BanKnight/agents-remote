@@ -60,7 +60,6 @@ export function loadMessagesFromRaw(
     const msg = rawMessages[i];
 
     if (msg.type === "system") {
-      // compact_boundary is the CLI's persistent compact record
       if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
         const meta = (msg as Record<string, unknown>).compactMetadata as
           | Record<string, unknown>
@@ -69,18 +68,15 @@ export function loadMessagesFromRaw(
           | Record<string, unknown>
           | undefined;
         const data = meta ?? micro ?? {};
+        const trigger = (data.trigger as string) ?? "auto";
+        const preTokens = data.preTokens as number | undefined;
+        const preStr = preTokens ? `${Math.round(preTokens / 1000)}k` : null;
+        const label = trigger === "manual" ? "上下文已压缩" : "上下文自动压缩";
+        const text = preStr ? `${label} (~${preStr} tokens)` : label;
         flushAssistant();
         messages.push({
-          role: "assistant",
-          content: [
-            {
-              type: "tool-call" as const,
-              toolCallId: `compact-${i}`,
-              toolName: "compact-result",
-              args: asReadonlyJSON(data as Record<string, unknown>),
-              argsText: JSON.stringify(data),
-            },
-          ],
+          role: "system",
+          content: [{ type: "text", text }],
         });
         continue;
       }
