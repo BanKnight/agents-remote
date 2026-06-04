@@ -241,6 +241,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasOlder, setHasOlder] = useState(false);
+  const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string>();
   const [permissionMode, setPermissionMode] = useState<string>("default");
 
@@ -325,6 +326,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
         });
       },
       switchModel(model) {
+        setCurrentModel(model);
         sendToSocket({ type: "switch_model", model });
       },
       switchPermissionMode(mode) {
@@ -441,7 +443,14 @@ export function useClaude2Session(projectName: string, sessionId: string) {
 
         // ── Track model from system.init ───────────────────────────
         if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
-          setResolvedModel((msg as { model: string }).model);
+          const model = (msg as { model: string }).model;
+          setResolvedModel(model);
+          // Derive tier name from resolved model (e.g.
+          // "claude-sonnet-4-20250514" → "sonnet") so the dropdown
+          // checkmark follows the actual running model.
+          const tiers = ["sonnet", "opus", "haiku"];
+          const tier = tiers.find((t) => model.includes(t));
+          if (tier) setCurrentModel(tier);
         }
 
         if (msg.type === "result") {
@@ -640,5 +649,5 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     [threadLikeMessages, isRunning, isLoading, onNew, onCancel],
   );
 
-  return { storeAdapter, bridge, hasOlder, loadOlder, resolvedModel, permissionMode };
+  return { storeAdapter, bridge, hasOlder, loadOlder, currentModel, resolvedModel, permissionMode };
 }
