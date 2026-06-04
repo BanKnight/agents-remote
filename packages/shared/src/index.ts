@@ -297,6 +297,17 @@ export type Claude2AssistantMessage = {
   session_id: string;
 };
 
+export type Claude2ApiRetry = {
+  type: "system";
+  subtype: "api_retry";
+  attempt: number;
+  max_retries: number;
+  retry_delay_ms: number;
+  error_status?: number;
+  error?: string;
+  session_id: string;
+};
+
 export type Claude2UserMessage = {
   type: "user";
   message: {
@@ -316,6 +327,8 @@ export type Claude2Result = {
   total_cost_usd?: number;
   duration_ms?: number;
   result?: string;
+  is_error?: boolean;
+  api_error_status?: number;
 };
 
 // Claude CLI --permission-prompt-tool stdio routes permission prompts
@@ -446,11 +459,18 @@ export type SessionStreamServerMessage =
   | Claude2SystemInit
   | Claude2CompactBoundary
   | Claude2StatusMessage
+  | Claude2ApiRetry
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage
   | Claude2Result
-  | Claude2ControlRequest;
+  | Claude2ControlRequest
+  | {
+      type: "switch_model_result";
+      model: string;
+      success: boolean;
+      error?: string;
+    };
 
 export type HealthResponse = {
   ok: true;

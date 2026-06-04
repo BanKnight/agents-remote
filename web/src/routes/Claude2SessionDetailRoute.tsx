@@ -114,8 +114,17 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     },
   });
 
-  const { storeAdapter, bridge, hasOlder, loadOlder, currentModel, resolvedModel, permissionMode } =
-    useClaude2Session(projectName, sessionId);
+  const {
+    storeAdapter,
+    bridge,
+    hasOlder,
+    loadOlder,
+    currentModel,
+    resolvedModel,
+    modelSwitchVersion,
+    retryState,
+    permissionMode,
+  } = useClaude2Session(projectName, sessionId);
 
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
 
@@ -255,6 +264,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   </ThreadPrimitive.ScrollToBottom>
                 </div>
 
+                <RetryIndicator retryState={retryState} />
                 <CompactIndicator />
                 <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
                   <ComposerPrimitive.Root>
@@ -262,6 +272,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                       currentModel={currentModel}
                       currentResolved={resolvedModel ?? session?.model}
                       availableModels={availableModels}
+                      modelSwitchVersion={modelSwitchVersion}
                       permissionMode={permissionMode}
                     />
                   </ComposerPrimitive.Root>
@@ -396,23 +407,26 @@ function MarkdownText() {
 
 function AssistantChatBubble() {
   const message = useMessage();
-  const isRunning = useThread((s) => s.isRunning);
   const isEmpty =
     !message.content || (Array.isArray(message.content) && message.content.length === 0);
 
-  // Only show reasoning in the currently streaming message, never in history.
   const msgStatus = (message as { status?: { type?: string } }).status;
-  const showReasoning = msgStatus?.type === "running";
+  // isStreaming is message-level — only the CURRENTLY streaming message
+  // gets the loading dots / trailing animation. Thread-level isRunning
+  // would light up ALL past bubbles during generation.
+  const isStreaming = msgStatus?.type === "running";
 
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
         {isEmpty ? (
-          <div className="flex items-center gap-1.5 py-1">
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-          </div>
+          isStreaming ? (
+            <div className="flex items-center gap-1.5 py-1">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+            </div>
+          ) : null
         ) : (
           <>
             <MessagePrimitive.Parts>
@@ -422,11 +436,11 @@ function AssistantChatBubble() {
                   const CustomUI = getToolRenderer(part.toolName);
                   return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
                 }
-                if (part.type === "reasoning") return showReasoning ? <ReasoningDisplay /> : null;
+                if (part.type === "reasoning") return isStreaming ? <ReasoningDisplay /> : null;
                 return null;
               }}
             </MessagePrimitive.Parts>
-            {isRunning ? (
+            {isStreaming ? (
               <div className="mt-2 flex items-center gap-1.5 py-1">
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
@@ -436,7 +450,7 @@ function AssistantChatBubble() {
           </>
         )}
       </div>
-      {!isEmpty && !isRunning ? (
+      {!isEmpty && !isStreaming ? (
         <ActionBarPrimitive.Root className="flex items-center gap-0.5 self-end opacity-0 group-hover:opacity-100 transition-opacity px-1">
           <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
             <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -473,13 +487,22 @@ function AssistantChatBubble() {
 // SAME path for both live streaming and history load — that is what keeps
 // this divider consistent across both (the single-source-pipeline rule).
 //
-// Renders as a low-key full-width rule with the label centred:
-//   ──────────  上下文已压缩 (~6k tokens)  ──────────
+// ── SystemMessage: renders role:"system" messages from the pipeline ────
+// Two sub-types, distinguished by metadata.custom.systemMessageType:
+//   "compact" (default) — compact boundary divider, low-key gray
+//   "error"              — API error result, red-tinted
+// Wired as ThreadPrimitive.Messages SystemMessage component.
 function CompactDivider() {
+  const msg = useMessage();
+  const meta = (msg as { metadata?: { custom?: Record<string, unknown> } }).metadata;
+  const isError = meta?.custom?.systemMessageType === "error";
+
   return (
-    <MessagePrimitive.Root className="flex items-center gap-3 px-3 py-2 sm:px-5">
-      <span className="h-px flex-1 bg-slate-600" />
-      <span className="text-xs text-slate-400 shrink-0">
+    <MessagePrimitive.Root
+      className={`flex items-center gap-3 px-3 py-2 sm:px-5 ${isError ? "bg-red-950/20" : ""}`}
+    >
+      <span className={`h-px flex-1 ${isError ? "bg-red-800/50" : "bg-slate-600"}`} />
+      <span className={`text-xs shrink-0 ${isError ? "text-red-400/80" : "text-slate-400"}`}>
         <MessagePrimitive.Parts>
           {({ part }) => {
             if (part.type === "text") return <>{part.text}</>;
@@ -487,7 +510,7 @@ function CompactDivider() {
           }}
         </MessagePrimitive.Parts>
       </span>
-      <span className="h-px flex-1 bg-slate-600" />
+      <span className={`h-px flex-1 ${isError ? "bg-red-800/50" : "bg-slate-600"}`} />
     </MessagePrimitive.Root>
   );
 }
@@ -577,10 +600,12 @@ function ModelSelector({
   currentModel,
   currentResolved,
   availableModels,
+  modelSwitchVersion,
 }: {
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
+  modelSwitchVersion: number;
 }) {
   const { t } = useT();
   const bridge = useContext(Claude2BridgeContext);
@@ -589,34 +614,47 @@ function ModelSelector({
   const preSwitchResolvedRef = useRef<string | undefined>(undefined);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Only clear the spinner when currentResolved changes FROM the value it had
-  // when the switch was initiated. This prevents premature clearing from React
-  // re-render artifacts and ensures the spinner stays until a real system.init
-  // with the new model name arrives over WebSocket.
+  // Clear the spinner when the server confirms the switch:
+  //   a) currentResolved changes from its pre-switch baseline (system.init
+  //      from the new CLI process carries the resolved model name), OR
+  //   b) modelSwitchVersion increments (switch_model_result {success:true}
+  //      from backend — explicit confirmation that the new process started).
+  //   c) modelSwitchVersion also covers failure: the adapter increments it
+  //      on error too, so the spinner clears and the model reverts.
+  const preSwitchVersionRef = useRef(modelSwitchVersion);
   useEffect(() => {
     if (!switchingTo) {
       preSwitchResolvedRef.current = undefined;
+      preSwitchVersionRef.current = modelSwitchVersion;
       return;
     }
     if (preSwitchResolvedRef.current === undefined) {
       // First render after the switch was requested — capture the baseline.
       preSwitchResolvedRef.current = currentResolved;
+      preSwitchVersionRef.current = modelSwitchVersion;
       return;
     }
-    if (currentResolved !== preSwitchResolvedRef.current) {
-      // Resolved model has actually changed — confirmation received.
+    const resolvedChanged = currentResolved !== preSwitchResolvedRef.current;
+    const versionChanged = modelSwitchVersion !== preSwitchVersionRef.current;
+    if (resolvedChanged || versionChanged) {
       setSwitchingTo(null);
       preSwitchResolvedRef.current = undefined;
     }
-  }, [currentResolved, switchingTo]);
+  }, [currentResolved, switchingTo, modelSwitchVersion]);
 
   if (availableModels.length === 0) return null;
 
   const current = currentModel ?? availableModels[0];
-  const label =
-    currentResolved && (currentModel === current || !currentModel)
-      ? currentResolved
-      : modelDisplayLabel(current);
+  // Only show the resolved model name when it actually matches the current
+  // tier. After a model switch, currentModel updates immediately but
+  // currentResolved stays stale until the new CLI process emits system.init.
+  // Without this check, the collapsed button shows the OLD model name while
+  // the expanded dropdown checkmark tracks currentModel — two data sources,
+  // two different answers.
+  const resolvedMatchesTier = Boolean(
+    currentResolved && currentModel && currentResolved.includes(currentModel),
+  );
+  const label = resolvedMatchesTier ? currentResolved : modelDisplayLabel(current);
 
   if (switchingTo) {
     return (
@@ -804,11 +842,13 @@ function ComposerWithInterrupt({
   currentModel,
   currentResolved,
   availableModels,
+  modelSwitchVersion,
   permissionMode,
 }: {
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
+  modelSwitchVersion: number;
   permissionMode?: string;
 }) {
   const composer = useComposerRuntime();
@@ -849,6 +889,7 @@ function ComposerWithInterrupt({
           currentModel={currentModel}
           currentResolved={currentResolved}
           availableModels={availableModels}
+          modelSwitchVersion={modelSwitchVersion}
         />
         <PermissionModeSelector currentMode={permissionMode} />
       </div>
@@ -859,6 +900,28 @@ function ComposerWithInterrupt({
 // TRANSIENT banner above the composer. See the CompactStatus block at the
 // top of this file for the full two-surface design. This component shows
 // ONLY ephemeral states — there is deliberately no success branch, because a
+// TRANSIENT banner above the composer for API retries (e.g. 502 server_error).
+// Cleared automatically when system.init or an assistant message arrives.
+function RetryIndicator({
+  retryState,
+}: {
+  retryState: { attempt: number; maxRetries: number; delayMs: number; error: string } | null;
+}) {
+  if (!retryState) return null;
+  return (
+    <div className="shrink-0 px-3 pb-1">
+      <div className="rounded-lg border border-amber-600/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-400/80">
+        <span className="font-medium">API retry</span>
+        {" · "}
+        attempt {retryState.attempt}/{retryState.maxRetries}
+        {" · "}
+        next in {Math.round(retryState.delayMs / 1000)}s{" · "}
+        {retryState.error}
+      </div>
+    </div>
+  );
+}
+
 // successful compaction is recorded permanently by CompactDivider in the
 // message stream, not by this banner.
 function CompactIndicator() {

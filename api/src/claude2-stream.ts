@@ -190,12 +190,14 @@ export class Claude2StreamController {
           // Restart stream with new process
           try {
             await this.startStream(socket, data);
+            send(socket, { type: "switch_model_result", model: parsed.model, success: true });
           } catch (e) {
             console.error(`[claude2-stream] restart stream after model switch failed`, e);
             send(socket, {
-              type: "error",
-              code: "SESSION_RUNTIME_ERROR",
-              message: "Failed to restart stream after model switch",
+              type: "switch_model_result",
+              model: parsed.model,
+              success: false,
+              error: String(e),
             });
           }
         }

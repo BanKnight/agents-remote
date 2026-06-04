@@ -226,8 +226,20 @@ export function loadMessagesFromRaw(
     }
 
     if (msg.type === "result") {
-      flushAssistant();
-      lastAssistantMsgId = null;
+      // If the API returned an error (e.g. 422 model not found), surface it
+      // as an inline error divider so the user sees what went wrong.
+      if ("is_error" in msg && msg.is_error && typeof msg.result === "string") {
+        flushAssistant();
+        lastAssistantMsgId = null;
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: msg.result }],
+          metadata: { custom: { systemMessageType: "error" } },
+        });
+      } else {
+        flushAssistant();
+        lastAssistantMsgId = null;
+      }
       continue;
     }
   }
@@ -243,6 +255,13 @@ export function useClaude2Session(projectName: string, sessionId: string) {
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string>();
+  const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
+  const [retryState, setRetryState] = useState<{
+    attempt: number;
+    maxRetries: number;
+    delayMs: number;
+    error: string;
+  } | null>(null);
   const [permissionMode, setPermissionMode] = useState<string>("default");
 
   const cursorRef = useRef<string | null>(null);
@@ -451,6 +470,43 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           const tiers = ["sonnet", "opus", "haiku"];
           const tier = tiers.find((t) => model.includes(t));
           if (tier) setCurrentModel(tier);
+          setRetryState(null);
+        }
+
+        // ── API retry indicator ────────────────────────────────────
+        if (msg.type === "system" && msg.subtype === "api_retry") {
+          const r = msg as {
+            attempt: number;
+            max_retries: number;
+            retry_delay_ms: number;
+            error?: string;
+            error_status?: number;
+          };
+          setRetryState({
+            attempt: r.attempt,
+            maxRetries: r.max_retries,
+            delayMs: r.retry_delay_ms,
+            error: r.error ?? `status ${r.error_status ?? "unknown"}`,
+          });
+          // Fall through — rawMessages skips system messages, retry is
+          // shown via the retryState indicator, not as a chat message.
+        }
+
+        // ── Server-confirmed model switch ──────────────────────────
+        if (msg.type === "switch_model_result") {
+          const result = msg as {
+            type: "switch_model_result";
+            model: string;
+            success: boolean;
+            error?: string;
+          };
+          if (result.success) {
+            setModelSwitchVersion((v) => v + 1);
+          } else {
+            console.error(`[claude2-adapter] model switch failed: ${result.error ?? "unknown"}`);
+            setCurrentModel(undefined);
+            setModelSwitchVersion((v) => v + 1);
+          }
         }
 
         if (msg.type === "result") {
@@ -649,5 +705,15 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     [threadLikeMessages, isRunning, isLoading, onNew, onCancel],
   );
 
-  return { storeAdapter, bridge, hasOlder, loadOlder, currentModel, resolvedModel, permissionMode };
+  return {
+    storeAdapter,
+    bridge,
+    hasOlder,
+    loadOlder,
+    currentModel,
+    resolvedModel,
+    modelSwitchVersion,
+    retryState,
+    permissionMode,
+  };
 }
