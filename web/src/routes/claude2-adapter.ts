@@ -18,7 +18,7 @@ export type Claude2Bridge = {
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
   switchPermissionMode: (mode: string) => void;
-  onCompact: ((phase: "start" | "end") => void) | null;
+  onCompact: ((event: { phase: "start" } | { phase: "end"; error?: string }) => void) | null;
 };
 
 export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
@@ -327,7 +327,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           compactActiveRef.current = true;
           setIsRunning(true);
           compactPhaseRef.current = "compacting";
-          if (bridge.onCompact) bridge.onCompact("start");
+          if (bridge.onCompact) bridge.onCompact({ phase: "start" });
           return;
         }
 
@@ -335,7 +335,16 @@ export function useClaude2Session(projectName: string, sessionId: string) {
         if (msg.type === "system" && msg.subtype === "status" && "compact_result" in msg) {
           if (compactActiveRef.current) {
             compactActiveRef.current = false;
-            if (bridge.onCompact) bridge.onCompact("end");
+            const statusMsg = msg as { compact_result?: string; compact_error?: string };
+            if (bridge.onCompact) {
+              bridge.onCompact({
+                phase: "end",
+                error:
+                  statusMsg.compact_result === "failed"
+                    ? (statusMsg.compact_error ?? "Compact failed")
+                    : undefined,
+              });
+            }
           }
           compactPhaseRef.current = "replay";
           // isRunning stays true — CLI replays compacted context next
@@ -352,7 +361,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
             compactActiveRef.current = true;
             setIsRunning(true);
             compactPhaseRef.current = "compacting";
-            if (bridge.onCompact) bridge.onCompact("start");
+            if (bridge.onCompact) bridge.onCompact({ phase: "start" });
           }
           // If already in compacting/replay, this is a replay marker — skip
           return;
@@ -368,7 +377,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
             // End of compact or replay phase
             if (compactActiveRef.current) {
               compactActiveRef.current = false;
-              if (bridge.onCompact) bridge.onCompact("end");
+              if (bridge.onCompact) bridge.onCompact({ phase: "end" });
             }
             setIsRunning(false);
             compactPhaseRef.current = "waiting-live";
@@ -434,8 +443,15 @@ export function useClaude2Session(projectName: string, sessionId: string) {
         if (msg.type === "assistant") {
           const assistantMsg = msg as {
             type: "assistant";
-            message: { content: Array<{ type: string; name?: string }> };
+            message: {
+              model?: string;
+              content: Array<{ type: string; name?: string }>;
+            };
           };
+          // Skip synthetic assistant messages (CLI internal, e.g.
+          // compact cancellation notices with model:"<synthetic>")
+          if (assistantMsg.message.model === "<synthetic>") return;
+
           const hasAsk = assistantMsg.message.content.some(
             (b) => b.type === "tool_use" && b.name === "AskUserQuestion",
           );
