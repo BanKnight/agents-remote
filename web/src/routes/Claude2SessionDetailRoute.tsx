@@ -478,8 +478,8 @@ function AssistantChatBubble() {
 function CompactDivider() {
   return (
     <MessagePrimitive.Root className="flex items-center gap-3 px-3 py-2 sm:px-5">
-      <span className="h-px flex-1 bg-slate-700" />
-      <span className="text-xs text-slate-500 shrink-0">
+      <span className="h-px flex-1 bg-slate-600" />
+      <span className="text-xs text-slate-400 shrink-0">
         <MessagePrimitive.Parts>
           {({ part }) => {
             if (part.type === "text") return <>{part.text}</>;
@@ -487,7 +487,7 @@ function CompactDivider() {
           }}
         </MessagePrimitive.Parts>
       </span>
-      <span className="h-px flex-1 bg-slate-700" />
+      <span className="h-px flex-1 bg-slate-600" />
     </MessagePrimitive.Root>
   );
 }
