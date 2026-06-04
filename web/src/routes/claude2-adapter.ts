@@ -24,6 +24,9 @@ export type Claude2Bridge = {
   sendToolResult: (toolUseId: string, content: string) => void;
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
+  /** Called on compact_boundary (start) and on result after compact (end).
+   * Set by the route component after adapter creation. */
+  onCompact: ((phase: "start" | "end") => void) | null;
 };
 
 export type Claude2Pagination = {
@@ -47,6 +50,8 @@ type ConnectionState = {
   resolveNext: Resolver | null;
   aborted: boolean;
   closed: boolean;
+  /** True between compact_boundary and the result that follows. */
+  compactActive: boolean;
   /** Buffered assistant message containing AskUserQuestion tool_use.
    * Held until the matching control_request arrives (which carries the
    * request_id needed for the bridge). Flushed immediately when the next
@@ -225,6 +230,7 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
       resolveNext: null,
       aborted: false,
       closed: false,
+      compactActive: false,
       bufferedAssistant: null,
     };
 
@@ -238,6 +244,25 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
         const raw = event.data as string;
         console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
+
+        // ── compact protocol ────────────────────────────────────────
+        // Claude CLI emits compact_boundary when compaction starts.
+        // The result message that follows signals completion.
+        // Session continues with the same session_id — no switch needed.
+        if (
+          msg.type === "system" &&
+          (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
+        ) {
+          console.log(`[claude2-adapter] compact boundary: subtype=${msg.subtype}`);
+          state.compactActive = true;
+          if (bridge.onCompact) bridge.onCompact("start");
+          return;
+        }
+        if (msg.type === "result" && state.compactActive) {
+          console.log("[claude2-adapter] compact complete (result after compact_boundary)");
+          state.compactActive = false;
+          if (bridge.onCompact) bridge.onCompact("end");
+        }
 
         // ── control_request routing ─────────────────────────────────
         //
@@ -480,6 +505,8 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
     switchModel: (model) => {
       sendToSocket({ type: "switch_model", model });
     },
+
+    onCompact: null,
   };
 
   // ── History adapter (ThreadHistoryAdapter) ───────────────────────────

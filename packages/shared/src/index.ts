@@ -250,6 +250,20 @@ export type Claude2SystemInit = {
   slash_commands: string[];
 };
 
+export type Claude2CompactBoundary = {
+  type: "system";
+  subtype: "compact_boundary" | "microcompact_boundary";
+  compactMetadata?: {
+    trigger?: string;
+    preTokens?: number;
+  };
+  microcompactMetadata?: {
+    trigger?: string;
+    preTokens?: number;
+    tokensSaved?: number;
+  };
+};
+
 export type Claude2AssistantContent =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
@@ -394,6 +408,7 @@ export type SessionStreamServerMessage =
       message: string;
     }
   | Claude2SystemInit
+  | Claude2CompactBoundary
   | Claude2AssistantMessage
   | Claude2UserMessage
   | Claude2Result

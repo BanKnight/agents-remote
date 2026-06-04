@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -34,6 +34,17 @@ import {
 } from "./claude2-adapter";
 
 const Claude2PaginationContext = createContext<Claude2Pagination | null>(null);
+
+type CompactStatus = "idle" | "compacting" | "compacted" | "error";
+
+type CompactState = {
+  status: CompactStatus;
+  setCompacting: () => void;
+  setCompacted: () => void;
+  setCompactError: () => void;
+};
+
+const Claude2CompactContext = createContext<CompactState | null>(null);
 
 export function Claude2SessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -91,6 +102,39 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     () => createClaude2Adapters(projectName, sessionId),
     [projectName, sessionId],
   );
+
+  const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
+
+  const compactState: CompactState = useMemo(
+    () => ({
+      status: compactStatus,
+      setCompacting: () => setCompactStatus("compacting"),
+      setCompacted: () => setCompactStatus("compacted"),
+      setCompactError: () => setCompactStatus("error"),
+    }),
+    [compactStatus],
+  );
+
+  // Auto-dismiss compacted/error status after 4 seconds
+  useEffect(() => {
+    if (compactStatus === "compacted" || compactStatus === "error") {
+      const timer = setTimeout(() => setCompactStatus("idle"), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [compactStatus]);
+
+  // Wire bridge.onCompact after adapter creation.
+  // compact_boundary → "start", result after compact → "end".
+  // Session continues with same session_id — no switch needed.
+  bridge.onCompact = (phase: "start" | "end") => {
+    if (phase === "start") {
+      console.log("[claude2-chat] compact started");
+      setCompactStatus("compacting");
+    } else {
+      console.log("[claude2-chat] compact completed");
+      setCompactStatus("compacted");
+    }
+  };
 
   const runtime = useLocalRuntime(chatAdapter, {
     adapters: { history: historyAdapter },
@@ -154,51 +198,54 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>
           <Claude2PaginationContext.Provider value={pagination}>
-            <div
-              className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-            >
-              {detail.error instanceof Error ? (
-                <div className="shrink-0 px-3 py-2">
-                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                    {detail.error.message}
-                  </p>
-                </div>
-              ) : null}
-              {closeSession.error instanceof Error ? (
-                <div className="shrink-0 px-3 py-2">
-                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                    {closeSession.error.message}
-                  </p>
-                </div>
-              ) : null}
+            <Claude2CompactContext.Provider value={compactState}>
+              <div
+                className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+              >
+                {detail.error instanceof Error ? (
+                  <div className="shrink-0 px-3 py-2">
+                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                      {detail.error.message}
+                    </p>
+                  </div>
+                ) : null}
+                {closeSession.error instanceof Error ? (
+                  <div className="shrink-0 px-3 py-2">
+                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                      {closeSession.error.message}
+                    </p>
+                  </div>
+                ) : null}
 
-              <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-                  <ThreadViewportContent />
-                  <ThreadPrimitive.ScrollToBottom className="absolute bottom-16 sm:bottom-24 right-5 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition hover:bg-slate-600/90 cursor-pointer">
-                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path
-                        d="M4 6l4 4 4-4"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
+                <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
+                    <ThreadViewportContent />
+                    <ThreadPrimitive.ScrollToBottom className="absolute bottom-16 sm:bottom-24 right-5 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition hover:bg-slate-600/90 cursor-pointer">
+                      <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path
+                          d="M4 6l4 4 4-4"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </ThreadPrimitive.ScrollToBottom>
+                  </ThreadPrimitive.Viewport>
+
+                  <CompactIndicator />
+                  <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                    <ComposerPrimitive.Root>
+                      <ComposerWithInterrupt
+                        currentModel={undefined}
+                        currentResolved={session?.model}
+                        availableModels={availableModels}
                       />
-                    </svg>
-                  </ThreadPrimitive.ScrollToBottom>
-                </ThreadPrimitive.Viewport>
-
-                <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                  <ComposerPrimitive.Root>
-                    <ComposerWithInterrupt
-                      currentModel={undefined}
-                      currentResolved={session?.model}
-                      availableModels={availableModels}
-                    />
-                  </ComposerPrimitive.Root>
-                </div>
-              </ThreadPrimitive.Root>
-            </div>
+                    </ComposerPrimitive.Root>
+                  </div>
+                </ThreadPrimitive.Root>
+              </div>
+            </Claude2CompactContext.Provider>
           </Claude2PaginationContext.Provider>
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
@@ -671,6 +718,65 @@ function HistoryBubble({ message }: { message: ReturnType<typeof loadMessagesFro
           <div className={HISTORY_MARKDOWN_CLASS}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CompactIndicator() {
+  const compact = useContext(Claude2CompactContext);
+  const { t } = useT();
+  const status = compact?.status ?? "idle";
+
+  if (status === "idle") return null;
+
+  return (
+    <div className="shrink-0 px-3 pb-1">
+      <div
+        className={`rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-2 ${
+          status === "compacting"
+            ? "bg-amber-500/10 text-amber-400/90"
+            : status === "compacted"
+              ? "bg-emerald-500/10 text-emerald-400/90"
+              : "bg-red-500/10 text-red-400/90"
+        }`}
+      >
+        {status === "compacting" ? (
+          <>
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400 shrink-0" />
+            {t("claude2.compacting")}
+          </>
+        ) : status === "compacted" ? (
+          <>
+            <svg
+              className="h-3.5 w-3.5 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 8l3.5 3.5L13 5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {t("claude2.compacted")}
+          </>
+        ) : (
+          <>
+            <svg
+              className="h-3.5 w-3.5 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M8 5v4M8 11h0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            {t("claude2.compactError")}
+          </>
         )}
       </div>
     </div>
