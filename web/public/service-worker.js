@@ -1,4 +1,4 @@
-const CACHE_NAME = "agents-remote-shell-v5";
+const CACHE_NAME = "agents-remote-shell-v6";
 const NAVIGATION_TIMEOUT_MS = 3000;
 
 const APP_SHELL_ASSETS = [
