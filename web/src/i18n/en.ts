@@ -258,7 +258,6 @@ export const en = {
   "claude2.loadOlder": "Load older messages",
   "claude2.loadingOlder": "Loading...",
   "claude2.compacting": "Compacting...",
-  "claude2.compacted": "Context compacted",
   "claude2.compactError": "Compact failed",
   "claude2.compactInterrupted": "Compaction stopped",
 } as const;

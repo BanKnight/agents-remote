@@ -27,14 +27,37 @@ import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { Claude2BridgeContext, useClaude2Session } from "./claude2-adapter";
 
-type CompactStatus = "idle" | "compacting" | "compacted" | "interrupted" | "error";
+// ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
+//
+// A compaction shows up in the UI through two completely separate
+// components. They were repeatedly confused during development, so the
+// split is spelled out here once and referenced from both:
+//
+//   1. CompactIndicator — TRANSIENT banner above the composer. Shows ONLY
+//      ephemeral states: "compacting" (spinner) / "interrupted" / "error".
+//      Auto-dismisses. It has NO success state by design.
+//
+//   2. CompactDivider — PERMANENT inline divider in the message stream.
+//      The single source of truth that "a compaction happened". Driven by
+//      the compact_boundary record via loadMessagesFromRaw, so it appears
+//      identically in BOTH live streaming and history load (one path —
+//      the single-source-pipeline rule).
+//
+// Why the split: a successful compaction is a permanent fact about the
+// conversation, so it lives in the durable message stream (the divider).
+// The banner only communicates ephemeral state ("working on it" / "it
+// failed"), which has no place in history. That is why there is NO
+// "compacted" success status below — on success the banner clears to
+// "idle" and the divider carries the record.
+type CompactStatus = "idle" | "compacting" | "interrupted" | "error";
 
 type CompactState = {
   status: CompactStatus;
   setCompacting: () => void;
-  setCompacted: () => void;
   setInterrupted: () => void;
   setCompactError: () => void;
+  // Success path: clear the banner. The divider records the success.
+  reset: () => void;
 };
 
 const Claude2CompactContext = createContext<CompactState | null>(null);
@@ -100,38 +123,36 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     () => ({
       status: compactStatus,
       setCompacting: () => setCompactStatus("compacting"),
-      setCompacted: () => setCompactStatus("compacted"),
       setInterrupted: () => setCompactStatus("interrupted"),
       setCompactError: () => setCompactStatus("error"),
+      reset: () => setCompactStatus("idle"),
     }),
     [compactStatus],
   );
 
-  // Auto-dismiss compacted/interrupted/error status after 4 seconds
+  // Auto-dismiss the transient banner. "interrupted"/"error" linger 4s so
+  // the user can read them, then clear. ("compacted" is intentionally not a
+  // status — success is shown by the permanent CompactDivider, not here.)
   useEffect(() => {
-    if (
-      compactStatus === "compacted" ||
-      compactStatus === "interrupted" ||
-      compactStatus === "error"
-    ) {
+    if (compactStatus === "interrupted" || compactStatus === "error") {
       const timer = setTimeout(() => setCompactStatus("idle"), 4000);
       return () => clearTimeout(timer);
     }
   }, [compactStatus]);
 
-  // Wire bridge.onCompact after hook returns.
-  // status:"compacting" or auto compact_boundary → { phase: "start" }
-  // compact_result or result after compact → { phase: "end", error? }
+  // Bridge from the WebSocket compact lifecycle to the TRANSIENT banner only.
+  //   phase:"start"        → spinner ("compacting")
+  //   phase:"end" + error  → "interrupted" / "error" (lingers, then clears)
+  //   phase:"end" success  → clear the banner; the CompactDivider (driven by
+  //                          the compact_boundary record in the message
+  //                          stream) is what records the successful compaction.
   bridge.onCompact = (event) => {
     if (event.phase === "start") {
-      console.log("[claude2-chat] compact started");
       setCompactStatus("compacting");
     } else if (event.error) {
-      console.log("[claude2-chat] compact failed:", event.error);
       setCompactStatus(event.error === "interrupted" ? "interrupted" : "error");
     } else {
-      console.log("[claude2-chat] compact completed");
-      setCompactStatus("compacted");
+      setCompactStatus("idle");
     }
   };
 
@@ -442,6 +463,18 @@ function AssistantChatBubble() {
   );
 }
 
+// PERMANENT inline divider in the message stream — the single source of
+// truth that "a compaction happened". See the CompactStatus block at the top
+// of this file for the full two-surface design.
+//
+// Wired in as the SystemMessage component of ThreadPrimitive.Messages, so it
+// renders for every role:"system" message. Those messages are produced ONLY
+// by loadMessagesFromRaw from compact_boundary records, which arrive on the
+// SAME path for both live streaming and history load — that is what keeps
+// this divider consistent across both (the single-source-pipeline rule).
+//
+// Renders as a low-key full-width rule with the label centred:
+//   ──────────  上下文已压缩 (~6k tokens)  ──────────
 function CompactDivider() {
   return (
     <MessagePrimitive.Root className="flex items-center gap-3 px-3 py-2 sm:px-5">
@@ -808,11 +841,18 @@ function ComposerWithInterrupt({
   );
 }
 
+// TRANSIENT banner above the composer. See the CompactStatus block at the
+// top of this file for the full two-surface design. This component shows
+// ONLY ephemeral states — there is deliberately no success branch, because a
+// successful compaction is recorded permanently by CompactDivider in the
+// message stream, not by this banner.
 function CompactIndicator() {
   const compact = useContext(Claude2CompactContext);
   const { t } = useT();
   const status = compact?.status ?? "idle";
 
+  // idle = nothing in progress; success also lands here (banner hidden, the
+  // divider in the stream carries the record).
   if (status === "idle") return null;
 
   return (
@@ -821,35 +861,15 @@ function CompactIndicator() {
         className={`rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-2 ${
           status === "compacting"
             ? "bg-amber-500/10 text-amber-400/90"
-            : status === "compacted"
-              ? "bg-emerald-500/10 text-emerald-400/90"
-              : status === "interrupted"
-                ? "bg-slate-500/10 text-slate-400/90"
-                : "bg-red-500/10 text-red-400/90"
+            : status === "interrupted"
+              ? "bg-slate-500/10 text-slate-400/90"
+              : "bg-red-500/10 text-red-400/90"
         }`}
       >
         {status === "compacting" ? (
           <>
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400 shrink-0" />
             {t("claude2.compacting")}
-          </>
-        ) : status === "compacted" ? (
-          <>
-            <svg
-              className="h-3.5 w-3.5 shrink-0"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M3 8l3.5 3.5L13 5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {t("claude2.compacted")}
           </>
         ) : status === "interrupted" ? (
           <>
