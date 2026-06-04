@@ -324,6 +324,17 @@ const agentSessionsPath = (projectName: string) =>
 const terminalSessionsPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/terminal-sessions`;
 
+let refreshPromise: Promise<boolean> | null = null;
+
+const refreshAuth = () => {
+  if (!refreshPromise) {
+    refreshPromise = getAuthStatus().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+};
+
 const fetchJson = async <T>(
   url: string,
   failureKey: TranslationKey,
@@ -332,6 +343,18 @@ const fetchJson = async <T>(
   const response = await fetch(url, init);
 
   if (response.status === 401) {
+    const refreshed = await refreshAuth();
+
+    if (refreshed) {
+      const retryResponse = await fetch(url, init);
+
+      if (retryResponse.ok) {
+        return retryResponse.json();
+      }
+
+      throw new Error(`${resolveTranslation(failureKey)}: ${retryResponse.status}`);
+    }
+
     window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
     throw new Error(`${resolveTranslation(failureKey)}: ${response.status}`);
   }

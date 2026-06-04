@@ -50,8 +50,9 @@ test("requireHttpAuth accepts bearer token and rejects missing token", () => {
   );
   const failure = requireHttpAuth(new Request("http://localhost/api/projects"), auth);
 
-  expect(ok).toBeUndefined();
-  expect(failure?.status).toBe(401);
+  expect(ok.status).toBe("authenticated");
+  expect(failure.status).toBe("unauthenticated");
+  expect(failure.response.status).toBe(401);
 });
 
 test("extractBearerToken supports auth header, cookie, and query", () => {

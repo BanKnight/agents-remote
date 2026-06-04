@@ -4,8 +4,15 @@ import { Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./i18n";
+import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
 import "./styles/index.css";
+
+restoreLastPath();
+
+router.subscribe("onResolved", () => {
+  saveCurrentPath(window.location.pathname, window.location.search);
+});
 
 const queryClient = new QueryClient();
 const root = document.getElementById("root");
@@ -25,6 +32,14 @@ createRoot(root).render(
     </I18nProvider>
   </StrictMode>,
 );
+
+const splash = document.getElementById("splash");
+if (splash) {
+  requestAnimationFrame(() => {
+    splash.setAttribute("hidden", "");
+    splash.addEventListener("transitionend", () => splash.remove(), { once: true });
+  });
+}
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

@@ -5,7 +5,7 @@ import type {
   LoginRequest,
   LoginResponse,
 } from "@agents-remote/shared";
-import { AuthError, AuthService } from "./auth";
+import { AuthError, AuthService, type TokenIssue } from "./auth";
 
 export const jsonError = (code: ApiErrorCode, message: string, status: number) =>
   Response.json(
@@ -39,17 +39,44 @@ export const extractBearerToken = (request: Request) => {
   return url.searchParams.get("token") ?? undefined;
 };
 
-export const requireHttpAuth = (request: Request, auth: AuthService) => {
-  try {
-    auth.requireToken(extractBearerToken(request));
-    return undefined;
-  } catch (error) {
-    if (error instanceof AuthError && error.code === "UNAUTHENTICATED") {
-      return jsonError("UNAUTHENTICATED", "Authentication required", 401);
-    }
+const setTokenCookie = (headers: Headers, issue: TokenIssue) => {
+  headers.set(
+    "Set-Cookie",
+    `agents_remote_token=${encodeURIComponent(issue.token)}; HttpOnly; SameSite=Strict; Path=/api; Expires=${new Date(issue.expiresAt).toUTCString()}`,
+  );
+};
 
-    throw error;
+export type HttpAuthResult =
+  | { status: "authenticated"; refreshToken?: TokenIssue }
+  | { status: "unauthenticated"; response: Response };
+
+export const requireHttpAuth = (request: Request, auth: AuthService): HttpAuthResult => {
+  const token = extractBearerToken(request);
+  const result = auth.verifyWithRefresh(token);
+
+  if (!result.valid) {
+    return {
+      status: "unauthenticated",
+      response: jsonError("UNAUTHENTICATED", "Authentication required", 401),
+    };
   }
+
+  return { status: "authenticated", refreshToken: result.refreshedToken };
+};
+
+export const applyAuthRefresh = (response: Response, refreshToken?: TokenIssue) => {
+  if (!refreshToken || response.status < 200 || response.status >= 300) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  setTokenCookie(headers, refreshToken);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 export const handleLogin = async (request: Request, auth: AuthService) => {
@@ -69,10 +96,12 @@ export const handleLogin = async (request: Request, auth: AuthService) => {
       expiresAt: issue.expiresAt,
     };
 
-    return Response.json(response, {
-      headers: {
-        "Set-Cookie": `agents_remote_token=${encodeURIComponent(issue.token)}; HttpOnly; SameSite=Strict; Path=/api; Expires=${new Date(issue.expiresAt).toUTCString()}`,
-      },
+    const headers = new Headers();
+    setTokenCookie(headers, issue);
+
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers,
     });
   } catch (error) {
     if (error instanceof AuthError && error.code === "INVALID_PASSWORD") {
@@ -84,11 +113,18 @@ export const handleLogin = async (request: Request, auth: AuthService) => {
 };
 
 export const handleAuthMe = (request: Request, auth: AuthService) => {
-  const authFailure = requireHttpAuth(request, auth);
+  const authResult = requireHttpAuth(request, auth);
 
-  if (authFailure) {
-    return authFailure;
+  if (authResult.status === "unauthenticated") {
+    return authResult.response;
   }
 
-  return Response.json({ authenticated: true } satisfies AuthMeResponse);
+  const body = JSON.stringify({ authenticated: true } satisfies AuthMeResponse);
+  const headers = new Headers({ "Content-Type": "application/json" });
+
+  if (authResult.refreshToken) {
+    setTokenCookie(headers, authResult.refreshToken);
+  }
+
+  return new Response(body, { status: 200, headers });
 };

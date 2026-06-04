@@ -12,6 +12,8 @@ const isStandaloneDisplay = () =>
   window.matchMedia("(display-mode: standalone)").matches ||
   ("standalone" in window.navigator && window.navigator.standalone === true);
 
+const AUTH_OK_KEY = "auth_ok";
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -19,6 +21,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [installDismissed, setInstallDismissed] = useState(false);
   const [password, setPassword] = useState("");
   const passwordId = useId();
+  const [authOk] = useState(() => localStorage.getItem(AUTH_OK_KEY) === "1");
   const auth = useQuery({
     queryKey: ["auth", "me"],
     queryFn: getAuthStatus,
@@ -29,6 +32,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     mutationFn: login,
     onSuccess: async () => {
       setPassword("");
+      localStorage.setItem(AUTH_OK_KEY, "1");
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
@@ -60,6 +64,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handleUnauthenticated = () => {
+      localStorage.removeItem(AUTH_OK_KEY);
       queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
     };
     window.addEventListener("auth:unauthenticated", handleUnauthenticated);
@@ -101,6 +106,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
     ) : null;
 
   if (auth.isLoading) {
+    if (authOk) {
+      return (
+        <>
+          {children}
+          {installBanner}
+        </>
+      );
+    }
+
     return (
       <>
         <AuthFrame title={t("auth.checkingTitle")} description={t("auth.checkingDesc")} />
@@ -119,6 +133,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (auth.data) {
+    if (!authOk) {
+      localStorage.setItem(AUTH_OK_KEY, "1");
+    }
     return (
       <>
         {children}

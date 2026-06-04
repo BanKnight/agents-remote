@@ -12,7 +12,7 @@ test("AuthService signs and verifies a token for the correct password", () => {
 
   const issue = service.login("secret");
 
-  expect(issue.expiresAt).toBe("2026-05-31T00:00:00.000Z");
+  expect(issue.expiresAt).toBe("2026-06-23T00:00:00.000Z");
   expect(service.verify(issue.token)).toBe(true);
 });
 

@@ -159,7 +159,13 @@ function ProjectListCard({
       density="compact"
       docked
     >
-      {isLoading ? <StatusPanel label={t("home.loading")} /> : null}
+      {isLoading ? (
+        <div className="grid min-w-0 gap-3">
+          <ProjectCardSkeleton />
+          <ProjectCardSkeleton />
+          <ProjectCardSkeleton />
+        </div>
+      ) : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {deleteError ? (
         <p className="mb-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
@@ -360,4 +366,30 @@ function StatusPanel({ label, tone = "default" }: StatusPanelProps) {
       : `${shellSurfaceClasses.inset} text-slate-300`;
 
   return <p className={`mt-5 rounded-2xl px-4 py-3 text-sm ${classes}`}>{label}</p>;
+}
+
+function SkeletonPulse({ className }: { className: string }) {
+  return <div className={`animate-pulse rounded-lg bg-slate-800/70 ${className}`} />;
+}
+
+function ProjectCardSkeleton() {
+  return (
+    <div
+      className={`block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 ${shellSurfaceClasses.raised}`}
+      aria-hidden="true"
+    >
+      <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+        <SkeletonPulse className="h-7 w-7 rounded-full" />
+        <span className="min-w-0 flex-1 space-y-2">
+          <SkeletonPulse className="h-4 w-36" />
+          <span className="flex items-center gap-3">
+            <SkeletonPulse className="h-3 w-10 rounded-full" />
+            <SkeletonPulse className="h-3 w-10 rounded-full" />
+            <SkeletonPulse className="h-3 w-16 rounded-full" />
+          </span>
+        </span>
+        <SkeletonPulse className="h-4 w-4" />
+      </span>
+    </div>
+  );
 }

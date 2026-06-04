@@ -24,6 +24,7 @@ export type AppConfig = {
   apiPort?: number;
   webPort?: number;
   webApiBaseUrl?: string;
+  tokenTtlHours?: number;
 };
 
 export type ResolvedSettings = {
@@ -32,6 +33,7 @@ export type ResolvedSettings = {
   apiPort: number;
   webPort: number;
   webApiBaseUrl: string;
+  tokenTtlHours: number;
   configPath: string;
 };
 
@@ -50,6 +52,7 @@ projects_root = ""
 api_port = 3001
 web_port = 3000
 web_api_base_url = "/api"
+token_ttl_hours = 720
 `;
 
 export const getDefaultConfigPath = defaultConfigPath;
@@ -118,6 +121,9 @@ const applyEnvOverrides = (
   apiPort: env.API_PORT ? parsePort(env.API_PORT, "API_PORT") : config.apiPort,
   webPort: env.WEB_PORT ? parsePort(env.WEB_PORT, "WEB_PORT") : config.webPort,
   webApiBaseUrl: env.WEB_API_BASE_URL ?? config.webApiBaseUrl,
+  tokenTtlHours: env.TOKEN_TTL_HOURS
+    ? parseTokenTtlHours(env.TOKEN_TTL_HOURS)
+    : config.tokenTtlHours,
 });
 
 const validateConfig = (config: AppConfig, configPath: string): ResolvedSettings => {
@@ -169,6 +175,7 @@ const validateConfig = (config: AppConfig, configPath: string): ResolvedSettings
     apiPort,
     webPort,
     webApiBaseUrl,
+    tokenTtlHours: config.tokenTtlHours ?? 720,
     configPath,
   };
 };
@@ -198,6 +205,7 @@ const parseConfigToml = (content: string, configPath: string): AppConfig => {
     apiPort: optionalPort(values.api_port, "api_port", configPath),
     webPort: optionalPort(values.web_port, "web_port", configPath),
     webApiBaseUrl: optionalString(values.web_api_base_url, "web_api_base_url", configPath),
+    tokenTtlHours: optionalTokenTtlHours(values.token_ttl_hours, configPath),
   };
 };
 
@@ -252,6 +260,38 @@ const parsePort = (value: string, field: string) => {
 const validatePort = (value: number, field: string) => {
   if (!Number.isInteger(value) || value < 1 || value > 65535) {
     throw new StartupError("CONFIG_INVALID", `${field} must be between 1 and 65535.`);
+  }
+
+  return value;
+};
+
+const parseTokenTtlHours = (value: string) => {
+  const num = Number(value);
+
+  if (!Number.isInteger(num) || num < 1 || num > 87600) {
+    throw new StartupError(
+      "CONFIG_INVALID",
+      "TOKEN_TTL_HOURS must be an integer between 1 and 87600.",
+    );
+  }
+
+  return num;
+};
+
+const optionalTokenTtlHours = (value: string | number | undefined, configPath: string) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number") {
+    throw new StartupError("CONFIG_INVALID", `token_ttl_hours must be a number in ${configPath}.`);
+  }
+
+  if (!Number.isInteger(value) || value < 1 || value > 87600) {
+    throw new StartupError(
+      "CONFIG_INVALID",
+      `token_ttl_hours must be between 1 and 87600 in ${configPath}.`,
+    );
   }
 
   return value;

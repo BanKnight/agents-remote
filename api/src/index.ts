@@ -10,7 +10,13 @@ import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
 import { Claude2Runtime } from "./claude2-runtime";
 import { Claude2StreamController, handleClaude2StreamUpgrade } from "./claude2-stream";
-import { handleAuthMe, handleLogin, jsonError, requireHttpAuth } from "./http-auth";
+import {
+  applyAuthRefresh,
+  handleAuthMe,
+  handleLogin,
+  jsonError,
+  requireHttpAuth,
+} from "./http-auth";
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectService, ProjectServiceError } from "./projects";
@@ -67,8 +73,7 @@ export const createFetchHandler =
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health" && request.method === "GET") {
-      const response: HealthResponse = { ok: true, service: "api" };
-      return Response.json(response);
+      return Response.json({ ok: true, service: "api" } satisfies HealthResponse);
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
@@ -91,13 +96,24 @@ export const createFetchHandler =
       return new Response("WebSocket upgrade required", { status: 426 });
     }
 
-    if (url.pathname.startsWith("/api/")) {
-      const authFailure = requireHttpAuth(request, auth);
+    let authRefreshToken: import("./auth").TokenIssue | undefined;
 
-      if (authFailure) {
-        return authFailure;
+    if (url.pathname.startsWith("/api/")) {
+      const authResult = requireHttpAuth(request, auth);
+
+      if (authResult.status === "unauthenticated") {
+        return authResult.response;
       }
+
+      authRefreshToken = authResult.refreshToken;
     }
+
+    const withRefresh = (response: Response | undefined) => {
+      if (authRefreshToken && response) {
+        return applyAuthRefresh(response, authRefreshToken);
+      }
+      return response;
+    };
 
     if (options.projectsRoot && options.sessionRegistry) {
       if (options.claude2StreamController) {
@@ -110,7 +126,7 @@ export const createFetchHandler =
         );
 
         if (claude2Upgrade.matched) {
-          return claude2Upgrade.response;
+          return withRefresh(claude2Upgrade.response);
         }
       }
 
@@ -123,7 +139,7 @@ export const createFetchHandler =
       );
 
       if (streamUpgrade.matched) {
-        return streamUpgrade.response;
+        return withRefresh(streamUpgrade.response);
       }
 
       const sessionResponse = await handleSessionRoutes(
@@ -134,7 +150,7 @@ export const createFetchHandler =
       );
 
       if (sessionResponse) {
-        return sessionResponse;
+        return withRefresh(sessionResponse);
       }
     }
 
@@ -148,11 +164,11 @@ export const createFetchHandler =
       );
 
       if (projectResponse) {
-        return projectResponse;
+        return withRefresh(projectResponse);
       }
     }
 
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return withRefresh(Response.json({ error: "Not found" }, { status: 404 }));
   };
 
 const handleProjects = async (
@@ -563,7 +579,11 @@ export const startApi = async () => {
     await writeFile(tokenSecretPath, tokenSecret, { mode: 0o600 });
   }
 
-  const auth = new AuthService({ appPassword: settings.appPassword, tokenSecret });
+  const auth = new AuthService({
+    appPassword: settings.appPassword,
+    tokenSecret,
+    tokenTtlMs: settings.tokenTtlHours * 3600 * 1000,
+  });
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
   const claude2Runtime = new Claude2Runtime();

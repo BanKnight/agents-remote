@@ -47,13 +47,14 @@ import { useConfirm } from "../components/shell/confirm-dialog";
 export function ProjectConsoleRoute() {
   const { t } = useT();
   const { projectName } = useParams({ from: "/projects/$projectName" });
+  const { workspace: activeSection } = useSearch({ from: "/projects/$projectName" });
   const project = useQuery({
     queryKey: ["projects", projectName],
     queryFn: () => getProject(projectName),
   });
 
   if (project.isLoading) {
-    return <ConsoleFrame title={t("project.loading")} subtitle={t("project.loadingDesc")} />;
+    return <ProjectConsoleLoading projectName={projectName} activeSection={activeSection} />;
   }
 
   if (project.error instanceof Error) {
@@ -94,6 +95,65 @@ function ConsoleFrame({ children, subtitle, title }: ConsoleFrameProps) {
         {children ? <div className="mt-5">{children}</div> : null}
       </section>
     </main>
+  );
+}
+
+type ProjectConsoleLoadingProps = {
+  activeSection: ConsoleSection;
+  projectName: string;
+};
+
+function ProjectConsoleLoading({ activeSection, projectName }: ProjectConsoleLoadingProps) {
+  const selectedSection = sectionForId(activeSection);
+  const skeletonProject: Project = {
+    name: projectName,
+    path: "",
+    agentSessionCount: 0,
+    terminalSessionCount: 0,
+  };
+  const summary = projectSummary(skeletonProject);
+
+  return (
+    <ShellLayout
+      sidebar={
+        <ProjectSecondaryNav
+          activeSection={activeSection}
+          project={skeletonProject}
+          onSelectSection={() => {}}
+        />
+      }
+      variant="project"
+      bottomNavigation={
+        <ProjectSecondaryBottomNav activeSection={activeSection} onSelectSection={() => {}} />
+      }
+    >
+      <WorkspaceHeader project={skeletonProject} section={selectedSection} summary={summary} />
+      <ShellPanel className="flex-1 px-4 sm:px-5 lg:px-5 lg:pb-5" density="compact" docked>
+        <div className="grid gap-3" aria-hidden="true">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </ShellPanel>
+    </ShellLayout>
+  );
+}
+
+function SkeletonPulse({ className }: { className: string }) {
+  return <div className={`animate-pulse rounded-lg bg-slate-800/70 ${className}`} />;
+}
+
+function SkeletonCard() {
+  return (
+    <div className={`block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 ${shellSurfaceClasses.raised}`}>
+      <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+        <SkeletonPulse className="h-7 w-7 rounded-full" />
+        <span className="min-w-0 flex-1 space-y-2">
+          <SkeletonPulse className="h-4 w-28" />
+          <SkeletonPulse className="h-3 w-44" />
+        </span>
+        <SkeletonPulse className="h-4 w-4" />
+      </span>
+    </div>
   );
 }
 

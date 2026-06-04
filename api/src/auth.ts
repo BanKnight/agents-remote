@@ -17,6 +17,11 @@ export type TokenIssue = {
   expiresAt: string;
 };
 
+export type TokenVerifyResult = {
+  valid: boolean;
+  refreshedToken?: TokenIssue;
+};
+
 type AuthServiceOptions = {
   appPassword: string;
   tokenSecret?: string;
@@ -24,12 +29,13 @@ type AuthServiceOptions = {
   tokenTtlMs?: number;
 };
 
-const defaultTokenTtlMs = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_THRESHOLD_RATIO = 0.5;
+const defaultTokenTtlMs = 30 * 24 * 60 * 60 * 1000;
 
 export class AuthService {
   private readonly tokenSecret: string;
   private readonly now: () => Date;
-  private readonly tokenTtlMs: number;
+  readonly tokenTtlMs: number;
 
   constructor(private readonly options: AuthServiceOptions) {
     this.tokenSecret = options.tokenSecret ?? randomBytes(32).toString("base64url");
@@ -42,15 +48,7 @@ export class AuthService {
       throw new AuthError("INVALID_PASSWORD", "密码错误");
     }
 
-    const expiresAtMs = this.now().getTime() + this.tokenTtlMs;
-    const nonce = randomBytes(16).toString("base64url");
-    const payload = `${expiresAtMs}.${nonce}`;
-    const signature = this.sign(payload);
-
-    return {
-      token: `${payload}.${signature}`,
-      expiresAt: new Date(expiresAtMs).toISOString(),
-    };
+    return this.issueToken();
   }
 
   verify(token: string | undefined): boolean {
@@ -79,6 +77,35 @@ export class AuthService {
     if (!this.verify(token)) {
       throw new AuthError("UNAUTHENTICATED", "Authentication required");
     }
+  }
+
+  verifyWithRefresh(token: string | undefined): TokenVerifyResult {
+    if (!this.verify(token)) {
+      return { valid: false };
+    }
+
+    const token_ = token as string;
+    const expiresAtMs = Number(token_.split(".")[0]);
+    const issuedAtMs = expiresAtMs - this.tokenTtlMs;
+    const tokenAge = this.now().getTime() - issuedAtMs;
+
+    if (tokenAge > this.tokenTtlMs * REFRESH_THRESHOLD_RATIO) {
+      return { valid: true, refreshedToken: this.issueToken() };
+    }
+
+    return { valid: true };
+  }
+
+  private issueToken(): TokenIssue {
+    const expiresAtMs = this.now().getTime() + this.tokenTtlMs;
+    const nonce = randomBytes(16).toString("base64url");
+    const payload = `${expiresAtMs}.${nonce}`;
+    const signature = this.sign(payload);
+
+    return {
+      token: `${payload}.${signature}`,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    };
   }
 
   private sign(payload: string) {

@@ -31,6 +31,7 @@ test("loadSettings reads config file values", async () => {
     apiPort: 3001,
     webPort: 3000,
     webApiBaseUrl: "/api",
+    tokenTtlHours: 720,
     configPath,
   });
 });

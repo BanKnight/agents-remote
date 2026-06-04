@@ -1,5 +1,8 @@
-const CACHE_NAME = "agents-remote-shell-v4";
+const CACHE_NAME = "agents-remote-shell-v5";
+const NAVIGATION_TIMEOUT_MS = 3000;
+
 const APP_SHELL_ASSETS = [
+  "/",
   "/manifest.webmanifest",
   "/icons/icon.svg",
   "/icons/icon-192.png",
@@ -40,6 +43,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    event.respondWith(networkFirstWithCacheFallback(request));
     return;
   }
 
@@ -66,4 +70,25 @@ const staleWhileRevalidate = async (request) => {
     .catch(() => undefined);
 
   return cached ?? (await fetched) ?? Response.error();
+};
+
+const networkFirstWithCacheFallback = async (request) => {
+  try {
+    const networkResponse = await Promise.race([
+      fetch(request),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), NAVIGATION_TIMEOUT_MS),
+      ),
+    ]);
+
+    if (networkResponse.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      void cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = (await cache.match(request)) ?? (await cache.match("/"));
+    return cached ?? Response.error();
+  }
 };
