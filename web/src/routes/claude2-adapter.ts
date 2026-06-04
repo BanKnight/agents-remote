@@ -59,7 +59,51 @@ export function loadMessagesFromRaw(
   for (let i = 0; i < rawMessages.length; i++) {
     const msg = rawMessages[i];
 
-    if (msg.type === "system") continue;
+    if (msg.type === "system") {
+      if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
+        const compactMsg = msg as {
+          compactMetadata?: { trigger?: string; preTokens?: number };
+          microcompactMetadata?: {
+            trigger?: string;
+            preTokens?: number;
+            tokensSaved?: number;
+          };
+        };
+        const meta = compactMsg.compactMetadata ?? compactMsg.microcompactMetadata;
+        const trigger = meta?.trigger ?? "auto";
+        const preTokens = meta?.preTokens;
+        const tokensSaved =
+          "tokensSaved" in (meta ?? {})
+            ? (meta as { tokensSaved?: number }).tokensSaved
+            : undefined;
+        const parts: string[] = [];
+        if (preTokens) parts.push(`~${Math.round(preTokens / 1000)}k tokens`);
+        if (tokensSaved) parts.push(`saved ${Math.round(tokensSaved / 1000)}k`);
+        messages.push({
+          role: "user",
+          content: `[compact]${parts.length ? ` (${parts.join(", ")})` : ""} [${trigger}]`,
+        });
+        continue;
+      }
+
+      if (msg.subtype === "status" && "compact_result" in msg) {
+        const statusMsg = msg as {
+          compact_result: string;
+          compact_error?: string;
+        };
+        if (statusMsg.compact_result === "success") {
+          messages.push({ role: "user", content: "[compact] completed" });
+        } else {
+          messages.push({
+            role: "user",
+            content: `[compact] failed: ${statusMsg.compact_error ?? "unknown error"}`,
+          });
+        }
+        continue;
+      }
+
+      continue;
+    }
 
     if (msg.type === "user") {
       const userTexts: string[] = [];
@@ -351,7 +395,9 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           return;
         }
 
-        // Phase: compact_boundary — start if auto compact, skip if replay
+        // Phase: compact_boundary — start if auto compact, skip if replay.
+        // compact_boundary IS the CLI's authoritative compact record
+        // (persisted to JSONL), so it must flow into rawMessages for chat display.
         if (
           msg.type === "system" &&
           (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
@@ -363,8 +409,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
             compactPhaseRef.current = "compacting";
             if (bridge.onCompact) bridge.onCompact({ phase: "start" });
           }
-          // If already in compacting/replay, this is a replay marker — skip
-          return;
+          // Fall through — message enters rawMessages.
         }
 
         // ── Track model from system.init ───────────────────────────
