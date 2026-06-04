@@ -471,13 +471,13 @@ function ThreadViewportContent({
   return (
     <>
       {isLoading ? <ChatSkeleton /> : <LoadOlderButton hasOlder={hasOlder} loadOlder={loadOlder} />}
-      <ThreadPrimitive.Messages>
-        {({ message }) => {
-          if (message.role === "user") return <UserChatBubble />;
-          if (message.role === "system") return <CompactDivider />;
-          return <AssistantChatBubble />;
+      <ThreadPrimitive.Messages
+        components={{
+          UserMessage: UserChatBubble,
+          AssistantMessage: AssistantChatBubble,
+          SystemMessage: CompactDivider,
         }}
-      </ThreadPrimitive.Messages>
+      />
       <ThreadPrimitive.ViewportFooter />
     </>
   );
