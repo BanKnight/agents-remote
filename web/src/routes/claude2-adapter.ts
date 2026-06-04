@@ -68,12 +68,27 @@ export function loadMessagesFromRaw(
       // Content is a plain string, not the usual array of blocks.
       if (typeof rawContent === "string") {
         const content = rawContent as string;
+        // CLI command output — render as a tool result (like Bash), not a
+        // user bubble. <local-command-caveat> is internal bookkeeping.
         if (content.includes("<local-command-stdout>")) {
           flushAssistant();
-          messages.push({ role: "user", content });
+          const text = content.replace(/<\/?local-command-stdout>/g, "").trim();
+          messages.push({
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call" as const,
+                toolCallId: `cmd-${i}`,
+                toolName: "slash-command",
+                args: asReadonlyJSON({}),
+                argsText: "",
+                result: text || content,
+              },
+            ],
+          });
         }
-        // other string-content user messages (compact summaries etc.) are
-        // CLI internal — skip.
+        // <local-command-caveat> and other string-content user messages are
+        // CLI internal (compact summaries, caveats) — skip.
         continue;
       }
 

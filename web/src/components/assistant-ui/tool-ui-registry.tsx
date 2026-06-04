@@ -27,6 +27,8 @@ const Icons = {
     '<path d="M16 2l4 4-11 11H5v-4L16 2zm0 1.4L7.4 12H6v1.4L14.6 4.8 16 3.4zM3 17v3h3L17.4 8.6 14 5.2 3 17z" fill="currentColor"/>',
   question:
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17.5" r="0.75" fill="currentColor"/>',
+  command:
+    '<path d="M7 7l4 5-4 5M13 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 
 function ToolIcon({ name, className }: { name: string; className?: string }) {
@@ -545,6 +547,13 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   );
 };
 
+// ── Slash command output (e.g. /compact) ──────────────────────────
+
+const CommandOutputUI = makeToolRenderer({
+  icon: "command",
+  label: (_args, toolName) => toolName,
+});
+
 // ── Registry ─────────────────────────────────────────────────────────
 
 type ToolRenderer = ToolCallMessagePartComponent;
@@ -565,6 +574,8 @@ toolRegistry.set("Glob", GlobToolUI);
 toolRegistry.set("Grep", GrepToolUI);
 toolRegistry.set("NotebookEdit", NotebookEditToolUI);
 toolRegistry.set("AskUserQuestion", AskUserQuestionToolUI);
+// Slash command output (e.g. /compact result via <local-command-stdout>)
+toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
 toolRegistry.set("bash", BashToolUI);
 
