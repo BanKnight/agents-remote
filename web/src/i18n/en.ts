@@ -260,4 +260,5 @@ export const en = {
   "claude2.compacting": "Compacting...",
   "claude2.compacted": "Context compacted",
   "claude2.compactError": "Compact failed",
+  "claude2.compactInterrupted": "Compaction stopped",
 } as const;

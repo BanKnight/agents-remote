@@ -27,12 +27,13 @@ import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { Claude2BridgeContext, useClaude2Session } from "./claude2-adapter";
 
-type CompactStatus = "idle" | "compacting" | "compacted" | "error";
+type CompactStatus = "idle" | "compacting" | "compacted" | "interrupted" | "error";
 
 type CompactState = {
   status: CompactStatus;
   setCompacting: () => void;
   setCompacted: () => void;
+  setInterrupted: () => void;
   setCompactError: () => void;
 };
 
@@ -100,14 +101,19 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
       status: compactStatus,
       setCompacting: () => setCompactStatus("compacting"),
       setCompacted: () => setCompactStatus("compacted"),
+      setInterrupted: () => setCompactStatus("interrupted"),
       setCompactError: () => setCompactStatus("error"),
     }),
     [compactStatus],
   );
 
-  // Auto-dismiss compacted/error status after 4 seconds
+  // Auto-dismiss compacted/interrupted/error status after 4 seconds
   useEffect(() => {
-    if (compactStatus === "compacted" || compactStatus === "error") {
+    if (
+      compactStatus === "compacted" ||
+      compactStatus === "interrupted" ||
+      compactStatus === "error"
+    ) {
       const timer = setTimeout(() => setCompactStatus("idle"), 4000);
       return () => clearTimeout(timer);
     }
@@ -122,7 +128,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
       setCompactStatus("compacting");
     } else if (event.error) {
       console.log("[claude2-chat] compact failed:", event.error);
-      setCompactStatus("error");
+      setCompactStatus(event.error === "interrupted" ? "interrupted" : "error");
     } else {
       console.log("[claude2-chat] compact completed");
       setCompactStatus("compacted");
@@ -799,7 +805,9 @@ function CompactIndicator() {
             ? "bg-amber-500/10 text-amber-400/90"
             : status === "compacted"
               ? "bg-emerald-500/10 text-emerald-400/90"
-              : "bg-red-500/10 text-red-400/90"
+              : status === "interrupted"
+                ? "bg-slate-500/10 text-slate-400/90"
+                : "bg-red-500/10 text-red-400/90"
         }`}
       >
         {status === "compacting" ? (
@@ -824,6 +832,26 @@ function CompactIndicator() {
               />
             </svg>
             {t("claude2.compacted")}
+          </>
+        ) : status === "interrupted" ? (
+          <>
+            <svg
+              className="h-3.5 w-3.5 shrink-0"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect
+                x="3"
+                y="3"
+                width="10"
+                height="10"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+            </svg>
+            {t("claude2.compactInterrupted")}
           </>
         ) : (
           <>

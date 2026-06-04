@@ -59,58 +59,31 @@ export function loadMessagesFromRaw(
   for (let i = 0; i < rawMessages.length; i++) {
     const msg = rawMessages[i];
 
-    if (msg.type === "system") {
-      if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
-        const compactMsg = msg as {
-          compactMetadata?: { trigger?: string; preTokens?: number };
-          microcompactMetadata?: {
-            trigger?: string;
-            preTokens?: number;
-            tokensSaved?: number;
-          };
-        };
-        const meta = compactMsg.compactMetadata ?? compactMsg.microcompactMetadata;
-        const trigger = meta?.trigger ?? "auto";
-        const preTokens = meta?.preTokens;
-        const tokensSaved =
-          "tokensSaved" in (meta ?? {})
-            ? (meta as { tokensSaved?: number }).tokensSaved
-            : undefined;
-        const parts: string[] = [];
-        if (preTokens) parts.push(`~${Math.round(preTokens / 1000)}k tokens`);
-        if (tokensSaved) parts.push(`saved ${Math.round(tokensSaved / 1000)}k`);
-        messages.push({
-          role: "user",
-          content: `[compact]${parts.length ? ` (${parts.join(", ")})` : ""} [${trigger}]`,
-        });
-        continue;
-      }
-
-      if (msg.subtype === "status" && "compact_result" in msg) {
-        const statusMsg = msg as {
-          compact_result: string;
-          compact_error?: string;
-        };
-        if (statusMsg.compact_result === "success") {
-          messages.push({ role: "user", content: "[compact] completed" });
-        } else {
-          messages.push({
-            role: "user",
-            content: `[compact] failed: ${statusMsg.compact_error ?? "unknown error"}`,
-          });
-        }
-        continue;
-      }
-
-      continue;
-    }
+    if (msg.type === "system") continue;
 
     if (msg.type === "user") {
+      const rawContent = msg.message.content as unknown;
+
+      // CLI command output (e.g. <local-command-stdout> for /compact).
+      // Content is a plain string, not the usual array of blocks.
+      if (typeof rawContent === "string") {
+        const content = rawContent as string;
+        if (content.includes("<local-command-stdout>")) {
+          flushAssistant();
+          messages.push({ role: "user", content });
+        }
+        // other string-content user messages (compact summaries etc.) are
+        // CLI internal — skip.
+        continue;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contentBlocks = rawContent as any[];
       const userTexts: string[] = [];
 
-      for (const block of msg.message.content) {
-        if (block.type === "text" && block.text.trim()) {
-          userTexts.push(block.text);
+      for (const block of contentBlocks) {
+        if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+          userTexts.push(block.text as string);
         }
         if (block.type === "tool_result") {
           const isError = !!(block as { is_error?: boolean }).is_error;
@@ -228,6 +201,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
   const compactActiveRef = useRef(false);
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
+  const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
 
   const sendToSocket = useCallback((data: unknown) => {
@@ -369,6 +343,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           msg.status === "compacting"
         ) {
           compactActiveRef.current = true;
+          compactInterruptedRef.current = false;
           setIsRunning(true);
           compactPhaseRef.current = "compacting";
           if (bridge.onCompact) bridge.onCompact({ phase: "start" });
@@ -381,12 +356,14 @@ export function useClaude2Session(projectName: string, sessionId: string) {
             compactActiveRef.current = false;
             const statusMsg = msg as { compact_result?: string; compact_error?: string };
             if (bridge.onCompact) {
+              const failed = statusMsg.compact_result === "failed";
               bridge.onCompact({
                 phase: "end",
-                error:
-                  statusMsg.compact_result === "failed"
-                    ? (statusMsg.compact_error ?? "Compact failed")
-                    : undefined,
+                error: failed
+                  ? compactInterruptedRef.current
+                    ? "interrupted"
+                    : (statusMsg.compact_error ?? "Compact failed")
+                  : undefined,
               });
             }
           }
@@ -405,6 +382,7 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           if (compactPhaseRef.current === "none") {
             // Auto compact — no preceding status:"compacting"
             compactActiveRef.current = true;
+            compactInterruptedRef.current = false;
             setIsRunning(true);
             compactPhaseRef.current = "compacting";
             if (bridge.onCompact) bridge.onCompact({ phase: "start" });
@@ -512,11 +490,19 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           pendingAskRef.current = null;
         }
 
-        // Skip text-only user messages (echo of our own messages)
+        // Skip text-only user messages (echo of our own messages).
+        // CLI command output (<local-command-stdout>) has string content and
+        // must NOT be skipped — it is the authoritative command result.
         if (msg.type === "user") {
-          const userMsg = msg as { type: "user"; message: { content: Array<{ type: string }> } };
-          const hasToolResults = userMsg.message.content.some((b) => b.type === "tool_result");
-          if (!hasToolResults) return;
+          const rawContent = (msg as { type: "user"; message: { content: unknown } }).message
+            .content;
+          if (typeof rawContent === "string") {
+            // Command output (e.g. /compact result) — let it through.
+          } else {
+            const blocks = rawContent as Array<{ type: string }>;
+            const hasToolResults = blocks.some((b) => b.type === "tool_result");
+            if (!hasToolResults) return;
+          }
         }
 
         setRawMessages((prev) => [...prev, msg]);
@@ -581,6 +567,9 @@ export function useClaude2Session(projectName: string, sessionId: string) {
 
   // onCancel: user interrupted the run — send proper interrupt via SDK protocol
   const onCancel = useCallback(async () => {
+    if (compactPhaseRef.current === "compacting") {
+      compactInterruptedRef.current = true;
+    }
     sendToSocket({
       type: "control_request",
       request_id: crypto.randomUUID(),
