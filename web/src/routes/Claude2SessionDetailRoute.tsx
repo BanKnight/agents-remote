@@ -447,12 +447,12 @@ function SystemNotification() {
     <MessagePrimitive.Root className="flex justify-center px-3 py-2 sm:px-5">
       <div className="rounded-lg bg-slate-700/30 px-3 py-1.5">
         <span className="text-xs text-slate-400">
-          <MessagePrimitive.Parts
-            components={{
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              Text: ({ children }: any) => <>{children}</>,
+          <MessagePrimitive.Parts>
+            {({ part }) => {
+              if (part.type === "text") return <>{part.text}</>;
+              return null;
             }}
-          />
+          </MessagePrimitive.Parts>
         </span>
       </div>
     </MessagePrimitive.Root>
