@@ -20,6 +20,11 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>智控 · AI 远程控制台</title>
     <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
       #splash {
         position: fixed;
         inset: 0;
@@ -30,6 +35,11 @@
         justify-content: center;
         background: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
         transition: opacity 0.2s ease-out;
+      }
+      @supports (padding-top: env(safe-area-inset-top)) {
+        #splash {
+          inset: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
+        }
       }
       #splash[hidden] {
         opacity: 0;
