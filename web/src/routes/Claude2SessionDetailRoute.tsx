@@ -444,17 +444,17 @@ function AssistantChatBubble() {
 
 function SystemNotification() {
   return (
-    <MessagePrimitive.Root className="flex justify-center px-3 py-2 sm:px-5">
-      <div className="rounded-lg bg-slate-700/30 px-3 py-1.5">
-        <span className="text-xs text-slate-400">
-          <MessagePrimitive.Parts>
-            {({ part }) => {
-              if (part.type === "text") return <>{part.text}</>;
-              return null;
-            }}
-          </MessagePrimitive.Parts>
-        </span>
-      </div>
+    <MessagePrimitive.Root className="flex items-center gap-3 px-3 py-2 sm:px-5">
+      <span className="h-px flex-1 bg-slate-700" />
+      <span className="text-xs text-slate-500 shrink-0">
+        <MessagePrimitive.Parts>
+          {({ part }) => {
+            if (part.type === "text") return <>{part.text}</>;
+            return null;
+          }}
+        </MessagePrimitive.Parts>
+      </span>
+      <span className="h-px flex-1 bg-slate-700" />
     </MessagePrimitive.Root>
   );
 }
