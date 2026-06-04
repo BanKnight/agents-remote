@@ -442,11 +442,27 @@ function AssistantChatBubble() {
   );
 }
 
-function SystemNotification() {
+function CompactDivider() {
   return (
     <MessagePrimitive.Root className="flex items-center gap-3 px-3 py-2 sm:px-5">
-      <span className="h-px flex-1 bg-slate-700" />
-      <span className="text-xs text-slate-500 shrink-0">
+      <span className="h-px flex-1 bg-emerald-500/30" />
+      <span className="flex items-center gap-1.5 shrink-0 text-xs text-emerald-400/70">
+        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M4 10l4-4 4 4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M4 6l4 4 4-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
         <MessagePrimitive.Parts>
           {({ part }) => {
             if (part.type === "text") return <>{part.text}</>;
@@ -454,7 +470,7 @@ function SystemNotification() {
           }}
         </MessagePrimitive.Parts>
       </span>
-      <span className="h-px flex-1 bg-slate-700" />
+      <span className="h-px flex-1 bg-emerald-500/30" />
     </MessagePrimitive.Root>
   );
 }
@@ -474,7 +490,7 @@ function ThreadViewportContent({
       <ThreadPrimitive.Messages>
         {({ message }) => {
           if (message.role === "user") return <UserChatBubble />;
-          if (message.role === "system") return <SystemNotification />;
+          if (message.role === "system") return <CompactDivider />;
           return <AssistantChatBubble />;
         }}
       </ThreadPrimitive.Messages>
