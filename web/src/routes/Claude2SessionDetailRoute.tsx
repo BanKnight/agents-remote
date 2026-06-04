@@ -750,8 +750,13 @@ function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  const mode = currentMode ?? "default";
-  const label = PERMISSION_MODES.find((m) => m.id === mode)?.label ?? mode;
+  // currentMode starts undefined and is populated by system.init — the
+  // single source of truth. Until it arrives, we show a placeholder
+  // instead of guessing "default" (which may not match the CLI's actual
+  // default, e.g. "auto").
+  const pending = currentMode === undefined;
+  const mode = currentMode ?? "__pending__";
+  const label = pending ? "..." : (PERMISSION_MODES.find((m) => m.id === mode)?.label ?? mode);
 
   // Clear switching animation when mode changes
   useEffect(() => {
@@ -771,7 +776,12 @@ function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
     <div className="relative shrink-0" ref={ref}>
       <button
         type="button"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-violet-400/80 hover:text-violet-300 hover:bg-slate-800/50 transition cursor-pointer"
+        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
+          pending
+            ? "text-slate-500 cursor-default"
+            : "text-violet-400/80 hover:text-violet-300 hover:bg-slate-800/50 cursor-pointer"
+        }`}
+        disabled={pending}
         onClick={() => setOpen(!open)}
       >
         {label}
