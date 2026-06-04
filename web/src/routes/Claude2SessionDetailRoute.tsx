@@ -586,12 +586,29 @@ function ModelSelector({
   const bridge = useContext(Claude2BridgeContext);
   const [open, setOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const preSwitchResolvedRef = useRef<string | undefined>(undefined);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Clear switching animation when resolved model updates
+  // Only clear the spinner when currentResolved changes FROM the value it had
+  // when the switch was initiated. This prevents premature clearing from React
+  // re-render artifacts and ensures the spinner stays until a real system.init
+  // with the new model name arrives over WebSocket.
   useEffect(() => {
-    if (switchingTo) setSwitchingTo(null);
-  }, [currentResolved]);
+    if (!switchingTo) {
+      preSwitchResolvedRef.current = undefined;
+      return;
+    }
+    if (preSwitchResolvedRef.current === undefined) {
+      // First render after the switch was requested — capture the baseline.
+      preSwitchResolvedRef.current = currentResolved;
+      return;
+    }
+    if (currentResolved !== preSwitchResolvedRef.current) {
+      // Resolved model has actually changed — confirmation received.
+      setSwitchingTo(null);
+      preSwitchResolvedRef.current = undefined;
+    }
+  }, [currentResolved, switchingTo]);
 
   if (availableModels.length === 0) return null;
 
@@ -649,8 +666,6 @@ function ModelSelector({
                     if (!isActive && bridge) {
                       setSwitchingTo(modelId);
                       bridge.switchModel(modelId);
-                      // Auto-clear after reasonable startup time
-                      setTimeout(() => setSwitchingTo(null), 8000);
                     }
                   }}
                 >
