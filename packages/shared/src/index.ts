@@ -245,6 +245,7 @@ export type Claude2SystemInit = {
   subtype: "init";
   session_id: string;
   model: string;
+  permissionMode: string;
   cwd: string;
   tools: string[];
   slash_commands: string[];

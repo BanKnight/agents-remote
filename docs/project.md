@@ -157,7 +157,7 @@ agents-remote/
 - [Monorepo Service Boundaries](./architecture/monorepo-service-boundaries.md) — `web`、`api`、`packages/shared` 的工程结构、服务边界与同域 `/api` 部署路径约定。
 - [Project Boundary](./architecture/project-boundary.md) — Project 模块、安全路径解析和下游 project-scoped 能力的长期架构边界。
 - [Session Runtime 架构](./architecture/session-runtime.md) — SessionRegistry、runtime metadata、tmux adapter、HTTP/WS stream 和 transport 边界。
-- [Agent Runtime 架构](./architecture/agent-runtime.md) — Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。
+- [Agent Runtime 架构](./architecture/agent-runtime.md) — Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。协议细节参见 [Claude CLI stream-json 协议](./research/claude-cli-stream-protocol.md)。
 - [Files 架构](./architecture/file-browser-preview.md) — Files API、safe path 复用、只读 preview union 和文件系统读取边界。
 - [Git Diff 架构](./architecture/git-diff-viewer.md) — Git diff API、Project-safe resolver 复用、只读 Git CLI 命令和 Git DTO 边界。
 - [E2E Quality Baseline 架构](./architecture/e2e-quality-baseline.md) — Playwright + Bun E2E harness、临时环境、真实 tmux/WebSocket smoke 和 artifact 边界。
@@ -167,4 +167,5 @@ agents-remote/
 - [个人部署配置 Runbook](./runbooks/personal-deployment-configuration.md) — 首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。
 - [E2E Quality Baseline Runbook](./runbooks/e2e-quality-baseline.md) — 如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
 - [Agent 接入调研](./research/agent-access-options.md) — hapi/remodex/Codex/Claude 接入路线、证据追溯和统一协议可能性调研。
+- [Claude CLI stream-json 协议](./research/claude-cli-stream-protocol.md) — CLI stdio 协议完整参考：启动参数、消息类型、system.init 字段、model/permissionMode 权威来源规则、生命周期和集成边界。
 - 数据库参考：当前没有独立数据库 schema；Project 数据模型以 `PROJECTS_ROOT` 目录和 runtime metadata 为主，优先参考 Project/Session 相关规格与架构文档。

@@ -262,7 +262,10 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     delayMs: number;
     error: string;
   } | null>(null);
-  const [permissionMode, setPermissionMode] = useState<string>("default");
+  // Initialised by system.init — the CLI is the sole authority for both.
+  // Defaults to undefined until the first system.init arrives so the UI
+  // can show a loading state instead of guessing.
+  const [permissionMode, setPermissionMode] = useState<string>();
 
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
@@ -460,15 +463,28 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           // Fall through — message enters rawMessages.
         }
 
-        // ── Track model from system.init ───────────────────────────
+        // ── Session identity from system.init ──────────────────────
+        //
+        // system.init is the SINGLE source of truth for the current model
+        // and permission mode. It arrives:
+        //   • New session  — CLI emits its internal defaults (model from
+        //                     user config, permissionMode typically "auto")
+        //   • Reconnect    — CLI restores both from its JSONL session file
+        //                     via --resume and emits them in system.init
+        //   • After switch — new process emits the just-applied values
+        //
+        // We do NOT persist model or permissionMode in our own metadata.
+        // The CLI's JSONL session file is the authoritative store; we
+        // read the current values exclusively from system.init.
         if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
-          const model = (msg as { model: string }).model;
-          setResolvedModel(model);
+          const init = msg as { model: string; permissionMode: string };
+          setResolvedModel(init.model);
+          setPermissionMode(init.permissionMode);
           // Derive tier name from resolved model (e.g.
           // "claude-sonnet-4-20250514" → "sonnet") so the dropdown
           // checkmark follows the actual running model.
           const tiers = ["sonnet", "opus", "haiku"];
-          const tier = tiers.find((t) => model.includes(t));
+          const tier = tiers.find((t) => init.model.includes(t));
           if (tier) setCurrentModel(tier);
           setRetryState(null);
         }
