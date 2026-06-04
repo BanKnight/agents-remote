@@ -270,8 +270,6 @@ const requestUrlEndsWith = (request: Request, suffix: string) =>
 const isChatMessage = (msg: Record<string, unknown>): boolean => {
   const type = msg.type as string | undefined;
   if (!type) return false;
-  // Skip system-injected meta messages (skill loading, context injection, etc.)
-  // that use type "user" but are not actual user input.
   if (msg.isMeta === true) return false;
   return (
     type === "user" ||
@@ -279,6 +277,14 @@ const isChatMessage = (msg: Record<string, unknown>): boolean => {
     type === "result" ||
     (type === "system" && msg.subtype === "init")
   );
+};
+
+// Count only visible messages (user/assistant) toward the pagination limit.
+// result and system.init are included in the output for grouping fidelity
+// but do not consume a slot in the limit.
+const isVisibleMessage = (msg: Record<string, unknown>): boolean => {
+  const type = msg.type as string | undefined;
+  return type === "user" || type === "assistant";
 };
 
 const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string => {
@@ -327,8 +333,7 @@ const loadClaude2Messages = async (
         return { messages: [], hasOlder: false, nextCursor: null };
       }
 
-      const messages: { lineIndex: number; msg: SessionStreamServerMessage }[] = [];
-      const lineIndices: number[] = []; // track line indices of chat messages
+      const messages: { lineIndex: number; msg: Record<string, unknown>; visible: boolean }[] = [];
       let lineIndex = 0;
 
       for await (const line of handle.readLines()) {
@@ -336,8 +341,11 @@ const loadClaude2Messages = async (
         try {
           const msg = JSON.parse(line) as Record<string, unknown>;
           if (isChatMessage(msg)) {
-            messages.push({ lineIndex, msg: msg as unknown as SessionStreamServerMessage });
-            lineIndices.push(lineIndex);
+            messages.push({
+              lineIndex,
+              msg,
+              visible: isVisibleMessage(msg),
+            });
           }
         } catch {
           // skip malformed
@@ -345,27 +353,43 @@ const loadClaude2Messages = async (
         lineIndex++;
       }
 
-      // Return the last `limit` messages from the collected set
-      if (messages.length <= params.limit) {
+      const visibleCount = messages.filter((m) => m.visible).length;
+
+      // Return all if visible messages fit within the limit
+      if (visibleCount <= params.limit) {
         console.log(
-          `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} returned=${messages.length} hasOlder=false`,
+          `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} visible=${visibleCount} returned=${messages.length} hasOlder=false`,
         );
         return {
-          messages: messages.map((m) => m.msg),
+          messages: messages.map((m) => m.msg as unknown as SessionStreamServerMessage),
           hasOlder: false,
           nextCursor: null,
         };
       }
 
-      const sliced = messages.slice(-params.limit);
+      // Find the slice window containing the last `limit` visible messages.
+      // Include all non-visible messages (result/system.init) within the window.
+      let visibleSeen = 0;
+      let sliceStart = messages.length;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i]!.visible) {
+          visibleSeen++;
+          if (visibleSeen === params.limit) {
+            sliceStart = i;
+            break;
+          }
+        }
+      }
+
+      const sliced = messages.slice(sliceStart);
       const firstLineIndex = sliced[0]!.lineIndex;
-      const hasOlder = lineIndices[0]! < firstLineIndex;
+      const hasOlder = messages[0]!.lineIndex < firstLineIndex;
       console.log(
         `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} returned=${sliced.length} hasOlder=${hasOlder} cursorLine=${firstLineIndex}`,
       );
 
       return {
-        messages: sliced.map((m) => m.msg),
+        messages: sliced.map((m) => m.msg as unknown as SessionStreamServerMessage),
         hasOlder,
         nextCursor: encodeCursor(firstLineIndex),
       };

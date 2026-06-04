@@ -1,12 +1,5 @@
-import { createContext } from "react";
-import type {
-  ChatModelAdapter,
-  ChatModelRunOptions,
-  ChatModelRunResult,
-  ThreadHistoryAdapter,
-} from "@assistant-ui/react";
-import { ExportedMessageRepository } from "@assistant-ui/react";
-import type { ThreadMessageLike } from "@assistant-ui/react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { claude2StreamUrl, getAgentSessionMessages } from "../api/client";
 
@@ -15,7 +8,7 @@ import { claude2StreamUrl, getAgentSessionMessages } from "../api/client";
 // AskUserQuestionToolUI renders deep inside the assistant-ui tree and
 // needs to send answers back through the WebSocket. Instead of module-
 // level singletons (which Vite HMR resets), we use React Context — the
-// adapter creates the bridge, the route component provides it, and the
+// hook creates the bridge, the route component provides it, and the
 // tool UI consumes it.
 
 export type Claude2Bridge = {
@@ -24,41 +17,13 @@ export type Claude2Bridge = {
   sendToolResult: (toolUseId: string, content: string) => void;
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
-  /** Called on compact_boundary (start) and on result after compact (end).
-   * Set by the route component after adapter creation. */
   onCompact: ((phase: "start" | "end") => void) | null;
-};
-
-export type Claude2Pagination = {
-  hasOlder: boolean;
-  nextCursor: string | null;
-  loadOlder: () => Promise<ThreadMessageLike[]>;
 };
 
 export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
 
-type Resolver = () => void;
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asReadonlyJSON = (v: Record<string, unknown>): any => v;
-
-type ConnectionState = {
-  socket: WebSocket;
-  /** Converted messages for the live-stream generator. */
-  history: ChatModelRunResult[];
-  yieldIndex: number;
-  resolveNext: Resolver | null;
-  aborted: boolean;
-  closed: boolean;
-  /** True between compact_boundary and the result that follows. */
-  compactActive: boolean;
-  /** Buffered assistant message containing AskUserQuestion tool_use.
-   * Held until the matching control_request arrives (which carries the
-   * request_id needed for the bridge). Flushed immediately when the next
-   * non-control_request message arrives (card renders without submit
-   * button — gracefully degraded). */
-  bufferedAssistant: ChatModelRunResult | null;
-};
 
 /**
  * Convert raw Claude2 JSONL/API messages into ThreadMessageLike[] for
@@ -79,7 +44,8 @@ export function loadMessagesFromRaw(
   rawMessages: SessionStreamServerMessage[],
 ): ThreadMessageLike[] {
   const messages: ThreadMessageLike[] = [];
-  let currentParts: NonNullable<ChatModelRunResult["content"]> = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let currentParts: any[] = [];
   let lastAssistantMsgId: string | null = null;
 
   const flushAssistant = () => {
@@ -113,10 +79,12 @@ export function loadMessagesFromRaw(
           const resultText = texts || "Tool result";
           const toolUseId: string = "tool_use_id" in block ? (block.tool_use_id as string) : "";
           const matchIdx = currentParts.findIndex(
-            (p) => p.type === "tool-call" && "toolCallId" in p && p.toolCallId === toolUseId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (p: any) => p.type === "tool-call" && "toolCallId" in p && p.toolCallId === toolUseId,
           );
           if (toolUseId && matchIdx >= 0) {
-            currentParts = currentParts.map((p, i) =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            currentParts = currentParts.map((p: any, i: number) =>
               i === matchIdx
                 ? { ...p, result: resultText, ...(isError ? { isError: true } : {}) }
                 : p,
@@ -138,7 +106,8 @@ export function loadMessagesFromRaw(
                 );
                 if (flushedMatchIdx >= 0) {
                   currentParts = [...candidate.content];
-                  currentParts = currentParts.map((p, i) =>
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  currentParts = currentParts.map((p: any, i: number) =>
                     i === flushedMatchIdx
                       ? { ...p, result: resultText, ...(isError ? { isError: true } : {}) }
                       : p,
@@ -202,215 +171,20 @@ export function loadMessagesFromRaw(
   return messages;
 }
 
-export function createClaude2Adapters(projectName: string, sessionId: string) {
-  const url = claude2StreamUrl(projectName, sessionId);
+export function useClaude2Session(projectName: string, sessionId: string) {
+  const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasOlder, setHasOlder] = useState(false);
 
-  let conn: ConnectionState | null = null;
+  const cursorRef = useRef<string | null>(null);
+  const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
+  const compactActiveRef = useRef(false);
+  const socketRef = useRef<WebSocket | null>(null);
 
-  const getConnection = (): ConnectionState => {
-    if (
-      conn &&
-      (conn.socket.readyState === WebSocket.OPEN ||
-        conn.socket.readyState === WebSocket.CONNECTING) &&
-      !conn.aborted
-    ) {
-      return conn;
-    }
-
-    if (conn) {
-      conn.aborted = true;
-      conn.socket.close();
-    }
-
-    const socket = new WebSocket(url);
-    const state: ConnectionState = {
-      socket,
-      history: [],
-      yieldIndex: 0,
-      resolveNext: null,
-      aborted: false,
-      closed: false,
-      compactActive: false,
-      bufferedAssistant: null,
-    };
-
-    socket.onopen = () => {
-      console.log("[claude2-adapter] ws open");
-    };
-
-    socket.onmessage = (event) => {
-      if (state.aborted) return;
-      try {
-        const raw = event.data as string;
-        console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
-        const msg = JSON.parse(raw) as SessionStreamServerMessage;
-
-        // ── compact protocol ────────────────────────────────────────
-        // Claude CLI emits compact_boundary when compaction starts.
-        // The result message that follows signals completion.
-        // Session continues with the same session_id — no switch needed.
-        if (
-          msg.type === "system" &&
-          (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
-        ) {
-          console.log(`[claude2-adapter] compact boundary: subtype=${msg.subtype}`);
-          state.compactActive = true;
-          if (bridge.onCompact) bridge.onCompact("start");
-          return;
-        }
-        if (msg.type === "result" && state.compactActive) {
-          console.log("[claude2-adapter] compact complete (result after compact_boundary)");
-          state.compactActive = false;
-          if (bridge.onCompact) bridge.onCompact("end");
-        }
-
-        // ── control_request routing ─────────────────────────────────
-        //
-        // --permission-prompt-tool stdio routes permission-type tools
-        // (Bash, Write, AskUserQuestion, etc.) as control_request on stdout.
-        //
-        // Non-AskUserQuestion tools (Bash, Write, Read, etc.):
-        //   Auto-allow immediately. Claude executes the tool, emits
-        //   tool_result + assistant + result through the normal message
-        //   stream. The tool_use in the assistant message already carries
-        //   the correct tool_use.id for tool_result matching.
-        //
-        // AskUserQuestion:
-        //   The assistant message with the AskUserQuestion tool_use is
-        //   buffered (see below). When the control_request arrives, we
-        //   inject the request_id into the buffered tool-call's args
-        //   and flush it. This ensures:
-        //
-        //   - Card toolCallId = tool_use.id (matches tool_result echo,
-        //     server-driven state, no optimistic update).
-        //   - request_id lives only in args.__controlRequestId for the
-        //     bridge to send control_response — it's an RPC transient,
-        //     not a persistent message ID.
-        if (msg.type === "control_request") {
-          const toolName = msg.request?.tool_name;
-          if (toolName !== "AskUserQuestion") {
-            console.log(`[claude2-adapter] auto-allowing control_request: ${toolName}`);
-            sendToSocket({
-              type: "control_response",
-              response: {
-                subtype: "success",
-                request_id: msg.request_id,
-                response: { behavior: "allow", updatedInput: {} },
-              },
-            });
-            return;
-          }
-
-          // AskUserQuestion: inject request_id into buffered assistant.
-          if (state.bufferedAssistant) {
-            const content = state.bufferedAssistant.content;
-            if (Array.isArray(content)) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const updated = content.map((p: any) => {
-                if (
-                  p.type === "tool-call" &&
-                  p.toolName === "AskUserQuestion" &&
-                  (!p.args?.__controlRequestId || p.args.__controlRequestId === "")
-                ) {
-                  return {
-                    ...p,
-                    args: { ...p.args, __controlRequestId: msg.request_id },
-                    argsText: JSON.stringify({
-                      ...p.args,
-                      __controlRequestId: msg.request_id,
-                    }),
-                  };
-                }
-                return p;
-              });
-              state.history.push({ content: updated });
-            }
-            state.bufferedAssistant = null;
-            if (state.resolveNext) {
-              state.resolveNext();
-              state.resolveNext = null;
-            }
-          }
-          return;
-        }
-
-        // ── Buffer assistant messages with AskUserQuestion ─────────
-        //
-        // When an assistant message contains AskUserQuestion tool_use,
-        // hold it until the control_request arrives. The control_request
-        // carries the request_id needed for bridge.respondToControlRequest.
-        // Once injected, a single message is pushed to history — one
-        // bubble, one yield, one card with the correct toolCallId
-        // (= tool_use.id) and __controlRequestId for the bridge.
-        //
-        // If the next message is NOT a control_request (edge case: Claude
-        // running in a mode that doesn't emit control_request), flush the
-        // buffer immediately — card renders without submit button.
-        if (msg.type === "assistant") {
-          const hasAskUserQuestion = msg.message?.content?.some(
-            (b: { type: string; name?: string }) =>
-              b.type === "tool_use" && b.name === "AskUserQuestion",
-          );
-          if (hasAskUserQuestion) {
-            const result = convertMessage(msg);
-            if (result) {
-              console.log(`[claude2-adapter] buffered assistant with AskUserQuestion`);
-              state.bufferedAssistant = result;
-            }
-            return;
-          }
-        }
-
-        // ── Flush stale buffer ─────────────────────────────────────
-        //
-        // If a buffered assistant hasn't been matched by a control_request
-        // yet (unlikely but possible), flush it now so the question text
-        // isn't lost.
-        if (state.bufferedAssistant) {
-          console.log(`[claude2-adapter] flushing stale buffer`);
-          state.history.push(state.bufferedAssistant);
-          state.bufferedAssistant = null;
-          if (state.resolveNext) {
-            state.resolveNext();
-            state.resolveNext = null;
-          }
-        }
-
-        const result = convertMessage(msg);
-        if (result) {
-          console.log(`[claude2-adapter] converted: ${JSON.stringify(result).slice(0, 200)}`);
-          state.history.push(result);
-          if (state.resolveNext) {
-            state.resolveNext();
-            state.resolveNext = null;
-          }
-        }
-      } catch {
-        // skip
-      }
-    };
-
-    socket.onclose = () => {
-      console.log("[claude2-adapter] ws close");
-      if (state.aborted) return;
-      state.closed = true;
-      if (state.resolveNext) {
-        state.history.push({ status: { type: "incomplete", reason: "error" } });
-        state.resolveNext();
-        state.resolveNext = null;
-      }
-    };
-
-    socket.onerror = (e) => {
-      console.log("[claude2-adapter] ws error", e);
-    };
-
-    conn = state;
-    return state;
-  };
-
-  const sendToSocket = (data: unknown) => {
-    const { socket } = getConnection();
+  const sendToSocket = useCallback((data: unknown) => {
+    const socket = socketRef.current;
+    if (!socket) return;
     const raw = JSON.stringify(data);
     console.log(
       `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
@@ -433,324 +207,263 @@ export function createClaude2Adapters(projectName: string, sessionId: string) {
         },
         { once: true },
       );
-    } else {
-      console.error(`[claude2-adapter] ws not open, readyState=${socket.readyState}, cannot send`);
     }
-  };
+  }, []);
 
-  // ── Bridge: the route component provides this via Claude2BridgeContext.
-  // AskUserQuestionToolUI consumes it with useContext to send answers back.
-  const bridge: Claude2Bridge = {
-    respondToControlRequest: (requestId, updatedInput) => {
-      const {
-        __controlRequestId: _,
-        answers,
-        ...restArgs
-      } = updatedInput as Record<string, unknown>;
-      console.log(
-        `[claude2-adapter] bridge.respondToControlRequest requestId=${requestId} hasAnswers=${!!answers} hasQuestions=${!!restArgs.questions}`,
-      );
-      // Claude SDK replaces (not merges) the tool input with updatedInput.
-      // The AskUserQuestion handler destructures `answers` from the input:
-      //   const { answers, questions } = input;
-      // So updatedInput must include BOTH `questions` (preserved from original
-      // tool_use input) AND `answers` as a nested key (not spread to root).
-      //
-      // Format: { questions: [...], answers: { "question text": "answer" } }
-      sendToSocket({
-        type: "control_response",
-        response: {
-          subtype: "success",
-          request_id: requestId,
+  const bridge = useMemo<Claude2Bridge>(
+    () => ({
+      respondToControlRequest(requestId, updatedInput) {
+        const {
+          __controlRequestId: _,
+          answers,
+          ...restArgs
+        } = updatedInput as Record<string, unknown>;
+        sendToSocket({
+          type: "control_response",
           response: {
-            behavior: "allow",
-            updatedInput: { ...restArgs, answers } as Record<string, unknown>,
+            subtype: "success",
+            request_id: requestId,
+            response: {
+              behavior: "allow",
+              updatedInput: { ...restArgs, answers } as Record<string, unknown>,
+            },
           },
-        },
-      });
-    },
-
-    cancelControlRequest: (requestId) => {
-      console.log(`[claude2-adapter] bridge.cancelControlRequest requestId=${requestId}`);
-      sendToSocket({
-        type: "control_response",
-        response: {
-          subtype: "success",
-          request_id: requestId,
+        });
+      },
+      cancelControlRequest(requestId) {
+        sendToSocket({
+          type: "control_response",
           response: {
-            behavior: "deny",
-            message: "User skipped",
+            subtype: "success",
+            request_id: requestId,
+            response: { behavior: "deny", message: "User skipped" },
           },
-        },
-      });
-    },
-
-    sendToolResult: (toolUseId, content) => {
-      sendToSocket({
-        type: "user",
-        message: {
-          role: "user",
-          content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
-        },
-      } as Record<string, unknown>);
-    },
-
-    sendMessage: (text) => {
-      sendToSocket({
-        type: "user",
-        message: { role: "user", content: [{ type: "text", text }] },
-      });
-    },
-
-    switchModel: (model) => {
-      sendToSocket({ type: "switch_model", model });
-    },
-
-    onCompact: null,
-  };
-
-  // ── History adapter (ThreadHistoryAdapter) ───────────────────────────
-
-  let paginationCursor: string | null = null;
-  let paginationHasOlder = false;
-
-  const historyAdapter: ThreadHistoryAdapter = {
-    async load() {
-      let rawMessages: SessionStreamServerMessage[] = [];
-      try {
-        const response = await getAgentSessionMessages(projectName, sessionId);
-        rawMessages = response.messages;
-        paginationHasOlder = response.pagination.hasOlder;
-        paginationCursor = response.pagination.nextCursor;
-      } catch {
-        // If REST fails (e.g. session not ready), start with empty history.
-      }
-
-      const messages = loadMessagesFromRaw(rawMessages);
-
-      getConnection();
-
-      return ExportedMessageRepository.fromArray(messages);
-    },
-
-    async append() {
-      // CLI handles persistence via JSONL. No client-side write needed.
-    },
-  };
-
-  const loadOlder = async (): Promise<ThreadMessageLike[]> => {
-    if (!paginationCursor) return [];
-    try {
-      const response = await getAgentSessionMessages(projectName, sessionId, {
-        cursor: paginationCursor,
-      });
-      paginationHasOlder = response.pagination.hasOlder;
-      paginationCursor = response.pagination.nextCursor;
-      return loadMessagesFromRaw(response.messages);
-    } catch {
-      return [];
-    }
-  };
-
-  const pagination: Claude2Pagination = {
-    get hasOlder() {
-      return paginationHasOlder;
-    },
-    get nextCursor() {
-      return paginationCursor;
-    },
-    loadOlder,
-  };
-
-  // ── Chat adapter (ChatModelAdapter) ──────────────────────────────────
-
-  const chatAdapter: ChatModelAdapter = {
-    async *run(options: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void> {
-      const lastUserMsg = options.messages.filter((m) => m.role === "user").at(-1);
-      if (lastUserMsg?.role === "user") {
-        const textPart = lastUserMsg.content.find((p) => p.type === "text");
-        if (textPart?.type === "text") {
-          sendToSocket({
-            type: "user",
-            message: { role: "user", content: [{ type: "text", text: textPart.text }] },
-          });
-        }
-      }
-
-      const onAbort = () => {
+        });
+      },
+      sendToolResult(toolUseId, content) {
         sendToSocket({
           type: "user",
-          message: { role: "user", content: [{ type: "text", text: "" }] },
+          message: {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
+          },
+        } as Record<string, unknown>);
+      },
+      sendMessage(text) {
+        sendToSocket({
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text }] },
         });
-      };
-      options.abortSignal.addEventListener("abort", onAbort, { once: true });
+      },
+      switchModel(model) {
+        sendToSocket({ type: "switch_model", model });
+      },
+      onCompact: null,
+    }),
+    [sendToSocket],
+  );
 
-      const state = getConnection();
+  // Connect WebSocket and load initial history
+  useEffect(() => {
+    let cancelled = false;
+    const url = claude2StreamUrl(projectName, sessionId);
 
-      let parts: NonNullable<ChatModelRunResult["content"]> = [];
+    // Load initial history from REST
+    getAgentSessionMessages(projectName, sessionId)
+      .then((response) => {
+        if (cancelled) return;
+        setRawMessages(response.messages);
+        setHasOlder(response.pagination.hasOlder);
+        cursorRef.current = response.pagination.nextCursor;
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoading(false);
+      });
 
+    // Open WebSocket for live streaming
+    const socket = new WebSocket(url);
+    socketRef.current = socket;
+
+    socket.onopen = () => console.log("[claude2-adapter] ws open");
+
+    socket.onmessage = (event) => {
+      if (cancelled) return;
       try {
-        while (true) {
-          if (options.abortSignal.aborted) return;
-          if (state.closed) return;
+        const raw = event.data as string;
+        console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
+        const msg = JSON.parse(raw) as SessionStreamServerMessage;
 
-          // Wait for at least one new item if nothing is pending.
-          // Claude may emit multiple messages in quick succession
-          // (e.g. tool_result echo → assistant text → result) after
-          // a control_response. If we only process one per promise
-          // resolution, intervening messages arrive while resolveNext
-          // is null and get stuck in history — never yielded.
-          if (state.yieldIndex >= state.history.length) {
-            await new Promise<void>((resolve) => {
-              state.resolveNext = () => resolve();
-            });
-            if (options.abortSignal.aborted) return;
-          }
-
-          // Drain ALL pending items in a tight loop so rapid-fire
-          // messages are all yielded before we block again.
-          while (state.yieldIndex < state.history.length) {
-            const item = state.history[state.yieldIndex];
-            state.yieldIndex++;
-
-            if (item.content) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const content = item.content as any[];
-              const toolResults = content.filter((p) => p.type === "tool-result");
-              const nonReasoning = content.filter(
-                (p: { type: string }) => p.type !== "reasoning" && p.type !== "tool-result",
-              );
-              const latestReasoning = content
-                .filter((p: { type: string }) => p.type === "reasoning")
-                .at(-1);
-
-              for (const tr of toolResults) {
-                const trPart = tr as { toolCallId: string; result: string; isError?: boolean };
-                parts = parts.map((p) => {
-                  if (
-                    p.type === "tool-call" &&
-                    "toolCallId" in p &&
-                    (p as { toolCallId: string }).toolCallId === trPart.toolCallId
-                  ) {
-                    const update: Record<string, unknown> = { result: trPart.result };
-                    if (trPart.isError) update.isError = true;
-                    return { ...p, ...update } as typeof p;
-                  }
-                  return p;
-                });
-              }
-
-              parts = [...parts.filter((p) => p.type !== "reasoning"), ...nonReasoning];
-              if (latestReasoning) parts = [...parts, latestReasoning];
-            }
-
-            if ("status" in item && item.status) {
-              yield { content: parts, status: item.status };
-              return;
-            }
-
-            yield { content: parts };
+        // ── compact protocol ────────────────────────────────────────
+        if (
+          msg.type === "system" &&
+          (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
+        ) {
+          compactActiveRef.current = true;
+          if (bridge.onCompact) bridge.onCompact("start");
+          return;
+        }
+        if (msg.type === "result") {
+          setIsRunning(false);
+          if (compactActiveRef.current) {
+            compactActiveRef.current = false;
+            if (bridge.onCompact) bridge.onCompact("end");
           }
         }
-      } finally {
-        options.abortSignal.removeEventListener("abort", onAbort);
+
+        // ── control_request routing ─────────────────────────────────
+        if (msg.type === "control_request") {
+          const toolName = msg.request?.tool_name;
+          if (toolName !== "AskUserQuestion") {
+            sendToSocket({
+              type: "control_response",
+              response: {
+                subtype: "success",
+                request_id: msg.request_id,
+                response: { behavior: "allow", updatedInput: {} },
+              },
+            });
+            return;
+          }
+
+          // AskUserQuestion: inject request_id into buffered assistant
+          if (pendingAskRef.current) {
+            const assistant = pendingAskRef.current as {
+              type: "assistant";
+              message: {
+                content: Array<{ type: string; name?: string; input: Record<string, unknown> }>;
+              };
+            };
+            const updated = {
+              ...assistant,
+              message: {
+                ...assistant.message,
+                content: assistant.message.content.map((block) => {
+                  if (block.type === "tool_use" && block.name === "AskUserQuestion") {
+                    return {
+                      ...block,
+                      input: { ...block.input, __controlRequestId: msg.request_id },
+                    };
+                  }
+                  return block;
+                }),
+              },
+            };
+            pendingAskRef.current = null;
+            setRawMessages((prev) => [...prev, updated as SessionStreamServerMessage]);
+          }
+          return;
+        }
+
+        // ── Buffer assistant with AskUserQuestion ───────────────────
+        if (msg.type === "assistant") {
+          const assistantMsg = msg as {
+            type: "assistant";
+            message: { content: Array<{ type: string; name?: string }> };
+          };
+          const hasAsk = assistantMsg.message.content.some(
+            (b) => b.type === "tool_use" && b.name === "AskUserQuestion",
+          );
+          if (hasAsk) {
+            pendingAskRef.current = msg;
+            return;
+          }
+        }
+
+        // ── Flush stale buffer ─────────────────────────────────────
+        if (pendingAskRef.current) {
+          setRawMessages((prev) => [...prev, pendingAskRef.current!]);
+          pendingAskRef.current = null;
+        }
+
+        // Skip text-only user messages (echo of our own messages)
+        if (msg.type === "user") {
+          const userMsg = msg as { type: "user"; message: { content: Array<{ type: string }> } };
+          const hasToolResults = userMsg.message.content.some((b) => b.type === "tool_result");
+          if (!hasToolResults) return;
+        }
+
+        setRawMessages((prev) => [...prev, msg]);
+      } catch {
+        // skip
+      }
+    };
+
+    socket.onclose = () => {
+      if (!cancelled) setIsRunning(false);
+    };
+
+    socket.onerror = (e) => console.log("[claude2-adapter] ws error", e);
+
+    return () => {
+      cancelled = true;
+      socket.close();
+      socketRef.current = null;
+    };
+  }, [projectName, sessionId, bridge, sendToSocket]);
+
+  // Convert raw messages to ThreadMessageLike[]
+  const threadLikeMessages = useMemo(() => loadMessagesFromRaw(rawMessages), [rawMessages]);
+
+  // Load older messages (prepend to rawMessages)
+  const loadOlder = useCallback(async () => {
+    const cursor = cursorRef.current;
+    if (!cursor) return;
+    try {
+      const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
+      cursorRef.current = response.pagination.nextCursor;
+      setHasOlder(response.pagination.hasOlder);
+      setRawMessages((prev) => [...response.messages, ...prev]);
+    } catch (err) {
+      console.error("[loadOlder] error", err);
+    }
+  }, [projectName, sessionId]);
+
+  // onNew: user sent a message from the composer
+  const onNew = useCallback(
+    async (message: AppendMessage) => {
+      const textContent = (Array.isArray(message.content) ? message.content : [])
+        .filter((p) => p.type === "text")
+        .map((p) => (p as { text: string }).text)
+        .join("\n");
+
+      if (textContent) {
+        const userMsg: SessionStreamServerMessage = {
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: textContent }] },
+        } as SessionStreamServerMessage;
+        setRawMessages((prev) => [...prev, userMsg]);
+        setIsRunning(true);
+        sendToSocket({
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: textContent }] },
+        });
       }
     },
-  };
+    [sendToSocket],
+  );
 
-  return { chatAdapter, historyAdapter, bridge, pagination };
-}
+  // onCancel: user interrupted the run
+  const onCancel = useCallback(async () => {
+    sendToSocket({
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "" }] },
+    });
+    setIsRunning(false);
+  }, [sendToSocket]);
 
-function convertMessage(msg: SessionStreamServerMessage): ChatModelRunResult | null {
-  if (msg.type === "error") {
-    return { status: { type: "incomplete", reason: "error" } };
-  }
-  if (msg.type === "ended") {
-    return null;
-  }
-  if (msg.type === "control_request") {
-    // control_request is handled in onmessage, not here.
-    // For AskUserQuestion: onmessage injects request_id into the buffered
-    // assistant message and pushes a single merged result.
-    // For other tools: onmessage auto-allows.
-    return null;
-  }
-  if (msg.type === "assistant") {
-    const parts = msg.message.content
-      .filter(
-        (block) => block.type === "text" || block.type === "tool_use" || block.type === "thinking",
-      )
-      .map((block) => {
-        if (block.type === "text") return { type: "text" as const, text: block.text };
-        if (block.type === "thinking") return { type: "reasoning" as const, text: block.thinking };
-        // tool_use block — toolCallId = tool_use.id matches tool_result.tool_use_id
-        // for server-driven state updates (no optimistic setLocalAnswer).
-        //
-        // AskUserQuestion: __controlRequestId starts as "" placeholder.
-        // The onmessage handler injects the real request_id when the
-        // control_request arrives (before the message is pushed to history).
-        // In loaded history (JSONL), control_request is absent, so the
-        // placeholder stays — but the bridge is unused for history viewing.
-        const isAsk = block.name === "AskUserQuestion";
-        const input = isAsk ? { ...block.input, __controlRequestId: "" } : block.input;
-        return {
-          type: "tool-call" as const,
-          toolCallId: block.id,
-          toolName: block.name,
-          args: asReadonlyJSON(input),
-          argsText: JSON.stringify(input),
-        };
-      });
-    if (parts.length > 0) {
-      return { content: parts };
-    }
-    return null;
-  }
-  if (msg.type === "user") {
-    // ── tool_result echo from Claude ───────────────────────────────
-    //
-    // When Claude completes a tool, it echoes a user message containing
-    // the tool_result on stdout. We convert these into tool-result parts
-    // so the run() generator can match them to tool-call cards by toolCallId.
-    //
-    // is_error tool_results are skipped: Claude auto-generates these when
-    // an AskUserQuestion is auto-allowed without real answers (12ms after
-    // the control_request). They carry no useful content.
-    const parts = msg.message.content
-      .filter((block) => block.type === "tool_result")
-      .flatMap((block) => {
-        if (block.type !== "tool_result") return [];
-        const isError = !!(block as { is_error?: boolean }).is_error;
-        const texts =
-          typeof block.content === "string"
-            ? block.content
-            : (block.content as Array<{ type: string; text: string }>)
-                .filter((c) => c.type === "text")
-                .map((c) => c.text)
-                .join("\n");
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const part: any = {
-          type: "tool-result" as const,
-          toolCallId: (block as { tool_use_id: string }).tool_use_id,
-          result: texts || (isError ? "Tool error" : "Tool result"),
-        };
-        if (isError) part.isError = true;
-        return [part];
-      });
-    if (parts.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return { content: parts as any };
-    }
-    return null;
-  }
-  if (msg.type === "result") {
-    const resultStatus =
-      msg.subtype === "success"
-        ? ({ type: "complete", reason: "stop" } as const)
-        : msg.subtype === "interrupted"
-          ? ({ type: "incomplete", reason: "cancelled" } as const)
-          : ({ type: "incomplete", reason: "error" } as const);
-    return { status: resultStatus };
-  }
-  return null;
+  // ExternalStoreAdapter for useExternalStoreRuntime
+  const storeAdapter = useMemo<ExternalStoreAdapter<ThreadMessageLike>>(
+    () => ({
+      messages: threadLikeMessages,
+      isRunning,
+      isLoading,
+      convertMessage: (m: ThreadMessageLike) => m,
+      onNew,
+      onCancel,
+    }),
+    [threadLikeMessages, isRunning, isLoading, onNew, onCancel],
+  );
+
+  return { storeAdapter, bridge, hasOlder, loadOlder };
 }

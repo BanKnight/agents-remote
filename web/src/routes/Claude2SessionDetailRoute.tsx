@@ -8,13 +8,12 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   useComposerRuntime,
-  useLocalRuntime,
+  useExternalStoreRuntime,
   useMessage,
   useMessagePartReasoning,
   useThread,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT } from "../i18n";
@@ -26,14 +25,7 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
-import {
-  Claude2BridgeContext,
-  type Claude2Pagination,
-  createClaude2Adapters,
-  loadMessagesFromRaw,
-} from "./claude2-adapter";
-
-const Claude2PaginationContext = createContext<Claude2Pagination | null>(null);
+import { Claude2BridgeContext, useClaude2Session } from "./claude2-adapter";
 
 type CompactStatus = "idle" | "compacting" | "compacted" | "error";
 
@@ -98,10 +90,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     },
   });
 
-  const { chatAdapter, historyAdapter, bridge, pagination } = useMemo(
-    () => createClaude2Adapters(projectName, sessionId),
-    [projectName, sessionId],
-  );
+  const { storeAdapter, bridge, hasOlder, loadOlder } = useClaude2Session(projectName, sessionId);
 
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
 
@@ -123,9 +112,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     }
   }, [compactStatus]);
 
-  // Wire bridge.onCompact after adapter creation.
+  // Wire bridge.onCompact after hook returns.
   // compact_boundary → "start", result after compact → "end".
-  // Session continues with same session_id — no switch needed.
   bridge.onCompact = (phase: "start" | "end") => {
     if (phase === "start") {
       console.log("[claude2-chat] compact started");
@@ -136,9 +124,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     }
   };
 
-  const runtime = useLocalRuntime(chatAdapter, {
-    adapters: { history: historyAdapter },
-  });
+  const runtime = useExternalStoreRuntime(storeAdapter);
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
@@ -197,56 +183,54 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>
-          <Claude2PaginationContext.Provider value={pagination}>
-            <Claude2CompactContext.Provider value={compactState}>
-              <div
-                className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-              >
-                {detail.error instanceof Error ? (
-                  <div className="shrink-0 px-3 py-2">
-                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                      {detail.error.message}
-                    </p>
-                  </div>
-                ) : null}
-                {closeSession.error instanceof Error ? (
-                  <div className="shrink-0 px-3 py-2">
-                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                      {closeSession.error.message}
-                    </p>
-                  </div>
-                ) : null}
+          <Claude2CompactContext.Provider value={compactState}>
+            <div
+              className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+            >
+              {detail.error instanceof Error ? (
+                <div className="shrink-0 px-3 py-2">
+                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                    {detail.error.message}
+                  </p>
+                </div>
+              ) : null}
+              {closeSession.error instanceof Error ? (
+                <div className="shrink-0 px-3 py-2">
+                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                    {closeSession.error.message}
+                  </p>
+                </div>
+              ) : null}
 
-                <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-                    <ThreadViewportContent />
-                    <ThreadPrimitive.ScrollToBottom className="absolute bottom-16 sm:bottom-24 right-5 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition hover:bg-slate-600/90 cursor-pointer">
-                      <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path
-                          d="M4 6l4 4 4-4"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </ThreadPrimitive.ScrollToBottom>
-                  </ThreadPrimitive.Viewport>
-
-                  <CompactIndicator />
-                  <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                    <ComposerPrimitive.Root>
-                      <ComposerWithInterrupt
-                        currentModel={undefined}
-                        currentResolved={session?.model}
-                        availableModels={availableModels}
+              <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
+                  <ThreadViewportContent hasOlder={hasOlder} loadOlder={loadOlder} />
+                  <ThreadPrimitive.ScrollToBottom className="absolute bottom-16 sm:bottom-24 right-5 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition hover:bg-slate-600/90 cursor-pointer">
+                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="M4 6l4 4 4-4"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
-                    </ComposerPrimitive.Root>
-                  </div>
-                </ThreadPrimitive.Root>
-              </div>
-            </Claude2CompactContext.Provider>
-          </Claude2PaginationContext.Provider>
+                    </svg>
+                  </ThreadPrimitive.ScrollToBottom>
+                </ThreadPrimitive.Viewport>
+
+                <CompactIndicator />
+                <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                  <ComposerPrimitive.Root>
+                    <ComposerWithInterrupt
+                      currentModel={undefined}
+                      currentResolved={session?.model}
+                      availableModels={availableModels}
+                    />
+                  </ComposerPrimitive.Root>
+                </div>
+              </ThreadPrimitive.Root>
+            </div>
+          </Claude2CompactContext.Provider>
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
       {holder}
@@ -441,12 +425,18 @@ function AssistantChatBubble() {
   );
 }
 
-function ThreadViewportContent() {
+function ThreadViewportContent({
+  hasOlder,
+  loadOlder,
+}: {
+  hasOlder: boolean;
+  loadOlder: () => Promise<void>;
+}) {
   const isLoading = useThread((s) => s.isLoading);
 
   return (
     <>
-      {isLoading ? <ChatSkeleton /> : <LoadOlderMessages />}
+      {isLoading ? <ChatSkeleton /> : <LoadOlderButton hasOlder={hasOlder} loadOlder={loadOlder} />}
       <ThreadPrimitive.Messages
         components={{
           UserMessage: UserChatBubble,
@@ -479,48 +469,38 @@ function ChatSkeleton() {
   );
 }
 
-function LoadOlderMessages() {
+function LoadOlderButton({
+  hasOlder,
+  loadOlder,
+}: {
+  hasOlder: boolean;
+  loadOlder: () => Promise<void>;
+}) {
   const { t } = useT();
-  const pagination = useContext(Claude2PaginationContext);
   const [loading, setLoading] = useState(false);
-  const [olderMessages, setOlderMessages] = useState<ReturnType<typeof loadMessagesFromRaw>>([]);
 
-  const hasOlder = pagination?.hasOlder ?? false;
+  if (!hasOlder) return null;
 
-  if (!hasOlder && olderMessages.length === 0) return null;
-
-  const handleLoadOlder = async () => {
-    if (loading || !pagination) return;
+  const handleLoad = async () => {
+    if (loading) return;
     setLoading(true);
     try {
-      const older = await pagination.loadOlder();
-      setOlderMessages((prev) => [...older, ...prev]);
+      await loadOlder();
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="px-3 pt-2">
-      {hasOlder ? (
-        <div className="flex justify-center py-1">
-          <button
-            type="button"
-            disabled={loading}
-            onClick={handleLoadOlder}
-            className="rounded-lg bg-slate-800/60 px-3 py-1.5 text-[0.65rem] text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 transition cursor-pointer disabled:opacity-50"
-          >
-            {loading ? t("claude2.loadingOlder") : t("claude2.loadOlder")}
-          </button>
-        </div>
-      ) : null}
-      {olderMessages.length > 0 ? (
-        <div className="space-y-3 border-b border-slate-700/40 pb-3 mb-3">
-          {olderMessages.map((msg, i) => (
-            <HistoryBubble key={i} message={msg} />
-          ))}
-        </div>
-      ) : null}
+    <div className="flex justify-center py-1 px-3">
+      <button
+        type="button"
+        disabled={loading}
+        onClick={handleLoad}
+        className="rounded-lg bg-slate-800/60 px-3 py-1.5 text-[0.65rem] text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 transition cursor-pointer disabled:opacity-50"
+      >
+        {loading ? t("claude2.loadingOlder") : t("claude2.loadOlder")}
+      </button>
     </div>
   );
 }
@@ -679,46 +659,6 @@ function ComposerWithInterrupt({
           currentResolved={currentResolved}
           availableModels={availableModels}
         />
-      </div>
-    </div>
-  );
-}
-
-const HISTORY_MARKDOWN_CLASS =
-  "text-sm text-slate-100 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 [&_li]:mb-1 [&_pre]:relative [&_pre]:bg-slate-950/80 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:pt-7 [&_pre]:mb-2 [&_pre]:overflow-x-auto [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:text-[0.75rem] [&_pre_code]:leading-relaxed [&_a]:text-cyan-400 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-slate-600 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-slate-600 [&_td]:px-2 [&_td]:py-1 [&_hr]:border-slate-700 [&_hr]:my-3";
-
-function HistoryBubble({ message }: { message: ReturnType<typeof loadMessagesFromRaw>[number] }) {
-  const isUser = message.role === "user";
-
-  let text = "";
-  if (typeof message.content === "string") {
-    text = message.content;
-  } else if (Array.isArray(message.content)) {
-    text = message.content
-      .filter(
-        (p): p is { type: "text"; text: string } =>
-          typeof p === "object" && "type" in p && p.type === "text",
-      )
-      .map((p) => p.text)
-      .join("\n");
-  }
-
-  if (!text) return null;
-
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"} px-3 py-1.5 sm:px-5`}>
-      <div
-        className={`max-w-[90%] rounded-2xl px-4 py-2.5 ${
-          isUser ? "rounded-br-md bg-cyan-700/60" : "rounded-bl-md bg-slate-800/70"
-        }`}
-      >
-        {isUser ? (
-          text
-        ) : (
-          <div className={HISTORY_MARKDOWN_CLASS}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-          </div>
-        )}
       </div>
     </div>
   );

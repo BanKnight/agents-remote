@@ -13,6 +13,13 @@
 - 颜色、间距、圆角、active 宽度、safe-area、bottom navigation、surface 层级等都属于抽象契约；不要在 route 文件里为了单页观感私自散写另一套设计语言。
 - 抽象只服务于还原原型和保持真实能力边界；不得伪造数据、日志、历史、文件/Git 能力或运行态输出让 UI 看起来更完整。
 
+## 数据流设计原则
+
+- UI 组件的数据流必须遵循 `UI = f(state)`：同一数据类型的渲染只能有一条管道进入 UI 层。
+- 如果同一数据类型（如消息）有多条管道（如 REST 历史 + WebSocket 实时），应合并为单一 state 数组，由 React 统一渲染，而不是为不同来源维护平行的渲染组件和状态管理。
+- 分页、实时追加、历史回放等能力应只是对单一 state 数组的不同操作（prepend / append / reset），不应产生独立的 UI 分支。
+- 使用 `useExternalStoreRuntime`（assistant-ui）或等价的外部 state 管理时，应让框架只负责渲染，业务层自己掌控 state 生命周期。
+
 ## 调试第三方库 Bug
 - 遇到第三方库 bug 时，正确顺序：① `tvly search` 查库的 issue → ② 找同样使用该库的开源项目参考实战解法（clone 到 `~/repos`）→ ③ 读 `node_modules` 源码验证机制 → ④ 一次性实现。不要靠猜测反复试错。
 
