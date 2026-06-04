@@ -275,7 +275,10 @@ const isChatMessage = (msg: Record<string, unknown>): boolean => {
     type === "user" ||
     type === "assistant" ||
     type === "result" ||
-    (type === "system" && msg.subtype === "init")
+    (type === "system" &&
+      (msg.subtype === "init" ||
+        msg.subtype === "compact_boundary" ||
+        msg.subtype === "microcompact_boundary"))
   );
 };
 
