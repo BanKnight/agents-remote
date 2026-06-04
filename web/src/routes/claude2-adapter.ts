@@ -394,7 +394,8 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           setIsRunning(true);
           compactPhaseRef.current = "compacting";
           if (bridge.onCompact) bridge.onCompact({ phase: "start" });
-          return;
+          // Fall through — loadMessagesFromRaw skips non-compact_boundary
+          // system messages, so the rendering pipeline is the single filter.
         }
 
         // Phase: manual compact finished (compact_result)
@@ -416,7 +417,8 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           }
           compactPhaseRef.current = "replay";
           // isRunning stays true — CLI replays compacted context next
-          return;
+          // Fall through — loadMessagesFromRaw skips non-compact_boundary
+          // system messages, so the rendering pipeline is the single filter.
         }
 
         // Phase: compact_boundary — start if auto compact, skip if replay.
