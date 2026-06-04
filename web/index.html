@@ -20,14 +20,15 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>智控 · AI 远程控制台</title>
     <style>
-      html {
-        background: #020617;
-      }
       body {
-        min-height: 100dvh;
         margin: 0;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
         background: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
-        background-attachment: fixed;
       }
       #splash {
         position: fixed;
