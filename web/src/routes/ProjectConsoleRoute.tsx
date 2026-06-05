@@ -1,4 +1,10 @@
-import type { AgentProvider, AgentSession, Project, TerminalSession } from "@agents-remote/shared";
+import type {
+  AgentHistoryEntry,
+  AgentProvider,
+  AgentSession,
+  Project,
+  TerminalSession,
+} from "@agents-remote/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode, Ref } from "react";
@@ -8,6 +14,7 @@ import {
   closeTerminalSession,
   createAgentSession,
   createTerminalSession,
+  listAgentHistory,
   getProject,
   listAgentSessions,
   listTerminalSessions,
@@ -294,15 +301,18 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       </div>
 
       {activeSection === "agents" ? (
-        <AgentPanel
-          projectName={project.name}
-          sessions={agentSessions.data?.sessions ?? []}
-          isLoading={agentSessions.isLoading}
-          isCreating={createAgent.isPending}
-          createError={createAgent.error}
-          closeError={closeAgent.error}
-          onCreate={(provider) => createAgent.mutate(provider)}
-        />
+        <div className="min-h-0 flex-1 flex flex-col gap-4 overflow-y-auto rounded-none border-0 bg-transparent shadow-none ring-0 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+          <AgentPanel
+            projectName={project.name}
+            sessions={agentSessions.data?.sessions ?? []}
+            isLoading={agentSessions.isLoading}
+            isCreating={createAgent.isPending}
+            createError={createAgent.error}
+            closeError={closeAgent.error}
+            onCreate={(provider) => createAgent.mutate(provider)}
+          />
+          <AgentSessionHistoryPanel projectName={project.name} />
+        </div>
       ) : null}
 
       {activeSection === "terminal" ? (
@@ -491,11 +501,7 @@ function AgentPanel({
 }: AgentPanelProps) {
   const { t } = useT();
   return (
-    <ShellPanel
-      className="flex flex-col px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5"
-      density="compact"
-      docked
-    >
+    <ShellPanel className="flex flex-col px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact">
       <div className="grid grid-cols-3 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
         <CreateButton
           disabled={isCreating}
@@ -562,10 +568,7 @@ function AgentInstanceList({ projectName, sessions, isLoading }: AgentInstanceLi
   }
 
   return (
-    <div
-      className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-1 lg:grid-cols-2"
-      aria-label="Agent instances"
-    >
+    <div className="mt-4 grid gap-3 lg:grid-cols-2" aria-label="Agent instances">
       {sessions.map((session) => (
         <AgentInstanceRow key={session.id} projectName={projectName} session={session} />
       ))}
@@ -628,8 +631,49 @@ function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
   );
 }
 
-function _AgentHistoryPanel() {
+type AgentSessionHistoryPanelProps = {
+  projectName: string;
+};
+
+function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps) {
   const { t } = useT();
+  const navigate = useNavigate({ from: "/projects/$projectName" });
+  const queryClient = useQueryClient();
+
+  const history = useQuery({
+    queryKey: ["projects", projectName, "agent-history"],
+    queryFn: () => listAgentHistory(projectName),
+  });
+
+  const resumeSession = useMutation({
+    mutationFn: (claudeSessionId: string) =>
+      createAgentSession(projectName, "claude2", claudeSessionId),
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-history"] }),
+      ]);
+      await navigate({
+        to: "/projects/$projectName/agent-sessions/$sessionId/claude2",
+        params: { projectName, sessionId: data.session.id },
+      });
+    },
+  });
+
+  const handleEntryClick = (entry: AgentHistoryEntry) => {
+    if (entry.hasActiveSession && entry.activeSessionId) {
+      void navigate({
+        to: "/projects/$projectName/agent-sessions/$sessionId/claude2",
+        params: { projectName, sessionId: entry.activeSessionId },
+      });
+    } else {
+      resumeSession.mutate(entry.claudeSessionId);
+    }
+  };
+
+  const entries = history.data?.entries ?? [];
+  const isResuming = resumeSession.isPending;
+
   return (
     <ShellPanel
       className={`mt-4 rounded-[1.25rem] ${shellSurfaceClasses.raised}`}
@@ -638,20 +682,96 @@ function _AgentHistoryPanel() {
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-100">Session history</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{t("project.historyFuture")}</p>
+          <h3 className="text-sm font-semibold text-slate-100">{t("project.historyTitle")}</h3>
+          {entries.length > 0 ? (
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {t("project.historySubtitle", { count: entries.length })}
+            </p>
+          ) : null}
         </div>
-        <StatusPill tone="muted" value={t("project.historyStaged")} />
+        {entries.length > 0 ? (
+          <span className="text-xs text-slate-400">
+            {t("project.historySubtitle", { count: entries.length })}
+          </span>
+        ) : null}
       </div>
-      <div
-        className={`mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 ${shellSurfaceClasses.inset}`}
-      >
-        <IconMarker size="sm" tone="muted">
+
+      {history.isLoading ? (
+        <div className="mt-3 grid gap-2" aria-hidden="true">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : entries.length === 0 ? (
+        <div
+          className={`mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 ${shellSurfaceClasses.inset}`}
+        >
+          <IconMarker size="sm" tone="muted">
+            H
+          </IconMarker>
+          <p className="min-w-0 text-sm leading-6 text-slate-400">
+            {history.error ? history.error.message : t("project.historyEmptyDesc")}
+          </p>
+        </div>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {entries.map((entry) => (
+            <AgentHistoryRow
+              key={entry.claudeSessionId}
+              entry={entry}
+              isResuming={isResuming}
+              onClick={handleEntryClick}
+            />
+          ))}
+        </div>
+      )}
+    </ShellPanel>
+  );
+}
+
+type AgentHistoryRowProps = {
+  entry: AgentHistoryEntry;
+  isResuming: boolean;
+  onClick: (entry: AgentHistoryEntry) => void;
+};
+
+function AgentHistoryRow({ entry, isResuming, onClick }: AgentHistoryRowProps) {
+  const { t } = useT();
+  const displayTitle = entry.title ?? entry.firstMessage ?? entry.claudeSessionId.slice(0, 8);
+  const displayTime = entry.lastActivityAt
+    ? relativeTime(entry.lastActivityAt, t)
+    : entry.startedAt
+      ? relativeTime(entry.startedAt, t)
+      : "";
+
+  return (
+    <button
+      className={`block w-full min-w-0 rounded-xl p-3 text-left transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover} ${isResuming ? "pointer-events-none opacity-60" : ""}`}
+      onClick={() => onClick(entry)}
+      type="button"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <IconMarker size="sm" tone={entry.hasActiveSession ? "success" : "muted"}>
           H
         </IconMarker>
-        <p className="min-w-0 text-sm leading-6 text-slate-400">{t("project.historyDesc")}</p>
+        <div className="min-w-0 flex-1">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+            <div className="min-w-0">
+              <h4 className="truncate text-sm font-medium text-slate-100">{displayTitle}</h4>
+              <p className="mt-0.5 text-xs text-slate-500">{displayTime}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusPill
+                tone="muted"
+                value={t("project.historyTurns", { count: entry.messageCount })}
+              />
+              {entry.hasActiveSession ? (
+                <StatusPill tone="success" value={t("project.historyActive")} />
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
-    </ShellPanel>
+    </button>
   );
 }
 

@@ -19,6 +19,7 @@ import type {
   GitFileDiffResponse,
   HealthResponse,
   ListAgentSessionsResponse,
+  ListAgentHistoryResponse,
   ListTerminalSessionsResponse,
   LoginRequest,
   LoginResponse,
@@ -179,14 +180,22 @@ export async function listAgentSessions(projectName: string): Promise<ListAgentS
   return fetchJson(agentSessionsPath(projectName), "api.agentSessionListFailed");
 }
 
+export async function listAgentHistory(projectName: string): Promise<ListAgentHistoryResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/agent-history`,
+    "api.agentHistoryListFailed",
+  );
+}
+
 export async function createAgentSession(
   projectName: string,
   provider: AgentProvider,
+  claudeSessionId?: string,
 ): Promise<CreateAgentSessionResponse> {
   return fetchJson(agentSessionsPath(projectName), "api.agentSessionCreationFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider } satisfies CreateAgentSessionRequest),
+    body: JSON.stringify({ provider, claudeSessionId } satisfies CreateAgentSessionRequest),
   });
 }
 

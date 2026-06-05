@@ -194,6 +194,8 @@ export type ListAgentSessionsResponse = {
 export type CreateAgentSessionRequest = {
   provider?: AgentProvider;
   displayName?: string;
+  /** Resume an existing Claude CLI session */
+  claudeSessionId?: string;
 };
 
 export type CreateAgentSessionResponse = {
@@ -216,6 +218,31 @@ export type AgentSessionMessagesResponse = {
     hasOlder: boolean;
     nextCursor: string | null;
   };
+};
+
+// -- Agent History --
+
+export type AgentHistoryEntry = {
+  /** Claude CLI session UUID (JSONL filename without extension) */
+  claudeSessionId: string;
+  /** AI-generated title (last ai-title entry), or null */
+  title: string | null;
+  /** First user message text, truncated */
+  firstMessage: string | null;
+  /** ISO timestamp of the first user message */
+  startedAt: string | null;
+  /** ISO timestamp from file mtime */
+  lastActivityAt: string | null;
+  /** Approximate number of user turns */
+  messageCount: number;
+  /** Whether an active agent instance is linked to this Claude session */
+  hasActiveSession: boolean;
+  /** Agent session ID when hasActiveSession is true */
+  activeSessionId?: string;
+};
+
+export type ListAgentHistoryResponse = {
+  entries: AgentHistoryEntry[];
 };
 
 export type ListTerminalSessionsResponse = {

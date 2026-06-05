@@ -71,6 +71,14 @@ export const en = {
   "project.historyFuture": "Future restore will live here when provider history is available.",
   "project.historyDesc":
     "Current Agent instances stay above. Provider history and future session restore will appear here.",
+  "project.historyTitle": "Session history",
+  "project.historySubtitle": "{{count}} sessions",
+  "project.historyEmpty": "No session history",
+  "project.historyEmptyDesc":
+    "Claude CLI session history will appear here after your first conversation.",
+  "project.historyResuming": "Resuming...",
+  "project.historyTurns": "{{count}} turns",
+  "project.historyActive": "Active",
 
   // ── Session Detail ───────────────────────────────────────────
   "session.backToAgent": "Back to agent detail",
@@ -230,6 +238,7 @@ export const en = {
   "api.projectGitDiffFailed": "Project Git diff failed",
   "api.projectGitFileDiffFailed": "Project Git file diff failed",
   "api.agentSessionListFailed": "Agent session list failed",
+  "api.agentHistoryListFailed": "Agent history list failed",
   "api.agentSessionCreationFailed": "Agent session creation failed",
   "api.agentSessionDetailFailed": "Agent session detail failed",
   "api.agentSessionCloseFailed": "Agent session close failed",

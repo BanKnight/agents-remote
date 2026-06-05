@@ -70,6 +70,7 @@ type CreateAgentSessionInput = {
   project: ResolvedProjectPath;
   provider: AgentProvider;
   displayName?: string;
+  claudeSessionId?: string;
 };
 
 type CreateTerminalSessionInput = {
@@ -130,6 +131,17 @@ export class SessionRegistry {
     };
   }
 
+  async getActiveClaudeSessionMap(projectName: string): Promise<Map<string, string>> {
+    const metadata = await this.listMetadata("agent", projectName);
+    const map = new Map<string, string>();
+    for (const m of metadata) {
+      if (m.provider === "claude2" && m.claudeSessionId) {
+        map.set(m.claudeSessionId, m.id);
+      }
+    }
+    return map;
+  }
+
   async listAgentSessions(projectName: string): Promise<AgentSession[]> {
     const metadata = await this.listMetadata("agent", projectName);
     return metadata.map(agentSessionFromMetadata);
@@ -159,6 +171,7 @@ export class SessionRegistry {
       type: "agent",
       provider: input.provider,
       displayName: input.displayName,
+      claudeSessionId: input.claudeSessionId,
     });
 
     try {
@@ -284,6 +297,7 @@ export class SessionRegistry {
     type: SessionType;
     provider?: AgentProvider;
     displayName?: string;
+    claudeSessionId?: string;
   }) {
     const id = this.createId(input.type);
     const timestamp = this.now().toISOString();
@@ -299,6 +313,7 @@ export class SessionRegistry {
       tmuxSessionName: createTmuxSessionName(input.project.name, input.type, input.provider, id),
       createdAt: timestamp,
       updatedAt: timestamp,
+      claudeSessionId: input.claudeSessionId,
     };
 
     await this.writeMetadata(metadata);

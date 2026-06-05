@@ -58,11 +58,11 @@ export class Claude2Runtime implements RuntimeResources {
   }
 
   async startAgent(metadata: SessionMetadata): Promise<void> {
-    const proc = this.spawnClaude(metadata.projectPath);
+    const proc = this.spawnClaude(metadata.projectPath, metadata.claudeSessionId);
     this.sessions.set(metadata.tmuxSessionName, {
       projectPath: metadata.projectPath,
       sessionId: metadata.id,
-      claudeSessionId: undefined,
+      claudeSessionId: metadata.claudeSessionId,
       process: proc,
     });
   }

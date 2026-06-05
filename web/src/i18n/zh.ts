@@ -72,6 +72,13 @@ export const zh: Record<TranslationKey, string> = {
   "project.historyFuture": "当 provider 历史记录可用时，将来的恢复功能将在此处显示。",
   "project.historyDesc":
     "当前 Agent 实例保持在上方。Provider 历史记录和将来的会话恢复将在此处显示。",
+  "project.historyTitle": "会话历史",
+  "project.historySubtitle": "{{count}} 个会话",
+  "project.historyEmpty": "暂无会话历史",
+  "project.historyEmptyDesc": "首次对话后，Claude CLI 会话历史将在此处显示。",
+  "project.historyResuming": "正在恢复...",
+  "project.historyTurns": "{{count}} 轮",
+  "project.historyActive": "活跃",
 
   // ── Session Detail ───────────────────────────────────────────
   "session.backToAgent": "返回 Agent 详情",
@@ -231,6 +238,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.projectGitDiffFailed": "项目 Git 差异获取失败",
   "api.projectGitFileDiffFailed": "项目 Git 文件差异获取失败",
   "api.agentSessionListFailed": "Agent 会话列表获取失败",
+  "api.agentHistoryListFailed": "Agent 历史列表获取失败",
   "api.agentSessionCreationFailed": "Agent 会话创建失败",
   "api.agentSessionDetailFailed": "Agent 会话详情获取失败",
   "api.agentSessionCloseFailed": "Agent 会话关闭失败",

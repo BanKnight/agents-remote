@@ -10,11 +10,13 @@ import type {
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
   ListAgentSessionsResponse,
+  ListAgentHistoryResponse,
   ListTerminalSessionsResponse,
   AgentSessionDetailResponse,
   TerminalSessionDetailResponse,
 } from "@agents-remote/shared";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
+import { listAgentHistory } from "./agent-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
@@ -28,6 +30,22 @@ export const handleSessionRoutes = async (
   projectsRoot: string,
   registry: SessionRegistry,
 ) => {
+  const historyMatch = matchAgentHistoryRoute(url.pathname);
+  if (historyMatch && request.method === "GET") {
+    try {
+      const project = await resolveProjectPath(projectsRoot, historyMatch.projectName);
+      const activeMap = await registry.getActiveClaudeSessionMap(project.name);
+      const entries = await listAgentHistory(project.path, activeMap);
+      const response: ListAgentHistoryResponse = { entries };
+      return Response.json(response);
+    } catch (error) {
+      if (error instanceof ProjectPathError) {
+        return projectPathErrorResponse(error);
+      }
+      throw error;
+    }
+  }
+
   const match = matchSessionRoute(url.pathname);
 
   if (!match) {
@@ -77,6 +95,7 @@ const handleAgentSessionRoute = async (
           project,
           provider: body.provider,
           displayName: normalizeDisplayName(body.displayName),
+          claudeSessionId: body.claudeSessionId,
         }),
       };
       return Response.json(response);
@@ -201,6 +220,16 @@ const handleTerminalSessionRoute = async (
   }
 
   return undefined;
+};
+
+const matchAgentHistoryRoute = (pathname: string) => {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length !== 4) return undefined;
+  if (segments[0] !== "api" || segments[1] !== "projects" || segments[3] !== "agent-history") {
+    return undefined;
+  }
+  const projectName = decodePathSegment(segments[2]);
+  return projectName ? { projectName } : undefined;
 };
 
 const matchSessionRoute = (pathname: string) => {
