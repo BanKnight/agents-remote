@@ -2,6 +2,8 @@
 
 本文档沉淀 Claude CLI (`claude`) 的 stdio stream-json 协议——它是 Agent Runtime 与 CLI 进程之间的通信契约，也是 model、permissionMode 等会话状态的唯一权威来源。
 
+**目标读者**：需要实现兼容前端的开发者。读完本文档即可独立做出功能等价的前端。
+
 ## 概述
 
 Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信：
@@ -29,31 +31,42 @@ stdout → CLI 输出 system.init / assistant / user / result / control_request
 
 ## 完整消息类型规范
 
+每种消息以统一格式记录：**含义** → **字段** → **处理方法**。
+
 ### CLI → 客户端（stdout）
+
+---
 
 #### `system` / `init` — 会话初始化
 
-CLI 启动后的会话元数据。**只在第一条用户消息到达后发送**——CLI 启动时不立即发送。
+**含义**：CLI 启动后发送的会话元数据。**只在第一条用户消息到达后发送**——CLI 启动时因等待 stdin 输入，不会立即发送 system.init。
 
-```json
-{
-  "type": "system",
-  "subtype": "init",
-  "session_id": "uuid",
-  "model": "claude-sonnet-4-6[1m]",
-  "permissionMode": "auto",
-  "cwd": "/path/to/project",
-  "tools": ["Task", "Bash", "Read", "Write", ...],
-  "slash_commands": ["compact", "clear", ...],
-  "mcp_servers": [...],
-  "agents": ["claude", "Explore", ...],
-  "skills": [...],
-  "plugins": [...],
-  "apiKeySource": "none",
-  "claude_code_version": "2.1.160",
-  "output_style": "default"
-}
-```
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"init"` | 初始化为 `"init"` |
+| `session_id` | string | CLI 内部 session UUID |
+| `model` | string | 当前运行的实际模型（如 `"claude-sonnet-4-6[1m]"`） |
+| `permissionMode` | string | 当前权限模式（`"auto"`, `"default"`, `"bypassPermissions"`, `"acceptEdits"`, `"dontAsk"`, `"plan"`） |
+| `cwd` | string | CLI 工作目录 |
+| `tools` | string[] | 可用工具列表 |
+| `slash_commands` | string[] | 可用 slash 命令 |
+| `mcp_servers` | object[] | MCP 服务器列表 |
+| `agents` | string[] | 可用 subagent 类型 |
+| `skills` | string[] | 可用 skill 列表 |
+| `plugins` | string[] | 可用 plugin 列表 |
+| `apiKeySource` | string | API key 来源（`"none"` 表示外部配置） |
+| `claude_code_version` | string | CLI 版本号 |
+| `output_style` | string | 输出样式（`"default"`） |
+
+**处理方法**：
+
+1. 解析 `model` 和 `permissionMode`，更新客户端 UI 状态（模型下拉框选中项、权限模式指示器）
+2. 派生 model tier（从完整 model 名中提取，如 `"claude-sonnet-4-6[1m]"` → `"sonnet"`）
+3. 存储 `session_id` 用于后续 CLI 进程管理
+4. system.init 是 model 和 permissionMode 的**权威来源**——新 session、重连、切换后均以 system.init 中的值为准
 
 **时效性**：
 
@@ -64,290 +77,448 @@ CLI 启动后的会话元数据。**只在第一条用户消息到达后发送**
 | 切换 model（`--model X --resume`） | 新传入值 `X` | CLI JSONL 文件中的值 |
 | 切换 permissionMode（`--permission-mode Y --resume`） | CLI JSONL 文件中的值 | 新传入值 `Y` |
 
-**关键结论**：新 session 必须在创建时显式传入 `--model` 和 `--permission-mode`
-（参考 hapi 的 `bootstrapSession` 方案），因为 system.init 在用户发消息前不可用。
-对于恢复/重连，system.init 是权威来源。两个值同时存入 `SessionMetadata`
-以便 REST API 在 system.init 到达前返回初始值。
+关键结论：新 session 必须在创建时显式传入 `--model` 和 `--permission-mode`（参考 hapi 的 `bootstrapSession` 方案），因为 system.init 在用户发消息前不可用。对于恢复/重连，system.init 是权威来源。两个值同时存入服务端 metadata 以便 REST API 在 system.init 到达前返回初始值。
 
-#### `system` / `status` — 状态变更
+---
 
-CLI 内部状态通知。
+#### `system` / `status` — compact 状态变更
+
+**含义**：上下文压缩（compact）的生命周期通知。CLI 在压缩开始时发送 `status: "compacting"`，完成时发送 `compact_result`。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"status"` | 状态通知 |
+| `status` | `"compacting"` \| `null` | 压缩进行中 / 已结束 |
+| `compact_result` | `"success"` \| `"failed"` | 压缩结果（完成时） |
+| `compact_error` | string? | 失败原因（失败时） |
+| `session_id` | string | 会话 UUID |
 
 ```json
 // compact 开始
-{ "type": "system", "subtype": "status", "status": "compacting", "session_id": "...", "uuid": "..." }
+{ "type": "system", "subtype": "status", "status": "compacting", "session_id": "..." }
 
 // compact 完成
-{ "type": "system", "subtype": "status", "status": null, "compact_result": "success", "session_id": "...", "uuid": "..." }
-
-// compact 失败
-{ "type": "system", "subtype": "status", "status": null, "compact_result": "failed", "compact_error": "...", "session_id": "...", "uuid": "..." }
+{ "type": "system", "subtype": "status", "status": null, "compact_result": "success", "session_id": "..." }
 ```
+
+**处理方法**：
+
+1. `status: "compacting"` → 设置 `isRunning = true`，显示 compact 进度指示器
+2. `compact_result: "success"` → 隐藏进度指示器，进入 replay 阶段
+3. `compact_result: "failed"` → 显示失败信息，`compact_error` 说明原因
+4. 需配合 `compact_boundary` 消息实现完整的 compact 阶段跟踪（见下方生命周期章节）
+
+---
 
 #### `system` / `compact_boundary` / `microcompact_boundary` — 上下文压缩标记
 
-CLI 写入 JSONL 的持久化压缩记录（`isMeta: false`），不是元数据。恢复 session 时 CLI 会重放这些记录。
+**含义**：CLI 持久化到 JSONL 的压缩记录（`isMeta: false`）。表示在此之前的上下文已被压缩，后续消息在一个精简后的上下文中继续。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"compact_boundary"` \| `"microcompact_boundary"` | 压缩类型 |
+| `compactMetadata` / `microcompactMetadata` | object | 压缩元数据 |
+| `compactMetadata.trigger` | `"auto"` \| `"manual"` | 触发方式 |
+| `compactMetadata.preTokens` | number | 压缩前 token 数 |
+| `microcompactMetadata.tokensSaved` | number | 微压缩节省的 token 数 |
 
 ```json
-// 压缩边界（自动或手动触发）
-{
-  "type": "system",
-  "subtype": "compact_boundary",
-  "compactMetadata": { "trigger": "auto" | "manual", "preTokens": 123456 }
-}
-
-// 微压缩边界
-{
-  "type": "system",
-  "subtype": "microcompact_boundary",
-  "microcompactMetadata": { "trigger": "auto", "preTokens": 80000, "tokensSaved": 12345 }
-}
+{ "type": "system", "subtype": "compact_boundary", "compactMetadata": { "trigger": "auto", "preTokens": 123456 } }
 ```
 
-在消息流中以 role:"system" 渲染它们，作为上下文压缩的永久分割线。
+**处理方法**：
 
-#### `system` / `api_retry` — API 重试通知
+1. 将当前正在积累的 assistant bubble 刷出
+2. 以 `role: "system"` 在消息流中渲染压缩分割线，显示压缩类型（手动/自动）和压缩前 token 数
+3. 手动压缩显示「上下文已压缩 (~120k tokens)」，自动压缩显示「上下文自动压缩 (~120k tokens)」
+4. 这是持久化消息——重连时也会重放
 
-API 返回 502/overloaded 时 CLI 自动重试。
+---
+
+#### `system` / `api_retry` — API 请求重试
+
+**含义**：CLI 向 Anthropic API 发送请求失败（如 502/overloaded）后自动重试的通知。只在发生重试时发送，不表示重试最终成功或失败。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"api_retry"` | 重试通知 |
+| `attempt` | number | 当前第几次重试 |
+| `max_retries` | number | 最大重试次数 |
+| `retry_delay_ms` | number | 距下次重试的等待时间（毫秒） |
+| `error` | string? | 失败原因描述（如 `"Overloaded"`） |
+| `error_status` | number? | HTTP 状态码（如 502） |
+| `session_id` | string | 会话 UUID |
 
 ```json
-{
-  "type": "system",
-  "subtype": "api_retry",
-  "attempt": 2,
-  "max_retries": 3,
-  "retry_delay_ms": 2000,
-  "error": "Overloaded",
-  "error_status": 502,
-  "session_id": "..."
-}
+{ "type": "system", "subtype": "api_retry", "attempt": 2, "max_retries": 3, "retry_delay_ms": 2000, "error": "Overloaded", "error_status": 502, "session_id": "..." }
 ```
 
-**UI 渲染**：以 `role: "system"` 的 **inline 错误消息**渲染在消息流中（与 compact_boundary 同级），显示错误原因和重试次数（如「API 请求失败2/3：Overloaded，2s 后重试」）。不是固定横幅——它出现在消息流中 API 请求失败的当时位置。
+**处理方法**：
 
-#### `system` / `turn_duration` — 轮次耗时统计
+1. 以 `role: "system"` 的 **inline 错误消息**渲染在消息流中，出现在请求失败的当时位置
+2. 消息文本示例：`API 请求失败2/3：Overloaded，2s 后重试`
+3. 使用 `metadata: { custom: { systemMessageType: "error" } }` 标记，前端可据此应用红色/琥珀色样式
+4. **不要**渲染为固定横幅——它属于消息流中的事件，出现在 API 调用失败的上下文位置
+5. 不表示最终失败（最终失败由 `result` 的 `is_error: true` 表达）；如果重试成功，后续 assistant 消息会自然覆盖
+
+---
+
+#### `system` / `turn_duration` — 轮次耗时
+
+**含义**：每个 turn 结束后的耗时统计，用于调试和性能分析。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"turn_duration"` | 耗时统计 |
+| `duration_ms` | number | 本轮耗时（毫秒） |
+| `session_id` | string | 会话 UUID |
 
 ```json
-{
-  "type": "system",
-  "subtype": "turn_duration",
-  "duration_ms": 3500,
-  "session_id": "..."
-}
+{ "type": "system", "subtype": "turn_duration", "duration_ms": 3500, "session_id": "..." }
 ```
 
-仅用于调试日志，不在 UI 中渲染。
+**处理方法**：不渲染。仅用于服务端日志调试。
+
+---
 
 #### `system` / `thinking_tokens` — 推理 token 计数
 
+**含义**：CLI 终端 TUI 渲染过程中产生的 per-chunk 推理 token 增量计数。这不是 Claude 返回的 thinking 内容——真正的 thinking 嵌入在 assistant 消息的 `content` 数组内（`type: "thinking"`）。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"thinking_tokens"` | 推理 token 计数 |
+| `estimated_tokens` | number | 当前累计推理 token 数 |
+| `estimated_tokens_delta` | number | 本增量段的 token 数 |
+| `session_id` | string | 会话 UUID |
+
 ```json
-{
-  "type": "system",
-  "subtype": "thinking_tokens",
-  "estimated_tokens": 15000,
-  "estimated_tokens_delta": 500,
-  "session_id": "...",
-  "uuid": "..."
-}
+{ "type": "system", "subtype": "thinking_tokens", "estimated_tokens": 15000, "estimated_tokens_delta": 500, "session_id": "..." }
 ```
 
-**UI 渲染**：**不渲染**。`thinking_tokens` 是终端 TUI 渲染过程中产生的 per-token 增量计数（`estimated_tokens_delta`），对 Web UI 无意义。在 relay buffer 入口（`isChatMessage`）和客户端消息流（`loadMessagesFromRaw`）两层过滤掉。真正的 thinking 内容在 assistant 消息的 `content` 数组中以 `type: "thinking"` 块传递。
+**处理方法**：
+
+1. **不渲染**——`thinking_tokens` 是终端 TUI 产物，对 Web UI 无意义
+2. 在 relay buffer 入口（`isChatMessage`）过滤，防止它们进入 buffer 导致重连时泛滥
+3. 在客户端消息处理（`loadMessagesFromRaw`）过滤，作为防御层
+4. 真正的 thinking 内容以 `{ type: "thinking", thinking: "...", signature: "..." }` 形式存在于 assistant 消息的 `content` 数组中
+
+---
 
 #### `assistant` — AI 回复
 
-流式发送，同一回复可能跨多行。`message.id` 标识同一个回复。
+**含义**：Claude AI 的回复内容，流式发送，同一回复可能跨多行。`message.id` 标识同一个回复——相同 id 的 consecutive assistant 消息应合并到同一个对话气泡。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"assistant"` | 消息类型 |
+| `message.id` | string | 本回复的唯一标识（多次流式发送共享同一 id） |
+| `message.role` | `"assistant"` | 角色 |
+| `message.model` | string | 生成此消息的模型（如 `"claude-sonnet-4-6[1m]"`） |
+| `message.content` | array | 内容块数组，每个块有独立的 `type` |
+| `message.usage` | object? | token 使用统计 |
+| `message.stop_reason` | string? | 停止原因（`"end_turn"`, `"tool_use"` 等） |
+
+**content 块类型**：
+
+| block.type | 关键字段 | 说明 |
+|-----------|---------|------|
+| `"text"` | `text: string` | Markdown 文本，直接渲染 |
+| `"thinking"` | `thinking: string`, `signature: string` | 推理过程（需 `--verbose` 参数），映射为 assistant-ui 的 `reasoning` 类型 |
+| `"tool_use"` | `id: string`, `name: string`, `input: object` | 工具调用申请，映射为 `tool-call` 类型，等待 `tool_result` 匹配 |
 
 ```json
-{
-  "type": "assistant",
-  "message": {
-    "id": "msg_uuid",
-    "role": "assistant",
-    "model": "claude-sonnet-4-6[1m]",
-    "content": [
-      { "type": "text", "text": "Markdown 文本..." },
-      { "type": "thinking", "thinking": "推理过程...", "signature": "..." },
-      { "type": "tool_use", "id": "toolu_uuid", "name": "Bash", "input": { "command": "ls" } }
-    ]
-  },
-  "session_id": "..."
-}
+{ "type": "assistant", "message": { "id": "msg_uuid", "role": "assistant", "model": "claude-sonnet-4-6[1m]", "content": [
+  { "type": "text", "text": "Markdown 文本..." },
+  { "type": "thinking", "thinking": "推理过程...", "signature": "..." },
+  { "type": "tool_use", "id": "toolu_uuid", "name": "Bash", "input": { "command": "ls" } }
+] }, "session_id": "..." }
 ```
 
-- `model: "<synthetic>"` —— CLI 内部消息（如 compact 取消通知），必须跳过不渲染
-- `content` 数组中的 block 类型：`text`（Markdown 文本）、`thinking`（推理过程，verbose 模式）、`tool_use`（工具调用）
+**处理方法**：
 
-#### `user` — 用户消息回显
+1. **相同 `message.id` 的 assistant 消息合并**到同一个对话气泡中（流式发送时 content 逐块追加）
+2. `message.model === "<synthetic>"` —— CLI 内部消息（如 compact 取消通知），**必须跳过不渲染**
+3. text 块 → 渲染为 Markdown
+4. thinking 块 → 映射为 `{ type: "reasoning", text: block.thinking }`，渲染时可折叠的 Thinking 面板（amber 配色，默认折叠）
+5. tool_use 块 → 映射为 `{ type: "tool-call", toolCallId: block.id, toolName: block.name, args: block.input }`，渲染为工具调用卡片，等待 tool_result 填充结果
+6. 新的 `message.id` 出现时，flush 之前的 assistant 气泡并开始新的
 
-CLI 将用户输入（包括工具结果）回显到 stdout。
-
-```json
-// 用户文本输入
-{
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": [
-      { "type": "text", "text": "用户输入的内容" },
-      { "type": "tool_result", "tool_use_id": "toolu_uuid", "content": "工具输出..." }
-    ]
-  }
-}
-
-// CLI 命令输出（字符串形式，如 /compact 结果）
-{
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": "<local-command-stdout>Compacted</local-command-stdout>"
-  }
-}
-```
-
-两种 content 形态：
-- **数组**：正常的用户输入或工具结果，包含 `type: "text"` 和 `type: "tool_result"` 两种 block
-- **字符串**：CLI 内部命令输出，如 `<local-command-stdout>Compacted</local-command-stdout>`。这类消息在 JSONL 中存储，`isMeta: false`
-
-**回显机制**：CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显到 stdout。用户消息通过**服务端 relay 注入**回到客户端：`Claude2Runtime.write()` 写完 stdin FIFO 后调用 `relay.injectLine()` 直接将用户消息广播给所有 WebSocket subscriber 并持久化到 buffer（用于重连回放）。
-
-**客户端去重**：前端 `onNew` 做乐观更新（直接 `setRawMessages` 添加用户消息），WebSocket handler 收到 relay 注入的同一消息时通过比较 `last.message` 去重。工具结果（`tool_result` block）不经过乐观更新，由 relay 注入直接传递。
-
-#### `result` — 轮次结束
-
-每个完整的用户→AI 交互轮次以一条 `result` 消息结束。
-
-```json
-// 成功
-{
-  "type": "result",
-  "subtype": "success",
-  "session_id": "...",
-  "num_turns": 5,
-  "total_cost_usd": 0.0123,
-  "duration_ms": 8500
-}
-
-// 用户中断
-{
-  "type": "result",
-  "subtype": "interrupted",
-  "session_id": "...",
-  "num_turns": 3
-}
-
-// API 错误（如 422 model not found）
-{
-  "type": "result",
-  "subtype": "error",
-  "is_error": true,
-  "result": "Model not found: claude-unknown",
-  "session_id": "..."
-}
-```
-
-- `is_error: true` → 在消息流中以红色分割线渲染 error 文本
-- `subtype: "interrupted"` → 用户点击了停止或发送了 interrupt
-- `subtype: "success"` → 正常结束
-
-#### `control_request` — 权限请求
-
-CLI 通过 `--permission-prompt-tool stdio` 将权限提示路由到 stdout。
-
-```json
-{
-  "type": "control_request",
-  "request_id": "uuid",
-  "request": {
-    "subtype": "can_use_tool",
-    "tool_name": "AskUserQuestion",
-    "display_name": "AskUserQuestion",
-    "input": {
-      "questions": [
-        { "question": "...", "header": "...", "options": [...] }
-      ]
-    }
-  }
-}
-```
-
-- `tool_name` 可能是 `AskUserQuestion`、`Bash`、`Write`、`Read` 等
-- 非 `AskUserQuestion` 的工具一律自动 allow（不阻塞 UI）
-- `AskUserQuestion` 需要用户交互，通过 `control_response` 响应
-
-### 客户端 → CLI（stdin）
+---
 
 #### `user` — 用户输入
 
+**含义**：用户的输入消息。来源于两个渠道：(1) 用户通过 Web UI 输入（经服务端 relay 注入回传），(2) CLI JSONL 历史回放。
+
+**两种 content 形态**：
+
+**数组形式**（用户文本输入 + 工具结果）：
+
+```json
+{ "type": "user", "message": { "role": "user", "content": [
+  { "type": "text", "text": "用户输入的内容" },
+  { "type": "tool_result", "tool_use_id": "toolu_uuid", "content": "工具输出..." }
+] } }
+```
+
+| content 块类型 | 关键字段 | 说明 |
+|---------------|---------|------|
+| `"text"` | `text: string` | 用户输入的文本，渲染为用户对话气泡 |
+| `"tool_result"` | `tool_use_id: string`, `content: string`, `is_error?: boolean` | 工具执行结果，应匹配到对应 tool-call 的 `result` 字段 |
+
+**字符串形式**（CLI 内部命令输出）：
+
+```json
+{ "type": "user", "message": { "role": "user", "content": "<local-command-stdout>Compacted</local-command-stdout>" } }
+```
+
+content 为字符串时，包含 `<local-command-stdout>` 包裹的 CLI 内部命令输出。这类消息在 JSONL 中以 `isMeta: false` 存储。
+
+**处理方法**：
+
+1. **数组 content**：
+   - `text` 块 → 累积到 `userTexts`，然后生成 `role: "user"` 对话气泡
+   - `tool_result` 块 → 通过 `tool_use_id` 匹配到之前的 `tool-call`，设置其 `result` 字段。如果匹配的 tool-call 已被 flush 到之前的 assistant 消息中，则回溯查找并更新
+   - `is_error: true` 的 tool_result → 设置 `isError` 标记，显示错误状态
+2. **字符串 content**：
+   - `<local-command-stdout>Compacted</local-command-stdout>` → 如果内容为 `"Compacted"`，跳过（compact_boundary 已提供永久记录）
+   - 其他 local-command-stdout → 渲染为 `role: "assistant"` 包含 tool-call 的卡片（toolName: `"slash-command"`）
+   - `<local-command-caveat>` → 跳过（CLI 内部）
+3. 纯文本用户消息（无 tool_result）生成用户对话气泡
+
+**回显机制**：
+
+CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显到 stdout。用户消息通过以下路径回到客户端：
+
+```
+客户端 sendToSocket({type:"user", ...})
+  → server Claude2StreamController.message()
+  → Claude2Runtime.write()
+    → appendFile(FIFO)  // 写入 CLI stdin
+    → relay.injectLine(msg)  // 注入 relay buffer + 广播
+      → WebSocket → 客户端 onmessage → setRawMessages
+```
+
+**去重**：
+
+- 前端 `onNew` 做**乐观更新**：在 sendToSocket 之前直接 `setRawMessages` 添加用户消息，消除 WebSocket roundtrip 延迟
+- WebSocket handler 收到 relay 注入的同一消息时——比较 `rawMessages` 最后一条的 `message` 字段，相同则跳过
+- 工具结果（`tool_result` block）不经过乐观更新，由 relay 注入直接传递
+
+---
+
+#### `result` — 轮次结束
+
+**含义**：每个用户→AI 交互轮次的结束标记。有三种子类型。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"result"` | 消息类型 |
+| `subtype` | `"success"` \| `"interrupted"` \| `"error"` | 结果类型 |
+| `is_error` | boolean? | 是否错误（`subtype: "error"` 时为 true） |
+| `result` | string? | 错误消息（`is_error: true` 时） |
+| `num_turns` | number? | 累计轮次数 |
+| `total_cost_usd` | number? | 累计费用（美元） |
+| `duration_ms` | number? | 本轮耗时 |
+| `session_id` | string | 会话 UUID |
+
+```json
+// 正常结束
+{ "type": "result", "subtype": "success", "num_turns": 5, "total_cost_usd": 0.0123, "session_id": "..." }
+
+// 用户中断
+{ "type": "result", "subtype": "interrupted", "num_turns": 3, "session_id": "..." }
+
+// API 错误
+{ "type": "result", "subtype": "error", "is_error": true, "result": "Model not found: claude-unknown", "session_id": "..." }
+```
+
+**处理方法**：
+
+1. `subtype: "success"` → 设置 `isRunning = false`，flush 当前 assistant 气泡，重置 `lastAssistantMsgId`
+2. `subtype: "interrupted"` → 同上。不额外渲染（中断由用户操作本身暗示）
+3. `subtype: "error"` / `is_error: true` → 以 `role: "system"` + `systemMessageType: "error"` 的 inline 错误分割线渲染 `result` 字段中的错误文本
+
+---
+
+#### `control_request` — 权限请求
+
+**含义**：CLI 通过 `--permission-prompt-tool stdio` 将工具权限确认请求路由到 stdout。阻塞等待客户端的 `control_response`。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `"control_request"` | 消息类型 |
+| `request_id` | string | 请求 UUID（响应时回传） |
+| `request.subtype` | `"can_use_tool"` | 请求子类型 |
+| `request.tool_name` | string | 工具名称（`"AskUserQuestion"`, `"Bash"`, `"Write"` 等） |
+| `request.display_name` | string | 工具显示名 |
+| `request.input` | object | 工具参数 |
+
+```json
+{ "type": "control_request", "request_id": "uuid", "request": {
+  "subtype": "can_use_tool", "tool_name": "AskUserQuestion",
+  "display_name": "AskUserQuestion",
+  "input": { "questions": [{ "question": "...", "header": "Color", "options": [{"label":"Red","description":"..."}] }] }
+} }
+```
+
+**处理方法**：
+
+1. `tool_name !== "AskUserQuestion"` → 自动 allow（发送 `control_response` 含 `behavior: "allow", updatedInput: {}`），不阻塞 UI
+2. `tool_name === "AskUserQuestion"` → 将 `request_id` 注入到当前 assistant 消息中的对应 `tool_use` 块的 `input.__controlRequestId`，触发 AskUserQuestion 工具 UI 卡片渲染，等待用户交互后通过 bridge 发送 `control_response`
+
+---
+
+### 客户端 → CLI（stdin）
+
+以下消息通过 WebSocket 发送到 API server，server 将它们写入 CLI 的 stdin FIFO。
+
+---
+
+#### `user` — 用户输入
+
+**含义**：用户通过聊天输入框发送的文本消息，或 AskUserQuestion 工具 UI 选择的答案（以 tool_result 形式）。
+
 ```json
 // 文本消息
-{
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": [{ "type": "text", "text": "用户输入" }]
-  }
-}
+{ "type": "user", "message": { "role": "user", "content": [{ "type": "text", "text": "用户输入" }] } }
 
-// 工具结果（权限提示中的用户选择会被转换为 tool_result）
-{
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": [{ "type": "tool_result", "tool_use_id": "toolu_uuid", "content": "结果" }]
-  }
-}
+// 工具结果
+{ "type": "user", "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": "toolu_uuid", "content": "结果" }] } }
 ```
+
+**发送时机**：
+
+1. 用户在输入框输入文字并按 Enter
+2. AskUserQuestion 工具 UI 中用户选择答案后，通过 bridge 发送
+
+**服务端行为**：
+
+1. 写入 CLI stdin FIFO（`claude2Runtime.write()`）
+2. 同时通过 `relay.injectLine()` 将消息注入 relay buffer 并广播回客户端
+
+---
 
 #### `control_response` — 响应权限请求
 
+**含义**：客户端对 `control_request` 的响应。允许或拒绝工具使用。
+
 ```json
-// 允许
-{
-  "type": "control_response",
-  "response": {
-    "subtype": "success",
-    "request_id": "uuid",
-    "response": { "behavior": "allow", "updatedInput": { "answers": { "q": "a" }, "其他字段": "值" } }
-  }
-}
+// 允许（带 updatedInput）
+{ "type": "control_response", "response": {
+  "subtype": "success", "request_id": "uuid",
+  "response": { "behavior": "allow", "updatedInput": { "answers": { "q": "a" }, "其他字段": "值" } }
+} }
 
 // 拒绝
-{
-  "type": "control_response",
-  "response": {
-    "subtype": "success",
-    "request_id": "uuid",
-    "response": { "behavior": "deny", "message": "User skipped" }
-  }
-}
+{ "type": "control_response", "response": {
+  "subtype": "success", "request_id": "uuid",
+  "response": { "behavior": "deny", "message": "User skipped" }
+} }
 ```
 
 注意：`request_id` 在 `response` 对象内，不在顶层（与 Claude SDK 的 `CanUseToolControlResponse` 格式一致）。
 
+**发送时机**：AskUserQuestion 工具 UI 中用户点击提交/跳过按钮时。
+
+---
+
 #### `control_request` (interrupt) — 中断执行
 
+**含义**：用户点击停止按钮，中断当前正在执行的 AI 回复。
+
 ```json
-{
-  "type": "control_request",
-  "request_id": "uuid",
-  "request": { "subtype": "interrupt" }
-}
+{ "type": "control_request", "request_id": "uuid", "request": { "subtype": "interrupt" } }
 ```
 
-发送 interrupt 后 CLI 返回 `result` 消息（`subtype: "interrupted"`）。
+发送后 CLI 返回 `result` 消息（`subtype: "interrupted"`）。
+
+---
 
 ### WebSocket 传输层消息
 
 这些消息是 API server 在 WebSocket 层添加的，不是 CLI 原始输出。
 
-| type | 说明 |
-|------|------|
-| `connected` | WebSocket 连接确认，含 sessionId、sessionType、status |
-| `replay_start` | 缓冲区回放开始，含 `count`（回放消息数）。前端收到后清空消息列表 |
-| `replay_end` | 缓冲区回放结束，之后所有消息为实时流 |
-| `ended` | 会话结束通知（跟随在 `result` 消息后） |
-| `error` | 传输层错误，含 code、message |
-| `switch_model_result` | 模型切换确认，含 model、success、error? |
+#### `connected` — 连接确认
+
+**含义**：WebSocket 连接建立后服务端发送的第一条消息，确认连接成功并传递会话元数据。
+
+**字段**：`type: "connected"`, `sessionId`, `sessionType`, `status`
+
+**处理方法**：记录连接成功，不渲染 UI。
+
+---
+
+#### `ended` — 会话结束
+
+**含义**：跟随在 `result` 消息后发送，表示一轮交互的流式输出已完全结束。
+
+**处理方法**：可用于触发 UI 收尾动画或状态同步。
+
+---
+
+#### `error` — 传输层错误
+
+**含义**：WebSocket 层面的错误，不是 CLI 错误（如 session 不存在、runtime 启动失败）。
+
+**字段**：`type: "error"`, `code`, `message`
+
+**处理方法**：显示为 inline 错误提示或 toast，告知用户连接出现问题。
+
+---
+
+#### `switch_model_result` — 模型切换确认
+
+**含义**：模型切换操作的结果确认。
+
+**字段**：`type: "switch_model_result"`, `model`, `success: boolean`, `error?: string`
+
+**处理方法**：
+
+1. `success: true` → 更新 UI 中的当前模型显示，递增 `modelSwitchVersion` 以强制 tool UI 重新渲染
+2. `success: false` → 回退模型选择到之前的值，显示 error 信息
+
+---
+
+## 消息渲染语义总表
+
+| 消息 | 渲染方式 | 关键逻辑 |
+|------|---------|---------|
+| `system.init` | **不渲染** | 提取 model/permissionMode 更新 UI state |
+| `system.status` | **不渲染** | compact 生命周期由 CompactIndicator 组件处理 |
+| `system.compact_boundary` | **inline** | `role: "system"` 压缩分割线 |
+| `system.api_retry` | **inline** | `role: "system"` + `systemMessageType: "error"`，含错误原因和重试次数 |
+| `system.thinking_tokens` | **不渲染** | 两层过滤（isChatMessage + loadMessagesFromRaw） |
+| `system.turn_duration` | **不渲染** | 仅调试日志 |
+| `assistant` | **inline 气泡** | text/thinking/tool_use → Markdown/Thinking面板/工具卡片 |
+| `user` | **inline 气泡** | 文本→用户气泡，tool_result→匹配 tool-call 的 result |
+| `result.success` / `result.interrupted` | **不渲染** | `isRunning = false` |
+| `result.error` (`is_error`) | **inline** | `role: "system"` + `systemMessageType: "error"` |
+| `control_request` | **不渲染** | AskUserQuestion → 注入 request_id 到 assistant 的 tool_use |
+| `connected` / `ended` | **不渲染** | 连接状态管理 |
+| `error` (传输层) | **inline / toast** | 连接错误通知 |
+| `switch_model_result` | **不渲染** | 更新 model state |
 
 ## 生命周期
 
@@ -413,34 +584,6 @@ CLI 启动 (--resume)
   → CLI 重放: system.init (原 model, 新 permissionMode) → compact_boundary → 历史 → result
   → 流式恢复
 ```
-
-## 消息渲染语义
-
-以下表格定义每种消息类型在 UI 中的渲染行为，作为后续开发的权威参考。
-
-### CLI → 客户端消息
-
-| type | subtype | 渲染位置 | 说明 |
-|------|---------|---------|------|
-| `system` | `init` | **不渲染** | 仅用于客户端状态同步（model、permissionMode） |
-| `system` | `status` | **不渲染** | compact 生命周期管理，由 CompactIndicator 组件处理 |
-| `system` | `compact_boundary` / `microcompact_boundary` | **inline 消息** | 以 `role: "system"` 渲染为压缩分割线 |
-| `system` | `api_retry` | **inline 消息** | 以 `role: "system"` + `systemMessageType: "error"` 渲染，显示错误原因和重试次数 |
-| `system` | `thinking_tokens` | **不渲染** | 两层过滤（isChatMessage + loadMessagesFromRaw），终端 TUI 产物 |
-| `system` | `turn_duration` | **不渲染** | 仅调试日志 |
-| `assistant` | — | **inline 气泡** | 渲染为 AI 对话气泡，含 text/thinking/tool_use 三种内容块 |
-| `user` | — | **inline 气泡** | 渲染为用户对话气泡（仅文本块）。`tool_result` 块匹配到对应 tool-call |
-| `result` | `success` / `interrupted` | **不渲染** | 仅用于 `isRunning` 状态切换和轮次分界 |
-| `result` | `error` (`is_error: true`) | **inline 消息** | 以 `role: "system"` + `systemMessageType: "error"` 渲染 |
-| `control_request` | — | **不渲染** | 仅用于 AskUserQuestion 工具交互 |
-
-### 关键设计决策
-
-1. **inline 消息 vs 固定横幅**：只有临时状态才可能需要横幅（如 compact 进度条）。重试、错误等事件性消息一律走 inline 消息流——出现在事件发生的时间点，不抢占固定空间。
-
-2. **不渲染的消息**：`system.init`、`thinking_tokens`、`turn_duration`、`result`（success）等不在消息流中出现。它们通过不同的 React state 通道传递（如 `resolvedModel`、`isRunning`）。
-
-3. **用户消息去重**：前端乐观更新（`onNew` → `setRawMessages`）+ 服务端 relay 注入（`write` → `injectLine`）→ 客户端 JSON 比较去重。
 
 ## 我们的集成方式
 
