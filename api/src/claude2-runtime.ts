@@ -55,7 +55,7 @@ export class Claude2Runtime implements RuntimeResources {
   async exists(sessionName: string): Promise<boolean> {
     if (this.sessions.has(sessionName)) return true;
     if (!sessionName.includes("-agent-claude2-")) return false;
-    const result = await runTmux(["has-session", "-t", sessionName]);
+    const result = await runTmux(["has-session", "-t", `=${sessionName}`]);
     return result.exitCode === 0;
   }
 
@@ -119,7 +119,7 @@ export class Claude2Runtime implements RuntimeResources {
   ): Promise<void> {
     if (this.sessions.has(sessionName)) return;
 
-    const exists = await runTmux(["has-session", "-t", sessionName]);
+    const exists = await runTmux(["has-session", "-t", `=${sessionName}`]);
     if (exists.exitCode === 0) {
       this.sessions.set(sessionName, {
         projectPath,
@@ -149,7 +149,7 @@ export class Claude2Runtime implements RuntimeResources {
   }
 
   async write(sessionName: string, data: string): Promise<void> {
-    const result = await runTmux(["has-session", "-t", sessionName]);
+    const result = await runTmux(["has-session", "-t", `=${sessionName}`]);
     if (result.exitCode !== 0) {
       throw new Error(`Claude2 process not running for session "${sessionName}"`);
     }
