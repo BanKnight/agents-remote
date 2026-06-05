@@ -175,6 +175,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   const { workspace: activeSection, filesPath } = useSearch({ from: "/projects/$projectName" });
   const [resourceDeepDetailOpen, setResourceDeepDetailOpen] = useState(false);
   const [mobileFilePreviewOpen, setMobileFilePreviewOpen] = useState(false);
+  const [agentTab, setAgentTab] = useState<"instances" | "history">("instances");
   const selectedSection = sectionForId(activeSection);
   const summary = projectSummary(project);
   const agentSessions = useQuery({
@@ -185,6 +186,11 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     queryKey: ["projects", project.name, "terminal-sessions"],
     queryFn: () => listTerminalSessions(project.name),
   });
+  const historyCountQuery = useQuery({
+    queryKey: ["projects", project.name, "agent-history"],
+    queryFn: () => listAgentHistory(project.name),
+  });
+  const historyCount = historyCountQuery.data?.entries.length ?? 0;
   const invalidateSessions = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["projects"] }),
@@ -333,21 +339,48 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
               {t("project.createClaude2")}
             </CreateButton>
           </div>
-          <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
-            <h3 className="text-base font-semibold">{t("project.activeInstances")}</h3>
-            <span className="text-xs text-slate-400">
-              {t("project.agentCount", {
-                count: agentSessions.data?.sessions.length ?? 0,
-              })}
-            </span>
+
+          <div className="mt-4 flex gap-1 rounded-xl bg-white/[0.03] p-1 sm:mt-0">
+            <button
+              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                agentTab === "instances"
+                  ? "bg-white/10 text-slate-100"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              type="button"
+              onClick={() => setAgentTab("instances")}
+            >
+              {t("project.activeInstances")}
+              <span className="ml-1.5 text-xs text-slate-500">
+                {agentSessions.data?.sessions.length ?? 0}
+              </span>
+            </button>
+            <button
+              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                agentTab === "history"
+                  ? "bg-white/10 text-slate-100"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              type="button"
+              onClick={() => setAgentTab("history")}
+            >
+              {t("project.historyTitle")}
+              <span className="ml-1.5 text-xs text-slate-500">{historyCount}</span>
+            </button>
           </div>
-          <ErrorText error={createAgent.error ?? closeAgent.error} />
-          <AgentInstanceList
-            projectName={project.name}
-            sessions={agentSessions.data?.sessions ?? []}
-            isLoading={agentSessions.isLoading}
-          />
-          <AgentSessionHistoryPanel projectName={project.name} />
+
+          {agentTab === "instances" ? (
+            <>
+              <ErrorText error={createAgent.error ?? closeAgent.error} />
+              <AgentInstanceList
+                projectName={project.name}
+                sessions={agentSessions.data?.sessions ?? []}
+                isLoading={agentSessions.isLoading}
+              />
+            </>
+          ) : (
+            <AgentSessionHistoryPanel projectName={project.name} />
+          )}
         </div>
       ) : null}
 
