@@ -285,7 +285,7 @@ export class Claude2Runtime implements RuntimeResources {
     // Build the tmux shell command as a single string.
     // Steps: create dirs → mkfifo → keep fifo open → run claude | stdout-helper
     const script = [
-      `mkdir -p ${q(turnDir)}`,
+      `mkdir -p ${q(turnDir)} ${q(join(this.runDir, "claude2-fifo"))}`,
       `rm -f ${q(fifoPath)}`,
       `mkfifo ${q(fifoPath)}`,
       `exec 3<> ${q(fifoPath)}`,
