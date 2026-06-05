@@ -636,19 +636,6 @@ export function useClaude2Session(
           pendingAskRef.current = null;
         }
 
-        // Skip text-only user messages (echo of our own messages).
-        if (msg.type === "user") {
-          const rawContent = (msg as { type: "user"; message: { content: unknown } }).message
-            .content;
-          if (typeof rawContent === "string") {
-            // Command output (e.g. /compact result) — let it through.
-          } else {
-            const blocks = rawContent as Array<{ type: string }>;
-            const hasToolResults = blocks.some((b) => b.type === "tool_result");
-            if (!hasToolResults) return;
-          }
-        }
-
         setRawMessages((prev) => [...prev, msg]);
       } catch {
         // skip
@@ -694,11 +681,6 @@ export function useClaude2Session(
         .join("\n");
 
       if (textContent) {
-        const userMsg: SessionStreamServerMessage = {
-          type: "user",
-          message: { role: "user", content: [{ type: "text", text: textContent }] },
-        } as SessionStreamServerMessage;
-        setRawMessages((prev) => [...prev, userMsg]);
         setIsRunning(true);
         sendToSocket({
           type: "user",
