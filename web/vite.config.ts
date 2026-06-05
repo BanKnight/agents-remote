@@ -1,10 +1,35 @@
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const apiPort = process.env.API_PORT ?? "3001";
-const webPort = Number(process.env.WEB_PORT ?? "3000");
+function readDeployConfig(): Record<string, string> {
+  try {
+    const raw = readFileSync(join(homedir(), ".agents-remote", "config.toml"), "utf8");
+    const result: Record<string, string> = {};
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq === -1) continue;
+      result[trimmed.slice(0, eq).trim()] = trimmed
+        .slice(eq + 1)
+        .trim()
+        .replace(/^"|"$/g, "");
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+const deployConfig = readDeployConfig();
+const apiPort = process.env.API_PORT ?? String(deployConfig.api_port ?? "3001");
+const webPort = Number(process.env.WEB_PORT ?? deployConfig.web_port ?? "3000");
 const apiTarget = process.env.WEB_API_PROXY_TARGET ?? `http://127.0.0.1:${apiPort}`;
 const allowedHosts = (process.env.WEB_ALLOWED_HOSTS ?? "service-remotes-agent.8811156.xyz")
   .split(",")

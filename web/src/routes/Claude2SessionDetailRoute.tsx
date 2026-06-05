@@ -443,7 +443,7 @@ function AssistantChatBubble() {
                   const CustomUI = getToolRenderer(part.toolName);
                   return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
                 }
-                if (part.type === "reasoning") return isStreaming ? <ReasoningDisplay /> : null;
+                if (part.type === "reasoning") return <ReasoningDisplay />;
                 return null;
               }}
             </MessagePrimitive.Parts>

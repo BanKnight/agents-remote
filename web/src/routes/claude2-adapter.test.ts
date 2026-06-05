@@ -8,6 +8,7 @@ const assistant = (
   id: string,
   blocks: Array<
     | { type: "text"; text: string }
+    | { type: "thinking"; thinking: string; signature: string }
     | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   >,
 ): SessionStreamServerMessage =>
@@ -319,5 +320,27 @@ describe("loadMessagesFromRaw", () => {
       result?: string;
     }>;
     expect(assistantContent[0].result).toBe("plain string content");
+  });
+
+  test("thinking blocks are mapped to reasoning parts", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "think about this" }]),
+      assistant("msg-1", [
+        { type: "thinking", thinking: "Let me reason about this carefully.", signature: "sig-abc" },
+        { type: "text", text: "Here is my conclusion." },
+      ]),
+      result("success"),
+    ];
+    const result_msgs = loadMessagesFromRaw(msgs);
+    const assistantContent = result_msgs[1].content as Array<{
+      type: string;
+      text?: string;
+    }>;
+    expect(assistantContent.length).toBe(2);
+    expect(assistantContent[0]).toEqual({
+      type: "reasoning",
+      text: "Let me reason about this carefully.",
+    });
+    expect(assistantContent[1]).toEqual({ type: "text", text: "Here is my conclusion." });
   });
 });

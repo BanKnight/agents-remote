@@ -209,6 +209,9 @@ export function loadMessagesFromRaw(
         if (block.type === "text") {
           currentParts = [...currentParts, { type: "text" as const, text: block.text }];
         }
+        if (block.type === "thinking") {
+          currentParts = [...currentParts, { type: "reasoning" as const, text: block.thinking }];
+        }
         if (block.type === "tool_use") {
           currentParts = [
             ...currentParts,
