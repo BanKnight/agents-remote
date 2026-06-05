@@ -123,7 +123,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     currentModel,
     resolvedModel,
     modelSwitchVersion,
-    retryState,
     permissionMode,
   } = useClaude2Session(
     projectName,
@@ -270,7 +269,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   </ThreadPrimitive.ScrollToBottom>
                 </div>
 
-                <RetryIndicator retryState={retryState} />
                 <CompactIndicator />
                 <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
                   <ComposerPrimitive.Root>
@@ -922,31 +920,6 @@ function ComposerWithInterrupt({
           currentMode={permissionMode}
           availableModes={availablePermissionModes}
         />
-      </div>
-    </div>
-  );
-}
-
-// TRANSIENT banner above the composer. See the CompactStatus block at the
-// top of this file for the full two-surface design. This component shows
-// ONLY ephemeral states — there is deliberately no success branch, because a
-// TRANSIENT banner above the composer for API retries (e.g. 502 server_error).
-// Cleared automatically when system.init or an assistant message arrives.
-function RetryIndicator({
-  retryState,
-}: {
-  retryState: { attempt: number; maxRetries: number; delayMs: number; error: string } | null;
-}) {
-  if (!retryState) return null;
-  return (
-    <div className="shrink-0 px-3 pb-1">
-      <div className="rounded-lg border border-amber-600/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-400/80">
-        <span className="font-medium">API retry</span>
-        {" · "}
-        attempt {retryState.attempt}/{retryState.maxRetries}
-        {" · "}
-        next in {Math.round(retryState.delayMs / 1000)}s{" · "}
-        {retryState.error}
       </div>
     </div>
   );

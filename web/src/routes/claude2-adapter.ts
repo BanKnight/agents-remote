@@ -61,6 +61,24 @@ export function loadMessagesFromRaw(
 
     if (msg.type === "system") {
       if (msg.subtype === "thinking_tokens") continue;
+      if (msg.subtype === "api_retry") {
+        const r = msg as {
+          attempt: number;
+          max_retries: number;
+          retry_delay_ms: number;
+          error?: string;
+          error_status?: number;
+        };
+        const errorText = r.error ?? `HTTP ${r.error_status ?? "error"}`;
+        const retryText = `API 请求失败${r.attempt}/${r.max_retries}：${errorText}，${Math.round(r.retry_delay_ms / 1000)}s 后重试`;
+        flushAssistant();
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: retryText }],
+          metadata: { custom: { systemMessageType: "error" } },
+        });
+        continue;
+      }
       if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
         const meta = (msg as Record<string, unknown>).compactMetadata as
           | Record<string, unknown>
@@ -265,12 +283,6 @@ export function useClaude2Session(
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
-  const [retryState, setRetryState] = useState<{
-    attempt: number;
-    maxRetries: number;
-    delayMs: number;
-    error: string;
-  } | null>(null);
   // Initialised from REST response for new sessions.
   // system.init overrides when it arrives (for reconnect/switch/resume).
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
@@ -497,27 +509,10 @@ export function useClaude2Session(
           const tiers = ["sonnet", "opus", "haiku"];
           const tier = tiers.find((t) => init.model.includes(t));
           if (tier) setCurrentModel(tier);
-          setRetryState(null);
         }
 
-        // ── API retry indicator ────────────────────────────────────
-        if (msg.type === "system" && msg.subtype === "api_retry") {
-          const r = msg as {
-            attempt: number;
-            max_retries: number;
-            retry_delay_ms: number;
-            error?: string;
-            error_status?: number;
-          };
-          setRetryState({
-            attempt: r.attempt,
-            maxRetries: r.max_retries,
-            delayMs: r.retry_delay_ms,
-            error: r.error ?? `status ${r.error_status ?? "unknown"}`,
-          });
-          // Fall through — rawMessages skips system messages, retry is
-          // shown via the retryState indicator, not as a chat message.
-        }
+        // ── API retry — flows through to rawMessages as an inline
+        // system error in the message stream (handled in loadMessagesFromRaw).
 
         // ── Server-confirmed model switch ──────────────────────────
         if (msg.type === "switch_model_result") {
@@ -745,7 +740,6 @@ export function useClaude2Session(
     currentModel,
     resolvedModel,
     modelSwitchVersion,
-    retryState,
     permissionMode,
   };
 }
