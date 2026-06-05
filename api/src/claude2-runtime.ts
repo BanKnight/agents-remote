@@ -282,14 +282,17 @@ export class Claude2Runtime implements RuntimeResources {
       ...(claudeSessionId ? ["--resume", claudeSessionId] : []),
     ];
 
-    // Build the tmux shell command as a single string.
+    // Build the tmux shell command.
     // Steps: create dirs → mkfifo → keep fifo open → run claude | stdout-helper
-    const script = [
+    const setup = [
       `mkdir -p ${q(turnDir)} ${q(join(this.runDir, "claude2-fifo"))}`,
       `rm -f ${q(fifoPath)}`,
       `mkfifo ${q(fifoPath)}`,
       `exec 3<> ${q(fifoPath)}`,
-      claudeArgs.join(" "),
+    ].join(" && ");
+
+    const pipeline = [
+      claudeArgs.map(q).join(" "),
       `< ${q(fifoPath)}`,
       `2>> ${q(join(turnDir, "..", "claude2.stderr.log"))}`,
       "|",
@@ -298,6 +301,8 @@ export class Claude2Runtime implements RuntimeResources {
       q(this.helperPath),
       q(turnDir),
     ].join(" ");
+
+    const script = `${setup} && ${pipeline}`;
 
     const result = await runTmux([
       "new-session",
