@@ -248,13 +248,18 @@ export function loadMessagesFromRaw(
   return messages;
 }
 
-export function useClaude2Session(projectName: string, sessionId: string) {
+export function useClaude2Session(
+  projectName: string,
+  sessionId: string,
+  initialModel?: string,
+  initialPermissionMode?: string,
+) {
   const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
-  const [resolvedModel, setResolvedModel] = useState<string>();
+  const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
   const [retryState, setRetryState] = useState<{
     attempt: number;
@@ -262,10 +267,21 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     delayMs: number;
     error: string;
   } | null>(null);
-  // Initialised by system.init — the CLI is the sole authority for both.
-  // Defaults to undefined until the first system.init arrives so the UI
-  // can show a loading state instead of guessing.
-  const [permissionMode, setPermissionMode] = useState<string>();
+  // Initialised from REST response for new sessions.
+  // system.init overrides when it arrives (for reconnect/switch/resume).
+  const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
+
+  // Sync from REST response when it loads after initial render.
+  useEffect(() => {
+    if (initialModel !== undefined && resolvedModel === undefined) {
+      setResolvedModel(initialModel);
+    }
+  }, [initialModel, resolvedModel]);
+  useEffect(() => {
+    if (initialPermissionMode !== undefined && permissionMode === undefined) {
+      setPermissionMode(initialPermissionMode);
+    }
+  }, [initialPermissionMode, permissionMode]);
 
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
@@ -365,18 +381,9 @@ export function useClaude2Session(projectName: string, sessionId: string) {
     let cancelled = false;
     const url = claude2StreamUrl(projectName, sessionId);
 
-    // Load initial history from REST
-    getAgentSessionMessages(projectName, sessionId)
-      .then((response) => {
-        if (cancelled) return;
-        setRawMessages(response.messages);
-        setHasOlder(response.pagination.hasOlder);
-        cursorRef.current = response.pagination.nextCursor;
-        setIsLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+    // Messages flow entirely through the WebSocket — the server's
+    // session relay integrates JSONL history, turn buffers, and live
+    // streaming into a single pipeline. No separate REST fetch needed.
 
     // Open WebSocket for live streaming
     const socket = new WebSocket(url);
@@ -605,6 +612,12 @@ export function useClaude2Session(projectName: string, sessionId: string) {
           // compact cancellation notices with model:"<synthetic>")
           if (assistantMsg.message.model === "<synthetic>") return;
 
+          // Live assistant response — mark running so the UI shows
+          // the stop button and three-dot streaming indicator.
+          if (compactPhaseRef.current === "none") {
+            setIsRunning(true);
+          }
+
           const hasAsk = assistantMsg.message.content.some(
             (b) => b.type === "tool_use" && b.name === "AskUserQuestion",
           );
@@ -621,8 +634,6 @@ export function useClaude2Session(projectName: string, sessionId: string) {
         }
 
         // Skip text-only user messages (echo of our own messages).
-        // CLI command output (<local-command-stdout>) has string content and
-        // must NOT be skipped — it is the authoritative command result.
         if (msg.type === "user") {
           const rawContent = (msg as { type: "user"; message: { content: unknown } }).message
             .content;

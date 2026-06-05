@@ -89,6 +89,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
   const session = detail.data?.session;
   const availableModels = detail.data?.availableModels ?? [];
+  const availablePermissionModes = detail.data?.availablePermissionModes ?? [];
   const title = session?.displayName ?? `${t("section.agents")} Session`;
 
   const closeSession = useMutation({
@@ -124,7 +125,12 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     modelSwitchVersion,
     retryState,
     permissionMode,
-  } = useClaude2Session(projectName, sessionId);
+  } = useClaude2Session(
+    projectName,
+    sessionId,
+    detail.data?.session.model,
+    detail.data?.session.permissionMode,
+  );
 
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
 
@@ -274,6 +280,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                       availableModels={availableModels}
                       modelSwitchVersion={modelSwitchVersion}
                       permissionMode={permissionMode}
+                      availablePermissionModes={availablePermissionModes}
                     />
                   </ComposerPrimitive.Root>
                 </div>
@@ -736,27 +743,35 @@ function ModelSelector({
   );
 }
 
-const PERMISSION_MODES = [
-  { id: "default", label: "Default" },
-  { id: "acceptEdits", label: "Accept Edits" },
-  { id: "bypassPermissions", label: "Bypass" },
-  { id: "plan", label: "Plan Only" },
-  { id: "auto", label: "Auto" },
-] as const;
+const PERMISSION_MODE_LABELS: Record<string, string> = {
+  default: "Default",
+  acceptEdits: "Accept Edits",
+  bypassPermissions: "Bypass",
+  plan: "Plan Only",
+  auto: "Auto",
+  dontAsk: "Don't Ask",
+};
 
-function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
+function PermissionModeSelector({
+  currentMode,
+  availableModes,
+}: {
+  currentMode?: string;
+  availableModes: string[];
+}) {
   const bridge = useContext(Claude2BridgeContext);
   const [open, setOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // currentMode starts undefined and is populated by system.init — the
-  // single source of truth. Until it arrives, we show a placeholder
-  // instead of guessing "default" (which may not match the CLI's actual
-  // default, e.g. "auto").
+  const modes =
+    availableModes.length > 0
+      ? availableModes
+      : ["default", "acceptEdits", "bypassPermissions", "plan", "auto", "dontAsk"];
+
   const pending = currentMode === undefined;
   const mode = currentMode ?? "__pending__";
-  const label = pending ? "..." : (PERMISSION_MODES.find((m) => m.id === mode)?.label ?? mode);
+  const label = pending ? "..." : (PERMISSION_MODE_LABELS[mode] ?? mode);
 
   // Clear switching animation when mode changes
   useEffect(() => {
@@ -767,7 +782,7 @@ function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
     return (
       <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-amber-400/80">
         <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-        {PERMISSION_MODES.find((m) => m.id === switchingTo)?.label ?? switchingTo}
+        {PERMISSION_MODE_LABELS[switchingTo] ?? switchingTo}
       </div>
     );
   }
@@ -799,11 +814,11 @@ function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-slate-600/50 bg-slate-800 shadow-xl py-1">
-            {PERMISSION_MODES.map((pm) => {
-              const isActive = pm.id === mode;
+            {modes.map((pmId) => {
+              const isActive = pmId === mode;
               return (
                 <button
-                  key={pm.id}
+                  key={pmId}
                   type="button"
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
                     isActive
@@ -814,8 +829,8 @@ function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
                   onClick={() => {
                     setOpen(false);
                     if (!isActive && bridge) {
-                      setSwitchingTo(pm.id);
-                      bridge.switchPermissionMode(pm.id);
+                      setSwitchingTo(pmId);
+                      bridge.switchPermissionMode(pmId);
                     }
                   }}
                 >
@@ -837,7 +852,7 @@ function PermissionModeSelector({ currentMode }: { currentMode?: string }) {
                   ) : (
                     <span className="w-3 shrink-0" />
                   )}
-                  {pm.label}
+                  {PERMISSION_MODE_LABELS[pmId] ?? pmId}
                 </button>
               );
             })}
@@ -854,12 +869,14 @@ function ComposerWithInterrupt({
   availableModels,
   modelSwitchVersion,
   permissionMode,
+  availablePermissionModes,
 }: {
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
   modelSwitchVersion: number;
   permissionMode?: string;
+  availablePermissionModes: string[];
 }) {
   const composer = useComposerRuntime();
   const isRunning = useThread((s) => s.isRunning);
@@ -901,7 +918,10 @@ function ComposerWithInterrupt({
           availableModels={availableModels}
           modelSwitchVersion={modelSwitchVersion}
         />
-        <PermissionModeSelector currentMode={permissionMode} />
+        <PermissionModeSelector
+          currentMode={permissionMode}
+          availableModes={availablePermissionModes}
+        />
       </div>
     </div>
   );

@@ -1,20 +1,15 @@
+import { appendFile, unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { TmuxSharedPipe, runTmux } from "./pipe-pane";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
-
-type DataCallback = (data: string) => void;
-type ErrorCallback = (error: Error) => void;
-
-type Subscriber = {
-  onData: DataCallback;
-  onError: ErrorCallback;
-};
-
-type Claude2Process = {
-  subprocess: ReturnType<typeof Bun.spawn>;
-  exited: boolean;
-  onCloseCallbacks: Set<() => void>;
-  subscribers: Set<Subscriber>;
-  readerStarted: boolean;
-};
+import {
+  ensureTurnDir,
+  getStdinFifo,
+  getTurnDir,
+  readFileLines,
+  removeTurnDir,
+} from "./turn-files";
+import { Claude2SessionRelay } from "./session-relay";
 
 type Claude2SessionState = {
   projectPath: string;
@@ -22,14 +17,23 @@ type Claude2SessionState = {
   claudeSessionId?: string;
   model?: string;
   permissionMode?: string;
-  process: Claude2Process | null;
 };
 
 export class Claude2Runtime implements RuntimeResources {
   private readonly sessions = new Map<string, Claude2SessionState>();
+  private readonly pipeStreams = new Map<string, Promise<TmuxSharedPipe>>();
+  private readonly relays = new Map<string, Claude2SessionRelay>();
+  private readonly runDir: string;
+  private readonly helperPath: string;
   private onSystemInit:
     | ((sessionId: string, tmuxSessionName: string, claudeSessionId: string, model: string) => void)
     | null = null;
+
+  constructor(runDir: string) {
+    this.runDir = runDir;
+    // stdout-helper lives alongside this file at api/src/stdout-helper.ts
+    this.helperPath = join(import.meta.dirname, "stdout-helper.ts");
+  }
 
   setOnSystemInit(
     cb: (
@@ -42,29 +46,67 @@ export class Claude2Runtime implements RuntimeResources {
     this.onSystemInit = cb;
   }
 
-  async exists(sessionName: string): Promise<boolean> {
+  getSessionState(sessionName: string) {
     const state = this.sessions.get(sessionName);
-    if (!state) return false;
-    return state.process !== null && !state.process.exited;
+    if (!state) return null;
+    return { model: state.model, permissionMode: state.permissionMode };
+  }
+
+  async exists(sessionName: string): Promise<boolean> {
+    if (this.sessions.has(sessionName)) return true;
+    if (!sessionName.includes("-agent-claude2-")) return false;
+    const result = await runTmux(["has-session", "-t", sessionName]);
+    return result.exitCode === 0;
   }
 
   async close(sessionName: string): Promise<void> {
-    const state = this.sessions.get(sessionName);
-    if (!state?.process) return;
-    state.process.subprocess.kill();
-    for (const cb of state.process.onCloseCallbacks) cb();
-    state.process.onCloseCallbacks.clear();
-    state.process = null;
+    // Kill tmux session
+    const result = await runTmux(["kill-session", "-t", sessionName]);
+    if (result.exitCode !== 0 && !result.stderr.includes("can't find session")) {
+      // ignore — session may already be gone
+    }
+
+    // Destroy session relay
+    const relay = this.relays.get(sessionName);
+    if (relay) {
+      relay.destroy();
+      this.relays.delete(sessionName);
+    }
+
+    // Drop cached pipe stream
+    this.pipeStreams.delete(sessionName);
+
+    // Clean up FIFO
+    try {
+      await unlink(getStdinFifo(this.runDir, sessionName));
+    } catch {
+      // best effort
+    }
+
+    // Clean up turn directory
+    await removeTurnDir(getTurnDir(this.runDir, sessionName));
+
+    this.sessions.delete(sessionName);
   }
 
   async startAgent(metadata: SessionMetadata): Promise<void> {
-    const proc = this.spawnClaude(metadata.projectPath, metadata.claudeSessionId);
+    await this.spawnClaudeInTmux(
+      metadata.tmuxSessionName,
+      metadata.projectPath,
+      metadata.claudeSessionId,
+      metadata.model,
+      metadata.permissionMode,
+    );
+
     this.sessions.set(metadata.tmuxSessionName, {
       projectPath: metadata.projectPath,
       sessionId: metadata.id,
       claudeSessionId: metadata.claudeSessionId,
-      process: proc,
+      model: metadata.model,
+      permissionMode: metadata.permissionMode,
     });
+
+    this.detectSystemInit(metadata.tmuxSessionName, metadata.id);
   }
 
   async ensureRunning(
@@ -75,20 +117,43 @@ export class Claude2Runtime implements RuntimeResources {
     model?: string,
     permissionMode?: string,
   ): Promise<void> {
-    const existing = this.sessions.get(sessionName);
-    if (existing?.process && !existing.process.exited) {
+    if (this.sessions.has(sessionName)) return;
+
+    const exists = await runTmux(["has-session", "-t", sessionName]);
+    if (exists.exitCode === 0) {
+      this.sessions.set(sessionName, {
+        projectPath,
+        sessionId,
+        claudeSessionId,
+        model,
+        permissionMode,
+      });
+
+      // Reconnected session — poll for system.init to capture
+      // claudeSessionId, model, and permissionMode from the CLI.
+      this.detectSystemInit(sessionName, sessionId);
       return;
     }
 
-    const proc = this.spawnClaude(projectPath, claudeSessionId, model, permissionMode);
+    await this.spawnClaudeInTmux(sessionName, projectPath, claudeSessionId, model, permissionMode);
+
     this.sessions.set(sessionName, {
       projectPath,
       sessionId,
       claudeSessionId,
       model,
       permissionMode,
-      process: proc,
     });
+
+    this.detectSystemInit(sessionName, sessionId);
+  }
+
+  async write(sessionName: string, data: string): Promise<void> {
+    const result = await runTmux(["has-session", "-t", sessionName]);
+    if (result.exitCode !== 0) {
+      throw new Error(`Claude2 process not running for session "${sessionName}"`);
+    }
+    await appendFile(getStdinFifo(this.runDir, sessionName), data);
   }
 
   async switchModel(
@@ -98,15 +163,22 @@ export class Claude2Runtime implements RuntimeResources {
     const state = this.sessions.get(sessionName);
     if (!state) return null;
 
-    if (state.process) {
-      state.process.subprocess.kill();
-      for (const cb of state.process.onCloseCallbacks) cb();
-      state.process.onCloseCallbacks.clear();
-      state.process = null;
+    const relay = this.relays.get(sessionName);
+    if (relay) {
+      relay.destroy();
+      this.relays.delete(sessionName);
     }
 
-    const proc = this.spawnClaude(state.projectPath, state.claudeSessionId, model);
-    state.process = proc;
+    await runTmux(["kill-session", "-t", sessionName]);
+    this.pipeStreams.delete(sessionName);
+
+    await this.spawnClaudeInTmux(
+      sessionName,
+      state.projectPath,
+      state.claudeSessionId,
+      model,
+      state.permissionMode,
+    );
     state.model = model;
 
     return { claudeSessionId: state.claudeSessionId, projectPath: state.projectPath };
@@ -119,56 +191,57 @@ export class Claude2Runtime implements RuntimeResources {
     const state = this.sessions.get(sessionName);
     if (!state) return null;
 
-    if (state.process) {
-      state.process.subprocess.kill();
-      for (const cb of state.process.onCloseCallbacks) cb();
-      state.process.onCloseCallbacks.clear();
-      state.process = null;
+    const relay = this.relays.get(sessionName);
+    if (relay) {
+      relay.destroy();
+      this.relays.delete(sessionName);
     }
 
-    const proc = this.spawnClaude(
+    await runTmux(["kill-session", "-t", sessionName]);
+    this.pipeStreams.delete(sessionName);
+
+    await this.spawnClaudeInTmux(
+      sessionName,
       state.projectPath,
       state.claudeSessionId,
       state.model,
       permissionMode,
     );
-    state.process = proc;
     state.permissionMode = permissionMode;
 
     return { claudeSessionId: state.claudeSessionId, projectPath: state.projectPath };
   }
 
-  async write(sessionName: string, data: string): Promise<void> {
-    const state = this.sessions.get(sessionName);
-    if (!state?.process || state.process.exited) throw new Error("Claude2 process not running");
-    console.log(`[claude2 write] ${sessionName}: ${data.slice(0, 200)}`);
-    const stdin = state.process.subprocess.stdin as import("bun").FileSink;
-    stdin.write(data);
-    await stdin.flush();
-  }
-
   async stream(
     sessionName: string,
-    onData: DataCallback,
-    onError: ErrorCallback,
+    onData: (data: string) => void,
+    onError: (error: Error) => void,
   ): Promise<RuntimeStream> {
     const state = this.sessions.get(sessionName);
-    if (!state?.process || state.process.exited) throw new Error("Claude2 process not running");
+    if (!state) throw new Error(`Session "${sessionName}" not registered`);
 
-    const proc = state.process;
-    const subscriber: Subscriber = { onData, onError };
-    proc.subscribers.add(subscriber);
+    let relay = this.relays.get(sessionName);
+    if (!relay) {
+      relay = new Claude2SessionRelay();
+      this.relays.set(sessionName, relay);
 
-    if (!proc.readerStarted) {
-      proc.readerStarted = true;
-      this.startReader(sessionName, proc);
+      relay
+        .activate(
+          this.runDir,
+          state.projectPath,
+          state.claudeSessionId,
+          (name) => this.ensureSharedPipe(name),
+          sessionName,
+        )
+        .catch(() => {
+          // Error already broadcast to subscribers via broadcastError in
+          // doActivate. Clean up the stale relay entry so the next stream()
+          // call can retry with a fresh one.
+          this.relays.delete(sessionName);
+        });
     }
 
-    return {
-      close: () => {
-        proc.subscribers.delete(subscriber);
-      },
-    };
+    return relay.addSubscriber(onData, onError);
   }
 
   async capture(): Promise<string> {
@@ -183,68 +256,20 @@ export class Claude2Runtime implements RuntimeResources {
     throw new Error("Claude2Runtime does not support terminal sessions");
   }
 
-  private startReader(sessionName: string, proc: Claude2Process) {
-    let stdout: ReadableStream<Uint8Array>;
-    try {
-      stdout = proc.subprocess.stdout as ReadableStream<Uint8Array>;
-    } catch {
-      return;
-    }
+  // ── private ──
 
-    const readerPromise = (async () => {
-      let reader: ReadableStreamDefaultReader<Uint8Array>;
-      try {
-        reader = stdout.getReader();
-      } catch {
-        proc.readerStarted = false;
-        return;
-      }
-
-      let buffer = "";
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += new TextDecoder().decode(value);
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed) {
-              console.log(`[claude2 stdout] ${sessionName}: ${trimmed.slice(0, 200)}`);
-              this.checkClaudeSessionId(sessionName, trimmed);
-              for (const sub of proc.subscribers) {
-                try {
-                  sub.onData(trimmed);
-                } catch {
-                  /* skip */
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        for (const sub of proc.subscribers) {
-          try {
-            sub.onError(err);
-          } catch {
-            /* skip */
-          }
-        }
-      }
-    })();
-
-    void readerPromise;
-  }
-
-  private spawnClaude(
+  private async spawnClaudeInTmux(
+    sessionName: string,
     projectPath: string,
     claudeSessionId?: string,
     model?: string,
     permissionMode?: string,
-  ): Claude2Process {
-    const args = [
+  ) {
+    const turnDir = await ensureTurnDir(this.runDir, sessionName);
+    const fifoPath = getStdinFifo(this.runDir, sessionName);
+
+    const claudeArgs = [
+      "claude",
       "--output-format",
       "stream-json",
       "--input-format",
@@ -252,94 +277,106 @@ export class Claude2Runtime implements RuntimeResources {
       "--verbose",
       "--permission-prompt-tool",
       "stdio",
+      ...(permissionMode ? ["--permission-mode", permissionMode] : []),
+      ...(model ? ["--model", model] : []),
+      ...(claudeSessionId ? ["--resume", claudeSessionId] : []),
     ];
-    if (permissionMode) {
-      args.push("--permission-mode", permissionMode);
+
+    // Build the tmux shell command as a single string.
+    // Steps: create dirs → mkfifo → keep fifo open → run claude | stdout-helper
+    const script = [
+      `mkdir -p ${q(turnDir)}`,
+      `rm -f ${q(fifoPath)}`,
+      `mkfifo ${q(fifoPath)}`,
+      `exec 3<> ${q(fifoPath)}`,
+      claudeArgs.join(" "),
+      `< ${q(fifoPath)}`,
+      `2>> ${q(join(turnDir, "..", "claude2.stderr.log"))}`,
+      "|",
+      "bun",
+      "run",
+      q(this.helperPath),
+      q(turnDir),
+    ].join(" ");
+
+    const result = await runTmux([
+      "new-session",
+      "-d",
+      "-s",
+      sessionName,
+      "-c",
+      projectPath,
+      script,
+    ]);
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to start Claude2 tmux session "${sessionName}": ${result.stderr}`);
     }
-    if (model) {
-      args.push("--model", model);
-    }
-    if (claudeSessionId) {
-      args.push("--resume", claudeSessionId);
-    }
-
-    const subprocess = Bun.spawn({
-      cmd: ["claude", ...args],
-      cwd: projectPath,
-      env: {
-        ...process.env,
-        CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
-        DISABLE_AUTOUPDATER: "1",
-      },
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const proc: Claude2Process = {
-      subprocess,
-      exited: false,
-      onCloseCallbacks: new Set(),
-      subscribers: new Set(),
-      readerStarted: false,
-    };
-
-    subprocess.exited.then(() => {
-      proc.exited = true;
-      for (const cb of proc.onCloseCallbacks) cb();
-    });
-
-    void readStderr(subprocess.stderr, (line) => {
-      console.error(`[claude2 stderr] ${line}`);
-    });
-
-    return proc;
   }
 
-  private checkClaudeSessionId(sessionName: string, line: string) {
-    if (!this.onSystemInit) return;
-    try {
-      const msg = JSON.parse(line);
-      if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
-        const state = this.sessions.get(sessionName);
-        if (state) {
-          if (!state.claudeSessionId) {
-            state.claudeSessionId = msg.session_id;
+  /**
+   * Poll turn_000.jsonl for the system.init message.
+   * For new sessions, system.init only arrives after the first user message,
+   * so the polling is best-effort with a timeout.
+   */
+  private detectSystemInit(sessionName: string, sessionId: string) {
+    const turnDir = getTurnDir(this.runDir, sessionName);
+    void (async () => {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await sleep(300 + attempt * 150);
+        try {
+          const lines = await readFileLines(join(turnDir, "turn_000.jsonl"));
+          for (const line of lines) {
+            try {
+              const msg = JSON.parse(line);
+              if (
+                msg.type === "system" &&
+                msg.subtype === "init" &&
+                typeof msg.session_id === "string"
+              ) {
+                const state = this.sessions.get(sessionName);
+                if (state) {
+                  if (!state.claudeSessionId) state.claudeSessionId = msg.session_id;
+                  if (typeof msg.model === "string") state.model = msg.model;
+                  if (typeof msg.permissionMode === "string")
+                    state.permissionMode = msg.permissionMode;
+                }
+                this.onSystemInit?.(
+                  sessionId,
+                  sessionName,
+                  msg.session_id,
+                  typeof msg.model === "string" ? msg.model : "unknown",
+                );
+                return;
+              }
+            } catch {
+              continue;
+            }
           }
-          if (typeof msg.model === "string") state.model = msg.model;
-          this.onSystemInit(
-            state.sessionId,
-            sessionName,
-            msg.session_id,
-            typeof msg.model === "string" ? msg.model : "unknown",
-          );
+        } catch {
+          // turn file not ready
         }
       }
-    } catch {
-      // skip
+    })();
+  }
+
+  private async ensureSharedPipe(sessionName: string): Promise<TmuxSharedPipe> {
+    const existing = this.pipeStreams.get(sessionName);
+    if (existing) return existing;
+
+    const next = TmuxSharedPipe.open(sessionName, this.runDir, () => {
+      this.pipeStreams.delete(sessionName);
+    });
+    this.pipeStreams.set(sessionName, next);
+
+    try {
+      return await next;
+    } catch (error) {
+      this.pipeStreams.delete(sessionName);
+      throw error;
     }
   }
 }
 
-async function readStderr(
-  stream: ReadableStream<Uint8Array> | undefined,
-  onLine: (line: string) => void,
-) {
-  if (!stream) return;
-  const reader = stream.getReader();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += new TextDecoder().decode(value);
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.trim()) onLine(line.trim());
-      }
-    }
-  } catch {
-    // stream closed
-  }
-}
+const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

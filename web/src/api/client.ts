@@ -190,12 +190,17 @@ export async function listAgentHistory(projectName: string): Promise<ListAgentHi
 export async function createAgentSession(
   projectName: string,
   provider: AgentProvider,
-  claudeSessionId?: string,
+  opts?: { claudeSessionId?: string; model?: string; permissionMode?: string },
 ): Promise<CreateAgentSessionResponse> {
   return fetchJson(agentSessionsPath(projectName), "api.agentSessionCreationFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider, claudeSessionId } satisfies CreateAgentSessionRequest),
+    body: JSON.stringify({
+      provider,
+      claudeSessionId: opts?.claudeSessionId,
+      model: opts?.model,
+      permissionMode: opts?.permissionMode,
+    } satisfies CreateAgentSessionRequest),
   });
 }
 

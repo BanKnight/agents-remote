@@ -28,6 +28,7 @@ export type SessionMetadata = {
   lastConnectedAt?: string;
   claudeSessionId?: string;
   model?: string;
+  permissionMode?: string;
 };
 
 export type RuntimeStream = {
@@ -71,6 +72,8 @@ type CreateAgentSessionInput = {
   provider: AgentProvider;
   displayName?: string;
   claudeSessionId?: string;
+  model?: string;
+  permissionMode?: string;
 };
 
 type CreateTerminalSessionInput = {
@@ -172,6 +175,8 @@ export class SessionRegistry {
       provider: input.provider,
       displayName: input.displayName,
       claudeSessionId: input.claudeSessionId,
+      model: input.model,
+      permissionMode: input.permissionMode,
     });
 
     try {
@@ -298,6 +303,8 @@ export class SessionRegistry {
     provider?: AgentProvider;
     displayName?: string;
     claudeSessionId?: string;
+    model?: string;
+    permissionMode?: string;
   }) {
     const id = this.createId(input.type);
     const timestamp = this.now().toISOString();
@@ -314,6 +321,8 @@ export class SessionRegistry {
       createdAt: timestamp,
       updatedAt: timestamp,
       claudeSessionId: input.claudeSessionId,
+      model: input.model,
+      permissionMode: input.permissionMode,
     };
 
     await this.writeMetadata(metadata);
@@ -462,6 +471,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   status: metadata.status as AgentSessionStatus,
   createdAt: metadata.createdAt,
   model: metadata.model,
+  permissionMode: metadata.permissionMode,
   claudeSessionId: metadata.claudeSessionId,
 });
 

@@ -655,7 +655,7 @@ function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps
 
   const resumeSession = useMutation({
     mutationFn: (claudeSessionId: string) =>
-      createAgentSession(projectName, "claude2", claudeSessionId),
+      createAgentSession(projectName, "claude2", { claudeSessionId }),
     onSuccess: async (data) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),

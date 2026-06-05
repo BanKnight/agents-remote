@@ -116,10 +116,12 @@ export class Claude2StreamController {
       metadata?.projectPath ?? "",
       data.sessionId,
       metadata?.claudeSessionId,
+      metadata?.model,
+      metadata?.permissionMode,
     );
 
-    // History is loaded separately via REST endpoint (GET /agent-sessions/:id/messages).
-    // WebSocket is only for live streaming — no history replay here.
+    // History is loaded via REST for deep pagination (GET /agent-sessions/:id/messages).
+    // Recent messages are replayed from the CLI stdout buffer on reconnect.
 
     send(socket, {
       type: "connected",
@@ -243,52 +245,50 @@ export class Claude2StreamController {
   }
 
   private async startStream(socket: StreamSocket, data: NonNullable<Claude2WebSocketData>) {
-    if (this.runtime.stream) {
-      const stream = await this.runtime.stream(
-        data.tmuxSessionName,
-        (line: string) => {
-          try {
-            const parsed = JSON.parse(line) as SessionStreamServerMessage;
-            console.log(
-              `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
-            );
-            // Capture claudeSessionId and model from system.init
-            if (
-              parsed.type === "system" &&
-              "subtype" in parsed &&
-              parsed.subtype === "init" &&
-              "session_id" in parsed
-            ) {
-              const init = parsed as { session_id: string; model?: string };
-              if (init.session_id) {
-                console.log(
-                  `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
-                );
-                void this.sessionRegistry.setClaudeSessionId(
-                  data.sessionId,
-                  init.session_id,
-                  init.model,
-                );
-              }
+    const stream = await this.claude2Runtime.stream(
+      data.tmuxSessionName,
+      (line: string) => {
+        try {
+          const parsed = JSON.parse(line) as SessionStreamServerMessage;
+          console.log(
+            `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
+          );
+          // Capture claudeSessionId and model from system.init
+          if (
+            parsed.type === "system" &&
+            "subtype" in parsed &&
+            parsed.subtype === "init" &&
+            "session_id" in parsed
+          ) {
+            const init = parsed as { session_id: string; model?: string };
+            if (init.session_id) {
+              console.log(
+                `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
+              );
+              void this.sessionRegistry.setClaudeSessionId(
+                data.sessionId,
+                init.session_id,
+                init.model,
+              );
             }
-            send(socket, parsed);
-            if (parsed.type === "result") {
-              send(socket, { type: "ended" });
-            }
-          } catch {
-            // skip unparseable lines
           }
-        },
-        (error: Error) => {
-          send(socket, {
-            type: "error",
-            code: "SESSION_RUNTIME_ERROR",
-            message: error.message,
-          });
-        },
-      );
-      this.streams.set(socket, stream);
-    }
+          send(socket, parsed);
+          if (parsed.type === "result") {
+            send(socket, { type: "ended" });
+          }
+        } catch {
+          // skip unparseable lines
+        }
+      },
+      (error: Error) => {
+        send(socket, {
+          type: "error",
+          code: "SESSION_RUNTIME_ERROR",
+          message: error.message,
+        });
+      },
+    );
+    this.streams.set(socket, stream);
   }
 }
 

@@ -9,6 +9,7 @@ import type {
 import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
 import { Claude2Runtime } from "./claude2-runtime";
+import { parseClaudePermissionModes } from "./agent-provider-profiles";
 import { Claude2StreamController, handleClaude2StreamUpgrade } from "./claude2-stream";
 import {
   applyAuthRefresh,
@@ -586,7 +587,9 @@ export const startApi = async () => {
   });
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
-  const claude2Runtime = new Claude2Runtime();
+  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir);
+  const claudePermissionModes = await parseClaudePermissionModes();
+  console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   const runtime: RuntimeResources = {
     exists: async (sessionName) => {
       if (await claude2Runtime.exists(sessionName)) return true;

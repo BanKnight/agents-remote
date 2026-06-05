@@ -178,6 +178,7 @@ export type AgentSession = {
   status: AgentSessionStatus;
   createdAt: string;
   model?: string;
+  permissionMode?: string;
   claudeSessionId?: string;
   lastAssistantMessage?: string;
 };
@@ -196,6 +197,8 @@ export type ListAgentSessionsResponse = {
 export type CreateAgentSessionRequest = {
   provider?: AgentProvider;
   displayName?: string;
+  model?: string;
+  permissionMode?: string;
   /** Resume an existing Claude CLI session */
   claudeSessionId?: string;
 };
@@ -207,6 +210,7 @@ export type CreateAgentSessionResponse = {
 export type AgentSessionDetailResponse = {
   session: AgentSession;
   availableModels?: string[];
+  availablePermissionModes?: string[];
 };
 
 export type CloseAgentSessionResponse = {
@@ -432,7 +436,8 @@ export type Claude2PermissionMode =
   | "acceptEdits"
   | "bypassPermissions"
   | "plan"
-  | "auto";
+  | "auto"
+  | "dontAsk";
 
 export type Claude2StreamClientMessage =
   | {

@@ -20,7 +20,7 @@ import { listAgentHistory, getLastAssistantMessage } from "./agent-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
-import { getAgentProviderProfile } from "./agent-provider-profiles";
+import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
@@ -96,6 +96,31 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Agent provider is required", 400);
     }
 
+    const profile = getAgentProviderProfile(body.provider);
+    const model = body.model ?? profile?.availableModels?.[0];
+    if (model && profile?.availableModels && !profile.availableModels.includes(model)) {
+      return jsonError("SESSION_PROVIDER_UNAVAILABLE", `Unsupported model: ${model}`, 400);
+    }
+
+    let permissionMode = body.permissionMode ?? "auto";
+    if (body.provider === "claude2") {
+      const modes: readonly string[] = profile?.permissionModes ?? [
+        "default",
+        "acceptEdits",
+        "bypassPermissions",
+        "plan",
+        "auto",
+        "dontAsk",
+      ];
+      if (!modes.includes(permissionMode)) {
+        return jsonError(
+          "SESSION_PROVIDER_UNAVAILABLE",
+          `Unsupported permission mode: ${permissionMode}`,
+          400,
+        );
+      }
+    }
+
     try {
       const response: CreateAgentSessionResponse = {
         session: await registry.createAgentSession({
@@ -103,6 +128,8 @@ const handleAgentSessionRoute = async (
           provider: body.provider,
           displayName: normalizeDisplayName(body.displayName),
           claudeSessionId: body.claudeSessionId,
+          model,
+          permissionMode,
         }),
       };
       return Response.json(response);
@@ -159,9 +186,14 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
     }
 
+    const profile = getAgentProviderProfile(session.provider);
+    const permissionModes =
+      session.provider === "claude2" ? await parseClaudePermissionModes() : undefined;
+
     const response: AgentSessionDetailResponse = {
       session,
-      availableModels: getAgentProviderProfile(session.provider)?.availableModels,
+      availableModels: profile?.availableModels,
+      availablePermissionModes: permissionModes,
     };
     return Response.json(response);
   }
@@ -303,7 +335,7 @@ const normalizeDisplayName = (displayName: string | undefined) => {
 const requestUrlEndsWith = (request: Request, suffix: string) =>
   new URL(request.url).pathname.endsWith(suffix);
 
-const isChatMessage = (msg: Record<string, unknown>): boolean => {
+export const isChatMessage = (msg: Record<string, unknown>): boolean => {
   const type = msg.type as string | undefined;
   if (!type) return false;
   if (msg.isMeta === true) return false;
@@ -318,7 +350,7 @@ const isVisibleMessage = (msg: Record<string, unknown>): boolean => {
   return type === "user" || type === "assistant";
 };
 
-const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string => {
+export const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string => {
   const projectDir = projectPath.replace(/\//g, "-");
   return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
 };

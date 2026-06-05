@@ -1,4 +1,4 @@
-import type { AgentProvider } from "@agents-remote/shared";
+import type { AgentProvider, Claude2PermissionMode } from "@agents-remote/shared";
 
 export type AgentProviderProfile = {
   provider: AgentProvider;
@@ -9,6 +9,7 @@ export type AgentProviderProfile = {
     history: "unsupported" | "native";
   };
   availableModels?: string[];
+  permissionModes?: Claude2PermissionMode[];
 };
 
 const readClaude2Models = (): string[] => {
@@ -22,6 +23,43 @@ const readClaude2Models = (): string[] => {
   // that Claude CLI resolves to the latest model version at runtime.
   return ["sonnet", "opus", "haiku"];
 };
+
+let cachedPermissionModes: Claude2PermissionMode[] | null = null;
+
+export async function parseClaudePermissionModes(): Promise<Claude2PermissionMode[]> {
+  if (cachedPermissionModes) return cachedPermissionModes;
+
+  const fallback: Claude2PermissionMode[] = [
+    "default",
+    "acceptEdits",
+    "bypassPermissions",
+    "plan",
+    "auto",
+    "dontAsk",
+  ];
+
+  try {
+    const proc = Bun.spawn({
+      cmd: ["claude", "--help"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const match = output.match(/--permission-mode[^(]*\(choices:\s*([^)]+)\)/);
+    if (!match) return fallback;
+
+    const choices = match[1]
+      .split(",")
+      .map((s) => s.trim().replace(/^"|"$/g, ""))
+      .filter(Boolean) as Claude2PermissionMode[];
+
+    return choices.length > 0 ? choices : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const profiles: Record<AgentProvider, AgentProviderProfile> = {
   claude: {
