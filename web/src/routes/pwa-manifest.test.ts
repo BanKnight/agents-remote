@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-const serviceWorkerSource = readFileSync(
-  new URL("../../public/service-worker.js", import.meta.url),
-  "utf8",
-);
 const mainSource = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
 
 const manifest = JSON.parse(
@@ -39,16 +35,7 @@ test("PWA manifest includes Chromium installability icon sizes", () => {
   );
 });
 
-test("PWA service worker caches install assets without intercepting app or API requests", () => {
-  expect(serviceWorkerSource).toContain("APP_SHELL_ASSETS");
-  expect(serviceWorkerSource).toContain("/manifest.webmanifest");
-  expect(serviceWorkerSource).toContain('url.pathname.startsWith("/api/")');
-  expect(serviceWorkerSource).toContain('request.mode === "navigate"');
-  expect(serviceWorkerSource).not.toContain('networkFirst(request, "/")');
-});
-
-test("PWA service worker registration uses a stable script URL", () => {
-  expect(mainSource).toContain('register?.("/service-worker.js"');
-  expect(mainSource).toContain('updateViaCache: "none"');
-  expect(mainSource).not.toContain("Date.now()");
+test("PWA service worker registration uses virtual:pwa-register", () => {
+  expect(mainSource).toContain('import { registerSW } from "virtual:pwa-register"');
+  expect(mainSource).toContain("registerSW(");
 });

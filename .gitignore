@@ -1,6 +1,7 @@
 node_modules/
 .bun/
 dist/
+dev-dist/
 *.tsbuildinfo
 test-results/
 .env

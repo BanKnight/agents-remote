@@ -7,6 +7,7 @@ import { I18nProvider } from "./i18n";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
 import "./styles/index.css";
+import { registerSW } from "virtual:pwa-register";
 
 restoreLastPath();
 
@@ -41,29 +42,17 @@ if (splash) {
   });
 }
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    const registrationPromise = navigator.serviceWorker.register?.("/service-worker.js", {
-      updateViaCache: "none",
+registerSW({
+  onRegisteredSW(_swUrl, registration) {
+    if (!registration) return;
+    setInterval(
+      () => {
+        registration.update();
+      },
+      30 * 60 * 1000,
+    );
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") registration.update();
     });
-
-    if (!registrationPromise) {
-      return;
-    }
-
-    void registrationPromise
-      .then((registration) => {
-        let refreshing = false;
-
-        navigator.serviceWorker.addEventListener?.("controllerchange", () => {
-          if (!refreshing && registration.active) {
-            refreshing = true;
-            window.location.reload();
-          }
-        });
-
-        void registration?.update?.();
-      })
-      .catch(() => undefined);
-  });
-}
+  },
+});

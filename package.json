@@ -33,6 +33,8 @@
     "@types/bun": "^1.3.4",
     "oxfmt": "0.50.0",
     "oxlint": "1.65.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-window": "^7.4.1"
   }
 }

@@ -2,6 +2,9 @@ export const en = {
   // ── Shared ────────────────────────────────────────────────────
   cancel: "Cancel",
 
+  // ── Offline ──────────────────────────────────────────────────
+  "offline.message": "You are offline. Check your network connection.",
+
   // ── Auth ──────────────────────────────────────────────────────
   "auth.brand": "Agents Remote",
   "auth.checkingTitle": "Checking private access",

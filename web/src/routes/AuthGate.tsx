@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { getAuthStatus, login } from "../api/client";
+import { OfflineBanner } from "../components/OfflineBanner";
 import { useT } from "../i18n";
 
 type BeforeInstallPromptEvent = Event & {
@@ -109,6 +110,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (authOk) {
       return (
         <>
+          <OfflineBanner />
           {children}
           {installBanner}
         </>
@@ -117,6 +119,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     return (
       <>
+        <OfflineBanner />
         <AuthFrame title={t("auth.checkingTitle")} description={t("auth.checkingDesc")} />
         {installBanner}
       </>
@@ -126,6 +129,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (auth.error instanceof Error) {
     return (
       <>
+        <OfflineBanner />
         <AuthFrame title={t("auth.errorTitle")} description={auth.error.message} />
         {installBanner}
       </>
@@ -138,6 +142,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
     return (
       <>
+        <OfflineBanner />
         {children}
         {installBanner}
       </>
@@ -146,6 +151,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <OfflineBanner />
       <AuthFrame title={t("auth.loginTitle")} description={t("auth.loginDesc")}>
         <form className="mt-5" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-slate-200" htmlFor={passwordId}>

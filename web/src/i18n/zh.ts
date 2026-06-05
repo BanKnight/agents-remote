@@ -4,6 +4,9 @@ export const zh: Record<TranslationKey, string> = {
   // ── Shared ────────────────────────────────────────────────────
   cancel: "取消",
 
+  // ── Offline ──────────────────────────────────────────────────
+  "offline.message": "当前处于离线状态，请检查网络连接。",
+
   // ── Auth ──────────────────────────────────────────────────────
   "auth.brand": "Agents Remote",
   "auth.checkingTitle": "正在验证访问权限",
