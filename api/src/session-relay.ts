@@ -65,6 +65,11 @@ export class Claude2SessionRelay {
     };
   }
 
+  injectLine(line: string): void {
+    this.broadcast(line);
+    this.pushBuffer(line);
+  }
+
   destroy(): void {
     this.phase = "destroyed";
     this.tailStop?.();

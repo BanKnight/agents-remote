@@ -154,6 +154,21 @@ export class Claude2Runtime implements RuntimeResources {
       throw new Error(`Claude2 process not running for session "${sessionName}"`);
     }
     await appendFile(getStdinFifo(this.runDir, sessionName), data);
+
+    // Inject user messages into the relay so they are broadcast back
+    // to the client and persisted in the buffer for replay on reconnect.
+    // The CLI does not echo user input to stdout in stream-json mode.
+    try {
+      const msg = JSON.parse(data.trim());
+      if (msg && msg.type === "user") {
+        const relay = this.relays.get(sessionName);
+        if (relay && !relay.isDestroyed) {
+          relay.injectLine(data.trim());
+        }
+      }
+    } catch {
+      // Not JSON or parse failure — skip injection
+    }
   }
 
   async switchModel(

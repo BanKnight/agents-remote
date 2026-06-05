@@ -60,6 +60,7 @@ export function loadMessagesFromRaw(
     const msg = rawMessages[i];
 
     if (msg.type === "system") {
+      if (msg.subtype === "thinking_tokens") continue;
       if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
         const meta = (msg as Record<string, unknown>).compactMetadata as
           | Record<string, unknown>
@@ -636,7 +637,21 @@ export function useClaude2Session(
           pendingAskRef.current = null;
         }
 
-        setRawMessages((prev) => [...prev, msg]);
+        setRawMessages((prev) => {
+          // Dedup: when the relay injects the same user message that onNew
+          // already added optimistically, skip the duplicate.
+          if (msg.type === "user") {
+            const last = prev[prev.length - 1];
+            if (
+              last &&
+              last.type === "user" &&
+              JSON.stringify(last.message) === JSON.stringify(msg.message)
+            ) {
+              return prev;
+            }
+          }
+          return [...prev, msg];
+        });
       } catch {
         // skip
       }
@@ -681,6 +696,11 @@ export function useClaude2Session(
         .join("\n");
 
       if (textContent) {
+        const userMsg: SessionStreamServerMessage = {
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: textContent }] },
+        } as SessionStreamServerMessage;
+        setRawMessages((prev) => [...prev, userMsg]);
         setIsRunning(true);
         sendToSocket({
           type: "user",
