@@ -25,15 +25,11 @@ export default defineConfig({
         navigateFallback: null,
         runtimeCaching: [
           {
+            // Only intercept navigation requests — serve HTML straight from network
+            // so stale SW never caches a zombie index.html.
+            // API and other non-precached requests fall through to the browser,
+            // which lets Playwright page.route() intercept them in E2E tests.
             urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkOnly",
-          },
-          {
-            urlPattern: /^.*\/api\/.*/,
-            handler: "NetworkOnly",
-          },
-          {
-            urlPattern: () => true,
             handler: "NetworkOnly",
           },
         ],

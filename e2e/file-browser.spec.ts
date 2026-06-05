@@ -18,8 +18,8 @@ test("authenticated user can browse Project files and preview text and images", 
   await page.getByRole("button", { name: /^Files/ }).click();
 
   const files = page.getByLabel("Project files");
-  await expect(files.getByRole("button", { name: /src/ })).toBeVisible();
-  await expect(files.getByRole("button", { name: /README\.md/ })).toBeVisible();
+  await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
+  await expect(files.getByRole("button", { name: /README\.md/ }).first()).toBeVisible();
   // Dot-files and dot-directories are excluded from file listing
   await expect(files.getByRole("button", { name: /\.config/ })).not.toBeVisible();
   await expect(files.getByRole("button", { name: /\.env/ })).not.toBeVisible();
@@ -29,15 +29,24 @@ test("authenticated user can browse Project files and preview text and images", 
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
   expect(rootNames.slice(0, 4)).toEqual(["src", "logo.svg", "notes.txt", "README.md"]);
 
-  await files.getByRole("button", { name: /src/ }).click();
-  await expect(files.getByRole("button", { name: /index\.ts/ })).toBeVisible();
-  await files.getByRole("button", { name: /index\.ts/ }).click();
+  await files.getByRole("button", { name: /src/ }).first().click();
+  await expect(files.getByRole("button", { name: /index\.ts/ }).first()).toBeVisible();
+  await files
+    .getByRole("button", { name: /index\.ts/ })
+    .first()
+    .click();
   await expect(page.getByLabel("File preview")).toContainText("fileBrowserE2e");
 
   await page.getByRole("button", { name: "Root" }).click();
-  await files.getByRole("button", { name: /README\.md/ }).click();
+  await files
+    .getByRole("button", { name: /README\.md/ })
+    .first()
+    .click();
   await expect(page.getByLabel("File preview")).toContainText("file-browser-e2e-text-ok");
 
-  await files.getByRole("button", { name: /logo\.svg/ }).click();
+  await files
+    .getByRole("button", { name: /logo\.svg/ })
+    .first()
+    .click();
   await expect(page.getByRole("img", { name: "logo.svg" })).toBeVisible();
 });
