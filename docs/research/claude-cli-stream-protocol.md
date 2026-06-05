@@ -51,18 +51,25 @@ CLI 启动后第一条 stdout 消息，包含当前会话的完整配置。
 }
 ```
 
-### system.init 是模型和权限模式的唯一权威来源
+### system.init 时效性
 
-无论是新 session 还是恢复已有 session，`model` 和 `permissionMode` 都通过 `system.init` 确定：
+**`system.init` 只在第一条用户消息后才返回**——CLI 启动时不立即发送。这意味着：
+
+- **新 session（用户尚未发消息）**：`system.init` 不会到达，model 和 permissionMode 无法从 system.init 获取
+- **恢复 session（有历史消息）**：`system.init` 会作为历史回放的一部分立即返回
+
+因此，model 和 permissionMode 的获取策略分两种场景：
 
 | 场景 | model 来源 | permissionMode 来源 |
 |------|-----------|-------------------|
-| 新 session（无 `--resume`，无 `--model`） | CLI 默认 | CLI 默认（通常 `"auto"`） |
-| 新 session（有 `--model`） | 传入值 | CLI 默认 |
-| 恢复 session（`--resume`） | CLI JSONL 文件中上次使用的 model | CLI JSONL 文件中上次使用的 permissionMode |
+| 新 session | 创建时显式传入 `--model` | 创建时显式传入 `--permission-mode` |
+| 恢复 session（`--resume`） | CLI JSONL 文件中上次使用的 model → system.init | CLI JSONL 文件中上次使用的 permissionMode → system.init |
 | 切换 model（`--model X --resume`） | 新传入值 | CLI JSONL 文件中的值 |
 
-**关键结论**：我们不需要在 `SessionMetadata` 中持久化 model 或 permissionMode。CLI 的 JSONL session 文件 + `system.init` 已经覆盖了所有场景。
+**关键结论**：新 session 必须在创建时显式传入 model 和 permissionMode（参
+考 hapi 的 `bootstrapSession` 方案），因为 system.init 在用户发消息前不可用。
+对于恢复 session，system.init 是权威来源。两个值都存入 `SessionMetadata`
+以便 REST API 可以在 system.init 到达前返回初始值。
 
 ## 消息类型
 

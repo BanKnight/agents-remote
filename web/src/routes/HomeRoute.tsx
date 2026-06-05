@@ -209,7 +209,7 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
   const { t } = useT();
   return (
     <Link
-      className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
       params={{ projectName: project.name }}
       search={{ workspace: defaultConsoleSection, filesPath: "" }}
       to="/projects/$projectName"

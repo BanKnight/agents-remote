@@ -301,15 +301,51 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       </div>
 
       {activeSection === "agents" ? (
-        <div className="min-h-0 flex-1 flex flex-col gap-4 overflow-y-auto rounded-none border-0 bg-transparent shadow-none ring-0 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
-          <AgentPanel
+        <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
+          <div
+            className="grid grid-cols-3 gap-2 sm:hidden"
+            aria-label="Create Agent instance mobile"
+          >
+            <CreateButton
+              disabled={createAgent.isPending}
+              tone="accent"
+              onClick={() => createAgent.mutate("claude")}
+              className="py-3 text-sm"
+            >
+              <ShellIcon name="anthropic" />
+              {t("project.createClaude")}
+            </CreateButton>
+            <CreateButton
+              disabled={createAgent.isPending}
+              onClick={() => createAgent.mutate("codex")}
+              className="py-3 text-sm"
+            >
+              <ShellIcon name="openai" />
+              {t("project.createCodex")}
+            </CreateButton>
+            <CreateButton
+              disabled={createAgent.isPending}
+              tone="accent"
+              onClick={() => createAgent.mutate("claude2")}
+              className="py-3 text-sm"
+            >
+              <ShellIcon name="anthropic" />
+              {t("project.createClaude2")}
+            </CreateButton>
+          </div>
+          <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
+            <h3 className="text-base font-semibold">{t("project.activeInstances")}</h3>
+            <span className="text-xs text-slate-400">
+              {t("project.agentCount", {
+                count: agentSessions.data?.sessions.length ?? 0,
+              })}
+            </span>
+          </div>
+          <ErrorText error={createAgent.error ?? closeAgent.error} />
+          <AgentInstanceList
             projectName={project.name}
             sessions={agentSessions.data?.sessions ?? []}
             isLoading={agentSessions.isLoading}
-            isCreating={createAgent.isPending}
-            createError={createAgent.error}
-            closeError={closeAgent.error}
-            onCreate={(provider) => createAgent.mutate(provider)}
           />
           <AgentSessionHistoryPanel projectName={project.name} />
         </div>
@@ -480,68 +516,6 @@ function SummaryBadge({ label, value }: SummaryBadgeProps) {
   return <StatusPill label={label} tone="muted" value={value} />;
 }
 
-type AgentPanelProps = {
-  projectName: string;
-  sessions: AgentSession[];
-  isLoading: boolean;
-  isCreating: boolean;
-  createError: Error | null;
-  closeError: Error | null;
-  onCreate: (provider: AgentProvider) => void;
-};
-
-function AgentPanel({
-  projectName,
-  sessions,
-  isLoading,
-  isCreating,
-  createError,
-  closeError,
-  onCreate,
-}: AgentPanelProps) {
-  const { t } = useT();
-  return (
-    <ShellPanel className="flex flex-col px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5" density="compact">
-      <div className="grid grid-cols-3 gap-2 sm:hidden" aria-label="Create Agent instance mobile">
-        <CreateButton
-          disabled={isCreating}
-          tone="accent"
-          onClick={() => onCreate("claude")}
-          className="py-3 sm:py-1.5 text-sm sm:text-xs"
-        >
-          <ShellIcon name="anthropic" />
-          {t("project.createClaude")}
-        </CreateButton>
-        <CreateButton
-          disabled={isCreating}
-          onClick={() => onCreate("codex")}
-          className="py-3 sm:py-1.5 text-sm sm:text-xs"
-        >
-          <ShellIcon name="openai" />
-          {t("project.createCodex")}
-        </CreateButton>
-        <CreateButton
-          disabled={isCreating}
-          tone="accent"
-          onClick={() => onCreate("claude2")}
-          className="py-3 sm:py-1.5 text-sm sm:text-xs"
-        >
-          <ShellIcon name="anthropic" />
-          {t("project.createClaude2")}
-        </CreateButton>
-      </div>
-      <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
-        <h3 className="text-base font-semibold">{t("project.activeInstances")}</h3>
-        <span className="text-xs text-slate-400">
-          {t("project.agentCount", { count: sessions.length })}
-        </span>
-      </div>
-      <ErrorText error={createError ?? closeError} />
-      <AgentInstanceList projectName={projectName} sessions={sessions} isLoading={isLoading} />
-    </ShellPanel>
-  );
-}
-
 type AgentInstanceListProps = {
   projectName: string;
   sessions: AgentSession[];
@@ -675,12 +649,8 @@ function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps
   const isResuming = resumeSession.isPending;
 
   return (
-    <ShellPanel
-      className={`mt-4 rounded-[1.25rem] ${shellSurfaceClasses.raised}`}
-      density="compact"
-      aria-label="Session history"
-    >
-      <div className="flex min-w-0 items-start justify-between gap-3">
+    <>
+      <div className="mt-6 flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-100">{t("project.historyTitle")}</h3>
           {entries.length > 0 ? (
@@ -689,11 +659,6 @@ function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps
             </p>
           ) : null}
         </div>
-        {entries.length > 0 ? (
-          <span className="text-xs text-slate-400">
-            {t("project.historySubtitle", { count: entries.length })}
-          </span>
-        ) : null}
       </div>
 
       {history.isLoading ? (
@@ -713,7 +678,7 @@ function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps
           </p>
         </div>
       ) : (
-        <div className="mt-3 grid gap-2">
+        <div className="mt-3 divide-y divide-white/5">
           {entries.map((entry) => (
             <AgentHistoryRow
               key={entry.claudeSessionId}
@@ -724,7 +689,7 @@ function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps
           ))}
         </div>
       )}
-    </ShellPanel>
+    </>
   );
 }
 
@@ -745,13 +710,13 @@ function AgentHistoryRow({ entry, isResuming, onClick }: AgentHistoryRowProps) {
 
   return (
     <button
-      className={`block w-full min-w-0 rounded-xl p-3 text-left transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover} ${isResuming ? "pointer-events-none opacity-60" : ""}`}
+      className={`block w-full min-w-0 cursor-pointer px-1 py-3 text-left transition-colors interactive-row ${isResuming ? "pointer-events-none opacity-60" : ""}`}
       onClick={() => onClick(entry)}
       type="button"
     >
       <div className="flex min-w-0 items-start gap-3">
-        <IconMarker size="sm" tone={entry.hasActiveSession ? "success" : "muted"}>
-          H
+        <IconMarker tone={entry.hasActiveSession ? "success" : "accent"}>
+          <ShellIcon name="anthropic" />
         </IconMarker>
         <div className="min-w-0 flex-1">
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
@@ -794,7 +759,7 @@ function SessionInstanceRow({
 }: SessionInstanceRowProps) {
   return (
     <article
-      className={`min-w-0 rounded-[1.25rem] p-3 transition sm:p-4 ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      className={`min-w-0 rounded-[1.25rem] p-3 transition sm:p-4 interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
     >
       <div className="flex min-w-0 items-start gap-3">
         {marker}

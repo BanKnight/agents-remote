@@ -164,6 +164,17 @@ body {
   }
 }
 
+@layer utilities {
+  .interactive-row {
+    &:hover {
+      background-color: rgb(255 255 255 / 0.05);
+    }
+    &:active {
+      background-color: rgb(255 255 255 / 0.08);
+    }
+  }
+}
+
 @media (min-width: 640px) {
   html {
     scrollbar-color: oklch(0.3 0 0) transparent;

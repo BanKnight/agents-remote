@@ -235,7 +235,7 @@ export function ListRow({
           (e.currentTarget as HTMLDivElement).click();
         }
       }}
-      className={`flex h-auto w-full min-w-0 cursor-pointer items-center justify-start rounded-xl px-3 py-2.5 text-left transition ${
+      className={`flex h-auto w-full min-w-0 cursor-pointer items-center justify-start rounded-xl px-3 py-2.5 text-left transition interactive-row ${
         selected
           ? "border border-cyan-300/60 bg-cyan-300/10"
           : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
