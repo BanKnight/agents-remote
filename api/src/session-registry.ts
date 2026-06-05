@@ -462,6 +462,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   status: metadata.status as AgentSessionStatus,
   createdAt: metadata.createdAt,
   model: metadata.model,
+  claudeSessionId: metadata.claudeSessionId,
 });
 
 const terminalSessionFromMetadata = (metadata: SessionMetadata): TerminalSession => ({

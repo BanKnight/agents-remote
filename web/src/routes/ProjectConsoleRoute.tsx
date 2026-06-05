@@ -629,6 +629,7 @@ function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
             )}
           </IconMarker>
         }
+        preview={session.lastAssistantMessage}
         statusTone={sessionStatusTone(session.status)}
         status={t(sessionStatusLabel(session.status))}
         subtitle={relativeTime(session.createdAt, t)}
@@ -776,6 +777,7 @@ function AgentHistoryRow({ entry, isResuming, onClick }: AgentHistoryRowProps) {
 type SessionInstanceRowProps = {
   actions?: ReactNode;
   marker: ReactNode;
+  preview?: string;
   status: ReactNode;
   statusTone: ShellTone;
   subtitle?: ReactNode;
@@ -785,6 +787,7 @@ type SessionInstanceRowProps = {
 function SessionInstanceRow({
   actions,
   marker,
+  preview,
   status,
   statusTone,
   subtitle,
@@ -802,6 +805,11 @@ function SessionInstanceRow({
               <h4 className="truncate font-semibold text-slate-100">{title}</h4>
               {subtitle ? (
                 <p className="mt-1 break-all font-mono text-xs text-slate-500">{subtitle}</p>
+              ) : null}
+              {preview ? (
+                <p className="mt-1 line-clamp-2 border-l-2 border-emerald-400/25 pl-2.5 text-xs leading-5 text-slate-400 italic">
+                  {preview}
+                </p>
               ) : null}
             </div>
             <div className="flex items-center gap-2">

@@ -178,6 +178,8 @@ export type AgentSession = {
   status: AgentSessionStatus;
   createdAt: string;
   model?: string;
+  claudeSessionId?: string;
+  lastAssistantMessage?: string;
 };
 
 export type TerminalSession = {

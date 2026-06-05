@@ -16,7 +16,7 @@ import type {
   TerminalSessionDetailResponse,
 } from "@agents-remote/shared";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { listAgentHistory } from "./agent-history";
+import { listAgentHistory, getLastAssistantMessage } from "./agent-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
@@ -76,9 +76,16 @@ const handleAgentSessionRoute = async (
   sessionId: string | undefined,
 ) => {
   if (!sessionId && request.method === "GET") {
-    const response: ListAgentSessionsResponse = {
-      sessions: await registry.listAgentSessions(project.name),
-    };
+    const sessions = await registry.listAgentSessions(project.name);
+    await Promise.all(
+      sessions.map(async (s) => {
+        if (s.claudeSessionId) {
+          s.lastAssistantMessage =
+            (await getLastAssistantMessage(project.path, s.claudeSessionId)) ?? undefined;
+        }
+      }),
+    );
+    const response: ListAgentSessionsResponse = { sessions };
     return Response.json(response);
   }
 

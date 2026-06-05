@@ -2,9 +2,11 @@ import { open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readdir, stat } from "node:fs/promises";
+import { open, read, close } from "node:fs";
 import type { AgentHistoryEntry } from "@agents-remote/shared";
 
 const MAX_SCAN_LINES = 200;
+const LAST_MESSAGE_TAIL_BYTES = 64 * 1024;
 
 export async function listAgentHistory(
   projectPath: string,
@@ -61,7 +63,7 @@ async function extractEntry(
               startedAt = msg.timestamp;
             }
             if (!firstMessage) {
-              firstMessage = extractUserText(msg.message as Record<string, unknown>);
+              firstMessage = extractMessageText(msg.message as Record<string, unknown>);
             }
           }
         } catch {
@@ -102,7 +104,7 @@ async function extractEntry(
   };
 }
 
-function extractUserText(message: Record<string, unknown>): string | null {
+function extractMessageText(message: Record<string, unknown>): string | null {
   const content = message.content;
   if (!Array.isArray(content)) return null;
   for (const block of content) {
@@ -116,6 +118,58 @@ function extractUserText(message: Record<string, unknown>): string | null {
     }
   }
   return null;
+}
+
+export async function getLastAssistantMessage(
+  projectPath: string,
+  claudeSessionId: string,
+): Promise<string | null> {
+  const slug = projectToSlug(projectPath);
+  const filePath = join(homedir(), ".claude", "projects", slug, `${claudeSessionId}.jsonl`);
+
+  let fd: number | undefined;
+  try {
+    fd = await new Promise<number>((resolve, reject) =>
+      open(filePath, "r", (err, opened) => (err ? reject(err) : resolve(opened))),
+    );
+
+    const { size } = await stat(filePath);
+    if (size === 0) return null;
+
+    const readStart = Math.max(0, size - LAST_MESSAGE_TAIL_BYTES);
+    const buf = Buffer.alloc(size - readStart);
+
+    await new Promise<number>((resolve, reject) =>
+      read(fd!, buf, 0, buf.length, readStart, (err, bytesRead) =>
+        err ? reject(err) : resolve(bytesRead),
+      ),
+    );
+
+    const chunk = buf.toString("utf-8");
+    const lines = chunk.split("\n");
+    let lastText: string | null = null;
+
+    for (const line of lines) {
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line) as Record<string, unknown>;
+        if (msg.type === "assistant" && msg.message && typeof msg.message === "object") {
+          const text = extractMessageText(msg.message as Record<string, unknown>);
+          if (text) lastText = text;
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+
+    return lastText;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      close(fd, () => {});
+    }
+  }
 }
 
 export const projectToSlug = (projectPath: string): string => projectPath.replace(/\//g, "-");
