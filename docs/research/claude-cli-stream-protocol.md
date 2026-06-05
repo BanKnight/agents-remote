@@ -123,7 +123,7 @@ API 返回 502/overloaded 时 CLI 自动重试。
 }
 ```
 
-在 composer 上方显示琥珀色横幅指示重试状态。新的 `system.init` 或 `assistant` 消息到达后自动清除。
+**UI 渲染**：以 `role: "system"` 的 **inline 错误消息**渲染在消息流中（与 compact_boundary 同级），显示错误原因和重试次数（如「API 请求失败2/3：Overloaded，2s 后重试」）。不是固定横幅——它出现在消息流中 API 请求失败的当时位置。
 
 #### `system` / `turn_duration` — 轮次耗时统计
 
@@ -151,7 +151,7 @@ API 返回 502/overloaded 时 CLI 自动重试。
 }
 ```
 
-用于显示推理进度指示器。
+**UI 渲染**：**不渲染**。`thinking_tokens` 是终端 TUI 渲染过程中产生的 per-token 增量计数（`estimated_tokens_delta`），对 Web UI 无意义。在 relay buffer 入口（`isChatMessage`）和客户端消息流（`loadMessagesFromRaw`）两层过滤掉。真正的 thinking 内容在 assistant 消息的 `content` 数组中以 `type: "thinking"` 块传递。
 
 #### `assistant` — AI 回复
 
@@ -208,7 +208,9 @@ CLI 将用户输入（包括工具结果）回显到 stdout。
 - **数组**：正常的用户输入或工具结果，包含 `type: "text"` 和 `type: "tool_result"` 两种 block
 - **字符串**：CLI 内部命令输出，如 `<local-command-stdout>Compacted</local-command-stdout>`。这类消息在 JSONL 中存储，`isMeta: false`
 
-**文本用户消息去重**：WebSocket 实时流中会收到用户消息回显（纯文本，不含 tool_result）。由于我们已经在前端本地添加了用户消息气泡，必须跳过纯文本用户回显以避免重复。但工具结果（含 tool_result block）需要传递给前端用于渲染工具卡片。
+**回显机制**：CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显到 stdout。用户消息通过**服务端 relay 注入**回到客户端：`Claude2Runtime.write()` 写完 stdin FIFO 后调用 `relay.injectLine()` 直接将用户消息广播给所有 WebSocket subscriber 并持久化到 buffer（用于重连回放）。
+
+**客户端去重**：前端 `onNew` 做乐观更新（直接 `setRawMessages` 添加用户消息），WebSocket handler 收到 relay 注入的同一消息时通过比较 `last.message` 去重。工具结果（`tool_result` block）不经过乐观更新，由 relay 注入直接传递。
 
 #### `result` — 轮次结束
 
@@ -411,6 +413,34 @@ CLI 启动 (--resume)
   → CLI 重放: system.init (原 model, 新 permissionMode) → compact_boundary → 历史 → result
   → 流式恢复
 ```
+
+## 消息渲染语义
+
+以下表格定义每种消息类型在 UI 中的渲染行为，作为后续开发的权威参考。
+
+### CLI → 客户端消息
+
+| type | subtype | 渲染位置 | 说明 |
+|------|---------|---------|------|
+| `system` | `init` | **不渲染** | 仅用于客户端状态同步（model、permissionMode） |
+| `system` | `status` | **不渲染** | compact 生命周期管理，由 CompactIndicator 组件处理 |
+| `system` | `compact_boundary` / `microcompact_boundary` | **inline 消息** | 以 `role: "system"` 渲染为压缩分割线 |
+| `system` | `api_retry` | **inline 消息** | 以 `role: "system"` + `systemMessageType: "error"` 渲染，显示错误原因和重试次数 |
+| `system` | `thinking_tokens` | **不渲染** | 两层过滤（isChatMessage + loadMessagesFromRaw），终端 TUI 产物 |
+| `system` | `turn_duration` | **不渲染** | 仅调试日志 |
+| `assistant` | — | **inline 气泡** | 渲染为 AI 对话气泡，含 text/thinking/tool_use 三种内容块 |
+| `user` | — | **inline 气泡** | 渲染为用户对话气泡（仅文本块）。`tool_result` 块匹配到对应 tool-call |
+| `result` | `success` / `interrupted` | **不渲染** | 仅用于 `isRunning` 状态切换和轮次分界 |
+| `result` | `error` (`is_error: true`) | **inline 消息** | 以 `role: "system"` + `systemMessageType: "error"` 渲染 |
+| `control_request` | — | **不渲染** | 仅用于 AskUserQuestion 工具交互 |
+
+### 关键设计决策
+
+1. **inline 消息 vs 固定横幅**：只有临时状态才可能需要横幅（如 compact 进度条）。重试、错误等事件性消息一律走 inline 消息流——出现在事件发生的时间点，不抢占固定空间。
+
+2. **不渲染的消息**：`system.init`、`thinking_tokens`、`turn_duration`、`result`（success）等不在消息流中出现。它们通过不同的 React state 通道传递（如 `resolvedModel`、`isRunning`）。
+
+3. **用户消息去重**：前端乐观更新（`onNew` → `setRawMessages`）+ 服务端 relay 注入（`write` → `injectLine`）→ 客户端 JSON 比较去重。
 
 ## 我们的集成方式
 
