@@ -1,4 +1,5 @@
 import { readFile, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { claudeJsonlPath, isChatMessage } from "./session-routes";
 import { getTurnDir, isCompletedTurn, listTurnFiles, readFileLines, tailFile } from "./turn-files";
 import type { TmuxSharedPipe } from "./pipe-pane";
@@ -81,6 +82,47 @@ export class Claude2SessionRelay {
     this.subscribers.clear();
   }
 
+  private startTailingTurns(turnDir: string, startIndex: number): void {
+    const filePath = (i: number) => join(turnDir, `turn_${String(i).padStart(3, "0")}.jsonl`);
+    let index = startIndex;
+
+    const onResult = () => {
+      if (this.phase === "destroyed") return;
+      index++;
+      this.tailStop = tailFile(
+        filePath(index),
+        (line) => {
+          if (this.phase === "destroyed") return;
+          this.broadcast(line);
+          this.pushBuffer(line);
+        },
+        (line) => {
+          if (this.phase === "destroyed") return;
+          this.broadcast(line);
+          this.pushBuffer(line);
+          void unlink(filePath(index)).catch(() => {});
+          onResult();
+        },
+      ).stop;
+    };
+
+    this.tailStop = tailFile(
+      filePath(index),
+      (line) => {
+        if (this.phase === "destroyed") return;
+        this.broadcast(line);
+        this.pushBuffer(line);
+      },
+      (line) => {
+        if (this.phase === "destroyed") return;
+        this.broadcast(line);
+        this.pushBuffer(line);
+        void unlink(filePath(index)).catch(() => {});
+        onResult();
+      },
+    ).stop;
+  }
+
   get isDestroyed(): boolean {
     return this.phase === "destroyed";
   }
@@ -121,9 +163,11 @@ export class Claude2SessionRelay {
         }
       }
 
-      // 2. Process turn files
+      // 2. Process turn files — replay completed ones not in JSONL,
+      //    and set up a chained tail for in-progress and future turns.
       const turnDir = getTurnDir(runDir, sessionName);
       const turnFiles = await listTurnFiles(turnDir);
+      let nextTurnIndex = 0;
 
       for (const file of turnFiles) {
         if (this.phase === "destroyed") return;
@@ -131,35 +175,12 @@ export class Claude2SessionRelay {
         const completed = await isCompletedTurn(file);
         const lines = await readFileLines(file);
 
-        // Empty in-progress turn — set up tail in case stdout-helper
-        // writes data later (the file may be brand new and empty).
-        if (lines.length === 0) {
-          if (!completed) {
-            this.tailStop = tailFile(
-              file,
-              (line) => {
-                if (this.phase === "destroyed") return;
-                this.broadcast(line);
-                this.pushBuffer(line);
-              },
-              (line) => {
-                if (this.phase === "destroyed") return;
-                this.broadcast(line);
-                this.pushBuffer(line);
-                void unlink(file).catch(() => {});
-              },
-            ).stop;
-          } else {
-            void unlink(file).catch(() => {});
-          }
-          continue;
-        }
-
         if (completed) {
           const turnNumTurns = extractNumTurns(lines);
 
           if (lastNumTurns !== null && turnNumTurns !== null && turnNumTurns <= lastNumTurns) {
             void unlink(file).catch(() => {});
+            nextTurnIndex = Math.max(nextTurnIndex, indexFromTurnFile(file) + 1);
             continue;
           }
 
@@ -168,30 +189,24 @@ export class Claude2SessionRelay {
             this.pushBuffer(line);
           }
           void unlink(file).catch(() => {});
+          nextTurnIndex = Math.max(nextTurnIndex, indexFromTurnFile(file) + 1);
         } else {
+          // In-progress turn — replay existing lines, then chain-tail
           for (const line of lines) {
             this.broadcast(line);
             this.pushBuffer(line);
           }
-
-          this.tailStop = tailFile(
-            file,
-            (line) => {
-              if (this.phase === "destroyed") return;
-              this.broadcast(line);
-              this.pushBuffer(line);
-            },
-            (line) => {
-              if (this.phase === "destroyed") return;
-              this.broadcast(line);
-              this.pushBuffer(line);
-              void unlink(file).catch(() => {});
-            },
-          ).stop;
+          nextTurnIndex = indexFromTurnFile(file);
         }
       }
 
-      // 3. Subscribe pipe-pane for live data
+      // Start tailing from the next expected turn file (chained: on
+      // completion, auto-starts tailing the next index).
+      if (!this.tailStop) {
+        this.startTailingTurns(turnDir, nextTurnIndex);
+      }
+
+      // 3. Subscribe pipe-pane for additional live data
       const pipe = await pipeProvider(sessionName);
       this.pipeSub = pipe.subscribe(
         (data) => this.handlePipeData(data),
@@ -252,6 +267,11 @@ export class Claude2SessionRelay {
     }
   }
 }
+
+const indexFromTurnFile = (filePath: string): number => {
+  const match = filePath.match(/turn_(\d+)\.jsonl$/);
+  return match ? parseInt(match[1]!, 10) : 0;
+};
 
 const extractNumTurns = (lines: string[]): number | null => {
   for (let i = lines.length - 1; i >= 0; i--) {

@@ -283,7 +283,11 @@ export class Claude2Runtime implements RuntimeResources {
     ];
 
     // Build the tmux shell command.
-    // Steps: create dirs → mkfifo → keep fifo open → run claude | stdout-helper
+    //
+    // `exec 3<>` opens the FIFO O_RDWR (non-blocking, unlike O_RDONLY or
+    // O_WRONLY). This keeps the write end alive so `claude < fifo` opens
+    // without blocking and claude never gets EOF. bash never reads from fd 3,
+    // so data written to the FIFO always reaches claude's stdin (fd 0).
     const setup = [
       `mkdir -p ${q(turnDir)} ${q(join(this.runDir, "claude2-fifo"))}`,
       `rm -f ${q(fifoPath)}`,

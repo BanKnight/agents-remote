@@ -250,9 +250,6 @@ export class Claude2StreamController {
       (line: string) => {
         try {
           const parsed = JSON.parse(line) as SessionStreamServerMessage;
-          console.log(
-            `[claude2-stream] send to ws: type=${parsed.type} ${"subtype" in parsed ? `subtype=${parsed.subtype}` : ""}`,
-          );
           // Capture claudeSessionId and model from system.init
           if (
             parsed.type === "system" &&
