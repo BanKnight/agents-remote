@@ -442,10 +442,23 @@ export function useClaude2Session(
         console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
 
+        // ── Session lifecycle ───────────────────────────────────────
+        //
+        // Message order on connect:
+        //   connected → replay_start → [history] → replay_end → [live]
+        //
+        // connected carries the authoritative session status from the
+        // server (registry). JSONL has no result messages (CLI doesn't
+        // write them), so buffer content alone cannot tell us whether
+        // the session is idle — the last message is always assistant
+        // after an API restart when turn files are gone.
+        if (msg.type === "connected") {
+          const status = (msg as { status: string }).status;
+          setIsRunning(status === "running");
+          return;
+        }
+
         // ── Replay batching ──────────────────────────────────────────
-        // Buffer replay is wrapped in replay_start / replay_end markers.
-        // During replay, batch all messages and apply atomically to avoid
-        // per-message render jitter and spurious isRunning toggling.
         if (msg.type === "replay_start") {
           replayBatchRef.current = [];
           return;
@@ -455,17 +468,6 @@ export function useClaude2Session(
           replayBatchRef.current = null;
           if (batch && batch.length > 0) {
             setRawMessages(batch);
-            // Skip thinking_tokens — they're per-chunk deltas, not meaningful
-            // for determining whether the session is still generating.
-            // Scan backward for the last user/assistant/result message.
-            let lastMeaningful: SessionStreamServerMessage | null = null;
-            for (let i = batch.length - 1; i >= 0; i--) {
-              const m = batch[i]!;
-              if (m.type === "system" && (m as any).subtype === "thinking_tokens") continue;
-              lastMeaningful = m;
-              break;
-            }
-            setIsRunning(lastMeaningful?.type === "assistant" || lastMeaningful?.type === "user");
           }
           setLoading(false);
           return;
