@@ -301,6 +301,7 @@ export function useClaude2Session(
 
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
+  const replayBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const compactActiveRef = useRef(false);
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
@@ -413,6 +414,31 @@ export function useClaude2Session(
         const raw = event.data as string;
         console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
+
+        // ── Replay batching ──────────────────────────────────────────
+        // Buffer replay is wrapped in replay_start / replay_end markers.
+        // During replay, batch all messages and apply atomically to avoid
+        // per-message render jitter and spurious isRunning toggling.
+        if (msg.type === "replay_start") {
+          replayBatchRef.current = [];
+          return;
+        }
+        if (msg.type === "replay_end") {
+          const batch = replayBatchRef.current;
+          replayBatchRef.current = null;
+          if (batch && batch.length > 0) {
+            setRawMessages(batch);
+            // Determine final isRunning from the last message in the batch
+            const last = batch[batch.length - 1]!;
+            setIsRunning(last.type === "assistant");
+          }
+          return;
+        }
+        // During replay, accumulate instead of processing individually
+        if (replayBatchRef.current) {
+          replayBatchRef.current.push(msg);
+          return;
+        }
 
         // ── compact protocol ────────────────────────────────────────
         //

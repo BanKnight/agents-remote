@@ -659,6 +659,8 @@ export const startApi = async () => {
         }
       },
       message(ws, message) {
+        const raw = message.toString().slice(0, 120);
+        console.log(`[ws] message kind=${ws.data?.kind ?? "none"} raw=${raw}`);
         if (ws.data?.kind === "session-stream") {
           void streamController.message(ws, message);
           return;

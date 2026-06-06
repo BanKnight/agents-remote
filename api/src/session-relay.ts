@@ -48,12 +48,26 @@ export class Claude2SessionRelay {
       return { close: () => {} };
     }
 
+    const lastLine =
+      this.buffer.length > 0 ? this.buffer[this.buffer.length - 1]!.slice(0, 80) : "(empty)";
+    console.log(
+      `[relay] addSubscriber: phase=${this.phase} buffer=${this.buffer.length} last=${lastLine}`,
+    );
+
+    // Wrap buffer replay in markers so the client can batch-apply
+    // history without per-message render jitter.
+    if (this.buffer.length > 0) {
+      onData(JSON.stringify({ type: "replay_start" }));
+    }
     for (const line of this.buffer) {
       try {
         onData(line);
       } catch {
         // subscriber error shouldn't block replay
       }
+    }
+    if (this.buffer.length > 0) {
+      onData(JSON.stringify({ type: "replay_end" }));
     }
 
     const sub: Subscriber = { onData, onError };
@@ -143,13 +157,13 @@ export class Claude2SessionRelay {
     sessionName: string,
   ): Promise<void> {
     try {
-      // 1. Load JSONL → find lastNumTurns
-      let lastNumTurns: number | null = null;
+      // 1. Load JSONL
       if (claudeSessionId) {
         this.activatedWithClaudeSessionId = true;
         try {
           const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
           const raw = await readFile(jsonlPath, "utf8");
+          let loaded = 0;
           for (const line of raw.split("\n")) {
             const trimmed = line.trim();
             if (!trimmed) continue;
@@ -157,17 +171,18 @@ export class Claude2SessionRelay {
               const msg = JSON.parse(trimmed) as Record<string, unknown>;
               if (isChatMessage(msg)) {
                 this.pushBuffer(trimmed);
-                if (msg.type === "result" && typeof msg.num_turns === "number") {
-                  lastNumTurns = msg.num_turns;
-                }
+                loaded++;
               }
             } catch {
               // skip unparseable
             }
           }
+          console.log(`[relay] JSONL loaded: ${loaded} messages`);
         } catch {
-          // JSONL doesn't exist (new session)
+          console.log(`[relay] JSONL not found for ${claudeSessionId}`);
         }
+      } else {
+        console.log(`[relay] no claudeSessionId — skipping JSONL`);
       }
 
       // 2. Process turn files — replay completed ones not in JSONL,
@@ -175,23 +190,28 @@ export class Claude2SessionRelay {
       const turnDir = getTurnDir(runDir, sessionName);
       const turnFiles = await listTurnFiles(turnDir);
       let nextTurnIndex = 0;
+      const jsonlLoaded = claudeSessionId != null;
 
       for (const file of turnFiles) {
         if (this.phase === "destroyed") return;
 
         const completed = await isCompletedTurn(file);
         const lines = await readFileLines(file);
+        const filtered = lines.filter((l) => {
+          try {
+            return isChatMessage(JSON.parse(l) as Record<string, unknown>);
+          } catch {
+            return false;
+          }
+        });
 
         if (completed) {
-          const turnNumTurns = extractNumTurns(lines);
-
-          if (lastNumTurns !== null && turnNumTurns !== null && turnNumTurns <= lastNumTurns) {
-            void unlink(file).catch(() => {});
-            nextTurnIndex = Math.max(nextTurnIndex, indexFromTurnFile(file) + 1);
-            continue;
-          }
-
-          for (const line of lines) {
+          // When JSONL was loaded, it already contains user+assistant messages
+          // for completed turns. Only keep result messages from turn files.
+          const keep = jsonlLoaded
+            ? filtered.filter((l) => l.includes('"type":"result"'))
+            : filtered;
+          for (const line of keep) {
             this.broadcast(line);
             this.pushBuffer(line);
           }
@@ -199,7 +219,7 @@ export class Claude2SessionRelay {
           nextTurnIndex = Math.max(nextTurnIndex, indexFromTurnFile(file) + 1);
         } else {
           // In-progress turn — replay existing lines, then chain-tail
-          for (const line of lines) {
+          for (const line of filtered) {
             this.broadcast(line);
             this.pushBuffer(line);
           }
@@ -221,6 +241,9 @@ export class Claude2SessionRelay {
       );
 
       this.phase = "active";
+      console.log(
+        `[relay] activate done: buffer=${this.buffer.length} lines, nextTurn=${nextTurnIndex}`,
+      );
     } catch (err) {
       // Clean up partial state on any activation failure
       this.tailStop?.();
@@ -275,18 +298,4 @@ export class Claude2SessionRelay {
 const indexFromTurnFile = (filePath: string): number => {
   const match = filePath.match(/turn_(\d+)\.jsonl$/);
   return match ? parseInt(match[1]!, 10) : 0;
-};
-
-const extractNumTurns = (lines: string[]): number | null => {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const msg = JSON.parse(lines[i]!) as Record<string, unknown>;
-      if (msg.type === "result" && typeof msg.num_turns === "number") {
-        return msg.num_turns;
-      }
-    } catch {
-      // continue
-    }
-  }
-  return null;
 };

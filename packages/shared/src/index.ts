@@ -505,6 +505,12 @@ export type SessionStreamServerMessage =
       model: string;
       success: boolean;
       error?: string;
+    }
+  | {
+      type: "replay_start";
+    }
+  | {
+      type: "replay_end";
     };
 
 export type HealthResponse = {
