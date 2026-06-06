@@ -1004,8 +1004,10 @@ function CompactIndicator() {
 }
 
 function ReasoningDisplay() {
-  const { text } = useMessagePartReasoning();
+  const { text, status } = useMessagePartReasoning();
   const [expanded, setExpanded] = useState(false);
+  const isRunning = status.type === "running";
+  const isComplete = status.type === "complete";
 
   return (
     <div className="my-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
@@ -1015,7 +1017,13 @@ function ReasoningDisplay() {
         onClick={() => setExpanded(!expanded)}
       >
         <span className="text-amber-400/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
-        <span className="text-[0.7rem] font-medium text-amber-400/90">Thinking</span>
+        {isRunning ? (
+          <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+        ) : null}
+        <span className="text-[0.7rem] font-medium text-amber-400/90">
+          Thinking
+          {isRunning ? "…" : isComplete ? "" : " (interrupted)"}
+        </span>
       </button>
       {expanded ? (
         <div className="border-t border-amber-500/20 px-3 py-2">
