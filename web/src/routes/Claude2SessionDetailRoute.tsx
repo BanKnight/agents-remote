@@ -131,6 +131,9 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     detail.data?.session.permissionMode,
   );
 
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const didInitialScrollRef = useRef(false);
+
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
 
   const compactState: CompactState = useMemo(
@@ -171,6 +174,19 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   };
 
   const runtime = useExternalStoreRuntime(storeAdapter);
+
+  // Scroll to top after initial history load (replay batch applied).
+  // Without this, assistant-ui auto-scrolls to the bottom on first render
+  // and the user sees the END of history instead of the beginning.
+  const msgCount = storeAdapter.messages?.length ?? 0;
+  useEffect(() => {
+    if (!didInitialScrollRef.current && msgCount > 0) {
+      didInitialScrollRef.current = true;
+      requestAnimationFrame(() => {
+        viewportRef.current?.scrollTo({ top: 0 });
+      });
+    }
+  }, [msgCount]);
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
@@ -249,7 +265,10 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
               ) : null}
 
               <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 scroll-smooth">
+                <ThreadPrimitive.Viewport
+                  ref={viewportRef}
+                  className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 scroll-smooth"
+                >
                   <ThreadViewportContent hasOlder={hasOlder} loadOlder={loadOlder} />
                 </ThreadPrimitive.Viewport>
                 <div className="relative h-0 w-full pointer-events-none">

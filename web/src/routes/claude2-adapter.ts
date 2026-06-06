@@ -305,7 +305,7 @@ export function useClaude2Session(
 ) {
   const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [isLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
@@ -455,10 +455,10 @@ export function useClaude2Session(
           replayBatchRef.current = null;
           if (batch && batch.length > 0) {
             setRawMessages(batch);
-            // Determine final isRunning from the last message in the batch
             const last = batch[batch.length - 1]!;
             setIsRunning(last.type === "assistant");
           }
+          setIsLoading(false);
           return;
         }
         // During replay, accumulate instead of processing individually
@@ -466,6 +466,9 @@ export function useClaude2Session(
           replayBatchRef.current.push(msg);
           return;
         }
+
+        // First message outside of replay — initial load complete
+        setIsLoading(false);
 
         // ── compact protocol ────────────────────────────────────────
         //
@@ -706,10 +709,16 @@ export function useClaude2Session(
     };
 
     socket.onclose = () => {
-      if (!cancelled) setIsRunning(false);
+      if (!cancelled) {
+        setIsRunning(false);
+        setIsLoading(false);
+      }
     };
 
-    socket.onerror = (e) => console.log("[claude2-adapter] ws error", e);
+    socket.onerror = (e) => {
+      console.log("[claude2-adapter] ws error", e);
+      setIsLoading(false);
+    };
 
     return () => {
       cancelled = true;
