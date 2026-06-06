@@ -20,6 +20,7 @@
 - 分页、实时追加、历史回放等能力应只是对单一 state 数组的不同操作（prepend / append / reset），不应产生独立的 UI 分支。
 - 使用 `useExternalStoreRuntime`（assistant-ui）或等价的外部 state 管理时，应让框架只负责渲染，业务层自己掌控 state 生命周期。
 - 聊天记录以 Claude CLI 的 JSONL session 文件为唯一权威来源。不要自行"注入"或"伪造"消息；如果某条消息在 JSONL 中存在但 UI 没有显示，说明是渲染层过滤逻辑的问题。CLI 自身的 `isMeta: true/false` 分类是是否展示的第一手依据，不应以我们对 message type 的猜测替代。
+- **消息处理说明统一用 live/replay 双列表格**：凡是讨论消息类型如何处理、讨论渲染语义、设计数据流时，必须使用「实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI」四列格式。同一消息类型在实时流和回放两条路径上的行为必须明确区分，不得混为一谈。协议文档（`docs/research/claude-cli-stream-protocol.md`）中的 thinking 生命周期表格是标准模板。
 
 ## Claude2 Session 数据流调试指南
 

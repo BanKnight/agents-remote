@@ -39,8 +39,22 @@ const user = (
     },
   }) as unknown as SessionStreamServerMessage;
 
-const result = (subtype: "success" | "interrupted" | "error"): SessionStreamServerMessage =>
-  ({ type: "result", subtype }) as unknown as SessionStreamServerMessage;
+const result = (
+  subtype: "success" | "interrupted" | "error",
+  durationMs?: number,
+): SessionStreamServerMessage =>
+  ({
+    type: "result",
+    subtype,
+    ...(durationMs !== undefined ? { duration_ms: durationMs } : {}),
+  }) as unknown as SessionStreamServerMessage;
+
+const thinkingTokens = (estimatedTokens: number): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "thinking_tokens",
+    estimated_tokens: estimatedTokens,
+  }) as unknown as SessionStreamServerMessage;
 
 const systemInit = (): SessionStreamServerMessage =>
   ({ type: "system", subtype: "init" }) as unknown as SessionStreamServerMessage;
@@ -337,10 +351,59 @@ describe("loadMessagesFromRaw", () => {
       text?: string;
     }>;
     expect(assistantContent.length).toBe(2);
-    expect(assistantContent[0]).toEqual({
+    expect(assistantContent[0]).toMatchObject({
       type: "reasoning",
       text: "Let me reason about this carefully.",
     });
     expect(assistantContent[1]).toEqual({ type: "text", text: "Here is my conclusion." });
+  });
+
+  test("thinking_tokens collapse into reasoning part (last one wins per turn)", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      thinkingTokens(1),
+      thinkingTokens(5),
+      user([{ type: "text", text: "hi" }]),
+      thinkingTokens(10),
+      assistant("msg-1", [
+        { type: "thinking", thinking: "Reasoning...", signature: "sig" },
+        { type: "text", text: "Answer." },
+      ]),
+      thinkingTokens(25),
+      thinkingTokens(39),
+      result("success", 3500),
+    ];
+    const result_msgs = loadMessagesFromRaw(msgs);
+    const assistantContent = result_msgs[1].content as Array<{
+      type: string;
+      text?: string;
+      estimatedTokens?: { value: number };
+      durationMs?: { value: number | null };
+    }>;
+    expect(assistantContent.length).toBe(2);
+    expect(assistantContent[0].type).toBe("reasoning");
+    expect(assistantContent[0].estimatedTokens?.value).toBe(39);
+    expect(assistantContent[0].durationMs?.value).toBe(3500);
+  });
+
+  test("reasoning parts in the same turn share the same token ref", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      thinkingTokens(5),
+      assistant("msg-1", [
+        { type: "thinking", thinking: "Step 1", signature: "sig1" },
+        { type: "text", text: "Intermediate." },
+      ]),
+      assistant("msg-2", [
+        { type: "thinking", thinking: "Step 2", signature: "sig2" },
+        { type: "text", text: "Final." },
+      ]),
+      thinkingTokens(42),
+      result("success"),
+    ];
+    const result_msgs = loadMessagesFromRaw(msgs);
+    const content1 = result_msgs[0].content as Array<{ estimatedTokens?: { value: number } }>;
+    // Both reasoning parts should share the same token ref and see the final value
+    expect(content1[0].estimatedTokens?.value).toBe(42);
+    const content2 = result_msgs[1].content as Array<{ estimatedTokens?: { value: number } }>;
+    expect(content2[0].estimatedTokens?.value).toBe(42);
   });
 });

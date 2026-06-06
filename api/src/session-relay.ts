@@ -1,6 +1,11 @@
 import { readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { claudeJsonlPath, isChatMessage } from "./session-routes";
+import {
+  claudeJsonlPath,
+  isChatMessage,
+  isStreamingMessage,
+  isThinkingTokens,
+} from "./session-routes";
 import { getTurnDir, isCompletedTurn, listTurnFiles, readFileLines, tailFile } from "./turn-files";
 import type { TmuxSharedPipe } from "./pipe-pane";
 import type { RuntimeStream } from "./session-registry";
@@ -206,10 +211,21 @@ export class Claude2SessionRelay {
         });
 
         if (completed) {
-          // When JSONL was loaded, it already contains user+assistant messages
-          // for completed turns. Only keep result messages from turn files.
+          // When JSONL was loaded, it is the canonical source for
+          // instantaneous events (user, assistant, system.*) and
+          // streaming final state. Turn files for completed turns only
+          // contribute what JSONL does not contain: result messages
+          // (which mark turn completion) and the collapsed final
+          // thinking_tokens (which pushBuffer will handle).
           const keep = jsonlLoaded
-            ? filtered.filter((l) => l.includes('"type":"result"'))
+            ? filtered.filter((l) => {
+                try {
+                  const m = JSON.parse(l) as Record<string, unknown>;
+                  return m.type === "result";
+                } catch {
+                  return false;
+                }
+              })
             : filtered;
           for (const line of keep) {
             this.broadcast(line);
@@ -288,10 +304,33 @@ export class Claude2SessionRelay {
   }
 
   private pushBuffer(line: string): void {
-    // thinking_tokens are per-chunk deltas meaningful only during live
-    // streaming. Filter them from the buffer to prevent flooding on
-    // reconnect replay while keeping them in live broadcast.
-    if (isThinkingTokens(line)) return;
+    let msg: Record<string, unknown>;
+    try {
+      msg = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      return; // unparseable line — discard
+    }
+
+    if (!isChatMessage(msg)) return;
+
+    if (isStreamingMessage(msg)) {
+      // 持续流分支。assistant 直接存储（回放时 batch 渲染为完整气泡）；
+      // thinking_tokens 折叠为最后一条（含最终 estimated_tokens）。
+      if (isThinkingTokens(msg)) {
+        if (
+          this.buffer.length > 0 &&
+          isThinkingTokensString(this.buffer[this.buffer.length - 1]!)
+        ) {
+          this.buffer[this.buffer.length - 1] = line;
+        } else {
+          this.buffer.push(line);
+        }
+        return;
+      }
+      // assistant — fall through to store as-is
+    }
+
+    // 瞬时事件 / assistant：到达即终态，live broadcast 和 replay buffer 处理一致
     this.buffer.push(line);
     if (this.buffer.length > 5000) {
       this.buffer = this.buffer.slice(-5000);
@@ -299,7 +338,7 @@ export class Claude2SessionRelay {
   }
 }
 
-const isThinkingTokens = (line: string): boolean => {
+const isThinkingTokensString = (line: string): boolean => {
   return line.includes('"type":"system"') && line.includes('"subtype":"thinking_tokens"');
 };
 

@@ -454,7 +454,7 @@ function AssistantChatBubble() {
                   const CustomUI = getToolRenderer(part.toolName);
                   return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
                 }
-                if (part.type === "reasoning") return <ReasoningDisplay />;
+                if (part.type === "reasoning") return <ReasoningDisplay part={part} />;
                 return null;
               }}
             </MessagePrimitive.Parts>
@@ -1003,11 +1003,33 @@ function CompactIndicator() {
   );
 }
 
-function ReasoningDisplay() {
+function ReasoningDisplay({
+  part,
+}: {
+  part: {
+    estimatedTokens?: { value: number };
+    durationMs?: { value: number | null };
+    text?: string;
+  };
+}) {
   const { text, status } = useMessagePartReasoning();
   const [expanded, setExpanded] = useState(false);
   const isRunning = status.type === "running";
   const isComplete = status.type === "complete";
+  const isInterrupted = !isRunning && !isComplete;
+
+  const tokenCount = part.estimatedTokens?.value ?? 0;
+  const durationMs = part.durationMs?.value ?? 0;
+
+  const suffix = isRunning
+    ? tokenCount > 0
+      ? `… (${tokenCount} tokens)`
+      : "…"
+    : isComplete
+      ? formatThinkingMeta(tokenCount, durationMs)
+      : isInterrupted
+        ? " (interrupted)"
+        : "";
 
   return (
     <div className="my-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
@@ -1020,10 +1042,7 @@ function ReasoningDisplay() {
         {isRunning ? (
           <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
         ) : null}
-        <span className="text-[0.7rem] font-medium text-amber-400/90">
-          Thinking
-          {isRunning ? "…" : isComplete ? "" : " (interrupted)"}
-        </span>
+        <span className="text-[0.7rem] font-medium text-amber-400/90">Thinking{suffix}</span>
       </button>
       {expanded ? (
         <div className="border-t border-amber-500/20 px-3 py-2">
@@ -1032,4 +1051,14 @@ function ReasoningDisplay() {
       ) : null}
     </div>
   );
+}
+
+function formatThinkingMeta(tokens: number, durationMs: number): string {
+  const parts: string[] = [];
+  if (tokens > 0) parts.push(`${tokens} tokens`);
+  if (durationMs > 0) {
+    const sec = (durationMs / 1000).toFixed(1);
+    parts.push(`${sec}s`);
+  }
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }

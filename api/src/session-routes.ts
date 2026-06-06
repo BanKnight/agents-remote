@@ -342,6 +342,41 @@ export const isChatMessage = (msg: Record<string, unknown>): boolean => {
   return type === "user" || type === "assistant" || type === "result" || type === "system";
 };
 
+// ── Message classification framework ──────────────────────────────────
+//
+// Messages fall into two categories:
+//
+//   1. 瞬时事件 (instant events) — arrive at final state. Live broadcast
+//      and replay buffer are processed IDENTICALLY. Examples: user, result,
+//      system.init, system.compact_boundary, system.api_retry.
+//
+//   2. 持续流 (streaming messages) — have an in-progress → complete
+//      lifecycle. Live broadcast streams deltas; replay must collapse to
+//      final state. Only two: assistant and thinking_tokens.
+//
+// Every new message type must be classified into one of these two
+// categories. If you add a type without classifying it, you're adding
+// an implicit "hope it works" path.
+
+/** 瞬时事件：到达即终态。live broadcast 和 replay buffer 处理一致。 */
+export const isInstantEvent = (msg: Record<string, unknown>): boolean => {
+  if (!isChatMessage(msg)) return false;
+  if (msg.type === "assistant") return false;
+  if (msg.type === "system" && (msg.subtype as string) === "thinking_tokens") return false;
+  return true;
+};
+
+/** 持续流：有进行中→完成生命周期。live 逐条推送，replay 折叠为最终态。 */
+export const isStreamingMessage = (msg: Record<string, unknown>): boolean => {
+  if (!isChatMessage(msg)) return false;
+  if (msg.type === "assistant") return true;
+  if (msg.type === "system" && (msg.subtype as string) === "thinking_tokens") return true;
+  return false;
+};
+
+export const isThinkingTokens = (msg: Record<string, unknown>): boolean =>
+  msg.type === "system" && (msg.subtype as string) === "thinking_tokens";
+
 // Count only visible messages (user/assistant) toward the pagination limit.
 // result and system.init are included in the output for grouping fidelity
 // but do not consume a slot in the limit.

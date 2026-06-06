@@ -49,6 +49,14 @@ export function loadMessagesFromRaw(
   let currentParts: any[] = [];
   let lastAssistantMsgId: string | null = null;
 
+  // Shared mutable wrapper so reasoning parts created in the same turn all
+  // reference the latest estimated_tokens. During live streaming
+  // loadMessagesFromRaw re-runs on every rawMessages update, so the
+  // reference stays current. During replay the collapsed thinking_tokens
+  // (kept by pushBuffer) provides the final count.
+  let turnTokens: { value: number } = { value: 0 };
+  let turnDuration: { value: number | null } = { value: null };
+
   const flushAssistant = () => {
     if (currentParts.length > 0) {
       messages.push({ role: "assistant", content: currentParts });
@@ -60,7 +68,10 @@ export function loadMessagesFromRaw(
     const msg = rawMessages[i];
 
     if (msg.type === "system") {
-      if (msg.subtype === "thinking_tokens") continue;
+      if (msg.subtype === "thinking_tokens") {
+        turnTokens.value = (msg as { estimated_tokens: number }).estimated_tokens;
+        continue;
+      }
       if (msg.subtype === "api_retry") {
         const r = msg as {
           attempt: number;
@@ -229,7 +240,15 @@ export function loadMessagesFromRaw(
           currentParts = [...currentParts, { type: "text" as const, text: block.text }];
         }
         if (block.type === "thinking") {
-          currentParts = [...currentParts, { type: "reasoning" as const, text: block.thinking }];
+          currentParts = [
+            ...currentParts,
+            {
+              type: "reasoning" as const,
+              text: block.thinking,
+              estimatedTokens: turnTokens,
+              durationMs: turnDuration,
+            },
+          ];
         }
         if (block.type === "tool_use") {
           currentParts = [
@@ -248,6 +267,11 @@ export function loadMessagesFromRaw(
     }
 
     if (msg.type === "result") {
+      // Capture turn duration for reasoning display (shared mutable ref so
+      // reasoning parts created before the result still see the final value).
+      if ("duration_ms" in msg && typeof msg.duration_ms === "number") {
+        turnDuration.value = msg.duration_ms;
+      }
       // If the API returned an error (e.g. 422 model not found), surface it
       // as an inline error divider so the user sees what went wrong.
       if ("is_error" in msg && msg.is_error && typeof msg.result === "string") {
@@ -262,6 +286,9 @@ export function loadMessagesFromRaw(
         flushAssistant();
         lastAssistantMsgId = null;
       }
+      // Reset per-turn tracking
+      turnTokens = { value: 0 };
+      turnDuration = { value: null };
       continue;
     }
   }
