@@ -124,6 +124,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     resolvedModel,
     modelSwitchVersion,
     permissionMode,
+    loading,
   } = useClaude2Session(
     projectName,
     sessionId,
@@ -269,7 +270,11 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   ref={viewportRef}
                   className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 scroll-smooth"
                 >
-                  <ThreadViewportContent hasOlder={hasOlder} loadOlder={loadOlder} />
+                  <ThreadViewportContent
+                    hasOlder={hasOlder}
+                    loadOlder={loadOlder}
+                    loading={loading}
+                  />
                 </ThreadPrimitive.Viewport>
                 <div className="relative h-0 w-full pointer-events-none">
                   <ThreadPrimitive.ScrollToBottom
@@ -555,15 +560,15 @@ function CompactDivider() {
 function ThreadViewportContent({
   hasOlder,
   loadOlder,
+  loading,
 }: {
   hasOlder: boolean;
   loadOlder: () => Promise<void>;
+  loading: boolean;
 }) {
-  const isLoading = useThread((s) => s.isLoading);
-
   return (
     <>
-      {isLoading ? <ChatSkeleton /> : <LoadOlderButton hasOlder={hasOlder} loadOlder={loadOlder} />}
+      {loading ? <ChatSkeleton /> : <LoadOlderButton hasOlder={hasOlder} loadOlder={loadOlder} />}
       <ThreadPrimitive.Messages
         components={{
           UserMessage: UserChatBubble,

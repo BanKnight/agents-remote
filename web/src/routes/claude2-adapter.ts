@@ -305,7 +305,7 @@ export function useClaude2Session(
 ) {
   const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
@@ -455,10 +455,19 @@ export function useClaude2Session(
           replayBatchRef.current = null;
           if (batch && batch.length > 0) {
             setRawMessages(batch);
-            const last = batch[batch.length - 1]!;
-            setIsRunning(last.type === "assistant");
+            // Skip thinking_tokens — they're per-chunk deltas, not meaningful
+            // for determining whether the session is still generating.
+            // Scan backward for the last user/assistant/result message.
+            let lastMeaningful: SessionStreamServerMessage | null = null;
+            for (let i = batch.length - 1; i >= 0; i--) {
+              const m = batch[i]!;
+              if (m.type === "system" && (m as any).subtype === "thinking_tokens") continue;
+              lastMeaningful = m;
+              break;
+            }
+            setIsRunning(lastMeaningful?.type === "assistant" || lastMeaningful?.type === "user");
           }
-          setIsLoading(false);
+          setLoading(false);
           return;
         }
         // During replay, accumulate instead of processing individually
@@ -468,7 +477,7 @@ export function useClaude2Session(
         }
 
         // First message outside of replay — initial load complete
-        setIsLoading(false);
+        setLoading(false);
 
         // ── compact protocol ────────────────────────────────────────
         //
@@ -711,13 +720,13 @@ export function useClaude2Session(
     socket.onclose = () => {
       if (!cancelled) {
         setIsRunning(false);
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
     socket.onerror = (e) => {
       console.log("[claude2-adapter] ws error", e);
-      setIsLoading(false);
+      setLoading(false);
     };
 
     return () => {
@@ -786,12 +795,11 @@ export function useClaude2Session(
     () => ({
       messages: threadLikeMessages,
       isRunning,
-      isLoading,
       convertMessage: (m: ThreadMessageLike) => m,
       onNew,
       onCancel,
     }),
-    [threadLikeMessages, isRunning, isLoading, onNew, onCancel],
+    [threadLikeMessages, isRunning, onNew, onCancel],
   );
 
   return {
@@ -803,5 +811,6 @@ export function useClaude2Session(
     resolvedModel,
     modelSwitchVersion,
     permissionMode,
+    loading,
   };
 }
