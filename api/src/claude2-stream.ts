@@ -262,6 +262,11 @@ export class Claude2StreamController {
               console.log(
                 `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
               );
+              this.claude2Runtime.setClaudeSessionId(
+                data.tmuxSessionName,
+                init.session_id,
+                init.model,
+              );
               void this.sessionRegistry.setClaudeSessionId(
                 data.sessionId,
                 init.session_id,

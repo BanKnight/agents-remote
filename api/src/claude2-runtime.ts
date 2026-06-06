@@ -6,6 +6,7 @@ import {
   ensureTurnDir,
   getStdinFifo,
   getTurnDir,
+  listTurnFiles,
   readFileLines,
   removeTurnDir,
 } from "./turn-files";
@@ -50,6 +51,14 @@ export class Claude2Runtime implements RuntimeResources {
     const state = this.sessions.get(sessionName);
     if (!state) return null;
     return { model: state.model, permissionMode: state.permissionMode };
+  }
+
+  setClaudeSessionId(sessionName: string, claudeSessionId: string, model?: string): void {
+    const state = this.sessions.get(sessionName);
+    if (state) {
+      if (!state.claudeSessionId) state.claudeSessionId = claudeSessionId;
+      if (model && !state.model) state.model = model;
+    }
   }
 
   async exists(sessionName: string): Promise<boolean> {
@@ -117,7 +126,14 @@ export class Claude2Runtime implements RuntimeResources {
     model?: string,
     permissionMode?: string,
   ): Promise<void> {
-    if (this.sessions.has(sessionName)) return;
+    const existing = this.sessions.get(sessionName);
+    if (existing) {
+      // Update state with newly available metadata
+      if (!existing.claudeSessionId && claudeSessionId) existing.claudeSessionId = claudeSessionId;
+      if (!existing.model && model) existing.model = model;
+      if (!existing.permissionMode && permissionMode) existing.permissionMode = permissionMode;
+      return;
+    }
 
     const exists = await runTmux(["has-session", "-t", `=${sessionName}`]);
     if (exists.exitCode === 0) {
@@ -236,11 +252,21 @@ export class Claude2Runtime implements RuntimeResources {
     if (!state) throw new Error(`Session "${sessionName}" not registered`);
 
     let relay = this.relays.get(sessionName);
+    // If the relay was created before we knew the claudeSessionId, and we
+    // now have it, recreate the relay so JSONL history is loaded.
+    if (relay && !relay.activatedWithClaudeSessionId && state.claudeSessionId) {
+      console.log(
+        `[relay] recreating relay for ${sessionName}: now have claudeSessionId=${state.claudeSessionId}`,
+      );
+      relay.destroy();
+      this.relays.delete(sessionName);
+      relay = undefined;
+    }
     if (!relay) {
       relay = new Claude2SessionRelay();
       this.relays.set(sessionName, relay);
 
-      relay
+      await relay
         .activate(
           this.runDir,
           state.projectPath,
@@ -339,42 +365,46 @@ export class Claude2Runtime implements RuntimeResources {
   }
 
   /**
-   * Poll turn_000.jsonl for the system.init message.
+   * Poll turn files for the system.init message.
    * For new sessions, system.init only arrives after the first user message,
    * so the polling is best-effort with a timeout.
+   * For resumed sessions, the turn file index may be > 0.
    */
   private detectSystemInit(sessionName: string, sessionId: string) {
     const turnDir = getTurnDir(this.runDir, sessionName);
     void (async () => {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        await sleep(300 + attempt * 150);
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await sleep(500 + attempt * 200);
         try {
-          const lines = await readFileLines(join(turnDir, "turn_000.jsonl"));
-          for (const line of lines) {
-            try {
-              const msg = JSON.parse(line);
-              if (
-                msg.type === "system" &&
-                msg.subtype === "init" &&
-                typeof msg.session_id === "string"
-              ) {
-                const state = this.sessions.get(sessionName);
-                if (state) {
-                  if (!state.claudeSessionId) state.claudeSessionId = msg.session_id;
-                  if (typeof msg.model === "string") state.model = msg.model;
-                  if (typeof msg.permissionMode === "string")
-                    state.permissionMode = msg.permissionMode;
+          const files = await listTurnFiles(turnDir);
+          for (const file of files) {
+            const lines = await readFileLines(file);
+            for (const line of lines) {
+              try {
+                const msg = JSON.parse(line);
+                if (
+                  msg.type === "system" &&
+                  msg.subtype === "init" &&
+                  typeof msg.session_id === "string"
+                ) {
+                  const state = this.sessions.get(sessionName);
+                  if (state) {
+                    if (!state.claudeSessionId) state.claudeSessionId = msg.session_id;
+                    if (typeof msg.model === "string") state.model = msg.model;
+                    if (typeof msg.permissionMode === "string")
+                      state.permissionMode = msg.permissionMode;
+                  }
+                  this.onSystemInit?.(
+                    sessionId,
+                    sessionName,
+                    msg.session_id,
+                    typeof msg.model === "string" ? msg.model : "unknown",
+                  );
+                  return;
                 }
-                this.onSystemInit?.(
-                  sessionId,
-                  sessionName,
-                  msg.session_id,
-                  typeof msg.model === "string" ? msg.model : "unknown",
-                );
-                return;
+              } catch {
+                continue;
               }
-            } catch {
-              continue;
             }
           }
         } catch {

@@ -19,6 +19,7 @@ export class Claude2SessionRelay {
   private activatePromise: Promise<void> | null = null;
   private activationError: Error | null = null;
   private pipeLineBuffer = "";
+  activatedWithClaudeSessionId = false;
 
   async activate(
     runDir: string,
@@ -145,6 +146,7 @@ export class Claude2SessionRelay {
       // 1. Load JSONL → find lastNumTurns
       let lastNumTurns: number | null = null;
       if (claudeSessionId) {
+        this.activatedWithClaudeSessionId = true;
         try {
           const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
           const raw = await readFile(jsonlPath, "utf8");
@@ -154,7 +156,7 @@ export class Claude2SessionRelay {
             try {
               const msg = JSON.parse(trimmed) as Record<string, unknown>;
               if (isChatMessage(msg)) {
-                this.buffer.push(trimmed);
+                this.pushBuffer(trimmed);
                 if (msg.type === "result" && typeof msg.num_turns === "number") {
                   lastNumTurns = msg.num_turns;
                 }
@@ -264,9 +266,6 @@ export class Claude2SessionRelay {
 
   private pushBuffer(line: string): void {
     this.buffer.push(line);
-    // Limit buffer to prevent unbounded memory growth.
-    // Trim from the front so late subscribers see the most recent
-    // window — no gap, just older history dropped.
     if (this.buffer.length > 5000) {
       this.buffer = this.buffer.slice(-5000);
     }

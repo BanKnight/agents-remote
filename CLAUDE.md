@@ -21,6 +21,60 @@
 - 使用 `useExternalStoreRuntime`（assistant-ui）或等价的外部 state 管理时，应让框架只负责渲染，业务层自己掌控 state 生命周期。
 - 聊天记录以 Claude CLI 的 JSONL session 文件为唯一权威来源。不要自行"注入"或"伪造"消息；如果某条消息在 JSONL 中存在但 UI 没有显示，说明是渲染层过滤逻辑的问题。CLI 自身的 `isMeta: true/false` 分类是是否展示的第一手依据，不应以我们对 message type 的猜测替代。
 
+## Claude2 Session 数据流调试指南
+
+Claude2 session 消息经过多层管道，排查问题时**必须逐层沿数据流方向检查**，而不是到处看代码猜原因。
+
+### 下行数据流（CLI → 浏览器）
+
+```
+CLI stdout → stdout-helper → turn_XXX.jsonl → relay tail/buffer → broadcast → WebSocket → 浏览器
+                              └─ pipe-pane ───────────┘（冗余路径）
+```
+
+| 环节 | 文件 | 关键日志 | 检查方法 |
+|------|------|---------|---------|
+| CLI stdout | `claude2-runtime.ts` `spawnClaudeInTmux()` | stderr log 在 `claude2-turn/claude2.stderr.log` | 检查 CLI 是否在运行，是否有错误输出 |
+| stdout → turn file | `stdout-helper.ts` | 无显式日志 | `ls -lt claude2-turn/<session>/` 看是否有新 turn_XXX.jsonl 生成 |
+| turn file → relay | `session-relay.ts` `startTailingTurns()` / `handlePipeData()` | `[relay] broadcast` (如有日志) | 检查 `tailFile` 是否在 poll 对应 index 的文件；检查 pipe-pane 是否活着 |
+| relay → WebSocket | `claude2-stream.ts` `startStream()` callback | `[claude2-stream] captured claudeSessionId=...` | 确认 callback 的 `send(socket, parsed)` 被调用 |
+| WebSocket → 浏览器 | `claude2-adapter.ts` `socket.onmessage` | `[claude2-adapter] ws recv: ...` | 浏览器 Console 看是否有消息到达 |
+
+### 上行数据流（浏览器 → CLI）
+
+```
+浏览器 sendToSocket → WebSocket → controller.message() → runtime.write() → FIFO → CLI stdin
+```
+
+| 环节 | 文件 | 关键日志 | 检查方法 |
+|------|------|---------|---------|
+| 浏览器发送 | `claude2-adapter.ts` `sendToSocket()` | `[claude2-adapter] ws send: ...` | 浏览器 Console |
+| WebSocket → server | `index.ts` `websocket.message` | — | 检查 `ws.data.kind === "claude2-stream"` 路由是否命中 |
+| controller.message() | `claude2-stream.ts` `message()` | `[claude2-stream] message ${type}: ${sessionName}` | **如果没有这条日志，说明消息没到达 message()** |
+| FIFO 写入 | `claude2-runtime.ts` `write()` | 无显式日志 | 检查 FIFO 文件是否存在：`ls -la claude2-fifo/<session>.stdin` |
+| CLI 读取 | CLI 进程 | stderr log | 如果没有响应，检查 CLI 进程是否存活 |
+
+### 历史回放数据流（reconnect）
+
+```
+WebSocket 连接 → stream() → relay.activate() → JSONL 加载 → buffer
+                       ↓
+                  addSubscriber() → onData 逐行回放 → WebSocket → 浏览器
+```
+
+关键检查点：
+- `claudeSessionId` 是否为 `none`（如果为 none，JSONL 不会加载，只有 turn file 数据）
+- `detectSystemInit` 是否找到了 system.init（它现在扫描所有 turn file，不再只看 turn_000.jsonl）
+- `ensureRunning` 是否因为 session 已在内存中而跳过了 claudeSessionId 更新
+- `tailFile` 是否因文件尚未创建就提前退出（`!firstPoll` 导致 return）
+
+### 常见陷阱
+
+1. **API 重启后 relay 丢失**：relay 在内存中，重启后重建。`activate()` 从 JSONL + turn files 恢复，但 `claudeSessionId` 可能还是 `none`。
+2. **`ensureRunning` 提前 return**：如果 session 已注册，不会更新 `claudeSessionId`。修复：即使 session 存在，也更新缺失的字段。
+3. **`tailFile` 对新文件的等待不足**：第一次 poll 文件不存在，第二次 poll 就认为"被删除"而退出。修复：用 `firstPoll` 区分"从未见过"和"见过后被删除"，给前者 5 分钟创建窗口。
+4. **系统命令用 tmux 管理**：API/Web 进程必须在 `ar-dev-api` tmux session 内运行，不能在外面跑。进程变孤儿后无法控制。
+
 ## 调试第三方库 Bug
 - 遇到第三方库 bug 时，正确顺序：① `tvly search` 查库的 issue → ② 找同样使用该库的开源项目参考实战解法（clone 到 `~/repos`）→ ③ 读 `node_modules` 源码验证机制 → ④ 一次性实现。不要靠猜测反复试错。
 

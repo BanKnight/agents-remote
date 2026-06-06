@@ -89,6 +89,8 @@ export const tailFile = (
   };
 
   const poll = async () => {
+    let missingPolls = 0;
+    const MAX_MISSING = 1500; // 5 min at 200ms — wait for file creation
     while (!stopped) {
       try {
         let fstat;
@@ -96,9 +98,15 @@ export const tailFile = (
           fstat = await stat(filePath);
         } catch {
           // File doesn't exist (yet or anymore)
-          if (!firstPoll) return; // deleted — done
-          await sleep(200);
-          continue;
+          if (firstPoll) {
+            // Haven't seen the file at all — keep waiting for creation
+            missingPolls++;
+            if (missingPolls > MAX_MISSING) return;
+            await sleep(200);
+            continue;
+          }
+          // Saw the file before, now it's gone — deleted, done.
+          return;
         }
 
         if (firstPoll) {
