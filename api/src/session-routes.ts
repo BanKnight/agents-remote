@@ -339,10 +339,6 @@ export const isChatMessage = (msg: Record<string, unknown>): boolean => {
   const type = msg.type as string | undefined;
   if (!type) return false;
   if (msg.isMeta === true) return false;
-  // thinking_tokens are per-token deltas from the terminal TUI, not
-  // meaningful for chat display. Exclude to prevent buffer flooding
-  // on reconnect.
-  if (type === "system" && (msg.subtype as string) === "thinking_tokens") return false;
   return type === "user" || type === "assistant" || type === "result" || type === "system";
 };
 

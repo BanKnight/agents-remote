@@ -288,12 +288,20 @@ export class Claude2SessionRelay {
   }
 
   private pushBuffer(line: string): void {
+    // thinking_tokens are per-chunk deltas meaningful only during live
+    // streaming. Filter them from the buffer to prevent flooding on
+    // reconnect replay while keeping them in live broadcast.
+    if (isThinkingTokens(line)) return;
     this.buffer.push(line);
     if (this.buffer.length > 5000) {
       this.buffer = this.buffer.slice(-5000);
     }
   }
 }
+
+const isThinkingTokens = (line: string): boolean => {
+  return line.includes('"type":"system"') && line.includes('"subtype":"thinking_tokens"');
+};
 
 const indexFromTurnFile = (filePath: string): number => {
   const match = filePath.match(/turn_(\d+)\.jsonl$/);
