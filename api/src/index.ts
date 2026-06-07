@@ -567,6 +567,10 @@ const projectErrorResponse = (error: ProjectServiceError) => {
   return jsonError(error.code, error.message, 400);
 };
 
+const sessionNamePrefix = process.env.AGENTS_REMOTE_SESSION_PREFIX ?? "ar";
+const isClaude2SessionName = (sessionName: string) =>
+  sessionName.startsWith(`${sessionNamePrefix}-agent-claude2-`);
+
 export const startApi = async () => {
   const settings = await loadSettings();
   const runtimePaths = await ensureRuntimeDir(resolveRuntimePaths());
@@ -592,11 +596,11 @@ export const startApi = async () => {
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   const runtime: RuntimeResources = {
     exists: async (sessionName) => {
-      if (await claude2Runtime.exists(sessionName)) return true;
+      if (isClaude2SessionName(sessionName)) return claude2Runtime.exists(sessionName);
       return tmuxRuntime.exists(sessionName);
     },
     close: async (sessionName) => {
-      if (await claude2Runtime.exists(sessionName)) {
+      if (isClaude2SessionName(sessionName)) {
         return claude2Runtime.close(sessionName);
       }
       return tmuxRuntime.close(sessionName);
@@ -609,7 +613,7 @@ export const startApi = async () => {
     },
     startTerminal: (metadata) => tmuxRuntime.startTerminal(metadata),
     write: async (sessionName, data) => {
-      if (await claude2Runtime.exists(sessionName)) {
+      if (isClaude2SessionName(sessionName)) {
         return claude2Runtime.write(sessionName, data);
       }
       return tmuxRuntime.write(sessionName, data);
@@ -617,7 +621,7 @@ export const startApi = async () => {
     resize: (sessionName, cols, rows) => tmuxRuntime.resize(sessionName, cols, rows),
     capture: (sessionName) => tmuxRuntime.capture(sessionName),
     stream: async (sessionName, onData, onError) => {
-      if (await claude2Runtime.exists(sessionName)) {
+      if (isClaude2SessionName(sessionName)) {
         return claude2Runtime.stream(sessionName, onData, onError);
       }
       return tmuxRuntime.stream(sessionName, onData, onError);

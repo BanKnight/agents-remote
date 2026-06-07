@@ -59,6 +59,11 @@ function makeToolRenderer(config: {
     const args = safeParseArgs(argsText);
     const displayLabel = label ? label(args, toolName) : toolName;
     const hasArgs = argsText.length > 0 && argsText !== "{}";
+    const metadata = (rest as Record<string, unknown>).metadata as
+      | Record<string, unknown>
+      | undefined;
+    const skillContent =
+      typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
 
     const accentColor = isError ? "text-red-400" : "text-cyan-400";
     const accentBorder = isError ? "border-red-500/40" : "border-slate-600/50";
@@ -108,6 +113,16 @@ function makeToolRenderer(config: {
                     {argsText}
                   </pre>
                 )}
+              </div>
+            ) : null}
+            {skillContent ? (
+              <div className={`border-t ${accentDivider} px-3 py-2`}>
+                <span className="text-[0.55rem] font-semibold text-purple-400/70 uppercase tracking-wide">
+                  Skill
+                </span>
+                <pre className="text-[0.6rem] text-purple-200/80 whitespace-pre-wrap break-all leading-relaxed mt-1">
+                  {skillContent}
+                </pre>
               </div>
             ) : null}
             {hasResult ? (
@@ -254,8 +269,20 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   const args = safeParseArgs(argsText);
   const questions = (args.questions as Question[]) ?? [];
   const controlRequestId = (args.__controlRequestId as string) ?? "";
+  const structuredResult = (rest as Record<string, unknown>).structuredResult as
+    | { answers?: Record<string, string> }
+    | undefined;
+  const structuredAnswers =
+    structuredResult?.answers && typeof structuredResult.answers === "object"
+      ? structuredResult.answers
+      : undefined;
   const resultStr =
     typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
+  const answerText = structuredAnswers
+    ? Object.entries(structuredAnswers)
+        .map(([question, answer]) => `${question}: ${answer}`)
+        .join("\n")
+    : resultStr;
   const hasResult = resultStr.length > 0;
   // Default expanded when waiting for answer, collapsed when already answered
   const [expanded, setExpanded] = useState(!hasResult);
@@ -538,7 +565,9 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
           {hasResult ? (
             <div className="border-t border-amber-500/20 px-3 py-2">
               <p className="text-[0.6rem] text-amber-400/60 mb-1">回答</p>
-              <p className="text-[0.65rem] text-amber-200/70">{resultStr}</p>
+              <pre className="text-[0.65rem] text-amber-200/70 whitespace-pre-wrap break-all leading-relaxed">
+                {answerText}
+              </pre>
             </div>
           ) : null}
         </div>

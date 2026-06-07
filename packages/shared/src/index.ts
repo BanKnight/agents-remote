@@ -348,9 +348,50 @@ export type Claude2UserMessage = {
     role: "user";
     content: Array<
       | { type: "text"; text: string }
-      | { type: "tool_result"; tool_use_id: string; content: Array<{ type: "text"; text: string }> }
+      | {
+          type: "tool_result";
+          tool_use_id: string;
+          content: string | Array<{ type: "text"; text: string }>;
+          is_error?: boolean;
+        }
     >;
   };
+  tool_use_result?: unknown;
+  toolUseResult?: unknown;
+  parent_tool_use_id?: string;
+  isMeta?: boolean;
+  sourceToolUseID?: string;
+};
+
+export type Claude2TaskStarted = {
+  type: "system";
+  subtype: "task_started";
+  task_id: string;
+  agentType?: string;
+  workflowName?: string;
+  prompt?: string;
+  session_id?: string;
+};
+
+export type Claude2TaskUpdated = {
+  type: "system";
+  subtype: "task_updated";
+  task_id: string;
+  isBackgrounded?: boolean;
+  error?: string;
+  end_time?: number;
+  total_paused_ms?: number;
+  session_id?: string;
+};
+
+export type Claude2TaskNotification = {
+  type: "system";
+  subtype: "task_notification";
+  task_id: string;
+  text?: string;
+  outputFile?: string;
+  skipTranscript?: boolean;
+  session_id?: string;
 };
 
 export type Claude2Result = {
@@ -498,6 +539,9 @@ export type SessionStreamServerMessage =
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage
+  | Claude2TaskStarted
+  | Claude2TaskUpdated
+  | Claude2TaskNotification
   | Claude2Result
   | Claude2ControlRequest
   | {

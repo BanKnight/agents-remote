@@ -338,7 +338,6 @@ const requestUrlEndsWith = (request: Request, suffix: string) =>
 export const isChatMessage = (msg: Record<string, unknown>): boolean => {
   const type = msg.type as string | undefined;
   if (!type) return false;
-  if (msg.isMeta === true) return false;
   return type === "user" || type === "assistant" || type === "result" || type === "system";
 };
 

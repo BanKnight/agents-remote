@@ -172,7 +172,7 @@ export class Claude2StreamController {
         parsed.type === "control_request"
       ) {
         console.log(`[claude2-stream] message ${parsed.type}: ${data.tmuxSessionName}`);
-        await this.runtime.write?.(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
+        await this.claude2Runtime.write(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
       } else if (parsed.type === "switch_model") {
         console.log(`[claude2-stream] switch_model: ${data.tmuxSessionName} → ${parsed.model}`);
         // Close existing stream before switching

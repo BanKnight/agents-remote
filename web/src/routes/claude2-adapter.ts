@@ -3,6 +3,106 @@ import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@as
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { claude2StreamUrl, getAgentSessionMessages } from "../api/client";
 
+export type TaskInfo = {
+  id: string;
+  agentType?: string;
+  workflowName?: string;
+  description: string;
+  status: "running" | "completed" | "error" | "backgrounded";
+  text?: string;
+  error?: string;
+};
+
+type TaskSystemMessage = Extract<
+  SessionStreamServerMessage,
+  { type: "system"; subtype: "task_started" | "task_updated" | "task_notification" }
+>;
+
+const isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSystemMessage =>
+  msg.type === "system" &&
+  "subtype" in msg &&
+  (msg.subtype === "task_started" ||
+    msg.subtype === "task_updated" ||
+    msg.subtype === "task_notification");
+
+export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {
+  const existing = prev.findIndex((t) => t.id === msg.task_id);
+  if (existing >= 0) {
+    const updated = [...prev];
+    const current = updated[existing];
+
+    if (msg.subtype === "task_updated") {
+      updated[existing] = {
+        ...current,
+        status: msg.error ? "error" : msg.isBackgrounded ? "backgrounded" : "running",
+        error: msg.error ?? current.error,
+      };
+      return updated;
+    }
+
+    if (msg.subtype === "task_notification") {
+      updated[existing] = {
+        ...current,
+        status: "completed",
+        text: msg.text ?? current.text,
+      };
+      return updated;
+    }
+
+    updated[existing] = {
+      ...current,
+      agentType: msg.agentType ?? current.agentType,
+      workflowName: msg.workflowName ?? current.workflowName,
+      description: msg.prompt ?? current.description,
+    };
+    return updated;
+  }
+
+  if (msg.subtype === "task_started") {
+    return [
+      ...prev,
+      {
+        id: msg.task_id,
+        agentType: msg.agentType,
+        workflowName: msg.workflowName,
+        description: msg.prompt ?? "",
+        status: "running",
+      },
+    ];
+  }
+
+  if (msg.subtype === "task_updated") {
+    return [
+      ...prev,
+      {
+        id: msg.task_id,
+        description: "",
+        status: msg.error ? "error" : msg.isBackgrounded ? "backgrounded" : "running",
+        ...(msg.error ? { error: msg.error } : {}),
+      },
+    ];
+  }
+
+  return [
+    ...prev,
+    {
+      id: msg.task_id,
+      description: msg.text ?? "",
+      status: "completed",
+      ...(msg.text ? { text: msg.text } : {}),
+    },
+  ];
+};
+
+export const deriveTasksFromReplayBatch = (batch: SessionStreamServerMessage[]): TaskInfo[] => {
+  let tasks: TaskInfo[] = [];
+  for (const msg of batch) {
+    if (!isTaskSystemMessage(msg)) continue;
+    tasks = applyTaskSystemMessage(tasks, msg);
+  }
+  return tasks;
+};
+
 // ── Bridge Context ──────────────────────────────────────────────────
 //
 // AskUserQuestionToolUI renders deep inside the assistant-ui tree and
@@ -26,6 +126,18 @@ export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asReadonlyJSON = (v: Record<string, unknown>): any => v;
 
+const extractTextFromContent = (content: unknown): string | null => {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  const texts: string[] = [];
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block.type === "text" && typeof block.text === "string") {
+      texts.push(block.text);
+    }
+  }
+  return texts.length > 0 ? texts.join("\n") : null;
+};
+
 /**
  * Convert raw Claude2 JSONL/API messages into ThreadMessageLike[] for
  * assistant-ui history display.
@@ -41,6 +153,84 @@ const asReadonlyJSON = (v: Record<string, unknown>): any => v;
  * - control_request messages are NOT in JSONL history — AskUserQuestion
  *   in history comes from assistant tool_use blocks directly.
  */
+/**
+ * Count active streams/tool-calls from raw messages. Each "start" event
+ * increments the counter; each "end" event decrements it. isRunning is
+ * true whenever the counter > 0.
+ *
+ * Start (+1):  first assistant in a turn, first thinking_tokens in a turn,
+ *              each tool_use block
+ * End   (-1):  result (resets to 0), each matched tool_result block
+ *
+ * Multiple assistant deltas (same turn) count as 1, not N.
+ * Multiple thinking_tokens deltas count as 1, not N.
+ */
+export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): number {
+  let count = 0;
+  const startedTools = new Set<string>();
+  let turnActive = false;
+
+  for (const msg of rawMessages) {
+    if (msg.type === "result") {
+      count = 0;
+      startedTools.clear();
+      turnActive = false;
+      continue;
+    }
+
+    if (msg.type === "assistant") {
+      if (!turnActive) {
+        count++;
+        turnActive = true;
+      }
+      for (const block of msg.message.content) {
+        if (block.type === "tool_use" && "id" in block) {
+          startedTools.add(block.id as string);
+          count++;
+        }
+      }
+      continue;
+    }
+
+    if (msg.type === "system" && "subtype" in msg && msg.subtype === "thinking_tokens") {
+      if (!turnActive) {
+        count++;
+        turnActive = true;
+      }
+      continue;
+    }
+
+    if (msg.type === "user") {
+      let hasText = false;
+      for (const block of msg.message.content) {
+        if (
+          block.type === "tool_result" &&
+          "tool_use_id" in block &&
+          typeof block.tool_use_id === "string"
+        ) {
+          if (startedTools.has(block.tool_use_id)) {
+            startedTools.delete(block.tool_use_id);
+            count--;
+          }
+        }
+        if (block.type === "text") {
+          hasText = true;
+        }
+      }
+      // User text message marks a new turn boundary. Since disk JSONL has
+      // no result messages, user text is the reliable signal that the
+      // previous turn completed. Reset all counters.
+      if (hasText) {
+        count = 0;
+        startedTools.clear();
+        turnActive = false;
+      }
+    }
+  }
+
+  return count;
+}
+
 export function loadMessagesFromRaw(
   rawMessages: SessionStreamServerMessage[],
 ): ThreadMessageLike[] {
@@ -114,6 +304,72 @@ export function loadMessagesFromRaw(
     }
 
     if (msg.type === "user") {
+      // isMeta user messages are CLI-internal. If they have
+      // sourceToolUseID, attach the text to the matching tool-call
+      // rather than rendering a user bubble. All isMeta messages
+      // are skipped regardless.
+      const userMeta = msg as Record<string, unknown>;
+      if (userMeta.isMeta === true) {
+        if (typeof userMeta.sourceToolUseID === "string") {
+          const toolUseId = userMeta.sourceToolUseID;
+          const metaText = extractTextFromContent(msg.message.content);
+          if (metaText) {
+            const matchIdx = currentParts.findIndex(
+              (p: Record<string, unknown>) =>
+                p.type === "tool-call" && "toolCallId" in p && p.toolCallId === toolUseId,
+            );
+            if (matchIdx >= 0) {
+              currentParts = currentParts.map((p, i) =>
+                i === matchIdx
+                  ? {
+                      ...p,
+                      metadata: {
+                        ...((p as Record<string, unknown>).metadata as Record<string, unknown>),
+                        skillContent: metaText,
+                      },
+                    }
+                  : p,
+              );
+            } else {
+              let attached = false;
+              for (let j = messages.length - 1; j >= 0; j--) {
+                const candidate = messages[j];
+                if (candidate.role === "assistant" && Array.isArray(candidate.content)) {
+                  const fmIdx = candidate.content.findIndex(
+                    (p) =>
+                      p.type === "tool-call" &&
+                      "toolCallId" in p &&
+                      (p as Record<string, string>).toolCallId === toolUseId,
+                  );
+                  if (fmIdx >= 0) {
+                    const updated = [...candidate.content];
+                    updated[fmIdx] = {
+                      ...updated[fmIdx],
+                      metadata: {
+                        ...((updated[fmIdx] as Record<string, unknown>).metadata as Record<
+                          string,
+                          unknown
+                        >),
+                        skillContent: metaText,
+                      },
+                    };
+                    messages[j] = { ...candidate, content: updated };
+                    attached = true;
+                    break;
+                  }
+                }
+              }
+              if (!attached) {
+                console.warn("[claude2-adapter] skillContent: no matching tool-call found", {
+                  toolUseId,
+                });
+              }
+            }
+          }
+        }
+        continue;
+      }
+
       const rawContent = msg.message.content as unknown;
 
       // CLI command output (e.g. <local-command-stdout> for /compact).
@@ -216,7 +472,31 @@ export function loadMessagesFromRaw(
         }
       }
 
+      // Attach structured tool result metadata to the last matching tool-call.
+      // Real JSONL currently uses camelCase toolUseResult; keep snake_case
+      // for compatibility with earlier assumptions / transformed payloads.
+      const toolUseResult = ((msg as Record<string, unknown>).toolUseResult ??
+        (msg as Record<string, unknown>).tool_use_result) as unknown;
+      if (toolUseResult) {
+        // Find the last tool-call and attach the structured result
+        for (let i = currentParts.length - 1; i >= 0; i--) {
+          const p = currentParts[i] as Record<string, unknown>;
+          if (p.type === "tool-call" && !p.structuredResult) {
+            currentParts = currentParts.map((part, idx) =>
+              idx === i ? { ...part, structuredResult: toolUseResult } : part,
+            );
+            break;
+          }
+        }
+      }
+
       if (userTexts.length > 0) {
+        if (userTexts.some((text) => text.startsWith("Base directory for this skill:"))) {
+          console.warn("[claude2-adapter] skill content fell through to user bubble", {
+            userTexts,
+            rawMessage: msg,
+          });
+        }
         flushAssistant();
         messages.push({ role: "user", content: userTexts.join("\n") });
       }
@@ -304,7 +584,9 @@ export function useClaude2Session(
   initialPermissionMode?: string,
 ) {
   const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const isRunning = useMemo(() => {
+    return computeRunningCount(rawMessages) > 0;
+  }, [rawMessages]);
   const [loading, setLoading] = useState(true);
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
@@ -333,6 +615,7 @@ export function useClaude2Session(
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const [tasks, setTasks] = useState<TaskInfo[]>([]);
 
   const sendToSocket = useCallback((data: unknown) => {
     const socket = socketRef.current;
@@ -447,14 +730,12 @@ export function useClaude2Session(
         // Message order on connect:
         //   connected → replay_start → [history] → replay_end → [live]
         //
-        // connected carries the authoritative session status from the
-        // server (registry). JSONL has no result messages (CLI doesn't
-        // write them), so buffer content alone cannot tell us whether
-        // the session is idle — the last message is always assistant
-        // after an API restart when turn files are gone.
+        // connected means transport is established, not that Claude is
+        // generating. A fresh session's registry status is "running" but
+        // the thread is idle until the user sends a message or live
+        // assistant/thinking content arrives.
         if (msg.type === "connected") {
-          const status = (msg as { status: string }).status;
-          setIsRunning(status === "running");
+          setTasks([]);
           return;
         }
 
@@ -468,6 +749,7 @@ export function useClaude2Session(
           replayBatchRef.current = null;
           if (batch && batch.length > 0) {
             setRawMessages(batch);
+            setTasks(deriveTasksFromReplayBatch(batch));
           }
           setLoading(false);
           return;
@@ -480,6 +762,12 @@ export function useClaude2Session(
 
         // First message outside of replay — initial load complete
         setLoading(false);
+
+        // ── Task system ──────────────────────────────────────────────
+        if (isTaskSystemMessage(msg)) {
+          setTasks((prev) => applyTaskSystemMessage(prev, msg));
+          return;
+        }
 
         // ── compact protocol ────────────────────────────────────────
         //
@@ -505,7 +793,6 @@ export function useClaude2Session(
         ) {
           compactActiveRef.current = true;
           compactInterruptedRef.current = false;
-          setIsRunning(true);
           compactPhaseRef.current = "compacting";
           if (bridge.onCompact) bridge.onCompact({ phase: "start" });
           // Fall through — loadMessagesFromRaw skips non-compact_boundary
@@ -546,7 +833,6 @@ export function useClaude2Session(
             // Auto compact — no preceding status:"compacting"
             compactActiveRef.current = true;
             compactInterruptedRef.current = false;
-            setIsRunning(true);
             compactPhaseRef.current = "compacting";
             if (bridge.onCompact) bridge.onCompact({ phase: "start" });
           }
@@ -605,10 +891,7 @@ export function useClaude2Session(
               compactActiveRef.current = false;
               if (bridge.onCompact) bridge.onCompact({ phase: "end" });
             }
-            setIsRunning(false);
             compactPhaseRef.current = "waiting-live";
-          } else {
-            setIsRunning(false);
           }
         }
 
@@ -618,7 +901,6 @@ export function useClaude2Session(
           (msg.type === "assistant" || (msg.type === "system" && msg.subtype === "thinking_tokens"))
         ) {
           compactPhaseRef.current = "none";
-          setIsRunning(true);
         }
 
         // ── control_request routing ─────────────────────────────────
@@ -678,12 +960,6 @@ export function useClaude2Session(
           // compact cancellation notices with model:"<synthetic>")
           if (assistantMsg.message.model === "<synthetic>") return;
 
-          // Live assistant response — mark running so the UI shows
-          // the stop button and three-dot streaming indicator.
-          if (compactPhaseRef.current === "none") {
-            setIsRunning(true);
-          }
-
           const hasAsk = assistantMsg.message.content.some(
             (b) => b.type === "tool_use" && b.name === "AskUserQuestion",
           );
@@ -721,7 +997,6 @@ export function useClaude2Session(
 
     socket.onclose = () => {
       if (!cancelled) {
-        setIsRunning(false);
         setLoading(false);
       }
     };
@@ -769,7 +1044,6 @@ export function useClaude2Session(
           message: { role: "user", content: [{ type: "text", text: textContent }] },
         } as SessionStreamServerMessage;
         setRawMessages((prev) => [...prev, userMsg]);
-        setIsRunning(true);
         sendToSocket({
           type: "user",
           message: { role: "user", content: [{ type: "text", text: textContent }] },
@@ -789,7 +1063,6 @@ export function useClaude2Session(
       request_id: crypto.randomUUID(),
       request: { subtype: "interrupt" },
     });
-    setIsRunning(false);
   }, [sendToSocket]);
 
   // ExternalStoreAdapter for useExternalStoreRuntime
@@ -814,5 +1087,6 @@ export function useClaude2Session(
     modelSwitchVersion,
     permissionMode,
     loading,
+    tasks,
   };
 }

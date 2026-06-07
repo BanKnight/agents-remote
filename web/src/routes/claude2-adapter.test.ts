@@ -1,6 +1,10 @@
 import { expect, test, describe } from "bun:test";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { loadMessagesFromRaw } from "./claude2-adapter";
+import {
+  loadMessagesFromRaw,
+  deriveTasksFromReplayBatch,
+  applyTaskSystemMessage,
+} from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -58,6 +62,39 @@ const thinkingTokens = (estimatedTokens: number): SessionStreamServerMessage =>
 
 const systemInit = (): SessionStreamServerMessage =>
   ({ type: "system", subtype: "init" }) as unknown as SessionStreamServerMessage;
+
+const taskStarted = (
+  task_id: string,
+  fields: Partial<{ agentType: string; workflowName: string; prompt: string }> = {},
+): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "task_started",
+    task_id,
+    ...fields,
+  }) as unknown as SessionStreamServerMessage;
+
+const taskUpdated = (
+  task_id: string,
+  fields: Partial<{ isBackgrounded: boolean; error: string }> = {},
+): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "task_updated",
+    task_id,
+    ...fields,
+  }) as unknown as SessionStreamServerMessage;
+
+const taskNotification = (
+  task_id: string,
+  fields: Partial<{ text: string }> = {},
+): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "task_notification",
+    task_id,
+    ...fields,
+  }) as unknown as SessionStreamServerMessage;
 
 // ── loadMessagesFromRaw tests ──────────────────────────────────────────
 
@@ -321,26 +358,286 @@ describe("loadMessagesFromRaw", () => {
     expect(assistantContent[1].result).toBe("result B");
   });
 
-  test("tool_result with string content is handled", () => {
+  test("skill isMeta content attaches to Skill tool-call instead of creating a user bubble", () => {
     const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "hi" }]),
-      assistant("msg-1", [{ type: "tool_use", id: "tu-1", name: "Read", input: {} }]),
-      user([{ type: "tool_result", tool_use_id: "tu-1", content: "plain string content" }]),
+      user([{ type: "text", text: "search with skill" }]),
+      assistant("msg-skill", [
+        {
+          type: "tool_use",
+          id: "tu-skill",
+          name: "Skill",
+          input: { skill: "tavily-search", args: "deepseek provider" },
+        },
+      ]),
+      user([
+        { type: "tool_result", tool_use_id: "tu-skill", content: "Launching skill: tavily-search" },
+      ]),
+      {
+        type: "user",
+        isMeta: true,
+        sourceToolUseID: "tu-skill",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Base directory for this skill: /tmp/skill\n\n# tavily search\n...",
+            },
+          ],
+        },
+      } as unknown as SessionStreamServerMessage,
+      assistant("msg-next", [{ type: "text", text: "done" }]),
       result("success"),
     ];
+
     const result_msgs = loadMessagesFromRaw(msgs);
+
+    expect(result_msgs.length).toBe(3);
+    expect(result_msgs[0]).toEqual({ role: "user", content: "search with skill" });
+    expect(result_msgs[1].role).toBe("assistant");
+    expect(result_msgs[2].role).toBe("assistant");
+
     const assistantContent = result_msgs[1].content as Array<{
       type: string;
+      toolCallId?: string;
+      toolName?: string;
+      result?: string;
+      metadata?: { skillContent?: string };
+    }>;
+    expect(assistantContent.length).toBe(1);
+    expect(assistantContent[0].type).toBe("tool-call");
+    expect(assistantContent[0].toolCallId).toBe("tu-skill");
+    expect(assistantContent[0].toolName).toBe("Skill");
+    expect(assistantContent[0].result).toBe("Launching skill: tavily-search");
+    expect(assistantContent[0].metadata?.skillContent).toContain("Base directory for this skill:");
+  });
+
+  test("permission_denied final effect persists through is_error tool_result in history", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "run bash" }]),
+      assistant("msg-perm", [
+        {
+          type: "tool_use",
+          id: "tu-bash",
+          name: "Bash",
+          input: { command: "curl https://cli.tavily.com/install.sh | bash" },
+        },
+      ]),
+      user([
+        {
+          type: "tool_result",
+          tool_use_id: "tu-bash",
+          content: "Permission for this action was denied by the Claude Code auto mode classifier.",
+          is_error: true,
+        },
+      ]),
+      assistant("msg-next", [
+        { type: "text", text: "I should stop and explain why I need permission." },
+      ]),
+      result("success"),
+    ];
+
+    const resultMsgs = loadMessagesFromRaw(msgs);
+    expect(resultMsgs.length).toBe(3);
+
+    const assistantContent = resultMsgs[1].content as Array<{
+      type: string;
+      toolCallId?: string;
+      toolName?: string;
+      result?: string;
+      isError?: boolean;
+    }>;
+    expect(assistantContent.length).toBe(1);
+    expect(assistantContent[0].type).toBe("tool-call");
+    expect(assistantContent[0].toolCallId).toBe("tu-bash");
+    expect(assistantContent[0].toolName).toBe("Bash");
+    expect(assistantContent[0].result).toContain("Permission for this action was denied");
+    expect(assistantContent[0].isError).toBe(true);
+  });
+
+  test("AskUserQuestion history keeps structured answers from camelCase toolUseResult", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "help me choose" }]),
+      assistant("msg-ask", [
+        {
+          type: "tool_use",
+          id: "tu-ask",
+          name: "AskUserQuestion",
+          input: {
+            questions: [
+              {
+                question: "Which task?",
+                header: "Task",
+                options: [
+                  { label: "Bug fix", description: "Fix a bug" },
+                  { label: "Code review", description: "Review code" },
+                ],
+              },
+            ],
+          },
+        },
+      ]),
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tu-ask",
+              content:
+                'Your questions have been answered: "Which task?"="Code review". You can now continue with these answers in mind.',
+            },
+          ],
+        },
+        toolUseResult: {
+          questions: [
+            {
+              question: "Which task?",
+              header: "Task",
+              options: [
+                { label: "Bug fix", description: "Fix a bug" },
+                { label: "Code review", description: "Review code" },
+              ],
+            },
+          ],
+          answers: { "Which task?": "Code review" },
+        },
+      } as unknown as SessionStreamServerMessage,
+      result("success"),
+    ];
+
+    const resultMsgs = loadMessagesFromRaw(msgs);
+    expect(resultMsgs.length).toBe(2);
+
+    const assistantContent = resultMsgs[1].content as Array<{
+      type: string;
+      toolCallId?: string;
+      toolName?: string;
+      result?: string;
+      structuredResult?: {
+        questions?: Array<{ question: string }>;
+        answers?: Record<string, string>;
+      };
+    }>;
+    expect(assistantContent.length).toBe(1);
+    expect(assistantContent[0].type).toBe("tool-call");
+    expect(assistantContent[0].toolCallId).toBe("tu-ask");
+    expect(assistantContent[0].toolName).toBe("AskUserQuestion");
+    expect(assistantContent[0].result).toContain('"Which task?"="Code review"');
+    expect(assistantContent[0].structuredResult?.answers).toEqual({ "Which task?": "Code review" });
+    expect(assistantContent[0].structuredResult?.questions?.[0]?.question).toBe("Which task?");
+  });
+
+  test("api_retry becomes inline system error message", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      {
+        type: "system",
+        subtype: "api_retry",
+        attempt: 2,
+        max_retries: 3,
+        retry_delay_ms: 2000,
+        error: "Overloaded",
+      } as unknown as SessionStreamServerMessage,
+    ];
+
+    const resultMsgs = loadMessagesFromRaw(msgs);
+    expect(resultMsgs).toHaveLength(1);
+    expect(resultMsgs[0].role).toBe("system");
+    const content = resultMsgs[0].content as Array<{ type: string; text: string }>;
+    expect(content[0]).toEqual({
+      type: "text",
+      text: "API 请求失败2/3：Overloaded，2s 后重试",
+    });
+  });
+
+  test("compact_boundary renders as system divider message", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compactMetadata: { trigger: "manual", preTokens: 123456 },
+      } as unknown as SessionStreamServerMessage,
+    ];
+
+    const resultMsgs = loadMessagesFromRaw(msgs);
+    expect(resultMsgs).toHaveLength(1);
+    expect(resultMsgs[0].role).toBe("system");
+    const content = resultMsgs[0].content as Array<{ type: string; text: string }>;
+    expect(content[0]).toEqual({ type: "text", text: "上下文已压缩 (~123k tokens)" });
+  });
+
+  test("local-command stdout Compacted is skipped because compact_boundary is authoritative", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: "<local-command-stdout>Compacted</local-command-stdout>",
+        },
+      } as unknown as SessionStreamServerMessage,
+    ];
+
+    expect(loadMessagesFromRaw(msgs)).toEqual([]);
+  });
+
+  test("non-compact local-command stdout renders as slash-command tool result", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: "<local-command-stdout>patched 3 files</local-command-stdout>",
+        },
+      } as unknown as SessionStreamServerMessage,
+    ];
+
+    const resultMsgs = loadMessagesFromRaw(msgs);
+    expect(resultMsgs).toHaveLength(1);
+    expect(resultMsgs[0].role).toBe("assistant");
+    const content = resultMsgs[0].content as Array<{
+      type: string;
+      toolName?: string;
       result?: string;
     }>;
-    expect(assistantContent[0].result).toBe("plain string content");
+    expect(content[0]).toMatchObject({
+      type: "tool-call",
+      toolName: "slash-command",
+      result: "patched 3 files",
+    });
+  });
+
+  test("synthetic assistant messages are skipped", () => {
+    const msgs: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "hello" }]),
+      {
+        type: "assistant",
+        message: {
+          id: "msg-synth",
+          role: "assistant",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "internal notice" }],
+        },
+      } as unknown as SessionStreamServerMessage,
+      assistant("msg-real", [{ type: "text", text: "real reply" }]),
+    ];
+
+    const resultMsgs = loadMessagesFromRaw(msgs);
+    expect(resultMsgs).toHaveLength(2);
+    expect(resultMsgs[0]).toEqual({ role: "user", content: "hello" });
+    const content = resultMsgs[1].content as Array<{ type: string; text: string }>;
+    expect(content).toEqual([{ type: "text", text: "real reply" }]);
   });
 
   test("thinking blocks are mapped to reasoning parts", () => {
     const msgs: SessionStreamServerMessage[] = [
       user([{ type: "text", text: "think about this" }]),
       assistant("msg-1", [
-        { type: "thinking", thinking: "Let me reason about this carefully.", signature: "sig-abc" },
+        {
+          type: "thinking",
+          thinking: "Let me reason about this carefully.",
+          signature: "sig-abc",
+        },
         { type: "text", text: "Here is my conclusion." },
       ]),
       result("success"),
@@ -405,5 +702,70 @@ describe("loadMessagesFromRaw", () => {
     expect(content1[0].estimatedTokens?.value).toBe(42);
     const content2 = result_msgs[1].content as Array<{ estimatedTokens?: { value: number } }>;
     expect(content2[0].estimatedTokens?.value).toBe(42);
+  });
+});
+
+describe("task system state", () => {
+  test("deriveTasksFromReplayBatch rebuilds task chips only from task_* messages", () => {
+    const batch: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "create task" }]),
+      assistant("msg-task", [
+        {
+          type: "tool_use",
+          id: "tu-task",
+          name: "TaskCreate",
+          input: { subject: "Research bug", description: "Investigate issue" },
+        },
+      ]),
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "tu-task", content: "Task #49 created" }],
+        },
+        toolUseResult: {
+          task: { id: "49", subject: "Research bug" },
+        },
+      } as unknown as SessionStreamServerMessage,
+      taskStarted("task-1", { prompt: "Run search", agentType: "general-purpose" }),
+      taskUpdated("task-1", { isBackgrounded: true }),
+      taskNotification("task-1", { text: "done" }),
+    ];
+
+    const tasks = deriveTasksFromReplayBatch(batch);
+    expect(tasks).toEqual([
+      {
+        id: "task-1",
+        agentType: "general-purpose",
+        workflowName: undefined,
+        description: "Run search",
+        status: "completed",
+        text: "done",
+      },
+    ]);
+  });
+
+  test("applyTaskSystemMessage updates task status across running backgrounded error completed", () => {
+    let tasks = applyTaskSystemMessage(
+      [],
+      taskStarted("task-2", { prompt: "Inspect logs" }) as never,
+    );
+    expect(tasks[0]).toMatchObject({
+      id: "task-2",
+      description: "Inspect logs",
+      status: "running",
+    });
+
+    tasks = applyTaskSystemMessage(tasks, taskUpdated("task-2", { isBackgrounded: true }) as never);
+    expect(tasks[0]).toMatchObject({ id: "task-2", status: "backgrounded" });
+
+    tasks = applyTaskSystemMessage(tasks, taskUpdated("task-2", { error: "failed" }) as never);
+    expect(tasks[0]).toMatchObject({ id: "task-2", status: "error", error: "failed" });
+
+    tasks = applyTaskSystemMessage(
+      tasks,
+      taskNotification("task-2", { text: "finished" }) as never,
+    );
+    expect(tasks[0]).toMatchObject({ id: "task-2", status: "completed", text: "finished" });
   });
 });
