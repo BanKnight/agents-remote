@@ -7,6 +7,8 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  unstable_useSlashCommandAdapter,
+  type Unstable_SlashCommand,
   useComposerRuntime,
   useExternalStoreRuntime,
   useMessage,
@@ -126,6 +128,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     permissionMode,
     loading,
     tasks,
+    slashCommands,
   } = useClaude2Session(
     projectName,
     sessionId,
@@ -298,45 +301,78 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                 {tasks.length > 0 && (
                   <div className="shrink-0 border-t border-slate-700/80 px-3 py-1.5">
                     <div className="flex flex-wrap gap-1.5">
-                      {tasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
-                            task.status === "error"
-                              ? "bg-red-900/30 text-red-300"
-                              : task.status === "completed"
-                                ? "bg-emerald-900/30 text-emerald-300"
-                                : "bg-slate-800 text-slate-300"
-                          }`}
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              task.status === "running"
-                                ? "bg-amber-400 animate-pulse"
-                                : task.status === "error"
-                                  ? "bg-red-400"
-                                  : "bg-emerald-400"
+                      {tasks.map((task) => {
+                        const title =
+                          task.text ??
+                          task.description ??
+                          task.workflowName ??
+                          task.agentType ??
+                          `Task ${task.id}`;
+                        const metaParts = [
+                          `#${task.id}`,
+                          task.kind,
+                          task.workflowName,
+                          task.agentType,
+                        ].filter(Boolean);
+                        return (
+                          <div
+                            key={task.id}
+                            className={`flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1 text-xs ${
+                              task.status === "error"
+                                ? "bg-red-900/30 text-red-300"
+                                : task.status === "completed"
+                                  ? "bg-emerald-900/30 text-emerald-300"
+                                  : "bg-slate-800 text-slate-300"
                             }`}
-                          />
-                          <span className="truncate max-w-[180px]">
-                            {task.description || task.id}
-                          </span>
-                        </div>
-                      ))}
+                          >
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span
+                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                  task.status === "running"
+                                    ? "bg-amber-400 animate-pulse"
+                                    : task.status === "error"
+                                      ? "bg-red-400"
+                                      : "bg-emerald-400"
+                                }`}
+                              />
+                              <span className="truncate max-w-[180px]">{title}</span>
+                              <span
+                                className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[0.6rem] uppercase tracking-wide ${
+                                  task.status === "error"
+                                    ? "bg-red-500/15 text-red-300"
+                                    : task.status === "completed"
+                                      ? "bg-emerald-500/15 text-emerald-300"
+                                      : task.status === "backgrounded"
+                                        ? "bg-slate-700 text-slate-300"
+                                        : "bg-amber-500/15 text-amber-300"
+                                }`}
+                              >
+                                {task.status}
+                              </span>
+                            </div>
+                            <div className="truncate text-[0.6rem] text-slate-500">
+                              {metaParts.join(" · ")}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
                 <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                  <ComposerPrimitive.Root>
-                    <ComposerWithInterrupt
-                      currentModel={currentModel}
-                      currentResolved={resolvedModel ?? session?.model}
-                      availableModels={availableModels}
-                      modelSwitchVersion={modelSwitchVersion}
-                      permissionMode={permissionMode}
-                      availablePermissionModes={availablePermissionModes}
-                    />
-                  </ComposerPrimitive.Root>
+                  <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                    <ComposerPrimitive.Root>
+                      <ComposerWithInterrupt
+                        currentModel={currentModel}
+                        currentResolved={resolvedModel ?? session?.model}
+                        availableModels={availableModels}
+                        modelSwitchVersion={modelSwitchVersion}
+                        permissionMode={permissionMode}
+                        availablePermissionModes={availablePermissionModes}
+                        slashCommands={slashCommands}
+                      />
+                    </ComposerPrimitive.Root>
+                  </ComposerPrimitive.Unstable_TriggerPopoverRoot>
                 </div>
               </ThreadPrimitive.Root>
             </div>
@@ -937,6 +973,7 @@ function ComposerWithInterrupt({
   modelSwitchVersion,
   permissionMode,
   availablePermissionModes,
+  slashCommands,
 }: {
   currentModel?: string;
   currentResolved?: string;
@@ -944,10 +981,24 @@ function ComposerWithInterrupt({
   modelSwitchVersion: number;
   permissionMode?: string;
   availablePermissionModes: string[];
+  slashCommands: string[];
 }) {
   const composer = useComposerRuntime();
   const isRunning = useThread((s) => s.isRunning);
   const { t } = useT();
+  const slashItems = useMemo<readonly Unstable_SlashCommand[]>(
+    () =>
+      slashCommands.map((command) => {
+        const id = command.replace(/^\/+/, "");
+        return {
+          id,
+          description: command,
+          execute: () => undefined,
+        };
+      }),
+    [slashCommands],
+  );
+  const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -976,6 +1027,32 @@ function ComposerWithInterrupt({
               {t("session.stop")}
             </button>
           </div>
+        ) : null}
+        {slashItems.length > 0 ? (
+          <ComposerPrimitive.Unstable_TriggerPopover
+            char="/"
+            adapter={slash.adapter}
+            className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
+          >
+            <ComposerPrimitive.Unstable_TriggerPopover.Action {...slash.action} />
+            <ComposerPrimitive.Unstable_TriggerPopoverItems>
+              {(items) =>
+                items.map((item, index) => (
+                  <ComposerPrimitive.Unstable_TriggerPopoverItem
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
+                  >
+                    <span className="truncate font-medium">/{item.label}</span>
+                    {item.description ? (
+                      <span className="truncate text-xs text-slate-400">{item.description}</span>
+                    ) : null}
+                  </ComposerPrimitive.Unstable_TriggerPopoverItem>
+                ))
+              }
+            </ComposerPrimitive.Unstable_TriggerPopoverItems>
+          </ComposerPrimitive.Unstable_TriggerPopover>
         ) : null}
       </div>
       <div className="flex items-center gap-2">

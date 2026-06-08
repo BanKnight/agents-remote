@@ -134,18 +134,6 @@ export class Claude2Runtime implements RuntimeResources {
       throw new Error(`stdin not available for session "${sessionName}"`);
     }
     stdin.write(data);
-
-    try {
-      const msg = JSON.parse(data.trim());
-      if (msg && msg.type === "user") {
-        const relay = this.relays.get(sessionName);
-        if (relay && !relay.isDestroyed) {
-          relay.injectLine(data.trim());
-        }
-      }
-    } catch {
-      // skip injection on parse failure
-    }
   }
 
   async switchModel(

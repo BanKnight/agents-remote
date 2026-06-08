@@ -31,38 +31,30 @@ test("Claude2SessionRelay suppresses stdout echo after injected user live echo",
   relay.injectLine(userLine);
   await relay.handleStdoutLine(userLine);
 
-  const userMessages = received
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
-    .filter((msg) => msg.type === "user");
-
-  expect(userMessages).toHaveLength(1);
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages.some((msg) => msg.type === "replay_start")).toBe(false);
+  expect(messages.some((msg) => msg.type === "replay_end")).toBe(false);
+  expect(messages.filter((msg) => msg.type === "user")).toHaveLength(1);
   relay.destroy();
 });
 
-test("Claude2SessionRelay skips flushed pending lines even when earlier pending lines are not in disk", async () => {
-  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
-  const claudeSessionId = "relay-non-prefix-flush-session";
-  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
-  cleanupDirs.add(dirname(jsonlPath));
-
-  await mkdir(dirname(jsonlPath), { recursive: true });
-  await writeFile(jsonlPath, "");
+test("Claude2SessionRelay replays the current raw buffer for a new session", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
 
   const systemLine = JSON.stringify({
     type: "system",
     subtype: "init",
-    session_id: claudeSessionId,
+    session_id: "new-session",
   });
   const assistantLine = JSON.stringify({
     type: "assistant",
+    uuid: "uuid-assistant-1",
     message: { id: "msg_1", role: "assistant", content: [{ type: "text", text: "done" }] },
   });
 
-  const relay = new Claude2SessionRelay();
-  await relay.activate(projectPath, claudeSessionId);
   await relay.handleStdoutLine(systemLine);
   await relay.handleStdoutLine(assistantLine);
-  await writeFile(jsonlPath, `${assistantLine}\n`);
 
   const received: string[] = [];
   relay.addSubscriber(
@@ -77,14 +69,15 @@ test("Claude2SessionRelay skips flushed pending lines even when earlier pending 
   const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
   const replayMessages = messages.slice(replayStart + 1, replayEnd);
 
-  expect(replayMessages.filter((msg) => msg.type === "assistant")).toHaveLength(1);
-  expect(replayMessages.filter((msg) => msg.type === "system")).toHaveLength(1);
+  expect(replayStart).toBe(0);
+  expect(replayEnd).toBe(3);
+  expect(replayMessages).toEqual([JSON.parse(systemLine), JSON.parse(assistantLine)]);
   relay.destroy();
 });
 
-test("Claude2SessionRelay keeps same-content pending user when disk only has activation baseline", async () => {
+test("Claude2SessionRelay replays resume relay before current raw buffer", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
-  const claudeSessionId = "relay-baseline-session";
+  const claudeSessionId = "relay-resume-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
   cleanupDirs.add(dirname(jsonlPath));
 
@@ -92,19 +85,25 @@ test("Claude2SessionRelay keeps same-content pending user when disk only has act
 
   const diskLine = JSON.stringify({
     type: "user",
+    uuid: "uuid-user-1",
     session_id: claudeSessionId,
-    message: { role: "user", content: [{ text: "repeat prompt", type: "text" }] },
+    message: { role: "user", content: [{ type: "text", text: "from disk" }] },
   });
   await writeFile(jsonlPath, `${diskLine}\n`);
 
-  const pendingLine = JSON.stringify({
-    type: "user",
-    message: { role: "user", content: [{ type: "text", text: "repeat prompt" }] },
+  const bufferLine = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-assistant-2",
+    message: {
+      id: "msg_2",
+      role: "assistant",
+      content: [{ type: "text", text: "from live buffer" }],
+    },
   });
 
   const relay = new Claude2SessionRelay();
   await relay.activate(projectPath, claudeSessionId);
-  relay.injectLine(pendingLine);
+  await relay.handleStdoutLine(bufferLine);
 
   const received: string[] = [];
   relay.addSubscriber(
@@ -118,38 +117,35 @@ test("Claude2SessionRelay keeps same-content pending user when disk only has act
   const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
   const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
   const replayMessages = messages.slice(replayStart + 1, replayEnd);
-  const userMessages = replayMessages.filter((msg) => msg.type === "user");
 
-  expect(userMessages).toHaveLength(2);
-  expect(userMessages[0]).toEqual(JSON.parse(diskLine));
-  expect(userMessages[1]).toEqual(JSON.parse(pendingLine));
+  expect(replayMessages).toEqual([JSON.parse(diskLine), JSON.parse(bufferLine)]);
   relay.destroy();
 });
 
-test("Claude2SessionRelay skips pending prefix already flushed to disk after activation", async () => {
+test("Claude2SessionRelay does not persist optimistic echo into later snapshots", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
-  const claudeSessionId = "relay-flushed-session";
+  const claudeSessionId = "relay-optimistic-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
   cleanupDirs.add(dirname(jsonlPath));
 
   await mkdir(dirname(jsonlPath), { recursive: true });
 
-  const baselineLine = JSON.stringify({
+  const diskLine = JSON.stringify({
     type: "user",
+    uuid: "uuid-user-1",
     session_id: claudeSessionId,
-    message: { role: "user", content: [{ text: "repeat prompt", type: "text" }] },
+    message: { role: "user", content: [{ type: "text", text: "persisted prompt" }] },
   });
-  await writeFile(jsonlPath, `${baselineLine}\n`);
+  await writeFile(jsonlPath, `${diskLine}\n`);
 
-  const flushedLine = JSON.stringify({
+  const optimisticLine = JSON.stringify({
     type: "user",
-    message: { role: "user", content: [{ type: "text", text: "repeat prompt" }] },
+    message: { role: "user", content: [{ type: "text", text: "optimistic only" }] },
   });
 
   const relay = new Claude2SessionRelay();
   await relay.activate(projectPath, claudeSessionId);
-  relay.injectLine(flushedLine);
-  await writeFile(jsonlPath, `${baselineLine}\n${flushedLine}\n`);
+  relay.injectLine(optimisticLine);
 
   const received: string[] = [];
   relay.addSubscriber(
@@ -163,10 +159,43 @@ test("Claude2SessionRelay skips pending prefix already flushed to disk after act
   const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
   const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
   const replayMessages = messages.slice(replayStart + 1, replayEnd);
-  const userMessages = replayMessages.filter((msg) => msg.type === "user");
 
-  expect(userMessages).toHaveLength(2);
-  expect(userMessages[0]).toEqual(JSON.parse(baselineLine));
-  expect(userMessages[1]).toEqual(JSON.parse(flushedLine));
+  expect(replayMessages).toEqual([JSON.parse(diskLine)]);
+  relay.destroy();
+});
+
+test("Claude2SessionRelay keeps meta skill user separate from plain user with same text", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  const skillText = "Base directory for this skill: /tmp/skill";
+  const plainUserLine = JSON.stringify({
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text: skillText }] },
+  });
+  const metaSkillLine = JSON.stringify({
+    type: "user",
+    isMeta: true,
+    sourceToolUseID: "tu-skill",
+    message: { role: "user", content: [{ type: "text", text: skillText }] },
+  });
+
+  await relay.handleStdoutLine(plainUserLine);
+  await relay.handleStdoutLine(metaSkillLine);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
+  const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
+  const replayMessages = messages.slice(replayStart + 1, replayEnd);
+
+  expect(replayMessages).toEqual([JSON.parse(plainUserLine), JSON.parse(metaSkillLine)]);
   relay.destroy();
 });

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
-import type { SessionStreamServerMessage } from "@agents-remote/shared";
+import type { Claude2ControlResponse, SessionStreamServerMessage } from "@agents-remote/shared";
 import { claude2StreamUrl, getAgentSessionMessages } from "../api/client";
 
 export type TaskInfo = {
@@ -11,12 +11,15 @@ export type TaskInfo = {
   status: "running" | "completed" | "error" | "backgrounded";
   text?: string;
   error?: string;
+  kind: "agent" | "workflow" | "task";
 };
 
 type TaskSystemMessage = Extract<
   SessionStreamServerMessage,
   { type: "system"; subtype: "task_started" | "task_updated" | "task_notification" }
 >;
+
+type AskUserQuestionAssistantMessage = Extract<SessionStreamServerMessage, { type: "assistant" }>;
 
 const isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSystemMessage =>
   msg.type === "system" &&
@@ -25,7 +28,59 @@ const isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSystem
     msg.subtype === "task_updated" ||
     msg.subtype === "task_notification");
 
+export const isSyntheticAssistantMessage = (msg: SessionStreamServerMessage): boolean =>
+  msg.type === "assistant" && (msg.message as { model?: string }).model === "<synthetic>";
+
+export const buildAllowAllControlResponse = (requestId: string): Claude2ControlResponse => ({
+  type: "control_response",
+  response: {
+    subtype: "success",
+    request_id: requestId,
+    response: { behavior: "allow", updatedInput: {} },
+  },
+});
+
+export const injectAskUserQuestionRequestId = (
+  assistantMsg: AskUserQuestionAssistantMessage,
+  requestId: string,
+): AskUserQuestionAssistantMessage => ({
+  ...assistantMsg,
+  message: {
+    ...assistantMsg.message,
+    content: assistantMsg.message.content.map((block) => {
+      if (block.type === "tool_use" && block.name === "AskUserQuestion") {
+        return {
+          ...block,
+          input: { ...block.input, __controlRequestId: requestId },
+        };
+      }
+      return block;
+    }),
+  },
+});
+
+export type SwitchModelResultState = {
+  currentModel?: string;
+  modelSwitchVersion: number;
+};
+
+export const applySwitchModelResult = (
+  state: SwitchModelResultState,
+  result: { success: boolean },
+): SwitchModelResultState => ({
+  currentModel: result.success ? state.currentModel : undefined,
+  modelSwitchVersion: state.modelSwitchVersion + 1,
+});
+
 export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {
+  const kind: TaskInfo["kind"] =
+    msg.subtype === "task_started"
+      ? msg.workflowName
+        ? "workflow"
+        : msg.agentType
+          ? "agent"
+          : "task"
+      : (prev.find((t) => t.id === msg.task_id)?.kind ?? "task");
   const existing = prev.findIndex((t) => t.id === msg.task_id);
   if (existing >= 0) {
     const updated = [...prev];
@@ -34,8 +89,9 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
     if (msg.subtype === "task_updated") {
       updated[existing] = {
         ...current,
+        kind,
         status: msg.error ? "error" : msg.isBackgrounded ? "backgrounded" : "running",
-        error: msg.error ?? current.error,
+        ...(msg.error ? { error: msg.error } : {}),
       };
       return updated;
     }
@@ -43,6 +99,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
     if (msg.subtype === "task_notification") {
       updated[existing] = {
         ...current,
+        kind,
         status: "completed",
         text: msg.text ?? current.text,
       };
@@ -51,6 +108,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
 
     updated[existing] = {
       ...current,
+      kind,
       agentType: msg.agentType ?? current.agentType,
       workflowName: msg.workflowName ?? current.workflowName,
       description: msg.prompt ?? current.description,
@@ -63,6 +121,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
       ...prev,
       {
         id: msg.task_id,
+        kind,
         agentType: msg.agentType,
         workflowName: msg.workflowName,
         description: msg.prompt ?? "",
@@ -76,6 +135,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
       ...prev,
       {
         id: msg.task_id,
+        kind,
         description: "",
         status: msg.error ? "error" : msg.isBackgrounded ? "backgrounded" : "running",
         ...(msg.error ? { error: msg.error } : {}),
@@ -87,6 +147,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
     ...prev,
     {
       id: msg.task_id,
+      kind,
       description: msg.text ?? "",
       status: "completed",
       ...(msg.text ? { text: msg.text } : {}),
@@ -97,7 +158,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
 export const deriveTasksFromReplayBatch = (batch: SessionStreamServerMessage[]): TaskInfo[] => {
   let tasks: TaskInfo[] = [];
   for (const msg of batch) {
-    if (!isTaskSystemMessage(msg)) continue;
+    if (!msg || !isTaskSystemMessage(msg)) continue;
     tasks = applyTaskSystemMessage(tasks, msg);
   }
   return tasks;
@@ -138,6 +199,146 @@ const extractTextFromContent = (content: unknown): string | null => {
   return texts.length > 0 ? texts.join("\n") : null;
 };
 
+const SKILL_CONTENT_PREFIX = "Base directory for this skill:";
+
+const extractUserTextBlocks = (content: unknown): string[] => {
+  if (!Array.isArray(content)) return [];
+  return (content as Array<Record<string, unknown>>)
+    .filter((block) => block.type === "text" && typeof block.text === "string" && block.text.trim())
+    .map((block) => block.text as string);
+};
+
+const isHiddenSkillContent = (texts: string[]): boolean =>
+  texts.some((text) => text.startsWith(SKILL_CONTENT_PREFIX));
+
+const attachSkillContentToToolCall = (
+  messages: ThreadMessageLike[],
+  currentParts: Array<Record<string, unknown>>,
+  toolUseId: string,
+  skillContent: string,
+): {
+  messages: ThreadMessageLike[];
+  currentParts: Array<Record<string, unknown>>;
+  attached: boolean;
+} => {
+  const matchIdx = currentParts.findIndex(
+    (part) => part.type === "tool-call" && "toolCallId" in part && part.toolCallId === toolUseId,
+  );
+  if (matchIdx >= 0) {
+    return {
+      messages,
+      currentParts: currentParts.map((part, index) =>
+        index === matchIdx
+          ? {
+              ...part,
+              metadata: {
+                ...(part.metadata as Record<string, unknown> | undefined),
+                skillContent,
+              },
+            }
+          : part,
+      ),
+      attached: true,
+    };
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const candidate = messages[i];
+    if (candidate.role !== "assistant" || !Array.isArray(candidate.content)) continue;
+
+    const flushedMatchIdx = candidate.content.findIndex(
+      (part) =>
+        part.type === "tool-call" &&
+        "toolCallId" in part &&
+        (part as Record<string, string>).toolCallId === toolUseId,
+    );
+    if (flushedMatchIdx < 0) continue;
+
+    const updatedContent = [...candidate.content];
+    updatedContent[flushedMatchIdx] = {
+      ...updatedContent[flushedMatchIdx],
+      metadata: {
+        ...(updatedContent[flushedMatchIdx] as Record<string, unknown>).metadata as
+          | Record<string, unknown>
+          | undefined,
+        skillContent,
+      },
+    };
+
+    const nextMessages = [...messages];
+    nextMessages[i] = { ...candidate, content: updatedContent };
+    return { messages: nextMessages, currentParts, attached: true };
+  }
+
+  return { messages, currentParts, attached: false };
+};
+
+const getMessageUuid = (msg: SessionStreamServerMessage): string | null => {
+  const uuid = (msg as Record<string, unknown>).uuid;
+  return typeof uuid === "string" ? uuid : null;
+};
+
+const findMissingTailByUuid = (
+  localMessages: SessionStreamServerMessage[],
+  snapshotMessages: SessionStreamServerMessage[],
+): SessionStreamServerMessage[] | null => {
+  if (localMessages.length === 0) return snapshotMessages;
+
+  const localUuids = new Set(
+    localMessages.map(getMessageUuid).filter((uuid): uuid is string => uuid !== null),
+  );
+  if (localUuids.size === 0) return snapshotMessages;
+
+  for (let i = snapshotMessages.length - 1; i >= 0; i--) {
+    const uuid = getMessageUuid(snapshotMessages[i]!);
+    if (!uuid) continue;
+    if (localUuids.has(uuid)) {
+      return snapshotMessages.slice(i + 1);
+    }
+  }
+
+  return null;
+};
+
+const summarizeStreamMessage = (msg: SessionStreamServerMessage): Record<string, unknown> => {
+  if (msg.type === "user") {
+    const meta = msg as Record<string, unknown>;
+    const content = Array.isArray(msg.message.content) ? msg.message.content : [];
+    return {
+      type: msg.type,
+      isMeta: meta.isMeta === true,
+      isSynthetic: meta.isSynthetic === true,
+      sourceToolUseID: typeof meta.sourceToolUseID === "string" ? meta.sourceToolUseID : undefined,
+      toolUseResult: meta.toolUseResult ?? meta.tool_use_result,
+      contentTypes: content.map((block) => block.type),
+      textPreview: extractTextFromContent(content)?.slice(0, 120),
+    };
+  }
+
+  if (msg.type === "assistant") {
+    return {
+      type: msg.type,
+      messageId: msg.message.id,
+      contentTypes: msg.message.content.map((block) => block.type),
+      toolUseIds: msg.message.content
+        .filter((block) => block.type === "tool_use")
+        .map((block) => ("id" in block ? block.id : undefined)),
+    };
+  }
+
+  if (msg.type === "system") {
+    return {
+      type: msg.type,
+      subtype: msg.subtype,
+      session_id: "session_id" in msg ? msg.session_id : undefined,
+      task_id: "task_id" in msg ? msg.task_id : undefined,
+      status: "status" in msg ? msg.status : undefined,
+    };
+  }
+
+  return { type: msg.type };
+};
+
 /**
  * Convert raw Claude2 JSONL/API messages into ThreadMessageLike[] for
  * assistant-ui history display.
@@ -166,75 +367,34 @@ const extractTextFromContent = (content: unknown): string | null => {
  * Multiple thinking_tokens deltas count as 1, not N.
  */
 export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): number {
-  let count = 0;
-  const startedTools = new Set<string>();
-  let turnActive = false;
+  let turnOpen = false;
 
   for (const msg of rawMessages) {
+    if (!msg) continue;
+
     if (msg.type === "result") {
-      count = 0;
-      startedTools.clear();
-      turnActive = false;
+      turnOpen = false;
       continue;
     }
 
     if (msg.type === "assistant") {
-      if (!turnActive) {
-        count++;
-        turnActive = true;
-      }
-      for (const block of msg.message.content) {
-        if (block.type === "tool_use" && "id" in block) {
-          startedTools.add(block.id as string);
-          count++;
-        }
-      }
+      turnOpen = true;
       continue;
     }
 
     if (msg.type === "system" && "subtype" in msg && msg.subtype === "thinking_tokens") {
-      if (!turnActive) {
-        count++;
-        turnActive = true;
-      }
+      turnOpen = true;
       continue;
-    }
-
-    if (msg.type === "user") {
-      let hasText = false;
-      for (const block of msg.message.content) {
-        if (
-          block.type === "tool_result" &&
-          "tool_use_id" in block &&
-          typeof block.tool_use_id === "string"
-        ) {
-          if (startedTools.has(block.tool_use_id)) {
-            startedTools.delete(block.tool_use_id);
-            count--;
-          }
-        }
-        if (block.type === "text") {
-          hasText = true;
-        }
-      }
-      // User text message marks a new turn boundary. Since disk JSONL has
-      // no result messages, user text is the reliable signal that the
-      // previous turn completed. Reset all counters.
-      if (hasText) {
-        count = 0;
-        startedTools.clear();
-        turnActive = false;
-      }
     }
   }
 
-  return count;
+  return turnOpen ? 1 : 0;
 }
 
 export function loadMessagesFromRaw(
   rawMessages: SessionStreamServerMessage[],
 ): ThreadMessageLike[] {
-  const messages: ThreadMessageLike[] = [];
+  let messages: ThreadMessageLike[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let currentParts: any[] = [];
   let lastAssistantMsgId: string | null = null;
@@ -242,8 +402,8 @@ export function loadMessagesFromRaw(
   // Shared mutable wrapper so reasoning parts created in the same turn all
   // reference the latest estimated_tokens. During live streaming
   // loadMessagesFromRaw re-runs on every rawMessages update, so the
-  // reference stays current. During replay the collapsed thinking_tokens
-  // (kept by pushBuffer) provides the final count.
+  // reference stays current. During replay/reconnect, the latest raw
+  // thinking_tokens event in the stream wins naturally.
   let turnTokens: { value: number } = { value: 0 };
   let turnDuration: { value: number | null } = { value: null };
 
@@ -304,73 +464,38 @@ export function loadMessagesFromRaw(
     }
 
     if (msg.type === "user") {
-      // isMeta user messages are CLI-internal. If they have
-      // sourceToolUseID, attach the text to the matching tool-call
-      // rather than rendering a user bubble. All isMeta messages
-      // are skipped regardless.
       const userMeta = msg as Record<string, unknown>;
-      if (userMeta.isMeta === true) {
-        if (typeof userMeta.sourceToolUseID === "string") {
-          const toolUseId = userMeta.sourceToolUseID;
-          const metaText = extractTextFromContent(msg.message.content);
-          if (metaText) {
-            const matchIdx = currentParts.findIndex(
-              (p: Record<string, unknown>) =>
-                p.type === "tool-call" && "toolCallId" in p && p.toolCallId === toolUseId,
-            );
-            if (matchIdx >= 0) {
-              currentParts = currentParts.map((p, i) =>
-                i === matchIdx
-                  ? {
-                      ...p,
-                      metadata: {
-                        ...((p as Record<string, unknown>).metadata as Record<string, unknown>),
-                        skillContent: metaText,
-                      },
-                    }
-                  : p,
-              );
-            } else {
-              let attached = false;
-              for (let j = messages.length - 1; j >= 0; j--) {
-                const candidate = messages[j];
-                if (candidate.role === "assistant" && Array.isArray(candidate.content)) {
-                  const fmIdx = candidate.content.findIndex(
-                    (p) =>
-                      p.type === "tool-call" &&
-                      "toolCallId" in p &&
-                      (p as Record<string, string>).toolCallId === toolUseId,
-                  );
-                  if (fmIdx >= 0) {
-                    const updated = [...candidate.content];
-                    updated[fmIdx] = {
-                      ...updated[fmIdx],
-                      metadata: {
-                        ...((updated[fmIdx] as Record<string, unknown>).metadata as Record<
-                          string,
-                          unknown
-                        >),
-                        skillContent: metaText,
-                      },
-                    };
-                    messages[j] = { ...candidate, content: updated };
-                    attached = true;
-                    break;
-                  }
-                }
-              }
-              if (!attached) {
-                console.warn("[claude2-adapter] skillContent: no matching tool-call found", {
-                  toolUseId,
-                });
-              }
-            }
+      const rawContent = msg.message.content as unknown;
+      const userTexts = extractUserTextBlocks(rawContent);
+      const hasHiddenSkillContent =
+        isHiddenSkillContent(userTexts) &&
+        (userMeta.isMeta === true ||
+          userMeta.isSynthetic === true ||
+          typeof userMeta.sourceToolUseID === "string");
+
+      if (userMeta.isMeta === true || hasHiddenSkillContent) {
+        const toolUseId =
+          typeof userMeta.sourceToolUseID === "string" ? userMeta.sourceToolUseID : null;
+        const skillContent =
+          userTexts.length > 0 ? userTexts.join("\n") : extractTextFromContent(rawContent);
+
+        if (toolUseId && skillContent) {
+          const attached = attachSkillContentToToolCall(
+            messages,
+            currentParts,
+            toolUseId,
+            skillContent,
+          );
+          messages = attached.messages;
+          currentParts = attached.currentParts;
+          if (!attached.attached) {
+            console.warn("[claude2-adapter] skillContent: no matching tool-call found", {
+              toolUseId,
+            });
           }
         }
         continue;
       }
-
-      const rawContent = msg.message.content as unknown;
 
       // CLI command output (e.g. <local-command-stdout> for /compact).
       // Content is a plain string, not the usual array of blocks.
@@ -407,12 +532,8 @@ export function loadMessagesFromRaw(
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const contentBlocks = rawContent as any[];
-      const userTexts: string[] = [];
 
       for (const block of contentBlocks) {
-        if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-          userTexts.push(block.text as string);
-        }
         if (block.type === "tool_result") {
           const isError = !!(block as { is_error?: boolean }).is_error;
           const texts =
@@ -436,10 +557,6 @@ export function loadMessagesFromRaw(
                 : p,
             );
           } else if (toolUseId) {
-            // Search backwards for the last assistant message that
-            // contains this tool-call. The last message may be a
-            // user text ("Continue from where you left off.") that
-            // was pushed AFTER the assistant was flushed.
             let found = false;
             for (let j = messages.length - 1; j >= 0; j--) {
               const candidate = messages[j];
@@ -465,8 +582,7 @@ export function loadMessagesFromRaw(
               }
             }
             if (!found) {
-              // Tool_use_id not found anywhere — possibly from a
-              // different turn. Ignore.
+              // Tool_use_id not found anywhere — possibly from a different turn. Ignore.
             }
           }
         }
@@ -478,7 +594,6 @@ export function loadMessagesFromRaw(
       const toolUseResult = ((msg as Record<string, unknown>).toolUseResult ??
         (msg as Record<string, unknown>).tool_use_result) as unknown;
       if (toolUseResult) {
-        // Find the last tool-call and attach the structured result
         for (let i = currentParts.length - 1; i >= 0; i--) {
           const p = currentParts[i] as Record<string, unknown>;
           if (p.type === "tool-call" && !p.structuredResult) {
@@ -491,12 +606,6 @@ export function loadMessagesFromRaw(
       }
 
       if (userTexts.length > 0) {
-        if (userTexts.some((text) => text.startsWith("Base directory for this skill:"))) {
-          console.warn("[claude2-adapter] skill content fell through to user bubble", {
-            userTexts,
-            rawMessage: msg,
-          });
-        }
         flushAssistant();
         messages.push({ role: "user", content: userTexts.join("\n") });
       }
@@ -584,19 +693,17 @@ export function useClaude2Session(
   initialPermissionMode?: string,
 ) {
   const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
-  const isRunning = useMemo(() => {
-    return computeRunningCount(rawMessages) > 0;
-  }, [rawMessages]);
+  const rawMessagesRef = useRef<SessionStreamServerMessage[]>([]);
+  const [connectionVersion, setConnectionVersion] = useState(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
-  // Initialised from REST response for new sessions.
-  // system.init overrides when it arrives (for reconnect/switch/resume).
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
 
-  // Sync from REST response when it loads after initial render.
   useEffect(() => {
     if (initialModel !== undefined && resolvedModel === undefined) {
       setResolvedModel(initialModel);
@@ -616,6 +723,67 @@ export function useClaude2Session(
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
+  const [slashCommands, setSlashCommands] = useState<string[]>([]);
+
+  const resetSessionState = useCallback(() => {
+    setRawMessages([]);
+    setTasks([]);
+    setSlashCommands([]);
+    setHasOlder(false);
+    setLoading(true);
+    setIsRunning(false);
+    cursorRef.current = null;
+    pendingAskRef.current = null;
+    replayBatchRef.current = null;
+    compactActiveRef.current = false;
+    compactPhaseRef.current = "none";
+    compactInterruptedRef.current = false;
+    rawMessagesRef.current = [];
+  }, [initialModel, initialPermissionMode]);
+
+  useEffect(() => {
+    rawMessagesRef.current = rawMessages;
+  }, [rawMessages]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+    }
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      setConnectionVersion((version) => version + 1);
+    }, 500);
+  }, []);
+
+  const reconcileSnapshot = useCallback(
+    (
+      localMessages: SessionStreamServerMessage[],
+      snapshotMessages: SessionStreamServerMessage[],
+    ) => {
+      if (snapshotMessages.length === 0) {
+        return localMessages;
+      }
+
+      const missingTail = findMissingTailByUuid(localMessages, snapshotMessages);
+      if (missingTail === null) {
+        return snapshotMessages;
+      }
+      if (missingTail.length === 0) {
+        return localMessages;
+      }
+      return [...localMessages, ...missingTail];
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    setConnectionVersion(0);
+    resetSessionState();
+  }, [projectName, sessionId, resetSessionState]);
 
   const sendToSocket = useCallback((data: unknown) => {
     const socket = socketRef.current;
@@ -703,16 +871,16 @@ export function useClaude2Session(
     [sendToSocket],
   );
 
-  // Connect WebSocket and load initial history
   useEffect(() => {
     let cancelled = false;
     const url = claude2StreamUrl(projectName, sessionId);
 
-    // Messages flow entirely through the WebSocket — the server's
-    // session relay integrates JSONL history, turn buffers, and live
-    // streaming into a single pipeline. No separate REST fetch needed.
+    if (connectionVersion === 0) {
+      resetSessionState();
+    } else {
+      setLoading(true);
+    }
 
-    // Open WebSocket for live streaming
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
@@ -722,69 +890,66 @@ export function useClaude2Session(
       if (cancelled) return;
       try {
         const raw = event.data as string;
-        console.log(`[claude2-adapter] ws recv: ${raw.slice(0, 200)}`);
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
+        console.log("[claude2-adapter] ws recv", summarizeStreamMessage(msg), msg);
 
-        // ── Session lifecycle ───────────────────────────────────────
-        //
-        // Message order on connect:
-        //   connected → replay_start → [history] → replay_end → [live]
-        //
-        // connected means transport is established, not that Claude is
-        // generating. A fresh session's registry status is "running" but
-        // the thread is idle until the user sends a message or live
-        // assistant/thinking content arrives.
         if (msg.type === "connected") {
-          setTasks([]);
+          if (rawMessagesRef.current.length === 0) {
+            setLoading(false);
+          }
           return;
         }
 
-        // ── Replay batching ──────────────────────────────────────────
         if (msg.type === "replay_start") {
           replayBatchRef.current = [];
+          setLoading(true);
+          setIsRunning(false);
           return;
         }
         if (msg.type === "replay_end") {
-          const batch = replayBatchRef.current;
+          const batch = replayBatchRef.current ?? [];
           replayBatchRef.current = null;
-          if (batch && batch.length > 0) {
-            setRawMessages(batch);
-            setTasks(deriveTasksFromReplayBatch(batch));
+          const merged = reconcileSnapshot(rawMessagesRef.current, batch);
+          rawMessagesRef.current = merged;
+          setRawMessages(merged);
+          setTasks(deriveTasksFromReplayBatch(merged));
+          setIsRunning(computeRunningCount(merged) > 0);
+          const replayInit = [...batch]
+            .reverse()
+            .find((item) => item.type === "system" && item.subtype === "init") as
+            | { model: string; permissionMode: string; slash_commands?: string[] }
+            | undefined;
+          if (replayInit) {
+            setResolvedModel(replayInit.model);
+            setPermissionMode(replayInit.permissionMode);
+            setSlashCommands(
+              Array.isArray(replayInit.slash_commands) ? replayInit.slash_commands : [],
+            );
+            const tiers = ["sonnet", "opus", "haiku"];
+            const tier = tiers.find((t) => replayInit.model.includes(t));
+            if (tier) setCurrentModel(tier);
           }
           setLoading(false);
           return;
         }
-        // During replay, accumulate instead of processing individually
         if (replayBatchRef.current) {
           replayBatchRef.current.push(msg);
           return;
         }
 
-        // First message outside of replay — initial load complete
         setLoading(false);
+        if (
+          msg.type === "assistant" ||
+          (msg.type === "system" && msg.subtype === "thinking_tokens")
+        ) {
+          setIsRunning(true);
+        }
 
-        // ── Task system ──────────────────────────────────────────────
         if (isTaskSystemMessage(msg)) {
           setTasks((prev) => applyTaskSystemMessage(prev, msg));
           return;
         }
 
-        // ── compact protocol ────────────────────────────────────────
-        //
-        // Compact lifecycle (manual /compact):
-        //   status:"compacting" → compact_result → [restart] →
-        //   compact_boundary (replay marker) → … → result →
-        //   [restart] → live assistant
-        //
-        // Auto compact (context full):
-        //   compact_boundary (inline, no preceding status) →
-        //   … → result → [restart] → live assistant
-        //
-        // Phase tracking prevents replay markers from re-triggering
-        // the compact indicator and keeps isRunning correct across
-        // the restart → replay → restart → live assistant sequence.
-
-        // Phase: manual compact start (status:"compacting")
         if (
           msg.type === "system" &&
           msg.subtype === "status" &&
@@ -795,11 +960,8 @@ export function useClaude2Session(
           compactInterruptedRef.current = false;
           compactPhaseRef.current = "compacting";
           if (bridge.onCompact) bridge.onCompact({ phase: "start" });
-          // Fall through — loadMessagesFromRaw skips non-compact_boundary
-          // system messages, so the rendering pipeline is the single filter.
         }
 
-        // Phase: manual compact finished (compact_result)
         if (msg.type === "system" && msg.subtype === "status" && "compact_result" in msg) {
           if (compactActiveRef.current) {
             compactActiveRef.current = false;
@@ -817,57 +979,30 @@ export function useClaude2Session(
             }
           }
           compactPhaseRef.current = "replay";
-          // isRunning stays true — CLI replays compacted context next
-          // Fall through — loadMessagesFromRaw skips non-compact_boundary
-          // system messages, so the rendering pipeline is the single filter.
         }
 
-        // Phase: compact_boundary — start if auto compact, skip if replay.
-        // compact_boundary IS the CLI's authoritative compact record
-        // (persisted to JSONL), so it must flow into rawMessages for chat display.
         if (
           msg.type === "system" &&
           (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
         ) {
           if (compactPhaseRef.current === "none") {
-            // Auto compact — no preceding status:"compacting"
             compactActiveRef.current = true;
             compactInterruptedRef.current = false;
             compactPhaseRef.current = "compacting";
             if (bridge.onCompact) bridge.onCompact({ phase: "start" });
           }
-          // Fall through — message enters rawMessages.
         }
 
-        // ── Session identity from system.init ──────────────────────
-        //
-        // system.init is the SINGLE source of truth for the current model
-        // and permission mode. It arrives:
-        //   • New session  — CLI emits its internal defaults (model from
-        //                     user config, permissionMode typically "auto")
-        //   • Reconnect    — CLI restores both from its JSONL session file
-        //                     via --resume and emits them in system.init
-        //   • After switch — new process emits the just-applied values
-        //
-        // We do NOT persist model or permissionMode in our own metadata.
-        // The CLI's JSONL session file is the authoritative store; we
-        // read the current values exclusively from system.init.
         if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
-          const init = msg as { model: string; permissionMode: string };
+          const init = msg as { model: string; permissionMode: string; slash_commands?: string[] };
           setResolvedModel(init.model);
           setPermissionMode(init.permissionMode);
-          // Derive tier name from resolved model (e.g.
-          // "claude-sonnet-4-20250514" → "sonnet") so the dropdown
-          // checkmark follows the actual running model.
+          setSlashCommands(Array.isArray(init.slash_commands) ? init.slash_commands : []);
           const tiers = ["sonnet", "opus", "haiku"];
           const tier = tiers.find((t) => init.model.includes(t));
           if (tier) setCurrentModel(tier);
         }
 
-        // ── API retry — flows through to rawMessages as an inline
-        // system error in the message stream (handled in loadMessagesFromRaw).
-
-        // ── Server-confirmed model switch ──────────────────────────
         if (msg.type === "switch_model_result") {
           const result = msg as {
             type: "switch_model_result";
@@ -875,18 +1010,16 @@ export function useClaude2Session(
             success: boolean;
             error?: string;
           };
-          if (result.success) {
-            setModelSwitchVersion((v) => v + 1);
-          } else {
-            console.error(`[claude2-adapter] model switch failed: ${result.error ?? "unknown"}`);
+          if (!result.success) {
             setCurrentModel(undefined);
-            setModelSwitchVersion((v) => v + 1);
+            console.error(`[claude2-adapter] model switch failed: ${result.error ?? "unknown"}`);
           }
+          setModelSwitchVersion((version) => version + 1);
         }
 
         if (msg.type === "result") {
+          setIsRunning(false);
           if (compactPhaseRef.current === "compacting" || compactPhaseRef.current === "replay") {
-            // End of compact or replay phase
             if (compactActiveRef.current) {
               compactActiveRef.current = false;
               if (bridge.onCompact) bridge.onCompact({ phase: "end" });
@@ -895,7 +1028,6 @@ export function useClaude2Session(
           }
         }
 
-        // Phase: live assistant starts after compact replay
         if (
           compactPhaseRef.current === "waiting-live" &&
           (msg.type === "assistant" || (msg.type === "system" && msg.subtype === "thinking_tokens"))
@@ -903,51 +1035,28 @@ export function useClaude2Session(
           compactPhaseRef.current = "none";
         }
 
-        // ── control_request routing ─────────────────────────────────
         if (msg.type === "control_request") {
           const toolName = msg.request?.tool_name;
           if (toolName !== "AskUserQuestion") {
-            sendToSocket({
-              type: "control_response",
-              response: {
-                subtype: "success",
-                request_id: msg.request_id,
-                response: { behavior: "allow", updatedInput: {} },
-              },
-            });
+            sendToSocket(buildAllowAllControlResponse(msg.request_id));
             return;
           }
 
-          // AskUserQuestion: inject request_id into buffered assistant
           if (pendingAskRef.current) {
-            const assistant = pendingAskRef.current as {
-              type: "assistant";
-              message: {
-                content: Array<{ type: string; name?: string; input: Record<string, unknown> }>;
-              };
-            };
-            const updated = {
-              ...assistant,
-              message: {
-                ...assistant.message,
-                content: assistant.message.content.map((block) => {
-                  if (block.type === "tool_use" && block.name === "AskUserQuestion") {
-                    return {
-                      ...block,
-                      input: { ...block.input, __controlRequestId: msg.request_id },
-                    };
-                  }
-                  return block;
-                }),
-              },
-            };
+            const updated = injectAskUserQuestionRequestId(
+              pendingAskRef.current as AskUserQuestionAssistantMessage,
+              msg.request_id,
+            );
             pendingAskRef.current = null;
-            setRawMessages((prev) => [...prev, updated as SessionStreamServerMessage]);
+            setRawMessages((prev) => {
+              const next = [...prev, updated as SessionStreamServerMessage];
+              rawMessagesRef.current = next;
+              return next;
+            });
           }
           return;
         }
 
-        // ── Buffer assistant with AskUserQuestion ───────────────────
         if (msg.type === "assistant") {
           const assistantMsg = msg as {
             type: "assistant";
@@ -956,9 +1065,9 @@ export function useClaude2Session(
               content: Array<{ type: string; name?: string }>;
             };
           };
-          // Skip synthetic assistant messages (CLI internal, e.g.
-          // compact cancellation notices with model:"<synthetic>")
-          if (assistantMsg.message.model === "<synthetic>") return;
+          if (isSyntheticAssistantMessage(assistantMsg as unknown as SessionStreamServerMessage)) {
+            return;
+          }
 
           const hasAsk = assistantMsg.message.content.some(
             (b) => b.type === "tool_use" && b.name === "AskUserQuestion",
@@ -969,26 +1078,20 @@ export function useClaude2Session(
           }
         }
 
-        // ── Flush stale buffer ─────────────────────────────────────
         if (pendingAskRef.current) {
-          setRawMessages((prev) => [...prev, pendingAskRef.current!]);
+          const pendingAsk = pendingAskRef.current;
           pendingAskRef.current = null;
+          setRawMessages((prev) => {
+            const next = [...prev, pendingAsk];
+            rawMessagesRef.current = next;
+            return next;
+          });
         }
 
         setRawMessages((prev) => {
-          // Dedup: when the relay injects the same user message that onNew
-          // already added optimistically, skip the duplicate.
-          if (msg.type === "user") {
-            const last = prev[prev.length - 1];
-            if (
-              last &&
-              last.type === "user" &&
-              JSON.stringify(last.message) === JSON.stringify(msg.message)
-            ) {
-              return prev;
-            }
-          }
-          return [...prev, msg];
+          const next = [...prev, msg];
+          rawMessagesRef.current = next;
+          return next;
         });
       } catch {
         // skip
@@ -997,40 +1100,56 @@ export function useClaude2Session(
 
     socket.onclose = () => {
       if (!cancelled) {
-        setLoading(false);
+        socketRef.current = null;
+        setLoading(true);
+        scheduleReconnect();
       }
     };
 
     socket.onerror = (e) => {
       console.log("[claude2-adapter] ws error", e);
-      setLoading(false);
     };
 
     return () => {
       cancelled = true;
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
       socket.close();
-      socketRef.current = null;
     };
-  }, [projectName, sessionId, bridge, sendToSocket]);
+  }, [
+    projectName,
+    sessionId,
+    bridge,
+    resetSessionState,
+    connectionVersion,
+    scheduleReconnect,
+    reconcileSnapshot,
+    sendToSocket,
+  ]);
 
-  // Convert raw messages to ThreadMessageLike[]
   const threadLikeMessages = useMemo(() => loadMessagesFromRaw(rawMessages), [rawMessages]);
 
-  // Load older messages (prepend to rawMessages)
-  const loadOlder = useCallback(async () => {
-    const cursor = cursorRef.current;
-    if (!cursor) return;
-    try {
-      const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
-      cursorRef.current = response.pagination.nextCursor;
-      setHasOlder(response.pagination.hasOlder);
-      setRawMessages((prev) => [...response.messages, ...prev]);
-    } catch (err) {
-      console.error("[loadOlder] error", err);
-    }
-  }, [projectName, sessionId]);
+  const loadOlder = useCallback(
+    async (cursorOverride?: string | null) => {
+      const cursor = cursorOverride ?? cursorRef.current;
+      if (!cursor) return;
+      try {
+        const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
+        cursorRef.current = response.pagination.nextCursor;
+        setHasOlder(response.pagination.hasOlder);
+        setRawMessages((prev) => {
+          const next = [...response.messages, ...prev];
+          rawMessagesRef.current = next;
+          return next;
+        });
+      } catch (err) {
+        console.error("[loadOlder] error", err);
+      }
+    },
+    [projectName, sessionId],
+  );
 
-  // onNew: user sent a message from the composer
   const onNew = useCallback(
     async (message: AppendMessage) => {
       const textContent = (Array.isArray(message.content) ? message.content : [])
@@ -1038,12 +1157,17 @@ export function useClaude2Session(
         .map((p) => (p as { text: string }).text)
         .join("\n");
 
-      if (textContent) {
+      if (textContent.trim()) {
         const userMsg: SessionStreamServerMessage = {
           type: "user",
           message: { role: "user", content: [{ type: "text", text: textContent }] },
+          metadata: { custom: { optimisticUserEcho: true } },
         } as SessionStreamServerMessage;
-        setRawMessages((prev) => [...prev, userMsg]);
+        setRawMessages((prev) => {
+          const next = [...prev, userMsg];
+          rawMessagesRef.current = next;
+          return next;
+        });
         sendToSocket({
           type: "user",
           message: { role: "user", content: [{ type: "text", text: textContent }] },
@@ -1053,7 +1177,6 @@ export function useClaude2Session(
     [sendToSocket],
   );
 
-  // onCancel: user interrupted the run — send proper interrupt via SDK protocol
   const onCancel = useCallback(async () => {
     if (compactPhaseRef.current === "compacting") {
       compactInterruptedRef.current = true;
@@ -1065,7 +1188,6 @@ export function useClaude2Session(
     });
   }, [sendToSocket]);
 
-  // ExternalStoreAdapter for useExternalStoreRuntime
   const storeAdapter = useMemo<ExternalStoreAdapter<ThreadMessageLike>>(
     () => ({
       messages: threadLikeMessages,
@@ -1088,5 +1210,6 @@ export function useClaude2Session(
     permissionMode,
     loading,
     tasks,
+    slashCommands,
   };
 }
