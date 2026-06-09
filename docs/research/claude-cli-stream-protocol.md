@@ -37,7 +37,7 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 
 | 类型                          | 子类型 / 形态                                | 含义               | 是否渲染                | 主要处理                                           |
 | ----------------------------- | -------------------------------------------- | ------------------ | ----------------------- | -------------------------------------------------- |
-| `system`                      | `init`                                       | 会话元数据初始化   | 不渲染                  | 读取 model / permissionMode / session_id           |
+| `system`                      | `init`                                       | 会话元数据初始化 (**不持久化到 JSONL**)  | 不渲染                  | 读取 model / permissionMode / session_id           |
 | `system`                      | `status`                                     | compact 运行态通知 | 不渲染                  | 驱动 compact banner                                |
 | `system`                      | `compact_boundary` / `microcompact_boundary` | 历史压缩边界       | inline 分割线           | 标记压缩后上下文边界                               |
 | `system`                      | `api_retry`                                  | API 重试通知       | inline 系统消息         | 展示失败与重试                                     |
@@ -1238,3 +1238,442 @@ connected → replay_start → 磁盘历史 JSONL → 待刷新历史 → replay
 - **REST /messages**：深分页加载旧消息，cursor-based，直接从磁盘 JSONL 读取
 - **SessionMetadata**：持久化 model 和 permissionMode（供 REST API 在 system.init 到达前返回初始值，也供 `ensureRunning` 重建进程时传入 CLI）
 - **CLI JSONL**：model 和 permissionMode 的权威历史存储（`--resume` 时 CLI 从中恢复）
+
+---
+
+## JSONL 与 CLI stdout 持久化边界
+
+Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json`） 和 **JSONL 磁盘文件**（`~/.claude/projects/<dir>/<sessionId>.jsonl`）。二者的格式和包含的消息类型**不完全重叠**。
+
+### CLI stdout 独有（JSONL 中不存在）
+
+以下消息类型只在 CLI stdout 实时流中出现，**不会**写入 JSONL 磁盘文件。API 重启后 relay 从 JSONL 重建历史时，这些消息会丢失：
+
+| 消息类型 | 生命周期 | Resume 影响 | 处理策略 |
+|---|---|---|---|
+| `system/init` | CLI 启动一次性 | **关键** | 持久化 `slash_commands`、`skills`、`tools` 到 SessionMetadata |
+| `result` | 每 turn 结束一次 | **重要** | 用于清零 isRunning、flush assistant；JSONL 不含，需 buffer 补充 |
+| `system/thinking_tokens` | 每 turn 实时 | 低 | turn 结束即无意义，不需要历史回放 |
+| `system/api_retry` | 重试时临时 | 低 | 临时消息，重试结束即无意义 |
+| `system/status` | compact 状态通知 | 低 | compact 结束即无意义 |
+| `system/task_started` | 子任务开始 | 中等 | task 状态不持久化；可考虑从 JSONL 的 `task_started` 重建 |
+| `system/task_updated` | 子任务更新 | 中等 | 同上 |
+| `system/task_notification` | 子任务通知 | 低 | 一次性通知，不需要历史回放 |
+| `system/microcompact_boundary` | 微压缩边界 | 低 | 可忽略 |
+| `control_request` | 交互式权限提示 | 无 | 交互式实时消息，当前 turn 结束后即无意义 |
+| `switch_model_result` | 模型切换响应 | 无 | 交互式实时消息 |
+| `system/permission_denied` | 自动权限拒绝 | 低 | 2026-06 新发现的类型，字段: `decision_reason`, `decision_reason_type`, `message`, `tool_name`, `tool_use_id` |
+
+### JSONL 独有（CLI stdout 不输出）
+
+以下类型只出现在 JSONL 磁盘文件中，CLI stdout **不会**输出。
+
+注意：JSONL 中 `assistant`、`user`、`mode`、`system/compact_boundary` 等类型的**外层信封格式与 CLI stdout 不同**（JSONL 多了 `parentUuid`、`isSidechain`、`uuid`、`timestamp`、`sessionId`、`cwd`、`gitBranch` 等追踪字段），但核心消息体一致。这部分差异不影响 resume 恢复，详见 [JSONL 信封字段](#jsonl-信封字段)。
+
+**Resume 关键类型**（可用于恢复会话状态）：
+
+| 类型 | 含义 | Resume 恢复价值 |
+|---|---|---|
+| `attachment` (23 种子类型) | 运行时附件：MCP 指令、skill 列表、命令权限、模式变更等 | **核心** — 可完整重建 MCP servers、skills、slash command 权限、plan/auto 模式状态 |
+| `last-prompt` | 上次用户 prompt 文本 | **高** — 可用作 UI 输入回显或 draft 恢复 |
+| `mode` | 运行时模式 | 中 — 恢复 `normal` / `auto` 等 mode 显示 |
+| `permission-mode` | 权限模式变更 | 中 — 恢复 permission mode 显示 |
+| `queue-operation` | 内部任务队列操作 | 低 — 用于 debug |
+
+---
+
+#### `attachment` — 运行时附件（23 种子类型）
+
+**含义**：`attachment` 是 CLI 运行时的非对话内容记录。它记录 MCP 服务器指令变更、skill 列表更新、命令权限、模式切换、文件编辑等运行时状态。**每条 attachment 都是对某个状态的增量更新**。
+
+**字段**（外层信封）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"attachment"` | 消息类型 |
+| `parentUuid` | string | 父消息 UUID |
+| `isSidechain` | boolean | 是否为侧链（如子 agent） |
+| `uuid` | string | 本条消息唯一标识 |
+| `timestamp` | string (ISO 8601) | 产生时间 |
+| `sessionId` | string | 会话 UUID |
+| `attachment` | object | 附件内容，`type` 字段决定子类型 |
+| `cwd` | string | 工作目录 |
+| `gitBranch` | string | 当前 Git 分支 |
+| `userType` | string | 来源类型（`"external"` / `"synthetic"`） |
+| `entrypoint` | string | 入口（`"cli"` / `"sdk-ts"`） |
+| `version` | string | CLI 版本号 |
+| `slug` | string? | 可选 slug |
+
+**时机**：每种 attachment 子类型在对应事件发生时写入 JSONL。attachment 只在 JSONL 中存在，CLI stdout **不输出**。
+
+##### 核心子类型（Resume 相关）
+
+**`mcp_instructions_delta`** — MCP 服务器指令变更
+
+**含义**：当 MCP 服务器提供的 `instructions` 内容被添加到 system prompt 或更新时记录。这是**增量** — `addedNames` 和 `addedBlocks` 追加到当前已累积的指令集。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"mcp_instructions_delta"` | 子类型 |
+| `attachment.addedNames` | string[] | 新增/更新的 MCP 服务器名 |
+| `attachment.addedBlocks` | string[] | 新增/更新的指令块（Markdown 文本） |
+
+**Resume 恢复**：从最近一条 `mcp_instructions_delta` 可重建 MCP 服务器指令状态。但注意这是增量更新，完整的恢复需要累积所有历史 delta。
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "mcp_instructions_delta",
+    "addedNames": ["context7", "deepwiki"],
+    "addedBlocks": ["## context7\nUse this server to fetch current documentation..."]
+  },
+  "uuid": "c6282445-7913-4e3b-a3eb-b7589a2a91c3",
+  "sessionId": "dbcec945-e33a-428b-8a70-f17d59298257"
+}
+```
+
+---
+
+**`skill_listing`** — Skill 列表更新
+
+**含义**：当已注册 skill 的完整列表被刷新时记录。`content` 包含所有当前 skill 的文本描述。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"skill_listing"` | 子类型 |
+| `attachment.content` | string | Markdown 列表，每行一个 skill 名称 + 描述 |
+
+**Resume 恢复**：从最近一条 `skill_listing` 可完整重建 session 当前的 skill 列表（名称 + 描述文本）。这比 `system.init` 里的 `skills` 数组更丰富 — 它包含完整描述。
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "skill_listing",
+    "content": "- context7-mcp: This skill should be used when the user asks about libraries, frameworks, API references...\n- vercel-react-best-practices: React and Next.js performance optimization guidelines..."
+  }
+}
+```
+
+---
+
+**`command_permissions`** — 命令权限记录
+
+**含义**：记录 slash command 的权限工具列表。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"command_permissions"` | 子类型 |
+| `attachment.allowedTools` | string[] | 允许的工具列表 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "command_permissions",
+    "allowedTools": []
+  }
+}
+```
+
+---
+
+**`invoked_skills`** — Skill 调用记录
+
+**含义**：记录被调用的 skill，包含 skill 名称、路径和完整内容。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"invoked_skills"` | 子类型 |
+| `attachment.skills` | object[] | 被调用的 skill 列表 |
+| `attachment.skills[].name` | string | Skill 名称 |
+| `attachment.skills[].path` | string | Skill 路径（`"bundled:..."` / 自定义路径） |
+| `attachment.skills[].content` | string | Skill 完整指令内容 |
+
+**Resume 恢复**：可恢复当前活跃的 skill 及其完整指令。
+
+---
+
+**`auto_mode`** / **`auto_mode_exit`** — 自动模式切换
+
+**含义**：auto mode 的进入和退出事件。`auto_mode` 无额外字段；`auto_mode_exit` 无额外字段。仅表示模式状态变更。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"auto_mode"` / `"auto_mode_exit"` | 子类型 |
+
+**Resume 恢复**：最近一条 auto mode 相关 attachment 决定当前是否处于 auto mode。
+
+---
+
+**`plan_mode`** / **`plan_mode_exit`** / **`plan_mode_reentry`** — Plan 模式状态
+
+**含义**：plan 模式的进入、退出和重新进入事件。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"plan_mode"` / `"plan_mode_exit"` / `"plan_mode_reentry"` | 子类型 |
+| `attachment.planFilePath` | string | Plan 文件绝对路径 |
+| `attachment.planExists` | boolean | Plan 文件是否存在 |
+| `attachment.reminderType` | string? | 提醒类型（`"full"`） |
+| `attachment.isSubAgent` | boolean? | 是否为子 agent |
+
+**Resume 恢复**：可恢复当前 plan mode 状态和关联的 plan 文件路径。
+
+---
+
+##### 其他子类型（概要）
+
+| 子类型 | 含义 | 出现频率 |
+|---|---|---|
+| `task_reminder` | 任务提醒 | 极高（3163 次） |
+| `file` | 文件附件 | 高（464） |
+| `edited_text_file` | 编辑文本文件记录 | 高（317） |
+| `queued_command` | 排队命令 | 高（380） |
+| `compact_file_reference` | 压缩后文件引用 | 中（122） |
+| `goal_status` | Goal 达成状态（`met`, `sentinel`, `condition`） | 中（78） |
+| `date_change` | 日期变更通知 | 中（77） |
+| `opened_file_in_ide` | IDE 打开文件记录 | 低（54） |
+| `plan_file_reference` | Plan 文件引用 | 低（49） |
+| `diagnostics` | 诊断信息 | 低（7） |
+| `selected_lines_in_ide` | IDE 选中行记录 | 低（4） |
+| `hook_success` | Hook 执行成功 | 低（9） |
+| `hook_additional_context` | Hook 附加上下文 | 低（7） |
+| `hook_non_blocking_error` | Hook 非阻塞错误 | 低（2） |
+
+---
+
+#### `last-prompt` — 上次用户 Prompt 文本
+
+**含义**：CLI 在每轮对话开始时，记录当前用户输入的文本。这是恢复用户界面上"上次输入"的最直接来源。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"last-prompt"` | 消息类型 |
+| `lastPrompt` | string | 用户最后一次输入的文本 |
+| `leafUuid` | string | 关联的用户消息 UUID |
+| `sessionId` | string | 会话 UUID |
+
+**时机**：每轮用户输入后记录一次。
+
+**Resume 恢复**：从最近一条 `last-prompt` 可取出上次用户输入文本，用于恢复输入框 draft 或显示"上次对话"摘要。
+
+示例：
+```json
+{
+  "type": "last-prompt",
+  "lastPrompt": "你好",
+  "leafUuid": "9ca16370-fcf4-42d2-bff9-1963cd9d87cd",
+  "sessionId": "dbcec945-e33a-428b-8a70-f17d59298257"
+}
+```
+
+---
+
+#### `mode` — 运行时模式
+
+**含义**：CLI 运行模式记录。当前仅观察到 `"normal"` 值。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"mode"` | 消息类型 |
+| `mode` | string | 模式标识（`"normal"`） |
+| `sessionId` | string | 会话 UUID |
+
+**时机**：模式切换时写入。此类型同时出现在 CLI stdout（`{"type":"mode","mode":"..."}` 格式简单一致）。
+
+示例：
+```json
+{
+  "type": "mode",
+  "mode": "normal",
+  "sessionId": "e3ca9671-453e-4bb1-bce9-6764b189a1a2"
+}
+```
+
+---
+
+#### `permission-mode` — 权限模式变更
+
+**含义**：用户切换 permission mode 时记录。独立于 `system/init`，是权限变更的持久化记录。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"permission-mode"` | 消息类型 |
+| `permissionMode` | string | 权限模式（`"auto"`, `"acceptEdits"`, `"plan"`, `"default"` 等） |
+| `sessionId` | string | 会话 UUID |
+
+**时机**：用户通过 `/permission-mode` 或 UI 切换权限模式时写入。
+
+示例：
+```json
+{
+  "type": "permission-mode",
+  "permissionMode": "auto",
+  "sessionId": "8ac6ff40-ea16-4666-a973-ea00c78c2af1"
+}
+```
+
+---
+
+#### `queue-operation` — 任务队列操作
+
+**含义**：CLI 内部任务队列（subagent 调度队列）的出队/入队记录。纯内部机制，不面向用户。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"queue-operation"` | 消息类型 |
+| `operation` | `"enqueue"` \| `"dequeue"` \| `"remove"` \| `"popAll"` | 队列操作 |
+| `timestamp` | string (ISO 8601) | 操作时间 |
+| `sessionId` | string | 会话 UUID |
+
+**操作类型**：
+| 操作 | 含义 |
+|---|---|
+| `enqueue` | 任务入队 |
+| `dequeue` | 任务出队（开始执行） |
+| `remove` | 任务移除（被取消或合并） |
+| `popAll` | 清空队列 |
+
+**时机**：每次 subagent 任务调度时成对出现（`enqueue` → `dequeue` / `remove`）。
+
+**Resume 恢复**：一般不需要。仅用于 debug 任务调度时序。
+
+示例：
+```json
+{
+  "type": "queue-operation",
+  "operation": "enqueue",
+  "timestamp": "2026-06-02T13:31:53.252Z",
+  "sessionId": "dbcec945-e33a-428b-8a70-f17d59298257"
+}
+```
+
+---
+
+#### 标题类消息
+
+| 类型 | 字段 | 含义 | 时机 |
+|---|---|---|---|
+| `ai-title` | `aiTitle` (string), `sessionId` | AI 自动生成会话标题 | 会话初期 AI 判断标题 |
+| `agent-name` | `agentName` (string), `sessionId` | Agent/subagent 名称 | Agent 创建时 |
+| `custom-title` | `customTitle` (string), `sessionId` | 用户自定义标题 | 用户执行重命名 |
+
+---
+
+#### `file-history-snapshot` — 文件历史快照
+
+**字段**：`type`, `messageId` (string), `snapshot` (object: `messageId`, `trackedFileBackups`, `timestamp`), `isSnapshotUpdate` (boolean)
+
+**含义**：CLI 的文件追踪系统快照。`trackedFileBackups` 记录被追踪文件的备份信息。
+
+**Resume 恢复**：低优先级。仅用于恢复文件编辑历史。
+
+---
+
+#### `system/away_summary` — 离开状态摘要
+
+**含义**：当 CLI 在 auto mode 或持续任务中生成阶段性摘要时记录。
+
+**关键字段**：`subtype: "away_summary"`, `content` (string), `slug` (string), `isMeta` (boolean)
+
+**Resume 恢复**：低。`content` 包含任务进度文本，可用于恢复上下文感知。
+
+---
+
+#### `system/informational` — 信息性通知
+
+**含义**：CLI 内部信息性通知（如 hook 阻塞警告）。
+
+**关键字段**：`subtype: "informational"`, `content` (string), `level` (string)
+
+---
+
+#### `system/local_command` — 本地命令执行
+
+**含义**：用户执行本地命令（如 `/config`、`/compact`）的记录。`content` 使用 XML 包裹 CLI TUI 输出（`<command-name>`, `<command-message>`, `<local-command-stdout>` 等）。
+
+**关键字段**：`subtype: "local_command"`, `content` (string — XML 格式)
+
+---
+
+#### `system/stop_hook_summary` — Stop Hook 执行摘要
+
+**含义**：Stop hook 执行完成后写入，记录 hook 执行次数、错误、是否阻止了 turn 结束等。
+
+**关键字段**：`subtype: "stop_hook_summary"`, `hookCount` (number), `hookInfos` (array), `hookErrors` (array), `stopReason` (string), `preventedContinuation` (boolean), `hasOutput` (boolean), `toolUseID` (string)
+
+---
+
+### 两处共存但信封格式不同
+
+以下类型同时在 JSONL 和 CLI stdout 中出现，**但 JSONL 外层信封更丰富**：
+
+| 类型 | JSONL 独有信封字段 | 核心消息体 |
+|---|---|---|
+| `assistant` | `parentUuid`, `isSidechain`, `uuid`, `timestamp`, `sessionId`, `cwd`, `gitBranch`, `userType`, `entrypoint`, `version`, `slug` | `message` (id, role, content, model, usage) |
+| `user` | `parentUuid`, `isSidechain`, `promptId`, `uuid`, `timestamp`, `permissionMode`, `userType`, `entrypoint`, `cwd`, `sessionId`, `gitBranch`, `version`, `slug` | `message` (role, content) |
+| `system/compact_boundary` | `content` (human-readable), `isMeta`, `level`, `logicalParentUuid`, `timestamp`, `slug`, `cwd`, `gitBranch` | `compactMetadata` (trigger, preTokens, durationMs 等) |
+| `system/turn_duration` | `isMeta`, `timestamp`, `uuid`, `userType`, `entrypoint`, `cwd`, `gitBranch`, `version` | `durationMs`, `messageCount` |
+| `system/api_error` | `isSidechain`, `level`, `maxRetries`, `retryAttempt`, `retryInMs`, `timestamp`, `uuid`, `userType`, `entrypoint`, `cwd`, `gitBranch`, `version`, `slug` | `error` (message, status 等) |
+| `mode` | 格式一致（`mode`, `sessionId`） | 两端相同 |
+
+**信封差异的本质**：JSONL 是持久化日志，需要完整的追溯信息（时间戳、分支、入口、版本等）。CLI stdout 是实时管道，只传当前处理所需的字段。
+
+### JSONL 信封字段
+
+几乎所有 JSONL 消息共享一套外层信封字段，用于追溯。这些字段在 resume 时用于关联和过滤：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `uuid` | string | 消息唯一标识 |
+| `sessionId` | string | 会话 UUID |
+| `parentUuid` | string \| null | 父消息 UUID（构建消息树） |
+| `isSidechain` | boolean | 是否为侧链消息（如子 agent） |
+| `timestamp` | string (ISO 8601) | 消息时间戳 |
+| `cwd` | string | 当前工作目录 |
+| `gitBranch` | string | 当前 Git 分支 |
+| `userType` | `"external"` \| `"synthetic"` | 来源 |
+| `entrypoint` | `"cli"` \| `"sdk-ts"` | 入口类型 |
+| `version` | string | CLI 版本号 |
+| `slug` | string? | 可选标识 |
+
+### Resume 恢复策略总结
+
+API 重启或 WebSocket 重连后，应根据 JSONL 中的最后一条状态消息重建以下客户端状态：
+
+| 状态 | 消息来源 | 恢复方法 |
+|---|---|---|
+| Model | `SessionMetadata.model` | 已持久化，从 metadata 文件恢复 |
+| Permission Mode | `SessionMetadata.permissionMode` / JSONL `permission-mode` | 已持久化 + JSONL 补充 |
+| Slash Commands | `system/init` → 持久化到 `SessionMetadata.slashCommands` | **待实现** |
+| Skills | `system/init` → 持久化到 `SessionMetadata.skills` / JSONL `attachment.skill_listing` 补充 | **待实现** |
+| MCP Servers | JSONL `attachment.mcp_instructions_delta` | 可选实现 |
+| Plan Mode State | JSONL `attachment.plan_mode` / `plan_mode_exit` | 可选实现 |
+| Auto Mode State | JSONL `attachment.auto_mode` / `auto_mode_exit` | 可选实现 |
+
+### API 重启后的数据丢失
+
+API 进程重启后，relay 从 JSONL 重建历史快照。内存 buffer（`bufferLines`）因为仅在内存中也会清空。以下数据会从 WebSocket 回放中**永久消失**：
+
+1. **`system/init`**：`slash_commands`、`skills`、`tools`、`agents`、`plugins`、`cwd` 等一次性启动参数
+2. **`result`**：最近一个 turn 的结束标记；回放中只有 `assistant` 而没有 `result`，`isRunning` 可能误判
+3. **`system/task_started/updated/notification`**：活跃 task 的状态
+
+**修复原则**：
+
+- `system/init` 的关键字段（`slash_commands`, `skills`）在 `captureSystemInitFromLine` 中捕获并通过 `onSystemInit` 回调持久化到 SessionMetadata
+- `buildBootstrapPlan` 检查 relay+buffer 快照中是否存在 `system/init`，若不存在则从 SessionMetadata 合成一条注入
+- `model` 和 `permissionMode` 已持久化，无需额外处理
