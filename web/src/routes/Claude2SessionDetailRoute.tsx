@@ -306,56 +306,84 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                     <div className="flex flex-wrap gap-1.5">
                       {tasks.map((task) => {
                         const title =
-                          task.text ??
-                          task.description ??
-                          task.workflowName ??
-                          task.agentType ??
-                          `Task ${task.id}`;
-                        const metaParts = [
-                          `#${task.id}`,
-                          task.kind,
-                          task.workflowName,
-                          task.agentType,
-                        ].filter(Boolean);
+                          task.description ||
+                          task.text ||
+                          task.workflowName ||
+                          task.agentType ||
+                          `#${task.id}`;
+                        const subParts = [task.kind, task.workflowName, task.agentType].filter(
+                          Boolean,
+                        );
+                        const tone =
+                          task.status === "error"
+                            ? "red"
+                            : task.status === "completed"
+                              ? "emerald"
+                              : "amber";
+                        const bg =
+                          tone === "red"
+                            ? "bg-red-900/25"
+                            : tone === "emerald"
+                              ? "bg-emerald-900/25"
+                              : "bg-slate-800";
+                        const textColor =
+                          tone === "red"
+                            ? "text-red-300"
+                            : tone === "emerald"
+                              ? "text-emerald-300"
+                              : "text-slate-300";
                         return (
                           <div
                             key={task.id}
-                            className={`flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1 text-xs ${
-                              task.status === "error"
-                                ? "bg-red-900/30 text-red-300"
-                                : task.status === "completed"
-                                  ? "bg-emerald-900/30 text-emerald-300"
-                                  : "bg-slate-800 text-slate-300"
-                            }`}
+                            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs ${bg} ${textColor}`}
                           >
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              <span
-                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                  task.status === "running"
-                                    ? "bg-amber-400 animate-pulse"
-                                    : task.status === "error"
-                                      ? "bg-red-400"
-                                      : "bg-emerald-400"
-                                }`}
-                              />
-                              <span className="truncate max-w-[180px]">{title}</span>
-                              <span
-                                className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[0.6rem] uppercase tracking-wide ${
-                                  task.status === "error"
-                                    ? "bg-red-500/15 text-red-300"
-                                    : task.status === "completed"
-                                      ? "bg-emerald-500/15 text-emerald-300"
-                                      : task.status === "backgrounded"
-                                        ? "bg-slate-700 text-slate-300"
-                                        : "bg-amber-500/15 text-amber-300"
-                                }`}
+                            {task.status === "running" ? (
+                              <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+                            ) : task.status === "completed" ? (
+                              <svg
+                                className="h-3 w-3 shrink-0 text-emerald-400"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                aria-hidden="true"
                               >
-                                {task.status}
+                                <path
+                                  d="M3 8l3.5 3.5L13 5"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            ) : task.status === "error" ? (
+                              <svg
+                                className="h-3 w-3 shrink-0 text-red-400"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  d="M4 4l8 8M12 4l-8 8"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                            ) : (
+                              <span className="h-3 w-3 shrink-0 text-slate-400" aria-hidden="true">
+                                <svg viewBox="0 0 16 16" fill="none">
+                                  <path
+                                    d="M4 4v8M8 3v10M12 4v8"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                  />
+                                </svg>
                               </span>
-                            </div>
-                            <div className="truncate text-[0.6rem] text-slate-500">
-                              {metaParts.join(" · ")}
-                            </div>
+                            )}
+                            <span className="truncate max-w-[200px]">{title}</span>
+                            {subParts.length > 0 ? (
+                              <span className="shrink-0 text-[0.55rem] text-slate-500">{`#${task.id}`}</span>
+                            ) : null}
                           </div>
                         );
                       })}
