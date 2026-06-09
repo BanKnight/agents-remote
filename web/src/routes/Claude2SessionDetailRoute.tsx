@@ -968,6 +968,30 @@ function PermissionModeSelector({
   );
 }
 
+const COMMAND_DESCRIPTIONS: Record<string, string> = {
+  compact: "Compact conversation context",
+  help: "Show available commands",
+  status: "Show current session status",
+  model: "Switch AI model",
+  permission: "Change permission mode",
+  clear: "Clear conversation history",
+  bug: "Report a bug",
+  doctor: "Check Claude Code health",
+  config: "Manage configuration",
+  cost: "Show token usage",
+  init: "Initialize project",
+  login: "Login to account",
+  logout: "Logout from account",
+  memory: "Manage persistent memory",
+  mcp: "Manage MCP servers",
+  "pr-comments": "View PR comments",
+  review: "Code review",
+  "terminal-setup": "Setup terminal integration",
+  vim: "Toggle vim keybindings",
+  fast: "Toggle fast mode",
+  conversations: "List conversations",
+};
+
 function ComposerWithInterrupt({
   currentModel,
   currentResolved,
@@ -1001,10 +1025,15 @@ function ComposerWithInterrupt({
   const slashItems = useMemo<readonly Unstable_SlashCommand[]>(() => {
     const items: Unstable_SlashCommand[] = [];
     for (const cmd of slashCommands) {
-      items.push({ id: cmd.replace(/^\/+/, ""), description: cmd, execute: () => undefined });
+      const id = cmd.replace(/^\/+/, "");
+      items.push({
+        id,
+        description: COMMAND_DESCRIPTIONS[id] ?? "",
+        execute: () => undefined,
+      });
     }
     for (const skill of skills) {
-      items.push({ id: skill.replace(/^\/+/, ""), description: skill, execute: () => undefined });
+      items.push({ id: skill.replace(/^\/+/, ""), description: "Skill", execute: () => undefined });
     }
     return items;
   }, [slashCommands, skills]);
@@ -1081,7 +1110,14 @@ function ComposerWithInterrupt({
                           />
                         </svg>
                       )}
-                      <span className="truncate font-medium">{item.label}</span>
+                      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                        <span className="shrink-0 font-medium">{item.label}</span>
+                        {item.description ? (
+                          <span className="truncate text-xs text-slate-500">
+                            {item.description}
+                          </span>
+                        ) : null}
+                      </span>
                     </ComposerPrimitive.Unstable_TriggerPopoverItem>
                   );
                 })
