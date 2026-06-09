@@ -284,6 +284,16 @@ export type Claude2SystemInit = {
   slash_commands: string[];
 };
 
+export type SlashCommandInfo = {
+  name: string;
+  description: string;
+  kind: "command" | "skill";
+};
+
+export type SlashCommandDescriptionsResponse = {
+  commands: SlashCommandInfo[];
+};
+
 export type Claude2CompactBoundary = {
   type: "system";
   subtype: "compact_boundary" | "microcompact_boundary";

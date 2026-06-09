@@ -372,6 +372,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                         availablePermissionModes={availablePermissionModes}
                         slashCommands={slashCommands}
                         skills={skills}
+                        projectName={projectName}
+                        sessionId={sessionId}
                       />
                     </ComposerPrimitive.Root>
                   </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -968,30 +970,6 @@ function PermissionModeSelector({
   );
 }
 
-const COMMAND_DESCRIPTIONS: Record<string, string> = {
-  compact: "Compact conversation context",
-  help: "Show available commands",
-  status: "Show current session status",
-  model: "Switch AI model",
-  permission: "Change permission mode",
-  clear: "Clear conversation history",
-  bug: "Report a bug",
-  doctor: "Check Claude Code health",
-  config: "Manage configuration",
-  cost: "Show token usage",
-  init: "Initialize project",
-  login: "Login to account",
-  logout: "Logout from account",
-  memory: "Manage persistent memory",
-  mcp: "Manage MCP servers",
-  "pr-comments": "View PR comments",
-  review: "Code review",
-  "terminal-setup": "Setup terminal integration",
-  vim: "Toggle vim keybindings",
-  fast: "Toggle fast mode",
-  conversations: "List conversations",
-};
-
 function ComposerWithInterrupt({
   currentModel,
   currentResolved,
@@ -1001,6 +979,8 @@ function ComposerWithInterrupt({
   availablePermissionModes,
   slashCommands,
   skills,
+  projectName,
+  sessionId,
 }: {
   currentModel?: string;
   currentResolved?: string;
@@ -1010,10 +990,22 @@ function ComposerWithInterrupt({
   availablePermissionModes: string[];
   slashCommands: string[];
   skills: string[];
+  projectName: string;
+  sessionId: string;
 }) {
   const composer = useComposerRuntime();
   const isRunning = useThread((s) => s.isRunning);
   const { t } = useT();
+
+  const descQuery = useQuery({
+    queryKey: ["projects", projectName, "agent-sessions", sessionId, "slash-command-descriptions"],
+    queryFn: async () => {
+      const { getSlashCommandDescriptions } = await import("../api/client");
+      return getSlashCommandDescriptions(projectName, sessionId, slashCommands, skills);
+    },
+    enabled: slashCommands.length > 0 || skills.length > 0,
+    staleTime: Infinity,
+  });
 
   const kindById = useMemo(() => {
     const map = new Map<string, "command" | "skill">();
@@ -1022,21 +1014,26 @@ function ComposerWithInterrupt({
     return map;
   }, [slashCommands, skills]);
 
+  const descMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const info of descQuery.data?.commands ?? []) {
+      if (info.description) map.set(info.name, info.description);
+    }
+    return map;
+  }, [descQuery.data]);
+
   const slashItems = useMemo<readonly Unstable_SlashCommand[]>(() => {
     const items: Unstable_SlashCommand[] = [];
     for (const cmd of slashCommands) {
       const id = cmd.replace(/^\/+/, "");
-      items.push({
-        id,
-        description: COMMAND_DESCRIPTIONS[id] ?? "",
-        execute: () => undefined,
-      });
+      items.push({ id, description: descMap.get(id) ?? "", execute: () => undefined });
     }
     for (const skill of skills) {
-      items.push({ id: skill.replace(/^\/+/, ""), description: "Skill", execute: () => undefined });
+      const id = skill.replace(/^\/+/, "");
+      items.push({ id, description: descMap.get(id) ?? "Skill", execute: () => undefined });
     }
     return items;
-  }, [slashCommands, skills]);
+  }, [slashCommands, skills, descMap]);
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1083,7 +1080,7 @@ function ComposerWithInterrupt({
                       key={item.id}
                       item={item}
                       index={index}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100 data-[highlighted]:bg-slate-800/80 data-[highlighted]:text-slate-100"
                     >
                       {kind === "skill" ? (
                         <svg

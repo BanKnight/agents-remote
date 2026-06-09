@@ -28,6 +28,7 @@ import type {
   ProjectFilePreviewResponse,
   ProjectListResponse,
   RenameFileResponse,
+  SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
   UploadFileResponse,
 } from "@agents-remote/shared";
@@ -210,6 +211,21 @@ export async function getAgentSession(
 ): Promise<AgentSessionDetailResponse> {
   return fetchJson(
     `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}`,
+    "api.agentSessionDetailFailed",
+  );
+}
+
+export async function getSlashCommandDescriptions(
+  projectName: string,
+  sessionId: string,
+  commands: string[],
+  skills: string[],
+): Promise<SlashCommandDescriptionsResponse> {
+  const params = new URLSearchParams();
+  if (commands.length > 0) params.set("commands", commands.map(encodeURIComponent).join(","));
+  if (skills.length > 0) params.set("skills", skills.map(encodeURIComponent).join(","));
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/slash-command-descriptions?${params.toString()}`,
     "api.agentSessionDetailFailed",
   );
 }
