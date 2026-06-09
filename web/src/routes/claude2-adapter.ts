@@ -64,6 +64,15 @@ export type SwitchModelResultState = {
   modelSwitchVersion: number;
 };
 
+export type RetryInfo = {
+  attempt: number;
+  maxRetries: number;
+  retryDelayMs: number;
+  error?: string;
+  errorStatus?: number;
+  startTime: number;
+};
+
 export const applySwitchModelResult = (
   state: SwitchModelResultState,
   result: { success: boolean },
@@ -423,21 +432,6 @@ export function loadMessagesFromRaw(
         continue;
       }
       if (msg.subtype === "api_retry") {
-        const r = msg as {
-          attempt: number;
-          max_retries: number;
-          retry_delay_ms: number;
-          error?: string;
-          error_status?: number;
-        };
-        const errorText = r.error ?? `HTTP ${r.error_status ?? "error"}`;
-        const retryText = `API 请求失败${r.attempt}/${r.max_retries}：${errorText}，${Math.round(r.retry_delay_ms / 1000)}s 后重试`;
-        flushAssistant();
-        messages.push({
-          role: "system",
-          content: [{ type: "text", text: retryText }],
-          metadata: { custom: { systemMessageType: "error" } },
-        });
         continue;
       }
       if (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary") {
@@ -726,11 +720,19 @@ export function useClaude2Session(
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
 
+  const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
+  const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const resetSessionState = useCallback(() => {
     setRawMessages([]);
     setTasks([]);
     setSlashCommands([]);
     setSkills([]);
+    setRetryInfo(null);
+    if (retryCountdownRef.current) {
+      clearInterval(retryCountdownRef.current);
+      retryCountdownRef.current = null;
+    }
     setHasOlder(false);
     setLoading(true);
     setIsRunning(false);
@@ -746,6 +748,58 @@ export function useClaude2Session(
   useEffect(() => {
     rawMessagesRef.current = rawMessages;
   }, [rawMessages]);
+
+  // Extract latest api_retry from raw messages — replaces on each new retry (merge).
+  useEffect(() => {
+    let latest: RetryInfo | null = null;
+    for (let i = rawMessages.length - 1; i >= 0; i--) {
+      const m = rawMessages[i];
+      if (m.type === "system" && m.subtype === "api_retry") {
+        const r = m as {
+          attempt: number;
+          max_retries: number;
+          retry_delay_ms: number;
+          error?: string;
+          error_status?: number;
+        };
+        latest = {
+          attempt: r.attempt,
+          maxRetries: r.max_retries,
+          retryDelayMs: r.retry_delay_ms,
+          error: r.error,
+          errorStatus: r.error_status,
+          startTime: Date.now(),
+        };
+        break;
+      }
+    }
+    setRetryInfo(latest);
+  }, [rawMessages]);
+
+  // Countdown timer for retry
+  useEffect(() => {
+    if (retryCountdownRef.current) {
+      clearInterval(retryCountdownRef.current);
+      retryCountdownRef.current = null;
+    }
+    if (!retryInfo) return;
+    const endTime = retryInfo.startTime + retryInfo.retryDelayMs;
+    retryCountdownRef.current = setInterval(() => {
+      if (Date.now() >= endTime) {
+        setRetryInfo(null);
+        if (retryCountdownRef.current) {
+          clearInterval(retryCountdownRef.current);
+          retryCountdownRef.current = null;
+        }
+      }
+    }, 250);
+    return () => {
+      if (retryCountdownRef.current) {
+        clearInterval(retryCountdownRef.current);
+        retryCountdownRef.current = null;
+      }
+    };
+  }, [retryInfo]);
 
   const scheduleReconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -1216,5 +1270,6 @@ export function useClaude2Session(
     tasks,
     slashCommands,
     skills,
+    retryInfo,
   };
 }

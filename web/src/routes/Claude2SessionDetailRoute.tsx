@@ -27,7 +27,7 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
-import { Claude2BridgeContext, useClaude2Session } from "./claude2-adapter";
+import { Claude2BridgeContext, useClaude2Session, type RetryInfo } from "./claude2-adapter";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -130,6 +130,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     tasks,
     slashCommands,
     skills,
+    retryInfo,
   } = useClaude2Session(
     projectName,
     sessionId,
@@ -299,6 +300,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                 </div>
 
                 <CompactIndicator />
+                <RetryIndicator retryInfo={retryInfo} />
                 {tasks.length > 0 && (
                   <div className="shrink-0 border-t border-slate-700/80 px-3 py-1.5">
                     <div className="flex flex-wrap gap-1.5">
@@ -1135,6 +1137,41 @@ function ComposerWithInterrupt({
           availableModes={availablePermissionModes}
         />
       </div>
+    </div>
+  );
+}
+
+function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
+  const [countdown, setCountdown] = useState<number>(0);
+
+  useEffect(() => {
+    if (!retryInfo) {
+      setCountdown(0);
+      return;
+    }
+    const endTime = retryInfo.startTime + retryInfo.retryDelayMs;
+    const tick = () => {
+      const remaining = Math.max(0, endTime - Date.now());
+      setCountdown(Math.ceil(remaining / 1000));
+      if (remaining <= 0) setCountdown(0);
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => clearInterval(timer);
+  }, [retryInfo]);
+
+  if (!retryInfo || countdown <= 0) return null;
+
+  const errorText =
+    retryInfo.error ?? (retryInfo.errorStatus ? `HTTP ${retryInfo.errorStatus}` : "error");
+  return (
+    <div className="shrink-0 flex justify-center px-3 py-1">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-[0.65rem] text-amber-400/70">
+        <span className="h-2 w-2 shrink-0 animate-spin rounded-full border border-amber-400/40 border-t-amber-400" />
+        {retryInfo.maxRetries > 1
+          ? `Retry ${retryInfo.attempt}/${retryInfo.maxRetries}: ${errorText}, ${countdown}s`
+          : `${errorText}, ${countdown}s`}
+      </span>
     </div>
   );
 }

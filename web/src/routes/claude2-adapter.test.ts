@@ -713,7 +713,7 @@ describe("loadMessagesFromRaw", () => {
     expect(assistantContent[0].result).toBe("line 1\nline 2");
   });
 
-  test("api_retry uses error_status when no error text exists", () => {
+  test("api_retry is skipped — retry state handled in hook, not as message", () => {
     const msgs: SessionStreamServerMessage[] = [
       {
         type: "system",
@@ -726,9 +726,7 @@ describe("loadMessagesFromRaw", () => {
     ];
 
     const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(1);
-    const content = resultMsgs[0].content as Array<{ type: string; text: string }>;
-    expect(content[0].text).toBe("API 请求失败1/5：HTTP 429，2s 后重试");
+    expect(resultMsgs).toHaveLength(0);
   });
 
   test("microcompact_boundary renders a compact divider with saved token count", () => {
