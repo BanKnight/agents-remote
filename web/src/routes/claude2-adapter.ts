@@ -724,11 +724,13 @@ export function useClaude2Session(
   const socketRef = useRef<WebSocket | null>(null);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
+  const [skills, setSkills] = useState<string[]>([]);
 
   const resetSessionState = useCallback(() => {
     setRawMessages([]);
     setTasks([]);
     setSlashCommands([]);
+    setSkills([]);
     setHasOlder(false);
     setLoading(true);
     setIsRunning(false);
@@ -917,7 +919,12 @@ export function useClaude2Session(
           const replayInit = [...batch]
             .reverse()
             .find((item) => item.type === "system" && item.subtype === "init") as
-            | { model: string; permissionMode: string; slash_commands?: string[] }
+            | {
+                model: string;
+                permissionMode: string;
+                slash_commands?: string[];
+                skills?: string[];
+              }
             | undefined;
           if (replayInit) {
             setResolvedModel(replayInit.model);
@@ -925,6 +932,7 @@ export function useClaude2Session(
             setSlashCommands(
               Array.isArray(replayInit.slash_commands) ? replayInit.slash_commands : [],
             );
+            setSkills(Array.isArray(replayInit.skills) ? replayInit.skills : []);
             const tiers = ["sonnet", "opus", "haiku"];
             const tier = tiers.find((t) => replayInit.model.includes(t));
             if (tier) setCurrentModel(tier);
@@ -994,10 +1002,16 @@ export function useClaude2Session(
         }
 
         if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
-          const init = msg as { model: string; permissionMode: string; slash_commands?: string[] };
+          const init = msg as {
+            model: string;
+            permissionMode: string;
+            slash_commands?: string[];
+            skills?: string[];
+          };
           setResolvedModel(init.model);
           setPermissionMode(init.permissionMode);
           setSlashCommands(Array.isArray(init.slash_commands) ? init.slash_commands : []);
+          setSkills(Array.isArray(init.skills) ? init.skills : []);
           const tiers = ["sonnet", "opus", "haiku"];
           const tier = tiers.find((t) => init.model.includes(t));
           if (tier) setCurrentModel(tier);
@@ -1201,5 +1215,6 @@ export function useClaude2Session(
     loading,
     tasks,
     slashCommands,
+    skills,
   };
 }

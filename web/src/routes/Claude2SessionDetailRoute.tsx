@@ -129,6 +129,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     loading,
     tasks,
     slashCommands,
+    skills,
   } = useClaude2Session(
     projectName,
     sessionId,
@@ -370,6 +371,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                         permissionMode={permissionMode}
                         availablePermissionModes={availablePermissionModes}
                         slashCommands={slashCommands}
+                        skills={skills}
                       />
                     </ComposerPrimitive.Root>
                   </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -974,6 +976,7 @@ function ComposerWithInterrupt({
   permissionMode,
   availablePermissionModes,
   slashCommands,
+  skills,
 }: {
   currentModel?: string;
   currentResolved?: string;
@@ -982,22 +985,29 @@ function ComposerWithInterrupt({
   permissionMode?: string;
   availablePermissionModes: string[];
   slashCommands: string[];
+  skills: string[];
 }) {
   const composer = useComposerRuntime();
   const isRunning = useThread((s) => s.isRunning);
   const { t } = useT();
-  const slashItems = useMemo<readonly Unstable_SlashCommand[]>(
-    () =>
-      slashCommands.map((command) => {
-        const id = command.replace(/^\/+/, "");
-        return {
-          id,
-          description: command,
-          execute: () => undefined,
-        };
-      }),
-    [slashCommands],
-  );
+
+  const kindById = useMemo(() => {
+    const map = new Map<string, "command" | "skill">();
+    for (const cmd of slashCommands) map.set(cmd.replace(/^\/+/, ""), "command");
+    for (const skill of skills) map.set(skill.replace(/^\/+/, ""), "skill");
+    return map;
+  }, [slashCommands, skills]);
+
+  const slashItems = useMemo<readonly Unstable_SlashCommand[]>(() => {
+    const items: Unstable_SlashCommand[] = [];
+    for (const cmd of slashCommands) {
+      items.push({ id: cmd.replace(/^\/+/, ""), description: cmd, execute: () => undefined });
+    }
+    for (const skill of skills) {
+      items.push({ id: skill.replace(/^\/+/, ""), description: skill, execute: () => undefined });
+    }
+    return items;
+  }, [slashCommands, skills]);
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1037,19 +1047,44 @@ function ComposerWithInterrupt({
             <ComposerPrimitive.Unstable_TriggerPopover.Action {...slash.action} />
             <ComposerPrimitive.Unstable_TriggerPopoverItems>
               {(items) =>
-                items.map((item, index) => (
-                  <ComposerPrimitive.Unstable_TriggerPopoverItem
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
-                  >
-                    <span className="truncate font-medium">/{item.label}</span>
-                    {item.description ? (
-                      <span className="truncate text-xs text-slate-400">{item.description}</span>
-                    ) : null}
-                  </ComposerPrimitive.Unstable_TriggerPopoverItem>
-                ))
+                items.map((item, index) => {
+                  const kind = kindById.get(item.id);
+                  return (
+                    <ComposerPrimitive.Unstable_TriggerPopoverItem
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100"
+                    >
+                      {kind === "skill" ? (
+                        <svg
+                          className="h-3.5 w-3.5 shrink-0 text-amber-400/70"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" fill="currentColor" />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="h-3.5 w-3.5 shrink-0 text-cyan-400/70"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M5 3l6 5-6 5"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                      <span className="truncate font-medium">{item.label}</span>
+                    </ComposerPrimitive.Unstable_TriggerPopoverItem>
+                  );
+                })
               }
             </ComposerPrimitive.Unstable_TriggerPopoverItems>
           </ComposerPrimitive.Unstable_TriggerPopover>
