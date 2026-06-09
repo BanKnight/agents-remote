@@ -319,6 +319,11 @@ const matchSessionRoute = (pathname: string) => {
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }
 
+  if (segments.length === 6 && segments[5] === "slash-command-descriptions") {
+    const sessionId = decodePathSegment(segments[4]);
+    return sessionId ? { projectName, resource, sessionId } : undefined;
+  }
+
   return undefined;
 };
 
