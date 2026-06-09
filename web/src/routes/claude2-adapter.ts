@@ -943,7 +943,6 @@ export function useClaude2Session(
           setRawMessages(merged);
           setRetryInfo(null);
           setTasks(deriveTasksFromReplayBatch(merged));
-          setIsRunning(computeRunningCount(merged) > 0);
           const replayInit = [...batch]
             .reverse()
             .find((item) => item.type === "system" && item.subtype === "init") as

@@ -282,6 +282,13 @@ export type Claude2SystemInit = {
   cwd: string;
   tools: string[];
   slash_commands: string[];
+  mcp_servers?: Record<string, unknown>[];
+  agents?: string[];
+  skills?: string[];
+  plugins?: string[];
+  apiKeySource?: string;
+  claude_code_version?: string;
+  output_style?: string;
 };
 
 export type SlashCommandInfo = {
@@ -350,6 +357,27 @@ export type Claude2ApiRetry = {
   error_status?: number;
   error?: string;
   session_id: string;
+};
+
+export type Claude2Mode = {
+  type: "mode";
+  mode: string;
+  session_id?: string;
+};
+
+export type Claude2Attachment = {
+  type: "system";
+  subtype: "attachment";
+  filename: string;
+  content_type: "text" | "image";
+  session_id?: string;
+};
+
+export type Claude2LastPrompt = {
+  type: "system";
+  subtype: "last_prompt";
+  text: string;
+  session_id?: string;
 };
 
 export type Claude2UserMessage = {
@@ -546,6 +574,9 @@ export type SessionStreamServerMessage =
   | Claude2CompactBoundary
   | Claude2StatusMessage
   | Claude2ApiRetry
+  | Claude2Mode
+  | Claude2Attachment
+  | Claude2LastPrompt
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage
