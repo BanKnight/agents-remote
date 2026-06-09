@@ -308,10 +308,9 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                         const title =
                           task.text ||
                           task.description ||
+                          task.agentType ||
                           task.workflowName ||
-                          (task.agentType ? `${task.kind}: ${task.agentType}` : "") ||
-                          (task.kind !== "task" ? task.kind : "") ||
-                          `#${task.id}`;
+                          `Task #${task.id}`;
                         const subParts = [task.kind, task.workflowName, task.agentType].filter(
                           Boolean,
                         );

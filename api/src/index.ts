@@ -143,6 +143,38 @@ export const createFetchHandler =
         return withRefresh(streamUpgrade.response);
       }
 
+      // /slash-command-descriptions – direct match, not through session-routes whitelist
+      const slashDescMatch = url.pathname.match(
+        /^\/api\/projects\/(.+)\/agent-sessions\/(.+)\/slash-command-descriptions$/,
+      );
+      if (slashDescMatch && request.method === "GET") {
+        const { resolveSlashCommandDescriptions } = await import("./claude2-slash-commands");
+        const { resolveProjectPath, ProjectPathError } = await import("./project-paths");
+        try {
+          const project = await resolveProjectPath(
+            options.projectsRoot,
+            decodeURIComponent(slashDescMatch[1]),
+          );
+          const commandsParam = url.searchParams.get("commands") ?? "";
+          const skillsParam = url.searchParams.get("skills") ?? "";
+          const slashCommands = commandsParam
+            ? commandsParam.split(",").map(decodeURIComponent)
+            : [];
+          const skills = skillsParam ? skillsParam.split(",").map(decodeURIComponent) : [];
+          const descriptions = await resolveSlashCommandDescriptions(
+            project.path,
+            slashCommands,
+            skills,
+          );
+          return withRefresh(Response.json({ commands: descriptions }));
+        } catch (error) {
+          if (error instanceof ProjectPathError) {
+            return jsonError(error.code, error.message, 400);
+          }
+          throw error;
+        }
+      }
+
       const sessionResponse = await handleSessionRoutes(
         request,
         url,

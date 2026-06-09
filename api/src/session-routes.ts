@@ -146,21 +146,6 @@ const handleAgentSessionRoute = async (
     }
   }
 
-  if (
-    sessionId &&
-    request.method === "GET" &&
-    requestUrlEndsWith(request, "/slash-command-descriptions")
-  ) {
-    const { resolveSlashCommandDescriptions } = await import("./claude2-slash-commands");
-    const url = new URL(request.url);
-    const commandsParam = url.searchParams.get("commands") ?? "";
-    const skillsParam = url.searchParams.get("skills") ?? "";
-    const slashCommands = commandsParam ? commandsParam.split(",").map(decodeURIComponent) : [];
-    const skills = skillsParam ? skillsParam.split(",").map(decodeURIComponent) : [];
-    const descriptions = await resolveSlashCommandDescriptions(project.path, slashCommands, skills);
-    return Response.json({ commands: descriptions });
-  }
-
   // /messages must be checked before the generic GET to avoid being captured
   // by the session-detail handler below.
   if (sessionId && request.method === "GET" && requestUrlEndsWith(request, "/messages")) {
@@ -315,11 +300,6 @@ const matchSessionRoute = (pathname: string) => {
   }
 
   if (segments.length === 6 && segments[5] === "messages") {
-    const sessionId = decodePathSegment(segments[4]);
-    return sessionId ? { projectName, resource, sessionId } : undefined;
-  }
-
-  if (segments.length === 6 && segments[5] === "slash-command-descriptions") {
     const sessionId = decodePathSegment(segments[4]);
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }

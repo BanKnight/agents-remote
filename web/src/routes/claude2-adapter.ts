@@ -712,7 +712,6 @@ export function useClaude2Session(
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
   const replayBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
-  const skipRetryFromReplayRef = useRef(false);
   const compactActiveRef = useRef(false);
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
@@ -748,35 +747,6 @@ export function useClaude2Session(
 
   useEffect(() => {
     rawMessagesRef.current = rawMessages;
-  }, [rawMessages]);
-
-  // Extract latest api_retry from raw messages — replaces on each new retry (merge).
-  // Skip replay data — retry from history is stale.
-  useEffect(() => {
-    if (skipRetryFromReplayRef.current) return;
-    let latest: RetryInfo | null = null;
-    for (let i = rawMessages.length - 1; i >= 0; i--) {
-      const m = rawMessages[i];
-      if (m.type === "system" && m.subtype === "api_retry") {
-        const r = m as {
-          attempt: number;
-          max_retries: number;
-          retry_delay_ms: number;
-          error?: string;
-          error_status?: number;
-        };
-        latest = {
-          attempt: r.attempt,
-          maxRetries: r.max_retries,
-          retryDelayMs: r.retry_delay_ms,
-          error: r.error,
-          errorStatus: r.error_status,
-          startTime: Date.now(),
-        };
-        break;
-      }
-    }
-    setRetryInfo(latest);
   }, [rawMessages]);
 
   // Countdown timer for retry
@@ -968,11 +938,9 @@ export function useClaude2Session(
         if (msg.type === "replay_end") {
           const batch = replayBatchRef.current ?? [];
           replayBatchRef.current = null;
-          skipRetryFromReplayRef.current = true;
           const merged = reconcileSnapshot(rawMessagesRef.current, batch);
           rawMessagesRef.current = merged;
           setRawMessages(merged);
-          skipRetryFromReplayRef.current = false;
           setRetryInfo(null);
           setTasks(deriveTasksFromReplayBatch(merged));
           setIsRunning(computeRunningCount(merged) > 0);
@@ -1011,6 +979,30 @@ export function useClaude2Session(
           (msg.type === "system" && msg.subtype === "thinking_tokens")
         ) {
           setIsRunning(true);
+        }
+
+        if (msg.type === "system" && msg.subtype === "api_retry") {
+          const r = msg as {
+            attempt: number;
+            max_retries: number;
+            retry_delay_ms: number;
+            error?: string;
+            error_status?: number;
+          };
+          setRetryInfo({
+            attempt: r.attempt,
+            maxRetries: r.max_retries,
+            retryDelayMs: r.retry_delay_ms,
+            error: r.error,
+            errorStatus: r.error_status,
+            startTime: Date.now(),
+          });
+          return;
+        }
+
+        // New content from assistant — retry succeeded, clear indicator
+        if (msg.type === "assistant" || msg.type === "user") {
+          setRetryInfo(null);
         }
 
         if (isTaskSystemMessage(msg)) {
