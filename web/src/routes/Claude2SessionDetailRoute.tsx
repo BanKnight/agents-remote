@@ -280,6 +280,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                     hasOlder={hasOlder}
                     loadOlder={loadOlder}
                     loading={loading}
+                    retryInfo={retryInfo}
                   />
                 </ThreadPrimitive.Viewport>
                 <div className="relative h-0 w-full pointer-events-none">
@@ -300,16 +301,16 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                 </div>
 
                 <CompactIndicator />
-                <RetryIndicator retryInfo={retryInfo} />
                 {tasks.length > 0 && (
                   <div className="shrink-0 border-t border-slate-700/80 px-3 py-1.5">
                     <div className="flex flex-wrap gap-1.5">
                       {tasks.map((task) => {
                         const title =
-                          task.description ||
                           task.text ||
+                          task.description ||
                           task.workflowName ||
-                          task.agentType ||
+                          (task.agentType ? `${task.kind}: ${task.agentType}` : "") ||
+                          (task.kind !== "task" ? task.kind : "") ||
                           `#${task.id}`;
                         const subParts = [task.kind, task.workflowName, task.agentType].filter(
                           Boolean,
@@ -663,10 +664,12 @@ function ThreadViewportContent({
   hasOlder,
   loadOlder,
   loading,
+  retryInfo,
 }: {
   hasOlder: boolean;
   loadOlder: () => Promise<void>;
   loading: boolean;
+  retryInfo: RetryInfo | null;
 }) {
   return (
     <>
@@ -678,6 +681,7 @@ function ThreadViewportContent({
           SystemMessage: CompactDivider,
         }}
       />
+      <RetryIndicator retryInfo={retryInfo} />
       <ThreadPrimitive.ViewportFooter />
     </>
   );

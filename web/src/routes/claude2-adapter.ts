@@ -712,6 +712,7 @@ export function useClaude2Session(
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
   const replayBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
+  const skipRetryFromReplayRef = useRef(false);
   const compactActiveRef = useRef(false);
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
@@ -750,7 +751,9 @@ export function useClaude2Session(
   }, [rawMessages]);
 
   // Extract latest api_retry from raw messages — replaces on each new retry (merge).
+  // Skip replay data — retry from history is stale.
   useEffect(() => {
+    if (skipRetryFromReplayRef.current) return;
     let latest: RetryInfo | null = null;
     for (let i = rawMessages.length - 1; i >= 0; i--) {
       const m = rawMessages[i];
@@ -965,9 +968,12 @@ export function useClaude2Session(
         if (msg.type === "replay_end") {
           const batch = replayBatchRef.current ?? [];
           replayBatchRef.current = null;
+          skipRetryFromReplayRef.current = true;
           const merged = reconcileSnapshot(rawMessagesRef.current, batch);
           rawMessagesRef.current = merged;
           setRawMessages(merged);
+          skipRetryFromReplayRef.current = false;
+          setRetryInfo(null);
           setTasks(deriveTasksFromReplayBatch(merged));
           setIsRunning(computeRunningCount(merged) > 0);
           const replayInit = [...batch]
