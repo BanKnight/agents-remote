@@ -258,9 +258,9 @@ const attachSkillContentToToolCall = (
     updatedContent[flushedMatchIdx] = {
       ...updatedContent[flushedMatchIdx],
       metadata: {
-        ...(updatedContent[flushedMatchIdx] as Record<string, unknown>).metadata as
+        ...((updatedContent[flushedMatchIdx] as Record<string, unknown>).metadata as
           | Record<string, unknown>
-          | undefined,
+          | undefined),
         skillContent,
       },
     };
@@ -1158,16 +1158,6 @@ export function useClaude2Session(
         .join("\n");
 
       if (textContent.trim()) {
-        const userMsg: SessionStreamServerMessage = {
-          type: "user",
-          message: { role: "user", content: [{ type: "text", text: textContent }] },
-          metadata: { custom: { optimisticUserEcho: true } },
-        } as SessionStreamServerMessage;
-        setRawMessages((prev) => {
-          const next = [...prev, userMsg];
-          rawMessagesRef.current = next;
-          return next;
-        });
         sendToSocket({
           type: "user",
           message: { role: "user", content: [{ type: "text", text: textContent }] },

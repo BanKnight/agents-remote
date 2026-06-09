@@ -287,7 +287,8 @@ describe("useClaude2Session websocket lifecycle", () => {
         content: [{ type: "text", text: "hello" }],
       } as never);
     });
-    await waitFor(() => expect(result.current.storeAdapter.messages).toHaveLength(1));
+    expect(socket.sent.some((s) => s.includes('"text":"hello"'))).toBe(true);
+    expect(result.current.storeAdapter.messages).toHaveLength(0);
 
     act(() => {
       result.current.bridge.respondToControlRequest("req-1", {
@@ -331,7 +332,7 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(true);
-    expect(result.current.storeAdapter.messages).toHaveLength(1);
+    expect(result.current.storeAdapter.messages).toHaveLength(0);
   });
 
   test("compact success transitions back to live after result", async () => {

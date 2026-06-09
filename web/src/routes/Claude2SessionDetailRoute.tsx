@@ -1032,7 +1032,7 @@ function ComposerWithInterrupt({
           <ComposerPrimitive.Unstable_TriggerPopover
             char="/"
             adapter={slash.adapter}
-            className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
+            className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
           >
             <ComposerPrimitive.Unstable_TriggerPopover.Action {...slash.action} />
             <ComposerPrimitive.Unstable_TriggerPopoverItems>
