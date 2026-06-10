@@ -89,9 +89,6 @@ function TaskPanel({
   tasks: TaskInfo[];
   onToggle: () => void;
 }) {
-  const running = tasks.filter((t) => t.status !== "completed").length;
-  const done = tasks.filter((t) => t.status === "completed").length;
-
   // Sort: running/error/backgrounded first, completed last
   const sorted = [...tasks].sort((a, b) => {
     const aDone = a.status === "completed" ? 1 : 0;
@@ -99,7 +96,51 @@ function TaskPanel({
     return aDone - bDone;
   });
 
-  const totalHeight = Math.min(sorted.length, 4) * 1.75;
+  const runningTasks = sorted.filter((t) => t.status !== "completed");
+  const doneCount = sorted.length - runningTasks.length;
+  const visible = collapsed ? runningTasks : sorted;
+  const totalHeight = Math.min(visible.length, collapsed ? 3 : 4) * 1.75;
+
+  const renderRow = (task: TaskInfo) => {
+    const title =
+      task.description ||
+      task.summary ||
+      task.agentType ||
+      task.workflowName ||
+      t("claude2.taskFallback", { id: task.id.slice(0, 6) });
+    const meta = [task.agentType, task.workflowName].filter(Boolean);
+    return (
+      <div key={task.id} className="flex items-start gap-2 text-xs">
+        <span className="mt-0.5 shrink-0">
+          {task.status === "running" ? (
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+          ) : task.status === "completed" ? (
+            <svg className="h-3 w-3 text-emerald-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : task.status === "error" ? (
+            <svg className="h-3 w-3 text-red-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : "text-slate-200"}`}>
+            {title}
+          </span>
+          {(task.text || meta.length > 0) && (
+            <span className="block truncate text-[0.65rem] text-slate-500">
+              {task.text}
+              {task.text && meta.length > 0 ? " · " : ""}
+              {meta.join(" · ")}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="shrink-0 border-t border-slate-700/80 px-3 py-2">
@@ -119,57 +160,16 @@ function TaskPanel({
         <span className="text-xs font-medium text-slate-400">{t("claude2.tasks")}</span>
         <span className="text-[0.65rem] text-slate-600">
           {collapsed
-            ? t("claude2.tasksCollapsed", { running, done })
+            ? `${runningTasks.length}/${doneCount}`
             : tasks.length}
         </span>
       </button>
-      {!collapsed && (
-        <div
-          className="flex flex-col gap-1 overflow-y-auto"
-          style={{ maxHeight: `${totalHeight}rem` }}
-        >
-          {sorted.map((task) => {
-            const title =
-              task.description ||
-              task.summary ||
-              task.agentType ||
-              task.workflowName ||
-              t("claude2.taskFallback", { id: task.id.slice(0, 6) });
-            const meta = [task.agentType, task.workflowName].filter(Boolean);
-            return (
-              <div key={task.id} className="flex items-start gap-2 text-xs">
-                <span className="mt-0.5 shrink-0">
-                  {task.status === "running" ? (
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-                  ) : task.status === "completed" ? (
-                    <svg className="h-3 w-3 text-emerald-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : task.status === "error" ? (
-                    <svg className="h-3 w-3 text-red-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                  ) : (
-                    <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <span className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : "text-slate-200"}`}>
-                    {title}
-                  </span>
-                  {(task.text || meta.length > 0) && (
-                    <span className="block truncate text-[0.65rem] text-slate-500">
-                      {task.text}
-                      {task.text && meta.length > 0 ? " · " : ""}
-                      {meta.join(" · ")}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div
+        className="flex flex-col gap-1 overflow-y-auto"
+        style={{ maxHeight: `${totalHeight}rem` }}
+      >
+        {visible.map(renderRow)}
+      </div>
     </div>
   );
 }
