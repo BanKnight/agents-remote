@@ -7,16 +7,9 @@ type Subscriber = {
   onError(err: Error): void;
 };
 
-type BootstrapPlan = {
-  snapshotLines: string[];
-  shouldReplay: boolean;
-};
-
 export class Claude2SessionRelay {
-  private relayLines: string[] = [];
-  private bufferLines: string[] = [];
-  private stdoutHistorySuppression = new Map<string, number>();
-  private localEchoSuppression = new Map<string, number>();
+  private historyLines: string[] = [];
+  private outputLines: string[] = [];
   private subscribers = new Set<Subscriber>();
   private phase: "init" | "active" | "destroyed" = "init";
   private activatePromise: Promise<void> | null = null;
@@ -47,26 +40,29 @@ export class Claude2SessionRelay {
       return { close: () => {} };
     }
 
-    const bootstrapPlan = this.buildBootstrapPlan();
     console.log(
-      `[relay] addSubscriber: phase=${this.phase} relay=${this.relayLines.length} buffer=${this.bufferLines.length} replay=${bootstrapPlan.shouldReplay}`,
+      `[relay] addSubscriber: phase=${this.phase} history=${this.historyLines.length} output=${this.outputLines.length}`,
     );
 
     const sub: Subscriber = { onData, onError };
     this.subscribers.add(sub);
 
-    if (bootstrapPlan.shouldReplay) {
-      onData(JSON.stringify({ type: "replay_start" }));
-
-      for (const line of bootstrapPlan.snapshotLines) {
-        try {
-          onData(line);
-        } catch {
-          /* subscriber error shouldn't block replay */
-        }
+    // Send history batch
+    if (this.historyLines.length > 0) {
+      onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
+      for (const line of this.historyLines) {
+        try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
       }
+      onData(JSON.stringify({ type: "history_end" }));
+    }
 
-      onData(JSON.stringify({ type: "replay_end" }));
+    // Send output batch
+    if (this.outputLines.length > 0) {
+      onData(JSON.stringify({ type: "output_start", count: this.outputLines.length }));
+      for (const line of this.outputLines) {
+        try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
+      }
+      onData(JSON.stringify({ type: "output_end" }));
     }
 
     return {
@@ -79,9 +75,6 @@ export class Claude2SessionRelay {
   async handleStdoutLine(line: string): Promise<void> {
     await this.activatePromise;
     if (this.isDestroyed) return;
-
-    if (consumeRawLine(this.localEchoSuppression, line)) return;
-    if (consumeRawLine(this.stdoutHistorySuppression, line)) return;
 
     try {
       const msg = JSON.parse(line) as Record<string, unknown>;
@@ -117,13 +110,12 @@ export class Claude2SessionRelay {
       /* unparseable — let through to broadcast/buffer */
     }
 
-    this.bufferLines.push(line);
-    this.capBuffer();
+    this.outputLines.push(line);
+    this.capOutput();
     this.broadcast(line);
   }
 
   injectLine(line: string): void {
-    incrementRawLine(this.localEchoSuppression, line);
     this.broadcast(line);
   }
 
@@ -133,10 +125,8 @@ export class Claude2SessionRelay {
 
   destroy(): void {
     this.phase = "destroyed";
-    this.relayLines = [];
-    this.bufferLines = [];
-    this.stdoutHistorySuppression.clear();
-    this.localEchoSuppression.clear();
+    this.historyLines = [];
+    this.outputLines = [];
     this.subscribers.clear();
   }
 
@@ -144,24 +134,15 @@ export class Claude2SessionRelay {
     return this.phase === "destroyed";
   }
 
-  private buildBootstrapPlan(): BootstrapPlan {
-    const snapshotLines = [...this.relayLines, ...this.bufferLines];
-    return {
-      snapshotLines,
-      shouldReplay: snapshotLines.length > 0,
-    };
-  }
-
   private async doActivate(): Promise<void> {
     try {
       if (this.startedAsResume && this.claudeSessionId) {
-        this.relayLines = this.readRelaySnapshot();
-        this.stdoutHistorySuppression = buildRawLineCounts(this.relayLines);
+        this.historyLines = this.readHistoryFromJsonl();
         console.log(
-          `[relay] resume relay lines=${this.relayLines.length} suppressionKeys=${this.stdoutHistorySuppression.size}`,
+          `[relay] resume loaded history lines=${this.historyLines.length}`,
         );
       } else {
-        console.log(`[relay] new session — starting with empty relay`);
+        console.log(`[relay] new session — starting with empty history`);
       }
 
       this.phase = "active";
@@ -172,13 +153,13 @@ export class Claude2SessionRelay {
     }
   }
 
-  private capBuffer(): void {
-    if (this.bufferLines.length > 5000) {
-      this.bufferLines = this.bufferLines.slice(-5000);
+  private capOutput(): void {
+    if (this.outputLines.length > 5000) {
+      this.outputLines = this.outputLines.slice(-5000);
     }
   }
 
-  private readRelaySnapshot(): string[] {
+  private readHistoryFromJsonl(): string[] {
     if (!this.claudeSessionId) return [];
 
     try {
@@ -223,23 +204,3 @@ export class Claude2SessionRelay {
     }
   }
 }
-
-const buildRawLineCounts = (lines: string[]): Map<string, number> => {
-  const counts = new Map<string, number>();
-  for (const line of lines) {
-    incrementRawLine(counts, line);
-  }
-  return counts;
-};
-
-const incrementRawLine = (counts: Map<string, number>, line: string) => {
-  counts.set(line, (counts.get(line) ?? 0) + 1);
-};
-
-const consumeRawLine = (counts: Map<string, number>, line: string): boolean => {
-  const count = counts.get(line) ?? 0;
-  if (count <= 0) return false;
-  if (count === 1) counts.delete(line);
-  else counts.set(line, count - 1);
-  return true;
-};

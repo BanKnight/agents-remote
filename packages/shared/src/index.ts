@@ -595,6 +595,20 @@ export type SessionStreamServerMessage =
       error?: string;
     }
   | {
+      type: "history_start";
+      count: number;
+    }
+  | {
+      type: "history_end";
+    }
+  | {
+      type: "output_start";
+      count: number;
+    }
+  | {
+      type: "output_end";
+    }
+  | {
       type: "replay_start";
     }
   | {

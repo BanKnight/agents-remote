@@ -120,8 +120,8 @@ export class Claude2StreamController {
       metadata?.permissionMode,
     );
 
-    // History is loaded via REST for deep pagination (GET /agent-sessions/:id/messages).
-    // Recent messages are replayed from the CLI stdout buffer on reconnect.
+    // History and recent output are replayed from the relay on connect.
+    // The relay sends history_start/end and output_start/end batch markers.
 
     send(socket, {
       type: "connected",

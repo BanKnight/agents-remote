@@ -11,34 +11,7 @@ afterEach(async () => {
   cleanupDirs.clear();
 });
 
-test("Claude2SessionRelay suppresses stdout echo after injected user live echo", async () => {
-  const relay = new Claude2SessionRelay();
-  await relay.activate("", undefined);
-
-  const received: string[] = [];
-  relay.addSubscriber(
-    (line) => received.push(line),
-    (error) => {
-      throw error;
-    },
-  );
-
-  const userLine = JSON.stringify({
-    type: "user",
-    message: { role: "user", content: [{ type: "text", text: "hello live" }] },
-  });
-
-  relay.injectLine(userLine);
-  await relay.handleStdoutLine(userLine);
-
-  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages.some((msg) => msg.type === "replay_start")).toBe(false);
-  expect(messages.some((msg) => msg.type === "replay_end")).toBe(false);
-  expect(messages.filter((msg) => msg.type === "user")).toHaveLength(1);
-  relay.destroy();
-});
-
-test("Claude2SessionRelay replays the current raw buffer for a new session", async () => {
+test("Claude2SessionRelay sends history and output batches for a new session", async () => {
   const relay = new Claude2SessionRelay();
   await relay.activate("", undefined);
 
@@ -59,23 +32,32 @@ test("Claude2SessionRelay replays the current raw buffer for a new session", asy
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => {
-      throw error;
-    },
+    (error) => { throw error; },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
-  const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
-  const replayMessages = messages.slice(replayStart + 1, replayEnd);
 
-  expect(replayStart).toBe(0);
-  expect(replayEnd).toBe(3);
-  expect(replayMessages).toEqual([JSON.parse(systemLine), JSON.parse(assistantLine)]);
+  // No history for new session
+  expect(messages.some((msg) => msg.type === "history_start")).toBe(false);
+  expect(messages.some((msg) => msg.type === "history_end")).toBe(false);
+
+  // Output batch with both lines
+  const outputStart = messages.findIndex((msg) => msg.type === "output_start");
+  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+
+  expect(outputStart).toBeGreaterThanOrEqual(0);
+  expect(outputEnd).toBeGreaterThan(outputStart);
+  expect(messages[outputStart - 1]).toBeUndefined(); // nothing before output_start
+
+  const outputMessages = messages.slice(outputStart + 1, outputEnd);
+  expect(outputMessages).toHaveLength(2);
+  expect(outputMessages[0]).toEqual(JSON.parse(systemLine));
+  expect(outputMessages[1]).toEqual(JSON.parse(assistantLine));
+
   relay.destroy();
 });
 
-test("Claude2SessionRelay replays resume relay before current raw buffer", async () => {
+test("Claude2SessionRelay sends history batch before output batch for resume", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-resume-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -97,7 +79,7 @@ test("Claude2SessionRelay replays resume relay before current raw buffer", async
     message: {
       id: "msg_2",
       role: "assistant",
-      content: [{ type: "text", text: "from live buffer" }],
+      content: [{ type: "text", text: "from live output" }],
     },
   });
 
@@ -108,94 +90,134 @@ test("Claude2SessionRelay replays resume relay before current raw buffer", async
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => {
-      throw error;
-    },
+    (error) => { throw error; },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
-  const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
-  const replayMessages = messages.slice(replayStart + 1, replayEnd);
 
-  expect(replayMessages).toEqual([JSON.parse(diskLine), JSON.parse(bufferLine)]);
+  // History batch comes first
+  const historyStart = messages.findIndex((msg) => msg.type === "history_start");
+  const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
+
+  expect(historyStart).toBe(0); // first message
+  expect(historyEnd).toBeGreaterThan(historyStart);
+
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages).toEqual([JSON.parse(diskLine)]);
+
+  // Output batch comes after history
+  const outputStart = messages.findIndex((msg) => msg.type === "output_start");
+  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+
+  expect(outputStart).toBeGreaterThan(historyEnd); // after history
+  expect(outputEnd).toBeGreaterThan(outputStart);
+
+  const outputMessages = messages.slice(outputStart + 1, outputEnd);
+  expect(outputMessages).toEqual([JSON.parse(bufferLine)]);
+
   relay.destroy();
 });
 
-test("Claude2SessionRelay does not persist optimistic echo into later snapshots", async () => {
+test("Claude2SessionRelay handles empty history for new session", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => { throw error; },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages.some((msg) => msg.type === "history_start")).toBe(false);
+  expect(messages.some((msg) => msg.type === "output_start")).toBe(false);
+  expect(messages).toHaveLength(0);
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay handles empty history file for resume", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
-  const claudeSessionId = "relay-optimistic-session";
+  const claudeSessionId = "relay-empty-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
   cleanupDirs.add(dirname(jsonlPath));
 
   await mkdir(dirname(jsonlPath), { recursive: true });
-
-  const diskLine = JSON.stringify({
-    type: "user",
-    uuid: "uuid-user-1",
-    session_id: claudeSessionId,
-    message: { role: "user", content: [{ type: "text", text: "persisted prompt" }] },
-  });
-  await writeFile(jsonlPath, `${diskLine}\n`);
-
-  const optimisticLine = JSON.stringify({
-    type: "user",
-    message: { role: "user", content: [{ type: "text", text: "optimistic only" }] },
-  });
+  await writeFile(jsonlPath, "");
 
   const relay = new Claude2SessionRelay();
   await relay.activate(projectPath, claudeSessionId);
-  relay.injectLine(optimisticLine);
 
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => {
-      throw error;
-    },
+    (error) => { throw error; },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
-  const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
-  const replayMessages = messages.slice(replayStart + 1, replayEnd);
+  expect(messages.some((msg) => msg.type === "history_start")).toBe(false);
+  expect(messages).toHaveLength(0);
 
-  expect(replayMessages).toEqual([JSON.parse(diskLine)]);
   relay.destroy();
 });
 
-test("Claude2SessionRelay keeps meta skill user separate from plain user with same text", async () => {
+test("Claude2SessionRelay broadcasts live output after batch", async () => {
   const relay = new Claude2SessionRelay();
   await relay.activate("", undefined);
 
-  const skillText = "Base directory for this skill: /tmp/skill";
-  const plainUserLine = JSON.stringify({
-    type: "user",
-    message: { role: "user", content: [{ type: "text", text: skillText }] },
+  const live1 = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-1",
+    message: { id: "m1", role: "assistant", content: [{ type: "text", text: "live" }] },
   });
-  const metaSkillLine = JSON.stringify({
-    type: "user",
-    isMeta: true,
-    sourceToolUseID: "tu-skill",
-    message: { role: "user", content: [{ type: "text", text: skillText }] },
-  });
-
-  await relay.handleStdoutLine(plainUserLine);
-  await relay.handleStdoutLine(metaSkillLine);
 
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => {
-      throw error;
-    },
+    (error) => { throw error; },
   );
 
-  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  const replayStart = messages.findIndex((msg) => msg.type === "replay_start");
-  const replayEnd = messages.findIndex((msg) => msg.type === "replay_end");
-  const replayMessages = messages.slice(replayStart + 1, replayEnd);
+  // After subscriber joins, handle more stdout lines
+  await relay.handleStdoutLine(live1);
 
-  expect(replayMessages).toEqual([JSON.parse(plainUserLine), JSON.parse(metaSkillLine)]);
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  // output_start + batch message + output_end + live message
+  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+  const liveMessages = messages.slice(outputEnd + 1);
+
+  expect(liveMessages).toHaveLength(1);
+  expect(liveMessages[0]).toEqual(JSON.parse(live1));
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay injectLine broadcasts but does not enter output", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  const injectedLine = JSON.stringify({
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text: "optimistic" }] },
+  });
+
+  // Add subscriber first so it receives the injectLine broadcast
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => { throw error; },
+  );
+
+  relay.injectLine(injectedLine);
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  // injectLine is broadcast live, not via output batch
+  const outputStart = messages.findIndex((msg) => msg.type === "output_start");
+  expect(outputStart).toBe(-1); // no output batch for empty session
+
+  // The injected line is received as a live broadcast
+  expect(messages.some((msg) => msg.type === "user")).toBe(true);
+
   relay.destroy();
 });
