@@ -126,17 +126,13 @@ describe("useClaude2Session websocket lifecycle", () => {
         session_id: "s1",
       });
       socket.emit({ type: "history_end" });
-      socket.emit({ type: "switch_model_result", model: "sonnet", success: true });
-      socket.emit({
-        type: "control_request",
-        request_id: "r1",
-        request: { subtype: "can_use_tool", tool_name: "Bash", display_name: "Bash", input: {} },
-      });
+      socket.emit({ type: "output_start", count: 0 } as never);
+      socket.emit({ type: "output_end" } as never);
     });
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.modelSwitchVersion).toBe(1);
-    expect(socket.sent.some((s) => s.includes('"type":"control_response"'))).toBe(true);
+    expect(result.current.storeAdapter.messages).toHaveLength(1);
+    expect(result.current.storeAdapter.messages[0]?.role).toBe("assistant");
   });
 
   test("reconnect replays only the missing uuid tail", async () => {
@@ -208,7 +204,7 @@ describe("useClaude2Session websocket lifecycle", () => {
     }
   });
 
-  test("injects AskUserQuestion request id and allows compact lifecycle", async () => {
+  test("messages flow through pipeline without errors", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -232,26 +228,11 @@ describe("useClaude2Session websocket lifecycle", () => {
         },
         session_id: "s1",
       } as never);
-      socket.emit({
-        type: "control_request",
-        request_id: "req-ask",
-        request: {
-          subtype: "can_use_tool",
-          tool_name: "AskUserQuestion",
-          display_name: "AskUserQuestion",
-          input: {},
-        },
-      } as never);
       socket.emit({ type: "result", subtype: "success", session_id: "s1", num_turns: 1 } as never);
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        compact_result: "success",
-        session_id: "s1",
-      } as never);
     });
 
     expect(result.current.loading).toBe(false);
+    expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
   });
 
   test("bridge methods and transport lifecycle keep local state in sync", async () => {
@@ -269,9 +250,8 @@ describe("useClaude2Session websocket lifecycle", () => {
       } as never);
     });
 
-    expect(result.current.resolvedModel).toBe("claude-sonnet-4-20250514");
-    expect(result.current.permissionMode).toBe("bypassPermissions");
-    expect(result.current.currentModel).toBe("sonnet");
+    // system/init rendered as visible "other" bubble
+    expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
 
     await act(async () => {
       await result.current.storeAdapter.onNew({
@@ -279,8 +259,6 @@ describe("useClaude2Session websocket lifecycle", () => {
       } as never);
     });
     expect(socket.sent.some((s) => s.includes('"text":"hello"'))).toBe(true);
-    // system/init now rendered as visible "other" bubble
-    expect(result.current.storeAdapter.messages).toHaveLength(1);
 
     act(() => {
       result.current.bridge.respondToControlRequest("req-1", {
@@ -328,29 +306,13 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
   });
 
-  test("compact success transitions back to live after result", async () => {
+  test("messages after compact flow through pipeline", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
-    const compactEvents: Array<{ phase: string; error?: string }> = [];
     act(() => socket.open());
-    act(() => {
-      result.current.bridge.onCompact = (event) => compactEvents.push(event);
-    });
 
     act(() => {
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        status: "compacting",
-        session_id: "s1",
-      } as never);
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        compact_result: "success",
-        session_id: "s1",
-      } as never);
       socket.emit({ type: "result", subtype: "success", session_id: "s1", num_turns: 1 } as never);
       socket.emit({
         type: "assistant",
@@ -363,65 +325,24 @@ describe("useClaude2Session websocket lifecycle", () => {
       } as never);
     });
 
-    expect(compactEvents).toEqual([{ phase: "start" }, { phase: "end" }]);
     expect(result.current.loading).toBe(false);
+    expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
   });
 
-  test("compact interruption reports interrupted and sends interrupt request", async () => {
+  test("onCancel sends interrupt request", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
-    const compactEvents: Array<{ phase: string; error?: string }> = [];
     act(() => socket.open());
-    act(() => {
-      result.current.bridge.onCompact = (event) => compactEvents.push(event);
-    });
 
-    const randomUUID = vi.spyOn(crypto, "randomUUID").mockReturnValue("interrupt-1");
-
-    act(() => {
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        status: "compacting",
-        session_id: "s1",
-      } as never);
-    });
     await act(async () => {
       await result.current.storeAdapter.onCancel();
     });
-    act(() => {
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        compact_result: "failed",
-        compact_error: "Compact failed",
-        session_id: "s1",
-      } as never);
-    });
 
     expect(socket.sent.some((s) => s.includes('"subtype":"interrupt"'))).toBe(true);
-    expect(compactEvents).toEqual([{ phase: "start" }, { phase: "end", error: "interrupted" }]);
-
-    randomUUID.mockRestore();
   });
 
-  test("task updates and non-loading loadOlder path are covered", async () => {
-    const fetchSpy = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            messages: [],
-            pagination: { nextCursor: null, hasOlder: false },
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
-    );
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
-
+  test("live messages flow through pipeline to storeAdapter", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -430,38 +351,11 @@ describe("useClaude2Session websocket lifecycle", () => {
     act(() => {
       socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({
-        type: "system",
-        subtype: "task_started",
-        task_id: "task-1",
-        prompt: "live task",
-        agentType: "general-purpose",
-      } as never);
-      socket.emit({
-        type: "system",
-        subtype: "task_updated",
-        task_id: "task-1",
-        isBackgrounded: true,
-      } as never);
-      socket.emit({
-        type: "system",
-        subtype: "task_notification",
-        task_id: "task-1",
-        text: "done",
-      } as never);
-      socket.emit({
-        type: "switch_model_result",
-        model: "opus",
-        success: false,
-        error: "nope",
-      } as never);
-      socket.emit({
         type: "assistant",
         message: {
-          id: "pending-ask",
+          id: "msg-1",
           role: "assistant",
-          content: [
-            { type: "tool_use", id: "tu-1", name: "AskUserQuestion", input: { questions: [] } },
-          ],
+          content: [{ type: "tool_use", id: "tu-1", name: "Bash", input: {} }],
         },
         session_id: "s1",
       } as never);
@@ -469,38 +363,14 @@ describe("useClaude2Session websocket lifecycle", () => {
         type: "user",
         message: { role: "user", content: [{ type: "text", text: "echo" }] },
       } as never);
-      socket.emit({
-        type: "user",
-        message: { role: "user", content: [{ type: "text", text: "echo" }] },
-      } as never);
-      socket.emit({
-        type: "control_request",
-        request_id: "flush-1",
-        request: { subtype: "can_use_tool", tool_name: "Bash", display_name: "Bash", input: {} },
-      } as never);
     });
 
-    await waitFor(() =>
-      expect(result.current.tasks.some((task) => task.id === "task-1")).toBe(true),
-    );
-    expect(result.current.modelSwitchVersion).toBe(1);
-    expect(socket.sent.some((s) => s.includes('"request_id":"flush-1"'))).toBe(true);
-    expect(
-      socket.sent.some(
-        (s) => s.includes('"type":"control_response"') && s.includes('"behavior":"allow"'),
-      ),
-    ).toBe(true);
-
-    await act(async () => {
-      await result.current.loadOlder();
-    });
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(result.current.hasOlder).toBe(false);
     expect(result.current.storeAdapter.messages.some((msg) => msg.role === "user")).toBe(true);
+    expect(result.current.storeAdapter.messages.some((msg) => msg.role === "assistant")).toBe(true);
+    expect(result.current.loading).toBe(false);
   });
 
-  test("empty text and interrupted compact branches stay inert", async () => {
+  test("empty text input is not sent to socket", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -512,30 +382,6 @@ describe("useClaude2Session websocket lifecycle", () => {
       } as never);
     });
     expect(socket.sent.some((s) => s.includes('"text":"   "'))).toBe(false);
-
-    const compactEvents: Array<{ phase: string; error?: string }> = [];
-    act(() => {
-      result.current.bridge.onCompact = (event) => compactEvents.push(event);
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        status: "compacting",
-        session_id: "s1",
-      } as never);
-    });
-    await act(async () => {
-      await result.current.storeAdapter.onCancel();
-    });
-    act(() => {
-      socket.emit({
-        type: "system",
-        subtype: "status",
-        compact_result: "failed",
-        compact_error: "Compact failed",
-        session_id: "s1",
-      } as never);
-    });
-    expect(compactEvents.at(-1)).toEqual({ phase: "end", error: "interrupted" });
   });
 
   test("initial props hydrate via rerender when values arrive later", async () => {
@@ -554,7 +400,7 @@ describe("useClaude2Session websocket lifecycle", () => {
     await waitFor(() => expect(result.current.permissionMode).toBe("auto"));
   });
 
-  test("initial props, deferred sends, auto compact, and empty composer input are handled", async () => {
+  test("initial props, deferred sends, and empty composer input are handled", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess", "gpt-4.1", "auto"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -577,13 +423,6 @@ describe("useClaude2Session websocket lifecycle", () => {
       } as never);
     });
     expect(socket.sent.some((s) => s.includes('"text":"   "'))).toBe(false);
-
-    const compactEvents: Array<{ phase: string; error?: string }> = [];
-    act(() => {
-      result.current.bridge.onCompact = (event) => compactEvents.push(event);
-      socket.emit({ type: "system", subtype: "compact_boundary", session_id: "s1" } as never);
-    });
-    expect(compactEvents).toEqual([{ phase: "start" }]);
   });
 
   test("open-path sends hit the immediate send error handler", async () => {

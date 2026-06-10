@@ -22,7 +22,7 @@ type TaskSystemMessage = Extract<
 
 type AskUserQuestionAssistantMessage = Extract<SessionStreamServerMessage, { type: "assistant" }>;
 
-const isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSystemMessage =>
+const _isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSystemMessage =>
   msg.type === "system" &&
   "subtype" in msg &&
   (msg.subtype === "task_started" ||
@@ -794,7 +794,7 @@ export function useClaude2Session(
   const [hasOlder, setHasOlder] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
-  const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
+  const [modelSwitchVersion, _setModelSwitchVersion] = useState(0);
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
 
   useEffect(() => {
@@ -1073,194 +1073,11 @@ export function useClaude2Session(
         if (liveUuid) messageMapRef.current.set(liveUuid, msg);
         processMessage(msg);
 
-        // ── Connected ─────────────────────────────────────────────────
-        if (msg.type === "connected") {
-          setLoading(false);
-          return;
-        }
-
-        // ── isRunning tracking ────────────────────────────────────────
         setLoading(false);
-        if (
-          msg.type === "assistant" ||
-          (msg.type === "system" && msg.subtype === "thinking_tokens")
-        ) {
-          setIsRunning(true);
-        }
 
-        // ── api_retry ─────────────────────────────────────────────────
-        if (msg.type === "system" && msg.subtype === "api_retry") {
-          const r = msg as {
-            attempt: number;
-            max_retries: number;
-            retry_delay_ms: number;
-            error?: string;
-            error_status?: number;
-          };
-          setRetryInfo({
-            attempt: r.attempt,
-            maxRetries: r.max_retries,
-            retryDelayMs: r.retry_delay_ms,
-            error: r.error,
-            errorStatus: r.error_status,
-            startTime: Date.now(),
-          });
-          return;
-        }
+        if (msg.type === "connected") return;
 
-        if (msg.type === "assistant" || msg.type === "user") {
-          setRetryInfo(null);
-        }
-
-        // ── Tasks ─────────────────────────────────────────────────────
-        if (isTaskSystemMessage(msg)) {
-          setTasks((prev) => applyTaskSystemMessage(prev, msg));
-          return;
-        }
-
-        // ── Compact lifecycle ─────────────────────────────────────────
-        if (
-          msg.type === "system" &&
-          msg.subtype === "status" &&
-          "status" in msg &&
-          msg.status === "compacting"
-        ) {
-          compactActiveRef.current = true;
-          compactInterruptedRef.current = false;
-          compactPhaseRef.current = "compacting";
-          if (bridge.onCompact) bridge.onCompact({ phase: "start" });
-        }
-
-        if (msg.type === "system" && msg.subtype === "status" && "compact_result" in msg) {
-          if (compactActiveRef.current) {
-            compactActiveRef.current = false;
-            const statusMsg = msg as { compact_result?: string; compact_error?: string };
-            if (bridge.onCompact) {
-              const failed = statusMsg.compact_result === "failed";
-              bridge.onCompact({
-                phase: "end",
-                error: failed
-                  ? compactInterruptedRef.current
-                    ? "interrupted"
-                    : (statusMsg.compact_error ?? "Compact failed")
-                  : undefined,
-              });
-            }
-          }
-          compactPhaseRef.current = "replay";
-        }
-
-        if (
-          msg.type === "system" &&
-          (msg.subtype === "compact_boundary" || msg.subtype === "microcompact_boundary")
-        ) {
-          if (compactPhaseRef.current === "none") {
-            compactActiveRef.current = true;
-            compactInterruptedRef.current = false;
-            compactPhaseRef.current = "compacting";
-            if (bridge.onCompact) bridge.onCompact({ phase: "start" });
-          }
-        }
-
-        // ── system.init metadata ──────────────────────────────────────
-        if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
-          const init = msg as {
-            model: string;
-            permissionMode: string;
-            slash_commands?: string[];
-            skills?: string[];
-          };
-          setResolvedModel(init.model);
-          setPermissionMode(init.permissionMode);
-          setSlashCommands(Array.isArray(init.slash_commands) ? init.slash_commands : []);
-          setSkills(Array.isArray(init.skills) ? init.skills : []);
-          const tiers = ["sonnet", "opus", "haiku"];
-          const tier = tiers.find((t) => init.model.includes(t));
-          if (tier) setCurrentModel(tier);
-        }
-
-        // ── switch_model_result ───────────────────────────────────────
-        if (msg.type === "switch_model_result") {
-          const result = msg as {
-            type: "switch_model_result";
-            model: string;
-            success: boolean;
-            error?: string;
-          };
-          if (!result.success) {
-            setCurrentModel(undefined);
-            console.error(`[claude2-adapter] model switch failed: ${result.error ?? "unknown"}`);
-          }
-          setModelSwitchVersion((version) => version + 1);
-        }
-
-        // ── result ────────────────────────────────────────────────────
-        if (msg.type === "result") {
-          setIsRunning(false);
-          if (compactPhaseRef.current === "compacting" || compactPhaseRef.current === "replay") {
-            if (compactActiveRef.current) {
-              compactActiveRef.current = false;
-              if (bridge.onCompact) bridge.onCompact({ phase: "end" });
-            }
-            compactPhaseRef.current = "waiting-live";
-          }
-        }
-
-        if (
-          compactPhaseRef.current === "waiting-live" &&
-          (msg.type === "assistant" || (msg.type === "system" && msg.subtype === "thinking_tokens"))
-        ) {
-          compactPhaseRef.current = "none";
-        }
-
-        // ── control_request ───────────────────────────────────────────
-        if (msg.type === "control_request") {
-          const toolName = msg.request?.tool_name;
-          if (toolName !== "AskUserQuestion") {
-            sendToSocket(buildAllowAllControlResponse(msg.request_id));
-            return;
-          }
-
-          if (pendingAskRef.current) {
-            const updated = injectAskUserQuestionRequestId(
-              pendingAskRef.current as AskUserQuestionAssistantMessage,
-              msg.request_id,
-            );
-            pendingAskRef.current = null;
-            setOutputMessages((prev) => [...prev, updated as SessionStreamServerMessage]);
-          }
-          return;
-        }
-
-        // ── assistant: synthetic / AskUserQuestion filter ─────────────
-        if (msg.type === "assistant") {
-          const assistantMsg = msg as {
-            type: "assistant";
-            message: {
-              model?: string;
-              content: Array<{ type: string; name?: string }>;
-            };
-          };
-          if (isSyntheticAssistantMessage(assistantMsg as unknown as SessionStreamServerMessage)) {
-            return;
-          }
-
-          const hasAsk = assistantMsg.message.content.some(
-            (b) => b.type === "tool_use" && b.name === "AskUserQuestion",
-          );
-          if (hasAsk) {
-            pendingAskRef.current = msg;
-            return;
-          }
-        }
-
-        if (pendingAskRef.current) {
-          const pendingAsk = pendingAskRef.current;
-          pendingAskRef.current = null;
-          setOutputMessages((prev) => [...prev, pendingAsk]);
-        }
-
-        // ── Append to live output ─────────────────────────────────────
+        // Append to live output
         setOutputMessages((prev) => [...prev, msg]);
       } catch {
         // skip
