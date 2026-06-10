@@ -31,42 +31,45 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 
 ## 协议类型总表
 
-下面先给出当前已知消息类型的总览，后续各节再展开字段和处理方式。
+下面按 **CLI stdout**（CLI 输出）和 **CLI stdin**（我们写入 CLI）两个方向列出当前已知消息类型。后续各节再展开字段和处理方式。
 
-### CLI stdout 原始消息
+列含义：**写入 JSONL** = CLI 是否将该消息写入磁盘 JSONL 文件；**新会话** / **resume 会话** = 该场景下此消息类型是否会出现。
 
-| 类型                          | 子类型 / 形态                                | 含义               | 是否渲染                | 主要处理                                           |
-| ----------------------------- | -------------------------------------------- | ------------------ | ----------------------- | -------------------------------------------------- |
-| `system`                      | `init`                                       | 会话元数据初始化 (**不持久化到 JSONL**)  | 不渲染                  | 读取 model / permissionMode / session_id           |
-| `system`                      | `status`                                     | compact 运行态通知 | 不渲染                  | 驱动 compact banner                                |
-| `system`                      | `compact_boundary` / `microcompact_boundary` | 历史压缩边界       | inline 分割线           | 标记压缩后上下文边界                               |
-| `system`                      | `api_retry`                                  | API 重试通知       | inline 系统消息         | 展示失败与重试                                     |
-| `system`                      | `api_error`                                  | API 错误通知       | inline 系统消息         | 展示错误态                                         |
-| `system`                      | `attachment`                                 | 附件注册通知       | 不渲染                  | 记录附件关联，供 Files 引用                        |
-| `system`                      | `last_prompt`                                | 最后 prompt 回显   | 不渲染                  | 写入调试日志，不进入 UI                            |
-| `mode`                        | （顶层类型）                                 | 运行时模式切换     | 不渲染                  | 更新 permissionMode 指示器                         |
-| `system`                      | `thinking_tokens`                            | 推理 token 增量    | 不单独渲染              | 供 reasoning part 计数                             |
-| `system`                      | `task_started`                               | 子任务开始         | 不渲染到聊天流          | 更新 task 列表                                     |
-| `system`                      | `task_updated`                               | 子任务状态更新     | 不渲染到聊天流          | 更新 task 列表                                     |
-| `system`                      | `task_notification`                          | 子任务通知 / 完成  | 不渲染到聊天流          | 更新 task 列表                                     |
-| `system`                      | `permission_denied`                          | 自动权限拒绝       | 不渲染到聊天流          | 作为调试/错误来源信号                              |
-| `assistant`                   | message.content blocks                       | AI 回复流          | 渲染为 assistant bubble | 合并同 id message，处理 text / thinking / tool_use |
-| `user`                        | text                                         | 用户文本输入       | 渲染为 user bubble      | 作为 turn 边界与输入回显                           |
-| `user`                        | tool_result                                  | 工具结果回显       | 不单独渲染              | 回填对应 tool-call result                          |
-| `user`                        | `isMeta: true` + `sourceToolUseID`           | skill 加载内容     | hidden                  | 挂到对应 tool-call 的 metadata.skillContent        |
-| `user`                        | `isMeta: true` 无 `sourceToolUseID`          | 内部用户形消息     | hidden                  | 直接跳过                                           |
-| `user`                        | 字符串 `<local-command-stdout>`              | CLI 本地命令输出   | 通常 hidden / special   | 仅保留权威记录或映射为专用卡片                     |
-| `result`                      | `success` / `interrupted` / `error`          | turn 结束          | 不渲染或 inline error   | 清零 isRunning、flush assistant                    |
-| `control_request`             | `can_use_tool`                               | 权限请求           | 不直接渲染              | AskUserQuestion / tool 权限流                      |
-| `control_request`             | `interrupt`                                  | 用户中断           | 不直接渲染              | 中断当前执行                                       |
-| `switch_model_result`         | 成功 / 失败                                  | 模型切换确认       | 不渲染                  | 更新 currentModel / modelSwitchVersion             |
-| `replay_start` / `replay_end` | batch 边界                                   | 回放边界           | 不渲染                  | 切换 loading 与 replay 合并                        |
-| `connected`                   | transport                                    | WS 连接确认        | 不渲染                  | 连接状态确认                                       |
-| `snapshot`                    | transport                                    | 全量快照           | 不渲染                  | 传输层文本快照                                     |
-| `output`                      | transport                                    | 增量输出           | 不渲染                  | 传输层文本增量                                     |
-| `status`                      | transport                                    | 传输状态           | 不渲染                  | WS / session transport 状态                        |
-| `ended`                       | transport                                    | 连接终止           | 不渲染                  | 结束 transport 状态                                |
-| `error`                       | transport                                    | 传输错误           | inline / toast          | 告知连接失败                                       |
+### CLI stdout（CLI → 外部）
+
+| 类型 | 子类型 / 形态 | 含义 | 写入 JSONL | 新会话 | resume 会话 |
+|---|---|---|---|---|---|
+| `system` | `init` | 会话元数据初始化（model, slash_commands, skills 等） | 否 | 是 | 是 |
+| `system` | `status` | compact 运行态通知 | 否 | 是 | 是 |
+| `system` | `compact_boundary` | 上下文压缩边界 | 是 | 是 | 是 |
+| `system` | `microcompact_boundary` | 微压缩边界 | 否 | 是 | 是 |
+| `system` | `api_retry` | API 重试通知 | 否 | 是 | 是 |
+| `system` | `api_error` | API 错误通知 | 是 | 是 | 是 |
+| `system` | `thinking_tokens` | 推理 token 增量 | 否 | 是 | 是 |
+| `system` | `task_started` | 子任务开始 | 否 | 是 | 是 |
+| `system` | `task_updated` | 子任务状态更新 | 否 | 是 | 是 |
+| `system` | `task_notification` | 子任务通知 / 完成 | 否 | 是 | 是 |
+| `system` | `permission_denied` | 自动权限拒绝 | 否 | 是 | 是 |
+| `system` | `turn_duration` | turn 耗时统计 | 是 | 是 | 是 |
+| `assistant` | message.content blocks | AI 回复流 | 是 | 是 | 是 |
+| `user` | text | 用户文本输入 | 是 | 是 | 是 |
+| `user` | tool_result | 工具执行结果回填 | 是 | 是 | 是 |
+| `user` | `isMeta: true` + `sourceToolUseID` | skill 加载内容 | 是 | 是 | 是 |
+| `user` | `isMeta: true` 无 `sourceToolUseID` | CLI 内部隐藏消息 | 是 | 是 | 是 |
+| `user` | `<local-command-stdout>` | CLI 本地命令输出 | 是 | 是 | 是 |
+| `result` | `success` / `error` / `interrupted` / `error_max_turns` | turn 结束 | 否 | 是 | 是 |
+| `control_request` | `can_use_tool` | 权限请求（Bash, Write, AskUserQuestion 等） | 否 | 是 | 是 |
+| `switch_model_result` | 成功 / 失败 | 模型切换确认 | 否 | 是 | 是 |
+
+### CLI stdin（外部 → CLI）
+
+| 类型 | 含义 | 写入 JSONL | 新会话 | resume 会话 |
+|---|---|---|---|---|
+| `user` | 用户文本输入 | 是（处理后） | 是 | 是 |
+| `control_response` | 权限响应（allow / deny） | 否 | 是 | 是 |
+| `control_request` | 中断请求（`subtype: "interrupt"`） | 否 | 是 | 是 |
+| `switch_model` | 请求切换模型 | 否 | 是 | 是 |
+| `permission_mode` | 请求切换权限模式 | 否 | 是 | 是 |
 
 ### 顶层辅助字段
 
