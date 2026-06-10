@@ -107,6 +107,10 @@ export const zh: Record<TranslationKey, string> = {
   "session.actionsAria": "会话操作",
   "session.filesAria": "查看文件",
   "session.gitAria": "查看 Git 差异",
+  "session.namePrompt.createAgent": "创建 Agent 会话",
+  "session.namePrompt.createTerminal": "创建终端",
+  "session.namePrompt.placeholder": "会话名称（可选）",
+  "session.namePrompt.confirm": "创建",
 
   // ── Files ────────────────────────────────────────────────────
   "files.loading": "正在加载文件...",

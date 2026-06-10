@@ -191,7 +191,7 @@ export async function listAgentHistory(projectName: string): Promise<ListAgentHi
 export async function createAgentSession(
   projectName: string,
   provider: AgentProvider,
-  opts?: { claudeSessionId?: string; model?: string; permissionMode?: string },
+  opts?: { claudeSessionId?: string; displayName?: string; model?: string; permissionMode?: string },
 ): Promise<CreateAgentSessionResponse> {
   return fetchJson(agentSessionsPath(projectName), "api.agentSessionCreationFailed", {
     method: "POST",
@@ -199,6 +199,7 @@ export async function createAgentSession(
     body: JSON.stringify({
       provider,
       claudeSessionId: opts?.claudeSessionId,
+      displayName: opts?.displayName,
       model: opts?.model,
       permissionMode: opts?.permissionMode,
     } satisfies CreateAgentSessionRequest),

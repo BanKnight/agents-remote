@@ -107,6 +107,10 @@ export const en = {
   "session.actionsAria": "Session actions",
   "session.filesAria": "View files",
   "session.gitAria": "View Git diff",
+  "session.namePrompt.createAgent": "Create Agent Session",
+  "session.namePrompt.createTerminal": "Create Terminal",
+  "session.namePrompt.placeholder": "Session name (optional)",
+  "session.namePrompt.confirm": "Create",
 
   // ── Files ────────────────────────────────────────────────────
   "files.loading": "Loading files...",

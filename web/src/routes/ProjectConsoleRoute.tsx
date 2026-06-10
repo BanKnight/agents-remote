@@ -50,6 +50,7 @@ import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
+import { usePromptDialog } from "../components/shell/prompt-dialog";
 
 export function ProjectConsoleRoute() {
   const { t } = useT();
@@ -200,11 +201,13 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     ]);
   };
   const createAgent = useMutation({
-    mutationFn: (provider: AgentProvider) => createAgentSession(project.name, provider),
+    mutationFn: ({ displayName, provider }: { displayName: string; provider: AgentProvider }) =>
+      createAgentSession(project.name, provider, { displayName: displayName || undefined }),
     onSuccess: invalidateSessions,
   });
   const createTerminal = useMutation({
-    mutationFn: () => createTerminalSession(project.name),
+    mutationFn: (displayName: string) =>
+      createTerminalSession(project.name, displayName || undefined),
     onSuccess: invalidateSessions,
   });
   const closeAgent = useMutation({
@@ -216,6 +219,29 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
     onSuccess: invalidateSessions,
   });
   const { confirm, holder } = useConfirm();
+  const { holder: promptHolder, prompt } = usePromptDialog();
+
+  const handleCreateAgent = (provider: AgentProvider) => {
+    void prompt({
+      title: t("session.namePrompt.createAgent"),
+      placeholder: t("session.namePrompt.placeholder"),
+      confirmLabel: t("session.namePrompt.confirm"),
+      cancelLabel: t("cancel"),
+    }).then((name) => {
+      if (name !== null) createAgent.mutate({ displayName: name, provider });
+    });
+  };
+
+  const handleCreateTerminal = () => {
+    void prompt({
+      title: t("session.namePrompt.createTerminal"),
+      placeholder: t("session.namePrompt.placeholder"),
+      confirmLabel: t("session.namePrompt.confirm"),
+      cancelLabel: t("cancel"),
+    }).then((name) => {
+      if (name !== null) createTerminal.mutate(name);
+    });
+  };
 
   const selectWorkspace = (workspace: (typeof consoleSections)[number]["id"]) => {
     setResourceDeepDetailOpen(false);
@@ -266,14 +292,14 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                 <CreateButton
                   disabled={createAgent.isPending}
                   tone="accent"
-                  onClick={() => createAgent.mutate("claude")}
+                  onClick={() => handleCreateAgent("claude")}
                 >
                   <ShellIcon name="anthropic" />
                   {t("project.createClaude")}
                 </CreateButton>
                 <CreateButton
                   disabled={createAgent.isPending}
-                  onClick={() => createAgent.mutate("codex")}
+                  onClick={() => handleCreateAgent("codex")}
                 >
                   <ShellIcon name="openai" />
                   {t("project.createCodex")}
@@ -281,7 +307,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                 <CreateButton
                   disabled={createAgent.isPending}
                   tone="accent"
-                  onClick={() => createAgent.mutate("claude2")}
+                  onClick={() => handleCreateAgent("claude2")}
                 >
                   <ShellIcon name="anthropic" />
                   {t("project.createClaude2")}
@@ -295,7 +321,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
                 <CreateButton
                   disabled={createTerminal.isPending}
                   tone="accent"
-                  onClick={() => createTerminal.mutate()}
+                  onClick={() => handleCreateTerminal()}
                 >
                   <ShellIcon name="terminal" />
                   {createTerminal.isPending ? t("project.creating") : t("project.newTerminal")}
@@ -315,7 +341,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
             <CreateButton
               disabled={createAgent.isPending}
               tone="accent"
-              onClick={() => createAgent.mutate("claude")}
+              onClick={() => handleCreateAgent("claude")}
               className="py-3 text-sm"
             >
               <ShellIcon name="anthropic" />
@@ -323,7 +349,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
             </CreateButton>
             <CreateButton
               disabled={createAgent.isPending}
-              onClick={() => createAgent.mutate("codex")}
+              onClick={() => handleCreateAgent("codex")}
               className="py-3 text-sm"
             >
               <ShellIcon name="openai" />
@@ -332,7 +358,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
             <CreateButton
               disabled={createAgent.isPending}
               tone="accent"
-              onClick={() => createAgent.mutate("claude2")}
+              onClick={() => handleCreateAgent("claude2")}
               className="py-3 text-sm"
             >
               <ShellIcon name="anthropic" />
@@ -394,7 +420,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
           createError={createTerminal.error}
           closeError={closeTerminal.error}
           confirm={confirm}
-          onCreate={() => createTerminal.mutate()}
+          onCreate={() => handleCreateTerminal()}
           onClose={(sessionId) => closeTerminal.mutate(sessionId)}
         />
       ) : null}
@@ -412,6 +438,7 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
         />
       ) : null}
       {holder}
+      {promptHolder}
     </ShellLayout>
   );
 }
