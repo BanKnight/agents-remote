@@ -642,35 +642,17 @@ function AssistantChatBubble() {
 // of this file for the full two-surface design.
 //
 // Wired in as the SystemMessage component of ThreadPrimitive.Messages, so it
-// renders for every role:"system" message. Those messages are produced ONLY
-// by loadMessagesFromRaw from compact_boundary records, which arrive on the
-// SAME path for both live streaming and history load — that is what keeps
-// this divider consistent across both (the single-source-pipeline rule).
-//
-// ── SystemMessage: renders role:"system" messages from the pipeline ────
-// Two sub-types, distinguished by metadata.custom.systemMessageType:
-//   "compact" (default) — compact boundary divider, low-key gray
-//   "error"              — API error result, red-tinted
-// Wired as ThreadPrimitive.Messages SystemMessage component.
-function CompactDivider() {
-  const msg = useMessage();
-  const meta = (msg as { metadata?: { custom?: Record<string, unknown> } }).metadata;
-  const isError = meta?.custom?.systemMessageType === "error";
-
+// ── SystemChatBubble: renders role:"system" messages (other types) ────
+// Distinct from assistant (slate) and user (cyan) — uses amber tint.
+// Shows raw message content for observation.
+function SystemChatBubble() {
   return (
-    <MessagePrimitive.Root
-      className={`flex items-center gap-3 px-3 py-2 sm:px-5 ${isError ? "bg-red-950/20" : ""}`}
-    >
-      <span className={`h-px flex-1 ${isError ? "bg-red-800/50" : "bg-slate-600"}`} />
-      <span className={`text-xs shrink-0 ${isError ? "text-red-400/80" : "text-slate-400"}`}>
-        <MessagePrimitive.Parts>
-          {({ part }) => {
-            if (part.type === "text") return <>{part.text}</>;
-            return null;
-          }}
-        </MessagePrimitive.Parts>
-      </span>
-      <span className={`h-px flex-1 ${isError ? "bg-red-800/50" : "bg-slate-600"}`} />
+    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
+      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
+        <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
+          <MessagePrimitive.Parts />
+        </div>
+      </div>
     </MessagePrimitive.Root>
   );
 }
@@ -693,7 +675,7 @@ function ThreadViewportContent({
         components={{
           UserMessage: UserChatBubble,
           AssistantMessage: AssistantChatBubble,
-          SystemMessage: CompactDivider,
+          SystemMessage: SystemChatBubble,
         }}
       />
       <RetryIndicator retryInfo={retryInfo} />
