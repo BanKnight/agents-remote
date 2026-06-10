@@ -203,12 +203,26 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
   const createAgent = useMutation({
     mutationFn: ({ displayName, provider }: { displayName: string; provider: AgentProvider }) =>
       createAgentSession(project.name, provider, { displayName: displayName || undefined }),
-    onSuccess: invalidateSessions,
+    onSuccess: async (data) => {
+      await invalidateSessions();
+      const to =
+        data.session.provider === "claude2"
+          ? "/projects/$projectName/agent-sessions/$sessionId/claude2"
+          : "/projects/$projectName/agent-sessions/$sessionId";
+      await navigate({ to, params: { projectName: project.name, sessionId: data.session.id } });
+    },
   });
   const createTerminal = useMutation({
     mutationFn: (displayName: string) =>
       createTerminalSession(project.name, displayName || undefined),
-    onSuccess: invalidateSessions,
+    onSuccess: async (data) => {
+      await invalidateSessions();
+      await navigate({
+        to: "/projects/$projectName/terminal-sessions/$sessionId",
+        params: { projectName: project.name, sessionId: data.session.id },
+        search: { fromAgentSession: undefined },
+      });
+    },
   });
   const closeAgent = useMutation({
     mutationFn: (sessionId: string) => closeAgentSession(project.name, sessionId),
