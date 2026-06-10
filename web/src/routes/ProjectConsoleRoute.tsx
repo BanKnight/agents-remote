@@ -46,7 +46,7 @@ import {
   shellSurfaceClasses,
   type ShellTone,
 } from "../components/shell/shell-primitives";
-import { FilesPanel } from "../components/files/file-browser";
+import { FilesPanel, formatBytes } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
@@ -797,7 +797,10 @@ function AgentHistoryRow({ entry, isResuming, onClick }: AgentHistoryRowProps) {
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
             <div className="min-w-0">
               <h4 className="truncate text-sm font-medium text-slate-100">{displayTitle}</h4>
-              <p className="mt-0.5 text-xs text-slate-500">{displayTime}</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {displayTime}
+                {entry.fileSize > 0 ? ` · ${formatBytes(entry.fileSize)}` : ""}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <StatusPill

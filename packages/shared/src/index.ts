@@ -241,6 +241,8 @@ export type AgentHistoryEntry = {
   lastActivityAt: string | null;
   /** Approximate number of user turns */
   messageCount: number;
+  /** JSONL session file size in bytes */
+  fileSize: number;
   /** Whether an active agent instance is linked to this Claude session */
   hasActiveSession: boolean;
   /** Agent session ID when hasActiveSession is true */

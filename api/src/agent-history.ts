@@ -79,9 +79,11 @@ async function extractEntry(
   }
 
   let lastActivityAt: string | null = null;
+  let fileSize = 0;
   try {
     const info = await stat(filePath);
     lastActivityAt = info.mtime.toISOString();
+    fileSize = info.size;
   } catch {
     // use startedAt as fallback
   }
@@ -99,6 +101,7 @@ async function extractEntry(
     startedAt,
     lastActivityAt,
     messageCount,
+    fileSize,
     hasActiveSession: activeSessionId !== undefined,
     activeSessionId,
   };

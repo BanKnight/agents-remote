@@ -6,14 +6,13 @@
 
 ## 概述
 
-Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信，当前已知的原始消息类型包括：
+Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。消息类型分三类：
 
-```
-stdin  ← 我们写入 user / control_response / control_request (interrupt)
-stdout → CLI 输出 system.* / assistant / user / result / control_request
-```
+- **CLI stdout 实时流**：`system.*` / `assistant` / `user` / `result` / `control_request` / `mode` / `switch_model_result`
+- **CLI stdin 输入**：`user` / `control_response` / `control_request` (interrupt) / `switch_model` / `permission_mode`
+- **JSONL 磁盘文件独有**：`attachment` / `last-prompt` / `ai-title` / `agent-name` / `permission-mode` / `mode` / `file-history-snapshot` / `queue-operation` / `custom-title`
 
-其中 `system.*` 目前已知包含 `system.init`、`system.status`、`system.compact_boundary` / `system.microcompact_boundary`、`system.api_retry`、`system.api_error`、`system.turn_duration`、`system.thinking_tokens`、`system.task_started` / `system.task_updated` / `system.task_notification`，以及运行时控制信号（例如 `permission_denied`）。每行都是一个完整的 JSON 对象，以 `\n` 分隔。
+其中 `system.*` 目前已知包含 `system.init`、`system.status`、`system.compact_boundary` / `system.microcompact_boundary`、`system.api_retry`、`system.api_error`、`system.turn_duration`、`system.thinking_tokens`、`system.task_started` / `system.task_updated` / `system.task_notification`、`system.local_command`，以及运行时控制信号（`permission_denied`）。JSONL 独有类型是独立的顶层类型（如 `type: "attachment"`），**不是** `system` 子类型。
 
 ## 启动参数
 
@@ -51,15 +50,12 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 | `system` | `task_notification` | 子任务通知 / 完成 | 否 | 是 | 是 |
 | `system` | `permission_denied` | 自动权限拒绝 | 否 | 是 | 是 |
 | `system` | `turn_duration` | turn 耗时统计 | 是 | 是 | 是 |
-| `assistant` | message.content blocks | AI 回复流 | 是 | 是 | 是 |
-| `user` | text | 用户文本输入 | 是 | 是 | 是 |
-| `user` | tool_result | 工具执行结果回填 | 是 | 是 | 是 |
-| `user` | `isMeta: true` + `sourceToolUseID` | skill 加载内容 | 是 | 是 | 是 |
-| `user` | `isMeta: true` 无 `sourceToolUseID` | CLI 内部隐藏消息 | 是 | 是 | 是 |
-| `user` | `<local-command-stdout>` | CLI 本地命令输出 | 是 | 是 | 是 |
+| `assistant` | 见下方 [assistant content 子类型](#assistant-messagecontent-子类型) | AI 回复流 | 是 | 是 | 是 |
+| `user` | 见下方 [user 消息变体](#user-消息变体) | 用户输入 / 工具结果 / CLI 内部消息 | 是 | 是 | 是 |
 | `result` | `success` / `error` / `interrupted` / `error_max_turns` | turn 结束 | 否 | 是 | 是 |
 | `control_request` | `can_use_tool` | 权限请求（Bash, Write, AskUserQuestion 等） | 否 | 是 | 是 |
 | `switch_model_result` | 成功 / 失败 | 模型切换确认 | 否 | 是 | 是 |
+| `mode` | `"auto"` / `"default"` / `"plan"` / `"normal"` | 运行时模式切换（顶层类型，非 system 子类型） | 是 | 是 | 是 |
 
 ### CLI stdin（外部 → CLI）
 
@@ -70,6 +66,22 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 | `control_request` | 中断请求（`subtype: "interrupt"`） | 否 | 是 | 是 |
 | `switch_model` | 请求切换模型 | 否 | 是 | 是 |
 | `permission_mode` | 请求切换权限模式 | 否 | 是 | 是 |
+
+### JSONL 独有顶层类型
+
+以下类型**不出现在 CLI stdout**，仅写入磁盘 JSONL 文件。它们的 `type` 是顶层字段，**不是** `system` 子类型。
+
+| 类型 | 含义 | 关键字段 | Resume 恢复价值 |
+|---|---|---|---|
+| `attachment` | 运行时附件（MCP 指令、skill 列表、模式变更等 15+ 子类型） | `attachment.type`, `attachment.*` | **核心** — 可重建 MCP servers、skills、plan/auto 模式状态 |
+| `last-prompt` | 上次用户 prompt 文本 | `lastPrompt`, `leafUuid` | **高** — 可用作 UI 输入回显或 draft 恢复 |
+| `ai-title` | AI 生成会话标题 | `aiTitle` | 中 — 会话列表摘要 |
+| `agent-name` | Agent/subagent 名称 | `agentName` | 低 — 识别活跃 agent |
+| `permission-mode` | 权限模式变更 | `permissionMode` | 中 — 恢复 permission mode 显示 |
+| `mode` | 运行时模式（也出现在 stdout） | `mode` | 中 — 恢复 `normal` / `auto` 等 mode 显示 |
+| `file-history-snapshot` | 文件追踪系统快照 | `messageId`, `snapshot`, `isSnapshotUpdate` | 低 — 恢复文件编辑历史 |
+| `queue-operation` | 任务队列操作（入队/出队/移除/清空） | `operation`, `content?` | 低 — 调试任务调度 |
+| `custom-title` | 用户自定义标题 | `customTitle` | 低 — 会话重命名记录 |
 
 ### 顶层辅助字段
 
@@ -243,17 +255,24 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 
 #### `system` / `api_error` — API 错误通知
 
-**含义**：CLI 在 API 请求或内部处理出错时发送的系统级错误通知。它和 `api_retry` 不同：`api_retry` 表示还会继续尝试；`api_error` 表示当前请求已经进入错误路径，需要前端展示明确的错误态。
+**含义**：CLI 在 API 请求或内部处理出错时发送的系统级错误通知。同时出现在 CLI stdout 和 JSONL 中。
 
-**字段**（从代码与日志约定中总结）：
+**字段**（从实机 JSONL 提取）：
 
-| 字段           | 类型          | 说明                    |
-| -------------- | ------------- | ----------------------- |
-| `type`         | `"system"`    | 消息类型                |
-| `subtype`      | `"api_error"` | 错误通知                |
-| `error`        | string?       | 错误描述                |
-| `error_status` | number?       | HTTP 状态码或等价状态码 |
-| `session_id`   | string        | 会话 UUID               |
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"api_error"` | 错误通知 |
+| `level` | `"error"` | 日志级别 |
+| `error` | object | 错误详情：`{ message, formatted, connection?, isNetworkDown, rateLimits? }` |
+| `error.message` | string | 简短错误描述（如 `"Connection error."`） |
+| `error.formatted` | string | 格式化错误信息（如 `"Unable to connect to API (ECONNRESET)"`） |
+| `error.connection` | object? | 连接级错误详情（`{ code, message, isSSLError }`） |
+| `error.isNetworkDown` | boolean | 网络是否断开 |
+| `retryInMs` | number | 重试等待时间（毫秒） |
+| `retryAttempt` | number | 当前重试次数 |
+| `maxRetries` | number | 最大重试次数 |
+| `session_id` | string | 会话 UUID |
 
 **处理方法**：
 
@@ -263,44 +282,54 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 
 ---
 
-#### `system` / `attachment` — 对话附件注册
+#### `attachment` — JSONL 独有顶层类型：运行时附件注册
 
-**含义**：用户通过 CLI 输入框粘贴/拖入文件（文本或图片）时，CLI 在上行 user 消息之外额外发送此通知，告知前端"本次对话多了一个附件"。仅记录附件存在，不包含附件内容本身。
+**注意**：`attachment` 是**顶层类型**（`type: "attachment"`），不是 `system` 子类型。**仅出现在 JSONL 磁盘文件中**，CLI stdout 不输出。
 
-**字段**（从 CLI 实机行为提取）：
+**含义**：记录 CLI 运行时的非对话状态变更——MCP 指令、skill 列表、模式切换、文件编辑、hook 执行等。每条 attachment 都是对某个状态的增量更新。
 
-| 字段           | 类型                  | 说明         |
-| -------------- | --------------------- | ------------ |
-| `type`         | `"system"`            | 消息类型     |
-| `subtype`      | `"attachment"`        | 附件注册通知 |
-| `filename`     | string                | 附件文件名   |
-| `content_type` | `"text"` \| `"image"` | 附件类型     |
-| `session_id`   | string                | 会话 UUID    |
+**字段**（外层信封）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"attachment"` | 顶层消息类型 |
+| `attachment.type` | string | 子类型（15+ 种，见下方） |
+| `attachment.*` | — | 其他字段随子类型变化 |
+| `uuid` | string | 消息唯一标识 |
+| `parentUuid` | string \| null | 父消息 UUID |
+| `isSidechain` | boolean | 是否为侧链消息 |
+| `timestamp` | string (ISO 8601) | 产生时间 |
+| `sessionId` | string | 会话 UUID |
+| `cwd` | string | 工作目录 |
+| `gitBranch` | string | 当前 Git 分支 |
 
 **处理方法**：
 
-1. 不渲染到聊天流——它仅用于记录附件关联关系中
-2. 可存储为 session metadata 的附件列表，供 Files inspector 引用
+1. 不渲染到聊天流——它记录运行时状态变更
+2. 可用于 Resume 恢复 MCP servers、skills、plan/auto mode 状态
 
 ---
 
-#### `system` / `last_prompt` — 最后一条用户 prompt
+#### `last-prompt` — JSONL 独有顶层类型：上次用户 Prompt
 
-**含义**：在每个 assistant turn 开始前，CLI 回显完整的已组装 prompt（含 system prompt、工具定义、历史消息、附件上下文等）。用于调试和审计。
+**注意**：`last-prompt` 是**顶层类型**（`type: "last-prompt"`，注意有连字符），**不是** `system` 子类型。**仅出现在 JSONL 磁盘文件中**，CLI stdout 不输出。
 
-**字段**（从 CLI 实机行为提取）：
+**含义**：CLI 在每轮对话开始时，记录当前用户输入的原始文本。是恢复用户界面上"上次输入"的最直接来源。
 
-| 字段         | 类型            | 说明                     |
-| ------------ | --------------- | ------------------------ |
-| `type`       | `"system"`      | 消息类型                 |
-| `subtype`    | `"last_prompt"` | 最后 prompt 回显         |
-| `text`       | string          | 完整的已组装 prompt 文本 |
-| `session_id` | string          | 会话 UUID                |
+**字段**（从实机 JSONL 提取）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"last-prompt"` | 顶层消息类型 |
+| `lastPrompt` | string | 用户最后一次输入的原始文本 |
+| `leafUuid` | string | 关联的用户消息 UUID |
+| `sessionId` | string | 会话 UUID |
 
 **处理方法**：
 
-1. 不渲染到聊天流——内容巨大，仅供调试
-2. 可写入 turn 调试日志，不进入 UI state pipeline
+1. 不渲染到聊天流——用户输入已有 `user` 消息承载
+2. 可用于恢复输入框 draft 或显示"上次对话"摘要
+3. 与 `system/last_prompt`（stdout 中的完整组装 prompt 回显，含 system prompt + 工具定义）不同——`last-prompt` 只记录用户原文
 
 ---
 
@@ -609,28 +638,41 @@ Skill 调用产生三条消息的序列，后两条关联同一个 `tool_use_id`
 
 **content 块类型**：
 
-| block.type   | 关键字段                                      | 说明                                                                     |
-| ------------ | --------------------------------------------- | ------------------------------------------------------------------------ |
-| `"text"`     | `text: string`                                | Markdown 文本，直接渲染                                                  |
-| `"thinking"` | `thinking: string`, `signature: string`       | 推理过程（需 `--verbose` 参数），映射为 assistant-ui 的 `reasoning` 类型 |
-| `"tool_use"` | `id: string`, `name: string`, `input: object` | 工具调用申请，映射为 `tool-call` 类型，等待 `tool_result` 匹配           |
+##### `text` — Markdown 文本
 
-```json
-{
-  "type": "assistant",
-  "message": {
-    "id": "msg_uuid",
-    "role": "assistant",
-    "model": "claude-sonnet-4-6[1m]",
-    "content": [
-      { "type": "text", "text": "Markdown 文本..." },
-      { "type": "thinking", "thinking": "推理过程...", "signature": "..." },
-      { "type": "tool_use", "id": "toolu_uuid", "name": "Bash", "input": { "command": "ls" } }
-    ]
-  },
-  "session_id": "..."
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"text"` | 块类型 |
+| `text` | string | Markdown 格式文本，直接渲染为对话内容 |
+
+##### `thinking` — 推理过程
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"thinking"` | 块类型 |
+| `thinking` | string | 推理文本（需 `--verbose` 参数） |
+| `signature` | string | 推理内容签名，用于验证完整性 |
+
+映射为 assistant-ui 的 `reasoning` 类型，渲染时可折叠的 Thinking 面板（amber 配色，默认折叠）。
+
+##### `tool_use` — 工具调用申请
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"tool_use"` | 块类型 |
+| `id` | string | tool_use 唯一标识（如 `call_00_rM9AbdxW5e4s1Q6zWOCK8957`） |
+| `name` | string | 工具名称（`"Bash"`, `"Write"`, `"TaskCreate"`, `"Skill"`, `"AskUserQuestion"` 等） |
+| `input` | object | 工具参数，结构因工具不同而异 |
+
+映射为 `tool-call` 类型，等待 `tool_result` 匹配。
+
+##### `message.stop_reason` — 停止原因
+
+| 值 | 出现次数（本会话） | 说明 |
+|---|---|---|
+| `"tool_use"` | 879 | Claude 申请工具调用，暂停等待执行 |
+| `"end_turn"` | 79 | Claude 完成本轮回复 |
+| `"stop_sequence"` | 6 | 命中 stop sequence |
 
 **处理方法**：
 
@@ -664,21 +706,29 @@ Skill 调用产生三条消息的序列，后两条关联同一个 `tool_use_id`
 }
 ```
 
-| content 块类型  | 关键字段                                                       | 说明                                                  |
-| --------------- | -------------------------------------------------------------- | ----------------------------------------------------- |
-| `"text"`        | `text: string`                                                 | 用户输入的文本，渲染为用户对话气泡                    |
-| `"tool_result"` | `tool_use_id: string`, `content: string`, `is_error?: boolean` | 工具执行结果，应匹配到对应 tool-call 的 `result` 字段 |
+| content 块类型  | 关键字段 | 说明 |
+| --------------- | -------- | ---- |
+| `"text"` | `text: string` | 用户输入的文本，渲染为用户对话气泡 |
+| `"tool_result"` | `tool_use_id: string`, `content: string \| array`, `is_error?: boolean` | 工具执行结果，应匹配到对应 tool-call 的 `result` 字段 |
 
-**字符串形式**（CLI 内部命令输出）：
+`tool_result.content` 可以是字符串（简单文本结果）或数组（`[{ type: "text", text: "..." }]`）。
 
-```json
-{
-  "type": "user",
-  "message": { "role": "user", "content": "<local-command-stdout>Compacted</local-command-stdout>" }
-}
-```
+**字符串形式**（CLI 内部命令输出）。`message.content` 为字符串时，有四种模式：
 
-content 为字符串时，包含 `<local-command-stdout>` 包裹的 CLI 内部命令输出。这类消息在 JSONL 中以 `isMeta: false` 存储。
+| 模式 | 出现次数 | 示例 | 处理方式 |
+|---|---|---|---|
+| 纯文本用户输入 | 93 | `"我们之前做了一次优化..."` | 渲染为用户对话气泡 |
+| `<local-command-caveat>` | 4 | `<local-command-caveat>Caveat: The messages below...</local-command-caveat>` | 跳过（CLI 内部指令说明） |
+| `<command-name>` | 4 | `<command-name>/clear</command-name><command-message>clear</command-message>` | 跳过（slash command 记录） |
+| `<local-command-stdout>` | 4 | `<local-command-stdout>Compacted</local-command-stdout>` | "Compacted" → 跳过；其他 → slash-command 卡片 |
+
+**User 顶层标记变体**。user 消息的顶层有若干布尔标记组合，决定其渲染语义：
+
+| 变体 | 出现次数 | 说明 |
+|---|---|---|
+| `hasToolUseResult`（顶层 `toolUseResult` 字段） | 1080 | 工具执行结构化结果（见下方 `tool_use_result` 章节） |
+| `plain`（无特殊标记） | 103 | 普通用户输入文本 |
+| `isMeta` | 5 | CLI 内部消息，`isMeta: true` 不渲染为用户气泡；若有 `sourceToolUseID` 则挂到对应 tool-call 元数据 |
 
 **处理方法**：
 
@@ -1430,53 +1480,29 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 ---
 
-##### 其他子类型（概要）
+##### 其他子类型
 
-| 子类型 | 含义 | 出现频率 |
-|---|---|---|
-| `task_reminder` | 任务提醒 | 极高（3163 次） |
-| `file` | 文件附件 | 高（464） |
-| `edited_text_file` | 编辑文本文件记录 | 高（317） |
-| `queued_command` | 排队命令 | 高（380） |
-| `compact_file_reference` | 压缩后文件引用 | 中（122） |
-| `goal_status` | Goal 达成状态（`met`, `sentinel`, `condition`） | 中（78） |
-| `date_change` | 日期变更通知 | 中（77） |
-| `opened_file_in_ide` | IDE 打开文件记录 | 低（54） |
-| `plan_file_reference` | Plan 文件引用 | 低（49） |
-| `diagnostics` | 诊断信息 | 低（7） |
-| `selected_lines_in_ide` | IDE 选中行记录 | 低（4） |
-| `hook_success` | Hook 执行成功 | 低（9） |
-| `hook_additional_context` | Hook 附加上下文 | 低（7） |
-| `hook_non_blocking_error` | Hook 非阻塞错误 | 低（2） |
+以下子类型在本会话 JSONL 中出现，按频率排列：
 
----
+**`task_reminder`** (122 次) — 任务提醒。`content` 为当前任务列表数组（TaskInfo[]），`itemCount` 为任务总数。
 
-#### `last-prompt` — 上次用户 Prompt 文本
+**`queued_command`** (19 次) — 排队命令。字段：`prompt` (string), `commandMode` (string)。
 
-**含义**：CLI 在每轮对话开始时，记录当前用户输入的文本。这是恢复用户界面上"上次输入"的最直接来源。
+**`file`** (18 次) — 文件附件。字段：`filename` (string), `displayPath` (string), `content` (object, 含 `file.content`, `file.filePath`, `file.numLines` 等)。
 
-**字段**：
+**`compact_file_reference`** (17 次) — Compact 后文件引用。字段：`filename` (string), `displayPath` (string)。
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `type` | `"last-prompt"` | 消息类型 |
-| `lastPrompt` | string | 用户最后一次输入的文本 |
-| `leafUuid` | string | 关联的用户消息 UUID |
-| `sessionId` | string | 会话 UUID |
+**`edited_text_file`** (13 次) — 编辑文本文件记录。字段：`filename` (string), `snippet` (string)。
 
-**时机**：每轮用户输入后记录一次。
+**`date_change`** (9 次) — 日期变更通知。字段：`newDate` (string, 如 `"2026-06-09"`)。
 
-**Resume 恢复**：从最近一条 `last-prompt` 可取出上次用户输入文本，用于恢复输入框 draft 或显示"上次对话"摘要。
+**`hook_success`** (8 次) — Hook 执行成功。字段：`hookName` (string), `hookEvent` (string), `toolUseID` (string), `command` (string), `stdout` (string), `stderr` (string), `exitCode` (number), `durationMs` (number)。
 
-示例：
-```json
-{
-  "type": "last-prompt",
-  "lastPrompt": "你好",
-  "leafUuid": "9ca16370-fcf4-42d2-bff9-1963cd9d87cd",
-  "sessionId": "dbcec945-e33a-428b-8a70-f17d59298257"
-}
-```
+**`plan_file_reference`** (7 次) — Plan 文件内容快照。字段：`planFilePath` (string), `planContent` (string)。
+
+**`hook_additional_context`** (7 次) — Hook 附加上下文。字段：`content` (string[]), `hookName` (string), `hookEvent` (string), `toolUseID` (string)。
+
+`goal_status`、`opened_file_in_ide`、`diagnostics`、`selected_lines_in_ide`、`hook_non_blocking_error` 等子类型本会话未出现，暂不展开。
 
 ---
 
@@ -1579,9 +1605,18 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 #### `file-history-snapshot` — 文件历史快照
 
-**字段**：`type`, `messageId` (string), `snapshot` (object: `messageId`, `trackedFileBackups`, `timestamp`), `isSnapshotUpdate` (boolean)
+**含义**：CLI 的文件追踪系统快照。`trackedFileBackups` 记录被追踪文件的备份信息。JSONL-only 顶层类型。
 
-**含义**：CLI 的文件追踪系统快照。`trackedFileBackups` 记录被追踪文件的备份信息。
+**字段**（从实机 JSONL 提取）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"file-history-snapshot"` | 顶层消息类型 |
+| `messageId` | string | 关联的 message UUID |
+| `snapshot` | object | 快照数据：`{ messageId, trackedFileBackups, timestamp }` |
+| `snapshot.trackedFileBackups` | object | 被追踪文件的备份信息（key 为文件路径） |
+| `snapshot.timestamp` | string (ISO 8601) | 快照时间 |
+| `isSnapshotUpdate` | boolean | 是否为增量更新 |
 
 **Resume 恢复**：低优先级。仅用于恢复文件编辑历史。
 
@@ -1607,9 +1642,33 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 #### `system/local_command` — 本地命令执行
 
-**含义**：用户执行本地命令（如 `/config`、`/compact`）的记录。`content` 使用 XML 包裹 CLI TUI 输出（`<command-name>`, `<command-message>`, `<local-command-stdout>` 等）。
+**含义**：用户执行本地命令（如 `/clear`、`/compact`、`/config`）的记录。`content` 使用 XML 包裹 CLI TUI 输出。
 
-**关键字段**：`subtype: "local_command"`, `content` (string — XML 格式)
+**字段**（从实机 JSONL 提取）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"local_command"` | 本地命令 |
+| `content` | string | XML 格式输出，包含 `<command-name>`, `<command-message>`, `<command-args>`, `<local-command-stdout>` 等标签 |
+| `level` | `"info"` | 日志级别 |
+| `isMeta` | boolean | 通常为 `false` |
+| `parentUuid` | string | 父消息 UUID |
+| `timestamp` | string (ISO 8601) | 时间戳 |
+| `uuid` | string | 消息 UUID |
+| `sessionId` | string | 会话 UUID |
+
+示例：
+```json
+{
+  "type": "system",
+  "subtype": "local_command",
+  "content": "<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>",
+  "level": "info",
+  "isMeta": false,
+  "sessionId": "f4dd7cbe-4f02-4154-8126-e7c01ad22ef2"
+}
+```
 
 ---
 
