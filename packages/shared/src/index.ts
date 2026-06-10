@@ -427,6 +427,7 @@ export type Claude2TaskNotification = {
   subtype: "task_notification";
   task_id: string;
   text?: string;
+  summary?: string;
   outputFile?: string;
   skipTranscript?: boolean;
   session_id?: string;

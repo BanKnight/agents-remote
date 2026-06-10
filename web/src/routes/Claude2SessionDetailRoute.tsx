@@ -302,88 +302,52 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
                 <CompactIndicator />
                 {tasks.length > 0 && (
-                  <div className="shrink-0 border-t border-slate-700/80 px-3 py-1.5">
-                    <div className="flex flex-wrap gap-1.5">
+                  <div className="shrink-0 border-t border-slate-700/80 px-3 py-2">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span className="text-xs font-medium text-slate-400">{t("claude2.tasks")}</span>
+                      <span className="text-[0.65rem] text-slate-600">{tasks.length}</span>
+                    </div>
+                    <div className="flex flex-col gap-1">
                       {tasks.map((task) => {
                         const title =
-                          task.text ||
                           task.description ||
+                          task.summary ||
                           task.agentType ||
                           task.workflowName ||
-                          `Task #${task.id}`;
-                        const subParts = [task.kind, task.workflowName, task.agentType].filter(
-                          Boolean,
-                        );
-                        const tone =
-                          task.status === "error"
-                            ? "red"
-                            : task.status === "completed"
-                              ? "emerald"
-                              : "amber";
-                        const bg =
-                          tone === "red"
-                            ? "bg-red-900/25"
-                            : tone === "emerald"
-                              ? "bg-emerald-900/25"
-                              : "bg-slate-800";
-                        const textColor =
-                          tone === "red"
-                            ? "text-red-300"
-                            : tone === "emerald"
-                              ? "text-emerald-300"
-                              : "text-slate-300";
+                          t("claude2.taskFallback", { id: task.id.slice(0, 6) });
+                        const meta = [task.agentType, task.workflowName].filter(Boolean);
                         return (
                           <div
                             key={task.id}
-                            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs ${bg} ${textColor}`}
+                            className="flex items-start gap-2 text-xs"
                           >
-                            {task.status === "running" ? (
-                              <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-                            ) : task.status === "completed" ? (
-                              <svg
-                                className="h-3 w-3 shrink-0 text-emerald-400"
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M3 8l3.5 3.5L13 5"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                            ) : task.status === "error" ? (
-                              <svg
-                                className="h-3 w-3 shrink-0 text-red-400"
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M4 4l8 8M12 4l-8 8"
-                                  stroke="currentColor"
-                                  strokeWidth="1.5"
-                                  strokeLinecap="round"
-                                />
-                              </svg>
-                            ) : (
-                              <span className="h-3 w-3 shrink-0 text-slate-400" aria-hidden="true">
-                                <svg viewBox="0 0 16 16" fill="none">
-                                  <path
-                                    d="M4 4v8M8 3v10M12 4v8"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                  />
+                            <span className="mt-0.5 shrink-0">
+                              {task.status === "running" ? (
+                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+                              ) : task.status === "completed" ? (
+                                <svg className="h-3 w-3 text-emerald-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                  <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
+                              ) : task.status === "error" ? (
+                                <svg className="h-3 w-3 text-red-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                </svg>
+                              ) : (
+                                <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
+                              )}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <span className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : "text-slate-200"}`}>
+                                {title}
                               </span>
-                            )}
-                            <span className="truncate max-w-[200px]">{title}</span>
-                            {subParts.length > 0 ? (
-                              <span className="shrink-0 text-[0.55rem] text-slate-500">{`#${task.id}`}</span>
-                            ) : null}
+                              {(task.text || meta.length > 0) && (
+                                <span className="block truncate text-[0.65rem] text-slate-500">
+                                  {task.text}
+                                  {task.text && meta.length > 0 ? " · " : ""}
+                                  {meta.join(" · ")}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         );
                       })}

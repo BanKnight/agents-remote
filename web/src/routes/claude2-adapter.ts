@@ -10,6 +10,7 @@ export type TaskInfo = {
   description: string;
   status: "running" | "completed" | "error" | "backgrounded";
   text?: string;
+  summary?: string;
   error?: string;
   kind: "agent" | "workflow" | "task";
 };
@@ -110,7 +111,9 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
         ...current,
         kind,
         status: "completed",
+        description: msg.summary || current.description,
         text: msg.text ?? current.text,
+        ...(msg.summary ? { summary: msg.summary } : {}),
       };
       return updated;
     }

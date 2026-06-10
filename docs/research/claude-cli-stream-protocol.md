@@ -421,6 +421,7 @@ stdout → CLI 输出 system.* / assistant / user / result / control_request
 | `subtype`        | `"task_notification"` | 子任务通知                                  |
 | `task_id`        | string                | 子任务唯一标识                              |
 | `text`           | string                | 通知文本（如 "Agent completed · 3h 2m 5s"） |
+| `summary`        | string?               | 任务摘要（可用于更新任务描述）              |
 | `outputFile`     | string?               | 子任务输出文件路径                          |
 | `skipTranscript` | boolean?              | 是否跳过 transcript 记录                    |
 

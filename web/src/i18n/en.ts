@@ -277,4 +277,6 @@ export const en = {
   "claude2.compacting": "Compacting...",
   "claude2.compactError": "Compact failed",
   "claude2.compactInterrupted": "Compaction stopped",
+  "claude2.tasks": "Tasks",
+  "claude2.taskFallback": "Task #{{id}}",
 } as const;

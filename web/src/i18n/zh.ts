@@ -277,4 +277,6 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.compacting": "正在压缩...",
   "claude2.compactError": "压缩失败",
   "claude2.compactInterrupted": "压缩已停止",
+  "claude2.tasks": "任务",
+  "claude2.taskFallback": "任务 #{{id}}",
 };
