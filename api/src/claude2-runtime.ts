@@ -158,19 +158,21 @@ export class Claude2Runtime implements RuntimeResources {
     const proc = this.processes.get(sessionName);
     if (!proc) throw new Error(`Session "${sessionName}" not registered`);
 
-    let relay = this.relays.get(sessionName);
-    if (relay && proc.claudeSessionId) {
-      relay.setClaudeSessionId(proc.projectPath, proc.claudeSessionId);
+    // Destroy any existing relay — replay must start fresh with proper
+    // history/output batches. An old relay created during ensureRunning
+    // may have been activated before claudeSessionId was known.
+    const oldRelay = this.relays.get(sessionName);
+    if (oldRelay) {
+      oldRelay.destroy();
+      this.relays.delete(sessionName);
     }
 
-    if (!relay) {
-      relay = new Claude2SessionRelay();
-      this.relays.set(sessionName, relay);
+    const relay = new Claude2SessionRelay();
+    this.relays.set(sessionName, relay);
 
-      await relay.activate(proc.projectPath, proc.claudeSessionId).catch(() => {
-        this.relays.delete(sessionName);
-      });
-    }
+    await relay.activate(proc.projectPath, proc.claudeSessionId).catch(() => {
+      this.relays.delete(sessionName);
+    });
 
     return relay.addSubscriber(onData, onError);
   }
