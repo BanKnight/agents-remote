@@ -607,12 +607,6 @@ export type SessionStreamServerMessage =
     }
   | {
       type: "output_end";
-    }
-  | {
-      type: "replay_start";
-    }
-  | {
-      type: "replay_end";
     };
 
 export type HealthResponse = {
