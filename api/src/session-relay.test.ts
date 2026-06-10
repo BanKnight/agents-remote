@@ -37,17 +37,19 @@ test("Claude2SessionRelay sends history and output batches for a new session", a
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
-  // No history for new session
-  expect(messages.some((msg) => msg.type === "history_start")).toBe(false);
-  expect(messages.some((msg) => msg.type === "history_end")).toBe(false);
+  // History always comes first, even when empty (count=0)
+  const historyStart = messages.findIndex((msg) => msg.type === "history_start");
+  const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
+  expect(historyStart).toBe(0);
+  expect(historyEnd).toBe(1);
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
 
   // Output batch with both lines
   const outputStart = messages.findIndex((msg) => msg.type === "output_start");
   const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
 
-  expect(outputStart).toBeGreaterThanOrEqual(0);
+  expect(outputStart).toBe(2);
   expect(outputEnd).toBeGreaterThan(outputStart);
-  expect(messages[outputStart - 1]).toBeUndefined(); // nothing before output_start
 
   const outputMessages = messages.slice(outputStart + 1, outputEnd);
   expect(outputMessages).toHaveLength(2);
@@ -118,7 +120,7 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
   relay.destroy();
 });
 
-test("Claude2SessionRelay handles empty history for new session", async () => {
+test("Claude2SessionRelay always sends history+output markers even when empty", async () => {
   const relay = new Claude2SessionRelay();
   await relay.activate("", undefined);
 
@@ -129,9 +131,11 @@ test("Claude2SessionRelay handles empty history for new session", async () => {
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages.some((msg) => msg.type === "history_start")).toBe(false);
-  expect(messages.some((msg) => msg.type === "output_start")).toBe(false);
-  expect(messages).toHaveLength(0);
+  expect(messages).toHaveLength(4); // history_start, history_end, output_start, output_end
+  expect(messages[0]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[1]).toMatchObject({ type: "history_end" });
+  expect(messages[2]).toMatchObject({ type: "output_start", count: 0 });
+  expect(messages[3]).toMatchObject({ type: "output_end" });
 
   relay.destroy();
 });
@@ -155,8 +159,8 @@ test("Claude2SessionRelay handles empty history file for resume", async () => {
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages.some((msg) => msg.type === "history_start")).toBe(false);
-  expect(messages).toHaveLength(0);
+  expect(messages[0]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[1]).toMatchObject({ type: "history_end" });
 
   relay.destroy();
 });
@@ -212,12 +216,13 @@ test("Claude2SessionRelay injectLine broadcasts but does not enter output", asyn
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
-  // injectLine is broadcast live, not via output batch
-  const outputStart = messages.findIndex((msg) => msg.type === "output_start");
-  expect(outputStart).toBe(-1); // no output batch for empty session
+  // injectLine is broadcast live after the batches
+  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+  expect(outputEnd).toBeGreaterThanOrEqual(0); // output batch always sent
 
-  // The injected line is received as a live broadcast
-  expect(messages.some((msg) => msg.type === "user")).toBe(true);
+  // The injected line appears after output_end
+  const liveMessages = messages.slice(outputEnd + 1);
+  expect(liveMessages.some((msg) => msg.type === "user")).toBe(true);
 
   relay.destroy();
 });

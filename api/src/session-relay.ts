@@ -47,23 +47,19 @@ export class Claude2SessionRelay {
     const sub: Subscriber = { onData, onError };
     this.subscribers.add(sub);
 
-    // Send history batch
-    if (this.historyLines.length > 0) {
-      onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
-      for (const line of this.historyLines) {
-        try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
-      }
-      onData(JSON.stringify({ type: "history_end" }));
+    // Always send history batch (count may be 0 for new sessions)
+    onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
+    for (const line of this.historyLines) {
+      try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
     }
+    onData(JSON.stringify({ type: "history_end" }));
 
-    // Send output batch
-    if (this.outputLines.length > 0) {
-      onData(JSON.stringify({ type: "output_start", count: this.outputLines.length }));
-      for (const line of this.outputLines) {
-        try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
-      }
-      onData(JSON.stringify({ type: "output_end" }));
+    // Always send output batch (count may be 0)
+    onData(JSON.stringify({ type: "output_start", count: this.outputLines.length }));
+    for (const line of this.outputLines) {
+      try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
     }
+    onData(JSON.stringify({ type: "output_end" }));
 
     return {
       close: () => {
