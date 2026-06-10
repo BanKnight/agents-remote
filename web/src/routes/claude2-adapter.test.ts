@@ -1,14 +1,14 @@
-import { describe, expect, test, vi } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import {
-  loadMessagesFromRaw,
-  deriveTasksFromReplayBatch,
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
   injectAskUserQuestionRequestId,
   isSyntheticAssistantMessage,
   applySwitchModelResult,
   computeRunningCount,
+  processMessage,
+  messageToThreadLike,
 } from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -65,8 +65,11 @@ const thinkingTokens = (estimatedTokens: number): SessionStreamServerMessage =>
     estimated_tokens: estimatedTokens,
   }) as unknown as SessionStreamServerMessage;
 
+// KEPT: used in commented-out loadMessagesFromRaw tests
+/*
 const systemInit = (): SessionStreamServerMessage =>
   ({ type: "system", subtype: "init" }) as unknown as SessionStreamServerMessage;
+*/
 
 const taskStarted = (
   task_id: string,
@@ -268,11 +271,99 @@ describe("computeRunningCount", () => {
   });
 });
 
-// ── loadMessagesFromRaw tests ──────────────────────────────────────────
+// ── messageToThreadLike tests ─────────────────────────────────────────
 
-describe("loadMessagesFromRaw", () => {
-  test("empty raw messages returns empty array", () => {
-    expect(loadMessagesFromRaw([])).toEqual([]);
+describe("messageToThreadLike", () => {
+  test("assistant message maps to assistant role", () => {
+    const msg = {
+      type: "assistant",
+      message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hello" }] },
+    } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    expect(result.role).toBe("assistant");
+    expect(result.content).toEqual([{ type: "text", text: "hello" }]);
+  });
+
+  test("user message maps to user role", () => {
+    const msg = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    expect(result.role).toBe("user");
+    expect(result.content).toBe("hi");
+  });
+
+  test("system message maps to system role with type/subtype label", () => {
+    const msg = {
+      type: "system",
+      subtype: "init",
+      model: "sonnet",
+    } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    expect(result.role).toBe("system");
+    expect(result.content).toEqual([{ type: "text", text: "system/init" }]);
+  });
+
+  test("result message maps to system role", () => {
+    const msg = {
+      type: "result",
+      subtype: "success",
+    } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    expect(result.role).toBe("system");
+    expect(result.content).toEqual([{ type: "text", text: "result/success" }]);
+  });
+
+  test("message without subtype uses type as label", () => {
+    const msg = {
+      type: "connected",
+      sessionId: "s1",
+    } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    expect(result.role).toBe("system");
+    expect(result.content).toEqual([{ type: "text", text: "connected" }]);
+  });
+});
+
+// ── processMessage tests ─────────────────────────────────────────────
+
+describe("processMessage", () => {
+  test("does not throw for assistant message", () => {
+    const msg = {
+      type: "assistant",
+      message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hello" }] },
+    } as unknown as SessionStreamServerMessage;
+    expect(() => processMessage(msg)).not.toThrow();
+  });
+
+  test("does not throw for user message", () => {
+    const msg = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    } as unknown as SessionStreamServerMessage;
+    expect(() => processMessage(msg)).not.toThrow();
+  });
+
+  test("does not throw for system message", () => {
+    const msg = {
+      type: "system",
+      subtype: "init",
+    } as unknown as SessionStreamServerMessage;
+    expect(() => processMessage(msg)).not.toThrow();
+  });
+
+  test("does not throw for result message", () => {
+    const msg = {
+      type: "result",
+      subtype: "success",
+    } as unknown as SessionStreamServerMessage;
+    expect(() => processMessage(msg)).not.toThrow();
+  });
+});
+
+// KEPT: 旧 loadMessagesFromRaw 测试保留作为参考（函数已注释，后续重构时参考）
+/*
   });
 
   test("system messages are skipped", () => {
@@ -960,7 +1051,13 @@ describe("loadMessagesFromRaw", () => {
   });
 });
 
+*/
+
+// ── task system state tests ───────────────────────────────────────────
+
 describe("task system state", () => {
+  // KEPT: deriveTasksFromReplayBatch 已注释，测试保留作为参考
+  /*
   test("deriveTasksFromReplayBatch rebuilds task chips only from task_* messages", () => {
     const batch: SessionStreamServerMessage[] = [
       user([{ type: "text", text: "create task" }]),
@@ -1000,6 +1097,7 @@ describe("task system state", () => {
       },
     ]);
   });
+*/
 
   test("applyTaskSystemMessage updates task status across running backgrounded error completed", () => {
     let tasks = applyTaskSystemMessage(

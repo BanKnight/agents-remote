@@ -167,6 +167,8 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
   ];
 };
 
+// KEPT: task 批量派生，后续在新架构下重新接入
+/*
 export const deriveTasksFromReplayBatch = (batch: SessionStreamServerMessage[]): TaskInfo[] => {
   let tasks: TaskInfo[] = [];
   for (const msg of batch) {
@@ -175,6 +177,7 @@ export const deriveTasksFromReplayBatch = (batch: SessionStreamServerMessage[]):
   }
   return tasks;
 };
+*/
 
 // ── Bridge Context ──────────────────────────────────────────────────
 //
@@ -196,8 +199,11 @@ export type Claude2Bridge = {
 
 export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
 
+// KEPT: used by commented-out loadMessagesFromRaw
+/*
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asReadonlyJSON = (v: Record<string, unknown>): any => v;
+*/
 
 const extractTextFromContent = (content: unknown): string | null => {
   if (typeof content === "string") return content;
@@ -211,7 +217,7 @@ const extractTextFromContent = (content: unknown): string | null => {
   return texts.length > 0 ? texts.join("\n") : null;
 };
 
-const SKILL_CONTENT_PREFIX = "Base directory for this skill:";
+const _SKILL_CONTENT_PREFIX = "Base directory for this skill:";
 
 const extractUserTextBlocks = (content: unknown): string[] => {
   if (!Array.isArray(content)) return [];
@@ -220,10 +226,10 @@ const extractUserTextBlocks = (content: unknown): string[] => {
     .map((block) => block.text as string);
 };
 
-const isHiddenSkillContent = (texts: string[]): boolean =>
-  texts.some((text) => text.startsWith(SKILL_CONTENT_PREFIX));
+const _isHiddenSkillContent = (texts: string[]): boolean =>
+  texts.some((text) => text.startsWith(_SKILL_CONTENT_PREFIX));
 
-const attachSkillContentToToolCall = (
+const _attachSkillContentToToolCall = (
   messages: ThreadMessageLike[],
   currentParts: Array<Record<string, unknown>>,
   toolUseId: string,
@@ -290,6 +296,8 @@ const getMessageUuid = (msg: SessionStreamServerMessage): string | null => {
   return typeof uuid === "string" ? uuid : null;
 };
 
+// KEPT: 后续需要去重时启用
+/*
 const findMissingTailByUuid = (
   localMessages: SessionStreamServerMessage[],
   snapshotMessages: SessionStreamServerMessage[],
@@ -311,6 +319,7 @@ const findMissingTailByUuid = (
 
   return null;
 };
+*/
 
 const summarizeStreamMessage = (msg: SessionStreamServerMessage): Record<string, unknown> => {
   if (msg.type === "user") {
@@ -403,6 +412,86 @@ export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): 
   return turnOpen ? 1 : 0;
 }
 
+// ── Unified message dispatch ─────────────────────────────────────────
+// Entry point for all live messages after batch processing.
+// Dispatches by type to sub-handlers; each handler is responsible for
+// updating messageMapRef and producing console diagnostics.
+//
+// Called from onmessage for every non-batch message.
+
+export function processMessage(msg: SessionStreamServerMessage): void {
+  switch (msg.type) {
+    case "assistant":
+      handleAssistantMessage(msg);
+      break;
+    case "user":
+      handleUserMessage(msg);
+      break;
+    default:
+      handleOtherMessage(msg);
+      break;
+  }
+}
+
+function handleAssistantMessage(msg: SessionStreamServerMessage): void {
+  const assistantMsg = msg as { type: "assistant"; message: { id: string; role: string; content: unknown[] } };
+  const contentTypes = assistantMsg.message.content.map((b: unknown) => (b as { type: string }).type);
+  console.log("[claude2] assistant", {
+    messageId: assistantMsg.message.id,
+    contentTypes,
+    content: assistantMsg.message.content,
+  });
+}
+
+function handleUserMessage(msg: SessionStreamServerMessage): void {
+  const userMsg = msg as { type: "user"; message: { role: string; content: unknown } };
+  console.log("[claude2] user", {
+    role: userMsg.message.role,
+    content: userMsg.message.content,
+  });
+}
+
+function handleOtherMessage(msg: SessionStreamServerMessage): void {
+  if (msg.type === "system" && "subtype" in msg) {
+    console.log("[claude2] system", { subtype: msg.subtype, msg });
+  } else {
+    console.log("[claude2] other", { type: msg.type, msg });
+  }
+}
+
+// ── messageToThreadLike ──────────────────────────────────────────────
+// Simple mapping: one raw message → one ThreadMessageLike bubble.
+// Does NOT do grouping, tool matching, dedup, or filtering.
+// Kept intentionally simple — complex rendering logic belongs in
+// future sub-handlers.
+
+export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike {
+  if (msg.type === "assistant") {
+    const texts = extractUserTextBlocks(msg.message.content as unknown);
+    const text = texts.length > 0 ? texts.join("\n") : JSON.stringify(msg.message.content);
+    return {
+      role: "assistant",
+      content: [{ type: "text", text }],
+    };
+  }
+
+  if (msg.type === "user") {
+    const texts = extractUserTextBlocks(msg.message.content as unknown);
+    const text = texts.length > 0 ? texts.join("\n") : JSON.stringify(msg.message.content);
+    return { role: "user", content: text };
+  }
+
+  // Other: system, result, control_request, etc.
+  const subtype = "subtype" in msg ? (msg as { subtype: string }).subtype : undefined;
+  const label = subtype ? `${msg.type}/${subtype}` : msg.type;
+  return {
+    role: "system",
+    content: [{ type: "text", text: label }],
+  };
+}
+
+// KEPT: 作为后续新渲染函数的参考实现
+/*
 export function loadMessagesFromRaw(
   rawMessages: SessionStreamServerMessage[],
 ): ThreadMessageLike[] {
@@ -682,6 +771,7 @@ export function loadMessagesFromRaw(
   flushAssistant();
   return messages;
 }
+*/
 
 export function useClaude2Session(
   projectName: string,
@@ -689,9 +779,15 @@ export function useClaude2Session(
   initialModel?: string,
   initialPermissionMode?: string,
 ) {
-  const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
-  const rawMessagesRef = useRef<SessionStreamServerMessage[]>([]);
   const [connectionVersion, setConnectionVersion] = useState(0);
+
+  // ── history + output + Map data architecture ──────────────────────────
+  const [historyMessages, setHistoryMessages] = useState<SessionStreamServerMessage[]>([]);
+  const [outputMessages, setOutputMessages] = useState<SessionStreamServerMessage[]>([]);
+  const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
+  const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
+  const outputBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
+
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -714,7 +810,6 @@ export function useClaude2Session(
 
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
-  const replayBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const compactActiveRef = useRef(false);
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
@@ -727,7 +822,9 @@ export function useClaude2Session(
   const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const resetSessionState = useCallback(() => {
-    setRawMessages([]);
+    setHistoryMessages([]);
+    setOutputMessages([]);
+    messageMapRef.current = new Map();
     setTasks([]);
     setSlashCommands([]);
     setSkills([]);
@@ -741,16 +838,12 @@ export function useClaude2Session(
     setIsRunning(false);
     cursorRef.current = null;
     pendingAskRef.current = null;
-    replayBatchRef.current = null;
+    historyBatchRef.current = null;
+    outputBatchRef.current = null;
     compactActiveRef.current = false;
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
-    rawMessagesRef.current = [];
   }, [initialModel, initialPermissionMode]);
-
-  useEffect(() => {
-    rawMessagesRef.current = rawMessages;
-  }, [rawMessages]);
 
   // Countdown timer for retry
   useEffect(() => {
@@ -787,6 +880,8 @@ export function useClaude2Session(
     }, 500);
   }, []);
 
+  // KEPT: 后续需要去重时启用
+  /*
   const reconcileSnapshot = useCallback(
     (
       localMessages: SessionStreamServerMessage[],
@@ -807,6 +902,7 @@ export function useClaude2Session(
     },
     [],
   );
+  */
 
   useEffect(() => {
     if (reconnectTimerRef.current) {
@@ -925,56 +1021,65 @@ export function useClaude2Session(
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
         console.log("[claude2-adapter] ws recv", summarizeStreamMessage(msg), msg);
 
-        if (msg.type === "connected") {
-          if (rawMessagesRef.current.length === 0) {
-            setLoading(false);
+        // ── Batch markers ────────────────────────────────────────────
+        if (msg.type === "history_start") {
+          historyBatchRef.current = [];
+          setLoading(true);
+          setIsRunning(false);
+          console.log("[claude2-adapter] history batch start, count=", msg.count);
+          return;
+        }
+        if (msg.type === "history_end") {
+          const batch = historyBatchRef.current ?? [];
+          historyBatchRef.current = null;
+          setHistoryMessages(batch);
+          for (const m of batch) {
+            const uuid = getMessageUuid(m);
+            if (uuid) messageMapRef.current.set(uuid, m);
           }
+          console.log("[claude2-adapter] history batch end, stored", batch.length, "messages");
+          return;
+        }
+        if (msg.type === "output_start") {
+          outputBatchRef.current = [];
+          console.log("[claude2-adapter] output batch start, count=", msg.count);
+          return;
+        }
+        if (msg.type === "output_end") {
+          const batch = outputBatchRef.current ?? [];
+          outputBatchRef.current = null;
+          setOutputMessages(batch);
+          for (const m of batch) {
+            const uuid = getMessageUuid(m);
+            if (uuid) messageMapRef.current.set(uuid, m);
+          }
+          setLoading(false);
+          console.log("[claude2-adapter] output batch end, stored", batch.length, "messages");
           return;
         }
 
-        if (msg.type === "replay_start") {
-          replayBatchRef.current = [];
-          setLoading(true);
-          setIsRunning(false);
+        // In batch collection — buffer, don't process yet
+        if (historyBatchRef.current) {
+          historyBatchRef.current.push(msg);
           return;
         }
-        if (msg.type === "replay_end") {
-          const batch = replayBatchRef.current ?? [];
-          replayBatchRef.current = null;
-          const merged = reconcileSnapshot(rawMessagesRef.current, batch);
-          rawMessagesRef.current = merged;
-          setRawMessages(merged);
-          setRetryInfo(null);
-          setTasks(deriveTasksFromReplayBatch(merged));
-          const replayInit = [...batch]
-            .reverse()
-            .find((item) => item.type === "system" && item.subtype === "init") as
-            | {
-                model: string;
-                permissionMode: string;
-                slash_commands?: string[];
-                skills?: string[];
-              }
-            | undefined;
-          if (replayInit) {
-            setResolvedModel(replayInit.model);
-            setPermissionMode(replayInit.permissionMode);
-            setSlashCommands(
-              Array.isArray(replayInit.slash_commands) ? replayInit.slash_commands : [],
-            );
-            setSkills(Array.isArray(replayInit.skills) ? replayInit.skills : []);
-            const tiers = ["sonnet", "opus", "haiku"];
-            const tier = tiers.find((t) => replayInit.model.includes(t));
-            if (tier) setCurrentModel(tier);
-          }
+        if (outputBatchRef.current) {
+          outputBatchRef.current.push(msg);
+          return;
+        }
+
+        // ── Per-message dispatch (live, after batches) ───────────────
+        const liveUuid = getMessageUuid(msg);
+        if (liveUuid) messageMapRef.current.set(liveUuid, msg);
+        processMessage(msg);
+
+        // ── Connected ─────────────────────────────────────────────────
+        if (msg.type === "connected") {
           setLoading(false);
           return;
         }
-        if (replayBatchRef.current) {
-          replayBatchRef.current.push(msg);
-          return;
-        }
 
+        // ── isRunning tracking ────────────────────────────────────────
         setLoading(false);
         if (
           msg.type === "assistant" ||
@@ -983,6 +1088,7 @@ export function useClaude2Session(
           setIsRunning(true);
         }
 
+        // ── api_retry ─────────────────────────────────────────────────
         if (msg.type === "system" && msg.subtype === "api_retry") {
           const r = msg as {
             attempt: number;
@@ -1002,16 +1108,17 @@ export function useClaude2Session(
           return;
         }
 
-        // New content from assistant — retry succeeded, clear indicator
         if (msg.type === "assistant" || msg.type === "user") {
           setRetryInfo(null);
         }
 
+        // ── Tasks ─────────────────────────────────────────────────────
         if (isTaskSystemMessage(msg)) {
           setTasks((prev) => applyTaskSystemMessage(prev, msg));
           return;
         }
 
+        // ── Compact lifecycle ─────────────────────────────────────────
         if (
           msg.type === "system" &&
           msg.subtype === "status" &&
@@ -1055,6 +1162,7 @@ export function useClaude2Session(
           }
         }
 
+        // ── system.init metadata ──────────────────────────────────────
         if (msg.type === "system" && msg.subtype === "init" && "model" in msg) {
           const init = msg as {
             model: string;
@@ -1071,6 +1179,7 @@ export function useClaude2Session(
           if (tier) setCurrentModel(tier);
         }
 
+        // ── switch_model_result ───────────────────────────────────────
         if (msg.type === "switch_model_result") {
           const result = msg as {
             type: "switch_model_result";
@@ -1085,6 +1194,7 @@ export function useClaude2Session(
           setModelSwitchVersion((version) => version + 1);
         }
 
+        // ── result ────────────────────────────────────────────────────
         if (msg.type === "result") {
           setIsRunning(false);
           if (compactPhaseRef.current === "compacting" || compactPhaseRef.current === "replay") {
@@ -1103,6 +1213,7 @@ export function useClaude2Session(
           compactPhaseRef.current = "none";
         }
 
+        // ── control_request ───────────────────────────────────────────
         if (msg.type === "control_request") {
           const toolName = msg.request?.tool_name;
           if (toolName !== "AskUserQuestion") {
@@ -1116,15 +1227,12 @@ export function useClaude2Session(
               msg.request_id,
             );
             pendingAskRef.current = null;
-            setRawMessages((prev) => {
-              const next = [...prev, updated as SessionStreamServerMessage];
-              rawMessagesRef.current = next;
-              return next;
-            });
+            setOutputMessages((prev) => [...prev, updated as SessionStreamServerMessage]);
           }
           return;
         }
 
+        // ── assistant: synthetic / AskUserQuestion filter ─────────────
         if (msg.type === "assistant") {
           const assistantMsg = msg as {
             type: "assistant";
@@ -1149,18 +1257,11 @@ export function useClaude2Session(
         if (pendingAskRef.current) {
           const pendingAsk = pendingAskRef.current;
           pendingAskRef.current = null;
-          setRawMessages((prev) => {
-            const next = [...prev, pendingAsk];
-            rawMessagesRef.current = next;
-            return next;
-          });
+          setOutputMessages((prev) => [...prev, pendingAsk]);
         }
 
-        setRawMessages((prev) => {
-          const next = [...prev, msg];
-          rawMessagesRef.current = next;
-          return next;
-        });
+        // ── Append to live output ─────────────────────────────────────
+        setOutputMessages((prev) => [...prev, msg]);
       } catch {
         // skip
       }
@@ -1192,11 +1293,13 @@ export function useClaude2Session(
     resetSessionState,
     connectionVersion,
     scheduleReconnect,
-    reconcileSnapshot,
     sendToSocket,
   ]);
 
-  const threadLikeMessages = useMemo(() => loadMessagesFromRaw(rawMessages), [rawMessages]);
+  const threadLikeMessages = useMemo(() => {
+    const all = [...historyMessages, ...outputMessages];
+    return all.map((msg) => messageToThreadLike(msg));
+  }, [historyMessages, outputMessages]);
 
   const loadOlder = useCallback(
     async (cursorOverride?: string | null) => {
@@ -1206,11 +1309,11 @@ export function useClaude2Session(
         const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
         cursorRef.current = response.pagination.nextCursor;
         setHasOlder(response.pagination.hasOlder);
-        setRawMessages((prev) => {
-          const next = [...response.messages, ...prev];
-          rawMessagesRef.current = next;
-          return next;
-        });
+        setHistoryMessages((prev) => [...response.messages, ...prev]);
+        for (const m of response.messages) {
+          const uuid = getMessageUuid(m);
+          if (uuid) messageMapRef.current.set(uuid, m);
+        }
       } catch (err) {
         console.error("[loadOlder] error", err);
       }

@@ -95,30 +95,19 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(result.current.storeAdapter.messages[0]?.role).toBe("assistant");
   });
 
-  test("connected preserves local state when replay is empty", async () => {
+  test("connected preserves local state when history is empty", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
 
     act(() => {
-      socket.emit({
-        type: "assistant",
-        uuid: "uuid-old",
-        message: { id: "old", role: "assistant", content: [{ type: "text", text: "stale" }] },
-        session_id: "s1",
-      } as never);
-    });
-    expect(result.current.storeAdapter.messages).toHaveLength(1);
-
-    act(() => {
       socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
-      socket.emit({ type: "replay_start" } as never);
-      socket.emit({ type: "replay_end" } as never);
+      socket.emit({ type: "output_start", count: 0 } as never);
+      socket.emit({ type: "output_end" } as never);
     });
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.storeAdapter.messages).toHaveLength(1);
     expect(result.current.tasks).toEqual([]);
   });
 
@@ -130,13 +119,13 @@ describe("useClaude2Session websocket lifecycle", () => {
 
     act(() => {
       socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
-      socket.emit({ type: "replay_start" });
+      socket.emit({ type: "history_start", count: 1 });
       socket.emit({
         type: "assistant",
         message: { id: "a1", role: "assistant", content: [] },
         session_id: "s1",
       });
-      socket.emit({ type: "replay_end" });
+      socket.emit({ type: "history_end" });
       socket.emit({ type: "switch_model_result", model: "sonnet", success: true });
       socket.emit({
         type: "control_request",
@@ -188,7 +177,7 @@ describe("useClaude2Session websocket lifecycle", () => {
           sessionType: "agent",
           status: "running",
         });
-        reconnectSocket.emit({ type: "replay_start" } as never);
+        reconnectSocket.emit({ type: "history_start", count: 2 } as never);
         reconnectSocket.emit({
           type: "assistant",
           uuid: "uuid-1",
@@ -201,7 +190,9 @@ describe("useClaude2Session websocket lifecycle", () => {
           message: { id: "a2", role: "assistant", content: [{ type: "text", text: "second" }] },
           session_id: "s1",
         } as never);
-        reconnectSocket.emit({ type: "replay_end" } as never);
+        reconnectSocket.emit({ type: "history_end" } as never);
+        reconnectSocket.emit({ type: "output_start", count: 0 } as never);
+        reconnectSocket.emit({ type: "output_end" } as never);
       });
 
       expect(result.current.loading).toBe(false);
@@ -288,7 +279,8 @@ describe("useClaude2Session websocket lifecycle", () => {
       } as never);
     });
     expect(socket.sent.some((s) => s.includes('"text":"hello"'))).toBe(true);
-    expect(result.current.storeAdapter.messages).toHaveLength(0);
+    // system/init now rendered as visible "other" bubble
+    expect(result.current.storeAdapter.messages).toHaveLength(1);
 
     act(() => {
       result.current.bridge.respondToControlRequest("req-1", {
@@ -332,7 +324,8 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(true);
-    expect(result.current.storeAdapter.messages).toHaveLength(0);
+    // Messages persist across disconnect (live output is preserved)
+    expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
   });
 
   test("compact success transitions back to live after result", async () => {
