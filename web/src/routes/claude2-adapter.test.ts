@@ -294,7 +294,7 @@ describe("messageToThreadLike", () => {
     expect(result.content).toBe("hi");
   });
 
-  test("system message maps to system role with type/subtype label and raw content", () => {
+  test("system message maps to system role with raw JSON content", () => {
     const msg = {
       type: "system",
       subtype: "init",
@@ -303,10 +303,10 @@ describe("messageToThreadLike", () => {
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("system");
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    expect(text).toStartWith("system/init\n");
+    expect(text).toInclude('"type": "system"');
   });
 
-  test("result message maps to system role with raw content", () => {
+  test("result message maps to system role with raw JSON content", () => {
     const msg = {
       type: "result",
       subtype: "success",
@@ -314,10 +314,10 @@ describe("messageToThreadLike", () => {
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("system");
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    expect(text).toStartWith("result/success\n");
+    expect(text).toInclude('"type": "result"');
   });
 
-  test("message without subtype uses type as label with raw content", () => {
+  test("other message shows raw JSON", () => {
     const msg = {
       type: "connected",
       sessionId: "s1",
@@ -325,7 +325,7 @@ describe("messageToThreadLike", () => {
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("system");
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    expect(text).toStartWith("connected\n");
+    expect(text).toInclude('"type": "connected"');
   });
 });
 

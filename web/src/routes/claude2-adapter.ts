@@ -482,11 +482,9 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
   }
 
   // Other: system, result, control_request, switch_model_result, etc.
-  const subtype = "subtype" in msg ? (msg as { subtype: string }).subtype : undefined;
-  const label = subtype ? `${msg.type}/${subtype}` : msg.type;
   return {
     role: "system",
-    content: [{ type: "text", text: `${label}\n${JSON.stringify(msg, null, 2)}` }],
+    content: [{ type: "text", text: JSON.stringify(msg, null, 2) }],
   };
 }
 
