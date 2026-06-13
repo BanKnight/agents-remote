@@ -451,7 +451,11 @@ export function convertExternalToThreadLike(msg: SessionStreamServerMessage): Th
 // Kept intentionally simple — complex rendering logic belongs in
 // future sub-handlers.
 
-export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike {
+export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike | null {
+  if (msg.type === "permission-mode") {
+    // State signal, not a chat bubble. State is applied in handleInternalMessage.
+    return null;
+  }
   const raw = JSON.stringify(msg, null, 2);
   const meta = { custom: { _raw: msg } };
   if (msg.type === "assistant") {
@@ -776,6 +780,9 @@ export function useClaude2Session(
 
   // All non-external (synthetic / system / result) message side effects.
   const handleInternalMessage = useCallback((msg: SessionStreamServerMessage) => {
+    if (msg.type === "permission-mode") {
+      setPermissionMode(msg.permissionMode);
+    }
     const uiMessage = messageToThreadLike(msg);
     if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
   }, []);

@@ -519,4 +519,22 @@ describe("useClaude2Session websocket lifecycle", () => {
 
     expect(result.current.permissionMode).toBe("plan");
   });
+
+  test("permission-mode message sets permissionMode and renders no bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const before = result.current.storeAdapter.messages.length;
+    act(() => {
+      socket.emit({
+        type: "permission-mode",
+        permissionMode: "acceptEdits",
+      } as never);
+    });
+
+    expect(result.current.permissionMode).toBe("acceptEdits");
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+  });
 });

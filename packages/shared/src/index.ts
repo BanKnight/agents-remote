@@ -382,6 +382,12 @@ export type Claude2LastPromptEntry = {
   sessionId?: string;
 };
 
+export type Claude2PermissionModeEntry = {
+  type: "permission-mode";
+  permissionMode: Claude2PermissionMode;
+  session_id?: string;
+};
+
 export type Claude2UserMessage = {
   type: "user";
   message: {
@@ -581,6 +587,7 @@ export type SessionStreamServerMessage =
   | Claude2Mode
   | Claude2Attachment
   | Claude2LastPromptEntry
+  | Claude2PermissionModeEntry
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage
