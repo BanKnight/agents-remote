@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from "react";
+import { useState, useContext, useEffect, type ReactNode } from "react";
 import { useComposerRuntime, type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
 
@@ -49,8 +49,9 @@ function ToolIcon({ name, className }: { name: string; className?: string }) {
 function makeToolRenderer(config: {
   icon: string;
   label?: (args: Record<string, unknown>, toolName: string) => string;
+  body?: (args: Record<string, unknown>) => ReactNode | null;
 }): ToolCallMessagePartComponent {
-  const { icon, label } = config;
+  const { icon, label, body } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
     const [expanded, setExpanded] = useState(false);
     const isRunning = status.type === "running";
@@ -99,24 +100,33 @@ function makeToolRenderer(config: {
         </button>
         {expanded && (
           <>
-            {hasArgs ? (
-              <div className={`border-t ${accentDivider} px-3 py-2`}>
-                {Object.keys(args).length > 0 ? (
-                  <div className="space-y-1.5">
-                    {Object.entries(args).map(([key, value]) => (
-                      <div key={key} className="flex gap-2 text-xs">
-                        <span className="shrink-0 font-medium text-slate-400">{key}:</span>
-                        <span className="text-slate-300 break-all">{formatArg(value)}</span>
+            {(() => {
+              const bodyNode = body ? body(args) : null;
+              if (bodyNode) {
+                return <div className={`border-t ${accentDivider} px-3 py-2`}>{bodyNode}</div>;
+              }
+              if (hasArgs) {
+                return (
+                  <div className={`border-t ${accentDivider} px-3 py-2`}>
+                    {Object.keys(args).length > 0 ? (
+                      <div className="space-y-1.5">
+                        {Object.entries(args).map(([key, value]) => (
+                          <div key={key} className="flex gap-2 text-xs">
+                            <span className="shrink-0 font-medium text-slate-400">{key}:</span>
+                            <span className="text-slate-300 break-all">{formatArg(value)}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : (
+                      <pre className="text-[0.6rem] text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
+                        {argsText}
+                      </pre>
+                    )}
                   </div>
-                ) : (
-                  <pre className="text-[0.6rem] text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
-                    {argsText}
-                  </pre>
-                )}
-              </div>
-            ) : null}
+                );
+              }
+              return null;
+            })()}
             {skillContent ? (
               <div className={`border-t ${accentDivider} px-3 py-2`}>
                 <span className="text-[0.55rem] font-semibold text-purple-400/70 uppercase tracking-wide">
@@ -141,6 +151,89 @@ function makeToolRenderer(config: {
       </div>
     );
   };
+}
+
+// ── Edit diff view ───────────────────────────────────────────────────
+
+export type DiffLine = { type: "same" | "add" | "del"; text: string };
+
+// Line-level LCS diff. O(m*n) is fine — Edit blocks are small.
+export function lineDiff(oldStr: string, newStr: string): DiffLine[] {
+  const a = oldStr.length ? oldStr.split("\n") : [];
+  const b = newStr.length ? newStr.split("\n") : [];
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    Array.from({ length: n + 1 }, () => 0),
+  );
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      out.push({ type: "same", text: a[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push({ type: "del", text: a[i] });
+      i++;
+    } else {
+      out.push({ type: "add", text: b[j] });
+      j++;
+    }
+  }
+  while (i < m) out.push({ type: "del", text: a[i++] });
+  while (j < n) out.push({ type: "add", text: b[j++] });
+  return out;
+}
+
+function EditDiffView({ oldStr, newStr }: { oldStr: string; newStr: string }) {
+  const lines = lineDiff(oldStr, newStr);
+  return (
+    <div className="rounded border border-slate-700/60 bg-slate-950/60 overflow-x-auto font-mono text-[0.6rem] leading-relaxed">
+      {lines.map((line, idx) => {
+        const cls =
+          line.type === "add"
+            ? "bg-emerald-500/10 text-emerald-200"
+            : line.type === "del"
+              ? "bg-red-500/10 text-red-200"
+              : "text-slate-500";
+        const sign = line.type === "add" ? "+" : line.type === "del" ? "-" : " ";
+        return (
+          <div key={idx} className={`flex px-2 whitespace-pre ${cls}`}>
+            <span className="shrink-0 select-none opacity-60">{sign} </span>
+            <span className="break-all">{line.text || " "}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Renders the diff body for Edit (single old/new) and MultiEdit (edits[]).
+function editDiffBody(args: Record<string, unknown>): ReactNode {
+  const edits = Array.isArray(args.edits)
+    ? (args.edits as Array<Record<string, unknown>>)
+    : [{ old_string: args.old_string, new_string: args.new_string }];
+  const pairs = edits
+    .map((e) => ({
+      oldStr: typeof e.old_string === "string" ? e.old_string : "",
+      newStr: typeof e.new_string === "string" ? e.new_string : "",
+    }))
+    .filter((p) => p.oldStr || p.newStr);
+  if (pairs.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {pairs.map((p, idx) => (
+        <EditDiffView key={idx} oldStr={p.oldStr} newStr={p.newStr} />
+      ))}
+    </div>
+  );
 }
 
 // ── Tool-specific renderers ──────────────────────────────────────────
@@ -177,6 +270,7 @@ export const EditToolUI = makeToolRenderer({
     const path = typeof args.file_path === "string" ? args.file_path : "";
     return path ? `Edit ${path.split("/").pop() ?? path}` : "Edit";
   },
+  body: editDiffBody,
 });
 
 export const SkillToolUI = makeToolRenderer({

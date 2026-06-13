@@ -93,11 +93,16 @@ function TaskPanel({
   tasks: TaskInfo[];
   onToggle: () => void;
 }) {
-  // Sort: running/error/backgrounded first, completed last
+  // Sort: non-completed first, completed last; within the same group, by numeric task id ascending.
+  const numericId = (id: string): number => {
+    const n = Number(id);
+    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+  };
   const sorted = [...tasks].sort((a, b) => {
     const aDone = a.status === "completed" ? 1 : 0;
     const bDone = b.status === "completed" ? 1 : 0;
-    return aDone - bDone;
+    if (aDone !== bDone) return aDone - bDone;
+    return numericId(a.id) - numericId(b.id);
   });
 
   const runningTasks = sorted.filter((t) => t.status !== "completed");
