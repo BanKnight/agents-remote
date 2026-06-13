@@ -7,6 +7,7 @@ export type TaskInfo = {
   id: string;
   agentType?: string;
   workflowName?: string;
+  subject?: string;
   description: string;
   status: "running" | "completed" | "error" | "backgrounded";
   text?: string;
@@ -83,88 +84,55 @@ export const applySwitchModelResult = (
 });
 
 export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {
-  const kind: TaskInfo["kind"] =
-    msg.subtype === "task_started"
-      ? msg.workflowName
-        ? "workflow"
-        : msg.agentType
-          ? "agent"
-          : "task"
-      : (prev.find((t) => t.id === msg.task_id)?.kind ?? "task");
-  const existing = prev.findIndex((t) => t.id === msg.task_id);
-  if (existing >= 0) {
-    const updated = [...prev];
-    const current = updated[existing];
-
-    if (msg.subtype === "task_updated") {
-      updated[existing] = {
-        ...current,
-        kind,
-        status: msg.error ? "error" : msg.isBackgrounded ? "backgrounded" : "running",
-        ...(msg.error ? { error: msg.error } : {}),
-      };
-      return updated;
-    }
-
-    if (msg.subtype === "task_notification") {
-      updated[existing] = {
-        ...current,
-        kind,
-        status: "completed",
-        description: msg.summary || current.description,
-        text: msg.text ?? current.text,
-        ...(msg.summary ? { summary: msg.summary } : {}),
-      };
-      return updated;
-    }
-
-    updated[existing] = {
-      ...current,
-      kind,
-      agentType: msg.agentType ?? current.agentType,
-      workflowName: msg.workflowName ?? current.workflowName,
-      description: msg.prompt ?? current.description,
-    };
-    return updated;
-  }
-
+  // task_started: always creates. TaskCreate-originated ops carry no id
+  // (empty string) — assign a sequential id (1, 2, 3, ...) by creation order.
+  // Real system/task_started messages keep their own task_id.
   if (msg.subtype === "task_started") {
+    const id = msg.task_id || String(prev.length + 1);
+    const kind: TaskInfo["kind"] = msg.workflowName ? "workflow" : msg.agentType ? "agent" : "task";
     return [
       ...prev,
       {
-        id: msg.task_id,
+        id,
         kind,
         agentType: msg.agentType,
         workflowName: msg.workflowName,
+        subject: msg.subject,
         description: msg.prompt ?? "",
         status: "running",
       },
     ];
   }
 
+  // task_updated / task_notification: update an EXISTING task only.
+  // Unknown ids are skipped — never create orphan entries.
+  const existing = prev.findIndex((t) => t.id === msg.task_id);
+  if (existing < 0) return prev;
+
+  const updated = [...prev];
+  const current = updated[existing];
+  const kind = current.kind;
+
   if (msg.subtype === "task_updated") {
-    return [
-      ...prev,
-      {
-        id: msg.task_id,
-        kind,
-        description: "",
-        status: msg.error ? "error" : msg.isBackgrounded ? "backgrounded" : "running",
-        ...(msg.error ? { error: msg.error } : {}),
-      },
-    ];
+    const isCompleted = (msg as Record<string, unknown>).isCompleted === true;
+    updated[existing] = {
+      ...current,
+      kind,
+      status: msg.error ? "error" : isCompleted ? "completed" : msg.isBackgrounded ? "backgrounded" : "running",
+      ...(msg.error ? { error: msg.error } : {}),
+    };
+    return updated;
   }
 
-  return [
-    ...prev,
-    {
-      id: msg.task_id,
-      kind,
-      description: msg.text ?? "",
-      status: "completed",
-      ...(msg.text ? { text: msg.text } : {}),
-    },
-  ];
+  updated[existing] = {
+    ...current,
+    kind,
+    status: "completed",
+    description: msg.summary || current.description,
+    text: msg.text ?? current.text,
+    ...(msg.summary ? { summary: msg.summary } : {}),
+  };
+  return updated;
 };
 
 // KEPT: task 批量派生，后续在新架构下重新接入
@@ -205,21 +173,9 @@ export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
 const asReadonlyJSON = (v: Record<string, unknown>): any => v;
 */
 
-const extractTextFromContent = (content: unknown): string | null => {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return null;
-  const texts: string[] = [];
-  for (const block of content as Array<Record<string, unknown>>) {
-    if (block.type === "text" && typeof block.text === "string") {
-      texts.push(block.text);
-    }
-  }
-  return texts.length > 0 ? texts.join("\n") : null;
-};
-
 const _SKILL_CONTENT_PREFIX = "Base directory for this skill:";
 
-const extractUserTextBlocks = (content: unknown): string[] => {
+const _extractUserTextBlocks = (content: unknown): string[] => {
   if (!Array.isArray(content)) return [];
   return (content as Array<Record<string, unknown>>)
     .filter((block) => block.type === "text" && typeof block.text === "string" && block.text.trim())
@@ -321,45 +277,6 @@ const findMissingTailByUuid = (
 };
 */
 
-const summarizeStreamMessage = (msg: SessionStreamServerMessage): Record<string, unknown> => {
-  if (msg.type === "user") {
-    const meta = msg as Record<string, unknown>;
-    const content = Array.isArray(msg.message.content) ? msg.message.content : [];
-    return {
-      type: msg.type,
-      isMeta: meta.isMeta === true,
-      isSynthetic: meta.isSynthetic === true,
-      sourceToolUseID: typeof meta.sourceToolUseID === "string" ? meta.sourceToolUseID : undefined,
-      toolUseResult: meta.toolUseResult ?? meta.tool_use_result,
-      contentTypes: content.map((block) => block.type),
-      textPreview: extractTextFromContent(content)?.slice(0, 120),
-    };
-  }
-
-  if (msg.type === "assistant") {
-    return {
-      type: msg.type,
-      messageId: msg.message.id,
-      contentTypes: msg.message.content.map((block) => block.type),
-      toolUseIds: msg.message.content
-        .filter((block) => block.type === "tool_use")
-        .map((block) => ("id" in block ? block.id : undefined)),
-    };
-  }
-
-  if (msg.type === "system") {
-    return {
-      type: msg.type,
-      subtype: msg.subtype,
-      session_id: "session_id" in msg ? msg.session_id : undefined,
-      task_id: "task_id" in msg ? msg.task_id : undefined,
-      status: "status" in msg ? msg.status : undefined,
-    };
-  }
-
-  return { type: msg.type };
-};
-
 /**
  * Convert raw Claude2 JSONL/API messages into ThreadMessageLike[] for
  * assistant-ui history display.
@@ -414,48 +331,117 @@ export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): 
 
 // ── Unified message dispatch ─────────────────────────────────────────
 // Entry point for all live messages after batch processing.
-// Dispatches by type to sub-handlers; each handler is responsible for
-// updating messageMapRef and producing console diagnostics.
-//
-// Called from onmessage for every non-batch message.
+// Converts SessionStreamServerMessage → ThreadMessageLike | null.
+// Returns null for messages that don't produce UI output (business logic
+// like compact, retry, task, etc. handled internally).
 
-export function processMessage(msg: SessionStreamServerMessage): void {
-  switch (msg.type) {
-    case "assistant":
-      handleAssistantMessage(msg);
-      break;
-    case "user":
-      handleUserMessage(msg);
-      break;
+// ── State delta ──────────────────────────────────────────────────────
+// processMessage is the single entry point: raw message → all state updates.
+// It lives inside the hook and directly applies state changes.
+// Building blocks (convertExternalToThreadLike, extractTaskOps, etc.) are
+// exported for unit testing; the orchestration is integration-tested
+// via the hook tests.
+
+// ── Content block processor ─────────────────────────────────────────
+
+type RawContentBlock = { type: string } & Record<string, unknown>;
+
+function processContentBlock(block: RawContentBlock): Record<string, unknown> | null {
+  switch (block.type) {
+    case "thinking":
+      return { type: "reasoning", text: block.thinking as string };
+    case "text":
+      return { type: "text", text: block.text as string };
+    case "tool_use": {
+      const b = block;
+      return {
+        type: "tool-call",
+        toolCallId: b.id as string,
+        toolName: b.name as string,
+        args: (b.input ?? {}) as Record<string, unknown>,
+        argsText: JSON.stringify(b.input ?? {}),
+      };
+    }
     default:
-      handleOtherMessage(msg);
-      break;
+      return null;
   }
 }
 
-function handleAssistantMessage(msg: SessionStreamServerMessage): void {
-  const assistantMsg = msg as { type: "assistant"; message: { id: string; role: string; content: unknown[] } };
-  const contentTypes = assistantMsg.message.content.map((b: unknown) => (b as { type: string }).type);
-  console.log("[claude2] assistant", {
-    messageId: assistantMsg.message.id,
-    contentTypes,
-    content: assistantMsg.message.content,
-  });
+function extractTaskOpFromBlock(block: RawContentBlock): TaskSystemMessage | null {
+  if (block.type !== "tool_use") return null;
+  const toolName = block.name as string;
+  const input = (block.input ?? {}) as Record<string, unknown>;
+
+  if (toolName === "TaskCreate") {
+    // No task_id here — the reducer assigns a sequential id (1, 2, 3, …)
+    // in TaskCreate order. TaskUpdate later references that id via input.taskId.
+    return {
+      type: "system",
+      subtype: "task_started",
+      task_id: "",
+      agentType: input.subagent_type as string | undefined,
+      workflowName: input.workflow_name as string | undefined,
+      subject: input.subject as string | undefined,
+      prompt: (input.description ?? input.prompt ?? toolName) as string,
+      session_id: "",
+    } as unknown as TaskSystemMessage;
+  }
+  if (toolName === "TaskUpdate") {
+    const status = input.status as string;
+    const taskId = (input.taskId ?? input.task_id ?? input.id) as string;
+    return {
+      type: "system",
+      subtype: "task_updated",
+      task_id: taskId,
+      isBackgrounded: status === "backgrounded",
+      isCompleted: status === "completed",
+      error: input.error as string | undefined,
+      session_id: "",
+    } as unknown as TaskSystemMessage;
+  }
+  return null;
 }
 
-function handleUserMessage(msg: SessionStreamServerMessage): void {
-  const userMsg = msg as { type: "user"; message: { role: string; content: unknown } };
-  console.log("[claude2] user", {
-    role: userMsg.message.role,
-    content: userMsg.message.content,
-  });
+export function extractTaskOps(msg: SessionStreamServerMessage): TaskSystemMessage[] {
+  const userType = (msg as Record<string, unknown>).userType;
+  if (userType !== "external") return [];
+  if (msg.type !== "assistant") return [];
+  const assistantMsg = msg as unknown as { message: { content: RawContentBlock[] } };
+  return assistantMsg.message.content.map(extractTaskOpFromBlock).filter((op): op is TaskSystemMessage => op !== null);
 }
 
-function handleOtherMessage(msg: SessionStreamServerMessage): void {
-  if (msg.type === "system" && "subtype" in msg) {
-    console.log("[claude2] system", { subtype: msg.subtype, msg });
-  } else {
-    console.log("[claude2] other", { type: msg.type, msg });
+export function hasToolUseNamed(msg: SessionStreamServerMessage, toolName: string): boolean {
+  const userType = (msg as Record<string, unknown>).userType;
+  if (userType !== "external") return false;
+  if (msg.type !== "assistant") return false;
+  const assistantMsg = msg as unknown as { message: { content: RawContentBlock[] } };
+  return assistantMsg.message.content.some(
+    (b) => b.type === "tool_use" && (b.name === toolName || b.name === toolName.toLowerCase()),
+  );
+}
+
+// ── Handlers ─────────────────────────────────────────────────────────
+
+export function convertExternalToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike | null {
+  switch (msg.type) {
+    case "assistant": {
+      const assistantMsg = msg as unknown as { message: { content: RawContentBlock[] } };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parts = assistantMsg.message.content.map((block): any => {
+        const rendered = processContentBlock(block);
+        if (rendered) return rendered;
+        return { type: "text", text: JSON.stringify(block) };
+      });
+      return {
+        role: "assistant",
+        content: parts,
+        metadata: { custom: { _raw: msg } },
+      };
+    }
+    case "user":
+      return null;
+    default:
+      return null;
   }
 }
 
@@ -466,26 +452,18 @@ function handleOtherMessage(msg: SessionStreamServerMessage): void {
 // future sub-handlers.
 
 export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike {
+  const raw = JSON.stringify(msg, null, 2);
+  const meta = { custom: { _raw: msg } };
   if (msg.type === "assistant") {
-    const texts = extractUserTextBlocks(msg.message.content as unknown);
-    const text = texts.length > 0 ? texts.join("\n") : JSON.stringify(msg.message.content);
-    return {
-      role: "assistant",
-      content: [{ type: "text", text }],
-    };
+    return { role: "assistant", content: [{ type: "text", text: raw }], metadata: meta };
   }
-
   if (msg.type === "user") {
-    const texts = extractUserTextBlocks(msg.message.content as unknown);
-    const text = texts.length > 0 ? texts.join("\n") : JSON.stringify(msg.message.content);
-    return { role: "user", content: text };
+    return { role: "user", content: raw, metadata: meta };
   }
-
-  // Other: system, result, control_request, switch_model_result, etc.
-  return {
-    role: "system",
-    content: [{ type: "text", text: JSON.stringify(msg, null, 2) }],
-  };
+  if (msg.type === "last-prompt") {
+    return { role: "user", content: msg.lastPrompt, metadata: meta };
+  }
+  return { role: "system", content: [{ type: "text", text: raw }], metadata: meta };
 }
 
 // KEPT: 作为后续新渲染函数的参考实现
@@ -779,12 +757,49 @@ export function useClaude2Session(
 ) {
   const [connectionVersion, setConnectionVersion] = useState(0);
 
-  // ── history + output + Map data architecture ──────────────────────────
-  const [historyMessages, setHistoryMessages] = useState<SessionStreamServerMessage[]>([]);
-  const [outputMessages, setOutputMessages] = useState<SessionStreamServerMessage[]>([]);
+  // ── Unified message state ──────────────────────────────────────────
+  const [messages, setMessagesState] = useState<ThreadMessageLike[]>([]);
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const outputBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
+
+  // All external-message side effects in one place.
+  const handleExternalMessage = useCallback((msg: SessionStreamServerMessage) => {
+    const uiMessage = convertExternalToThreadLike(msg);
+    if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
+
+    const ops = extractTaskOps(msg);
+    if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+
+    if (hasToolUseNamed(msg, "EnterPlanMode")) setPermissionMode("plan");
+  }, []);
+
+  // All non-external (synthetic / system / result) message side effects.
+  const handleInternalMessage = useCallback((msg: SessionStreamServerMessage) => {
+    const uiMessage = messageToThreadLike(msg);
+    if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
+  }, []);
+
+  // Single entry point: dispatches by userType to the matching handler.
+  const processMessage = useCallback(
+    (msg: SessionStreamServerMessage) => {
+      const userType = (msg as Record<string, unknown>).userType;
+      if (userType === "external") {
+        handleExternalMessage(msg);
+      } else {
+        handleInternalMessage(msg);
+      }
+    },
+    [handleExternalMessage, handleInternalMessage],
+  );
+
+  const processBatch = useCallback((rawMessages: SessionStreamServerMessage[]) => {
+    for (const m of rawMessages) {
+      const uuid = getMessageUuid(m);
+      if (uuid) messageMapRef.current.set(uuid, m);
+      processMessage(m);
+    }
+  }, [processMessage]);
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -820,8 +835,7 @@ export function useClaude2Session(
   const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const resetSessionState = useCallback(() => {
-    setHistoryMessages([]);
-    setOutputMessages([]);
+    setMessagesState([]);
     messageMapRef.current = new Map();
     setTasks([]);
     setSlashCommands([]);
@@ -1017,42 +1031,36 @@ export function useClaude2Session(
       try {
         const raw = event.data as string;
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
-        console.log("[claude2-adapter] ws recv", summarizeStreamMessage(msg), msg);
+        console.log("[claude2-adapter] ws recv", msg);
 
         // ── Batch markers ────────────────────────────────────────────
         if (msg.type === "history_start") {
-          historyBatchRef.current = [];
+          historyBatchRef.current = [msg];
           setLoading(true);
           setIsRunning(false);
           console.log("[claude2-adapter] history batch start, count=", msg.count);
           return;
         }
         if (msg.type === "history_end") {
+          historyBatchRef.current?.push(msg);
           const batch = historyBatchRef.current ?? [];
           historyBatchRef.current = null;
-          setHistoryMessages(batch);
-          for (const m of batch) {
-            const uuid = getMessageUuid(m);
-            if (uuid) messageMapRef.current.set(uuid, m);
-          }
-          console.log("[claude2-adapter] history batch end, stored", batch.length, "messages");
+          processBatch(batch);
+          console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
           return;
         }
         if (msg.type === "output_start") {
-          outputBatchRef.current = [];
+          outputBatchRef.current = [msg];
           console.log("[claude2-adapter] output batch start, count=", msg.count);
           return;
         }
         if (msg.type === "output_end") {
+          outputBatchRef.current?.push(msg);
           const batch = outputBatchRef.current ?? [];
           outputBatchRef.current = null;
-          setOutputMessages(batch);
-          for (const m of batch) {
-            const uuid = getMessageUuid(m);
-            if (uuid) messageMapRef.current.set(uuid, m);
-          }
+          processBatch(batch);
           setLoading(false);
-          console.log("[claude2-adapter] output batch end, stored", batch.length, "messages");
+          console.log("[claude2-adapter] output batch end, processed", batch.length, "messages");
           return;
         }
 
@@ -1069,14 +1077,12 @@ export function useClaude2Session(
         // ── Per-message dispatch (live, after batches) ───────────────
         const liveUuid = getMessageUuid(msg);
         if (liveUuid) messageMapRef.current.set(liveUuid, msg);
+
         processMessage(msg);
 
         setLoading(false);
 
         if (msg.type === "connected") return;
-
-        // Append to live output
-        setOutputMessages((prev) => [...prev, msg]);
       } catch {
         // skip
       }
@@ -1109,12 +1115,11 @@ export function useClaude2Session(
     connectionVersion,
     scheduleReconnect,
     sendToSocket,
+    processMessage,
+    processBatch,
   ]);
 
-  const threadLikeMessages = useMemo(() => {
-    const all = [...historyMessages, ...outputMessages];
-    return all.map((msg) => messageToThreadLike(msg));
-  }, [historyMessages, outputMessages]);
+  const threadLikeMessages = messages;
 
   const loadOlder = useCallback(
     async (cursorOverride?: string | null) => {
@@ -1124,11 +1129,24 @@ export function useClaude2Session(
         const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
         cursorRef.current = response.pagination.nextCursor;
         setHasOlder(response.pagination.hasOlder);
-        setHistoryMessages((prev) => [...response.messages, ...prev]);
+        const converted: ThreadMessageLike[] = [];
         for (const m of response.messages) {
           const uuid = getMessageUuid(m);
           if (uuid) messageMapRef.current.set(uuid, m);
+          // processMessage appends to messages state, but for loadOlder
+          // we need to prepend. Collect messages first, apply task ops directly.
+          const userType = (m as Record<string, unknown>).userType;
+          let uiMessage: ThreadMessageLike | null;
+          if (userType === "external") {
+            uiMessage = convertExternalToThreadLike(m);
+            const ops = extractTaskOps(m);
+            if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+          } else {
+            uiMessage = messageToThreadLike(m);
+          }
+          if (uiMessage) converted.push(uiMessage);
         }
+        setMessagesState((prev) => [...converted, ...prev]);
       } catch (err) {
         console.error("[loadOlder] error", err);
       }

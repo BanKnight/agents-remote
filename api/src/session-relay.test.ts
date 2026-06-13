@@ -32,7 +32,9 @@ test("Claude2SessionRelay sends history and output batches for a new session", a
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => { throw error; },
+    (error) => {
+      throw error;
+    },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -92,7 +94,9 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => { throw error; },
+    (error) => {
+      throw error;
+    },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -127,7 +131,9 @@ test("Claude2SessionRelay always sends history+output markers even when empty", 
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => { throw error; },
+    (error) => {
+      throw error;
+    },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -155,7 +161,9 @@ test("Claude2SessionRelay handles empty history file for resume", async () => {
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => { throw error; },
+    (error) => {
+      throw error;
+    },
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -178,7 +186,9 @@ test("Claude2SessionRelay broadcasts live output after batch", async () => {
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => { throw error; },
+    (error) => {
+      throw error;
+    },
   );
 
   // After subscriber joins, handle more stdout lines
@@ -209,7 +219,9 @@ test("Claude2SessionRelay injectLine broadcasts but does not enter output", asyn
   const received: string[] = [];
   relay.addSubscriber(
     (line) => received.push(line),
-    (error) => { throw error; },
+    (error) => {
+      throw error;
+    },
   );
 
   relay.injectLine(injectedLine);

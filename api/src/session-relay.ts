@@ -50,14 +50,22 @@ export class Claude2SessionRelay {
     // Always send history batch (count may be 0 for new sessions)
     onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
     for (const line of this.historyLines) {
-      try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
+      try {
+        onData(line);
+      } catch {
+        /* subscriber error shouldn't block replay */
+      }
     }
     onData(JSON.stringify({ type: "history_end" }));
 
     // Always send output batch (count may be 0)
     onData(JSON.stringify({ type: "output_start", count: this.outputLines.length }));
     for (const line of this.outputLines) {
-      try { onData(line); } catch { /* subscriber error shouldn't block replay */ }
+      try {
+        onData(line);
+      } catch {
+        /* subscriber error shouldn't block replay */
+      }
     }
     onData(JSON.stringify({ type: "output_end" }));
 
@@ -134,9 +142,7 @@ export class Claude2SessionRelay {
     try {
       if (this.startedAsResume && this.claudeSessionId) {
         this.historyLines = this.readHistoryFromJsonl();
-        console.log(
-          `[relay] resume loaded history lines=${this.historyLines.length}`,
-        );
+        console.log(`[relay] resume loaded history lines=${this.historyLines.length}`);
       } else {
         console.log(`[relay] new session — starting with empty history`);
       }

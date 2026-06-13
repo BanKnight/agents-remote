@@ -7,7 +7,9 @@ import {
   isSyntheticAssistantMessage,
   applySwitchModelResult,
   computeRunningCount,
-  processMessage,
+  convertExternalToThreadLike,
+  extractTaskOps,
+  hasToolUseNamed,
   messageToThreadLike,
 } from "./claude2-adapter";
 
@@ -274,24 +276,26 @@ describe("computeRunningCount", () => {
 // ── messageToThreadLike tests ─────────────────────────────────────────
 
 describe("messageToThreadLike", () => {
-  test("assistant message maps to assistant role", () => {
+  test("assistant message maps to assistant role with raw JSON content", () => {
     const msg = {
       type: "assistant",
       message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hello" }] },
     } as unknown as SessionStreamServerMessage;
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("assistant");
-    expect(result.content).toEqual([{ type: "text", text: "hello" }]);
+    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+    expect(text).toInclude('"type": "assistant"');
+    expect(text).toInclude('"hello"');
   });
 
-  test("user message maps to user role", () => {
+  test("user message maps to user role with raw JSON content", () => {
     const msg = {
       type: "user",
       message: { role: "user", content: [{ type: "text", text: "hi" }] },
     } as unknown as SessionStreamServerMessage;
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("user");
-    expect(result.content).toBe("hi");
+    expect(result.content).toInclude('"type": "user"');
   });
 
   test("system message maps to system role with raw JSON content", () => {
@@ -329,39 +333,131 @@ describe("messageToThreadLike", () => {
   });
 });
 
-// ── processMessage tests ─────────────────────────────────────────────
+// ── processMessage building blocks ───────────────────────────────────
 
-describe("processMessage", () => {
-  test("does not throw for assistant message", () => {
+describe("message processing building blocks", () => {
+  test("convertExternalToThreadLike converts assistant message", () => {
     const msg = {
       type: "assistant",
+      userType: "external",
       message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hello" }] },
     } as unknown as SessionStreamServerMessage;
-    expect(() => processMessage(msg)).not.toThrow();
+    const result = convertExternalToThreadLike(msg);
+    expect(result).toBeDefined();
+    expect(result?.role).toBe("assistant");
   });
 
-  test("does not throw for user message", () => {
+  test("extractTaskOps returns empty for non-task messages", () => {
     const msg = {
-      type: "user",
-      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      type: "assistant",
+      userType: "external",
+      message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hello" }] },
     } as unknown as SessionStreamServerMessage;
-    expect(() => processMessage(msg)).not.toThrow();
+    expect(extractTaskOps(msg)).toEqual([]);
   });
 
-  test("does not throw for system message", () => {
+  test("extractTaskOps extracts TaskCreate with subject; reducer assigns sequential id", () => {
     const msg = {
-      type: "system",
-      subtype: "init",
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "short title", description: "detailed description" } }],
+      },
     } as unknown as SessionStreamServerMessage;
-    expect(() => processMessage(msg)).not.toThrow();
+    const ops = extractTaskOps(msg);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ subtype: "task_started", task_id: "" });
+    const tasks = applyTaskSystemMessage([], ops[0]);
+    expect(tasks[0].id).toBe("1");
+    expect(tasks[0].subject).toBe("short title");
+    expect(tasks[0].description).toBe("detailed description");
   });
 
-  test("does not throw for result message", () => {
-    const msg = {
-      type: "result",
-      subtype: "success",
+  test("TaskUpdate matches TaskCreate via sequential id, no orphan entries", () => {
+    const createMsg = {
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "do thing" } }],
+      },
     } as unknown as SessionStreamServerMessage;
-    expect(() => processMessage(msg)).not.toThrow();
+    const updateMsg = {
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m2",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-2", name: "TaskUpdate", input: { taskId: "1", status: "completed" } }],
+      },
+    } as unknown as SessionStreamServerMessage;
+
+    let tasks: ReturnType<typeof applyTaskSystemMessage> = [];
+    for (const op of extractTaskOps(createMsg)) tasks = applyTaskSystemMessage(tasks, op);
+    for (const op of extractTaskOps(updateMsg)) tasks = applyTaskSystemMessage(tasks, op);
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe("1");
+    expect(tasks[0].status).toBe("completed");
+  });
+
+  test("TaskUpdate for unknown id does not create orphan", () => {
+    const updateMsg = {
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m2",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-2", name: "TaskUpdate", input: { taskId: "99", status: "completed" } }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const ops = extractTaskOps(updateMsg);
+    const tasks = ops.reduce(applyTaskSystemMessage, [] as ReturnType<typeof applyTaskSystemMessage>);
+    expect(tasks).toHaveLength(0);
+  });
+
+  test("extractTaskOps returns empty for non-external", () => {
+    const msg = {
+      type: "assistant",
+      message: { id: "m1", role: "assistant", content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: {} }] },
+    } as unknown as SessionStreamServerMessage;
+    expect(extractTaskOps(msg)).toEqual([]);
+  });
+
+  test("hasToolUseNamed detects EnterPlanMode in external assistant", () => {
+    const msg = {
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "EnterPlanMode", input: {} }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    expect(hasToolUseNamed(msg, "EnterPlanMode")).toBe(true);
+    expect(hasToolUseNamed(msg, "TaskCreate")).toBe(false);
+  });
+
+  test("hasToolUseNamed returns false for non-external", () => {
+    const msg = {
+      type: "assistant",
+      message: { id: "m1", role: "assistant", content: [{ type: "tool_use", id: "tu-1", name: "EnterPlanMode", input: {} }] },
+    } as unknown as SessionStreamServerMessage;
+    expect(hasToolUseNamed(msg, "EnterPlanMode")).toBe(false);
+  });
+
+  test("messageToThreadLike converts all message types", () => {
+    const assistant = { type: "assistant", message: { id: "a1", role: "assistant", content: [] } } as unknown as SessionStreamServerMessage;
+    expect(messageToThreadLike(assistant).role).toBe("assistant");
+
+    const user = { type: "user", message: { role: "user", content: [] } } as unknown as SessionStreamServerMessage;
+    expect(messageToThreadLike(user).role).toBe("user");
+
+    const system = { type: "system", subtype: "init" } as unknown as SessionStreamServerMessage;
+    expect(messageToThreadLike(system).role).toBe("system");
   });
 });
 
@@ -1126,61 +1222,28 @@ describe("task system state", () => {
     expect(tasks[0]).toMatchObject({ id: "task-2", status: "completed", text: "finished" });
   });
 
-  test("applyTaskSystemMessage fills in missing metadata on existing task_started entries", () => {
-    const tasks = applyTaskSystemMessage(
-      [{ id: "task-3", description: "old", status: "running" }],
-      taskStarted("task-3", {
-        agentType: "general-purpose",
-        workflowName: "workflow-x",
-        prompt: "fresh prompt",
-      }) as never,
-    );
-
-    expect(tasks[0]).toMatchObject({
-      id: "task-3",
-      agentType: "general-purpose",
-      workflowName: "workflow-x",
-      description: "fresh prompt",
-      status: "running",
-    });
+  test("applyTaskSystemMessage assigns sequential id when task_started has no id", () => {
+    const noId = { type: "system", subtype: "task_started", task_id: "", prompt: "first" } as never;
+    expect(applyTaskSystemMessage([], noId)[0]).toMatchObject({ id: "1", description: "first" });
+    const noId2 = { type: "system", subtype: "task_started", task_id: "", prompt: "second" } as never;
+    const after = applyTaskSystemMessage(applyTaskSystemMessage([], noId), noId2);
+    expect(after[1]).toMatchObject({ id: "2", description: "second" });
   });
 
-  test("applyTaskSystemMessage appends fresh task_updated entries", () => {
-    expect(applyTaskSystemMessage([], taskUpdated("task-4") as never)[0]).toMatchObject({
-      id: "task-4",
-      status: "running",
-      description: "",
-    });
+  test("applyTaskSystemMessage skips task_updated for unknown id (no orphan)", () => {
+    expect(applyTaskSystemMessage([], taskUpdated("task-4") as never)).toEqual([]);
     expect(
-      applyTaskSystemMessage([], taskUpdated("task-5", { isBackgrounded: true }) as never)[0],
-    ).toMatchObject({
-      id: "task-5",
-      status: "backgrounded",
-      description: "",
-    });
+      applyTaskSystemMessage([], taskUpdated("task-5", { isBackgrounded: true }) as never),
+    ).toEqual([]);
     expect(
-      applyTaskSystemMessage([], taskUpdated("task-6", { error: "failed" }) as never)[0],
-    ).toMatchObject({
-      id: "task-6",
-      status: "error",
-      description: "",
-      error: "failed",
-    });
+      applyTaskSystemMessage([], taskUpdated("task-6", { error: "failed" }) as never),
+    ).toEqual([]);
   });
 
-  test("applyTaskSystemMessage appends fresh task_notification entries", () => {
-    expect(applyTaskSystemMessage([], taskNotification("task-7") as never)[0]).toMatchObject({
-      id: "task-7",
-      status: "completed",
-      description: "",
-    });
+  test("applyTaskSystemMessage skips task_notification for unknown id (no orphan)", () => {
+    expect(applyTaskSystemMessage([], taskNotification("task-7") as never)).toEqual([]);
     expect(
-      applyTaskSystemMessage([], taskNotification("task-8", { text: "done" }) as never)[0],
-    ).toMatchObject({
-      id: "task-8",
-      status: "completed",
-      description: "done",
-      text: "done",
-    });
+      applyTaskSystemMessage([], taskNotification("task-8", { text: "done" }) as never),
+    ).toEqual([]);
   });
 });

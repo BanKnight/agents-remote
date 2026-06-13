@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AuiIf,
   ActionBarPrimitive,
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -9,11 +10,9 @@ import {
   ThreadPrimitive,
   unstable_useSlashCommandAdapter,
   type Unstable_SlashCommand,
-  useComposerRuntime,
   useExternalStoreRuntime,
   useMessage,
-  useMessagePartReasoning,
-  useThread,
+  groupPartByType,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,7 +26,12 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
-import { Claude2BridgeContext, useClaude2Session, type RetryInfo, type TaskInfo } from "./claude2-adapter";
+import {
+  Claude2BridgeContext,
+  useClaude2Session,
+  type RetryInfo,
+  type TaskInfo,
+} from "./claude2-adapter";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -103,32 +107,57 @@ function TaskPanel({
 
   const renderRow = (task: TaskInfo) => {
     const title =
+      task.subject ||
       task.description ||
       task.summary ||
       task.agentType ||
       task.workflowName ||
       t("claude2.taskFallback", { id: task.id.slice(0, 6) });
+    const hasTooltip = !!task.description && task.subject;
     const meta = [task.agentType, task.workflowName].filter(Boolean);
     return (
-      <div key={task.id} className="flex items-start gap-2 text-xs">
+      <div key={task.id} className="flex items-start gap-2 text-xs" title={hasTooltip ? task.description : undefined}>
         <span className="mt-0.5 shrink-0">
           {task.status === "running" ? (
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
           ) : task.status === "completed" ? (
-            <svg className="h-3 w-3 text-emerald-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              className="h-3 w-3 text-emerald-400"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 8l3.5 3.5L13 5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           ) : task.status === "error" ? (
-            <svg className="h-3 w-3 text-red-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <svg
+              className="h-3 w-3 text-red-400"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 4l8 8M12 4l-8 8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
             </svg>
           ) : (
             <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <span className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : "text-slate-200"}`}>
-            {title}
+          <span
+            className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : "text-slate-200"}`}
+          >
+            <span className="text-slate-500">#{task.id}</span> {title}
           </span>
           {(task.text || meta.length > 0) && (
             <span className="block truncate text-[0.65rem] text-slate-500">
@@ -155,13 +184,17 @@ function TaskPanel({
           fill="none"
           aria-hidden="true"
         >
-          <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
         <span className="text-xs font-medium text-slate-400">{t("claude2.tasks")}</span>
         <span className="text-[0.65rem] text-slate-600">
-          {collapsed
-            ? `${runningTasks.length}/${doneCount}`
-            : tasks.length}
+          {collapsed ? `${runningTasks.length}/${doneCount}` : tasks.length}
         </span>
       </button>
       <div
@@ -489,32 +522,24 @@ function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderPro
 }
 
 function UserChatBubble() {
+  const message = useMessage();
+  const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
   return (
     <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
       </div>
-      <ActionBarPrimitive.Root className="flex items-center gap-0.5 self-end opacity-0 group-hover:opacity-100 transition-opacity px-1">
-        <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
-          <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect
-              x="5"
-              y="2"
-              width="9"
-              height="12"
-              rx="1"
-              stroke="currentColor"
-              strokeWidth="1.2"
-            />
-            <path
-              d="M2 5v9a1 1 0 001 1h7"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </ActionBarPrimitive.Copy>
-      </ActionBarPrimitive.Root>
+      <div className="flex items-end gap-0.5 self-end">
+        <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
+          <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="5" y="2" width="9" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M2 5v9a1 1 0 001 1h7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+          </ActionBarPrimitive.Copy>
+        </ActionBarPrimitive.Root>
+        {rawData ? <RawDebugTooltip data={rawData} /> : null}
+      </div>
     </MessagePrimitive.Root>
   );
 }
@@ -569,89 +594,169 @@ function AssistantChatBubble() {
   const message = useMessage();
   const isEmpty =
     !message.content || (Array.isArray(message.content) && message.content.length === 0);
-
   const msgStatus = (message as { status?: { type?: string } }).status;
-  // isStreaming is message-level — only the CURRENTLY streaming message
-  // gets the loading dots / trailing animation. Thread-level isRunning
-  // would light up ALL past bubbles during generation.
   const isStreaming = msgStatus?.type === "running";
+  const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
 
   return (
-    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
+    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
       <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
-        {isEmpty ? (
-          isStreaming ? (
-            <div className="flex items-center gap-1.5 py-1">
-              <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-            </div>
-          ) : null
-        ) : (
-          <>
-            <MessagePrimitive.Parts>
-              {({ part }) => {
-                if (part.type === "text") return <MarkdownText />;
-                if (part.type === "tool-call") {
+        <AuiIf condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}>
+          <div className="flex items-center gap-1.5 py-1">
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+          </div>
+        </AuiIf>
+        <AuiIf condition={(s) => s.message.content.length > 0}>
+          <MessagePrimitive.GroupedParts
+            groupBy={groupPartByType({ reasoning: ["group-reasoning"] })}
+          >
+            {({ part, children }) => {
+              switch (part.type) {
+                case "group-reasoning": {
+                  return <ReasoningGroup running={part.status.type === "running"}>{children}</ReasoningGroup>;
+                }
+                case "reasoning":
+                  return <span className="whitespace-pre-wrap">{part.text}</span>;
+                case "text":
+                  return <MarkdownText />;
+                case "tool-call": {
                   const CustomUI = getToolRenderer(part.toolName);
                   return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
                 }
-                if (part.type === "reasoning") return <ReasoningDisplay part={part} />;
-                return null;
-              }}
-            </MessagePrimitive.Parts>
-            {isStreaming ? (
-              <div className="mt-2 flex items-center gap-1.5 py-1">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
-              </div>
-            ) : null}
-          </>
-        )}
+                default:
+                  return null;
+              }
+            }}
+          </MessagePrimitive.GroupedParts>
+          {isStreaming ? (
+            <div className="mt-2 flex items-center gap-1.5 py-1">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
+            </div>
+          ) : null}
+        </AuiIf>
       </div>
-      {!isEmpty && !isStreaming ? (
-        <ActionBarPrimitive.Root className="flex items-center gap-0.5 self-end opacity-0 group-hover:opacity-100 transition-opacity px-1">
-          <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
-            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect
-                x="5"
-                y="2"
-                width="9"
-                height="12"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M2 5v9a1 1 0 001 1h7"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </ActionBarPrimitive.Copy>
-        </ActionBarPrimitive.Root>
-      ) : null}
+      <div className="flex items-end gap-0.5 self-end">
+        {!isEmpty && !isStreaming ? (
+          <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
+            <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="5" y="2" width="9" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M2 5v9a1 1 0 001 1h7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+            </ActionBarPrimitive.Copy>
+          </ActionBarPrimitive.Root>
+        ) : null}
+        {rawData ? <RawDebugTooltip data={rawData} /> : null}
+      </div>
     </MessagePrimitive.Root>
   );
 }
 
-// PERMANENT inline divider in the message stream — the single source of
-// truth that "a compaction happened". See the CompactStatus block at the top
-// of this file for the full two-surface design.
-//
-// Wired in as the SystemMessage component of ThreadPrimitive.Messages, so it
+function ReasoningGroup({ running, children }: { running: boolean; children: React.ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="my-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left hover:bg-amber-500/10 transition cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-amber-400/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
+        {running ? (
+          <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+        ) : null}
+        <span className="text-[0.7rem] font-medium text-amber-400/90">
+          Thinking{running ? "…" : ""}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="border-t border-amber-500/20 px-3 py-2 text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RawDebugTooltip({ data }: { data: unknown }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const rawJson = JSON.stringify(data, null, 2);
+  const displayText = rawJson.length > 2000 ? rawJson.slice(0, 2000) + "\n… (truncated)" : rawJson;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="rounded p-1 text-slate-500 hover:text-amber-400 transition cursor-pointer"
+        onClick={() => setOpen(!open)}
+        aria-label="View raw message"
+      >
+        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M8 5v0M8 7v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open ? (
+        <RawDebugPopover text={displayText} anchor={btnRef.current} onClose={() => setOpen(false)} />
+      ) : null}
+    </>
+  );
+}
+
+function RawDebugPopover({
+  text,
+  anchor,
+  onClose,
+}: {
+  text: string;
+  anchor: HTMLButtonElement | null;
+  onClose: () => void;
+}) {
+  const rect = anchor?.getBoundingClientRect();
+  const maxW = Math.min(window.innerWidth * 0.9, 28 * 16);
+  // Right-align to button, but clamp so panel stays in viewport
+  const rightEdge = rect ? window.innerWidth - rect.right : 8;
+  const left = Math.max(8, window.innerWidth - rightEdge - maxW);
+  const style: React.CSSProperties = rect
+    ? { position: "fixed", top: Math.min(rect.bottom + 4, window.innerHeight - 280), left, zIndex: 50, maxWidth: maxW }
+    : { position: "fixed", bottom: 8, right: 8, zIndex: 50, maxWidth: maxW };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        style={style}
+        className="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-slate-600/50 bg-slate-900 p-3 shadow-xl"
+      >
+        <pre className="text-[0.6rem] leading-relaxed text-slate-300 whitespace-pre-wrap break-all">
+          {text}
+        </pre>
+      </div>
+    </>
+  );
+}
+
 // ── SystemChatBubble: renders role:"system" messages (other types) ────
 // Distinct from assistant (slate) and user (cyan) — uses amber tint.
 // Shows raw message content for observation.
 function SystemChatBubble() {
+  const message = useMessage();
+  const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
         <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
           <MessagePrimitive.Parts />
         </div>
+      </div>
+      <div className="flex items-end gap-0.5 self-end">
+        {rawData ? <RawDebugTooltip data={rawData} /> : null}
       </div>
     </MessagePrimitive.Root>
   );
@@ -1024,8 +1129,6 @@ function ComposerWithInterrupt({
   projectName: string;
   sessionId: string;
 }) {
-  const composer = useComposerRuntime();
-  const isRunning = useThread((s) => s.isRunning);
   const { t } = useT();
 
   const descQuery = useQuery({
@@ -1067,13 +1170,6 @@ function ComposerWithInterrupt({
   }, [slashCommands, skills, descMap]);
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      if (!isRunning) composer.send();
-    }
-  };
-
   return (
     <div className="flex flex-col gap-2">
       <div className="relative">
@@ -1082,19 +1178,14 @@ function ComposerWithInterrupt({
           className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
           rows={1}
           enterKeyHint="send"
-          onKeyDown={handleKeyDown}
         />
-        {isRunning ? (
+        <AuiIf condition={(s) => s.thread.isRunning}>
           <div className="absolute inset-0 rounded-xl bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center">
-            <button
-              type="button"
-              className="rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-500 shadow-lg cursor-pointer"
-              onClick={() => composer.cancel()}
-            >
+            <ComposerPrimitive.Cancel className="rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-500 shadow-lg cursor-pointer">
               {t("session.stop")}
-            </button>
+            </ComposerPrimitive.Cancel>
           </div>
-        ) : null}
+        </AuiIf>
         {slashItems.length > 0 ? (
           <ComposerPrimitive.Unstable_TriggerPopover
             char="/"
@@ -1270,62 +1361,3 @@ function CompactIndicator() {
   );
 }
 
-function ReasoningDisplay({
-  part,
-}: {
-  part: {
-    estimatedTokens?: { value: number };
-    durationMs?: { value: number | null };
-    text?: string;
-  };
-}) {
-  const { text, status } = useMessagePartReasoning();
-  const [expanded, setExpanded] = useState(false);
-  const isRunning = status.type === "running";
-  const isComplete = status.type === "complete";
-  const isInterrupted = !isRunning && !isComplete;
-
-  const tokenCount = part.estimatedTokens?.value ?? 0;
-  const durationMs = part.durationMs?.value ?? 0;
-
-  const suffix = isRunning
-    ? tokenCount > 0
-      ? `… (${tokenCount} tokens)`
-      : "…"
-    : isComplete
-      ? formatThinkingMeta(tokenCount, durationMs)
-      : isInterrupted
-        ? " (interrupted)"
-        : "";
-
-  return (
-    <div className="my-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left hover:bg-amber-500/10 transition"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="text-amber-400/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
-        {isRunning ? (
-          <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-        ) : null}
-        <span className="text-[0.7rem] font-medium text-amber-400/90">Thinking{suffix}</span>
-      </button>
-      {expanded ? (
-        <div className="border-t border-amber-500/20 px-3 py-2">
-          <p className="text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">{text}</p>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function formatThinkingMeta(tokens: number, durationMs: number): string {
-  const parts: string[] = [];
-  if (tokens > 0) parts.push(`${tokens} tokens`);
-  if (durationMs > 0) {
-    const sec = (durationMs / 1000).toFixed(1);
-    parts.push(`${sec}s`);
-  }
-  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
-}

@@ -375,11 +375,11 @@ export type Claude2Attachment = {
   session_id?: string;
 };
 
-export type Claude2LastPrompt = {
-  type: "system";
-  subtype: "last_prompt";
-  text: string;
-  session_id?: string;
+export type Claude2LastPromptEntry = {
+  type: "last-prompt";
+  lastPrompt: string;
+  leafUuid?: string;
+  sessionId?: string;
 };
 
 export type Claude2UserMessage = {
@@ -410,6 +410,7 @@ export type Claude2TaskStarted = {
   agentType?: string;
   workflowName?: string;
   prompt?: string;
+  subject?: string;
   session_id?: string;
 };
 
@@ -579,7 +580,7 @@ export type SessionStreamServerMessage =
   | Claude2ApiRetry
   | Claude2Mode
   | Claude2Attachment
-  | Claude2LastPrompt
+  | Claude2LastPromptEntry
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage

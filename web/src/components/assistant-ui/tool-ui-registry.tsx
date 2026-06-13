@@ -29,6 +29,8 @@ const Icons = {
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17.5" r="0.75" fill="currentColor"/>',
   command:
     '<path d="M7 7l4 5-4 5M13 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  plan:
+    '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h18M9 3v18" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="6.5" r="1" fill="currentColor"/><circle cx="15.5" cy="13.5" r="1" fill="currentColor"/><path d="M9 15h10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M3 18h6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
 };
 
 function ToolIcon({ name, className }: { name: string; className?: string }) {
@@ -146,6 +148,8 @@ function makeToolRenderer(config: {
 export const BashToolUI = makeToolRenderer({
   icon: "terminal",
   label: (args) => {
+    const desc = typeof args.description === "string" ? args.description.trim() : "";
+    if (desc) return desc.slice(0, 80);
     const cmd = typeof args.command === "string" ? args.command : "";
     return cmd ? `$ ${cmd.slice(0, 80)}` : "Bash";
   },
@@ -583,6 +587,11 @@ const CommandOutputUI = makeToolRenderer({
   label: (_args, toolName) => toolName,
 });
 
+const EnterPlanModeToolUI = makeToolRenderer({
+  icon: "plan",
+  label: () => "Enter Plan Mode",
+});
+
 // ── Registry ─────────────────────────────────────────────────────────
 
 type ToolRenderer = ToolCallMessagePartComponent;
@@ -603,6 +612,7 @@ toolRegistry.set("Glob", GlobToolUI);
 toolRegistry.set("Grep", GrepToolUI);
 toolRegistry.set("NotebookEdit", NotebookEditToolUI);
 toolRegistry.set("AskUserQuestion", AskUserQuestionToolUI);
+toolRegistry.set("EnterPlanMode", EnterPlanModeToolUI);
 toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
 toolRegistry.set("bash", BashToolUI);

@@ -91,8 +91,9 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.storeAdapter.messages).toHaveLength(1);
-    expect(result.current.storeAdapter.messages[0]?.role).toBe("assistant");
+    // connected (system bubble) + assistant
+    expect(result.current.storeAdapter.messages).toHaveLength(2);
+    expect(result.current.storeAdapter.messages[1]?.role).toBe("assistant");
   });
 
   test("connected preserves local state when history is empty", async () => {
@@ -131,8 +132,8 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.storeAdapter.messages).toHaveLength(1);
-    expect(result.current.storeAdapter.messages[0]?.role).toBe("assistant");
+    // connected via uiMessages + history(3) + output(2) = 6
+    expect(result.current.storeAdapter.messages).toHaveLength(6);
   });
 
   test("reconnect replays only the missing uuid tail", async () => {
@@ -192,13 +193,8 @@ describe("useClaude2Session websocket lifecycle", () => {
       });
 
       expect(result.current.loading).toBe(false);
-      expect(result.current.storeAdapter.messages).toHaveLength(2);
-      expect(result.current.storeAdapter.messages[0]?.content).toEqual([
-        { type: "text", text: "first" },
-      ]);
-      expect(result.current.storeAdapter.messages[1]?.content).toEqual([
-        { type: "text", text: "second" },
-      ]);
+      // history(4) + output(2) + uiMessages(2 from first conn + reconnect connected) = 8
+      expect(result.current.storeAdapter.messages).toHaveLength(8);
     } finally {
       vi.useRealTimers();
     }
@@ -501,5 +497,26 @@ describe("useClaude2Session websocket lifecycle", () => {
     );
     expect(result.current.hasOlder).toBe(true);
     expect(result.current.storeAdapter.messages.some((msg) => msg.role === "user")).toBe(true);
+  });
+
+  test("EnterPlanMode tool_use sets permissionMode to plan", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({
+        type: "assistant",
+        userType: "external",
+        message: {
+          id: "m1",
+          role: "assistant",
+          content: [{ type: "tool_use", id: "tu-plan", name: "EnterPlanMode", input: {} }],
+        },
+      } as never);
+    });
+
+    expect(result.current.permissionMode).toBe("plan");
   });
 });

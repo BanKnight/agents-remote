@@ -22,6 +22,30 @@
 - 聊天记录以 Claude CLI 的 JSONL session 文件为唯一权威来源。不要自行"注入"或"伪造"消息；如果某条消息在 JSONL 中存在但 UI 没有显示，说明是渲染层过滤逻辑的问题。CLI 自身的 `isMeta: true/false` 分类是是否展示的第一手依据，不应以我们对 message type 的猜测替代。
 - **消息处理说明统一用 live/replay 双列表格**：凡是讨论消息类型如何处理、讨论渲染语义、设计数据流时，必须使用「实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI」四列格式。同一消息类型在实时流和回放两条路径上的行为必须明确区分，不得混为一谈。协议文档（`docs/research/claude-cli-stream-protocol.md`）中的 thinking 生命周期表格是标准模板。
 
+### 消息处理函数直接操作 state
+
+- 消息处理函数的职责是"收到一条消息，更新所有相关 state"，而非"返回转换结果让调用方去应用"。
+- 处理函数内部直接调用 state setter（`setMessagesState`、`setTasks` 等），不需要返回值、delta 对象或回调。
+- 可独立测试的转换逻辑（如 content block → UI part、tool_use → task op）抽取为独立的纯函数并导出；编排逻辑（"对这条消息调哪些纯函数、结果写哪个 state"）留在处理函数内部，通过集成测试覆盖。
+- 新增 state 类别时，在处理函数内部加一行 setter 调用即可，不需要改返回类型、调用方签名或 delta 结构。
+
+### 从语义出发设计和命名
+
+- 设计任何结构（函数、模块、状态、接口、数据流）时，先从语义出发：理解它在系统中扮演什么角色、属于哪个语义分类，再据此组织结构和命名，而不是从机械的操作步骤出发。
+- 命名要表达事物在系统中的**角色/语义**，而不是它**做了什么操作**。函数名应回答"这是什么"，而非"它执行了哪个动作"。
+- 当一段逻辑因为缺少上下文而无法完成其语义职责、不得不泄漏到外层打补丁时，根因是"语义不足 + 上下文传递不够"。正确做法是把该逻辑移到拥有上下文的位置，让它的语义边界自洽，而不是在外层堆判断。
+- 例：消息分发应先识别数据的语义分类（如 Claude CLI 的 `external` vs 非 external 消息），为每个分类设计一个拥有完整 state 上下文的 handler，分发层只做按语义分类的 dispatch，不直接调用通用转换函数；通用转换函数只能作为 building block 被 handler 调用。
+
+## assistant-ui
+
+This project uses assistant-ui for chat interfaces.
+Documentation: https://www.assistant-ui.com/llms-full.txt<br/>
+Key patterns:
+- Use AssistantRuntimeProvider at the app root
+- Thread component for full chat interface
+- AssistantModal for floating chat widget
+- useChatRuntime hook with AI SDK transport
+
 ## Claude2 Session 数据流调试指南
 
 Claude2 session 消息经过多层管道，排查问题时**必须逐层沿数据流方向检查**，而不是到处看代码猜原因。
