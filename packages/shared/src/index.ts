@@ -388,6 +388,23 @@ export type Claude2PermissionModeEntry = {
   session_id?: string;
 };
 
+export type Claude2TrackedFileBackup = {
+  backupFileName?: string;
+  version?: number;
+  backupTime?: string;
+};
+
+export type Claude2FileHistorySnapshot = {
+  type: "file-history-snapshot";
+  messageId?: string;
+  isSnapshotUpdate?: boolean;
+  snapshot?: {
+    messageId?: string;
+    timestamp?: string;
+    trackedFileBackups?: Record<string, Claude2TrackedFileBackup>;
+  };
+};
+
 export type Claude2UserMessage = {
   type: "user";
   message: {
@@ -588,6 +605,7 @@ export type SessionStreamServerMessage =
   | Claude2Attachment
   | Claude2LastPromptEntry
   | Claude2PermissionModeEntry
+  | Claude2FileHistorySnapshot
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage

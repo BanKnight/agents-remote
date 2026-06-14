@@ -467,6 +467,11 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
   if (msg.type === "last-prompt") {
     return { role: "user", content: msg.lastPrompt, metadata: meta };
   }
+  if (msg.type === "file-history-snapshot") {
+    const count = Object.keys(msg.snapshot?.trackedFileBackups ?? {}).length;
+    const text = `文件历史快照 · ${count} 个文件`;
+    return { role: "system", content: [{ type: "text", text }], metadata: meta };
+  }
   return { role: "system", content: [{ type: "text", text: raw }], metadata: meta };
 }
 

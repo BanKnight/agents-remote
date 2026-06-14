@@ -32,6 +32,7 @@ import {
   type RetryInfo,
   type TaskInfo,
 } from "./claude2-adapter";
+import type { Claude2FileHistorySnapshot } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -749,22 +750,116 @@ function RawDebugPopover({
 
 // ── SystemChatBubble: renders role:"system" messages (other types) ────
 // Distinct from assistant (slate) and user (cyan) — uses amber tint.
-// Shows raw message content for observation.
+// Detects known system-level types (file-history-snapshot) and renders a
+// structured view; falls back to raw text for observation.
 function SystemChatBubble() {
   const message = useMessage();
   const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
+  const fileSnapshot =
+    rawData && (rawData as { type?: string }).type === "file-history-snapshot"
+      ? (rawData as Claude2FileHistorySnapshot)
+      : null;
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
-        <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
-          <MessagePrimitive.Parts />
-        </div>
+        {fileSnapshot ? (
+          <FileHistorySnapshotView snapshot={fileSnapshot} />
+        ) : (
+          <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
+            <MessagePrimitive.Parts />
+          </div>
+        )}
       </div>
       <div className="flex items-end gap-0.5 self-end">
         {rawData ? <RawDebugTooltip data={rawData} /> : null}
       </div>
     </MessagePrimitive.Root>
   );
+}
+
+// file-history-snapshot: CLI's internal file-tracking checkpoint.
+// trackedFileBackups maps file path → { backupFileName, version, backupTime }.
+// Collapsible — defaults to collapsed since it is low-priority internal metadata.
+function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySnapshot }) {
+  const backups = snapshot.snapshot?.trackedFileBackups ?? {};
+  const entries = Object.entries(backups);
+  const isUpdate = snapshot.isSnapshotUpdate === true;
+  const ts = snapshot.snapshot?.timestamp;
+  const timeStr = ts ? formatSnapshotTime(ts) : null;
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="min-w-[14rem]">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 text-left hover:opacity-80 transition cursor-pointer"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="text-amber-300/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
+        <svg
+          className="h-3 w-3 shrink-0 text-amber-300/80"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M12 7v5l3 2"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="text-[0.7rem] font-medium text-amber-200/90">文件历史快照</span>
+        <span className="text-[0.6rem] text-amber-300/50">{entries.length} 个文件</span>
+        <span
+          className={`ml-auto rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
+            isUpdate
+              ? "bg-amber-600/30 text-amber-200/80"
+              : "bg-amber-700/30 text-amber-200/60"
+          }`}
+        >
+          {isUpdate ? "增量" : "完整"}
+        </span>
+      </button>
+      {expanded ? (
+        <>
+          {entries.length > 0 ? (
+            <div className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto border-t border-amber-700/20 pt-1.5">
+              {entries.map(([path, info]) => {
+                const version = typeof info?.version === "number" ? info.version : null;
+                return (
+                  <div key={path} className="flex items-center gap-2 text-[0.65rem]">
+                    <span className="truncate text-amber-200/70 break-all" title={path}>
+                      {path}
+                    </span>
+                    {version !== null ? (
+                      <span className="ml-auto shrink-0 rounded bg-amber-700/30 px-1 py-0.5 text-[0.55rem] font-semibold text-amber-200/80">
+                        v{version}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-1.5 border-t border-amber-700/20 pt-1.5 text-[0.65rem] text-amber-300/40">
+              无追踪文件
+            </p>
+          )}
+          {timeStr ? <p className="mt-1 text-[0.55rem] text-amber-300/40">{timeStr}</p> : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function formatSnapshotTime(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function ThreadViewportContent({
