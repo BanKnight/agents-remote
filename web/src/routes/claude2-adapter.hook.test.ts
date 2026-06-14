@@ -537,4 +537,31 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(result.current.permissionMode).toBe("acceptEdits");
     expect(result.current.storeAdapter.messages.length).toBe(before);
   });
+
+  test("ai-title and agent-name are state signals, produce no bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const before = result.current.storeAdapter.messages.length;
+    act(() => {
+      socket.emit({ type: "ai-title", aiTitle: "测试标题" } as never);
+    });
+    expect(result.current.aiTitle).toBe("测试标题");
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+
+    act(() => {
+      socket.emit({ type: "agent-name", agentName: "test-agent" } as never);
+    });
+    expect(result.current.agentName).toBe("test-agent");
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+
+    // Dedup: same value should not trigger re-render count change (react batches)
+    act(() => {
+      socket.emit({ type: "ai-title", aiTitle: "测试标题" } as never);
+    });
+    expect(result.current.aiTitle).toBe("测试标题");
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+  });
 });

@@ -262,6 +262,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     resolvedModel,
     modelSwitchVersion,
     permissionMode,
+    aiTitle,
+    agentName,
     loading,
     tasks,
     slashCommands,
@@ -435,6 +437,21 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                       />
                     </svg>
                   </ThreadPrimitive.ScrollToBottom>
+                  {aiTitle ? (
+                    <div
+                      className="pointer-events-auto absolute -top-8 right-14 z-10 max-w-[65%] select-none"
+                      title={aiTitle}
+                    >
+                      <span className="block truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.65rem] text-amber-300/80 whitespace-nowrap">
+                        {agentName ? (
+                          <span className="mr-1.5 text-[0.55rem] font-semibold text-amber-400/60">
+                            {agentName}
+                          </span>
+                        ) : null}
+                        {aiTitle}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <CompactIndicator />

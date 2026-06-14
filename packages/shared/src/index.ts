@@ -405,6 +405,18 @@ export type Claude2FileHistorySnapshot = {
   };
 };
 
+export type Claude2AiTitle = {
+  type: "ai-title";
+  aiTitle: string;
+  sessionId?: string;
+};
+
+export type Claude2AgentName = {
+  type: "agent-name";
+  agentName: string;
+  sessionId?: string;
+};
+
 export type Claude2UserMessage = {
   type: "user";
   message: {
@@ -606,6 +618,8 @@ export type SessionStreamServerMessage =
   | Claude2LastPromptEntry
   | Claude2PermissionModeEntry
   | Claude2FileHistorySnapshot
+  | Claude2AiTitle
+  | Claude2AgentName
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage

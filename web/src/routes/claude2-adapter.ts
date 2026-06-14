@@ -452,8 +452,11 @@ export function convertExternalToThreadLike(msg: SessionStreamServerMessage): Th
 // future sub-handlers.
 
 export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike | null {
-  if (msg.type === "permission-mode") {
-    // State signal, not a chat bubble. State is applied in handleInternalMessage.
+  if (
+    msg.type === "permission-mode" ||
+    msg.type === "ai-title" ||
+    msg.type === "agent-name"
+  ) {
     return null;
   }
   const raw = JSON.stringify(msg, null, 2);
@@ -788,6 +791,18 @@ export function useClaude2Session(
     if (msg.type === "permission-mode") {
       setPermissionMode(msg.permissionMode);
     }
+    if (msg.type === "ai-title") {
+      if (msg.aiTitle !== lastAiTitleRef.current) {
+        lastAiTitleRef.current = msg.aiTitle;
+        setAiTitle(msg.aiTitle);
+      }
+    }
+    if (msg.type === "agent-name") {
+      if (msg.agentName !== lastAgentNameRef.current) {
+        lastAgentNameRef.current = msg.agentName;
+        setAgentName(msg.agentName);
+      }
+    }
     const uiMessage = messageToThreadLike(msg);
     if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
   }, []);
@@ -821,6 +836,10 @@ export function useClaude2Session(
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, _setModelSwitchVersion] = useState(0);
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
+  const [aiTitle, setAiTitle] = useState<string | null>(null);
+  const [agentName, setAgentName] = useState<string | null>(null);
+  const lastAiTitleRef = useRef<string | null>(null);
+  const lastAgentNameRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (initialModel !== undefined && resolvedModel === undefined) {
@@ -1214,6 +1233,8 @@ export function useClaude2Session(
     resolvedModel,
     modelSwitchVersion,
     permissionMode,
+    aiTitle,
+    agentName,
     loading,
     tasks,
     slashCommands,
