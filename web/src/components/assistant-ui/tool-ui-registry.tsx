@@ -1,6 +1,7 @@
 import { useState, useContext, useEffect, type ReactNode } from "react";
 import { useComposerRuntime, type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
+import { CollapsibleSection } from "./collapsible-section";
 
 // Icon paths are inline SVG strings for simplicitly
 const Icons = {
@@ -56,7 +57,6 @@ function makeToolRenderer(config: {
 }): ToolCallMessagePartComponent {
   const { icon, label, badge, body } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
-    const [expanded, setExpanded] = useState(false);
     const isRunning = status.type === "running";
     const isError = (rest as Record<string, unknown>).isError === true;
     const resultStr =
@@ -73,91 +73,89 @@ function makeToolRenderer(config: {
       typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
 
     const accentColor = isError ? "text-red-400" : "text-cyan-400";
-    const accentBorder = isError ? "border-red-500/40" : "border-slate-600/50";
-    const accentBg = isError ? "bg-red-500/5" : "bg-slate-900/60";
     const accentDivider = isError ? "border-red-500/20" : "border-slate-700/50";
 
+    const bodyNode = body ? body(args) : null;
+    const primaryNode = bodyNode ? (
+      <div>{bodyNode}</div>
+    ) : hasArgs ? (
+      <div>
+        {Object.keys(args).length > 0 ? (
+          <div className="space-y-1.5">
+            {Object.entries(args).map(([key, value]) => (
+              <div key={key} className="flex gap-2 text-xs">
+                <span className="shrink-0 font-medium text-slate-400">{key}:</span>
+                <span className="text-slate-300 break-all">{formatArg(value)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <pre className="text-[0.6rem] text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
+            {argsText}
+          </pre>
+        )}
+      </div>
+    ) : null;
+    const hasPrimary = primaryNode !== null;
+    const hasContent = hasPrimary || Boolean(skillContent) || hasResult;
+    const sectionDivider = `mt-2 border-t pt-2 ${accentDivider}`;
+
     return (
-      <div className={`my-2 rounded-lg border ${accentBorder} ${accentBg} overflow-hidden`}>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-800/50 transition cursor-pointer"
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span className="text-slate-500 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
-          <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
-          {badgeText ? (
-            <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-slate-300">
-              {badgeText}
-            </span>
-          ) : null}
-          <span className={`text-xs font-medium truncate ${accentColor}`}>{displayLabel}</span>
-          {isRunning ? (
-            <span
-              className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
-            />
-          ) : null}
-          {isError && !expanded ? (
-            <span className="text-[0.6rem] text-red-400/70 ml-auto shrink-0">错误</span>
-          ) : hasResult && !expanded ? (
-            <span className="text-[0.6rem] text-slate-500 truncate ml-auto">
-              {resultStr.length > 1024
-                ? `${(resultStr.length / 1024).toFixed(1)}k`
-                : `${resultStr.length} chars`}
-            </span>
-          ) : null}
-        </button>
-        {expanded && (
+      <CollapsibleSection
+        className={`my-1 ${accentColor}`}
+        dividerClassName={accentDivider}
+        header={(expanded) => (
           <>
-            {(() => {
-              const bodyNode = body ? body(args) : null;
-              if (bodyNode) {
-                return <div className={`border-t ${accentDivider} px-3 py-2`}>{bodyNode}</div>;
-              }
-              if (hasArgs) {
-                return (
-                  <div className={`border-t ${accentDivider} px-3 py-2`}>
-                    {Object.keys(args).length > 0 ? (
-                      <div className="space-y-1.5">
-                        {Object.entries(args).map(([key, value]) => (
-                          <div key={key} className="flex gap-2 text-xs">
-                            <span className="shrink-0 font-medium text-slate-400">{key}:</span>
-                            <span className="text-slate-300 break-all">{formatArg(value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <pre className="text-[0.6rem] text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
-                        {argsText}
-                      </pre>
-                    )}
-                  </div>
-                );
-              }
-              return null;
-            })()}
+            <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
+            {badgeText ? (
+              <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-slate-300">
+                {badgeText}
+              </span>
+            ) : null}
+            <span className="text-xs font-medium truncate">{displayLabel}</span>
+            {isRunning ? (
+              <span
+                className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
+              />
+            ) : !expanded && isError ? (
+              <span className="ml-auto shrink-0 text-[0.6rem] text-red-400/70">错误</span>
+            ) : !expanded && hasResult ? (
+              <span className="ml-auto shrink-0 truncate text-[0.6rem] text-slate-500">
+                {resultStr.length > 1024
+                  ? `${(resultStr.length / 1024).toFixed(1)}k`
+                  : `${resultStr.length} chars`}
+              </span>
+            ) : null}
+          </>
+        )}
+      >
+        {hasContent ? (
+          <>
+            {primaryNode}
             {skillContent ? (
-              <div className={`border-t ${accentDivider} px-3 py-2`}>
-                <span className="text-[0.55rem] font-semibold text-purple-400/70 uppercase tracking-wide">
+              <div className={hasPrimary ? sectionDivider : ""}>
+                <span className="text-[0.55rem] font-semibold uppercase tracking-wide text-purple-400/70">
                   Skill
                 </span>
-                <pre className="text-[0.6rem] text-purple-200/80 whitespace-pre-wrap break-all leading-relaxed mt-1">
+                <pre className="mt-1 text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-purple-200/80">
                   {skillContent}
                 </pre>
               </div>
             ) : null}
             {hasResult ? (
-              <div className={`border-t ${accentDivider} px-3 py-2 max-h-48 overflow-y-auto`}>
+              <div
+                className={`max-h-48 overflow-y-auto ${hasPrimary || skillContent ? sectionDivider : ""}`}
+              >
                 <pre
-                  className={`text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed ${isError ? "text-red-300" : "text-slate-300"}`}
+                  className={`whitespace-pre-wrap break-all text-[0.6rem] leading-relaxed ${isError ? "text-red-300" : "text-slate-300"}`}
                 >
                   {resultStr}
                 </pre>
               </div>
             ) : null}
           </>
-        )}
-      </div>
+        ) : null}
+      </CollapsibleSection>
     );
   };
 }
