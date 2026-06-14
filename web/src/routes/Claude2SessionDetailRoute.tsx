@@ -26,6 +26,7 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
+import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import {
   Claude2BridgeContext,
   useClaude2Session,
@@ -663,28 +664,35 @@ function AssistantChatBubble() {
 }
 
 function ReasoningGroup({ running, children }: { running: boolean; children: React.ReactNode }) {
-  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="my-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left hover:bg-amber-500/10 transition cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="text-amber-400/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
-        {running ? (
-          <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-        ) : null}
-        <span className="text-[0.7rem] font-medium text-amber-400/90">
-          Thinking{running ? "…" : ""}
-        </span>
-      </button>
-      {expanded ? (
-        <div className="border-t border-amber-500/20 px-3 py-2 text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">
-          {children}
-        </div>
-      ) : null}
-    </div>
+    <CollapsibleSection
+      className="my-1 text-amber-400/90"
+      dividerClassName="border-amber-700/20"
+      header={
+        <>
+          <svg
+            className="h-3 w-3 shrink-0 text-amber-300/80"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 2a6 6 0 00-3.8 10.6c.5.4.8 1 .8 1.7v.7h6v-.7c0-.7.3-1.3.8-1.7A6 6 0 0012 2z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+            <path d="M9 18h6M10 21h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          {running ? (
+            <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+          ) : null}
+          <span className="text-[0.7rem] font-medium">Thinking{running ? "…" : ""}</span>
+        </>
+      }
+    >
+      <div className="text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">{children}</div>
+    </CollapsibleSection>
   );
 }
 
@@ -779,79 +787,71 @@ function SystemChatBubble() {
 
 // file-history-snapshot: CLI's internal file-tracking checkpoint.
 // trackedFileBackups maps file path → { backupFileName, version, backupTime }.
-// Collapsible — defaults to collapsed since it is low-priority internal metadata.
 function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySnapshot }) {
   const backups = snapshot.snapshot?.trackedFileBackups ?? {};
   const entries = Object.entries(backups);
   const isUpdate = snapshot.isSnapshotUpdate === true;
   const ts = snapshot.snapshot?.timestamp;
   const timeStr = ts ? formatSnapshotTime(ts) : null;
-  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="min-w-[14rem]">
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 text-left hover:opacity-80 transition cursor-pointer"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <span className="text-amber-300/70 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
-        <svg
-          className="h-3 w-3 shrink-0 text-amber-300/80"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-          <path
-            d="M12 7v5l3 2"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="text-[0.7rem] font-medium text-amber-200/90">文件历史快照</span>
-        <span className="text-[0.6rem] text-amber-300/50">{entries.length} 个文件</span>
-        <span
-          className={`ml-auto rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
-            isUpdate
-              ? "bg-amber-600/30 text-amber-200/80"
-              : "bg-amber-700/30 text-amber-200/60"
-          }`}
-        >
-          {isUpdate ? "增量" : "完整"}
-        </span>
-      </button>
-      {expanded ? (
+    <CollapsibleSection
+      className="min-w-[14rem] text-amber-200/90"
+      dividerClassName="border-amber-700/20"
+      header={
         <>
-          {entries.length > 0 ? (
-            <div className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto border-t border-amber-700/20 pt-1.5">
-              {entries.map(([path, info]) => {
-                const version = typeof info?.version === "number" ? info.version : null;
-                return (
-                  <div key={path} className="flex items-center gap-2 text-[0.65rem]">
-                    <span className="truncate text-amber-200/70 break-all" title={path}>
-                      {path}
-                    </span>
-                    {version !== null ? (
-                      <span className="ml-auto shrink-0 rounded bg-amber-700/30 px-1 py-0.5 text-[0.55rem] font-semibold text-amber-200/80">
-                        v{version}
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="mt-1.5 border-t border-amber-700/20 pt-1.5 text-[0.65rem] text-amber-300/40">
-              无追踪文件
-            </p>
-          )}
-          {timeStr ? <p className="mt-1 text-[0.55rem] text-amber-300/40">{timeStr}</p> : null}
+          <svg
+            className="h-3 w-3 shrink-0 text-amber-300/80"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+            <path
+              d="M12 7v5l3 2"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="text-[0.7rem] font-medium">文件历史快照</span>
+          <span className="text-[0.6rem] text-amber-300/50">{entries.length} 个文件</span>
+          <span
+            className={`ml-auto rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
+              isUpdate
+                ? "bg-amber-600/30 text-amber-200/80"
+                : "bg-amber-700/30 text-amber-200/60"
+            }`}
+          >
+            {isUpdate ? "增量" : "完整"}
+          </span>
         </>
-      ) : null}
-    </div>
+      }
+    >
+      {entries.length > 0 ? (
+        <div className="max-h-40 space-y-0.5 overflow-y-auto">
+          {entries.map(([path, info]) => {
+            const version = typeof info?.version === "number" ? info.version : null;
+            return (
+              <div key={path} className="flex items-center gap-2 text-[0.65rem]">
+                <span className="truncate text-amber-200/70 break-all" title={path}>
+                  {path}
+                </span>
+                {version !== null ? (
+                  <span className="ml-auto shrink-0 rounded bg-amber-700/30 px-1 py-0.5 text-[0.55rem] font-semibold text-amber-200/80">
+                    v{version}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-[0.65rem] text-amber-300/40">无追踪文件</p>
+      )}
+      {timeStr ? <p className="mt-1 text-[0.55rem] text-amber-300/40">{timeStr}</p> : null}
+    </CollapsibleSection>
   );
 }
 
