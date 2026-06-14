@@ -31,6 +31,8 @@ const Icons = {
     '<path d="M7 7l4 5-4 5M13 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   plan:
     '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h18M9 3v18" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="6.5" r="1" fill="currentColor"/><circle cx="15.5" cy="13.5" r="1" fill="currentColor"/><path d="M9 15h10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M3 18h6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
+  agent:
+    '<circle cx="6" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="17" cy="17" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8l7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
 };
 
 function ToolIcon({ name, className }: { name: string; className?: string }) {
@@ -49,9 +51,10 @@ function ToolIcon({ name, className }: { name: string; className?: string }) {
 function makeToolRenderer(config: {
   icon: string;
   label?: (args: Record<string, unknown>, toolName: string) => string;
+  badge?: (args: Record<string, unknown>, toolName: string) => string | null;
   body?: (args: Record<string, unknown>) => ReactNode | null;
 }): ToolCallMessagePartComponent {
-  const { icon, label, body } = config;
+  const { icon, label, badge, body } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
     const [expanded, setExpanded] = useState(false);
     const isRunning = status.type === "running";
@@ -61,6 +64,7 @@ function makeToolRenderer(config: {
     const hasResult = resultStr.length > 0 && !isRunning;
     const args = safeParseArgs(argsText);
     const displayLabel = label ? label(args, toolName) : toolName;
+    const badgeText = badge ? badge(args, toolName) : null;
     const hasArgs = argsText.length > 0 && argsText !== "{}";
     const metadata = (rest as Record<string, unknown>).metadata as
       | Record<string, unknown>
@@ -82,6 +86,11 @@ function makeToolRenderer(config: {
         >
           <span className="text-slate-500 text-[0.6rem] shrink-0">{expanded ? "▾" : "▸"}</span>
           <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
+          {badgeText ? (
+            <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-slate-300">
+              {badgeText}
+            </span>
+          ) : null}
           <span className={`text-xs font-medium truncate ${accentColor}`}>{displayLabel}</span>
           {isRunning ? (
             <span
@@ -236,6 +245,18 @@ function editDiffBody(args: Record<string, unknown>): ReactNode {
   );
 }
 
+// Body for Agent tool: prompt is the detailed instruction sent to the sub-agent.
+// subagent_type + description already live in the header, so the body shows only prompt.
+function agentBody(args: Record<string, unknown>): ReactNode {
+  const prompt = typeof args.prompt === "string" ? args.prompt : "";
+  if (!prompt) return null;
+  return (
+    <pre className="text-[0.65rem] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+      {prompt}
+    </pre>
+  );
+}
+
 // ── Tool-specific renderers ──────────────────────────────────────────
 
 export const BashToolUI = makeToolRenderer({
@@ -292,6 +313,19 @@ export const TaskToolUI = makeToolRenderer({
           : "";
     return desc ? desc.slice(0, 80) : "Task";
   },
+});
+
+export const AgentToolUI = makeToolRenderer({
+  icon: "agent",
+  badge: (args) => {
+    const type = typeof args.subagent_type === "string" ? args.subagent_type.trim() : "";
+    return type || null;
+  },
+  label: (args) => {
+    const desc = typeof args.description === "string" ? args.description.trim() : "";
+    return desc ? desc.slice(0, 80) : "Agent";
+  },
+  body: agentBody,
 });
 
 export const WebSearchToolUI = makeToolRenderer({
@@ -700,6 +734,7 @@ toolRegistry.set("Edit", EditToolUI);
 toolRegistry.set("MultiEdit", EditToolUI);
 toolRegistry.set("Skill", SkillToolUI);
 toolRegistry.set("Task", TaskToolUI);
+toolRegistry.set("Agent", AgentToolUI);
 toolRegistry.set("WebSearch", WebSearchToolUI);
 toolRegistry.set("WebFetch", WebFetchToolUI);
 toolRegistry.set("Glob", GlobToolUI);
@@ -710,6 +745,7 @@ toolRegistry.set("EnterPlanMode", EnterPlanModeToolUI);
 toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
 toolRegistry.set("bash", BashToolUI);
+toolRegistry.set("agent", AgentToolUI);
 
 export function getToolRenderer(toolName: string): ToolRenderer | undefined {
   // Exact match first
