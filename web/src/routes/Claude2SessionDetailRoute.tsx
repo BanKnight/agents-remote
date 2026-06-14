@@ -437,21 +437,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                       />
                     </svg>
                   </ThreadPrimitive.ScrollToBottom>
-                  {aiTitle ? (
-                    <div
-                      className="pointer-events-auto absolute -top-8 right-14 z-10 max-w-[65%] select-none"
-                      title={aiTitle}
-                    >
-                      <span className="block truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.65rem] text-amber-300/80 whitespace-nowrap">
-                        {agentName ? (
-                          <span className="mr-1.5 text-[0.55rem] font-semibold text-amber-400/60">
-                            {agentName}
-                          </span>
-                        ) : null}
-                        {aiTitle}
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
 
                 <CompactIndicator />
@@ -477,6 +462,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                         skills={skills}
                         projectName={projectName}
                         sessionId={sessionId}
+                        aiTitle={aiTitle}
+                        agentName={agentName}
                       />
                     </ComposerPrimitive.Root>
                   </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -1234,6 +1221,8 @@ function ComposerWithInterrupt({
   skills,
   projectName,
   sessionId,
+  aiTitle,
+  agentName,
 }: {
   currentModel?: string;
   currentResolved?: string;
@@ -1245,6 +1234,8 @@ function ComposerWithInterrupt({
   skills: string[];
   projectName: string;
   sessionId: string;
+  aiTitle?: string | null;
+  agentName?: string | null;
 }) {
   const { t } = useT();
 
@@ -1373,6 +1364,19 @@ function ComposerWithInterrupt({
           currentMode={permissionMode}
           availableModes={availablePermissionModes}
         />
+        {aiTitle ? (
+          <span
+            className="ml-auto max-w-[50%] select-none truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.65rem] text-amber-300/80 whitespace-nowrap"
+            title={aiTitle}
+          >
+            {agentName ? (
+              <span className="mr-1.5 text-[0.55rem] font-semibold text-amber-400/60">
+                {agentName}
+              </span>
+            ) : null}
+            {aiTitle}
+          </span>
+        ) : null}
       </div>
     </div>
   );
