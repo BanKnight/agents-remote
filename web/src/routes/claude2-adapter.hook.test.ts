@@ -132,8 +132,9 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(false);
-    // connected via uiMessages + history(3) + output(2) = 6
-    expect(result.current.storeAdapter.messages).toHaveLength(6);
+    // connected(1 system) + assistant(1) + history divider(1 system) = 3
+    // (markers are no longer rendered as raw bubbles)
+    expect(result.current.storeAdapter.messages).toHaveLength(3);
   });
 
   test("reconnect replays only the missing uuid tail", async () => {
@@ -193,8 +194,9 @@ describe("useClaude2Session websocket lifecycle", () => {
       });
 
       expect(result.current.loading).toBe(false);
-      // history(4) + output(2) + uiMessages(2 from first conn + reconnect connected) = 8
-      expect(result.current.storeAdapter.messages).toHaveLength(8);
+      // first conn assistant(1) + reconnect connected(1 system) + history assistants(2) + history divider(1 system) = 5
+      // (markers are no longer rendered as raw bubbles; output batch is empty → no divider)
+      expect(result.current.storeAdapter.messages).toHaveLength(5);
     } finally {
       vi.useRealTimers();
     }
@@ -867,5 +869,85 @@ describe("useClaude2Session API error handling", () => {
     // connected + assistant = 2
     expect(getMessages(result)).toHaveLength(2);
     expect(getMessages(result)[1]?.role).toBe("assistant");
+  });
+});
+
+describe("useClaude2Session batch marker rendering", () => {
+  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+    result.current.storeAdapter.messages;
+
+  test("empty history batch: no messages, no divider", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit({ type: "history_start", count: 0 } as never);
+      socket.emit({ type: "history_end" } as never);
+    });
+
+    // connected only; neither marker renders; no divider (empty batch)
+    expect(getMessages(result)).toHaveLength(1);
+  });
+
+  test("empty output batch: no divider", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit({ type: "output_start", count: 0 } as never);
+      socket.emit({ type: "output_end" } as never);
+    });
+
+    // connected only; no divider
+    expect(getMessages(result)).toHaveLength(1);
+  });
+
+  test("history batch with visible assistant → divider after batch", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit({ type: "history_start", count: 1 });
+      socket.emit({
+        type: "assistant",
+        message: { id: "a1", role: "assistant", content: [{ type: "text", text: "hello" }] },
+      } as never);
+      socket.emit({ type: "history_end" });
+    });
+
+    const msgs = getMessages(result);
+    // connected + assistant + divider = 3
+    expect(msgs).toHaveLength(3);
+    const last = msgs[msgs.length - 1];
+    expect((last?.metadata?.custom as Record<string, unknown>)?.systemMessageType).toBe(
+      "batch-boundary",
+    );
+  });
+
+  test("output batch with only queue-operation: no divider", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit({ type: "output_start", count: 1 } as never);
+      socket.emit({ type: "queue-operation", operation: "enqueue", content: "/help" } as never);
+      socket.emit({ type: "output_end" } as never);
+    });
+
+    // connected only; queue-operation is a side-effect, no visible bubble
+    expect(getMessages(result)).toHaveLength(1);
+    expect(result.current.inputQueue).toHaveLength(1);
   });
 });

@@ -700,6 +700,15 @@ export function drainPendingErrors(
   return { messages: current, remaining };
 }
 
+/** Build a thin horizontal divider for a batch boundary (history or output). */
+export function makeBoundaryDivider(kind: "history" | "output"): ThreadMessageLike {
+  return {
+    role: "system",
+    content: [{ type: "text", text: "" }],
+    metadata: { custom: { systemMessageType: "batch-boundary", batchBoundary: kind } },
+  };
+}
+
 // ── messageToThreadLike ──────────────────────────────────────────────
 // Simple mapping: one raw message → one ThreadMessageLike bubble.
 // Does NOT do grouping, tool matching, dedup, or filtering.
@@ -711,7 +720,11 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "permission-mode" ||
     msg.type === "ai-title" ||
     msg.type === "agent-name" ||
-    msg.type === "queue-operation"
+    msg.type === "queue-operation" ||
+    msg.type === "history_start" ||
+    msg.type === "history_end" ||
+    msg.type === "output_start" ||
+    msg.type === "output_end"
   ) {
     return null;
   }
@@ -1030,6 +1043,9 @@ export function useClaude2Session(
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const outputBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
+  // Tracks whether the current batch (since last *_start) contains visible content.
+  // Reset on *_start; flipped true when a visible bubble is appended; checked at *_end.
+  const currentBatchHasContentRef = useRef(false);
 
   // All external-message side effects in one place.
   // API errors are intercepted before convert — they attach to parent bubbles,
@@ -1050,6 +1066,7 @@ export function useClaude2Session(
 
     const uiMessage = convertExternalToThreadLike(msg);
     if (uiMessage) {
+      currentBatchHasContentRef.current = true;
       setMessagesState((prev) => {
         let next = [...prev, uiMessage];
         if (pendingApiErrorsRef.current.length > 0) {
@@ -1094,6 +1111,7 @@ export function useClaude2Session(
     }
     const uiMessage = messageToThreadLike(msg);
     if (uiMessage) {
+      currentBatchHasContentRef.current = true;
       const enriched = enrichBubbleMetadata(uiMessage);
       setMessagesState((prev) => {
         let next = [...prev, enriched];
@@ -1201,6 +1219,7 @@ export function useClaude2Session(
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
     pendingApiErrorsRef.current = [];
+    currentBatchHasContentRef.current = false;
   }, [initialModel, initialPermissionMode]);
 
   // Countdown timer for retry
@@ -1380,8 +1399,12 @@ export function useClaude2Session(
         console.log("[claude2-adapter] ws recv", msg);
 
         // ── Batch markers ────────────────────────────────────────────
+        // Start markers are transport control — never render.
+        // End markers render as a horizontal divider only when the
+        // batch contained at least one visible content bubble.
         if (msg.type === "history_start") {
-          historyBatchRef.current = [msg];
+          historyBatchRef.current = [];
+          currentBatchHasContentRef.current = false;
           // Queue-operation has no uuid dedup; clear on replay to avoid double-application on reconnect
           setInputQueue([]);
           setLoading(true);
@@ -1390,23 +1413,30 @@ export function useClaude2Session(
           return;
         }
         if (msg.type === "history_end") {
-          historyBatchRef.current?.push(msg);
           const batch = historyBatchRef.current ?? [];
           historyBatchRef.current = null;
           processBatch(batch);
+          if (currentBatchHasContentRef.current) {
+            setMessagesState((prev) => [...prev, makeBoundaryDivider("history")]);
+          }
+          currentBatchHasContentRef.current = false;
           console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
           return;
         }
         if (msg.type === "output_start") {
-          outputBatchRef.current = [msg];
+          outputBatchRef.current = [];
+          currentBatchHasContentRef.current = false;
           console.log("[claude2-adapter] output batch start, count=", msg.count);
           return;
         }
         if (msg.type === "output_end") {
-          outputBatchRef.current?.push(msg);
           const batch = outputBatchRef.current ?? [];
           outputBatchRef.current = null;
           processBatch(batch);
+          if (currentBatchHasContentRef.current) {
+            setMessagesState((prev) => [...prev, makeBoundaryDivider("output")]);
+          }
+          currentBatchHasContentRef.current = false;
           setLoading(false);
           console.log("[claude2-adapter] output batch end, processed", batch.length, "messages");
           return;

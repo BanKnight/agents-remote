@@ -847,7 +847,19 @@ function RawDebugPopover({
 // structured view; falls back to raw text for observation.
 function SystemChatBubble() {
   const message = useMessage();
-  const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
+  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const systemMessageType = custom?.systemMessageType as string | undefined;
+
+  // Batch boundary divider: thin horizontal line, no bubble, no debug tooltip.
+  if (systemMessageType === "batch-boundary") {
+    return (
+      <MessagePrimitive.Root className="flex w-full px-3 sm:px-5 py-1.5">
+        <div className="w-full border-t border-slate-700/50" />
+      </MessagePrimitive.Root>
+    );
+  }
+
+  const rawData = custom?._raw;
   const fileSnapshot =
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
       ? (rawData as Claude2FileHistorySnapshot)

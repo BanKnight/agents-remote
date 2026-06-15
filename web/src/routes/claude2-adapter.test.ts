@@ -24,6 +24,7 @@ import {
   attachErrorToBubble,
   attachApiErrorToMessages,
   drainPendingErrors,
+  makeBoundaryDivider,
 } from "./claude2-adapter";
 import type { ApiErrorAttachment, QueueEntry } from "./claude2-adapter";
 
@@ -1765,6 +1766,42 @@ describe("attachApiErrorToMessages", () => {
     const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
     const err = (custom.apiErrors as ApiErrorAttachment[])[0];
     expect(err.resolution).toBe("ancestor");
+  });
+});
+
+// ── Boundary divider helpers ─────────────────────────────────────────
+
+const marker = (type: string): SessionStreamServerMessage =>
+  ({ type }) as SessionStreamServerMessage;
+
+describe("messageToThreadLike batch markers", () => {
+  test("history_start → null", () => {
+    expect(messageToThreadLike(marker("history_start"))).toBeNull();
+  });
+  test("history_end → null", () => {
+    expect(messageToThreadLike(marker("history_end"))).toBeNull();
+  });
+  test("output_start → null", () => {
+    expect(messageToThreadLike(marker("output_start"))).toBeNull();
+  });
+  test("output_end → null", () => {
+    expect(messageToThreadLike(marker("output_end"))).toBeNull();
+  });
+});
+
+describe("makeBoundaryDivider", () => {
+  test("returns system role with boundary metadata", () => {
+    const d = makeBoundaryDivider("history");
+    expect(d.role).toBe("system");
+    const custom = d.metadata?.custom as Record<string, unknown>;
+    expect(custom.systemMessageType).toBe("batch-boundary");
+    expect(custom.batchBoundary).toBe("history");
+  });
+
+  test("output kind is preserved", () => {
+    const d = makeBoundaryDivider("output");
+    const custom = d.metadata?.custom as Record<string, unknown>;
+    expect(custom.batchBoundary).toBe("output");
   });
 });
 
