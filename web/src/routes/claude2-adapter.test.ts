@@ -11,7 +11,10 @@ import {
   extractTaskOps,
   hasToolUseNamed,
   messageToThreadLike,
+  deriveQueueSource,
+  applyQueueOperation,
 } from "./claude2-adapter";
+import type { QueueEntry } from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -363,7 +366,14 @@ describe("message processing building blocks", () => {
       message: {
         id: "m1",
         role: "assistant",
-        content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "short title", description: "detailed description" } }],
+        content: [
+          {
+            type: "tool_use",
+            id: "tu-1",
+            name: "TaskCreate",
+            input: { subject: "short title", description: "detailed description" },
+          },
+        ],
       },
     } as unknown as SessionStreamServerMessage;
     const ops = extractTaskOps(msg);
@@ -382,7 +392,9 @@ describe("message processing building blocks", () => {
       message: {
         id: "m1",
         role: "assistant",
-        content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "do thing" } }],
+        content: [
+          { type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "do thing" } },
+        ],
       },
     } as unknown as SessionStreamServerMessage;
     const updateMsg = {
@@ -391,7 +403,14 @@ describe("message processing building blocks", () => {
       message: {
         id: "m2",
         role: "assistant",
-        content: [{ type: "tool_use", id: "tu-2", name: "TaskUpdate", input: { taskId: "1", status: "completed" } }],
+        content: [
+          {
+            type: "tool_use",
+            id: "tu-2",
+            name: "TaskUpdate",
+            input: { taskId: "1", status: "completed" },
+          },
+        ],
       },
     } as unknown as SessionStreamServerMessage;
 
@@ -411,18 +430,32 @@ describe("message processing building blocks", () => {
       message: {
         id: "m2",
         role: "assistant",
-        content: [{ type: "tool_use", id: "tu-2", name: "TaskUpdate", input: { taskId: "99", status: "completed" } }],
+        content: [
+          {
+            type: "tool_use",
+            id: "tu-2",
+            name: "TaskUpdate",
+            input: { taskId: "99", status: "completed" },
+          },
+        ],
       },
     } as unknown as SessionStreamServerMessage;
     const ops = extractTaskOps(updateMsg);
-    const tasks = ops.reduce(applyTaskSystemMessage, [] as ReturnType<typeof applyTaskSystemMessage>);
+    const tasks = ops.reduce(
+      applyTaskSystemMessage,
+      [] as ReturnType<typeof applyTaskSystemMessage>,
+    );
     expect(tasks).toHaveLength(0);
   });
 
   test("extractTaskOps returns empty for non-external", () => {
     const msg = {
       type: "assistant",
-      message: { id: "m1", role: "assistant", content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: {} }] },
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: {} }],
+      },
     } as unknown as SessionStreamServerMessage;
     expect(extractTaskOps(msg)).toEqual([]);
   });
@@ -444,16 +477,26 @@ describe("message processing building blocks", () => {
   test("hasToolUseNamed returns false for non-external", () => {
     const msg = {
       type: "assistant",
-      message: { id: "m1", role: "assistant", content: [{ type: "tool_use", id: "tu-1", name: "EnterPlanMode", input: {} }] },
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "EnterPlanMode", input: {} }],
+      },
     } as unknown as SessionStreamServerMessage;
     expect(hasToolUseNamed(msg, "EnterPlanMode")).toBe(false);
   });
 
   test("messageToThreadLike converts all message types", () => {
-    const assistant = { type: "assistant", message: { id: "a1", role: "assistant", content: [] } } as unknown as SessionStreamServerMessage;
+    const assistant = {
+      type: "assistant",
+      message: { id: "a1", role: "assistant", content: [] },
+    } as unknown as SessionStreamServerMessage;
     expect(messageToThreadLike(assistant).role).toBe("assistant");
 
-    const user = { type: "user", message: { role: "user", content: [] } } as unknown as SessionStreamServerMessage;
+    const user = {
+      type: "user",
+      message: { role: "user", content: [] },
+    } as unknown as SessionStreamServerMessage;
     expect(messageToThreadLike(user).role).toBe("user");
 
     const system = { type: "system", subtype: "init" } as unknown as SessionStreamServerMessage;
@@ -1225,7 +1268,12 @@ describe("task system state", () => {
   test("applyTaskSystemMessage assigns sequential id when task_started has no id", () => {
     const noId = { type: "system", subtype: "task_started", task_id: "", prompt: "first" } as never;
     expect(applyTaskSystemMessage([], noId)[0]).toMatchObject({ id: "1", description: "first" });
-    const noId2 = { type: "system", subtype: "task_started", task_id: "", prompt: "second" } as never;
+    const noId2 = {
+      type: "system",
+      subtype: "task_started",
+      task_id: "",
+      prompt: "second",
+    } as never;
     const after = applyTaskSystemMessage(applyTaskSystemMessage([], noId), noId2);
     expect(after[1]).toMatchObject({ id: "2", description: "second" });
   });
@@ -1235,9 +1283,9 @@ describe("task system state", () => {
     expect(
       applyTaskSystemMessage([], taskUpdated("task-5", { isBackgrounded: true }) as never),
     ).toEqual([]);
-    expect(
-      applyTaskSystemMessage([], taskUpdated("task-6", { error: "failed" }) as never),
-    ).toEqual([]);
+    expect(applyTaskSystemMessage([], taskUpdated("task-6", { error: "failed" }) as never)).toEqual(
+      [],
+    );
   });
 
   test("applyTaskSystemMessage skips task_notification for unknown id (no orphan)", () => {
@@ -1245,5 +1293,139 @@ describe("task system state", () => {
     expect(
       applyTaskSystemMessage([], taskNotification("task-8", { text: "done" }) as never),
     ).toEqual([]);
+  });
+});
+
+// ── Queue-operation helpers ──────────────────────────────────────────
+
+describe("queue-operation helpers", () => {
+  describe("deriveQueueSource", () => {
+    test("undefined / empty / plain text / slash commands → user", () => {
+      expect(deriveQueueSource(undefined)).toBe("user");
+      expect(deriveQueueSource("")).toBe("user");
+      expect(deriveQueueSource("/model")).toBe("user");
+      expect(deriveQueueSource("/model opusplan")).toBe("user");
+      expect(deriveQueueSource("普通用户文本")).toBe("user");
+    });
+
+    test("<3 (not XML) → user", () => {
+      expect(deriveQueueSource("<3 you")).toBe("user");
+      expect(deriveQueueSource("<<EOF")).toBe("user");
+    });
+
+    test("XML elements → assistant", () => {
+      expect(
+        deriveQueueSource("<task-notification>\n<task-id>a1</task-id>\n</task-notification>"),
+      ).toBe("assistant");
+      expect(deriveQueueSource("<local-command-stdout>ok</local-command-stdout>")).toBe(
+        "assistant",
+      );
+    });
+
+    test("self-closing XML → assistant", () => {
+      expect(deriveQueueSource("<br/>")).toBe("assistant");
+      expect(deriveQueueSource('<img src="x" />')).toBe("assistant");
+    });
+
+    test("multiline XML → assistant", () => {
+      const xml = `<task-notification>
+<task-id>a122c801a46ab5746</task-id>
+<tool-use-id>call_03_bVTcgN1qLQLkHuVtsZgo6322</tool-use-id>
+<output-file>/tmp/claude-1000/...</output-file>
+</task-notification>`;
+      expect(deriveQueueSource(xml)).toBe("assistant");
+    });
+  });
+
+  describe("applyQueueOperation", () => {
+    const entry = (content: string, source: "user" | "assistant"): QueueEntry => ({
+      content,
+      source,
+    });
+
+    test("enqueue with content → push tail, derived source", () => {
+      const r = applyQueueOperation([], {
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "/model opusplan",
+      });
+      expect(r).toEqual([entry("/model opusplan", "user")]);
+    });
+
+    test("enqueue XML content → assistant source", () => {
+      const r = applyQueueOperation([], {
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "<task-notification><task-id>a1</task-id></task-notification>",
+      });
+      expect(r).toEqual([
+        entry("<task-notification><task-id>a1</task-id></task-notification>", "assistant"),
+      ]);
+    });
+
+    test("enqueue without content → empty user entry", () => {
+      const r = applyQueueOperation([], {
+        type: "queue-operation",
+        operation: "enqueue",
+      });
+      expect(r).toEqual([entry("", "user")]);
+    });
+
+    test("dequeue → shift head (FIFO)", () => {
+      const state = [entry("A", "user"), entry("B", "user")];
+      const r = applyQueueOperation(state, {
+        type: "queue-operation",
+        operation: "dequeue",
+      });
+      expect(r).toEqual([entry("B", "user")]);
+    });
+
+    test("remove → pop tail (LIFO)", () => {
+      const state = [entry("A", "user"), entry("B", "user")];
+      const r = applyQueueOperation(state, {
+        type: "queue-operation",
+        operation: "remove",
+      });
+      expect(r).toEqual([entry("A", "user")]);
+    });
+
+    test("popAll → clear", () => {
+      const state = [entry("A", "user"), entry("B", "user")];
+      const r = applyQueueOperation(state, {
+        type: "queue-operation",
+        operation: "popAll",
+      });
+      expect(r).toEqual([]);
+    });
+
+    test("dequeue on empty → []", () => {
+      expect(applyQueueOperation([], { type: "queue-operation", operation: "dequeue" })).toEqual(
+        [],
+      );
+    });
+
+    test("remove on empty → []", () => {
+      expect(applyQueueOperation([], { type: "queue-operation", operation: "remove" })).toEqual([]);
+    });
+
+    test("sequence: enqueue A, enqueue B, dequeue → [B]; remove → [A] (LIFO assertion)", () => {
+      let state: QueueEntry[] = [];
+      state = applyQueueOperation(state, {
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "A",
+      });
+      state = applyQueueOperation(state, {
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "B",
+      });
+      // dequeue = FIFO shift head → A removed
+      state = applyQueueOperation(state, { type: "queue-operation", operation: "dequeue" });
+      expect(state).toEqual([entry("B", "user")]);
+      // remove = LIFO pop tail → B removed, leaving A gone already → []
+      state = applyQueueOperation(state, { type: "queue-operation", operation: "remove" });
+      expect(state).toEqual([]);
+    });
   });
 });

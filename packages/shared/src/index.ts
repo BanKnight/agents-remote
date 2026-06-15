@@ -417,6 +417,14 @@ export type Claude2AgentName = {
   sessionId?: string;
 };
 
+export type Claude2QueueOperation = {
+  type: "queue-operation";
+  operation: "enqueue" | "dequeue" | "remove" | "popAll";
+  timestamp?: string;
+  sessionId?: string;
+  content?: string;
+};
+
 export type Claude2UserMessage = {
   type: "user";
   message: {
@@ -620,6 +628,7 @@ export type SessionStreamServerMessage =
   | Claude2FileHistorySnapshot
   | Claude2AiTitle
   | Claude2AgentName
+  | Claude2QueueOperation
   | Claude2ThinkingTokens
   | Claude2AssistantMessage
   | Claude2UserMessage

@@ -565,3 +565,178 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(result.current.storeAdapter.messages.length).toBe(before);
   });
 });
+
+describe("useClaude2Session queue-operation", () => {
+  test("live enqueue does not produce bubble, updates inputQueue", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const before = result.current.storeAdapter.messages.length;
+    act(() => {
+      socket.emit({
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "/model opusplan",
+      } as never);
+    });
+
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+    expect(result.current.inputQueue).toEqual([{ content: "/model opusplan", source: "user" }]);
+  });
+
+  test("enqueue/dequeue/remove/popAll sequence", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "/model opusplan",
+      } as never);
+      socket.emit({
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "<task-notification><task-id>a1</task-id></task-notification>",
+      } as never);
+    });
+    expect(result.current.inputQueue).toHaveLength(2);
+    expect(result.current.inputQueue[0].source).toBe("user");
+    expect(result.current.inputQueue[1].source).toBe("assistant");
+
+    act(() => socket.emit({ type: "queue-operation", operation: "dequeue" } as never));
+    expect(result.current.inputQueue).toHaveLength(1);
+
+    act(() => socket.emit({ type: "queue-operation", operation: "remove" } as never));
+    expect(result.current.inputQueue).toHaveLength(0);
+
+    // popAll on already-empty queue → []
+    act(() =>
+      socket.emit({ type: "queue-operation", operation: "popAll", content: "old text" } as never),
+    );
+    expect(result.current.inputQueue).toHaveLength(0);
+  });
+
+  test("history replay batch processes queue-operation without bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "history_start", count: 2 });
+      socket.emit({
+        type: "assistant",
+        message: { id: "a1", role: "assistant", content: [] },
+        session_id: "s1",
+      });
+      socket.emit({ type: "queue-operation", operation: "enqueue", content: "/model" } as never);
+      socket.emit({ type: "history_end" });
+      socket.emit({ type: "output_start", count: 0 } as never);
+      socket.emit({ type: "output_end" } as never);
+    });
+
+    expect(result.current.loading).toBe(false);
+    // Only the assistant message should be in the list (plus connected/system bubbles)
+    expect(result.current.storeAdapter.messages.some((m) => m.role === "assistant")).toBe(true);
+    expect(result.current.inputQueue).toEqual([{ content: "/model", source: "user" }]);
+  });
+
+  test("loadOlder filters queue-operation from messages, updates state", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            sessionId: "sess",
+            messages: [
+              {
+                type: "user",
+                message: { role: "user", content: [{ type: "text", text: "hello" }] },
+              },
+              { type: "queue-operation", operation: "enqueue", content: "/resume" },
+            ],
+            pagination: { nextCursor: null, hasOlder: false },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.loadOlder("cursor-1");
+    });
+
+    // Only user message as bubble
+    expect(result.current.storeAdapter.messages.some((m) => m.role === "user")).toBe(true);
+    // queue-operation was NOT rendered
+    expect(result.current.storeAdapter.messages.length).toBe(1);
+    // but it WAS applied to state
+    expect(result.current.inputQueue).toEqual([{ content: "/resume", source: "user" }]);
+  });
+
+  test("session reset clears inputQueue", async () => {
+    const { result, rerender } = renderHook(
+      ({ project, session }: { project: string; session: string }) =>
+        useClaude2Session(project, session),
+      { initialProps: { project: "proj", session: "sess" } },
+    );
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "queue-operation", operation: "enqueue", content: "/model" } as never);
+    });
+    expect(result.current.inputQueue).toHaveLength(1);
+
+    // Switch session triggers reset
+    rerender({ project: "proj", session: "sess2" });
+    await waitFor(() => expect(result.current.inputQueue).toHaveLength(0));
+  });
+
+  test("ws recv log still prints queue-operation", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const msg = { type: "queue-operation", operation: "enqueue", content: "/model" } as const;
+    act(() => socket.emit(msg as never));
+
+    expect(logSpy).toHaveBeenCalledWith("[claude2-adapter] ws recv", msg);
+    logSpy.mockRestore();
+  });
+
+  test("XML content → assistant source, plain text → user source", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({
+        type: "queue-operation",
+        operation: "enqueue",
+        content: "<task-notification><task-id>a1</task-id></task-notification>",
+      } as never);
+      socket.emit({ type: "queue-operation", operation: "enqueue", content: "普通文本" } as never);
+      socket.emit({ type: "queue-operation", operation: "enqueue" } as never);
+    });
+
+    expect(result.current.inputQueue[0]).toEqual({
+      content: "<task-notification><task-id>a1</task-id></task-notification>",
+      source: "assistant",
+    });
+    expect(result.current.inputQueue[1]).toEqual({ content: "普通文本", source: "user" });
+    expect(result.current.inputQueue[2]).toEqual({ content: "", source: "user" });
+  });
+});

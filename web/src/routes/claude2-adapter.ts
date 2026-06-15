@@ -1,6 +1,10 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
-import type { Claude2ControlResponse, SessionStreamServerMessage } from "@agents-remote/shared";
+import type {
+  Claude2ControlResponse,
+  Claude2QueueOperation,
+  SessionStreamServerMessage,
+} from "@agents-remote/shared";
 import { claude2StreamUrl, getAgentSessionMessages } from "../api/client";
 
 export type TaskInfo = {
@@ -118,7 +122,13 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
     updated[existing] = {
       ...current,
       kind,
-      status: msg.error ? "error" : isCompleted ? "completed" : msg.isBackgrounded ? "backgrounded" : "running",
+      status: msg.error
+        ? "error"
+        : isCompleted
+          ? "completed"
+          : msg.isBackgrounded
+            ? "backgrounded"
+            : "running",
       ...(msg.error ? { error: msg.error } : {}),
     };
     return updated;
@@ -133,6 +143,40 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
     ...(msg.summary ? { summary: msg.summary } : {}),
   };
   return updated;
+};
+
+// ── Queue Operation State ──────────────────────────────────────────────
+
+export type QueueEntry = {
+  content: string;
+  source: "user" | "assistant";
+};
+
+/** XML 格式 → "assistant"，其余（斜杠命令、纯文本、空）→ "user" */
+export const deriveQueueSource = (content: string | undefined): "user" | "assistant" => {
+  if (!content) return "user";
+  const trimmed = content.trim();
+  return /^<[A-Za-z][\s\S]*<\/[A-Za-z][\w-]*>$/.test(trimmed) ||
+    /^<[A-Za-z][\w-]*(\s[^>]*)?\/>$/.test(trimmed)
+    ? "assistant"
+    : "user";
+};
+
+/** 纯 reducer：按 operation 语义操作 FIFO+LIFO 混合队列 */
+export const applyQueueOperation = (
+  state: QueueEntry[],
+  msg: Claude2QueueOperation,
+): QueueEntry[] => {
+  switch (msg.operation) {
+    case "enqueue":
+      return [...state, { content: msg.content ?? "", source: deriveQueueSource(msg.content) }];
+    case "dequeue":
+      return state.slice(1);
+    case "remove":
+      return state.slice(0, -1);
+    case "popAll":
+      return [];
+  }
 };
 
 // KEPT: task 批量派生，后续在新架构下重新接入
@@ -407,7 +451,9 @@ export function extractTaskOps(msg: SessionStreamServerMessage): TaskSystemMessa
   if (userType !== "external") return [];
   if (msg.type !== "assistant") return [];
   const assistantMsg = msg as unknown as { message: { content: RawContentBlock[] } };
-  return assistantMsg.message.content.map(extractTaskOpFromBlock).filter((op): op is TaskSystemMessage => op !== null);
+  return assistantMsg.message.content
+    .map(extractTaskOpFromBlock)
+    .filter((op): op is TaskSystemMessage => op !== null);
 }
 
 export function hasToolUseNamed(msg: SessionStreamServerMessage, toolName: string): boolean {
@@ -422,7 +468,9 @@ export function hasToolUseNamed(msg: SessionStreamServerMessage, toolName: strin
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
-export function convertExternalToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike | null {
+export function convertExternalToThreadLike(
+  msg: SessionStreamServerMessage,
+): ThreadMessageLike | null {
   switch (msg.type) {
     case "assistant": {
       const assistantMsg = msg as unknown as { message: { content: RawContentBlock[] } };
@@ -455,7 +503,8 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
   if (
     msg.type === "permission-mode" ||
     msg.type === "ai-title" ||
-    msg.type === "agent-name"
+    msg.type === "agent-name" ||
+    msg.type === "queue-operation"
   ) {
     return null;
   }
@@ -803,6 +852,10 @@ export function useClaude2Session(
         setAgentName(msg.agentName);
       }
     }
+    if (msg.type === "queue-operation") {
+      setInputQueue((prev) => applyQueueOperation(prev, msg));
+      return;
+    }
     const uiMessage = messageToThreadLike(msg);
     if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
   }, []);
@@ -820,13 +873,16 @@ export function useClaude2Session(
     [handleExternalMessage, handleInternalMessage],
   );
 
-  const processBatch = useCallback((rawMessages: SessionStreamServerMessage[]) => {
-    for (const m of rawMessages) {
-      const uuid = getMessageUuid(m);
-      if (uuid) messageMapRef.current.set(uuid, m);
-      processMessage(m);
-    }
-  }, [processMessage]);
+  const processBatch = useCallback(
+    (rawMessages: SessionStreamServerMessage[]) => {
+      for (const m of rawMessages) {
+        const uuid = getMessageUuid(m);
+        if (uuid) messageMapRef.current.set(uuid, m);
+        processMessage(m);
+      }
+    },
+    [processMessage],
+  );
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -861,6 +917,7 @@ export function useClaude2Session(
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
+  const [inputQueue, setInputQueue] = useState<QueueEntry[]>([]);
 
   const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
   const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -871,6 +928,7 @@ export function useClaude2Session(
     setTasks([]);
     setSlashCommands([]);
     setSkills([]);
+    setInputQueue([]);
     setRetryInfo(null);
     if (retryCountdownRef.current) {
       clearInterval(retryCountdownRef.current);
@@ -1067,6 +1125,8 @@ export function useClaude2Session(
         // ── Batch markers ────────────────────────────────────────────
         if (msg.type === "history_start") {
           historyBatchRef.current = [msg];
+          // Queue-operation has no uuid dedup; clear on replay to avoid double-application on reconnect
+          setInputQueue([]);
           setLoading(true);
           setIsRunning(false);
           console.log("[claude2-adapter] history batch start, count=", msg.count);
@@ -1172,6 +1232,9 @@ export function useClaude2Session(
             uiMessage = convertExternalToThreadLike(m);
             const ops = extractTaskOps(m);
             if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+          } else if (m.type === "queue-operation") {
+            setInputQueue((prev) => applyQueueOperation(prev, m));
+            continue;
           } else {
             uiMessage = messageToThreadLike(m);
           }
@@ -1239,6 +1302,7 @@ export function useClaude2Session(
     tasks,
     slashCommands,
     skills,
+    inputQueue,
     retryInfo,
   };
 }

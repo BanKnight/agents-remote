@@ -123,7 +123,11 @@ function TaskPanel({
     const hasTooltip = !!task.description && task.subject;
     const meta = [task.agentType, task.workflowName].filter(Boolean);
     return (
-      <div key={task.id} className="flex items-start gap-2 text-xs" title={hasTooltip ? task.description : undefined}>
+      <div
+        key={task.id}
+        className="flex items-start gap-2 text-xs"
+        title={hasTooltip ? task.description : undefined}
+      >
         <span className="mt-0.5 shrink-0">
           {task.status === "running" ? (
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
@@ -544,8 +548,21 @@ function UserChatBubble() {
         <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
           <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
             <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="5" y="2" width="9" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M2 5v9a1 1 0 001 1h7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <rect
+                x="5"
+                y="2"
+                width="9"
+                height="12"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M2 5v9a1 1 0 001 1h7"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
             </svg>
           </ActionBarPrimitive.Copy>
         </ActionBarPrimitive.Root>
@@ -612,7 +629,9 @@ function AssistantChatBubble() {
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
       <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
-        <AuiIf condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}>
+        <AuiIf
+          condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
+        >
           <div className="flex items-center gap-1.5 py-1">
             <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
             <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
@@ -626,7 +645,11 @@ function AssistantChatBubble() {
             {({ part, children }) => {
               switch (part.type) {
                 case "group-reasoning": {
-                  return <ReasoningGroup running={part.status.type === "running"}>{children}</ReasoningGroup>;
+                  return (
+                    <ReasoningGroup running={part.status.type === "running"}>
+                      {children}
+                    </ReasoningGroup>
+                  );
                 }
                 case "reasoning":
                   return <span className="whitespace-pre-wrap">{part.text}</span>;
@@ -655,8 +678,21 @@ function AssistantChatBubble() {
           <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
             <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
               <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <rect x="5" y="2" width="9" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M2 5v9a1 1 0 001 1h7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                <rect
+                  x="5"
+                  y="2"
+                  width="9"
+                  height="12"
+                  rx="1"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M2 5v9a1 1 0 001 1h7"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
               </svg>
             </ActionBarPrimitive.Copy>
           </ActionBarPrimitive.Root>
@@ -686,7 +722,12 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
               strokeWidth="1.5"
               strokeLinejoin="round"
             />
-            <path d="M9 18h6M10 21h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path
+              d="M9 18h6M10 21h4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
           </svg>
           {running ? (
             <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
@@ -695,7 +736,9 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
         </>
       }
     >
-      <div className="text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">{children}</div>
+      <div className="text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">
+        {children}
+      </div>
     </CollapsibleSection>
   );
 }
@@ -721,7 +764,11 @@ function RawDebugTooltip({ data }: { data: unknown }) {
         </svg>
       </button>
       {open ? (
-        <RawDebugPopover text={displayText} anchor={btnRef.current} onClose={() => setOpen(false)} />
+        <RawDebugPopover
+          text={displayText}
+          anchor={btnRef.current}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </>
   );
@@ -742,7 +789,13 @@ function RawDebugPopover({
   const rightEdge = rect ? window.innerWidth - rect.right : 8;
   const left = Math.max(8, window.innerWidth - rightEdge - maxW);
   const style: React.CSSProperties = rect
-    ? { position: "fixed", top: Math.min(rect.bottom + 4, window.innerHeight - 280), left, zIndex: 50, maxWidth: maxW }
+    ? {
+        position: "fixed",
+        top: Math.min(rect.bottom + 4, window.innerHeight - 280),
+        left,
+        zIndex: 50,
+        maxWidth: maxW,
+      }
     : { position: "fixed", bottom: 8, right: 8, zIndex: 50, maxWidth: maxW };
 
   return (
@@ -823,9 +876,7 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
           <span className="text-[0.6rem] text-amber-300/50">{entries.length} 个文件</span>
           <span
             className={`ml-auto rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
-              isUpdate
-                ? "bg-amber-600/30 text-amber-200/80"
-                : "bg-amber-700/30 text-amber-200/60"
+              isUpdate ? "bg-amber-600/30 text-amber-200/80" : "bg-amber-700/30 text-amber-200/60"
             }`}
           >
             {isUpdate ? "增量" : "完整"}
@@ -1481,4 +1532,3 @@ function CompactIndicator() {
     </div>
   );
 }
-
