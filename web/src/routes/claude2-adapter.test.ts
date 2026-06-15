@@ -351,6 +351,42 @@ describe("message processing building blocks", () => {
     expect(result?.role).toBe("assistant");
   });
 
+  test("convertExternalToThreadLike renders external user message with text content", () => {
+    const msg = {
+      type: "user",
+      userType: "external",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "hello world" }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const result = convertExternalToThreadLike(msg);
+    expect(result).toBeDefined();
+    expect(result?.role).toBe("user");
+    expect(result?.content).toBe("hello world");
+  });
+
+  test("convertExternalToThreadLike returns null for user message with only tool_result", () => {
+    const msg = {
+      type: "user",
+      userType: "external",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tu-1", content: "result" }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    expect(convertExternalToThreadLike(msg)).toBeNull();
+  });
+
+  test("convertExternalToThreadLike returns null for user message with empty content", () => {
+    const msg = {
+      type: "user",
+      userType: "external",
+      message: { role: "user", content: [] },
+    } as unknown as SessionStreamServerMessage;
+    expect(convertExternalToThreadLike(msg)).toBeNull();
+  });
+
   test("extractTaskOps returns empty for non-task messages", () => {
     const msg = {
       type: "assistant",

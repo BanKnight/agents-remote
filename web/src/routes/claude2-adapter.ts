@@ -486,8 +486,43 @@ export function convertExternalToThreadLike(
         metadata: { custom: { _raw: msg } },
       });
     }
-    case "user":
+    case "user": {
+      const userMsg = msg as { message?: { role?: string; content?: unknown } };
+      const content = userMsg.message?.content;
+      // Array content: extract text blocks for user bubble, skip tool_result-only
+      if (Array.isArray(content)) {
+        const textBlocks = content
+          .filter(
+            (b): b is { type: "text"; text: string } =>
+              (b as Record<string, unknown>)?.type === "text",
+          )
+          .map((b) => b.text)
+          .filter(Boolean);
+        if (textBlocks.length > 0) {
+          return enrichBubbleMetadata({
+            role: "user",
+            content: textBlocks.join("\n"),
+            metadata: { custom: { _raw: msg } },
+          });
+        }
+      }
+      // String content: plain user text (but skip CLI internal XML commands)
+      if (typeof content === "string" && content.trim()) {
+        if (
+          content.startsWith("<local-command") ||
+          content.startsWith("<command-name>") ||
+          content.startsWith("<command-message>")
+        ) {
+          return null;
+        }
+        return enrichBubbleMetadata({
+          role: "user",
+          content,
+          metadata: { custom: { _raw: msg } },
+        });
+      }
       return null;
+    }
     default:
       return null;
   }
