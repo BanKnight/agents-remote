@@ -490,22 +490,11 @@ export function convertExternalToThreadLike(
       const userMsg = msg as { message?: { role?: string; content?: unknown } };
       const content = userMsg.message?.content;
       if (Array.isArray(content)) {
-        if (content.length === 0) return null;
+        // Only text blocks form the user bubble.
+        // tool_result blocks are consumed separately by extractToolResults.
         const texts: string[] = [];
         for (const b of content as Array<Record<string, unknown>>) {
-          if (b.type === "text" && typeof b.text === "string") {
-            texts.push(b.text);
-          } else if (b.type === "tool_result") {
-            const toolContent = (b as { content?: unknown }).content;
-            if (typeof toolContent === "string") {
-              texts.push(toolContent);
-            } else if (Array.isArray(toolContent)) {
-              for (const c of toolContent as Array<Record<string, unknown>>) {
-                if (c.type === "text" && typeof c.text === "string") texts.push(c.text);
-              }
-            }
-            if ((b as { is_error?: boolean }).is_error) texts.push("[error]");
-          }
+          if (b.type === "text" && typeof b.text === "string") texts.push(b.text);
         }
         if (texts.length === 0) return null;
         return enrichBubbleMetadata({
@@ -602,6 +591,92 @@ export function threadMessageHasToolCallId(msg: ThreadMessageLike, toolUseId: st
       (part as { type?: string; toolCallId?: string }).type === "tool-call" &&
       (part as { toolCallId: string }).toolCallId === toolUseId,
   );
+}
+
+export type ExtractedToolResult = {
+  toolUseId: string;
+  content: string;
+  isError: boolean;
+};
+
+/** Extract tool_result blocks from a user message into {toolUseId, content, isError}. */
+export function extractToolResults(msg: SessionStreamServerMessage): ExtractedToolResult[] {
+  if (msg.type !== "user") return [];
+  const userMsg = msg as unknown as {
+    message?: {
+      content?: Array<{
+        type?: string;
+        tool_use_id?: string;
+        content?: unknown;
+        is_error?: boolean;
+      }>;
+    };
+  };
+  const results: ExtractedToolResult[] = [];
+  for (const block of userMsg.message?.content ?? []) {
+    if (block.type !== "tool_result") continue;
+    const toolUseId = block.tool_use_id;
+    if (typeof toolUseId !== "string") continue;
+    const c = block.content;
+    const texts: string[] = [];
+    if (typeof c === "string") {
+      texts.push(c);
+    } else if (Array.isArray(c)) {
+      for (const item of c as Array<Record<string, unknown>>) {
+        if (item.type === "text" && typeof item.text === "string") texts.push(item.text);
+      }
+    }
+    results.push({
+      toolUseId,
+      content: texts.join("\n") || "Tool result",
+      isError: !!block.is_error,
+    });
+  }
+  return results;
+}
+
+/**
+ * Match tool_results to tool-call parts by tool_use_id and set result/isError.
+ * Scans messages backwards (most-recent first) — a performance optimization
+ * since tool_use_id values are unique.
+ */
+export function applyToolResultsToMessages(
+  messages: ThreadMessageLike[],
+  results: ExtractedToolResult[],
+): { messages: ThreadMessageLike[]; appliedCount: number } {
+  if (results.length === 0) return { messages, appliedCount: 0 };
+  const pending = [...results];
+  let appliedCount = 0;
+  const next = [...messages];
+  for (let i = next.length - 1; i >= 0 && pending.length > 0; i--) {
+    const msg = next[i];
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    let content = msg.content;
+    let touched = false;
+    for (let p = pending.length - 1; p >= 0; p--) {
+      const r = pending[p];
+      const idx = content.findIndex(
+        (part: unknown) =>
+          (part as { type?: string; toolCallId?: string }).type === "tool-call" &&
+          (part as { toolCallId?: string }).toolCallId === r.toolUseId,
+      );
+      if (idx === -1) continue;
+      content = content.map((part: unknown, j: number) =>
+        j === idx
+          ? {
+              ...(part as Record<string, unknown>),
+              result: r.content,
+              ...(r.isError ? { isError: true } : {}),
+            }
+          : part,
+      );
+      touched = true;
+      appliedCount++;
+      pending.splice(p, 1);
+    }
+    if (touched) next[i] = { ...msg, content };
+  }
+  return { messages: appliedCount > 0 ? next : messages, appliedCount };
 }
 
 type RawByUuid = Map<string, SessionStreamServerMessage>;
@@ -1108,18 +1183,30 @@ export function useClaude2Session(
     }
 
     const uiMessage = convertExternalToThreadLike(msg);
-    if (uiMessage) {
-      currentBatchHasContentRef.current = true;
+    const toolResults = extractToolResults(msg);
+    if (uiMessage) currentBatchHasContentRef.current = true;
+
+    // Apply tool_results to matching tool-calls; append the user bubble (if any).
+    // tool_result consumption does NOT flip currentBatchHasContentRef — the
+    // parent tool-call already counted when it was appended earlier.
+    if (uiMessage || toolResults.length > 0) {
       setMessagesState((prev) => {
-        let next = [...prev, uiMessage];
-        if (pendingApiErrorsRef.current.length > 0) {
-          const drained = drainPendingErrors(
-            next,
-            pendingApiErrorsRef.current,
-            messageMapRef.current,
-          );
-          pendingApiErrorsRef.current = drained.remaining;
-          next = drained.messages;
+        let next = prev;
+        if (toolResults.length > 0) {
+          const applied = applyToolResultsToMessages(next, toolResults);
+          if (applied.appliedCount > 0) next = applied.messages;
+        }
+        if (uiMessage) {
+          next = [...next, uiMessage];
+          if (pendingApiErrorsRef.current.length > 0) {
+            const drained = drainPendingErrors(
+              next,
+              pendingApiErrorsRef.current,
+              messageMapRef.current,
+            );
+            pendingApiErrorsRef.current = drained.remaining;
+            next = drained.messages;
+          }
         }
         return next;
       });
@@ -1558,6 +1645,7 @@ export function useClaude2Session(
         // Phase 2: convert non-error messages.
         const converted: ThreadMessageLike[] = [];
         const errorsInPage: SessionStreamServerMessage[] = [];
+        const pageToolResults: ExtractedToolResult[] = [];
 
         for (const m of response.messages) {
           if (isExternalApiErrorMessage(m)) {
@@ -1570,6 +1658,8 @@ export function useClaude2Session(
             uiMessage = convertExternalToThreadLike(m);
             const ops = extractTaskOps(m);
             if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+            const trs = extractToolResults(m);
+            if (trs.length > 0) pageToolResults.push(...trs);
           } else if (m.type === "queue-operation") {
             setInputQueue((prev) => applyQueueOperation(prev, m));
             continue;
@@ -1585,9 +1675,13 @@ export function useClaude2Session(
         const drained = drainPendingErrors(converted, allPending, messageMapRef.current);
         pendingApiErrorsRef.current = drained.remaining;
 
-        // Phase 4: prepend and drain against existing messages too.
+        // Phase 4: prepend, apply tool_results against full list, drain errors.
         setMessagesState((prev) => {
           let next = [...drained.messages, ...prev];
+          if (pageToolResults.length > 0) {
+            const applied = applyToolResultsToMessages(next, pageToolResults);
+            if (applied.appliedCount > 0) next = applied.messages;
+          }
           if (pendingApiErrorsRef.current.length > 0) {
             const drained2 = drainPendingErrors(
               next,

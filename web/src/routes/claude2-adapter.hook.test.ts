@@ -927,3 +927,152 @@ describe("useClaude2Session batch marker rendering", () => {
     expect(result.current.inputQueue).toHaveLength(1);
   });
 });
+
+describe("useClaude2Session tool_result matching (external path)", () => {
+  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+    result.current.storeAdapter.messages;
+
+  const externalToolUseAssistant = (
+    id: string,
+    toolUses: Array<{ tool_use_id: string; name: string }>,
+  ): SessionStreamServerMessage =>
+    ({
+      type: "assistant",
+      userType: "external",
+      message: {
+        id,
+        role: "assistant",
+        content: toolUses.map((tu) => ({
+          type: "tool_use",
+          id: tu.tool_use_id,
+          name: tu.name,
+          input: {},
+        })),
+      },
+    }) as unknown as SessionStreamServerMessage;
+
+  const externalToolResultUser = (
+    results: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+  ): SessionStreamServerMessage =>
+    ({
+      type: "user",
+      userType: "external",
+      message: {
+        role: "user",
+        content: results.map((r) => ({
+          type: "tool_result",
+          tool_use_id: r.tool_use_id,
+          content: r.content,
+          ...(r.is_error ? { is_error: true } : {}),
+        })),
+      },
+    }) as unknown as SessionStreamServerMessage;
+
+  test("single tool_use → tool_result: no user bubble, tool-call gets result", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-1", name: "Read" }]));
+      socket.emit(externalToolResultUser([{ tool_use_id: "tu-1", content: "file contents" }]));
+    });
+
+    const msgs = getMessages(result);
+    // Assistant only; no user bubble for tool_result
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe("assistant");
+    const content = msgs[0]?.content as Array<{ toolCallId?: string; result?: string }>;
+    const toolCall = content.find((c) => "toolCallId" in c);
+    expect(toolCall?.toolCallId).toBe("tu-1");
+    expect(toolCall?.result).toBe("file contents");
+  });
+
+  test("parallel tools: two tool_use in one assistant, two tool_result in one user", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(
+        externalToolUseAssistant("a1", [
+          { tool_use_id: "tu-a", name: "ToolA" },
+          { tool_use_id: "tu-b", name: "ToolB" },
+        ]),
+      );
+      socket.emit(
+        externalToolResultUser([
+          { tool_use_id: "tu-a", content: "result A" },
+          { tool_use_id: "tu-b", content: "result B" },
+        ]),
+      );
+    });
+
+    const msgs = getMessages(result);
+    expect(msgs).toHaveLength(1);
+    const content = msgs[0]?.content as Array<{ toolCallId?: string; result?: string }>;
+    const calls = content.filter((c) => c.toolCallId);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.toolCallId).toBe("tu-a");
+    expect(calls[0]?.result).toBe("result A");
+    expect(calls[1]?.toolCallId).toBe("tu-b");
+    expect(calls[1]?.result).toBe("result B");
+  });
+
+  test("hybrid text+tool_result: user bubble for text, tool-call gets result", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-1", name: "Read" }]));
+      socket.emit({
+        type: "user",
+        userType: "external",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "Continue from where you left off." },
+            { type: "tool_result", tool_use_id: "tu-1", content: "file contents" },
+          ],
+        },
+      } as unknown as SessionStreamServerMessage);
+    });
+
+    const msgs = getMessages(result);
+    // Assistant (with tool-call) + user text bubble = 2
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]?.role).toBe("assistant");
+    expect(msgs[1]?.role).toBe("user");
+    expect(msgs[1]?.content).toBe("Continue from where you left off.");
+
+    const assistantContent = msgs[0]?.content as Array<{ toolCallId?: string; result?: string }>;
+    const toolCall = assistantContent.find((c) => c.toolCallId === "tu-1");
+    expect(toolCall?.result).toBe("file contents");
+  });
+
+  test("tool_result with is_error sets isError on tool-call", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(
+        externalToolUseAssistant("a1", [{ tool_use_id: "tu-ask", name: "AskUserQuestion" }]),
+      );
+      socket.emit(
+        externalToolResultUser([{ tool_use_id: "tu-ask", content: "failed", is_error: true }]),
+      );
+    });
+
+    const msgs = getMessages(result);
+    expect(msgs).toHaveLength(1);
+    const content = msgs[0]?.content as Array<{ toolCallId?: string; isError?: boolean }>;
+    const toolCall = content.find((c) => c.toolCallId === "tu-ask");
+    expect(toolCall?.isError).toBe(true);
+  });
+});

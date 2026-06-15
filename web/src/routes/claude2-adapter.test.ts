@@ -25,8 +25,10 @@ import {
   attachApiErrorToMessages,
   drainPendingErrors,
   makeBoundaryDivider,
+  extractToolResults,
+  applyToolResultsToMessages,
 } from "./claude2-adapter";
-import type { ApiErrorAttachment, QueueEntry } from "./claude2-adapter";
+import type { ApiErrorAttachment, QueueEntry, ExtractedToolResult } from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -366,7 +368,7 @@ describe("message processing building blocks", () => {
     expect(result?.content).toBe("hello world");
   });
 
-  test("convertExternalToThreadLike renders user message with only tool_result as brown bubble", () => {
+  test("convertExternalToThreadLike returns null for user message with only tool_result", () => {
     const msg = {
       type: "user",
       userType: "external",
@@ -375,10 +377,25 @@ describe("message processing building blocks", () => {
         content: [{ type: "tool_result", tool_use_id: "tu-1", content: "result" }],
       },
     } as unknown as SessionStreamServerMessage;
+    expect(convertExternalToThreadLike(msg)).toBeNull();
+  });
+
+  test("convertExternalToThreadLike renders hybrid text+tool_result as text-only bubble", () => {
+    const msg = {
+      type: "user",
+      userType: "external",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "Continue from where you left off." },
+          { type: "tool_result", tool_use_id: "tu-1", content: "output" },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage;
     const result = convertExternalToThreadLike(msg);
     expect(result).toBeDefined();
     expect(result?.role).toBe("user");
-    expect(result?.content).toBe("result");
+    expect(result?.content).toBe("Continue from where you left off.");
   });
 
   test("convertExternalToThreadLike returns null for user message with empty content", () => {
@@ -1851,5 +1868,179 @@ describe("drainPendingErrors", () => {
     expect(result.remaining).toEqual([]);
     const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
     expect(custom.apiErrors).toHaveLength(1);
+  });
+});
+
+// ── tool_result matching helpers ──────────────────────────────────────
+
+describe("extractToolResults", () => {
+  test("extracts tool_use_id, content, isError from string content", () => {
+    const msg = user([{ type: "tool_result", tool_use_id: "tu-1", content: "hello" }]);
+    const results = extractToolResults(msg);
+    expect(results).toEqual([{ toolUseId: "tu-1", content: "hello", isError: false }]);
+  });
+
+  test("joins array-of-text content with newlines", () => {
+    const msg = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-1",
+            content: [
+              { type: "text", text: "line1" },
+              { type: "text", text: "line2" },
+            ],
+          },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const results = extractToolResults(msg);
+    expect(results).toEqual([{ toolUseId: "tu-1", content: "line1\nline2", isError: false }]);
+  });
+
+  test("empty content falls back to 'Tool result'", () => {
+    const msg = user([{ type: "tool_result", tool_use_id: "tu-1", content: "" }]);
+    expect(extractToolResults(msg)[0]?.content).toBe("Tool result");
+  });
+
+  test("is_error flag is captured", () => {
+    const msg = user([
+      { type: "tool_result", tool_use_id: "tu-1", content: "err", is_error: true },
+    ]);
+    expect(extractToolResults(msg)[0]?.isError).toBe(true);
+  });
+
+  test("returns empty for text-only user message", () => {
+    const msg = user([{ type: "text", text: "hello" }]);
+    expect(extractToolResults(msg)).toEqual([]);
+  });
+
+  test("returns empty for non-user type", () => {
+    expect(extractToolResults({ type: "assistant" } as SessionStreamServerMessage)).toEqual([]);
+  });
+
+  test("skips blocks without string tool_use_id", () => {
+    const msg = user([
+      { type: "tool_result", content: "orphan" } as unknown as {
+        type: "tool_result";
+        tool_use_id: string;
+        content: string;
+      },
+    ]);
+    expect(extractToolResults(msg)).toEqual([]);
+  });
+
+  test("extracts multiple tool_results from one message", () => {
+    const msg = user([
+      { type: "tool_result", tool_use_id: "tu-a", content: "result A" },
+      { type: "tool_result", tool_use_id: "tu-b", content: "result B" },
+    ]);
+    const results = extractToolResults(msg);
+    expect(results).toHaveLength(2);
+    expect(results[0]?.toolUseId).toBe("tu-a");
+    expect(results[1]?.toolUseId).toBe("tu-b");
+  });
+});
+
+describe("applyToolResultsToMessages", () => {
+  const makeToolCallBubble = (toolCallId: string): ThreadMessageLike => ({
+    role: "assistant",
+    content: [
+      { type: "text" as const, text: "...thinking..." },
+      { type: "tool-call" as const, toolCallId, toolName: "Bash", args: {}, argsText: "{}" },
+    ],
+    metadata: { custom: {} },
+  });
+
+  test("matches tool_result to tool-call and sets result", () => {
+    const messages = [makeToolCallBubble("tu-1")];
+    const results: ExtractedToolResult[] = [
+      { toolUseId: "tu-1", content: "file contents", isError: false },
+    ];
+    const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
+    expect(appliedCount).toBe(1);
+    const content = applied[0]?.content as Array<{ result?: string }>;
+    expect(content[1]?.result).toBe("file contents");
+  });
+
+  test("sets isError when is_error is true", () => {
+    const messages = [makeToolCallBubble("tu-1")];
+    const results: ExtractedToolResult[] = [
+      { toolUseId: "tu-1", content: "failed", isError: true },
+    ];
+    const { messages: applied } = applyToolResultsToMessages(messages, results);
+    const content = applied[0]?.content as Array<{ isError?: boolean }>;
+    expect(content[1]?.isError).toBe(true);
+  });
+
+  test("backtracks through multiple messages to find matching tool-call", () => {
+    const messages = [
+      makeToolCallBubble("tu-old"),
+      { role: "assistant", content: [{ type: "text", text: "no tool-call here" }] },
+      makeToolCallBubble("tu-target"),
+    ];
+    const results: ExtractedToolResult[] = [
+      { toolUseId: "tu-old", content: "old result", isError: false },
+    ];
+    const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
+    expect(appliedCount).toBe(1);
+    // Should update the first message (backtracks past the later ones)
+    const content = applied[0]?.content as Array<{ result?: string }>;
+    expect(content[1]?.result).toBe("old result");
+  });
+
+  test("multiple results in one call all attach (parallel tools)", () => {
+    const messages = [
+      {
+        role: "assistant" as const,
+        content: [
+          { type: "text" as const, text: "..." },
+          {
+            type: "tool-call" as const,
+            toolCallId: "tu-a",
+            toolName: "ToolA",
+            args: {},
+            argsText: "{}",
+          },
+          {
+            type: "tool-call" as const,
+            toolCallId: "tu-b",
+            toolName: "ToolB",
+            args: {},
+            argsText: "{}",
+          },
+        ],
+        metadata: { custom: {} },
+      },
+    ];
+    const results: ExtractedToolResult[] = [
+      { toolUseId: "tu-a", content: "result A", isError: false },
+      { toolUseId: "tu-b", content: "result B", isError: false },
+    ];
+    const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
+    expect(appliedCount).toBe(2);
+    const content = applied[0]?.content as Array<{ result?: string }>;
+    expect(content[1]?.result).toBe("result A");
+    expect(content[2]?.result).toBe("result B");
+  });
+
+  test("returns unchanged reference + appliedCount 0 when no match", () => {
+    const messages = [makeToolCallBubble("tu-1")];
+    const results: ExtractedToolResult[] = [
+      { toolUseId: "tu-missing", content: "orphan", isError: false },
+    ];
+    const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
+    expect(appliedCount).toBe(0);
+    expect(applied).toBe(messages);
+  });
+
+  test("no-op when results is empty", () => {
+    const messages = [makeToolCallBubble("tu-1")];
+    const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, []);
+    expect(appliedCount).toBe(0);
+    expect(applied).toBe(messages);
   });
 });
