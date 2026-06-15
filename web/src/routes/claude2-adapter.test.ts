@@ -366,7 +366,7 @@ describe("message processing building blocks", () => {
     expect(result?.content).toBe("hello world");
   });
 
-  test("convertExternalToThreadLike returns null for user message with only tool_result", () => {
+  test("convertExternalToThreadLike renders user message with only tool_result as brown bubble", () => {
     const msg = {
       type: "user",
       userType: "external",
@@ -375,7 +375,10 @@ describe("message processing building blocks", () => {
         content: [{ type: "tool_result", tool_use_id: "tu-1", content: "result" }],
       },
     } as unknown as SessionStreamServerMessage;
-    expect(convertExternalToThreadLike(msg)).toBeNull();
+    const result = convertExternalToThreadLike(msg);
+    expect(result).toBeDefined();
+    expect(result?.role).toBe("user");
+    expect(result?.content).toBe("result");
   });
 
   test("convertExternalToThreadLike returns null for user message with empty content", () => {

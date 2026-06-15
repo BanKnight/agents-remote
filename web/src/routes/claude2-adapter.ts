@@ -489,24 +489,31 @@ export function convertExternalToThreadLike(
     case "user": {
       const userMsg = msg as { message?: { role?: string; content?: unknown } };
       const content = userMsg.message?.content;
-      // Array content: extract text blocks for user bubble, skip tool_result-only
       if (Array.isArray(content)) {
-        const textBlocks = content
-          .filter(
-            (b): b is { type: "text"; text: string } =>
-              (b as Record<string, unknown>)?.type === "text",
-          )
-          .map((b) => b.text)
-          .filter(Boolean);
-        if (textBlocks.length > 0) {
-          return enrichBubbleMetadata({
-            role: "user",
-            content: textBlocks.join("\n"),
-            metadata: { custom: { _raw: msg } },
-          });
+        if (content.length === 0) return null;
+        const texts: string[] = [];
+        for (const b of content as Array<Record<string, unknown>>) {
+          if (b.type === "text" && typeof b.text === "string") {
+            texts.push(b.text);
+          } else if (b.type === "tool_result") {
+            const toolContent = (b as { content?: unknown }).content;
+            if (typeof toolContent === "string") {
+              texts.push(toolContent);
+            } else if (Array.isArray(toolContent)) {
+              for (const c of toolContent as Array<Record<string, unknown>>) {
+                if (c.type === "text" && typeof c.text === "string") texts.push(c.text);
+              }
+            }
+            if ((b as { is_error?: boolean }).is_error) texts.push("[error]");
+          }
         }
+        if (texts.length === 0) return null;
+        return enrichBubbleMetadata({
+          role: "user",
+          content: texts.join("\n"),
+          metadata: { custom: { _raw: msg } },
+        });
       }
-      // String content: plain user text (but skip CLI internal XML commands)
       if (typeof content === "string" && content.trim()) {
         if (
           content.startsWith("<local-command") ||
