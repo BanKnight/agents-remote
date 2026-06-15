@@ -308,6 +308,7 @@ export class Claude2Runtime implements RuntimeResources {
           if (!this.isCurrentGeneration(sessionName, generation)) return;
 
           this.captureSystemInitFromLine(sessionName, trimmed);
+          console.log(`[claude2-stdout] ${trimmed}`);
           const relay = this.relays.get(sessionName);
           if (relay && !relay.isDestroyed) {
             await relay.handleStdoutLine(trimmed);
@@ -318,6 +319,7 @@ export class Claude2Runtime implements RuntimeResources {
       const trimmed = leftover.trim();
       if (trimmed && this.isCurrentGeneration(sessionName, generation)) {
         this.captureSystemInitFromLine(sessionName, trimmed);
+        console.log(`[claude2-stdout] ${trimmed}`);
         const relay = this.relays.get(sessionName);
         if (relay && !relay.isDestroyed) {
           await relay.handleStdoutLine(trimmed);
