@@ -123,14 +123,6 @@ export class Claude2StreamController {
     // History and recent output are replayed from the relay on connect.
     // The relay sends history_start/end and output_start/end batch markers.
 
-    send(socket, {
-      type: "connected",
-      sessionId: data.sessionId,
-      sessionType: data.sessionType,
-      status: data.status,
-    });
-    console.log(`[claude2-stream] sent connected for ${data.sessionId}`);
-
     try {
       await this.startStream(socket, data);
     } catch (e) {

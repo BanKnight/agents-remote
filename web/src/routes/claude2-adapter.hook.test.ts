@@ -82,7 +82,6 @@ describe("useClaude2Session websocket lifecycle", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({
         type: "assistant",
         message: { id: "live-1", role: "assistant", content: [{ type: "text", text: "hello" }] },
@@ -91,19 +90,17 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(false);
-    // connected (system bubble) + assistant
-    expect(result.current.storeAdapter.messages).toHaveLength(2);
-    expect(result.current.storeAdapter.messages[1]?.role).toBe("assistant");
+    expect(result.current.storeAdapter.messages).toHaveLength(1);
+    expect(result.current.storeAdapter.messages[0]?.role).toBe("assistant");
   });
 
-  test("connected preserves local state when history is empty", async () => {
+  test("empty output batch does not crash or add messages", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "output_start", count: 0 } as never);
       socket.emit({ type: "output_end" } as never);
     });
@@ -112,14 +109,13 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(result.current.tasks).toEqual([]);
   });
 
-  test("handles connected, replay, switch model, and control_request branches", async () => {
+  test("handles replay, switch model, and control_request branches", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "history_start", count: 1 });
       socket.emit({
         type: "assistant",
@@ -132,9 +128,9 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.loading).toBe(false);
-    // connected(1 system) + assistant(1) + history divider(1 system) = 3
+    // assistant(1) + history divider(1 system) = 2
     // (markers are no longer rendered as raw bubbles)
-    expect(result.current.storeAdapter.messages).toHaveLength(3);
+    expect(result.current.storeAdapter.messages).toHaveLength(2);
   });
 
   test("reconnect replays only the missing uuid tail", async () => {
@@ -169,12 +165,6 @@ describe("useClaude2Session websocket lifecycle", () => {
       act(() => reconnectSocket.open());
 
       act(() => {
-        reconnectSocket.emit({
-          type: "connected",
-          sessionId: "s1",
-          sessionType: "agent",
-          status: "running",
-        });
         reconnectSocket.emit({ type: "history_start", count: 2 } as never);
         reconnectSocket.emit({
           type: "assistant",
@@ -194,9 +184,9 @@ describe("useClaude2Session websocket lifecycle", () => {
       });
 
       expect(result.current.loading).toBe(false);
-      // first conn assistant(1) + reconnect connected(1 system) + history assistants(2) + history divider(1 system) = 5
+      // first conn assistant(1) + history assistants(2) + history divider(1 system) = 4
       // (markers are no longer rendered as raw bubbles; output batch is empty → no divider)
-      expect(result.current.storeAdapter.messages).toHaveLength(5);
+      expect(result.current.storeAdapter.messages).toHaveLength(4);
     } finally {
       vi.useRealTimers();
     }
@@ -347,7 +337,6 @@ describe("useClaude2Session websocket lifecycle", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({
         type: "assistant",
         message: {
@@ -643,7 +632,7 @@ describe("useClaude2Session queue-operation", () => {
     });
 
     expect(result.current.loading).toBe(false);
-    // Only the assistant message should be in the list (plus connected/system bubbles)
+    // Only the assistant message should be in the list
     expect(result.current.storeAdapter.messages.some((m) => m.role === "assistant")).toBe(true);
     expect(result.current.inputQueue).toEqual([{ content: "/model", source: "user" }]);
   });
@@ -779,14 +768,13 @@ describe("useClaude2Session API error handling", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit(extAssistant("a1", "hello", "parent-uuid"));
       socket.emit(apiErrorMsg({ parentUuid: "parent-uuid" }));
     });
 
-    // connected (system) + assistant = 2 messages; error NOT standalone
-    expect(getMessages(result)).toHaveLength(2);
-    const custom = getMessages(result)[1]?.metadata?.custom as Record<string, unknown>;
+    // assistant only; error NOT standalone
+    expect(getMessages(result)).toHaveLength(1);
+    const custom = getMessages(result)[0]?.metadata?.custom as Record<string, unknown>;
     const apiErrors = custom?.apiErrors as unknown[];
     expect(apiErrors).toHaveLength(1);
   });
@@ -798,14 +786,13 @@ describe("useClaude2Session API error handling", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit(apiErrorMsg({ parentUuid: "parent-uuid", uuid: "e1" }));
       socket.emit(extAssistant("a1", "hello", "parent-uuid"));
     });
 
-    // connected + assistant = 2 messages
-    expect(getMessages(result)).toHaveLength(2);
-    const custom = getMessages(result)[1]?.metadata?.custom as Record<string, unknown>;
+    // assistant only; error NOT standalone
+    expect(getMessages(result)).toHaveLength(1);
+    const custom = getMessages(result)[0]?.metadata?.custom as Record<string, unknown>;
     expect(custom?.apiErrors).toHaveLength(1);
   });
 
@@ -816,17 +803,13 @@ describe("useClaude2Session API error handling", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "history_start", count: 2 });
       socket.emit(extAssistant("a1", "hello", "parent-uuid"));
       socket.emit(apiErrorMsg({ parentUuid: "parent-uuid", uuid: "e1" }));
       socket.emit({ type: "history_end" });
     });
 
-    // history_start(1) + assistant(1) + history_end(1) = 3 system bubbles + assistant(1) + connected(1)
-    // connected(1) + history messages(4: hs, assist, error-not-standalone, he)
-    // wait, the error doesn't produce a standalone bubble. So: connected + hs + assistant + he = 4
-    // Actually let me just count externally visible bubbles:
+    // assistant + history divider = 2 messages; markers not rendered; error NOT standalone
     const msgs = getMessages(result);
     const assistantMsgs = msgs.filter((m) => m.role === "assistant");
     expect(assistantMsgs).toHaveLength(1);
@@ -841,7 +824,6 @@ describe("useClaude2Session API error handling", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "output_start", count: 2 } as never);
       socket.emit(extAssistant("a2", "world", "pu-2"));
       socket.emit(apiErrorMsg({ parentUuid: "pu-2", uuid: "e2" }));
@@ -862,13 +844,11 @@ describe("useClaude2Session API error handling", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit(extAssistant("a1", "normal reply", "uuid-a1"));
     });
 
-    // connected + assistant = 2
-    expect(getMessages(result)).toHaveLength(2);
-    expect(getMessages(result)[1]?.role).toBe("assistant");
+    expect(getMessages(result)).toHaveLength(1);
+    expect(getMessages(result)[0]?.role).toBe("assistant");
   });
 });
 
@@ -883,13 +863,12 @@ describe("useClaude2Session batch marker rendering", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "history_start", count: 0 } as never);
       socket.emit({ type: "history_end" } as never);
     });
 
-    // connected only; neither marker renders; no divider (empty batch)
-    expect(getMessages(result)).toHaveLength(1);
+    // neither marker renders; no divider (empty batch)
+    expect(getMessages(result)).toHaveLength(0);
   });
 
   test("empty output batch: no divider", async () => {
@@ -899,13 +878,12 @@ describe("useClaude2Session batch marker rendering", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "output_start", count: 0 } as never);
       socket.emit({ type: "output_end" } as never);
     });
 
-    // connected only; no divider
-    expect(getMessages(result)).toHaveLength(1);
+    // no divider
+    expect(getMessages(result)).toHaveLength(0);
   });
 
   test("history batch with visible assistant → divider after batch", async () => {
@@ -915,7 +893,6 @@ describe("useClaude2Session batch marker rendering", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "history_start", count: 1 });
       socket.emit({
         type: "assistant",
@@ -925,8 +902,8 @@ describe("useClaude2Session batch marker rendering", () => {
     });
 
     const msgs = getMessages(result);
-    // connected + assistant + divider = 3
-    expect(msgs).toHaveLength(3);
+    // assistant + divider = 2
+    expect(msgs).toHaveLength(2);
     const last = msgs[msgs.length - 1];
     expect((last?.metadata?.custom as Record<string, unknown>)?.systemMessageType).toBe(
       "batch-boundary",
@@ -940,14 +917,13 @@ describe("useClaude2Session batch marker rendering", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
       socket.emit({ type: "output_start", count: 1 } as never);
       socket.emit({ type: "queue-operation", operation: "enqueue", content: "/help" } as never);
       socket.emit({ type: "output_end" } as never);
     });
 
-    // connected only; queue-operation is a side-effect, no visible bubble
-    expect(getMessages(result)).toHaveLength(1);
+    // queue-operation is a side-effect, no visible bubble
+    expect(getMessages(result)).toHaveLength(0);
     expect(result.current.inputQueue).toHaveLength(1);
   });
 });

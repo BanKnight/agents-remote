@@ -336,15 +336,13 @@ describe("messageToThreadLike", () => {
     expect(text).toInclude('"type": "result"');
   });
 
-  test("other message shows raw JSON", () => {
+  test("connected returns null (not rendered)", () => {
     const msg = {
       type: "connected",
       sessionId: "s1",
     } as unknown as SessionStreamServerMessage;
     const result = messageToThreadLike(msg);
-    expect(result.role).toBe("system");
-    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    expect(text).toInclude('"type": "connected"');
+    expect(result).toBeNull();
   });
 });
 
