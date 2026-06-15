@@ -480,17 +480,224 @@ export function convertExternalToThreadLike(
         if (rendered) return rendered;
         return { type: "text", text: JSON.stringify(block) };
       });
-      return {
+      return enrichBubbleMetadata({
         role: "assistant",
         content: parts,
         metadata: { custom: { _raw: msg } },
-      };
+      });
     }
     case "user":
       return null;
     default:
       return null;
   }
+}
+
+// ── API Error Attachment ────────────────────────────────────────────
+
+export type ApiErrorAttachment = {
+  uuid?: string;
+  parentUuid?: string;
+  error?: string;
+  text: string;
+  raw: SessionStreamServerMessage;
+  resolution: "direct-parent" | "ancestor" | "tool-result-parent" | "pending";
+};
+
+/** Check if a message is an external API error annotation (not a normal assistant reply). */
+export function isExternalApiErrorMessage(msg: SessionStreamServerMessage): boolean {
+  const m = msg as Record<string, unknown>;
+  return m.userType === "external" && m.isApiErrorMessage === true;
+}
+
+/** Extract human-readable error text from an API error message. */
+export function extractApiErrorText(msg: SessionStreamServerMessage): string {
+  try {
+    const assistantMsg = msg as unknown as {
+      message?: { content?: Array<{ type: string; text?: string }> };
+    };
+    const texts = (assistantMsg.message?.content ?? [])
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text!);
+    if (texts.length > 0) return texts.join("\n");
+  } catch {
+    /* fall through */
+  }
+  const err = (msg as Record<string, unknown>).error;
+  if (typeof err === "string") return err;
+  return JSON.stringify(msg).slice(0, 500);
+}
+
+/** Get the parentUuid from a message's envelope fields. */
+export function getMsgParentUuid(msg: SessionStreamServerMessage): string | null {
+  const m = msg as Record<string, unknown>;
+  return (m.parentUuid as string) ?? (m.logicalParentUuid as string) ?? null;
+}
+
+/** Standalone UUID extractor (for pure functions; mirrors getMessageUuid in the hook). */
+export function getMsgUuid(msg: SessionStreamServerMessage): string | null {
+  const uuid = (msg as Record<string, unknown>).uuid;
+  return typeof uuid === "string" ? uuid : null;
+}
+
+/** Extract tool_use_id values from a user message's tool_result content blocks. */
+export function getMsgToolResultIds(msg: SessionStreamServerMessage): string[] {
+  if (msg.type !== "user") return [];
+  const userMsg = msg as unknown as {
+    message?: { content?: Array<{ type?: string; tool_use_id?: string }> };
+  };
+  return (userMsg.message?.content ?? [])
+    .filter((b) => b.type === "tool_result" && typeof b.tool_use_id === "string")
+    .map((b) => b.tool_use_id!);
+}
+
+/** Check if a thread message's tool-call parts include a specific tool_use_id. */
+export function threadMessageHasToolCallId(msg: ThreadMessageLike, toolUseId: string): boolean {
+  const content = msg.content;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (part: unknown) =>
+      (part as { type?: string; toolCallId?: string }).type === "tool-call" &&
+      (part as { toolCallId: string }).toolCallId === toolUseId,
+  );
+}
+
+type RawByUuid = Map<string, SessionStreamServerMessage>;
+
+function findBubbleForRawUuid(
+  messages: ThreadMessageLike[],
+  uuid: string,
+): ThreadMessageLike | null {
+  for (const m of messages) {
+    const custom = m.metadata?.custom as Record<string, unknown> | undefined;
+    if (!custom) continue;
+    const sourceUuids = custom.sourceUuids as string[] | undefined;
+    if (sourceUuids?.includes(uuid)) return m;
+    const raw = custom._raw as Record<string, unknown> | undefined;
+    if (raw?.uuid === uuid) return m;
+  }
+  return null;
+}
+
+function resolveErrorAnchor(
+  errorMsg: SessionStreamServerMessage,
+  messages: ThreadMessageLike[],
+  rawByUuid: RawByUuid,
+): { bubble: ThreadMessageLike; resolution: ApiErrorAttachment["resolution"] } | null {
+  const parentUuid = getMsgParentUuid(errorMsg);
+  if (!parentUuid) return null;
+
+  const direct = findBubbleForRawUuid(messages, parentUuid);
+  if (direct) return { bubble: direct, resolution: "direct-parent" };
+
+  const parentRaw = rawByUuid.get(parentUuid);
+  if (!parentRaw) return null;
+
+  const toolResultIds = getMsgToolResultIds(parentRaw);
+  if (toolResultIds.length > 0) {
+    for (const m of messages) {
+      if (m.role !== "assistant") continue;
+      if (toolResultIds.some((tid) => threadMessageHasToolCallId(m, tid))) {
+        return { bubble: m, resolution: "tool-result-parent" };
+      }
+    }
+  }
+
+  let ancestor = parentRaw;
+  for (let i = 0; i < 10; i++) {
+    const ancestorParentUuid = getMsgParentUuid(ancestor);
+    if (!ancestorParentUuid) break;
+    const ancestorBubble = findBubbleForRawUuid(messages, ancestorParentUuid);
+    if (ancestorBubble) return { bubble: ancestorBubble, resolution: "ancestor" };
+    const next = rawByUuid.get(ancestorParentUuid);
+    if (!next) break;
+    ancestor = next;
+  }
+
+  return null;
+}
+
+function makeApiErrorAttachment(
+  msg: SessionStreamServerMessage,
+  resolution: ApiErrorAttachment["resolution"],
+): ApiErrorAttachment {
+  return {
+    uuid: getMsgUuid(msg) ?? undefined,
+    parentUuid: getMsgParentUuid(msg) ?? undefined,
+    error: (msg as Record<string, unknown>).error as string | undefined,
+    text: extractApiErrorText(msg),
+    raw: msg,
+    resolution,
+  };
+}
+
+/** Add sourceUuids / _rawMessages metadata to a newly created bubble. */
+export function enrichBubbleMetadata(bubble: ThreadMessageLike): ThreadMessageLike {
+  const custom = (bubble.metadata?.custom ?? {}) as Record<string, unknown>;
+  const raw = custom._raw as SessionStreamServerMessage | undefined;
+  const uuid = raw ? getMsgUuid(raw) : null;
+  const sourceUuids: string[] = uuid ? [uuid] : [];
+  const _rawMessages: SessionStreamServerMessage[] = raw ? [raw] : [];
+  return {
+    ...bubble,
+    metadata: { custom: { ...custom, sourceUuids, _rawMessages } },
+  };
+}
+
+/** Attach an API error to a bubble (returns new bubble, does not mutate). */
+export function attachErrorToBubble(
+  bubble: ThreadMessageLike,
+  attachment: ApiErrorAttachment,
+): ThreadMessageLike {
+  const custom = { ...bubble.metadata?.custom } as Record<string, unknown>;
+  const existing =
+    (custom._rawMessages as SessionStreamServerMessage[]) ??
+    (custom._raw ? [custom._raw as SessionStreamServerMessage] : []);
+  const existingSources = (custom.sourceUuids as string[]) ?? [];
+  return {
+    ...bubble,
+    metadata: {
+      custom: {
+        ...custom,
+        apiErrors: [...((custom.apiErrors as ApiErrorAttachment[]) ?? []), attachment],
+        _rawMessages: [...existing, attachment.raw],
+        sourceUuids: [...existingSources, ...(attachment.uuid ? [attachment.uuid] : [])],
+      },
+    },
+  };
+}
+
+export function attachApiErrorToMessages(
+  messages: ThreadMessageLike[],
+  errorMsg: SessionStreamServerMessage,
+  rawByUuid: RawByUuid,
+): { messages: ThreadMessageLike[]; attached: boolean } {
+  const anchor = resolveErrorAnchor(errorMsg, messages, rawByUuid);
+  if (!anchor) return { messages, attached: false };
+
+  const attachment = makeApiErrorAttachment(errorMsg, anchor.resolution);
+  return {
+    messages: messages.map((m) => (m === anchor.bubble ? attachErrorToBubble(m, attachment) : m)),
+    attached: true,
+  };
+}
+
+export function drainPendingErrors(
+  messages: ThreadMessageLike[],
+  pending: SessionStreamServerMessage[],
+  rawByUuid: RawByUuid,
+): { messages: ThreadMessageLike[]; remaining: SessionStreamServerMessage[] } {
+  const remaining: SessionStreamServerMessage[] = [];
+  let current = messages;
+  for (const errorMsg of pending) {
+    const result = attachApiErrorToMessages(current, errorMsg, rawByUuid);
+    if (result.attached) {
+      current = result.messages;
+    } else {
+      remaining.push(errorMsg);
+    }
+  }
+  return { messages: current, remaining };
 }
 
 // ── messageToThreadLike ──────────────────────────────────────────────
@@ -825,9 +1032,38 @@ export function useClaude2Session(
   const outputBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
 
   // All external-message side effects in one place.
+  // API errors are intercepted before convert — they attach to parent bubbles,
+  // never render as standalone messages.
+  const pendingApiErrorsRef = useRef<SessionStreamServerMessage[]>([]);
+
   const handleExternalMessage = useCallback((msg: SessionStreamServerMessage) => {
+    if (isExternalApiErrorMessage(msg)) {
+      setMessagesState((prev) => {
+        const result = attachApiErrorToMessages(prev, msg, messageMapRef.current);
+        if (!result.attached) {
+          pendingApiErrorsRef.current.push(msg);
+        }
+        return result.messages;
+      });
+      return;
+    }
+
     const uiMessage = convertExternalToThreadLike(msg);
-    if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
+    if (uiMessage) {
+      setMessagesState((prev) => {
+        let next = [...prev, uiMessage];
+        if (pendingApiErrorsRef.current.length > 0) {
+          const drained = drainPendingErrors(
+            next,
+            pendingApiErrorsRef.current,
+            messageMapRef.current,
+          );
+          pendingApiErrorsRef.current = drained.remaining;
+          next = drained.messages;
+        }
+        return next;
+      });
+    }
 
     const ops = extractTaskOps(msg);
     if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
@@ -857,7 +1093,22 @@ export function useClaude2Session(
       return;
     }
     const uiMessage = messageToThreadLike(msg);
-    if (uiMessage) setMessagesState((prev) => [...prev, uiMessage]);
+    if (uiMessage) {
+      const enriched = enrichBubbleMetadata(uiMessage);
+      setMessagesState((prev) => {
+        let next = [...prev, enriched];
+        if (pendingApiErrorsRef.current.length > 0) {
+          const drained = drainPendingErrors(
+            next,
+            pendingApiErrorsRef.current,
+            messageMapRef.current,
+          );
+          pendingApiErrorsRef.current = drained.remaining;
+          next = drained.messages;
+        }
+        return next;
+      });
+    }
   }, []);
 
   // Single entry point: dispatches by userType to the matching handler.
@@ -875,9 +1126,14 @@ export function useClaude2Session(
 
   const processBatch = useCallback(
     (rawMessages: SessionStreamServerMessage[]) => {
+      // Phase 1: register all messages so errors can find their parents
+      // regardless of message order within the batch.
       for (const m of rawMessages) {
         const uuid = getMessageUuid(m);
         if (uuid) messageMapRef.current.set(uuid, m);
+      }
+      // Phase 2: process each message through the normal pipeline.
+      for (const m of rawMessages) {
         processMessage(m);
       }
     },
@@ -944,6 +1200,7 @@ export function useClaude2Session(
     compactActiveRef.current = false;
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
+    pendingApiErrorsRef.current = [];
   }, [initialModel, initialPermissionMode]);
 
   // Countdown timer for retry
@@ -1220,12 +1477,22 @@ export function useClaude2Session(
         const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
         cursorRef.current = response.pagination.nextCursor;
         setHasOlder(response.pagination.hasOlder);
-        const converted: ThreadMessageLike[] = [];
+
+        // Phase 1: register all messages so errors can find parents in-page.
         for (const m of response.messages) {
           const uuid = getMessageUuid(m);
           if (uuid) messageMapRef.current.set(uuid, m);
-          // processMessage appends to messages state, but for loadOlder
-          // we need to prepend. Collect messages first, apply task ops directly.
+        }
+
+        // Phase 2: convert non-error messages.
+        const converted: ThreadMessageLike[] = [];
+        const errorsInPage: SessionStreamServerMessage[] = [];
+
+        for (const m of response.messages) {
+          if (isExternalApiErrorMessage(m)) {
+            errorsInPage.push(m);
+            continue;
+          }
           const userType = (m as Record<string, unknown>).userType;
           let uiMessage: ThreadMessageLike | null;
           if (userType === "external") {
@@ -1237,10 +1504,30 @@ export function useClaude2Session(
             continue;
           } else {
             uiMessage = messageToThreadLike(m);
+            if (uiMessage) uiMessage = enrichBubbleMetadata(uiMessage);
           }
           if (uiMessage) converted.push(uiMessage);
         }
-        setMessagesState((prev) => [...converted, ...prev]);
+
+        // Phase 3: attach errors from this page + any pending.
+        const allPending = [...pendingApiErrorsRef.current, ...errorsInPage];
+        const drained = drainPendingErrors(converted, allPending, messageMapRef.current);
+        pendingApiErrorsRef.current = drained.remaining;
+
+        // Phase 4: prepend and drain against existing messages too.
+        setMessagesState((prev) => {
+          let next = [...drained.messages, ...prev];
+          if (pendingApiErrorsRef.current.length > 0) {
+            const drained2 = drainPendingErrors(
+              next,
+              pendingApiErrorsRef.current,
+              messageMapRef.current,
+            );
+            pendingApiErrorsRef.current = drained2.remaining;
+            next = drained2.messages;
+          }
+          return next;
+        });
       } catch (err) {
         console.error("[loadOlder] error", err);
       }

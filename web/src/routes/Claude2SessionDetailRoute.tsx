@@ -30,6 +30,7 @@ import { CollapsibleSection } from "../components/assistant-ui/collapsible-secti
 import {
   Claude2BridgeContext,
   useClaude2Session,
+  type ApiErrorAttachment,
   type RetryInfo,
   type TaskInfo,
 } from "./claude2-adapter";
@@ -543,6 +544,7 @@ function UserChatBubble() {
     <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
+        <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
         <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
@@ -672,6 +674,7 @@ function AssistantChatBubble() {
             </div>
           ) : null}
         </AuiIf>
+        <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
         {!isEmpty && !isStreaming ? (
@@ -743,10 +746,35 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
   );
 }
 
+function ApiErrorAttachments() {
+  const message = useMessage();
+  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const apiErrors = custom?.apiErrors as ApiErrorAttachment[] | undefined;
+  if (!apiErrors || apiErrors.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-1 border-t border-red-700/30 pt-2">
+      {apiErrors.map((err, i) => (
+        <div
+          key={i}
+          className="text-[0.65rem] leading-relaxed text-red-300/90 bg-red-950/50 rounded px-2 py-1 break-all overflow-hidden"
+        >
+          <span className="font-semibold text-red-400 mr-1.5">{err.error ?? "error"}</span>
+          <span className="text-red-300/70">{err.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RawDebugTooltip({ data }: { data: unknown }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
-  const rawJson = JSON.stringify(data, null, 2);
+  // If the bubble carries _rawMessages (primary raw + error raws), show all.
+  const custom = data as Record<string, unknown>;
+  const rawMessages = custom._rawMessages as unknown[] | undefined;
+  const displayData = rawMessages && rawMessages.length > 1 ? rawMessages : data;
+  const rawJson = JSON.stringify(displayData, null, 2);
   const displayText = rawJson.length > 2000 ? rawJson.slice(0, 2000) + "\n… (truncated)" : rawJson;
 
   return (
@@ -834,6 +862,7 @@ function SystemChatBubble() {
             <MessagePrimitive.Parts />
           </div>
         )}
+        <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
         {rawData ? <RawDebugTooltip data={rawData} /> : null}

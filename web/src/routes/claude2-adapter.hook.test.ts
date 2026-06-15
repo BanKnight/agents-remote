@@ -704,7 +704,7 @@ describe("useClaude2Session queue-operation", () => {
   test("ws recv log still prints queue-operation", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -738,5 +738,134 @@ describe("useClaude2Session queue-operation", () => {
     });
     expect(result.current.inputQueue[1]).toEqual({ content: "普通文本", source: "user" });
     expect(result.current.inputQueue[2]).toEqual({ content: "", source: "user" });
+  });
+});
+
+describe("useClaude2Session API error handling", () => {
+  const apiErrorMsg = (overrides: Record<string, unknown> = {}) =>
+    ({
+      type: "assistant",
+      message: {
+        id: "err-1",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "500 Request failed" }],
+      },
+      userType: "external",
+      isApiErrorMessage: true,
+      error: "server_error",
+      uuid: "err-uuid",
+      parentUuid: "parent-uuid",
+      ...overrides,
+    }) as unknown as SessionStreamServerMessage;
+
+  const extAssistant = (id: string, text: string, uuid: string): SessionStreamServerMessage =>
+    ({
+      type: "assistant",
+      message: { id, role: "assistant", content: [{ type: "text", text }] },
+      userType: "external",
+      uuid,
+    }) as unknown as SessionStreamServerMessage;
+
+  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+    result.current.storeAdapter.messages;
+
+  test("live: API error after parent attaches to parent bubble, no extra bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit(extAssistant("a1", "hello", "parent-uuid"));
+      socket.emit(apiErrorMsg({ parentUuid: "parent-uuid" }));
+    });
+
+    // connected (system) + assistant = 2 messages; error NOT standalone
+    expect(getMessages(result)).toHaveLength(2);
+    const custom = getMessages(result)[1]?.metadata?.custom as Record<string, unknown>;
+    const apiErrors = custom?.apiErrors as unknown[];
+    expect(apiErrors).toHaveLength(1);
+  });
+
+  test("live: error before parent → pending, then resolved when parent arrives", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit(apiErrorMsg({ parentUuid: "parent-uuid", uuid: "e1" }));
+      socket.emit(extAssistant("a1", "hello", "parent-uuid"));
+    });
+
+    // connected + assistant = 2 messages
+    expect(getMessages(result)).toHaveLength(2);
+    const custom = getMessages(result)[1]?.metadata?.custom as Record<string, unknown>;
+    expect(custom?.apiErrors).toHaveLength(1);
+  });
+
+  test("history batch: parent + error in same batch → error attaches, no standalone", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit({ type: "history_start", count: 2 });
+      socket.emit(extAssistant("a1", "hello", "parent-uuid"));
+      socket.emit(apiErrorMsg({ parentUuid: "parent-uuid", uuid: "e1" }));
+      socket.emit({ type: "history_end" });
+    });
+
+    // history_start(1) + assistant(1) + history_end(1) = 3 system bubbles + assistant(1) + connected(1)
+    // connected(1) + history messages(4: hs, assist, error-not-standalone, he)
+    // wait, the error doesn't produce a standalone bubble. So: connected + hs + assistant + he = 4
+    // Actually let me just count externally visible bubbles:
+    const msgs = getMessages(result);
+    const assistantMsgs = msgs.filter((m) => m.role === "assistant");
+    expect(assistantMsgs).toHaveLength(1);
+    const custom = assistantMsgs[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom?.apiErrors).toHaveLength(1);
+  });
+
+  test("output batch: API error does not create standalone bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit({ type: "output_start", count: 2 } as never);
+      socket.emit(extAssistant("a2", "world", "pu-2"));
+      socket.emit(apiErrorMsg({ parentUuid: "pu-2", uuid: "e2" }));
+      socket.emit({ type: "output_end" } as never);
+    });
+
+    const msgs = getMessages(result);
+    const assistantMsgs = msgs.filter((m) => m.role === "assistant");
+    expect(assistantMsgs).toHaveLength(1);
+    const custom = assistantMsgs[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom?.apiErrors).toHaveLength(1);
+  });
+
+  test("normal external assistant still rendered (no regression)", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "connected", sessionId: "s1", sessionType: "agent", status: "running" });
+      socket.emit(extAssistant("a1", "normal reply", "uuid-a1"));
+    });
+
+    // connected + assistant = 2
+    expect(getMessages(result)).toHaveLength(2);
+    expect(getMessages(result)[1]?.role).toBe("assistant");
   });
 });

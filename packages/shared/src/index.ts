@@ -346,8 +346,20 @@ export type Claude2AssistantMessage = {
     id: string;
     role: "assistant";
     content: Claude2AssistantContent[];
+    model?: string;
+    usage?: { input_tokens: number; output_tokens: number };
   };
   session_id: string;
+  // JSONL envelope fields (optional — may be absent from stdout stream)
+  uuid?: string;
+  parentUuid?: string;
+  logicalParentUuid?: string;
+  userType?: string;
+  isApiErrorMessage?: boolean;
+  isSidechain?: boolean;
+  error?: string;
+  timestamp?: string;
+  sessionId?: string;
 };
 
 export type Claude2ApiRetry = {
@@ -444,6 +456,17 @@ export type Claude2UserMessage = {
   parent_tool_use_id?: string;
   isMeta?: boolean;
   sourceToolUseID?: string;
+  isSynthetic?: boolean;
+  // JSONL envelope fields (optional — may be absent from stdout stream)
+  uuid?: string;
+  parentUuid?: string;
+  logicalParentUuid?: string;
+  userType?: string;
+  isApiErrorMessage?: boolean;
+  isSidechain?: boolean;
+  error?: string;
+  timestamp?: string;
+  sessionId?: string;
 };
 
 export type Claude2TaskStarted = {

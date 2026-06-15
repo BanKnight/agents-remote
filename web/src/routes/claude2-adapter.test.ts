@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
+import type { ThreadMessageLike } from "@assistant-ui/react";
 import {
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
@@ -13,8 +14,18 @@ import {
   messageToThreadLike,
   deriveQueueSource,
   applyQueueOperation,
+  isExternalApiErrorMessage,
+  extractApiErrorText,
+  getMsgParentUuid,
+  getMsgUuid,
+  getMsgToolResultIds,
+  threadMessageHasToolCallId,
+  enrichBubbleMetadata,
+  attachErrorToBubble,
+  attachApiErrorToMessages,
+  drainPendingErrors,
 } from "./claude2-adapter";
-import type { QueueEntry } from "./claude2-adapter";
+import type { ApiErrorAttachment, QueueEntry } from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -1427,5 +1438,353 @@ describe("queue-operation helpers", () => {
       state = applyQueueOperation(state, { type: "queue-operation", operation: "remove" });
       expect(state).toEqual([]);
     });
+  });
+});
+
+// ── API error attachment helpers ──────────────────────────────────────
+
+const apiErrorMsg = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
+  ({
+    type: "assistant",
+    message: {
+      id: "err-1",
+      role: "assistant",
+      model: "<synthetic>",
+      content: [{ type: "text", text: "500 Request failed" }],
+    },
+    userType: "external",
+    isApiErrorMessage: true,
+    error: "server_error",
+    uuid: "err-uuid-1",
+    parentUuid: "parent-uuid-1",
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
+
+const normalExternalAssistant = (id = "a1", text = "hello"): SessionStreamServerMessage =>
+  ({
+    type: "assistant",
+    message: { id, role: "assistant", content: [{ type: "text", text }] },
+    userType: "external",
+    uuid: "uuid-" + id,
+  }) as unknown as SessionStreamServerMessage;
+
+const bubble = (
+  role: "user" | "assistant" | "system",
+  overrides: Record<string, unknown> = {},
+): ThreadMessageLike => {
+  const base: ThreadMessageLike = {
+    role,
+    content: role === "user" ? "test content" : [{ type: "text", text: "test content" }],
+    metadata: {
+      custom: {
+        _raw: { uuid: "uuid-" + role },
+        sourceUuids: ["uuid-" + role],
+        _rawMessages: [{ uuid: "uuid-" + role }],
+        ...overrides,
+      },
+    },
+  };
+  return base;
+};
+
+const toolCallBubble = (toolCallId: string, rawUuid: string): ThreadMessageLike => ({
+  role: "assistant",
+  content: [
+    { type: "text" as const, text: "thinking..." },
+    { type: "tool-call" as const, toolCallId, toolName: "Bash", args: {}, argsText: "{}" },
+  ],
+  metadata: {
+    custom: { _raw: { uuid: rawUuid }, sourceUuids: [rawUuid], _rawMessages: [{ uuid: rawUuid }] },
+  },
+});
+
+describe("API error detection", () => {
+  test("isExternalApiErrorMessage true for error message", () => {
+    expect(isExternalApiErrorMessage(apiErrorMsg())).toBe(true);
+  });
+
+  test("isExternalApiErrorMessage false for normal external assistant", () => {
+    expect(isExternalApiErrorMessage(normalExternalAssistant())).toBe(false);
+  });
+
+  test("isExternalApiErrorMessage false when userType missing", () => {
+    const m = apiErrorMsg();
+    delete (m as Record<string, unknown>).userType;
+    expect(isExternalApiErrorMessage(m)).toBe(false);
+  });
+
+  test("isExternalApiErrorMessage false when isApiErrorMessage missing", () => {
+    const m = apiErrorMsg();
+    delete (m as Record<string, unknown>).isApiErrorMessage;
+    expect(isExternalApiErrorMessage(m)).toBe(false);
+  });
+});
+
+describe("extractApiErrorText", () => {
+  test("extracts from text content blocks", () => {
+    expect(extractApiErrorText(apiErrorMsg())).toBe("500 Request failed");
+  });
+
+  test("joins multiple text blocks", () => {
+    const m = apiErrorMsg({
+      message: {
+        id: "e",
+        role: "assistant",
+        content: [
+          { type: "text", text: "Line 1" },
+          { type: "text", text: "Line 2" },
+        ],
+      },
+    });
+    expect(extractApiErrorText(m)).toBe("Line 1\nLine 2");
+  });
+
+  test("falls back to error field", () => {
+    const m = apiErrorMsg({
+      message: { id: "e", role: "assistant", content: [] },
+      error: "max_output_tokens",
+    });
+    expect(extractApiErrorText(m)).toBe("max_output_tokens");
+  });
+
+  test("falls back to JSON for malformed message", () => {
+    const m = {
+      type: "assistant",
+      userType: "external",
+      isApiErrorMessage: true,
+    } as unknown as SessionStreamServerMessage;
+    const text = extractApiErrorText(m);
+    expect(text).toContain("isApiErrorMessage");
+  });
+});
+
+describe("getMsgParentUuid", () => {
+  test("reads parentUuid", () => {
+    expect(getMsgParentUuid(apiErrorMsg({ parentUuid: "p-123" }))).toBe("p-123");
+  });
+
+  test("prefers parentUuid over logicalParentUuid", () => {
+    const m = apiErrorMsg({ parentUuid: "p-1", logicalParentUuid: "lp-2" });
+    expect(getMsgParentUuid(m)).toBe("p-1");
+  });
+
+  test("falls back to logicalParentUuid", () => {
+    const m = apiErrorMsg({ parentUuid: undefined, logicalParentUuid: "lp-2" });
+    expect(getMsgParentUuid(m)).toBe("lp-2");
+  });
+
+  test("returns null when neither field present", () => {
+    const m = apiErrorMsg({ parentUuid: undefined, logicalParentUuid: undefined });
+    expect(getMsgParentUuid(m)).toBeNull();
+  });
+});
+
+describe("getMsgUuid", () => {
+  test("reads uuid string", () => {
+    expect(getMsgUuid(apiErrorMsg({ uuid: "u-123" }))).toBe("u-123");
+  });
+
+  test("returns null when absent", () => {
+    expect(getMsgUuid({ type: "assistant" } as SessionStreamServerMessage)).toBeNull();
+  });
+
+  test("returns null for non-string uuid", () => {
+    expect(
+      getMsgUuid({ type: "assistant", uuid: 42 } as unknown as SessionStreamServerMessage),
+    ).toBeNull();
+  });
+});
+
+describe("getMsgToolResultIds", () => {
+  test("extracts tool_use_id from user with tool_result", () => {
+    const m = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "tid-1", content: "ok" },
+          { type: "tool_result", tool_use_id: "tid-2", content: "ok" },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage;
+    expect(getMsgToolResultIds(m)).toEqual(["tid-1", "tid-2"]);
+  });
+
+  test("returns empty for user without tool_result", () => {
+    const m = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    } as unknown as SessionStreamServerMessage;
+    expect(getMsgToolResultIds(m)).toEqual([]);
+  });
+
+  test("returns empty for non-user type", () => {
+    expect(getMsgToolResultIds({ type: "assistant" } as SessionStreamServerMessage)).toEqual([]);
+  });
+});
+
+describe("threadMessageHasToolCallId", () => {
+  test("finds matching tool-call", () => {
+    const b = toolCallBubble("call-1", "uuid-1");
+    expect(threadMessageHasToolCallId(b, "call-1")).toBe(true);
+  });
+
+  test("returns false for non-matching id", () => {
+    const b = toolCallBubble("call-1", "uuid-1");
+    expect(threadMessageHasToolCallId(b, "call-2")).toBe(false);
+  });
+
+  test("returns false for non-array content", () => {
+    const b: ThreadMessageLike = { role: "user", content: "text" };
+    expect(threadMessageHasToolCallId(b, "call-1")).toBe(false);
+  });
+});
+
+describe("enrichBubbleMetadata", () => {
+  test("adds sourceUuids and _rawMessages from _raw", () => {
+    const raw = { type: "assistant", uuid: "u-1" } as SessionStreamServerMessage;
+    const input: ThreadMessageLike = {
+      role: "assistant",
+      content: [{ type: "text", text: "hi" }],
+      metadata: { custom: { _raw: raw } },
+    };
+    const enriched = enrichBubbleMetadata(input);
+    const custom = enriched.metadata?.custom as Record<string, unknown>;
+    expect(custom.sourceUuids).toEqual(["u-1"]);
+    expect(custom._rawMessages).toEqual([raw]);
+  });
+
+  test("handles message without _raw", () => {
+    const input: ThreadMessageLike = { role: "user", content: "hi" };
+    const enriched = enrichBubbleMetadata(input);
+    const custom = enriched.metadata?.custom as Record<string, unknown>;
+    expect(custom.sourceUuids).toEqual([]);
+    expect(custom._rawMessages).toEqual([]);
+  });
+});
+
+describe("attachErrorToBubble", () => {
+  test("adds apiErrors, extends _rawMessages and sourceUuids", () => {
+    const b = bubble("assistant");
+    const attachment: ApiErrorAttachment = {
+      uuid: "err-uuid",
+      parentUuid: "parent-uuid",
+      error: "server_error",
+      text: "500 failed",
+      raw: apiErrorMsg(),
+      resolution: "direct-parent",
+    };
+    const updated = attachErrorToBubble(b, attachment);
+    const custom = updated.metadata?.custom as Record<string, unknown>;
+    expect(custom.apiErrors).toEqual([attachment]);
+    expect(custom._rawMessages).toHaveLength(2); // original + error raw
+    expect(custom.sourceUuids).toContain("err-uuid");
+  });
+
+  test("appends second error to existing apiErrors", () => {
+    const first: ApiErrorAttachment = {
+      uuid: "e1",
+      error: "err1",
+      text: "t1",
+      raw: apiErrorMsg(),
+      resolution: "direct-parent",
+    };
+    const b = attachErrorToBubble(bubble("assistant"), first);
+    const second: ApiErrorAttachment = {
+      uuid: "e2",
+      error: "err2",
+      text: "t2",
+      raw: apiErrorMsg(),
+      resolution: "ancestor",
+    };
+    const updated = attachErrorToBubble(b, second);
+    const custom = updated.metadata?.custom as Record<string, unknown>;
+    const apiErrors = custom.apiErrors as ApiErrorAttachment[];
+    expect(apiErrors).toHaveLength(2);
+    expect(apiErrors[0].uuid).toBe("e1");
+    expect(apiErrors[1].uuid).toBe("e2");
+  });
+});
+
+describe("attachApiErrorToMessages", () => {
+  test("direct parent attach: error attaches to matching bubble", () => {
+    const messages = [bubble("assistant", { sourceUuids: ["parent-uuid-1"] })];
+    const result = attachApiErrorToMessages(messages, apiErrorMsg(), new Map());
+    expect(result.attached).toBe(true);
+    const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom.apiErrors).toHaveLength(1);
+  });
+
+  test("returns unmodified + attached=false when parent not found", () => {
+    const messages = [bubble("assistant", { sourceUuids: ["other-uuid"] })];
+    const result = attachApiErrorToMessages(messages, apiErrorMsg(), new Map());
+    expect(result.attached).toBe(false);
+    expect(result.messages).toBe(messages);
+  });
+
+  test("returns attached=false when no parentUuid on error", () => {
+    const messages = [bubble("assistant")];
+    const m = apiErrorMsg({ parentUuid: undefined, logicalParentUuid: undefined });
+    const result = attachApiErrorToMessages(messages, m, new Map());
+    expect(result.attached).toBe(false);
+  });
+
+  test("tool-result-parent: attaches to tool-call bubble when parent is user with tool_use_id", () => {
+    const toolBubble = toolCallBubble("tid-1", "tc-uuid");
+    const messages = [toolBubble];
+    const userParentRaw = {
+      type: "user",
+      uuid: "user-uuid",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tid-1", content: "output" }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const rawByUuid = new Map([["user-uuid", userParentRaw]]);
+    const errMsg = apiErrorMsg({ parentUuid: "user-uuid" });
+    const result = attachApiErrorToMessages(messages, errMsg, rawByUuid);
+    expect(result.attached).toBe(true);
+    const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom.apiErrors).toHaveLength(1);
+    const err = (custom.apiErrors as ApiErrorAttachment[])[0];
+    expect(err.resolution).toBe("tool-result-parent");
+  });
+
+  test("ancestor walk: attaches to ancestor bubble when parent is attachment", () => {
+    const ancestorBubble = bubble("user", { sourceUuids: ["ancestor-uuid"] });
+    const messages = [ancestorBubble];
+    const attachmentRaw = {
+      type: "attachment",
+      uuid: "att-uuid",
+      parentUuid: "ancestor-uuid",
+    } as unknown as SessionStreamServerMessage;
+    const rawByUuid = new Map([["att-uuid", attachmentRaw]]);
+    const errMsg = apiErrorMsg({ parentUuid: "att-uuid" });
+    const result = attachApiErrorToMessages(messages, errMsg, rawByUuid);
+    expect(result.attached).toBe(true);
+    const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
+    const err = (custom.apiErrors as ApiErrorAttachment[])[0];
+    expect(err.resolution).toBe("ancestor");
+  });
+});
+
+describe("drainPendingErrors", () => {
+  test("attaches resolvable errors, keeps unresolved", () => {
+    const messages = [bubble("assistant", { sourceUuids: ["pu-1"] })];
+    const resolved = apiErrorMsg({ parentUuid: "pu-1", uuid: "e-resolved" });
+    const unresolved = apiErrorMsg({ parentUuid: "pu-missing", uuid: "e-unresolved" });
+    const result = drainPendingErrors(messages, [resolved, unresolved], new Map());
+    expect(result.remaining).toHaveLength(1);
+    expect(result.remaining[0]).toBe(unresolved);
+    const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom.apiErrors).toHaveLength(1);
+  });
+
+  test("returns empty remaining when all resolved", () => {
+    const messages = [bubble("assistant", { sourceUuids: ["pu-1"] })];
+    const result = drainPendingErrors(messages, [apiErrorMsg({ parentUuid: "pu-1" })], new Map());
+    expect(result.remaining).toEqual([]);
+    const custom = result.messages[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom.apiErrors).toHaveLength(1);
   });
 });
