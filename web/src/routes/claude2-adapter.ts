@@ -717,7 +717,6 @@ export function makeBoundaryDivider(kind: "history" | "output"): ThreadMessageLi
 
 export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMessageLike | null {
   if (
-    msg.type === "connected" ||
     msg.type === "permission-mode" ||
     msg.type === "ai-title" ||
     msg.type === "agent-name" ||

@@ -102,12 +102,6 @@ export class SessionStreamController {
       return false;
     }
 
-    send(socket, {
-      type: "connected",
-      sessionId: data.sessionId,
-      sessionType: data.sessionType,
-      status: data.status,
-    });
     try {
       await this.sendSnapshot(socket, data);
     } catch (e) {

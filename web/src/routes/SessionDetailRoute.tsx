@@ -157,6 +157,14 @@ function SessionDetail({
       : `${t("section.terminal")} Session`);
   const isEnded = connectionStatus === "ended" || sessionStatus === "closed";
 
+  // Seed initial sessionStatus from the detail query; subsequent updates come
+  // from WebSocket status messages.
+  useEffect(() => {
+    if (detail.data?.session.status) {
+      setSessionStatus((prev) => prev ?? detail.data.session.status);
+    }
+  }, [detail.data?.session.status]);
+
   const closeSession = useMutation({
     mutationFn: async () => {
       if (sessionType === "agent") {
@@ -241,6 +249,8 @@ function SessionDetail({
 
       socket.onopen = () => {
         if (!socketIsCurrent()) return;
+        reconnectAttemptsRef.current = 0;
+        setConnectionStatus("connected");
       };
 
       socket.onmessage = (event) => {
@@ -250,13 +260,6 @@ function SessionDetail({
         if (!message) {
           setConnectionStatus("error");
           setFatalError(t("session.fatalProtocol"));
-          return;
-        }
-
-        if (message.type === "connected") {
-          reconnectAttemptsRef.current = 0;
-          setConnectionStatus("connected");
-          setSessionStatus(message.status);
           return;
         }
 

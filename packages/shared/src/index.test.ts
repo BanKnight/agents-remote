@@ -192,12 +192,6 @@ test("Session API DTOs keep Agent and Terminal semantics separate", () => {
 test("Session stream envelopes describe transport messages", () => {
   const input: SessionStreamClientMessage = { type: "input", data: "pwd\n" };
   const resize: SessionStreamClientMessage = { type: "resize", cols: 100, rows: 30 };
-  const connected: SessionStreamServerMessage = {
-    type: "connected",
-    sessionId: "term_123",
-    sessionType: "terminal",
-    status: "running",
-  };
   const snapshot: SessionStreamServerMessage = { type: "snapshot", data: "$ pwd" };
   const disconnected: SessionStreamServerMessage = { type: "status", status: "disconnected" };
   const error: SessionStreamServerMessage = {
@@ -208,7 +202,6 @@ test("Session stream envelopes describe transport messages", () => {
 
   expect(input.data).toBe("pwd\n");
   expect(resize.cols).toBe(100);
-  expect(connected.sessionType).toBe("terminal");
   expect(snapshot.data).toContain("pwd");
   expect(disconnected.status).toBe("disconnected");
   expect(error.code).toBe("SESSION_RUNTIME_MISSING");

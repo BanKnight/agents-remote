@@ -134,12 +134,6 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
   await controller.message(socket, JSON.stringify({ type: "ping" }));
   controller.close(socket);
 
-  expect(messages).toContainEqual({
-    type: "connected",
-    sessionId: "terminal_stream123456",
-    sessionType: "terminal",
-    status: "running",
-  });
   expect(messages).toContainEqual({ type: "snapshot", data: "ready" });
   expect(messages).toContainEqual({ type: "output", data: "\npwd\n" });
   expect(messages).toContainEqual({ type: "snapshot", data: "ready\npwd\n" });

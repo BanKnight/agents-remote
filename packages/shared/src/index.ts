@@ -615,12 +615,6 @@ export type Claude2StreamClientMessage =
 
 export type SessionStreamServerMessage =
   | {
-      type: "connected";
-      sessionId: string;
-      sessionType: SessionType;
-      status: AgentSessionStatus | TerminalSessionStatus;
-    }
-  | {
       type: "snapshot";
       data: string;
     }
