@@ -2250,11 +2250,84 @@ describe("handleAttachment", () => {
   });
 
   test("file returns bubble without stateOps", () => {
-    const result = handleAttachment(attachment("file", { filePath: "/src/a.ts" }));
+    const result = handleAttachment(
+      attachment("file", {
+        filename: "/home/project/src/main.ts",
+        displayPath: "src/main.ts",
+        content: {
+          type: "text",
+          file: {
+            filePath: "/home/project/src/main.ts",
+            content: "export function hello() {\n  return 'world';\n}",
+            numLines: 3,
+            startLine: 1,
+            totalLines: 3,
+          },
+        },
+      }),
+    );
     expect(result.stateOps).toBeUndefined();
     expect(result.bubble).toBeDefined();
     const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
     expect(custom?.attachmentType).toBe("file");
+
+    // Verify _raw structure for the bubble renderer
+    const raw = custom?._raw as Record<string, unknown> | undefined;
+    const att = raw?.attachment as Record<string, unknown> | undefined;
+    expect(att?.displayPath).toBe("src/main.ts");
+    expect(att?.filename).toBe("/home/project/src/main.ts");
+    const inner = att?.content as Record<string, unknown> | undefined;
+    const fileData = inner?.file as Record<string, unknown> | undefined;
+    expect(fileData?.content).toBe("export function hello() {\n  return 'world';\n}");
+    expect(fileData?.numLines).toBe(3);
+  });
+
+  test("edited_text_file returns bubble with filename and snippet in _raw", () => {
+    const result = handleAttachment(
+      attachment("edited_text_file", {
+        filename: "/home/project/src/edited.ts",
+        snippet: "const x = 1;\nconst y = 2;",
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("edited_text_file");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.filename).toBe("/home/project/src/edited.ts");
+    expect(att?.snippet).toBe("const x = 1;\nconst y = 2;");
+  });
+
+  test("compact_file_reference returns bubble without body (single-line)", () => {
+    const result = handleAttachment(
+      attachment("compact_file_reference", {
+        filename: "/home/project/src/compact.ts",
+        displayPath: "src/compact.ts",
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("compact_file_reference");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.displayPath).toBe("src/compact.ts");
+    expect(att?.filename).toBe("/home/project/src/compact.ts");
+  });
+
+  test("plan_file_reference returns bubble with planFilePath and planContent in _raw", () => {
+    const result = handleAttachment(
+      attachment("plan_file_reference", {
+        planFilePath: "/home/.claude/plans/my-plan.md",
+        planContent: "# My Plan\n\n## Context\n...",
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("plan_file_reference");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.planFilePath).toBe("/home/.claude/plans/my-plan.md");
+    expect(att?.planContent).toBe("# My Plan\n\n## Context\n...");
   });
 
   test("hook_success returns bubble with attachmentType", () => {
@@ -2265,6 +2338,28 @@ describe("handleAttachment", () => {
     expect(result.bubble).toBeDefined();
     const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
     expect(custom?.attachmentType).toBe("hook_success");
+  });
+
+  test("hook_non_blocking_error returns bubble with accent/error fields", () => {
+    const result = handleAttachment(
+      attachment("hook_non_blocking_error", {
+        hookName: "Stop",
+        hookEvent: "Stop",
+        exitCode: 1,
+        stderr: "JSON validation failed",
+        durationMs: 20177,
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("hook_non_blocking_error");
+    // The raw attachment data is passed through so the bubble config can read accent/error fields
+    const raw = custom?._raw as Record<string, unknown> | undefined;
+    const att = raw?.attachment as Record<string, unknown> | undefined;
+    expect(att?.hookName).toBe("Stop");
+    expect(att?.exitCode).toBe(1);
+    expect(att?.stderr).toBe("JSON validation failed");
   });
 
   test("diagnostics returns bubble without stateOps", () => {

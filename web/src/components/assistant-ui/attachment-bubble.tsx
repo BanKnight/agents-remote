@@ -62,8 +62,14 @@ function fileBody(raw: Record<string, unknown>): ReactNode | null {
   const fileData = inner?.file as Record<string, unknown> | undefined;
   const text = fileData?.content as string | undefined;
   if (!text) return null;
+  const numLines = (fileData?.numLines as number) ?? (fileData?.totalLines as number);
   return (
-    <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">{text}</pre>
+    <div className="space-y-1">
+      {numLines != null && (
+        <div className="text-[0.6rem] text-amber-200/50 font-mono">{numLines} lines</div>
+      )}
+      <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">{text}</pre>
+    </div>
   );
 }
 
@@ -110,13 +116,13 @@ function hookStdioBody(raw: Record<string, unknown>): ReactNode | null {
 
 function hookContextBody(raw: Record<string, unknown>): ReactNode | null {
   const content = raw.attachment as Record<string, unknown> | undefined;
-  const items = content?.content as Array<{ text?: string }> | undefined;
+  const items = content?.content as string[] | undefined;
   if (!items || items.length === 0) return null;
   return (
     <div className="space-y-1">
       {items.map((item, i) => (
         <pre key={i} className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-32">
-          {item.text ?? JSON.stringify(item)}
+          {item}
         </pre>
       ))}
     </div>
@@ -125,22 +131,49 @@ function hookContextBody(raw: Record<string, unknown>): ReactNode | null {
 
 function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
   const content = raw.attachment as Record<string, unknown> | undefined;
-  const items = content?.diagnostics as
-    | Array<{ message?: string; severity?: string; line?: number }>
+  const files = content?.files as
+    | Array<{
+        uri?: string;
+        diagnostics?: Array<{
+          message?: string;
+          severity?: string;
+          range?: { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } };
+          source?: string;
+          code?: string;
+        }>;
+      }>
     | undefined;
-  if (!items || items.length === 0) return null;
+  if (!files || files.length === 0) return null;
   return (
-    <div className="space-y-1">
-      {items.map((d, i) => (
-        <div key={i} className="text-xs">
-          {d.severity && (
-            <span className={d.severity === "error" ? "text-red-300/80" : "text-amber-200/60"}>
-              [{d.severity}]
-            </span>
-          )}{" "}
-          {d.line != null && <span className="opacity-50">L{d.line}:</span>} {d.message}
-        </div>
-      ))}
+    <div className="space-y-1.5">
+      {files.map((file, fi) => {
+        const filePath = file.uri?.replace(/^file:\/\//, "") ?? null;
+        const diags = file.diagnostics;
+        if (!diags || diags.length === 0) return null;
+        return (
+          <div key={fi} className="space-y-0.5">
+            {filePath && (
+              <div className="text-[0.6rem] text-amber-200/50 font-mono truncate">{filePath}</div>
+            )}
+            {diags.map((d, di) => (
+              <div key={di} className="text-xs pl-1">
+                {d.severity && (
+                  <span className={d.severity === "Error" ? "text-red-300/80" : "text-amber-200/60"}>
+                    [{d.severity}]
+                  </span>
+                )}{" "}
+                {d.range?.start?.line != null && (
+                  <span className="opacity-50">
+                    L{d.range.start.line}
+                    {d.range.start.character != null ? `:${d.range.start.character}` : ""}:
+                  </span>
+                )}{" "}
+                {d.message}
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -178,19 +211,25 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   file: {
     icon: "file",
     labelKey: "claude2.attachment.file",
-    badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filePath as string) ?? null,
+    badge: (raw) => {
+      const a = raw.attachment as Record<string, unknown>;
+      return ((a?.displayPath as string) || (a?.filename as string)) ?? null;
+    },
     body: fileBody,
   },
   edited_text_file: {
     icon: "edit",
     labelKey: "claude2.attachment.edited_text_file",
-    badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filePath as string) ?? null,
+    badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filename as string) ?? null,
     body: editedTextBody,
   },
   compact_file_reference: {
     icon: "file",
     labelKey: "claude2.attachment.compact_file_reference",
-    badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filePath as string) ?? null,
+    badge: (raw) => {
+      const a = raw.attachment as Record<string, unknown>;
+      return ((a?.displayPath as string) || (a?.filename as string)) ?? null;
+    },
   },
   plan_file_reference: {
     icon: "plan",
@@ -205,9 +244,10 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
     labelKey: "claude2.attachment.hook_success",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
+      const name = (a?.hookName as string) ?? "";
       const exit = a?.exitCode != null ? `exit ${a.exitCode}` : "";
       const dur = a?.durationMs != null ? `${a.durationMs}ms` : "";
-      return [exit, dur].filter(Boolean).join(" ") || null;
+      return [name, exit, dur].filter(Boolean).join(" ") || null;
     },
     body: hookStdioBody,
   },
@@ -217,7 +257,9 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
     accent: "text-red-300/80",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
-      return (a?.hookName as string) ?? null;
+      const name = (a?.hookName as string) ?? "";
+      const exit = a?.exitCode != null ? `exit ${a.exitCode}` : "";
+      return [name, exit].filter(Boolean).join(" ") || null;
     },
     body: hookStdioBody,
   },
@@ -243,15 +285,15 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   opened_file_in_ide: {
     icon: "file",
     labelKey: "claude2.attachment.opened_file_in_ide",
-    badge: (raw) => ((raw.attachment as Record<string, unknown>)?.absolutePath as string) ?? null,
+    badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filename as string) ?? null,
   },
   selected_lines_in_ide: {
     icon: "edit",
     labelKey: "claude2.attachment.selected_lines_in_ide",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
-      const start = a?.startLine;
-      const end = a?.endLine;
+      const start = a?.lineStart;
+      const end = a?.lineEnd;
       return start != null ? (end != null ? `L${start}-L${end}` : `L${start}`) : null;
     },
     body: selectedLinesBody,
@@ -261,8 +303,8 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
     labelKey: "claude2.attachment.diagnostics",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
-      const diags = a?.diagnostics as Array<unknown> | undefined;
-      return diags ? `${diags.length} files` : null;
+      const files = a?.files as Array<unknown> | undefined;
+      return files ? `${files.length} files` : null;
     },
     body: diagnosticsBody,
   },
@@ -271,8 +313,12 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
     labelKey: "claude2.attachment.goal_status",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
-      const achieved = a?.goalAchieved;
-      return achieved === false ? "incomplete" : null;
+      const met = a?.met;
+      const condition = a?.condition as string | undefined;
+      if (met === false) {
+        return condition ? `incomplete: ${condition}` : "incomplete";
+      }
+      return condition ? `condition: ${condition}` : null;
     },
   },
 };
