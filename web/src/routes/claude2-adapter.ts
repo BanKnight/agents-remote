@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type {
+  Claude2Attachment,
   Claude2ControlResponse,
   Claude2QueueOperation,
   SessionStreamServerMessage,
@@ -464,6 +465,155 @@ export function hasToolUseNamed(msg: SessionStreamServerMessage, toolName: strin
   return assistantMsg.message.content.some(
     (b) => b.type === "tool_use" && (b.name === toolName || b.name === toolName.toLowerCase()),
   );
+}
+
+// ── Attachment handler ─────────────────────────────────────────────────
+//
+// Pure function: maps an attachment message to { bubble?, stateOps? }.
+// The caller (handleExternalMessage hook context) applies state side effects
+// and pushes the bubble to the message list. Exported for unit testing.
+//
+// Each case maps to one of:
+//   1. bubble only (file, hook, environment subtypes)
+//   2. stateOps only (task, session metadata subtypes — no bubble)
+//   3. bubble + stateOps (mode transitions)
+//
+// Unknown / unimplemented subtypes fall through to a placeholder bubble.
+
+export type AttachmentStateOps = {
+  permissionMode?: string;
+  replaceTasks?: TaskInfo[];
+  taskStatus?: {
+    id: string;
+    taskType: string;
+    description: string;
+    status: string;
+  };
+  skills?: string[];
+  skillsAdd?: string[];
+  slashCommands?: string[];
+  mcpServersAdd?: string[];
+};
+
+export type AttachmentResult = {
+  bubble?: ThreadMessageLike | null;
+  stateOps?: AttachmentStateOps | null;
+};
+
+function makeAttachmentBubble(subtype: string, raw: Claude2Attachment): ThreadMessageLike {
+  return {
+    role: "system",
+    content: [{ type: "text", text: `Attachment: ${subtype}` }],
+    metadata: { custom: { _raw: raw, attachmentType: subtype } },
+  };
+}
+
+export function handleAttachment(msg: Claude2Attachment): AttachmentResult {
+  const att = msg.attachment;
+
+  switch (att.type) {
+    // ── Mode transitions ──────────────────────────────────────────
+    case "plan_mode":
+    case "plan_mode_reentry":
+      return {
+        bubble: makeAttachmentBubble(att.type, msg),
+        stateOps: { permissionMode: "plan" },
+      };
+    case "plan_mode_exit":
+      return { bubble: makeAttachmentBubble(att.type, msg) };
+    case "auto_mode":
+      return {
+        bubble: makeAttachmentBubble(att.type, msg),
+        stateOps: { permissionMode: "auto" },
+      };
+    case "auto_mode_exit":
+      return {
+        bubble: makeAttachmentBubble(att.type, msg),
+        stateOps: { permissionMode: "default" },
+      };
+
+    // ── Tasks ─────────────────────────────────────────────────────
+    case "task_reminder":
+      return {
+        stateOps: {
+          replaceTasks: att.content.map((t) => ({
+            id: t.id ?? "",
+            kind: "task" as const,
+            description: t.subject ?? "",
+            status: (t.status ?? "running") as TaskInfo["status"],
+            subject: t.subject,
+          })),
+        },
+      };
+    case "task_status":
+      return {
+        stateOps: {
+          taskStatus: {
+            id: att.taskId,
+            taskType: att.taskType,
+            description: att.description,
+            status: att.status,
+          },
+        },
+      };
+
+    // ── Session metadata ──────────────────────────────────────────
+    case "skill_listing":
+      return {
+        stateOps: {
+          skills: att.content
+            .split("\n")
+            .filter((l) => l.startsWith("- "))
+            .map((l) => l.slice(2).split(":")[0].trim()),
+        },
+      };
+    case "mcp_instructions_delta":
+      return { stateOps: { mcpServersAdd: att.addedNames } };
+    case "command_permissions":
+      return { stateOps: { slashCommands: att.allowedTools } };
+    case "invoked_skills":
+      return {
+        stateOps: {
+          skillsAdd: att.skills.map((s) => s.name),
+        },
+      };
+
+    // ── Files / Hooks / Environment ───────────────────────────────
+    // All render as collapsible or single-line bubbles via the
+    // attachment-bubble component. The _raw payload in metadata
+    // provides the full fields for the renderer.
+    case "file":
+    case "edited_text_file":
+    case "compact_file_reference":
+    case "plan_file_reference":
+    case "hook_success":
+    case "hook_non_blocking_error":
+    case "hook_additional_context":
+    case "date_change":
+    case "queued_command":
+    case "opened_file_in_ide":
+    case "selected_lines_in_ide":
+    case "diagnostics":
+    case "goal_status":
+      return { bubble: makeAttachmentBubble(att.type, msg) };
+
+    default:
+      // Unknown subtype — placeholder bubble with subtype name
+      return { bubble: makeAttachmentBubble((att as { type: string }).type, msg) };
+  }
+}
+
+export function normalizeAttachmentTaskStatus(status: string): TaskInfo["status"] {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "error":
+      return "error";
+    case "backgrounded":
+      return "backgrounded";
+    default:
+      return "running";
+  }
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -1254,20 +1404,40 @@ export function useClaude2Session(
     const enteredPlan = hasToolUseNamed(msg, "EnterPlanMode");
     if (enteredPlan) setPermissionMode("plan");
 
-    // Attachment messages — compact placeholder showing subtype until
-    // each subtype gets a proper handler.
+    // Attachment messages — dispatched to pure handleAttachment which
+    // returns { bubble?, stateOps? }. State side effects applied here;
+    // bubble pushed to message list (or skipped for state-only subtypes).
     if (msg.type === "attachment") {
-      currentBatchHasContentRef.current = true;
-      const att = (msg as Record<string, unknown>).attachment as
-        | Record<string, unknown>
-        | undefined;
-      const subtype = att?.type ?? "unknown";
-      const placeholder: ThreadMessageLike = {
-        role: "system",
-        content: [{ type: "text", text: `Attachment: ${subtype}` }],
-        metadata: { custom: { _raw: msg, _placeholder: true } },
-      };
-      setMessagesState((prev) => [...prev, placeholder]);
+      const result = handleAttachment(msg as Claude2Attachment);
+      // Apply state operations
+      if (result.stateOps) {
+        const ops = result.stateOps;
+        if (ops.permissionMode) setPermissionMode(ops.permissionMode);
+        if (ops.replaceTasks) setTasks(ops.replaceTasks);
+        if (ops.taskStatus)
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === ops.taskStatus!.id
+                ? {
+                    ...t,
+                    status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
+                    description: ops.taskStatus!.description,
+                  }
+                : t,
+            ),
+          );
+        if (ops.skills) setSkills(ops.skills);
+        if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
+        if (ops.slashCommands) setSlashCommands(ops.slashCommands);
+        if (ops.mcpServersAdd)
+          setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
+      }
+      // Render bubble (if any)
+      if (result.bubble) {
+        currentBatchHasContentRef.current = true;
+        const enriched = enrichBubbleMetadata(result.bubble);
+        setMessagesState((prev) => [...prev, enriched]);
+      }
       return;
     }
 
@@ -1404,6 +1574,7 @@ export function useClaude2Session(
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
+  const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [inputQueue, setInputQueue] = useState<QueueEntry[]>([]);
 
   const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
@@ -1415,6 +1586,7 @@ export function useClaude2Session(
     setTasks([]);
     setSlashCommands([]);
     setSkills([]);
+    setMcpServers([]);
     setInputQueue([]);
     setRetryInfo(null);
     if (retryCountdownRef.current) {
@@ -1852,6 +2024,7 @@ export function useClaude2Session(
     tasks,
     slashCommands,
     skills,
+    mcpServers,
     inputQueue,
     retryInfo,
   };
