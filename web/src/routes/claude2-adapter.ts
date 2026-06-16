@@ -510,6 +510,7 @@ function makeAttachmentBubble(subtype: string, raw: Claude2Attachment): ThreadMe
 
 export function handleAttachment(msg: Claude2Attachment): AttachmentResult {
   const att = msg.attachment;
+  if (!att?.type) return { bubble: makeAttachmentBubble("unknown", msg) };
 
   switch (att.type) {
     // ── Mode transitions ──────────────────────────────────────────
@@ -540,7 +541,7 @@ export function handleAttachment(msg: Claude2Attachment): AttachmentResult {
             id: t.id ?? "",
             kind: "task" as const,
             description: t.subject ?? "",
-            status: (t.status ?? "running") as TaskInfo["status"],
+            status: normalizeAttachmentTaskStatus(t.status ?? "running"),
             subject: t.subject,
           })),
         },
@@ -564,7 +565,8 @@ export function handleAttachment(msg: Claude2Attachment): AttachmentResult {
           skills: att.content
             .split("\n")
             .filter((l) => l.startsWith("- "))
-            .map((l) => l.slice(2).split(":")[0].trim()),
+            .map((l) => l.slice(2).split(":")[0].trim())
+            .filter(Boolean),
         },
       };
     case "mcp_instructions_delta":
@@ -1894,9 +1896,12 @@ export function useClaude2Session(
 
   const threadLikeMessages = messages;
 
-  // DEPRECATED: 翻页加载功能在重构中，不应被调用。保留仅为接口兼容。
-  // 确认调用方：Claude2SessionDetailRoute.tsx LoadOlderButton (line ~1025)
-  // 待前端重构完成后删除此函数及调用方。
+  // DEPRECATED: loadOlder（加载更早消息）在消息处理重构后尚未启用。
+  // hasOlder 固定为 false，LoadOlderButton 永远不会渲染，此函数不会被调用。
+  // 保留仅为接口兼容，待重构稳定后删除此函数及 LoadOlderButton。
+  //
+  // 如果将来重新启用：回放路径（约 line 1928）缺少 handleAttachment dispatch，
+  // 会导致 attachment 驱动状态（permissionMode/tasks/skills/mcpServers）在翻页时丢失。
   const loadOlder = useCallback(
     async (cursorOverride?: string | null) => {
       const cursor = cursorOverride ?? cursorRef.current;

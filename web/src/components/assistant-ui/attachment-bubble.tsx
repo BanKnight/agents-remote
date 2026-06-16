@@ -117,11 +117,14 @@ function hookStdioBody(raw: Record<string, unknown>): ReactNode | null {
 function hookContextBody(raw: Record<string, unknown>): ReactNode | null {
   const content = raw.attachment as Record<string, unknown> | undefined;
   const items = content?.content as string[] | undefined;
-  if (!items || items.length === 0) return null;
+  if (!Array.isArray(items) || items.length === 0) return null;
   return (
     <div className="space-y-1">
       {items.map((item, i) => (
-        <pre key={i} className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-32">
+        <pre
+          key={`${item.slice(0, 40)}-${i}`}
+          className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-32"
+        >
           {item}
         </pre>
       ))}
@@ -147,19 +150,23 @@ function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
       }>
     | undefined;
   if (!files || files.length === 0) return null;
+  const withDiagnostics = files.filter((f) => f.diagnostics && f.diagnostics.length > 0);
+  if (withDiagnostics.length === 0) return null;
   return (
     <div className="space-y-1.5">
-      {files.map((file, fi) => {
+      {withDiagnostics.map((file, fi) => {
+        const fileKey = file.uri ?? `unknown-${fi}`;
         const filePath = file.uri?.replace(/^file:\/\//, "") ?? null;
-        const diags = file.diagnostics;
-        if (!diags || diags.length === 0) return null;
         return (
-          <div key={fi} className="space-y-0.5">
+          <div key={fileKey} className="space-y-0.5">
             {filePath && (
               <div className="text-[0.6rem] text-amber-200/50 font-mono truncate">{filePath}</div>
             )}
-            {diags.map((d, di) => (
-              <div key={di} className="text-xs pl-1">
+            {file.diagnostics!.map((d, di) => (
+              <div
+                key={`${d.severity ?? "diag"}-${d.message?.slice(0, 30) ?? di}`}
+                className="text-xs pl-1"
+              >
                 {d.severity && (
                   <span
                     className={d.severity === "Error" ? "text-red-300/80" : "text-amber-200/60"}
@@ -201,16 +208,6 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   plan_mode_reentry: { icon: "plan", labelKey: "claude2.attachment.plan_mode_reentry" },
   auto_mode: { icon: "auto", labelKey: "claude2.attachment.auto_mode" },
   auto_mode_exit: { icon: "auto", labelKey: "claude2.attachment.auto_mode_exit" },
-
-  // Tasks — state-only (never rendered as bubble by handleAttachment)
-  task_reminder: { icon: "task", labelKey: "claude2.attachment.task_reminder" },
-  task_status: { icon: "task", labelKey: "claude2.attachment.task_status" },
-
-  // Session metadata — state-only (never rendered as bubble)
-  skill_listing: { icon: "skill", labelKey: "claude2.attachment.skill_listing" },
-  mcp_instructions_delta: { icon: "mcp", labelKey: "claude2.attachment.mcp_instructions_delta" },
-  command_permissions: { icon: "command", labelKey: "claude2.attachment.command_permissions" },
-  invoked_skills: { icon: "skill", labelKey: "claude2.attachment.invoked_skills" },
 
   // Files — collapsible bubbles
   file: {
