@@ -137,7 +137,10 @@ function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
         diagnostics?: Array<{
           message?: string;
           severity?: string;
-          range?: { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } };
+          range?: {
+            start?: { line?: number; character?: number };
+            end?: { line?: number; character?: number };
+          };
           source?: string;
           code?: string;
         }>;
@@ -158,7 +161,9 @@ function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
             {diags.map((d, di) => (
               <div key={di} className="text-xs pl-1">
                 {d.severity && (
-                  <span className={d.severity === "Error" ? "text-red-300/80" : "text-amber-200/60"}>
+                  <span
+                    className={d.severity === "Error" ? "text-red-300/80" : "text-amber-200/60"}
+                  >
                     [{d.severity}]
                   </span>
                 )}{" "}

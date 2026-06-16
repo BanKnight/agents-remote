@@ -2362,10 +2362,134 @@ describe("handleAttachment", () => {
     expect(att?.stderr).toBe("JSON validation failed");
   });
 
-  test("diagnostics returns bubble without stateOps", () => {
-    const result = handleAttachment(attachment("diagnostics", { diagnostics: [] }));
+  test("date_change returns bubble with newDate in _raw", () => {
+    const result = handleAttachment(attachment("date_change", { newDate: "2026-05-29" }));
     expect(result.stateOps).toBeUndefined();
     expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("date_change");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.newDate).toBe("2026-05-29");
+  });
+
+  test("queued_command returns bubble with prompt in _raw", () => {
+    const result = handleAttachment(
+      attachment("queued_command", {
+        prompt: "完成本change之后，你需要汇报给我...",
+        commandMode: "prompt",
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("queued_command");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.prompt).toBe("完成本change之后，你需要汇报给我...");
+    expect(att?.commandMode).toBe("prompt");
+  });
+
+  test("opened_file_in_ide returns bubble with filename in _raw", () => {
+    const result = handleAttachment(
+      attachment("opened_file_in_ide", {
+        filename: "/home/deploy/workspace/agents-remote/.workflow/versions/index.md",
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("opened_file_in_ide");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.filename).toBe("/home/deploy/workspace/agents-remote/.workflow/versions/index.md");
+  });
+
+  test("selected_lines_in_ide returns bubble with lineStart/lineEnd/content in _raw", () => {
+    const result = handleAttachment(
+      attachment("selected_lines_in_ide", {
+        ideName: "Visual Studio Code",
+        filename: "Untitled-1",
+        displayPath: "Untitled-1",
+        lineStart: 0,
+        lineEnd: 3,
+        content: "新增两个需要优化的内容...",
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("selected_lines_in_ide");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.lineStart).toBe(0);
+    expect(att?.lineEnd).toBe(3);
+    expect(att?.content).toBe("新增两个需要优化的内容...");
+    expect(att?.displayPath).toBe("Untitled-1");
+  });
+
+  test("diagnostics returns bubble with files[] structure in _raw", () => {
+    const result = handleAttachment(
+      attachment("diagnostics", {
+        files: [
+          {
+            uri: "file:///home/deploy/workspace/agents-remote/web/src/routes/SessionDetailRoute.tsx",
+            diagnostics: [
+              {
+                message: '"FormEvent"已弃用。',
+                severity: "Hint",
+                range: {
+                  start: { line: 1673, character: 20 },
+                  end: { line: 1673, character: 46 },
+                },
+                source: "ts",
+                code: "6385",
+              },
+            ],
+          },
+        ],
+        isNew: true,
+      }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("diagnostics");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.isNew).toBe(true);
+    const files = att?.files as Array<Record<string, unknown>> | undefined;
+    expect(files).toHaveLength(1);
+    expect(files?.[0].uri).toBe(
+      "file:///home/deploy/workspace/agents-remote/web/src/routes/SessionDetailRoute.tsx",
+    );
+    const diags = files?.[0].diagnostics as Array<Record<string, unknown>> | undefined;
+    expect(diags).toHaveLength(1);
+    expect(diags?.[0].message).toBe('"FormEvent"已弃用。');
+    expect(diags?.[0].severity).toBe("Hint");
+    const range = diags?.[0].range as Record<string, unknown> | undefined;
+    expect((range?.start as Record<string, number>)?.line).toBe(1673);
+    expect((range?.start as Record<string, number>)?.character).toBe(20);
+  });
+
+  test("goal_status returns bubble with met/sentinel/condition in _raw", () => {
+    const resultIncomplete = handleAttachment(
+      attachment("goal_status", {
+        met: false,
+        sentinel: true,
+        condition: "使用step-change技能来完成所有change",
+      }),
+    );
+    expect(resultIncomplete.stateOps).toBeUndefined();
+    expect(resultIncomplete.bubble).toBeDefined();
+    const custom = resultIncomplete.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("goal_status");
+    const att = (custom?._raw as Record<string, unknown>)?.attachment as Record<string, unknown>;
+    expect(att?.met).toBe(false);
+    expect(att?.sentinel).toBe(true);
+    expect(att?.condition).toBe("使用step-change技能来完成所有change");
+
+    // met: true should not show "incomplete" in badge
+    const resultDone = handleAttachment(
+      attachment("goal_status", { met: true, sentinel: false, condition: "" }),
+    );
+    expect(resultDone.stateOps).toBeUndefined();
+    expect(resultDone.bubble).toBeDefined();
   });
 
   test("unknown subtype returns placeholder bubble", () => {
