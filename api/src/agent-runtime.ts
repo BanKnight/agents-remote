@@ -13,8 +13,8 @@ export type AgentCommandRuntime = Pick<RuntimeResources, "close" | "exists"> & {
 export class AgentRuntime implements RuntimeResources {
   constructor(private readonly commandRuntime: AgentCommandRuntime) {}
 
-  async exists(tmuxSessionName: string) {
-    return this.commandRuntime.exists(tmuxSessionName);
+  async exists(runtimeKey: string) {
+    return this.commandRuntime.exists(runtimeKey);
   }
 
   async startAgent(metadata: SessionMetadata) {
@@ -35,8 +35,8 @@ export class AgentRuntime implements RuntimeResources {
     }
   }
 
-  async close(tmuxSessionName: string) {
-    await this.commandRuntime.close(tmuxSessionName);
+  async close(runtimeKey: string) {
+    await this.commandRuntime.close(runtimeKey);
   }
 }
 

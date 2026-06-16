@@ -54,7 +54,7 @@ type WebSocketData =
       sessionType: "agent" | "terminal";
       projectName: string;
       sessionId: string;
-      tmuxSessionName: string;
+      runtimeKey: string;
       status: "running" | "idle" | "closed" | "error";
     }
   | {
@@ -62,7 +62,7 @@ type WebSocketData =
       sessionType: "agent";
       projectName: string;
       sessionId: string;
-      tmuxSessionName: string;
+      runtimeKey: string;
       status: "running" | "idle" | "closed" | "error";
     };
 
@@ -667,7 +667,7 @@ export const startApi = async () => {
     sessionRegistry,
   );
 
-  claude2Runtime.setOnSystemInit((sessionId, _tmuxSessionName, claudeSessionId, model) => {
+  claude2Runtime.setOnSystemInit((sessionId, _runtimeKey, claudeSessionId, model) => {
     void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId, model);
   });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);

@@ -134,7 +134,7 @@ for each line from stdin:
 ### Session 创建
 
 ```
-tmux new-session -d -s {tmuxSessionName} -c {projectPath} \
+tmux new-session -d -s {runtimeKey} -c {projectPath} \
   "mkdir -p {turnDir} && \
    rm -f {fifoPath} && \
    mkfifo {fifoPath} && \

@@ -23,7 +23,7 @@ export type SessionWebSocketData = {
   sessionType: SessionType;
   projectName: string;
   sessionId: string;
-  tmuxSessionName: string;
+  runtimeKey: string;
   status: AgentSessionStatus | TerminalSessionStatus;
 };
 
@@ -69,7 +69,7 @@ export const handleSessionStreamUpgrade = async (
           sessionType: match.sessionType,
           projectName: project.name,
           sessionId: metadata.id,
-          tmuxSessionName: metadata.tmuxSessionName,
+          runtimeKey: metadata.runtimeKey,
           status: metadata.status,
         },
       })
@@ -137,11 +137,11 @@ export class SessionStreamController {
 
     try {
       if (parsed.type === "input") {
-        await this.writeInput(data.tmuxSessionName, parsed.data);
+        await this.writeInput(data.runtimeKey, parsed.data);
       }
 
       if (parsed.type === "resize") {
-        await this.runtime.resize?.(data.tmuxSessionName, parsed.cols, parsed.rows);
+        await this.runtime.resize?.(data.runtimeKey, parsed.cols, parsed.rows);
         await this.sendSnapshot(socket, data);
       }
 
@@ -176,30 +176,30 @@ export class SessionStreamController {
   }
 
   private async sendSnapshot(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
-    if (!(await this.runtime.exists(data.tmuxSessionName))) {
+    if (!(await this.runtime.exists(data.runtimeKey))) {
       send(socket, { type: "ended" });
       return;
     }
 
-    const snapshot = (await this.runtime.capture?.(data.tmuxSessionName)) ?? "";
+    const snapshot = (await this.runtime.capture?.(data.runtimeKey)) ?? "";
     this.lastSnapshots.set(socket, snapshot);
     send(socket, { type: "snapshot", data: snapshot });
   }
 
-  private async writeInput(tmuxSessionName: string, data: string) {
-    const previous = this.writeQueues.get(tmuxSessionName) ?? Promise.resolve();
+  private async writeInput(runtimeKey: string, data: string) {
+    const previous = this.writeQueues.get(runtimeKey) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
       .then(async () => {
-        await this.runtime.write?.(tmuxSessionName, data);
+        await this.runtime.write?.(runtimeKey, data);
       });
-    this.writeQueues.set(tmuxSessionName, next);
+    this.writeQueues.set(runtimeKey, next);
 
     try {
       await next;
     } finally {
-      if (this.writeQueues.get(tmuxSessionName) === next) {
-        this.writeQueues.delete(tmuxSessionName);
+      if (this.writeQueues.get(runtimeKey) === next) {
+        this.writeQueues.delete(runtimeKey);
       }
     }
   }
@@ -207,7 +207,7 @@ export class SessionStreamController {
   private async startStream(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
     if (this.runtime.stream) {
       const stream = await this.runtime.stream(
-        data.tmuxSessionName,
+        data.runtimeKey,
         (output) => send(socket, { type: "output", data: output }),
         () =>
           send(socket, {
@@ -228,13 +228,13 @@ export class SessionStreamController {
 
   private async poll(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
     try {
-      if (!(await this.runtime.exists(data.tmuxSessionName))) {
+      if (!(await this.runtime.exists(data.runtimeKey))) {
         send(socket, { type: "ended" });
         this.close(socket);
         return;
       }
 
-      const snapshot = (await this.runtime.capture?.(data.tmuxSessionName)) ?? "";
+      const snapshot = (await this.runtime.capture?.(data.runtimeKey)) ?? "";
       const previous = this.lastSnapshots.get(socket);
 
       if (snapshot === previous) {
@@ -311,7 +311,7 @@ const sessionData = (socket: StreamSocket) => {
     "sessionType" in data &&
     "projectName" in data &&
     "sessionId" in data &&
-    "tmuxSessionName" in data &&
+    "runtimeKey" in data &&
     "status" in data
   ) {
     return data as SessionWebSocketData;

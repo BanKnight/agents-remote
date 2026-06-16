@@ -14,7 +14,7 @@ export type Claude2WebSocketData = {
   sessionType: SessionType;
   projectName: string;
   sessionId: string;
-  tmuxSessionName: string;
+  runtimeKey: string;
   status: AgentSessionStatus;
 };
 
@@ -67,7 +67,7 @@ export const handleClaude2StreamUpgrade = async (
           sessionType: "agent",
           projectName: project.name,
           sessionId: metadata.id,
-          tmuxSessionName: metadata.tmuxSessionName,
+          runtimeKey: metadata.runtimeKey,
           status: session.status,
         },
       })
@@ -102,7 +102,7 @@ export class Claude2StreamController {
       return;
     }
 
-    console.log(`[claude2-stream] open: sessionId=${data.sessionId} tmux=${data.tmuxSessionName}`);
+    console.log(`[claude2-stream] open: sessionId=${data.sessionId} tmux=${data.runtimeKey}`);
 
     // Resolve metadata for projectPath and claudeSessionId
     const metadata = await this.sessionRegistry.getAgentMetadata(data.projectName, data.sessionId);
@@ -112,7 +112,7 @@ export class Claude2StreamController {
 
     // Ensure the Claude2 process is running (respawn with --resume if needed)
     await this.claude2Runtime.ensureRunning(
-      data.tmuxSessionName,
+      data.runtimeKey,
       metadata?.projectPath ?? "",
       data.sessionId,
       metadata?.claudeSessionId,
@@ -163,17 +163,17 @@ export class Claude2StreamController {
         parsed.type === "control_response" ||
         parsed.type === "control_request"
       ) {
-        console.log(`[claude2-stream] message ${parsed.type}: ${data.tmuxSessionName}`);
-        await this.claude2Runtime.write(data.tmuxSessionName, JSON.stringify(parsed) + "\n");
+        console.log(`[claude2-stream] message ${parsed.type}: ${data.runtimeKey}`);
+        await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(parsed) + "\n");
       } else if (parsed.type === "switch_model") {
-        console.log(`[claude2-stream] switch_model: ${data.tmuxSessionName} → ${parsed.model}`);
+        console.log(`[claude2-stream] switch_model: ${data.runtimeKey} → ${parsed.model}`);
         // Close existing stream before switching
         const existingStream = this.streams.get(socket);
         if (existingStream) {
           existingStream.close();
           this.streams.delete(socket);
         }
-        const result = await this.claude2Runtime.switchModel(data.tmuxSessionName, parsed.model);
+        const result = await this.claude2Runtime.switchModel(data.runtimeKey, parsed.model);
         if (result) {
           // Update session metadata with new model
           void this.sessionRegistry.setClaudeSessionId(
@@ -196,14 +196,14 @@ export class Claude2StreamController {
           }
         }
       } else if (parsed.type === "permission_mode") {
-        console.log(`[claude2-stream] permission_mode: ${data.tmuxSessionName} → ${parsed.mode}`);
+        console.log(`[claude2-stream] permission_mode: ${data.runtimeKey} → ${parsed.mode}`);
         const existingStream = this.streams.get(socket);
         if (existingStream) {
           existingStream.close();
           this.streams.delete(socket);
         }
         const result = await this.claude2Runtime.switchPermissionMode(
-          data.tmuxSessionName,
+          data.runtimeKey,
           parsed.mode,
         );
         if (result) {
@@ -238,7 +238,7 @@ export class Claude2StreamController {
 
   private async startStream(socket: StreamSocket, data: NonNullable<Claude2WebSocketData>) {
     const stream = await this.claude2Runtime.stream(
-      data.tmuxSessionName,
+      data.runtimeKey,
       (line: string) => {
         try {
           const parsed = JSON.parse(line) as SessionStreamServerMessage;
@@ -255,7 +255,7 @@ export class Claude2StreamController {
                 `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
               );
               this.claude2Runtime.setClaudeSessionId(
-                data.tmuxSessionName,
+                data.runtimeKey,
                 init.session_id,
                 init.model,
               );
@@ -323,7 +323,7 @@ const sessionData = (socket: StreamSocket): Claude2WebSocketData | undefined => 
     "sessionType" in data &&
     "projectName" in data &&
     "sessionId" in data &&
-    "tmuxSessionName" in data &&
+    "runtimeKey" in data &&
     "status" in data
   ) {
     return data as Claude2WebSocketData;

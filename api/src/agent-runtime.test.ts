@@ -12,7 +12,7 @@ const metadata: SessionMetadata = {
   provider: "claude",
   displayName: "Claude Agent test12",
   status: "running",
-  tmuxSessionName: "ar-agent-claude-demo-agent_test12",
+  runtimeKey: "ar-agent-claude-demo-agent_test12",
   createdAt: "2026-05-25T00:00:00.000Z",
   updatedAt: "2026-05-25T00:00:00.000Z",
 };
@@ -70,16 +70,16 @@ test("AgentRuntime maps tmux startup failures to provider unavailable", async ()
 test("AgentRuntime delegates lifecycle checks to command runtime", async () => {
   const closed: string[] = [];
   const runtime = new AgentRuntime({
-    async exists(tmuxSessionName) {
-      return tmuxSessionName === metadata.tmuxSessionName;
+    async exists(runtimeKey) {
+      return runtimeKey === metadata.runtimeKey;
     },
-    async close(tmuxSessionName) {
-      closed.push(tmuxSessionName);
+    async close(runtimeKey) {
+      closed.push(runtimeKey);
     },
     async startCommand() {},
   });
 
-  expect(await runtime.exists(metadata.tmuxSessionName)).toBe(true);
-  await runtime.close(metadata.tmuxSessionName);
-  expect(closed).toEqual([metadata.tmuxSessionName]);
+  expect(await runtime.exists(metadata.runtimeKey)).toBe(true);
+  await runtime.close(metadata.runtimeKey);
+  expect(closed).toEqual([metadata.runtimeKey]);
 });

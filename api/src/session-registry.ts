@@ -22,7 +22,7 @@ export type SessionMetadata = {
   provider?: AgentProvider;
   displayName: string;
   status: AgentSessionStatus | TerminalSessionStatus;
-  tmuxSessionName: string;
+  runtimeKey: string;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
@@ -36,15 +36,15 @@ export type RuntimeStream = {
 };
 
 export type RuntimeResources = {
-  exists(tmuxSessionName: string): Promise<boolean>;
-  close(tmuxSessionName: string): Promise<void>;
+  exists(runtimeKey: string): Promise<boolean>;
+  close(runtimeKey: string): Promise<void>;
   startTerminal?(metadata: SessionMetadata): Promise<void>;
   startAgent?(metadata: SessionMetadata): Promise<void>;
-  write?(tmuxSessionName: string, data: string): Promise<void>;
-  resize?(tmuxSessionName: string, cols: number, rows: number): Promise<void>;
-  capture?(tmuxSessionName: string): Promise<string>;
+  write?(runtimeKey: string, data: string): Promise<void>;
+  resize?(runtimeKey: string, cols: number, rows: number): Promise<void>;
+  capture?(runtimeKey: string): Promise<string>;
   stream?(
-    tmuxSessionName: string,
+    runtimeKey: string,
     onData: (data: string) => void,
     onError: (error: Error) => void,
   ): Promise<RuntimeStream>;
@@ -317,7 +317,7 @@ export class SessionRegistry {
       provider: input.provider,
       displayName: input.displayName ?? defaultDisplayName(input.type, input.provider, id),
       status: "running",
-      tmuxSessionName: createTmuxSessionName(input.project.name, input.type, input.provider, id),
+      runtimeKey: createRuntimeKey(input.project.name, input.type, input.provider, id),
       createdAt: timestamp,
       updatedAt: timestamp,
       claudeSessionId: input.claudeSessionId,
@@ -330,15 +330,15 @@ export class SessionRegistry {
   }
 
   private async closeMetadata(metadata: SessionMetadata) {
-    if (await this.runtime.exists(metadata.tmuxSessionName)) {
-      await this.runtime.close(metadata.tmuxSessionName);
+    if (await this.runtime.exists(metadata.runtimeKey)) {
+      await this.runtime.close(metadata.runtimeKey);
     }
 
     await this.removeMetadata(metadata.id);
   }
 
   private async keepIfRuntimeExists(metadata: SessionMetadata) {
-    if (await this.runtime.exists(metadata.tmuxSessionName)) {
+    if (await this.runtime.exists(metadata.runtimeKey)) {
       return metadata;
     }
 
@@ -383,7 +383,7 @@ export class SessionRegistry {
   }
 }
 
-export const createTmuxSessionName = (
+export const createRuntimeKey = (
   projectName: string,
   type: SessionType,
   provider: AgentProvider | undefined,
@@ -427,7 +427,12 @@ const safeProjectKey = (projectName: string) => {
 };
 
 const parseMetadata = (raw: string): SessionMetadata | undefined => {
-  const parsed = JSON.parse(raw) as Partial<SessionMetadata>;
+  const rawParsed = JSON.parse(raw) as Record<string, unknown>;
+  // Backward compat: old metadata files use "tmuxSessionName"
+  if (typeof rawParsed.runtimeKey !== "string" && typeof rawParsed.tmuxSessionName === "string") {
+    rawParsed.runtimeKey = rawParsed.tmuxSessionName;
+  }
+  const parsed = rawParsed as Partial<SessionMetadata>;
 
   if (
     parsed.schemaVersion !== 1 ||
@@ -437,7 +442,7 @@ const parseMetadata = (raw: string): SessionMetadata | undefined => {
     (parsed.type !== "agent" && parsed.type !== "terminal") ||
     typeof parsed.displayName !== "string" ||
     typeof parsed.status !== "string" ||
-    typeof parsed.tmuxSessionName !== "string" ||
+    typeof parsed.runtimeKey !== "string" ||
     typeof parsed.createdAt !== "string" ||
     typeof parsed.updatedAt !== "string"
   ) {

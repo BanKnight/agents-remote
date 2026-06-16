@@ -17,22 +17,22 @@ export class TmuxSharedPipe {
   private closed = false;
 
   private constructor(
-    private readonly tmuxSessionName: string,
+    private readonly runtimeKey: string,
     private readonly server: Server,
     private readonly socketPath: string,
     private readonly onClose: () => void,
   ) {}
 
-  static async open(tmuxSessionName: string, runDir: string, onClose: () => void) {
+  static async open(runtimeKey: string, runDir: string, onClose: () => void) {
     const socketPath = join(runDir, `stream-${randomUUID()}.sock`);
-    const pipe = new TmuxSharedPipe(tmuxSessionName, createServer(), socketPath, onClose);
+    const pipe = new TmuxSharedPipe(runtimeKey, createServer(), socketPath, onClose);
     pipe.server.on("connection", (socket) => {
       socket.on("data", (chunk) => pipe.send(chunk.toString("utf8")));
       socket.on("error", (error) => pipe.error(error));
     });
     await listen(pipe.server, socketPath);
     const pipeCommand = `socat - UNIX-CONNECT:${shellQuote(socketPath)}`;
-    const result = await runTmux(["pipe-pane", "-O", "-t", tmuxSessionName, pipeCommand]);
+    const result = await runTmux(["pipe-pane", "-O", "-t", runtimeKey, pipeCommand]);
 
     if (result.exitCode !== 0) {
       await pipe.close();
@@ -76,7 +76,7 @@ export class TmuxSharedPipe {
 
     this.closed = true;
     this.onClose();
-    await runTmux(["pipe-pane", "-t", this.tmuxSessionName]);
+    await runTmux(["pipe-pane", "-t", this.runtimeKey]);
     await closeServer(this.server);
     await removeSocket(this.socketPath);
   }
@@ -141,8 +141,8 @@ export class TmuxRuntime implements RuntimeResources {
 
   constructor(private readonly runDir = "/run/agents-remote") {}
 
-  async exists(tmuxSessionName: string) {
-    const result = await runTmux(["has-session", "-t", tmuxSessionName]);
+  async exists(runtimeKey: string) {
+    const result = await runTmux(["has-session", "-t", runtimeKey]);
     return result.exitCode === 0;
   }
 
@@ -155,7 +155,7 @@ export class TmuxRuntime implements RuntimeResources {
       "new-session",
       "-d",
       "-s",
-      metadata.tmuxSessionName,
+      metadata.runtimeKey,
       "-c",
       metadata.projectPath,
       command,
@@ -166,27 +166,27 @@ export class TmuxRuntime implements RuntimeResources {
     }
   }
 
-  async close(tmuxSessionName: string) {
-    const result = await runTmux(["kill-session", "-t", tmuxSessionName]);
+  async close(runtimeKey: string) {
+    const result = await runTmux(["kill-session", "-t", runtimeKey]);
 
     if (result.exitCode !== 0 && !result.stderr.includes("can't find session")) {
       throw new TmuxRuntimeError("Unable to close terminal session", result.stderr);
     }
   }
 
-  async write(tmuxSessionName: string, data: string) {
-    const result = await runTmux(["send-keys", "-t", tmuxSessionName, "-l", data]);
+  async write(runtimeKey: string, data: string) {
+    const result = await runTmux(["send-keys", "-t", runtimeKey, "-l", data]);
 
     if (result.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to write to terminal session", result.stderr);
     }
   }
 
-  async resize(tmuxSessionName: string, cols: number, rows: number) {
+  async resize(runtimeKey: string, cols: number, rows: number) {
     const result = await runTmux([
       "resize-window",
       "-t",
-      tmuxSessionName,
+      runtimeKey,
       "-x",
       String(cols),
       "-y",
@@ -198,10 +198,10 @@ export class TmuxRuntime implements RuntimeResources {
     }
   }
 
-  async capture(tmuxSessionName: string) {
+  async capture(runtimeKey: string) {
     const [pane, cursorInfo] = await Promise.all([
-      runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", tmuxSessionName]),
-      runTmux(["display-message", "-t", tmuxSessionName, "-p", "#{cursor_x}"]),
+      runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", runtimeKey]),
+      runTmux(["display-message", "-t", runtimeKey, "-p", "#{cursor_x}"]),
     ]);
 
     if (pane.exitCode !== 0) {
@@ -224,30 +224,30 @@ export class TmuxRuntime implements RuntimeResources {
   }
 
   async stream(
-    tmuxSessionName: string,
+    runtimeKey: string,
     onData: (data: string) => void,
     onError: (error: Error) => void,
   ): Promise<RuntimeStream> {
-    const stream = await this.sharedPipe(tmuxSessionName);
+    const stream = await this.sharedPipe(runtimeKey);
     return stream.subscribe(onData, onError);
   }
 
-  private async sharedPipe(tmuxSessionName: string) {
-    const existing = this.pipeStreams.get(tmuxSessionName);
+  private async sharedPipe(runtimeKey: string) {
+    const existing = this.pipeStreams.get(runtimeKey);
 
     if (existing) {
       return existing;
     }
 
-    const next = TmuxSharedPipe.open(tmuxSessionName, this.runDir, () => {
-      this.pipeStreams.delete(tmuxSessionName);
+    const next = TmuxSharedPipe.open(runtimeKey, this.runDir, () => {
+      this.pipeStreams.delete(runtimeKey);
     });
-    this.pipeStreams.set(tmuxSessionName, next);
+    this.pipeStreams.set(runtimeKey, next);
 
     try {
       return await next;
     } catch (error) {
-      this.pipeStreams.delete(tmuxSessionName);
+      this.pipeStreams.delete(runtimeKey);
       throw error;
     }
   }

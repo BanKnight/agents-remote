@@ -21,7 +21,7 @@ export class Claude2Runtime implements RuntimeResources {
   private readonly runDir: string;
   private nextGeneration = 1;
   private onSystemInit:
-    | ((sessionId: string, tmuxSessionName: string, claudeSessionId: string, model: string) => void)
+    | ((sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void)
     | null = null;
 
   constructor(runDir: string) {
@@ -31,7 +31,7 @@ export class Claude2Runtime implements RuntimeResources {
   setOnSystemInit(
     cb: (
       sessionId: string,
-      tmuxSessionName: string,
+      runtimeKey: string,
       claudeSessionId: string,
       model: string,
     ) => void,
@@ -77,7 +77,7 @@ export class Claude2Runtime implements RuntimeResources {
 
   async startAgent(metadata: SessionMetadata): Promise<void> {
     await this.spawnAndStart(
-      metadata.tmuxSessionName,
+      metadata.runtimeKey,
       metadata.projectPath,
       metadata.id,
       metadata.claudeSessionId,

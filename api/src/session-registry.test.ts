@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionRegistry, SessionRegistryError, createTmuxSessionName } from "./session-registry";
+import { SessionRegistry, SessionRegistryError, createRuntimeKey } from "./session-registry";
 
 let runDir: string;
 
@@ -44,8 +44,8 @@ test("SessionRegistry creates Agent and Terminal metadata with separate DTO sema
   expect(metadata.projectName).toBe("hello world 中文");
   expect(metadata.projectPath).toBe("/projects/hello world 中文");
   expect(metadata.type).toBe("agent");
-  expect(metadata.tmuxSessionName).not.toContain(" ");
-  expect(metadata.tmuxSessionName).not.toContain("中文");
+  expect(metadata.runtimeKey).not.toContain(" ");
+  expect(metadata.runtimeKey).not.toContain("中文");
 });
 
 test("SessionRegistry uses provider profiles for default Agent display names", async () => {
@@ -60,8 +60,8 @@ test("SessionRegistry uses provider profiles for default Agent display names", a
   expect(agent.displayName).toBe("Codex Agent displa");
 });
 
-test("createTmuxSessionName keeps original project names out of runtime resource names", () => {
-  const name = createTmuxSessionName(
+test("createRuntimeKey keeps original project names out of runtime resource names", () => {
+  const name = createRuntimeKey(
     "hello world 中文",
     "agent",
     "codex",
@@ -109,8 +109,8 @@ test("SessionRegistry close terminates runtime and removes metadata", async () =
       async exists() {
         return true;
       },
-      async close(tmuxSessionName) {
-        closed.push(tmuxSessionName);
+      async close(runtimeKey) {
+        closed.push(runtimeKey);
       },
     },
   });
@@ -154,7 +154,7 @@ test("SessionRegistry starts Agent sessions through provider-aware runtime seam"
       },
       async close() {},
       async startAgent(metadata) {
-        started.push(`${metadata.provider}:${metadata.tmuxSessionName}`);
+        started.push(`${metadata.provider}:${metadata.runtimeKey}`);
       },
     },
   });

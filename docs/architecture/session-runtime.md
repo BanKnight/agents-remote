@@ -12,7 +12,7 @@
 
 - `packages/shared` 定义跨边界 DTO、状态枚举、stream envelope 和 session error code。
 - `api` 内部持有 SessionRegistry、session HTTP routes、session stream controller 和 tmux runtime adapter。
-- SessionRegistry 将 internal session id 映射到 Project、session type、provider、displayName、status、tmuxSessionName 和 timestamps。
+- SessionRegistry 将 internal session id 映射到 Project、session type、provider、displayName、status、runtimeKey 和 timestamps。
 - Runtime metadata 存放在 `AGENTS_REMOTE_RUN_DIR` 或默认 `/run/agents-remote` 下的运行态目录中，不写入 Project 目录或 `~/.agents-remote` 配置目录。
 - TmuxRuntime 负责普通 shell / provider CLI 的 `tmux new-session`、`send-keys`、`resize-window`、`capture-pane` 和 `kill-session`。
 - WebSocket stream attach 到具体 Agent/Terminal Session 资源，发送 connected/snapshot/output/status/ended/error envelope，接收 input/resize/ping。
@@ -62,7 +62,7 @@ flowchart LR
 - All public session runtime endpoints live under `/api/projects/:projectName/{agent-sessions|terminal-sessions}`.
 - Agent and Terminal use parallel resource paths rather than a generic `/sessions?type=...` path to preserve product semantics.
 - `sessionId` is opaque to callers; callers must not parse prefixes, short ids, provider, tmux names or timestamps from it.
-- `tmuxSessionName` is internal-only and must be generated from safe project key + type + optional provider + short id.
+- `runtimeKey` is internal-only and must be generated from safe project key + type + optional provider + short id.
 - Runtime metadata belongs to runtime dir; long-term config belongs to `~/.agents-remote`, and Project data belongs under `PROJECTS_ROOT`.
 - A WebSocket stream is transport state, not a session lifecycle authority; session close must go through explicit close action.
 - Provider CLI unavailable errors should be mapped to provider/runtime errors and must not expose credentials, tokens or full command internals to clients.

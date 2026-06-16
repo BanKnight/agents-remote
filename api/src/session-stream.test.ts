@@ -95,15 +95,15 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
     async capture() {
       return snapshot;
     },
-    async write(_tmuxSessionName, data) {
+    async write(_runtimeKey, data) {
       writes.push(data);
       snapshot = `ready\n${data}`;
       streamOutput?.(`\n${data}`);
     },
-    async resize(_tmuxSessionName, cols, rows) {
+    async resize(_runtimeKey, cols, rows) {
       resizes.push([cols, rows]);
     },
-    async stream(_tmuxSessionName, onData) {
+    async stream(_runtimeKey, onData) {
       streamOutput = onData;
       return {
         close() {
@@ -120,7 +120,7 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
       sessionType: "terminal" as const,
       projectName: "demo",
       sessionId: "terminal_stream123456",
-      tmuxSessionName: "ar-terminal-demo-terminal_stream",
+      runtimeKey: "ar-terminal-demo-terminal_stream",
       status: "running" as const,
     },
     send(message: string) {
@@ -160,7 +160,7 @@ test("SessionStreamController reports ended when runtime disappears", async () =
       sessionType: "terminal" as const,
       projectName: "demo",
       sessionId: "terminal_stream123456",
-      tmuxSessionName: "ar-terminal-demo-terminal_stream",
+      runtimeKey: "ar-terminal-demo-terminal_stream",
       status: "running" as const,
     },
     send(message: string) {

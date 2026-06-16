@@ -13,7 +13,7 @@
 
 - Web/PWA 通过 `api control plane` 操作项目、会话和流式连接。
 - 控制面长期语义以 `AgentSession` 为核心，而不是以 terminal session、provider thread、Claude transcript 或 transport socket 为核心。
-- `SessionRegistry` 维护 internal session id、Project、type、provider、displayName、status、tmuxSessionName 和 runtime metadata；它不持有 provider CLI command。
+- `SessionRegistry` 维护 internal session id、Project、type、provider、displayName、status、runtimeKey 和 runtime metadata；它不持有 provider CLI command。
 - `AgentRuntime` 是当前 Agent Session runtime 入口，负责 provider profile lookup、provider CLI command 解析、provider unavailable 映射，并委托 command runtime 启动第一轮 CLI passthrough。
 - `ProviderProfile` 是 API 内部实现 seam，当前包含 provider id、label、默认 command、display name prefix 和 staged capability 标记；它不是 shared DTO 或公开 API resource。
 - `ProviderAdapter` 是后续扩展 seam，用于吸收 Claude/Codex history、resume、thread/turn/event/schema/auth/account state 和 compatibility 处理。
