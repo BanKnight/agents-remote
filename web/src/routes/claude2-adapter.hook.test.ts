@@ -1214,3 +1214,162 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     expect(doneToolCall?.isOrphaned).toBeUndefined();
   });
 });
+
+// ── Attachment subtype integration tests ──────────────────────────────
+
+describe("useClaude2Session attachment subtypes", () => {
+  const attMsg = (subtype: string, fields?: Record<string, unknown>): SessionStreamServerMessage =>
+    ({
+      type: "attachment",
+      userType: "external",
+      uuid: "u-att",
+      parentUuid: null,
+      isSidechain: false,
+      timestamp: "2025-06-16T00:00:00.000Z",
+      sessionId: "s-1",
+      attachment: { type: subtype, ...fields },
+    }) as unknown as SessionStreamServerMessage;
+
+  test("plan_mode sets permissionMode to plan and adds system bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(attMsg("plan_mode"));
+    });
+
+    expect(result.current.permissionMode).toBe("plan");
+    const msgs = result.current.storeAdapter.messages;
+    const bubble = msgs[msgs.length - 1];
+    expect(bubble?.role).toBe("system");
+    const custom = bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("plan_mode");
+  });
+
+  test("auto_mode_exit sets permissionMode to default", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(attMsg("auto_mode_exit"));
+    });
+
+    expect(result.current.permissionMode).toBe("default");
+  });
+
+  test("task_reminder updates tasks without adding bubble", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const before = result.current.storeAdapter.messages.length;
+    act(() => {
+      socket.emit(
+        attMsg("task_reminder", {
+          content: [{ id: "t1", subject: "Fix bug", status: "running" }],
+        }),
+      );
+    });
+
+    expect(result.current.tasks).toHaveLength(1);
+    expect(result.current.tasks[0].id).toBe("t1");
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+  });
+
+  test("skill_listing populates skills state", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(
+        attMsg("skill_listing", {
+          content: "- skill-x: desc\n- skill-y: another",
+        }),
+      );
+    });
+
+    expect(result.current.skills).toEqual(["skill-x", "skill-y"]);
+  });
+
+  test("mcp_instructions_delta accumulates mcpServers", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(attMsg("mcp_instructions_delta", { addedNames: ["a", "b"], addedBlocks: [] }));
+    });
+
+    expect(result.current.mcpServers).toEqual(["a", "b"]);
+  });
+
+  test("invoked_skills merges into skills", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(
+        attMsg("skill_listing", {
+          content: "- base-skill: desc",
+        }),
+      );
+      socket.emit(
+        attMsg("invoked_skills", {
+          skills: [{ name: "extra-skill", path: "/tmp" }],
+        }),
+      );
+    });
+
+    expect(result.current.skills).toContain("base-skill");
+    expect(result.current.skills).toContain("extra-skill");
+  });
+
+  test("file adds system bubble with attachmentType", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(attMsg("file", { filePath: "/src/index.ts" }));
+    });
+
+    const msgs = result.current.storeAdapter.messages;
+    const bubble = msgs[msgs.length - 1];
+    expect(bubble?.role).toBe("system");
+    const custom = bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("file");
+  });
+
+  test("session_init resets mcpServers and skills", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(attMsg("mcp_instructions_delta", { addedNames: ["srv"], addedBlocks: [] }));
+      socket.emit(attMsg("skill_listing", { content: "- old-skill: desc" }));
+    });
+
+    expect(result.current.mcpServers).toEqual(["srv"]);
+    expect(result.current.skills).toEqual(["old-skill"]);
+
+    act(() => {
+      socket.emit({ type: "session_init", resume: false } as SessionStreamServerMessage);
+    });
+
+    expect(result.current.mcpServers).toEqual([]);
+    expect(result.current.skills).toEqual([]);
+  });
+});

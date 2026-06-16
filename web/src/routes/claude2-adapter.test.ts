@@ -28,6 +28,8 @@ import {
   extractToolResults,
   applyToolResultsToMessages,
   markOrphanedToolCalls,
+  handleAttachment,
+  normalizeAttachmentTaskStatus,
 } from "./claude2-adapter";
 import type { ApiErrorAttachment, QueueEntry, ExtractedToolResult } from "./claude2-adapter";
 
@@ -153,6 +155,18 @@ const controlRequest = (
       input,
     },
   }) as unknown as SessionStreamServerMessage;
+
+// biome-ignore lint/suspicious/noExplicitAny: attachment shape varies by subtype
+const attachment = (subtype: string, fields?: Record<string, unknown>): any =>
+  ({
+    type: "attachment",
+    uuid: "u-att",
+    parentUuid: null,
+    isSidechain: false,
+    timestamp: "2025-06-16T00:00:00.000Z",
+    sessionId: "s-1",
+    attachment: { type: subtype, ...fields },
+  }) as unknown as Record<string, unknown>;
 
 describe("helper functions", () => {
   test("control response helper allows non AskUserQuestion tools", () => {
@@ -2123,5 +2137,160 @@ describe("markOrphanedToolCalls", () => {
     ];
     const { changed } = markOrphanedToolCalls(messages);
     expect(changed).toBe(false);
+  });
+});
+
+// ── Attachment subtype dispatch ───────────────────────────────────────
+
+describe("handleAttachment", () => {
+  test("plan_mode returns stateOps.permissionMode=plan and bubble", () => {
+    const msg = attachment("plan_mode");
+    const result = handleAttachment(msg);
+    expect(result.stateOps?.permissionMode).toBe("plan");
+    expect(result.bubble).toBeDefined();
+    expect(result.bubble?.role).toBe("system");
+  });
+
+  test("plan_mode_exit returns bubble without permissionMode override", () => {
+    const result = handleAttachment(attachment("plan_mode_exit"));
+    expect(result.stateOps?.permissionMode).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+  });
+
+  test("plan_mode_reentry returns stateOps.permissionMode=plan and bubble", () => {
+    const result = handleAttachment(attachment("plan_mode_reentry"));
+    expect(result.stateOps?.permissionMode).toBe("plan");
+    expect(result.bubble).toBeDefined();
+  });
+
+  test("auto_mode returns stateOps.permissionMode=auto and bubble", () => {
+    const result = handleAttachment(attachment("auto_mode"));
+    expect(result.stateOps?.permissionMode).toBe("auto");
+    expect(result.bubble).toBeDefined();
+  });
+
+  test("auto_mode_exit returns stateOps.permissionMode=default and bubble", () => {
+    const result = handleAttachment(attachment("auto_mode_exit"));
+    expect(result.stateOps?.permissionMode).toBe("default");
+    expect(result.bubble).toBeDefined();
+  });
+
+  test("task_reminder returns replaceTasks with mapped TaskInfo entries", () => {
+    const result = handleAttachment(
+      attachment("task_reminder", {
+        content: [
+          { id: "t1", subject: "Fix bug", status: "running" },
+          { id: "t2", subject: "Add feature", status: "completed" },
+        ],
+      }),
+    );
+    expect(result.stateOps?.replaceTasks).toHaveLength(2);
+    expect(result.stateOps?.replaceTasks?.[0].id).toBe("t1");
+    expect(result.stateOps?.replaceTasks?.[0].kind).toBe("task");
+    expect(result.stateOps?.replaceTasks?.[1].status).toBe("completed");
+    expect(result.bubble).toBeUndefined();
+  });
+
+  test("task_status returns taskStatus stateOps with normalized fields", () => {
+    const result = handleAttachment(
+      attachment("task_status", {
+        taskId: "t42",
+        taskType: "agent",
+        description: "Run tests",
+        status: "completed",
+      }),
+    );
+    expect(result.stateOps?.taskStatus?.id).toBe("t42");
+    expect(result.stateOps?.taskStatus?.taskType).toBe("agent");
+    expect(result.stateOps?.taskStatus?.status).toBe("completed");
+    expect(result.bubble).toBeUndefined();
+  });
+
+  test("skill_listing parses markdown bullet list into skills array", () => {
+    const result = handleAttachment(
+      attachment("skill_listing", {
+        content: "- skill-a: description\n- skill-b: another\n- skill-c: third",
+      }),
+    );
+    expect(result.stateOps?.skills).toEqual(["skill-a", "skill-b", "skill-c"]);
+    expect(result.bubble).toBeUndefined();
+  });
+
+  test("mcp_instructions_delta returns mcpServersAdd with addedNames", () => {
+    const result = handleAttachment(
+      attachment("mcp_instructions_delta", {
+        addedNames: ["server1", "server2"],
+        addedBlocks: [],
+      }),
+    );
+    expect(result.stateOps?.mcpServersAdd).toEqual(["server1", "server2"]);
+    expect(result.bubble).toBeUndefined();
+  });
+
+  test("command_permissions returns slashCommands with allowedTools", () => {
+    const result = handleAttachment(
+      attachment("command_permissions", {
+        allowedTools: ["Bash", "Read", "Edit"],
+        allowedToolsWithContext: [],
+        deniedTools: [],
+      }),
+    );
+    expect(result.stateOps?.slashCommands).toEqual(["Bash", "Read", "Edit"]);
+    expect(result.bubble).toBeUndefined();
+  });
+
+  test("invoked_skills returns skillsAdd with skill names", () => {
+    const result = handleAttachment(
+      attachment("invoked_skills", {
+        skills: [{ name: "my-skill", path: "/tmp/skill.md" }],
+      }),
+    );
+    expect(result.stateOps?.skillsAdd).toEqual(["my-skill"]);
+    expect(result.bubble).toBeUndefined();
+  });
+
+  test("file returns bubble without stateOps", () => {
+    const result = handleAttachment(attachment("file", { filePath: "/src/a.ts" }));
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("file");
+  });
+
+  test("hook_success returns bubble with attachmentType", () => {
+    const result = handleAttachment(
+      attachment("hook_success", { hookName: "pre-commit", exitCode: 0, durationMs: 42 }),
+    );
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+    const custom = result.bubble?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?.attachmentType).toBe("hook_success");
+  });
+
+  test("diagnostics returns bubble without stateOps", () => {
+    const result = handleAttachment(attachment("diagnostics", { diagnostics: [] }));
+    expect(result.stateOps).toBeUndefined();
+    expect(result.bubble).toBeDefined();
+  });
+
+  test("unknown subtype returns placeholder bubble", () => {
+    const result = handleAttachment(attachment("future-subtype"));
+    expect(result.bubble).toBeDefined();
+    expect(result.stateOps).toBeUndefined();
+  });
+});
+
+describe("normalizeAttachmentTaskStatus", () => {
+  test('maps "completed"', () => {
+    expect(normalizeAttachmentTaskStatus("completed")).toBe("completed");
+  });
+  test('maps "error"', () => {
+    expect(normalizeAttachmentTaskStatus("error")).toBe("error");
+  });
+  test('maps "backgrounded"', () => {
+    expect(normalizeAttachmentTaskStatus("backgrounded")).toBe("backgrounded");
+  });
+  test("maps unknown status to running", () => {
+    expect(normalizeAttachmentTaskStatus("unknown")).toBe("running");
   });
 });
