@@ -1002,7 +1002,7 @@ export function drainPendingErrors(
 }
 
 /** Build a thin horizontal divider for a batch boundary (history or output). */
-export function makeBoundaryDivider(kind: "history" | "output"): ThreadMessageLike {
+export function makeBoundaryDivider(kind: "history" | "live"): ThreadMessageLike {
   return {
     role: "system",
     content: [{ type: "text", text: "" }],
@@ -1026,8 +1026,8 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "session_init" ||
     msg.type === "history_start" ||
     msg.type === "history_end" ||
-    msg.type === "output_start" ||
-    msg.type === "output_end"
+    msg.type === "live_start" ||
+    msg.type === "live_end"
   ) {
     return null;
   }
@@ -1342,7 +1342,7 @@ export function useClaude2Session(
   const [messages, setMessagesState] = useState<ThreadMessageLike[]>([]);
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
-  const outputBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
+  const liveBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   // Tracks whether the current batch (since last *_start) contains visible content.
   // Reset on *_start; flipped true when a visible bubble is appended; checked at *_end.
   const currentBatchHasContentRef = useRef(false);
@@ -1607,7 +1607,7 @@ export function useClaude2Session(
     cursorRef.current = null;
     pendingAskRef.current = null;
     historyBatchRef.current = null;
-    outputBatchRef.current = null;
+    liveBatchRef.current = null;
     compactActiveRef.current = false;
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
@@ -1828,22 +1828,22 @@ export function useClaude2Session(
           console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
           return;
         }
-        if (msg.type === "output_start") {
-          outputBatchRef.current = [];
+        if (msg.type === "live_start") {
+          liveBatchRef.current = [];
           currentBatchHasContentRef.current = false;
-          console.log("[claude2-adapter] output batch start, count=", msg.count);
+          console.log("[claude2-adapter] live batch start, count=", msg.count);
           return;
         }
-        if (msg.type === "output_end") {
-          const batch = outputBatchRef.current ?? [];
-          outputBatchRef.current = null;
+        if (msg.type === "live_end") {
+          const batch = liveBatchRef.current ?? [];
+          liveBatchRef.current = null;
           processBatch(batch);
           if (currentBatchHasContentRef.current) {
-            setMessagesState((prev) => [...prev, makeBoundaryDivider("output")]);
+            setMessagesState((prev) => [...prev, makeBoundaryDivider("live")]);
           }
           currentBatchHasContentRef.current = false;
           setLoading(false);
-          console.log("[claude2-adapter] output batch end, processed", batch.length, "messages");
+          console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
           return;
         }
 
@@ -1852,8 +1852,8 @@ export function useClaude2Session(
           historyBatchRef.current.push(msg);
           return;
         }
-        if (outputBatchRef.current) {
-          outputBatchRef.current.push(msg);
+        if (liveBatchRef.current) {
+          liveBatchRef.current.push(msg);
           return;
         }
 

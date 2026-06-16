@@ -101,8 +101,8 @@ describe("useClaude2Session websocket lifecycle", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "output_start", count: 0 } as never);
-      socket.emit({ type: "output_end" } as never);
+      socket.emit({ type: "live_start", count: 0 } as never);
+      socket.emit({ type: "live_end" } as never);
     });
 
     expect(result.current.loading).toBe(false);
@@ -123,8 +123,8 @@ describe("useClaude2Session websocket lifecycle", () => {
         session_id: "s1",
       });
       socket.emit({ type: "history_end" });
-      socket.emit({ type: "output_start", count: 0 } as never);
-      socket.emit({ type: "output_end" } as never);
+      socket.emit({ type: "live_start", count: 0 } as never);
+      socket.emit({ type: "live_end" } as never);
     });
 
     expect(result.current.loading).toBe(false);
@@ -179,8 +179,8 @@ describe("useClaude2Session websocket lifecycle", () => {
           session_id: "s1",
         } as never);
         reconnectSocket.emit({ type: "history_end" } as never);
-        reconnectSocket.emit({ type: "output_start", count: 0 } as never);
-        reconnectSocket.emit({ type: "output_end" } as never);
+        reconnectSocket.emit({ type: "live_start", count: 0 } as never);
+        reconnectSocket.emit({ type: "live_end" } as never);
       });
 
       expect(result.current.loading).toBe(false);
@@ -627,8 +627,8 @@ describe("useClaude2Session queue-operation", () => {
       });
       socket.emit({ type: "queue-operation", operation: "enqueue", content: "/model" } as never);
       socket.emit({ type: "history_end" });
-      socket.emit({ type: "output_start", count: 0 } as never);
-      socket.emit({ type: "output_end" } as never);
+      socket.emit({ type: "live_start", count: 0 } as never);
+      socket.emit({ type: "live_end" } as never);
     });
 
     expect(result.current.loading).toBe(false);
@@ -824,10 +824,10 @@ describe("useClaude2Session API error handling", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "output_start", count: 2 } as never);
+      socket.emit({ type: "live_start", count: 2 } as never);
       socket.emit(extAssistant("a2", "world", "pu-2"));
       socket.emit(apiErrorMsg({ parentUuid: "pu-2", uuid: "e2" }));
-      socket.emit({ type: "output_end" } as never);
+      socket.emit({ type: "live_end" } as never);
     });
 
     const msgs = getMessages(result);
@@ -878,8 +878,8 @@ describe("useClaude2Session batch marker rendering", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "output_start", count: 0 } as never);
-      socket.emit({ type: "output_end" } as never);
+      socket.emit({ type: "live_start", count: 0 } as never);
+      socket.emit({ type: "live_end" } as never);
     });
 
     // no divider
@@ -917,9 +917,9 @@ describe("useClaude2Session batch marker rendering", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "output_start", count: 1 } as never);
+      socket.emit({ type: "live_start", count: 1 } as never);
       socket.emit({ type: "queue-operation", operation: "enqueue", content: "/help" } as never);
-      socket.emit({ type: "output_end" } as never);
+      socket.emit({ type: "live_end" } as never);
     });
 
     // queue-operation is a side-effect, no visible bubble

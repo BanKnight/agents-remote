@@ -52,8 +52,8 @@ test("Claude2SessionRelay sends history and output batches for a new session", a
   expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
 
   // Output batch with both lines
-  const outputStart = messages.findIndex((msg) => msg.type === "output_start");
-  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+  const outputStart = messages.findIndex((msg) => msg.type === "live_start");
+  const outputEnd = messages.findIndex((msg) => msg.type === "live_end");
 
   expect(outputStart).toBe(3);
   expect(outputEnd).toBeGreaterThan(outputStart);
@@ -123,8 +123,8 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
   expect(historyMessages).toEqual([JSON.parse(diskLine)]);
 
   // Output batch comes after history
-  const outputStart = messages.findIndex((msg) => msg.type === "output_start");
-  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+  const outputStart = messages.findIndex((msg) => msg.type === "live_start");
+  const outputEnd = messages.findIndex((msg) => msg.type === "live_end");
 
   expect(outputStart).toBeGreaterThan(historyEnd); // after history
   expect(outputEnd).toBeGreaterThan(outputStart);
@@ -153,8 +153,8 @@ test("Claude2SessionRelay always sends history+output markers even when empty", 
   expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
   expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
   expect(messages[2]).toMatchObject({ type: "history_end" });
-  expect(messages[3]).toMatchObject({ type: "output_start", count: 0 });
-  expect(messages[4]).toMatchObject({ type: "output_end" });
+  expect(messages[3]).toMatchObject({ type: "live_start", count: 0 });
+  expect(messages[4]).toMatchObject({ type: "live_end" });
 
   relay.destroy();
 });
@@ -211,7 +211,7 @@ test("Claude2SessionRelay broadcasts live output after batch", async () => {
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
   // output_start + batch message + output_end + live message
-  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+  const outputEnd = messages.findIndex((msg) => msg.type === "live_end");
   const liveMessages = messages.slice(outputEnd + 1);
 
   expect(liveMessages).toHaveLength(1);
@@ -243,7 +243,7 @@ test("Claude2SessionRelay injectLine broadcasts but does not enter output", asyn
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
   // injectLine is broadcast live after the batches
-  const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
+  const outputEnd = messages.findIndex((msg) => msg.type === "live_end");
   expect(outputEnd).toBeGreaterThanOrEqual(0); // output batch always sent
 
   // The injected line appears after output_end

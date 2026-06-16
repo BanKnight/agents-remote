@@ -1855,11 +1855,11 @@ describe("messageToThreadLike batch markers", () => {
   test("history_end → null", () => {
     expect(messageToThreadLike(marker("history_end"))).toBeNull();
   });
-  test("output_start → null", () => {
-    expect(messageToThreadLike(marker("output_start"))).toBeNull();
+  test("live_start → null", () => {
+    expect(messageToThreadLike(marker("live_start"))).toBeNull();
   });
-  test("output_end → null", () => {
-    expect(messageToThreadLike(marker("output_end"))).toBeNull();
+  test("live_end → null", () => {
+    expect(messageToThreadLike(marker("live_end"))).toBeNull();
   });
 });
 
@@ -1872,10 +1872,10 @@ describe("makeBoundaryDivider", () => {
     expect(custom.batchBoundary).toBe("history");
   });
 
-  test("output kind is preserved", () => {
-    const d = makeBoundaryDivider("output");
+  test("live kind is preserved", () => {
+    const d = makeBoundaryDivider("live");
     const custom = d.metadata?.custom as Record<string, unknown>;
-    expect(custom.batchBoundary).toBe("output");
+    expect(custom.batchBoundary).toBe("live");
   });
 });
 

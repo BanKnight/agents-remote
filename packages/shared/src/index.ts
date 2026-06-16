@@ -949,11 +949,11 @@ export type SessionStreamServerMessage =
       type: "history_end";
     }
   | {
-      type: "output_start";
+      type: "live_start";
       count: number;
     }
   | {
-      type: "output_end";
+      type: "live_end";
     };
 
 export type HealthResponse = {

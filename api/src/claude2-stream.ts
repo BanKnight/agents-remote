@@ -120,8 +120,8 @@ export class Claude2StreamController {
       metadata?.permissionMode,
     );
 
-    // History and recent output are replayed from the relay on connect.
-    // The relay sends history_start/end and output_start/end batch markers.
+    // History and live cache are replayed from the relay on connect.
+    // The relay sends history_start/end and live_start/end batch markers.
 
     try {
       await this.startStream(socket, data);

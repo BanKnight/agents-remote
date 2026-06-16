@@ -9,7 +9,7 @@ type Subscriber = {
 
 export class Claude2SessionRelay {
   private historyLines: string[] = [];
-  private outputLines: string[] = [];
+  private liveLines: string[] = [];
   private subscribers = new Set<Subscriber>();
   private phase: "init" | "active" | "destroyed" = "init";
   private activatePromise: Promise<void> | null = null;
@@ -41,7 +41,7 @@ export class Claude2SessionRelay {
     }
 
     console.log(
-      `[relay] addSubscriber: phase=${this.phase} history=${this.historyLines.length} output=${this.outputLines.length}`,
+      `[relay] addSubscriber: phase=${this.phase} history=${this.historyLines.length} live=${this.liveLines.length}`,
     );
 
     const sub: Subscriber = { onData, onError };
@@ -62,16 +62,16 @@ export class Claude2SessionRelay {
     }
     onData(JSON.stringify({ type: "history_end" }));
 
-    // Always send output batch (count may be 0)
-    onData(JSON.stringify({ type: "output_start", count: this.outputLines.length }));
-    for (const line of this.outputLines) {
+    // Always send live batch (count may be 0)
+    onData(JSON.stringify({ type: "live_start", count: this.liveLines.length }));
+    for (const line of this.liveLines) {
       try {
         onData(line);
       } catch {
         /* subscriber error shouldn't block replay */
       }
     }
-    onData(JSON.stringify({ type: "output_end" }));
+    onData(JSON.stringify({ type: "live_end" }));
 
     return {
       close: () => {
@@ -118,8 +118,8 @@ export class Claude2SessionRelay {
       /* unparseable — let through to broadcast/buffer */
     }
 
-    this.outputLines.push(line);
-    this.capOutput();
+    this.liveLines.push(line);
+    this.capLive();
     this.broadcast(line);
   }
 
@@ -134,7 +134,7 @@ export class Claude2SessionRelay {
   destroy(): void {
     this.phase = "destroyed";
     this.historyLines = [];
-    this.outputLines = [];
+    this.liveLines = [];
     this.subscribers.clear();
   }
 
@@ -159,9 +159,9 @@ export class Claude2SessionRelay {
     }
   }
 
-  private capOutput(): void {
-    if (this.outputLines.length > 5000) {
-      this.outputLines = this.outputLines.slice(-5000);
+  private capLive(): void {
+    if (this.liveLines.length > 5000) {
+      this.liveLines = this.liveLines.slice(-5000);
     }
   }
 
