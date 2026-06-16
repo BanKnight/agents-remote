@@ -27,6 +27,7 @@ import {
   makeBoundaryDivider,
   extractToolResults,
   applyToolResultsToMessages,
+  markOrphanedToolCalls,
 } from "./claude2-adapter";
 import type { ApiErrorAttachment, QueueEntry, ExtractedToolResult } from "./claude2-adapter";
 
@@ -2042,5 +2043,85 @@ describe("applyToolResultsToMessages", () => {
     const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, []);
     expect(appliedCount).toBe(0);
     expect(applied).toBe(messages);
+  });
+
+  test("clears isOrphaned when setting result (self-heal)", () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "tu-heal", toolName: "Ask", args: {}, isOrphaned: true },
+        ],
+      },
+    ];
+    const results: ExtractedToolResult[] = [
+      { toolUseId: "tu-heal", content: "late result", isError: false },
+    ];
+    const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
+    expect(appliedCount).toBe(1);
+    const content = applied[0]?.content as Array<Record<string, unknown>>;
+    expect(content[0].result).toBe("late result");
+    expect(content[0].isOrphaned).toBeUndefined();
+  });
+});
+
+describe("markOrphanedToolCalls", () => {
+  const makeToolCallPart = (overrides: Record<string, unknown> = {}) => ({
+    type: "tool-call" as const,
+    toolCallId: "tu-1",
+    toolName: "Read",
+    args: {} as Record<string, unknown>,
+    ...overrides,
+  });
+
+  const msg = (parts: Record<string, unknown>[]): ThreadMessageLike => ({
+    role: "assistant",
+    content: parts as unknown as ThreadMessageLike["content"],
+  });
+
+  test("marks tool-call parts with no result as orphaned", () => {
+    const messages: ThreadMessageLike[] = [msg([makeToolCallPart()])];
+    const { messages: next, changed } = markOrphanedToolCalls(messages);
+    expect(changed).toBe(true);
+    const firstMsg = next[0];
+    expect(firstMsg).toBeDefined();
+    const part = (firstMsg!.content as Array<Record<string, unknown>>)[0];
+    expect(part.isOrphaned).toBe(true);
+  });
+
+  test("skips tool-call parts that already have a result", () => {
+    const messages: ThreadMessageLike[] = [msg([makeToolCallPart({ result: "file contents" })])];
+    const { changed } = markOrphanedToolCalls(messages);
+    expect(changed).toBe(false);
+  });
+
+  test("skips tool-call parts with isError", () => {
+    const messages: ThreadMessageLike[] = [msg([makeToolCallPart({ isError: true })])];
+    const { changed } = markOrphanedToolCalls(messages);
+    expect(changed).toBe(false);
+  });
+
+  test("idempotent — already-orphaned stays orphaned", () => {
+    const messages: ThreadMessageLike[] = [msg([makeToolCallPart({ isOrphaned: true })])];
+    const { changed } = markOrphanedToolCalls(messages);
+    expect(changed).toBe(false);
+  });
+
+  test("returns unchanged reference when nothing to mark", () => {
+    const messages: ThreadMessageLike[] = [
+      msg([makeToolCallPart({ result: "done" }), makeToolCallPart({ isError: true })]),
+    ];
+    const { messages: next, changed } = markOrphanedToolCalls(messages);
+    expect(changed).toBe(false);
+    expect(next).toBe(messages);
+  });
+
+  test("skips non-assistant messages", () => {
+    const messages: ThreadMessageLike[] = [
+      { role: "user", content: "hello" },
+      { role: "system", content: "init" },
+    ];
+    const { changed } = markOrphanedToolCalls(messages);
+    expect(changed).toBe(false);
   });
 });

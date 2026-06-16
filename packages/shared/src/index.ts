@@ -663,6 +663,7 @@ export type SessionStreamServerMessage =
   | {
       type: "history_start";
       count: number;
+      resume?: boolean;
     }
   | {
       type: "history_end";

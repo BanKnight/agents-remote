@@ -1100,3 +1100,114 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     expect(content).toContain("payload");
   });
 });
+
+describe("useClaude2Session resume-gated orphan marking", () => {
+  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+    result.current.storeAdapter.messages;
+
+  const externalToolUseAssistant = (
+    id: string,
+    toolUses: Array<{ tool_use_id: string; name: string }>,
+  ): SessionStreamServerMessage =>
+    ({
+      type: "assistant",
+      userType: "external",
+      message: {
+        id,
+        role: "assistant",
+        content: toolUses.map((tu) => ({
+          type: "tool_use",
+          id: tu.tool_use_id,
+          name: tu.name,
+          input: {},
+        })),
+      },
+    }) as unknown as SessionStreamServerMessage;
+
+  const externalToolResultUser = (
+    results: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+  ): SessionStreamServerMessage =>
+    ({
+      type: "user",
+      userType: "external",
+      message: {
+        role: "user",
+        content: results.map((r) => ({
+          type: "tool_result",
+          tool_use_id: r.tool_use_id,
+          content: r.content,
+          is_error: r.is_error ?? false,
+        })),
+      },
+    }) as unknown as SessionStreamServerMessage;
+
+  test("resume history: pending tool_use marked orphaned at history_end", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "history_start", count: 1, resume: true } as SessionStreamServerMessage);
+      socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-o", name: "Read" }]));
+      socket.emit({ type: "history_end" } as SessionStreamServerMessage);
+    });
+
+    const msgs = getMessages(result);
+    const assistantMsg = msgs.find(
+      (m): m is typeof m & { role: "assistant" } => m.role === "assistant",
+    );
+    expect(assistantMsg).toBeDefined();
+    const content = assistantMsg!.content as Array<Record<string, unknown>>;
+    const toolCall = content.find((c) => c.type === "tool-call");
+    expect(toolCall?.isOrphaned).toBe(true);
+    expect(toolCall?.toolCallId).toBe("tu-o");
+  });
+
+  test("live (non-resume) history: pending tool_use NOT orphaned", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "history_start", count: 1, resume: false } as SessionStreamServerMessage);
+      socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-p", name: "Read" }]));
+      socket.emit({ type: "history_end" } as SessionStreamServerMessage);
+    });
+
+    const msgs2 = getMessages(result);
+    const liveAssistant = msgs2.find(
+      (m): m is typeof m & { role: "assistant" } => m.role === "assistant",
+    );
+    expect(liveAssistant).toBeDefined();
+    const liveContent = liveAssistant!.content as Array<Record<string, unknown>>;
+    const liveToolCall = liveContent.find((c) => c.type === "tool-call");
+    expect(liveToolCall?.toolCallId).toBe("tu-p");
+    expect(liveToolCall?.isOrphaned).toBeUndefined();
+  });
+
+  test("resume: tool_use with already-matched result NOT orphaned", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "history_start", count: 2, resume: true } as SessionStreamServerMessage);
+      socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-done", name: "Ask" }]));
+      socket.emit(externalToolResultUser([{ tool_use_id: "tu-done", content: "answer" }]));
+      socket.emit({ type: "history_end" } as SessionStreamServerMessage);
+    });
+
+    const msgs3 = getMessages(result);
+    const doneAssistant = msgs3.find(
+      (m): m is typeof m & { role: "assistant" } => m.role === "assistant",
+    );
+    expect(doneAssistant).toBeDefined();
+    const doneContent = doneAssistant!.content as Array<Record<string, unknown>>;
+    const doneToolCall = doneContent.find((c) => c.type === "tool-call");
+    expect(doneToolCall?.result).toBe("answer");
+    expect(doneToolCall?.isOrphaned).toBeUndefined();
+  });
+});

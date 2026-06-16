@@ -48,7 +48,13 @@ export class Claude2SessionRelay {
     this.subscribers.add(sub);
 
     // Always send history batch (count may be 0 for new sessions)
-    onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
+    onData(
+      JSON.stringify({
+        type: "history_start",
+        count: this.historyLines.length,
+        resume: this.startedAsResume,
+      }),
+    );
     for (const line of this.historyLines) {
       try {
         onData(line);

@@ -661,15 +661,17 @@ export function applyToolResultsToMessages(
           (part as { toolCallId?: string }).toolCallId === r.toolUseId,
       );
       if (idx === -1) continue;
-      content = content.map((part: unknown, j: number) =>
-        j === idx
-          ? {
-              ...(part as Record<string, unknown>),
-              result: r.content,
-              ...(r.isError ? { isError: true } : {}),
-            }
-          : part,
-      );
+      content = content.map((part: unknown, j: number) => {
+        if (j !== idx) return part;
+        const update: Record<string, unknown> = {
+          ...(part as Record<string, unknown>),
+          result: r.content,
+          ...(r.isError ? { isError: true } : {}),
+        };
+        // Self-heal: a late result overrides a premature orphan mark
+        delete update.isOrphaned;
+        return update;
+      });
       touched = true;
       appliedCount++;
       pending.splice(p, 1);
@@ -677,6 +679,36 @@ export function applyToolResultsToMessages(
     if (touched) next[i] = { ...msg, content };
   }
   return { messages: appliedCount > 0 ? next : messages, appliedCount };
+}
+
+/**
+ * Mark tool-call parts that lack both result and isError as orphaned.
+ * Only called at history_end when the server declared this connection is a
+ * resume (isResumeRef). The history JSONL is from a concluded invocation;
+ * pending tool_use in that history will never receive their results.
+ *
+ * Returns `{ messages: prev, changed: false }` when nothing was marked
+ * (no-alloc pass to avoid needless re-render).
+ */
+export function markOrphanedToolCalls(messages: ThreadMessageLike[]): {
+  messages: ThreadMessageLike[];
+  changed: boolean;
+} {
+  let changed = false;
+  const next = messages.map((msg) => {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) return msg;
+    const content = msg.content.map((part: unknown): unknown => {
+      const p = part as Record<string, unknown>;
+      if (p.type !== "tool-call") return part;
+      if ("result" in p) return part;
+      if (p.isError === true) return part;
+      if (p.isOrphaned === true) return part; // already marked
+      changed = true;
+      return { ...p, isOrphaned: true };
+    });
+    return changed ? { ...msg, content } : msg;
+  }) as ThreadMessageLike[];
+  return { messages: changed ? next : messages, changed };
 }
 
 type RawByUuid = Map<string, SessionStreamServerMessage>;
@@ -1164,6 +1196,9 @@ export function useClaude2Session(
   // Tracks whether the current batch (since last *_start) contains visible content.
   // Reset on *_start; flipped true when a visible bubble is appended; checked at *_end.
   const currentBatchHasContentRef = useRef(false);
+  // Server-authoritative: whether this session instance was spawned with --resume.
+  // Populated on each history_start; used at history_end to decide orphan marking.
+  const isResumeRef = useRef(false);
 
   // All external-message side effects in one place.
   // API errors are intercepted before convert — they attach to parent bubbles,
@@ -1565,6 +1600,7 @@ export function useClaude2Session(
         if (msg.type === "history_start") {
           historyBatchRef.current = [];
           currentBatchHasContentRef.current = false;
+          isResumeRef.current = (msg as { resume?: boolean }).resume ?? false;
           // Queue-operation has no uuid dedup; clear on replay to avoid double-application on reconnect
           setInputQueue([]);
           setLoading(true);
@@ -1576,6 +1612,14 @@ export function useClaude2Session(
           const batch = historyBatchRef.current ?? [];
           historyBatchRef.current = null;
           processBatch(batch);
+          // If this is a resumed session whose prior process exited,
+          // any tool_use without a result is permanently orphaned.
+          if (isResumeRef.current) {
+            setMessagesState((prev) => {
+              const { messages, changed } = markOrphanedToolCalls(prev);
+              return changed ? messages : prev;
+            });
+          }
           if (currentBatchHasContentRef.current) {
             setMessagesState((prev) => [...prev, makeBoundaryDivider("history")]);
           }

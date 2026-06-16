@@ -44,7 +44,7 @@ test("Claude2SessionRelay sends history and output batches for a new session", a
   const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
   expect(historyStart).toBe(0);
   expect(historyEnd).toBe(1);
-  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0, resume: false });
 
   // Output batch with both lines
   const outputStart = messages.findIndex((msg) => msg.type === "output_start");
@@ -106,6 +106,11 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
   const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
 
   expect(historyStart).toBe(0); // first message
+  expect(messages[historyStart]).toMatchObject({
+    type: "history_start",
+    count: 1,
+    resume: true,
+  });
   expect(historyEnd).toBeGreaterThan(historyStart);
 
   const historyMessages = messages.slice(historyStart + 1, historyEnd);
@@ -138,7 +143,7 @@ test("Claude2SessionRelay always sends history+output markers even when empty", 
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
   expect(messages).toHaveLength(4); // history_start, history_end, output_start, output_end
-  expect(messages[0]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[0]).toMatchObject({ type: "history_start", count: 0, resume: false });
   expect(messages[1]).toMatchObject({ type: "history_end" });
   expect(messages[2]).toMatchObject({ type: "output_start", count: 0 });
   expect(messages[3]).toMatchObject({ type: "output_end" });
@@ -167,7 +172,7 @@ test("Claude2SessionRelay handles empty history file for resume", async () => {
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[0]).toMatchObject({ type: "history_start", count: 0, resume: true });
   expect(messages[1]).toMatchObject({ type: "history_end" });
 
   relay.destroy();
