@@ -26,6 +26,7 @@ import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
+import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import {
   Claude2BridgeContext,
@@ -859,7 +860,8 @@ function SystemChatBubble() {
     );
   }
 
-  const rawData = custom?._raw;
+  const rawData = custom?._raw as Record<string, unknown> | undefined;
+  const attachmentType = custom?.attachmentType as string | undefined;
   const fileSnapshot =
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
       ? (rawData as Claude2FileHistorySnapshot)
@@ -867,7 +869,9 @@ function SystemChatBubble() {
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
-        {fileSnapshot ? (
+        {attachmentType && rawData ? (
+          <AttachmentBubble subtype={attachmentType} raw={rawData} />
+        ) : fileSnapshot ? (
           <FileHistorySnapshotView snapshot={fileSnapshot} />
         ) : (
           <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
