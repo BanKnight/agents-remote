@@ -1254,6 +1254,23 @@ export function useClaude2Session(
     const enteredPlan = hasToolUseNamed(msg, "EnterPlanMode");
     if (enteredPlan) setPermissionMode("plan");
 
+    // Attachment messages — compact placeholder showing subtype until
+    // each subtype gets a proper handler.
+    if (msg.type === "attachment") {
+      currentBatchHasContentRef.current = true;
+      const att = (msg as Record<string, unknown>).attachment as
+        | Record<string, unknown>
+        | undefined;
+      const subtype = att?.type ?? "unknown";
+      const placeholder: ThreadMessageLike = {
+        role: "system",
+        content: [{ type: "text", text: `Attachment: ${subtype}` }],
+        metadata: { custom: { _raw: msg, _placeholder: true } },
+      };
+      setMessagesState((prev) => [...prev, placeholder]);
+      return;
+    }
+
     // Fallback: any external message type that received no specific handling
     // (state change or rendering) is rendered as a visible brown bubble so it
     // cannot be silently discarded. "Handled" here means the message produced
