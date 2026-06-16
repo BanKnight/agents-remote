@@ -39,18 +39,23 @@ test("Claude2SessionRelay sends history and output batches for a new session", a
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
-  // History always comes first, even when empty (count=0)
+  // session_init always comes first
+  const sessionInit = messages.findIndex((msg) => msg.type === "session_init");
+  expect(sessionInit).toBe(0);
+  expect(messages[sessionInit]).toMatchObject({ type: "session_init", resume: false });
+
+  // History batch
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
   const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
-  expect(historyStart).toBe(0);
-  expect(historyEnd).toBe(1);
-  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0, resume: false });
+  expect(historyStart).toBe(1);
+  expect(historyEnd).toBe(2);
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
 
   // Output batch with both lines
   const outputStart = messages.findIndex((msg) => msg.type === "output_start");
   const outputEnd = messages.findIndex((msg) => msg.type === "output_end");
 
-  expect(outputStart).toBe(2);
+  expect(outputStart).toBe(3);
   expect(outputEnd).toBeGreaterThan(outputStart);
 
   const outputMessages = messages.slice(outputStart + 1, outputEnd);
@@ -101,16 +106,17 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
-  // History batch comes first
+  // session_init always comes first
+  const sessionInit = messages.findIndex((msg) => msg.type === "session_init");
+  expect(sessionInit).toBe(0);
+  expect(messages[sessionInit]).toMatchObject({ type: "session_init", resume: true });
+
+  // History batch comes next
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
   const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
 
-  expect(historyStart).toBe(0); // first message
-  expect(messages[historyStart]).toMatchObject({
-    type: "history_start",
-    count: 1,
-    resume: true,
-  });
+  expect(historyStart).toBe(1);
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 1 });
   expect(historyEnd).toBeGreaterThan(historyStart);
 
   const historyMessages = messages.slice(historyStart + 1, historyEnd);
@@ -142,11 +148,13 @@ test("Claude2SessionRelay always sends history+output markers even when empty", 
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages).toHaveLength(4); // history_start, history_end, output_start, output_end
-  expect(messages[0]).toMatchObject({ type: "history_start", count: 0, resume: false });
-  expect(messages[1]).toMatchObject({ type: "history_end" });
-  expect(messages[2]).toMatchObject({ type: "output_start", count: 0 });
-  expect(messages[3]).toMatchObject({ type: "output_end" });
+  // session_init + history_start + history_end + output_start + output_end = 5
+  expect(messages).toHaveLength(5);
+  expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
+  expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[2]).toMatchObject({ type: "history_end" });
+  expect(messages[3]).toMatchObject({ type: "output_start", count: 0 });
+  expect(messages[4]).toMatchObject({ type: "output_end" });
 
   relay.destroy();
 });
@@ -172,8 +180,9 @@ test("Claude2SessionRelay handles empty history file for resume", async () => {
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "history_start", count: 0, resume: true });
-  expect(messages[1]).toMatchObject({ type: "history_end" });
+  expect(messages[0]).toMatchObject({ type: "session_init", resume: true });
+  expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages[2]).toMatchObject({ type: "history_end" });
 
   relay.destroy();
 });

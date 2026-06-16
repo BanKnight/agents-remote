@@ -871,6 +871,7 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "ai-title" ||
     msg.type === "agent-name" ||
     msg.type === "queue-operation" ||
+    msg.type === "session_init" ||
     msg.type === "history_start" ||
     msg.type === "history_end" ||
     msg.type === "output_start" ||
@@ -1197,7 +1198,7 @@ export function useClaude2Session(
   // Reset on *_start; flipped true when a visible bubble is appended; checked at *_end.
   const currentBatchHasContentRef = useRef(false);
   // Server-authoritative: whether this session instance was spawned with --resume.
-  // Populated on each history_start; used at history_end to decide orphan marking.
+  // Populated on session_init; used at history_end to decide orphan marking.
   const isResumeRef = useRef(false);
 
   // All external-message side effects in one place.
@@ -1597,10 +1598,14 @@ export function useClaude2Session(
         // Start markers are transport control — never render.
         // End markers render as a horizontal divider only when the
         // batch contained at least one visible content bubble.
+        if (msg.type === "session_init") {
+          isResumeRef.current = (msg as { resume: boolean }).resume ?? false;
+          console.log("[claude2-adapter] session_init resume=", isResumeRef.current);
+          return;
+        }
         if (msg.type === "history_start") {
           historyBatchRef.current = [];
           currentBatchHasContentRef.current = false;
-          isResumeRef.current = (msg as { resume?: boolean }).resume ?? false;
           // Queue-operation has no uuid dedup; clear on replay to avoid double-application on reconnect
           setInputQueue([]);
           setLoading(true);

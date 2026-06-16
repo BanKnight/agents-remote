@@ -1148,7 +1148,8 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "history_start", count: 1, resume: true } as SessionStreamServerMessage);
+      socket.emit({ type: "session_init", resume: true } as SessionStreamServerMessage);
+      socket.emit({ type: "history_start", count: 1 } as SessionStreamServerMessage);
       socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-o", name: "Read" }]));
       socket.emit({ type: "history_end" } as SessionStreamServerMessage);
     });
@@ -1171,7 +1172,8 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "history_start", count: 1, resume: false } as SessionStreamServerMessage);
+      socket.emit({ type: "session_init", resume: false } as SessionStreamServerMessage);
+      socket.emit({ type: "history_start", count: 1 } as SessionStreamServerMessage);
       socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-p", name: "Read" }]));
       socket.emit({ type: "history_end" } as SessionStreamServerMessage);
     });
@@ -1194,7 +1196,8 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit({ type: "history_start", count: 2, resume: true } as SessionStreamServerMessage);
+      socket.emit({ type: "session_init", resume: true } as SessionStreamServerMessage);
+      socket.emit({ type: "history_start", count: 2 } as SessionStreamServerMessage);
       socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-done", name: "Ask" }]));
       socket.emit(externalToolResultUser([{ tool_use_id: "tu-done", content: "answer" }]));
       socket.emit({ type: "history_end" } as SessionStreamServerMessage);

@@ -47,14 +47,12 @@ export class Claude2SessionRelay {
     const sub: Subscriber = { onData, onError };
     this.subscribers.add(sub);
 
+    // Connection-level metadata — sent before any batch so the client knows
+    // whether this is a resume (history may contain orphaned tool_use).
+    onData(JSON.stringify({ type: "session_init", resume: this.startedAsResume }));
+
     // Always send history batch (count may be 0 for new sessions)
-    onData(
-      JSON.stringify({
-        type: "history_start",
-        count: this.historyLines.length,
-        resume: this.startedAsResume,
-      }),
-    );
+    onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
     for (const line of this.historyLines) {
       try {
         onData(line);
