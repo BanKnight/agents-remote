@@ -352,6 +352,20 @@ describe("messageToThreadLike", () => {
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
     expect(text).toInclude('"type": "result"');
   });
+
+  test("last-prompt falls through to system role (state-only, not user bubble)", () => {
+    const msg = {
+      type: "last-prompt",
+      lastPrompt: "继续",
+      leafUuid: "abc-123",
+      sessionId: "s1",
+    } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    // No longer rendered as a user bubble — falls through to system fallback.
+    // In practice this path is never reached because handleInternalMessage
+    // intercepts last-prompt before calling messageToThreadLike.
+    expect(result.role).toBe("system");
+  });
 });
 
 // ── processMessage building blocks ───────────────────────────────────

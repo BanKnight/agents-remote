@@ -1039,9 +1039,6 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
   if (msg.type === "user") {
     return { role: "user", content: raw, metadata: meta };
   }
-  if (msg.type === "last-prompt") {
-    return { role: "user", content: msg.lastPrompt, metadata: meta };
-  }
   if (msg.type === "file-history-snapshot") {
     const count = Object.keys(msg.snapshot?.trackedFileBackups ?? {}).length;
     const text = `文件历史快照 · ${count} 个文件`;
@@ -1494,6 +1491,11 @@ export function useClaude2Session(
       setInputQueue((prev) => applyQueueOperation(prev, msg));
       return;
     }
+    if (msg.type === "last-prompt") {
+      setLastPrompt(msg.lastPrompt);
+      setSessionLeafUuid(msg.leafUuid ?? null);
+      return;
+    }
     const uiMessage = messageToThreadLike(msg);
     if (uiMessage) {
       currentBatchHasContentRef.current = true;
@@ -1578,6 +1580,8 @@ export function useClaude2Session(
   const [skills, setSkills] = useState<string[]>([]);
   const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [inputQueue, setInputQueue] = useState<QueueEntry[]>([]);
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
+  const [sessionLeafUuid, setSessionLeafUuid] = useState<string | null>(null);
 
   const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
   const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1590,6 +1594,8 @@ export function useClaude2Session(
     setSkills([]);
     setMcpServers([]);
     setInputQueue([]);
+    setLastPrompt(null);
+    setSessionLeafUuid(null);
     setRetryInfo(null);
     if (retryCountdownRef.current) {
       clearInterval(retryCountdownRef.current);
@@ -2031,6 +2037,8 @@ export function useClaude2Session(
     skills,
     mcpServers,
     inputQueue,
+    lastPrompt,
+    sessionLeafUuid,
     retryInfo,
   };
 }
