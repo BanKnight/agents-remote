@@ -1215,7 +1215,37 @@ export function useClaude2Session(
     const ops = extractTaskOps(msg);
     if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
 
-    if (hasToolUseNamed(msg, "EnterPlanMode")) setPermissionMode("plan");
+    const enteredPlan = hasToolUseNamed(msg, "EnterPlanMode");
+    if (enteredPlan) setPermissionMode("plan");
+
+    // Fallback: any external message type that received no specific handling
+    // (state change or rendering) is rendered as a visible brown bubble so it
+    // cannot be silently discarded. "Handled" here means the message produced
+    // a UI bubble, consumed tool_results, generated task ops, or triggered a
+    // permission-mode transition.
+    const wasHandled =
+      uiMessage !== null || toolResults.length > 0 || ops.length > 0 || enteredPlan;
+    if (!wasHandled) {
+      currentBatchHasContentRef.current = true;
+      const fallback: ThreadMessageLike = {
+        role: "user",
+        content: JSON.stringify(msg, null, 2),
+        metadata: { custom: { _raw: msg } },
+      };
+      setMessagesState((prev) => {
+        let next = [...prev, fallback];
+        if (pendingApiErrorsRef.current.length > 0) {
+          const drained = drainPendingErrors(
+            next,
+            pendingApiErrorsRef.current,
+            messageMapRef.current,
+          );
+          pendingApiErrorsRef.current = drained.remaining;
+          next = drained.messages;
+        }
+        return next;
+      });
+    }
   }, []);
 
   // All non-external (synthetic / system / result) message side effects.
@@ -1627,6 +1657,9 @@ export function useClaude2Session(
 
   const threadLikeMessages = messages;
 
+  // DEPRECATED: 翻页加载功能在重构中，不应被调用。保留仅为接口兼容。
+  // 确认调用方：Claude2SessionDetailRoute.tsx LoadOlderButton (line ~1025)
+  // 待前端重构完成后删除此函数及调用方。
   const loadOlder = useCallback(
     async (cursorOverride?: string | null) => {
       const cursor = cursorOverride ?? cursorRef.current;

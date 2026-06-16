@@ -1075,4 +1075,28 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     const toolCall = content.find((c) => c.toolCallId === "tu-ask");
     expect(toolCall?.isError).toBe(true);
   });
+
+  test("unhandled external message type renders as brown bubble fallback", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({
+        type: "unknown_type",
+        userType: "external",
+        message: { some: "payload" },
+        session_name: "proj/sess",
+      } as unknown as SessionStreamServerMessage);
+    });
+
+    const msgs = getMessages(result);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe("user");
+    const content = msgs[0]?.content;
+    expect(typeof content).toBe("string");
+    expect(content).toContain("unknown_type");
+    expect(content).toContain("payload");
+  });
 });
