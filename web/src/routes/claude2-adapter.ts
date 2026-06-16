@@ -1599,6 +1599,9 @@ export function useClaude2Session(
         // End markers render as a horizontal divider only when the
         // batch contained at least one visible content bubble.
         if (msg.type === "session_init") {
+          // New connection — discard all state from the prior connection
+          // before replaying history/output batches.
+          resetSessionState();
           isResumeRef.current = (msg as { resume: boolean }).resume ?? false;
           console.log("[claude2-adapter] session_init resume=", isResumeRef.current);
           return;
@@ -1606,10 +1609,6 @@ export function useClaude2Session(
         if (msg.type === "history_start") {
           historyBatchRef.current = [];
           currentBatchHasContentRef.current = false;
-          // Queue-operation has no uuid dedup; clear on replay to avoid double-application on reconnect
-          setInputQueue([]);
-          setLoading(true);
-          setIsRunning(false);
           console.log("[claude2-adapter] history batch start, count=", msg.count);
           return;
         }
