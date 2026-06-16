@@ -379,12 +379,289 @@ export type Claude2Mode = {
   session_id?: string;
 };
 
-export type Claude2Attachment = {
-  type: "system";
-  subtype: "attachment";
-  filename: string;
-  content_type: "text" | "image";
-  session_id?: string;
+// attachment 外层信封（所有子类型共享）
+export type Claude2AttachmentEnvelope = {
+  type: "attachment";
+  uuid: string;
+  parentUuid: string | null;
+  isSidechain: boolean;
+  timestamp: string;
+  sessionId: string;
+  userType?: string;
+  entrypoint?: string;
+  cwd?: string;
+  version?: string;
+  gitBranch?: string;
+  slug?: string;
+};
+
+// attachment 子类型（23 种，按 domain 分组）
+
+export type AttachmentMcpInstructionsDelta = {
+  attachment: {
+    type: "mcp_instructions_delta";
+    addedNames: string[];
+    addedBlocks: string[];
+  };
+};
+
+export type AttachmentSkillListing = {
+  attachment: {
+    type: "skill_listing";
+    content: string;
+  };
+};
+
+export type AttachmentCommandPermissions = {
+  attachment: {
+    type: "command_permissions";
+    allowedTools: string[];
+  };
+};
+
+export type AttachmentInvokedSkills = {
+  attachment: {
+    type: "invoked_skills";
+    skills: Array<{ name: string; path: string; content: string }>;
+  };
+};
+
+export type AttachmentAutoMode = {
+  attachment: {
+    type: "auto_mode";
+    reminderType?: "full";
+  };
+};
+
+export type AttachmentAutoModeExit = {
+  attachment: {
+    type: "auto_mode_exit";
+  };
+};
+
+export type AttachmentPlanMode = {
+  attachment: {
+    type: "plan_mode";
+    reminderType?: "full";
+    isSubAgent: boolean;
+    planFilePath: string;
+    planExists: boolean;
+  };
+};
+
+export type AttachmentPlanModeExit = {
+  attachment: {
+    type: "plan_mode_exit";
+    planFilePath: string;
+    planExists: boolean;
+  };
+};
+
+export type AttachmentPlanModeReentry = {
+  attachment: {
+    type: "plan_mode_reentry";
+    planFilePath: string;
+  };
+};
+
+export type AttachmentTaskReminder = {
+  attachment: {
+    type: "task_reminder";
+    content: Array<{
+      id?: string;
+      subject?: string;
+      status?: string;
+      [key: string]: unknown;
+    }>;
+    itemCount: number;
+  };
+};
+
+export type AttachmentTaskStatus = {
+  attachment: {
+    type: "task_status";
+    taskId: string;
+    taskType: string;
+    description: string;
+    status: string;
+    deltaSummary: string | null;
+    outputFilePath: string;
+  };
+};
+
+export type AttachmentQueuedCommand = {
+  attachment: {
+    type: "queued_command";
+    prompt: string;
+    commandMode: string;
+  };
+};
+
+export type AttachmentFile = {
+  attachment: {
+    type: "file";
+    filename: string;
+    displayPath: string;
+    content: {
+      type: "text";
+      file: {
+        filePath: string;
+        content: string;
+        numLines: number;
+        startLine: number;
+        totalLines: number;
+      };
+    };
+  };
+};
+
+export type AttachmentEditedTextFile = {
+  attachment: {
+    type: "edited_text_file";
+    filename: string;
+    snippet: string;
+  };
+};
+
+export type AttachmentCompactFileReference = {
+  attachment: {
+    type: "compact_file_reference";
+    filename: string;
+    displayPath: string;
+  };
+};
+
+export type AttachmentPlanFileReference = {
+  attachment: {
+    type: "plan_file_reference";
+    planFilePath: string;
+    planContent: string;
+  };
+};
+
+export type AttachmentHookSuccess = {
+  attachment: {
+    type: "hook_success";
+    hookName: string;
+    hookEvent: string;
+    toolUseID: string;
+    command: string;
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    durationMs: number;
+    content?: string;
+  };
+};
+
+export type AttachmentHookNonBlockingError = {
+  attachment: {
+    type: "hook_non_blocking_error";
+    hookName: string;
+    hookEvent: string;
+    toolUseID: string;
+    command: string;
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    durationMs: number;
+  };
+};
+
+export type AttachmentHookAdditionalContext = {
+  attachment: {
+    type: "hook_additional_context";
+    content: string[];
+    hookName: string;
+    hookEvent: string;
+    toolUseID: string;
+  };
+};
+
+export type AttachmentDateChange = {
+  attachment: {
+    type: "date_change";
+    newDate: string;
+  };
+};
+
+export type AttachmentOpenedFileInIde = {
+  attachment: {
+    type: "opened_file_in_ide";
+    filename: string;
+  };
+};
+
+export type AttachmentSelectedLinesInIde = {
+  attachment: {
+    type: "selected_lines_in_ide";
+    ideName: string;
+    filename: string;
+    displayPath: string;
+    lineStart: number;
+    lineEnd: number;
+    content: string;
+  };
+};
+
+export type AttachmentDiagnostics = {
+  attachment: {
+    type: "diagnostics";
+    files: Array<{
+      uri: string;
+      diagnostics: Array<{
+        message: string;
+        severity: string;
+        range: {
+          start: { line: number; character: number };
+          end: { line: number; character: number };
+        };
+        source: string;
+        code: string;
+      }>;
+    }>;
+    isNew: boolean;
+  };
+};
+
+export type AttachmentGoalStatus = {
+  attachment: {
+    type: "goal_status";
+    met: boolean;
+    sentinel: boolean;
+    condition: string;
+  };
+};
+
+export type AttachmentContent =
+  | AttachmentMcpInstructionsDelta["attachment"]
+  | AttachmentSkillListing["attachment"]
+  | AttachmentCommandPermissions["attachment"]
+  | AttachmentInvokedSkills["attachment"]
+  | AttachmentAutoMode["attachment"]
+  | AttachmentAutoModeExit["attachment"]
+  | AttachmentPlanMode["attachment"]
+  | AttachmentPlanModeExit["attachment"]
+  | AttachmentPlanModeReentry["attachment"]
+  | AttachmentTaskReminder["attachment"]
+  | AttachmentTaskStatus["attachment"]
+  | AttachmentQueuedCommand["attachment"]
+  | AttachmentFile["attachment"]
+  | AttachmentEditedTextFile["attachment"]
+  | AttachmentCompactFileReference["attachment"]
+  | AttachmentPlanFileReference["attachment"]
+  | AttachmentHookSuccess["attachment"]
+  | AttachmentHookNonBlockingError["attachment"]
+  | AttachmentHookAdditionalContext["attachment"]
+  | AttachmentDateChange["attachment"]
+  | AttachmentOpenedFileInIde["attachment"]
+  | AttachmentSelectedLinesInIde["attachment"]
+  | AttachmentDiagnostics["attachment"]
+  | AttachmentGoalStatus["attachment"];
+
+// 完整 attachment 消息（信封 + 子类型）
+export type Claude2Attachment = Claude2AttachmentEnvelope & {
+  attachment: AttachmentContent;
 };
 
 export type Claude2LastPromptEntry = {

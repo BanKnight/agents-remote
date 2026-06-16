@@ -1648,11 +1648,23 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 ---
 
-**`plan_mode_exit`** — Plan 模式退出
+**`plan_mode`** / **`plan_mode_exit`** / **`plan_mode_reentry`** — Plan 模式生命周期
 
-**含义**：用户退出 plan 模式时写入。`planFilePath` 记录 plan 文件路径，`planExists` 表示退出时 plan 文件是否仍然存在。
+**含义**：记录 plan 模式的进入、退出和重新进入事件。`plan_mode`（进入）、`plan_mode_exit`（退出）和 `plan_mode_reentry`（重新进入）构成完整的 plan 模式状态机。
 
-**已确认**：`plan_mode_exit` 在真实 JSONL 中存在（1 次，`entrypoint: "cli"`）。`plan_mode`（进入）和 `plan_mode_reentry`（重新进入）**尚未在真实 JSONL 样本中观察到**——plan 模式的进入可能通过其他机制记录（如 `user.permissionMode: "plan"`），或者 CLI 不为此产生独立的 attachment 事件。
+**统计**（跨 4 个数据源 4208 条 attachment）：`plan_mode` 25 次、`plan_mode_exit` 36 次、`plan_mode_reentry` 15 次。三种子类型均已确认存在。
+
+**`plan_mode` 字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"plan_mode"` | 子类型 |
+| `attachment.reminderType` | `"full"` \| absent | 是否带完整提醒文本 |
+| `attachment.isSubAgent` | boolean | 是否由子 agent 触发 |
+| `attachment.planFilePath` | string | Plan 文件绝对路径 |
+| `attachment.planExists` | boolean | Plan 文件是否存在 |
+
+**`plan_mode_exit` 字段**：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1660,7 +1672,33 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 | `attachment.planFilePath` | string | Plan 文件绝对路径 |
 | `attachment.planExists` | boolean | Plan 文件是否存在 |
 
-**Resume 恢复**：最近一条 `plan_mode_exit` 标记用户已退出 plan mode。
+**`plan_mode_reentry` 字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"plan_mode_reentry"` | 子类型 |
+| `attachment.planFilePath` | string | Plan 文件绝对路径 |
+
+**Resume 恢复**：最近一条 plan mode 相关 attachment 决定当前是否处于 plan mode 及 plan 文件路径。
+
+示例（`plan_mode`）：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "plan_mode",
+    "reminderType": "full",
+    "isSubAgent": false,
+    "planFilePath": "/home/deploy/.claude/plans/kind-pondering-lagoon.md",
+    "planExists": false
+  },
+  "userType": "external",
+  "entrypoint": "cli",
+  "sessionId": "36a1a53f-...",
+  "version": "2.1.142",
+  "slug": "kind-pondering-lagoon"
+}
+```
 
 示例（`plan_mode_exit`）：
 ```json
@@ -1679,31 +1717,467 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 }
 ```
 
+示例（`plan_mode_reentry`）：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "plan_mode_reentry",
+    "planFilePath": "/home/deploy/.claude/plans/kind-pondering-lagoon.md"
+  },
+  "userType": "external",
+  "entrypoint": "cli",
+  "sessionId": "36a1a53f-...",
+  "version": "2.1.142",
+  "slug": "kind-pondering-lagoon"
+}
+```
+
 ---
 
-##### 其他子类型
+##### 任务与命令
 
-以下子类型在本会话 JSONL 中出现，按频率排列：
+**`task_reminder`** — 任务提醒
 
-**`task_reminder`** (122 次) — 任务提醒。`content` 为当前任务列表数组（TaskInfo[]），`itemCount` 为任务总数。
+**含义**：当前任务列表的定期快照。`content` 为任务对象数组，`itemCount` 为任务总数。
 
-**`queued_command`** (19 次) — 排队命令。字段：`prompt` (string), `commandMode` (string)。
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"task_reminder"` | 子类型 |
+| `attachment.content` | TaskInfo[] | 当前任务列表（每个任务包含 id、subject、status 等字段） |
+| `attachment.itemCount` | number | 任务总数 |
 
-**`file`** (18 次) — 文件附件。字段：`filename` (string), `displayPath` (string), `content` (object, 含 `file.content`, `file.filePath`, `file.numLines` 等)。
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "task_reminder",
+    "content": [],
+    "itemCount": 0
+  }
+}
+```
 
-**`compact_file_reference`** (17 次) — Compact 后文件引用。字段：`filename` (string), `displayPath` (string)。
+---
 
-**`edited_text_file`** (13 次) — 编辑文本文件记录。字段：`filename` (string), `snippet` (string)。
+**`task_status`** — 子任务状态变更
 
-**`date_change`** (9 次) — 日期变更通知。字段：`newDate` (string, 如 `"2026-06-09"`)。
+**含义**：后台子 agent（local_agent / remote_agent）的状态更新。包含任务 ID、类型、描述、当前状态和输出文件路径。
 
-**`hook_success`** (8 次) — Hook 执行成功。字段：`hookName` (string), `hookEvent` (string), `toolUseID` (string), `command` (string), `stdout` (string), `stderr` (string), `exitCode` (number), `durationMs` (number)。
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"task_status"` | 子类型 |
+| `attachment.taskId` | string | 任务 ID |
+| `attachment.taskType` | string | 任务类型（`"local_agent"` / `"remote_agent"`） |
+| `attachment.description` | string | 任务描述 |
+| `attachment.status` | string | 当前状态（`"running"` 等） |
+| `attachment.deltaSummary` | string \| null | 增量摘要 |
+| `attachment.outputFilePath` | string | 输出文件路径 |
 
-**`plan_file_reference`** (7 次) — Plan 文件内容快照。字段：`planFilePath` (string), `planContent` (string)。
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "task_status",
+    "taskId": "a59fd32663419d240",
+    "taskType": "local_agent",
+    "description": "Angle D — reuse audit",
+    "status": "running",
+    "deltaSummary": null,
+    "outputFilePath": "/tmp/claude-1000/-home-deploy-workspace-lang-partner/.../tasks/a59fd32663419d240.output"
+  }
+}
+```
 
-**`hook_additional_context`** (7 次) — Hook 附加上下文。字段：`content` (string[]), `hookName` (string), `hookEvent` (string), `toolUseID` (string)。
+---
 
-`goal_status`、`opened_file_in_ide`、`diagnostics`、`selected_lines_in_ide`、`hook_non_blocking_error` 等子类型本会话未出现，暂不展开。
+**`queued_command`** — 排队命令
+
+**含义**：记录用户通过斜杠命令或其他机制排队的命令。`commandMode` 决定命令的处理模式。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"queued_command"` | 子类型 |
+| `attachment.prompt` | string | 命令/提示文本 |
+| `attachment.commandMode` | string | 命令模式（`"prompt"` 等） |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "queued_command",
+    "prompt": "完成本change之后，你需要汇报给我...",
+    "commandMode": "prompt"
+  }
+}
+```
+
+---
+
+##### 文件与编辑
+
+**`file`** — 文件附件
+
+**含义**：记录 CLI 读取或引用的文件内容。`content` 包含完整的文件数据和元信息。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"file"` | 子类型 |
+| `attachment.filename` | string | 文件绝对路径 |
+| `attachment.displayPath` | string | 相对显示路径 |
+| `attachment.content` | object | 文件内容对象 |
+| `attachment.content.type` | `"text"` | 内容类型 |
+| `attachment.content.file.filePath` | string | 文件路径 |
+| `attachment.content.file.content` | string | 文件完整内容 |
+| `attachment.content.file.numLines` | number | 文件行数 |
+| `attachment.content.file.startLine` | number | 起始行（1） |
+| `attachment.content.file.totalLines` | number | 总行数 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "file",
+    "filename": "/home/deploy/workspace/agents-remote/.workflow/versions/.../progress.md",
+    "displayPath": ".workflow/versions/.../progress.md",
+    "content": {
+      "type": "text",
+      "file": {
+        "filePath": "/home/deploy/workspace/agents-remote/.workflow/versions/.../progress.md",
+        "content": "# progress\n\n本文件记录...",
+        "numLines": 51,
+        "startLine": 1,
+        "totalLines": 51
+      }
+    }
+  }
+}
+```
+
+---
+
+**`edited_text_file`** — 编辑文本文件记录
+
+**含义**：记录 CLI 编辑过的文本文件的内容片段。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"edited_text_file"` | 子类型 |
+| `attachment.filename` | string | 文件绝对路径 |
+| `attachment.snippet` | string | 文件内容片段 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "edited_text_file",
+    "filename": "/home/deploy/workspace/agents-remote/.workflow/versions/.../capture-web.log",
+    "snippet": "VITE v8.0.13  ready in 410 ms\n➜  Local:   http://127.0.0.1:44103/"
+  }
+}
+```
+
+---
+
+**`compact_file_reference`** — Compact 后文件引用
+
+**含义**：上下文压缩后保留的文件引用。只记录路径，不包含内容——内容已在压缩时被丢弃。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"compact_file_reference"` | 子类型 |
+| `attachment.filename` | string | 文件绝对路径 |
+| `attachment.displayPath` | string | 相对显示路径 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "compact_file_reference",
+    "filename": "/home/deploy/workspace/agents-remote/web/src/routes/ProjectConsoleRoute.tsx",
+    "displayPath": "web/src/routes/ProjectConsoleRoute.tsx"
+  }
+}
+```
+
+---
+
+**`plan_file_reference`** — Plan 文件内容快照
+
+**含义**：记录 plan 文件的完整内容快照，用于跨 compact 保留 plan 上下文。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"plan_file_reference"` | 子类型 |
+| `attachment.planFilePath` | string | Plan 文件绝对路径 |
+| `attachment.planContent` | string | Plan 文件完整内容 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "plan_file_reference",
+    "planFilePath": "/home/deploy/.claude/plans/kind-pondering-lagoon.md",
+    "planContent": "# Agent List: Full Simplification\n\n## Context\n..."
+  }
+}
+```
+
+---
+
+##### Hook 事件
+
+**`hook_success`** — Hook 执行成功
+
+**含义**：记录 hook 脚本执行成功的结果，包括 stdout、stderr、退出码和执行耗时。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"hook_success"` | 子类型 |
+| `attachment.hookName` | string | Hook 名称 |
+| `attachment.hookEvent` | string | Hook 触发事件（`"SessionStart"` / `"Stop"` 等） |
+| `attachment.toolUseID` | string | 关联的 tool_use ID |
+| `attachment.command` | string | 执行的命令 |
+| `attachment.stdout` | string | 标准输出 |
+| `attachment.stderr` | string | 标准错误 |
+| `attachment.exitCode` | number | 退出码 |
+| `attachment.durationMs` | number | 执行耗时（毫秒） |
+| `attachment.content`? | string | 可选附加内容 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "hook_success",
+    "hookName": "SessionStart:compact",
+    "hookEvent": "SessionStart",
+    "toolUseID": "8d014227-...",
+    "command": "bash ${CLAUDE_PROJECT_DIR}/scripts/handoff-restore.sh",
+    "stdout": "=== LinguaPair Session Restore ===\n...",
+    "stderr": "",
+    "exitCode": 0,
+    "durationMs": 104
+  }
+}
+```
+
+---
+
+**`hook_non_blocking_error`** — Hook 非阻塞错误
+
+**含义**：Hook 脚本以非零退出码结束（非阻塞，不会中断 CLI 执行）。记录错误详情供诊断。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"hook_non_blocking_error"` | 子类型 |
+| `attachment.hookName` | string | Hook 名称 |
+| `attachment.hookEvent` | string | Hook 触发事件 |
+| `attachment.toolUseID` | string | 关联的 tool_use ID |
+| `attachment.command` | string | 执行的命令 |
+| `attachment.stdout` | string | 标准输出 |
+| `attachment.stderr` | string | 标准错误（含错误描述） |
+| `attachment.exitCode` | number | 退出码（非零） |
+| `attachment.durationMs` | number | 执行耗时（毫秒） |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "hook_non_blocking_error",
+    "hookName": "Stop",
+    "hookEvent": "Stop",
+    "toolUseID": "ac42bd14-...",
+    "command": "那就继续吧...",
+    "stdout": "",
+    "stderr": "JSON validation failed",
+    "exitCode": 1,
+    "durationMs": 20177
+  }
+}
+```
+
+---
+
+**`hook_additional_context`** — Hook 附加上下文
+
+**含义**：Hook 执行后注入到会话的附加上下文数据。`content` 为字符串数组，每条为一段上下文文本。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"hook_additional_context"` | 子类型 |
+| `attachment.content` | string[] | 上下文内容数组 |
+| `attachment.hookName` | string | Hook 名称 |
+| `attachment.hookEvent` | string | Hook 触发事件 |
+| `attachment.toolUseID` | string | 关联的 tool_use ID |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "hook_additional_context",
+    "content": [
+      "Recovered handoff checkpoint from the previous session...\n\n## Big picture\n..."
+    ],
+    "hookName": "SessionStart",
+    "hookEvent": "SessionStart",
+    "toolUseID": "SessionStart"
+  }
+}
+```
+
+---
+
+##### 运行环境
+
+**`date_change`** — 日期变更通知
+
+**含义**：当系统日期跨越 UTC 午夜时写入，通知 CLI 内部日期已更新。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"date_change"` | 子类型 |
+| `attachment.newDate` | string | 新日期（`"YYYY-MM-DD"` 格式） |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "date_change",
+    "newDate": "2026-05-29"
+  }
+}
+```
+
+---
+
+**`opened_file_in_ide`** — IDE 打开文件
+
+**含义**：记录用户在 IDE 中打开的文件。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"opened_file_in_ide"` | 子类型 |
+| `attachment.filename` | string | 文件绝对路径 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "opened_file_in_ide",
+    "filename": "/home/deploy/workspace/agents-remote/.workflow/versions/index.md"
+  }
+}
+```
+
+---
+
+**`selected_lines_in_ide`** — IDE 选中行
+
+**含义**：记录用户在 IDE 中选中的代码行及内容。`content` 为选中的文本片段。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"selected_lines_in_ide"` | 子类型 |
+| `attachment.ideName` | string | IDE 名称（如 `"Visual Studio Code"`） |
+| `attachment.filename` | string | 文件名 |
+| `attachment.displayPath` | string | 显示路径 |
+| `attachment.lineStart` | number | 选中起始行 |
+| `attachment.lineEnd` | number | 选中结束行 |
+| `attachment.content` | string | 选中内容文本 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "selected_lines_in_ide",
+    "ideName": "Visual Studio Code",
+    "filename": "Untitled-1",
+    "displayPath": "Untitled-1",
+    "lineStart": 0,
+    "lineEnd": 3,
+    "content": "新增两个需要优化的内容：1 终端打字的延迟..."
+  }
+}
+```
+
+---
+
+**`diagnostics`** — IDE 诊断信息
+
+**含义**：记录 IDE 的诊断信息（如 TypeScript 类型检查提示），包含文件 URI 和诊断条目列表。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"diagnostics"` | 子类型 |
+| `attachment.files` | object[] | 诊断文件列表 |
+| `attachment.files[].uri` | string | 文件 URI（`file://` 格式） |
+| `attachment.files[].diagnostics` | object[] | 诊断条目列表 |
+| `attachment.files[].diagnostics[].message` | string | 诊断消息 |
+| `attachment.files[].diagnostics[].severity` | string | 严重级别（`"Hint"` 等） |
+| `attachment.files[].diagnostics[].range` | object | 位置范围（含 `start`/`end` 的 `line` + `character`） |
+| `attachment.files[].diagnostics[].source` | string | 来源（`"ts"` 等） |
+| `attachment.files[].diagnostics[].code` | string | 错误/提示代码 |
+| `attachment.isNew` | boolean | 是否为新的诊断结果 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "diagnostics",
+    "files": [{
+      "uri": "file:///home/deploy/workspace/agents-remote/web/src/routes/SessionDetailRoute.tsx",
+      "diagnostics": [{
+        "message": "\"FormEvent\"已弃用。",
+        "severity": "Hint",
+        "range": { "start": { "line": 1673, "character": 20 }, "end": { "line": 1673, "character": 46 } },
+        "source": "ts",
+        "code": "6385"
+      }]
+    }],
+    "isNew": true
+  }
+}
+```
+
+---
+
+**`goal_status`** — 目标状态
+
+**含义**：记录 CLI 的当前目标/任务声明及其完成状态。`condition` 为目标描述文本，`met` 表示是否已达成，`sentinel` 标记是否为哨兵条目。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"goal_status"` | 子类型 |
+| `attachment.met` | boolean | 目标是否已达成 |
+| `attachment.sentinel` | boolean | 是否为哨兵目标 |
+| `attachment.condition` | string | 目标描述文本 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "goal_status",
+    "met": false,
+    "sentinel": true,
+    "condition": "使用step-change 技能来完成versions/index.md 中的所有change..."
+  }
+}
+```
 
 ---
 
