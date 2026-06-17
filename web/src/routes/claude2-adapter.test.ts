@@ -8,7 +8,7 @@ import {
   isSyntheticAssistantMessage,
   applySwitchModelResult,
   computeRunningCount,
-  convertExternalToThreadLike,
+  convertContentToBubble,
   extractTaskOps,
   hasToolUseNamed,
   messageToThreadLike,
@@ -371,18 +371,18 @@ describe("messageToThreadLike", () => {
 // ── processMessage building blocks ───────────────────────────────────
 
 describe("message processing building blocks", () => {
-  test("convertExternalToThreadLike converts assistant message", () => {
+  test("converts assistant message with content block decomposition", () => {
     const msg = {
       type: "assistant",
       userType: "external",
       message: { id: "m1", role: "assistant", content: [{ type: "text", text: "hello" }] },
     } as unknown as SessionStreamServerMessage;
-    const result = convertExternalToThreadLike(msg);
+    const result = convertContentToBubble(msg);
     expect(result).toBeDefined();
     expect(result?.role).toBe("assistant");
   });
 
-  test("convertExternalToThreadLike renders external user message with text content", () => {
+  test("renders user message with text content", () => {
     const msg = {
       type: "user",
       userType: "external",
@@ -391,13 +391,13 @@ describe("message processing building blocks", () => {
         content: [{ type: "text", text: "hello world" }],
       },
     } as unknown as SessionStreamServerMessage;
-    const result = convertExternalToThreadLike(msg);
+    const result = convertContentToBubble(msg);
     expect(result).toBeDefined();
     expect(result?.role).toBe("user");
     expect(result?.content).toBe("hello world");
   });
 
-  test("convertExternalToThreadLike returns null for user message with only tool_result", () => {
+  test("convertContentToBubble returns null for user message with only tool_result", () => {
     const msg = {
       type: "user",
       userType: "external",
@@ -406,10 +406,10 @@ describe("message processing building blocks", () => {
         content: [{ type: "tool_result", tool_use_id: "tu-1", content: "result" }],
       },
     } as unknown as SessionStreamServerMessage;
-    expect(convertExternalToThreadLike(msg)).toBeNull();
+    expect(convertContentToBubble(msg)).toBeNull();
   });
 
-  test("convertExternalToThreadLike renders hybrid text+tool_result as text-only bubble", () => {
+  test("convertContentToBubble renders hybrid text+tool_result as text-only bubble", () => {
     const msg = {
       type: "user",
       userType: "external",
@@ -421,19 +421,19 @@ describe("message processing building blocks", () => {
         ],
       },
     } as unknown as SessionStreamServerMessage;
-    const result = convertExternalToThreadLike(msg);
+    const result = convertContentToBubble(msg);
     expect(result).toBeDefined();
     expect(result?.role).toBe("user");
     expect(result?.content).toBe("Continue from where you left off.");
   });
 
-  test("convertExternalToThreadLike returns null for user message with empty content", () => {
+  test("convertContentToBubble returns null for user message with empty content", () => {
     const msg = {
       type: "user",
       userType: "external",
       message: { role: "user", content: [] },
     } as unknown as SessionStreamServerMessage;
-    expect(convertExternalToThreadLike(msg)).toBeNull();
+    expect(convertContentToBubble(msg)).toBeNull();
   });
 
   test("extractTaskOps returns empty for non-task messages", () => {
@@ -534,7 +534,19 @@ describe("message processing building blocks", () => {
     expect(tasks).toHaveLength(0);
   });
 
-  test("extractTaskOps returns empty for non-external", () => {
+  test("extractTaskOps returns empty for non-assistant", () => {
+    const msg = {
+      type: "user",
+      message: {
+        id: "m1",
+        role: "user",
+        content: [{ type: "text", text: "hello" }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    expect(extractTaskOps(msg)).toEqual([]);
+  });
+
+  test("extractTaskOps handles assistant without userType", () => {
     const msg = {
       type: "assistant",
       message: {
@@ -543,7 +555,9 @@ describe("message processing building blocks", () => {
         content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: {} }],
       },
     } as unknown as SessionStreamServerMessage;
-    expect(extractTaskOps(msg)).toEqual([]);
+    const ops = extractTaskOps(msg);
+    expect(ops).toHaveLength(1);
+    expect(ops[0].subtype).toBe("task_started");
   });
 
   test("hasToolUseNamed detects EnterPlanMode in external assistant", () => {
@@ -560,7 +574,19 @@ describe("message processing building blocks", () => {
     expect(hasToolUseNamed(msg, "TaskCreate")).toBe(false);
   });
 
-  test("hasToolUseNamed returns false for non-external", () => {
+  test("hasToolUseNamed returns false for non-assistant", () => {
+    const msg = {
+      type: "user",
+      message: {
+        id: "m1",
+        role: "user",
+        content: [{ type: "text", text: "EnterPlanMode" }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    expect(hasToolUseNamed(msg, "EnterPlanMode")).toBe(false);
+  });
+
+  test("hasToolUseNamed detects tool use without userType", () => {
     const msg = {
       type: "assistant",
       message: {
@@ -569,7 +595,7 @@ describe("message processing building blocks", () => {
         content: [{ type: "tool_use", id: "tu-1", name: "EnterPlanMode", input: {} }],
       },
     } as unknown as SessionStreamServerMessage;
-    expect(hasToolUseNamed(msg, "EnterPlanMode")).toBe(false);
+    expect(hasToolUseNamed(msg, "EnterPlanMode")).toBe(true);
   });
 
   test("messageToThreadLike converts all message types", () => {
@@ -1582,8 +1608,14 @@ describe("API error detection", () => {
     expect(isExternalApiErrorMessage(normalExternalAssistant())).toBe(false);
   });
 
-  test("isExternalApiErrorMessage false when userType missing", () => {
+  test("isExternalApiErrorMessage true when userType missing (structural detection)", () => {
     const m = apiErrorMsg();
+    delete (m as Record<string, unknown>).userType;
+    expect(isExternalApiErrorMessage(m)).toBe(true);
+  });
+
+  test("isExternalApiErrorMessage false for normal assistant without userType", () => {
+    const m = normalExternalAssistant();
     delete (m as Record<string, unknown>).userType;
     expect(isExternalApiErrorMessage(m)).toBe(false);
   });

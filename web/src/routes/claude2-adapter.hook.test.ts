@@ -1076,7 +1076,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     expect(toolCall?.isError).toBe(true);
   });
 
-  test("unhandled external message type renders as brown bubble fallback", async () => {
+  test("unhandled message type renders as visible fallback bubble", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -1085,7 +1085,6 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     act(() => {
       socket.emit({
         type: "unknown_type",
-        userType: "external",
         message: { some: "payload" },
         session_name: "proj/sess",
       } as unknown as SessionStreamServerMessage);
@@ -1093,11 +1092,13 @@ describe("useClaude2Session tool_result matching (external path)", () => {
 
     const msgs = getMessages(result);
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]?.role).toBe("user");
+    // Unknown types fall through to messageToThreadLike default → system role
+    expect(msgs[0]?.role).toBe("system");
     const content = msgs[0]?.content;
-    expect(typeof content).toBe("string");
-    expect(content).toContain("unknown_type");
-    expect(content).toContain("payload");
+    expect(Array.isArray(content)).toBe(true);
+    const text = (content as Array<{ type: string; text: string }>)[0]?.text ?? "";
+    expect(text).toContain("unknown_type");
+    expect(text).toContain("payload");
   });
 });
 

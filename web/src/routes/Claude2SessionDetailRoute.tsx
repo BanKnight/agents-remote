@@ -708,6 +708,17 @@ function AssistantChatBubble() {
 }
 
 function ReasoningGroup({ running, children }: { running: boolean; children: React.ReactNode }) {
+  const message = useMessage();
+  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const estimatedTokens = typeof custom?.estimatedTokens === "number" ? custom.estimatedTokens : null;
+
+  let label = "Thinking";
+  if (running) {
+    label = estimatedTokens != null ? `Thinking… (${estimatedTokens} tokens)` : "Thinking…";
+  } else {
+    label = estimatedTokens != null ? `Thinking (${estimatedTokens} tokens)` : "Thinking";
+  }
+
   return (
     <CollapsibleSection
       className="my-1 text-amber-400/90"
@@ -736,7 +747,7 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
           {running ? (
             <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
           ) : null}
-          <span className="text-[0.7rem] font-medium">Thinking{running ? "…" : ""}</span>
+          <span className="text-[0.7rem] font-medium">{label}</span>
         </>
       }
     >
@@ -754,18 +765,67 @@ function ApiErrorAttachments() {
   if (!apiErrors || apiErrors.length === 0) return null;
 
   return (
-    <div className="mt-2 space-y-1 border-t border-red-700/30 pt-2">
+    <>
+      <div className="border-t border-dashed border-red-500/20 my-1.5" />
       {apiErrors.map((err, i) => (
-        <div
-          key={i}
-          className="text-[0.65rem] leading-relaxed text-red-300/90 bg-red-950/50 rounded px-2 py-1 break-all overflow-hidden"
-        >
-          <span className="font-semibold text-red-400 mr-1.5">{err.error ?? "error"}</span>
-          <span className="text-red-300/70">{err.text}</span>
-        </div>
+        <ApiErrorRow key={i} attachment={err} />
       ))}
+    </>
+  );
+}
+
+function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
+  const [expanded, setExpanded] = useState(false);
+  const label = attachment.error ?? "error";
+  const detail = attachment.text;
+  const retry = extractRetryInfo(attachment);
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-red-500/5 rounded transition cursor-pointer min-w-0"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-slate-500 text-[0.55rem] shrink-0 leading-none">
+          {expanded ? "▾" : "▸"}
+        </span>
+        <svg
+          className="h-3 w-3 shrink-0 text-red-400/70"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span className="text-[0.65rem] text-red-400/80 truncate min-w-0">{label}</span>
+        <span className="text-[0.6rem] text-red-400/50 ml-auto shrink-0 whitespace-nowrap">
+          {retry ? retry : null}
+          {!expanded ? " ▸" : null}
+        </span>
+      </button>
+      {expanded && (
+        <div className="ml-7 pl-2 border-l-2 border-red-800/20">
+          <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-red-300/50">
+            {detail}
+          </pre>
+        </div>
+      )}
     </div>
   );
+}
+
+function extractRetryInfo(err: ApiErrorAttachment): string | null {
+  const raw = err.raw as Record<string, unknown> | undefined;
+  if (!raw) return null;
+  const attempt = raw.retryAttempt as number | undefined;
+  const maxRetries = raw.maxRetries as number | undefined;
+  const inMs = raw.retryInMs as number | undefined;
+  if (attempt == null || maxRetries == null) return null;
+  let s = `重试 ${attempt}/${maxRetries}`;
+  if (inMs != null) s += `，${(inMs / 1000).toFixed(1)}s 后`;
+  return s;
 }
 
 function RawDebugTooltip({ data }: { data: unknown }) {
@@ -856,6 +916,22 @@ function SystemChatBubble() {
     return (
       <MessagePrimitive.Root className="flex w-full px-3 sm:px-5 py-1.5">
         <div className="w-full border-t border-slate-700/50" />
+      </MessagePrimitive.Root>
+    );
+  }
+
+  // Compact boundary divider: thin line + label showing compaction trigger & token count.
+  if (systemMessageType === "compact-boundary") {
+    const compactText = (custom?.compactText as string) ?? "";
+    return (
+      <MessagePrimitive.Root className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5">
+        <div className="flex-1 border-t border-amber-700/30" />
+        {compactText ? (
+          <span className="shrink-0 text-[0.6rem] text-amber-400/60 font-medium">
+            {compactText}
+          </span>
+        ) : null}
+        <div className="flex-1 border-t border-amber-700/30" />
       </MessagePrimitive.Root>
     );
   }
