@@ -545,6 +545,7 @@ function UserChatBubble() {
     <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
+        <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
@@ -675,6 +676,7 @@ function AssistantChatBubble() {
             </div>
           ) : null}
         </AuiIf>
+        <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
@@ -710,7 +712,8 @@ function AssistantChatBubble() {
 function ReasoningGroup({ running, children }: { running: boolean; children: React.ReactNode }) {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
-  const estimatedTokens = typeof custom?.estimatedTokens === "number" ? custom.estimatedTokens : null;
+  const estimatedTokens =
+    typeof custom?.estimatedTokens === "number" ? custom.estimatedTokens : null;
 
   let label = "Thinking";
   if (running) {
@@ -758,6 +761,66 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
   );
 }
 
+// ── Synthetic Body: rendered inside parent bubble when a child message has isSynthetic: true ──
+
+function SyntheticBodyView() {
+  const message = useMessage();
+  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const syntheticBody = custom?.syntheticBody as string | undefined;
+  if (!syntheticBody) return null;
+
+  return (
+    <>
+      <div className="border-t border-dashed border-slate-500/20 my-1.5" />
+      <SyntheticBodyRow body={syntheticBody} />
+    </>
+  );
+}
+
+function SyntheticBodyRow({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = body.slice(0, 120).replace(/\n/g, " ");
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-slate-500/5 rounded transition cursor-pointer min-w-0"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-slate-500 text-[0.55rem] shrink-0 leading-none">
+          {expanded ? "▾" : "▸"}
+        </span>
+        <svg
+          className="h-3 w-3 shrink-0 text-slate-400/70"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M8 9h8M8 13h8M8 17h5"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="text-[0.65rem] text-slate-400/80 truncate min-w-0">{preview}</span>
+        <span className="text-[0.6rem] text-slate-400/50 ml-auto shrink-0 whitespace-nowrap">
+          {!expanded ? " ▸" : null}
+        </span>
+      </button>
+      {expanded && (
+        <div className="ml-7 pl-2 border-l-2 border-slate-700/30">
+          <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-slate-300/50 max-h-60 overflow-y-auto">
+            {body}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApiErrorAttachments() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
@@ -797,7 +860,12 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
           aria-hidden="true"
         >
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <path
+            d="M12 8v4M12 16h.01"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
         </svg>
         <span className="text-[0.65rem] text-red-400/80 truncate min-w-0">{label}</span>
         <span className="text-[0.6rem] text-red-400/50 ml-auto shrink-0 whitespace-nowrap">
@@ -954,6 +1022,7 @@ function SystemChatBubble() {
             <MessagePrimitive.Parts />
           </div>
         )}
+        <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">

@@ -690,8 +690,10 @@ export type ApiErrorAttachment = {
 /** Check if a message is an API error annotation (not a normal assistant reply). */
 export function isExternalApiErrorMessage(msg: SessionStreamServerMessage): boolean {
   const m = msg as Record<string, unknown>;
-  return m.isApiErrorMessage === true
-    && (m.message as { model?: string } | undefined)?.model === "<synthetic>";
+  return (
+    m.isApiErrorMessage === true &&
+    (m.message as { model?: string } | undefined)?.model === "<synthetic>"
+  );
 }
 
 /** Extract human-readable error text from an API error message. */
@@ -997,6 +999,63 @@ export function attachApiErrorToMessages(
   const attachment = makeApiErrorAttachment(errorMsg, anchor.resolution);
   return {
     messages: messages.map((m) => (m === anchor.bubble ? attachErrorToBubble(m, attachment) : m)),
+    attached: true,
+  };
+}
+
+// ── Synthetic Body Attachment ───────────────────────────────────────
+
+function extractSyntheticBody(msg: SessionStreamServerMessage): string {
+  const content = (msg as Record<string, unknown>).message as
+    | { content?: Array<{ type?: string; text?: string }> }
+    | undefined;
+  if (Array.isArray(content?.content)) {
+    return content.content
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text!)
+      .join("\n");
+  }
+  // Fallback: stringify the whole message for non-standard shapes.
+  return JSON.stringify(msg).slice(0, 2000);
+}
+
+function attachSyntheticToBubble(
+  bubble: ThreadMessageLike,
+  syntheticMsg: SessionStreamServerMessage,
+  body: string,
+): ThreadMessageLike {
+  const custom = { ...bubble.metadata?.custom } as Record<string, unknown>;
+  const existing = (custom._rawMessages as SessionStreamServerMessage[]) ?? [];
+  const existingSources = (custom.sourceUuids as string[]) ?? [];
+  const uuid = getMsgUuid(syntheticMsg);
+  return {
+    ...bubble,
+    metadata: {
+      custom: {
+        ...custom,
+        syntheticBody: body,
+        _rawMessages: [...existing, syntheticMsg],
+        sourceUuids: [...existingSources, ...(uuid ? [uuid] : [])],
+      },
+    },
+  };
+}
+
+function attachSyntheticToParent(
+  messages: ThreadMessageLike[],
+  syntheticMsg: SessionStreamServerMessage,
+): { messages: ThreadMessageLike[]; attached: boolean } {
+  const parentUuid = getMsgParentUuid(syntheticMsg);
+  if (!parentUuid) return { messages, attached: false };
+
+  const anchor = findBubbleForRawUuid(messages, parentUuid);
+  if (!anchor) return { messages, attached: false };
+
+  const body = extractSyntheticBody(syntheticMsg);
+  return {
+    messages: messages.map((m) =>
+      m === anchor ? attachSyntheticToBubble(m, syntheticMsg, body) : m,
+    ),
     attached: true,
   };
 }
@@ -1415,6 +1474,12 @@ export function useClaude2Session(
       // Must be AFTER the API-error check: errors are themselves synthetic.
       if (isSyntheticAssistantMessage(msg)) return;
 
+      // Any isSynthetic message should be folded into its parentUuid bubble.
+      if ((msg as Record<string, unknown>).isSynthetic === true) {
+        setMessagesState((prev) => attachSyntheticToParent(prev, msg).messages);
+        return;
+      }
+
       const uiMessage = convertContentToBubble(msg, {
         estimatedTokens: pendingEstimatedTokensRef.current,
       });
@@ -1467,6 +1532,13 @@ export function useClaude2Session(
 
   const handleUserContentMessage = useCallback(
     (msg: SessionStreamServerMessage) => {
+      // Any isSynthetic message should be folded into its parentUuid bubble,
+      // not rendered as a standalone user bubble.
+      if ((msg as Record<string, unknown>).isSynthetic === true) {
+        setMessagesState((prev) => attachSyntheticToParent(prev, msg).messages);
+        return;
+      }
+
       const uiMessage = convertContentToBubble(msg);
       const toolResults = extractToolResults(msg);
       if (uiMessage) currentBatchHasContentRef.current = true;
@@ -1505,43 +1577,85 @@ export function useClaude2Session(
     [pushBubbleWithDrain],
   );
 
-  const handleAttachmentMessage = useCallback(
-    (msg: SessionStreamServerMessage) => {
-      const result = handleAttachment(msg as Claude2Attachment);
-      if (result.stateOps) {
-        const ops = result.stateOps;
-        if (ops.permissionMode) setPermissionMode(ops.permissionMode);
-        if (ops.replaceTasks) setTasks(ops.replaceTasks);
-        if (ops.taskStatus)
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === ops.taskStatus!.id
-                ? {
-                    ...t,
-                    status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
-                    description: ops.taskStatus!.description,
-                  }
-                : t,
-            ),
-          );
-        if (ops.skills) setSkills(ops.skills);
-        if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
-        if (ops.slashCommands) setSlashCommands(ops.slashCommands);
-        if (ops.mcpServersAdd)
-          setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
-      }
-      if (result.bubble) {
-        currentBatchHasContentRef.current = true;
-        const enriched = enrichBubbleMetadata(result.bubble);
-        setMessagesState((prev) => [...prev, enriched]);
-      }
-    },
-    [],
-  );
+  const handleAttachmentMessage = useCallback((msg: SessionStreamServerMessage) => {
+    const result = handleAttachment(msg as Claude2Attachment);
+    if (result.stateOps) {
+      const ops = result.stateOps;
+      if (ops.permissionMode) setPermissionMode(ops.permissionMode);
+      if (ops.replaceTasks) setTasks(ops.replaceTasks);
+      if (ops.taskStatus)
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === ops.taskStatus!.id
+              ? {
+                  ...t,
+                  status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
+                  description: ops.taskStatus!.description,
+                }
+              : t,
+          ),
+        );
+      if (ops.skills) setSkills(ops.skills);
+      if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
+      if (ops.slashCommands) setSlashCommands(ops.slashCommands);
+      if (ops.mcpServersAdd)
+        setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
+    }
+    if (result.bubble) {
+      currentBatchHasContentRef.current = true;
+      const enriched = enrichBubbleMetadata(result.bubble);
+      setMessagesState((prev) => [...prev, enriched]);
+    }
+  }, []);
 
   const handleSystemMessage = useCallback(
     (msg: SessionStreamServerMessage) => {
       const subtype = (msg as Record<string, unknown>).subtype as string | undefined;
+
+      // system.init: apply state first, then show a compact debug summary.
+      // It is NOT a conversational message — state management is its primary job.
+      if (subtype === "init") {
+        const init = msg as {
+          model?: string;
+          permissionMode?: string;
+          slash_commands?: string[];
+          skills?: string[];
+          mcp_servers?: Array<{ name?: string }>;
+          tools?: string[];
+          session_id?: string;
+        };
+
+        if (init.model) {
+          setCurrentModel(init.model);
+          setResolvedModel(init.model);
+        }
+        if (init.permissionMode) setPermissionMode(init.permissionMode);
+        if (init.slash_commands?.length) setSlashCommands(init.slash_commands);
+        if (init.skills?.length) setSkills(init.skills);
+        if (init.mcp_servers?.length) {
+          setMcpServers(init.mcp_servers.map((s) => s.name ?? "").filter(Boolean));
+        }
+
+        // Debug summary: one compact line.
+        const modelBrief = init.model ?? "?";
+        const mode = init.permissionMode ?? "?";
+        const toolsN = init.tools?.length ?? 0;
+        const skillsN = init.skills?.length ?? 0;
+        const mcpN = init.mcp_servers?.length ?? 0;
+        const summary = `system.init · ${modelBrief} · ${mode} · ${toolsN} tools, ${skillsN} skills, ${mcpN} mcp`;
+
+        pushBubbleWithDrain({
+          role: "system",
+          content: [{ type: "text", text: summary }],
+          metadata: {
+            custom: {
+              _raw: msg,
+              systemMessageType: "system-init" as const,
+            },
+          },
+        });
+        return;
+      }
 
       // thinking_tokens: update token-count ref + spinner; never a bubble.
       if (subtype === "thinking_tokens") {
