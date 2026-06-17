@@ -230,7 +230,7 @@ const _extractUserTextBlocks = (content: unknown): string[] => {
 const _isHiddenSkillContent = (texts: string[]): boolean =>
   texts.some((text) => text.startsWith(_SKILL_CONTENT_PREFIX));
 
-const _attachSkillContentToToolCall = (
+const attachSkillContentToToolCall = (
   messages: ThreadMessageLike[],
   currentParts: Array<Record<string, unknown>>,
   toolUseId: string,
@@ -1474,9 +1474,39 @@ export function useClaude2Session(
       // Must be AFTER the API-error check: errors are themselves synthetic.
       if (isSyntheticAssistantMessage(msg)) return;
 
-      // Any isSynthetic message should be folded into its parentUuid bubble.
-      if ((msg as Record<string, unknown>).isSynthetic === true) {
-        setMessagesState((prev) => attachSyntheticToParent(prev, msg).messages);
+      // Hidden / internal assistant messages: attach to parentUuid,
+      // not rendered as standalone assistant bubbles.
+      if (
+        (msg as Record<string, unknown>).isMeta === true ||
+        (msg as Record<string, unknown>).isSynthetic === true
+      ) {
+        const parentUuid = getMsgParentUuid(msg);
+        const sourceToolUseId = (msg as Record<string, unknown>).sourceToolUseID as
+          | string
+          | undefined;
+
+        if (parentUuid) {
+          setMessagesState((prev) => {
+            const result = attachSyntheticToParent(prev, msg);
+            if (result.attached) return result.messages;
+            if (sourceToolUseId) {
+              const body = extractSyntheticBody(msg);
+              return attachSkillContentToToolCall(result.messages, [], sourceToolUseId, body)
+                .messages;
+            }
+            return result.messages;
+          });
+          return;
+        }
+
+        if (sourceToolUseId) {
+          setMessagesState((prev) => {
+            const body = extractSyntheticBody(msg);
+            return attachSkillContentToToolCall(prev, [], sourceToolUseId, body).messages;
+          });
+          return;
+        }
+
         return;
       }
 
@@ -1532,10 +1562,39 @@ export function useClaude2Session(
 
   const handleUserContentMessage = useCallback(
     (msg: SessionStreamServerMessage) => {
-      // Any isSynthetic message should be folded into its parentUuid bubble,
-      // not rendered as a standalone user bubble.
-      if ((msg as Record<string, unknown>).isSynthetic === true) {
-        setMessagesState((prev) => attachSyntheticToParent(prev, msg).messages);
+      const meta = msg as Record<string, unknown>;
+      const isHidden = meta.isMeta === true || meta.isSynthetic === true;
+
+      if (isHidden) {
+        const parentUuid = getMsgParentUuid(msg);
+        const sourceToolUseId = meta.sourceToolUseID as string | undefined;
+
+        // Priority 1: attach to parentUuid bubble (e.g., skill body → skill_listing attachment).
+        if (parentUuid) {
+          setMessagesState((prev) => {
+            const result = attachSyntheticToParent(prev, msg);
+            if (result.attached) return result.messages;
+            // Priority 2: fall back to tool-call part attachment via sourceToolUseID.
+            if (sourceToolUseId) {
+              const body = extractSyntheticBody(msg);
+              return attachSkillContentToToolCall(result.messages, [], sourceToolUseId, body)
+                .messages;
+            }
+            return result.messages;
+          });
+          return;
+        }
+
+        // Priority 2: attach to tool-call via sourceToolUseID (e.g., skill body → Skill tool_use).
+        if (sourceToolUseId) {
+          setMessagesState((prev) => {
+            const body = extractSyntheticBody(msg);
+            return attachSkillContentToToolCall(prev, [], sourceToolUseId, body).messages;
+          });
+          return;
+        }
+
+        // Hidden but no anchor — skip silently.
         return;
       }
 
