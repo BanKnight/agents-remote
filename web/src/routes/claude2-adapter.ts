@@ -1569,32 +1569,77 @@ export function useClaude2Session(
         const parentUuid = getMsgParentUuid(msg);
         const sourceToolUseId = meta.sourceToolUseID as string | undefined;
 
-        // Priority 1: attach to parentUuid bubble (e.g., skill body → skill_listing attachment).
-        if (parentUuid) {
-          setMessagesState((prev) => {
+        setMessagesState((prev) => {
+          // Priority 1: try parentUuid.
+          if (parentUuid) {
             const result = attachSyntheticToParent(prev, msg);
-            if (result.attached) return result.messages;
-            // Priority 2: fall back to tool-call part attachment via sourceToolUseID.
+            if (result.attached) {
+              console.warn(
+                "[claude2-adapter] hidden msg attached via parentUuid",
+                getMsgUuid(msg),
+                "→",
+                parentUuid,
+              );
+              return result.messages;
+            }
+            // Priority 2: fall back to tool-call part via sourceToolUseID.
             if (sourceToolUseId) {
               const body = extractSyntheticBody(msg);
-              return attachSkillContentToToolCall(result.messages, [], sourceToolUseId, body)
-                .messages;
+              const skill = attachSkillContentToToolCall(
+                result.messages,
+                [],
+                sourceToolUseId,
+                body,
+              );
+              if (skill.attached) {
+                console.warn(
+                  "[claude2-adapter] hidden msg attached via sourceToolUseID (parentUuid fallback)",
+                  getMsgUuid(msg),
+                  "→ toolCallId:",
+                  sourceToolUseId,
+                );
+              } else {
+                console.warn(
+                  "[claude2-adapter] hidden msg: parentUuid NOT found, sourceToolUseID NOT matched",
+                  { uuid: getMsgUuid(msg), parentUuid, sourceToolUseId },
+                );
+              }
+              return skill.messages;
             }
+            console.warn("[claude2-adapter] hidden msg: parentUuid NOT found, no sourceToolUseID", {
+              uuid: getMsgUuid(msg),
+              parentUuid,
+            });
             return result.messages;
-          });
-          return;
-        }
+          }
 
-        // Priority 2: attach to tool-call via sourceToolUseID (e.g., skill body → Skill tool_use).
-        if (sourceToolUseId) {
-          setMessagesState((prev) => {
+          // No parentUuid — try sourceToolUseID directly.
+          if (sourceToolUseId) {
             const body = extractSyntheticBody(msg);
-            return attachSkillContentToToolCall(prev, [], sourceToolUseId, body).messages;
-          });
-          return;
-        }
+            const skill = attachSkillContentToToolCall(prev, [], sourceToolUseId, body);
+            if (skill.attached) {
+              console.warn(
+                "[claude2-adapter] hidden msg attached via sourceToolUseID",
+                getMsgUuid(msg),
+                "→ toolCallId:",
+                sourceToolUseId,
+              );
+            } else {
+              console.warn("[claude2-adapter] hidden msg: sourceToolUseID NOT matched", {
+                uuid: getMsgUuid(msg),
+                sourceToolUseId,
+              });
+            }
+            return skill.messages;
+          }
 
-        // Hidden but no anchor — skip silently.
+          // Hidden but no anchor.
+          console.warn(
+            "[claude2-adapter] hidden msg: no parentUuid, no sourceToolUseID — dropped",
+            { uuid: getMsgUuid(msg) },
+          );
+          return prev;
+        });
         return;
       }
 
