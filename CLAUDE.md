@@ -22,6 +22,15 @@
 - 聊天记录以 Claude CLI 的 JSONL session 文件为唯一权威来源。不要自行"注入"或"伪造"消息；如果某条消息在 JSONL 中存在但 UI 没有显示，说明是渲染层过滤逻辑的问题。CLI 自身的 `isMeta: true/false` 分类是是否展示的第一手依据，不应以我们对 message type 的猜测替代。
 - **消息处理说明统一用 live/replay 双列表格**：凡是讨论消息类型如何处理、讨论渲染语义、设计数据流时，必须使用「实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI」四列格式。同一消息类型在实时流和回放两条路径上的行为必须明确区分，不得混为一谈。协议文档（`docs/research/claude-cli-stream-protocol.md`）中的 thinking 生命周期表格是标准模板。
 
+### State/Render 分离（两条管道，通用原则）
+
+- **消息 = state，不是气泡**。全部原始消息（包括内部/合成消息）先进入唯一的 state 有序日志（`rawMessages: SessionStreamServerMessage[]`），不在此阶段做渲染决策或丢弃。
+- **渲染 = state 的投影（子集）**。渲染列表通过纯函数（如 `deriveThread(rawMessages): ThreadMessageLike[]`）从 state 派生，由 `useMemo` 管理。收 100 条消息渲染 50 条是正常的（HiddenDropped 语义）。
+- **关联在 state 层用有序关系表达，不进渲染 metadata**。synthetic→parent、tool_result→tool_use、thinking_tokens→assistant 等关联都应从有序 raw 日志中的位置推导（前一条消息、tool_use_id 匹配等），或从消息自身的字段（如 `sourceToolUseID`）解析，而不是塞进气泡的 `metadata.custom` hack。
+- **Pass 1 / Pass 2 是标准范式**：Pass 1 = 批量追加 raw state + 更新独立标量 state（tasks、model、skills 等）；Pass 2 = 纯函数从 raw state 派生渲染列表。不要在第一遍处理时直接 mutate 渲染列表。
+- **设计从语义出发，不要从 type 机械 switch**。先做语义分类（AssistantTurn、ToolResult、SkillBody、UserPrompt、ThinkingTokens、ApiError 等），再为每个语义角色设计渲染投影逻辑，而不是对 `msg.type` 做 switch-case。
+- **实时流与 JSONL 的同一条消息标记不同**：实时流可能用 `isSynthetic: true` 标记内部消息（无 `parentUuid`/`sourceToolUseID`），JSONL 可能用 `isMeta: true`（有 `sourceToolUseID`/`parentUuid`）。语义层应统一处理两种来源，不因标记不同而产生平行分支。
+
 ### 消息处理函数直接操作 state
 
 - 消息处理函数的职责是"收到一条消息，更新所有相关 state"，而非"返回转换结果让调用方去应用"。
