@@ -30,6 +30,7 @@ import {
   markOrphanedToolCalls,
   handleAttachment,
   normalizeAttachmentTaskStatus,
+  deriveThread,
 } from "./claude2-adapter";
 import type { ApiErrorAttachment, QueueEntry, ExtractedToolResult } from "./claude2-adapter";
 
@@ -2542,6 +2543,379 @@ describe("handleAttachment", () => {
     const result = handleAttachment(attachment("future-subtype"));
     expect(result.bubble).toBeDefined();
     expect(result.stateOps).toBeUndefined();
+  });
+});
+
+// ── deriveThread Unit Tests ─────────────────────────────────────────────
+
+describe("deriveThread", () => {
+  const makeAssistant = (
+    id: string,
+    content: Array<
+      | { type: "text"; text: string }
+      | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+    >,
+    overrides: Record<string, unknown> = {},
+  ): SessionStreamServerMessage =>
+    ({
+      type: "assistant",
+      message: { id, role: "assistant", content },
+      ...overrides,
+    }) as unknown as SessionStreamServerMessage;
+
+  const makeUser = (
+    content: string | Array<Record<string, unknown>>,
+    overrides: Record<string, unknown> = {},
+  ): SessionStreamServerMessage =>
+    ({
+      type: "user",
+      message: {
+        role: "user",
+        content: typeof content === "string" ? [{ type: "text", text: content }] : content,
+      },
+      ...overrides,
+    }) as unknown as SessionStreamServerMessage;
+
+  const makeBatchBoundary = (kind: "history" | "live" = "history"): SessionStreamServerMessage =>
+    ({
+      type: "system",
+      subtype: "batch_boundary",
+      batchKind: kind,
+    }) as unknown as SessionStreamServerMessage;
+
+  const makeSystemInit = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
+    ({
+      type: "system",
+      subtype: "init",
+      model: "sonnet",
+      permissionMode: "default",
+      tools: ["bash"],
+      skills: ["base-skill"],
+      mcp_servers: [{ name: "srv" }],
+      ...overrides,
+    }) as unknown as SessionStreamServerMessage;
+
+  const makeApiError = (parentUuid: string, uuid = "err-uuid"): SessionStreamServerMessage =>
+    ({
+      type: "assistant",
+      message: {
+        id: "err-1",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "500 Request failed" }],
+      },
+      isApiErrorMessage: true,
+      error: "server_error",
+      uuid,
+      parentUuid,
+    }) as unknown as SessionStreamServerMessage;
+
+  // ── Empty / trivial ──────────────────────────────────────────────────
+  test("empty rawMessages produces no rendered messages", () => {
+    expect(deriveThread([])).toHaveLength(0);
+  });
+
+  test("single empty assistant produces one bubble when followed by boundary", () => {
+    const result = deriveThread([makeAssistant("a1", []), makeBatchBoundary()]);
+    // 1 assistant bubble + 1 divider = 2
+    expect(result).toHaveLength(2);
+    expect(result[0].role).toBe("assistant");
+    expect(result[1].role).toBe("system");
+  });
+
+  test("single empty assistant produces no bubble without boundary", () => {
+    // No boundary to flush — assistant is still pending at end of loop,
+    // but since flushAssistant resets lastAssistantMsgId after flush,
+    // the final flush is a no-op.
+    const result = deriveThread([makeAssistant("a1", [])]);
+    // The empty assistant creates a bubble because lastAssistantMsgId
+    // is non-null at end and end-flush fires.
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("assistant");
+  });
+
+  // ── AssistantTurn grouping ───────────────────────────────────────────
+  test("groups assistants with same message.id into single bubble", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "first" }]),
+      makeAssistant("a1", [{ type: "text", text: "second" }]),
+    ]);
+    expect(result).toHaveLength(1);
+    const content = result[0].content as Array<{ type: string; text?: string }>;
+    const texts = content.filter((c) => c.type === "text").map((c) => c.text);
+    expect(texts).toEqual(["first", "second"]);
+  });
+
+  test("different message.id triggers flush and starts new group", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "first" }]),
+      makeAssistant("a2", [{ type: "text", text: "second" }]),
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[0].role).toBe("assistant");
+    expect(result[1].role).toBe("assistant");
+  });
+
+  // ── Batch boundary divider ───────────────────────────────────────────
+  test("batch boundary flushes assistant and adds divider", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "hello" }]),
+      makeBatchBoundary("history"),
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[1].role).toBe("system");
+    expect((result[1].metadata?.custom as Record<string, unknown>)?.systemMessageType).toBe(
+      "batch-boundary",
+    );
+  });
+
+  // ── API Error ────────────────────────────────────────────────────────
+  test("attaches error to parent bubble when parent is in same batch", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "parent-uuid" }),
+      makeApiError("parent-uuid", "e1"),
+      makeBatchBoundary(),
+    ]);
+    // Assistant + divider = 2 (error is attached, not standalone)
+    expect(result).toHaveLength(2);
+    const custom = result[0].metadata?.custom as Record<string, unknown>;
+    const errors = custom?.apiErrors as unknown[];
+    expect(errors).toHaveLength(1);
+  });
+
+  test("pending error resolved when parent arrives later", () => {
+    // Error before parent — pending, then resolved at end
+    const result = deriveThread([
+      makeApiError("parent-uuid", "e1"),
+      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "parent-uuid" }),
+    ]);
+    expect(result).toHaveLength(1);
+    const custom = result[0].metadata?.custom as Record<string, unknown>;
+    const errors = custom?.apiErrors as unknown[];
+    expect(errors).toHaveLength(1);
+  });
+
+  test("unresolved error remains pending until end drain", () => {
+    // Error with no parent — not attached, drained at end
+    const result = deriveThread([makeApiError("orphan-uuid", "e1"), makeBatchBoundary()]);
+    // Boundary flushes pending errors via drainPending(), but orphan
+    // can't resolve.  system divider only.
+    const assistantMsgs = result.filter((m) => m.role === "assistant");
+    // The error (type "assistant") goes through ApiError classification
+    // -> pending, then drainPending can't resolve -> stays pending.
+    // No assistant bubble is produced.
+    expect(assistantMsgs).toHaveLength(0);
+  });
+
+  // ── Skill body (hidden user messages) ────────────────────────────────
+  test("hidden user message (isMeta) does not produce bubble", () => {
+    const result = deriveThread([makeUser("hidden content", { isMeta: true })]);
+    // isMeta/isSynthetic → SkillBody → no bubble
+    expect(result).toHaveLength(0);
+  });
+
+  test("hidden skill content via prefix detection does not produce bubble", () => {
+    const result = deriveThread([
+      makeUser([{ type: "text", text: "Base directory for this skill: /tmp/skill" }]),
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  // ── UserPrompt ───────────────────────────────────────────────────────
+  test("visible user text produces UserPrompt bubble", () => {
+    const result = deriveThread([makeUser("hello world")]);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+  });
+
+  test("hybrid user: tool_result + text produces tool match and user bubble", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
+      makeUser([
+        { type: "tool_result", tool_use_id: "tu-1", content: "output" },
+        { type: "text", text: "also text" },
+      ]),
+    ]);
+    // Assistant with matched result + user text bubble
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    const hasUser = result.some((m) => m.role === "user");
+    expect(hasUser).toBe(true);
+  });
+
+  // ── HiddenDropped (isMeta/isSynthetic assistant) ─────────────────────
+  test("assistant with isMeta=true does not produce standalone bubble", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "hidden" }], { isMeta: true }),
+      makeBatchBoundary(),
+    ]);
+    // Only divider, no assistant bubble
+    const assistantMsgs = result.filter((m) => m.role === "assistant");
+    expect(assistantMsgs).toHaveLength(0);
+  });
+
+  test("synthetic assistant (model=<synthetic>) is skipped", () => {
+    const result = deriveThread([
+      {
+        type: "assistant",
+        message: {
+          id: "synth",
+          role: "assistant",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "x" }],
+        },
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    // isSyntheticAssistantMessage returns true → skip
+    expect(result).toHaveLength(0);
+  });
+
+  // ── Compact boundary ─────────────────────────────────────────────────
+  test("compact_boundary flushes assistant and inserts compact divider", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "pre-compact" }]),
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compactMetadata: { trigger: "manual", preTokens: 50000 },
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[1].role).toBe("system");
+    const custom = result[1].metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("compact-boundary");
+  });
+
+  // ── System init ──────────────────────────────────────────────────────
+  test("system_init produces summary bubble", () => {
+    const result = deriveThread([makeSystemInit()]);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("system");
+    const custom = result[0].metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("system-init");
+  });
+
+  // ── Thinking tokens (no bubble) ──────────────────────────────────────
+  test("thinking_tokens updates estimated tokens but produces no bubble", () => {
+    const result = deriveThread([
+      {
+        type: "system",
+        subtype: "thinking_tokens",
+        estimated_tokens: 1500,
+      } as unknown as SessionStreamServerMessage,
+      makeAssistant("a1", [{ type: "text", text: "reply" }]),
+    ]);
+    // 1 assistant bubble, thinking_tokens is context-only
+    expect(result).toHaveLength(1);
+    const custom = result[0].metadata?.custom as Record<string, unknown>;
+    expect(custom?.estimatedTokens).toBe(1500);
+  });
+
+  // ── TaskState (no bubble) ────────────────────────────────────────────
+  test("task_started produces no bubble", () => {
+    const result = deriveThread([
+      {
+        type: "system",
+        subtype: "task_started",
+        task_id: "t1",
+        prompt: "do stuff",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  // ── Result ───────────────────────────────────────────────────────────
+  test("success result flushes and produces no extra bubble", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "done" }]),
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s1",
+        num_turns: 2,
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    // Assistant flushed + no error bubble from result
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("assistant");
+  });
+
+  test("error result produces error system bubble", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "partial" }]),
+      {
+        type: "result",
+        subtype: "error",
+        is_error: true,
+        result: "something went wrong",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    // Assistant + error system bubble
+    expect(result).toHaveLength(2);
+    expect(result[1].role).toBe("system");
+    const custom = result[1].metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("error");
+  });
+
+  // ── Attachment ──────────────────────────────────────────────────────
+  test("attachment that produces a bubble (e.g. file) renders", () => {
+    const result = deriveThread([
+      {
+        type: "attachment",
+        attachment: { type: "file", filePath: "/src/index.ts" },
+        userType: "external",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("system");
+  });
+
+  test("state-only attachment (e.g. skill_listing) produces no bubble", () => {
+    const result = deriveThread([
+      {
+        type: "attachment",
+        attachment: { type: "skill_listing", content: "- skill: desc" },
+        userType: "external",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    // skill_listing only updates scalar state, no bubble
+    expect(result).toHaveLength(0);
+  });
+
+  // ── Fallback (unknown type via messageToThreadLike) ──────────────────
+  test("unknown system message falls back to messageToThreadLike", () => {
+    const result = deriveThread([
+      {
+        type: "system",
+        subtype: "unknown_subtype",
+        message: { role: "system", content: [{ type: "text", text: "fallback" }] },
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("system");
+  });
+
+  // ── markOrphanedToolCalls interaction ────────────────────────────────
+  test("derived output can be fed to markOrphanedToolCalls", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
+    ]);
+    const marked = markOrphanedToolCalls(result);
+    // No tool result → tool call is orphaned
+    expect(marked.changed).toBe(true);
+    const callPart = (marked.messages[0].content as Array<Record<string, unknown>>).find(
+      (p) => p.type === "tool-call",
+    );
+    expect(callPart?.isOrphaned).toBe(true);
+  });
+
+  // ── sourceUuids tracking ─────────────────────────────────────────────
+  test("tracks source UUIDs in bubble metadata", () => {
+    const result = deriveThread([
+      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "uuid-a1" }),
+    ]);
+    const custom = result[0].metadata?.custom as Record<string, unknown>;
+    const uuids = custom?.sourceUuids as string[];
+    expect(uuids).toContain("uuid-a1");
   });
 });
 

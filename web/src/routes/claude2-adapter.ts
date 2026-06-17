@@ -6,7 +6,7 @@ import type {
   Claude2QueueOperation,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
-import { claude2StreamUrl, getAgentSessionMessages } from "../api/client";
+import { claude2StreamUrl } from "../api/client";
 
 export type TaskInfo = {
   id: string;
@@ -1124,6 +1124,422 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
   return { role: "system", content: [{ type: "text", text: raw }], metadata: meta };
 }
 
+// ── deriveThread ──────────────────────────────────────────────────────
+// Pure function: ordered raw messages → rendered ThreadMessageLike[].
+// Walks messages by semantic role (not mechanical type switch).
+// Internal state (assistant buffer, estimated tokens, tool_use_id) is
+// closure-local — no React refs, no side effects.
+
+export function deriveThread(rawMessages: SessionStreamServerMessage[]): ThreadMessageLike[] {
+  const messages: ThreadMessageLike[] = [];
+  let currentParts: Array<Record<string, unknown>> = [];
+  let currentSourceUuids: string[] = [];
+  let lastAssistantMsgId: string | null = null;
+  let lastEstimatedTokens: number | null = null;
+  let lastToolUseId: string | null = null;
+  const rawByUuid = new Map<string, SessionStreamServerMessage>();
+  const pendingApiErrors: SessionStreamServerMessage[] = [];
+
+  // Pre-register all messages by UUID for error parent resolution.
+  for (const msg of rawMessages) {
+    const uuid = getMsgUuid(msg);
+    if (uuid) rawByUuid.set(uuid, msg);
+  }
+
+  const flushAssistant = () => {
+    // Flush when there are parts, or when we've seen at least one assistant
+    // message in this turn group (lastAssistantMsgId tracks grouping).
+    if (currentParts.length === 0 && lastAssistantMsgId === null) return;
+    const custom: Record<string, unknown> = {
+      sourceUuids: [...currentSourceUuids],
+      _rawMessages: [],
+    };
+    if (lastEstimatedTokens != null) custom.estimatedTokens = lastEstimatedTokens;
+    messages.push({
+      role: "assistant",
+      content: [...currentParts] as unknown as ThreadMessageLike["content"],
+      metadata: { custom },
+    });
+    currentParts = [];
+    currentSourceUuids = [];
+    lastAssistantMsgId = null;
+    lastEstimatedTokens = null;
+  };
+
+  const drainPending = () => {
+    if (pendingApiErrors.length === 0) return;
+    const drained = drainPendingErrors(messages, pendingApiErrors, rawByUuid);
+    messages.length = 0;
+    messages.push(...drained.messages);
+    pendingApiErrors.length = 0;
+    pendingApiErrors.push(...drained.remaining);
+  };
+
+  for (const msg of rawMessages) {
+    if (!msg) continue;
+
+    // ── Semantic classification (order of precedence matters) ──────
+
+    // ═══ Assistant ═══
+    if (msg.type === "assistant") {
+      // ApiError: attach to parent, never standalone.
+      if (isExternalApiErrorMessage(msg)) {
+        const result = attachApiErrorToMessages(messages, msg, rawByUuid);
+        if (!result.attached) {
+          pendingApiErrors.push(msg);
+        } else {
+          messages.length = 0;
+          messages.push(...result.messages);
+        }
+        continue;
+      }
+
+      // Synthetic assistant (model === "<synthetic>"): skip.
+      if (isSyntheticAssistantMessage(msg)) continue;
+
+      // Hidden / internal assistant (isMeta / isSynthetic):
+      // attach to parentUuid or tool-call, no standalone bubble.
+      const assistantMeta = msg as Record<string, unknown>;
+      if (assistantMeta.isMeta === true || assistantMeta.isSynthetic === true) {
+        const parentUuid = getMsgParentUuid(msg);
+        const sourceToolUseId = assistantMeta.sourceToolUseID as string | undefined;
+
+        if (parentUuid) {
+          const attachedViaParent = attachSyntheticToParent(messages, msg);
+          if (attachedViaParent.attached) {
+            messages.length = 0;
+            messages.push(...attachedViaParent.messages);
+            continue;
+          }
+          if (sourceToolUseId) {
+            const body = extractSyntheticBody(msg);
+            const skill = attachSkillContentToToolCall(
+              messages,
+              currentParts,
+              sourceToolUseId,
+              body,
+            );
+            messages.length = 0;
+            messages.push(...skill.messages);
+            currentParts = skill.currentParts;
+            if (skill.attached) continue;
+          }
+          continue;
+        }
+
+        if (sourceToolUseId) {
+          const body = extractSyntheticBody(msg);
+          const skill = attachSkillContentToToolCall(messages, currentParts, sourceToolUseId, body);
+          messages.length = 0;
+          messages.push(...skill.messages);
+          currentParts = skill.currentParts;
+        }
+        continue;
+      }
+
+      // AssistantTurn: accumulate parts grouped by message.id.
+      const msgId = (msg.message as { id?: string })?.id;
+      if (msgId && msgId !== lastAssistantMsgId) {
+        flushAssistant();
+        drainPending();
+        lastAssistantMsgId = msgId;
+      }
+      const uuid = getMsgUuid(msg);
+      if (uuid) currentSourceUuids.push(uuid);
+      const content =
+        (msg as unknown as { message: { content: Array<Record<string, unknown>> } }).message
+          ?.content ?? [];
+      for (const block of content) {
+        const part = processContentBlock(block as RawContentBlock);
+        if (part) currentParts.push(part);
+      }
+      continue;
+    }
+
+    // ═══ User ═══
+    if (msg.type === "user") {
+      const toolResults = extractToolResults(msg);
+      const userMeta = msg as unknown as {
+        message?: { content?: unknown };
+        isMeta?: boolean;
+        isSynthetic?: boolean;
+        sourceToolUseID?: string;
+      };
+
+      // ToolResult: match to tool-call part, no bubble.
+      if (toolResults.length > 0) {
+        lastToolUseId = toolResults[toolResults.length - 1].toolUseId;
+
+        // Apply to currentParts (un-flushed assistant buffer).
+        for (const tr of toolResults) {
+          const matchIdx = currentParts.findIndex(
+            (p) =>
+              p.type === "tool-call" &&
+              "toolCallId" in p &&
+              (p as { toolCallId: string }).toolCallId === tr.toolUseId,
+          );
+          if (matchIdx >= 0) {
+            currentParts = currentParts.map((p, i) =>
+              i === matchIdx
+                ? { ...p, result: tr.content, ...(tr.isError ? { isError: true } : {}) }
+                : p,
+            );
+          }
+        }
+        // Apply remaining to flushed messages.
+        const remaining = toolResults.filter((tr) => {
+          const matchIdx = currentParts.findIndex(
+            (p) =>
+              p.type === "tool-call" &&
+              "toolCallId" in p &&
+              (p as { toolCallId: string }).toolCallId === tr.toolUseId,
+          );
+          return matchIdx < 0;
+        });
+        if (remaining.length > 0) {
+          const applied = applyToolResultsToMessages(messages, remaining);
+          if (applied.appliedCount > 0) {
+            messages.length = 0;
+            messages.push(...applied.messages);
+          }
+        }
+        // Do NOT continue — user message may also have text blocks
+        // that produce a UserPrompt bubble below.
+      }
+
+      // SkillBody: attach text to tool-call metadata, no bubble.
+      const isSkillBody = userMeta.isSynthetic === true || userMeta.isMeta === true;
+
+      if (isSkillBody) {
+        const sourceToolUseId = userMeta.sourceToolUseID as string | undefined;
+        const body = extractSyntheticBody(msg);
+        const toolUseId = sourceToolUseId ?? lastToolUseId;
+        if (toolUseId && body) {
+          const skill = attachSkillContentToToolCall(messages, currentParts, toolUseId, body);
+          messages.length = 0;
+          messages.push(...skill.messages);
+          currentParts = skill.currentParts;
+          if (!skill.attached) {
+            console.warn("[deriveThread] skill body: no matching tool-call found", {
+              sourceToolUseId,
+              lastToolUseId,
+              toolUseId,
+            });
+          }
+        } else {
+          console.warn("[deriveThread] skill body: no toolUseId available", {
+            sourceToolUseId,
+            lastToolUseId,
+            hasBody: !!body,
+          });
+        }
+        continue;
+      }
+
+      // Skill content via prefix detection (isMeta/isSynthetic may be absent).
+      const texts = _extractUserTextBlocks(userMeta.message?.content);
+      if (_isHiddenSkillContent(texts)) {
+        const sourceToolUseId = userMeta.sourceToolUseID as string | undefined;
+        const toolUseId = sourceToolUseId ?? lastToolUseId;
+        const body = texts.join("\n");
+        if (toolUseId && body) {
+          const skill = attachSkillContentToToolCall(messages, currentParts, toolUseId, body);
+          messages.length = 0;
+          messages.push(...skill.messages);
+          currentParts = skill.currentParts;
+          if (!skill.attached) {
+            console.warn("[deriveThread] skill content (prefix): no matching tool-call found", {
+              sourceToolUseId,
+              lastToolUseId,
+              toolUseId,
+            });
+          }
+        }
+        continue;
+      }
+
+      // UserPrompt: text content → user bubble.
+      if (texts.length > 0) {
+        flushAssistant();
+        drainPending();
+        messages.push(
+          enrichBubbleMetadata({
+            role: "user",
+            content: texts.join("\n"),
+            metadata: { custom: { _raw: msg } },
+          }),
+        );
+        continue;
+      }
+
+      // String-content user message.
+      const rawContent = userMeta.message?.content;
+      if (typeof rawContent === "string" && rawContent.trim()) {
+        if (
+          rawContent.startsWith("<local-command") ||
+          rawContent.startsWith("<command-name>") ||
+          rawContent.startsWith("<command-message>")
+        )
+          continue;
+        flushAssistant();
+        drainPending();
+        messages.push(
+          enrichBubbleMetadata({
+            role: "user",
+            content: rawContent,
+            metadata: { custom: { _raw: msg } },
+          }),
+        );
+        continue;
+      }
+
+      continue;
+    }
+
+    // ═══ System ═══
+    if (msg.type === "system") {
+      const subtype = (msg as Record<string, unknown>).subtype as string | undefined;
+
+      // SessionInit: debug summary bubble (scalar state handled in pass 1).
+      if (subtype === "init") {
+        const init = msg as unknown as {
+          model?: string;
+          permissionMode?: string;
+          tools?: string[];
+          skills?: string[];
+          mcp_servers?: Array<{ name?: string }>;
+        };
+        const modelBrief = init.model ?? "?";
+        const mode = init.permissionMode ?? "?";
+        const toolsN = init.tools?.length ?? 0;
+        const skillsN = init.skills?.length ?? 0;
+        const mcpN = init.mcp_servers?.length ?? 0;
+        const summary = `system.init · ${modelBrief} · ${mode} · ${toolsN} tools, ${skillsN} skills, ${mcpN} mcp`;
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: summary }],
+          metadata: {
+            custom: {
+              _raw: msg,
+              systemMessageType: "system-init",
+            },
+          },
+        });
+        continue;
+      }
+
+      // ThinkingTokens: update estimated-tokens context, no bubble.
+      if (subtype === "thinking_tokens") {
+        lastEstimatedTokens =
+          (msg as unknown as { estimated_tokens?: number }).estimated_tokens ?? null;
+        continue;
+      }
+
+      // ApiError: attach to parent bubble.
+      if (subtype === "api_error") {
+        const result = attachApiErrorToMessages(messages, msg, rawByUuid);
+        if (!result.attached) {
+          pendingApiErrors.push(msg);
+        } else {
+          messages.length = 0;
+          messages.push(...result.messages);
+        }
+        continue;
+      }
+
+      // CompactBoundary: thin divider.
+      if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
+        flushAssistant();
+        drainPending();
+        const cmeta = (msg as Record<string, unknown>).compactMetadata as
+          | { trigger?: string; preTokens?: number }
+          | undefined;
+        const trigger = cmeta?.trigger === "manual" ? "手动" : "自动";
+        const pretok = cmeta?.preTokens;
+        const label = pretok != null ? `${Math.round(pretok / 1000)}k` : "?";
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              _raw: msg,
+              systemMessageType: "compact-boundary",
+              compactText: `上下文${trigger}压缩 (~${label} tokens)`,
+            },
+          },
+        });
+        continue;
+      }
+
+      // TaskState: no bubble (scalar state handled in pass 1).
+      if (
+        subtype === "task_started" ||
+        subtype === "task_updated" ||
+        subtype === "task_notification"
+      ) {
+        continue;
+      }
+
+      // Batch boundary (synthetic, injected by hook): divider.
+      if (subtype === "batch_boundary") {
+        flushAssistant();
+        drainPending();
+        const kind: "history" | "live" =
+          ((msg as Record<string, unknown>).batchKind as "history" | "live") ?? "history";
+        messages.push(makeBoundaryDivider(kind));
+        continue;
+      }
+
+      // Other system messages: fallback via messageToThreadLike.
+      const uiMessage = messageToThreadLike(msg);
+      if (uiMessage) messages.push(uiMessage);
+      continue;
+    }
+
+    // ═══ Result (TurnBoundary) ═══
+    if (msg.type === "result") {
+      const resultMsg = msg as { is_error?: boolean; result?: string };
+      if (resultMsg.is_error && typeof resultMsg.result === "string") {
+        flushAssistant();
+        drainPending();
+        lastAssistantMsgId = null;
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: resultMsg.result }],
+          metadata: { custom: { _raw: msg, systemMessageType: "error" } },
+        });
+      } else {
+        flushAssistant();
+        drainPending();
+        lastAssistantMsgId = null;
+      }
+      lastEstimatedTokens = null;
+      continue;
+    }
+
+    // ═══ Attachment ═══
+    if (msg.type === "attachment") {
+      flushAssistant();
+      drainPending();
+      const result = handleAttachment(msg as Claude2Attachment);
+      if (result.bubble) {
+        messages.push(enrichBubbleMetadata(result.bubble));
+      }
+      continue;
+    }
+
+    // ═══ Other (fallback) ═══
+    const fallback = messageToThreadLike(msg);
+    if (fallback) messages.push(fallback);
+  }
+
+  // Flush any remaining assistant parts and pending errors.
+  flushAssistant();
+  drainPending();
+
+  return messages;
+}
+
 // KEPT: 作为后续新渲染函数的参考实现
 /*
 export function loadMessagesFromRaw(
@@ -1416,509 +1832,219 @@ export function useClaude2Session(
   const [connectionVersion, setConnectionVersion] = useState(0);
 
   // ── Unified message state ──────────────────────────────────────────
-  const [messages, setMessagesState] = useState<ThreadMessageLike[]>([]);
+  // ── Unified raw message state ────────────────────────────────────
+  const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const liveBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   // Tracks whether the current batch (since last *_start) contains visible content.
-  // Reset on *_start; flipped true when a visible bubble is appended; checked at *_end.
+  // Reset on *_start; checked at *_end for batch boundary insertion.
   const currentBatchHasContentRef = useRef(false);
   // Server-authoritative: whether this session instance was spawned with --resume.
   // Populated on session_init; used at history_end to decide orphan marking.
   const isResumeRef = useRef(false);
-  // Track the last thinking_tokens.estimated_tokens so the next assistant
-  // bubble can carry the final token count in its metadata.
-  const pendingEstimatedTokensRef = useRef<number | null>(null);
-
-  // All external-message side effects in one place.
-  // API errors are intercepted before convert — they attach to parent bubbles,
-  // never render as standalone messages.
-  const pendingApiErrorsRef = useRef<SessionStreamServerMessage[]>([]);
 
   // ── Shared helper: push a bubble + drain pending API errors ──
-  const pushBubbleWithDrain = useCallback((bubble: ThreadMessageLike) => {
-    currentBatchHasContentRef.current = true;
-    const enriched = enrichBubbleMetadata(bubble);
-    setMessagesState((prev) => {
-      let next = [...prev, enriched];
-      if (pendingApiErrorsRef.current.length > 0) {
-        const drained = drainPendingErrors(
-          next,
-          pendingApiErrorsRef.current,
-          messageMapRef.current,
-        );
-        pendingApiErrorsRef.current = drained.remaining;
-        next = drained.messages;
-      }
-      return next;
-    });
-  }, []);
 
   // ── Content message handlers ──
 
-  const handleAssistantContentMessage = useCallback(
-    (msg: SessionStreamServerMessage) => {
-      // API error annotations: attach to parent, never standalone.
-      if (isExternalApiErrorMessage(msg)) {
-        setMessagesState((prev) => {
-          const result = attachApiErrorToMessages(prev, msg, messageMapRef.current);
-          if (!result.attached) {
-            pendingApiErrorsRef.current.push(msg);
-          }
-          return result.messages;
-        });
-        return;
+  // ── Scalar state updater ──────────────────────────────────────────
+  // Applies per-message scalar state updates (tasks, model, etc.)
+  // that are NOT handled by deriveThread.
+  const applyMessageScalarState = useCallback((msg: SessionStreamServerMessage) => {
+    const sm = msg as Record<string, unknown>;
+
+    // system.init
+    if (msg.type === "system" && sm.subtype === "init") {
+      const init = msg as {
+        model?: string;
+        permissionMode?: string;
+        slash_commands?: string[];
+        skills?: string[];
+        mcp_servers?: Array<{ name?: string }>;
+      };
+      if (init.model) {
+        setCurrentModel(init.model);
+        setResolvedModel(init.model);
       }
-
-      // Synthetic assistant (compact cancel etc.) — skip entirely.
-      // Must be AFTER the API-error check: errors are themselves synthetic.
-      if (isSyntheticAssistantMessage(msg)) return;
-
-      // Hidden / internal assistant messages: attach to parentUuid,
-      // not rendered as standalone assistant bubbles.
-      if (
-        (msg as Record<string, unknown>).isMeta === true ||
-        (msg as Record<string, unknown>).isSynthetic === true
-      ) {
-        const parentUuid = getMsgParentUuid(msg);
-        const sourceToolUseId = (msg as Record<string, unknown>).sourceToolUseID as
-          | string
-          | undefined;
-
-        if (parentUuid) {
-          setMessagesState((prev) => {
-            const result = attachSyntheticToParent(prev, msg);
-            if (result.attached) return result.messages;
-            if (sourceToolUseId) {
-              const body = extractSyntheticBody(msg);
-              return attachSkillContentToToolCall(result.messages, [], sourceToolUseId, body)
-                .messages;
-            }
-            return result.messages;
-          });
-          return;
-        }
-
-        if (sourceToolUseId) {
-          setMessagesState((prev) => {
-            const body = extractSyntheticBody(msg);
-            return attachSkillContentToToolCall(prev, [], sourceToolUseId, body).messages;
-          });
-          return;
-        }
-
-        return;
+      if (init.permissionMode) setPermissionMode(init.permissionMode);
+      if (init.slash_commands?.length) setSlashCommands(init.slash_commands);
+      if (init.skills?.length) setSkills(init.skills);
+      if (init.mcp_servers?.length) {
+        setMcpServers(init.mcp_servers.map((s) => s.name ?? "").filter(Boolean));
       }
+      return;
+    }
 
-      const uiMessage = convertContentToBubble(msg, {
-        estimatedTokens: pendingEstimatedTokensRef.current,
-      });
-      const toolResults = extractToolResults(msg);
-      if (uiMessage) currentBatchHasContentRef.current = true;
-
-      // Apply tool_results to matching tool-calls; append the user bubble (if any).
-      if (uiMessage || toolResults.length > 0) {
-        setMessagesState((prev) => {
-          let next = prev;
-          if (toolResults.length > 0) {
-            const applied = applyToolResultsToMessages(next, toolResults);
-            if (applied.appliedCount > 0) next = applied.messages;
-          }
-          if (uiMessage) {
-            next = [...next, uiMessage];
-            if (pendingApiErrorsRef.current.length > 0) {
-              const drained = drainPendingErrors(
-                next,
-                pendingApiErrorsRef.current,
-                messageMapRef.current,
-              );
-              pendingApiErrorsRef.current = drained.remaining;
-              next = drained.messages;
-            }
-          }
-          return next;
-        });
-      }
-
+    // Task state
+    if (
+      msg.type === "system" &&
+      (sm.subtype === "task_started" ||
+        sm.subtype === "task_updated" ||
+        sm.subtype === "task_notification")
+    ) {
       const ops = extractTaskOps(msg);
       if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
-
-      const enteredPlan = hasToolUseNamed(msg, "EnterPlanMode");
-      if (enteredPlan) setPermissionMode("plan");
-
-      // Brown fallback: any assistant message that received no specific handling.
-      const wasHandled =
-        uiMessage !== null || toolResults.length > 0 || ops.length > 0 || enteredPlan;
-      if (!wasHandled) {
-        pushBubbleWithDrain({
-          role: "user",
-          content: JSON.stringify(msg, null, 2),
-          metadata: { custom: { _raw: msg } },
-        });
-      }
-    },
-    [pushBubbleWithDrain],
-  );
-
-  const handleUserContentMessage = useCallback(
-    (msg: SessionStreamServerMessage) => {
-      const meta = msg as Record<string, unknown>;
-      const isHidden = meta.isMeta === true || meta.isSynthetic === true;
-
-      if (isHidden) {
-        const parentUuid = getMsgParentUuid(msg);
-        const sourceToolUseId = meta.sourceToolUseID as string | undefined;
-
-        setMessagesState((prev) => {
-          // Priority 1: try parentUuid.
-          if (parentUuid) {
-            const result = attachSyntheticToParent(prev, msg);
-            if (result.attached) {
-              console.warn(
-                "[claude2-adapter] hidden msg attached via parentUuid",
-                getMsgUuid(msg),
-                "→",
-                parentUuid,
-              );
-              return result.messages;
-            }
-            // Priority 2: fall back to tool-call part via sourceToolUseID.
-            if (sourceToolUseId) {
-              const body = extractSyntheticBody(msg);
-              const skill = attachSkillContentToToolCall(
-                result.messages,
-                [],
-                sourceToolUseId,
-                body,
-              );
-              if (skill.attached) {
-                console.warn(
-                  "[claude2-adapter] hidden msg attached via sourceToolUseID (parentUuid fallback)",
-                  getMsgUuid(msg),
-                  "→ toolCallId:",
-                  sourceToolUseId,
-                );
-              } else {
-                console.warn(
-                  "[claude2-adapter] hidden msg: parentUuid NOT found, sourceToolUseID NOT matched",
-                  { uuid: getMsgUuid(msg), parentUuid, sourceToolUseId },
-                );
-              }
-              return skill.messages;
-            }
-            console.warn("[claude2-adapter] hidden msg: parentUuid NOT found, no sourceToolUseID", {
-              uuid: getMsgUuid(msg),
-              parentUuid,
-            });
-            return result.messages;
-          }
-
-          // No parentUuid — try sourceToolUseID directly.
-          if (sourceToolUseId) {
-            const body = extractSyntheticBody(msg);
-            const skill = attachSkillContentToToolCall(prev, [], sourceToolUseId, body);
-            if (skill.attached) {
-              console.warn(
-                "[claude2-adapter] hidden msg attached via sourceToolUseID",
-                getMsgUuid(msg),
-                "→ toolCallId:",
-                sourceToolUseId,
-              );
-            } else {
-              console.warn("[claude2-adapter] hidden msg: sourceToolUseID NOT matched", {
-                uuid: getMsgUuid(msg),
-                sourceToolUseId,
-              });
-            }
-            return skill.messages;
-          }
-
-          // Hidden but no anchor.
-          console.warn(
-            "[claude2-adapter] hidden msg: no parentUuid, no sourceToolUseID — dropped",
-            { uuid: getMsgUuid(msg) },
-          );
-          return prev;
-        });
-        return;
-      }
-
-      const uiMessage = convertContentToBubble(msg);
-      const toolResults = extractToolResults(msg);
-      if (uiMessage) currentBatchHasContentRef.current = true;
-
-      if (uiMessage || toolResults.length > 0) {
-        setMessagesState((prev) => {
-          let next = prev;
-          if (toolResults.length > 0) {
-            const applied = applyToolResultsToMessages(next, toolResults);
-            if (applied.appliedCount > 0) next = applied.messages;
-          }
-          if (uiMessage) {
-            next = [...next, uiMessage];
-            if (pendingApiErrorsRef.current.length > 0) {
-              const drained = drainPendingErrors(
-                next,
-                pendingApiErrorsRef.current,
-                messageMapRef.current,
-              );
-              pendingApiErrorsRef.current = drained.remaining;
-              next = drained.messages;
-            }
-          }
-          return next;
-        });
-        return;
-      }
-
-      // Brown fallback
-      pushBubbleWithDrain({
-        role: "user",
-        content: JSON.stringify(msg, null, 2),
-        metadata: { custom: { _raw: msg } },
-      });
-    },
-    [pushBubbleWithDrain],
-  );
-
-  const handleAttachmentMessage = useCallback((msg: SessionStreamServerMessage) => {
-    const result = handleAttachment(msg as Claude2Attachment);
-    if (result.stateOps) {
-      const ops = result.stateOps;
-      if (ops.permissionMode) setPermissionMode(ops.permissionMode);
-      if (ops.replaceTasks) setTasks(ops.replaceTasks);
-      if (ops.taskStatus)
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === ops.taskStatus!.id
-              ? {
-                  ...t,
-                  status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
-                  description: ops.taskStatus!.description,
-                }
-              : t,
-          ),
-        );
-      if (ops.skills) setSkills(ops.skills);
-      if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
-      if (ops.slashCommands) setSlashCommands(ops.slashCommands);
-      if (ops.mcpServersAdd)
-        setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
+      return;
     }
-    if (result.bubble) {
+
+    // Compact state
+    if (
+      msg.type === "system" &&
+      (sm.subtype === "compact_boundary" || sm.subtype === "microcompact_boundary")
+    ) {
+      compactActiveRef.current = true;
+      if (compactPhaseRef.current === "compacting") compactPhaseRef.current = "replay";
+      return;
+    }
+
+    // permission-mode
+    if (msg.type === "permission-mode") {
+      setPermissionMode((msg as { permissionMode: string }).permissionMode);
+      return;
+    }
+
+    // mode: skip
+    if (msg.type === "mode") return;
+
+    // ai-title
+    if (msg.type === "ai-title") {
+      const title = (msg as { aiTitle: string }).aiTitle;
+      if (title !== lastAiTitleRef.current) {
+        lastAiTitleRef.current = title;
+        setAiTitle(title);
+      }
+      return;
+    }
+
+    // agent-name
+    if (msg.type === "agent-name") {
+      const name = (msg as { agentName: string }).agentName;
+      if (name !== lastAgentNameRef.current) {
+        lastAgentNameRef.current = name;
+        setAgentName(name);
+      }
+      return;
+    }
+
+    // queue-operation
+    if (msg.type === "queue-operation") {
+      setInputQueue((prev) => applyQueueOperation(prev, msg));
+      return;
+    }
+
+    // last-prompt
+    if (msg.type === "last-prompt") {
+      setLastPrompt((msg as { lastPrompt: string }).lastPrompt);
+      setSessionLeafUuid((msg as { leafUuid?: string }).leafUuid ?? null);
+      return;
+    }
+
+    // attachment: apply stateOps (bubble is handled by deriveThread)
+    if (msg.type === "attachment") {
+      const result = handleAttachment(msg as Claude2Attachment);
+      if (result.stateOps) {
+        const ops = result.stateOps;
+        if (ops.permissionMode) setPermissionMode(ops.permissionMode);
+        if (ops.replaceTasks) setTasks(ops.replaceTasks);
+        if (ops.taskStatus)
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === ops.taskStatus!.id
+                ? {
+                    ...t,
+                    status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
+                    description: ops.taskStatus!.description,
+                  }
+                : t,
+            ),
+          );
+        if (ops.skills) setSkills(ops.skills);
+        if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
+        if (ops.slashCommands) setSlashCommands(ops.slashCommands);
+        if (ops.mcpServersAdd)
+          setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
+      }
+      // Track whether this batch has visible content
+      if (result.bubble) currentBatchHasContentRef.current = true;
+      return;
+    }
+
+    // assistant: extract task ops + detect plan mode entry
+    if (msg.type === "assistant") {
+      if (isExternalApiErrorMessage(msg)) return;
+      if (isSyntheticAssistantMessage(msg)) return;
+      const ops = extractTaskOps(msg);
+      if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+      if (hasToolUseNamed(msg, "EnterPlanMode")) setPermissionMode("plan");
+      // Track content visibility for batch boundary
+      const asstMeta = msg as Record<string, unknown>;
+      if (!(asstMeta.isMeta === true || asstMeta.isSynthetic === true)) {
+        currentBatchHasContentRef.current = true;
+      }
+      return;
+    }
+
+    // user: track content visibility
+    if (msg.type === "user") {
+      const userMeta = msg as unknown as {
+        message?: { content?: unknown };
+        isMeta?: boolean;
+        isSynthetic?: boolean;
+      };
+      const isHidden = userMeta.isMeta === true || userMeta.isSynthetic === true;
+      if (!isHidden) {
+        // Check if this user message has visible text content
+        const texts = _extractUserTextBlocks(userMeta.message?.content);
+        const rawContent = userMeta.message?.content;
+        if (texts.length > 0 || (typeof rawContent === "string" && rawContent.trim())) {
+          currentBatchHasContentRef.current = true;
+        }
+      }
+      return;
+    }
+
+    // system: track visibility for compact_boundary, init, and other renderable messages
+    if (msg.type === "system") {
+      const subtype = sm.subtype as string | undefined;
+      if (
+        subtype === "init" ||
+        subtype === "compact_boundary" ||
+        subtype === "microcompact_boundary"
+      ) {
+        currentBatchHasContentRef.current = true;
+      }
+      return;
+    }
+
+    // result: track visibility (attachment already handled above)
+    if (msg.type === "result") {
+      const resultMsg = msg as { is_error?: boolean };
+      if (resultMsg.is_error) currentBatchHasContentRef.current = true;
+      return;
+    }
+
+    // Other types that produce UI output: track visibility
+    if (msg.type === "file-history-snapshot" || msg.type === "control_request") {
       currentBatchHasContentRef.current = true;
-      const enriched = enrichBubbleMetadata(result.bubble);
-      setMessagesState((prev) => [...prev, enriched]);
+      return;
     }
   }, []);
 
-  const handleSystemMessage = useCallback(
-    (msg: SessionStreamServerMessage) => {
-      const subtype = (msg as Record<string, unknown>).subtype as string | undefined;
-
-      // system.init: apply state first, then show a compact debug summary.
-      // It is NOT a conversational message — state management is its primary job.
-      if (subtype === "init") {
-        const init = msg as {
-          model?: string;
-          permissionMode?: string;
-          slash_commands?: string[];
-          skills?: string[];
-          mcp_servers?: Array<{ name?: string }>;
-          tools?: string[];
-          session_id?: string;
-        };
-
-        if (init.model) {
-          setCurrentModel(init.model);
-          setResolvedModel(init.model);
-        }
-        if (init.permissionMode) setPermissionMode(init.permissionMode);
-        if (init.slash_commands?.length) setSlashCommands(init.slash_commands);
-        if (init.skills?.length) setSkills(init.skills);
-        if (init.mcp_servers?.length) {
-          setMcpServers(init.mcp_servers.map((s) => s.name ?? "").filter(Boolean));
-        }
-
-        // Debug summary: one compact line.
-        const modelBrief = init.model ?? "?";
-        const mode = init.permissionMode ?? "?";
-        const toolsN = init.tools?.length ?? 0;
-        const skillsN = init.skills?.length ?? 0;
-        const mcpN = init.mcp_servers?.length ?? 0;
-        const summary = `system.init · ${modelBrief} · ${mode} · ${toolsN} tools, ${skillsN} skills, ${mcpN} mcp`;
-
-        pushBubbleWithDrain({
-          role: "system",
-          content: [{ type: "text", text: summary }],
-          metadata: {
-            custom: {
-              _raw: msg,
-              systemMessageType: "system-init" as const,
-            },
-          },
-        });
-        return;
-      }
-
-      // thinking_tokens: update token-count ref + spinner; never a bubble.
-      if (subtype === "thinking_tokens") {
-        pendingEstimatedTokensRef.current =
-          (msg as { estimated_tokens?: number }).estimated_tokens ?? null;
-        return;
-      }
-
-      // Compact boundaries: render a thin divider.
-      if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
-        const meta = (msg as Record<string, unknown>).compactMetadata as
-          | { trigger?: string; preTokens?: number }
-          | undefined;
-        const trigger = meta?.trigger === "manual" ? "手动" : "自动";
-        const pretok = meta?.preTokens;
-        const label = pretok != null ? `${Math.round(pretok / 1000)}k` : "?";
-        pushBubbleWithDrain({
-          role: "system",
-          content: [{ type: "text", text: "" }],
-          metadata: {
-            custom: {
-              _raw: msg,
-              systemMessageType: "compact-boundary" as const,
-              compactText: `上下文${trigger}压缩 (~${label} tokens)`,
-            },
-          },
-        });
-        return;
-      }
-
-      // API error notifications: attach to parent bubble via the same
-      // pipeline as isExternalApiErrorMessage. system.api_error carries
-      // parentUuid (not documented in protocol doc, but confirmed from
-      // real stdout — missing is the exception, not the rule).
-      if (subtype === "api_error") {
-        setMessagesState((prev) => {
-          const result = attachApiErrorToMessages(prev, msg, messageMapRef.current);
-          if (!result.attached) {
-            pendingApiErrorsRef.current.push(msg);
-          }
-          return result.messages;
-        });
-        return;
-      }
-
-      // Task system messages: extract ops, no bubble.
-      if (
-        subtype === "task_started" ||
-        subtype === "task_updated" ||
-        subtype === "task_notification"
-      ) {
-        const ops = extractTaskOps(msg);
-        if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
-        return;
-      }
-
-      // Default: render via messageToThreadLike (init, status, api_retry, unknown).
-      const uiMessage = messageToThreadLike(msg);
-      if (uiMessage) pushBubbleWithDrain(uiMessage);
-    },
-    [pushBubbleWithDrain],
-  );
-
-  const handleResultMessage = useCallback(
-    (msg: SessionStreamServerMessage) => {
-      pendingEstimatedTokensRef.current = null;
-      const resultMsg = msg as { is_error?: boolean; result?: string };
-      if (resultMsg.is_error && typeof resultMsg.result === "string") {
-        pushBubbleWithDrain({
-          role: "system",
-          content: [{ type: "text", text: resultMsg.result }],
-          metadata: { custom: { _raw: msg, systemMessageType: "error" as const } },
-        });
-      }
-    },
-    [pushBubbleWithDrain],
-  );
-
-  // ── Entry point: structural dispatch by message type. ──
-  const processMessage = useCallback(
-    (msg: SessionStreamServerMessage) => {
-      switch (msg.type) {
-        case "assistant":
-          handleAssistantContentMessage(msg);
-          break;
-        case "user":
-          handleUserContentMessage(msg);
-          break;
-        case "attachment":
-          handleAttachmentMessage(msg);
-          break;
-        case "system":
-          handleSystemMessage(msg);
-          break;
-        case "result":
-          handleResultMessage(msg);
-          break;
-        case "permission-mode":
-          setPermissionMode(msg.permissionMode);
-          break;
-        case "mode":
-          // CLI heartbeat — skip, not a permission-mode signal.
-          break;
-        case "ai-title":
-          if (msg.aiTitle !== lastAiTitleRef.current) {
-            lastAiTitleRef.current = msg.aiTitle;
-            setAiTitle(msg.aiTitle);
-          }
-          break;
-        case "agent-name":
-          if (msg.agentName !== lastAgentNameRef.current) {
-            lastAgentNameRef.current = msg.agentName;
-            setAgentName(msg.agentName);
-          }
-          break;
-        case "queue-operation":
-          setInputQueue((prev) => applyQueueOperation(prev, msg));
-          break;
-        case "last-prompt":
-          setLastPrompt(msg.lastPrompt);
-          setSessionLeafUuid(msg.leafUuid ?? null);
-          break;
-        case "session_init":
-        case "history_start":
-        case "history_end":
-        case "live_start":
-        case "live_end":
-          // Transport-control — intercepted upstream in onmessage.
-          break;
-        default: {
-          const uiMessage = messageToThreadLike(msg);
-          if (uiMessage) pushBubbleWithDrain(uiMessage);
-        }
-      }
-    },
-    [
-      handleAssistantContentMessage,
-      handleUserContentMessage,
-      handleAttachmentMessage,
-      handleSystemMessage,
-      handleResultMessage,
-      pushBubbleWithDrain,
-    ],
-  );
-
   const processBatch = useCallback(
-    (rawMessages: SessionStreamServerMessage[]) => {
-      // Phase 1: register all messages so errors can find their parents
-      // regardless of message order within the batch.
-      for (const m of rawMessages) {
+    (rawMsgs: SessionStreamServerMessage[]) => {
+      // Phase 1: register all uuids + append to rawMessages
+      for (const m of rawMsgs) {
         const uuid = getMessageUuid(m);
         if (uuid) messageMapRef.current.set(uuid, m);
       }
-      // Phase 2: process each message through the normal pipeline.
-      for (const m of rawMessages) {
-        processMessage(m);
+      setRawMessages((prev) => [...prev, ...rawMsgs]);
+      // Phase 2: update scalar state for each message in the batch
+      for (const m of rawMsgs) {
+        applyMessageScalarState(m);
       }
     },
-    [processMessage],
+    [applyMessageScalarState],
   );
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1963,7 +2089,7 @@ export function useClaude2Session(
   const retryCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const resetSessionState = useCallback(() => {
-    setMessagesState([]);
+    setRawMessages([]);
     messageMapRef.current = new Map();
     setTasks([]);
     setSlashCommands([]);
@@ -1987,8 +2113,6 @@ export function useClaude2Session(
     compactActiveRef.current = false;
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
-    pendingApiErrorsRef.current = [];
-    pendingEstimatedTokensRef.current = null;
     currentBatchHasContentRef.current = false;
   }, [initialModel, initialPermissionMode]);
 
@@ -2190,16 +2314,15 @@ export function useClaude2Session(
           const batch = historyBatchRef.current ?? [];
           historyBatchRef.current = null;
           processBatch(batch);
-          // If this is a resumed session whose prior process exited,
-          // any tool_use without a result is permanently orphaned.
-          if (isResumeRef.current) {
-            setMessagesState((prev) => {
-              const { messages, changed } = markOrphanedToolCalls(prev);
-              return changed ? messages : prev;
-            });
-          }
           if (currentBatchHasContentRef.current) {
-            setMessagesState((prev) => [...prev, makeBoundaryDivider("history")]);
+            setRawMessages((prev) => [
+              ...prev,
+              {
+                type: "system",
+                subtype: "batch_boundary",
+                batchKind: "history",
+              } as unknown as SessionStreamServerMessage,
+            ]);
           }
           currentBatchHasContentRef.current = false;
           console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
@@ -2216,7 +2339,14 @@ export function useClaude2Session(
           liveBatchRef.current = null;
           processBatch(batch);
           if (currentBatchHasContentRef.current) {
-            setMessagesState((prev) => [...prev, makeBoundaryDivider("live")]);
+            setRawMessages((prev) => [
+              ...prev,
+              {
+                type: "system",
+                subtype: "batch_boundary",
+                batchKind: "live",
+              } as unknown as SessionStreamServerMessage,
+            ]);
           }
           currentBatchHasContentRef.current = false;
           setLoading(false);
@@ -2237,9 +2367,8 @@ export function useClaude2Session(
         // ── Per-message dispatch (live, after batches) ───────────────
         const liveUuid = getMessageUuid(msg);
         if (liveUuid) messageMapRef.current.set(liveUuid, msg);
-
-        processMessage(msg);
-
+        setRawMessages((prev) => [...prev, msg]);
+        applyMessageScalarState(msg);
         setLoading(false);
       } catch {
         // skip
@@ -2273,11 +2402,22 @@ export function useClaude2Session(
     connectionVersion,
     scheduleReconnect,
     sendToSocket,
-    processMessage,
     processBatch,
+    applyMessageScalarState,
   ]);
 
-  const threadLikeMessages = messages;
+  // ── Pass 2: derive rendered output from raw state ──────────────
+  const renderedMessages = useMemo(() => {
+    const derived = deriveThread(rawMessages);
+    // Post-derivation: mark orphan tool calls for resumed sessions
+    if (isResumeRef.current) {
+      const result = markOrphanedToolCalls(derived);
+      return result.changed ? result.messages : derived;
+    }
+    return derived;
+  }, [rawMessages]);
+
+  // ── DEPRECATED: isRunning will be derived from raw state ───────
 
   // DEPRECATED: loadOlder（加载更早消息）在消息处理重构后尚未启用。
   // hasOlder 固定为 false，LoadOlderButton 永远不会渲染，此函数不会被调用。
@@ -2285,95 +2425,17 @@ export function useClaude2Session(
   //
   // 如果将来重新启用：回放路径（约 line 1928）缺少 handleAttachment dispatch，
   // 会导致 attachment 驱动状态（permissionMode/tasks/skills/mcpServers）在翻页时丢失。
+  // DEPRECATED: loadOlder（加载更早消息）在消息处理重构后尚未启用。
+  // hasOlder 固定为 false，LoadOlderButton 永远不会渲染。
+  // 消息现在通过 rawMessages + deriveThread 处理，loadOlder 需使用新 API 重写。
   const loadOlder = useCallback(
-    async (cursorOverride?: string | null) => {
-      const cursor = cursorOverride ?? cursorRef.current;
-      if (!cursor) return;
-      try {
-        const response = await getAgentSessionMessages(projectName, sessionId, { cursor });
-        cursorRef.current = response.pagination.nextCursor;
-        setHasOlder(response.pagination.hasOlder);
-
-        // Phase 1: register all messages so errors can find parents in-page.
-        for (const m of response.messages) {
-          const uuid = getMessageUuid(m);
-          if (uuid) messageMapRef.current.set(uuid, m);
-        }
-
-        // Phase 2: convert non-error messages.
-        const converted: ThreadMessageLike[] = [];
-        const errorsInPage: SessionStreamServerMessage[] = [];
-        const pageToolResults: ExtractedToolResult[] = [];
-
-        for (const m of response.messages) {
-          if (isExternalApiErrorMessage(m)) {
-            errorsInPage.push(m);
-            continue;
-          }
-          let uiMessage: ThreadMessageLike | null = null;
-          // Content-bearing messages: decompose via convertContentToBubble.
-          // No userType check — live stdout messages lack this field.
-          if (m.type === "assistant") {
-            if (!isSyntheticAssistantMessage(m)) {
-              uiMessage = convertContentToBubble(m);
-            }
-            const ops = extractTaskOps(m);
-            if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
-            const trs = extractToolResults(m);
-            if (trs.length > 0) pageToolResults.push(...trs);
-          } else if (m.type === "user") {
-            uiMessage = convertContentToBubble(m);
-            const trs = extractToolResults(m);
-            if (trs.length > 0) pageToolResults.push(...trs);
-          } else if (m.type === "attachment") {
-            const result = handleAttachment(m as Claude2Attachment);
-            if (result.stateOps) {
-              const ops = result.stateOps;
-              if (ops.permissionMode) setPermissionMode(ops.permissionMode);
-              if (ops.replaceTasks) setTasks(ops.replaceTasks);
-              if (ops.skills) setSkills(ops.skills);
-              if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
-              if (ops.slashCommands) setSlashCommands(ops.slashCommands);
-              if (ops.mcpServersAdd)
-                setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
-            }
-            if (result.bubble) uiMessage = enrichBubbleMetadata(result.bubble);
-          } else if (m.type === "queue-operation") {
-            setInputQueue((prev) => applyQueueOperation(prev, m));
-            continue;
-          } else {
-            uiMessage = messageToThreadLike(m);
-            if (uiMessage) uiMessage = enrichBubbleMetadata(uiMessage);
-          }
-          if (uiMessage) converted.push(uiMessage);
-        }
-
-        // Phase 3: attach errors from this page + any pending.
-        const allPending = [...pendingApiErrorsRef.current, ...errorsInPage];
-        const drained = drainPendingErrors(converted, allPending, messageMapRef.current);
-        pendingApiErrorsRef.current = drained.remaining;
-
-        // Phase 4: prepend, apply tool_results against full list, drain errors.
-        setMessagesState((prev) => {
-          let next = [...drained.messages, ...prev];
-          if (pageToolResults.length > 0) {
-            const applied = applyToolResultsToMessages(next, pageToolResults);
-            if (applied.appliedCount > 0) next = applied.messages;
-          }
-          if (pendingApiErrorsRef.current.length > 0) {
-            const drained2 = drainPendingErrors(
-              next,
-              pendingApiErrorsRef.current,
-              messageMapRef.current,
-            );
-            pendingApiErrorsRef.current = drained2.remaining;
-            next = drained2.messages;
-          }
-          return next;
-        });
-      } catch (err) {
-        console.error("[loadOlder] error", err);
-      }
+    async (_cursorOverride?: string | null) => {
+      // Stub: not implemented in new architecture yet.
+      // Previously fetched server messages and prepended them to the message list.
+      // New implementation should:
+      // 1. Fetch messages from server
+      // 2. Prepend to rawMessages via setRawMessages
+      // 3. Apply scalar state via applyMessageScalarState
     },
     [projectName, sessionId],
   );
@@ -2408,13 +2470,13 @@ export function useClaude2Session(
 
   const storeAdapter = useMemo<ExternalStoreAdapter<ThreadMessageLike>>(
     () => ({
-      messages: threadLikeMessages,
+      messages: renderedMessages,
       isRunning,
       convertMessage: (m: ThreadMessageLike) => m,
       onNew,
       onCancel,
     }),
-    [threadLikeMessages, isRunning, onNew, onCancel],
+    [renderedMessages, isRunning, onNew, onCancel],
   );
 
   return {
