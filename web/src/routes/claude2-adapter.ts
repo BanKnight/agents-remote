@@ -305,8 +305,11 @@ type RawContentBlock = { type: string } & Record<string, unknown>;
 
 function processContentBlock(block: RawContentBlock): Record<string, unknown> | null {
   switch (block.type) {
-    case "thinking":
-      return { type: "reasoning", text: block.thinking as string };
+    case "thinking": {
+      const t = (block.thinking as string) ?? "";
+      if (!t.trim()) return null;
+      return { type: "reasoning", text: t };
+    }
     case "text":
       return { type: "text", text: block.text as string };
     case "tool_use": {
