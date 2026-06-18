@@ -562,7 +562,9 @@ function UserChatBubble() {
               />
             </svg>
           </ActionBarPrimitive.Copy>
-          <RawDebugTooltip custom={custom} />
+          <span className="inline-flex items-center">
+            <RawDebugTooltip custom={custom} />
+          </span>
         </ActionBarPrimitive.Root>
       </div>
     </MessagePrimitive.Root>
@@ -697,9 +699,7 @@ function AssistantChatBubble() {
             <RawDebugTooltip custom={custom} />
           </ActionBarPrimitive.Root>
         ) : (
-          <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-            <RawDebugTooltip custom={custom} />
-          </span>
+          <RawDebugTooltip custom={custom} />
         )}
       </div>
     </MessagePrimitive.Root>
@@ -898,9 +898,17 @@ function RawDebugTooltip({ custom }: { custom?: Record<string, unknown> }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   // Prefer _rawMessages array (new adapter: all messages carry sourceUuids → _rawMessages).
   // Fall back to single _raw for legacy call sites or old messages.
+  // Last resort: show the custom metadata itself — always has toolName etc.
   const rawMessages = custom?._rawMessages as unknown[] | undefined;
   const rawSingle = custom?._raw as unknown;
-  const displayData = rawMessages && rawMessages.length > 0 ? rawMessages : rawSingle;
+  const displayData =
+    rawMessages && rawMessages.length > 0
+      ? rawMessages
+      : rawSingle
+        ? rawSingle
+        : custom && Object.keys(custom).length > 0
+          ? custom
+          : null;
   if (!displayData) return null;
   const rawJson = JSON.stringify(displayData, null, 2);
   const displayText = rawJson.length > 2000 ? rawJson.slice(0, 2000) + "\n… (truncated)" : rawJson;
@@ -1002,7 +1010,7 @@ function SystemChatBubble() {
             <div className="px-3 py-2">
               <ToolUIAny {...toolProps} />
             </div>
-            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute top-1 right-1">
               <RawDebugTooltip custom={custom} />
             </div>
           </div>
@@ -1058,9 +1066,7 @@ function SystemChatBubble() {
         <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
-        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-          <RawDebugTooltip custom={custom} />
-        </span>
+        <RawDebugTooltip custom={custom} />
       </div>
     </MessagePrimitive.Root>
   );
