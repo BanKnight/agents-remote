@@ -1622,9 +1622,20 @@ export function renderChatStream(
     switch (item.kind) {
       case "assistant": {
         const rawMsgs = item._rawSnapshots;
+        // Messages that carry only text/reasoning (no tool_use) — used for
+        // the assistant bubble's debug info so it excludes tool-destined content.
+        const hasToolUse = (m: SessionStreamServerMessage) => {
+          const content = (m as Record<string, unknown>).message as
+            | { content?: Array<{ type?: string }> }
+            | undefined;
+          return Array.isArray(content?.content)
+            ? content.content.some((b) => b.type === "tool_use")
+            : false;
+        };
+        const textOnlyMsgs = rawMsgs.filter((m) => !hasToolUse(m));
         const customBase: Record<string, unknown> = {
           sourceUuids: [...item.sourceUuids],
-          _rawMessages: rawMsgs,
+          _rawMessages: textOnlyMsgs,
         };
         if (item.estimatedTokens != null) customBase.estimatedTokens = item.estimatedTokens;
 
