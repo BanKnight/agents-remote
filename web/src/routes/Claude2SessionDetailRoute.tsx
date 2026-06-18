@@ -535,7 +535,7 @@ function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   return (
-    <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group">
+    <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group relative">
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
         <SyntheticBodyView />
@@ -562,10 +562,10 @@ function UserChatBubble() {
               />
             </svg>
           </ActionBarPrimitive.Copy>
-          <span className="inline-flex items-center">
-            <RawDebugTooltip custom={custom} />
-          </span>
         </ActionBarPrimitive.Root>
+      </div>
+      <div className="absolute left-1 bottom-0">
+        <RawDebugTooltip custom={custom} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -696,11 +696,11 @@ function AssistantChatBubble() {
                 />
               </svg>
             </ActionBarPrimitive.Copy>
-            <RawDebugTooltip custom={custom} />
           </ActionBarPrimitive.Root>
-        ) : (
-          <RawDebugTooltip custom={custom} />
-        )}
+        ) : null}
+      </div>
+      <div className="absolute right-1 bottom-0">
+        <RawDebugTooltip custom={custom} />
       </div>
     </MessagePrimitive.Root>
   );
