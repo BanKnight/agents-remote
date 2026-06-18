@@ -164,6 +164,24 @@ body {
   }
 }
 
+/* Consecutive tool-cards merge into a visual list */
+[data-tool-card]:has(+ [data-tool-card]) {
+  padding-bottom: 0;
+}
+[data-tool-card]:has(+ [data-tool-card]) [data-tool-card-inner] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-width: 0;
+}
+[data-tool-card] + [data-tool-card] {
+  padding-top: 0;
+}
+[data-tool-card] + [data-tool-card] [data-tool-card-inner] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top-color: rgb(51 65 85 / 0.5);
+}
+
 @layer utilities {
   .interactive-row {
     &:hover {

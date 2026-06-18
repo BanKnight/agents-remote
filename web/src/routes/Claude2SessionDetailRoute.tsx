@@ -1007,9 +1007,15 @@ function SystemChatBubble() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     return (
-      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+      <MessagePrimitive.Root
+        data-tool-card=""
+        className="flex justify-start px-3 py-1.5 sm:px-5 group relative"
+      >
         <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
-          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
+          <div
+            data-tool-card-inner=""
+            className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden"
+          >
             <div className="px-3 py-2">
               <ToolUIAny {...toolProps} />
             </div>
