@@ -998,9 +998,13 @@ function SystemChatBubble() {
     return (
       <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
         <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
-          <ToolUIAny {...toolProps} />
-          <div className="flex justify-end">
-            <RawDebugTooltip custom={custom} />
+          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
+            <div className="px-3 py-2">
+              <ToolUIAny {...toolProps} />
+            </div>
+            <div className="flex justify-end px-2 pb-1.5">
+              <RawDebugTooltip custom={custom} />
+            </div>
           </div>
         </div>
       </MessagePrimitive.Root>
