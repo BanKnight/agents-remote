@@ -905,8 +905,6 @@ function RawDebugTooltip({
   const displayData =
     rawMessages && rawMessages.length > 0 ? rawMessages : rawSingle ? rawSingle : null;
   if (!displayData) return null;
-  const rawJson = JSON.stringify(displayData, null, 2);
-  const displayText = rawJson.length > 2000 ? rawJson.slice(0, 2000) + "\n… (truncated)" : rawJson;
 
   return (
     <>
@@ -924,7 +922,7 @@ function RawDebugTooltip({
       </button>
       {open ? (
         <RawDebugPopover
-          text={displayText}
+          text={JSON.stringify(displayData, null, 2)}
           anchor={btnRef.current}
           onClose={() => setOpen(false)}
         />
@@ -950,7 +948,7 @@ function RawDebugPopover({
   const style: React.CSSProperties = rect
     ? {
         position: "fixed",
-        top: Math.min(rect.bottom + 4, window.innerHeight - 280),
+        top: Math.min(rect.bottom + 4, window.innerHeight - 520),
         left,
         zIndex: 50,
         maxWidth: maxW,
@@ -962,7 +960,7 @@ function RawDebugPopover({
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         style={style}
-        className="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-slate-600/50 bg-slate-900 p-3 shadow-xl"
+        className="max-h-[min(80vh,48rem)] overflow-y-auto overflow-x-hidden rounded-lg border border-slate-600/50 bg-slate-900 p-3 shadow-xl"
       >
         <pre className="text-[0.6rem] leading-relaxed text-slate-300 whitespace-pre-wrap break-all">
           {text}

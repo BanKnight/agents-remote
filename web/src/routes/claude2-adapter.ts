@@ -1005,6 +1005,11 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
   }
   const raw = JSON.stringify(msg, null, 2);
   const meta = { custom: { _raw: msg } };
+  const subtype = (msg as Record<string, unknown>).subtype as string | undefined;
+  const uuid = (msg as Record<string, unknown>).uuid as string | undefined;
+  const summary = [msg.type, subtype, uuid ? `#${(uuid as string).slice(0, 8)}` : undefined]
+    .filter(Boolean)
+    .join(" · ");
   if (msg.type === "assistant") {
     return { role: "assistant", content: [{ type: "text", text: raw }], metadata: meta };
   }
@@ -1016,7 +1021,7 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     const text = `文件历史快照 · ${count} 个文件`;
     return { role: "system", content: [{ type: "text", text }], metadata: meta };
   }
-  return { role: "system", content: [{ type: "text", text: raw }], metadata: meta };
+  return { role: "system", content: [{ type: "text", text: summary }], metadata: meta };
 }
 
 // ── ChatStream domain model ──────────────────────────────────────────

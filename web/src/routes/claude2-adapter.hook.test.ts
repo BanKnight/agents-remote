@@ -1034,12 +1034,15 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     const msgs = getMessages(result);
     expect(msgs).toHaveLength(1);
     // Unknown types fall through to messageToThreadLike default → system role
+    // with a summary line (type · subtype · uuid#), not raw JSON.
     expect(msgs[0]?.role).toBe("system");
     const content = msgs[0]?.content;
     expect(Array.isArray(content)).toBe(true);
     const text = (content as Array<{ type: string; text: string }>)[0]?.text ?? "";
     expect(text).toContain("unknown_type");
-    expect(text).toContain("payload");
+    // Debug info is available via the _raw metadata on the bubble.
+    const custom = msgs[0]?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom?._raw).toBeDefined();
   });
 });
 

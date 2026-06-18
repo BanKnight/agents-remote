@@ -332,7 +332,7 @@ describe("messageToThreadLike", () => {
     expect(result.content).toInclude('"type": "user"');
   });
 
-  test("system message maps to system role with raw JSON content", () => {
+  test("system message maps to system role with type summary", () => {
     const msg = {
       type: "system",
       subtype: "init",
@@ -341,10 +341,11 @@ describe("messageToThreadLike", () => {
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("system");
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    expect(text).toInclude('"type": "system"');
+    expect(text).toContain("system");
+    expect(text).toContain("init");
   });
 
-  test("result message maps to system role with raw JSON content", () => {
+  test("result message maps to system role with type summary", () => {
     const msg = {
       type: "result",
       subtype: "success",
@@ -352,7 +353,8 @@ describe("messageToThreadLike", () => {
     const result = messageToThreadLike(msg);
     expect(result.role).toBe("system");
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    expect(text).toInclude('"type": "result"');
+    expect(text).toContain("result");
+    expect(text).toContain("success");
   });
 
   test("last-prompt returns null (scalar state only, never rendered)", () => {
