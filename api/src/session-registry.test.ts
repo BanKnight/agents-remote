@@ -61,12 +61,7 @@ test("SessionRegistry uses provider profiles for default Agent display names", a
 });
 
 test("createRuntimeKey keeps original project names out of runtime resource names", () => {
-  const name = createRuntimeKey(
-    "hello world 中文",
-    "agent",
-    "codex",
-    "agent_1234567890abcdef",
-  );
+  const name = createRuntimeKey("hello world 中文", "agent", "codex", "agent_1234567890abcdef");
 
   expect(name).toStartWith("ar-agent-codex-");
   expect(name).toContain("hello-world");

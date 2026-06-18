@@ -202,10 +202,7 @@ export class Claude2StreamController {
           existingStream.close();
           this.streams.delete(socket);
         }
-        const result = await this.claude2Runtime.switchPermissionMode(
-          data.runtimeKey,
-          parsed.mode,
-        );
+        const result = await this.claude2Runtime.switchPermissionMode(data.runtimeKey, parsed.mode);
         if (result) {
           try {
             await this.startStream(socket, data);
@@ -254,11 +251,7 @@ export class Claude2StreamController {
               console.log(
                 `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
               );
-              this.claude2Runtime.setClaudeSessionId(
-                data.runtimeKey,
-                init.session_id,
-                init.model,
-              );
+              this.claude2Runtime.setClaudeSessionId(data.runtimeKey, init.session_id, init.model);
               void this.sessionRegistry.setClaudeSessionId(
                 data.sessionId,
                 init.session_id,

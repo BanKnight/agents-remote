@@ -49,9 +49,9 @@ import type { Claude2FileHistorySnapshot } from "@agents-remote/shared";
 //
 //   2. CompactDivider — PERMANENT inline divider in the message stream.
 //      The single source of truth that "a compaction happened". Driven by
-//      the compact_boundary record via loadMessagesFromRaw, so it appears
-//      identically in BOTH live streaming and history load (one path —
-//      the single-source-pipeline rule).
+//      the compact_boundary record via normalizeChatStream/renderChatStream,
+//      so it appears identically in BOTH live streaming and history load
+//      (one path — the single-source-pipeline rule).
 //
 // Why the split: a successful compaction is a permanent fact about the
 // conversation, so it lives in the durable message stream (the divider).
@@ -262,8 +262,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   const {
     storeAdapter,
     bridge,
-    hasOlder,
-    loadOlder,
     currentModel,
     resolvedModel,
     modelSwitchVersion,
@@ -421,12 +419,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   ref={viewportRef}
                   className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 scroll-smooth"
                 >
-                  <ThreadViewportContent
-                    hasOlder={hasOlder}
-                    loadOlder={loadOlder}
-                    loading={loading}
-                    retryInfo={retryInfo}
-                  />
+                  <ThreadViewportContent loading={loading} retryInfo={retryInfo} />
                 </ThreadPrimitive.Viewport>
                 <div className="relative h-0 w-full pointer-events-none">
                   <ThreadPrimitive.ScrollToBottom
@@ -1108,19 +1101,15 @@ function formatSnapshotTime(iso: string): string | null {
 }
 
 function ThreadViewportContent({
-  hasOlder,
-  loadOlder,
   loading,
   retryInfo,
 }: {
-  hasOlder: boolean;
-  loadOlder: () => Promise<void>;
   loading: boolean;
   retryInfo: RetryInfo | null;
 }) {
   return (
     <>
-      {loading ? <ChatSkeleton /> : <LoadOlderButton hasOlder={hasOlder} loadOlder={loadOlder} />}
+      {loading ? <ChatSkeleton /> : null}
       <ThreadPrimitive.Messages
         components={{
           UserMessage: UserChatBubble,
@@ -1151,42 +1140,6 @@ function ChatSkeleton() {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function LoadOlderButton({
-  hasOlder,
-  loadOlder,
-}: {
-  hasOlder: boolean;
-  loadOlder: () => Promise<void>;
-}) {
-  const { t } = useT();
-  const [loading, setLoading] = useState(false);
-
-  if (!hasOlder) return null;
-
-  const handleLoad = async () => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      await loadOlder();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="flex justify-center py-1 px-3">
-      <button
-        type="button"
-        disabled={loading}
-        onClick={handleLoad}
-        className="rounded-lg bg-slate-800/60 px-3 py-1.5 text-[0.65rem] text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 transition cursor-pointer disabled:opacity-50"
-      >
-        {loading ? t("claude2.loadingOlder") : t("claude2.loadOlder")}
-      </button>
     </div>
   );
 }

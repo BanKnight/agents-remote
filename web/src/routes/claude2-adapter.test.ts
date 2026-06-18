@@ -30,9 +30,16 @@ import {
   markOrphanedToolCalls,
   handleAttachment,
   normalizeAttachmentTaskStatus,
-  deriveThread,
+  normalizeChatStream,
+  renderChatStream,
 } from "./claude2-adapter";
-import type { ApiErrorAttachment, QueueEntry, ExtractedToolResult } from "./claude2-adapter";
+import type {
+  ApiErrorAttachment,
+  QueueEntry,
+  ExtractedToolResult,
+  ChatStreamItem,
+  NormalizedPart,
+} from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -87,12 +94,6 @@ const thinkingTokens = (estimatedTokens: number): SessionStreamServerMessage =>
     subtype: "thinking_tokens",
     estimated_tokens: estimatedTokens,
   }) as unknown as SessionStreamServerMessage;
-
-// KEPT: used in commented-out loadMessagesFromRaw tests
-/*
-const systemInit = (): SessionStreamServerMessage =>
-  ({ type: "system", subtype: "init" }) as unknown as SessionStreamServerMessage;
-*/
 
 const taskStarted = (
   task_id: string,
@@ -616,697 +617,6 @@ describe("message processing building blocks", () => {
     expect(messageToThreadLike(system).role).toBe("system");
   });
 });
-
-// KEPT: 旧 loadMessagesFromRaw 测试保留作为参考（函数已注释，后续重构时参考）
-/*
-  });
-
-  test("system messages are skipped", () => {
-    const msgs: SessionStreamServerMessage[] = [systemInit()];
-    expect(loadMessagesFromRaw(msgs)).toEqual([]);
-  });
-
-  test("simple user text + assistant text produces two messages", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "Hello" }]),
-      assistant("msg-1", [{ type: "text", text: "Hi there!" }]),
-    ];
-
-    const result_msgs = loadMessagesFromRaw(msgs);
-    expect(result_msgs.length).toBe(2);
-    expect(result_msgs[0]).toEqual({ role: "user", content: "Hello" });
-    expect(result_msgs[1].role).toBe("assistant");
-    expect(Array.isArray(result_msgs[1].content)).toBe(true);
-    const content = result_msgs[1].content as Array<{ type: string; text: string }>;
-    expect(content[0]).toEqual({ type: "text", text: "Hi there!" });
-  });
-
-  test("multiple assistant messages with same id are grouped into one bubble", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "what is 2+2" }]),
-      assistant("msg-1", [{ type: "text", text: "Let me think" }]),
-      assistant("msg-1", [{ type: "text", text: "The answer is 4" }]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    expect(result_msgs.length).toBe(2);
-    const content = result_msgs[1].content as Array<{ type: string; text: string }>;
-    expect(content.length).toBe(2);
-    expect(content[0].text).toBe("Let me think");
-    expect(content[1].text).toBe("The answer is 4");
-  });
-
-  test("different assistant message ids produce separate bubbles", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "msg1" }]),
-      assistant("msg-1", [{ type: "text", text: "reply 1" }]),
-      result("success"),
-      user([{ type: "text", text: "msg2" }]),
-      assistant("msg-2", [{ type: "text", text: "reply 2" }]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    expect(result_msgs.length).toBe(4);
-  });
-
-  test("tool_use followed by matching tool_result applies result to tool-call", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "read the file" }]),
-      assistant("msg-1", [
-        { type: "text", text: "Let me read it." },
-        { type: "tool_use", id: "tu-1", name: "Read", input: { file_path: "/x" } },
-      ]),
-      user([{ type: "tool_result", tool_use_id: "tu-1", content: "file contents" }]),
-      assistant("msg-2", [{ type: "text", text: "The file says: hello" }]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-
-    expect(result_msgs.length).toBe(3);
-
-    const assistantContent = result_msgs[1].content as Array<{
-      type: string;
-      text?: string;
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(assistantContent.length).toBe(2);
-    expect(assistantContent[0].type).toBe("text");
-    expect(assistantContent[1].type).toBe("tool-call");
-    expect(assistantContent[1].toolCallId).toBe("tu-1");
-    expect(assistantContent[1].result).toBe("file contents");
-  });
-
-  test("tool_use + intervening user text + tool_result still matches (the 'Continue' bug)", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "ask me a question" }]),
-      assistant("msg-1", [
-        {
-          type: "tool_use",
-          id: "tu-ask",
-          name: "AskUserQuestion",
-          input: { questions: [{ question: "What color?", options: ["Red", "Blue"] }] },
-        },
-      ]),
-      user([{ type: "text", text: "Continue from where you left off." }]),
-      user([{ type: "tool_result", tool_use_id: "tu-ask", content: "Red" }]),
-      assistant("msg-2", [{ type: "text", text: "Thanks for the answer!" }]),
-      result("success"),
-    ];
-
-    const result_msgs = loadMessagesFromRaw(msgs);
-
-    expect(result_msgs.length).toBe(4);
-    expect(result_msgs[0].role).toBe("user");
-    expect(result_msgs[1].role).toBe("user");
-    expect(result_msgs[2].role).toBe("assistant");
-    expect(result_msgs[3].role).toBe("assistant");
-
-    const firstAssistant = result_msgs[2].content as Array<{
-      type: string;
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(firstAssistant.length).toBe(1);
-    const toolCall = firstAssistant[0];
-    expect(toolCall.type).toBe("tool-call");
-    expect(toolCall.toolCallId).toBe("tu-ask");
-    expect(toolCall.result).toBe("Red");
-  });
-
-  test("is_error tool_result sets isError flag and shows error content", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "hello" }]),
-      assistant("msg-1", [
-        {
-          type: "tool_use",
-          id: "tu-ask",
-          name: "AskUserQuestion",
-          input: { questions: [{ question: "X?", options: ["A", "B"] }] },
-        },
-      ]),
-      user([
-        {
-          type: "tool_result",
-          tool_use_id: "tu-ask",
-          content: "Something went wrong",
-          is_error: true,
-        },
-      ]),
-      result("success"),
-    ];
-
-    const result_msgs = loadMessagesFromRaw(msgs);
-    const assistantContent = result_msgs[1].content as Array<{
-      type: string;
-      result?: string;
-      isError?: boolean;
-    }>;
-    const toolCall = assistantContent[0];
-    expect(toolCall.type).toBe("tool-call");
-    expect(toolCall.result).toBe("Something went wrong");
-    expect(toolCall.isError).toBe(true);
-  });
-
-  test("user message with only tool_result (no text) does not create a user bubble", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "read file" }]),
-      assistant("msg-1", [
-        { type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "/f" } },
-      ]),
-      user([{ type: "tool_result", tool_use_id: "tu-read", content: "hello world" }]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-
-    expect(result_msgs.length).toBe(2);
-    const assistantContent = result_msgs[1].content as Array<{
-      type: string;
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(assistantContent.length).toBe(1);
-    expect(assistantContent[0].toolCallId).toBe("tu-read");
-    expect(assistantContent[0].result).toBe("hello world");
-  });
-
-  test("user message with both text and tool_result creates user bubble and applies result", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "read file" }]),
-      assistant("msg-1", [
-        { type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "/f" } },
-      ]),
-      user([
-        { type: "text", text: "Continue from where you left off." },
-        { type: "tool_result", tool_use_id: "tu-read", content: "file content here" },
-      ]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-
-    expect(result_msgs.length).toBe(3);
-    expect(result_msgs[0].role).toBe("user");
-
-    const assistantContent = result_msgs[1].content as Array<{
-      type: string;
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(assistantContent.length).toBe(1);
-    expect(assistantContent[0].toolCallId).toBe("tu-read");
-    expect(assistantContent[0].result).toBe("file content here");
-
-    expect(result_msgs[2].role).toBe("user");
-  });
-
-  test("result message flushes and resets assistant grouping", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "hello" }]),
-      assistant("msg-1", [{ type: "text", text: "hi" }]),
-      result("success"),
-      user([{ type: "text", text: "bye" }]),
-      assistant("msg-2", [{ type: "text", text: "goodbye" }]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    expect(result_msgs.length).toBe(4);
-  });
-
-  test("interrupted result does not break subsequent messages", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "hello" }]),
-      assistant("msg-1", [{ type: "text", text: "hi" }]),
-      result("interrupted"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    expect(result_msgs.length).toBe(2);
-  });
-
-  test("empty user text (whitespace only) does not create a user message", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "   " }]),
-      assistant("msg-1", [{ type: "text", text: "empty" }]),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    expect(result_msgs.length).toBe(1);
-    expect(result_msgs[0].role).toBe("assistant");
-  });
-
-  test("multiple tool_use blocks in one assistant message all get results matched", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "use multiple tools" }]),
-      assistant("msg-1", [
-        { type: "tool_use", id: "tu-a", name: "ToolA", input: {} },
-        { type: "tool_use", id: "tu-b", name: "ToolB", input: {} },
-      ]),
-      user([
-        { type: "tool_result", tool_use_id: "tu-a", content: "result A" },
-        { type: "tool_result", tool_use_id: "tu-b", content: "result B" },
-      ]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    const assistantContent = result_msgs[1].content as Array<{
-      type: string;
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(assistantContent.length).toBe(2);
-    expect(assistantContent[0].result).toBe("result A");
-    expect(assistantContent[1].result).toBe("result B");
-  });
-
-  test("skill synthetic content with sourceToolUseID is hidden and attaches to tool-call", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "search with skill" }]),
-      assistant("msg-skill", [
-        {
-          type: "tool_use",
-          id: "tu-skill",
-          name: "Skill",
-          input: { skill: "tavily-search", args: "deepseek provider" },
-        },
-      ]),
-      {
-        type: "user",
-        isSynthetic: true,
-        sourceToolUseID: "tu-skill",
-        message: {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Base directory for this skill: /tmp/skill\n\n# tavily search\n...",
-            },
-          ],
-        },
-      } as unknown as SessionStreamServerMessage,
-      assistant("msg-next", [{ type: "text", text: "done" }]),
-      result("success"),
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-
-    expect(resultMsgs).toHaveLength(3);
-    expect(resultMsgs[0]).toEqual({ role: "user", content: "search with skill" });
-    expect(resultMsgs[1].role).toBe("assistant");
-    expect(resultMsgs[2].role).toBe("assistant");
-
-    const assistantContent = resultMsgs[1].content as Array<{
-      type: string;
-      toolCallId?: string;
-      metadata?: { skillContent?: string };
-    }>;
-    expect(assistantContent[0].type).toBe("tool-call");
-    expect(assistantContent[0].toolCallId).toBe("tu-skill");
-    expect(assistantContent[0].metadata?.skillContent).toContain("Base directory for this skill:");
-  });
-
-  test("unmatched tool_result is ignored without mutating history", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "hello" }]),
-      {
-        type: "user",
-        message: {
-          role: "user",
-          content: [{ type: "tool_result", tool_use_id: "missing-tool", content: "orphan" }],
-        },
-      } as unknown as SessionStreamServerMessage,
-      result("success"),
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toEqual([{ role: "user", content: "hello" }]);
-  });
-
-  test("skill metadata without a matching tool-call warns instead of crashing", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "plain" }]),
-      {
-        type: "user",
-        isMeta: true,
-        sourceToolUseID: "missing-tool",
-        message: {
-          role: "user",
-          content: [{ type: "text", text: "Base directory for this skill: /tmp/skill" }],
-        },
-      } as unknown as SessionStreamServerMessage,
-      result("success"),
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toEqual([{ role: "user", content: "plain" }]);
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
-  });
-
-  test("tool_result backfills a flushed assistant bubble after result", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "do skill" }]),
-      assistant("msg-skill", [
-        { type: "text", text: "before" },
-        { type: "tool_use", id: "tu-skill", name: "Skill", input: { skill: "x" } },
-        { type: "text", text: "after" },
-      ]),
-      assistant("msg-next", [{ type: "text", text: "next" }]),
-      result("success"),
-      {
-        type: "user",
-        message: {
-          role: "user",
-          content: [
-            { type: "tool_result", tool_use_id: "tu-skill", content: "Launching skill: x" },
-          ],
-        },
-        toolUseResult: { skill: { id: "x" } },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(3);
-    const assistantContent = resultMsgs[2].content as Array<{
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(
-      assistantContent.some(
-        (part) => part.toolCallId === "tu-skill" && part.result === "Launching skill: x",
-      ),
-    ).toBe(true);
-  });
-
-  test("skill metadata backfills a flushed assistant bubble after result", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "do skill" }]),
-      assistant("msg-skill", [
-        { type: "text", text: "before" },
-        { type: "tool_use", id: "tu-skill", name: "Skill", input: { skill: "x" } },
-        { type: "text", text: "after" },
-      ]),
-      assistant("msg-next", [{ type: "text", text: "next" }]),
-      result("success"),
-      {
-        type: "user",
-        isMeta: true,
-        sourceToolUseID: "tu-skill",
-        message: {
-          role: "user",
-          content: [{ type: "text", text: "Base directory for this skill: /tmp/skill" }],
-        },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(3);
-    const assistantContent = resultMsgs[1].content as Array<{
-      metadata?: { skillContent?: string };
-    }>;
-    expect(assistantContent[1].metadata?.skillContent).toContain("Base directory for this skill:");
-  });
-
-  test("tool_result content arrays are joined into one result string", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "read file" }]),
-      assistant("msg-1", [
-        { type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "/f" } },
-      ]),
-      {
-        type: "user",
-        message: {
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: "tu-read",
-              content: [
-                { type: "text", text: "line 1" },
-                { type: "text", text: "line 2" },
-              ],
-            },
-          ],
-        },
-      } as unknown as SessionStreamServerMessage,
-      result("success"),
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    const assistantContent = resultMsgs[1].content as Array<{
-      type: string;
-      toolCallId?: string;
-      result?: string;
-    }>;
-    expect(assistantContent[0].result).toBe("line 1\nline 2");
-  });
-
-  test("api_retry is skipped — retry state handled in hook, not as message", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      {
-        type: "system",
-        subtype: "api_retry",
-        attempt: 1,
-        max_retries: 5,
-        retry_delay_ms: 1500,
-        error_status: 429,
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(0);
-  });
-
-  test("microcompact_boundary renders a compact divider with saved token count", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      {
-        type: "system",
-        subtype: "microcompact_boundary",
-        microcompactMetadata: { trigger: "manual", preTokens: 24500, tokensSaved: 12000 },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(1);
-    const content = resultMsgs[0].content as Array<{ type: string; text: string }>;
-    expect(content[0].text).toBe("上下文已压缩 (~25k tokens)");
-  });
-
-  test("skill metadata backfills a flushed assistant bubble after result", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "do skill" }]),
-      assistant("msg-skill", [
-        { type: "text", text: "before" },
-        { type: "tool_use", id: "tu-skill", name: "Skill", input: { skill: "x" } },
-        { type: "text", text: "after" },
-      ]),
-      result("success"),
-      {
-        type: "user",
-        isMeta: true,
-        sourceToolUseID: "tu-skill",
-        message: {
-          role: "user",
-          content: [{ type: "text", text: "Base directory for this skill: /tmp/skill" }],
-        },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(2);
-    const assistantContent = resultMsgs[1].content as Array<{
-      metadata?: { skillContent?: string };
-    }>;
-    expect(assistantContent[1].metadata?.skillContent).toContain("Base directory for this skill:");
-  });
-
-  test("compact_boundary renders as system divider message", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        compactMetadata: { trigger: "manual", preTokens: 123456 },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(1);
-    expect(resultMsgs[0].role).toBe("system");
-    const content = resultMsgs[0].content as Array<{ type: string; text: string }>;
-    expect(content[0]).toEqual({ type: "text", text: "上下文已压缩 (~123k tokens)" });
-  });
-
-  test("local-command stdout Compacted is skipped because compact_boundary is authoritative", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      {
-        type: "user",
-        message: {
-          role: "user",
-          content: "<local-command-stdout>Compacted</local-command-stdout>",
-        },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    expect(loadMessagesFromRaw(msgs)).toEqual([]);
-  });
-
-  test("non-compact local-command stdout renders as slash-command tool result", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      {
-        type: "user",
-        message: {
-          role: "user",
-          content: "<local-command-stdout>patched 3 files</local-command-stdout>",
-        },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(1);
-    expect(resultMsgs[0].role).toBe("assistant");
-    const content = resultMsgs[0].content as Array<{
-      type: string;
-      toolName?: string;
-      result?: string;
-    }>;
-    expect(content[0]).toMatchObject({
-      type: "tool-call",
-      toolName: "slash-command",
-      result: "patched 3 files",
-    });
-  });
-
-  test("synthetic assistant messages are skipped", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "hello" }]),
-      {
-        type: "assistant",
-        message: {
-          id: "msg-synth",
-          role: "assistant",
-          model: "<synthetic>",
-          content: [{ type: "text", text: "internal notice" }],
-        },
-      } as unknown as SessionStreamServerMessage,
-      assistant("msg-real", [{ type: "text", text: "real reply" }]),
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs).toHaveLength(2);
-    expect(resultMsgs[0]).toEqual({ role: "user", content: "hello" });
-    const content = resultMsgs[1].content as Array<{ type: string; text: string }>;
-    expect(content).toEqual([{ type: "text", text: "real reply" }]);
-  });
-
-  test("thinking blocks are mapped to reasoning parts", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "think about this" }]),
-      assistant("msg-1", [
-        {
-          type: "thinking",
-          thinking: "Let me reason about this carefully.",
-          signature: "sig-abc",
-        },
-        { type: "text", text: "Here is my conclusion." },
-      ]),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    const assistantContent = result_msgs[1].content as Array<{
-      type: string;
-      text?: string;
-    }>;
-    expect(assistantContent.length).toBe(2);
-    expect(assistantContent[0]).toMatchObject({
-      type: "reasoning",
-      text: "Let me reason about this carefully.",
-    });
-    expect(assistantContent[1]).toEqual({ type: "text", text: "Here is my conclusion." });
-  });
-
-  test("result error surfaces as system error divider", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      user([{ type: "text", text: "start" }]),
-      assistant("msg-1", [{ type: "text", text: "working" }]),
-      {
-        type: "result",
-        subtype: "error",
-        result: "Bad request",
-        is_error: true,
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    expect(resultMsgs[resultMsgs.length - 1]).toMatchObject({
-      role: "system",
-      metadata: { custom: { systemMessageType: "error" } },
-    });
-  });
-
-  test("bare hidden skill text without metadata no longer renders as user bubble", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      {
-        type: "user",
-        isSynthetic: true,
-        message: {
-          role: "user",
-          content: [{ type: "text", text: "Base directory for this skill: /tmp/skill" }],
-        },
-      } as unknown as SessionStreamServerMessage,
-    ];
-
-    expect(loadMessagesFromRaw(msgs)).toEqual([]);
-  });
-
-  test("thinking_tokens collapse into reasoning part (last one wins per turn)", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      thinkingTokens(1),
-      thinkingTokens(5),
-      user([{ type: "text", text: "hi" }]),
-      thinkingTokens(10),
-      assistant("msg-1", [
-        { type: "thinking", thinking: "Reasoning...", signature: "sig" },
-        { type: "text", text: "Answer." },
-      ]),
-      thinkingTokens(25),
-      thinkingTokens(39),
-      result("success", 3500),
-    ];
-    const resultMsgs = loadMessagesFromRaw(msgs);
-    const assistantContent = resultMsgs[1].content as Array<{
-      type: string;
-      text?: string;
-      estimatedTokens?: { value: number };
-      durationMs?: { value: number | null };
-    }>;
-    expect(assistantContent.length).toBe(2);
-    expect(assistantContent[0].type).toBe("reasoning");
-    expect(assistantContent[0].estimatedTokens?.value).toBe(39);
-    expect(assistantContent[0].durationMs?.value).toBe(3500);
-  });
-
-  test("reasoning parts in the same turn share the same token ref", () => {
-    const msgs: SessionStreamServerMessage[] = [
-      thinkingTokens(5),
-      assistant("msg-1", [
-        { type: "thinking", thinking: "Step 1", signature: "sig1" },
-        { type: "text", text: "Intermediate." },
-      ]),
-      assistant("msg-2", [
-        { type: "thinking", thinking: "Step 2", signature: "sig2" },
-        { type: "text", text: "Final." },
-      ]),
-      thinkingTokens(42),
-      result("success"),
-    ];
-    const result_msgs = loadMessagesFromRaw(msgs);
-    const content1 = result_msgs[0].content as Array<{ estimatedTokens?: { value: number } }>;
-    // Both reasoning parts should share the same token ref and see the final value
-    expect(content1[0].estimatedTokens?.value).toBe(42);
-    const content2 = result_msgs[1].content as Array<{ estimatedTokens?: { value: number } }>;
-    expect(content2[0].estimatedTokens?.value).toBe(42);
-  });
-});
-
-*/
 
 // ── task system state tests ───────────────────────────────────────────
 
@@ -2546,215 +1856,243 @@ describe("handleAttachment", () => {
   });
 });
 
-// ── deriveThread Unit Tests ─────────────────────────────────────────────
+// ── normalizeChatStream / renderChatStream Unit Tests ───────────────────
+//
+// The render pipeline is split into two pure layers:
+//   normalizeChatStream — state/association (rawMessages → ChatStreamItem[]).
+//   renderChatStream     — render (ChatStreamItem[] → ThreadMessageLike[]).
+// Tests below cover each layer independently and the composition via the
+// shared message builders.
 
-describe("deriveThread", () => {
-  const makeAssistant = (
-    id: string,
-    content: Array<
-      | { type: "text"; text: string }
-      | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
-    >,
-    overrides: Record<string, unknown> = {},
-  ): SessionStreamServerMessage =>
-    ({
-      type: "assistant",
-      message: { id, role: "assistant", content },
-      ...overrides,
-    }) as unknown as SessionStreamServerMessage;
+const makeAssistant = (
+  id: string,
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  >,
+  overrides: Record<string, unknown> = {},
+): SessionStreamServerMessage =>
+  ({
+    type: "assistant",
+    message: { id, role: "assistant", content },
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
 
-  const makeUser = (
-    content: string | Array<Record<string, unknown>>,
-    overrides: Record<string, unknown> = {},
-  ): SessionStreamServerMessage =>
-    ({
-      type: "user",
-      message: {
-        role: "user",
-        content: typeof content === "string" ? [{ type: "text", text: content }] : content,
-      },
-      ...overrides,
-    }) as unknown as SessionStreamServerMessage;
+const makeUser = (
+  content: string | Array<Record<string, unknown>>,
+  overrides: Record<string, unknown> = {},
+): SessionStreamServerMessage =>
+  ({
+    type: "user",
+    message: {
+      role: "user",
+      content: typeof content === "string" ? [{ type: "text", text: content }] : content,
+    },
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
 
-  const makeBatchBoundary = (kind: "history" | "live" = "history"): SessionStreamServerMessage =>
-    ({
-      type: "system",
-      subtype: "batch_boundary",
-      batchKind: kind,
-    }) as unknown as SessionStreamServerMessage;
+const makeBatchBoundary = (kind: "history" | "live" = "history"): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "batch_boundary",
+    batchKind: kind,
+  }) as unknown as SessionStreamServerMessage;
 
-  const makeSystemInit = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
-    ({
-      type: "system",
-      subtype: "init",
-      model: "sonnet",
-      permissionMode: "default",
-      tools: ["bash"],
-      skills: ["base-skill"],
-      mcp_servers: [{ name: "srv" }],
-      ...overrides,
-    }) as unknown as SessionStreamServerMessage;
+const makeSystemInit = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "init",
+    model: "sonnet",
+    permissionMode: "default",
+    tools: ["bash"],
+    skills: ["base-skill"],
+    mcp_servers: [{ name: "srv" }],
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
 
-  const makeApiError = (parentUuid: string, uuid = "err-uuid"): SessionStreamServerMessage =>
-    ({
-      type: "assistant",
-      message: {
-        id: "err-1",
-        role: "assistant",
-        model: "<synthetic>",
-        content: [{ type: "text", text: "500 Request failed" }],
-      },
-      isApiErrorMessage: true,
-      error: "server_error",
-      uuid,
-      parentUuid,
-    }) as unknown as SessionStreamServerMessage;
+const makeApiError = (parentUuid: string, uuid = "err-uuid"): SessionStreamServerMessage =>
+  ({
+    type: "assistant",
+    message: {
+      id: "err-1",
+      role: "assistant",
+      model: "<synthetic>",
+      content: [{ type: "text", text: "500 Request failed" }],
+    },
+    isApiErrorMessage: true,
+    error: "server_error",
+    uuid,
+    parentUuid,
+  }) as unknown as SessionStreamServerMessage;
 
-  // ── Empty / trivial ──────────────────────────────────────────────────
-  test("empty rawMessages produces no rendered messages", () => {
-    expect(deriveThread([])).toHaveLength(0);
+const assistantItems = (items: ChatStreamItem[]) =>
+  items.filter((i): i is Extract<ChatStreamItem, { kind: "assistant" }> => i.kind === "assistant");
+
+// ── normalizeChatStream ───────────────────────────────────────────────
+
+describe("normalizeChatStream", () => {
+  test("empty rawMessages produces no items", () => {
+    expect(normalizeChatStream([])).toHaveLength(0);
   });
 
-  test("single empty assistant produces one bubble when followed by boundary", () => {
-    const result = deriveThread([makeAssistant("a1", []), makeBatchBoundary()]);
-    // 1 assistant bubble + 1 divider = 2
-    expect(result).toHaveLength(2);
-    expect(result[0].role).toBe("assistant");
-    expect(result[1].role).toBe("system");
-  });
-
-  test("single empty assistant produces no bubble without boundary", () => {
-    // No boundary to flush — assistant is still pending at end of loop,
-    // but since flushAssistant resets lastAssistantMsgId after flush,
-    // the final flush is a no-op.
-    const result = deriveThread([makeAssistant("a1", [])]);
-    // The empty assistant creates a bubble because lastAssistantMsgId
-    // is non-null at end and end-flush fires.
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("assistant");
-  });
-
-  // ── AssistantTurn grouping ───────────────────────────────────────────
-  test("groups assistants with same message.id into single bubble", () => {
-    const result = deriveThread([
+  // ── Assistant accumulation (grouped by message.id) ──────────────────
+  test("assistant deltas with the same message.id accumulate into ONE item", () => {
+    const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "text", text: "first" }]),
       makeAssistant("a1", [{ type: "text", text: "second" }]),
     ]);
-    expect(result).toHaveLength(1);
-    const content = result[0].content as Array<{ type: string; text?: string }>;
-    const texts = content.filter((c) => c.type === "text").map((c) => c.text);
+    const asst = assistantItems(items);
+    expect(asst).toHaveLength(1);
+    const texts = asst[0].parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { text: string }).text);
     expect(texts).toEqual(["first", "second"]);
   });
 
-  test("different message.id triggers flush and starts new group", () => {
-    const result = deriveThread([
+  test("a different message.id finalizes the current assistant and opens a new one", () => {
+    const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "text", text: "first" }]),
       makeAssistant("a2", [{ type: "text", text: "second" }]),
     ]);
-    expect(result).toHaveLength(2);
-    expect(result[0].role).toBe("assistant");
-    expect(result[1].role).toBe("assistant");
+    expect(assistantItems(items)).toHaveLength(2);
   });
 
-  // ── Batch boundary divider ───────────────────────────────────────────
-  test("batch boundary flushes assistant and adds divider", () => {
-    const result = deriveThread([
-      makeAssistant("a1", [{ type: "text", text: "hello" }]),
-      makeBatchBoundary("history"),
+  test("an empty assistant delta still produces an assistant item (preserves bubble on finalize)", () => {
+    const items = normalizeChatStream([makeAssistant("a1", [])]);
+    expect(assistantItems(items)).toHaveLength(1);
+  });
+
+  // ── Thinking tokens ─────────────────────────────────────────────────
+  test("thinking_tokens stamps estimatedTokens into the current assistant item", () => {
+    const items = normalizeChatStream([
+      {
+        type: "system",
+        subtype: "thinking_tokens",
+        estimated_tokens: 1500,
+      } as unknown as SessionStreamServerMessage,
+      makeAssistant("a1", [{ type: "text", text: "reply" }]),
     ]);
-    expect(result).toHaveLength(2);
-    expect(result[1].role).toBe("system");
-    expect((result[1].metadata?.custom as Record<string, unknown>)?.systemMessageType).toBe(
-      "batch-boundary",
-    );
+    const asst = assistantItems(items)[0];
+    expect(asst.estimatedTokens).toBe(1500);
   });
 
-  // ── API Error ────────────────────────────────────────────────────────
-  test("attaches error to parent bubble when parent is in same batch", () => {
-    const result = deriveThread([
-      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "parent-uuid" }),
-      makeApiError("parent-uuid", "e1"),
-      makeBatchBoundary(),
-    ]);
-    // Assistant + divider = 2 (error is attached, not standalone)
-    expect(result).toHaveLength(2);
-    const custom = result[0].metadata?.custom as Record<string, unknown>;
-    const errors = custom?.apiErrors as unknown[];
-    expect(errors).toHaveLength(1);
-  });
-
-  test("pending error resolved when parent arrives later", () => {
-    // Error before parent — pending, then resolved at end
-    const result = deriveThread([
-      makeApiError("parent-uuid", "e1"),
-      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "parent-uuid" }),
-    ]);
-    expect(result).toHaveLength(1);
-    const custom = result[0].metadata?.custom as Record<string, unknown>;
-    const errors = custom?.apiErrors as unknown[];
-    expect(errors).toHaveLength(1);
-  });
-
-  test("unresolved error remains pending until end drain", () => {
-    // Error with no parent — not attached, drained at end
-    const result = deriveThread([makeApiError("orphan-uuid", "e1"), makeBatchBoundary()]);
-    // Boundary flushes pending errors via drainPending(), but orphan
-    // can't resolve.  system divider only.
-    const assistantMsgs = result.filter((m) => m.role === "assistant");
-    // The error (type "assistant") goes through ApiError classification
-    // -> pending, then drainPending can't resolve -> stays pending.
-    // No assistant bubble is produced.
-    expect(assistantMsgs).toHaveLength(0);
-  });
-
-  // ── Skill body (hidden user messages) ────────────────────────────────
-  test("hidden user message (isMeta) does not produce bubble", () => {
-    const result = deriveThread([makeUser("hidden content", { isMeta: true })]);
-    // isMeta/isSynthetic → SkillBody → no bubble
-    expect(result).toHaveLength(0);
-  });
-
-  test("hidden skill content via prefix detection does not produce bubble", () => {
-    const result = deriveThread([
-      makeUser([{ type: "text", text: "Base directory for this skill: /tmp/skill" }]),
-    ]);
-    expect(result).toHaveLength(0);
-  });
-
-  // ── UserPrompt ───────────────────────────────────────────────────────
-  test("visible user text produces UserPrompt bubble", () => {
-    const result = deriveThread([makeUser("hello world")]);
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("user");
-  });
-
-  test("hybrid user: tool_result + text produces tool match and user bubble", () => {
-    const result = deriveThread([
+  // ── Tool result → tool-call association ─────────────────────────────
+  test("tool_result matches its tool-call part by tool_use_id (in-buffer)", () => {
+    const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
-      makeUser([
-        { type: "tool_result", tool_use_id: "tu-1", content: "output" },
-        { type: "text", text: "also text" },
-      ]),
+      makeUser([{ type: "tool_result", tool_use_id: "tu-1", content: "output" }]),
     ]);
-    // Assistant with matched result + user text bubble
-    expect(result.length).toBeGreaterThanOrEqual(1);
-    const hasUser = result.some((m) => m.role === "user");
-    expect(hasUser).toBe(true);
+    const toolCall = assistantItems(items)[0].parts.find((p) => p.type === "tool-call") as Extract<
+      NormalizedPart,
+      { type: "tool-call" }
+    >;
+    expect(toolCall.result).toBe("output");
+    expect(toolCall.isError).toBeUndefined();
   });
 
-  // ── HiddenDropped (isMeta/isSynthetic assistant) ─────────────────────
-  test("assistant with isMeta=true does not produce standalone bubble", () => {
-    const result = deriveThread([
+  test("tool_result matches an already-emitted assistant's tool-call", () => {
+    // A second assistant delta (new message.id) flushes the first; the
+    // tool_result that follows must still reach the flushed tool-call.
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
+      makeAssistant("a2", [{ type: "text", text: "next response" }]),
+      makeUser([{ type: "tool_result", tool_use_id: "tu-1", content: "delayed output" }]),
+    ]);
+    const first = assistantItems(items)[0];
+    const toolCall = first.parts.find((p) => p.type === "tool-call") as Extract<
+      NormalizedPart,
+      { type: "tool-call" }
+    >;
+    expect(toolCall.result).toBe("delayed output");
+  });
+
+  // ── Skill body folding (live isSynthetic + JSONL isMeta paths) ──────
+  test("synthetic skill body (isSynthetic + sourceToolUseID) folds into the tool-call", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "skill", input: {} }]),
+      makeUser([{ type: "text", text: "Base directory for this skill: /tmp/skill" }], {
+        isSynthetic: true,
+        sourceToolUseID: "tu-1",
+      }),
+    ]);
+    const toolCall = assistantItems(items)[0].parts.find((p) => p.type === "tool-call") as Extract<
+      NormalizedPart,
+      { type: "tool-call" }
+    >;
+    expect(toolCall.skillContent).toContain("/tmp/skill");
+  });
+
+  test("meta skill body (isMeta + sourceToolUseID) folds into the tool-call", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "skill", input: {} }]),
+      makeUser([{ type: "text", text: "Base directory for this skill: /tmp/skill2" }], {
+        isMeta: true,
+        sourceToolUseID: "tu-1",
+      }),
+    ]);
+    const toolCall = assistantItems(items)[0].parts.find((p) => p.type === "tool-call") as Extract<
+      NormalizedPart,
+      { type: "tool-call" }
+    >;
+    expect(toolCall.skillContent).toContain("/tmp/skill2");
+  });
+
+  // ── api_error → parent ──────────────────────────────────────────────
+  test("api_error attaches to its parent assistant item", () => {
+    const items = normalizeChatStream([
+      makeApiError("parent-uuid", "e1"),
+      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "parent-uuid" }),
+    ]);
+    expect(assistantItems(items)).toHaveLength(1);
+    expect(assistantItems(items)[0].apiErrors).toHaveLength(1);
+  });
+
+  test("api_error whose parent never arrives stays unattached (no item produced)", () => {
+    const items = normalizeChatStream([makeApiError("orphan-uuid", "e1")]);
+    // No assistant item, no fallback — orphan errors are silently held.
+    expect(items).toHaveLength(0);
+  });
+
+  // ── result ──────────────────────────────────────────────────────────
+  test("a non-error result finalizes the assistant but emits no item", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "text", text: "done" }]),
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s1",
+        num_turns: 2,
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("assistant");
+  });
+
+  test("an error result emits a result-error item", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "text", text: "partial" }]),
+      {
+        type: "result",
+        subtype: "error",
+        is_error: true,
+        result: "something went wrong",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(2);
+    expect(items[1].kind).toBe("result-error");
+    expect((items[1] as { text: string }).text).toBe("something went wrong");
+  });
+
+  // ── HiddenDropped ───────────────────────────────────────────────────
+  test("hidden/internal messages with no association key are dropped", () => {
+    const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "text", text: "hidden" }], { isMeta: true }),
-      makeBatchBoundary(),
     ]);
-    // Only divider, no assistant bubble
-    const assistantMsgs = result.filter((m) => m.role === "assistant");
-    expect(assistantMsgs).toHaveLength(0);
+    expect(assistantItems(items)).toHaveLength(0);
   });
 
-  test("synthetic assistant (model=<synthetic>) is skipped", () => {
-    const result = deriveThread([
+  test("synthetic assistant (model=<synthetic>) produces no item", () => {
+    const items = normalizeChatStream([
       {
         type: "assistant",
         message: {
@@ -2765,54 +2103,11 @@ describe("deriveThread", () => {
         },
       } as unknown as SessionStreamServerMessage,
     ]);
-    // isSyntheticAssistantMessage returns true → skip
-    expect(result).toHaveLength(0);
+    expect(items).toHaveLength(0);
   });
 
-  // ── Compact boundary ─────────────────────────────────────────────────
-  test("compact_boundary flushes assistant and inserts compact divider", () => {
-    const result = deriveThread([
-      makeAssistant("a1", [{ type: "text", text: "pre-compact" }]),
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        compactMetadata: { trigger: "manual", preTokens: 50000 },
-      } as unknown as SessionStreamServerMessage,
-    ]);
-    expect(result).toHaveLength(2);
-    expect(result[1].role).toBe("system");
-    const custom = result[1].metadata?.custom as Record<string, unknown>;
-    expect(custom?.systemMessageType).toBe("compact-boundary");
-  });
-
-  // ── System init ──────────────────────────────────────────────────────
-  test("system_init produces summary bubble", () => {
-    const result = deriveThread([makeSystemInit()]);
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("system");
-    const custom = result[0].metadata?.custom as Record<string, unknown>;
-    expect(custom?.systemMessageType).toBe("system-init");
-  });
-
-  // ── Thinking tokens (no bubble) ──────────────────────────────────────
-  test("thinking_tokens updates estimated tokens but produces no bubble", () => {
-    const result = deriveThread([
-      {
-        type: "system",
-        subtype: "thinking_tokens",
-        estimated_tokens: 1500,
-      } as unknown as SessionStreamServerMessage,
-      makeAssistant("a1", [{ type: "text", text: "reply" }]),
-    ]);
-    // 1 assistant bubble, thinking_tokens is context-only
-    expect(result).toHaveLength(1);
-    const custom = result[0].metadata?.custom as Record<string, unknown>;
-    expect(custom?.estimatedTokens).toBe(1500);
-  });
-
-  // ── TaskState (no bubble) ────────────────────────────────────────────
-  test("task_started produces no bubble", () => {
-    const result = deriveThread([
+  test("task_started produces no item (scalar-only)", () => {
+    const items = normalizeChatStream([
       {
         type: "system",
         subtype: "task_started",
@@ -2820,102 +2115,231 @@ describe("deriveThread", () => {
         prompt: "do stuff",
       } as unknown as SessionStreamServerMessage,
     ]);
-    expect(result).toHaveLength(0);
+    expect(items).toHaveLength(0);
   });
 
-  // ── Result ───────────────────────────────────────────────────────────
-  test("success result flushes and produces no extra bubble", () => {
-    const result = deriveThread([
-      makeAssistant("a1", [{ type: "text", text: "done" }]),
+  // ── user-prompt ─────────────────────────────────────────────────────
+  test("user text produces a user-prompt item", () => {
+    const items = normalizeChatStream([makeUser("hello world")]);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("user-prompt");
+    expect((items[0] as { text: string }).text).toBe("hello world");
+  });
+
+  test("user string-content produces a user-prompt item", () => {
+    const items = normalizeChatStream([
       {
-        type: "result",
-        subtype: "success",
-        session_id: "s1",
-        num_turns: 2,
+        type: "user",
+        message: { role: "user", content: "a plain string" },
       } as unknown as SessionStreamServerMessage,
     ]);
-    // Assistant flushed + no error bubble from result
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("assistant");
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("user-prompt");
   });
 
-  test("error result produces error system bubble", () => {
-    const result = deriveThread([
-      makeAssistant("a1", [{ type: "text", text: "partial" }]),
+  test("hybrid user: tool_result + text produces both a tool match and a user-prompt item", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
+      makeUser([
+        { type: "tool_result", tool_use_id: "tu-1", content: "output" },
+        { type: "text", text: "also text" },
+      ]),
+    ]);
+    const hasUserPrompt = items.some((i) => i.kind === "user-prompt");
+    expect(hasUserPrompt).toBe(true);
+    const toolCall = assistantItems(items)[0].parts.find((p) => p.type === "tool-call") as Extract<
+      NormalizedPart,
+      { type: "tool-call" }
+    >;
+    expect(toolCall.result).toBe("output");
+  });
+
+  // ── system.init / compact ───────────────────────────────────────────
+  test("system.init produces a session-init summary item", () => {
+    const items = normalizeChatStream([makeSystemInit()]);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("session-init");
+  });
+
+  test("compact_boundary produces a compact-boundary item", () => {
+    const items = normalizeChatStream([
       {
-        type: "result",
-        subtype: "error",
-        is_error: true,
-        result: "something went wrong",
+        type: "system",
+        subtype: "compact_boundary",
+        compactMetadata: { trigger: "manual", preTokens: 50000 },
       } as unknown as SessionStreamServerMessage,
     ]);
-    // Assistant + error system bubble
-    expect(result).toHaveLength(2);
-    expect(result[1].role).toBe("system");
-    const custom = result[1].metadata?.custom as Record<string, unknown>;
-    expect(custom?.systemMessageType).toBe("error");
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("compact-boundary");
+    expect((items[0] as { trigger: string }).trigger).toBe("manual");
+    expect((items[0] as { preTokens: number }).preTokens).toBe(50000);
   });
 
-  // ── Attachment ──────────────────────────────────────────────────────
-  test("attachment that produces a bubble (e.g. file) renders", () => {
-    const result = deriveThread([
+  // ── batch-boundary passthrough ──────────────────────────────────────
+  test("batch_boundary marker passes through as a batch-boundary item", () => {
+    const items = normalizeChatStream([makeBatchBoundary("live")]);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("batch-boundary");
+    expect((items[0] as { batchKind: string }).batchKind).toBe("live");
+  });
+
+  // ── attachment ──────────────────────────────────────────────────────
+  test("attachment that produces a bubble becomes an attachment item", () => {
+    const items = normalizeChatStream([
       {
         type: "attachment",
         attachment: { type: "file", filePath: "/src/index.ts" },
         userType: "external",
       } as unknown as SessionStreamServerMessage,
     ]);
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("system");
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("attachment");
   });
 
-  test("state-only attachment (e.g. skill_listing) produces no bubble", () => {
-    const result = deriveThread([
+  test("state-only attachment (e.g. skill_listing) produces no item", () => {
+    const items = normalizeChatStream([
       {
         type: "attachment",
         attachment: { type: "skill_listing", content: "- skill: desc" },
         userType: "external",
       } as unknown as SessionStreamServerMessage,
     ]);
-    // skill_listing only updates scalar state, no bubble
-    expect(result).toHaveLength(0);
+    expect(items).toHaveLength(0);
   });
 
-  // ── Fallback (unknown type via messageToThreadLike) ──────────────────
-  test("unknown system message falls back to messageToThreadLike", () => {
-    const result = deriveThread([
+  // ── fallback ────────────────────────────────────────────────────────
+  test("unknown system message falls back to a fallback item", () => {
+    const items = normalizeChatStream([
       {
         type: "system",
         subtype: "unknown_subtype",
         message: { role: "system", content: [{ type: "text", text: "fallback" }] },
       } as unknown as SessionStreamServerMessage,
     ]);
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("system");
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("fallback");
   });
 
-  // ── markOrphanedToolCalls interaction ────────────────────────────────
-  test("derived output can be fed to markOrphanedToolCalls", () => {
-    const result = deriveThread([
+  // ── sourceUuids tracking ────────────────────────────────────────────
+  test("tracks source UUIDs on assistant items", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "uuid-a1" }),
+    ]);
+    expect(assistantItems(items)[0].sourceUuids).toContain("uuid-a1");
+  });
+});
+
+// ── renderChatStream ──────────────────────────────────────────────────
+
+describe("renderChatStream", () => {
+  test("assistant item renders an assistant bubble", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([makeAssistant("a1", [{ type: "text", text: "hi" }])]),
+    );
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].role).toBe("assistant");
+  });
+
+  test("user-prompt item renders a user bubble", () => {
+    const rendered = renderChatStream(normalizeChatStream([makeUser("hello")]));
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].role).toBe("user");
+  });
+
+  test("compact-boundary item renders a divider with the compact text", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        makeAssistant("a1", [{ type: "text", text: "pre" }]),
+        {
+          type: "system",
+          subtype: "compact_boundary",
+          compactMetadata: { trigger: "manual", preTokens: 50000 },
+        } as unknown as SessionStreamServerMessage,
+      ]),
+    );
+    const divider = rendered[rendered.length - 1];
+    expect(divider.role).toBe("system");
+    const custom = divider.metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("compact-boundary");
+    expect(custom?.compactText).toContain("手动");
+  });
+
+  test("session-init item renders a summary bubble", () => {
+    const rendered = renderChatStream(normalizeChatStream([makeSystemInit()]));
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].role).toBe("system");
+    const custom = rendered[0].metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("system-init");
+  });
+
+  test("estimatedTokens carried onto the rendered assistant bubble", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        {
+          type: "system",
+          subtype: "thinking_tokens",
+          estimated_tokens: 1500,
+        } as unknown as SessionStreamServerMessage,
+        makeAssistant("a1", [{ type: "text", text: "reply" }]),
+      ]),
+    );
+    const custom = rendered[0].metadata?.custom as Record<string, unknown>;
+    expect(custom?.estimatedTokens).toBe(1500);
+  });
+
+  test("batch-boundary is drawn when a visible neighbor precedes it", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        makeAssistant("a1", [{ type: "text", text: "hello" }]),
+        makeBatchBoundary("history"),
+      ]),
+    );
+    // assistant bubble + boundary divider
+    expect(rendered).toHaveLength(2);
+    expect((rendered[1].metadata?.custom as Record<string, unknown>)?.systemMessageType).toBe(
+      "batch-boundary",
+    );
+  });
+
+  test("batch-boundary with no visible neighbor is dropped", () => {
+    const items = normalizeChatStream([makeBatchBoundary("history")]);
+    const rendered = renderChatStream(items);
+    // A lone boundary with nothing on either side renders nothing.
+    expect(rendered).toHaveLength(0);
+  });
+
+  test("batch-boundary is drawn when a visible neighbor follows it", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        makeBatchBoundary("history"),
+        makeAssistant("a1", [{ type: "text", text: "after boundary" }]),
+      ]),
+    );
+    // boundary divider + assistant bubble
+    expect(rendered).toHaveLength(2);
+    expect(rendered[0].role).toBe("system");
+  });
+
+  test("resume marks orphaned tool-calls on the rendered output", () => {
+    const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
     ]);
-    const marked = markOrphanedToolCalls(result);
-    // No tool result → tool call is orphaned
-    expect(marked.changed).toBe(true);
-    const callPart = (marked.messages[0].content as Array<Record<string, unknown>>).find(
+    const rendered = renderChatStream(items, { isResume: true });
+    const callPart = (rendered[0].content as Array<Record<string, unknown>>).find(
       (p) => p.type === "tool-call",
     );
     expect(callPart?.isOrphaned).toBe(true);
   });
 
-  // ── sourceUuids tracking ─────────────────────────────────────────────
-  test("tracks source UUIDs in bubble metadata", () => {
-    const result = deriveThread([
-      makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "uuid-a1" }),
+  test("non-resume does NOT mark orphaned tool-calls", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
     ]);
-    const custom = result[0].metadata?.custom as Record<string, unknown>;
-    const uuids = custom?.sourceUuids as string[];
-    expect(uuids).toContain("uuid-a1");
+    const rendered = renderChatStream(items, { isResume: false });
+    const callPart = (rendered[0].content as Array<Record<string, unknown>>).find(
+      (p) => p.type === "tool-call",
+    );
+    expect(callPart?.isOrphaned).toBeUndefined();
   });
 });
 

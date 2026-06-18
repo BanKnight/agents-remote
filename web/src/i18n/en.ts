@@ -272,8 +272,6 @@ export const en = {
   "claude2.emptyChat": "Ask Claude a question to get started.",
   "claude2.switchingModel": "Switching to {{model}}...",
   "claude2.modelSwitchFailed": "Model switch failed",
-  "claude2.loadOlder": "Load older messages",
-  "claude2.loadingOlder": "Loading...",
   "claude2.compacting": "Compacting...",
   "claude2.compactError": "Compact failed",
   "claude2.compactInterrupted": "Compaction stopped",

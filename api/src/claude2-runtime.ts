@@ -29,12 +29,7 @@ export class Claude2Runtime implements RuntimeResources {
   }
 
   setOnSystemInit(
-    cb: (
-      sessionId: string,
-      runtimeKey: string,
-      claudeSessionId: string,
-      model: string,
-    ) => void,
+    cb: (sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void,
   ) {
     this.onSystemInit = cb;
   }

@@ -184,9 +184,10 @@ describe("useClaude2Session websocket lifecycle", () => {
       });
 
       expect(result.current.loading).toBe(false);
-      // deriveThread groups by message.id: the first-conn a1 and replay a1
-      // share the same id so they merge into one bubble (no duplicate).
-      // Result: merged assistant a1 + assistant a2 + history divider = 3.
+      // normalizeChatStream groups by message.id: the first-conn a1 and
+      // replay a1 share the same id so they merge into one bubble (no
+      // duplicate). Result: merged assistant a1 + assistant a2 + history
+      // divider = 3.
       expect(result.current.storeAdapter.messages).toHaveLength(3);
     } finally {
       vi.useRealTimers();
@@ -454,46 +455,6 @@ describe("useClaude2Session websocket lifecycle", () => {
     errorSpy.mockRestore();
   });
 
-  // loadOlder is stubbed per state/render separation refactor. It needs a new
-  // implementation using the rawMessages + deriveThread architecture. When
-  // re-enabled, restore the full fetch → prepend → re-derive pipeline.
-  test.skip("loadOlder with a cursor fetches older history and updates pagination", async () => {
-    const fetchSpy = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            sessionId: "sess",
-            messages: [
-              {
-                type: "user",
-                message: { role: "user", content: [{ type: "text", text: "older" }] },
-              },
-            ],
-            pagination: { nextCursor: "cursor-2", hasOlder: true },
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
-    );
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
-
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
-    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
-
-    await act(async () => {
-      await result.current.loadOlder("cursor-1");
-    });
-
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "/api/projects/proj/agent-sessions/sess/messages?cursor=cursor-1",
-      undefined,
-    );
-    expect(result.current.hasOlder).toBe(true);
-    expect(result.current.storeAdapter.messages.some((msg) => msg.role === "user")).toBe(true);
-  });
-
   test("EnterPlanMode tool_use sets permissionMode to plan", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
@@ -639,42 +600,6 @@ describe("useClaude2Session queue-operation", () => {
     // Only the assistant message should be in the list
     expect(result.current.storeAdapter.messages.some((m) => m.role === "assistant")).toBe(true);
     expect(result.current.inputQueue).toEqual([{ content: "/model", source: "user" }]);
-  });
-
-  // loadOlder is stubbed per state/render separation refactor; see note above.
-  test.skip("loadOlder filters queue-operation from messages, updates state", async () => {
-    const fetchSpy = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            sessionId: "sess",
-            messages: [
-              {
-                type: "user",
-                message: { role: "user", content: [{ type: "text", text: "hello" }] },
-              },
-              { type: "queue-operation", operation: "enqueue", content: "/resume" },
-            ],
-            pagination: { nextCursor: null, hasOlder: false },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    );
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
-
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
-    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
-
-    await act(async () => {
-      await result.current.loadOlder("cursor-1");
-    });
-
-    // Only user message as bubble
-    expect(result.current.storeAdapter.messages.some((m) => m.role === "user")).toBe(true);
-    // queue-operation was NOT rendered
-    expect(result.current.storeAdapter.messages.length).toBe(1);
-    // but it WAS applied to state
-    expect(result.current.inputQueue).toEqual([{ content: "/resume", source: "user" }]);
   });
 
   test("session reset clears inputQueue", async () => {
