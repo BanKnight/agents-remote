@@ -53,8 +53,9 @@ function makeToolRenderer(config: {
   label?: (args: Record<string, unknown>, toolName: string) => string;
   badge?: (args: Record<string, unknown>, toolName: string) => string | null;
   body?: (args: Record<string, unknown>) => ReactNode | null;
+  footer?: (result: string, args: Record<string, unknown>, isError: boolean) => ReactNode;
 }): ToolCallMessagePartComponent {
-  const { icon, label, badge, body } = config;
+  const { icon, label, badge, body, footer } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
     const isRunning = status.type === "running";
     const isError = (rest as Record<string, unknown>).isError === true;
@@ -147,6 +148,10 @@ function makeToolRenderer(config: {
             {isOrphaned ? (
               <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
                 <span className="text-[0.6rem] text-slate-500">进程已退出，工具未返回结果</span>
+              </div>
+            ) : footer ? (
+              <div className={hasPrimary || skillContent ? sectionDivider : ""}>
+                {footer(resultStr, args, isError)}
               </div>
             ) : hasResult ? (
               <div
@@ -249,15 +254,30 @@ function editDiffBody(args: Record<string, unknown>): ReactNode {
   );
 }
 
-// Body for Agent tool: prompt is the detailed instruction sent to the sub-agent.
-// subagent_type + description already live in the header, so the body shows only prompt.
-function agentBody(args: Record<string, unknown>): ReactNode {
+// Footer for Agent tool: renders prompt collapsed + sub-agent response nested.
+function agentFooter(result: string, args: Record<string, unknown>, isError: boolean): ReactNode {
   const prompt = typeof args.prompt === "string" ? args.prompt : "";
-  if (!prompt) return null;
   return (
-    <pre className="text-[0.65rem] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
-      {prompt}
-    </pre>
+    <div className="space-y-2">
+      {prompt ? (
+        <details className="text-xs text-slate-400">
+          <summary className="cursor-pointer">Prompt</summary>
+          <pre className="mt-1 text-[0.6rem] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+            {prompt}
+          </pre>
+        </details>
+      ) : null}
+      <div className="rounded bg-slate-800/50 p-2">
+        <div className="mb-1 text-[0.55rem] font-semibold uppercase tracking-wide text-cyan-400/70">
+          子 Agent 输出
+        </div>
+        <pre
+          className={`whitespace-pre-wrap break-all text-[0.65rem] leading-relaxed ${isError ? "text-red-300" : "text-slate-200"}`}
+        >
+          {result}
+        </pre>
+      </div>
+    </div>
   );
 }
 
@@ -329,7 +349,7 @@ export const AgentToolUI = makeToolRenderer({
     const desc = typeof args.description === "string" ? args.description.trim() : "";
     return desc ? desc.slice(0, 80) : "Agent";
   },
-  body: agentBody,
+  footer: agentFooter,
 });
 
 export const WebSearchToolUI = makeToolRenderer({
