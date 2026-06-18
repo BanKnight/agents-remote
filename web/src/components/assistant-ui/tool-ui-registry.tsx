@@ -21,7 +21,7 @@ const Icons = {
   webFetch:
     '<circle cx="12" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 13l3 4 3-4M12 8v9M4 20h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   mcp: '<circle cx="5" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="19" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  task: '<circle cx="12" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 21c0-4 3.1-7 7-7s7 3 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  task: '<rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8h4M8 12h6M8 16h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   code: '<path d="M8 3L3 9l5 6M16 3l5 6-5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   globe:
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20" stroke="currentColor" stroke-width="1.5"/>',
@@ -328,16 +328,66 @@ export const SkillToolUI = makeToolRenderer({
   },
 });
 
+function TaskBody({ args }: { args: Record<string, unknown> }) {
+  const desc =
+    typeof args.description === "string"
+      ? args.description
+      : typeof args.prompt === "string"
+        ? args.prompt
+        : typeof args.subject === "string"
+          ? args.subject
+          : "";
+  const subagent = typeof args.subagent_type === "string" ? args.subagent_type : undefined;
+  const taskId = typeof args.task_id === "string" ? args.task_id : undefined;
+  const status =
+    typeof args.status === "string"
+      ? args.status
+      : typeof args.isCompleted === "boolean"
+        ? args.isCompleted
+          ? "completed"
+          : "running"
+        : undefined;
+  return (
+    <div className="space-y-1.5">
+      {subagent || taskId || status ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          {subagent ? (
+            <span className="shrink-0 rounded bg-amber-600/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-300">
+              {subagent}
+            </span>
+          ) : null}
+          {taskId ? <span className="text-[0.65rem] text-slate-500">#{taskId}</span> : null}
+          {status ? (
+            <span
+              className={`text-[0.65rem] ${status === "completed" ? "text-emerald-400" : status === "error" ? "text-red-400" : "text-amber-400"}`}
+            >
+              {status}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {desc ? (
+        <div className="text-xs text-slate-300 leading-relaxed break-words">{desc}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export const TaskToolUI = makeToolRenderer({
   icon: "task",
-  label: (args) => {
-    const desc =
-      typeof args.description === "string"
-        ? args.description
-        : typeof args.prompt === "string"
-          ? args.prompt
-          : "";
-    return desc ? desc.slice(0, 80) : "Task";
+  label: (args, toolName) => toolName,
+  badge: (args) => {
+    const subagent = typeof args.subagent_type === "string" ? args.subagent_type : undefined;
+    return subagent ?? null;
+  },
+  body: (args) => {
+    const hasContent =
+      typeof args.description === "string" ||
+      typeof args.prompt === "string" ||
+      typeof args.subject === "string" ||
+      typeof args.subagent_type === "string" ||
+      typeof args.task_id === "string";
+    return hasContent ? <TaskBody args={args} /> : null;
   },
 });
 
@@ -784,6 +834,8 @@ toolRegistry.set("Edit", EditToolUI);
 toolRegistry.set("MultiEdit", EditToolUI);
 toolRegistry.set("Skill", SkillToolUI);
 toolRegistry.set("Task", TaskToolUI);
+toolRegistry.set("TaskCreate", TaskToolUI);
+toolRegistry.set("TaskUpdate", TaskToolUI);
 toolRegistry.set("Agent", AgentToolUI);
 toolRegistry.set("WebSearch", WebSearchToolUI);
 toolRegistry.set("WebFetch", WebFetchToolUI);
