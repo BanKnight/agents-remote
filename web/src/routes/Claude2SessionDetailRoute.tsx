@@ -535,38 +535,36 @@ function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   return (
-    <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group relative">
+    <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative">
+      <div className="flex items-end gap-0.5 self-end">
+        <RawDebugTooltip custom={custom} />
+      </div>
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
         <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
-      <div className="flex items-end gap-0.5 self-end">
-        <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
-          <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
-            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect
-                x="5"
-                y="2"
-                width="9"
-                height="12"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M2 5v9a1 1 0 001 1h7"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </ActionBarPrimitive.Copy>
-        </ActionBarPrimitive.Root>
-      </div>
-      <div className="absolute left-1 bottom-0">
-        <RawDebugTooltip custom={custom} />
-      </div>
+      <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+          <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect
+              x="5"
+              y="2"
+              width="9"
+              height="12"
+              rx="1"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            />
+            <path
+              d="M2 5v9a1 1 0 001 1h7"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </ActionBarPrimitive.Copy>
+      </ActionBarPrimitive.Root>
     </MessagePrimitive.Root>
   );
 }
@@ -675,33 +673,31 @@ function AssistantChatBubble() {
         <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
-        {!isEmpty && !isStreaming ? (
-          <ActionBarPrimitive.Root className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity px-1">
-            <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
-              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <rect
-                  x="5"
-                  y="2"
-                  width="9"
-                  height="12"
-                  rx="1"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                />
-                <path
-                  d="M2 5v9a1 1 0 001 1h7"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </ActionBarPrimitive.Copy>
-          </ActionBarPrimitive.Root>
-        ) : null}
-      </div>
-      <div className="absolute right-1 bottom-0">
         <RawDebugTooltip custom={custom} />
       </div>
+      <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {!isEmpty && !isStreaming ? (
+          <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect
+                x="5"
+                y="2"
+                width="9"
+                height="12"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M2 5v9a1 1 0 001 1h7"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </ActionBarPrimitive.Copy>
+        ) : null}
+      </ActionBarPrimitive.Root>
     </MessagePrimitive.Root>
   );
 }
@@ -896,19 +892,12 @@ function extractRetryInfo(err: ApiErrorAttachment): string | null {
 function RawDebugTooltip({ custom }: { custom?: Record<string, unknown> }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
-  // Prefer _rawMessages array (new adapter: all messages carry sourceUuids → _rawMessages).
-  // Fall back to single _raw for legacy call sites or old messages.
-  // Last resort: show the custom metadata itself — always has toolName etc.
+  // _rawMessages is populated from normalizeChatStream's _rawSnapshots.
+  // _raw is for legacy call sites (attachments, enrichBubbleMetadata).
   const rawMessages = custom?._rawMessages as unknown[] | undefined;
   const rawSingle = custom?._raw as unknown;
   const displayData =
-    rawMessages && rawMessages.length > 0
-      ? rawMessages
-      : rawSingle
-        ? rawSingle
-        : custom && Object.keys(custom).length > 0
-          ? custom
-          : null;
+    rawMessages && rawMessages.length > 0 ? rawMessages : rawSingle ? rawSingle : null;
   if (!displayData) return null;
   const rawJson = JSON.stringify(displayData, null, 2);
   const displayText = rawJson.length > 2000 ? rawJson.slice(0, 2000) + "\n… (truncated)" : rawJson;
@@ -1005,14 +994,14 @@ function SystemChatBubble() {
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     return (
       <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
-        <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
-          <div className="relative rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
+        <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3 relative">
+          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
             <div className="px-3 py-2">
               <ToolUIAny {...toolProps} />
             </div>
-            <div className="absolute top-1 right-1">
-              <RawDebugTooltip custom={custom} />
-            </div>
+          </div>
+          <div className="absolute top-0 right-0 pt-1 pr-1">
+            <RawDebugTooltip custom={custom} />
           </div>
         </div>
       </MessagePrimitive.Root>

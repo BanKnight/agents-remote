@@ -876,12 +876,24 @@ function makeApiErrorAttachment(
 export function enrichBubbleMetadata(bubble: ThreadMessageLike): ThreadMessageLike {
   const custom = (bubble.metadata?.custom ?? {}) as Record<string, unknown>;
   const raw = custom._raw as SessionStreamServerMessage | undefined;
-  const uuid = raw ? getMsgUuid(raw) : null;
-  const sourceUuids: string[] = uuid ? [uuid] : [];
-  const _rawMessages: SessionStreamServerMessage[] = raw ? [raw] : [];
+  if (!raw) {
+    if (!bubble.metadata?.custom) {
+      return { ...bubble, metadata: { custom: { sourceUuids: [], _rawMessages: [] } } };
+    }
+    return bubble;
+  }
+  const uuid = getMsgUuid(raw);
+  const existingSources = (custom.sourceUuids as string[]) ?? [];
+  const existingRawMessages = (custom._rawMessages as SessionStreamServerMessage[]) ?? [];
   return {
     ...bubble,
-    metadata: { custom: { ...custom, sourceUuids, _rawMessages } },
+    metadata: {
+      custom: {
+        ...custom,
+        sourceUuids: [...existingSources, ...(uuid ? [uuid] : [])],
+        _rawMessages: [...existingRawMessages, raw],
+      },
+    },
   };
 }
 
@@ -1037,13 +1049,20 @@ export type ChatStreamItem =
       estimatedTokens?: number;
       apiErrors: SessionStreamServerMessage[];
       sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
     }
-  | { kind: "user-prompt"; text: string; sourceUuids: string[] }
+  | {
+      kind: "user-prompt";
+      text: string;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
   | {
       kind: "compact-boundary";
       trigger: "manual" | "auto";
       preTokens?: number;
       sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
     }
   | {
       kind: "session-init";
@@ -1053,10 +1072,21 @@ export type ChatStreamItem =
       skillsN: number;
       mcpN: number;
       sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
     }
-  | { kind: "result-error"; text: string; sourceUuids: string[] }
+  | {
+      kind: "result-error";
+      text: string;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
   | { kind: "batch-boundary"; batchKind: "history" | "live" }
-  | { kind: "attachment"; bubble: ThreadMessageLike; sourceUuids: string[] }
+  | {
+      kind: "attachment";
+      bubble: ThreadMessageLike;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
   | { kind: "fallback"; ui: ThreadMessageLike };
 
 /**
@@ -1075,6 +1105,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   let currentAssistantParts: NormalizedPart[] = [];
   let currentEstimatedTokens: number | null = null;
   let currentSourceUuids: string[] = [];
+  let currentRawSnapshots: SessionStreamServerMessage[] = [];
   // Most-recent tool_use_id seen via tool_result — fallback anchor for
   // synthetic / meta skill bodies that carry no sourceToolUseID.
   let lastToolUseId: string | null = null;
@@ -1201,6 +1232,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         const body = extractSyntheticBody(syntheticMsg);
         const uuid = getMsgUuid(syntheticMsg);
         if (uuid && !item.sourceUuids.includes(uuid)) item.sourceUuids.push(uuid);
+        item._rawSnapshots.push(syntheticMsg);
         // Stamp the body onto the last tool-call part as skill content (best
         // effort) so the renderer can surface it; the parentUuid association
         // itself is already recorded via sourceUuids.
@@ -1230,6 +1262,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       parts: currentAssistantParts,
       apiErrors: [],
       sourceUuids: [...currentSourceUuids],
+      _rawSnapshots: [...currentRawSnapshots],
     };
     if (currentEstimatedTokens != null) item.estimatedTokens = currentEstimatedTokens;
     items.push(item);
@@ -1239,6 +1272,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     currentAssistantParts = [];
     currentEstimatedTokens = null;
     currentSourceUuids = [];
+    currentRawSnapshots = [];
   };
 
   for (const msg of rawMessages) {
@@ -1278,6 +1312,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
       const uuid = getMsgUuid(msg);
       if (uuid && !currentSourceUuids.includes(uuid)) currentSourceUuids.push(uuid);
+      currentRawSnapshots.push(msg);
       const content =
         (msg as unknown as { message: { content: Array<Record<string, unknown>> } }).message
           ?.content ?? [];
@@ -1361,6 +1396,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           kind: "user-prompt",
           text: texts.join("\n"),
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
         });
         continue;
       }
@@ -1379,6 +1415,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           kind: "user-prompt",
           text: rawContent,
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
         });
         continue;
       }
@@ -1409,6 +1446,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           skillsN: init.skills?.length ?? 0,
           mcpN: init.mcp_servers?.length ?? 0,
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
         });
         continue;
       }
@@ -1437,6 +1475,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           trigger: cmeta?.trigger === "manual" ? "manual" : "auto",
           ...(cmeta?.preTokens != null ? { preTokens: cmeta.preTokens } : {}),
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
         });
         continue;
       }
@@ -1474,6 +1513,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           kind: "result-error",
           text: resultMsg.result,
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
         });
       } else {
         // Non-error result only finalizes the current assistant (no item).
@@ -1491,6 +1531,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           kind: "attachment",
           bubble: enrichBubbleMetadata(result.bubble),
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
         });
       }
       continue;
@@ -1515,24 +1556,15 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
  */
 export function renderChatStream(
   items: ChatStreamItem[],
-  opts?: { isResume?: boolean; rawByUuid?: Map<string, SessionStreamServerMessage> },
+  opts?: { isResume?: boolean },
 ): ThreadMessageLike[] {
   const messages: ThreadMessageLike[] = [];
-  const rawByUuid = opts?.rawByUuid;
-
-  /** Resolve sourceUuids → _rawMessages array for debug. */
-  const resolveRawMessages = (sourceUuids: string[]): SessionStreamServerMessage[] => {
-    if (!rawByUuid) return [];
-    return sourceUuids
-      .map((id) => rawByUuid.get(id))
-      .filter(Boolean) as SessionStreamServerMessage[];
-  };
 
   for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
     const item = items[itemIdx];
     switch (item.kind) {
       case "assistant": {
-        const rawMsgs = resolveRawMessages(item.sourceUuids);
+        const rawMsgs = item._rawSnapshots;
         const customBase: Record<string, unknown> = {
           sourceUuids: [...item.sourceUuids],
           _rawMessages: rawMsgs,
@@ -1625,7 +1657,7 @@ export function renderChatStream(
             metadata: {
               custom: {
                 sourceUuids: [...item.sourceUuids],
-                _rawMessages: resolveRawMessages(item.sourceUuids),
+                _rawMessages: item._rawSnapshots,
               },
             },
           }),
@@ -1641,7 +1673,7 @@ export function renderChatStream(
           metadata: {
             custom: {
               sourceUuids: [...item.sourceUuids],
-              _rawMessages: resolveRawMessages(item.sourceUuids),
+              _rawMessages: item._rawSnapshots,
               systemMessageType: "compact-boundary",
               compactText: `上下文${trigger}压缩 (~${label} tokens)`,
             },
@@ -1657,7 +1689,7 @@ export function renderChatStream(
           metadata: {
             custom: {
               sourceUuids: [...item.sourceUuids],
-              _rawMessages: resolveRawMessages(item.sourceUuids),
+              _rawMessages: item._rawSnapshots,
               systemMessageType: "system-init",
             },
           },
@@ -1671,7 +1703,7 @@ export function renderChatStream(
           metadata: {
             custom: {
               sourceUuids: [...item.sourceUuids],
-              _rawMessages: resolveRawMessages(item.sourceUuids),
+              _rawMessages: item._rawSnapshots,
               systemMessageType: "error",
             },
           },
@@ -2256,17 +2288,9 @@ export function useClaude2Session(
 
   // ── Pass 2: derive rendered output from raw state ──────────────
   const chatStream = useMemo(() => normalizeChatStream(rawMessages), [rawMessages]);
-  const rawByUuid = useMemo(() => {
-    const m = new Map<string, SessionStreamServerMessage>();
-    for (const msg of rawMessages) {
-      const uuid = getMsgUuid(msg);
-      if (uuid) m.set(uuid, msg);
-    }
-    return m;
-  }, [rawMessages]);
   const renderedMessages = useMemo(
-    () => renderChatStream(chatStream, { isResume: isResumeRef.current, rawByUuid }),
-    [chatStream, rawByUuid],
+    () => renderChatStream(chatStream, { isResume: isResumeRef.current }),
+    [chatStream],
   );
 
   const onNew = useCallback(
