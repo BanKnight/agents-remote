@@ -535,11 +535,11 @@ function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   return (
-    <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative [content-visibility:auto] [contain-intrinsic-size:auto_100px]">
+    <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative [content-visibility:auto] [contain-intrinsic-size:auto_250px]">
       <div className="flex items-end gap-0.5 self-end">
         <RawDebugTooltip custom={custom} />
       </div>
-      <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
+      <div className="max-w-[90%] max-h-[200px] overflow-y-auto rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
         <SyntheticBodyView />
         <ApiErrorAttachments />
@@ -624,8 +624,8 @@ function AssistantChatBubble() {
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
 
   return (
-    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative [content-visibility:auto] [contain-intrinsic-size:auto_400px]">
-      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
+    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative [content-visibility:auto] [contain-intrinsic-size:auto_550px]">
+      <div className="max-w-[90%] max-h-[500px] overflow-y-auto rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
         <AuiIf
           condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
         >
@@ -1019,7 +1019,9 @@ function SystemChatBubble() {
       last: "pt-0 pb-1.5",
     };
     const inner = (
-      <div className={`${cardBorder[groupPos] ?? cardBorder.solo} bg-slate-800/40 overflow-hidden`}>
+      <div
+        className={`${cardBorder[groupPos] ?? cardBorder.solo} bg-slate-800/40 max-h-[800px] overflow-y-auto`}
+      >
         <div className="px-3 py-2">
           <ToolUIAny {...toolProps} />
         </div>
@@ -1047,7 +1049,7 @@ function SystemChatBubble() {
     );
     return (
       <MessagePrimitive.Root
-        className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo} [content-visibility:auto] [contain-intrinsic-size:auto_800px]`}
+        className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo} [content-visibility:auto] [contain-intrinsic-size:auto_850px]`}
       >
         {indent ? (
           <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">{inner}</div>
@@ -1091,8 +1093,8 @@ function SystemChatBubble() {
       ? (rawData as Claude2FileHistorySnapshot)
       : null;
   return (
-    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group [content-visibility:auto] [contain-intrinsic-size:auto_150px]">
-      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
+    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group [content-visibility:auto] [contain-intrinsic-size:auto_250px]">
+      <div className="max-w-[90%] max-h-[200px] overflow-y-auto rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
         {attachmentType && rawData ? (
           <AttachmentBubble subtype={attachmentType} raw={rawData} />
         ) : fileSnapshot ? (
