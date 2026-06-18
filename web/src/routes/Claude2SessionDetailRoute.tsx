@@ -1006,41 +1006,56 @@ function SystemChatBubble() {
     const ToolUI = CustomUI ?? ToolFallback;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ToolUIAny = ToolUI as React.ComponentType<any>;
+    const groupPos = (custom?.toolGroupPosition as string) ?? "solo";
+    const indent = custom?.toolIndent !== false;
+    const cardBorder: Record<string, string> = {
+      solo: "rounded-lg border border-slate-700/60",
+      first: "rounded-t-lg border-l border-r border-t border-slate-700/60",
+      middle: "border-l border-r border-slate-700/60 border-t border-slate-700/50",
+      last: "rounded-b-lg border-l border-r border-b border-slate-700/60 border-t border-slate-700/50",
+    };
+    const rootPy: Record<string, string> = {
+      solo: "py-1.5",
+      first: "pt-1.5 pb-0",
+      middle: "py-0",
+      last: "pt-0 pb-1.5",
+    };
+    const inner = (
+      <div className={`${cardBorder[groupPos] ?? cardBorder.solo} bg-slate-800/40 overflow-hidden`}>
+        <div className="px-3 py-2">
+          <ToolUIAny {...toolProps} />
+        </div>
+        {progress ? (
+          <div className="px-3 pb-2 flex items-center gap-2 text-xs border-t border-slate-700/50 pt-2 mx-3">
+            {progress.subagentType ? (
+              <span className="shrink-0 rounded bg-amber-600/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-300">
+                {progress.subagentType}
+              </span>
+            ) : null}
+            <span className="truncate text-slate-300">{progress.description}</span>
+            <span className="shrink-0 text-slate-500 ml-auto tabular-nums">
+              {progress.usage.tool_uses} tools ·{" "}
+              {progress.usage.total_tokens >= 1000
+                ? `${Math.round(progress.usage.total_tokens / 1000)}K`
+                : progress.usage.total_tokens}{" "}
+              tokens ·{" "}
+              {progress.usage.duration_ms >= 10000
+                ? `${Math.round(progress.usage.duration_ms / 1000)}s`
+                : `${progress.usage.duration_ms}ms`}
+            </span>
+          </div>
+        ) : null}
+      </div>
+    );
     return (
       <MessagePrimitive.Root
-        data-tool-card=""
-        className="flex justify-start px-3 py-1.5 sm:px-5 group relative"
+        className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo}`}
       >
-        <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
-          <div
-            data-tool-card-inner=""
-            className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden"
-          >
-            <div className="px-3 py-2">
-              <ToolUIAny {...toolProps} />
-            </div>
-            {progress ? (
-              <div className="px-3 pb-2 flex items-center gap-2 text-xs border-t border-slate-700/50 pt-2 mx-3">
-                {progress.subagentType ? (
-                  <span className="shrink-0 rounded bg-amber-600/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-300">
-                    {progress.subagentType}
-                  </span>
-                ) : null}
-                <span className="truncate text-slate-300">{progress.description}</span>
-                <span className="shrink-0 text-slate-500 ml-auto tabular-nums">
-                  {progress.usage.tool_uses} tools ·{" "}
-                  {progress.usage.total_tokens >= 1000
-                    ? `${Math.round(progress.usage.total_tokens / 1000)}K`
-                    : progress.usage.total_tokens}{" "}
-                  tokens ·{" "}
-                  {progress.usage.duration_ms >= 10000
-                    ? `${Math.round(progress.usage.duration_ms / 1000)}s`
-                    : `${progress.usage.duration_ms}ms`}
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </div>
+        {indent ? (
+          <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">{inner}</div>
+        ) : (
+          <div className="w-full">{inner}</div>
+        )}
         <RawDebugTooltip custom={custom} className="absolute top-0 right-0" />
       </MessagePrimitive.Root>
     );

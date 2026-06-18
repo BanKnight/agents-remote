@@ -1051,6 +1051,7 @@ export type NormalizedPart =
 export type ChatStreamItem =
   | {
       kind: "assistant";
+      messageId: string;
       parts: NormalizedPart[];
       estimatedTokens?: number;
       apiErrors: SessionStreamServerMessage[];
@@ -1106,12 +1107,30 @@ export type ChatStreamItem =
 export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): ChatStreamItem[] {
   const items: ChatStreamItem[] = [];
 
-  // Assistant accumulator — one assistant response (grouped by message.id).
-  let currentAssistantId: string | null = null;
-  let currentAssistantParts: NormalizedPart[] = [];
-  let currentEstimatedTokens: number | null = null;
-  let currentSourceUuids: string[] = [];
-  let currentRawSnapshots: SessionStreamServerMessage[] = [];
+  const lastAssistant = (): Extract<ChatStreamItem, { kind: "assistant" }> | null =>
+    items.length > 0 && items[items.length - 1].kind === "assistant"
+      ? (items[items.length - 1] as Extract<ChatStreamItem, { kind: "assistant" }>)
+      : null;
+
+  const pushAssistant = (
+    messageId: string,
+    sourceUuids: string[],
+    rawSnapshots: SessionStreamServerMessage[],
+  ): Extract<ChatStreamItem, { kind: "assistant" }> => {
+    const item: Extract<ChatStreamItem, { kind: "assistant" }> = {
+      kind: "assistant",
+      messageId,
+      parts: [],
+      apiErrors: [],
+      sourceUuids,
+      _rawSnapshots: rawSnapshots,
+    };
+    items.push(item);
+    drainPendingApiErrors();
+    return item;
+  };
+
+  let pendingEstimatedTokens: number | null = null;
   // Most-recent tool_use_id seen via tool_result — fallback anchor for
   // synthetic / meta skill bodies that carry no sourceToolUseID.
   let lastToolUseId: string | null = null;
@@ -1195,22 +1214,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     pendingApiErrors.push(...remaining);
   };
 
-  // Fold a skill body into a tool-call part (in-buffer or already emitted).
+  // Fold a skill body into a tool-call part (already emitted).
   const attachSkillBody = (toolUseId: string, body: string): boolean => {
     if (!toolUseId || !body) return false;
 
-    // In-buffer assistant accumulator.
-    const bufIdx = currentAssistantParts.findIndex(
-      (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
-    );
-    if (bufIdx >= 0) {
-      currentAssistantParts = currentAssistantParts.map((p, i) =>
-        i === bufIdx && p.type === "tool-call" ? { ...p, skillContent: body } : p,
-      );
-      return true;
-    }
-
-    // Already-emitted assistant items (scan backwards — ids are unique).
+    // Scan backwards through emitted assistant items (ids are unique).
     for (let i = items.length - 1; i >= 0; i--) {
       const item = items[i];
       if (item.kind !== "assistant") continue;
@@ -1257,30 +1265,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     return false;
   };
 
-  // Close the current assistant accumulator, emitting an `assistant` item.
-  // Emits whenever at least one assistant delta was seen for this message.id
-  // (an empty-content assistant still produces a bubble, matching the prior
-  // single-pass behavior).
-  const finalizeAssistant = () => {
-    if (currentAssistantId === null) return;
-    const item: Extract<ChatStreamItem, { kind: "assistant" }> = {
-      kind: "assistant",
-      parts: currentAssistantParts,
-      apiErrors: [],
-      sourceUuids: [...currentSourceUuids],
-      _rawSnapshots: [...currentRawSnapshots],
-    };
-    if (currentEstimatedTokens != null) item.estimatedTokens = currentEstimatedTokens;
-    items.push(item);
-    // Resolve any pending errors now that this assistant item is emitted.
-    drainPendingApiErrors();
-    currentAssistantId = null;
-    currentAssistantParts = [];
-    currentEstimatedTokens = null;
-    currentSourceUuids = [];
-    currentRawSnapshots = [];
-  };
-
   for (const msg of rawMessages) {
     if (!msg) continue;
 
@@ -1307,24 +1291,30 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
-      // Accumulate parts grouped by message.id.
+      // Merge into the last assistant item if it shares the same message.id;
+      // otherwise push a new one. No mutable buffer — just peek at items[].
       const msgId = (msg.message as { id?: string })?.id;
-      if (msgId && msgId !== currentAssistantId) {
-        finalizeAssistant();
-        currentAssistantId = msgId;
-      } else if (!msgId && currentAssistantId === null) {
-        // No id on the delta — open a fresh accumulator if none is open.
-        currentAssistantId = "__no_id__";
+      const prev = lastAssistant();
+      const target =
+        prev && msgId && prev.messageId === msgId
+          ? prev
+          : pushAssistant(msgId ?? "__no_id__", getMsgUuid(msg) ? [getMsgUuid(msg)!] : [], [msg]);
+
+      // Stamp pending estimatedTokens onto the first assistant item of a turn.
+      if (pendingEstimatedTokens != null) {
+        target.estimatedTokens = pendingEstimatedTokens;
+        pendingEstimatedTokens = null;
       }
+
       const uuid = getMsgUuid(msg);
-      if (uuid && !currentSourceUuids.includes(uuid)) currentSourceUuids.push(uuid);
-      currentRawSnapshots.push(msg);
+      if (uuid && !target.sourceUuids.includes(uuid)) target.sourceUuids.push(uuid);
+      if (!target._rawSnapshots.includes(msg)) target._rawSnapshots.push(msg);
       const content =
         (msg as unknown as { message: { content: Array<Record<string, unknown>> } }).message
           ?.content ?? [];
       for (const block of content) {
         const part = processContentBlock(block as RawContentBlock);
-        if (part) currentAssistantParts.push(part as NormalizedPart);
+        if (part) target.parts.push(part as NormalizedPart);
       }
       continue;
     }
@@ -1336,23 +1326,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       if (toolResults.length > 0) {
         lastToolUseId = toolResults[toolResults.length - 1].toolUseId;
         for (const tr of toolResults) {
-          // In-buffer first.
-          const bufIdx = currentAssistantParts.findIndex(
-            (p) => p.type === "tool-call" && p.toolCallId === tr.toolUseId,
-          );
-          if (bufIdx >= 0) {
-            currentAssistantParts = currentAssistantParts.map((p, i) =>
-              i === bufIdx && p.type === "tool-call"
-                ? {
-                    ...p,
-                    result: tr.content,
-                    ...(tr.isError ? { isError: true } : {}),
-                  }
-                : p,
-            );
-            continue;
-          }
-          // Already-emitted assistant items.
+          // Search emitted assistant items.
           for (const item of items) {
             if (item.kind !== "assistant") continue;
             const partIdx = item.parts.findIndex(
@@ -1397,7 +1371,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // UserPrompt: text content → user-prompt item.
       if (texts.length > 0) {
-        finalizeAssistant();
         items.push({
           kind: "user-prompt",
           text: texts.join("\n"),
@@ -1416,7 +1389,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           rawContent.startsWith("<command-message>")
         )
           continue;
-        finalizeAssistant();
+
         items.push({
           kind: "user-prompt",
           text: rawContent,
@@ -1436,7 +1409,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // SessionInit: summary item (scalar state is still updated by the handler).
       if (subtype === "init") {
-        finalizeAssistant();
         const init = msg as unknown as {
           model?: string;
           permissionMode?: string;
@@ -1459,7 +1431,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // ThinkingTokens: stamp into the current assistant accumulator.
       if (subtype === "thinking_tokens") {
-        currentEstimatedTokens =
+        pendingEstimatedTokens =
           (msg as unknown as { estimated_tokens?: number }).estimated_tokens ?? null;
         continue;
       }
@@ -1472,7 +1444,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // CompactBoundary: divider item.
       if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
-        finalizeAssistant();
         const cmeta = (msg as Record<string, unknown>).compactMetadata as
           | { trigger?: string; preTokens?: number }
           | undefined;
@@ -1510,18 +1481,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           },
         };
 
-        // In-buffer first.
-        const bufIdx = currentAssistantParts.findIndex(
-          (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
-        );
-        if (bufIdx >= 0) {
-          currentAssistantParts = currentAssistantParts.map((p, i) =>
-            i === bufIdx && p.type === "tool-call" ? { ...p, progress } : p,
-          );
-          continue;
-        }
-
-        // Already-emitted assistant items.
+        // Search emitted assistant items.
         for (const item of items) {
           if (item.kind !== "assistant") continue;
           const partIdx = item.parts.findIndex(
@@ -1548,7 +1508,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // Batch boundary (synthetic, injected by the handler).
       if (subtype === "batch_boundary") {
-        finalizeAssistant();
         const batchKind: "history" | "live" =
           ((msg as Record<string, unknown>).batchKind as "history" | "live") ?? "history";
         items.push({ kind: "batch-boundary", batchKind });
@@ -1556,6 +1515,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
 
       // Other system messages: fallback.
+
       const ui = messageToThreadLike(msg);
       if (ui) items.push({ kind: "fallback", ui });
       continue;
@@ -1565,7 +1525,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     if (msg.type === "result") {
       const resultMsg = msg as { is_error?: boolean; result?: string };
       if (resultMsg.is_error && typeof resultMsg.result === "string") {
-        finalizeAssistant();
         items.push({
           kind: "result-error",
           text: resultMsg.result,
@@ -1574,14 +1533,12 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         });
       } else {
         // Non-error result only finalizes the current assistant (no item).
-        finalizeAssistant();
       }
       continue;
     }
 
     // ═══ Attachment ═══
     if (msg.type === "attachment") {
-      finalizeAssistant();
       const result = handleAttachment(msg as Claude2Attachment);
       if (result.bubble) {
         items.push({
@@ -1602,7 +1559,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     if (fallback) items.push({ kind: "fallback", ui: fallback });
   }
 
-  finalizeAssistant();
   return items;
 }
 
@@ -1654,6 +1610,9 @@ export function renderChatStream(
           textParts = [];
         };
 
+        const hasTextParts = item.parts.some((p) => p.type !== "tool-call");
+        const toolMessageId = item.messageId;
+
         for (const part of item.parts) {
           if (part.type === "tool-call") {
             flushText();
@@ -1686,6 +1645,8 @@ export function renderChatStream(
               isError: part.isError,
               isOrphaned: part.isOrphaned,
               skillContent: part.skillContent,
+              toolMessageId,
+              toolIndent: hasTextParts,
               ...(part.progress ? { progress: part.progress } : {}),
             };
             messages.push({
@@ -1825,6 +1786,31 @@ export function renderChatStream(
         break;
       }
     }
+  }
+
+  // Post-process: assign toolGroupPosition for consecutive tool-cards
+  // sharing the same message.id so the UI can merge them into a list.
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const custom = msg.metadata?.custom as Record<string, unknown> | undefined;
+    if (custom?.systemMessageType !== "tool-card") continue;
+    const curId = custom.toolMessageId as string;
+    const prevCustom =
+      i > 0 ? (messages[i - 1].metadata?.custom as Record<string, unknown> | undefined) : undefined;
+    const nextCustom =
+      i < messages.length - 1
+        ? (messages[i + 1].metadata?.custom as Record<string, unknown> | undefined)
+        : undefined;
+    const prevSameGroup =
+      prevCustom?.systemMessageType === "tool-card" && prevCustom.toolMessageId === curId;
+    const nextSameGroup =
+      nextCustom?.systemMessageType === "tool-card" && nextCustom.toolMessageId === curId;
+    if (!prevSameGroup && !nextSameGroup) custom.toolGroupPosition = "solo";
+    else if (!prevSameGroup && nextSameGroup) custom.toolGroupPosition = "first";
+    else if (prevSameGroup && nextSameGroup) custom.toolGroupPosition = "middle";
+    else custom.toolGroupPosition = "last";
+    // Indent propagates from first to rest in same group.
+    if (prevSameGroup) custom.toolIndent = prevCustom?.toolIndent;
   }
 
   if (opts?.isResume && messages.length > 0) {
