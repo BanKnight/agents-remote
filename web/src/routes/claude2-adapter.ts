@@ -764,17 +764,31 @@ export function markOrphanedToolCalls(messages: ThreadMessageLike[]): {
 } {
   let changed = false;
   const next = messages.map((msg) => {
-    if (msg.role !== "assistant" || !Array.isArray(msg.content)) return msg;
-    const content = msg.content.map((part: unknown): unknown => {
-      const p = part as Record<string, unknown>;
-      if (p.type !== "tool-call") return part;
-      if ("result" in p) return part;
-      if (p.isError === true) return part;
-      if (p.isOrphaned === true) return part; // already marked
+    const custom = msg.metadata?.custom as Record<string, unknown> | undefined;
+    // Standalone tool-card system message
+    if (msg.role === "system" && custom?.systemMessageType === "tool-card") {
+      if (custom.result != null || custom.isError === true || custom.isOrphaned === true)
+        return msg;
       changed = true;
-      return { ...p, isOrphaned: true };
-    });
-    return changed ? { ...msg, content } : msg;
+      return {
+        ...msg,
+        metadata: { custom: { ...custom, isOrphaned: true } },
+      };
+    }
+    // Legacy: tool-call content parts inside assistant bubbles
+    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      const content = msg.content.map((part: unknown): unknown => {
+        const p = part as Record<string, unknown>;
+        if (p.type !== "tool-call") return part;
+        if ("result" in p) return part;
+        if (p.isError === true) return part;
+        if (p.isOrphaned === true) return part;
+        changed = true;
+        return { ...p, isOrphaned: true };
+      });
+      return changed ? { ...msg, content } : msg;
+    }
+    return msg;
   }) as ThreadMessageLike[];
   return { messages: changed ? next : messages, changed };
 }
@@ -1501,38 +1515,106 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
  */
 export function renderChatStream(
   items: ChatStreamItem[],
-  opts?: { isResume?: boolean },
+  opts?: { isResume?: boolean; rawByUuid?: Map<string, SessionStreamServerMessage> },
 ): ThreadMessageLike[] {
   const messages: ThreadMessageLike[] = [];
+  const rawByUuid = opts?.rawByUuid;
+
+  /** Resolve sourceUuids → _rawMessages array for debug. */
+  const resolveRawMessages = (sourceUuids: string[]): SessionStreamServerMessage[] => {
+    if (!rawByUuid) return [];
+    return sourceUuids
+      .map((id) => rawByUuid.get(id))
+      .filter(Boolean) as SessionStreamServerMessage[];
+  };
 
   for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
     const item = items[itemIdx];
     switch (item.kind) {
       case "assistant": {
-        const custom: Record<string, unknown> = {
+        const rawMsgs = resolveRawMessages(item.sourceUuids);
+        const customBase: Record<string, unknown> = {
           sourceUuids: [...item.sourceUuids],
-          _rawMessages: [],
+          _rawMessages: rawMsgs,
         };
-        if (item.estimatedTokens != null) custom.estimatedTokens = item.estimatedTokens;
-        const bubble: ThreadMessageLike = {
-          role: "assistant",
-          content: [...item.parts] as unknown as ThreadMessageLike["content"],
-          metadata: { custom },
-        };
-        // Attach api_errors onto the same bubble.
-        let withErrors = bubble;
-        for (const err of item.apiErrors) {
-          const attachment: ApiErrorAttachment = {
-            uuid: getMsgUuid(err) ?? undefined,
-            parentUuid: getMsgParentUuid(err) ?? undefined,
-            error: undefined,
-            text: extractApiErrorText(err),
-            raw: err,
-            resolution: "direct-parent",
+        if (item.estimatedTokens != null) customBase.estimatedTokens = item.estimatedTokens;
+
+        // Split parts into text/reasoning groups, emitting each tool-call as a
+        // standalone system message. Consecutive non-tool-call parts share one
+        // assistant bubble; each tool-call gets its own message.
+        let textParts: NormalizedPart[] = [];
+        const flushText = () => {
+          if (textParts.length === 0) return;
+          const bubble: ThreadMessageLike = {
+            role: "assistant",
+            content: [...textParts] as unknown as ThreadMessageLike["content"],
+            metadata: { custom: { ...customBase } },
           };
-          withErrors = attachErrorToBubble(withErrors, attachment);
+          messages.push(enrichBubbleMetadata(bubble));
+          textParts = [];
+        };
+
+        for (const part of item.parts) {
+          if (part.type === "tool-call") {
+            flushText();
+            const toolCustom: Record<string, unknown> = {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: rawMsgs,
+              systemMessageType: "tool-card",
+              toolName: part.toolName,
+              toolCallId: part.toolCallId,
+              args: part.args,
+              argsText: part.argsText,
+              result: part.result,
+              isError: part.isError,
+              isOrphaned: part.isOrphaned,
+              skillContent: part.skillContent,
+            };
+            messages.push({
+              role: "system",
+              content: [{ type: "text", text: "" }],
+              metadata: { custom: toolCustom },
+            });
+          } else {
+            textParts.push(part);
+          }
         }
-        messages.push(enrichBubbleMetadata(withErrors));
+        flushText();
+
+        // If the assistant item produced no messages at all (empty delta, no
+        // tool-calls), emit an empty assistant bubble so it still appears in
+        // the rendered list.  This preserves the pre-tool-independence
+        // behavior for truly empty deltas.
+        if (item.parts.length === 0) {
+          const emptyBubble: ThreadMessageLike = {
+            role: "assistant",
+            content: [],
+            metadata: { custom: { ...customBase } },
+          };
+          messages.push(enrichBubbleMetadata(emptyBubble));
+        }
+
+        // Attach api_errors to the last assistant bubble (if any).
+        if (item.apiErrors.length > 0) {
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === "assistant") {
+              let withErrors = messages[i];
+              for (const err of item.apiErrors) {
+                const attachment: ApiErrorAttachment = {
+                  uuid: getMsgUuid(err) ?? undefined,
+                  parentUuid: getMsgParentUuid(err) ?? undefined,
+                  error: undefined,
+                  text: extractApiErrorText(err),
+                  raw: err,
+                  resolution: "direct-parent",
+                };
+                withErrors = attachErrorToBubble(withErrors, attachment);
+              }
+              messages[i] = withErrors;
+              break;
+            }
+          }
+        }
         break;
       }
       case "user-prompt": {
@@ -1540,7 +1622,12 @@ export function renderChatStream(
           enrichBubbleMetadata({
             role: "user",
             content: item.text,
-            metadata: { custom: { sourceUuids: [...item.sourceUuids] } },
+            metadata: {
+              custom: {
+                sourceUuids: [...item.sourceUuids],
+                _rawMessages: resolveRawMessages(item.sourceUuids),
+              },
+            },
           }),
         );
         break;
@@ -1554,6 +1641,7 @@ export function renderChatStream(
           metadata: {
             custom: {
               sourceUuids: [...item.sourceUuids],
+              _rawMessages: resolveRawMessages(item.sourceUuids),
               systemMessageType: "compact-boundary",
               compactText: `上下文${trigger}压缩 (~${label} tokens)`,
             },
@@ -1569,6 +1657,7 @@ export function renderChatStream(
           metadata: {
             custom: {
               sourceUuids: [...item.sourceUuids],
+              _rawMessages: resolveRawMessages(item.sourceUuids),
               systemMessageType: "system-init",
             },
           },
@@ -1582,6 +1671,7 @@ export function renderChatStream(
           metadata: {
             custom: {
               sourceUuids: [...item.sourceUuids],
+              _rawMessages: resolveRawMessages(item.sourceUuids),
               systemMessageType: "error",
             },
           },
@@ -2166,9 +2256,17 @@ export function useClaude2Session(
 
   // ── Pass 2: derive rendered output from raw state ──────────────
   const chatStream = useMemo(() => normalizeChatStream(rawMessages), [rawMessages]);
+  const rawByUuid = useMemo(() => {
+    const m = new Map<string, SessionStreamServerMessage>();
+    for (const msg of rawMessages) {
+      const uuid = getMsgUuid(msg);
+      if (uuid) m.set(uuid, msg);
+    }
+    return m;
+  }, [rawMessages]);
   const renderedMessages = useMemo(
-    () => renderChatStream(chatStream, { isResume: isResumeRef.current }),
-    [chatStream],
+    () => renderChatStream(chatStream, { isResume: isResumeRef.current, rawByUuid }),
+    [chatStream, rawByUuid],
   );
 
   const onNew = useCallback(

@@ -533,7 +533,7 @@ function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderPro
 
 function UserChatBubble() {
   const message = useMessage();
-  const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
+  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   return (
     <MessagePrimitive.Root className="flex justify-end px-3 py-1.5 sm:px-5 group">
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
@@ -563,7 +563,7 @@ function UserChatBubble() {
             </svg>
           </ActionBarPrimitive.Copy>
         </ActionBarPrimitive.Root>
-        {rawData ? <RawDebugTooltip data={rawData} /> : null}
+        <RawDebugTooltip custom={custom} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -621,7 +621,7 @@ function AssistantChatBubble() {
     !message.content || (Array.isArray(message.content) && message.content.length === 0);
   const msgStatus = (message as { status?: { type?: string } }).status;
   const isStreaming = msgStatus?.type === "running";
-  const rawData = (message.metadata?.custom as Record<string, unknown> | undefined)?._raw;
+  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
 
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
@@ -696,7 +696,7 @@ function AssistantChatBubble() {
             </ActionBarPrimitive.Copy>
           </ActionBarPrimitive.Root>
         ) : null}
-        {rawData ? <RawDebugTooltip data={rawData} /> : null}
+        <RawDebugTooltip custom={custom} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -889,13 +889,15 @@ function extractRetryInfo(err: ApiErrorAttachment): string | null {
   return s;
 }
 
-function RawDebugTooltip({ data }: { data: unknown }) {
+function RawDebugTooltip({ custom }: { custom?: Record<string, unknown> }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
-  // If the bubble carries _rawMessages (primary raw + error raws), show all.
-  const custom = data as Record<string, unknown>;
-  const rawMessages = custom._rawMessages as unknown[] | undefined;
-  const displayData = rawMessages && rawMessages.length > 1 ? rawMessages : data;
+  // Prefer _rawMessages array (new adapter: all messages carry sourceUuids → _rawMessages).
+  // Fall back to single _raw for legacy call sites or old messages.
+  const rawMessages = custom?._rawMessages as unknown[] | undefined;
+  const rawSingle = custom?._raw as unknown;
+  const displayData = rawMessages && rawMessages.length > 0 ? rawMessages : rawSingle;
+  if (!displayData) return null;
   const rawJson = JSON.stringify(displayData, null, 2);
   const displayText = rawJson.length > 2000 ? rawJson.slice(0, 2000) + "\n… (truncated)" : rawJson;
 
@@ -972,6 +974,35 @@ function SystemChatBubble() {
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const systemMessageType = custom?.systemMessageType as string | undefined;
 
+  // Tool-card: standalone tool message rendered outside of assistant bubbles.
+  // Metadata carries all tool-call props; we reconstruct ToolCallMessagePartProps.
+  if (systemMessageType === "tool-card") {
+    const toolName = (custom?.toolName as string) ?? "?";
+    const CustomUI = getToolRenderer(toolName);
+    const toolProps = {
+      toolName,
+      argsText: (custom?.argsText as string) ?? "{}",
+      result: custom?.result as string | undefined,
+      status: { type: "complete" as const },
+      isError: custom?.isError === true,
+      isOrphaned: custom?.isOrphaned === true,
+      metadata: { skillContent: custom?.skillContent },
+    } as Record<string, unknown>;
+    const ToolUI = CustomUI ?? ToolFallback;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ToolUIAny = ToolUI as React.ComponentType<any>;
+    return (
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
+        <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
+          <ToolUIAny {...toolProps} />
+          <div className="flex justify-end mt-1">
+            <RawDebugTooltip custom={custom} />
+          </div>
+        </div>
+      </MessagePrimitive.Root>
+    );
+  }
+
   // Batch boundary divider: thin horizontal line, no bubble, no debug tooltip.
   if (systemMessageType === "batch-boundary") {
     return (
@@ -997,8 +1028,8 @@ function SystemChatBubble() {
     );
   }
 
-  const rawData = custom?._raw as Record<string, unknown> | undefined;
   const attachmentType = custom?.attachmentType as string | undefined;
+  const rawData = custom?._raw as Record<string, unknown> | undefined;
   const fileSnapshot =
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
       ? (rawData as Claude2FileHistorySnapshot)
@@ -1019,7 +1050,7 @@ function SystemChatBubble() {
         <ApiErrorAttachments />
       </div>
       <div className="flex items-end gap-0.5 self-end">
-        {rawData ? <RawDebugTooltip data={rawData} /> : null}
+        <RawDebugTooltip custom={custom} />
       </div>
     </MessagePrimitive.Root>
   );

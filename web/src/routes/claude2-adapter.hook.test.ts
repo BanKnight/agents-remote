@@ -355,7 +355,15 @@ describe("useClaude2Session websocket lifecycle", () => {
     });
 
     expect(result.current.storeAdapter.messages.some((msg) => msg.role === "user")).toBe(true);
-    expect(result.current.storeAdapter.messages.some((msg) => msg.role === "assistant")).toBe(true);
+    // tool_use-only assistant → tool-card system message, no assistant bubble
+    expect(
+      result.current.storeAdapter.messages.some(
+        (msg) =>
+          msg.role === "system" &&
+          ((msg.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+            "tool-card",
+      ),
+    ).toBe(true);
     expect(result.current.loading).toBe(false);
   });
 
@@ -910,13 +918,13 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     });
 
     const msgs = getMessages(result);
-    // Assistant only; no user bubble for tool_result
+    // Tool-card system message only (no assistant text part, no user bubble)
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]?.role).toBe("assistant");
-    const content = msgs[0]?.content as Array<{ toolCallId?: string; result?: string }>;
-    const toolCall = content.find((c) => "toolCallId" in c);
-    expect(toolCall?.toolCallId).toBe("tu-1");
-    expect(toolCall?.result).toBe("file contents");
+    expect(msgs[0]?.role).toBe("system");
+    const custom = msgs[0]?.metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("tool-card");
+    expect(custom?.toolCallId).toBe("tu-1");
+    expect(custom?.result).toBe("file contents");
   });
 
   test("parallel tools: two tool_use in one assistant, two tool_result in one user", async () => {
@@ -941,14 +949,15 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     });
 
     const msgs = getMessages(result);
-    expect(msgs).toHaveLength(1);
-    const content = msgs[0]?.content as Array<{ toolCallId?: string; result?: string }>;
-    const calls = content.filter((c) => c.toolCallId);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]?.toolCallId).toBe("tu-a");
-    expect(calls[0]?.result).toBe("result A");
-    expect(calls[1]?.toolCallId).toBe("tu-b");
-    expect(calls[1]?.result).toBe("result B");
+    // Two tool-card messages (from assistant with 2 tool_use, no text)
+    expect(msgs).toHaveLength(2);
+    const toolCards = msgs.map((m) => m.metadata?.custom as Record<string, unknown>);
+    expect(toolCards[0]?.systemMessageType).toBe("tool-card");
+    expect(toolCards[0]?.toolCallId).toBe("tu-a");
+    expect(toolCards[0]?.result).toBe("result A");
+    expect(toolCards[1]?.systemMessageType).toBe("tool-card");
+    expect(toolCards[1]?.toolCallId).toBe("tu-b");
+    expect(toolCards[1]?.result).toBe("result B");
   });
 
   test("hybrid text+tool_result: user bubble for text, tool-call gets result", async () => {
@@ -973,15 +982,16 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     });
 
     const msgs = getMessages(result);
-    // Assistant (with tool-call) + user text bubble = 2
+    // Tool-card system message + user text bubble = 2
     expect(msgs).toHaveLength(2);
-    expect(msgs[0]?.role).toBe("assistant");
+    expect(msgs[0]?.role).toBe("system");
     expect(msgs[1]?.role).toBe("user");
     expect(msgs[1]?.content).toBe("Continue from where you left off.");
 
-    const assistantContent = msgs[0]?.content as Array<{ toolCallId?: string; result?: string }>;
-    const toolCall = assistantContent.find((c) => c.toolCallId === "tu-1");
-    expect(toolCall?.result).toBe("file contents");
+    const toolCustom = msgs[0]?.metadata?.custom as Record<string, unknown>;
+    expect(toolCustom?.systemMessageType).toBe("tool-card");
+    expect(toolCustom?.toolCallId).toBe("tu-1");
+    expect(toolCustom?.result).toBe("file contents");
   });
 
   test("tool_result with is_error sets isError on tool-call", async () => {
@@ -1001,9 +1011,10 @@ describe("useClaude2Session tool_result matching (external path)", () => {
 
     const msgs = getMessages(result);
     expect(msgs).toHaveLength(1);
-    const content = msgs[0]?.content as Array<{ toolCallId?: string; isError?: boolean }>;
-    const toolCall = content.find((c) => c.toolCallId === "tu-ask");
-    expect(toolCall?.isError).toBe(true);
+    const toolCustom = msgs[0]?.metadata?.custom as Record<string, unknown>;
+    expect(toolCustom?.systemMessageType).toBe("tool-card");
+    expect(toolCustom?.toolCallId).toBe("tu-ask");
+    expect(toolCustom?.isError).toBe(true);
   });
 
   test("unhandled message type renders as visible fallback bubble", async () => {
@@ -1086,14 +1097,16 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     });
 
     const msgs = getMessages(result);
-    const assistantMsg = msgs.find(
-      (m): m is typeof m & { role: "assistant" } => m.role === "assistant",
+    const toolCard = msgs.find(
+      (m) =>
+        m.role === "system" &&
+        ((m.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+          "tool-card",
     );
-    expect(assistantMsg).toBeDefined();
-    const content = assistantMsg!.content as Array<Record<string, unknown>>;
-    const toolCall = content.find((c) => c.type === "tool-call");
-    expect(toolCall?.isOrphaned).toBe(true);
-    expect(toolCall?.toolCallId).toBe("tu-o");
+    expect(toolCard).toBeDefined();
+    const custom = toolCard!.metadata?.custom as Record<string, unknown>;
+    expect(custom?.isOrphaned).toBe(true);
+    expect(custom?.toolCallId).toBe("tu-o");
   });
 
   test("live (non-resume) history: pending tool_use NOT orphaned", async () => {
@@ -1110,14 +1123,16 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     });
 
     const msgs2 = getMessages(result);
-    const liveAssistant = msgs2.find(
-      (m): m is typeof m & { role: "assistant" } => m.role === "assistant",
+    const liveToolCard = msgs2.find(
+      (m) =>
+        m.role === "system" &&
+        ((m.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+          "tool-card",
     );
-    expect(liveAssistant).toBeDefined();
-    const liveContent = liveAssistant!.content as Array<Record<string, unknown>>;
-    const liveToolCall = liveContent.find((c) => c.type === "tool-call");
-    expect(liveToolCall?.toolCallId).toBe("tu-p");
-    expect(liveToolCall?.isOrphaned).toBeUndefined();
+    expect(liveToolCard).toBeDefined();
+    const liveCustom = liveToolCard!.metadata?.custom as Record<string, unknown>;
+    expect(liveCustom?.toolCallId).toBe("tu-p");
+    expect(liveCustom?.isOrphaned).toBeUndefined();
   });
 
   test("resume: tool_use with already-matched result NOT orphaned", async () => {
@@ -1135,14 +1150,16 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     });
 
     const msgs3 = getMessages(result);
-    const doneAssistant = msgs3.find(
-      (m): m is typeof m & { role: "assistant" } => m.role === "assistant",
+    const doneToolCard = msgs3.find(
+      (m) =>
+        m.role === "system" &&
+        ((m.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+          "tool-card",
     );
-    expect(doneAssistant).toBeDefined();
-    const doneContent = doneAssistant!.content as Array<Record<string, unknown>>;
-    const doneToolCall = doneContent.find((c) => c.type === "tool-call");
-    expect(doneToolCall?.result).toBe("answer");
-    expect(doneToolCall?.isOrphaned).toBeUndefined();
+    expect(doneToolCard).toBeDefined();
+    const doneCustom = doneToolCard!.metadata?.custom as Record<string, unknown>;
+    expect(doneCustom?.result).toBe("answer");
+    expect(doneCustom?.isOrphaned).toBeUndefined();
   });
 });
 

@@ -2333,10 +2333,14 @@ describe("renderChatStream", () => {
       makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
     ]);
     const rendered = renderChatStream(items, { isResume: true });
-    const callPart = (rendered[0].content as Array<Record<string, unknown>>).find(
-      (p) => p.type === "tool-call",
+    const toolCard = rendered.find(
+      (m) =>
+        m.role === "system" &&
+        ((m.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+          "tool-card",
     );
-    expect(callPart?.isOrphaned).toBe(true);
+    expect(toolCard).toBeDefined();
+    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isOrphaned).toBe(true);
   });
 
   test("non-resume does NOT mark orphaned tool-calls", () => {
@@ -2344,10 +2348,14 @@ describe("renderChatStream", () => {
       makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
     ]);
     const rendered = renderChatStream(items, { isResume: false });
-    const callPart = (rendered[0].content as Array<Record<string, unknown>>).find(
-      (p) => p.type === "tool-call",
+    const toolCard = rendered.find(
+      (m) =>
+        m.role === "system" &&
+        ((m.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+          "tool-card",
     );
-    expect(callPart?.isOrphaned).toBeUndefined();
+    expect(toolCard).toBeDefined();
+    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isOrphaned).toBeUndefined();
   });
 });
 
