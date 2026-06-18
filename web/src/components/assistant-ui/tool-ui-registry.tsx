@@ -1,5 +1,7 @@
 import { useState, useContext, useEffect, type ReactNode } from "react";
 import { useComposerRuntime, type ToolCallMessagePartComponent } from "@assistant-ui/react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
 import { CollapsibleSection } from "./collapsible-section";
 
@@ -744,6 +746,30 @@ const EnterPlanModeToolUI = makeToolRenderer({
   label: () => "Enter Plan Mode",
 });
 
+function PlanMarkdown({ content }: { content: string }) {
+  return (
+    <div className="text-xs text-slate-300 leading-relaxed prose prose-invert prose-sm max-w-none prose-headings:text-slate-200 prose-code:text-amber-300 prose-code:bg-slate-800/70 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-[0.7rem] prose-code:before:content-none prose-code:after:content-none prose-li:text-slate-300 prose-a:text-cyan-400 prose-strong:text-slate-100 prose-blockquote:border-l-2 prose-blockquote:border-slate-600 prose-blockquote:pl-3 prose-blockquote:text-slate-400">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
+const ExitPlanModeToolUI = makeToolRenderer({
+  icon: "plan",
+  badge: (args) => {
+    const fp = args.planFilePath as string | undefined;
+    if (!fp) return null;
+    const parts = fp.split("/");
+    return parts[parts.length - 1] ?? null;
+  },
+  label: () => "Plan",
+  body: (args) => {
+    const plan = args.plan as string | undefined;
+    if (!plan || typeof plan !== "string") return null;
+    return <PlanMarkdown content={plan} />;
+  },
+});
+
 // ── Registry ─────────────────────────────────────────────────────────
 
 type ToolRenderer = ToolCallMessagePartComponent;
@@ -766,6 +792,7 @@ toolRegistry.set("Grep", GrepToolUI);
 toolRegistry.set("NotebookEdit", NotebookEditToolUI);
 toolRegistry.set("AskUserQuestion", AskUserQuestionToolUI);
 toolRegistry.set("EnterPlanMode", EnterPlanModeToolUI);
+toolRegistry.set("ExitPlanMode", ExitPlanModeToolUI);
 toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
 toolRegistry.set("bash", BashToolUI);
