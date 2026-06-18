@@ -355,7 +355,7 @@ describe("messageToThreadLike", () => {
     expect(text).toInclude('"type": "result"');
   });
 
-  test("last-prompt falls through to system role (state-only, not user bubble)", () => {
+  test("last-prompt returns null (scalar state only, never rendered)", () => {
     const msg = {
       type: "last-prompt",
       lastPrompt: "继续",
@@ -363,10 +363,7 @@ describe("messageToThreadLike", () => {
       sessionId: "s1",
     } as unknown as SessionStreamServerMessage;
     const result = messageToThreadLike(msg);
-    // No longer rendered as a user bubble — falls through to system fallback.
-    // In practice this path is never reached because handleInternalMessage
-    // intercepts last-prompt before calling messageToThreadLike.
-    expect(result.role).toBe("system");
+    expect(result).toBeNull();
   });
 });
 
@@ -2221,6 +2218,17 @@ describe("normalizeChatStream", () => {
   });
 
   // ── sourceUuids tracking ────────────────────────────────────────────
+  test("last-prompt is skipped (scalar state only, no item)", () => {
+    const items = normalizeChatStream([
+      {
+        type: "last-prompt",
+        lastPrompt: "继续",
+        leafUuid: "abc-123",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
   test("tracks source UUIDs on assistant items", () => {
     const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "text", text: "hello" }], { uuid: "uuid-a1" }),

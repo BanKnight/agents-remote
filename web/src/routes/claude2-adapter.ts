@@ -965,6 +965,7 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "ai-title" ||
     msg.type === "agent-name" ||
     msg.type === "queue-operation" ||
+    msg.type === "last-prompt" ||
     msg.type === "session_init" ||
     msg.type === "history_start" ||
     msg.type === "history_end" ||
@@ -1480,6 +1481,9 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
       continue;
     }
+
+    // last-prompt: scalar state only (already handled in Pass 1). No item.
+    if (msg.type === "last-prompt") continue;
 
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
