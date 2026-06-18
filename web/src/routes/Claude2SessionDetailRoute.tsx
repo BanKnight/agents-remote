@@ -562,10 +562,8 @@ function UserChatBubble() {
               />
             </svg>
           </ActionBarPrimitive.Copy>
-        </ActionBarPrimitive.Root>
-        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
           <RawDebugTooltip custom={custom} />
-        </span>
+        </ActionBarPrimitive.Root>
       </div>
     </MessagePrimitive.Root>
   );
@@ -696,11 +694,13 @@ function AssistantChatBubble() {
                 />
               </svg>
             </ActionBarPrimitive.Copy>
+            <RawDebugTooltip custom={custom} />
           </ActionBarPrimitive.Root>
-        ) : null}
-        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-          <RawDebugTooltip custom={custom} />
-        </span>
+        ) : (
+          <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <RawDebugTooltip custom={custom} />
+          </span>
+        )}
       </div>
     </MessagePrimitive.Root>
   );
@@ -998,11 +998,9 @@ function SystemChatBubble() {
     return (
       <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
         <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
-          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
-            <ToolUIAny {...toolProps} />
-            <div className="flex justify-end px-2 pb-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <RawDebugTooltip custom={custom} />
-            </div>
+          <ToolUIAny {...toolProps} />
+          <div className="flex justify-end">
+            <RawDebugTooltip custom={custom} />
           </div>
         </div>
       </MessagePrimitive.Root>
