@@ -648,14 +648,14 @@ export function getMsgUuid(msg: SessionStreamServerMessage): string | null {
 /** Extract tool_use_id values from a user message's tool_result content blocks. */
 export function getMsgToolResultIds(msg: SessionStreamServerMessage): string[] {
   if (msg.type !== "user") return [];
-  const userMsg = msg as unknown as {
-    message?: { content?: unknown };
-  };
-  const content = userMsg.message?.content;
-  if (!Array.isArray(content)) return [];
-  return (content as Array<{ type?: string; tool_use_id?: string }>)
-    .filter((b) => b.type === "tool_result" && typeof b.tool_use_id === "string")
-    .map((b) => b.tool_use_id!);
+  const content = msg.message.content;
+  if (typeof content === "string") return [];
+  return content
+    .filter(
+      (b): b is typeof b & { type: "tool_result"; tool_use_id: string } =>
+        b.type === "tool_result" && typeof b.tool_use_id === "string",
+    )
+    .map((b) => b.tool_use_id);
 }
 
 /** Check if a thread message's tool-call parts include a specific tool_use_id. */
@@ -678,18 +678,10 @@ export type ExtractedToolResult = {
 /** Extract tool_result blocks from a user message into {toolUseId, content, isError}. */
 export function extractToolResults(msg: SessionStreamServerMessage): ExtractedToolResult[] {
   if (msg.type !== "user") return [];
-  const userMsg = msg as unknown as {
-    message?: {
-      content?: Array<{
-        type?: string;
-        tool_use_id?: string;
-        content?: unknown;
-        is_error?: boolean;
-      }>;
-    };
-  };
+  const content = msg.message.content;
+  if (typeof content === "string") return [];
   const results: ExtractedToolResult[] = [];
-  for (const block of userMsg.message?.content ?? []) {
+  for (const block of content) {
     if (block.type !== "tool_result") continue;
     const toolUseId = block.tool_use_id;
     if (typeof toolUseId !== "string") continue;
@@ -1284,13 +1276,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // ═══ User ═══
     if (msg.type === "user") {
       const toolResults = extractToolResults(msg);
-      const userMeta = msg as unknown as {
-        message?: { content?: unknown };
-        isMeta?: boolean;
-        isSynthetic?: boolean;
-        sourceToolUseID?: string;
-      };
-
       // ToolResult: match to tool-call part, no item.
       if (toolResults.length > 0) {
         lastToolUseId = toolResults[toolResults.length - 1].toolUseId;
@@ -1335,20 +1320,20 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
 
       // SkillBody: attach text to tool-call, no item.
-      const isSkillBody = userMeta.isSynthetic === true || userMeta.isMeta === true;
+      const isSkillBody = msg.isSynthetic === true || msg.isMeta === true;
       if (isSkillBody) {
-        const sourceToolUseId = userMeta.sourceToolUseID as string | undefined;
+        const sourceToolUseId = msg.sourceToolUseID;
         const toolUseId = sourceToolUseId ?? lastToolUseId;
         const body = extractSyntheticBody(msg);
         attachSkillBody(toolUseId ?? "", body);
         continue;
       }
 
-      const texts = _extractUserTextBlocks(userMeta.message?.content);
+      const texts = _extractUserTextBlocks(msg.message.content);
 
       // Skill content via prefix detection (isMeta/isSynthetic may be absent).
       if (_isHiddenSkillContent(texts)) {
-        const sourceToolUseId = userMeta.sourceToolUseID as string | undefined;
+        const sourceToolUseId = msg.sourceToolUseID;
         const toolUseId = sourceToolUseId ?? lastToolUseId;
         attachSkillBody(toolUseId ?? "", texts.join("\n"));
         continue;
@@ -1366,7 +1351,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
 
       // String-content user message (skip CLI command tags).
-      const rawContent = userMeta.message?.content;
+      const rawContent = msg.message.content;
       if (typeof rawContent === "string" && rawContent.trim()) {
         if (
           rawContent.startsWith("<local-command") ||

@@ -718,15 +718,17 @@ export type Claude2UserMessage = {
   type: "user";
   message: {
     role: "user";
-    content: Array<
-      | { type: "text"; text: string }
-      | {
-          type: "tool_result";
-          tool_use_id: string;
-          content: string | Array<{ type: "text"; text: string }>;
-          is_error?: boolean;
-        }
-    >;
+    content:
+      | string
+      | Array<
+          | { type: "text"; text: string }
+          | {
+              type: "tool_result";
+              tool_use_id: string;
+              content: string | Array<{ type: "text"; text: string }>;
+              is_error?: boolean;
+            }
+        >;
   };
   tool_use_result?: unknown;
   toolUseResult?: unknown;
