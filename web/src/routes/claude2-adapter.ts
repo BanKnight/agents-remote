@@ -649,9 +649,11 @@ export function getMsgUuid(msg: SessionStreamServerMessage): string | null {
 export function getMsgToolResultIds(msg: SessionStreamServerMessage): string[] {
   if (msg.type !== "user") return [];
   const userMsg = msg as unknown as {
-    message?: { content?: Array<{ type?: string; tool_use_id?: string }> };
+    message?: { content?: unknown };
   };
-  return (userMsg.message?.content ?? [])
+  const content = userMsg.message?.content;
+  if (!Array.isArray(content)) return [];
+  return (content as Array<{ type?: string; tool_use_id?: string }>)
     .filter((b) => b.type === "tool_result" && typeof b.tool_use_id === "string")
     .map((b) => b.tool_use_id!);
 }
