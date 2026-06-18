@@ -1646,9 +1646,26 @@ export function renderChatStream(
         for (const part of item.parts) {
           if (part.type === "tool-call") {
             flushText();
+            const toolRawMsgs = rawMsgs.filter((m) => {
+              // Assistant message: keep if any content block is a tool_use
+              // matching this part's toolCallId.
+              const content = (m as Record<string, unknown>).message as
+                | { content?: Array<{ type?: string; id?: string }> }
+                | undefined;
+              if (Array.isArray(content?.content)) {
+                return content.content.some(
+                  (b) => b.type === "tool_use" && b.id === part.toolCallId,
+                );
+              }
+              // Synthetic/internal messages attached to this tool_use.
+              if ((m as Record<string, unknown>).sourceToolUseID === part.toolCallId) {
+                return true;
+              }
+              return false;
+            });
             const toolCustom: Record<string, unknown> = {
               sourceUuids: [...item.sourceUuids],
-              _rawMessages: rawMsgs,
+              _rawMessages: toolRawMsgs,
               systemMessageType: "tool-card",
               toolName: part.toolName,
               toolCallId: part.toolCallId,
