@@ -1040,6 +1040,12 @@ export type NormalizedPart =
       isError?: boolean;
       isOrphaned?: boolean;
       skillContent?: string;
+      progress?: {
+        subagentType?: string;
+        description: string;
+        lastToolName?: string;
+        usage: { total_tokens: number; tool_uses: number; duration_ms: number };
+      };
     };
 
 export type ChatStreamItem =
@@ -1480,6 +1486,57 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
+      // TaskProgress: inject into matching tool-call part, no item.
+      if (subtype === "task_progress") {
+        const tp = msg as unknown as {
+          task_id?: string;
+          tool_use_id?: string;
+          description?: string;
+          subagent_type?: string;
+          last_tool_name?: string;
+          usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+        };
+        const toolUseId = tp.tool_use_id;
+        if (!toolUseId) continue;
+
+        const progress = {
+          subagentType: tp.subagent_type,
+          description: tp.description ?? "",
+          lastToolName: tp.last_tool_name,
+          usage: {
+            total_tokens: tp.usage?.total_tokens ?? 0,
+            tool_uses: tp.usage?.tool_uses ?? 0,
+            duration_ms: tp.usage?.duration_ms ?? 0,
+          },
+        };
+
+        // In-buffer first.
+        const bufIdx = currentAssistantParts.findIndex(
+          (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
+        );
+        if (bufIdx >= 0) {
+          currentAssistantParts = currentAssistantParts.map((p, i) =>
+            i === bufIdx && p.type === "tool-call" ? { ...p, progress } : p,
+          );
+          continue;
+        }
+
+        // Already-emitted assistant items.
+        for (const item of items) {
+          if (item.kind !== "assistant") continue;
+          const partIdx = item.parts.findIndex(
+            (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
+          );
+          if (partIdx >= 0) {
+            item.parts = item.parts.map((p, j) =>
+              j === partIdx && p.type === "tool-call" ? { ...p, progress } : p,
+            );
+            break;
+          }
+        }
+        continue;
+      }
+
       // TaskState: no item (scalar state handled by the handler).
       if (
         subtype === "task_started" ||
@@ -1601,6 +1658,7 @@ export function renderChatStream(
               isError: part.isError,
               isOrphaned: part.isOrphaned,
               skillContent: part.skillContent,
+              ...(part.progress ? { progress: part.progress } : {}),
             };
             messages.push({
               role: "system",

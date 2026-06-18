@@ -889,7 +889,13 @@ function extractRetryInfo(err: ApiErrorAttachment): string | null {
   return s;
 }
 
-function RawDebugTooltip({ custom }: { custom?: Record<string, unknown> }) {
+function RawDebugTooltip({
+  custom,
+  className,
+}: {
+  custom?: Record<string, unknown>;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   // _rawMessages is populated from normalizeChatStream's _rawSnapshots.
@@ -907,7 +913,7 @@ function RawDebugTooltip({ custom }: { custom?: Record<string, unknown> }) {
       <button
         ref={btnRef}
         type="button"
-        className="rounded p-1 text-slate-500 hover:text-amber-400 transition cursor-pointer"
+        className={`rounded p-1 text-slate-500 hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
         onClick={() => setOpen(!open)}
         aria-label="View raw message"
       >
@@ -980,6 +986,14 @@ function SystemChatBubble() {
   if (systemMessageType === "tool-card") {
     const toolName = (custom?.toolName as string) ?? "?";
     const CustomUI = getToolRenderer(toolName);
+    const progress = custom?.progress as
+      | {
+          subagentType?: string;
+          description: string;
+          lastToolName?: string;
+          usage: { total_tokens: number; tool_uses: number; duration_ms: number };
+        }
+      | undefined;
     const toolProps = {
       toolName,
       argsText: (custom?.argsText as string) ?? "{}",
@@ -993,17 +1007,35 @@ function SystemChatBubble() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     return (
-      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
-        <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3 relative">
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+        <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
           <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
             <div className="px-3 py-2">
               <ToolUIAny {...toolProps} />
             </div>
-          </div>
-          <div className="absolute top-0 right-0 pt-1 pr-1">
-            <RawDebugTooltip custom={custom} />
+            {progress ? (
+              <div className="px-3 pb-2 flex items-center gap-2 text-xs border-t border-slate-700/50 pt-2 mx-3">
+                {progress.subagentType ? (
+                  <span className="shrink-0 rounded bg-amber-600/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-300">
+                    {progress.subagentType}
+                  </span>
+                ) : null}
+                <span className="truncate text-slate-300">{progress.description}</span>
+                <span className="shrink-0 text-slate-500 ml-auto tabular-nums">
+                  {progress.usage.tool_uses} tools ·{" "}
+                  {progress.usage.total_tokens >= 1000
+                    ? `${Math.round(progress.usage.total_tokens / 1000)}K`
+                    : progress.usage.total_tokens}{" "}
+                  tokens ·{" "}
+                  {progress.usage.duration_ms >= 10000
+                    ? `${Math.round(progress.usage.duration_ms / 1000)}s`
+                    : `${progress.usage.duration_ms}ms`}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
+        <RawDebugTooltip custom={custom} className="absolute top-0 right-0" />
       </MessagePrimitive.Root>
     );
   }

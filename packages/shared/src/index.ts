@@ -781,6 +781,25 @@ export type Claude2TaskNotification = {
   session_id?: string;
 };
 
+export type Claude2TaskProgress = {
+  type: "system";
+  subtype: "task_progress";
+  task_id: string;
+  tool_use_id?: string;
+  description: string;
+  subagent_type?: string;
+  usage: {
+    total_tokens: number;
+    tool_uses: number;
+    duration_ms: number;
+  };
+  last_tool_name?: string;
+  summary?: string;
+  uuid: string;
+  session_id: string;
+  workflow_progress?: Array<Record<string, unknown>>;
+};
+
 export type Claude2Result = {
   type: "result";
   subtype: "success" | "error_max_turns" | "error" | "interrupted";
@@ -931,6 +950,7 @@ export type SessionStreamServerMessage =
   | Claude2TaskStarted
   | Claude2TaskUpdated
   | Claude2TaskNotification
+  | Claude2TaskProgress
   | Claude2Result
   | Claude2ControlRequest
   | {
