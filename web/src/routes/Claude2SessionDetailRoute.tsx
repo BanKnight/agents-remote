@@ -998,11 +998,11 @@ function SystemChatBubble() {
     return (
       <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
         <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">
-          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
+          <div className="relative rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden">
             <div className="px-3 py-2">
               <ToolUIAny {...toolProps} />
             </div>
-            <div className="flex justify-end px-2 pb-1.5">
+            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <RawDebugTooltip custom={custom} />
             </div>
           </div>
