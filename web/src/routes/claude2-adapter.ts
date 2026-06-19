@@ -265,6 +265,28 @@ export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): 
   return responseOpen ? 1 : 0;
 }
 
+// ── Agent container status derivation ────────────────────────────────
+// Pure function: derives an Agent container's lifecycle status from
+// whether its tool_result (tail) has arrived + the socket connection
+// state. No independent container state — this is a projection of
+// rawMessages + connection, per UI = f(state).
+//   hasTail + !isError  → complete
+//   hasTail + isError   → error
+//   !hasTail + orphaned → orphaned (session ended, result never coming)
+//   !hasTail + !socket  → interrupted (disconnected, may reconnect)
+//   !hasTail + socket   → running (still expecting a result)
+export type AgentContainerStatus = "running" | "complete" | "error" | "interrupted" | "orphaned";
+
+export function deriveStatus(
+  input: { hasTail: boolean; isError: boolean; isOrphaned: boolean },
+  socketConnected: boolean,
+): AgentContainerStatus {
+  if (input.isOrphaned) return "orphaned";
+  if (input.hasTail) return input.isError ? "error" : "complete";
+  if (!socketConnected) return "interrupted";
+  return "running";
+}
+
 // ── Unified message dispatch ─────────────────────────────────────────
 // Entry point for all live messages after batch processing.
 // Converts SessionStreamServerMessage → ThreadMessageLike | null.
@@ -1030,6 +1052,11 @@ export type NormalizedPart =
       isError?: boolean;
       isOrphaned?: boolean;
       skillContent?: string;
+      // Agent container: uuids of child messages (subagent output stream)
+      // that render inside this tool-call's body. hasAgentBody is derived
+      // (= bodyChildUuids non-empty) — drives head-body-tail rendering.
+      bodyChildUuids?: string[];
+      hasAgentBody?: boolean;
       controlRequestId?: string;
       structuredResult?: unknown;
       rawSnapshots?: SessionStreamServerMessage[];
@@ -1089,6 +1116,11 @@ export type ChatStreamItem =
     }
   | { kind: "fallback"; ui: ThreadMessageLike };
 
+// Tool names that spawn a subagent and stream child messages via
+// parent_tool_use_id. Only these tool-calls get head-body-tail rendering;
+// skill bodies still fold into skillContent.
+const AGENT_TOOL_NAMES = new Set(["Agent", "agent", "Task", "task"]);
+
 /**
  * Layer 1 — state. Walks rawMessages once, performs all merging /
  * association / folding, emits a domain model (ChatStreamItem[]).
@@ -1146,6 +1178,63 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   let lastToolUseId: string | null = null;
   // api_error messages whose parent isn't emitted yet; resolved lazily.
   const pendingApiErrors: SessionStreamServerMessage[] = [];
+
+  // Pre-scan: identify Agent tool_use ids. Only Agent tool-calls get the
+  // head-body-tail container; their child messages (parent_tool_use_id) are
+  // kept as standalone items instead of folded into skillContent.
+  const agentToolUseIds = new Set<string>();
+  for (const msg of rawMessages) {
+    if (msg?.type !== "assistant") continue;
+    const content =
+      (msg as unknown as { message?: { content?: Array<Record<string, unknown>> } }).message
+        ?.content ?? [];
+    for (const block of content) {
+      if (
+        block.type === "tool_use" &&
+        typeof block.name === "string" &&
+        AGENT_TOOL_NAMES.has(block.name)
+      ) {
+        const id = block.id as string | undefined;
+        if (id) agentToolUseIds.add(id);
+      }
+    }
+  }
+
+  // Record a child message uuid onto its parent Agent tool-call part so the
+  // renderer can collect bodyIndices.
+  const pushBodyChild = (toolUseId: string, uuid: string) => {
+    if (!toolUseId || !uuid) return;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.kind !== "assistant") continue;
+      for (const part of item.parts) {
+        if (part.type === "tool-call" && part.toolCallId === toolUseId) {
+          if (!part.bodyChildUuids) part.bodyChildUuids = [];
+          if (!part.bodyChildUuids.includes(uuid)) part.bodyChildUuids.push(uuid);
+          return;
+        }
+      }
+    }
+  };
+
+  // Push a subagent child message as a standalone assistant item so it
+  // renders inside the Agent body (text + tool_use + nested Agent all
+  // surface). Mirrors the normal assistant path but tags the parent link.
+  const pushAgentBodyMessage = (parentToolUseId: string, msg: SessionStreamServerMessage) => {
+    const uuid = getMsgUuid(msg) ?? `agent-body-${items.length}`;
+    const item = pushAssistant(uuid, uuid ? [uuid] : [], [msg]);
+    const content =
+      (msg as unknown as { message?: { content?: Array<Record<string, unknown>> } }).message
+        ?.content ?? [];
+    const blocks: RawContentBlock[] = Array.isArray(content)
+      ? (content as RawContentBlock[])
+      : [{ type: "text", text: String(content) }];
+    for (const block of blocks) {
+      const part = processContentBlock(block);
+      if (part) item.parts.push(part as NormalizedPart);
+    }
+    pushBodyChild(parentToolUseId, uuid);
+  };
 
   const rawByUuid = new Map<string, SessionStreamServerMessage>();
   for (const msg of rawMessages) {
@@ -1277,6 +1366,19 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
   for (const msg of rawMessages) {
     if (!msg) continue;
+
+    // Agent body child: any message (user or assistant) carrying
+    // parent_tool_use_id that points at an Agent tool-call renders inside
+    // that Agent's body as a standalone item, not in the top-level stream.
+    const earlyParentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id;
+    if (
+      typeof earlyParentToolUseId === "string" &&
+      earlyParentToolUseId &&
+      agentToolUseIds.has(earlyParentToolUseId)
+    ) {
+      pushAgentBodyMessage(earlyParentToolUseId, msg);
+      continue;
+    }
 
     // ═══ Assistant ═══
     if (msg.type === "assistant") {
@@ -1642,6 +1744,18 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     if (fallback) items.push({ kind: "fallback", ui: fallback });
   }
 
+  // Derive hasAgentBody: any tool-call that collected subagent child
+  // messages (bodyChildUuids) becomes an Agent container. Pure projection
+  // of the association work done during the walk — no extra state.
+  for (const item of items) {
+    if (item.kind !== "assistant") continue;
+    for (const part of item.parts) {
+      if (part.type === "tool-call" && part.bodyChildUuids && part.bodyChildUuids.length > 0) {
+        part.hasAgentBody = true;
+      }
+    }
+  }
+
   return items;
 }
 
@@ -1699,28 +1813,60 @@ export function renderChatStream(
         for (const part of item.parts) {
           if (part.type === "tool-call") {
             flushText();
-            const toolCustom: Record<string, unknown> = {
-              sourceUuids: [...item.sourceUuids],
-              _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
-              systemMessageType: "tool-card",
-              toolName: part.toolName,
-              toolCallId: part.toolCallId,
-              args: part.args,
-              argsText: part.argsText,
-              result: part.result,
-              isError: part.isError,
-              isOrphaned: part.isOrphaned,
-              skillContent: part.skillContent,
-              controlRequestId: part.controlRequestId,
-              toolMessageId,
-              toolIndent: hasTextParts,
-              ...(part.progress ? { progress: part.progress } : {}),
-            };
-            messages.push({
-              role: "system",
-              content: [{ type: "text", text: "" }],
-              metadata: { custom: toolCustom },
-            });
+            if (part.hasAgentBody) {
+              // Agent container head. The renderer routes this to
+              // AgentContainer (head-body-tail). Body child messages are
+              // emitted as normal items in this loop; the post-process at
+              // the end resolves bodyChildUuids → bodyIndices and stamps
+              // absorbed on the children so the top-level stream skips them.
+              const argsRecord = part.args as Record<string, unknown>;
+              const agentCustom: Record<string, unknown> = {
+                sourceUuids: [...item.sourceUuids],
+                _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
+                systemMessageType: "agent-container",
+                toolName: part.toolName,
+                toolCallId: part.toolCallId,
+                subagentType: argsRecord?.subagent_type,
+                description: argsRecord?.description,
+                args: part.args,
+                argsText: part.argsText,
+                tailResult: part.result,
+                tailIsError: part.isError === true,
+                isOrphaned: part.isOrphaned === true,
+                controlRequestId: part.controlRequestId,
+                bodyChildUuids: part.bodyChildUuids ?? [],
+                toolMessageId,
+                ...(part.progress ? { progress: part.progress } : {}),
+              };
+              messages.push({
+                role: "system",
+                content: [{ type: "text", text: "" }],
+                metadata: { custom: agentCustom },
+              });
+            } else {
+              const toolCustom: Record<string, unknown> = {
+                sourceUuids: [...item.sourceUuids],
+                _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
+                systemMessageType: "tool-card",
+                toolName: part.toolName,
+                toolCallId: part.toolCallId,
+                args: part.args,
+                argsText: part.argsText,
+                result: part.result,
+                isError: part.isError,
+                isOrphaned: part.isOrphaned,
+                skillContent: part.skillContent,
+                controlRequestId: part.controlRequestId,
+                toolMessageId,
+                toolIndent: hasTextParts,
+                ...(part.progress ? { progress: part.progress } : {}),
+              };
+              messages.push({
+                role: "system",
+                content: [{ type: "text", text: "" }],
+                metadata: { custom: toolCustom },
+              });
+            }
           } else {
             textParts.push(part);
           }
@@ -1878,6 +2024,36 @@ export function renderChatStream(
     else custom.toolGroupPosition = "last";
     // Indent propagates from first to rest in same group.
     if (prevSameGroup) custom.toolIndent = prevCustom?.toolIndent;
+  }
+
+  // Post-process: resolve Agent container body. For each agent-container head,
+  // map its bodyChildUuids → global message indices (bodyIndices), and stamp
+  // absorbed on those children so the top-level render skips them — the
+  // AgentContainer renders them inside its body instead. Atomic within this
+  // single renderChatStream pass.
+  const uuidToIndex = new Map<string, number>();
+  for (let i = 0; i < messages.length; i++) {
+    const custom = messages[i].metadata?.custom as Record<string, unknown> | undefined;
+    const uuids = custom?.sourceUuids as string[] | undefined;
+    if (uuids) for (const u of uuids) uuidToIndex.set(u, i);
+  }
+  for (const msg of messages) {
+    const custom = msg.metadata?.custom as Record<string, unknown> | undefined;
+    if (custom?.systemMessageType !== "agent-container") continue;
+    const childUuids = (custom.bodyChildUuids as string[] | undefined) ?? [];
+    const bodyIndices: number[] = [];
+    for (const u of childUuids) {
+      const idx = uuidToIndex.get(u);
+      if (typeof idx === "number") {
+        bodyIndices.push(idx);
+        const childCustom = messages[idx]?.metadata?.custom as Record<string, unknown> | undefined;
+        if (childCustom) {
+          childCustom.absorbed = true;
+          childCustom.absorbedBy = custom.toolCallId;
+        }
+      }
+    }
+    custom.bodyIndices = bodyIndices;
   }
 
   if (opts?.isResume && messages.length > 0) {
@@ -2090,6 +2266,9 @@ export function useClaude2Session(
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
+  // Connection state drives Agent container status derivation (running vs
+  // interrupted). Toggled by socket onopen/onclose, not by message flow.
+  const [socketConnected, setSocketConnected] = useState(false);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
@@ -2298,7 +2477,10 @@ export function useClaude2Session(
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
-    socket.onopen = () => console.log("[claude2-adapter] ws open");
+    socket.onopen = () => {
+      console.log("[claude2-adapter] ws open");
+      setSocketConnected(true);
+    };
 
     socket.onmessage = (event) => {
       if (cancelled) return;
@@ -2392,6 +2574,7 @@ export function useClaude2Session(
     socket.onclose = () => {
       if (!cancelled) {
         socketRef.current = null;
+        setSocketConnected(false);
         setLoading(true);
         scheduleReconnect();
       }
@@ -2406,6 +2589,7 @@ export function useClaude2Session(
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
+      setSocketConnected(false);
       socket.close();
     };
   }, [
@@ -2476,6 +2660,7 @@ export function useClaude2Session(
     aiTitle,
     agentName,
     loading,
+    socketConnected,
     tasks,
     slashCommands,
     skills,

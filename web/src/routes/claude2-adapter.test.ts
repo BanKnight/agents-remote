@@ -8,6 +8,7 @@ import {
   applySwitchModelResult,
   computeRunningCount,
   convertContentToBubble,
+  deriveStatus,
   extractTaskOps,
   hasToolUseNamed,
   messageToThreadLike,
@@ -271,6 +272,132 @@ describe("computeRunningCount", () => {
 });
 
 // ── messageToThreadLike tests ─────────────────────────────────────────
+
+describe("deriveStatus", () => {
+  test("complete when tail arrived without error", () => {
+    expect(deriveStatus({ hasTail: true, isError: false, isOrphaned: false }, true)).toBe(
+      "complete",
+    );
+    // status stays complete regardless of connection after tail arrived
+    expect(deriveStatus({ hasTail: true, isError: false, isOrphaned: false }, false)).toBe(
+      "complete",
+    );
+  });
+
+  test("error when tail arrived with error", () => {
+    expect(deriveStatus({ hasTail: true, isError: true, isOrphaned: false }, true)).toBe("error");
+  });
+
+  test("running when no tail and socket still connected", () => {
+    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: false }, true)).toBe(
+      "running",
+    );
+  });
+
+  test("interrupted when no tail and socket disconnected (may reconnect)", () => {
+    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: false }, false)).toBe(
+      "interrupted",
+    );
+  });
+
+  test("orphaned takes precedence (session ended, result never coming)", () => {
+    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: true }, true)).toBe(
+      "orphaned",
+    );
+    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: true }, false)).toBe(
+      "orphaned",
+    );
+  });
+});
+
+// Agent subagent child: a user message carrying text from inside an Agent
+// tool-call, linked via parent_tool_use_id.
+const agentBodyChild = (
+  uuid: string,
+  parentToolUseId: string,
+  text: string,
+): SessionStreamServerMessage =>
+  ({
+    type: "user",
+    uuid,
+    parent_tool_use_id: parentToolUseId,
+    message: { role: "user", content: [{ type: "text", text }] },
+  }) as unknown as SessionStreamServerMessage;
+
+describe("agent-container pipeline", () => {
+  test("Agent tool_use with parent_tool_use_id children becomes agent-container with bodyIndices", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "plan it" }]),
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "agent-1",
+          name: "Agent",
+          input: { subagent_type: "Plan", description: "Plan X" },
+        },
+      ]),
+      agentBodyChild("child-1", "agent-1", "subagent thinking..."),
+      agentBodyChild("child-2", "agent-1", "subagent more output"),
+      user([{ type: "tool_result", tool_use_id: "agent-1", content: "plan done" }]),
+      result("success"),
+    ];
+
+    const items = normalizeChatStream(raw);
+    const agentPart = items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === "agent-1") as
+      | ({ type: "tool-call" } & { hasAgentBody?: boolean; bodyChildUuids?: string[] })
+      | undefined;
+    expect(agentPart).toBeDefined();
+    expect(agentPart?.hasAgentBody).toBe(true);
+    expect(agentPart?.bodyChildUuids).toEqual(["child-1", "child-2"]);
+
+    const rendered = renderChatStream(items);
+    const container = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "agent-container",
+    );
+    expect(container).toBeDefined();
+    const custom = container?.metadata?.custom as Record<string, unknown>;
+    expect(custom.subagentType).toBe("Plan");
+    expect(custom.description).toBe("Plan X");
+    expect(custom.tailResult).toBe("plan done");
+    expect(Array.isArray(custom.bodyIndices)).toBe(true);
+    expect((custom.bodyIndices as number[]).length).toBe(2);
+    for (const idx of custom.bodyIndices as number[]) {
+      const childCustom = rendered[idx]?.metadata?.custom as Record<string, unknown> | undefined;
+      expect(childCustom?.absorbed).toBe(true);
+    }
+  });
+
+  test("non-Agent tool_use does not become an agent-container", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "do it" }]),
+      assistant("a1", [
+        { type: "tool_use", id: "read-1", name: "Read", input: { file_path: "/x" } },
+      ]),
+      agentBodyChild("child-1", "read-1", "stray parent_tool_use_id"),
+      user([{ type: "tool_result", tool_use_id: "read-1", content: "content" }]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const readPart = items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === "read-1") as
+      | ({ type: "tool-call" } & { hasAgentBody?: boolean })
+      | undefined;
+    expect(readPart?.hasAgentBody).not.toBe(true);
+
+    const rendered = renderChatStream(items);
+    const container = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "agent-container",
+    );
+    expect(container).toBeUndefined();
+  });
+});
 
 describe("messageToThreadLike", () => {
   test("assistant message maps to assistant role with raw JSON content", () => {

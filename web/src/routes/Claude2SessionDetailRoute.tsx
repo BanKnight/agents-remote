@@ -43,6 +43,8 @@ import { createPortal } from "react-dom";
 import {
   Claude2BridgeContext,
   useClaude2Session,
+  deriveStatus,
+  type AgentContainerStatus,
   type ApiErrorAttachment,
   type RetryInfo,
   type TaskInfo,
@@ -83,6 +85,11 @@ type CompactState = {
 };
 
 const Claude2CompactContext = createContext<CompactState | null>(null);
+
+// WebSocket connection state, for Agent container status derivation
+// (running vs interrupted). Provided at the runtime body root so any
+// nested AgentContainer can read it without prop drilling.
+const SocketConnectedContext = createContext<boolean>(false);
 
 export function Claude2SessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -281,6 +288,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     aiTitle,
     agentName,
     loading,
+    socketConnected,
     tasks,
     slashCommands,
     skills,
@@ -391,60 +399,62 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>
-          <Claude2CompactContext.Provider value={compactState}>
-            <div
-              className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-            >
-              {detail.error instanceof Error ? (
-                <div className="shrink-0 px-3 py-2">
-                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                    {detail.error.message}
-                  </p>
-                </div>
-              ) : null}
-              {closeSession.error instanceof Error ? (
-                <div className="shrink-0 px-3 py-2">
-                  <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                    {closeSession.error.message}
-                  </p>
-                </div>
-              ) : null}
+          <SocketConnectedContext.Provider value={socketConnected}>
+            <Claude2CompactContext.Provider value={compactState}>
+              <div
+                className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+              >
+                {detail.error instanceof Error ? (
+                  <div className="shrink-0 px-3 py-2">
+                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                      {detail.error.message}
+                    </p>
+                  </div>
+                ) : null}
+                {closeSession.error instanceof Error ? (
+                  <div className="shrink-0 px-3 py-2">
+                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                      {closeSession.error.message}
+                    </p>
+                  </div>
+                ) : null}
 
-              <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+                <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
 
-                <CompactIndicator />
-                {tasks.length > 0 && (
-                  <TaskPanel
-                    collapsed={!tasksExpanded}
-                    t={t}
-                    tasks={tasks}
-                    onToggle={() => setTasksExpanded((v) => !v)}
-                  />
-                )}
-                <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                  <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                    <ComposerPrimitive.Root>
-                      <ComposerWithInterrupt
-                        currentModel={currentModel}
-                        currentResolved={resolvedModel ?? session?.model}
-                        availableModels={availableModels}
-                        modelSwitchVersion={modelSwitchVersion}
-                        permissionMode={permissionMode}
-                        availablePermissionModes={availablePermissionModes}
-                        slashCommands={slashCommands}
-                        skills={skills}
-                        projectName={projectName}
-                        sessionId={sessionId}
-                        aiTitle={aiTitle}
-                        agentName={agentName}
-                      />
-                    </ComposerPrimitive.Root>
-                  </ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                </div>
-              </ThreadPrimitive.Root>
-            </div>
-          </Claude2CompactContext.Provider>
+                  <CompactIndicator />
+                  {tasks.length > 0 && (
+                    <TaskPanel
+                      collapsed={!tasksExpanded}
+                      t={t}
+                      tasks={tasks}
+                      onToggle={() => setTasksExpanded((v) => !v)}
+                    />
+                  )}
+                  <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                    <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                      <ComposerPrimitive.Root>
+                        <ComposerWithInterrupt
+                          currentModel={currentModel}
+                          currentResolved={resolvedModel ?? session?.model}
+                          availableModels={availableModels}
+                          modelSwitchVersion={modelSwitchVersion}
+                          permissionMode={permissionMode}
+                          availablePermissionModes={availablePermissionModes}
+                          slashCommands={slashCommands}
+                          skills={skills}
+                          projectName={projectName}
+                          sessionId={sessionId}
+                          aiTitle={aiTitle}
+                          agentName={agentName}
+                        />
+                      </ComposerPrimitive.Root>
+                    </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                  </div>
+                </ThreadPrimitive.Root>
+              </div>
+            </Claude2CompactContext.Provider>
+          </SocketConnectedContext.Provider>
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
       {holder}
@@ -1072,15 +1082,7 @@ function SystemChatBubble() {
   // Metadata carries all tool-call props; we reconstruct ToolCallMessagePartProps.
   if (systemMessageType === "tool-card") {
     const toolName = (custom?.toolName as string) ?? "?";
-    const args = custom?.args as Record<string, unknown> | undefined;
-
-    // Detect Agent + Plan combo
-    let effectiveToolName = toolName;
-    if (toolName === "Agent" && args?.subagent_type === "Plan") {
-      effectiveToolName = "Agent_Plan";
-    }
-
-    const CustomUI = getToolRenderer(effectiveToolName);
+    const CustomUI = getToolRenderer(toolName);
     const progress = custom?.progress as
       | {
           subagentType?: string;
@@ -1364,6 +1366,214 @@ const MESSAGE_COMPONENTS = {
   SystemMessage: SystemChatBubble,
 } as const;
 
+// ── Agent container (head-body-tail) ──────────────────────────────────
+// An Agent tool-call whose subagent streamed child messages (parent_tool_use_id)
+// renders as a fixed-height container: HEAD bar (status) + BODY (real child
+// messages via MessageByIndex, tree connector line, internal scroll) + TAIL
+// bar (token usage + result). Status is derived purely from tail arrival +
+// socket connection — no independent container state.
+
+type AgentContainerCustom = {
+  systemMessageType: "agent-container";
+  toolName?: string;
+  toolCallId?: string;
+  subagentType?: string;
+  description?: string;
+  tailResult?: string;
+  tailIsError?: boolean;
+  isOrphaned?: boolean;
+  progress?: {
+    subagentType?: string;
+    description: string;
+    lastToolName?: string;
+    usage: { total_tokens: number; tool_uses: number; duration_ms: number };
+  };
+  bodyIndices?: number[];
+};
+
+function StatusIndicator({ status }: { status: AgentContainerStatus }) {
+  if (status === "running") {
+    return (
+      <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+    );
+  }
+  if (status === "complete") {
+    return (
+      <svg
+        className="h-3 w-3 shrink-0 text-emerald-400"
+        viewBox="0 0 16 16"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M3 8l3.5 3.5L13 5"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  if (status === "error") {
+    return (
+      <svg
+        className="h-3 w-3 shrink-0 text-red-400"
+        viewBox="0 0 16 16"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (status === "interrupted") {
+    return <span className="shrink-0 text-[0.6rem] text-amber-400">interrupted</span>;
+  }
+  return <span className="shrink-0 text-[0.6rem] text-slate-500">orphaned</span>;
+}
+
+function AgentTailBar({
+  status,
+  progress,
+  tailResult,
+  tailIsError,
+}: {
+  status: AgentContainerStatus;
+  progress: AgentContainerCustom["progress"];
+  tailResult?: string;
+  tailIsError?: boolean;
+}) {
+  const [resultOpen, setResultOpen] = useState(false);
+  const showTail = status === "complete" || status === "error";
+  return (
+    <div className="flex flex-col gap-1 rounded-b-lg border-t border-slate-700/50 bg-slate-800/40 px-3 py-1.5">
+      {progress ? (
+        <div className="flex gap-3 text-[0.65rem] text-slate-400">
+          <span>{progress.usage.tool_uses} tools</span>
+          <span>{progress.usage.total_tokens.toLocaleString()} tokens</span>
+          <span>{Math.round(progress.usage.duration_ms / 1000)}s</span>
+        </div>
+      ) : null}
+      {showTail && tailResult ? (
+        <button
+          type="button"
+          onClick={() => setResultOpen(!resultOpen)}
+          className="text-left text-[0.65rem] text-slate-400 hover:text-slate-300"
+        >
+          {resultOpen ? "▾" : "▸"} {tailIsError ? "Error details" : "Final result"}
+        </button>
+      ) : null}
+      {resultOpen && tailResult ? (
+        <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-all text-xs text-slate-300">
+          {tailResult}
+        </pre>
+      ) : null}
+      {status === "error" && !tailResult ? (
+        <span className="text-xs text-red-300">Agent execution failed</span>
+      ) : null}
+    </div>
+  );
+}
+
+function AgentContainer({ headIndex }: { headIndex: number }) {
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as AgentContainerCustom,
+  );
+  const socketConnected = useContext(SocketConnectedContext);
+  const status = deriveStatus(
+    {
+      hasTail: custom.tailResult != null,
+      isError: custom.tailIsError === true,
+      isOrphaned: custom.isOrphaned === true,
+    },
+    socketConnected,
+  );
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
+  const bodyIndices = custom.bodyIndices ?? [];
+  const subagentType = custom.subagentType ?? "Agent";
+
+  // While running, pin body to bottom unless the user scrolled up.
+  useEffect(() => {
+    if (status !== "running") return;
+    const el = bodyRef.current;
+    if (!el) return;
+    if (stickRef.current) el.scrollTop = el.scrollHeight;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      stickRef.current = atBottom;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [status]);
+
+  // New body content while running + sticky → scroll to bottom.
+  useEffect(() => {
+    if (status === "running" && stickRef.current && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [status, bodyIndices.length]);
+
+  return (
+    <div className="my-1 rounded-lg border border-slate-700/60 bg-slate-800/30">
+      <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 py-1.5">
+        <svg
+          className="h-3.5 w-3.5 shrink-0 text-cyan-400"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="17" cy="17" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 8l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] uppercase text-slate-300">
+          {subagentType}
+        </span>
+        <span className="flex-1 truncate text-xs text-slate-200">
+          {custom.description ?? (status === "running" ? "Working..." : "Agent")}
+        </span>
+        <StatusIndicator status={status} />
+      </div>
+      {bodyIndices.length > 0 ? (
+        <div
+          ref={bodyRef}
+          className="ml-2 max-h-96 space-y-1 overflow-y-auto border-l-2 border-slate-700/60 pl-3"
+        >
+          {bodyIndices.map((i) => (
+            <MessageRouter key={i} index={i} />
+          ))}
+        </div>
+      ) : null}
+      <AgentTailBar
+        status={status}
+        progress={custom.progress}
+        tailResult={custom.tailResult}
+        tailIsError={custom.tailIsError}
+      />
+    </div>
+  );
+}
+
+// Unified message router: top-level turn rendering and Agent body rendering
+// both go through this. agent-container → recursive AgentContainer; absorbed
+// children → null (rendered by their parent AgentContainer); otherwise the
+// standard MessageByIndex. Recursion falls out naturally for nested Agents.
+function MessageRouter({ index }: { index: number }) {
+  const custom = useAuiState(
+    (s) => s.thread.messages[index]?.metadata?.custom as Record<string, unknown> | undefined,
+  );
+  if (custom?.systemMessageType === "agent-container") return <AgentContainer headIndex={index} />;
+  if (custom?.absorbed === true) return null;
+  return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
+}
+
 function VirtualizedThreadContent({
   loading,
   retryInfo,
@@ -1372,8 +1582,16 @@ function VirtualizedThreadContent({
   retryInfo: RetryInfo | null;
 }) {
   // ── Turn builder ──────────────────────────────────────────────────
+  // Absorbed Agent body children report a non-user role so they never split
+  // a turn (they belong to their parent Agent's turn, rendered inside it).
   const messageSignature = useAuiState((s) =>
-    s.thread.messages.map((m, i) => `${i}:${m.role}:${m.id}`).join("\n"),
+    s.thread.messages
+      .map((m, i) => {
+        const custom = (m.metadata?.custom ?? {}) as Record<string, unknown>;
+        const role = custom.absorbed === true ? "assistant" : m.role;
+        return `${i}:${role}:${m.id}`;
+      })
+      .join("\n"),
   );
   const turns = useMemo(() => buildTurns(messageSignature), [messageSignature]);
 
@@ -1495,10 +1713,9 @@ function VirtualizedThreadContent({
                   }}
                 >
                   {Array.from({ length: turn.endIndex - turn.startIndex }, (_, offset) => (
-                    <ThreadPrimitive.MessageByIndex
+                    <MessageRouter
                       key={turn.startIndex + offset}
                       index={turn.startIndex + offset}
-                      components={MESSAGE_COMPONENTS}
                     />
                   ))}
                 </div>
