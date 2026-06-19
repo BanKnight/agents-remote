@@ -39,6 +39,7 @@ import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { createPortal } from "react-dom";
 import {
   Claude2BridgeContext,
   useClaude2Session,
@@ -508,16 +509,43 @@ function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderPro
 function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const [fullscreen, setFullscreen] = useState(false);
   return (
     <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative">
       <div className="flex items-end gap-0.5 self-end">
         <RawDebugTooltip custom={custom} />
       </div>
-      <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
+      <div
+        className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default"
+        onDoubleClick={() => setFullscreen(true)}
+      >
         <MessagePrimitive.Parts />
         <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
+      {fullscreen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex flex-col bg-slate-950"
+              style={{
+                paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
+                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
+                paddingLeft: "max(env(safe-area-inset-left, 0px), 1rem)",
+                paddingRight: "max(env(safe-area-inset-right, 0px), 1rem)",
+              }}
+              onClick={() => setFullscreen(false)}
+            >
+              <div className="flex-1 overflow-y-auto">
+                <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 mx-auto">
+                  <MessagePrimitive.Parts />
+                  <SyntheticBodyView />
+                  <ApiErrorAttachments />
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
           <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -596,10 +624,14 @@ function AssistantChatBubble() {
   const msgStatus = (message as { status?: { type?: string } }).status;
   const isStreaming = msgStatus?.type === "running";
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const [fullscreen, setFullscreen] = useState(false);
 
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
-      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
+      <div
+        className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default"
+        onDoubleClick={() => setFullscreen(true)}
+      >
         <AuiIf
           condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
         >
@@ -646,6 +678,72 @@ function AssistantChatBubble() {
         <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
+      {fullscreen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex flex-col bg-slate-950"
+              style={{
+                paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
+                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
+                paddingLeft: "max(env(safe-area-inset-left, 0px), 1rem)",
+                paddingRight: "max(env(safe-area-inset-right, 0px), 1rem)",
+              }}
+              onClick={() => setFullscreen(false)}
+            >
+              <div className="flex-1 overflow-y-auto">
+                <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 mx-auto">
+                  <AuiIf
+                    condition={(s) =>
+                      s.message.content.length === 0 && s.message.status?.type === "running"
+                    }
+                  >
+                    <div className="flex items-center gap-1.5 py-1">
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+                    </div>
+                  </AuiIf>
+                  <AuiIf condition={(s) => s.message.content.length > 0}>
+                    <MessagePrimitive.GroupedParts
+                      groupBy={groupPartByType({ reasoning: ["group-reasoning"] })}
+                    >
+                      {({ part, children }) => {
+                        switch (part.type) {
+                          case "group-reasoning":
+                            return (
+                              <ReasoningGroup running={part.status.type === "running"}>
+                                {children}
+                              </ReasoningGroup>
+                            );
+                          case "reasoning":
+                            return <span className="whitespace-pre-wrap">{part.text}</span>;
+                          case "text":
+                            return <MarkdownText />;
+                          case "tool-call": {
+                            const CustomUI = getToolRenderer(part.toolName);
+                            return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
+                          }
+                          default:
+                            return null;
+                        }
+                      }}
+                    </MessagePrimitive.GroupedParts>
+                    {isStreaming ? (
+                      <div className="mt-2 flex items-center gap-1.5 py-1">
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
+                      </div>
+                    ) : null}
+                  </AuiIf>
+                  <SyntheticBodyView />
+                  <ApiErrorAttachments />
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       <div className="flex items-end gap-0.5 self-end">
         <RawDebugTooltip custom={custom} />
       </div>
@@ -885,11 +983,11 @@ function RawDebugTooltip({
       <button
         ref={btnRef}
         type="button"
-        className={`rounded p-1 text-slate-500 hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
+        className={`rounded p-1.5 text-slate-500 hover:text-amber-400 transition cursor-pointer min-h-11 min-w-11 inline-flex items-center justify-center ${className ?? ""}`}
         onClick={() => setOpen(!open)}
         aria-label="View raw message"
       >
-        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2" />
           <path d="M8 5v0M8 7v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
@@ -929,7 +1027,12 @@ function RawDebugPopover({
       }
     : { position: "fixed", bottom: 8, right: 8, zIndex: 50, maxWidth: maxW };
 
-  return (
+  // Portal to document.body because this popover renders inside a virtualizer
+  // turn item that has transform:translateY(...). Per CSS spec, position:fixed
+  // inside a transform ancestor positions relative to that ancestor, not the
+  // viewport — so getBoundingClientRect() (viewport coords) and position:fixed
+  // (transform-relative coords) would mismatch by thousands of pixels.
+  return createPortal(
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
@@ -940,7 +1043,8 @@ function RawDebugPopover({
           {text}
         </pre>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 
@@ -1024,7 +1128,7 @@ function SystemChatBubble() {
         className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo}`}
       >
         {indent ? (
-          <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">{inner}</div>
+          <div className="w-full border-l-2 border-slate-700/50 pl-3">{inner}</div>
         ) : (
           <div className="w-full">{inner}</div>
         )}
@@ -1064,9 +1168,13 @@ function SystemChatBubble() {
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
       ? (rawData as Claude2FileHistorySnapshot)
       : null;
+  const [fullscreen, setFullscreen] = useState(false);
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
-      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
+      <div
+        className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default"
+        onDoubleClick={() => setFullscreen(true)}
+      >
         {attachmentType && rawData ? (
           <AttachmentBubble subtype={attachmentType} raw={rawData} />
         ) : fileSnapshot ? (
@@ -1079,6 +1187,37 @@ function SystemChatBubble() {
         <SyntheticBodyView />
         <ApiErrorAttachments />
       </div>
+      {fullscreen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex flex-col bg-slate-950"
+              style={{
+                paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
+                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
+                paddingLeft: "max(env(safe-area-inset-left, 0px), 1rem)",
+                paddingRight: "max(env(safe-area-inset-right, 0px), 1rem)",
+              }}
+              onClick={() => setFullscreen(false)}
+            >
+              <div className="flex-1 overflow-y-auto">
+                <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 mx-auto overflow-hidden">
+                  {attachmentType && rawData ? (
+                    <AttachmentBubble subtype={attachmentType} raw={rawData} />
+                  ) : fileSnapshot ? (
+                    <FileHistorySnapshotView snapshot={fileSnapshot} />
+                  ) : (
+                    <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
+                      <MessagePrimitive.Parts />
+                    </div>
+                  )}
+                  <SyntheticBodyView />
+                  <ApiErrorAttachments />
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       <div className="flex items-end gap-0.5 self-end">
         <RawDebugTooltip custom={custom} />
       </div>
@@ -1320,7 +1459,7 @@ function VirtualizedThreadContent({
                     position: "absolute",
                     top: 0,
                     left: 0,
-                    width: "100%",
+                    right: 0,
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
                 >
