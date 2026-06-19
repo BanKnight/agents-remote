@@ -1072,7 +1072,15 @@ function SystemChatBubble() {
   // Metadata carries all tool-call props; we reconstruct ToolCallMessagePartProps.
   if (systemMessageType === "tool-card") {
     const toolName = (custom?.toolName as string) ?? "?";
-    const CustomUI = getToolRenderer(toolName);
+    const args = custom?.args as Record<string, unknown> | undefined;
+
+    // Detect Agent + Plan combo
+    let effectiveToolName = toolName;
+    if (toolName === "Agent" && args?.subagent_type === "Plan") {
+      effectiveToolName = "Agent_Plan";
+    }
+
+    const CustomUI = getToolRenderer(effectiveToolName);
     const progress = custom?.progress as
       | {
           subagentType?: string;

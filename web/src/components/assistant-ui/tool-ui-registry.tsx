@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect, type ReactNode } from "react";
+import { useState, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { useComposerRuntime, type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -885,6 +885,152 @@ toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
 toolRegistry.set("bash", BashToolUI);
 toolRegistry.set("agent", AgentToolUI);
+
+// ── PlanToolUI: Head-Body-Tail Container for Plan Agents ──────────────
+
+export const PlanToolUI: ToolCallMessagePartComponent = ({
+  toolName: _toolName,
+  argsText,
+  result,
+  status,
+  ...rest
+}) => {
+  const isRunning = status.type === "running";
+  const isError = (rest as Record<string, unknown>).isError === true;
+  const metadata = (rest as Record<string, unknown>).metadata as
+    | Record<string, unknown>
+    | undefined;
+  const skillContent =
+    typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
+  const progress = metadata?.progress as
+    | {
+        subagentType?: string;
+        description: string;
+        lastToolName?: string;
+        usage: { total_tokens: number; tool_uses: number; duration_ms: number };
+      }
+    | undefined;
+  const args = safeParseArgs(argsText);
+  const description = typeof args.description === "string" ? args.description : "";
+  const resultStr =
+    typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
+
+  const [bodyExpanded, setBodyExpanded] = useState(!resultStr);
+
+  // Parse body items from skillContent
+  const bodyItems = useMemo(() => {
+    if (!skillContent) return [];
+    const lines = skillContent.split("\n");
+    const items: Array<{ type: "skill" | "text"; content: string }> = [];
+    let current = "";
+
+    for (const line of lines) {
+      if (line.startsWith("Base directory for this skill:")) {
+        if (current.trim()) items.push({ type: "text", content: current.trim() });
+        current = "";
+        items.push({ type: "skill", content: line });
+      } else {
+        current += line + "\n";
+      }
+    }
+    if (current.trim()) items.push({ type: "text", content: current.trim() });
+    return items;
+  }, [skillContent]);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-700/30 bg-slate-800/40 p-3">
+      {/* HEAD - Always visible */}
+      <div className="flex items-center gap-2">
+        <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-700/20 text-amber-400">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <g dangerouslySetInnerHTML={{ __html: Icons.plan }} />
+          </svg>
+        </div>
+        <span className="rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] uppercase text-slate-300">
+          Plan
+        </span>
+        <span className="flex-1 truncate text-xs text-slate-200">
+          {description || "Planning..."}
+        </span>
+        {isRunning && (
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+        )}
+        {!isRunning && !isError && (
+          <svg className="h-3 w-3 text-emerald-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M3 8l3.5 3.5L13 5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+        {isError && (
+          <svg className="h-3 w-3 text-red-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        )}
+      </div>
+
+      {/* BODY - Collapsible timeline */}
+      {bodyItems.length > 0 && (
+        <div className="border-t border-slate-700/50 pt-2">
+          <button
+            onClick={() => setBodyExpanded(!bodyExpanded)}
+            className="mb-1 flex w-full items-center gap-1 text-xs text-slate-400 hover:text-slate-300"
+          >
+            <span className={`transition-transform ${bodyExpanded ? "rotate-90" : ""}`}>▸</span>
+            <span>
+              {bodyExpanded ? "Hide" : "Show"} process ({bodyItems.length} item
+              {bodyItems.length !== 1 ? "s" : ""})
+            </span>
+          </button>
+          {bodyExpanded && (
+            <div className="ml-4 max-h-96 space-y-1.5 overflow-y-auto border-l-2 border-amber-700/30 pl-3">
+              {bodyItems.map((item, i) => (
+                <div key={i} className="text-xs">
+                  {item.type === "skill" ? (
+                    <div className="text-purple-300/70">
+                      <span className="text-[0.6rem] text-purple-400/50">Skill: </span>
+                      {item.content}
+                    </div>
+                  ) : (
+                    <div className="whitespace-pre-wrap text-slate-300/80">{item.content}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAIL - Result summary */}
+      <div className="space-y-1 border-t border-slate-700/50 pt-2">
+        {progress && (
+          <div className="flex gap-3 text-[0.65rem] text-slate-400">
+            <span>{progress.usage.tool_uses} tools</span>
+            <span>{progress.usage.total_tokens.toLocaleString()} tokens</span>
+            <span>{Math.round(progress.usage.duration_ms / 1000)}s</span>
+          </div>
+        )}
+        {resultStr && (
+          <CollapsibleSection
+            header={<span className="text-xs text-slate-300">Final Result</span>}
+            defaultExpanded={false}
+          >
+            <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap text-xs text-slate-300">
+              {resultStr}
+            </pre>
+          </CollapsibleSection>
+        )}
+        {isError && !resultStr && <div className="text-xs text-red-300">Plan execution failed</div>}
+      </div>
+    </div>
+  );
+};
+
+toolRegistry.set("Agent_Plan", PlanToolUI);
 
 export function getToolRenderer(toolName: string): ToolRenderer | undefined {
   // Exact match first
