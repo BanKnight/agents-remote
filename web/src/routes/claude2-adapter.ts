@@ -50,12 +50,16 @@ export const buildAllowAllControlResponse = (requestId: string): Claude2ControlR
 export const injectAskUserQuestionRequestId = (
   assistantMsg: AskUserQuestionAssistantMessage,
   requestId: string,
+  toolUseId?: string,
 ): AskUserQuestionAssistantMessage => ({
   ...assistantMsg,
   message: {
     ...assistantMsg.message,
     content: assistantMsg.message.content.map((block) => {
-      if (block.type === "tool_use" && block.name === "AskUserQuestion") {
+      if (
+        block.type === "tool_use" &&
+        (toolUseId ? block.id === toolUseId : block.name === "AskUserQuestion")
+      ) {
         return {
           ...block,
           input: { ...block.input, __controlRequestId: requestId },
@@ -1357,6 +1361,39 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         // Do NOT continue — the user message may also carry text blocks.
       }
 
+      // toolUseResult at top level: attach structuredResult to matching tool-call.
+      const toolUseResult =
+        (msg as Record<string, unknown>).toolUseResult ??
+        (msg as Record<string, unknown>).tool_use_result;
+      if (toolUseResult && lastToolUseId) {
+        for (const item of items) {
+          if (item.kind !== "assistant") continue;
+          const partIdx = item.parts.findIndex(
+            (p) => p.type === "tool-call" && p.toolCallId === lastToolUseId,
+          );
+          if (partIdx >= 0) {
+            item.parts = item.parts.map((p, j) =>
+              j === partIdx && p.type === "tool-call"
+                ? ({ ...p, structuredResult: toolUseResult } as NormalizedPart)
+                : p,
+            );
+            break;
+          }
+        }
+      }
+
+      // parent_tool_use_id: this user message is additional output from a
+      // tool execution (e.g. Agent sub-agent text). Attach text to the
+      // matching tool-call part instead of rendering as a user bubble.
+      const parentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id;
+      if (typeof parentToolUseId === "string" && parentToolUseId) {
+        const texts = _extractUserTextBlocks(msg.message.content);
+        if (texts.length > 0) {
+          attachSkillBody(parentToolUseId, texts.join("\n"));
+        }
+        continue;
+      }
+
       // SkillBody: attach text to tool-call, no item.
       const isSkillBody = msg.isSynthetic === true || msg.isMeta === true;
       if (isSkillBody) {
@@ -1985,15 +2022,14 @@ export function useClaude2Session(
     }
 
     // control_request (can_use_tool): inject __controlRequestId into the
-    // matching tool_use block in the most recent assistant message. This
-    // triggers the tool card to render permission confirmation UI.
+    // matching tool_use block identified by request.tool_use_id.
     if (
       msg.type === "control_request" &&
       (msg as unknown as { request?: { subtype?: string } }).request?.subtype === "can_use_tool"
     ) {
       const req = msg as {
         request_id: string;
-        request: { tool_name: string; input: Record<string, unknown> };
+        request: { tool_use_id: string; tool_name: string; input: Record<string, unknown> };
       };
       setRawMessages((prev) => {
         for (let i = prev.length - 1; i >= 0; i--) {
@@ -2002,12 +2038,17 @@ export function useClaude2Session(
           const am = m as unknown as {
             type: string;
             message: {
-              content: Array<{ type: string; name?: string; input: Record<string, unknown> }>;
+              content: Array<{
+                type: string;
+                id?: string;
+                name?: string;
+                input: Record<string, unknown>;
+              }>;
             };
           };
           const blocks = am.message.content;
           for (let j = 0; j < blocks.length; j++) {
-            if (blocks[j].type === "tool_use" && blocks[j].name === req.request.tool_name) {
+            if (blocks[j].type === "tool_use" && blocks[j].id === req.request.tool_use_id) {
               const newBlock = {
                 ...blocks[j],
                 input: { ...blocks[j].input, __controlRequestId: req.request_id },

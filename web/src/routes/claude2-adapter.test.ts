@@ -145,6 +145,7 @@ const assistantWithModel = (
 const controlRequest = (
   request_id: string,
   tool_name: string,
+  tool_use_id: string,
   input: Record<string, unknown> = {},
 ): SessionStreamServerMessage =>
   ({
@@ -153,6 +154,7 @@ const controlRequest = (
     request: {
       subtype: "can_use_tool",
       tool_name,
+      tool_use_id,
       display_name: tool_name,
       input,
     },
@@ -249,10 +251,10 @@ describe("helper functions", () => {
   });
 
   test("control_request helper input matches ask question routing shape", () => {
-    expect(controlRequest("req-7", "Bash", { command: "pwd" })).toMatchObject({
+    expect(controlRequest("req-7", "Bash", "toolu-7", { command: "pwd" })).toMatchObject({
       type: "control_request",
       request_id: "req-7",
-      request: { tool_name: "Bash", input: { command: "pwd" } },
+      request: { tool_name: "Bash", tool_use_id: "toolu-7", input: { command: "pwd" } },
     });
   });
 });

@@ -819,6 +819,7 @@ export type Claude2Result = {
 // Actual format from Claude CLI v2.1.160+:
 //   {"type":"control_request","request_id":"uuid",
 //    "request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion",
+//               "tool_use_id":"toolu_XXXX",
 //               "display_name":"AskUserQuestion","input":{"questions":[...]}}}
 //
 // Answer with control_response on stdin:
@@ -830,6 +831,7 @@ export type Claude2ControlRequest = {
   request: {
     subtype: string;
     tool_name: string;
+    tool_use_id: string;
     display_name: string;
     input: Record<string, unknown>;
   };
