@@ -512,11 +512,9 @@ function UserChatBubble() {
   const [fullscreen, setFullscreen] = useState(false);
   return (
     <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative">
-      <div className="flex items-end gap-0.5 self-end">
-        <RawDebugTooltip custom={custom} />
-      </div>
+      <RawDebugTooltip custom={custom} className="self-end" />
       <div
-        className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default"
+        className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
         <MessagePrimitive.Parts />
@@ -629,7 +627,7 @@ function AssistantChatBubble() {
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
       <div
-        className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default"
+        className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
         <AuiIf
@@ -744,9 +742,7 @@ function AssistantChatBubble() {
             document.body,
           )
         : null}
-      <div className="flex items-end gap-0.5 self-end">
-        <RawDebugTooltip custom={custom} />
-      </div>
+      <RawDebugTooltip custom={custom} className="self-end" />
       <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {!isEmpty && !isStreaming ? (
           <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
@@ -983,11 +979,11 @@ function RawDebugTooltip({
       <button
         ref={btnRef}
         type="button"
-        className={`rounded p-1.5 text-slate-500 hover:text-amber-400 transition cursor-pointer min-h-11 min-w-11 inline-flex items-center justify-center ${className ?? ""}`}
+        className={`rounded p-2 text-slate-500 hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
         onClick={() => setOpen(!open)}
         aria-label="View raw message"
       >
-        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2" />
           <path d="M8 5v0M8 7v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
@@ -1132,7 +1128,7 @@ function SystemChatBubble() {
         ) : (
           <div className="w-full">{inner}</div>
         )}
-        <RawDebugTooltip custom={custom} className="absolute top-0 right-0" />
+        <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
       </MessagePrimitive.Root>
     );
   }
@@ -1172,7 +1168,7 @@ function SystemChatBubble() {
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div
-        className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default"
+        className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-x-hidden overflow-y-auto max-h-[55vh] cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
         {attachmentType && rawData ? (
@@ -1218,9 +1214,7 @@ function SystemChatBubble() {
             document.body,
           )
         : null}
-      <div className="flex items-end gap-0.5 self-end">
-        <RawDebugTooltip custom={custom} />
-      </div>
+      <RawDebugTooltip custom={custom} className="self-end" />
     </MessagePrimitive.Root>
   );
 }
