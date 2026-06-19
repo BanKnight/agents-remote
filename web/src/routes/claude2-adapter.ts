@@ -1980,10 +1980,56 @@ export function useClaude2Session(
       return;
     }
 
-    // The remaining types (user, system, result, file-history-snapshot,
-    // control_request) carry no scalar state beyond what their dedicated
-    // branches above already handle. Bubble/visibility decisions for them
-    // live entirely in renderChatStream.
+    // control_request (can_use_tool): inject __controlRequestId into the
+    // matching tool_use block in the most recent assistant message. This
+    // triggers the tool card to render permission confirmation UI.
+    if (
+      msg.type === "control_request" &&
+      (msg as unknown as { request?: { subtype?: string } }).request?.subtype === "can_use_tool"
+    ) {
+      const req = msg as {
+        request_id: string;
+        request: { tool_name: string; input: Record<string, unknown> };
+      };
+      setRawMessages((prev) => {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const m = prev[i];
+          if (m.type !== "assistant") continue;
+          const am = m as unknown as {
+            type: string;
+            message: {
+              content: Array<{ type: string; name?: string; input: Record<string, unknown> }>;
+            };
+          };
+          const blocks = am.message.content;
+          for (let j = 0; j < blocks.length; j++) {
+            if (blocks[j].type === "tool_use" && blocks[j].name === req.request.tool_name) {
+              const newBlock = {
+                ...blocks[j],
+                input: { ...blocks[j].input, __controlRequestId: req.request_id },
+              };
+              return [
+                ...prev.slice(0, i),
+                {
+                  ...m,
+                  message: {
+                    ...am.message,
+                    content: blocks.map((b, idx) => (idx === j ? newBlock : b)),
+                  },
+                },
+                ...prev.slice(i + 1),
+              ] as SessionStreamServerMessage[];
+            }
+          }
+        }
+        return prev;
+      });
+      return;
+    }
+
+    // The remaining types (user, system, result, file-history-snapshot)
+    // carry no scalar state. Bubble/visibility decisions for them live
+    // entirely in renderChatStream.
   }, []);
 
   const processBatch = useCallback(

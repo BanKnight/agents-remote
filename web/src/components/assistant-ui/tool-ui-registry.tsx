@@ -65,7 +65,10 @@ function makeToolRenderer(config: {
     const resultStr =
       typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
     const hasResult = resultStr.length > 0 && !isRunning;
+    const bridge = useContext(Claude2BridgeContext);
     const args = safeParseArgs(argsText);
+    const controlRequestId = (args.__controlRequestId as string) ?? "";
+    const needsPermission = controlRequestId !== "" && isRunning && !isOrphaned;
     const displayLabel = label ? label(args, toolName) : toolName;
     const badgeText = badge ? badge(args, toolName) : null;
     const hasArgs = argsText.length > 0 && argsText !== "{}";
@@ -75,8 +78,16 @@ function makeToolRenderer(config: {
     const skillContent =
       typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
 
-    const accentColor = isError ? "text-red-400" : "text-cyan-400";
-    const accentDivider = isError ? "border-red-500/20" : "border-slate-700/50";
+    const accentColor = isError
+      ? "text-red-400"
+      : needsPermission
+        ? "text-amber-400"
+        : "text-cyan-400";
+    const accentDivider = isError
+      ? "border-red-500/20"
+      : needsPermission
+        ? "border-amber-500/20"
+        : "border-slate-700/50";
 
     const bodyNode = body ? body(args) : null;
     const primaryNode = bodyNode ? (
@@ -105,7 +116,7 @@ function makeToolRenderer(config: {
 
     return (
       <CollapsibleSection
-        className={`my-1 ${accentColor}`}
+        className={`my-1 ${accentColor} ${needsPermission ? "animate-pulse ring-1 ring-amber-500/30 rounded-lg" : ""}`}
         dividerClassName={accentDivider}
         header={(expanded) => (
           <>
@@ -134,6 +145,31 @@ function makeToolRenderer(config: {
           </>
         )}
       >
+        {needsPermission ? (
+          <div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/25 px-3 py-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400 animate-pulse" />
+            <span className="text-xs font-medium text-amber-300 flex-1">等待确认</span>
+            <button
+              type="button"
+              className="rounded-md bg-amber-500/25 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/40 active:bg-amber-500/50 transition"
+              onClick={() =>
+                bridge?.respondToControlRequest(controlRequestId, {
+                  ...args,
+                  __controlRequestId: controlRequestId,
+                })
+              }
+            >
+              允许
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-slate-700/50 px-3 py-1 text-xs font-medium text-slate-400 hover:bg-slate-600/50 hover:text-slate-300 transition"
+              onClick={() => bridge?.cancelControlRequest(controlRequestId)}
+            >
+              拒绝
+            </button>
+          </div>
+        ) : null}
         {hasContent ? (
           <>
             {primaryNode}
