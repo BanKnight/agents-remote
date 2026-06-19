@@ -118,25 +118,25 @@ WebSocket 连接 → stream() → relay.activate() → JSONL 加载 → buffer
 ## 调试第三方库 Bug
 - 遇到第三方库 bug 时，正确顺序：① `tvly search` 查库的 issue → ② 找同样使用该库的开源项目参考实战解法（clone 到 `~/repos`）→ ③ 读 `node_modules` 源码验证机制 → ④ 一次性实现。不要靠猜测反复试错。
 
-## CSS 布局陷阱
+## CSS 布局原则
 
-### position:fixed 在 transform 祖先内失效
-- CSS 规范：`transform` 创建新的 containing block，导致内部的 `position: fixed` 相对于 transform 祖先定位，而不是视口。
-- 虚拟化列表（`@tanstack/react-virtual`）使用 `transform: translateY()` 做滚动偏移，任何内部的 popover/tooltip 如果用 `position: fixed`，坐标会与 `getBoundingClientRect()`（视口坐标）产生数千像素偏差。
-- **规则**：虚拟化列表内的 `position: fixed` 组件必须通过 `createPortal(document.body)` 渲染到虚拟化 DOM 树外部。
+### 1. 如无必要，勿增实体
+- **不要加 wrapper div**。改现有元素的 attribute/className，不改 DOM 结构。
+- **不要加组件**。一个 `WithFullScreen` wrapper 引入了新的 flex item、新的 containing block、破坏了百分比解析。功能应通过现有元素上的 state + portal 实现。
+- **不要加 min 值**。`min-h-11 min-w-11` 强制尺寸在不同上下文表现不一致。用 padding + icon 自然尺寸。
+- **不要提取变量**。`const bubbleContent = (...)` 把 JSX 抽到变量里，增加了心智负担，没有解决任何问题。
 
-### 不要在 flex item 外随意加 wrapper div
-- 往 flex child 外包裹一个 div，会改变哪个元素是 flex item。原来在 flex item 上的 `max-w-[90%]`、背景色、圆角等类如果还留在内层，百分比值会解析到错误的 containing block（wrapper 而非 flex container），破坏宽度和定位。
-- 如果必须包裹，视觉类必须传给 wrapper，让 wrapper 成为承担这些样式的 flex item。
+### 2. 定位问题先追溯 containing block 链
+- 任何 `position: absolute/fixed` 元素的定位基准是它最近的 containing block。问三个问题：
+  - 哪个祖先创建了 containing block？（`position` 非 static？有 `transform`？）
+  - 那个祖先有没有 padding？（`absolute` 基准是 padding box，不是 border box）
+  - 有没有 `transform`？（CSS 规范：`transform` 会把 `fixed` 变成相对 transform 祖先，不再相对视口）
+- 回答了这三个问题再动手调 `top/right` 值，不要反复加负值试错。
 
-### 组件尺寸用内容驱动，不用写死的 min 值
-- `min-h-11 min-w-11` 等强制最小尺寸在不同上下文中表现不一致：气泡外可能 OK，tool 卡片内就过大。用 padding + icon 自然尺寸让组件在各场景都自适应。
-
-### absolute 定位的基准是 padding box
-- `position: absolute; top: 0; right: 0` 相对于最近 positioned 祖先的 **padding box**（content 区），不是 border box。如果祖先有 `px-3 py-1.5`，按钮会缩进在视觉边界内——用负值（`-top-1`）补偿。
-
-### 定位问题先确认轴向
-- 用户说"不够右上角"时，先确认是 X 轴还是 Y 轴的问题，不要默认两个轴都错。
+### 3. 虚拟化引入两层定位副作用
+- `@tanstack/react-virtual` 的每个 item 有 `position: absolute; transform: translateY(Npx)`。
+- **第一层**：`transform` 创建新的 containing block → 内部 `position: fixed` 失效，必须 portal 到 `document.body`。
+- **第二层**：item 自身是 `position: absolute` → 内部百分比宽度（`max-w-[90%]`）解析到 item 宽度而非视口。但如果 item 用 `left:0; right:0` 撑满，百分比效果等价。如果 item 用 `width:100%` 且不扣滚动条宽度，会横向溢出。
 
 ## 参考实现研究方法
 - Claude Code CLI / SDK 等上游文档稀疏时，不要反复试探或盲猜协议格式。
