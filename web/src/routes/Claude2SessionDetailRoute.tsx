@@ -1,6 +1,15 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AuiIf,
   ActionBarPrimitive,
@@ -10,6 +19,7 @@ import {
   ThreadPrimitive,
   unstable_useSlashCommandAdapter,
   type Unstable_SlashCommand,
+  useAuiState,
   useExternalStoreRuntime,
   useMessage,
   groupPartByType,
@@ -28,6 +38,7 @@ import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Claude2BridgeContext,
   useClaude2Session,
@@ -280,9 +291,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     detail.data?.session.permissionMode,
   );
 
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const didInitialScrollRef = useRef(false);
-
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
   const [tasksExpanded, setTasksExpanded] = useState(true);
 
@@ -324,19 +332,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   };
 
   const runtime = useExternalStoreRuntime(storeAdapter);
-
-  // Scroll to top after initial history load (replay batch applied).
-  // Without this, assistant-ui auto-scrolls to the bottom on first render
-  // and the user sees the END of history instead of the beginning.
-  const msgCount = storeAdapter.messages?.length ?? 0;
-  useEffect(() => {
-    if (!didInitialScrollRef.current && msgCount > 0) {
-      didInitialScrollRef.current = true;
-      requestAnimationFrame(() => {
-        viewportRef.current?.scrollTo({ top: 0 });
-      });
-    }
-  }, [msgCount]);
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
@@ -415,28 +410,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
               ) : null}
 
               <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ThreadPrimitive.Viewport
-                  ref={viewportRef}
-                  className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 scroll-smooth"
-                >
-                  <ThreadViewportContent loading={loading} retryInfo={retryInfo} />
-                </ThreadPrimitive.Viewport>
-                <div className="relative h-0 w-full pointer-events-none">
-                  <ThreadPrimitive.ScrollToBottom
-                    behavior="smooth"
-                    className="pointer-events-auto absolute -top-12 right-3 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition-all duration-300 ease-out hover:bg-slate-600/90 hover:scale-110 disabled:opacity-0 disabled:scale-50 cursor-pointer"
-                  >
-                    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path
-                        d="M4 6l4 4 4-4"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </ThreadPrimitive.ScrollToBottom>
-                </div>
+                <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
 
                 <CompactIndicator />
                 {tasks.length > 0 && (
@@ -535,11 +509,11 @@ function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   return (
-    <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative [content-visibility:auto] [contain-intrinsic-size:auto_250px]">
+    <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative">
       <div className="flex items-end gap-0.5 self-end">
         <RawDebugTooltip custom={custom} />
       </div>
-      <div className="max-w-[90%] max-h-[200px] overflow-y-auto rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
+      <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5">
         <MessagePrimitive.Parts />
         <SyntheticBodyView />
         <ApiErrorAttachments />
@@ -624,8 +598,8 @@ function AssistantChatBubble() {
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
 
   return (
-    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative [content-visibility:auto] [contain-intrinsic-size:auto_550px]">
-      <div className="max-w-[90%] max-h-[500px] overflow-y-auto rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
+    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5">
         <AuiIf
           condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
         >
@@ -1019,9 +993,7 @@ function SystemChatBubble() {
       last: "pt-0 pb-1.5",
     };
     const inner = (
-      <div
-        className={`${cardBorder[groupPos] ?? cardBorder.solo} bg-slate-800/40 max-h-[800px] overflow-y-auto`}
-      >
+      <div className={`${cardBorder[groupPos] ?? cardBorder.solo} bg-slate-800/40 overflow-hidden`}>
         <div className="px-3 py-2">
           <ToolUIAny {...toolProps} />
         </div>
@@ -1049,7 +1021,7 @@ function SystemChatBubble() {
     );
     return (
       <MessagePrimitive.Root
-        className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo} [content-visibility:auto] [contain-intrinsic-size:auto_850px]`}
+        className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo}`}
       >
         {indent ? (
           <div className="w-full border-l-2 border-slate-700/50 ml-4 pl-3">{inner}</div>
@@ -1064,7 +1036,7 @@ function SystemChatBubble() {
   // Batch boundary divider: thin horizontal line, no bubble, no debug tooltip.
   if (systemMessageType === "batch-boundary") {
     return (
-      <MessagePrimitive.Root className="flex w-full px-3 sm:px-5 py-1.5 [content-visibility:auto] [contain-intrinsic-size:auto_24px]">
+      <MessagePrimitive.Root className="flex w-full px-3 sm:px-5 py-1.5">
         <div className="w-full border-t border-slate-700/50" />
       </MessagePrimitive.Root>
     );
@@ -1074,7 +1046,7 @@ function SystemChatBubble() {
   if (systemMessageType === "compact-boundary") {
     const compactText = (custom?.compactText as string) ?? "";
     return (
-      <MessagePrimitive.Root className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5 [content-visibility:auto] [contain-intrinsic-size:auto_24px]">
+      <MessagePrimitive.Root className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5">
         <div className="flex-1 border-t border-amber-700/30" />
         {compactText ? (
           <span className="shrink-0 text-[0.6rem] text-amber-400/60 font-medium">
@@ -1093,8 +1065,8 @@ function SystemChatBubble() {
       ? (rawData as Claude2FileHistorySnapshot)
       : null;
   return (
-    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group [content-visibility:auto] [contain-intrinsic-size:auto_250px]">
-      <div className="max-w-[90%] max-h-[200px] overflow-y-auto rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
+    <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
+      <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-hidden">
         {attachmentType && rawData ? (
           <AttachmentBubble subtype={attachmentType} raw={rawData} />
         ) : fileSnapshot ? (
@@ -1189,26 +1161,203 @@ function formatSnapshotTime(iso: string): string | null {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function ThreadViewportContent({
+// ── Virtualization: turn builder ──────────────────────────────────
+// Turn = a user message + all following non-user messages up to the
+// next user message. Virtualizer operates on turns, not messages.
+
+type Turn = { startIndex: number; endIndex: number; key: string };
+
+function buildTurns(signature: string): Turn[] {
+  const lines = signature.split("\n").filter(Boolean);
+  if (lines.length === 0) return [];
+  const turns: Turn[] = [];
+  let currentTurnStart = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const role = lines[i].split(":")[1];
+    if (role === "user" && i !== currentTurnStart) {
+      turns.push({ startIndex: currentTurnStart, endIndex: i, key: `turn-${currentTurnStart}` });
+      currentTurnStart = i;
+    }
+  }
+  turns.push({
+    startIndex: currentTurnStart,
+    endIndex: lines.length,
+    key: `turn-${currentTurnStart}`,
+  });
+  return turns;
+}
+
+// Module-level constant: stable reference for ThreadPrimitive.MessageByIndex memo.
+const MESSAGE_COMPONENTS = {
+  UserMessage: UserChatBubble,
+  AssistantMessage: AssistantChatBubble,
+  SystemMessage: SystemChatBubble,
+} as const;
+
+function VirtualizedThreadContent({
   loading,
   retryInfo,
 }: {
   loading: boolean;
   retryInfo: RetryInfo | null;
 }) {
+  // ── Turn builder ──────────────────────────────────────────────────
+  const messageSignature = useAuiState((s) =>
+    s.thread.messages.map((m, i) => `${i}:${m.role}:${m.id}`).join("\n"),
+  );
+  const turns = useMemo(() => buildTurns(messageSignature), [messageSignature]);
+
+  // ── Scroll container ──────────────────────────────────────────────
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // ── Sticky-to-bottom ──────────────────────────────────────────────
+  const stickyRef = useRef(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (!el) return;
+      const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) <= 1;
+      stickyRef.current = atBottom;
+      setShowScrollButton(!atBottom);
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) stickyRef.current = false;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
+  // Pin to bottom while sticky and content resizes.
+  useEffect(() => {
+    const wrapper = contentRef.current;
+    if (!wrapper) return;
+    const ro = new ResizeObserver(() => {
+      if (stickyRef.current && scrollerRef.current) {
+        scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
+      }
+    });
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── Virtualizer ───────────────────────────────────────────────────
+  const virtualizer = useVirtualizer({
+    count: turns.length,
+    estimateSize: () => 200,
+    getItemKey: (index: number) => turns[index]?.key ?? `turn-${index}`,
+    getScrollElement: () => scrollerRef.current,
+    overscan: 4,
+    scrollToFn: (offset) => {
+      if (!stickyRef.current) {
+        scrollerRef.current?.scrollTo({ top: offset, behavior: "auto" });
+      }
+    },
+  });
+
+  // Initial jump to bottom.
+  const didInitialJumpRef = useRef(false);
+  useLayoutEffect(() => {
+    if (didInitialJumpRef.current || turns.length === 0) return;
+    didInitialJumpRef.current = true;
+    stickyRef.current = true;
+    scrollerRef.current?.scrollTo({
+      top: scrollerRef.current.scrollHeight,
+      behavior: "instant" as ScrollBehavior,
+    });
+  }, [turns.length]);
+
+  // Jump to bottom when streaming starts.
+  const prevIsRunningRef = useRef(false);
+  useLayoutEffect(() => {
+    if (isRunning && !prevIsRunningRef.current) {
+      stickyRef.current = true;
+      requestAnimationFrame(() => {
+        scrollerRef.current?.scrollTo({
+          top: scrollerRef.current.scrollHeight,
+          behavior: "smooth" as ScrollBehavior,
+        });
+      });
+    }
+    prevIsRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  const jumpToBottom = useCallback(() => {
+    stickyRef.current = true;
+    scrollerRef.current?.scrollTo({
+      top: scrollerRef.current.scrollHeight,
+      behavior: "smooth" as ScrollBehavior,
+    });
+  }, []);
+
+  // ── Render ────────────────────────────────────────────────────────
+  const items = virtualizer.getVirtualItems();
+
   return (
-    <>
-      {loading ? <ChatSkeleton /> : null}
-      <ThreadPrimitive.Messages
-        components={{
-          UserMessage: UserChatBubble,
-          AssistantMessage: AssistantChatBubble,
-          SystemMessage: SystemChatBubble,
-        }}
-      />
-      <RetryIndicator retryInfo={retryInfo} />
-      <ThreadPrimitive.ViewportFooter />
-    </>
+    <div className="relative flex-1 min-h-0 overflow-hidden">
+      <div ref={scrollerRef} className="h-full overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5">
+        {loading ? <ChatSkeleton /> : null}
+        <div ref={contentRef}>
+          <div style={{ position: "relative", height: virtualizer.getTotalSize() }}>
+            {items.map((virtualItem) => {
+              const turn = turns[virtualItem.index];
+              if (!turn) return null;
+              return (
+                <div
+                  key={virtualItem.key}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualItem.index}
+                  data-turn-message-ids={`${turn.startIndex}-${turn.endIndex - 1}`}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  {Array.from({ length: turn.endIndex - turn.startIndex }, (_, offset) => (
+                    <ThreadPrimitive.MessageByIndex
+                      key={turn.startIndex + offset}
+                      index={turn.startIndex + offset}
+                      components={MESSAGE_COMPONENTS}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <RetryIndicator retryInfo={retryInfo} />
+        <div className="h-4" />
+      </div>
+      {showScrollButton && (
+        <button
+          type="button"
+          onClick={jumpToBottom}
+          aria-label="Scroll to bottom"
+          className="pointer-events-auto absolute bottom-4 right-3 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition-all duration-300 ease-out hover:bg-slate-600/90 hover:scale-110 cursor-pointer"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
   );
 }
 
