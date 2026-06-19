@@ -118,6 +118,26 @@ WebSocket 连接 → stream() → relay.activate() → JSONL 加载 → buffer
 ## 调试第三方库 Bug
 - 遇到第三方库 bug 时，正确顺序：① `tvly search` 查库的 issue → ② 找同样使用该库的开源项目参考实战解法（clone 到 `~/repos`）→ ③ 读 `node_modules` 源码验证机制 → ④ 一次性实现。不要靠猜测反复试错。
 
+## CSS 布局陷阱
+
+### position:fixed 在 transform 祖先内失效
+- CSS 规范：`transform` 创建新的 containing block，导致内部的 `position: fixed` 相对于 transform 祖先定位，而不是视口。
+- 虚拟化列表（`@tanstack/react-virtual`）使用 `transform: translateY()` 做滚动偏移，任何内部的 popover/tooltip 如果用 `position: fixed`，坐标会与 `getBoundingClientRect()`（视口坐标）产生数千像素偏差。
+- **规则**：虚拟化列表内的 `position: fixed` 组件必须通过 `createPortal(document.body)` 渲染到虚拟化 DOM 树外部。
+
+### 不要在 flex item 外随意加 wrapper div
+- 往 flex child 外包裹一个 div，会改变哪个元素是 flex item。原来在 flex item 上的 `max-w-[90%]`、背景色、圆角等类如果还留在内层，百分比值会解析到错误的 containing block（wrapper 而非 flex container），破坏宽度和定位。
+- 如果必须包裹，视觉类必须传给 wrapper，让 wrapper 成为承担这些样式的 flex item。
+
+### 组件尺寸用内容驱动，不用写死的 min 值
+- `min-h-11 min-w-11` 等强制最小尺寸在不同上下文中表现不一致：气泡外可能 OK，tool 卡片内就过大。用 padding + icon 自然尺寸让组件在各场景都自适应。
+
+### absolute 定位的基准是 padding box
+- `position: absolute; top: 0; right: 0` 相对于最近 positioned 祖先的 **padding box**（content 区），不是 border box。如果祖先有 `px-3 py-1.5`，按钮会缩进在视觉边界内——用负值（`-top-1`）补偿。
+
+### 定位问题先确认轴向
+- 用户说"不够右上角"时，先确认是 X 轴还是 Y 轴的问题，不要默认两个轴都错。
+
 ## 参考实现研究方法
 - Claude Code CLI / SDK 等上游文档稀疏时，不要反复试探或盲猜协议格式。
 - 优先通过 deepwiki 查询参考项目（如 hapi `tiann/hapi`）对同一问题的处理方式：协议消息格式、生命周期阶段、UI 呈现策略。
