@@ -4,7 +4,6 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 import {
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
-  injectAskUserQuestionRequestId,
   isSyntheticAssistantMessage,
   applySwitchModelResult,
   computeRunningCount,
@@ -182,44 +181,6 @@ describe("helper functions", () => {
         response: { behavior: "allow", updatedInput: {} },
       },
     });
-  });
-
-  test("AskUserQuestion request id injection only touches matching tool_use", () => {
-    const assistantMsg = {
-      type: "assistant",
-      message: {
-        id: "msg-ask",
-        role: "assistant" as const,
-        content: [
-          { type: "text", text: "help" },
-          {
-            type: "tool_use",
-            id: "tu-ask",
-            name: "AskUserQuestion",
-            input: { questions: [{ question: "Which?" }] },
-          },
-          {
-            type: "tool_use",
-            id: "tu-other",
-            name: "Read",
-            input: { file_path: "/tmp/x" },
-          },
-        ],
-      },
-    } as unknown as SessionStreamServerMessage;
-
-    const updated = injectAskUserQuestionRequestId(assistantMsg as never, "req-42") as {
-      message: {
-        content: Array<{
-          type: string;
-          name?: string;
-          input: Record<string, unknown>;
-        }>;
-      };
-    };
-
-    expect(updated.message.content[1].input.__controlRequestId).toBe("req-42");
-    expect(updated.message.content[2].input.__controlRequestId).toBeUndefined();
   });
 
   test("synthetic assistant detection is based on model sentinel", () => {

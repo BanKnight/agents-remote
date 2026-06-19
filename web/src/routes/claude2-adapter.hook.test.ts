@@ -252,7 +252,6 @@ describe("useClaude2Session websocket lifecycle", () => {
 
     act(() => {
       result.current.bridge.respondToControlRequest("req-1", {
-        __controlRequestId: "req-1",
         foo: "bar",
         answers: ["yes"],
       } as never);

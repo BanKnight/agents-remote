@@ -26,8 +26,6 @@ type TaskSystemMessage = Extract<
   { type: "system"; subtype: "task_started" | "task_updated" | "task_notification" }
 >;
 
-type AskUserQuestionAssistantMessage = Extract<SessionStreamServerMessage, { type: "assistant" }>;
-
 const _isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSystemMessage =>
   msg.type === "system" &&
   "subtype" in msg &&
@@ -44,29 +42,6 @@ export const buildAllowAllControlResponse = (requestId: string): Claude2ControlR
     subtype: "success",
     request_id: requestId,
     response: { behavior: "allow", updatedInput: {} },
-  },
-});
-
-export const injectAskUserQuestionRequestId = (
-  assistantMsg: AskUserQuestionAssistantMessage,
-  requestId: string,
-  toolUseId?: string,
-): AskUserQuestionAssistantMessage => ({
-  ...assistantMsg,
-  message: {
-    ...assistantMsg.message,
-    content: assistantMsg.message.content.map((block) => {
-      if (
-        block.type === "tool_use" &&
-        (toolUseId ? block.id === toolUseId : block.name === "AskUserQuestion")
-      ) {
-        return {
-          ...block,
-          input: { ...block.input, __controlRequestId: requestId },
-        };
-      }
-      return block;
-    }),
   },
 });
 
@@ -776,6 +751,8 @@ export function markOrphanedToolCalls(messages: ThreadMessageLike[]): {
     if (msg.role === "system" && custom?.systemMessageType === "tool-card") {
       if (custom.result != null || custom.isError === true || custom.isOrphaned === true)
         return msg;
+      // Don't orphan a tool that has a pending control_request.
+      if (custom.controlRequestId) return msg;
       changed = true;
       return {
         ...msg,
@@ -790,6 +767,7 @@ export function markOrphanedToolCalls(messages: ThreadMessageLike[]): {
         if ("result" in p) return part;
         if (p.isError === true) return part;
         if (p.isOrphaned === true) return part;
+        if (p.controlRequestId) return part;
         changed = true;
         return { ...p, isOrphaned: true };
       });
@@ -1052,6 +1030,9 @@ export type NormalizedPart =
       isError?: boolean;
       isOrphaned?: boolean;
       skillContent?: string;
+      controlRequestId?: string;
+      structuredResult?: unknown;
+      rawSnapshots?: SessionStreamServerMessage[];
       progress?: {
         subagentType?: string;
         description: string;
@@ -1140,6 +1121,23 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     items.push(item);
     drainPendingApiErrors();
     return item;
+  };
+
+  // Push a raw message into the matching tool-call part's per-part snapshot
+  // array so the debug panel shows exactly the messages that compose this
+  // tool-card's rendering.
+  const pushPartRaw = (toolUseId: string, msg: SessionStreamServerMessage) => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.kind !== "assistant") continue;
+      for (const part of item.parts) {
+        if (part.type === "tool-call" && part.toolCallId === toolUseId) {
+          if (!part.rawSnapshots) part.rawSnapshots = [];
+          if (!part.rawSnapshots.includes(msg)) part.rawSnapshots.push(msg);
+          return;
+        }
+      }
+    }
   };
 
   let pendingEstimatedTokens: number | null = null;
@@ -1300,6 +1298,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         if (!attachedViaParent && sourceToolUseId) {
           attachSkillBody(sourceToolUseId, extractSyntheticBody(msg));
         }
+        if (sourceToolUseId) pushPartRaw(sourceToolUseId, msg);
         continue;
       }
 
@@ -1328,6 +1327,13 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         const part = processContentBlock(block as RawContentBlock);
         if (part) target.parts.push(part as NormalizedPart);
       }
+      // Parent assistant message belongs to every tool-call part it produced.
+      for (const part of target.parts) {
+        if (part.type === "tool-call") {
+          if (!part.rawSnapshots) part.rawSnapshots = [];
+          if (!part.rawSnapshots.includes(msg)) part.rawSnapshots.push(msg);
+        }
+      }
       continue;
     }
 
@@ -1354,6 +1360,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
                     }
                   : p,
               );
+              pushPartRaw(tr.toolUseId, msg);
               break;
             }
           }
@@ -1377,6 +1384,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
                 ? ({ ...p, structuredResult: toolUseResult } as NormalizedPart)
                 : p,
             );
+            pushPartRaw(lastToolUseId, msg);
             break;
           }
         }
@@ -1391,6 +1399,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         if (texts.length > 0) {
           attachSkillBody(parentToolUseId, texts.join("\n"));
         }
+        pushPartRaw(parentToolUseId, msg);
         continue;
       }
 
@@ -1401,6 +1410,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         const toolUseId = sourceToolUseId ?? lastToolUseId;
         const body = extractSyntheticBody(msg);
         attachSkillBody(toolUseId ?? "", body);
+        if (toolUseId) pushPartRaw(toolUseId, msg);
         continue;
       }
 
@@ -1411,6 +1421,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         const sourceToolUseId = msg.sourceToolUseID;
         const toolUseId = sourceToolUseId ?? lastToolUseId;
         attachSkillBody(toolUseId ?? "", texts.join("\n"));
+        if (toolUseId) pushPartRaw(toolUseId, msg);
         continue;
       }
 
@@ -1536,6 +1547,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
             item.parts = item.parts.map((p, j) =>
               j === partIdx && p.type === "tool-call" ? { ...p, progress } : p,
             );
+            pushPartRaw(toolUseId, msg);
             break;
           }
         }
@@ -1599,9 +1611,31 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // last-prompt: scalar state only (already handled in Pass 1). No item.
     if (msg.type === "last-prompt") continue;
 
-    // control_request: transient runtime control RPC. Its request_id is already
-    // injected into the matching assistant tool_use block in Pass 1 — no render.
-    if (msg.type === "control_request") continue;
+    // control_request: attach request_id as controlRequestId to the matching
+    // tool-call part. Same pattern as tool_result and task_progress above.
+    if (msg.type === "control_request") {
+      const cr = msg as { request_id: string; request?: { tool_use_id?: string } };
+      const toolUseId = cr.request?.tool_use_id;
+      if (toolUseId) {
+        for (let i = items.length - 1; i >= 0; i--) {
+          const item = items[i];
+          if (item.kind !== "assistant") continue;
+          const partIdx = item.parts.findIndex(
+            (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
+          );
+          if (partIdx >= 0) {
+            item.parts = item.parts.map((p, j) =>
+              j === partIdx && p.type === "tool-call"
+                ? { ...p, controlRequestId: cr.request_id }
+                : p,
+            );
+            pushPartRaw(toolUseId, msg);
+            break;
+          }
+        }
+      }
+      continue;
+    }
 
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
@@ -1665,26 +1699,9 @@ export function renderChatStream(
         for (const part of item.parts) {
           if (part.type === "tool-call") {
             flushText();
-            const toolRawMsgs = rawMsgs.filter((m) => {
-              // Assistant message: keep if any content block is a tool_use
-              // matching this part's toolCallId.
-              const content = (m as Record<string, unknown>).message as
-                | { content?: Array<{ type?: string; id?: string }> }
-                | undefined;
-              if (Array.isArray(content?.content)) {
-                return content.content.some(
-                  (b) => b.type === "tool_use" && b.id === part.toolCallId,
-                );
-              }
-              // Synthetic/internal messages attached to this tool_use.
-              if ((m as Record<string, unknown>).sourceToolUseID === part.toolCallId) {
-                return true;
-              }
-              return false;
-            });
             const toolCustom: Record<string, unknown> = {
               sourceUuids: [...item.sourceUuids],
-              _rawMessages: toolRawMsgs,
+              _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
               systemMessageType: "tool-card",
               toolName: part.toolName,
               toolCallId: part.toolCallId,
@@ -1694,6 +1711,7 @@ export function renderChatStream(
               isError: part.isError,
               isOrphaned: part.isOrphaned,
               skillContent: part.skillContent,
+              controlRequestId: part.controlRequestId,
               toolMessageId,
               toolIndent: hasTextParts,
               ...(part.progress ? { progress: part.progress } : {}),
@@ -2021,60 +2039,10 @@ export function useClaude2Session(
       return;
     }
 
-    // control_request (can_use_tool): inject __controlRequestId into the
-    // matching tool_use block identified by request.tool_use_id.
-    if (
-      msg.type === "control_request" &&
-      (msg as unknown as { request?: { subtype?: string } }).request?.subtype === "can_use_tool"
-    ) {
-      const req = msg as {
-        request_id: string;
-        request: { tool_use_id: string; tool_name: string; input: Record<string, unknown> };
-      };
-      setRawMessages((prev) => {
-        for (let i = prev.length - 1; i >= 0; i--) {
-          const m = prev[i];
-          if (m.type !== "assistant") continue;
-          const am = m as unknown as {
-            type: string;
-            message: {
-              content: Array<{
-                type: string;
-                id?: string;
-                name?: string;
-                input: Record<string, unknown>;
-              }>;
-            };
-          };
-          const blocks = am.message.content;
-          for (let j = 0; j < blocks.length; j++) {
-            if (blocks[j].type === "tool_use" && blocks[j].id === req.request.tool_use_id) {
-              const newBlock = {
-                ...blocks[j],
-                input: { ...blocks[j].input, __controlRequestId: req.request_id },
-              };
-              return [
-                ...prev.slice(0, i),
-                {
-                  ...m,
-                  message: {
-                    ...am.message,
-                    content: blocks.map((b, idx) => (idx === j ? newBlock : b)),
-                  },
-                },
-                ...prev.slice(i + 1),
-              ] as SessionStreamServerMessage[];
-            }
-          }
-        }
-        return prev;
-      });
-      return;
-    }
-
-    // The remaining types (user, system, result, file-history-snapshot)
-    // carry no scalar state. Bubble/visibility decisions for them live
-    // entirely in renderChatStream.
+    // The remaining types (user, system, result, file-history-snapshot,
+    // control_request) carry no scalar state. Bubble/visibility decisions for
+    // them live entirely in renderChatStream. control_request attaches its
+    // request_id to the matching tool-call part in normalizeChatStream.
   }, []);
 
   const processBatch = useCallback(
@@ -2250,11 +2218,6 @@ export function useClaude2Session(
   const bridge = useMemo<Claude2Bridge>(
     () => ({
       respondToControlRequest(requestId, updatedInput) {
-        const {
-          __controlRequestId: _,
-          answers,
-          ...restArgs
-        } = updatedInput as Record<string, unknown>;
         sendToSocket({
           type: "control_response",
           response: {
@@ -2262,7 +2225,7 @@ export function useClaude2Session(
             request_id: requestId,
             response: {
               behavior: "allow",
-              updatedInput: { ...restArgs, answers } as Record<string, unknown>,
+              updatedInput: updatedInput,
             },
           },
         });

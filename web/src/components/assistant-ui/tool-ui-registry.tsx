@@ -66,15 +66,15 @@ function makeToolRenderer(config: {
       typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
     const hasResult = resultStr.length > 0 && !isRunning;
     const bridge = useContext(Claude2BridgeContext);
-    const args = safeParseArgs(argsText);
-    const controlRequestId = (args.__controlRequestId as string) ?? "";
-    const needsPermission = controlRequestId !== "" && isRunning && !isOrphaned;
-    const displayLabel = label ? label(args, toolName) : toolName;
-    const badgeText = badge ? badge(args, toolName) : null;
-    const hasArgs = argsText.length > 0 && argsText !== "{}";
     const metadata = (rest as Record<string, unknown>).metadata as
       | Record<string, unknown>
       | undefined;
+    const controlRequestId = (metadata?.controlRequestId as string) ?? "";
+    const needsPermission = controlRequestId !== "" && isRunning && !isOrphaned;
+    const args = safeParseArgs(argsText);
+    const displayLabel = label ? label(args, toolName) : toolName;
+    const badgeText = badge ? badge(args, toolName) : null;
+    const hasArgs = argsText.length > 0 && argsText !== "{}";
     const skillContent =
       typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
 
@@ -115,49 +115,80 @@ function makeToolRenderer(config: {
     const sectionDivider = `mt-2 border-t pt-2 ${accentDivider}`;
 
     return (
-      <CollapsibleSection
-        className={`my-1 ${accentColor} ${needsPermission ? "animate-pulse ring-1 ring-amber-500/30 rounded-lg" : ""}`}
-        dividerClassName={accentDivider}
-        header={(expanded) => (
-          <>
-            <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
-            {badgeText ? (
-              <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-slate-300">
-                {badgeText}
-              </span>
-            ) : null}
-            <span className="text-xs font-medium truncate">{displayLabel}</span>
-            {isRunning && !isOrphaned ? (
-              <span
-                className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
-              />
-            ) : !expanded && isOrphaned ? (
-              <span className="ml-auto shrink-0 text-[0.6rem] text-slate-500">中断</span>
-            ) : !expanded && isError ? (
-              <span className="ml-auto shrink-0 text-[0.6rem] text-red-400/70">错误</span>
-            ) : !expanded && hasResult ? (
-              <span className="ml-auto shrink-0 truncate text-[0.6rem] text-slate-500">
-                {resultStr.length > 1024
-                  ? `${(resultStr.length / 1024).toFixed(1)}k`
-                  : `${resultStr.length} chars`}
-              </span>
-            ) : null}
-          </>
-        )}
-      >
+      <>
+        <CollapsibleSection
+          className={`my-1 ${accentColor}`}
+          dividerClassName={accentDivider}
+          header={(expanded) => (
+            <>
+              <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
+              {badgeText ? (
+                <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-slate-300">
+                  {badgeText}
+                </span>
+              ) : null}
+              <span className="text-xs font-medium truncate">{displayLabel}</span>
+              {isRunning && !isOrphaned ? (
+                <span
+                  className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
+                />
+              ) : !expanded && isOrphaned ? (
+                <span className="ml-auto shrink-0 text-[0.6rem] text-slate-500">中断</span>
+              ) : !expanded && isError ? (
+                <span className="ml-auto shrink-0 text-[0.6rem] text-red-400/70">错误</span>
+              ) : !expanded && hasResult ? (
+                <span className="ml-auto shrink-0 truncate text-[0.6rem] text-slate-500">
+                  {resultStr.length > 1024
+                    ? `${(resultStr.length / 1024).toFixed(1)}k`
+                    : `${resultStr.length} chars`}
+                </span>
+              ) : null}
+            </>
+          )}
+        >
+          {hasContent ? (
+            <>
+              {primaryNode}
+              {skillContent ? (
+                <div className={hasPrimary ? sectionDivider : ""}>
+                  <span className="text-[0.55rem] font-semibold uppercase tracking-wide text-purple-400/70">
+                    Skill
+                  </span>
+                  <pre className="mt-1 text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-purple-200/80">
+                    {skillContent}
+                  </pre>
+                </div>
+              ) : null}
+              {isOrphaned ? (
+                <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
+                  <span className="text-[0.6rem] text-slate-500">进程已退出，工具未返回结果</span>
+                </div>
+              ) : footer ? (
+                <div className={hasPrimary || skillContent ? sectionDivider : ""}>
+                  {footer(resultStr, args, isError)}
+                </div>
+              ) : hasResult ? (
+                <div
+                  className={`max-h-48 overflow-y-auto ${hasPrimary || skillContent ? sectionDivider : ""}`}
+                >
+                  <pre
+                    className={`whitespace-pre-wrap break-all text-[0.6rem] leading-relaxed ${isError ? "text-red-300" : "text-slate-300"}`}
+                  >
+                    {resultStr}
+                  </pre>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </CollapsibleSection>
         {needsPermission ? (
-          <div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/25 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/25 px-3 py-2 mt-1">
             <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400 animate-pulse" />
             <span className="text-xs font-medium text-amber-300 flex-1">等待确认</span>
             <button
               type="button"
               className="rounded-md bg-amber-500/25 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/40 active:bg-amber-500/50 transition"
-              onClick={() =>
-                bridge?.respondToControlRequest(controlRequestId, {
-                  ...args,
-                  __controlRequestId: controlRequestId,
-                })
-              }
+              onClick={() => bridge?.respondToControlRequest(controlRequestId, args)}
             >
               允许
             </button>
@@ -170,41 +201,7 @@ function makeToolRenderer(config: {
             </button>
           </div>
         ) : null}
-        {hasContent ? (
-          <>
-            {primaryNode}
-            {skillContent ? (
-              <div className={hasPrimary ? sectionDivider : ""}>
-                <span className="text-[0.55rem] font-semibold uppercase tracking-wide text-purple-400/70">
-                  Skill
-                </span>
-                <pre className="mt-1 text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-purple-200/80">
-                  {skillContent}
-                </pre>
-              </div>
-            ) : null}
-            {isOrphaned ? (
-              <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
-                <span className="text-[0.6rem] text-slate-500">进程已退出，工具未返回结果</span>
-              </div>
-            ) : footer ? (
-              <div className={hasPrimary || skillContent ? sectionDivider : ""}>
-                {footer(resultStr, args, isError)}
-              </div>
-            ) : hasResult ? (
-              <div
-                className={`max-h-48 overflow-y-auto ${hasPrimary || skillContent ? sectionDivider : ""}`}
-              >
-                <pre
-                  className={`whitespace-pre-wrap break-all text-[0.6rem] leading-relaxed ${isError ? "text-red-300" : "text-slate-300"}`}
-                >
-                  {resultStr}
-                </pre>
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </CollapsibleSection>
+      </>
     );
   };
 }
@@ -512,7 +509,10 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   const toolCallId = (rest as Record<string, unknown>).toolCallId as string | undefined;
   const args = safeParseArgs(argsText);
   const questions = (args.questions as Question[]) ?? [];
-  const controlRequestId = (args.__controlRequestId as string) ?? "";
+  const metadata = (rest as Record<string, unknown>).metadata as
+    | Record<string, unknown>
+    | undefined;
+  const controlRequestId = (metadata?.controlRequestId as string) ?? "";
   const structuredResult = (rest as Record<string, unknown>).structuredResult as
     | { answers?: Record<string, string> }
     | undefined;
@@ -542,7 +542,7 @@ export const AskUserQuestionToolUI: ToolCallMessagePartComponent = ({
   // tool_use_id matches tool_use.id → tool_result auto-matches → result prop
   // is set → card shows "已回答".
   //
-  // request_id (__controlRequestId) is a transient RPC key:
+  // request_id (controlRequestId) is a transient RPC key:
   //   - Present: live stream, user can submit via bridge.respondToControlRequest
   //   - Absent (""): history view, or edge case where control_request didn't fire.
   //     User can type into the composer.

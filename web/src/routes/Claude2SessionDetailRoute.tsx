@@ -1010,13 +1010,28 @@ function RawDebugPopover({
 }) {
   const rect = anchor?.getBoundingClientRect();
   const maxW = Math.min(window.innerWidth * 0.9, 28 * 16);
-  // Right-align to button, but clamp so panel stays in viewport
-  const rightEdge = rect ? window.innerWidth - rect.right : 8;
-  const left = Math.max(8, window.innerWidth - rightEdge - maxW);
+  const panelMaxH = Math.min(window.innerHeight * 0.8, 768);
+  // Right-align to button, clamped to viewport
+  const left = Math.max(
+    8,
+    Math.min(rect?.right ?? window.innerWidth, window.innerWidth - 8) - maxW,
+  );
+
+  // Position below button when there's room; flip above when not.
+  let top = rect ? rect.bottom + 4 : undefined;
+  if (top != null && top + panelMaxH > window.innerHeight) {
+    // Not enough space below — position above the button instead
+    top = Math.max(8, (rect?.top ?? 0) - panelMaxH - 4);
+  }
+  // Absolute fallback when even above doesn't fit
+  if (top != null && top + panelMaxH > window.innerHeight) {
+    top = Math.max(8, window.innerHeight - panelMaxH - 8);
+  }
+
   const style: React.CSSProperties = rect
     ? {
         position: "fixed",
-        top: Math.min(rect.bottom + 4, window.innerHeight - 520),
+        top,
         left,
         zIndex: 50,
         maxWidth: maxW,
@@ -1066,20 +1081,29 @@ function SystemChatBubble() {
           usage: { total_tokens: number; tool_uses: number; duration_ms: number };
         }
       | undefined;
+    const argsText = (custom?.argsText as string) ?? "{}";
+    const controlRequestId = custom?.controlRequestId as string | undefined;
     const toolProps = {
       toolName,
-      argsText: (custom?.argsText as string) ?? "{}",
+      argsText,
       result: custom?.result as string | undefined,
-      status: { type: "complete" as const },
+      status:
+        custom?.result != null || custom?.isError === true || custom?.isOrphaned === true
+          ? { type: "complete" as const }
+          : { type: "running" as const },
       isError: custom?.isError === true,
       isOrphaned: custom?.isOrphaned === true,
-      metadata: { skillContent: custom?.skillContent },
+      metadata: {
+        skillContent: custom?.skillContent,
+        controlRequestId,
+      },
     } as Record<string, unknown>;
     const ToolUI = CustomUI ?? ToolFallback;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     const groupPos = (custom?.toolGroupPosition as string) ?? "solo";
     const indent = custom?.toolIndent !== false;
+    const needsPermission = typeof controlRequestId === "string" && controlRequestId.length > 0;
     const cardBorder: Record<string, string> = {
       solo: "rounded-lg border border-slate-700/60",
       first: "rounded-t-lg border-l border-r border-t border-slate-700/60",
@@ -1092,8 +1116,13 @@ function SystemChatBubble() {
       middle: "py-0",
       last: "pt-0 pb-1.5",
     };
+    const baseBorder = cardBorder[groupPos] ?? cardBorder.solo;
+    const amberRing = needsPermission
+      ? "ring-2 ring-amber-500/40 shadow-[0_0_16px_rgba(245,158,11,0.15)]"
+      : "";
+    const pulseClass = needsPermission ? "animate-pulse" : "";
     const inner = (
-      <div className={`${cardBorder[groupPos] ?? cardBorder.solo} bg-slate-800/40 overflow-hidden`}>
+      <div className={`${baseBorder} ${amberRing} ${pulseClass} bg-slate-800/40 overflow-hidden`}>
         <div className="px-3 py-2">
           <ToolUIAny {...toolProps} />
         </div>
