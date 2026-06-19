@@ -1562,6 +1562,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // last-prompt: scalar state only (already handled in Pass 1). No item.
     if (msg.type === "last-prompt") continue;
 
+    // control_request: transient runtime control RPC. Its request_id is already
+    // injected into the matching assistant tool_use block in Pass 1 — no render.
+    if (msg.type === "control_request") continue;
+
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
     if (fallback) items.push({ kind: "fallback", ui: fallback });
