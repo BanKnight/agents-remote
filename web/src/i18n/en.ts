@@ -271,6 +271,8 @@ export const en = {
   "claude2.plan.feedback": "Tell AI how to revise",
   "claude2.plan.feedbackPlaceholder": "Feedback to revise the plan",
   "claude2.plan.enterToSend": "Enter to send · Shift+Enter for newline",
+  "claude2.plan.expand": "Expand plan",
+  "claude2.plan.exitFullscreen": "Exit fullscreen",
   "claude2.plan.send": "Send",
   "claude2.plan.result": "Result",
   "claude2.plan.error": "Plan approval failed",

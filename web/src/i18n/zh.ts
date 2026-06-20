@@ -271,6 +271,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.plan.feedback": "告诉 AI 怎么修改",
   "claude2.plan.feedbackPlaceholder": "反馈以修订计划",
   "claude2.plan.enterToSend": "回车发送 · Shift+Enter 换行",
+  "claude2.plan.expand": "展开计划",
+  "claude2.plan.exitFullscreen": "退出全屏",
   "claude2.plan.send": "发送",
   "claude2.plan.result": "结果",
   "claude2.plan.error": "计划审批失败",
