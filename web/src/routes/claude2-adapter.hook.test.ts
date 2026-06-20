@@ -1000,9 +1000,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     act(() => socket.open());
 
     act(() => {
-      socket.emit(
-        externalToolUseAssistant("a1", [{ tool_use_id: "tu-ask", name: "AskUserQuestion" }]),
-      );
+      socket.emit(externalToolUseAssistant("a1", [{ tool_use_id: "tu-ask", name: "Bash" }]));
       socket.emit(
         externalToolResultUser([{ tool_use_id: "tu-ask", content: "failed", is_error: true }]),
       );

@@ -20,6 +20,7 @@ import {
   unstable_useSlashCommandAdapter,
   type Unstable_SlashCommand,
   useAuiState,
+  useComposerRuntime,
   useExternalStoreRuntime,
   useMessage,
   groupPartByType,
@@ -29,6 +30,7 @@ import remarkGfm from "remark-gfm";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT } from "../i18n";
+import { formatTokenCount } from "../lib/utils";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { defaultConsoleSection, consoleSections } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -99,6 +101,13 @@ const SocketConnectedContext = createContext<boolean>(false);
 // `claude --help --permission-mode`). ExitPlanMode approval reads this to
 // decide whether "auto" mode is available (else fall back to acceptEdits).
 const PermissionModesContext = createContext<readonly string[]>([]);
+
+// Latest estimated_tokens of the in-flight response's thinking phase (null when
+// not thinking). AssistantChatBubble reads this to show a live "Thinking… (N
+// tokens)" indicator on assistant-ui's running placeholder before the thinking
+// block arrives. Thread-level derived state; the placeholder's metadata is not
+// ours to set, so it flows through context like SocketConnectedContext.
+const LiveThinkingTokensContext = createContext<number | null>(null);
 
 export function Claude2SessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -298,6 +307,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     agentName,
     loading,
     socketConnected,
+    liveThinkingTokens,
     tasks,
     slashCommands,
     skills,
@@ -410,60 +420,62 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
         <Claude2BridgeContext.Provider value={bridge}>
           <SocketConnectedContext.Provider value={socketConnected}>
             <PermissionModesContext.Provider value={availablePermissionModes}>
-              <Claude2CompactContext.Provider value={compactState}>
-                <div
-                  className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-                >
-                  {detail.error instanceof Error ? (
-                    <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                        {detail.error.message}
-                      </p>
-                    </div>
-                  ) : null}
-                  {closeSession.error instanceof Error ? (
-                    <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                        {closeSession.error.message}
-                      </p>
-                    </div>
-                  ) : null}
+              <LiveThinkingTokensContext.Provider value={liveThinkingTokens}>
+                <Claude2CompactContext.Provider value={compactState}>
+                  <div
+                    className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+                  >
+                    {detail.error instanceof Error ? (
+                      <div className="shrink-0 px-3 py-2">
+                        <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                          {detail.error.message}
+                        </p>
+                      </div>
+                    ) : null}
+                    {closeSession.error instanceof Error ? (
+                      <div className="shrink-0 px-3 py-2">
+                        <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                          {closeSession.error.message}
+                        </p>
+                      </div>
+                    ) : null}
 
-                  <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+                    <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                      <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
 
-                    <CompactIndicator />
-                    {tasks.length > 0 && (
-                      <TaskPanel
-                        collapsed={!tasksExpanded}
-                        t={t}
-                        tasks={tasks}
-                        onToggle={() => setTasksExpanded((v) => !v)}
-                      />
-                    )}
-                    <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                      <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                        <ComposerPrimitive.Root>
-                          <ComposerWithInterrupt
-                            currentModel={currentModel}
-                            currentResolved={resolvedModel ?? session?.model}
-                            availableModels={availableModels}
-                            modelSwitchVersion={modelSwitchVersion}
-                            permissionMode={permissionMode}
-                            availablePermissionModes={availablePermissionModes}
-                            slashCommands={slashCommands}
-                            skills={skills}
-                            projectName={projectName}
-                            sessionId={sessionId}
-                            aiTitle={aiTitle}
-                            agentName={agentName}
-                          />
-                        </ComposerPrimitive.Root>
-                      </ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                    </div>
-                  </ThreadPrimitive.Root>
-                </div>
-              </Claude2CompactContext.Provider>
+                      <CompactIndicator />
+                      {tasks.length > 0 && (
+                        <TaskPanel
+                          collapsed={!tasksExpanded}
+                          t={t}
+                          tasks={tasks}
+                          onToggle={() => setTasksExpanded((v) => !v)}
+                        />
+                      )}
+                      <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                        <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                          <ComposerPrimitive.Root>
+                            <ComposerWithInterrupt
+                              currentModel={currentModel}
+                              currentResolved={resolvedModel ?? session?.model}
+                              availableModels={availableModels}
+                              modelSwitchVersion={modelSwitchVersion}
+                              permissionMode={permissionMode}
+                              availablePermissionModes={availablePermissionModes}
+                              slashCommands={slashCommands}
+                              skills={skills}
+                              projectName={projectName}
+                              sessionId={sessionId}
+                              aiTitle={aiTitle}
+                              agentName={agentName}
+                            />
+                          </ComposerPrimitive.Root>
+                        </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                      </div>
+                    </ThreadPrimitive.Root>
+                  </div>
+                </Claude2CompactContext.Provider>
+              </LiveThinkingTokensContext.Provider>
             </PermissionModesContext.Provider>
           </SocketConnectedContext.Provider>
         </Claude2BridgeContext.Provider>
@@ -763,17 +775,27 @@ function AssistantChatBubble() {
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const { t } = useT();
   const [fullscreen, setFullscreen] = useState(false);
+  const liveThinkingTokens = useContext(LiveThinkingTokensContext);
 
   const renderBody = () => (
     <>
       <AuiIf
         condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
       >
-        <div className="flex items-center gap-1.5 py-1">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-        </div>
+        {liveThinkingTokens != null ? (
+          <div className="flex items-center gap-1.5 py-1 text-amber-400/90">
+            <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+            <span className="text-[0.7rem] font-medium">
+              Thinking… ({formatTokenCount(liveThinkingTokens)} tokens)
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 py-1">
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+          </div>
+        )}
       </AuiIf>
       <AuiIf condition={(s) => s.message.content.length > 0}>
         <MessagePrimitive.GroupedParts
@@ -900,9 +922,15 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
 
   let label = "Thinking";
   if (running) {
-    label = estimatedTokens != null ? `Thinking… (${estimatedTokens} tokens)` : "Thinking…";
+    label =
+      estimatedTokens != null
+        ? `Thinking… (${formatTokenCount(estimatedTokens)} tokens)`
+        : "Thinking…";
   } else {
-    label = estimatedTokens != null ? `Thinking (${estimatedTokens} tokens)` : "Thinking";
+    label =
+      estimatedTokens != null
+        ? `Thinking (${formatTokenCount(estimatedTokens)} tokens)`
+        : "Thinking";
   }
 
   return (
@@ -1258,10 +1286,7 @@ function SystemChatBubble() {
             ) : null}
             <span className="truncate text-slate-300">{progress.description}</span>
             <span className="shrink-0 text-slate-500 ml-auto tabular-nums">
-              {progress.usage.tool_uses} tools ·{" "}
-              {progress.usage.total_tokens >= 1000
-                ? `${Math.round(progress.usage.total_tokens / 1000)}K`
-                : progress.usage.total_tokens}{" "}
+              {progress.usage.tool_uses} tools · {formatTokenCount(progress.usage.total_tokens)}{" "}
               tokens ·{" "}
               {progress.usage.duration_ms >= 10000
                 ? `${Math.round(progress.usage.duration_ms / 1000)}s`
@@ -1595,7 +1620,7 @@ function AgentTailBar({
         {hasStats ? (
           <div className="flex flex-wrap gap-3 text-[0.65rem] text-slate-400">
             {tools != null ? <span>{tools} tools</span> : null}
-            {tokens != null ? <span>{tokens.toLocaleString()} tokens</span> : null}
+            {tokens != null ? <span>{formatTokenCount(tokens)} tokens</span> : null}
             {durationMs != null ? <span>{Math.round(durationMs / 1000)}s</span> : null}
           </div>
         ) : null}
@@ -1956,6 +1981,487 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   );
 }
 
+type Question = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options?: Array<{ label: string; description?: string }>;
+};
+
+type AskUserQuestionCustom = {
+  systemMessageType: "ask-user-question";
+  toolCallId?: string;
+  questions?: Question[];
+  args?: Record<string, unknown>;
+  controlRequestId?: string;
+  result?: string;
+  isError?: boolean;
+  isOrphaned?: boolean;
+};
+
+function QuestionGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className ?? "h-3.5 w-3.5 shrink-0 text-amber-300"}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="17.5" r="0.75" fill="currentColor" />
+    </svg>
+  );
+}
+
+function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
+  const { t } = useT();
+  const bridge = useContext(Claude2BridgeContext);
+  const composer = useComposerRuntime();
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as AskUserQuestionCustom,
+  );
+  const controlRequestId = custom.controlRequestId;
+  const isOrphaned = custom.isOrphaned === true;
+  const error = custom.isError === true;
+  const complete = custom.result != null && !error;
+  const awaiting = !!controlRequestId && custom.result == null && !isOrphaned && !error;
+  const indicatorStatus: AgentContainerStatus = error
+    ? "error"
+    : isOrphaned
+      ? "orphaned"
+      : complete
+        ? "complete"
+        : "running";
+  const questions = (custom.questions as Question[]) ?? [];
+  // User can answer while the question is running AND no result has landed yet.
+  const hasQuestionResult = !!custom.result;
+  const canAnswer = !hasQuestionResult && !isOrphaned && !error;
+  const [expanded, setExpanded] = useState(!hasQuestionResult);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Auto-collapse when a result arrives (answer submitted).
+  useEffect(() => {
+    if (hasQuestionResult) setExpanded(false);
+  }, [hasQuestionResult]);
+
+  // Track selected options and free-text answers per question index.
+  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
+  const [freeText, setFreeText] = useState<Record<number, string>>({});
+
+  const toggleOption = (qIdx: number, optIdx: number, multi: boolean) => {
+    if (!canAnswer) return;
+    setSelections((prev) => {
+      const current = new Set(prev[qIdx] ?? []);
+      if (multi) {
+        if (current.has(optIdx)) current.delete(optIdx);
+        else current.add(optIdx);
+      } else {
+        current.clear();
+        current.add(optIdx);
+      }
+      return { ...prev, [qIdx]: current };
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!canAnswer) return;
+    const answers: Record<string, string> = {};
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const hasOptions = q.options && q.options.length > 0;
+      if (hasOptions) {
+        const sel = selections[i];
+        if (!sel || sel.size === 0) continue;
+        const selectedLabels = Array.from(sel)
+          .map((idx) => q.options?.[idx]?.label ?? "")
+          .filter(Boolean);
+        if (selectedLabels.length > 0) answers[q.question] = selectedLabels.join(", ");
+      } else {
+        const text = freeText[i]?.trim();
+        if (text) answers[q.question] = text;
+      }
+    }
+    if (Object.keys(answers).length === 0) return;
+
+    const args = custom.args ?? {};
+    if (controlRequestId) {
+      bridge?.respondToControlRequest(controlRequestId, { ...args, answers });
+    } else if (custom.toolCallId) {
+      bridge?.sendToolResult(custom.toolCallId, JSON.stringify(answers));
+    } else {
+      const answersText = Object.entries(answers)
+        .map(([q, a]) => `${q}: ${a}`)
+        .join("\n");
+      composer.setText(answersText);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!canAnswer) return;
+    if (controlRequestId) {
+      bridge?.cancelControlRequest(controlRequestId);
+    } else if (custom.toolCallId) {
+      bridge?.sendToolResult(custom.toolCallId, "Skipped");
+    }
+  };
+
+  const hasAnySelection =
+    Object.values(selections).some((s) => s.size > 0) ||
+    Object.values(freeText).some((txt) => txt.trim().length > 0);
+
+  const resultStr =
+    typeof custom.result === "string"
+      ? custom.result
+      : custom.result != null
+        ? JSON.stringify(custom.result, null, 2)
+        : "";
+
+  const renderTail = () => (
+    <div className="rounded-b-lg border-t border-slate-700/50 bg-slate-800/40">
+      {awaiting ? (
+        <div className="px-3 py-2 sm:px-5">
+          <div className="flex flex-wrap items-center gap-2">
+            {controlRequestId ? (
+              <>
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-amber-400/50 bg-amber-500/20 px-3.5 py-1.5 text-xs font-semibold text-amber-200 shadow-sm transition hover:border-amber-400/70 hover:bg-amber-500/30 active:bg-amber-500/40 disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                  disabled={!hasAnySelection}
+                  onClick={handleSubmit}
+                >
+                  {t("claude2.ask.submit")}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-600/50 px-3.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-500 hover:text-slate-200 cursor-pointer"
+                  onClick={handleCancel}
+                >
+                  {t("claude2.ask.skip")}
+                </button>
+              </>
+            ) : custom.toolCallId ? (
+              <>
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-amber-400/50 bg-amber-500/20 px-3.5 py-1.5 text-xs font-semibold text-amber-200 shadow-sm transition hover:border-amber-400/70 hover:bg-amber-500/30 active:bg-amber-500/40 disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                  disabled={!hasAnySelection}
+                  onClick={handleSubmit}
+                >
+                  {t("claude2.ask.submit")}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-600/50 px-3.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-500 hover:text-slate-200 cursor-pointer"
+                  onClick={handleCancel}
+                >
+                  {t("claude2.ask.skip")}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={`flex-1 rounded-md px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  hasAnySelection
+                    ? "border border-amber-400/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30"
+                    : "border border-amber-400/20 bg-amber-500/10 text-amber-400/40 cursor-default"
+                }`}
+                disabled={!hasAnySelection}
+                onClick={handleSubmit}
+              >
+                {t("claude2.ask.fillComposer")}
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-[0.55rem] text-amber-400/40 text-center">
+            {t("claude2.ask.waitingHint")}
+          </p>
+        </div>
+      ) : error ? (
+        <div className="px-3 py-2 text-xs text-red-300 sm:px-5">
+          {resultStr || t("claude2.ask.error")}
+        </div>
+      ) : complete && resultStr ? (
+        <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
+          <button
+            type="button"
+            onClick={() => setResultOpen(!resultOpen)}
+            className="cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+          >
+            {resultOpen ? "▾" : "▸"} {t("claude2.ask.result")}
+          </button>
+          {resultOpen ? (
+            <div className="mt-1 max-h-32 overflow-y-auto">
+              <pre className="text-[0.65rem] text-amber-200/70 whitespace-pre-wrap break-all leading-relaxed">
+                {resultStr}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="px-3 py-1.5 text-[0.65rem] text-slate-500 sm:px-5">
+          {t("claude2.ask.orphaned")}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <div
+        className={`my-1 rounded-lg border bg-slate-800/30 overflow-hidden ${
+          awaiting ? "border-amber-500/40 plan-awaiting-flow" : "border-slate-700/60"
+        }`}
+      >
+        <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
+          <QuestionGlyph />
+          <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
+            {t("claude2.ask.title")}
+          </span>
+          <span className="flex-1" />
+          <StatusIndicator status={indicatorStatus} />
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            className="cursor-pointer rounded p-2 text-slate-500 transition hover:bg-slate-700/50 hover:text-amber-400"
+            aria-label={t("claude2.ask.expand")}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M2 6V3.5A1.5 1.5 0 013.5 2H6M14 6V3.5A1.5 1.5 0 0012.5 2H10M2 10v2.5A1.5 1.5 0 003.5 14H6M14 10v2.5a1.5 1.5 0 01-1.5 1.5H10"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <RawDebugTooltip custom={custom} className="-mr-1" />
+        </div>
+        {expanded ? (
+          <div className="max-h-72 overflow-y-auto px-3 py-2 space-y-3">
+            {questions.map((q, i) => {
+              const multi = q.multiSelect === true;
+              const selected = selections[i] ?? new Set<number>();
+              const hasOptions = q.options && q.options.length > 0;
+              return (
+                <div
+                  key={i}
+                  className="rounded-lg bg-slate-900/40 border border-slate-700/30 p-2.5"
+                >
+                  {q.header ? (
+                    <p className="text-[0.6rem] font-semibold text-amber-300/80 uppercase tracking-wide mb-0.5">
+                      {q.header}
+                    </p>
+                  ) : null}
+                  <p className="text-[0.7rem] text-slate-200 leading-relaxed mb-2">
+                    {q.question}
+                    {multi ? (
+                      <span className="text-[0.55rem] text-amber-400/60 ml-1">
+                        {t("claude2.ask.multiSelect")}
+                      </span>
+                    ) : null}
+                  </p>
+                  {hasOptions ? (
+                    <div className="space-y-1">
+                      {q.options!.map((opt, j) => {
+                        const isSelected = selected.has(j);
+                        return (
+                          <button
+                            key={j}
+                            type="button"
+                            className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
+                              isSelected
+                                ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                                : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                            } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
+                            disabled={!canAnswer}
+                            onClick={() => toggleOption(i, j, multi)}
+                          >
+                            <span
+                              className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
+                                isSelected
+                                  ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                                  : "border-slate-500 text-slate-500"
+                              }`}
+                            >
+                              {isSelected ? "✓" : j + 1}
+                            </span>
+                            <span className="flex-1">{opt.label}</span>
+                            {opt.description ? (
+                              <span className="text-[0.55rem] text-slate-500 text-right max-w-[40%]">
+                                {opt.description}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">
+                      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-amber-500/10">
+                        <svg
+                          className="h-3 w-3 text-amber-400/60"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M1 4l5 5-5 5"
+                            stroke="currentColor"
+                            strokeWidth="1.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span className="text-[0.55rem] text-amber-400/60">
+                          {t("claude2.ask.typeOpinion")}
+                        </span>
+                      </div>
+                      <textarea
+                        className="w-full bg-transparent px-2 py-1.5 text-[0.65rem] text-slate-200 placeholder-slate-600 outline-none resize-none"
+                        rows={2}
+                        placeholder={t("claude2.ask.inputPlaceholder")}
+                        disabled={!canAnswer}
+                        value={freeText[i] ?? ""}
+                        onChange={(e) => setFreeText((prev) => ({ ...prev, [i]: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+        {renderTail()}
+      </div>
+      {fullscreen ? (
+        <FullscreenReader
+          header={
+            <>
+              <QuestionGlyph />
+              <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
+                {t("claude2.ask.title")}
+              </span>
+              <span className="flex-1" />
+              <StatusIndicator status={indicatorStatus} />
+            </>
+          }
+          onClose={() => setFullscreen(false)}
+          closeLabel={t("claude2.ask.exitFullscreen")}
+          footer={renderTail()}
+        >
+          <div className="mx-auto max-w-4xl space-y-3">
+            {questions.length > 0 ? (
+              questions.map((q, i) => {
+                const multi = q.multiSelect === true;
+                const selected = selections[i] ?? new Set<number>();
+                const hasOptions = q.options && q.options.length > 0;
+                return (
+                  <div
+                    key={i}
+                    className="rounded-lg bg-slate-900/50 border border-slate-700/30 p-3"
+                  >
+                    {q.header ? (
+                      <p className="text-[0.7rem] font-semibold text-amber-300/80 uppercase tracking-wide mb-1">
+                        {q.header}
+                      </p>
+                    ) : null}
+                    <p className="text-sm text-slate-200 leading-relaxed mb-3">
+                      {q.question}
+                      {multi ? (
+                        <span className="text-xs text-amber-400/60 ml-1">
+                          {t("claude2.ask.multiSelect")}
+                        </span>
+                      ) : null}
+                    </p>
+                    {hasOptions ? (
+                      <div className="space-y-1.5">
+                        {q.options!.map((opt, j) => {
+                          const isSelected = selected.has(j);
+                          return (
+                            <button
+                              key={j}
+                              type="button"
+                              className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
+                                isSelected
+                                  ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                                  : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                              } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
+                              disabled={!canAnswer}
+                              onClick={() => toggleOption(i, j, multi)}
+                            >
+                              <span
+                                className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
+                                  isSelected
+                                    ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                                    : "border-slate-500 text-slate-500"
+                                }`}
+                              >
+                                {isSelected ? "✓" : j + 1}
+                              </span>
+                              <span className="flex-1">{opt.label}</span>
+                              {opt.description ? (
+                                <span className="text-xs text-slate-500 text-right max-w-[40%]">
+                                  {opt.description}
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-amber-500/10">
+                          <svg
+                            className="h-3.5 w-3.5 text-amber-400/60"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M1 4l5 5-5 5"
+                              stroke="currentColor"
+                              strokeWidth="1.2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <span className="text-xs text-amber-400/60">
+                            {t("claude2.ask.typeOpinion")}
+                          </span>
+                        </div>
+                        <textarea
+                          className="w-full bg-transparent px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none resize-none"
+                          rows={3}
+                          placeholder={t("claude2.ask.inputPlaceholder")}
+                          disabled={!canAnswer}
+                          value={freeText[i] ?? ""}
+                          onChange={(e) =>
+                            setFreeText((prev) => ({ ...prev, [i]: e.target.value }))
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <p className="py-8 text-center text-xs text-slate-500">{t("claude2.ask.orphaned")}</p>
+            )}
+          </div>
+        </FullscreenReader>
+      ) : null}
+    </>
+  );
+}
+
 // Unified message router: top-level turn rendering and Agent body rendering
 // both go through this. agent-container → recursive AgentContainer. At the
 // top level (renderAbsorbed=false) absorbed children return null — they are
@@ -1974,6 +2480,8 @@ function MessageRouter({
   );
   if (custom?.systemMessageType === "agent-container") return <AgentContainer headIndex={index} />;
   if (custom?.systemMessageType === "exit-plan-mode") return <ExitPlanModeCard headIndex={index} />;
+  if (custom?.systemMessageType === "ask-user-question")
+    return <AskUserQuestionCard headIndex={index} />;
   if (!renderAbsorbed && custom?.absorbed === true) return null;
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }

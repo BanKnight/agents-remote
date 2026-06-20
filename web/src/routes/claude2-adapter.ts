@@ -7,6 +7,7 @@ import type {
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
+import { formatTokenCount } from "../lib/utils";
 
 export type TaskInfo = {
   id: string;
@@ -284,6 +285,36 @@ export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): 
   }
 
   return responseOpen ? 1 : 0;
+}
+
+/**
+ * Latest estimated_tokens of the in-flight response's thinking phase, or null.
+ *
+ * The thinking phase is when the response is running and thinking_tokens are
+ * streaming but no assistant content has arrived yet for this turn — i.e. the
+ * most recent thinking_tokens comes after the most recent assistant message.
+ * Drives the live "Thinking… (N tokens)" indicator. Once the assistant(thinking)
+ * block arrives this returns null and the reasoning part (ReasoningGroup, with
+ * the final stamped count) takes over. Null when idle, in replay, or when the
+ * turn has no thinking_tokens at all.
+ */
+export function deriveLiveThinkingTokens(rawMessages: SessionStreamServerMessage[]): number | null {
+  if (computeRunningCount(rawMessages) === 0) return null;
+  let lastAssistantIdx = -1;
+  let lastThinkingTokensIdx = -1;
+  let lastEstimated: number | null = null;
+  for (let i = 0; i < rawMessages.length; i++) {
+    const msg = rawMessages[i];
+    if (!msg) continue;
+    if (msg.type === "assistant") {
+      lastAssistantIdx = i;
+    } else if (msg.type === "system" && "subtype" in msg && msg.subtype === "thinking_tokens") {
+      lastThinkingTokensIdx = i;
+      lastEstimated = (msg as unknown as { estimated_tokens?: number }).estimated_tokens ?? null;
+    }
+  }
+  if (lastThinkingTokensIdx === -1 || lastAssistantIdx > lastThinkingTokensIdx) return null;
+  return lastEstimated;
 }
 
 // ── Agent container status derivation ────────────────────────────────
@@ -1971,6 +2002,32 @@ export function renderChatStream(
                 content: [{ type: "text", text: "" }],
                 metadata: { custom: planCustom },
               });
+            } else if (part.toolName === "AskUserQuestion") {
+              // AskUserQuestion renders as its own dedicated card (structured
+              // questions + submit/skip tail), unified with ExitPlanMode's
+              // emission→router→card pipeline. controlRequestId (from a paired
+              // control_request) marks the live awaiting state; its absence in
+              // replay means history view. `args` is kept so the bridge submit
+              // can restore {...args, answers} as the control_response updatedInput.
+              const askArgs = part.args as Record<string, unknown> | undefined;
+              const askCustom: Record<string, unknown> = {
+                sourceUuids: [...item.sourceUuids],
+                _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
+                systemMessageType: "ask-user-question",
+                toolCallId: part.toolCallId,
+                questions: Array.isArray(askArgs?.questions) ? askArgs.questions : [],
+                args: askArgs ?? {},
+                controlRequestId: part.controlRequestId,
+                result: part.result,
+                isError: part.isError === true,
+                isOrphaned: part.isOrphaned === true,
+                toolMessageId,
+              };
+              messages.push({
+                role: "system",
+                content: [{ type: "text", text: "" }],
+                metadata: { custom: askCustom },
+              });
             } else {
               const toolCustom: Record<string, unknown> = {
                 sourceUuids: [...item.sourceUuids],
@@ -2054,7 +2111,7 @@ export function renderChatStream(
       }
       case "compact-boundary": {
         const trigger = item.trigger === "manual" ? "手动" : "自动";
-        const label = item.preTokens != null ? `${Math.round(item.preTokens / 1000)}k` : "?";
+        const label = item.preTokens != null ? formatTokenCount(item.preTokens) : "?";
         messages.push({
           role: "system",
           content: [{ type: "text", text: "" }],
@@ -2382,6 +2439,7 @@ export function useClaude2Session(
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRunning = useMemo(() => computeRunningCount(rawMessages) > 0, [rawMessages]);
+  const liveThinkingTokens = useMemo(() => deriveLiveThinkingTokens(rawMessages), [rawMessages]);
   const [loading, setLoading] = useState(true);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
@@ -2808,6 +2866,7 @@ export function useClaude2Session(
     agentName,
     loading,
     socketConnected,
+    liveThinkingTokens,
     tasks,
     slashCommands,
     skills,

@@ -8,6 +8,7 @@ import {
   applySwitchModelResult,
   computeRunningCount,
   convertContentToBubble,
+  deriveLiveThinkingTokens,
   deriveStatus,
   extractTaskOps,
   hasToolUseNamed,
@@ -269,6 +270,42 @@ describe("computeRunningCount", () => {
         result("success"),
       ]),
     ).toBe(0);
+  });
+});
+
+describe("deriveLiveThinkingTokens", () => {
+  test("null when idle (no in-flight response)", () => {
+    expect(deriveLiveThinkingTokens([])).toBeNull();
+    expect(deriveLiveThinkingTokens([result("success")])).toBeNull();
+  });
+
+  test("returns latest estimated_tokens during the thinking phase", () => {
+    expect(deriveLiveThinkingTokens([thinkingTokens(5)])).toBe(5);
+    // reject-then-think scenario: prior turn closed, new turn thinking.
+    expect(deriveLiveThinkingTokens([result("success"), thinkingTokens(39)])).toBe(39);
+  });
+
+  test("returns the most recent (cumulative) count across increments", () => {
+    expect(
+      deriveLiveThinkingTokens([thinkingTokens(5), thinkingTokens(20), thinkingTokens(39)]),
+    ).toBe(39);
+  });
+
+  test("null once an assistant message arrives after thinking_tokens", () => {
+    expect(
+      deriveLiveThinkingTokens([
+        thinkingTokens(39),
+        assistant("m1", [{ type: "thinking", thinking: "plan", signature: "s" }]),
+      ]),
+    ).toBeNull();
+  });
+
+  test("null when a turn is running but has no thinking_tokens", () => {
+    expect(deriveLiveThinkingTokens([assistant("m1", [{ type: "text", text: "hi" }])])).toBeNull();
+  });
+
+  test("null when thinking_tokens were terminated by a result", () => {
+    expect(deriveLiveThinkingTokens([thinkingTokens(39), result("success")])).toBeNull();
   });
 });
 
@@ -614,6 +651,95 @@ describe("exit-plan-mode pipeline", () => {
     expect(planCard).toBeDefined();
     const custom = planCard?.metadata?.custom as Record<string, unknown>;
     expect(custom.result).toBe("plan approved");
+    expect(custom.isError).not.toBe(true);
+  });
+});
+
+describe("ask-user-question pipeline", () => {
+  test("AskUserQuestion renders as its own card carrying questions + controlRequestId", () => {
+    const questions = [
+      {
+        question: "Which color?",
+        header: "Color",
+        options: [{ label: "Red" }, { label: "Blue" }],
+      },
+      { question: "Notes?", header: "Notes" },
+    ];
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "ask me" }]),
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "tu-ask",
+          name: "AskUserQuestion",
+          input: { questions },
+        },
+      ]),
+      controlRequest("req-ask", "AskUserQuestion", "tu-ask", { questions }),
+      result("success"),
+    ];
+
+    const items = normalizeChatStream(raw);
+    const askPart = items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === "tu-ask") as
+      | ({ type: "tool-call" } & { controlRequestId?: string })
+      | undefined;
+    expect(askPart).toBeDefined();
+    expect(askPart?.controlRequestId).toBe("req-ask");
+
+    const rendered = renderChatStream(items);
+    const askCard = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "ask-user-question",
+    );
+    expect(askCard).toBeDefined();
+    const custom = askCard?.metadata?.custom as Record<string, unknown>;
+    expect(custom.questions).toEqual(questions);
+    expect(custom.args).toEqual({ questions });
+    expect(custom.controlRequestId).toBe("req-ask");
+    expect(custom.isError).not.toBe(true);
+    // It must NOT also be emitted as a generic tool-card.
+    const toolCardForAsk = rendered.find((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return c?.systemMessageType === "tool-card" && c?.toolName === "AskUserQuestion";
+    });
+    expect(toolCardForAsk).toBeUndefined();
+  });
+
+  test("a paired tool_result marks the question card complete (result present, not error)", () => {
+    const questions = [{ question: "Which?", header: "Pick", options: [{ label: "A" }] }];
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "ask me" }]),
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "tu-ask",
+          name: "AskUserQuestion",
+          input: { questions },
+        },
+      ]),
+      controlRequest("req-ask", "AskUserQuestion", "tu-ask", { questions }),
+      user([
+        {
+          type: "tool_result",
+          tool_use_id: "tu-ask",
+          content: '{"Which?":"A"}',
+        },
+      ]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const askCard = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "ask-user-question",
+    );
+    expect(askCard).toBeDefined();
+    const custom = askCard?.metadata?.custom as Record<string, unknown>;
+    expect(custom.result).toBe('{"Which?":"A"}');
     expect(custom.isError).not.toBe(true);
   });
 });
@@ -2581,6 +2707,7 @@ describe("renderChatStream", () => {
     const custom = divider.metadata?.custom as Record<string, unknown>;
     expect(custom?.systemMessageType).toBe("compact-boundary");
     expect(custom?.compactText).toContain("手动");
+    expect(custom?.compactText).toContain("50,000");
   });
 
   test("session-init item renders a summary bubble", () => {
