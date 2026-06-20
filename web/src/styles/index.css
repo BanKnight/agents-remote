@@ -175,6 +175,53 @@ body {
   }
 }
 
+/* ExitPlanMode awaiting indicator: a 流光 (flowing light) that travels
+   around the border. A conic-gradient on a ::before pseudo-element is masked
+   to show only a thin ring, and its angle animates so a bright amber comet
+   sweeps the perimeter. Only the ring is painted — never the container
+   opacity — so the plan body stays fully readable. */
+@property --plan-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes plan-flow {
+  to {
+    --plan-angle: 360deg;
+  }
+}
+
+@layer utilities {
+  .plan-awaiting-flow {
+    position: relative;
+  }
+  .plan-awaiting-flow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 2px;
+    background: conic-gradient(
+      from var(--plan-angle),
+      rgb(245 158 11 / 0.35),
+      rgb(251 191 36 / 0.95),
+      rgb(245 158 11 / 0.35)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: 1;
+    animation: plan-flow 3s linear infinite;
+  }
+}
+
 @media (min-width: 640px) {
   html {
     scrollbar-color: oklch(0.3 0 0) transparent;

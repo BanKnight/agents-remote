@@ -32,6 +32,7 @@ import {
   normalizeAttachmentTaskStatus,
   normalizeChatStream,
   renderChatStream,
+  resolveAutoPermissionMode,
 } from "./claude2-adapter";
 import type {
   ApiErrorAttachment,
@@ -375,6 +376,22 @@ const agentTail = (
     tool_use_result: envelope,
   }) as unknown as SessionStreamServerMessage;
 
+describe("resolveAutoPermissionMode", () => {
+  test("prefers auto when the CLI advertises it", () => {
+    expect(resolveAutoPermissionMode(["default", "acceptEdits", "auto", "plan"])).toBe("auto");
+  });
+
+  test("falls back to acceptEdits when auto is unavailable", () => {
+    expect(resolveAutoPermissionMode(["default", "acceptEdits", "bypassPermissions", "plan"])).toBe(
+      "acceptEdits",
+    );
+  });
+
+  test("falls back to acceptEdits on an empty list", () => {
+    expect(resolveAutoPermissionMode([])).toBe("acceptEdits");
+  });
+});
+
 describe("agent-container pipeline", () => {
   test("body assistants merge by message.id, tool_results pair, tail envelope surfaces", () => {
     const raw: SessionStreamServerMessage[] = [
@@ -521,6 +538,83 @@ describe("agent-container pipeline", () => {
         "agent-container",
     );
     expect(container).toBeUndefined();
+  });
+});
+
+describe("exit-plan-mode pipeline", () => {
+  test("ExitPlanMode renders as its own container carrying plan + controlRequestId", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "make a plan" }]),
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "tu-exit",
+          name: "ExitPlanMode",
+          input: { plan: "# Plan\n- step 1", planFilePath: "/tmp/plan.md" },
+        },
+      ]),
+      controlRequest("req-1", "ExitPlanMode", "tu-exit", {
+        plan: "# Plan\n- step 1",
+        planFilePath: "/tmp/plan.md",
+      }),
+      result("success"),
+    ];
+
+    const items = normalizeChatStream(raw);
+    const exitPart = items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === "tu-exit") as
+      | ({ type: "tool-call" } & { controlRequestId?: string; hasAgentBody?: boolean })
+      | undefined;
+    expect(exitPart).toBeDefined();
+    expect(exitPart?.controlRequestId).toBe("req-1");
+    expect(exitPart?.hasAgentBody).not.toBe(true);
+
+    const rendered = renderChatStream(items);
+    const planCard = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "exit-plan-mode",
+    );
+    expect(planCard).toBeDefined();
+    const custom = planCard?.metadata?.custom as Record<string, unknown>;
+    expect(custom.plan).toBe("# Plan\n- step 1");
+    expect(custom.planFilePath).toBe("/tmp/plan.md");
+    expect(custom.controlRequestId).toBe("req-1");
+    // It must NOT also be emitted as a generic tool-card.
+    const toolCardForExit = rendered.find((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return c?.systemMessageType === "tool-card" && c?.toolName === "ExitPlanMode";
+    });
+    expect(toolCardForExit).toBeUndefined();
+  });
+
+  test("a paired tool_result marks the plan card complete (result present, not error)", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "make a plan" }]),
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "tu-exit",
+          name: "ExitPlanMode",
+          input: { plan: "# Plan" },
+        },
+      ]),
+      controlRequest("req-1", "ExitPlanMode", "tu-exit", { plan: "# Plan" }),
+      user([{ type: "tool_result", tool_use_id: "tu-exit", content: "plan approved" }]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const planCard = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "exit-plan-mode",
+    );
+    expect(planCard).toBeDefined();
+    const custom = planCard?.metadata?.custom as Record<string, unknown>;
+    expect(custom.result).toBe("plan approved");
+    expect(custom.isError).not.toBe(true);
   });
 });
 

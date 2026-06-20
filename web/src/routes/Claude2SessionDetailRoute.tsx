@@ -45,9 +45,11 @@ import {
   Claude2BridgeContext,
   useClaude2Session,
   deriveStatus,
+  resolveAutoPermissionMode,
   type AgentContainerStatus,
   type AgentTailStats,
   type ApiErrorAttachment,
+  type PermissionUpdate,
   type RetryInfo,
   type TaskInfo,
 } from "./claude2-adapter";
@@ -92,6 +94,11 @@ const Claude2CompactContext = createContext<CompactState | null>(null);
 // (running vs interrupted). Provided at the runtime body root so any
 // nested AgentContainer can read it without prop drilling.
 const SocketConnectedContext = createContext<boolean>(false);
+
+// Permission modes the server CLI advertises (parsed from
+// `claude --help --permission-mode`). ExitPlanMode approval reads this to
+// decide whether "auto" mode is available (else fall back to acceptEdits).
+const PermissionModesContext = createContext<readonly string[]>([]);
 
 export function Claude2SessionDetailRoute() {
   const { projectName, sessionId } = useParams({
@@ -402,60 +409,62 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>
           <SocketConnectedContext.Provider value={socketConnected}>
-            <Claude2CompactContext.Provider value={compactState}>
-              <div
-                className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-              >
-                {detail.error instanceof Error ? (
-                  <div className="shrink-0 px-3 py-2">
-                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                      {detail.error.message}
-                    </p>
-                  </div>
-                ) : null}
-                {closeSession.error instanceof Error ? (
-                  <div className="shrink-0 px-3 py-2">
-                    <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                      {closeSession.error.message}
-                    </p>
-                  </div>
-                ) : null}
+            <PermissionModesContext.Provider value={availablePermissionModes}>
+              <Claude2CompactContext.Provider value={compactState}>
+                <div
+                  className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+                >
+                  {detail.error instanceof Error ? (
+                    <div className="shrink-0 px-3 py-2">
+                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                        {detail.error.message}
+                      </p>
+                    </div>
+                  ) : null}
+                  {closeSession.error instanceof Error ? (
+                    <div className="shrink-0 px-3 py-2">
+                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                        {closeSession.error.message}
+                      </p>
+                    </div>
+                  ) : null}
 
-                <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+                  <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                    <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
 
-                  <CompactIndicator />
-                  {tasks.length > 0 && (
-                    <TaskPanel
-                      collapsed={!tasksExpanded}
-                      t={t}
-                      tasks={tasks}
-                      onToggle={() => setTasksExpanded((v) => !v)}
-                    />
-                  )}
-                  <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                    <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                      <ComposerPrimitive.Root>
-                        <ComposerWithInterrupt
-                          currentModel={currentModel}
-                          currentResolved={resolvedModel ?? session?.model}
-                          availableModels={availableModels}
-                          modelSwitchVersion={modelSwitchVersion}
-                          permissionMode={permissionMode}
-                          availablePermissionModes={availablePermissionModes}
-                          slashCommands={slashCommands}
-                          skills={skills}
-                          projectName={projectName}
-                          sessionId={sessionId}
-                          aiTitle={aiTitle}
-                          agentName={agentName}
-                        />
-                      </ComposerPrimitive.Root>
-                    </ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                  </div>
-                </ThreadPrimitive.Root>
-              </div>
-            </Claude2CompactContext.Provider>
+                    <CompactIndicator />
+                    {tasks.length > 0 && (
+                      <TaskPanel
+                        collapsed={!tasksExpanded}
+                        t={t}
+                        tasks={tasks}
+                        onToggle={() => setTasksExpanded((v) => !v)}
+                      />
+                    )}
+                    <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                      <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                        <ComposerPrimitive.Root>
+                          <ComposerWithInterrupt
+                            currentModel={currentModel}
+                            currentResolved={resolvedModel ?? session?.model}
+                            availableModels={availableModels}
+                            modelSwitchVersion={modelSwitchVersion}
+                            permissionMode={permissionMode}
+                            availablePermissionModes={availablePermissionModes}
+                            slashCommands={slashCommands}
+                            skills={skills}
+                            projectName={projectName}
+                            sessionId={sessionId}
+                            aiTitle={aiTitle}
+                            agentName={agentName}
+                          />
+                        </ComposerPrimitive.Root>
+                      </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                    </div>
+                  </ThreadPrimitive.Root>
+                </div>
+              </Claude2CompactContext.Provider>
+            </PermissionModesContext.Provider>
           </SocketConnectedContext.Provider>
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
@@ -1602,6 +1611,196 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
   );
 }
 
+type ExitPlanModeCustom = {
+  systemMessageType: "exit-plan-mode";
+  toolCallId?: string;
+  plan?: string;
+  planFilePath?: string;
+  controlRequestId?: string;
+  result?: string;
+  isError?: boolean;
+  isOrphaned?: boolean;
+};
+
+// Approving a plan exit chooses the permissionMode the session resumes in.
+// Wire layer is always allow/deny. Approve carries the target mode via
+// `permission_updates: [{type:"setMode", mode, destination:"session"}]`
+// (the CLI ignores updatedInput.permissionMode). Reject carries feedback
+// via deny.message. Modes mirror the CLI's plan-exit prompt: 自动模式 (auto,
+// falling back to acceptEdits) / 手动模式 (default) / 告诉AI怎么修改 (feedback).
+function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
+  const { t } = useT();
+  const bridge = useContext(Claude2BridgeContext);
+  const availableModes = useContext(PermissionModesContext);
+  const autoMode = resolveAutoPermissionMode(availableModes);
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as ExitPlanModeCustom,
+  );
+  const controlRequestId = custom.controlRequestId;
+  const isOrphaned = custom.isOrphaned === true;
+  const error = custom.isError === true;
+  const complete = custom.result != null && !error;
+  // Awaiting only while a control_request is open and no response landed yet.
+  const awaiting = !!controlRequestId && custom.result == null && !isOrphaned && !error;
+  const indicatorStatus: AgentContainerStatus = error
+    ? "error"
+    : isOrphaned
+      ? "orphaned"
+      : complete
+        ? "complete"
+        : "running";
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [resultOpen, setResultOpen] = useState(false);
+
+  const plan = typeof custom.plan === "string" ? custom.plan : undefined;
+  const planFilePath = typeof custom.planFilePath === "string" ? custom.planFilePath : undefined;
+  const result = typeof custom.result === "string" ? custom.result : undefined;
+
+  const onApprove = (mode: string) => {
+    if (!controlRequestId) return;
+    const permissionUpdates: PermissionUpdate[] = [
+      { type: "setMode", mode, destination: "session" },
+    ];
+    bridge?.respondToControlRequest(controlRequestId, {}, permissionUpdates);
+  };
+  const onReject = () => {
+    if (!controlRequestId) return;
+    const trimmed = feedback.trim();
+    bridge?.cancelControlRequest(controlRequestId, trimmed || undefined);
+    setFeedback("");
+    setFeedbackOpen(false);
+  };
+
+  return (
+    <div
+      className={`my-1 rounded-lg border bg-slate-800/30 overflow-hidden ${
+        awaiting ? "border-amber-500/40 plan-awaiting-flow" : "border-slate-700/60"
+      }`}
+    >
+      <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
+        <svg
+          className="h-3.5 w-3.5 shrink-0 text-amber-300"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M9 3h6l1 2h2a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h2l1-2z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M9 13l2 2 4-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
+          {t("claude2.plan.title")}
+        </span>
+        {planFilePath ? (
+          <span className="truncate text-[0.6rem] text-slate-400" title={planFilePath}>
+            {planFilePath}
+          </span>
+        ) : null}
+        <span className="flex-1" />
+        <StatusIndicator status={indicatorStatus} />
+        <RawDebugTooltip custom={custom} className="-mr-1" />
+      </div>
+      {plan ? (
+        <div className="max-h-80 overflow-y-auto px-3 py-2 sm:px-5">
+          <MarkdownString text={plan} />
+        </div>
+      ) : null}
+      <div className="rounded-b-lg border-t border-slate-700/50 bg-slate-800/40">
+        {awaiting ? (
+          <div className="px-3 py-2 sm:px-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onApprove(autoMode)}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-emerald-400/50 bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-200 shadow-sm transition hover:border-emerald-400/70 hover:bg-emerald-500/30 active:bg-emerald-500/40"
+              >
+                ✓ {t("claude2.plan.modeAuto")}
+              </button>
+              <button
+                type="button"
+                onClick={() => onApprove("default")}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-emerald-400/30 px-3.5 py-1.5 text-xs font-semibold text-emerald-200/90 transition hover:border-emerald-400/50 hover:bg-emerald-500/15 active:bg-emerald-500/25"
+              >
+                ✓ {t("claude2.plan.modeManual")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeedbackOpen(!feedbackOpen)}
+                className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-600/60 px-3.5 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-500 hover:bg-slate-700/50 active:bg-slate-700/70"
+              >
+                ✎ {t("claude2.plan.feedback")}
+              </button>
+            </div>
+            {feedbackOpen ? (
+              <div className="mt-2 flex flex-col gap-2">
+                <textarea
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      onReject();
+                    }
+                  }}
+                  placeholder={t("claude2.plan.feedbackPlaceholder")}
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-slate-600/60 bg-slate-900/50 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-amber-400/60 focus:outline-none"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <span className="text-[0.6rem] text-slate-500">
+                    {t("claude2.plan.enterToSend")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onReject}
+                    className="cursor-pointer rounded-md bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-200 hover:bg-red-500/35 transition"
+                  >
+                    {t("claude2.plan.send")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : error ? (
+          <div className="px-3 py-2 text-xs text-red-300 sm:px-5">
+            {result ?? t("claude2.plan.error")}
+          </div>
+        ) : complete && result ? (
+          <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
+            <button
+              type="button"
+              onClick={() => setResultOpen(!resultOpen)}
+              className="cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+            >
+              {resultOpen ? "▾" : "▸"} {t("claude2.plan.result")}
+            </button>
+            {resultOpen ? (
+              <div className="mt-1 max-h-48 overflow-y-auto">
+                <MarkdownString text={result} />
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="px-3 py-1.5 text-[0.65rem] text-slate-500 sm:px-5">
+            {t("claude2.plan.orphaned")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Unified message router: top-level turn rendering and Agent body rendering
 // both go through this. agent-container → recursive AgentContainer. At the
 // top level (renderAbsorbed=false) absorbed children return null — they are
@@ -1619,6 +1818,7 @@ function MessageRouter({
     (s) => s.thread.messages[index]?.metadata?.custom as Record<string, unknown> | undefined,
   );
   if (custom?.systemMessageType === "agent-container") return <AgentContainer headIndex={index} />;
+  if (custom?.systemMessageType === "exit-plan-mode") return <ExitPlanModeCard headIndex={index} />;
   if (!renderAbsorbed && custom?.absorbed === true) return null;
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }

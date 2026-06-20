@@ -179,9 +179,30 @@ export const deriveTasksFromReplayBatch = (batch: SessionStreamServerMessage[]):
 // hook creates the bridge, the route component provides it, and the
 // tool UI consumes it.
 
+// A permission-mode change the CLI applies after a control_response allow.
+// The CLI reads `permission_updates` (NOT updatedInput.permissionMode) — this
+// is how ExitPlanMode approval conveys which mode to resume in.
+export type PermissionUpdate = {
+  type: "setMode";
+  mode: string;
+  destination: "session";
+};
+
+// "Auto" approve for plan-exit prefers the newer `auto` mode when the CLI
+// advertises it (parsed from `claude --help --permission-mode` choices via
+// availablePermissionModes); otherwise falls back to the classic, universally
+// supported `acceptEdits`.
+export function resolveAutoPermissionMode(available: readonly string[]): "auto" | "acceptEdits" {
+  return available.includes("auto") ? "auto" : "acceptEdits";
+}
+
 export type Claude2Bridge = {
-  respondToControlRequest: (requestId: string, updatedInput: Record<string, unknown>) => void;
-  cancelControlRequest: (requestId: string) => void;
+  respondToControlRequest: (
+    requestId: string,
+    updatedInput: Record<string, unknown>,
+    permissionUpdates?: PermissionUpdate[],
+  ) => void;
+  cancelControlRequest: (requestId: string, message?: string) => void;
   sendToolResult: (toolUseId: string, content: string) => void;
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
@@ -1926,6 +1947,30 @@ export function renderChatStream(
                 content: [{ type: "text", text: "" }],
                 metadata: { custom: agentCustom },
               });
+            } else if (part.toolName === "ExitPlanMode") {
+              // ExitPlanMode renders as its own head/body/tail container
+              // (plan body + approve-with-mode / reject-with-feedback tail),
+              // not the generic tool-card. controlRequestId (from a paired
+              // control_request) marks the awaiting-confirmation state.
+              const planArgs = part.args as Record<string, unknown>;
+              const planCustom: Record<string, unknown> = {
+                sourceUuids: [...item.sourceUuids],
+                _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
+                systemMessageType: "exit-plan-mode",
+                toolCallId: part.toolCallId,
+                plan: planArgs?.plan,
+                planFilePath: planArgs?.planFilePath,
+                controlRequestId: part.controlRequestId,
+                result: part.result,
+                isError: part.isError === true,
+                isOrphaned: part.isOrphaned === true,
+                toolMessageId,
+              };
+              messages.push({
+                role: "system",
+                content: [{ type: "text", text: "" }],
+                metadata: { custom: planCustom },
+              });
             } else {
               const toolCustom: Record<string, unknown> = {
                 sourceUuids: [...item.sourceUuids],
@@ -2494,26 +2539,30 @@ export function useClaude2Session(
 
   const bridge = useMemo<Claude2Bridge>(
     () => ({
-      respondToControlRequest(requestId, updatedInput) {
+      respondToControlRequest(requestId, updatedInput, permissionUpdates) {
+        const allowResponse: Record<string, unknown> = {
+          behavior: "allow",
+          updatedInput: updatedInput,
+        };
+        if (permissionUpdates && permissionUpdates.length > 0) {
+          allowResponse.permission_updates = permissionUpdates;
+        }
         sendToSocket({
           type: "control_response",
           response: {
             subtype: "success",
             request_id: requestId,
-            response: {
-              behavior: "allow",
-              updatedInput: updatedInput,
-            },
+            response: allowResponse,
           },
         });
       },
-      cancelControlRequest(requestId) {
+      cancelControlRequest(requestId, message) {
         sendToSocket({
           type: "control_response",
           response: {
             subtype: "success",
             request_id: requestId,
-            response: { behavior: "deny", message: "User skipped" },
+            response: { behavior: "deny", message: message ?? "User skipped" },
           },
         });
       },
