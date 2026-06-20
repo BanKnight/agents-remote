@@ -452,6 +452,16 @@ describe("agent-container pipeline", () => {
       const childCustom = rendered[idx]?.metadata?.custom as Record<string, unknown> | undefined;
       expect(childCustom?.absorbed).toBe(true);
     }
+    // Head/tail raw split for the debug tooltips: head = ONLY the Agent
+    // tool_use (assistant); the prompt echo (user text) is excluded so the
+    // head stays lean; tail = the user tool_result carrying the envelope.
+    const headRaws = (custom._rawMessages ?? []) as Array<Record<string, unknown>>;
+    const tailRaws = (custom.tailRawMessages ?? []) as Array<Record<string, unknown>>;
+    expect(headRaws.length).toBe(1);
+    expect(headRaws[0]?.type).toBe("assistant");
+    expect(headRaws.some((m) => m.type === "user")).toBe(false);
+    expect(tailRaws.length).toBe(1);
+    expect(tailRaws[0]?.tool_use_result != null || tailRaws[0]?.toolUseResult != null).toBe(true);
   });
 
   test("prompt echo is suppressed from the stream but kept on the Agent part for debug", () => {

@@ -1410,6 +1410,7 @@ type AgentContainerCustom = {
     usage: { total_tokens: number; tool_uses: number; duration_ms: number };
   };
   bodyIndices?: number[];
+  tailRawMessages?: unknown[];
 };
 
 function StatusIndicator({ status }: { status: AgentContainerStatus }) {
@@ -1466,6 +1467,7 @@ function AgentTailBar({
   tailIsError,
   tailStats,
   tailContent,
+  tailRawMessages,
 }: {
   status: AgentContainerStatus;
   progress: AgentContainerCustom["progress"];
@@ -1473,6 +1475,7 @@ function AgentTailBar({
   tailIsError?: boolean;
   tailStats?: AgentTailStats;
   tailContent?: string;
+  tailRawMessages?: unknown[];
 }) {
   const [resultOpen, setResultOpen] = useState(false);
   const showTail = status === "complete" || status === "error";
@@ -1484,30 +1487,35 @@ function AgentTailBar({
   const durationMs = tailStats?.totalDurationMs ?? progress?.usage.duration_ms;
   const hasStats = tools != null || tokens != null || durationMs != null;
   return (
-    <div className="flex flex-col gap-1 rounded-b-lg border-t border-slate-700/50 bg-slate-800/40 px-3 py-1.5">
-      {hasStats ? (
-        <div className="flex flex-wrap gap-3 text-[0.65rem] text-slate-400">
-          {tools != null ? <span>{tools} tools</span> : null}
-          {tokens != null ? <span>{tokens.toLocaleString()} tokens</span> : null}
-          {durationMs != null ? <span>{Math.round(durationMs / 1000)}s</span> : null}
+    <div className="rounded-b-lg border-t border-slate-700/50 bg-slate-800/40">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pt-2 pb-1.5 sm:px-5">
+        {hasStats ? (
+          <div className="flex flex-wrap gap-3 text-[0.65rem] text-slate-400">
+            {tools != null ? <span>{tools} tools</span> : null}
+            {tokens != null ? <span>{tokens.toLocaleString()} tokens</span> : null}
+            {durationMs != null ? <span>{Math.round(durationMs / 1000)}s</span> : null}
+          </div>
+        ) : null}
+        <div className="ml-auto flex items-center gap-1">
+          {showTail && content ? (
+            <button
+              type="button"
+              onClick={() => setResultOpen(!resultOpen)}
+              className="cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+            >
+              {resultOpen ? "▾" : "▸"} {tailIsError ? "Error details" : "Final result"}
+            </button>
+          ) : null}
+          {status === "error" && !content ? (
+            <span className="text-xs text-red-300">Agent execution failed</span>
+          ) : null}
+          <RawDebugTooltip custom={{ _rawMessages: tailRawMessages }} />
         </div>
-      ) : null}
-      {showTail && content ? (
-        <button
-          type="button"
-          onClick={() => setResultOpen(!resultOpen)}
-          className="text-left text-[0.65rem] text-slate-400 hover:text-slate-300"
-        >
-          {resultOpen ? "▾" : "▸"} {tailIsError ? "Error details" : "Final result"}
-        </button>
-      ) : null}
+      </div>
       {resultOpen && content ? (
-        <div className="max-h-48 overflow-y-auto">
+        <div className="max-h-48 overflow-y-auto px-3 pb-2 sm:px-5">
           <MarkdownString text={content} />
         </div>
-      ) : null}
-      {status === "error" && !content ? (
-        <span className="text-xs text-red-300">Agent execution failed</span>
       ) : null}
     </div>
   );
@@ -1554,7 +1562,7 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
 
   return (
     <div className="my-1 rounded-lg border border-slate-700/60 bg-slate-800/30">
-      <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 py-1.5">
+      <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
         <svg
           className="h-3.5 w-3.5 shrink-0 text-cyan-400"
           viewBox="0 0 24 24"
@@ -1572,12 +1580,10 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
           {custom.description ?? (status === "running" ? "Working..." : "Agent")}
         </span>
         <StatusIndicator status={status} />
+        <RawDebugTooltip custom={custom} className="-mr-1" />
       </div>
       {bodyIndices.length > 0 ? (
-        <div
-          ref={bodyRef}
-          className="ml-2 max-h-96 space-y-1 overflow-y-auto border-l-2 border-slate-700/60 pl-3"
-        >
+        <div ref={bodyRef} className="max-h-96 overflow-y-auto">
           {bodyIndices.map((i) => (
             <MessageRouter key={i} index={i} renderAbsorbed />
           ))}
@@ -1590,6 +1596,7 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
         tailIsError={custom.tailIsError}
         tailStats={custom.tailStats}
         tailContent={custom.tailContent}
+        tailRawMessages={custom.tailRawMessages}
       />
     </div>
   );

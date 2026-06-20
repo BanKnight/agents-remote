@@ -1873,9 +1873,37 @@ export function renderChatStream(
               // absorbed on the children so the top-level stream skips them.
               const argsRecord = part.args as Record<string, unknown>;
               const tail = extractAgentTail(part.structuredResult, part.result);
+              // Split the part's raw snapshots for independent debug tooltips:
+              // head = the Agent tool_use (the assistant message that invoked
+              // the subagent); tail = the user tool_result carrying the
+              // tool_use_result envelope. The subagent prompt echo and other
+              // user-text messages belong to neither — body/tail already cover
+              // their own raws, so the head stays lean. Tail is empty while
+              // running.
+              const partRaws = (part.rawSnapshots ??
+                item._rawSnapshots) as SessionStreamServerMessage[];
+              const isTailResultRaw = (m: SessionStreamServerMessage): boolean => {
+                const r = m as Record<string, unknown>;
+                if (r.type !== "user") return false;
+                if (r.toolUseResult != null || r.tool_use_result != null) return true;
+                const content = (m as { message?: { content?: unknown[] } }).message?.content;
+                return (
+                  Array.isArray(content) &&
+                  content.some(
+                    (b) =>
+                      (b as Record<string, unknown>)?.type === "tool_result" &&
+                      (b as Record<string, unknown>)?.tool_use_id === part.toolCallId,
+                  )
+                );
+              };
+              const tailRawMessages = partRaws.filter(isTailResultRaw);
+              const headRawMessages = partRaws.filter(
+                (m) => (m as Record<string, unknown>).type === "assistant",
+              );
               const agentCustom: Record<string, unknown> = {
                 sourceUuids: [...item.sourceUuids],
-                _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
+                _rawMessages: headRawMessages,
+                tailRawMessages,
                 systemMessageType: "agent-container",
                 toolName: part.toolName,
                 toolCallId: part.toolCallId,
