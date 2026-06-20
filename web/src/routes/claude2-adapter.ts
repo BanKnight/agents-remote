@@ -287,6 +287,56 @@ export function deriveStatus(
   return "running";
 }
 
+// ── Agent container tail envelope ────────────────────────────────────
+// The Agent tool_result's tool_use_result envelope carries final stats +
+// full content. Pure projection parsed once in Pass 2: stats (everything
+// except content) drive the always-visible tail row; content is expandable.
+export type AgentTailStats = {
+  agentType?: string;
+  status?: string;
+  totalTokens?: number;
+  totalToolUseCount?: number;
+  totalDurationMs?: number;
+  toolStats?: Record<string, number>;
+};
+
+export type AgentTail = {
+  stats: AgentTailStats;
+  content: string;
+};
+
+export function extractAgentTail(envelope: unknown, fallbackContent?: string): AgentTail | null {
+  if (!envelope || typeof envelope !== "object") return null;
+  const e = envelope as Record<string, unknown>;
+  let content = fallbackContent ?? "";
+  const c = e.content;
+  if (typeof c === "string") {
+    content = c;
+  } else if (Array.isArray(c)) {
+    const texts = c
+      .map((b) => {
+        const block = b as Record<string, unknown>;
+        return block?.type === "text" ? String(block.text ?? "") : "";
+      })
+      .filter((t) => t.length > 0);
+    if (texts.length > 0) content = texts.join("\n");
+  }
+  return {
+    stats: {
+      agentType: typeof e.agentType === "string" ? e.agentType : undefined,
+      status: typeof e.status === "string" ? e.status : undefined,
+      totalTokens: typeof e.totalTokens === "number" ? e.totalTokens : undefined,
+      totalToolUseCount: typeof e.totalToolUseCount === "number" ? e.totalToolUseCount : undefined,
+      totalDurationMs: typeof e.totalDurationMs === "number" ? e.totalDurationMs : undefined,
+      toolStats:
+        e.toolStats && typeof e.toolStats === "object"
+          ? (e.toolStats as Record<string, number>)
+          : undefined,
+    },
+    content,
+  };
+}
+
 // ── Unified message dispatch ─────────────────────────────────────────
 // Entry point for all live messages after batch processing.
 // Converts SessionStreamServerMessage → ThreadMessageLike | null.
@@ -1077,6 +1127,11 @@ export type ChatStreamItem =
       apiErrors: SessionStreamServerMessage[];
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
+      // When non-null, this assistant item belongs to an Agent subagent's body
+      // (its messages carried parent_tool_use_id pointing at this Agent tool_use).
+      // Used only for body-aware message.id merging; render association goes via
+      // the Agent part's bodyChildUuids -> bodyIndices.
+      bodyParentToolUseId?: string | null;
     }
   | {
       kind: "user-prompt";
@@ -1147,6 +1202,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       messageId,
       parts: [],
       apiErrors: [],
+      bodyParentToolUseId: null,
       sourceUuids,
       _rawSnapshots: rawSnapshots,
     };
@@ -1215,25 +1271,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         }
       }
     }
-  };
-
-  // Push a subagent child message as a standalone assistant item so it
-  // renders inside the Agent body (text + tool_use + nested Agent all
-  // surface). Mirrors the normal assistant path but tags the parent link.
-  const pushAgentBodyMessage = (parentToolUseId: string, msg: SessionStreamServerMessage) => {
-    const uuid = getMsgUuid(msg) ?? `agent-body-${items.length}`;
-    const item = pushAssistant(uuid, uuid ? [uuid] : [], [msg]);
-    const content =
-      (msg as unknown as { message?: { content?: Array<Record<string, unknown>> } }).message
-        ?.content ?? [];
-    const blocks: RawContentBlock[] = Array.isArray(content)
-      ? (content as RawContentBlock[])
-      : [{ type: "text", text: String(content) }];
-    for (const block of blocks) {
-      const part = processContentBlock(block);
-      if (part) item.parts.push(part as NormalizedPart);
-    }
-    pushBodyChild(parentToolUseId, uuid);
   };
 
   const rawByUuid = new Map<string, SessionStreamServerMessage>();
@@ -1367,18 +1404,18 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   for (const msg of rawMessages) {
     if (!msg) continue;
 
-    // Agent body child: any message (user or assistant) carrying
-    // parent_tool_use_id that points at an Agent tool-call renders inside
-    // that Agent's body as a standalone item, not in the top-level stream.
-    const earlyParentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id;
-    if (
-      typeof earlyParentToolUseId === "string" &&
-      earlyParentToolUseId &&
-      agentToolUseIds.has(earlyParentToolUseId)
-    ) {
-      pushAgentBodyMessage(earlyParentToolUseId, msg);
-      continue;
-    }
+    // Body membership: a message whose parent_tool_use_id points at an Agent
+    // tool-call belongs to that Agent's body. Body messages flow through the
+    // SAME assistant/user branches as top-level (so message.id merging and
+    // tool_result pairing are reused, not reimplemented) — bodyParentToolUseId
+    // only tags the resulting item / drives prompt-echo suppression.
+    const msgParentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id;
+    const bodyParentToolUseId =
+      typeof msgParentToolUseId === "string" &&
+      msgParentToolUseId &&
+      agentToolUseIds.has(msgParentToolUseId)
+        ? msgParentToolUseId
+        : null;
 
     // ═══ Assistant ═══
     if (msg.type === "assistant") {
@@ -1404,14 +1441,24 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
-      // Merge into the last assistant item if it shares the same message.id;
-      // otherwise push a new one. No mutable buffer — just peek at items[].
+      // Merge into the last assistant item if it shares the same message.id
+      // AND the same body context; otherwise push a new one. Body-aware merge
+      // keeps a subagent's same-turn tool_uses together even when interleaved
+      // with top-level items.
       const msgId = (msg.message as { id?: string })?.id;
       const prev = lastAssistant();
       const target =
-        prev && msgId && prev.messageId === msgId
+        prev &&
+        msgId &&
+        prev.messageId === msgId &&
+        prev.bodyParentToolUseId === bodyParentToolUseId
           ? prev
           : pushAssistant(msgId ?? "__no_id__", getMsgUuid(msg) ? [getMsgUuid(msg)!] : [], [msg]);
+      if (bodyParentToolUseId) {
+        target.bodyParentToolUseId = bodyParentToolUseId;
+        const bodyUuid = getMsgUuid(msg);
+        if (bodyUuid) pushBodyChild(bodyParentToolUseId, bodyUuid);
+      }
 
       // Stamp pending estimatedTokens onto the first assistant item of a turn.
       if (pendingEstimatedTokens != null) {
@@ -1493,13 +1540,18 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
 
       // parent_tool_use_id: this user message is additional output from a
-      // tool execution (e.g. Agent sub-agent text). Attach text to the
-      // matching tool-call part instead of rendering as a user bubble.
+      // tool execution. For an Agent body message this is the subagent's
+      // prompt echo (user text) — suppress it from rendering (the Agent head
+      // already shows the description) but keep the raw on the Agent part for
+      // the debug tooltip. For other tools, fold the text into skillContent.
+      // Body tool_results have no text blocks and only reach pushPartRaw here.
       const parentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id;
       if (typeof parentToolUseId === "string" && parentToolUseId) {
-        const texts = _extractUserTextBlocks(msg.message.content);
-        if (texts.length > 0) {
-          attachSkillBody(parentToolUseId, texts.join("\n"));
+        if (!bodyParentToolUseId) {
+          const texts = _extractUserTextBlocks(msg.message.content);
+          if (texts.length > 0) {
+            attachSkillBody(parentToolUseId, texts.join("\n"));
+          }
         }
         pushPartRaw(parentToolUseId, msg);
         continue;
@@ -1820,6 +1872,7 @@ export function renderChatStream(
               // the end resolves bodyChildUuids → bodyIndices and stamps
               // absorbed on the children so the top-level stream skips them.
               const argsRecord = part.args as Record<string, unknown>;
+              const tail = extractAgentTail(part.structuredResult, part.result);
               const agentCustom: Record<string, unknown> = {
                 sourceUuids: [...item.sourceUuids],
                 _rawMessages: part.rawSnapshots ?? item._rawSnapshots,
@@ -1832,6 +1885,8 @@ export function renderChatStream(
                 argsText: part.argsText,
                 tailResult: part.result,
                 tailIsError: part.isError === true,
+                tailStats: tail?.stats,
+                tailContent: tail?.content ?? part.result,
                 isOrphaned: part.isOrphaned === true,
                 controlRequestId: part.controlRequestId,
                 bodyChildUuids: part.bodyChildUuids ?? [],
@@ -2031,11 +2086,24 @@ export function renderChatStream(
   // absorbed on those children so the top-level render skips them — the
   // AgentContainer renders them inside its body instead. Atomic within this
   // single renderChatStream pass.
-  const uuidToIndex = new Map<string, number>();
+  // Map each source uuid → ALL render indices that carry it. A merged body
+  // item (subagent's same-turn tool_uses share message.id) renders as several
+  // tool-card messages, each carrying the item's sourceUuids — so one uuid
+  // spans multiple indices, and the body must own all of them.
+  const uuidToIndices = new Map<string, number[]>();
   for (let i = 0; i < messages.length; i++) {
     const custom = messages[i].metadata?.custom as Record<string, unknown> | undefined;
     const uuids = custom?.sourceUuids as string[] | undefined;
-    if (uuids) for (const u of uuids) uuidToIndex.set(u, i);
+    if (uuids) {
+      for (const u of uuids) {
+        let list = uuidToIndices.get(u);
+        if (!list) {
+          list = [];
+          uuidToIndices.set(u, list);
+        }
+        list.push(i);
+      }
+    }
   }
   for (const msg of messages) {
     const custom = msg.metadata?.custom as Record<string, unknown> | undefined;
@@ -2043,8 +2111,10 @@ export function renderChatStream(
     const childUuids = (custom.bodyChildUuids as string[] | undefined) ?? [];
     const bodyIndices: number[] = [];
     for (const u of childUuids) {
-      const idx = uuidToIndex.get(u);
-      if (typeof idx === "number") {
+      const idxs = uuidToIndices.get(u);
+      if (!idxs) continue;
+      for (const idx of idxs) {
+        if (bodyIndices.includes(idx)) continue;
         bodyIndices.push(idx);
         const childCustom = messages[idx]?.metadata?.custom as Record<string, unknown> | undefined;
         if (childCustom) {

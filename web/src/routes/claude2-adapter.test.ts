@@ -310,9 +310,45 @@ describe("deriveStatus", () => {
   });
 });
 
-// Agent subagent child: a user message carrying text from inside an Agent
-// tool-call, linked via parent_tool_use_id.
-const agentBodyChild = (
+// A subagent's assistant turn inside an Agent body: linked via
+// parent_tool_use_id, with its own message.id (same id → merge) and tool_use.
+const agentBodyAssistant = (
+  uuid: string,
+  parentToolUseId: string,
+  messageId: string,
+  blocks: Array<
+    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+    | { type: "text"; text: string }
+  >,
+): SessionStreamServerMessage =>
+  ({
+    type: "assistant",
+    uuid,
+    parent_tool_use_id: parentToolUseId,
+    message: { id: messageId, role: "assistant", content: blocks },
+  }) as unknown as SessionStreamServerMessage;
+
+// A subagent's tool_result inside an Agent body (result of the subagent's
+// own tool call, NOT the Agent itself).
+const agentBodyToolResult = (
+  uuid: string,
+  parentToolUseId: string,
+  toolUseId: string,
+  content: string,
+  isError = false,
+): SessionStreamServerMessage =>
+  ({
+    type: "user",
+    uuid,
+    parent_tool_use_id: parentToolUseId,
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: toolUseId, content, is_error: isError }],
+    },
+  }) as unknown as SessionStreamServerMessage;
+
+// The subagent's prompt echo: a user-text body message (its instructions).
+const agentPromptEcho = (
   uuid: string,
   parentToolUseId: string,
   text: string,
@@ -324,8 +360,23 @@ const agentBodyChild = (
     message: { role: "user", content: [{ type: "text", text }] },
   }) as unknown as SessionStreamServerMessage;
 
+// The Agent's own tail: a top-level user tool_result for the Agent tool_use,
+// carrying the tool_use_result envelope (final stats + full content).
+const agentTail = (
+  toolUseId: string,
+  envelope: Record<string, unknown>,
+): SessionStreamServerMessage =>
+  ({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: toolUseId, content: "final summary" }],
+    },
+    tool_use_result: envelope,
+  }) as unknown as SessionStreamServerMessage;
+
 describe("agent-container pipeline", () => {
-  test("Agent tool_use with parent_tool_use_id children becomes agent-container with bodyIndices", () => {
+  test("body assistants merge by message.id, tool_results pair, tail envelope surfaces", () => {
     const raw: SessionStreamServerMessage[] = [
       user([{ type: "text", text: "plan it" }]),
       assistant("a1", [
@@ -336,9 +387,22 @@ describe("agent-container pipeline", () => {
           input: { subagent_type: "Plan", description: "Plan X" },
         },
       ]),
-      agentBodyChild("child-1", "agent-1", "subagent thinking..."),
-      agentBodyChild("child-2", "agent-1", "subagent more output"),
-      user([{ type: "tool_result", tool_use_id: "agent-1", content: "plan done" }]),
+      agentPromptEcho("echo-1", "agent-1", "Design the plan"),
+      agentBodyAssistant("b1", "agent-1", "turn-A", [
+        { type: "tool_use", id: "bash-1", name: "Bash", input: { command: "ls" } },
+      ]),
+      agentBodyAssistant("b2", "agent-1", "turn-A", [
+        { type: "tool_use", id: "bash-2", name: "Bash", input: { command: "pwd" } },
+      ]),
+      agentBodyToolResult("r1", "agent-1", "bash-1", "file1\nfile2"),
+      agentTail("agent-1", {
+        status: "completed",
+        agentType: "Plan",
+        totalTokens: 44129,
+        totalToolUseCount: 16,
+        totalDurationMs: 166761,
+        content: [{ type: "text", text: "full plan body" }],
+      }),
       result("success"),
     ];
 
@@ -350,7 +414,23 @@ describe("agent-container pipeline", () => {
       | undefined;
     expect(agentPart).toBeDefined();
     expect(agentPart?.hasAgentBody).toBe(true);
-    expect(agentPart?.bodyChildUuids).toEqual(["child-1", "child-2"]);
+    // Prompt echo and the body tool_result are NOT body children — only the
+    // subagent's assistant turns are.
+    expect(agentPart?.bodyChildUuids).toEqual(["b1", "b2"]);
+
+    // bash-1 and bash-2 share message.id "turn-A" → one merged assistant item.
+    const bodyItems = items.filter(
+      (i) => i.kind === "assistant" && i.bodyParentToolUseId === "agent-1",
+    );
+    expect(bodyItems.length).toBe(1);
+    const merged = bodyItems[0] as {
+      kind: "assistant";
+      parts: Array<{ type: string; toolCallId?: string; result?: string }>;
+    };
+    expect(merged.parts.filter((p) => p.type === "tool-call").length).toBe(2);
+    // bash-1's result paired via extractToolResults.
+    const bash1 = merged.parts.find((p) => p.toolCallId === "bash-1");
+    expect(bash1?.result).toBe("file1\nfile2");
 
     const rendered = renderChatStream(items);
     const container = rendered.find(
@@ -362,13 +442,48 @@ describe("agent-container pipeline", () => {
     const custom = container?.metadata?.custom as Record<string, unknown>;
     expect(custom.subagentType).toBe("Plan");
     expect(custom.description).toBe("Plan X");
-    expect(custom.tailResult).toBe("plan done");
-    expect(Array.isArray(custom.bodyIndices)).toBe(true);
-    expect((custom.bodyIndices as number[]).length).toBe(2);
-    for (const idx of custom.bodyIndices as number[]) {
+    expect(custom.tailResult).toBe("final summary");
+    expect(custom.tailContent).toBe("full plan body");
+    expect((custom.tailStats as Record<string, unknown>).totalTokens).toBe(44129);
+    // The merged item renders as two tool-cards; both belong in the body.
+    const bodyIndices = custom.bodyIndices as number[];
+    expect(bodyIndices.length).toBe(2);
+    for (const idx of bodyIndices) {
       const childCustom = rendered[idx]?.metadata?.custom as Record<string, unknown> | undefined;
       expect(childCustom?.absorbed).toBe(true);
     }
+  });
+
+  test("prompt echo is suppressed from the stream but kept on the Agent part for debug", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "go" }]),
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "agent-1",
+          name: "Agent",
+          input: { subagent_type: "Plan", description: "D" },
+        },
+      ]),
+      agentPromptEcho("echo-1", "agent-1", "the subagent prompt"),
+      user([{ type: "tool_result", tool_use_id: "agent-1", content: "done" }]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    // No standalone user-prompt item for the echo.
+    const echoItem = items.find(
+      (i) => i.kind === "user-prompt" && i.text === "the subagent prompt",
+    );
+    expect(echoItem).toBeUndefined();
+    // The echo raw is attached to the Agent part for the debug tooltip.
+    const agentPart = items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === "agent-1") as
+      | ({ type: "tool-call" } & { rawSnapshots?: SessionStreamServerMessage[] })
+      | undefined;
+    expect(
+      (agentPart?.rawSnapshots ?? []).some((m) => (m as Record<string, unknown>).uuid === "echo-1"),
+    ).toBe(true);
   });
 
   test("non-Agent tool_use does not become an agent-container", () => {
@@ -377,7 +492,7 @@ describe("agent-container pipeline", () => {
       assistant("a1", [
         { type: "tool_use", id: "read-1", name: "Read", input: { file_path: "/x" } },
       ]),
-      agentBodyChild("child-1", "read-1", "stray parent_tool_use_id"),
+      agentPromptEcho("child-1", "read-1", "stray parent_tool_use_id text"),
       user([{ type: "tool_result", tool_use_id: "read-1", content: "content" }]),
       result("success"),
     ];

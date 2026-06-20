@@ -46,6 +46,7 @@ import {
   useClaude2Session,
   deriveStatus,
   type AgentContainerStatus,
+  type AgentTailStats,
   type ApiErrorAttachment,
   type RetryInfo,
   type TaskInfo,
@@ -1399,6 +1400,8 @@ type AgentContainerCustom = {
   description?: string;
   tailResult?: string;
   tailIsError?: boolean;
+  tailStats?: AgentTailStats;
+  tailContent?: string;
   isOrphaned?: boolean;
   progress?: {
     subagentType?: string;
@@ -1461,24 +1464,35 @@ function AgentTailBar({
   progress,
   tailResult,
   tailIsError,
+  tailStats,
+  tailContent,
 }: {
   status: AgentContainerStatus;
   progress: AgentContainerCustom["progress"];
   tailResult?: string;
   tailIsError?: boolean;
+  tailStats?: AgentTailStats;
+  tailContent?: string;
 }) {
   const [resultOpen, setResultOpen] = useState(false);
   const showTail = status === "complete" || status === "error";
+  const content = tailContent ?? tailResult;
+  // Prefer final stats from the tool_use_result envelope (complete state);
+  // fall back to live task_progress stats while running.
+  const tools = tailStats?.totalToolUseCount ?? progress?.usage.tool_uses;
+  const tokens = tailStats?.totalTokens ?? progress?.usage.total_tokens;
+  const durationMs = tailStats?.totalDurationMs ?? progress?.usage.duration_ms;
+  const hasStats = tools != null || tokens != null || durationMs != null;
   return (
     <div className="flex flex-col gap-1 rounded-b-lg border-t border-slate-700/50 bg-slate-800/40 px-3 py-1.5">
-      {progress ? (
-        <div className="flex gap-3 text-[0.65rem] text-slate-400">
-          <span>{progress.usage.tool_uses} tools</span>
-          <span>{progress.usage.total_tokens.toLocaleString()} tokens</span>
-          <span>{Math.round(progress.usage.duration_ms / 1000)}s</span>
+      {hasStats ? (
+        <div className="flex flex-wrap gap-3 text-[0.65rem] text-slate-400">
+          {tools != null ? <span>{tools} tools</span> : null}
+          {tokens != null ? <span>{tokens.toLocaleString()} tokens</span> : null}
+          {durationMs != null ? <span>{Math.round(durationMs / 1000)}s</span> : null}
         </div>
       ) : null}
-      {showTail && tailResult ? (
+      {showTail && content ? (
         <button
           type="button"
           onClick={() => setResultOpen(!resultOpen)}
@@ -1487,12 +1501,12 @@ function AgentTailBar({
           {resultOpen ? "▾" : "▸"} {tailIsError ? "Error details" : "Final result"}
         </button>
       ) : null}
-      {resultOpen && tailResult ? (
+      {resultOpen && content ? (
         <div className="max-h-48 overflow-y-auto">
-          <MarkdownString text={tailResult} />
+          <MarkdownString text={content} />
         </div>
       ) : null}
-      {status === "error" && !tailResult ? (
+      {status === "error" && !content ? (
         <span className="text-xs text-red-300">Agent execution failed</span>
       ) : null}
     </div>
@@ -1565,7 +1579,7 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
           className="ml-2 max-h-96 space-y-1 overflow-y-auto border-l-2 border-slate-700/60 pl-3"
         >
           {bodyIndices.map((i) => (
-            <MessageRouter key={i} index={i} />
+            <MessageRouter key={i} index={i} renderAbsorbed />
           ))}
         </div>
       ) : null}
@@ -1574,21 +1588,31 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
         progress={custom.progress}
         tailResult={custom.tailResult}
         tailIsError={custom.tailIsError}
+        tailStats={custom.tailStats}
+        tailContent={custom.tailContent}
       />
     </div>
   );
 }
 
 // Unified message router: top-level turn rendering and Agent body rendering
-// both go through this. agent-container → recursive AgentContainer; absorbed
-// children → null (rendered by their parent AgentContainer); otherwise the
-// standard MessageByIndex. Recursion falls out naturally for nested Agents.
-function MessageRouter({ index }: { index: number }) {
+// both go through this. agent-container → recursive AgentContainer. At the
+// top level (renderAbsorbed=false) absorbed children return null — they are
+// rendered inside their parent AgentContainer, not in the top-level stream.
+// Inside a body (renderAbsorbed=true) absorbed children ARE the body's own
+// items, so they render normally.
+function MessageRouter({
+  index,
+  renderAbsorbed = false,
+}: {
+  index: number;
+  renderAbsorbed?: boolean;
+}) {
   const custom = useAuiState(
     (s) => s.thread.messages[index]?.metadata?.custom as Record<string, unknown> | undefined,
   );
   if (custom?.systemMessageType === "agent-container") return <AgentContainer headIndex={index} />;
-  if (custom?.absorbed === true) return null;
+  if (!renderAbsorbed && custom?.absorbed === true) return null;
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }
 
