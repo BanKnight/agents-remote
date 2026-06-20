@@ -527,10 +527,97 @@ function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderPro
   );
 }
 
+// Shared fullscreen reader shell for chat bubbles and the plan card. Provides a
+// fixed, safe-area-aware overlay portaled to document.body (escaping the
+// virtualizer's transform ancestor), a header bar with a role-specific left
+// side + an always-right close button, a scrollable body, and an optional
+// pinned footer (ExitPlanMode uses it for the approve/reject tail). Esc closes.
+function FullscreenReader({
+  header,
+  onClose,
+  closeLabel,
+  children,
+  footer,
+}: {
+  header: React.ReactNode;
+  onClose: () => void;
+  closeLabel: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-sm"
+      style={{
+        paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
+        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
+        paddingLeft: "max(env(safe-area-inset-left, 0px), 0.75rem)",
+        paddingRight: "max(env(safe-area-inset-right, 0px), 0.75rem)",
+      }}
+    >
+      <div className="flex items-center gap-2 rounded-t-lg border-b border-slate-700/60 bg-slate-800/60 px-3 py-2 sm:px-5">
+        {header}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto cursor-pointer rounded p-2 text-slate-400 transition hover:bg-slate-700/60 hover:text-slate-100"
+          aria-label={closeLabel}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M4 4l8 8M12 4l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">{children}</div>
+      {footer}
+    </div>,
+    document.body,
+  );
+}
+
+// Expand affordance icon reused by the bubble hover action bars.
+function ExpandGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className ?? "h-3 w-3"} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2 6V3.5A1.5 1.5 0 013.5 2H6M14 6V3.5A1.5 1.5 0 0012.5 2H10M2 10v2.5A1.5 1.5 0 003.5 14H6M14 10v2.5a1.5 1.5 0 01-1.5 1.5H10"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const { t } = useT();
   const [fullscreen, setFullscreen] = useState(false);
+
+  const renderBody = () => (
+    <>
+      <MessagePrimitive.Parts />
+      <SyntheticBodyView />
+      <ApiErrorAttachments />
+    </>
+  );
+
   return (
     <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative">
       <RawDebugTooltip custom={custom} className="self-end" />
@@ -538,34 +625,48 @@ function UserChatBubble() {
         className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
-        <MessagePrimitive.Parts />
-        <SyntheticBodyView />
-        <ApiErrorAttachments />
+        {renderBody()}
       </div>
-      {fullscreen
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[100] flex flex-col bg-slate-950"
-              style={{
-                paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
-                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
-                paddingLeft: "max(env(safe-area-inset-left, 0px), 1rem)",
-                paddingRight: "max(env(safe-area-inset-right, 0px), 1rem)",
-              }}
-              onClick={() => setFullscreen(false)}
-            >
-              <div className="flex-1 overflow-y-auto">
-                <div className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 mx-auto">
-                  <MessagePrimitive.Parts />
-                  <SyntheticBodyView />
-                  <ApiErrorAttachments />
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {fullscreen ? (
+        <FullscreenReader
+          header={
+            <>
+              <svg
+                className="h-4 w-4 shrink-0 text-cyan-300"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.5" />
+                <path
+                  d="M4 20a8 8 0 0116 0"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="text-xs font-medium text-slate-200">
+                {t("claude2.message.roleUser")}
+              </span>
+            </>
+          }
+          onClose={() => setFullscreen(false)}
+          closeLabel={t("claude2.message.exitFullscreen")}
+        >
+          <div className="mx-auto max-w-4xl">
+            <div className="rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-3">{renderBody()}</div>
+          </div>
+        </FullscreenReader>
+      ) : null}
       <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          type="button"
+          onClick={() => setFullscreen(true)}
+          className="cursor-pointer rounded p-1 text-slate-400 transition hover:text-slate-200"
+          aria-label={t("claude2.message.expand")}
+        >
+          <ExpandGlyph />
+        </button>
         <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
           <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <rect
@@ -660,7 +761,58 @@ function AssistantChatBubble() {
   const msgStatus = (message as { status?: { type?: string } }).status;
   const isStreaming = msgStatus?.type === "running";
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const { t } = useT();
   const [fullscreen, setFullscreen] = useState(false);
+
+  const renderBody = () => (
+    <>
+      <AuiIf
+        condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
+      >
+        <div className="flex items-center gap-1.5 py-1">
+          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+        </div>
+      </AuiIf>
+      <AuiIf condition={(s) => s.message.content.length > 0}>
+        <MessagePrimitive.GroupedParts
+          groupBy={groupPartByType({ reasoning: ["group-reasoning"] })}
+        >
+          {({ part, children }) => {
+            switch (part.type) {
+              case "group-reasoning": {
+                return (
+                  <ReasoningGroup running={part.status.type === "running"}>
+                    {children}
+                  </ReasoningGroup>
+                );
+              }
+              case "reasoning":
+                return <span className="whitespace-pre-wrap">{part.text}</span>;
+              case "text":
+                return <MarkdownText />;
+              case "tool-call": {
+                const CustomUI = getToolRenderer(part.toolName);
+                return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
+              }
+              default:
+                return null;
+            }
+          }}
+        </MessagePrimitive.GroupedParts>
+        {isStreaming ? (
+          <div className="mt-2 flex items-center gap-1.5 py-1">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
+          </div>
+        ) : null}
+      </AuiIf>
+      <SyntheticBodyView />
+      <ApiErrorAttachments />
+    </>
+  );
 
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
@@ -668,140 +820,72 @@ function AssistantChatBubble() {
         className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
-        <AuiIf
-          condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
-        >
-          <div className="flex items-center gap-1.5 py-1">
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-          </div>
-        </AuiIf>
-        <AuiIf condition={(s) => s.message.content.length > 0}>
-          <MessagePrimitive.GroupedParts
-            groupBy={groupPartByType({ reasoning: ["group-reasoning"] })}
-          >
-            {({ part, children }) => {
-              switch (part.type) {
-                case "group-reasoning": {
-                  return (
-                    <ReasoningGroup running={part.status.type === "running"}>
-                      {children}
-                    </ReasoningGroup>
-                  );
-                }
-                case "reasoning":
-                  return <span className="whitespace-pre-wrap">{part.text}</span>;
-                case "text":
-                  return <MarkdownText />;
-                case "tool-call": {
-                  const CustomUI = getToolRenderer(part.toolName);
-                  return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
-                }
-                default:
-                  return null;
-              }
-            }}
-          </MessagePrimitive.GroupedParts>
-          {isStreaming ? (
-            <div className="mt-2 flex items-center gap-1.5 py-1">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
-            </div>
-          ) : null}
-        </AuiIf>
-        <SyntheticBodyView />
-        <ApiErrorAttachments />
+        {renderBody()}
       </div>
-      {fullscreen
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[100] flex flex-col bg-slate-950"
-              style={{
-                paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
-                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
-                paddingLeft: "max(env(safe-area-inset-left, 0px), 1rem)",
-                paddingRight: "max(env(safe-area-inset-right, 0px), 1rem)",
-              }}
-              onClick={() => setFullscreen(false)}
-            >
-              <div className="flex-1 overflow-y-auto">
-                <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 mx-auto">
-                  <AuiIf
-                    condition={(s) =>
-                      s.message.content.length === 0 && s.message.status?.type === "running"
-                    }
-                  >
-                    <div className="flex items-center gap-1.5 py-1">
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
-                    </div>
-                  </AuiIf>
-                  <AuiIf condition={(s) => s.message.content.length > 0}>
-                    <MessagePrimitive.GroupedParts
-                      groupBy={groupPartByType({ reasoning: ["group-reasoning"] })}
-                    >
-                      {({ part, children }) => {
-                        switch (part.type) {
-                          case "group-reasoning":
-                            return (
-                              <ReasoningGroup running={part.status.type === "running"}>
-                                {children}
-                              </ReasoningGroup>
-                            );
-                          case "reasoning":
-                            return <span className="whitespace-pre-wrap">{part.text}</span>;
-                          case "text":
-                            return <MarkdownText />;
-                          case "tool-call": {
-                            const CustomUI = getToolRenderer(part.toolName);
-                            return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
-                          }
-                          default:
-                            return null;
-                        }
-                      }}
-                    </MessagePrimitive.GroupedParts>
-                    {isStreaming ? (
-                      <div className="mt-2 flex items-center gap-1.5 py-1">
-                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
-                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
-                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
-                      </div>
-                    ) : null}
-                  </AuiIf>
-                  <SyntheticBodyView />
-                  <ApiErrorAttachments />
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {fullscreen ? (
+        <FullscreenReader
+          header={
+            <>
+              <svg
+                className="h-4 w-4 shrink-0 text-cyan-300"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="text-xs font-medium text-slate-200">
+                {t("claude2.message.roleAssistant")}
+              </span>
+            </>
+          }
+          onClose={() => setFullscreen(false)}
+          closeLabel={t("claude2.message.exitFullscreen")}
+        >
+          <div className="mx-auto max-w-4xl">
+            <div className="rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-3">
+              {renderBody()}
+            </div>
+          </div>
+        </FullscreenReader>
+      ) : null}
       <RawDebugTooltip custom={custom} className="self-end" />
       <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {!isEmpty && !isStreaming ? (
-          <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
-            <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect
-                x="5"
-                y="2"
-                width="9"
-                height="12"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M2 5v9a1 1 0 001 1h7"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </ActionBarPrimitive.Copy>
+          <>
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              className="cursor-pointer rounded p-1 text-slate-400 transition hover:text-slate-200"
+              aria-label={t("claude2.message.expand")}
+            >
+              <ExpandGlyph />
+            </button>
+            <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect
+                  x="5"
+                  y="2"
+                  width="9"
+                  height="12"
+                  rx="1"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M2 5v9a1 1 0 001 1h7"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </ActionBarPrimitive.Copy>
+          </>
         ) : null}
       </ActionBarPrimitive.Root>
     </MessagePrimitive.Root>
@@ -1104,6 +1188,7 @@ function RawDebugPopover({
 function SystemChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const { t } = useT();
   const systemMessageType = custom?.systemMessageType as string | undefined;
 
   // Tool-card: standalone tool message rendered outside of assistant bubbles.
@@ -1232,55 +1317,64 @@ function SystemChatBubble() {
       ? (rawData as Claude2FileHistorySnapshot)
       : null;
   const [fullscreen, setFullscreen] = useState(false);
+
+  const renderBody = () => (
+    <>
+      {attachmentType && rawData ? (
+        <AttachmentBubble subtype={attachmentType} raw={rawData} />
+      ) : fileSnapshot ? (
+        <FileHistorySnapshotView snapshot={fileSnapshot} />
+      ) : (
+        <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
+          <MessagePrimitive.Parts />
+        </div>
+      )}
+      <SyntheticBodyView />
+      <ApiErrorAttachments />
+    </>
+  );
+
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div
         className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 overflow-x-hidden overflow-y-auto max-h-[55vh] cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
-        {attachmentType && rawData ? (
-          <AttachmentBubble subtype={attachmentType} raw={rawData} />
-        ) : fileSnapshot ? (
-          <FileHistorySnapshotView snapshot={fileSnapshot} />
-        ) : (
-          <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
-            <MessagePrimitive.Parts />
-          </div>
-        )}
-        <SyntheticBodyView />
-        <ApiErrorAttachments />
+        {renderBody()}
       </div>
-      {fullscreen
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[100] flex flex-col bg-slate-950"
-              style={{
-                paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
-                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
-                paddingLeft: "max(env(safe-area-inset-left, 0px), 1rem)",
-                paddingRight: "max(env(safe-area-inset-right, 0px), 1rem)",
-              }}
-              onClick={() => setFullscreen(false)}
-            >
-              <div className="flex-1 overflow-y-auto">
-                <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-2.5 mx-auto overflow-hidden">
-                  {attachmentType && rawData ? (
-                    <AttachmentBubble subtype={attachmentType} raw={rawData} />
-                  ) : fileSnapshot ? (
-                    <FileHistorySnapshotView snapshot={fileSnapshot} />
-                  ) : (
-                    <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
-                      <MessagePrimitive.Parts />
-                    </div>
-                  )}
-                  <SyntheticBodyView />
-                  <ApiErrorAttachments />
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {fullscreen ? (
+        <FullscreenReader
+          header={
+            <>
+              <svg
+                className="h-4 w-4 shrink-0 text-amber-300"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" />
+                <path
+                  d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="text-xs font-medium text-slate-200">
+                {t("claude2.message.roleSystem")}
+              </span>
+            </>
+          }
+          onClose={() => setFullscreen(false)}
+          closeLabel={t("claude2.message.exitFullscreen")}
+        >
+          <div className="mx-auto max-w-4xl">
+            <div className="rounded-2xl rounded-bl-md bg-amber-800/30 px-4 py-3 overflow-hidden">
+              {renderBody()}
+            </div>
+          </div>
+        </FullscreenReader>
+      ) : null}
       <RawDebugTooltip custom={custom} className="self-end" />
     </MessagePrimitive.Root>
   );
@@ -1826,61 +1920,38 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         ) : null}
         {renderTail()}
       </div>
-      {fullscreen
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-sm"
-              style={{
-                paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
-                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
-                paddingLeft: "max(env(safe-area-inset-left, 0px), 0.75rem)",
-                paddingRight: "max(env(safe-area-inset-right, 0px), 0.75rem)",
-              }}
-            >
-              <div className="flex items-center gap-2 rounded-t-lg border-b border-slate-700/60 bg-slate-800/60 px-3 py-2 sm:px-5">
-                <PlanGlyph />
-                <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
-                  {t("claude2.plan.title")}
+      {fullscreen ? (
+        <FullscreenReader
+          header={
+            <>
+              <PlanGlyph />
+              <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
+                {t("claude2.plan.title")}
+              </span>
+              {planFilePath ? (
+                <span className="truncate text-[0.6rem] text-slate-400" title={planFilePath}>
+                  {planFilePath}
                 </span>
-                {planFilePath ? (
-                  <span className="truncate text-[0.6rem] text-slate-400" title={planFilePath}>
-                    {planFilePath}
-                  </span>
-                ) : null}
-                <span className="flex-1" />
-                <StatusIndicator status={indicatorStatus} />
-                <button
-                  type="button"
-                  onClick={() => setFullscreen(false)}
-                  className="cursor-pointer rounded p-2 text-slate-400 transition hover:bg-slate-700/60 hover:text-slate-100"
-                  aria-label={t("claude2.plan.exitFullscreen")}
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M4 4l8 8M12 4l-8 8"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-                <div className="mx-auto max-w-4xl">
-                  {plan ? (
-                    <MarkdownString text={plan} />
-                  ) : (
-                    <p className="py-8 text-center text-xs text-slate-500">
-                      {t("claude2.plan.orphaned")}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {renderTail()}
-            </div>,
-            document.body,
-          )
-        : null}
+              ) : null}
+              <span className="flex-1" />
+              <StatusIndicator status={indicatorStatus} />
+            </>
+          }
+          onClose={() => setFullscreen(false)}
+          closeLabel={t("claude2.plan.exitFullscreen")}
+          footer={renderTail()}
+        >
+          <div className="mx-auto max-w-4xl">
+            {plan ? (
+              <MarkdownString text={plan} />
+            ) : (
+              <p className="py-8 text-center text-xs text-slate-500">
+                {t("claude2.plan.orphaned")}
+              </p>
+            )}
+          </div>
+        </FullscreenReader>
+      ) : null}
     </>
   );
 }
