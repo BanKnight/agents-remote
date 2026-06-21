@@ -1,62 +1,19 @@
 import { useContext, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
-import { useT } from "../../i18n";
+import { useT, type TranslationKey } from "../../i18n";
 import { CollapsibleSection } from "./collapsible-section";
-
-// Icon paths are inline SVG strings for simplicitly
-const Icons = {
-  terminal: '<path d="M4 17L2 15V5l2-2h1l-2 2v10l2 2H4zM8 17h8v-1H8v1z" fill="currentColor"/>',
-  file: '<path d="M4 2h6l4 4v10a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2zm6 1.4V6h2.6L10 3.4zM3 4v12a1 1 0 001 1h8a1 1 0 001-1V7h-4V3H4a1 1 0 00-1 1z" fill="currentColor"/>',
-  edit: '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>',
-  search:
-    '<circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20 20l-3.3-3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  puzzle:
-    '<path d="M4 8h2V6a2 2 0 012-2h1V2h2v2h1a2 2 0 012 2v2h2v2h-2v1a2 2 0 01-2 2h-1v2H9v-2H8a2 2 0 01-2-2v-1H4V8zm3 1H5v4h2v1a1 1 0 001 1h1v2h2v-2h1a1 1 0 001-1v-1h2V9h-2V8a1 1 0 00-1-1h-1V5H9v2H8a1 1 0 00-1 1v1z" fill="currentColor"/>',
-  skill:
-    '<path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M5 15l1 3.5L9.5 19.5 6.5 21 5 24l-1.5-3L0 19.5 3.5 18 5 15z" fill="currentColor" opacity="0.5"/>',
-  webSearch:
-    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 12h17M12 3.5a15 15 0 010 17M12 3.5a15 15 0 000 17" stroke="currentColor" stroke-width="1.5"/>',
-  webFetch:
-    '<circle cx="12" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 13l3 4 3-4M12 8v9M4 20h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  mcp: '<circle cx="5" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="19" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  task: '<rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8h4M8 12h6M8 16h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  code: '<path d="M8 3L3 9l5 6M16 3l5 6-5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  globe:
-    '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20" stroke="currentColor" stroke-width="1.5"/>',
-  read: '<path d="M2 3h6a3 3 0 013 3v12a3 3 0 00-3-3H2V3zm14 0h-6a3 3 0 00-3 3v12a3 3 0 013-3h6V3z" fill="currentColor"/>',
-  write:
-    '<path d="M16 2l4 4-11 11H5v-4L16 2zm0 1.4L7.4 12H6v1.4L14.6 4.8 16 3.4zM3 17v3h3L17.4 8.6 14 5.2 3 17z" fill="currentColor"/>',
-  question:
-    '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17.5" r="0.75" fill="currentColor"/>',
-  command:
-    '<path d="M7 7l4 5-4 5M13 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-  plan: '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h18M9 3v18" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="6.5" r="1" fill="currentColor"/><circle cx="15.5" cy="13.5" r="1" fill="currentColor"/><path d="M9 15h10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M3 18h6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
-  agent:
-    '<circle cx="6" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="17" cy="17" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8l7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-};
-
-function ToolIcon({ name, className }: { name: string; className?: string }) {
-  const d = Icons[name as keyof typeof Icons] ?? Icons.task;
-  return (
-    <svg
-      className={`h-3.5 w-3.5 shrink-0 ${className ?? "text-cyan-400"}`}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <g dangerouslySetInnerHTML={{ __html: d }} />
-    </svg>
-  );
-}
+import { ToolHead, type ToolHeadStatus } from "./tool-head";
 
 function makeToolRenderer(config: {
   icon: string;
-  label?: (args: Record<string, unknown>, toolName: string) => string;
+  typeLabel?: string; // i18n key for the badge (tool type). Falls back to toolName.
+  detail?: (args: Record<string, unknown>, toolName: string) => string | null;
   badge?: (args: Record<string, unknown>, toolName: string) => string | null;
   body?: (args: Record<string, unknown>) => ReactNode | null;
   footer?: (result: string, args: Record<string, unknown>, isError: boolean) => ReactNode;
 }): ToolCallMessagePartComponent {
-  const { icon, label, badge, body, footer } = config;
+  const { icon, typeLabel, detail, badge, body, footer } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
     const { t } = useT();
     const isRunning = status.type === "running";
@@ -72,11 +29,26 @@ function makeToolRenderer(config: {
     const controlRequestId = (metadata?.controlRequestId as string) ?? "";
     const needsPermission = controlRequestId !== "" && isRunning && !isInterrupted;
     const args = safeParseArgs(argsText);
-    const displayLabel = label ? label(args, toolName) : toolName;
-    const badgeText = badge ? badge(args, toolName) : null;
+    const detailText = detail ? detail(args, toolName) : null;
+    const badgeText = badge
+      ? badge(args, toolName)
+      : typeLabel
+        ? t(typeLabel as TranslationKey)
+        : toolName;
     const hasArgs = argsText.length > 0 && argsText !== "{}";
     const skillContent =
       typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
+
+    const toolStatus: ToolHeadStatus | null = isRunning
+      ? "running"
+      : isInterrupted
+        ? "interrupted"
+        : isError
+          ? "error"
+          : null;
+    const badgeBg = needsPermission
+      ? "bg-amber-500/15 text-amber-200"
+      : "bg-cyan-500/15 text-cyan-200";
 
     const accentColor = isError
       ? "text-red-400"
@@ -120,32 +92,22 @@ function makeToolRenderer(config: {
           className={`my-1 ${accentColor}`}
           dividerClassName={accentDivider}
           header={(expanded) => (
-            <>
-              <ToolIcon name={icon} className={isError ? "text-red-400" : undefined} />
-              {badgeText ? (
-                <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-slate-300">
-                  {badgeText}
-                </span>
-              ) : null}
-              <span className="text-xs font-medium truncate">{displayLabel}</span>
-              {isRunning && !isInterrupted ? (
-                <span
-                  className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
-                />
-              ) : !expanded && isInterrupted ? (
-                <span className="ml-auto shrink-0 text-[0.6rem] text-amber-400">
-                  {t("claude2.interrupted")}
-                </span>
-              ) : !expanded && isError ? (
-                <span className="ml-auto shrink-0 text-[0.6rem] text-red-400/70">错误</span>
-              ) : !expanded && hasResult ? (
-                <span className="ml-auto shrink-0 truncate text-[0.6rem] text-slate-500">
-                  {resultStr.length > 1024
-                    ? `${(resultStr.length / 1024).toFixed(1)}k`
-                    : `${resultStr.length} chars`}
-                </span>
-              ) : null}
-            </>
+            <ToolHead
+              icon={icon}
+              badge={badgeText}
+              badgeClassName={badgeBg}
+              detail={detailText}
+              status={toolStatus}
+              trailing={
+                !expanded && hasResult ? (
+                  <span className="truncate text-[0.6rem] text-slate-500">
+                    {resultStr.length > 1024
+                      ? `${(resultStr.length / 1024).toFixed(1)}k`
+                      : `${resultStr.length} chars`}
+                  </span>
+                ) : null
+              }
+            />
           )}
         >
           {hasContent ? (
@@ -324,44 +286,49 @@ function agentFooter(result: string, args: Record<string, unknown>, isError: boo
 
 export const BashToolUI = makeToolRenderer({
   icon: "terminal",
-  label: (args) => {
+  typeLabel: "claude2.tool.bash",
+  detail: (args) => {
     const desc = typeof args.description === "string" ? args.description.trim() : "";
     if (desc) return desc.slice(0, 80);
     const cmd = typeof args.command === "string" ? args.command : "";
-    return cmd ? `$ ${cmd.slice(0, 80)}` : "Bash";
+    return cmd ? `$ ${cmd.slice(0, 80)}` : null;
   },
 });
 
 export const ReadToolUI = makeToolRenderer({
   icon: "read",
-  label: (args) => {
+  typeLabel: "claude2.tool.read",
+  detail: (args) => {
     const path = typeof args.file_path === "string" ? args.file_path : "";
-    return path ? `Read ${path.split("/").pop() ?? path}` : "Read";
+    return path ? (path.split("/").pop() ?? path) : null;
   },
 });
 
 export const WriteToolUI = makeToolRenderer({
   icon: "write",
-  label: (args) => {
+  typeLabel: "claude2.tool.write",
+  detail: (args) => {
     const path = typeof args.file_path === "string" ? args.file_path : "";
-    return path ? `Write ${path.split("/").pop() ?? path}` : "Write";
+    return path ? (path.split("/").pop() ?? path) : null;
   },
 });
 
 export const EditToolUI = makeToolRenderer({
   icon: "edit",
-  label: (args) => {
+  typeLabel: "claude2.tool.edit",
+  detail: (args) => {
     const path = typeof args.file_path === "string" ? args.file_path : "";
-    return path ? `Edit ${path.split("/").pop() ?? path}` : "Edit";
+    return path ? (path.split("/").pop() ?? path) : null;
   },
   body: editDiffBody,
 });
 
 export const SkillToolUI = makeToolRenderer({
   icon: "skill",
-  label: (args) => {
+  typeLabel: "claude2.tool.skill",
+  detail: (args) => {
     const name = typeof args.skill === "string" ? args.skill : "";
-    return name ? `Skill: ${name}` : "Skill";
+    return name || null;
   },
 });
 
@@ -412,7 +379,8 @@ function TaskBody({ args }: { args: Record<string, unknown> }) {
 
 export const TaskToolUI = makeToolRenderer({
   icon: "task",
-  label: (args, toolName) => toolName,
+  typeLabel: "claude2.tool.task",
+  detail: (_args, toolName) => toolName,
   badge: (args) => {
     const subagent = typeof args.subagent_type === "string" ? args.subagent_type : undefined;
     return subagent ?? null;
@@ -430,78 +398,90 @@ export const TaskToolUI = makeToolRenderer({
 
 export const AgentToolUI = makeToolRenderer({
   icon: "agent",
+  detail: (args) => {
+    const desc = typeof args.description === "string" ? args.description.trim() : "";
+    return desc ? desc.slice(0, 80) : null;
+  },
   badge: (args) => {
     const type = typeof args.subagent_type === "string" ? args.subagent_type.trim() : "";
     return type || null;
-  },
-  label: (args) => {
-    const desc = typeof args.description === "string" ? args.description.trim() : "";
-    return desc ? desc.slice(0, 80) : "Agent";
   },
   footer: agentFooter,
 });
 
 export const WebSearchToolUI = makeToolRenderer({
   icon: "webSearch",
-  label: (args) => {
+  typeLabel: "claude2.tool.webSearch",
+  detail: (args) => {
     const query = typeof args.query === "string" ? args.query : "";
-    return query ? `Search: ${query.slice(0, 60)}` : "WebSearch";
+    return query ? query.slice(0, 60) : null;
   },
 });
 
 export const WebFetchToolUI = makeToolRenderer({
   icon: "webFetch",
-  label: (args) => {
+  typeLabel: "claude2.tool.webFetch",
+  detail: (args) => {
     const url = typeof args.url === "string" ? args.url : "";
     try {
       const host = url ? new URL(url).hostname : "";
-      return host ? `Fetch: ${host}` : "WebFetch";
+      return host || (url ? url.slice(0, 60) : null);
     } catch {
-      return url ? `Fetch: ${url.slice(0, 60)}` : "WebFetch";
+      return url ? url.slice(0, 60) : null;
     }
   },
 });
 
 export const MCPToolRenderer = makeToolRenderer({
   icon: "mcp",
-  label: (_args, toolName) => {
-    // Strip mcp__server__ prefix for display: "mcp__context7__query-docs" → "context7/query-docs"
+  typeLabel: "claude2.tool.mcp",
+  detail: (_args, toolName) => {
     const cleaned = toolName.replace(/^mcp__/, "").replace(/__/g, "/");
     return cleaned;
   },
 });
 
 export const GlobToolUI = makeToolRenderer({
-  icon: "search",
-  label: (args) => {
+  icon: "file",
+  typeLabel: "claude2.tool.glob",
+  detail: (args) => {
     const pattern = typeof args.pattern === "string" ? args.pattern : "";
-    return pattern ? `Glob: ${pattern}` : "Glob";
+    return pattern || null;
   },
 });
 
 export const GrepToolUI = makeToolRenderer({
   icon: "search",
-  label: (args) => {
+  typeLabel: "claude2.tool.grep",
+  detail: (args) => {
     const pattern = typeof args.pattern === "string" ? args.pattern : "";
-    return pattern ? `Grep: ${pattern.slice(0, 60)}` : "Grep";
+    return pattern ? pattern.slice(0, 60) : null;
   },
 });
 
 export const NotebookEditToolUI = makeToolRenderer({
-  icon: "edit",
-  label: () => "Notebook Edit",
+  icon: "notebook",
+  typeLabel: "claude2.tool.notebook",
+  detail: () => null,
 });
 
 // ── Slash command output (non-compact) ────────────────────────────
 
 const CommandOutputUI = makeToolRenderer({
   icon: "command",
-  label: (_args, toolName) => toolName,
+  detail: (_args, toolName) => toolName,
 });
 
 const EnterPlanModeToolUI = makeToolRenderer({
   icon: "plan",
-  label: () => "Enter Plan Mode",
+  typeLabel: "claude2.tool.planMode",
+  detail: () => null,
+});
+
+const GenericToolUI = makeToolRenderer({
+  icon: "command",
+  typeLabel: "claude2.tool.generic",
+  detail: (_args, toolName) => toolName,
 });
 
 // ── Registry ─────────────────────────────────────────────────────────
@@ -532,13 +512,11 @@ toolRegistry.set("slash-command", CommandOutputUI);
 toolRegistry.set("bash", BashToolUI);
 toolRegistry.set("agent", AgentToolUI);
 
-export function getToolRenderer(toolName: string): ToolRenderer | undefined {
-  // Exact match first
+export function getToolRenderer(toolName: string): ToolRenderer {
   const exact = toolRegistry.get(toolName);
   if (exact) return exact;
-  // MCP tools match with prefix — use shared MCP renderer with connector icon
   if (toolName.startsWith("mcp__")) return MCPToolRenderer;
-  return undefined;
+  return GenericToolUI;
 }
 
 function safeParseArgs(argsText: string): Record<string, unknown> {

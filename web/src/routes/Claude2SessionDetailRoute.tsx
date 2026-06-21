@@ -37,8 +37,8 @@ import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primi
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
-import { ToolFallback } from "../components/assistant-ui/tool-fallback";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
+import { ToolHead } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -807,8 +807,8 @@ function AssistantChatBubble() {
               case "text":
                 return <MarkdownText />;
               case "tool-call": {
-                const CustomUI = getToolRenderer(part.toolName);
-                return CustomUI ? <CustomUI {...part} /> : <ToolFallback {...part} />;
+                const ToolUI = getToolRenderer(part.toolName);
+                return <ToolUI {...part} />;
               }
               default:
                 return null;
@@ -1248,7 +1248,7 @@ function SystemChatBubble() {
         controlRequestId,
       },
     } as Record<string, unknown>;
-    const ToolUI = CustomUI ?? ToolFallback;
+    const ToolUI = CustomUI;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     const groupPos = (custom?.toolGroupPosition as string) ?? "solo";
@@ -1540,56 +1540,6 @@ type AgentContainerCustom = {
   tailRawMessages?: unknown[];
 };
 
-function StatusIndicator({ status }: { status: AgentContainerStatus }) {
-  const { t } = useT();
-  if (status === "running") {
-    return (
-      <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-    );
-  }
-  if (status === "complete") {
-    return (
-      <svg
-        className="h-3 w-3 shrink-0 text-emerald-400"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M3 8l3.5 3.5L13 5"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  if (status === "error") {
-    return (
-      <svg
-        className="h-3 w-3 shrink-0 text-red-400"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M4 4l8 8M12 4l-8 8"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  }
-  if (status === "interrupted") {
-    return (
-      <span className="shrink-0 text-[0.6rem] text-amber-400">{t("claude2.interrupted")}</span>
-    );
-  }
-  return null;
-}
-
 function AgentTailBar({
   status,
   progress,
@@ -1689,24 +1639,14 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
   return (
     <div className="my-1 rounded-lg border border-slate-700/60 bg-slate-800/30">
       <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
-        <svg
-          className="h-3.5 w-3.5 shrink-0 text-cyan-400"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5" />
-          <circle cx="17" cy="17" r="2.5" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M8 8l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-        <span className="shrink-0 rounded bg-slate-700/60 px-1.5 py-0.5 text-[0.55rem] uppercase text-slate-300">
-          {subagentType}
-        </span>
-        <span className="flex-1 truncate text-xs text-slate-200">
-          {custom.description ?? (status === "running" ? "Working..." : "Agent")}
-        </span>
-        <StatusIndicator status={status} />
-        <RawDebugTooltip custom={custom} className="-mr-1" />
+        <ToolHead
+          icon="agent"
+          badge={subagentType}
+          badgeClassName="bg-slate-700/60 text-slate-300"
+          detail={custom.description ?? (status === "running" ? "Working..." : "Agent")}
+          status={status === "complete" ? null : status}
+          trailing={<RawDebugTooltip custom={custom} className="-mr-1" />}
+        />
       </div>
       {bodyIndices.length > 0 ? (
         <div ref={bodyRef} className="max-h-96 overflow-y-auto">
@@ -1745,31 +1685,6 @@ type ExitPlanModeCustom = {
 // (the CLI ignores updatedInput.permissionMode). Reject carries feedback
 // via deny.message. Modes mirror the CLI's plan-exit prompt: 自动模式 (auto,
 // falling back to acceptEdits) / 手动模式 (default) / 告诉AI怎么修改 (feedback).
-function PlanGlyph({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className ?? "h-3.5 w-3.5 shrink-0 text-amber-300"}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M9 3h6l1 2h2a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h2l1-2z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M9 13l2 2 4-4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   const { t } = useT();
   const bridge = useContext(Claude2BridgeContext);
@@ -1923,15 +1838,12 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         }`}
       >
         <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
-          <PlanGlyph />
-          <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
-            {t("claude2.plan.title")}
-          </span>
-          {planFilePath ? (
-            <span className="truncate text-[0.6rem] text-slate-400" title={planFilePath}>
-              {planFilePath}
-            </span>
-          ) : null}
+          <ToolHead
+            icon="plan"
+            badge={t("claude2.plan.title")}
+            badgeClassName="bg-amber-500/20 text-amber-200"
+            detail={planFilePath}
+          />
           <span className="flex-1" />
           <button
             type="button"
@@ -1962,15 +1874,12 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         <FullscreenReader
           header={
             <>
-              <PlanGlyph />
-              <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
-                {t("claude2.plan.title")}
-              </span>
-              {planFilePath ? (
-                <span className="truncate text-[0.6rem] text-slate-400" title={planFilePath}>
-                  {planFilePath}
-                </span>
-              ) : null}
+              <ToolHead
+                icon="plan"
+                badge={t("claude2.plan.title")}
+                badgeClassName="bg-amber-500/20 text-amber-200"
+                detail={planFilePath}
+              />
               <span className="flex-1" />
             </>
           }
@@ -2010,26 +1919,6 @@ type AskUserQuestionCustom = {
   isError?: boolean;
   isOrphaned?: boolean;
 };
-
-function QuestionGlyph({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className ?? "h-3.5 w-3.5 shrink-0 text-amber-300"}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2.5-2.5 3.5V14"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <circle cx="12" cy="17.5" r="0.75" fill="currentColor" />
-    </svg>
-  );
-}
 
 function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   const { t } = useT();
@@ -2238,10 +2127,11 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
         }`}
       >
         <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
-          <QuestionGlyph />
-          <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
-            {t("claude2.ask.title")}
-          </span>
+          <ToolHead
+            icon="question"
+            badge={t("claude2.ask.title")}
+            badgeClassName="bg-amber-500/20 text-amber-200"
+          />
           <span className="flex-1" />
           <button
             type="button"
@@ -2362,10 +2252,11 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
         <FullscreenReader
           header={
             <>
-              <QuestionGlyph />
-              <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.55rem] uppercase text-amber-200">
-                {t("claude2.ask.title")}
-              </span>
+              <ToolHead
+                icon="question"
+                badge={t("claude2.ask.title")}
+                badgeClassName="bg-amber-500/20 text-amber-200"
+              />
               <span className="flex-1" />
             </>
           }
