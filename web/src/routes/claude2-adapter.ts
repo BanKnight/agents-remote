@@ -7,7 +7,18 @@ import type {
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
-import { isSocketLoggingEnabled } from "../lib/debug-flags";
+import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
+import {
+  count,
+  markOnce,
+  measureFrom,
+  measureSince,
+  peekMark,
+  reportArrival,
+  resetArrival,
+  tickArrival,
+  timed,
+} from "../lib/perf-trace";
 
 export type TaskInfo = {
   id: string;
@@ -2774,18 +2785,23 @@ export function useClaude2Session(
   }, []);
 
   const processBatch = useCallback(
-    (rawMsgs: SessionStreamServerMessage[]) => {
-      // Phase 1: register all uuids + append to rawMessages
-      for (const m of rawMsgs) {
-        const uuid = getMessageUuid(m);
-        if (uuid) messageMapRef.current.set(uuid, m);
-      }
-      setRawMessages((prev) => [...prev, ...rawMsgs]);
-      // Phase 2: update scalar state for each message in the batch
-      for (const m of rawMsgs) {
-        applyMessageScalarState(m);
-      }
-    },
+    (rawMsgs: SessionStreamServerMessage[]) =>
+      timed(
+        "processBatch",
+        () => {
+          // Phase 1: register all uuids + append to rawMessages
+          for (const m of rawMsgs) {
+            const uuid = getMessageUuid(m);
+            if (uuid) messageMapRef.current.set(uuid, m);
+          }
+          setRawMessages((prev) => [...prev, ...rawMsgs]);
+          // Phase 2: update scalar state for each message in the batch
+          for (const m of rawMsgs) {
+            applyMessageScalarState(m);
+          }
+        },
+        rawMsgs.length,
+      ),
     [applyMessageScalarState],
   );
 
@@ -3039,6 +3055,11 @@ export function useClaude2Session(
 
     socket.onmessage = (event) => {
       if (cancelled) return;
+      // Arrival probe: while a history batch is open, time each frame's arrival
+      // (inter-arrival gap) and processing (parse+dispatch+push) so the report can
+      // separate network wait from client work. See resetArrival/reportArrival.
+      const trackArrival = isPerfTraceEnabled() && historyBatchRef.current != null;
+      const arriveMs = trackArrival ? performance.now() : 0;
       try {
         const raw = event.data as string;
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
@@ -3058,6 +3079,11 @@ export function useClaude2Session(
           return;
         }
         if (msg.type === "history_start") {
+          markOnce("historyLoad");
+          // Count starts so the report surfaces a StrictMode/reconnect double-load
+          // (historyStart.count > 1) that would otherwise inflate loadE2E/historyRecv.
+          count("historyStart");
+          resetArrival();
           historyBatchRef.current = [];
           if (isSocketLoggingEnabled())
             console.log("[claude2-adapter] history batch start, count=", msg.count);
@@ -3066,6 +3092,15 @@ export function useClaude2Session(
         if (msg.type === "history_end") {
           const batch = historyBatchRef.current ?? [];
           historyBatchRef.current = null;
+          // history_start → history_end wall-clock = the WS reception/transfer phase
+          // (everything before this point was onmessage buffering). Read without
+          // clearing so live_end's loadE2E can still measure from the same start.
+          const recvStart = peekMark("historyLoad");
+          const recvMs = recvStart != null ? performance.now() - recvStart : 0;
+          if (recvStart != null) measureFrom("historyRecv", recvStart, batch.length);
+          // Break historyRecv down: how much was client processing vs waiting for
+          // frames to arrive. procTotal ≪ recvMs + even gaps ⇒ network, not client.
+          reportArrival(recvMs);
           processBatch(batch);
           // Inject a batch divider whenever the batch carried any messages at
           // all; whether it actually renders is decided in renderChatStream
@@ -3105,6 +3140,7 @@ export function useClaude2Session(
             ]);
           }
           setLoading(false);
+          measureSince("historyLoad", "loadE2E");
           if (isSocketLoggingEnabled())
             console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
           return;
@@ -3113,6 +3149,7 @@ export function useClaude2Session(
         // In batch collection — buffer, don't process yet
         if (historyBatchRef.current) {
           historyBatchRef.current.push(msg);
+          if (trackArrival) tickArrival(arriveMs, performance.now() - arriveMs);
           return;
         }
         if (liveBatchRef.current) {
@@ -3163,9 +3200,22 @@ export function useClaude2Session(
   ]);
 
   // ── Pass 2: derive rendered output from raw state ──────────────
-  const chatStream = useMemo(() => normalizeChatStream(rawMessages), [rawMessages]);
+  const chatStream = useMemo(
+    () =>
+      isPerfTraceEnabled()
+        ? timed("normalize", () => normalizeChatStream(rawMessages), rawMessages.length)
+        : normalizeChatStream(rawMessages),
+    [rawMessages],
+  );
   const renderedMessages = useMemo(
-    () => renderChatStream(chatStream, { isResume: isResumeRef.current }),
+    () =>
+      isPerfTraceEnabled()
+        ? timed(
+            "render",
+            () => renderChatStream(chatStream, { isResume: isResumeRef.current }),
+            chatStream.length,
+          )
+        : renderChatStream(chatStream, { isResume: isResumeRef.current }),
     [chatStream],
   );
 

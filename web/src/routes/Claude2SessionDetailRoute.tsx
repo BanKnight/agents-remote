@@ -32,7 +32,8 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
-import { isDebugButtonEnabled } from "../lib/debug-flags";
+import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
+import { measureFrom, timed } from "../lib/perf-trace";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { defaultConsoleSection, consoleSections } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -2478,16 +2479,35 @@ function VirtualizedThreadContent({
   // ── Turn builder ──────────────────────────────────────────────────
   // Absorbed Agent body children report a non-user role so they never split
   // a turn (they belong to their parent Agent's turn, rendered inside it).
-  const messageSignature = useAuiState((s) =>
-    s.thread.messages
-      .map((m, i) => {
-        const custom = (m.metadata?.custom ?? {}) as Record<string, unknown>;
-        const role = custom.absorbed === true ? "assistant" : m.role;
-        return `${i}:${role}:${m.id}`;
-      })
-      .join("\n"),
+  const messageSignature = useAuiState((s) => {
+    const compute = () =>
+      s.thread.messages
+        .map((m, i) => {
+          const custom = (m.metadata?.custom ?? {}) as Record<string, unknown>;
+          const role = custom.absorbed === true ? "assistant" : m.role;
+          return `${i}:${role}:${m.id}`;
+        })
+        .join("\n");
+    return isPerfTraceEnabled()
+      ? timed("messageSignature", compute, s.thread.messages.length)
+      : compute();
+  });
+  const turns = useMemo(
+    () =>
+      isPerfTraceEnabled()
+        ? timed("buildTurns", () => buildTurns(messageSignature))
+        : buildTurns(messageSignature),
+    [messageSignature],
   );
-  const turns = useMemo(() => buildTurns(messageSignature), [messageSignature]);
+
+  // C proxy: time from this render to its commit (virtualizer + mounted
+  // messages). The mark is written during render (gated, ref-only — no state);
+  // the layout effect fires after commit, before paint. Off-path is one read.
+  const commitMarkRef = useRef(0);
+  if (isPerfTraceEnabled()) commitMarkRef.current = performance.now();
+  useLayoutEffect(() => {
+    if (commitMarkRef.current !== 0) measureFrom("commit", commitMarkRef.current);
+  });
 
   // ── Scroll container ──────────────────────────────────────────────
   const scrollerRef = useRef<HTMLDivElement>(null);
