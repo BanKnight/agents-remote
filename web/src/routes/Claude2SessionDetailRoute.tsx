@@ -41,6 +41,7 @@ import { ShellIcon } from "../components/shell/icons";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
+import { CompactBlock } from "../components/assistant-ui/compact-block";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
@@ -1353,18 +1354,13 @@ function SystemChatBubble() {
     );
   }
 
-  // Compact boundary divider: thin line + label showing compaction trigger & token count.
-  if (systemMessageType === "compact-boundary") {
-    const compactText = (custom?.compactText as string) ?? "";
+  // Compact block: merged compaction boundary + summary + in-window attachments,
+  // rendered as one default-collapsed ToolHead-styled block.
+  if (systemMessageType === "compact-block") {
     return (
-      <MessagePrimitive.Root className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5">
-        <div className="flex-1 border-t border-amber-700/30" />
-        {compactText ? (
-          <span className="shrink-0 text-[0.6rem] text-amber-400/60 font-medium">
-            {compactText}
-          </span>
-        ) : null}
-        <div className="flex-1 border-t border-amber-700/30" />
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+        <CompactBlock custom={custom} />
+        <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
       </MessagePrimitive.Root>
     );
   }

@@ -371,4 +371,13 @@ export const en = {
   "claude2.attachment.selected_lines_in_ide": "Selected lines",
   "claude2.attachment.diagnostics": "Diagnostics",
   "claude2.attachment.goal_status": "Goal status",
+
+  // ── Context compaction block ─────────────────────────────────────
+  "claude2.compact.title": "Context compacted",
+  "claude2.compact.summaryLabel": "Summary",
+  "claude2.compact.restored": "+{{count}} context",
+  "claude2.compact.summarized": "{{count}} msgs",
+  "claude2.compact.triggerManual": "manual",
+  "claude2.compact.triggerAuto": "auto",
+  "claude2.compact.triggerMicro": "micro",
 } as const;

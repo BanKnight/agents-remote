@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { cn } from "../../lib/utils";
 
 // ── Unified icon map ──────────────────────────────────────────────────
 // Single source for tool + card icons. Merges the registry `Icons` from
@@ -55,6 +56,22 @@ export const ToolIcons: Record<string, string> = {
   // History / clock: circular clock with hands.
   history:
     '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  // Attachment-only glyphs (merged from the former attachment-bubble Icons map):
+  // Hook: a J-shaped fishing hook.
+  hook: '<path d="M6 2v20M6 2l4 4M6 2L2 6M18 22V2m0 20l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  // Goal: a circle with a check.
+  goal: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  // Auto: a star outline (auto / agentic mode).
+  auto: '<path d="M12 2l3 7 7 1-5 5 2 7-7-4-7 4 2-7-5-5 7-1 3-7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  // Calendar: a page with header + binding posts.
+  calendar:
+    '<rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // Queue: a flag/banner on a post.
+  queue:
+    '<path d="M5 3h14l-3 6 3 6H5m9-12v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  // Compact: a vertical axis with two chevrons squeezing toward the center.
+  compact:
+    '<path d="M12 3v18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M7 5l5 5 5-5M7 19l5-5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 
 export const DEFAULT_TOOL_ICON = "command";
@@ -108,6 +125,7 @@ export function ToolHead({
   badge,
   badgeClassName = "bg-cyan-500/15 text-cyan-200",
   detail,
+  detailClassName,
   status,
   trailing,
 }: {
@@ -116,6 +134,7 @@ export function ToolHead({
   badge?: string | null;
   badgeClassName?: string;
   detail?: string | null;
+  detailClassName?: string;
   status?: ToolHeadStatus | null;
   trailing?: ReactNode;
 }) {
@@ -132,7 +151,11 @@ export function ToolHead({
         </span>
       ) : null}
       {detail ? (
-        <span className="min-w-0 truncate text-xs font-medium text-slate-300">{detail}</span>
+        <span
+          className={cn("min-w-0 truncate text-xs font-medium text-slate-300", detailClassName)}
+        >
+          {detail}
+        </span>
       ) : null}
       {trailing ? <span className="ml-auto shrink-0">{trailing}</span> : null}
     </>

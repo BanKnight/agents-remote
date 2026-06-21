@@ -2429,6 +2429,32 @@ const makeSystemInit = (overrides: Record<string, unknown> = {}): SessionStreamS
     ...overrides,
   }) as unknown as SessionStreamServerMessage;
 
+const compactBoundary = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "compact_boundary",
+    compactMetadata: {
+      trigger: "manual",
+      preTokens: 224734,
+      postTokens: 162477,
+      durationMs: 132812,
+      messagesSummarized: 48,
+    },
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
+
+const compactSummary = (
+  text: string,
+  overrides: Record<string, unknown> = {},
+): SessionStreamServerMessage =>
+  ({
+    type: "user",
+    isCompactSummary: true,
+    summarizeMetadata: { messagesSummarized: 48, direction: "from" },
+    message: { role: "user", content: text },
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
+
 const makeApiError = (parentUuid: string, uuid = "err-uuid"): SessionStreamServerMessage =>
   ({
     type: "assistant",
@@ -2682,18 +2708,92 @@ describe("normalizeChatStream", () => {
     expect(items[0].kind).toBe("session-init");
   });
 
-  test("compact_boundary produces a compact-boundary item", () => {
+  test("compact_boundary + summary + attachments merge into one compact-block", () => {
     const items = normalizeChatStream([
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        compactMetadata: { trigger: "manual", preTokens: 50000 },
-      } as unknown as SessionStreamServerMessage,
+      compactBoundary(),
+      compactSummary("Summary text..."),
+      attachment("file", { displayPath: "src/a.ts" }),
+      attachment("plan_file_reference", { planFilePath: "plan.md" }),
     ]);
     expect(items).toHaveLength(1);
-    expect(items[0].kind).toBe("compact-boundary");
-    expect((items[0] as { trigger: string }).trigger).toBe("manual");
-    expect((items[0] as { preTokens: number }).preTokens).toBe(50000);
+    expect(items[0].kind).toBe("compact-block");
+    const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
+    expect(block.trigger).toBe("manual");
+    expect(block.preTokens).toBe(224734);
+    expect(block.postTokens).toBe(162477);
+    expect(block.durationMs).toBe(132812);
+    expect(block.messagesSummarized).toBe(48);
+    expect(block.summaryText).toBe("Summary text...");
+    expect(block.attachments).toHaveLength(2);
+    expect(block.attachments[0].subtype).toBe("file");
+    expect(block.attachments[1].subtype).toBe("plan_file_reference");
+  });
+
+  test("out-of-window attachment (after a real turn) stays a standalone item", () => {
+    const items = normalizeChatStream([
+      compactBoundary(),
+      compactSummary("Summary..."),
+      makeAssistant("a1", [{ type: "text", text: "post-compact turn" }]),
+      attachment("hook_success", { hookName: "PreToolUse" }),
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["compact-block", "assistant", "attachment"]);
+  });
+
+  test("compact-block without a summary does not crash (summaryText undefined)", () => {
+    const items = normalizeChatStream([
+      compactBoundary(),
+      attachment("compact_file_reference", { displayPath: "src/x.ts" }),
+    ]);
+    expect(items).toHaveLength(1);
+    const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
+    expect(block.summaryText).toBeUndefined();
+    expect(block.attachments).toHaveLength(1);
+  });
+
+  test("in-window isMeta user noise is dropped but the window stays open", () => {
+    const items = normalizeChatStream([
+      compactBoundary(),
+      compactSummary("Summary..."),
+      makeUser("noise", { isMeta: true }),
+      attachment("file", { displayPath: "a.ts" }),
+    ]);
+    expect(items).toHaveLength(1);
+    const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
+    // noise dropped; the following attachment is still absorbed
+    expect(block.attachments).toHaveLength(1);
+  });
+
+  test("microcompact_boundary maps to trigger 'micro'", () => {
+    const items = normalizeChatStream([
+      { type: "system", subtype: "microcompact_boundary" } as unknown as SessionStreamServerMessage,
+      compactSummary("micro summary"),
+    ]);
+    const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
+    expect(block.trigger).toBe("micro");
+  });
+
+  test("auto trigger (compactMetadata.trigger !== manual) maps to 'auto'", () => {
+    const items = normalizeChatStream([compactBoundary({ compactMetadata: { trigger: "auto" } })]);
+    const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
+    expect(block.trigger).toBe("auto");
+  });
+
+  test("boundary as the final message flushes the window post-loop", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "text", text: "pre" }]),
+      compactBoundary(),
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["assistant", "compact-block"]);
+  });
+
+  test("adjacent boundaries produce two compact-blocks", () => {
+    const items = normalizeChatStream([
+      compactBoundary(),
+      compactSummary("first"),
+      compactBoundary({ compactMetadata: { trigger: "auto" } }),
+      compactSummary("second"),
+    ]);
+    expect(items.filter((i) => i.kind === "compact-block")).toHaveLength(2);
   });
 
   // ── batch-boundary passthrough ──────────────────────────────────────
@@ -2778,23 +2878,27 @@ describe("renderChatStream", () => {
     expect(rendered[0].role).toBe("user");
   });
 
-  test("compact-boundary item renders a divider with the compact text", () => {
+  test("compact-block renders a system message carrying raw fields (no localized text)", () => {
     const rendered = renderChatStream(
       normalizeChatStream([
         makeAssistant("a1", [{ type: "text", text: "pre" }]),
-        {
-          type: "system",
-          subtype: "compact_boundary",
-          compactMetadata: { trigger: "manual", preTokens: 50000 },
-        } as unknown as SessionStreamServerMessage,
+        compactBoundary(),
+        compactSummary("Summary text..."),
+        attachment("file", { displayPath: "src/a.ts" }),
       ]),
     );
-    const divider = rendered[rendered.length - 1];
-    expect(divider.role).toBe("system");
-    const custom = divider.metadata?.custom as Record<string, unknown>;
-    expect(custom?.systemMessageType).toBe("compact-boundary");
-    expect(custom?.compactText).toContain("手动");
-    expect(custom?.compactText).toContain("50K");
+    const block = rendered[rendered.length - 1];
+    expect(block.role).toBe("system");
+    const custom = block.metadata?.custom as Record<string, unknown>;
+    expect(custom?.systemMessageType).toBe("compact-block");
+    expect(custom?.trigger).toBe("manual");
+    expect(custom?.preTokens).toBe(224734);
+    expect(custom?.postTokens).toBe(162477);
+    expect(custom?.summaryText).toBe("Summary text...");
+    expect(Array.isArray(custom?.attachments)).toBe(true);
+    // The adapter carries raw values only — localization is the component's job,
+    // so no hardcoded compactText must leak through.
+    expect(custom?.compactText).toBeUndefined();
   });
 
   test("session-init item renders a summary bubble", () => {

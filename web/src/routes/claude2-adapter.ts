@@ -7,7 +7,6 @@ import type {
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
-import { formatTokenCount } from "../lib/utils";
 
 export type TaskInfo = {
   id: string;
@@ -1294,9 +1293,19 @@ export type ChatStreamItem =
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | {
-      kind: "compact-boundary";
-      trigger: "manual" | "auto";
+      // One compact_boundary + its trailing compaction messages (isCompactSummary
+      // user message + in-window attachments + isMeta/isSynthetic noise), merged
+      // by position during normalize. Renders as a single default-collapsed
+      // CompactBlock. Carries raw values only — localization is the component's
+      // job (never hardcode user-facing text here).
+      kind: "compact-block";
+      trigger: "manual" | "auto" | "micro";
       preTokens?: number;
+      postTokens?: number;
+      durationMs?: number;
+      messagesSummarized?: number;
+      summaryText?: string;
+      attachments: Array<{ subtype: string; raw: Record<string, unknown> }>;
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
@@ -1406,6 +1415,41 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   let lastToolUseId: string | null = null;
   // api_error messages whose parent isn't emitted yet; resolved lazily.
   const pendingApiErrors: SessionStreamServerMessage[] = [];
+
+  // Compact window: opened at a compact/microcompact_boundary, absorbs the
+  // boundary's trailing compaction messages (isCompactSummary user message +
+  // in-window attachments + isMeta/isSynthetic noise) into one compact-block.
+  // Closed (flushed) at the next real content message — see the absorption
+  // block at the top of the walk loop. Mirrors the pendingEstimatedTokens /
+  // pendingApiErrors forward-scan accumulator pattern.
+  let compactWindow: {
+    trigger: "manual" | "auto" | "micro";
+    preTokens?: number;
+    postTokens?: number;
+    durationMs?: number;
+    messagesSummarized?: number;
+    summaryText?: string;
+    attachments: Array<{ subtype: string; raw: Record<string, unknown> }>;
+    sourceUuids: string[];
+    _rawSnapshots: SessionStreamServerMessage[];
+  } | null = null;
+  const flushCompactWindow = () => {
+    if (!compactWindow) return;
+    const w = compactWindow;
+    items.push({
+      kind: "compact-block",
+      trigger: w.trigger,
+      preTokens: w.preTokens,
+      postTokens: w.postTokens,
+      durationMs: w.durationMs,
+      messagesSummarized: w.messagesSummarized,
+      summaryText: w.summaryText,
+      attachments: w.attachments,
+      sourceUuids: w.sourceUuids,
+      _rawSnapshots: w._rawSnapshots,
+    });
+    compactWindow = null;
+  };
 
   // Pre-scan: identify Agent tool_use ids. Only Agent tool-calls get the
   // head-body-tail container; their child messages (parent_tool_use_id) are
@@ -1575,6 +1619,55 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
   for (const msg of rawMessages) {
     if (!msg) continue;
+
+    // ═══ Compact-window absorption ═══
+    // While a compact window is open (after a compact/microcompact_boundary),
+    // absorb the boundary's trailing messages into the single compact-block:
+    // the isCompactSummary user message, in-window attachments, and
+    // isMeta/isSynthetic user noise. The window closes at the next real
+    // content message, which then falls through to its normal branch below.
+    // isCompactSummary is checked before isMeta because a summary may also
+    // carry isMeta — we never want to drop the summary.
+    if (compactWindow) {
+      const cmeta = msg as Record<string, unknown>;
+
+      // isCompactSummary user message → summary text + messagesSummarized.
+      if (msg.type === "user" && cmeta.isCompactSummary === true) {
+        const sm = cmeta.summarizeMetadata as { messagesSummarized?: number } | undefined;
+        if (sm?.messagesSummarized != null)
+          compactWindow.messagesSummarized = sm.messagesSummarized;
+        const content = (cmeta.message as { content?: unknown } | undefined)?.content;
+        if (typeof content === "string" && content.trim()) compactWindow.summaryText = content;
+        const uuid = getMsgUuid(msg);
+        if (uuid && !compactWindow.sourceUuids.includes(uuid)) compactWindow.sourceUuids.push(uuid);
+        compactWindow._rawSnapshots.push(msg);
+        continue;
+      }
+
+      // In-window attachment → absorb (subtype + raw). Scalar state
+      // (permissionMode/tasks/mcpServers) is applied by the independent
+      // scalar-state handler, not here, so absorbing is render-only.
+      if (msg.type === "attachment") {
+        const att = cmeta.attachment as { type?: string } | undefined;
+        compactWindow.attachments.push({ subtype: att?.type ?? "unknown", raw: cmeta });
+        const uuid = getMsgUuid(msg);
+        if (uuid && !compactWindow.sourceUuids.includes(uuid)) compactWindow.sourceUuids.push(uuid);
+        compactWindow._rawSnapshots.push(msg);
+        continue;
+      }
+
+      // In-window isMeta/isSynthetic user noise (command-caveat, /compact
+      // echo, local-command-stdout) → drop, keep the window open. Handled here
+      // rather than via attachSkillBody so a stale lastToolUseId can't inject
+      // this noise into the preceding tool card.
+      if (msg.type === "user" && (cmeta.isMeta === true || cmeta.isSynthetic === true)) {
+        continue;
+      }
+
+      // Anything else (real assistant turn, real user prompt, another
+      // boundary, session-init, …) ends the window: flush, then fall through.
+      flushCompactWindow();
+    }
 
     // Body membership: a message whose parent_tool_use_id points at an Agent
     // tool-call belongs to that Agent's body. Body messages flow through the
@@ -1824,18 +1917,35 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
-      // CompactBoundary: divider item.
+      // CompactBoundary: open a compact window that absorbs the trailing
+      // compaction messages (summary + attachments + noise) into one block.
       if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
+        flushCompactWindow();
+        const isMicro = subtype === "microcompact_boundary";
         const cmeta = (msg as Record<string, unknown>).compactMetadata as
-          | { trigger?: string; preTokens?: number }
+          | {
+              trigger?: string;
+              preTokens?: number;
+              postTokens?: number;
+              durationMs?: number;
+              messagesSummarized?: number;
+            }
           | undefined;
-        items.push({
-          kind: "compact-boundary",
-          trigger: cmeta?.trigger === "manual" ? "manual" : "auto",
-          ...(cmeta?.preTokens != null ? { preTokens: cmeta.preTokens } : {}),
+        const trigger: "manual" | "auto" | "micro" = isMicro
+          ? "micro"
+          : cmeta?.trigger === "manual"
+            ? "manual"
+            : "auto";
+        compactWindow = {
+          trigger,
+          preTokens: cmeta?.preTokens,
+          postTokens: cmeta?.postTokens,
+          durationMs: cmeta?.durationMs,
+          messagesSummarized: cmeta?.messagesSummarized,
+          attachments: [],
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
           _rawSnapshots: [msg],
-        });
+        };
         continue;
       }
 
@@ -2024,6 +2134,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     const fallback = messageToThreadLike(msg);
     if (fallback) items.push({ kind: "fallback", ui: fallback });
   }
+
+  // Flush a compact window still open at end of stream (boundary as the final
+  // message, or window absorbing with no subsequent real content).
+  flushCompactWindow();
 
   // Derive hasAgentBody: any tool-call that collected subagent child
   // messages (bodyChildUuids) becomes an Agent container. Pure projection
@@ -2290,9 +2404,7 @@ export function renderChatStream(
         );
         break;
       }
-      case "compact-boundary": {
-        const trigger = item.trigger === "manual" ? "手动" : "自动";
-        const label = item.preTokens != null ? formatTokenCount(item.preTokens) : "?";
+      case "compact-block": {
         messages.push({
           role: "system",
           content: [{ type: "text", text: "" }],
@@ -2300,8 +2412,16 @@ export function renderChatStream(
             custom: {
               sourceUuids: [...item.sourceUuids],
               _rawMessages: item._rawSnapshots,
-              systemMessageType: "compact-boundary",
-              compactText: `上下文${trigger}压缩 (~${label} tokens)`,
+              systemMessageType: "compact-block",
+              trigger: item.trigger,
+              ...(item.preTokens != null ? { preTokens: item.preTokens } : {}),
+              ...(item.postTokens != null ? { postTokens: item.postTokens } : {}),
+              ...(item.durationMs != null ? { durationMs: item.durationMs } : {}),
+              ...(item.messagesSummarized != null
+                ? { messagesSummarized: item.messagesSummarized }
+                : {}),
+              ...(item.summaryText != null ? { summaryText: item.summaryText } : {}),
+              attachments: item.attachments,
             },
           },
         });

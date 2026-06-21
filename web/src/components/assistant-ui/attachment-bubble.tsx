@@ -2,51 +2,14 @@ import { type ReactNode } from "react";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { CollapsibleSection } from "./collapsible-section";
-
-// ── Inline icon SVGs (same convention as tool-ui-registry Icons map) ───
-
-const Icons: Record<string, string> = {
-  file: '<path d="M4 2h6l4 4v10a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2zm6 1.4V6h2.6L10 3.4zM3 4v12a1 1 0 001 1h8a1 1 0 001-1V7h-4V3H4a1 1 0 00-1 1z" fill="currentColor"/>',
-  edit: '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>',
-  plan: '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h18M9 3v18" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="6.5" r="1" fill="currentColor"/><circle cx="15.5" cy="13.5" r="1" fill="currentColor"/><path d="M9 15h10" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M3 18h6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
-  task: '<circle cx="12" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 21c0-4 3.1-7 7-7s7 3 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  skill:
-    '<path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M5 15l1 3.5L9.5 19.5 6.5 21 5 24l-1.5-3L0 19.5 3.5 18 5 15z" fill="currentColor" opacity="0.5"/>',
-  mcp: '<circle cx="5" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="19" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  command:
-    '<path d="M7 7l4 5-4 5M13 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-  globe:
-    '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20" stroke="currentColor" stroke-width="1.5"/>',
-  search:
-    '<circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20 20l-3.3-3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  hook: '<path d="M6 2v20M6 2l4 4M6 2L2 6M18 22V2m0 20l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  goal: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-  auto: '<path d="M12 2l3 7 7 1-5 5 2 7-7-4-7 4 2-7-5-5 7-1 3-7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  calendar:
-    '<rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  queue:
-    '<path d="M5 3h14l-3 6 3 6H5m9-12v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-};
-
-function AttachmentIcon({ name, className }: { name: string; className?: string }) {
-  const d = Icons[name] ?? Icons.task;
-  return (
-    <svg
-      className={`h-3.5 w-3.5 shrink-0 ${className ?? ""}`}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <g dangerouslySetInnerHTML={{ __html: d }} />
-    </svg>
-  );
-}
+import { ToolHead } from "./tool-head";
 
 // ── Config map ──────────────────────────────────────────────────────────
 //
 // Each subtype maps to an icon + i18n label key, with optional
 // badge (inline text next to label) and body (expandable content).
 // When body is null, the bubble renders as a single non-collapsible line.
-// accent overrides the default amber text color.
+// accent signals an error subtype (badge renders red instead of cyan).
 
 export type AttachmentBubbleConfig = {
   icon: string;
@@ -338,23 +301,33 @@ export function AttachmentBubble({
   const config = ATTACHMENT_CONFIG[subtype];
   if (!config) {
     return (
-      <div className="text-xs text-amber-200/80 font-mono whitespace-pre-wrap break-all">
-        Attachment: {subtype}
+      <div className="flex items-center gap-1.5">
+        <ToolHead
+          icon="task"
+          badge={subtype}
+          badgeClassName="bg-cyan-500/15 text-cyan-200"
+          status={null}
+        />
       </div>
     );
   }
 
   const badgeText = config.badge?.(raw) ?? null;
   const bodyContent = config.body?.(raw) ?? null;
-  const accent = config.accent ?? "text-amber-200/80";
+  // accent now only signals an error subtype → badge renders red instead of cyan.
+  const isError = config.accent?.includes("red") ?? false;
+  const badgeClassName = isError ? "bg-red-500/15 text-red-200" : "bg-cyan-500/15 text-cyan-200";
 
   const header = (
-    <div className={`flex items-center gap-1.5 text-xs min-w-0 ${accent}`}>
-      <AttachmentIcon name={config.icon} className="h-3 w-3 opacity-60" />
-      <span>{t(config.labelKey)}</span>
-      {badgeText && (
-        <span className="truncate opacity-70 font-mono text-[0.65rem]">{badgeText}</span>
-      )}
+    <div className="flex items-center gap-1.5 text-xs min-w-0">
+      <ToolHead
+        icon={config.icon}
+        badge={t(config.labelKey)}
+        badgeClassName={badgeClassName}
+        detail={badgeText}
+        detailClassName="font-mono text-[0.65rem] font-normal text-slate-400"
+        status={null}
+      />
     </div>
   );
 
@@ -363,7 +336,7 @@ export function AttachmentBubble({
   }
 
   return (
-    <CollapsibleSection className="min-w-0" dividerClassName="border-amber-700/20" header={header}>
+    <CollapsibleSection className="min-w-0" dividerClassName="border-cyan-700/20" header={header}>
       {bodyContent}
     </CollapsibleSection>
   );

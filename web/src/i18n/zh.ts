@@ -371,4 +371,13 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.attachment.selected_lines_in_ide": "已选中行",
   "claude2.attachment.diagnostics": "诊断信息",
   "claude2.attachment.goal_status": "目标状态",
+
+  // ── Context compaction block ─────────────────────────────────────
+  "claude2.compact.title": "上下文已压缩",
+  "claude2.compact.summaryLabel": "摘要",
+  "claude2.compact.restored": "+{{count}} 上下文",
+  "claude2.compact.summarized": "{{count}} 条",
+  "claude2.compact.triggerManual": "手动",
+  "claude2.compact.triggerAuto": "自动",
+  "claude2.compact.triggerMicro": "微压缩",
 };
