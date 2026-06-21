@@ -5,6 +5,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaude2Session } from "./claude2-adapter";
+import { setSocketLoggingEnabled } from "../lib/debug-flags";
 
 class MockSocket {
   static instances: MockSocket[] = [];
@@ -630,6 +631,10 @@ describe("useClaude2Session queue-operation", () => {
   });
 
   test("ws recv log still prints queue-operation", async () => {
+    // Socket logging is gated behind a runtime switch (default OFF). The recv
+    // log is only emitted while opted in, so enable it for this assertion and
+    // restore the default afterward to avoid leaking into sibling tests.
+    setSocketLoggingEnabled(true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     renderHook(() => useClaude2Session("proj", "sess"));
@@ -642,6 +647,7 @@ describe("useClaude2Session queue-operation", () => {
 
     expect(logSpy).toHaveBeenCalledWith("[claude2-adapter] ws recv", msg);
     logSpy.mockRestore();
+    setSocketLoggingEnabled(false);
   });
 
   test("XML content → assistant source, plain text → user source", async () => {

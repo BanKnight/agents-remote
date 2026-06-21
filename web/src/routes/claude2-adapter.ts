@@ -7,6 +7,7 @@ import type {
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
+import { isSocketLoggingEnabled } from "../lib/debug-flags";
 
 export type TaskInfo = {
   id: string;
@@ -2919,9 +2920,11 @@ export function useClaude2Session(
     const socket = socketRef.current;
     if (!socket) return;
     const raw = JSON.stringify(data);
-    console.log(
-      `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
-    );
+    if (isSocketLoggingEnabled()) {
+      console.log(
+        `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
+      );
+    }
     if (socket.readyState === WebSocket.OPEN) {
       try {
         socket.send(raw);
@@ -3039,7 +3042,7 @@ export function useClaude2Session(
       try {
         const raw = event.data as string;
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
-        console.log("[claude2-adapter] ws recv", msg);
+        if (isSocketLoggingEnabled()) console.log("[claude2-adapter] ws recv", msg);
 
         // ── Batch markers ────────────────────────────────────────────
         // Start markers are transport control — never render.
@@ -3050,12 +3053,14 @@ export function useClaude2Session(
           // before replaying history/output batches.
           resetSessionState();
           isResumeRef.current = (msg as { resume: boolean }).resume ?? false;
-          console.log("[claude2-adapter] session_init resume=", isResumeRef.current);
+          if (isSocketLoggingEnabled())
+            console.log("[claude2-adapter] session_init resume=", isResumeRef.current);
           return;
         }
         if (msg.type === "history_start") {
           historyBatchRef.current = [];
-          console.log("[claude2-adapter] history batch start, count=", msg.count);
+          if (isSocketLoggingEnabled())
+            console.log("[claude2-adapter] history batch start, count=", msg.count);
           return;
         }
         if (msg.type === "history_end") {
@@ -3075,12 +3080,14 @@ export function useClaude2Session(
               } as unknown as SessionStreamServerMessage,
             ]);
           }
-          console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
+          if (isSocketLoggingEnabled())
+            console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
           return;
         }
         if (msg.type === "live_start") {
           liveBatchRef.current = [];
-          console.log("[claude2-adapter] live batch start, count=", msg.count);
+          if (isSocketLoggingEnabled())
+            console.log("[claude2-adapter] live batch start, count=", msg.count);
           return;
         }
         if (msg.type === "live_end") {
@@ -3098,7 +3105,8 @@ export function useClaude2Session(
             ]);
           }
           setLoading(false);
-          console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
+          if (isSocketLoggingEnabled())
+            console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
           return;
         }
 

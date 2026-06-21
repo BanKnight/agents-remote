@@ -32,6 +32,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
+import { isDebugButtonEnabled } from "../lib/debug-flags";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { defaultConsoleSection, consoleSections } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -1144,6 +1145,9 @@ function RawDebugTooltip({
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+  // The (i) raw-message tooltip is gated behind a runtime switch (default ON).
+  // Flip via __arDebug.debugButton(false) in the console, then reload.
+  if (!isDebugButtonEnabled()) return null;
   // _rawMessages is populated from normalizeChatStream's _rawSnapshots.
   // _raw is for legacy call sites (attachments, enrichBubbleMetadata).
   const rawMessages = custom?._rawMessages as unknown[] | undefined;
