@@ -49,6 +49,12 @@ export const ToolIcons: Record<string, string> = {
   // Notebook: a notebook with a spiral binding.
   notebook:
     '<rect x="6" y="3" width="14" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 7h14M6 11h14M6 15h14M6 19h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M4 6h1M4 10h1M4 14h1M4 18h1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // Thinking / reasoning: a lightbulb.
+  thinking:
+    '<path d="M12 2a6 6 0 00-3.8 10.6c.5.4.8 1 .8 1.7v.7h6v-.7c0-.7.3-1.3.8-1.7A6 6 0 0012 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 18h6M10 21h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // History / clock: circular clock with hands.
+  history:
+    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 
 export const DEFAULT_TOOL_ICON = "command";
@@ -72,14 +78,29 @@ export function ToolIcon({ name, className }: { name: string; className?: string
 //
 // Layout: [status?] [icon] [badge] [detail] [trailing?]
 //
-//  status   — leftmost; colored dot (running pulses, interrupted amber,
-//             error red).
+//  status   — reflected on the icon color/animation (running pulses cyan,
+//             completed emerald, interrupted amber, error red).
 //  icon     — per-tool glyph from ToolIcons.
 //  badge    — colored background pill (the tool type / interaction type).
 //  detail   — trailing specific info (path, command, query, description).
 //  trailing — optional rightmost hint (chars count, etc.).
 
-export type ToolHeadStatus = "running" | "interrupted" | "error";
+export type ToolHeadStatus = "running" | "completed" | "interrupted" | "error";
+
+function statusIconClass(status: ToolHeadStatus | null | undefined): string {
+  switch (status) {
+    case "running":
+      return "text-cyan-400 animate-pulse";
+    case "completed":
+      return "text-emerald-400";
+    case "interrupted":
+      return "text-amber-400";
+    case "error":
+      return "text-red-400";
+    default:
+      return "";
+  }
+}
 
 export function ToolHead({
   icon,
@@ -98,16 +119,11 @@ export function ToolHead({
   status?: ToolHeadStatus | null;
   trailing?: ReactNode;
 }) {
+  const iconStatusClass = statusIconClass(status);
+  const finalIconClassName = [iconClassName, iconStatusClass].filter(Boolean).join(" ");
   return (
     <>
-      {status === "running" ? (
-        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-cyan-400" />
-      ) : status === "interrupted" ? (
-        <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-      ) : status === "error" ? (
-        <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" />
-      ) : null}
-      <ToolIcon name={icon} className={iconClassName} />
+      <ToolIcon name={icon} className={finalIconClassName || undefined} />
       {badge ? (
         <span
           className={`shrink-0 rounded px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide ${badgeClassName}`}

@@ -304,6 +304,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.message.roleAssistant": "助手",
   "claude2.message.roleSystem": "系统",
   "claude2.toolUse": "工具：{{name}}",
+  "claude2.thinking.title": "思考中",
   "claude2.running": "Claude 正在思考...",
   "claude2.completed": "已完成（{{turns}} 轮）",
   "claude2.interrupted": "已中断",
@@ -331,6 +332,11 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.tool.notebook": "笔记本",
   "claude2.tool.planMode": "计划模式",
   "claude2.tool.generic": "工具",
+  "claude2.fileSnapshot.title": "文件历史快照",
+  "claude2.fileSnapshot.files": "{{count}} 个文件",
+  "claude2.fileSnapshot.incremental": "增量",
+  "claude2.fileSnapshot.full": "完整",
+  "claude2.fileSnapshot.noTrackedFiles": "无追踪文件",
 
   // ── Attachment subtypes ──────────────────────────────────────────
   "claude2.attachment.plan_mode": "计划模式已激活",

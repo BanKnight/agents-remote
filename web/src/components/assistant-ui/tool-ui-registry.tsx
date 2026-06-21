@@ -333,6 +333,7 @@ export const SkillToolUI = makeToolRenderer({
 });
 
 function TaskBody({ args }: { args: Record<string, unknown> }) {
+  const { t } = useT();
   const desc =
     typeof args.description === "string"
       ? args.description
@@ -341,9 +342,8 @@ function TaskBody({ args }: { args: Record<string, unknown> }) {
         : typeof args.subject === "string"
           ? args.subject
           : "";
-  const subagent = typeof args.subagent_type === "string" ? args.subagent_type : undefined;
   const taskId = typeof args.task_id === "string" ? args.task_id : undefined;
-  const status =
+  const rawStatus =
     typeof args.status === "string"
       ? args.status
       : typeof args.isCompleted === "boolean"
@@ -351,24 +351,23 @@ function TaskBody({ args }: { args: Record<string, unknown> }) {
           ? "completed"
           : "running"
         : undefined;
+  const status: ToolHeadStatus | null =
+    rawStatus === "completed"
+      ? "completed"
+      : rawStatus === "error"
+        ? "error"
+        : rawStatus === "running"
+          ? "running"
+          : null;
   return (
     <div className="space-y-1.5">
-      {subagent || taskId || status ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          {subagent ? (
-            <span className="shrink-0 rounded bg-amber-600/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-300">
-              {subagent}
-            </span>
-          ) : null}
-          {taskId ? <span className="text-[0.65rem] text-slate-500">#{taskId}</span> : null}
-          {status ? (
-            <span
-              className={`text-[0.65rem] ${status === "completed" ? "text-emerald-400" : status === "error" ? "text-red-400" : "text-amber-400"}`}
-            >
-              {status}
-            </span>
-          ) : null}
-        </div>
+      {taskId || status ? (
+        <ToolHead
+          icon="task"
+          badge={t("claude2.tool.task")}
+          detail={taskId ? `#${taskId}` : null}
+          status={status}
+        />
       ) : null}
       {desc ? (
         <div className="text-xs text-slate-300 leading-relaxed break-words">{desc}</div>

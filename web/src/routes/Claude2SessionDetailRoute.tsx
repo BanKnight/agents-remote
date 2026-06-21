@@ -775,11 +775,14 @@ function AssistantChatBubble() {
         condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
       >
         {liveThinkingTokens != null ? (
-          <div className="flex items-center gap-1.5 py-1 text-amber-400/90">
-            <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-            <span className="text-[0.7rem] font-medium">
-              Thinking… ({formatTokenCount(liveThinkingTokens)} tokens)
-            </span>
+          <div className="py-1 text-amber-400/90">
+            <ToolHead
+              icon="thinking"
+              badge={t("claude2.thinking.title")}
+              badgeClassName="bg-amber-500/20 text-amber-200"
+              detail={`${formatTokenCount(liveThinkingTokens)} tokens`}
+              status="running"
+            />
           </div>
         ) : (
           <div className="flex items-center gap-1.5 py-1">
@@ -907,54 +910,24 @@ function AssistantChatBubble() {
 }
 
 function ReasoningGroup({ running, children }: { running: boolean; children: React.ReactNode }) {
+  const { t } = useT();
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const estimatedTokens =
     typeof custom?.estimatedTokens === "number" ? custom.estimatedTokens : null;
-
-  let label = "Thinking";
-  if (running) {
-    label =
-      estimatedTokens != null
-        ? `Thinking… (${formatTokenCount(estimatedTokens)} tokens)`
-        : "Thinking…";
-  } else {
-    label =
-      estimatedTokens != null
-        ? `Thinking (${formatTokenCount(estimatedTokens)} tokens)`
-        : "Thinking";
-  }
 
   return (
     <CollapsibleSection
       className="my-1 text-amber-400/90"
       dividerClassName="border-amber-700/20"
       header={
-        <>
-          <svg
-            className="h-3 w-3 shrink-0 text-amber-300/80"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M12 2a6 6 0 00-3.8 10.6c.5.4.8 1 .8 1.7v.7h6v-.7c0-.7.3-1.3.8-1.7A6 6 0 0012 2z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M9 18h6M10 21h4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-          {running ? (
-            <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-          ) : null}
-          <span className="text-[0.7rem] font-medium">{label}</span>
-        </>
+        <ToolHead
+          icon="thinking"
+          badge={t("claude2.thinking.title")}
+          badgeClassName="bg-amber-500/20 text-amber-200"
+          detail={estimatedTokens != null ? `${formatTokenCount(estimatedTokens)} tokens` : null}
+          status={running ? "running" : null}
+        />
       }
     >
       <div className="text-xs text-amber-300/70 whitespace-pre-wrap leading-relaxed">
@@ -1407,6 +1380,7 @@ function SystemChatBubble() {
 // file-history-snapshot: CLI's internal file-tracking checkpoint.
 // trackedFileBackups maps file path → { backupFileName, version, backupTime }.
 function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySnapshot }) {
+  const { t } = useT();
   const backups = snapshot.snapshot?.trackedFileBackups ?? {};
   const entries = Object.entries(backups);
   const isUpdate = snapshot.isSnapshotUpdate === true;
@@ -1418,32 +1392,21 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
       className="min-w-[14rem] text-amber-200/90"
       dividerClassName="border-amber-700/20"
       header={
-        <>
-          <svg
-            className="h-3 w-3 shrink-0 text-amber-300/80"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-            <path
-              d="M12 7v5l3 2"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className="text-[0.7rem] font-medium">文件历史快照</span>
-          <span className="text-[0.6rem] text-amber-300/50">{entries.length} 个文件</span>
-          <span
-            className={`ml-auto rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
-              isUpdate ? "bg-amber-600/30 text-amber-200/80" : "bg-amber-700/30 text-amber-200/60"
-            }`}
-          >
-            {isUpdate ? "增量" : "完整"}
-          </span>
-        </>
+        <ToolHead
+          icon="history"
+          badge={t("claude2.fileSnapshot.title")}
+          badgeClassName="bg-amber-600/30 text-amber-200/80"
+          detail={t("claude2.fileSnapshot.files", { count: entries.length })}
+          trailing={
+            <span
+              className={`rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
+                isUpdate ? "bg-amber-600/30 text-amber-200/80" : "bg-amber-700/30 text-amber-200/60"
+              }`}
+            >
+              {t(isUpdate ? "claude2.fileSnapshot.incremental" : "claude2.fileSnapshot.full")}
+            </span>
+          }
+        />
       }
     >
       {entries.length > 0 ? (
@@ -1465,7 +1428,9 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
           })}
         </div>
       ) : (
-        <p className="text-[0.65rem] text-amber-300/40">无追踪文件</p>
+        <p className="text-[0.65rem] text-amber-300/40">
+          {t("claude2.fileSnapshot.noTrackedFiles")}
+        </p>
       )}
       {timeStr ? <p className="mt-1 text-[0.55rem] text-amber-300/40">{timeStr}</p> : null}
     </CollapsibleSection>
@@ -1641,6 +1606,7 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
       <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
         <ToolHead
           icon="agent"
+          iconClassName="text-cyan-400"
           badge={subagentType}
           badgeClassName="bg-slate-700/60 text-slate-300"
           detail={custom.description ?? (status === "running" ? "Working..." : "Agent")}
@@ -1840,6 +1806,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
           <ToolHead
             icon="plan"
+            iconClassName="text-amber-300"
             badge={t("claude2.plan.title")}
             badgeClassName="bg-amber-500/20 text-amber-200"
             detail={planFilePath}
@@ -1876,6 +1843,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             <>
               <ToolHead
                 icon="plan"
+                iconClassName="text-amber-300"
                 badge={t("claude2.plan.title")}
                 badgeClassName="bg-amber-500/20 text-amber-200"
                 detail={planFilePath}
@@ -2129,6 +2097,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
         <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
           <ToolHead
             icon="question"
+            iconClassName="text-amber-300"
             badge={t("claude2.ask.title")}
             badgeClassName="bg-amber-500/20 text-amber-200"
           />
@@ -2254,6 +2223,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
             <>
               <ToolHead
                 icon="question"
+                iconClassName="text-amber-300"
                 badge={t("claude2.ask.title")}
                 badgeClassName="bg-amber-500/20 text-amber-200"
               />

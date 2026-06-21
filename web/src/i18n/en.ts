@@ -304,6 +304,7 @@ export const en = {
   "claude2.message.roleAssistant": "Assistant",
   "claude2.message.roleSystem": "System",
   "claude2.toolUse": "Tool: {{name}}",
+  "claude2.thinking.title": "Thinking",
   "claude2.running": "Claude is thinking...",
   "claude2.completed": "Completed in {{turns}} turns",
   "claude2.interrupted": "Interrupted",
@@ -331,6 +332,11 @@ export const en = {
   "claude2.tool.notebook": "Notebook",
   "claude2.tool.planMode": "Plan Mode",
   "claude2.tool.generic": "Tool",
+  "claude2.fileSnapshot.title": "File History Snapshot",
+  "claude2.fileSnapshot.files": "{{count}} files",
+  "claude2.fileSnapshot.incremental": "Incremental",
+  "claude2.fileSnapshot.full": "Full",
+  "claude2.fileSnapshot.noTrackedFiles": "No tracked files",
 
   // ── Attachment subtypes ──────────────────────────────────────────
   "claude2.attachment.plan_mode": "Plan mode active",
