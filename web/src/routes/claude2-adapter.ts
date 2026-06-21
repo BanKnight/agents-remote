@@ -322,20 +322,23 @@ export function deriveLiveThinkingTokens(rawMessages: SessionStreamServerMessage
 // whether its tool_result (tail) has arrived + the socket connection
 // state. No independent container state — this is a projection of
 // rawMessages + connection, per UI = f(state).
-//   hasTail + !isError  → complete
-//   hasTail + isError   → error
-//   !hasTail + orphaned → orphaned (session ended, result never coming)
-//   !hasTail + !socket  → interrupted (disconnected, may reconnect)
-//   !hasTail + socket   → running (still expecting a result)
-export type AgentContainerStatus = "running" | "complete" | "error" | "interrupted" | "orphaned";
+// Tool/Agent status derives ONLY from server-side CLI execution signals in
+// the message stream — never from client socket state. The CLI signals
+// turn-end via the `result` message; applyToolLifecycle marks unresolved
+// tools `isInterrupted` when their turn ended (or on resume).
+//   hasTail + !isError     → complete
+//   hasTail + isError      → error
+//   !hasTail + interrupted → interrupted (turn ended / resumed without result)
+//   !hasTail + !interrupted → running (turn still active)
+export type AgentContainerStatus = "running" | "complete" | "error" | "interrupted";
 
-export function deriveStatus(
-  input: { hasTail: boolean; isError: boolean; isOrphaned: boolean },
-  socketConnected: boolean,
-): AgentContainerStatus {
-  if (input.isOrphaned) return "orphaned";
+export function deriveStatus(input: {
+  hasTail: boolean;
+  isError: boolean;
+  isInterrupted: boolean;
+}): AgentContainerStatus {
+  if (input.isInterrupted) return "interrupted";
   if (input.hasTail) return input.isError ? "error" : "complete";
-  if (!socketConnected) return "interrupted";
   return "running";
 }
 
@@ -842,8 +845,8 @@ export function applyToolResultsToMessages(
           result: r.content,
           ...(r.isError ? { isError: true } : {}),
         };
-        // Self-heal: a late result overrides a premature orphan mark
-        delete update.isOrphaned;
+        // Self-heal: a late result overrides a premature interrupted mark
+        delete update.isInterrupted;
         return update;
       });
       touched = true;
@@ -856,46 +859,75 @@ export function applyToolResultsToMessages(
 }
 
 /**
- * Mark tool-call parts that lack both result and isError as orphaned.
- * Only called at history_end when the server declared this connection is a
- * resume (isResumeRef). The history JSONL is from a concluded invocation;
- * pending tool_use in that history will never receive their results.
+ * Apply the tool execution lifecycle: mark unresolved tools `isInterrupted`
+ * when their turn has ended. A tool's turn ends when a `result` message
+ * (turn-end boundary) appears after it, or unconditionally on resume (the
+ * history is from a concluded invocation whose pending tools will never
+ * receive results). Tool status derives ONLY from these server-side CLI
+ * signals — never from client socket state.
+ *
+ * `turnEndBoundaries` are render-list indices captured by renderChatStream
+ * at each `turn-end` item (= messages.length at that point); a tool at index
+ * `i < lastBoundary` belongs to a turn that already ended.
  *
  * Returns `{ messages: prev, changed: false }` when nothing was marked
  * (no-alloc pass to avoid needless re-render).
  */
-export function markOrphanedToolCalls(messages: ThreadMessageLike[]): {
-  messages: ThreadMessageLike[];
-  changed: boolean;
-} {
+export function applyToolLifecycle(
+  messages: ThreadMessageLike[],
+  turnEndBoundaries: number[],
+  opts: { isResume: boolean },
+): { messages: ThreadMessageLike[]; changed: boolean } {
+  if (turnEndBoundaries.length === 0 && !opts.isResume) {
+    return { messages, changed: false };
+  }
+  const lastBoundary =
+    turnEndBoundaries.length > 0 ? turnEndBoundaries[turnEndBoundaries.length - 1] : -1;
+  const turnEndedAt = (i: number) => opts.isResume || i < lastBoundary;
+
   let changed = false;
-  const next = messages.map((msg) => {
+  const next = messages.map((msg, i) => {
     const custom = msg.metadata?.custom as Record<string, unknown> | undefined;
     // Standalone tool-card system message
     if (msg.role === "system" && custom?.systemMessageType === "tool-card") {
-      if (custom.result != null || custom.isError === true || custom.isOrphaned === true)
+      if (custom.result != null || custom.isError === true || custom.isInterrupted === true)
         return msg;
-      // Don't orphan a tool that has a pending control_request.
+      // Don't interrupt a tool awaiting a permission control_request.
       if (custom.controlRequestId) return msg;
+      if (!turnEndedAt(i)) return msg;
       changed = true;
       return {
         ...msg,
-        metadata: { custom: { ...custom, isOrphaned: true } },
+        metadata: { custom: { ...custom, isInterrupted: true } },
+      };
+    }
+    // Agent container (subagent tool): resolved when its tail result arrives.
+    if (msg.role === "system" && custom?.systemMessageType === "agent-container") {
+      if (custom.tailResult != null || custom.tailIsError === true || custom.isInterrupted === true)
+        return msg;
+      if (!turnEndedAt(i)) return msg;
+      changed = true;
+      return {
+        ...msg,
+        metadata: { custom: { ...custom, isInterrupted: true } },
       };
     }
     // Legacy: tool-call content parts inside assistant bubbles
     if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      let partChanged = false;
       const content = msg.content.map((part: unknown): unknown => {
         const p = part as Record<string, unknown>;
         if (p.type !== "tool-call") return part;
         if ("result" in p) return part;
-        if (p.isError === true) return part;
-        if (p.isOrphaned === true) return part;
+        if (p.isError === true || p.isInterrupted === true) return part;
         if (p.controlRequestId) return part;
-        changed = true;
-        return { ...p, isOrphaned: true };
+        if (!turnEndedAt(i)) return part;
+        partChanged = true;
+        return { ...p, isInterrupted: true };
       });
-      return changed ? { ...msg, content } : msg;
+      if (!partChanged) return msg;
+      changed = true;
+      return { ...msg, content };
     }
     return msg;
   }) as ThreadMessageLike[];
@@ -1105,7 +1137,8 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "history_start" ||
     msg.type === "history_end" ||
     msg.type === "live_start" ||
-    msg.type === "live_end"
+    msg.type === "live_end" ||
+    msg.type === "ended"
   ) {
     return null;
   }
@@ -1152,7 +1185,7 @@ export type NormalizedPart =
       argsText: string;
       result?: string;
       isError?: boolean;
-      isOrphaned?: boolean;
+      isInterrupted?: boolean;
       skillContent?: string;
       // Agent container: uuids of child messages (subagent output stream)
       // that render inside this tool-call's body. hasAgentBody is derived
@@ -1225,6 +1258,14 @@ export type ChatStreamItem =
       kind: "mode-change";
       mode: string;
       sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
+      // Turn-end marker: emitted for every `result` message (success /
+      // interrupted / error). Renders no bubble — only records a turn
+      // boundary so applyToolLifecycle can mark unresolved tools interrupted.
+      kind: "turn-end";
+      subtype?: string;
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | { kind: "fallback"; ui: ThreadMessageLike };
@@ -1812,9 +1853,12 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       continue;
     }
 
-    // ═══ Result ═══
+    // ═══ Result (turn end) ═══
     if (msg.type === "result") {
-      const resultMsg = msg as { is_error?: boolean; result?: string };
+      const resultMsg = msg as { is_error?: boolean; result?: string; subtype?: string };
+      // turn-end marker drives tool "interrupted" marking in Pass 2 — emitted
+      // for every result (success / interrupted / error), renders no bubble.
+      items.push({ kind: "turn-end", subtype: resultMsg.subtype, _rawSnapshots: [msg] });
       if (resultMsg.is_error && typeof resultMsg.result === "string") {
         items.push({
           kind: "result-error",
@@ -1822,8 +1866,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
           _rawSnapshots: [msg],
         });
-      } else {
-        // Non-error result only finalizes the current assistant (no item).
       }
       continue;
     }
@@ -1901,6 +1943,10 @@ export function renderChatStream(
   opts?: { isResume?: boolean },
 ): ThreadMessageLike[] {
   const messages: ThreadMessageLike[] = [];
+  // Render-list indices at each turn-end (result) item. A tool at index
+  // i < lastBoundary belongs to a turn that already ended → interrupted if
+  // still unresolved. Captured by the "turn-end" case below.
+  const turnEndBoundaries: number[] = [];
 
   for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
     const item = items[itemIdx];
@@ -1995,7 +2041,7 @@ export function renderChatStream(
                 tailIsError: part.isError === true,
                 tailStats: tail?.stats,
                 tailContent: tail?.content ?? part.result,
-                isOrphaned: part.isOrphaned === true,
+                isInterrupted: part.isInterrupted === true,
                 controlRequestId: part.controlRequestId,
                 bodyChildUuids: part.bodyChildUuids ?? [],
                 toolMessageId,
@@ -2022,7 +2068,7 @@ export function renderChatStream(
                 controlRequestId: part.controlRequestId,
                 result: part.result,
                 isError: part.isError === true,
-                isOrphaned: part.isOrphaned === true,
+                isOrphaned: part.isInterrupted === true,
                 toolMessageId,
               };
               messages.push({
@@ -2048,7 +2094,7 @@ export function renderChatStream(
                 controlRequestId: part.controlRequestId,
                 result: part.result,
                 isError: part.isError === true,
-                isOrphaned: part.isOrphaned === true,
+                isOrphaned: part.isInterrupted === true,
                 toolMessageId,
               };
               messages.push({
@@ -2067,7 +2113,7 @@ export function renderChatStream(
                 argsText: part.argsText,
                 result: part.result,
                 isError: part.isError,
-                isOrphaned: part.isOrphaned,
+                isInterrupted: part.isInterrupted,
                 skillContent: part.skillContent,
                 controlRequestId: part.controlRequestId,
                 toolMessageId,
@@ -2222,6 +2268,11 @@ export function renderChatStream(
         });
         break;
       }
+      case "turn-end": {
+        // No bubble — record the turn boundary for applyToolLifecycle.
+        turnEndBoundaries.push(messages.length);
+        break;
+      }
       case "fallback": {
         messages.push(item.ui);
         break;
@@ -2299,10 +2350,7 @@ export function renderChatStream(
     custom.bodyIndices = bodyIndices;
   }
 
-  if (opts?.isResume && messages.length > 0) {
-    return markOrphanedToolCalls(messages).messages;
-  }
-  return messages;
+  return applyToolLifecycle(messages, turnEndBoundaries, { isResume: !!opts?.isResume }).messages;
 }
 
 export function useClaude2Session(
@@ -2518,9 +2566,6 @@ export function useClaude2Session(
   const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
-  // Connection state drives Agent container status derivation (running vs
-  // interrupted). Toggled by socket onopen/onclose, not by message flow.
-  const [socketConnected, setSocketConnected] = useState(false);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
@@ -2735,7 +2780,6 @@ export function useClaude2Session(
 
     socket.onopen = () => {
       console.log("[claude2-adapter] ws open");
-      setSocketConnected(true);
     };
 
     socket.onmessage = (event) => {
@@ -2830,7 +2874,6 @@ export function useClaude2Session(
     socket.onclose = () => {
       if (!cancelled) {
         socketRef.current = null;
-        setSocketConnected(false);
         setLoading(true);
         scheduleReconnect();
       }
@@ -2845,7 +2888,6 @@ export function useClaude2Session(
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
-      setSocketConnected(false);
       socket.close();
     };
   }, [
@@ -2916,7 +2958,6 @@ export function useClaude2Session(
     aiTitle,
     agentName,
     loading,
-    socketConnected,
     liveThinkingTokens,
     tasks,
     slashCommands,

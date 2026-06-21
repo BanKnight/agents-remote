@@ -92,11 +92,6 @@ type CompactState = {
 
 const Claude2CompactContext = createContext<CompactState | null>(null);
 
-// WebSocket connection state, for Agent container status derivation
-// (running vs interrupted). Provided at the runtime body root so any
-// nested AgentContainer can read it without prop drilling.
-const SocketConnectedContext = createContext<boolean>(false);
-
 // Permission modes the server CLI advertises (parsed from
 // `claude --help --permission-mode`). ExitPlanMode approval reads this to
 // decide whether "auto" mode is available (else fall back to acceptEdits).
@@ -106,7 +101,7 @@ const PermissionModesContext = createContext<readonly string[]>([]);
 // not thinking). AssistantChatBubble reads this to show a live "Thinking… (N
 // tokens)" indicator on assistant-ui's running placeholder before the thinking
 // block arrives. Thread-level derived state; the placeholder's metadata is not
-// ours to set, so it flows through context like SocketConnectedContext.
+// ours to set, so it flows through context.
 const LiveThinkingTokensContext = createContext<number | null>(null);
 
 export function Claude2SessionDetailRoute() {
@@ -306,7 +301,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     aiTitle,
     agentName,
     loading,
-    socketConnected,
     liveThinkingTokens,
     tasks,
     slashCommands,
@@ -418,66 +412,64 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
 
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>
-          <SocketConnectedContext.Provider value={socketConnected}>
-            <PermissionModesContext.Provider value={availablePermissionModes}>
-              <LiveThinkingTokensContext.Provider value={liveThinkingTokens}>
-                <Claude2CompactContext.Provider value={compactState}>
-                  <div
-                    className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-                  >
-                    {detail.error instanceof Error ? (
-                      <div className="shrink-0 px-3 py-2">
-                        <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                          {detail.error.message}
-                        </p>
-                      </div>
-                    ) : null}
-                    {closeSession.error instanceof Error ? (
-                      <div className="shrink-0 px-3 py-2">
-                        <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
-                          {closeSession.error.message}
-                        </p>
-                      </div>
-                    ) : null}
+          <PermissionModesContext.Provider value={availablePermissionModes}>
+            <LiveThinkingTokensContext.Provider value={liveThinkingTokens}>
+              <Claude2CompactContext.Provider value={compactState}>
+                <div
+                  className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+                >
+                  {detail.error instanceof Error ? (
+                    <div className="shrink-0 px-3 py-2">
+                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                        {detail.error.message}
+                      </p>
+                    </div>
+                  ) : null}
+                  {closeSession.error instanceof Error ? (
+                    <div className="shrink-0 px-3 py-2">
+                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                        {closeSession.error.message}
+                      </p>
+                    </div>
+                  ) : null}
 
-                    <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                      <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+                  <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                    <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
 
-                      <CompactIndicator />
-                      {tasks.length > 0 && (
-                        <TaskPanel
-                          collapsed={!tasksExpanded}
-                          t={t}
-                          tasks={tasks}
-                          onToggle={() => setTasksExpanded((v) => !v)}
-                        />
-                      )}
-                      <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                        <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                          <ComposerPrimitive.Root>
-                            <ComposerWithInterrupt
-                              currentModel={currentModel}
-                              currentResolved={resolvedModel ?? session?.model}
-                              availableModels={availableModels}
-                              modelSwitchVersion={modelSwitchVersion}
-                              permissionMode={permissionMode}
-                              availablePermissionModes={availablePermissionModes}
-                              slashCommands={slashCommands}
-                              skills={skills}
-                              projectName={projectName}
-                              sessionId={sessionId}
-                              aiTitle={aiTitle}
-                              agentName={agentName}
-                            />
-                          </ComposerPrimitive.Root>
-                        </ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                      </div>
-                    </ThreadPrimitive.Root>
-                  </div>
-                </Claude2CompactContext.Provider>
-              </LiveThinkingTokensContext.Provider>
-            </PermissionModesContext.Provider>
-          </SocketConnectedContext.Provider>
+                    <CompactIndicator />
+                    {tasks.length > 0 && (
+                      <TaskPanel
+                        collapsed={!tasksExpanded}
+                        t={t}
+                        tasks={tasks}
+                        onToggle={() => setTasksExpanded((v) => !v)}
+                      />
+                    )}
+                    <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
+                      <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                        <ComposerPrimitive.Root>
+                          <ComposerWithInterrupt
+                            currentModel={currentModel}
+                            currentResolved={resolvedModel ?? session?.model}
+                            availableModels={availableModels}
+                            modelSwitchVersion={modelSwitchVersion}
+                            permissionMode={permissionMode}
+                            availablePermissionModes={availablePermissionModes}
+                            slashCommands={slashCommands}
+                            skills={skills}
+                            projectName={projectName}
+                            sessionId={sessionId}
+                            aiTitle={aiTitle}
+                            agentName={agentName}
+                          />
+                        </ComposerPrimitive.Root>
+                      </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                    </div>
+                  </ThreadPrimitive.Root>
+                </div>
+              </Claude2CompactContext.Provider>
+            </LiveThinkingTokensContext.Provider>
+          </PermissionModesContext.Provider>
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
       {holder}
@@ -1246,11 +1238,11 @@ function SystemChatBubble() {
       argsText,
       result: custom?.result as string | undefined,
       status:
-        custom?.result != null || custom?.isError === true || custom?.isOrphaned === true
+        custom?.result != null || custom?.isError === true
           ? { type: "complete" as const }
           : { type: "running" as const },
       isError: custom?.isError === true,
-      isOrphaned: custom?.isOrphaned === true,
+      isInterrupted: custom?.isInterrupted === true,
       metadata: {
         skillContent: custom?.skillContent,
         controlRequestId,
@@ -1537,7 +1529,7 @@ type AgentContainerCustom = {
   tailIsError?: boolean;
   tailStats?: AgentTailStats;
   tailContent?: string;
-  isOrphaned?: boolean;
+  isInterrupted?: boolean;
   progress?: {
     subagentType?: string;
     description: string;
@@ -1549,6 +1541,7 @@ type AgentContainerCustom = {
 };
 
 function StatusIndicator({ status }: { status: AgentContainerStatus }) {
+  const { t } = useT();
   if (status === "running") {
     return (
       <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
@@ -1590,9 +1583,11 @@ function StatusIndicator({ status }: { status: AgentContainerStatus }) {
     );
   }
   if (status === "interrupted") {
-    return <span className="shrink-0 text-[0.6rem] text-amber-400">interrupted</span>;
+    return (
+      <span className="shrink-0 text-[0.6rem] text-amber-400">{t("claude2.interrupted")}</span>
+    );
   }
-  return <span className="shrink-0 text-[0.6rem] text-slate-500">orphaned</span>;
+  return null;
 }
 
 function AgentTailBar({
@@ -1660,15 +1655,11 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
   const custom = useAuiState(
     (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as AgentContainerCustom,
   );
-  const socketConnected = useContext(SocketConnectedContext);
-  const status = deriveStatus(
-    {
-      hasTail: custom.tailResult != null,
-      isError: custom.tailIsError === true,
-      isOrphaned: custom.isOrphaned === true,
-    },
-    socketConnected,
-  );
+  const status = deriveStatus({
+    hasTail: custom.tailResult != null,
+    isError: custom.tailIsError === true,
+    isInterrupted: custom.isInterrupted === true,
+  });
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const bodyIndices = custom.bodyIndices ?? [];
@@ -1793,17 +1784,15 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   const complete = custom.result != null && !error;
   // Awaiting only while a control_request is open and no response landed yet.
   const awaiting = !!controlRequestId && custom.result == null && !isOrphaned && !error;
-  const indicatorStatus: AgentContainerStatus = error
-    ? "error"
-    : isOrphaned
-      ? "orphaned"
-      : complete
-        ? "complete"
-        : "running";
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [resultOpen, setResultOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // Tracks the user's own approve/reject so the tail outcome pill can
+  // distinguish a user reject from a genuine server error. Lost on resume
+  // (component remount), where we fall back to the error label.
+  const [outcome, setOutcome] = useState<"approved" | "rejected" | null>(null);
+  const [approvedModeLabel, setApprovedModeLabel] = useState<string | null>(null);
 
   const plan = typeof custom.plan === "string" ? custom.plan : undefined;
   const planFilePath = typeof custom.planFilePath === "string" ? custom.planFilePath : undefined;
@@ -1811,6 +1800,10 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
 
   const onApprove = (mode: string) => {
     if (!controlRequestId) return;
+    setOutcome("approved");
+    setApprovedModeLabel(
+      mode === "default" ? t("claude2.plan.modeManualShort") : t("claude2.plan.modeAutoShort"),
+    );
     const permissionUpdates: PermissionUpdate[] = [
       { type: "setMode", mode, destination: "session" },
     ];
@@ -1818,6 +1811,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   };
   const onReject = () => {
     if (!controlRequestId) return;
+    setOutcome("rejected");
     const trimmed = feedback.trim();
     bridge?.cancelControlRequest(controlRequestId, trimmed || undefined);
     setFeedback("");
@@ -1882,15 +1876,28 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
           ) : null}
         </div>
       ) : error ? (
-        <div className="px-3 py-2 text-xs text-red-300 sm:px-5">
-          {result ?? t("claude2.plan.error")}
+        <div className="px-3 py-2 sm:px-5">
+          {outcome === "rejected" ? (
+            <span className="text-xs font-medium text-amber-300">
+              ⊘ {t("claude2.plan.rejected")}
+            </span>
+          ) : (
+            <span className="text-xs text-red-300">{result ?? t("claude2.plan.error")}</span>
+          )}
+          {outcome === "rejected" && result ? (
+            <div className="mt-1 text-[0.65rem] text-slate-400">{result}</div>
+          ) : null}
         </div>
       ) : complete && result ? (
         <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
+          <span className="text-xs font-medium text-emerald-300">
+            ✓ {t("claude2.plan.approved")}
+            {approvedModeLabel ? ` · ${approvedModeLabel}` : ""}
+          </span>
           <button
             type="button"
             onClick={() => setResultOpen(!resultOpen)}
-            className="cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+            className="ml-2 cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
           >
             {resultOpen ? "▾" : "▸"} {t("claude2.plan.result")}
           </button>
@@ -1926,7 +1933,6 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             </span>
           ) : null}
           <span className="flex-1" />
-          <StatusIndicator status={indicatorStatus} />
           <button
             type="button"
             onClick={() => setFullscreen(true)}
@@ -1966,7 +1972,6 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
                 </span>
               ) : null}
               <span className="flex-1" />
-              <StatusIndicator status={indicatorStatus} />
             </>
           }
           onClose={() => setFullscreen(false)}
@@ -2038,13 +2043,6 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   const error = custom.isError === true;
   const complete = custom.result != null && !error;
   const awaiting = !!controlRequestId && custom.result == null && !isOrphaned && !error;
-  const indicatorStatus: AgentContainerStatus = error
-    ? "error"
-    : isOrphaned
-      ? "orphaned"
-      : complete
-        ? "complete"
-        : "running";
   const questions = (custom.questions as Question[]) ?? [];
   // User can answer while the question is running AND no result has landed yet.
   const hasQuestionResult = !!custom.result;
@@ -2052,6 +2050,9 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   const [expanded, setExpanded] = useState(!hasQuestionResult);
   const [resultOpen, setResultOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // Tracks the user's own answer/skip so the tail outcome pill can distinguish
+  // a user skip from a genuine server error. Lost on resume (component remount).
+  const [outcome, setOutcome] = useState<"answered" | "skipped" | null>(null);
 
   // Auto-collapse when a result arrives (answer submitted).
   useEffect(() => {
@@ -2099,8 +2100,10 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
 
     const args = custom.args ?? {};
     if (controlRequestId) {
+      setOutcome("answered");
       bridge?.respondToControlRequest(controlRequestId, { ...args, answers });
     } else if (custom.toolCallId) {
+      setOutcome("answered");
       bridge?.sendToolResult(custom.toolCallId, JSON.stringify(answers));
     } else {
       const answersText = Object.entries(answers)
@@ -2112,6 +2115,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
 
   const handleCancel = () => {
     if (!canAnswer) return;
+    setOutcome("skipped");
     if (controlRequestId) {
       bridge?.cancelControlRequest(controlRequestId);
     } else if (custom.toolCallId) {
@@ -2191,15 +2195,22 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
           </p>
         </div>
       ) : error ? (
-        <div className="px-3 py-2 text-xs text-red-300 sm:px-5">
-          {resultStr || t("claude2.ask.error")}
+        <div className="px-3 py-2 sm:px-5">
+          {outcome === "skipped" ? (
+            <span className="text-xs font-medium text-amber-300">⊘ {t("claude2.ask.skipped")}</span>
+          ) : (
+            <span className="text-xs text-red-300">{resultStr || t("claude2.ask.error")}</span>
+          )}
         </div>
       ) : complete && resultStr ? (
         <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
+          <span className="text-xs font-medium text-emerald-300">
+            ✓ {t("claude2.ask.statusAnswered")}
+          </span>
           <button
             type="button"
             onClick={() => setResultOpen(!resultOpen)}
-            className="cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+            className="ml-2 cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
           >
             {resultOpen ? "▾" : "▸"} {t("claude2.ask.result")}
           </button>
@@ -2232,7 +2243,6 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
             {t("claude2.ask.title")}
           </span>
           <span className="flex-1" />
-          <StatusIndicator status={indicatorStatus} />
           <button
             type="button"
             onClick={() => setFullscreen(true)}
@@ -2357,7 +2367,6 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 {t("claude2.ask.title")}
               </span>
               <span className="flex-1" />
-              <StatusIndicator status={indicatorStatus} />
             </>
           }
           onClose={() => setFullscreen(false)}

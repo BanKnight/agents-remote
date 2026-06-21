@@ -1,6 +1,7 @@
 import { useContext, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
+import { useT } from "../../i18n";
 import { CollapsibleSection } from "./collapsible-section";
 
 // Icon paths are inline SVG strings for simplicitly
@@ -57,9 +58,10 @@ function makeToolRenderer(config: {
 }): ToolCallMessagePartComponent {
   const { icon, label, badge, body, footer } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
+    const { t } = useT();
     const isRunning = status.type === "running";
     const isError = (rest as Record<string, unknown>).isError === true;
-    const isOrphaned = (rest as Record<string, unknown>).isOrphaned === true;
+    const isInterrupted = (rest as Record<string, unknown>).isInterrupted === true;
     const resultStr =
       typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
     const hasResult = resultStr.length > 0 && !isRunning;
@@ -68,7 +70,7 @@ function makeToolRenderer(config: {
       | Record<string, unknown>
       | undefined;
     const controlRequestId = (metadata?.controlRequestId as string) ?? "";
-    const needsPermission = controlRequestId !== "" && isRunning && !isOrphaned;
+    const needsPermission = controlRequestId !== "" && isRunning && !isInterrupted;
     const args = safeParseArgs(argsText);
     const displayLabel = label ? label(args, toolName) : toolName;
     const badgeText = badge ? badge(args, toolName) : null;
@@ -109,7 +111,7 @@ function makeToolRenderer(config: {
       </div>
     ) : null;
     const hasPrimary = primaryNode !== null;
-    const hasContent = hasPrimary || Boolean(skillContent) || hasResult || isOrphaned;
+    const hasContent = hasPrimary || Boolean(skillContent) || hasResult || isInterrupted;
     const sectionDivider = `mt-2 border-t pt-2 ${accentDivider}`;
 
     return (
@@ -126,12 +128,14 @@ function makeToolRenderer(config: {
                 </span>
               ) : null}
               <span className="text-xs font-medium truncate">{displayLabel}</span>
-              {isRunning && !isOrphaned ? (
+              {isRunning && !isInterrupted ? (
                 <span
                   className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
                 />
-              ) : !expanded && isOrphaned ? (
-                <span className="ml-auto shrink-0 text-[0.6rem] text-slate-500">中断</span>
+              ) : !expanded && isInterrupted ? (
+                <span className="ml-auto shrink-0 text-[0.6rem] text-amber-400">
+                  {t("claude2.interrupted")}
+                </span>
               ) : !expanded && isError ? (
                 <span className="ml-auto shrink-0 text-[0.6rem] text-red-400/70">错误</span>
               ) : !expanded && hasResult ? (
@@ -157,9 +161,11 @@ function makeToolRenderer(config: {
                   </pre>
                 </div>
               ) : null}
-              {isOrphaned ? (
+              {isInterrupted ? (
                 <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
-                  <span className="text-[0.6rem] text-slate-500">进程已退出，工具未返回结果</span>
+                  <span className="text-[0.6rem] text-amber-400">
+                    {t("claude2.toolInterruptedHint")}
+                  </span>
                 </div>
               ) : footer ? (
                 <div className={hasPrimary || skillContent ? sectionDivider : ""}>

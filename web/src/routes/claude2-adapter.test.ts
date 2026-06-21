@@ -28,7 +28,7 @@ import {
   makeBoundaryDivider,
   extractToolResults,
   applyToolResultsToMessages,
-  markOrphanedToolCalls,
+  applyToolLifecycle,
   handleAttachment,
   normalizeAttachmentTaskStatus,
   normalizeChatStream,
@@ -326,37 +326,26 @@ describe("deriveLiveThinkingTokens", () => {
 
 describe("deriveStatus", () => {
   test("complete when tail arrived without error", () => {
-    expect(deriveStatus({ hasTail: true, isError: false, isOrphaned: false }, true)).toBe(
-      "complete",
-    );
-    // status stays complete regardless of connection after tail arrived
-    expect(deriveStatus({ hasTail: true, isError: false, isOrphaned: false }, false)).toBe(
-      "complete",
-    );
+    expect(deriveStatus({ hasTail: true, isError: false, isInterrupted: false })).toBe("complete");
   });
 
   test("error when tail arrived with error", () => {
-    expect(deriveStatus({ hasTail: true, isError: true, isOrphaned: false }, true)).toBe("error");
+    expect(deriveStatus({ hasTail: true, isError: true, isInterrupted: false })).toBe("error");
   });
 
-  test("running when no tail and socket still connected", () => {
-    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: false }, true)).toBe(
-      "running",
-    );
+  test("running when no tail and turn still active (default, independent of socket)", () => {
+    expect(deriveStatus({ hasTail: false, isError: false, isInterrupted: false })).toBe("running");
   });
 
-  test("interrupted when no tail and socket disconnected (may reconnect)", () => {
-    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: false }, false)).toBe(
+  test("interrupted when turn ended without a result", () => {
+    expect(deriveStatus({ hasTail: false, isError: false, isInterrupted: true })).toBe(
       "interrupted",
     );
   });
 
-  test("orphaned takes precedence (session ended, result never coming)", () => {
-    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: true }, true)).toBe(
-      "orphaned",
-    );
-    expect(deriveStatus({ hasTail: false, isError: false, isOrphaned: true }, false)).toBe(
-      "orphaned",
+  test("interrupted takes precedence over running even if a tail somehow exists", () => {
+    expect(deriveStatus({ hasTail: true, isError: false, isInterrupted: true })).toBe(
+      "interrupted",
     );
   });
 });
@@ -859,6 +848,12 @@ describe("messageToThreadLike", () => {
       leafUuid: "abc-123",
       sessionId: "s1",
     } as unknown as SessionStreamServerMessage;
+    const result = messageToThreadLike(msg);
+    expect(result).toBeNull();
+  });
+
+  test("ended returns null (server transport marker, never rendered)", () => {
+    const msg = { type: "ended" } as unknown as SessionStreamServerMessage;
     const result = messageToThreadLike(msg);
     expect(result).toBeNull();
   });
@@ -1910,12 +1905,18 @@ describe("applyToolResultsToMessages", () => {
     expect(applied).toBe(messages);
   });
 
-  test("clears isOrphaned when setting result (self-heal)", () => {
+  test("clears isInterrupted when setting result (self-heal)", () => {
     const messages: ThreadMessageLike[] = [
       {
         role: "assistant",
         content: [
-          { type: "tool-call", toolCallId: "tu-heal", toolName: "Ask", args: {}, isOrphaned: true },
+          {
+            type: "tool-call",
+            toolCallId: "tu-heal",
+            toolName: "Ask",
+            args: {},
+            isInterrupted: true,
+          },
         ],
       },
     ];
@@ -1926,68 +1927,91 @@ describe("applyToolResultsToMessages", () => {
     expect(appliedCount).toBe(1);
     const content = applied[0]?.content as Array<Record<string, unknown>>;
     expect(content[0].result).toBe("late result");
-    expect(content[0].isOrphaned).toBeUndefined();
+    expect(content[0].isInterrupted).toBeUndefined();
   });
 });
 
-describe("markOrphanedToolCalls", () => {
-  const makeToolCallPart = (overrides: Record<string, unknown> = {}) => ({
-    type: "tool-call" as const,
-    toolCallId: "tu-1",
-    toolName: "Read",
-    args: {} as Record<string, unknown>,
-    ...overrides,
+describe("applyToolLifecycle", () => {
+  const toolCardMsg = (overrides: Record<string, unknown> = {}): ThreadMessageLike => ({
+    role: "system",
+    content: [{ type: "text", text: "" }],
+    metadata: {
+      custom: {
+        systemMessageType: "tool-card",
+        toolName: "Read",
+        toolCallId: "tu-1",
+        ...overrides,
+      },
+    },
   });
 
-  const msg = (parts: Record<string, unknown>[]): ThreadMessageLike => ({
-    role: "assistant",
-    content: parts as unknown as ThreadMessageLike["content"],
-  });
+  const customOf = (m: ThreadMessageLike): Record<string, unknown> =>
+    m.metadata?.custom as Record<string, unknown>;
 
-  test("marks tool-call parts with no result as orphaned", () => {
-    const messages: ThreadMessageLike[] = [msg([makeToolCallPart()])];
-    const { messages: next, changed } = markOrphanedToolCalls(messages);
+  test("resume marks unresolved tool-card as interrupted", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg()];
+    const { messages: next, changed } = applyToolLifecycle(messages, [], { isResume: true });
     expect(changed).toBe(true);
-    const firstMsg = next[0];
-    expect(firstMsg).toBeDefined();
-    const part = (firstMsg!.content as Array<Record<string, unknown>>)[0];
-    expect(part.isOrphaned).toBe(true);
+    expect(customOf(next[0]!).isInterrupted).toBe(true);
   });
 
-  test("skips tool-call parts that already have a result", () => {
-    const messages: ThreadMessageLike[] = [msg([makeToolCallPart({ result: "file contents" })])];
-    const { changed } = markOrphanedToolCalls(messages);
+  test("turn-end boundary marks unresolved tools before it as interrupted", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg()];
+    // boundary at index 1 means the tool at index 0 belongs to an ended turn
+    const { messages: next, changed } = applyToolLifecycle(messages, [1], { isResume: false });
+    expect(changed).toBe(true);
+    expect(customOf(next[0]!).isInterrupted).toBe(true);
+  });
+
+  test("active turn (no boundary, not resume) leaves the tool running", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg()];
+    const { messages: next, changed } = applyToolLifecycle(messages, [], { isResume: false });
+    expect(changed).toBe(false);
+    expect(customOf(next[0]!).isInterrupted).toBeUndefined();
+  });
+
+  test("resume marks an unresolved agent-container as interrupted", () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: "system",
+        content: [{ type: "text", text: "" }],
+        metadata: { custom: { systemMessageType: "agent-container" } },
+      },
+    ];
+    const { messages: next, changed } = applyToolLifecycle(messages, [], { isResume: true });
+    expect(changed).toBe(true);
+    expect(customOf(next[0]!).isInterrupted).toBe(true);
+  });
+
+  test("skips tool-card that already has a result", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg({ result: "file contents" })];
+    const { changed } = applyToolLifecycle(messages, [1], { isResume: false });
     expect(changed).toBe(false);
   });
 
-  test("skips tool-call parts with isError", () => {
-    const messages: ThreadMessageLike[] = [msg([makeToolCallPart({ isError: true })])];
-    const { changed } = markOrphanedToolCalls(messages);
+  test("skips tool-card with isError", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg({ isError: true })];
+    const { changed } = applyToolLifecycle(messages, [1], { isResume: false });
     expect(changed).toBe(false);
   });
 
-  test("idempotent — already-orphaned stays orphaned", () => {
-    const messages: ThreadMessageLike[] = [msg([makeToolCallPart({ isOrphaned: true })])];
-    const { changed } = markOrphanedToolCalls(messages);
+  test("skips tool-card awaiting a permission control_request", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg({ controlRequestId: "cr-1" })];
+    const { changed } = applyToolLifecycle(messages, [1], { isResume: false });
+    expect(changed).toBe(false);
+  });
+
+  test("idempotent — already-interrupted stays interrupted", () => {
+    const messages: ThreadMessageLike[] = [toolCardMsg({ isInterrupted: true })];
+    const { changed } = applyToolLifecycle(messages, [1], { isResume: false });
     expect(changed).toBe(false);
   });
 
   test("returns unchanged reference when nothing to mark", () => {
-    const messages: ThreadMessageLike[] = [
-      msg([makeToolCallPart({ result: "done" }), makeToolCallPart({ isError: true })]),
-    ];
-    const { messages: next, changed } = markOrphanedToolCalls(messages);
+    const messages: ThreadMessageLike[] = [toolCardMsg({ result: "done" })];
+    const { messages: next, changed } = applyToolLifecycle(messages, [], { isResume: false });
     expect(changed).toBe(false);
     expect(next).toBe(messages);
-  });
-
-  test("skips non-assistant messages", () => {
-    const messages: ThreadMessageLike[] = [
-      { role: "user", content: "hello" },
-      { role: "system", content: "init" },
-    ];
-    const { changed } = markOrphanedToolCalls(messages);
-    expect(changed).toBe(false);
   });
 });
 
@@ -2548,7 +2572,7 @@ describe("normalizeChatStream", () => {
   });
 
   // ── result ──────────────────────────────────────────────────────────
-  test("a non-error result finalizes the assistant but emits no item", () => {
+  test("a non-error result emits only a turn-end marker (renders no bubble)", () => {
     const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "text", text: "done" }]),
       {
@@ -2558,11 +2582,12 @@ describe("normalizeChatStream", () => {
         num_turns: 2,
       } as unknown as SessionStreamServerMessage,
     ]);
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
     expect(items[0].kind).toBe("assistant");
+    expect(items[1].kind).toBe("turn-end");
   });
 
-  test("an error result emits a result-error item", () => {
+  test("an error result emits a turn-end marker plus a result-error item", () => {
     const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "text", text: "partial" }]),
       {
@@ -2572,9 +2597,10 @@ describe("normalizeChatStream", () => {
         result: "something went wrong",
       } as unknown as SessionStreamServerMessage,
     ]);
-    expect(items).toHaveLength(2);
-    expect(items[1].kind).toBe("result-error");
-    expect((items[1] as { text: string }).text).toBe("something went wrong");
+    expect(items).toHaveLength(3);
+    expect(items[1].kind).toBe("turn-end");
+    expect(items[2].kind).toBe("result-error");
+    expect((items[2] as { text: string }).text).toBe("something went wrong");
   });
 
   // ── HiddenDropped ───────────────────────────────────────────────────
@@ -2826,7 +2852,7 @@ describe("renderChatStream", () => {
     expect(rendered[0].role).toBe("system");
   });
 
-  test("resume marks orphaned tool-calls on the rendered output", () => {
+  test("resume marks unresolved tool-calls as interrupted on the rendered output", () => {
     const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
     ]);
@@ -2838,10 +2864,10 @@ describe("renderChatStream", () => {
           "tool-card",
     );
     expect(toolCard).toBeDefined();
-    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isOrphaned).toBe(true);
+    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isInterrupted).toBe(true);
   });
 
-  test("non-resume does NOT mark orphaned tool-calls", () => {
+  test("active turn (non-resume, no result) leaves tool-calls running", () => {
     const items = normalizeChatStream([
       makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
     ]);
@@ -2853,7 +2879,23 @@ describe("renderChatStream", () => {
           "tool-card",
     );
     expect(toolCard).toBeDefined();
-    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isOrphaned).toBeUndefined();
+    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isInterrupted).toBeUndefined();
+  });
+
+  test("live interrupt (result subtype interrupted) marks in-flight tool as interrupted", () => {
+    const items = normalizeChatStream([
+      makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "bash", input: {} }]),
+      result("interrupted"),
+    ]);
+    const rendered = renderChatStream(items, { isResume: false });
+    const toolCard = rendered.find(
+      (m) =>
+        m.role === "system" &&
+        ((m.metadata?.custom as Record<string, unknown>)?.systemMessageType as string) ===
+          "tool-card",
+    );
+    expect(toolCard).toBeDefined();
+    expect((toolCard?.metadata?.custom as Record<string, unknown>)?.isInterrupted).toBe(true);
   });
 });
 

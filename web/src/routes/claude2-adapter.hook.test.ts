@@ -1105,7 +1105,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     );
     expect(toolCard).toBeDefined();
     const custom = toolCard!.metadata?.custom as Record<string, unknown>;
-    expect(custom?.isOrphaned).toBe(true);
+    expect(custom?.isInterrupted).toBe(true);
     expect(custom?.toolCallId).toBe("tu-o");
   });
 
@@ -1132,7 +1132,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     expect(liveToolCard).toBeDefined();
     const liveCustom = liveToolCard!.metadata?.custom as Record<string, unknown>;
     expect(liveCustom?.toolCallId).toBe("tu-p");
-    expect(liveCustom?.isOrphaned).toBeUndefined();
+    expect(liveCustom?.isInterrupted).toBeUndefined();
   });
 
   test("resume: tool_use with already-matched result NOT orphaned", async () => {
@@ -1159,7 +1159,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     expect(doneToolCard).toBeDefined();
     const doneCustom = doneToolCard!.metadata?.custom as Record<string, unknown>;
     expect(doneCustom?.result).toBe("answer");
-    expect(doneCustom?.isOrphaned).toBeUndefined();
+    expect(doneCustom?.isInterrupted).toBeUndefined();
   });
 });
 

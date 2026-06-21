@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { useT } from "../../i18n";
 import { deriveToolState } from "./tool-state";
 
 export const ToolFallback: ToolCallMessagePartComponent = ({
@@ -9,11 +10,12 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   status,
   ...rest
 }) => {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(false);
   const isRunning = status.type === "running";
   const isError = (rest as Record<string, unknown>).isError === true;
-  const isOrphaned = (rest as Record<string, unknown>).isOrphaned === true;
-  const _toolState = deriveToolState({ result, isRunning, isError, isOrphaned });
+  const isInterrupted = (rest as Record<string, unknown>).isInterrupted === true;
+  const _toolState = deriveToolState({ result, isRunning, isError, isInterrupted });
   const hasArgs = argsText.length > 0 && argsText !== "{}";
   const resultStr =
     typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
@@ -46,13 +48,15 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
           />
         </svg>
         <span className={`text-xs font-medium truncate ${accentColor}`}>{toolName}</span>
-        {isRunning && !isOrphaned ? (
+        {isRunning && !isInterrupted ? (
           <span
             className={`ml-auto h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 ${isError ? "border-red-400/40 border-t-red-400" : "border-cyan-400/40 border-t-cyan-400"}`}
           />
         ) : null}
-        {isOrphaned && !expanded ? (
-          <span className="text-[0.6rem] text-slate-500 ml-auto shrink-0">中断</span>
+        {isInterrupted && !expanded ? (
+          <span className="text-[0.6rem] text-amber-400 ml-auto shrink-0">
+            {t("claude2.interrupted")}
+          </span>
         ) : isError && !expanded ? (
           <span className="text-[0.6rem] text-red-400/70 ml-auto shrink-0">错误</span>
         ) : hasResult && !expanded ? (
@@ -72,9 +76,11 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
               </pre>
             </div>
           ) : null}
-          {isOrphaned ? (
+          {isInterrupted ? (
             <div className={`border-t ${accentDivider} px-3 py-2`}>
-              <span className="text-[0.6rem] text-slate-500">进程已退出，工具未返回结果</span>
+              <span className="text-[0.6rem] text-amber-400">
+                {t("claude2.toolInterruptedHint")}
+              </span>
             </div>
           ) : hasResult ? (
             <div className={`border-t ${accentDivider} px-3 py-2 max-h-48 overflow-y-auto`}>
