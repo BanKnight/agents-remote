@@ -130,6 +130,19 @@ const taskNotification = (
     ...fields,
   }) as unknown as SessionStreamServerMessage;
 
+const systemStatus = (
+  fields: Partial<{
+    permissionMode: string;
+    status: string | null;
+    compact_result: unknown;
+  }>,
+): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "status",
+    ...fields,
+  }) as unknown as SessionStreamServerMessage;
+
 const assistantWithModel = (
   id: string,
   model: string,
@@ -741,6 +754,53 @@ describe("ask-user-question pipeline", () => {
     const custom = askCard?.metadata?.custom as Record<string, unknown>;
     expect(custom.result).toBe('{"Which?":"A"}');
     expect(custom.isError).not.toBe(true);
+  });
+});
+
+describe("system.status pipeline", () => {
+  const hasRawStatusFallback = (rendered: ReturnType<typeof renderChatStream>): boolean =>
+    rendered.some((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return (c?._raw as { subtype?: string } | undefined)?.subtype === "status";
+    });
+
+  test("permissionMode variant renders as a mode-change notice (not a fallback)", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "do it" }]),
+      assistant("a1", [{ type: "text", text: "ok" }]),
+      systemStatus({ status: null, permissionMode: "auto" }),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const notice = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "mode-change",
+    );
+    expect(notice).toBeDefined();
+    const custom = notice?.metadata?.custom as Record<string, unknown>;
+    expect(custom.mode).toBe("auto");
+    // Must NOT also fall through to a raw fallback bubble.
+    expect(hasRawStatusFallback(rendered)).toBe(false);
+  });
+
+  test("compacting variant is skipped (no notice, no fallback)", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "do it" }]),
+      assistant("a1", [{ type: "text", text: "ok" }]),
+      systemStatus({ status: "compacting" }),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const notice = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "mode-change",
+    );
+    expect(notice).toBeUndefined();
+    expect(hasRawStatusFallback(rendered)).toBe(false);
   });
 });
 

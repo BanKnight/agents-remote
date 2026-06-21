@@ -2462,6 +2462,48 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   );
 }
 
+function ModeChangeGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className ?? "h-3 w-3 shrink-0 text-amber-300"}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M7 7h10l-3-3M17 17H7l3 3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+type ModeChangeCustom = {
+  systemMessageType: "mode-change";
+  mode: string;
+};
+
+function ModeChangeNotice({ headIndex }: { headIndex: number }) {
+  const { t } = useT();
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as ModeChangeCustom,
+  );
+  const label = PERMISSION_MODE_LABELS[custom.mode] ?? custom.mode;
+  return (
+    <div className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5">
+      <div className="flex-1 border-t border-amber-700/30" />
+      <ModeChangeGlyph />
+      <span className="shrink-0 whitespace-nowrap text-[0.6rem] font-medium text-amber-400/70">
+        {t("claude2.mode.changed", { mode: label })}
+      </span>
+      <div className="flex-1 border-t border-amber-700/30" />
+    </div>
+  );
+}
+
 // Unified message router: top-level turn rendering and Agent body rendering
 // both go through this. agent-container → recursive AgentContainer. At the
 // top level (renderAbsorbed=false) absorbed children return null — they are
@@ -2482,6 +2524,7 @@ function MessageRouter({
   if (custom?.systemMessageType === "exit-plan-mode") return <ExitPlanModeCard headIndex={index} />;
   if (custom?.systemMessageType === "ask-user-question")
     return <AskUserQuestionCard headIndex={index} />;
+  if (custom?.systemMessageType === "mode-change") return <ModeChangeNotice headIndex={index} />;
   if (!renderAbsorbed && custom?.absorbed === true) return null;
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }

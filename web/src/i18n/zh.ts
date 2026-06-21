@@ -310,6 +310,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.compactInterrupted": "压缩已停止",
   "claude2.tasks": "任务",
   "claude2.taskFallback": "任务 #{{id}}",
+  "claude2.mode.changed": "已切换到 {{mode}}",
 
   // ── Attachment subtypes ──────────────────────────────────────────
   "claude2.attachment.plan_mode": "计划模式已激活",

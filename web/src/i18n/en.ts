@@ -310,6 +310,7 @@ export const en = {
   "claude2.compactInterrupted": "Compaction stopped",
   "claude2.tasks": "Tasks",
   "claude2.taskFallback": "Task #{{id}}",
+  "claude2.mode.changed": "Switched to {{mode}}",
 
   // ── Attachment subtypes ──────────────────────────────────────────
   "claude2.attachment.plan_mode": "Plan mode active",

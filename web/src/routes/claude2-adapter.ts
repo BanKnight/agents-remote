@@ -1221,6 +1221,12 @@ export type ChatStreamItem =
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
+  | {
+      kind: "mode-change";
+      mode: string;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
   | { kind: "fallback"; ui: ThreadMessageLike };
 
 // Tool names that spawn a subagent and stream child messages via
@@ -1777,6 +1783,28 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
+      // System.status: 权限模式切换(permissionMode) → 专属提示项；
+      // compact 生命周期 → 跳过（CompactIndicator 拥有）。permissionMode 的
+      // 标量更新由 applyMessageScalarState 负责。
+      if (subtype === "status") {
+        const s = msg as {
+          permissionMode?: string;
+          status?: string | null;
+          compact_result?: unknown;
+        };
+        if (s.status === "compacting" || s.compact_result !== undefined) continue;
+        if (s.permissionMode) {
+          items.push({
+            kind: "mode-change",
+            mode: s.permissionMode,
+            sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+            _rawSnapshots: [msg],
+          });
+          continue;
+        }
+        // 未知 status 变体 → 继续落到下方既有 fallback（保持现状）。
+      }
+
       // Other system messages: fallback.
 
       const ui = messageToThreadLike(msg);
@@ -2179,6 +2207,21 @@ export function renderChatStream(
         messages.push(item.bubble);
         break;
       }
+      case "mode-change": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "mode-change",
+              mode: item.mode,
+            },
+          },
+        });
+        break;
+      }
       case "fallback": {
         messages.push(item.ui);
         break;
@@ -2331,6 +2374,14 @@ export function useClaude2Session(
     ) {
       compactActiveRef.current = true;
       if (compactPhaseRef.current === "compacting") compactPhaseRef.current = "replay";
+      return;
+    }
+
+    // system.status: 权限模式切换的权威实时信号（compact 变体无标量副作用，
+    // 仅由 renderChatStream 跳过）。
+    if (msg.type === "system" && sm.subtype === "status") {
+      const s = msg as { permissionMode?: string };
+      if (s.permissionMode) setPermissionMode(s.permissionMode);
       return;
     }
 
