@@ -1161,10 +1161,17 @@ function RawDebugPopover({
   const rect = anchor?.getBoundingClientRect();
   const maxW = Math.min(window.innerWidth * 0.9, 28 * 16);
   const panelMaxH = Math.min(window.innerHeight * 0.8, 768);
-  // Right-align to button, clamped to viewport
+  // Prefer right-aligning the panel's right edge to the button. When the
+  // button sits near the left edge (short bubbles like brown attachment
+  // notices), right-aligning would clamp to the viewport left and leave the
+  // panel detached far to the right of the button — so fall back to left-
+  // aligning the panel to the button in that case.
+  const btnRight = Math.min(rect?.right ?? window.innerWidth, window.innerWidth - 8);
+  const btnLeft = Math.max(8, rect?.left ?? 8);
+  const rightAlignedLeft = btnRight - maxW;
   const left = Math.max(
     8,
-    Math.min(rect?.right ?? window.innerWidth, window.innerWidth - 8) - maxW,
+    Math.min(rightAlignedLeft >= 8 ? rightAlignedLeft : btnLeft, window.innerWidth - 8 - maxW),
   );
 
   // Position below button when there's room; flip above when not.
