@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
+  Fragment,
   useCallback,
   useContext,
   useEffect,
@@ -29,8 +30,8 @@ import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { closeAgentSession, getAgentSession } from "../api/client";
-import { useT } from "../i18n";
-import { formatTokenCount } from "../lib/utils";
+import { useT, type TranslationKey } from "../i18n";
+import { formatDuration, formatTokenCount } from "../lib/utils";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { defaultConsoleSection, consoleSections } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -47,6 +48,7 @@ import {
   Claude2BridgeContext,
   useClaude2Session,
   deriveStatus,
+  mapTurnStatusTone,
   resolveAutoPermissionMode,
   type AgentContainerStatus,
   type AgentTailStats,
@@ -54,6 +56,8 @@ import {
   type PermissionUpdate,
   type RetryInfo,
   type TaskInfo,
+  type TurnStats,
+  type TurnStatusTone,
 } from "./claude2-adapter";
 import type { Claude2FileHistorySnapshot } from "@agents-remote/shared";
 
@@ -758,6 +762,62 @@ function MarkdownString({ text }: { text: string }) {
   );
 }
 
+// tone → localized status word (shown first, colored) for the turn-end footer.
+const TURN_STATUS_LABEL: Record<TurnStatusTone, TranslationKey> = {
+  completed: "claude2.turnStatus.completed",
+  interrupted: "claude2.turnStatus.interrupted",
+  maxTurns: "claude2.turnStatus.maxTurns",
+  error: "claude2.turnStatus.error",
+  rateLimited: "claude2.turnStatus.rateLimited",
+  hookStopped: "claude2.turnStatus.hookStopped",
+  toolDeferred: "claude2.turnStatus.toolDeferred",
+};
+
+// tone → status-word color. Cost/tokens/duration stay muted slate.
+const TURN_STATUS_COLOR: Record<TurnStatusTone, string> = {
+  completed: "text-emerald-400",
+  interrupted: "text-amber-400",
+  maxTurns: "text-amber-400",
+  error: "text-red-400",
+  rateLimited: "text-amber-400",
+  hookStopped: "text-amber-400",
+  toolDeferred: "text-slate-400",
+};
+
+// Compact caption under the turn's final assistant bubble summarizing what the
+// turn cost: [status word] · N turns · $cost · tokens↓/↑ · duration. Sourced
+// from the `result` message's turnStats (live-only — result isn't in JSONL).
+function TurnStatsFooter({ stats }: { stats: TurnStats }) {
+  const { t } = useT();
+  const tone = mapTurnStatusTone(stats.terminalReason, stats.subtype);
+
+  const tailParts: string[] = [];
+  if (typeof stats.numTurns === "number")
+    tailParts.push(t("claude2.turn.turns", { count: stats.numTurns }));
+  if (typeof stats.totalCostUsd === "number") tailParts.push(`$${stats.totalCostUsd.toFixed(2)}`);
+  const tokenBits: string[] = [];
+  if (typeof stats.inputTokens === "number")
+    tokenBits.push(`${formatTokenCount(stats.inputTokens)}↓`);
+  if (typeof stats.outputTokens === "number")
+    tokenBits.push(`${formatTokenCount(stats.outputTokens)}↑`);
+  if (tokenBits.length > 0) tailParts.push(tokenBits.join(" "));
+  if (typeof stats.durationMs === "number") tailParts.push(formatDuration(stats.durationMs));
+
+  if (!tone && tailParts.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6rem] text-slate-500">
+      {tone ? <span className={TURN_STATUS_COLOR[tone]}>{t(TURN_STATUS_LABEL[tone])}</span> : null}
+      {tailParts.map((p, i) => (
+        <Fragment key={i}>
+          <span aria-hidden>·</span>
+          <span>{p}</span>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
 function AssistantChatBubble() {
   const message = useMessage();
   const isEmpty =
@@ -765,6 +825,7 @@ function AssistantChatBubble() {
   const msgStatus = (message as { status?: { type?: string } }).status;
   const isStreaming = msgStatus?.type === "running";
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
+  const turnStats = custom?.turnStats as TurnStats | undefined;
   const { t } = useT();
   const [fullscreen, setFullscreen] = useState(false);
   const liveThinkingTokens = useContext(LiveThinkingTokensContext);
@@ -828,6 +889,7 @@ function AssistantChatBubble() {
       </AuiIf>
       <SyntheticBodyView />
       <ApiErrorAttachments />
+      {turnStats ? <TurnStatsFooter stats={turnStats} /> : null}
     </>
   );
 

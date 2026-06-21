@@ -337,6 +337,14 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.fileSnapshot.incremental": "增量",
   "claude2.fileSnapshot.full": "完整",
   "claude2.fileSnapshot.noTrackedFiles": "无追踪文件",
+  "claude2.turn.turns": "{{count}} 轮",
+  "claude2.turnStatus.completed": "完成",
+  "claude2.turnStatus.interrupted": "已中断",
+  "claude2.turnStatus.maxTurns": "轮次上限",
+  "claude2.turnStatus.error": "出错",
+  "claude2.turnStatus.rateLimited": "限流",
+  "claude2.turnStatus.hookStopped": "Hook 拦截",
+  "claude2.turnStatus.toolDeferred": "工具延迟",
 
   // ── Attachment subtypes ──────────────────────────────────────────
   "claude2.attachment.plan_mode": "计划模式已激活",

@@ -934,6 +934,50 @@ export function applyToolLifecycle(
   return { messages: changed ? next : messages, changed };
 }
 
+// Map the CLI's terminal_reason (authoritative turn-termination signal) to a
+// display tone for the turn-end footer. When terminal_reason is unset (local
+// slash command, or external budget/retry interrupt between yields) fall back
+// to the coarse result subtype, then null — the footer still shows stats, just
+// without a status word. terminal_reason enum confirmed from CLI v2.1.160.
+export function mapTurnStatusTone(
+  terminalReason?: string | null,
+  subtype?: string | null,
+): TurnStatusTone | null {
+  switch (terminalReason ?? undefined) {
+    case "completed":
+      return "completed";
+    case "aborted_streaming":
+    case "aborted_tools":
+      return "interrupted";
+    case "max_turns":
+      return "maxTurns";
+    case "model_error":
+    case "image_error":
+    case "prompt_too_long":
+      return "error";
+    case "blocking_limit":
+    case "rapid_refill_breaker":
+      return "rateLimited";
+    case "stop_hook_prevented":
+    case "hook_stopped":
+      return "hookStopped";
+    case "tool_deferred":
+      return "toolDeferred";
+  }
+  switch (subtype ?? undefined) {
+    case "interrupted":
+      return "interrupted";
+    case "error":
+    case "error_max_turns":
+    case "error_during_execution":
+      return "error";
+    case "success":
+      return "completed";
+    default:
+      return null;
+  }
+}
+
 type RawByUuid = Map<string, SessionStreamServerMessage>;
 
 function findBubbleForRawUuid(
@@ -1203,6 +1247,31 @@ export type NormalizedPart =
       };
     };
 
+// Per-turn statistics lifted from the `result` message. All fields optional —
+// Pass 1 only carries raw values extracted from the wire; render/word decisions
+// (terminal_reason → status tone) happen in Pass 2 / the component.
+export type TurnStats = {
+  terminalReason?: string;
+  subtype?: string;
+  numTurns?: number;
+  totalCostUsd?: number;
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+};
+
+// Display tones terminal_reason collapses into (finer than subtype, coarser
+// than the raw 12-value enum). Used by mapTurnStatusTone + the footer.
+export type TurnStatusTone =
+  | "completed"
+  | "interrupted"
+  | "maxTurns"
+  | "error"
+  | "rateLimited"
+  | "hookStopped"
+  | "toolDeferred";
+
 export type ChatStreamItem =
   | {
       kind: "assistant";
@@ -1264,8 +1333,12 @@ export type ChatStreamItem =
       // Turn-end marker: emitted for every `result` message (success /
       // interrupted / error). Renders no bubble — only records a turn
       // boundary so applyToolLifecycle can mark unresolved tools interrupted.
+      // turnStats carries the per-turn cost/token/duration/terminal_reason
+      // lifted from the result message (Pass 2 stamps it onto the turn's last
+      // assistant bubble for the TurnStatsFooter).
       kind: "turn-end";
       subtype?: string;
+      turnStats?: TurnStats;
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | { kind: "fallback"; ui: ThreadMessageLike };
@@ -1855,10 +1928,44 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
     // ═══ Result (turn end) ═══
     if (msg.type === "result") {
-      const resultMsg = msg as { is_error?: boolean; result?: string; subtype?: string };
+      const resultMsg = msg as {
+        is_error?: boolean;
+        result?: string;
+        subtype?: string;
+        terminal_reason?: string;
+        num_turns?: number;
+        total_cost_usd?: number;
+        duration_ms?: number;
+        usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_input_tokens?: number;
+        };
+      };
+      // Lift per-turn stats off the result message. Pass 1 carries raw values
+      // only — the terminal_reason → status-tone mapping is a render decision,
+      // made in mapTurnStatusTone / the footer component.
+      const usage = resultMsg.usage;
+      const turnStats: TurnStats = {
+        terminalReason: resultMsg.terminal_reason,
+        subtype: resultMsg.subtype,
+        numTurns: typeof resultMsg.num_turns === "number" ? resultMsg.num_turns : undefined,
+        totalCostUsd:
+          typeof resultMsg.total_cost_usd === "number" ? resultMsg.total_cost_usd : undefined,
+        durationMs: typeof resultMsg.duration_ms === "number" ? resultMsg.duration_ms : undefined,
+        inputTokens: usage?.input_tokens,
+        outputTokens: usage?.output_tokens,
+        cacheReadTokens: usage?.cache_read_input_tokens,
+      };
+      const hasStats = Object.values(turnStats).some((v) => v !== undefined);
       // turn-end marker drives tool "interrupted" marking in Pass 2 — emitted
       // for every result (success / interrupted / error), renders no bubble.
-      items.push({ kind: "turn-end", subtype: resultMsg.subtype, _rawSnapshots: [msg] });
+      items.push({
+        kind: "turn-end",
+        subtype: resultMsg.subtype,
+        turnStats: hasStats ? turnStats : undefined,
+        _rawSnapshots: [msg],
+      });
       if (resultMsg.is_error && typeof resultMsg.result === "string") {
         items.push({
           kind: "result-error",
@@ -2269,6 +2376,31 @@ export function renderChatStream(
         break;
       }
       case "turn-end": {
+        // Stamp per-turn stats onto the turn's last assistant bubble (the
+        // footer caption), scoped to this turn's message range so we never
+        // reach across a prior turn boundary. Mirrors applyToolResultsToMessages'
+        // retroactive mutate of an already-emitted assistant message. The
+        // boundary itself is still recorded below for applyToolLifecycle.
+        if (item.turnStats) {
+          const startIdx =
+            turnEndBoundaries.length > 0 ? turnEndBoundaries[turnEndBoundaries.length - 1] : 0;
+          for (let i = messages.length - 1; i >= startIdx; i--) {
+            if (messages[i].role === "assistant") {
+              const prev = messages[i];
+              messages[i] = {
+                ...prev,
+                metadata: {
+                  ...prev.metadata,
+                  custom: {
+                    ...(prev.metadata?.custom as Record<string, unknown> | undefined),
+                    turnStats: item.turnStats,
+                  },
+                },
+              };
+              break;
+            }
+          }
+        }
         // No bubble — record the turn boundary for applyToolLifecycle.
         turnEndBoundaries.push(messages.length);
         break;

@@ -337,6 +337,14 @@ export const en = {
   "claude2.fileSnapshot.incremental": "Incremental",
   "claude2.fileSnapshot.full": "Full",
   "claude2.fileSnapshot.noTrackedFiles": "No tracked files",
+  "claude2.turn.turns": "{{count}} turns",
+  "claude2.turnStatus.completed": "Completed",
+  "claude2.turnStatus.interrupted": "Interrupted",
+  "claude2.turnStatus.maxTurns": "Max turns",
+  "claude2.turnStatus.error": "Error",
+  "claude2.turnStatus.rateLimited": "Rate limited",
+  "claude2.turnStatus.hookStopped": "Hook stopped",
+  "claude2.turnStatus.toolDeferred": "Tool deferred",
 
   // ── Attachment subtypes ──────────────────────────────────────────
   "claude2.attachment.plan_mode": "Plan mode active",

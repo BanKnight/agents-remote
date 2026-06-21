@@ -810,6 +810,18 @@ export type Claude2Result = {
   result?: string;
   is_error?: boolean;
   api_error_status?: number;
+  // Authoritative "why the query loop terminated" (CLI v2.1.160 enum):
+  // completed | aborted_streaming | aborted_tools | max_turns | model_error |
+  // image_error | prompt_too_long | blocking_limit | rapid_refill_breaker |
+  // stop_hook_prevented | hook_stopped | tool_deferred. Unset when the loop
+  // was bypassed (local slash command) or interrupted externally.
+  terminal_reason?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
 };
 
 // Claude CLI --permission-prompt-tool stdio routes permission prompts

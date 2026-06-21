@@ -11,6 +11,7 @@ import {
   deriveLiveThinkingTokens,
   deriveStatus,
   extractTaskOps,
+  mapTurnStatusTone,
   hasToolUseNamed,
   messageToThreadLike,
   deriveQueueSource,
@@ -2793,7 +2794,7 @@ describe("renderChatStream", () => {
     const custom = divider.metadata?.custom as Record<string, unknown>;
     expect(custom?.systemMessageType).toBe("compact-boundary");
     expect(custom?.compactText).toContain("手动");
-    expect(custom?.compactText).toContain("50,000");
+    expect(custom?.compactText).toContain("50K");
   });
 
   test("session-init item renders a summary bubble", () => {
@@ -2911,5 +2912,165 @@ describe("normalizeAttachmentTaskStatus", () => {
   });
   test("maps unknown status to running", () => {
     expect(normalizeAttachmentTaskStatus("unknown")).toBe("running");
+  });
+});
+
+// ── Turn-end footer stats ──────────────────────────────────────────────
+// result carries num_turns / total_cost_usd / duration_ms / usage /
+// terminal_reason. Pass 1 lifts them onto the turn-end item; Pass 2 stamps
+// them as metadata.custom.turnStats on the turn's last assistant bubble.
+
+const resultWithStats = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
+  ({
+    type: "result",
+    subtype: "success",
+    num_turns: 43,
+    total_cost_usd: 2.621,
+    duration_ms: 60732,
+    usage: {
+      input_tokens: 405532,
+      output_tokens: 32780,
+      cache_read_input_tokens: 1671424,
+    },
+    terminal_reason: "completed",
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
+
+describe("turn-end footer stats", () => {
+  test("Pass 1 lifts result stats onto the turn-end item", () => {
+    const items = normalizeChatStream([
+      user([{ type: "text", text: "hi" }]),
+      assistant("a1", [{ type: "text", text: "hello" }]),
+      resultWithStats(),
+    ]);
+    const turnEnd = items.find((i) => i.kind === "turn-end") as
+      | ({ kind: "turn-end" } & { turnStats?: Record<string, unknown> })
+      | undefined;
+    expect(turnEnd).toBeDefined();
+    expect(turnEnd?.turnStats).toBeDefined();
+    expect(turnEnd?.turnStats?.numTurns).toBe(43);
+    expect(turnEnd?.turnStats?.totalCostUsd).toBe(2.621);
+    expect(turnEnd?.turnStats?.durationMs).toBe(60732);
+    expect(turnEnd?.turnStats?.inputTokens).toBe(405532);
+    expect(turnEnd?.turnStats?.outputTokens).toBe(32780);
+    expect(turnEnd?.turnStats?.cacheReadTokens).toBe(1671424);
+    expect(turnEnd?.turnStats?.terminalReason).toBe("completed");
+  });
+
+  test("Pass 2 stamps custom.turnStats onto the turn's last assistant bubble", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        user([{ type: "text", text: "hi" }]),
+        assistant("a1", [{ type: "text", text: "hello" }]),
+        resultWithStats(),
+      ]),
+    );
+    const assistantBubble = rendered.find((m) => m.role === "assistant");
+    expect(assistantBubble).toBeDefined();
+    const turnStats = (assistantBubble?.metadata?.custom as Record<string, unknown> | undefined)
+      ?.turnStats as Record<string, unknown> | undefined;
+    expect(turnStats).toBeDefined();
+    expect(turnStats?.numTurns).toBe(43);
+    expect(turnStats?.totalCostUsd).toBe(2.621);
+    expect(turnStats?.terminalReason).toBe("completed");
+  });
+
+  test("stamp targets only the current turn's range (no cross-turn bleed)", () => {
+    // Turn 1 ends, then a new turn 2 with its own assistant + result. The
+    // turn-1 footer must NOT land on the turn-2 bubble and vice versa.
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        user([{ type: "text", text: "t1" }]),
+        assistant("a1", [{ type: "text", text: "one" }]),
+        resultWithStats({ num_turns: 1, total_cost_usd: 0.1 }),
+        user([{ type: "text", text: "t2" }]),
+        assistant("a2", [{ type: "text", text: "two" }]),
+        resultWithStats({ num_turns: 2, total_cost_usd: 0.2 }),
+      ]),
+    );
+    const assistants = rendered.filter((m) => m.role === "assistant");
+    expect(assistants.length).toBe(2);
+    const t1 = (assistants[0]?.metadata?.custom as Record<string, unknown> | undefined)
+      ?.turnStats as Record<string, unknown> | undefined;
+    const t2 = (
+      assistants[assistants.length - 1]?.metadata?.custom as Record<string, unknown> | undefined
+    )?.turnStats as Record<string, unknown> | undefined;
+    expect(t1?.numTurns).toBe(1);
+    expect(t2?.numTurns).toBe(2);
+  });
+
+  test("turn with no assistant bubble in range → no stamp, no crash", () => {
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        user([{ type: "text", text: "hi" }]),
+        // No assistant message before the result.
+        resultWithStats(),
+      ]),
+    );
+    const stamped = rendered.find(
+      (m) => (m.metadata?.custom as Record<string, unknown> | undefined)?.turnStats != null,
+    );
+    expect(stamped).toBeUndefined();
+  });
+
+  test("result carries turnStats.subtype even without numeric stats (status fallback)", () => {
+    const items = normalizeChatStream([
+      user([{ type: "text", text: "hi" }]),
+      assistant("a1", [{ type: "text", text: "hello" }]),
+      result("interrupted"),
+    ]);
+    const turnEnd = items.find((i) => i.kind === "turn-end") as
+      | ({ kind: "turn-end" } & { turnStats?: Record<string, unknown> })
+      | undefined;
+    // subtype is always present on a result → always carried, so the footer
+    // can still show a status word via mapTurnStatusTone's subtype fallback.
+    expect(turnEnd?.turnStats?.subtype).toBe("interrupted");
+    expect(turnEnd?.turnStats?.numTurns).toBeUndefined();
+    expect(turnEnd?.turnStats?.totalCostUsd).toBeUndefined();
+  });
+
+  test("resume (no result messages) → no turnStats anywhere", () => {
+    // JSONL replay carries no `result` messages, so normalizeChatStream emits
+    // no turn-end items and no bubble gets stamped.
+    const rendered = renderChatStream(
+      normalizeChatStream([
+        user([{ type: "text", text: "hi" }]),
+        assistant("a1", [{ type: "text", text: "hello" }]),
+      ]),
+    );
+    const stamped = rendered.find(
+      (m) => (m.metadata?.custom as Record<string, unknown> | undefined)?.turnStats != null,
+    );
+    expect(stamped).toBeUndefined();
+  });
+});
+
+describe("mapTurnStatusTone", () => {
+  test("maps each terminal_reason to its tone", () => {
+    expect(mapTurnStatusTone("completed")).toBe("completed");
+    expect(mapTurnStatusTone("aborted_streaming")).toBe("interrupted");
+    expect(mapTurnStatusTone("aborted_tools")).toBe("interrupted");
+    expect(mapTurnStatusTone("max_turns")).toBe("maxTurns");
+    expect(mapTurnStatusTone("model_error")).toBe("error");
+    expect(mapTurnStatusTone("image_error")).toBe("error");
+    expect(mapTurnStatusTone("prompt_too_long")).toBe("error");
+    expect(mapTurnStatusTone("blocking_limit")).toBe("rateLimited");
+    expect(mapTurnStatusTone("rapid_refill_breaker")).toBe("rateLimited");
+    expect(mapTurnStatusTone("stop_hook_prevented")).toBe("hookStopped");
+    expect(mapTurnStatusTone("hook_stopped")).toBe("hookStopped");
+    expect(mapTurnStatusTone("tool_deferred")).toBe("toolDeferred");
+  });
+
+  test("falls back to subtype when terminal_reason is unset", () => {
+    expect(mapTurnStatusTone(undefined, "interrupted")).toBe("interrupted");
+    expect(mapTurnStatusTone(undefined, "error")).toBe("error");
+    expect(mapTurnStatusTone(undefined, "error_max_turns")).toBe("error");
+    expect(mapTurnStatusTone(undefined, "success")).toBe("completed");
+  });
+
+  test("returns null when neither terminal_reason nor subtype is known", () => {
+    expect(mapTurnStatusTone(undefined, undefined)).toBeNull();
+    expect(mapTurnStatusTone(null, null)).toBeNull();
+    expect(mapTurnStatusTone("some_future_value", "success")).toBe("completed");
   });
 });
