@@ -166,6 +166,7 @@ agents-remote/
 
 - [个人部署配置 Runbook](./runbooks/personal-deployment-configuration.md) — 首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。
 - [E2E Quality Baseline Runbook](./runbooks/e2e-quality-baseline.md) — 如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
+- [Claude2 客户端调试开关 Runbook](./runbooks/claude2-client-debugging.md) — 浏览器运行时调试开关（socket 日志、调试按钮，均默认关闭）的控制范围与切换方法。
 - [Agent 接入调研](./research/agent-access-options.md) — hapi/remodex/Codex/Claude 接入路线、证据追溯和统一协议可能性调研。
 - [Claude CLI stream-json 协议](./research/claude-cli-stream-protocol.md) — CLI stdio 协议完整参考：启动参数、消息类型、system.init 字段、model/permissionMode 权威来源规则、生命周期和集成边界。
 - 数据库参考：当前没有独立数据库 schema；Project 数据模型以 `PROJECTS_ROOT` 目录和 runtime metadata 为主，优先参考 Project/Session 相关规格与架构文档。
