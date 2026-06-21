@@ -324,6 +324,8 @@ export const en = {
   "claude2.tool.edit": "Edit",
   "claude2.tool.skill": "Skill",
   "claude2.tool.task": "Task",
+  "claude2.tool.taskCreate": "New task",
+  "claude2.tool.taskUpdate": "Update task",
   "claude2.tool.webSearch": "Web Search",
   "claude2.tool.webFetch": "Web Fetch",
   "claude2.tool.mcp": "MCP",

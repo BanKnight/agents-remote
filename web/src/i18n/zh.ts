@@ -324,6 +324,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.tool.edit": "编辑",
   "claude2.tool.skill": "技能",
   "claude2.tool.task": "任务",
+  "claude2.tool.taskCreate": "新建任务",
+  "claude2.tool.taskUpdate": "更新任务",
   "claude2.tool.webSearch": "网络搜索",
   "claude2.tool.webFetch": "网络请求",
   "claude2.tool.mcp": "MCP",

@@ -30,11 +30,11 @@ function makeToolRenderer(config: {
     const needsPermission = controlRequestId !== "" && isRunning && !isInterrupted;
     const args = safeParseArgs(argsText);
     const detailText = detail ? detail(args, toolName) : null;
-    const badgeText = badge
-      ? badge(args, toolName)
-      : typeLabel
-        ? t(typeLabel as TranslationKey)
-        : toolName;
+    // A dynamic badge (when defined) wins, but a null result must not erase the
+    // pill — fall back to the i18n type label, then the raw tool name, so every
+    // tool always shows a background badge.
+    const dynamicBadge = badge ? badge(args, toolName) : null;
+    const badgeText = dynamicBadge ?? (typeLabel ? t(typeLabel as TranslationKey) : toolName);
     const hasArgs = argsText.length > 0 && argsText !== "{}";
     const skillContent =
       typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
@@ -332,67 +332,64 @@ export const SkillToolUI = makeToolRenderer({
   },
 });
 
+// Shared body for the task tools — the explanatory description / prompt text.
+// The header carries the type badge + identity (subject / #id); the body only
+// elaborates, so a plain text line is enough (no nested ToolHead).
 function TaskBody({ args }: { args: Record<string, unknown> }) {
-  const { t } = useT();
   const desc =
     typeof args.description === "string"
       ? args.description
       : typeof args.prompt === "string"
         ? args.prompt
-        : typeof args.subject === "string"
-          ? args.subject
-          : "";
-  const taskId = typeof args.task_id === "string" ? args.task_id : undefined;
-  const rawStatus =
-    typeof args.status === "string"
-      ? args.status
-      : typeof args.isCompleted === "boolean"
-        ? args.isCompleted
-          ? "completed"
-          : "running"
-        : undefined;
-  const status: ToolHeadStatus | null =
-    rawStatus === "completed"
-      ? "completed"
-      : rawStatus === "error"
-        ? "error"
-        : rawStatus === "running"
-          ? "running"
-          : null;
-  return (
-    <div className="space-y-1.5">
-      {taskId || status ? (
-        <ToolHead
-          icon="task"
-          badge={t("claude2.tool.task")}
-          detail={taskId ? `#${taskId}` : null}
-          status={status}
-        />
-      ) : null}
-      {desc ? (
-        <div className="text-xs text-slate-300 leading-relaxed break-words">{desc}</div>
-      ) : null}
-    </div>
-  );
+        : "";
+  if (!desc) return null;
+  return <div className="text-xs text-slate-300 leading-relaxed break-words">{desc}</div>;
 }
 
+// Subagent Task tool — spawns a child agent. The subagent type is the
+// meaningful "kind", shown as the badge; falls back to the generic Task label
+// via makeToolRenderer's badge-null fallback when absent.
 export const TaskToolUI = makeToolRenderer({
   icon: "task",
   typeLabel: "claude2.tool.task",
-  detail: (_args, toolName) => toolName,
   badge: (args) => {
     const subagent = typeof args.subagent_type === "string" ? args.subagent_type : undefined;
     return subagent ?? null;
   },
+  detail: (args) => {
+    const desc = typeof args.description === "string" ? args.description.trim() : "";
+    return desc ? desc.slice(0, 80) : null;
+  },
   body: (args) => {
-    const hasContent =
-      typeof args.description === "string" ||
-      typeof args.prompt === "string" ||
-      typeof args.subject === "string" ||
-      typeof args.subagent_type === "string" ||
-      typeof args.task_id === "string";
+    const hasContent = typeof args.description === "string" || typeof args.prompt === "string";
     return hasContent ? <TaskBody args={args} /> : null;
   },
+});
+
+// TaskCreate — adds a row to the todo list. Header shows the new task's
+// subject; the body carries the longer description.
+export const TaskCreateToolUI = makeToolRenderer({
+  icon: "task",
+  typeLabel: "claude2.tool.taskCreate",
+  detail: (args) => {
+    const subject = typeof args.subject === "string" ? args.subject.trim() : "";
+    return subject ? subject.slice(0, 80) : null;
+  },
+  body: (args) => (typeof args.description === "string" ? <TaskBody args={args} /> : null),
+});
+
+// TaskUpdate — mutates a todo row's status. Header shows the target task id.
+export const TaskUpdateToolUI = makeToolRenderer({
+  icon: "task",
+  typeLabel: "claude2.tool.taskUpdate",
+  detail: (args) => {
+    const taskId =
+      (typeof args.taskId === "string" && args.taskId) ||
+      (typeof args.task_id === "string" && args.task_id) ||
+      (typeof args.id === "string" && args.id);
+    return taskId ? `#${taskId}` : null;
+  },
+  body: (args) => (typeof args.description === "string" ? <TaskBody args={args} /> : null),
 });
 
 export const AgentToolUI = makeToolRenderer({
@@ -497,8 +494,8 @@ toolRegistry.set("Edit", EditToolUI);
 toolRegistry.set("MultiEdit", EditToolUI);
 toolRegistry.set("Skill", SkillToolUI);
 toolRegistry.set("Task", TaskToolUI);
-toolRegistry.set("TaskCreate", TaskToolUI);
-toolRegistry.set("TaskUpdate", TaskToolUI);
+toolRegistry.set("TaskCreate", TaskCreateToolUI);
+toolRegistry.set("TaskUpdate", TaskUpdateToolUI);
 toolRegistry.set("Agent", AgentToolUI);
 toolRegistry.set("WebSearch", WebSearchToolUI);
 toolRegistry.set("WebFetch", WebFetchToolUI);
