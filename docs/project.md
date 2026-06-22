@@ -158,6 +158,7 @@ agents-remote/
 - [Project Boundary](./architecture/project-boundary.md) — Project 模块、安全路径解析和下游 project-scoped 能力的长期架构边界。
 - [Session Runtime 架构](./architecture/session-runtime.md) — SessionRegistry、runtime metadata、tmux adapter、HTTP/WS stream 和 transport 边界。
 - [Agent Runtime 架构](./architecture/agent-runtime.md) — Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。协议细节参见 [Claude CLI stream-json 协议](./research/claude-cli-stream-protocol.md)。
+- [Claude2 进程模型与消息回放设计](./design/message-replay.md) — Claude2 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流的管线设计，含 system.init/turn 边界与 reconnect/API 重启时序。
 - [Files 架构](./architecture/file-browser-preview.md) — Files API、safe path 复用、只读 preview union 和文件系统读取边界。
 - [Git Diff 架构](./architecture/git-diff-viewer.md) — Git diff API、Project-safe resolver 复用、只读 Git CLI 命令和 Git DTO 边界。
 - [E2E Quality Baseline 架构](./architecture/e2e-quality-baseline.md) — Playwright + Bun E2E harness、临时环境、真实 tmux/WebSocket smoke 和 artifact 边界。

@@ -1,265 +1,187 @@
-# Claude2 进程持久化与消息回放设计
+# Claude2 进程模型与消息回放设计
 
-本文档定义 Claude2 Agent Session 的进程持久化方案与消息管线架构。
+本文档定义 Claude2 Agent Session 的进程模型与消息管线架构，并与实现保持同步。
 
-## 问题
+> **演进说明**：当前为 Gen 3——直接 `Bun.spawn` 拉起 CLI + 直读 stdout + JSONL 历史缓冲 + 内存 live 缓冲 + 单一 WS 流。它取代了早期的 Gen 2（tmux 进程容器 + `stdout-helper` + turn 文件 + `num_turns` 去重，见 git `7397bd4`→`4336830`）。简化后 CLI 进程存活期不再与 API 解耦，换来更简单的管线；会话状态改由 JSONL 在 `--resume` 时恢复。Gen 2 的机制在末节「已废弃」列出，调试时勿再引用。
 
-当前 Claude2 使用 `Bun.spawn("claude", ...)` 直接启动子进程。当 API 重启时：
-- CLI 子进程被 kill → 进行中的任务丢失
-- 内存 `messageBuffer` 清空 → 重连回放失效
-- 只能靠 `--resume` checkpoint 恢复，中间状态全部丢失
+## 问题与取舍
+
+直接 `Bun.spawn("claude")` 的固有约束：
+
+- API 进程退出 → CLI 子进程随之退出 → 进行中的 turn 被中断（无法像 tmux 方案那样保活）。
+- relay 的内存缓冲丢失 → 重连回放需从持久化来源重建。
+
+**Gen 3 取舍**：放弃 tmux 保活带来的「进程级」持久化，改为「状态级」持久化——CLI 用 `--resume <claudeSessionId>` 从自己的 JSONL 恢复完整历史，API 侧 relay 也从同一份 JSONL 重建历史缓冲。代价是 API 重启丢一个进行中的 turn，收益是管线大幅简化（无 FIFO、无 turn 文件、无 stdout-helper、无 `num_turns` 去重、无 pipe-pane）。
 
 ## 目标
 
-1. CLI 进程存活期与 API 进程解耦（tmux 作为进程容器）
-2. 消息回放不依赖内存 buffer，全部基于文件系统
-3. 服务端对客户端表现为**单一数据源**（一个 WebSocket），客户端不做多源拼接
-4. 服务端内部以 JSONL + turn 文件 + 实时流三者为完整数据集，API 对数据完整性负责
+1. 服务端对客户端表现为**单一数据源**（一个 WebSocket），客户端不做多源拼接。
+2. 消息回放基于**文件系统（JSONL）+ 内存缓冲**，不依赖跨重启的内存状态。
+3. API 对一个 session 的数据完整性负责：历史（JSONL）+ 实时（stdout）由 API 整合后统一推送。
 
 ## 核心设计原则
 
 ### 单一数据源
 
 ```
-Session Message Pipeline (session 级别，非 connection 级别):
-  JSONL 文件 (CLI 归档) ─┐
-  turn 文件 (stdout 缓冲) ─┼→ API 整合 → 单条 WS 流 → 所有 subscriber
-  实时 pipe-pane  ────────┘
-
-多个 WebSocket 连接 → 订阅同一 session pipeline → 各自拿到相同的历史 + 实时消息
+Session Message Pipeline（session 级别，非 connection 级别）:
+  JSONL 文件（CLI 归档，完整历史） ─┐
+  CLI stdout（实时输出）          ─┴→ relay 整合 → 单条 WS 流 → 所有 subscriber
 ```
 
-**不被允许的模式**：客户端分别调用 REST `/messages` 拿 JSONL + WS 拿 turn 文件回放 + WS 拿实时流，然后自行拼接去重。
+多个 WebSocket 连接订阅同一 session pipeline，各自拿到相同的 历史 + 实时消息。
 
-### Session 级别重建
+**禁止模式**：客户端分别调用 REST `/messages` 拿 JSONL + WS 拿实时流然后自行拼接去重。
 
-重建 (JSONL 加载、turn 文件消费、进入实时) 发生在 **session runtime 被激活时**，不是每个 WebSocket 连接时。
+### session 级重建
 
-触发时机：
-- API 启动后恢复已有 session
-- `ensureRunning` 发现 tmux session 存活但 API 端无状态
+relay 随进程 spawn 一起创建并 `activate()`（`claude2-runtime.ts` `spawnAndStart`），不是每个 WebSocket 连接时。激活时若该 session 有 `claudeSessionId`（resume），从 JSONL 加载历史到 `historyLines`；否则历史为空。之后每个新 WebSocket 连接直接订阅已有 pipeline。
 
-每个新 WebSocket 连接直接订阅已有 pipeline，拿到的消息从 session buffer 开始。
+### 两层缓冲
 
-### 数据完整性职责
+relay 持有两个字符串数组缓冲：
 
-API 视角下，一个 session 的完整数据由三部分组成：
+| 缓冲 | 来源 | 填充时机 | 上限 | 语义 |
+|---|---|---|---|---|
+| `historyLines` | CLI 的 session JSONL（`~/.claude/projects/.../<uuid>.jsonl`） | `activate()` 一次性 `readFileSync` 读入（仅 resume 会话） | 无（全量历史） | 已归档的完整过去 |
+| `liveLines` | CLI 的 stream-json stdout | CLI 跑 turn 时 `handleStdoutLine()` 逐行 push | 5000 行（`slice(-5000)`） | API 存活期间捕获的实时输出 |
 
-| 层 | 来源 | 含义 | 何时出现 |
-|---|------|------|---------|
-| JSONL | CLI `~/.claude/projects/.../xxx.jsonl` | CLI 自行维护的归档，完整消息 | turn 完成后 CLI 写入 |
-| turn 文件 | `stdout-helper` 输出 | stdout 还未进入 JSONL 的缓冲 | 正在输出的内容 |
-| 实时流 | pipe-pane + Unix socket | 当前正在输出的 raw stdout | 一直连接时 |
+二者是**时间上的前后衔接**：历史（JSONL，已落盘的过去）→ live（stdout，正在输出）。
 
-三者的关系是**时间上的前后衔接**：
-```
-已归档的过去 (JSONL) → 已输出但未归档的中间态 (turn 文件) → 正在输出的现在 (pipe-pane)
-```
+> ⚠️ **一致性前提**：`historyLines` 在 activate 时一次性定格，之后不再增长；CLI 之后写入 JSONL 的新内容只会出现在 `liveLines` 里（stdout 实时捕获）。所以同一行不会同时进两个缓冲，relay 不需要去重。副作用：一个**全新** session（初始无 `claudeSessionId`，JSONL 从不重读）在单次长驻 API 生命期里，早于 `liveLines` 5000 行上限的消息只留在 JSONL、不在 relay——直到下次 API 重启 `--resume` 时才作为 history 补回。
 
-API 的责任：
-1. 读取 turn 文件内容
-2. 对比 JSONL，确认是否已归档
-3. JSONL 已有 → 删除 turn 文件（数据不丢，turn 使命完成）
-4. JSONL 还没有 → 保留 turn 文件，内容需要发给客户端
-5. turn 文件发完后，无缝衔接到实时流
-
-### Turn 文件删除条件
-
-**唯一依据：JSONL 是否已包含对应数据。**
-
-- 对比 turn 文件中 result 的 `num_turns` 与 JSONL 最后一条 result 的 `num_turns`
-- `turn.num_turns ≤ jsonl.last_num_turns` → 已归档，删除 turn 文件
-- 与"是否已发给客户端"无关
-
-正常运行时（API 持续在线消费），turn 文件个数常态为 0——因为 API 实时消费，每个 turn 完成后很快被 JSONL 归档，turn 文件随即被删。turn 文件只在 API 断开时堆积。
-
-## 整体数据流
+## 整体数据流（Gen 3）
 
 ```
-CLI stdout
+API 启动 / 新 session
   │
-  ├──→ stdout-helper ──→ turn 文件 (按 result 边界切分，max 3 个已完成)
-  │                           │
-  │                           └── API poll/read ──→ 对比 JSONL ──→ emit / delete
+  ├─ spawnAndStart()
+  │    ├─ spawnClaudeDirect():  Bun.spawn(claude --output-format stream-json ...)
+  │    │     stdin=pipe  stdout=pipe  stderr=pipe  cwd=projectPath
+  │    ├─ new Claude2SessionRelay → relay.activate()
+  │    │     └─ readHistoryFromJsonl() → historyLines（resume 才读）
+  │    ├─ readStdout(): 读 proc.stdout 行流 → captureSystemInit + relay.handleStdoutLine
+  │    └─ pipeStderrToFile(): proc.stderr → runDir/claude2-stderr/{session}.log
   │
-  ├──→ CLI JSONL (~/.claude/projects/.../xxx.jsonl) ← CLI 自身归档
-  │         │
-  │         └── API read ──→ 历史基线 ──→ emit
+  ├─ 浏览器 WS 连接 → stream() → relay.addSubscriber(onData)
+  │    ├─ emit: session_init{resume}
+  │    ├─ emit: history_start → historyLines 逐行 → history_end
+  │    ├─ emit: live_start    → liveLines 逐行   → live_end
+  │    └─ 注册 subscriber，之后 broadcast() 实时推送
   │
-  └──→ pipe-pane + socat → Unix socket → API ──→ 实时 emit
+  └─ CLI 持续输出 → handleStdoutLine() → push liveLines(cap 5000) + broadcast → 所有 subscriber
 ```
 
-## stdout-helper
+`history_start/end`、`live_start/end` 是发给客户端的 batch marker；在 `claude2-stream.ts` 的 `createBatchEmitter` 里，两个 batch 的数据行被切成 ~256KB 块、各自 `gzipSync` 成独立二进制帧发出（详见 [Claude2 Replay 性能](../research/claude2-replay-performance.md)）。
 
-### 职责
+## 进程模型
 
-位于 CLI stdout 与文件系统之间：**检测 result 行 → 切换输出文件**。无缓冲、无消息解析、无状态管理。
+### spawn
 
-### 行为
-
-```
-counter = 0
-current_file = "turn_000.jsonl"
-
-for each line from stdin:
-    if line is empty: continue
-    appendFileSync(current_file, line + "\n")
-
-    if line contains {"type":"result"}:
-        counter++
-        current_file = f"turn_{counter:03d}.jsonl"
-        deleteOldestCompleted()  // 如果完成文件 > 3，删最旧的
-```
-
-### 关键决策
-
-- **按 result 切分**：system.init 归属明确，多轮边界可靠
-- **只追加、不截断**：helper 不做消息解析或去重
-- **每个 turn 一个文件**：已完成的有 result 结尾，进行中的没有
-- **最多保留 3 个已完成文件**：helper 在切换文件后清理，同步操作避免竞态
-- **使用 `appendFileSync`**：确保文件在 `readdirSync` 之前已落盘
-
-### 文件布局
+`spawnClaudeDirect()`（`claude2-runtime.ts`）用 `Bun.spawn` 直接拉起 CLI，argv 数组（非 shell 拼接）：
 
 ```
-/run/user/1000/agents-remote/claude2-turn/{sessionName}/
-  turn_000.jsonl   ← system.init (可能无 result)
-  turn_001.jsonl   ← user_1 + assistant + tool_use + tool_result + result_1 ✓
-  turn_002.jsonl   ← user_2 + assistant + tool_use + tool_result + result_2 ✓
-  turn_003.jsonl   ← user_3 + assistant... (进行中，无 result)
+claude --output-format stream-json --input-format stream-json \
+       --verbose --permission-prompt-tool stdio \
+       [--permission-mode X] [--model Y] [--resume <claudeSessionId>]
 ```
 
-## tmux 集成
+- `stdin/stdout/stderr` 全部 pipe，由 API 直接读写。
+- `--resume <claudeSessionId>`：有历史时恢复，CLI 从自己 JSONL 加载状态。
+- 进程元数据（`Claude2Process`）记 model/permissionMode/claudeSessionId/generation。
 
-### Session 创建
+### generation 守卫
 
-```
-tmux new-session -d -s {runtimeKey} -c {projectPath} \
-  "mkdir -p {turnDir} && \
-   rm -f {fifoPath} && \
-   mkfifo {fifoPath} && \
-   exec 3<> {fifoPath} && \
-   claude --output-format stream-json --input-format stream-json \
-          --verbose --permission-prompt-tool stdio \
-          --model {model} --permission-mode {permissionMode} \
-          < {fifoPath} \
-          2>> {stderrLog} | \
-   bun run stdout-helper.ts {turnDir}"
-```
+每次 spawn 递增 `nextGeneration`。`readStdout` 把 generation 闭包进读取循环，遇到非当前 generation 立即 return。`switchModel`/`switchPermissionMode` 重启时旧 stdout reader 自动停止，避免把旧进程输出灌进新 relay。
 
-- `mkfifo` 创建 stdin 命名管道
-- `exec 3<>` 以读写模式打开 FIFO 作为 keeper——API 断开时 CLI 不会看到 EOF
-- stderr 重定向到日志文件（调试用）
-- stdin 写入通过 `appendFile(fifoPath, data)` 完成
+### stdin / stderr
 
-### 实时流
+- `write()` 直接 `proc.stdin.write(data)`；上游 `claude2-stream.ts` `message()` 把客户端 JSON 加 `\n` 后写入。
+- `pipeStderrToFile()` 把 `proc.stderr` 异步追加到 `runDir/claude2-stderr/<sessionName>.log`（8KB 缓冲），不阻塞主循环，仅供调试。
 
-复用 `pipe-pane + socat + Unix socket`（与 TmuxRuntime 共享 `TmuxSharedPipe`）。
+## SessionRelay（服务端核心）
 
-### 切换 model / permissionMode
-
-kill tmux session → `spawnClaudeInTmux` with `--resume {claudeSessionId}` + 新参数。
-
-## Session Message Pipeline（服务端核心）
-
-### SessionRelay 类
-
-每个 Claude2 session 一个 relay 实例，负责消息管线：
+`Claude2SessionRelay`（`session-relay.ts`），每 session 一个实例：
 
 ```
-class Claude2SessionRelay:
-  - subscribers: Set<callback>
-  - messageBuffer: Message[]  // 最近的完整消息，新 subscriber 从这里开始
-  - phase: "init" | "replaying_turns" | "live"
+phase: "init" → "active" → "destroyed"
+historyLines: string[]   // activate 时从 JSONL 定格
+liveLines:   string[]    // stdout 实时 push，cap 5000
+subscribers: Set<{onData, onError}>
 
-  activate():
-    1. 加载 JSONL → push 所有完整消息到 buffer → emit 给 subscribers
-    2. 列 turn 文件，遍历:
-       a. 读取文件内容
-       b. 提取最后一条 result 的 num_turns
-       c. 对比 JSONL 最后一条 result 的 num_turns
-       d. 如果已覆盖 → 删除文件
-       e. 如果未覆盖 → emit 文件内容给 subscribers
-          - 有 result 结尾 → emit 完删除
-          - 无 result 结尾 → 进入 tail 模式 → 读到 result 后删除
-    3. turn 文件全部处理完 → 订阅 pipe-pane → 实时 emit
-    4. phase = "live"
+activate(projectPath, claudeSessionId):
+  if resume && claudeSessionId: historyLines = readHistoryFromJsonl()
+  phase = "active"
 
-  subscribe(callback): 注册 → 如果 buffer 非空，先发送 buffer 内容
-  unsubscribe(callback): 注销
+addSubscriber(onData, onError):
+  emit session_init{resume: startedAsResume}
+  emit history_start{count} → historyLines 逐行 → history_end
+  emit live_start{count}    → liveLines 逐行   → live_end
+  subscribers.add; return { close }
+
+handleStdoutLine(line):       // 由 readStdout 调用
+  liveLines.push(line); capLive(); broadcast(line)
+
+setClaudeSessionId(path, id): 更新 claudeSessionId（ensureRunning 后回填，不重读 JSONL）
+injectLine(line): broadcast only（不缓冲，用于注入合成消息）
 ```
 
-### 多 subscriber 处理
+### 多 subscriber
 
-1. **第一个 subscriber 连接** → relay.activate() → 历史 + 实时
-2. **后续 subscriber 连接** → relay.subscribe() → 从 buffer 拿已有消息 → 接上实时流
-3. **所有 subscriber 断开** → relay 保持运行（tmux session 仍在），buffer 保留最近 N 条
+1. 第一个连接 → `stream()` → 复用/建 relay + `activate()` → 历史 + 实时。
+2. 后续连接 → 复用同一 relay + `addSubscriber()` → 拿到 `historyLines + liveLines` → 接实时广播。
+3. 全部断开 → relay 保留（进程仍在），缓冲留存；进程退出或 `close()` 才 `destroy()`。
 
-## API 端实现
+## system.init 与 turn 边界
 
-### claude2-runtime.ts
-
-| 方法 | 行为 |
-|------|------|
-| `spawnClaudeInTmux(...)` | 构建 shell 命令 → `tmux new-session -d` |
-| `startAgent(metadata)` | 调用 spawnClaudeInTmux → detectSystemInit |
-| `ensureRunning(...)` | `tmux has-session` → 不存在则 spawn |
-| `exists(sessionName)` | 内存 + `tmux has-session` |
-| `close(sessionName)` | kill tmux + 清理 FIFO + 清理 turn dir |
-| `write(sessionName, data)` | `appendFile(fifoPath, data)` |
-| `stream(sessionName, onData, onError, onReplayEnd?)` | 交给 SessionRelay 处理 |
-| `switchModel / switchPermissionMode` | kill tmux → spawn with --resume + 新值 |
-
-### claude2-stream.ts
-
-- 不再区分 replay_start / replay_end
-- WS open → subscribe session relay → 所有消息通过 relay 推送
-- WS message → write to FIFO (不变)
-- 去掉 `getBufferedCount` 的 replay 前置逻辑
-
-### index.ts
-
-- `new Claude2Runtime(runDir)` — 传入 runDir
-
-## 前端变更
-
-### claude2-adapter.ts
-
-- **移除** `replayActiveRef` 及 `replay_start`/`replay_end` 处理
-- **移除** 用户消息过滤中关于 replay 状态的条件判断
-- 所有消息通过单一 WS 管道进入 state，无需区分来源
+- **system.init 捕获**：两路——`claude2-runtime.ts` `captureSystemInitFromLine`（写进程元数据 + `onSystemInit` 回调）；`claude2-stream.ts` realtime 分支（捕获 claudeSessionId/model 写 registry）。`system.init` 与 `result` 都是 **stdout 实时消息，不写入 JSONL**（见 [CLI stream-json 协议](../research/claude-cli-stream-protocol.md) 持久化表）。
+- **turn 边界**：持久化 JSONL 里 turn 尾是 `assistant.message.stop_reason === "end_turn"`，**不是** `result`（result 仅在 live 流）。resume 回放的 turn-end 由客户端 `isResume` 标志推导（`applyToolLifecycle` 对所有未收 tool_result 的工具无条件标 interrupted），不依赖 result 边界。
 
 ## 正常运行时序
 
 ```
-1. CLI 输出 assistant chunk → stdout-helper 写入 turn_001
-2. API tailFile 检测到新行 → emit 给 subscribers
-3. CLI 输出 result → stdout-helper 关闭 turn_001，开启 turn_002
-4. API 检测到 result → emit → 读取 JSONL → 发现 num_turns=1 已归档 → 删除 turn_001
-5. 目录回到 0 文件（或只有 turn_002 空文件）
+1. 浏览器 WS open → ensureRunning（进程已在则复用）→ stream() → addSubscriber
+2. relay 发 session_init → history（resume 时全量 JSONL）→ live（当前 liveLines）
+3. CLI 输出 assistant chunk → readStdout → handleStdoutLine → broadcast → 浏览器实时收到
+4. CLI 输出 result（turn 结束）→ 同上；claude2-stream 注入 ended
+5. CLI 把该 turn 写入 JSONL（归档）→ relay 不重读 JSONL，故不影响已发出的 live
 ```
 
-## 重连时序
+## 重连 / API 重启时序
 
 ```
-1. 第一个 WebSocket 连接 → ensureRunning (tmux 已存在，跳过)
-2. relay.activate():
-   a. 加载 JSONL → 客户端收到完整历史
-   b. 列 turn 文件 → 3 个文件堆积（API 断开期间 helper 持续写入）
-      - turn_002: result_2, num_turns=2 → JSONL 最后 num_turns=1 → 未覆盖 → emit → 等待...
-      - turn_003: result_3, num_turns=3 → emit → 等待...
-      - turn_004: in-progress → emit + tail
-   c. emit 完 → pipe-pane 订阅 → 实时流
-3. 后续 subscriber 连接 → 从 relay buffer 拿消息 → 接实时
+API 重启：
+  - CLI 子进程退出（Bun.spawn 随父进程）→ 进行中的 turn 丢失
+  - relay 内存（historyLines/liveLines）清空
+  - session JSONL 仍在磁盘，CLI 已归档的 turn 完整保留
+
+浏览器下次连接 → ensureRunning：
+  - 进程不在 → spawnAndStart（--resume claudeSessionId）→ CLI 从 JSONL 恢复
+  - relay.activate → historyLines = 全量 JSONL
+  - 浏览器拿到完整历史；上一个未完成 turn 以"被中断"状态呈现（isResume 标 interrupted）
 ```
 
-## 与旧方案对比
+## API 端职责对照
 
-| | 旧：Bun.spawn + 内存 buffer | 新：tmux + turn 文件 + SessionRelay |
-|------|-----------|-----------------|
-| API 重启安全 | ✗ 进程挂、buffer 丢 | ✓ tmux 保活、文件落盘 |
-| 多客户端 | 各自独立 stream() | ✓ 共享 session relay |
-| 数据一致性 | REST + WS 两个入口，客户端拼接 | ✓ 服务端单一管道 |
-| 磁盘占用 | 无 | ~1MB (正常 0 文件，异常堆积 ≤3 个) |
-| 去重职责 | 客户端自己处理 | ✓ 服务端通过 JSONL 对比保证 |
-| replay 协议 | replay_start/end 暴露给前端 | ✓ 内部消化，前端无感知 |
+| 方法（`claude2-runtime.ts`） | 行为 |
+|---|---|
+| `spawnClaudeDirect()` | argv 数组 → `Bun.spawn`，全 pipe |
+| `startAgent(metadata)` / `ensureRunning()` | 复用或 spawn + 建 relay + 读 stdout |
+| `write(session, data)` | `proc.stdin.write(data)` |
+| `stream(session, onData, onError)` | 取/建 relay + `addSubscriber` |
+| `switchModel` / `switchPermissionMode` | `restartWith`：destroy relay + kill proc + spawn with `--resume` + 新参数 |
+| `readStdout()` | 读 `proc.stdout` 行流，generation 守卫，喂 relay |
+| `close(session)` | kill proc + `relay.destroy()` |
+
+`claude2-stream.ts`：WS open → `stream()` 订阅 relay；`createBatchEmitter` 在 relay 的 onData 外层做 batch 压缩/分块 + system.init 捕获 + result→ended 注入。WS message → `runtime.write()`。
+
+## 已废弃的旧机制（Gen 2，勿再引用）
+
+以下在当前代码中**已不存在**，调试时不要再去找：
+
+- tmux 进程容器（`spawnClaudeInTmux`）、`mkfifo` FIFO stdin
+- `stdout-helper.ts`、`turn_XXX.jsonl` / `claude2-turn/` 目录
+- turn 文件按 `num_turns` 与 JSONL 去重
+- pipe-pane + socat + Unix socket 实时流
+- relay 的 `messageBuffer` / `replaying_turns` 阶段
+- "replay_start/end 内部消化，前端无感知"（现在是 `history_start/live_start` marker，前端感知）
