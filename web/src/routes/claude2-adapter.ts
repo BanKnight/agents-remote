@@ -14,6 +14,7 @@ import {
   measureFrom,
   measureSince,
   peekMark,
+  recordSample,
   reportArrival,
   resetArrival,
   tickArrival,
@@ -2869,7 +2870,13 @@ export function useClaude2Session(
     compactActiveRef.current = false;
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
-  }, [initialModel, initialPermissionMode]);
+    // NOTE: this callback never reads initialModel/initialPermissionMode (the
+    // initial values are applied by the dedicated effects below), so its deps
+    // must be empty. Listing them here made the TanStack Query resolve
+    // (detail.data undefined → string on mount) change this callback's identity,
+    // which re-triggered the WebSocket effect mid-replay — tearing the connection
+    // down and reconnecting (historyStart=2, inflated historyRecv).
+  }, []);
 
   // Countdown timer for retry
   useEffect(() => {
@@ -3047,17 +3054,61 @@ export function useClaude2Session(
     }
 
     const socket = new WebSocket(url);
+    // Receive the gzipped history/live replay batches as ArrayBuffer so they can
+    // be detected via `instanceof ArrayBuffer` and decompressed before buffering.
+    socket.binaryType = "arraybuffer";
     socketRef.current = socket;
 
     socket.onopen = () => {
       console.log("[claude2-adapter] ws open");
     };
 
-    socket.onmessage = (event) => {
+    const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
+      const stream = new Response(buf).body!.pipeThrough(new DecompressionStream("gzip"));
+      return await new Response(stream).text();
+    };
+
+    // Binary frame = one gzipped history/live replay batch. Decompress and push
+    // into the currently-open batch buffer. The text branch in handleFrame still
+    // buffers per-row text frames, which is how the server's gzip-failure
+    // fallback is delivered — the client needs no explicit fallback switch.
+    const handleBinaryBatch = async (buf: ArrayBuffer) => {
+      const t0 = performance.now();
+      const text = await decompressGzip(buf);
+      const target = historyBatchRef.current ?? liveBatchRef.current;
+      const kind = historyBatchRef.current != null ? "history" : "live";
+      if (!target) {
+        console.error(
+          "[claude2-adapter] compressed batch arrived outside a batch window — dropping",
+        );
+        return;
+      }
+      let rows = 0;
+      if (text.length > 0) {
+        for (const line of text.split("\n")) {
+          try {
+            target.push(JSON.parse(line) as SessionStreamServerMessage);
+            rows++;
+          } catch {
+            // skip malformed batch line
+          }
+        }
+      }
+      // historyDecompress = client CPU added by compression (DecompressionStream +
+      // per-line parse). historyBlobBytes = compressed wire size. Together with
+      // historyRecv: transfer ≈ historyRecv − historyDecompress.
+      recordSample(`${kind}Decompress`, performance.now() - t0, rows);
+      recordSample(`${kind}BlobBytes`, 0, buf.byteLength);
+    };
+
+    // Synchronous handling for text frames (control markers, real-time rows, and
+    // the server's per-row gzip-failure fallback). Kept synchronous so latency
+    // and the text-only test paths are unchanged when no blob is in flight.
+    const handleTextFrame = (event: MessageEvent) => {
       if (cancelled) return;
       // Arrival probe: while a history batch is open, time each frame's arrival
       // (inter-arrival gap) and processing (parse+dispatch+push) so the report can
-      // separate network wait from client work. See resetArrival/reportArrival.
+      // separate network work from client work. See resetArrival/reportArrival.
       const trackArrival = isPerfTraceEnabled() && historyBatchRef.current != null;
       const arriveMs = trackArrival ? performance.now() : 0;
       try {
@@ -3166,6 +3217,35 @@ export function useClaude2Session(
       } catch {
         // skip
       }
+    };
+
+    // A compressed batch decompresses asynchronously. While a blob is in flight,
+    // route subsequent frames through a serial promise chain so completion order
+    // matches arrival order — otherwise a coalesced history_end would drain the
+    // buffer before the blob's rows land, or a fast live blob could overtake a
+    // slow history blob. When no blob is pending (the common case, and every
+    // text-only path), frames are handled synchronously with no microtask hop.
+    let blobInFlight = false;
+    let chain: Promise<void> = Promise.resolve();
+    socket.onmessage = (event) => {
+      if (cancelled) return;
+      if (event.data instanceof ArrayBuffer) {
+        blobInFlight = true;
+        chain = chain
+          .then(() => handleBinaryBatch(event.data))
+          .catch((e) => console.error("[claude2-adapter] binary batch error", e))
+          .finally(() => {
+            blobInFlight = false;
+          });
+        return;
+      }
+      if (blobInFlight) {
+        chain = chain
+          .then(() => handleTextFrame(event))
+          .catch((e) => console.error("[claude2-adapter] handleFrame error", e));
+        return;
+      }
+      handleTextFrame(event);
     };
 
     socket.onclose = () => {

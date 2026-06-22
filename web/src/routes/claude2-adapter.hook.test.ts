@@ -17,7 +17,7 @@ class MockSocket {
   sent: string[] = [];
   listeners = new Map<string, Array<() => void>>();
   onopen: null | (() => void) = null;
-  onmessage: null | ((event: { data: string }) => void) = null;
+  onmessage: null | ((event: { data: ArrayBuffer | string }) => void) = null;
   onclose: null | (() => void) = null;
   onerror: null | ((event: unknown) => void) = null;
 
@@ -48,6 +48,16 @@ class MockSocket {
 
   emit(data: SessionStreamServerMessage) {
     this.onmessage?.({ data: JSON.stringify(data) });
+  }
+
+  // Emit one gzipped binary frame exactly as the server's createBatchEmitter
+  // does: rows joined with "\n", gzip-compressed, delivered as an ArrayBuffer
+  // (binaryType="arraybuffer" shape). Relies on the host's DecompressionStream
+  // (Bun provides it natively; the test exercises the real decompress path).
+  emitBinary(rows: SessionStreamServerMessage[]) {
+    const text = rows.map((r) => JSON.stringify(r)).join("\n");
+    const gz = Bun.gzipSync(Buffer.from(text));
+    this.onmessage?.({ data: gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength) });
   }
 }
 
@@ -95,6 +105,23 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(result.current.storeAdapter.messages[0]?.role).toBe("assistant");
   });
 
+  test("initialModel/permissionMode arriving async does not reopen the socket", async () => {
+    // The session-detail query resolves after mount: detail.data?.session.model
+    // goes undefined → string. resetSessionState must NOT change identity, or the
+    // WebSocket effect re-runs mid-replay, tears the connection down, reconnects,
+    // and replays twice (historyStart=2, inflated historyRecv).
+    let model: string | undefined;
+    let permissionMode: string | undefined;
+    const { rerender } = renderHook(() => useClaude2Session("proj", "sess", model, permissionMode));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+
+    model = "claude-sonnet-4-6";
+    permissionMode = "default";
+    rerender();
+
+    expect(MockSocket.instances).toHaveLength(1);
+  });
+
   test("empty output batch does not crash or add messages", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
@@ -132,6 +159,54 @@ describe("useClaude2Session websocket lifecycle", () => {
     // assistant(1) + history divider(1 system) = 2
     // (markers are no longer rendered as raw bubbles)
     expect(result.current.storeAdapter.messages).toHaveLength(2);
+  });
+
+  test("compressed history batch decompresses and renders like the text path", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    await act(async () => {
+      socket.emit({ type: "history_start", count: 1 });
+      socket.emitBinary([
+        {
+          type: "assistant",
+          message: { id: "a1", role: "assistant", content: [{ type: "text", text: "hi" }] },
+          session_id: "s1",
+        } as never,
+      ]);
+      socket.emit({ type: "history_end" });
+      socket.emit({ type: "live_start", count: 0 } as never);
+      socket.emit({ type: "live_end" } as never);
+    });
+
+    await waitFor(() => expect(result.current.storeAdapter.messages).toHaveLength(2));
+    expect(result.current.loading).toBe(false);
+  });
+
+  test("compressed live batch decompresses and clears loading", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    await act(async () => {
+      socket.emit({ type: "history_start", count: 0 } as never);
+      socket.emit({ type: "history_end" });
+      socket.emit({ type: "live_start", count: 1 } as never);
+      socket.emitBinary([
+        {
+          type: "assistant",
+          message: { id: "l1", role: "assistant", content: [{ type: "text", text: "live" }] },
+          session_id: "s1",
+        } as never,
+      ]);
+      socket.emit({ type: "live_end" });
+    });
+
+    await waitFor(() => expect(result.current.storeAdapter.messages).toHaveLength(2));
+    expect(result.current.loading).toBe(false);
   });
 
   test("reconnect replays only the missing uuid tail", async () => {

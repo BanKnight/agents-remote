@@ -73,6 +73,14 @@ export function count(label: string): void {
   record({ label, ms: 0 });
 }
 
+/** Record an externally-measured span (e.g. an async decompress the caller timed
+ *  with performance.now around an await). No-op when tracing is off; `size`
+ *  surfaces as `lastSize` in the report. */
+export function recordSample(label: string, ms: number, size?: number): void {
+  if (!isPerfTraceEnabled()) return;
+  record({ label, ms, size });
+}
+
 // ── Inter-arrival probe ─────────────────────────────────────────────────
 // Across a burst of events (e.g. the WS history frames), separates time spent
 // *processing* each event in onmessage from time spent *waiting* for the next

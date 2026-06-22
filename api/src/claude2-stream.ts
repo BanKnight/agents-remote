@@ -20,8 +20,120 @@ export type Claude2WebSocketData = {
 
 type StreamSocket = {
   data?: unknown;
-  send(message: string): void;
+  send(message: string | Uint8Array | ArrayBuffer): void;
 };
+
+/** Emit one wire frame: a text JSON string (control frame / real-time row) or a
+ *  gzipped `Uint8Array` (a replay batch blob). Maps directly to `socket.send`. */
+export type BatchEmit = (frame: string | Uint8Array) => void;
+
+export type BatchEmitterOptions = {
+  emit: BatchEmit;
+  /** Handle a real-time (post-batch) row: capture system.init, forward the raw
+   *  line, and inject the synthetic `ended` after a `result`. */
+  onRealtimeRow: (line: string, parsed: SessionStreamServerMessage, emit: BatchEmit) => void;
+};
+
+const BATCH_START_TYPES: ReadonlySet<string> = new Set(["history_start", "live_start"]);
+const BATCH_END_TYPES: ReadonlySet<string> = new Set(["history_end", "live_end"]);
+
+/**
+ * Target uncompressed bytes per compressed chunk frame. Profiling a single
+ * monolithic blob showed cloudflared drains one large WS message at ~6 Mbps,
+ * while the old per-line text frames (≈2 KB each) reached ~11 Mbps — the tunnel
+ * appears to buffer whole messages before forwarding, so splitting the batch
+ * into several smaller independently-gzipped frames lets them pipeline through
+ * the tunnel instead of stalling on one giant message. Tunable: lower = more
+ * frames / better pipelining (until per-frame overhead returns). Each chunk is
+ * gzipped independently so the client decompresses each without reassembly.
+ */
+const BATCH_CHUNK_TARGET_BYTES = 256 * 1024;
+
+/**
+ * Split raw JSONL batch lines into chunks whose joined size stays at or below
+ * `targetBytes` (the last chunk may be smaller; a single line larger than the
+ * target becomes its own chunk since lines can't be split). JSON rows never
+ * contain a raw newline, so re-joining all chunks with `"\n"` round-trips the
+ * original batch losslessly regardless of how it was chunked.
+ */
+export function chunkBatchLines(
+  lines: string[],
+  targetBytes: number = BATCH_CHUNK_TARGET_BYTES,
+): string[] {
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let currentBytes = 0;
+  for (const line of lines) {
+    // +1 accounts for the "\n" separator join will insert between lines.
+    const lineBytes = Buffer.byteLength(line) + 1;
+    if (currentBytes > 0 && currentBytes + lineBytes > targetBytes) {
+      chunks.push(current.join("\n"));
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(line);
+    currentBytes += lineBytes;
+  }
+  if (current.length > 0) chunks.push(current.join("\n"));
+  return chunks;
+}
+
+/**
+ * Wrap the relay's per-line `onData` so the history/live replay batches are
+ * emitted as a sequence of independently-gzipped binary frames instead of N text
+ * frames, while real-time (post-batch) rows keep their per-line text frames.
+ * Cloudflare's edge strips `permessage-deflate`, so compression must happen at
+ * the application layer; the client decompresses each chunk with
+ * `DecompressionStream('gzip')`.
+ *
+ * Batch data rows are forwarded verbatim (raw JSONL) — no re-parse/re-stringify —
+ * which also removes the double serialization on the replay path. Control markers
+ * and real-time rows stay text so the client's batch state machine is unchanged.
+ * JSON rows never contain a raw newline, so `join("\n")`/`split("\n")` round-trips
+ * losslessly. On gzip failure the batch falls back to per-row text frames.
+ */
+export function createBatchEmitter(opts: BatchEmitterOptions): (line: string) => void {
+  let accumulate: string[] | null = null;
+  return (line: string) => {
+    let parsed: SessionStreamServerMessage;
+    try {
+      parsed = JSON.parse(line) as SessionStreamServerMessage;
+    } catch {
+      return;
+    }
+    try {
+      const type = parsed.type;
+      if (BATCH_START_TYPES.has(type)) {
+        opts.emit(line);
+        accumulate = [];
+        return;
+      }
+      if (BATCH_END_TYPES.has(type)) {
+        const batch = accumulate ?? [];
+        accumulate = null;
+        if (batch.length > 0) {
+          try {
+            for (const chunk of chunkBatchLines(batch)) {
+              opts.emit(Bun.gzipSync(Buffer.from(chunk)));
+            }
+          } catch (e) {
+            console.error("[claude2-stream] gzip failed, falling back to text rows", e);
+            for (const raw of batch) opts.emit(raw);
+          }
+        }
+        opts.emit(line);
+        return;
+      }
+      if (accumulate !== null) {
+        accumulate.push(line);
+        return;
+      }
+      opts.onRealtimeRow(line, parsed, opts.emit);
+    } catch {
+      // isolate per-line failures (e.g. send on a closing socket) from other rows
+    }
+  };
+}
 
 type StreamRouteMatch = {
   projectName: string;
@@ -234,47 +346,60 @@ export class Claude2StreamController {
   }
 
   private async startStream(socket: StreamSocket, data: NonNullable<Claude2WebSocketData>) {
-    const stream = await this.claude2Runtime.stream(
-      data.runtimeKey,
-      (line: string) => {
-        try {
-          const parsed = JSON.parse(line) as SessionStreamServerMessage;
-          // Capture claudeSessionId and model from system.init
-          if (
-            parsed.type === "system" &&
-            "subtype" in parsed &&
-            parsed.subtype === "init" &&
-            "session_id" in parsed
-          ) {
-            const init = parsed as { session_id: string; model?: string };
-            if (init.session_id) {
-              console.log(
-                `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
-              );
-              this.claude2Runtime.setClaudeSessionId(data.runtimeKey, init.session_id, init.model);
-              void this.sessionRegistry.setClaudeSessionId(
-                data.sessionId,
-                init.session_id,
-                init.model,
-              );
-            }
+    const emit: BatchEmit = (frame) => {
+      if (frame instanceof Uint8Array) {
+        // Time socket.send for each compressed chunk frame. send() is normally
+        // non-blocking (buffers into the socket); if a chunk's sendMs spikes,
+        // cloudflared is backpressuring. Cross-check the client *BlobBytes and
+        // historyRecv to see whether multi-frame pipelining beats the old
+        // single-blob drain.
+        const t0 = performance.now();
+        socket.send(frame);
+        console.log(
+          `[claude2-stream] blob flushed: bytes=${frame.byteLength} sendMs=${(performance.now() - t0).toFixed(0)}`,
+        );
+      } else {
+        socket.send(frame);
+      }
+    };
+    const onData = createBatchEmitter({
+      emit,
+      onRealtimeRow: (line, parsed) => {
+        // Capture claudeSessionId and model from system.init
+        if (
+          parsed.type === "system" &&
+          "subtype" in parsed &&
+          parsed.subtype === "init" &&
+          "session_id" in parsed
+        ) {
+          const init = parsed as { session_id: string; model?: string };
+          if (init.session_id) {
+            console.log(
+              `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
+            );
+            this.claude2Runtime.setClaudeSessionId(data.runtimeKey, init.session_id, init.model);
+            void this.sessionRegistry.setClaudeSessionId(
+              data.sessionId,
+              init.session_id,
+              init.model,
+            );
           }
-          send(socket, parsed);
-          if (parsed.type === "result") {
-            send(socket, { type: "ended" });
-          }
-        } catch {
-          // skip unparseable lines
+        }
+        emit(line);
+        if (parsed.type === "result") {
+          emit(JSON.stringify({ type: "ended" }));
         }
       },
-      (error: Error) => {
-        send(socket, {
+    });
+    const stream = await this.claude2Runtime.stream(data.runtimeKey, onData, (error: Error) => {
+      emit(
+        JSON.stringify({
           type: "error",
           code: "SESSION_RUNTIME_ERROR",
           message: error.message,
-        });
-      },
-    );
+        }),
+      );
+    });
     this.streams.set(socket, stream);
   }
 }
