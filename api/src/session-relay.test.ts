@@ -252,3 +252,138 @@ test("Claude2SessionRelay injectLine broadcasts but does not enter output", asyn
 
   relay.destroy();
 });
+
+// compact-block windowing: keep only the last compact block.
+const compactBoundaryLine = (uuid: string) =>
+  JSON.stringify({
+    type: "system",
+    subtype: "compact_boundary",
+    uuid,
+    compactMetadata: { trigger: "manual" },
+  });
+const userLine = (uuid: string, text: string) =>
+  JSON.stringify({
+    type: "user",
+    uuid,
+    message: { role: "user", content: [{ type: "text", text }] },
+  });
+
+test("Claude2SessionRelay loads only the last compact block from JSONL", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-tail-session";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  // pre-compact | boundary(c1) | mid | boundary(c2) | tail
+  const content = [
+    userLine("u-pre", "old"),
+    compactBoundaryLine("c1"),
+    userLine("u-mid", "mid"),
+    compactBoundaryLine("c2"),
+    userLine("u-tail", "tail"),
+  ].join("\n");
+  await writeFile(jsonlPath, `${content}\n`);
+
+  const relay = new Claude2SessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((m) => m.type === "history_start");
+  const historyEnd = messages.findIndex((m) => m.type === "history_end");
+  // last compact_boundary (c2) + tail user msg = 2 lines (c1/mid/pre compacted away)
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 2 });
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages).toEqual([
+    JSON.parse(compactBoundaryLine("c2")),
+    JSON.parse(userLine("u-tail", "tail")),
+  ]);
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay trims history+live buffers on a live compact_boundary", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-trim-session";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  const diskLine = userLine("u-disk", "from disk");
+  await writeFile(jsonlPath, `${diskLine}\n`);
+
+  const liveBefore = JSON.stringify({
+    type: "assistant",
+    uuid: "a-pre",
+    message: { id: "m1", role: "assistant", content: [{ type: "text", text: "before compact" }] },
+  });
+
+  const relay = new Claude2SessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+  await relay.handleStdoutLine(liveBefore); // liveLines = [liveBefore]
+  // compact arrives in live → old history (disk) + pre-compact live are dropped;
+  // the boundary itself becomes the first line of the new block.
+  await relay.handleStdoutLine(compactBoundaryLine("c-live"));
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((m) => m.type === "history_start");
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 }); // history trimmed
+
+  const liveStart = messages.findIndex((m) => m.type === "live_start");
+  const liveEnd = messages.findIndex((m) => m.type === "live_end");
+  const liveMessages = messages.slice(liveStart + 1, liveEnd);
+  // only the boundary survived (disk history + liveBefore compacted away)
+  expect(liveMessages).toEqual([JSON.parse(compactBoundaryLine("c-live"))]);
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay emits seed init between session_init and history_start", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  const seedInitLine = JSON.stringify({
+    type: "system",
+    subtype: "init",
+    model: "opus",
+    permissionMode: "plan",
+  });
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    seedInitLine,
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  // session_init → seed init → history_start
+  expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
+  expect(messages[1]).toMatchObject({
+    type: "system",
+    subtype: "init",
+    model: "opus",
+    permissionMode: "plan",
+  });
+  expect(messages[2]).toMatchObject({ type: "history_start", count: 0 });
+
+  relay.destroy();
+});

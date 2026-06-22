@@ -5,6 +5,22 @@ import { Claude2SessionRelay } from "./session-relay";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
+// Build the scalar seed init line for replay. Carries CURRENT model/permissionMode
+// so the client's scalar fold has a seed (system.init is stdout-only, absent from
+// JSONL/tail). Deliberately OMITS session_id so server-side init capture
+// (claude2-stream onRealtimeRow, which requires `"session_id" in parsed`) skips
+// this synthetic row instead of overwriting claudeSessionId/model.
+// See docs/design/message-replay.md 「特殊时期 history 缩容」.
+export function buildSeedInitLine(model?: string, permissionMode?: string): string | undefined {
+  if (!model && !permissionMode) return undefined;
+  return JSON.stringify({
+    type: "system",
+    subtype: "init",
+    ...(model ? { model } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
+  });
+}
+
 type Claude2Process = {
   proc: BunSubprocess;
   generation: number;
@@ -162,7 +178,12 @@ export class Claude2Runtime implements RuntimeResources {
       });
     }
 
-    return relay.addSubscriber(onData, onError);
+    // Scalar seed init: system.init is stdout-only (absent from JSONL/tail), so on
+    // reconnect the client's scalar fold has no seed. Inject a synthetic init with
+    // the CURRENT model/permissionMode before history.
+    const seedInitLine = buildSeedInitLine(proc.model, proc.permissionMode);
+
+    return relay.addSubscriber(onData, onError, seedInitLine);
   }
 
   async capture(): Promise<string> {
@@ -296,6 +317,7 @@ export class Claude2Runtime implements RuntimeResources {
           if (!this.isCurrentGeneration(sessionName, generation)) return;
 
           this.captureSystemInitFromLine(sessionName, trimmed);
+          this.capturePermissionModeFromLine(sessionName, trimmed);
           console.log(`[claude2-stdout] ${trimmed}`);
           const relay = this.relays.get(sessionName);
           if (relay && !relay.isDestroyed) {
@@ -307,6 +329,7 @@ export class Claude2Runtime implements RuntimeResources {
       const trimmed = leftover.trim();
       if (trimmed && this.isCurrentGeneration(sessionName, generation)) {
         this.captureSystemInitFromLine(sessionName, trimmed);
+        this.capturePermissionModeFromLine(sessionName, trimmed);
         console.log(`[claude2-stdout] ${trimmed}`);
         const relay = this.relays.get(sessionName);
         if (relay && !relay.isDestroyed) {
@@ -348,6 +371,31 @@ export class Claude2Runtime implements RuntimeResources {
       }
     } catch {
       // not JSON or parse failure — skip
+    }
+  }
+
+  // Fold current permissionMode from live stdout so the replay seed init carries
+  // the CURRENT mode (system.init is spawn-time; permission-mode/system.status
+  // messages update it mid-session). See docs/design/message-replay.md.
+  private capturePermissionModeFromLine(sessionName: string, line: string): void {
+    try {
+      const msg = JSON.parse(line);
+      let next: string | undefined;
+      if (msg.type === "permission-mode" && typeof msg.permissionMode === "string") {
+        next = msg.permissionMode;
+      } else if (
+        msg.type === "system" &&
+        msg.subtype === "status" &&
+        typeof msg.permissionMode === "string"
+      ) {
+        next = msg.permissionMode;
+      }
+      if (next) {
+        const state = this.processes.get(sessionName);
+        if (state) state.permissionMode = next;
+      }
+    } catch {
+      // not JSON — skip
     }
   }
 

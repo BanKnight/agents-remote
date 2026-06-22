@@ -62,7 +62,7 @@ relay 持有两个字符串数组缓冲：
 
 **关键区分**：初始化是「把状态建立起来」；特殊时期是「为业务/性能目的**主动改写**已建立的状态」。二者不是一回事——API 重启、`--resume` 重读都只是初始化。
 
-**核心问题**：history + live 合起来量太大，是我们当前的性能瓶颈。解决方向是**服务端先用特殊时期管理自身 history/live 的大小**（先缩服务端状态），再决定对客户端的同步策略（全量 / 按需）。具体缩容与同步方案后续展开。
+**核心问题**：history + live 合起来量太大，是我们当前的性能瓶颈。解决方向是**服务端先用特殊时期管理自身 history/live 的大小**（先缩服务端状态），再决定对客户端的同步策略（全量 / 按需）。具体缩容与同步方案见下文「特殊时期 history 缩容」小节。
 
 ## 整体数据流（Gen 3）
 
@@ -188,6 +188,79 @@ API 重启：
 | `close(session)` | kill proc + `relay.destroy()` |
 
 `claude2-stream.ts`：WS open → `stream()` 订阅 relay；`createBatchEmitter` 在 relay 的 onData 外层做 batch 压缩/分块 + system.init 捕获 + result→ended 注入。WS message → `runtime.write()`。
+
+## 特殊时期 history 缩容（compact-block windowing + 标量重建）
+
+> 本节展开上文「服务端状态：生命周期与膨胀管理」承诺的缩容与同步方案。属于**即将实施的 v1 设计**，部分尚未落地；与上文已稳定的 Gen 3 描述分开存放，便于迭代。
+
+### 背景与目标
+
+history（JSONL 全量）+ live（cap 5000）合起来在长会话下是打开慢的主因（见 [Claude2 Replay 性能](../research/claude2-replay-performance.md)：传输是瓶颈，gzip 已把单批压到 ~1.7s，但不 scale）。**特殊时期**的目标是用 compact 天然形成的边界，把服务端在内存里持有/回放的 history **缩到尾部一个 compact 块**，同时保证客户端断连重连后仍能还原**当前会话标量**（model / permissionMode / skills / slash / mcp）。
+
+v1 范围（明确不做的事在末尾）：
+- 服务端 init 时只加载 JSONL **尾部一个 compact 块**（最后一个 `compact_boundary` → end）。
+- live 流里出现新 `compact_boundary` 时，**主动 trim** historyLines 到该边界。
+- 客户端**只渲染最后一个 compact 块**（render 决策，非 state 改写）。
+- 标量重建：model/permissionMode 走**种子 init + 现有 fold**；skills/slash 走**自建 discovery + REST**。
+
+### compact-block windowing
+
+**切分边界 = `compact_boundary`**。CLI 每次 compact 都在 JSONL 写一条 `system.compact_boundary`（`parentUuid:null`、`logicalParentUuid=tailUuid`、带 `compactMetadata`）；紧随其后一条 `isCompactSummary:true` 的 user 消息是 compact 摘要。协议真相见 [CLI stream-json 协议 · compact_boundary](../research/claude-cli-stream-protocol.md)。
+
+关键事实（4 个真实 session 实测）：
+- compact 块平均 1.4–2.3MB、postTokens 23–30k（**天然有界**）。
+- compact 不让 CLI 进程退出（事实）→ relay **不会**因 compact 自动 reload → trim 必须显式做。
+- JSONL 是**全量真相**：被 compact 压掉的消息仍留在磁盘 JSONL（f4dd7cbe 首 compact 前还有 593 条在文件里）→ 是日后「回填更早消息」的唯一来源。
+
+服务端机制：
+
+| 阶段 | 行为 |
+|---|---|
+| init（activate） | 一次性扫 JSONL 定位**最后一条** `compact_boundary` 的字节偏移，只把其后到 end 载入 `historyLines`（内存有界；全文件扫描是时间成本，非内存） |
+| 正常运行 | historyLines 冻结；新内容只进 liveLines |
+| 特殊时期（live 出现新 compact_boundary） | trim：丢弃 historyLines 里该边界之前的所有行，保留 boundary→当前 |
+
+客户端**只渲染最后一个 compact 块**：以 compact_boundary 为分块标记，render 时只投影最后一块（连同其后的 live）。这是渲染层投影决策，不改 raw state 日志——遵循「消息=state、渲染=投影」。
+
+### 标量重建：种子 init + 流 fold
+
+**问题**：`system.init` 是 **stdout-only、不在 JSONL**（实测 `subtype:"init"` 在 JSONL 里 = 0）。windowing 后 tail 里没有 init → 客户端断连重连 fold 没有**种子**。客户端 `applyMessageScalarState`（`claude2-adapter.ts`）本来就是**对每条消息做 fold**（processBatch Phase 2），但缺种子时 model/permissionMode/skills/slash/mcp 全空。
+
+**模型 = 事件溯源**：客户端收到 = `[state-init 种子] + [消息流]`；消息流里自带对 state 的 update；客户端 fold 出**当前** state。stale 不是「被接受」，而是「还没 fold 到的那条 update」。
+
+**状态信号的持久化不对称**（f4dd7cbe 实测）：
+
+| 信号 | JSONL 里 | tail 能 fold | 角色 |
+|---|---|---|---|
+| `system.init` | 0 | ❌ stdout-only | 种子：model/permissionMode/skills/mcp/slash 全量 |
+| `system.status` | 0 | ❌ stdout-only | permissionMode（被下行 permission-mode 覆盖） |
+| `permission-mode` | 336 | ✅ | permissionMode 的 JSONL 真相源 |
+| `attachment`（invoked_skills / mcp_instructions_delta） | 243 | ✅ | skills/mcp 增量 |
+| `assistant`（EnterPlanMode 等） | 2141 | ✅ | permissionMode fold |
+
+所以 fold 机器早就在了，且它 fold 的 update 信号**多数 JSONL 持久**——tail 能把它们 fold 到当前。
+
+#### 标量分流
+
+| scalar | 来源 | 通路 | 理由 |
+|---|---|---|---|
+| **model** | init（respawn 刷新）+ fold | 种子 init 注入 replay 头 | 协议有、单调（只 respawn 变）、鲁棒 |
+| **permissionMode** | `permission-mode`(JSONL) + status + EnterPlanMode fold | 种子 init 注入 + 现有 fold | 流里海量修正信号 |
+| **skills / slash** | **自建 discovery**（SKILL.md frontmatter / 命令定义） | **REST**（config 域） | init 无 description、协议补不全 |
+| **mcp** | （v1 不做）后续自建 discovery（.mcp.json + tools/list） | REST | 同上，范围后置 |
+
+**种子 = 当前 model + 当前 permissionMode**（语义等价于「现在发的」system.init，不妥协）：
+- 客户端处理顺序 `[种子] → historyLines → liveLines` 连续到 now；fold 是 **last-wins**，tail+live 最后一条 `permission-mode` = 当前，覆盖种子；整段零 `permission-mode` 事件时种子生效，而此时「当前 = 窗口起点」，种子放当前值也对。
+- model 单调（只 respawn 变）：respawn 在窗口内 → tail 有新 init → fold 到当前；不在窗口内 → 种子（最新 init 的 model）= 当前。不会 regress。
+- 服务端只需 fold 这两个标量（model 已截 init；permissionMode 加 live fold）。API 重启 `--resume` 重发 init 拿当前值，且 tail 的 `permission-mode`（JSONL 持久）也会 fold 纠正，双保险。
+
+**为什么 skills/slash 必须自建、不能靠 init**：`system.init` 的 `skills`/`slash_commands` 是**纯名字数组**、`mcp_servers` 是 `{name,status}`——都**无 description**（deepwiki 核实 `buildSystemInitMessage`）。协议里虽有 `skill_listing`/`skill_discovery` attachment 带 skill 描述、MCP `tools/list` 带 tool 描述，但：(1) slash_command 描述无专门载体；(2) 这些是给模型看的 system-reminder 格式化文本，非结构化 `{name,description}`；(3) `skill_listing` 抑制重复、通常只头部一次 → tail 窗口里没有（实测 = 0），要用得回填。而 CLI 自己 `--resume` 重建这些时**重跑 discovery**（读 SKILL.md / 命令定义 / MCP tools/list），不解析自己的 attachment。所以自建走同款 discovery 是唯一能拿到结构化、完整、带 description 数据的路。skills/slash 属 config 域，走 REST，与消息流解耦。
+
+### v1 不做（已知限制 / 后续）
+
+- **回填更早消息**：v1 只加载/渲染最后一个 compact 块；更早的消息在磁盘 JSONL 里完整保留，是日后「加载更早」的唯一来源。
+- **mcp 自建 discovery**：v1 只做 skills + slash_commands；mcp（解析 .mcp.json + 起 MCP 拿 tools/list）后续。
+- **mid-session config 变更 staleness**：skills/slash 走自建 discovery，可按需重读文件系统刷新（比 init 的 spawn-time 快照强）；model/permissionMode 由 fold 实时纠正。中断的 turn 仍以 interrupted 呈现（Gen 3 取舍，不变）。
 
 ## 已废弃的旧机制（Gen 2，勿再引用）
 

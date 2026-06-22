@@ -34,7 +34,11 @@ export class Claude2SessionRelay {
     this.claudeSessionId = claudeSessionId;
   }
 
-  addSubscriber(onData: (line: string) => void, onError: (err: Error) => void): RuntimeStream {
+  addSubscriber(
+    onData: (line: string) => void,
+    onError: (err: Error) => void,
+    seedInitLine?: string,
+  ): RuntimeStream {
     if (this.activationError) {
       onError(this.activationError);
       return { close: () => {} };
@@ -50,6 +54,18 @@ export class Claude2SessionRelay {
     // Connection-level metadata — sent before any batch so the client knows
     // whether this is a resume (history may contain orphaned tool_use).
     onData(JSON.stringify({ type: "session_init", resume: this.startedAsResume }));
+
+    // Scalar seed init: replayed before history so the client's scalar fold has a
+    // seed even though system.init is stdout-only (absent from JSONL/tail). Must
+    // follow session_init (client resets on session_init) and precede history_start
+    // (else it'd be gzipped into the batch). See docs/design/message-replay.md.
+    if (seedInitLine) {
+      try {
+        onData(seedInitLine);
+      } catch {
+        /* subscriber error shouldn't block replay */
+      }
+    }
 
     // Always send history batch (count may be 0 for new sessions)
     onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
@@ -88,6 +104,13 @@ export class Claude2SessionRelay {
       const msg = JSON.parse(line) as Record<string, unknown>;
       if (msg.type === "system") {
         const subtype = msg.subtype as string | undefined;
+        // 特殊时期缩容：compact 把之前的块压掉——清空旧 history/live 缓冲，
+        // 该 boundary 行由随后的 push 成为新块首行。
+        if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
+          this.historyLines = [];
+          this.liveLines = [];
+          console.log("[relay] compact_boundary: trimmed history+live buffers");
+        }
         const knownSubtypes = new Set([
           "init",
           "thinking_tokens",
@@ -172,19 +195,29 @@ export class Claude2SessionRelay {
       const jsonlPath = claudeJsonlPath(this.projectPath, this.claudeSessionId);
       const raw = readFileSync(jsonlPath, "utf8");
       const lines: string[] = [];
+      // compact-block windowing: keep only the last compact block. Track the index
+      // of the last compact_boundary — it starts the new (post-compact) block, so
+      // we slice from it (inclusive). No boundary ⇒ return full file (fallback).
+      let lastBoundaryIndex = -1;
       for (const line of raw.split("\n")) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         try {
           const parsed = JSON.parse(trimmed);
           if (parsed && typeof parsed === "object") {
+            if (
+              parsed.type === "system" &&
+              (parsed.subtype === "compact_boundary" || parsed.subtype === "microcompact_boundary")
+            ) {
+              lastBoundaryIndex = lines.length;
+            }
             lines.push(trimmed);
           }
         } catch {
           /* skip malformed */
         }
       }
-      return lines;
+      return lastBoundaryIndex >= 0 ? lines.slice(lastBoundaryIndex) : lines;
     } catch {
       return [];
     }
