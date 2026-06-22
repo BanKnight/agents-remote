@@ -2176,14 +2176,29 @@ export function renderChatStream(
   items: ChatStreamItem[],
   opts?: { isResume?: boolean },
 ): ThreadMessageLike[] {
+  // compact-block windowing: render only the LAST compact block (the block the
+  // most recent compact_boundary opens) plus the live that follows it. Earlier
+  // compacted-away content is dropped here, at the render/projection layer —
+  // rawMessages (state) stay intact. Mirrors the server's tail-load so a long
+  // session renders one bounded block regardless of how many compacts ran.
+  // See docs/design/message-replay.md 「特殊时期 history 缩容」.
+  let lastCompactIdx = -1;
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].kind === "compact-block") {
+      lastCompactIdx = i;
+      break;
+    }
+  }
+  const renderItems = lastCompactIdx >= 0 ? items.slice(lastCompactIdx) : items;
+
   const messages: ThreadMessageLike[] = [];
   // Render-list indices at each turn-end (result) item. A tool at index
   // i < lastBoundary belongs to a turn that already ended → interrupted if
   // still unresolved. Captured by the "turn-end" case below.
   const turnEndBoundaries: number[] = [];
 
-  for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
-    const item = items[itemIdx];
+  for (let itemIdx = 0; itemIdx < renderItems.length; itemIdx++) {
+    const item = renderItems[itemIdx];
     switch (item.kind) {
       case "assistant": {
         const rawMsgs = item._rawSnapshots;
@@ -2479,8 +2494,8 @@ export function renderChatStream(
             "batch-boundary";
         // Look ahead for the next visible item (skip boundaries).
         let nextVisible = false;
-        for (let j = itemIdx + 1; j < items.length; j++) {
-          if (items[j].kind === "batch-boundary") continue;
+        for (let j = itemIdx + 1; j < renderItems.length; j++) {
+          if (renderItems[j].kind === "batch-boundary") continue;
           nextVisible = true;
           break;
         }

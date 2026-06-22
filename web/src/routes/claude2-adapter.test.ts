@@ -2796,6 +2796,56 @@ describe("normalizeChatStream", () => {
     expect(items.filter((i) => i.kind === "compact-block")).toHaveLength(2);
   });
 
+  // compact-block windowing: render only the LAST compact block. Content before
+  // the most recent compact_boundary is compacted away at the render layer.
+  test("renderChatStream renders only the last compact block (+ following live)", () => {
+    const items = normalizeChatStream([
+      makeAssistant("m-old", [{ type: "text", text: "old block content" }]),
+      compactBoundary(),
+      compactSummary("first summary"),
+      makeAssistant("m-mid", [{ type: "text", text: "between blocks" }]),
+      compactBoundary({ compactMetadata: { trigger: "auto" } }),
+      compactSummary("second summary"),
+      makeAssistant("m-after", [{ type: "text", text: "after the last compact" }]),
+    ]);
+    // Sanity: two compact-block markers in state.
+    expect(items.filter((i) => i.kind === "compact-block")).toHaveLength(2);
+
+    const rendered = renderChatStream(items);
+    const flatText = rendered
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+      .map((p) => (p.type === "text" ? p.text : ""))
+      .join("\n");
+
+    // Last block + following live survive…
+    expect(flatText).toContain("after the last compact");
+    // …earlier compacted-away content is dropped at the render layer.
+    expect(flatText).not.toContain("old block content");
+    expect(flatText).not.toContain("between blocks");
+
+    // Exactly one compact-block system message — the last one ("second").
+    const compactBlocks = rendered.filter(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "compact-block",
+    );
+    expect(compactBlocks).toHaveLength(1);
+    expect((compactBlocks[0].metadata?.custom as Record<string, unknown>)?.summaryText).toBe(
+      "second summary",
+    );
+  });
+
+  // No compact_boundary ⇒ nothing to window, full render (fallback).
+  test("renderChatStream with no compact block renders everything", () => {
+    const items = normalizeChatStream([makeAssistant("m1", [{ type: "text", text: "keep me" }])]);
+    const rendered = renderChatStream(items);
+    const flatText = rendered
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+      .map((p) => (p.type === "text" ? p.text : ""))
+      .join("\n");
+    expect(flatText).toContain("keep me");
+  });
+
   // ── batch-boundary passthrough ──────────────────────────────────────
   test("batch_boundary marker passes through as a batch-boundary item", () => {
     const items = normalizeChatStream([makeBatchBoundary("live")]);
