@@ -1,7 +1,7 @@
 # CLAUDE
 
 ## 行为规范
-- @GUIDLINES.mds
+- @GUIDLINES.md
 - @state-sync-principles.md
 
 ## 项目目标
