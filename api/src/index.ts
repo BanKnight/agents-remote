@@ -143,30 +143,22 @@ export const createFetchHandler =
         return withRefresh(streamUpgrade.response);
       }
 
-      // /slash-command-descriptions – direct match, not through session-routes whitelist
-      const slashDescMatch = url.pathname.match(
-        /^\/api\/projects\/(.+)\/agent-sessions\/(.+)\/slash-command-descriptions$/,
+      // /skill-slash-catalog – full skill + slash-command catalog with real
+      // descriptions. Direct match, not through session-routes whitelist. The
+      // client filters this by the session's availability list.
+      const catalogMatch = url.pathname.match(
+        /^\/api\/projects\/(.+)\/agent-sessions\/(.+)\/skill-slash-catalog$/,
       );
-      if (slashDescMatch && request.method === "GET") {
-        const { resolveSlashCommandDescriptions } = await import("./claude2-slash-commands");
+      if (catalogMatch && request.method === "GET") {
+        const { resolveSkillSlashCatalog } = await import("./claude2-slash-commands");
         const { resolveProjectPath, ProjectPathError } = await import("./project-paths");
         try {
           const project = await resolveProjectPath(
             options.projectsRoot,
-            decodeURIComponent(slashDescMatch[1]),
+            decodeURIComponent(catalogMatch[1]),
           );
-          const commandsParam = url.searchParams.get("commands") ?? "";
-          const skillsParam = url.searchParams.get("skills") ?? "";
-          const slashCommands = commandsParam
-            ? commandsParam.split(",").map(decodeURIComponent)
-            : [];
-          const skills = skillsParam ? skillsParam.split(",").map(decodeURIComponent) : [];
-          const descriptions = await resolveSlashCommandDescriptions(
-            project.path,
-            slashCommands,
-            skills,
-          );
-          return withRefresh(Response.json({ commands: descriptions }));
+          const commands = await resolveSkillSlashCatalog(project.path);
+          return withRefresh(Response.json({ commands }));
         } catch (error) {
           if (error instanceof ProjectPathError) {
             return jsonError(error.code, error.message, 400);

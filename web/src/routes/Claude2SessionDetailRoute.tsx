@@ -2972,11 +2972,16 @@ function ComposerWithInterrupt({
 }) {
   const { t } = useT();
 
+  // Full skill+slash catalog = the description source. slashItems below filters
+  // it by the session's availability list (slashCommands/skills props), so the
+  // menu shows only what the CLI reports as available, with real descriptions
+  // (skills from SKILL.md, not a placeholder). Works under windowing where
+  // system.init may be absent from the replayed tail.
   const descQuery = useQuery({
-    queryKey: ["projects", projectName, "agent-sessions", sessionId, "slash-command-descriptions"],
+    queryKey: ["projects", projectName, "agent-sessions", sessionId, "skill-slash-catalog"],
     queryFn: async () => {
-      const { getSlashCommandDescriptions } = await import("../api/client");
-      return getSlashCommandDescriptions(projectName, sessionId, slashCommands, skills);
+      const { getSkillSlashCatalog } = await import("../api/client");
+      return getSkillSlashCatalog(projectName, sessionId);
     },
     enabled: slashCommands.length > 0 || skills.length > 0,
     staleTime: Infinity,

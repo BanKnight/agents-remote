@@ -48,8 +48,11 @@ const BUILTIN: Record<string, string> = {
   conversations: "List conversations",
 };
 
-async function scanDir(dir: string): Promise<Record<string, string>> {
-  const results: Record<string, string> = {};
+type CommandDescs = Record<string, string>;
+type SkillEntry = { name: string; description: string };
+
+async function scanDir(dir: string): Promise<CommandDescs> {
+  const results: CommandDescs = {};
   try {
     const entries = await readdir(dir);
     for (const entry of entries) {
@@ -78,32 +81,106 @@ async function scanDir(dir: string): Promise<Record<string, string>> {
   return results;
 }
 
-export async function resolveSlashCommandDescriptions(
-  projectRoot: string,
-  slashCommands: string[],
-  skills: string[],
-): Promise<SlashCommandInfo[]> {
-  const userCmdDir =
-    process.env.CLAUDE_CODE_USER_CMDS_DIR ??
-    resolve(process.env.HOME ?? "/root", ".claude", "commands");
-  const projectCmdDir = resolve(projectRoot, ".claude", "commands");
+// Read each `<dir>/<name>/SKILL.md` frontmatter. Skills are directories; the
+// authoritative name is the frontmatter `name`, falling back to the dir name.
+// Unlike system.init (which lists skill NAMES with no description), this reads
+// the real description the CLI itself uses for discovery.
+async function scanSkillDir(dir: string): Promise<SkillEntry[]> {
+  const results: SkillEntry[] = [];
+  try {
+    const entries = await readdir(dir);
+    for (const entry of entries) {
+      const skillMdPath = resolve(dir, entry, "SKILL.md");
+      let skillStat;
+      try {
+        skillStat = await stat(skillMdPath);
+      } catch {
+        continue;
+      }
+      if (!skillStat.isFile()) continue;
+      try {
+        const content = await readFile(skillMdPath, "utf8");
+        const fm = parseFrontmatter(content);
+        results.push({ name: fm.name || entry, description: fm.description ?? "" });
+      } catch {
+        // skip unreadable
+      }
+    }
+  } catch {
+    // no skills directory
+  }
+  return results;
+}
 
-  const [userDescs, projectDescs] = await Promise.all([
-    scanDir(userCmdDir),
-    projectCmdDir !== userCmdDir
-      ? scanDir(projectCmdDir)
-      : Promise.resolve({} as Record<string, string>),
+function userCommandsDir(): string {
+  return (
+    process.env.CLAUDE_CODE_USER_CMDS_DIR ??
+    resolve(process.env.HOME ?? "/root", ".claude", "commands")
+  );
+}
+
+function userSkillsDir(): string {
+  return resolve(process.env.HOME ?? "/root", ".claude", "skills");
+}
+
+/**
+ * Full skill + slash-command catalog with real descriptions. The client
+ * filters this by the session's availability list (the names the CLI reports
+ * via system.init / skill_listing / invoked_skills). system.init lists names
+ * only; this reads SKILL.md frontmatter and command .md files for the real
+ * descriptions, so the slash menu shows meaningful text even under windowing
+ * (where system.init may be absent from the replayed tail).
+ * See docs/design/message-replay.md 「特殊时期 history 缩容」.
+ *
+ * `userDirs` overrides the user-level scan roots (defaults derive from HOME /
+ * CLAUDE_CODE_USER_CMDS_DIR); exists for hermetic testing.
+ */
+export async function resolveSkillSlashCatalog(
+  projectRoot: string,
+  userDirs?: { commands?: string; skills?: string },
+): Promise<SlashCommandInfo[]> {
+  const projectCmdDir = resolve(projectRoot, ".claude", "commands");
+  const projectSkillDir = resolve(projectRoot, ".claude", "skills");
+  const userCmd = userDirs?.commands ?? userCommandsDir();
+  const userSkill = userDirs?.skills ?? userSkillsDir();
+
+  const [projectCmds, userCmds, projectSkills, userSkills] = await Promise.all([
+    scanDir(projectCmdDir),
+    projectCmdDir !== userCmd ? scanDir(userCmd) : Promise.resolve({} as CommandDescs),
+    scanSkillDir(projectSkillDir),
+    projectSkillDir !== userSkill ? scanSkillDir(userSkill) : Promise.resolve([]),
   ]);
 
   const result: SlashCommandInfo[] = [];
-  for (const cmd of slashCommands) {
-    const name = cmd.replace(/^\/+/, "");
-    const desc = projectDescs[name] ?? userDescs[name] ?? BUILTIN[name] ?? "";
+  const seen = new Set<string>();
+
+  // Commands: project > user > builtin (project wins on name clash).
+  for (const [name, desc] of Object.entries(projectCmds)) {
+    result.push({ name, description: desc, kind: "command" });
+    seen.add(name);
+  }
+  for (const [name, desc] of Object.entries(userCmds)) {
+    if (seen.has(name)) continue;
+    result.push({ name, description: desc, kind: "command" });
+    seen.add(name);
+  }
+  for (const [name, desc] of Object.entries(BUILTIN)) {
+    if (seen.has(name)) continue;
     result.push({ name, description: desc, kind: "command" });
   }
-  for (const skill of skills) {
-    const name = skill.replace(/^\/+/, "");
-    result.push({ name, description: "Skill", kind: "skill" });
+
+  // Skills: project > user (project wins on name clash).
+  seen.clear();
+  for (const s of projectSkills) {
+    if (seen.has(s.name)) continue;
+    result.push({ name: s.name, description: s.description, kind: "skill" });
+    seen.add(s.name);
   }
+  for (const s of userSkills) {
+    if (seen.has(s.name)) continue;
+    result.push({ name: s.name, description: s.description, kind: "skill" });
+    seen.add(s.name);
+  }
+
   return result;
 }
