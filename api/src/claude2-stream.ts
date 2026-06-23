@@ -50,35 +50,46 @@ const BATCH_END_TYPES: ReadonlySet<string> = new Set(["history_end", "live_end"]
 const BATCH_CHUNK_TARGET_BYTES = 256 * 1024;
 
 /**
- * Don't split batches whose total raw size falls below this threshold. The
- * multi-frame pipeline gain only matters for large payloads; a compact window's
- * tail block (e.g. 428 lines, ~850 KB raw → ~33 KB gzip) is too small to stall
- * cloudflared — splitting it into 4 tiny frames just adds socket.send and
- * DecompressionStream overhead with no throughput benefit.
+ * Max compressed size for a single-chunk batch. If the whole batch gzips below
+ * this, send it as one frame — cloudflared won't stall on a sub-128KB message
+ * (≤170ms at 6 Mbps), and the socket.send + DecompressionStream savings
+ * outweigh any pipelining gain. Windowed tail blocks typically hit 30–60 KB
+ * gzip, well under this.
  */
-const BATCH_CHUNK_MIN_TOTAL_BYTES = 2 * BATCH_CHUNK_TARGET_BYTES; // 512 KB
+const BATCH_SINGLE_CHUNK_MAX_COMPRESSED = 128 * 1024;
 
 /**
  * Split raw JSONL batch lines into chunks whose joined size stays at or below
- * `targetBytes` (the last chunk may be smaller; a single line larger than the
- * target becomes its own chunk since lines can't be split). If the total batch
- * is under `minTotalBytes` the whole batch stays as a single chunk — compact
- * windowing already shrunk the tail, and the multi-frame pipeline only pays off
- * for large payloads.
+ * `targetBytes`. Before chunking, gzip the full batch: if the compressed output
+ * is under 128 KB, return it as a single chunk — compact windowing already
+ * shrunk the tail, and the extra socket.send / DecompressionStream round-trips
+ * cost more than any multi-frame pipeline gain for such a small payload.
+ * JSON rows never contain a raw newline, so re-joining all chunks with `"\n"`
+ * round-trips the original batch losslessly regardless of how it's chunked.
  */
 export function chunkBatchLines(
   lines: string[],
   targetBytes: number = BATCH_CHUNK_TARGET_BYTES,
-  minTotalBytes: number = BATCH_CHUNK_MIN_TOTAL_BYTES,
+  maxCompressedBytes: number = BATCH_SINGLE_CHUNK_MAX_COMPRESSED,
 ): string[] {
-  let totalBytes = 0;
+  if (lines.length === 0) return [];
+
+  // Gzip the full batch to decide: small compressed → single frame is fine.
+  const joined = lines.join("\n");
+  try {
+    if (Bun.gzipSync(Buffer.from(joined)).byteLength < maxCompressedBytes) {
+      return [joined];
+    }
+  } catch {
+    // gzip failed — fall through to regular chunking (text fallback).
+  }
+
   const chunks: string[] = [];
   let current: string[] = [];
   let currentBytes = 0;
   for (const line of lines) {
     // +1 accounts for the "\n" separator join will insert between lines.
     const lineBytes = Buffer.byteLength(line) + 1;
-    totalBytes += lineBytes;
     if (currentBytes > 0 && currentBytes + lineBytes > targetBytes) {
       chunks.push(current.join("\n"));
       current = [];
@@ -88,11 +99,6 @@ export function chunkBatchLines(
     currentBytes += lineBytes;
   }
   if (current.length > 0) chunks.push(current.join("\n"));
-  // Windowing already shrinks the tail — small batches don't need multi-frame
-  // pipelining. Combine into one chunk to reduce socket.send round-trips.
-  if (chunks.length > 1 && totalBytes < minTotalBytes) {
-    return [lines.join("\n")];
-  }
   return chunks;
 }
 
