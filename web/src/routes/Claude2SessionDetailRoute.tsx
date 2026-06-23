@@ -1253,6 +1253,7 @@ function SystemChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const { t } = useT();
+  const [fullscreen, setFullscreen] = useState(false);
   const systemMessageType = custom?.systemMessageType as string | undefined;
 
   // Tool-card: standalone tool message rendered outside of assistant bubbles.
@@ -1372,7 +1373,6 @@ function SystemChatBubble() {
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
       ? (rawData as Claude2FileHistorySnapshot)
       : null;
-  const [fullscreen, setFullscreen] = useState(false);
 
   const renderBody = () => (
     <>
