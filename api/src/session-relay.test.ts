@@ -360,7 +360,7 @@ test("Claude2SessionRelay emits seed init between session_init and history_start
 
   const seedInitLine = JSON.stringify({
     type: "system",
-    subtype: "init",
+    subtype: "seed_init",
     model: "opus",
     permissionMode: "plan",
   });
@@ -379,7 +379,7 @@ test("Claude2SessionRelay emits seed init between session_init and history_start
   expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
   expect(messages[1]).toMatchObject({
     type: "system",
-    subtype: "init",
+    subtype: "seed_init",
     model: "opus",
     permissionMode: "plan",
   });

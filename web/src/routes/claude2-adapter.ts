@@ -2683,6 +2683,20 @@ export function useClaude2Session(
       return;
     }
 
+    // system.seed_init: scalar seed injected on replay. Carries only
+    // model/permissionMode (tools/skills/mcp come from the REST catalog, not the
+    // seed). Distinct subtype so normalizeChatStream renders it as a fallback
+    // amber bubble instead of a real session-init summary.
+    if (msg.type === "system" && sm.subtype === "seed_init") {
+      const seed = msg as { model?: string; permissionMode?: string };
+      if (seed.model) {
+        setCurrentModel(seed.model);
+        setResolvedModel(seed.model);
+      }
+      if (seed.permissionMode) setPermissionMode(seed.permissionMode);
+      return;
+    }
+
     // Task state
     if (
       msg.type === "system" &&

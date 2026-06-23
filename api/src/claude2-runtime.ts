@@ -7,15 +7,17 @@ type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
 // Build the scalar seed init line for replay. Carries CURRENT model/permissionMode
 // so the client's scalar fold has a seed (system.init is stdout-only, absent from
-// JSONL/tail). Deliberately OMITS session_id so server-side init capture
-// (claude2-stream onRealtimeRow, which requires `"session_id" in parsed`) skips
-// this synthetic row instead of overwriting claudeSessionId/model.
+// JSONL/tail). Uses a DISTINCT subtype "seed_init" (not "init") so both server-side
+// init capture (claude2-stream onRealtimeRow + runtime captureSystemInitFromLine,
+// which match subtype === "init") and client render (normalizeChatStream session-init
+// branch) skip it — it folds scalars via a dedicated seed_init branch and renders as
+// a fallback amber bubble, never a real session-init summary.
 // See docs/design/message-replay.md 「特殊时期 history 缩容」.
 export function buildSeedInitLine(model?: string, permissionMode?: string): string | undefined {
   if (!model && !permissionMode) return undefined;
   return JSON.stringify({
     type: "system",
-    subtype: "init",
+    subtype: "seed_init",
     ...(model ? { model } : {}),
     ...(permissionMode ? { permissionMode } : {}),
   });

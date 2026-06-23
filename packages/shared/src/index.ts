@@ -293,6 +293,19 @@ export type Claude2SystemInit = {
   output_style?: string;
 };
 
+// Scalar seed init — server-synthesized on replay so the client's scalar fold has
+// model/permissionMode even though real system.init is stdout-only (absent from
+// JSONL/tail). Distinct subtype "seed_init" (not "init") so server-side init capture
+// and client render both treat it as a non-init system message: it folds scalars via
+// a dedicated seed_init branch and renders as a fallback amber bubble, never a real
+// session-init summary.
+export type Claude2SeedInit = {
+  type: "system";
+  subtype: "seed_init";
+  model?: string;
+  permissionMode?: string;
+};
+
 export type SlashCommandInfo = {
   name: string;
   description: string;
@@ -947,6 +960,7 @@ export type SessionStreamServerMessage =
       message: string;
     }
   | Claude2SystemInit
+  | Claude2SeedInit
   | Claude2CompactBoundary
   | Claude2StatusMessage
   | Claude2ApiRetry

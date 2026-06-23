@@ -53,7 +53,11 @@ export class Claude2SessionRelay {
 
     // Connection-level metadata — sent before any batch so the client knows
     // whether this is a resume (history may contain orphaned tool_use).
-    onData(JSON.stringify({ type: "session_init", resume: this.startedAsResume }));
+    try {
+      onData(JSON.stringify({ type: "session_init", resume: this.startedAsResume }));
+    } catch {
+      /* subscriber error shouldn't block replay */
+    }
 
     // Scalar seed init: replayed before history so the client's scalar fold has a
     // seed even though system.init is stdout-only (absent from JSONL/tail). Must
@@ -113,6 +117,7 @@ export class Claude2SessionRelay {
         }
         const knownSubtypes = new Set([
           "init",
+          "seed_init",
           "thinking_tokens",
           "api_retry",
           "compact_boundary",

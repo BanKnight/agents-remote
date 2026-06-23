@@ -365,7 +365,10 @@ export class Claude2StreamController {
     const onData = createBatchEmitter({
       emit,
       onRealtimeRow: (line, parsed) => {
-        // Capture claudeSessionId and model from system.init
+        // Capture claudeSessionId and model from system.init. The replay seed
+        // (claude2-runtime buildSeedInitLine) uses subtype "seed_init" precisely so
+        // this branch skips it — it is excluded by subtype, not by a missing
+        // session_id, so the seed can never hijack claudeSessionId/model.
         if (
           parsed.type === "system" &&
           "subtype" in parsed &&
