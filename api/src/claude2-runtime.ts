@@ -318,25 +318,13 @@ export class Claude2Runtime implements RuntimeResources {
           if (!trimmed) continue;
           if (!this.isCurrentGeneration(sessionName, generation)) return;
 
-          this.captureSystemInitFromLine(sessionName, trimmed);
-          this.capturePermissionModeFromLine(sessionName, trimmed);
-          console.log(`[claude2-stdout] ${trimmed}`);
-          const relay = this.relays.get(sessionName);
-          if (relay && !relay.isDestroyed) {
-            await relay.handleStdoutLine(trimmed);
-          }
+          await this.processStdoutLine(sessionName, generation, trimmed);
         }
       }
 
       const trimmed = leftover.trim();
       if (trimmed && this.isCurrentGeneration(sessionName, generation)) {
-        this.captureSystemInitFromLine(sessionName, trimmed);
-        this.capturePermissionModeFromLine(sessionName, trimmed);
-        console.log(`[claude2-stdout] ${trimmed}`);
-        const relay = this.relays.get(sessionName);
-        if (relay && !relay.isDestroyed) {
-          await relay.handleStdoutLine(trimmed);
-        }
+        await this.processStdoutLine(sessionName, generation, trimmed);
       }
     } catch (error) {
       if (this.isCurrentGeneration(sessionName, generation)) {
@@ -354,50 +342,76 @@ export class Claude2Runtime implements RuntimeResources {
     return this.processes.get(sessionName)?.generation === generation;
   }
 
-  private captureSystemInitFromLine(sessionName: string, line: string): void {
+  // Parse each stdout line ONCE and feed the parsed object to all three consumers
+  // (system-init capture, permissionMode capture, relay). Previously each line was
+  // JSON.parsed three times — once per consumer. Callers have already verified the
+  // generation is current before invoking.
+  private async processStdoutLine(
+    sessionName: string,
+    generation: number,
+    trimmed: string,
+  ): Promise<void> {
+    let parsed: Record<string, unknown> | null;
     try {
-      const msg = JSON.parse(line);
-      if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
-        const state = this.processes.get(sessionName);
-        if (state) {
-          if (!state.claudeSessionId) state.claudeSessionId = msg.session_id;
-          if (typeof msg.model === "string") state.model = msg.model;
-          if (typeof msg.permissionMode === "string") state.permissionMode = msg.permissionMode;
-        }
-        this.onSystemInit?.(
-          state?.sessionId ?? "",
-          sessionName,
-          msg.session_id,
-          typeof msg.model === "string" ? msg.model : "unknown",
-        );
-      }
+      parsed = JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
-      // not JSON or parse failure — skip
+      parsed = null;
+    }
+    this.captureSystemInitFromLine(sessionName, parsed);
+    this.capturePermissionModeFromLine(sessionName, parsed);
+    console.log(`[claude2-stdout] ${trimmed}`);
+    const relay = this.relays.get(sessionName);
+    if (relay && !relay.isDestroyed && this.isCurrentGeneration(sessionName, generation)) {
+      await relay.handleStdoutLine(trimmed, parsed);
+    }
+  }
+
+  private captureSystemInitFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (
+      parsed &&
+      parsed.type === "system" &&
+      parsed.subtype === "init" &&
+      typeof parsed.session_id === "string"
+    ) {
+      const state = this.processes.get(sessionName);
+      if (state) {
+        if (!state.claudeSessionId) state.claudeSessionId = parsed.session_id;
+        if (typeof parsed.model === "string") state.model = parsed.model;
+        if (typeof parsed.permissionMode === "string") state.permissionMode = parsed.permissionMode;
+      }
+      this.onSystemInit?.(
+        state?.sessionId ?? "",
+        sessionName,
+        parsed.session_id,
+        typeof parsed.model === "string" ? parsed.model : "unknown",
+      );
     }
   }
 
   // Fold current permissionMode from live stdout so the replay seed init carries
   // the CURRENT mode (system.init is spawn-time; permission-mode/system.status
   // messages update it mid-session). See docs/design/message-replay.md.
-  private capturePermissionModeFromLine(sessionName: string, line: string): void {
-    try {
-      const msg = JSON.parse(line);
-      let next: string | undefined;
-      if (msg.type === "permission-mode" && typeof msg.permissionMode === "string") {
-        next = msg.permissionMode;
-      } else if (
-        msg.type === "system" &&
-        msg.subtype === "status" &&
-        typeof msg.permissionMode === "string"
-      ) {
-        next = msg.permissionMode;
-      }
-      if (next) {
-        const state = this.processes.get(sessionName);
-        if (state) state.permissionMode = next;
-      }
-    } catch {
-      // not JSON — skip
+  private capturePermissionModeFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (!parsed) return;
+    let next: string | undefined;
+    if (parsed.type === "permission-mode" && typeof parsed.permissionMode === "string") {
+      next = parsed.permissionMode;
+    } else if (
+      parsed.type === "system" &&
+      parsed.subtype === "status" &&
+      typeof parsed.permissionMode === "string"
+    ) {
+      next = parsed.permissionMode;
+    }
+    if (next) {
+      const state = this.processes.get(sessionName);
+      if (state) state.permissionMode = next;
     }
   }
 

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { COMPACT_BOUNDARY_SUBTYPES, isCompactBoundarySubtype } from "./index";
 import type {
   AgentSession,
   ApiErrorResponse,
@@ -205,4 +206,14 @@ test("Session stream envelopes describe transport messages", () => {
   expect(snapshot.data).toContain("pwd");
   expect(disconnected.status).toBe("disconnected");
   expect(error.code).toBe("SESSION_RUNTIME_MISSING");
+});
+
+test("isCompactBoundarySubtype matches the two boundary subtypes only", () => {
+  expect(isCompactBoundarySubtype("compact_boundary")).toBe(true);
+  expect(isCompactBoundarySubtype("microcompact_boundary")).toBe(true);
+  expect(isCompactBoundarySubtype("init")).toBe(false);
+  expect(isCompactBoundarySubtype("status")).toBe(false);
+  expect(isCompactBoundarySubtype(undefined)).toBe(false);
+  expect(isCompactBoundarySubtype(null)).toBe(false);
+  expect(COMPACT_BOUNDARY_SUBTYPES).toEqual(["compact_boundary", "microcompact_boundary"]);
 });

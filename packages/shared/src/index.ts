@@ -330,6 +330,18 @@ export type Claude2CompactBoundary = {
   };
 };
 
+// Compact-boundary subtypes — the single source of truth for "a compact starts a
+// new block". Server (relay buffer trim, history tail-scan) and client (render
+// windowing) both consume this so the two sides never disagree on what counts as
+// a boundary.
+export const COMPACT_BOUNDARY_SUBTYPES = ["compact_boundary", "microcompact_boundary"] as const;
+
+export function isCompactBoundarySubtype(
+  subtype: string | undefined | null,
+): subtype is (typeof COMPACT_BOUNDARY_SUBTYPES)[number] {
+  return subtype === "compact_boundary" || subtype === "microcompact_boundary";
+}
+
 export type Claude2StatusMessage = {
   type: "system";
   subtype: "status";

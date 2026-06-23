@@ -6,6 +6,7 @@ import type {
   Claude2QueueOperation,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
+import { isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
 import {
@@ -1932,7 +1933,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // CompactBoundary: open a compact window that absorbs the trailing
       // compaction messages (summary + attachments + noise) into one block.
-      if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
+      if (isCompactBoundarySubtype(subtype)) {
         flushCompactWindow();
         const isMicro = subtype === "microcompact_boundary";
         const cmeta = (msg as Record<string, unknown>).compactMetadata as
@@ -2708,10 +2709,7 @@ export function useClaude2Session(
     }
 
     // Compact state
-    if (
-      msg.type === "system" &&
-      (sm.subtype === "compact_boundary" || sm.subtype === "microcompact_boundary")
-    ) {
+    if (msg.type === "system" && isCompactBoundarySubtype(sm.subtype as string | undefined)) {
       compactActiveRef.current = true;
       if (compactPhaseRef.current === "compacting") compactPhaseRef.current = "replay";
       return;

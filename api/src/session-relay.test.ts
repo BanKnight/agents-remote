@@ -261,6 +261,13 @@ const compactBoundaryLine = (uuid: string) =>
     uuid,
     compactMetadata: { trigger: "manual" },
   });
+const microcompactBoundaryLine = (uuid: string) =>
+  JSON.stringify({
+    type: "system",
+    subtype: "microcompact_boundary",
+    uuid,
+    microcompactMetadata: { trigger: "auto" },
+  });
 const userLine = (uuid: string, text: string) =>
   JSON.stringify({
     type: "user",
@@ -310,6 +317,76 @@ test("Claude2SessionRelay loads only the last compact block from JSONL", async (
   relay.destroy();
 });
 
+test("Claude2SessionRelay tail-scan recognizes microcompact_boundary and picks the later of the two", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-tail-micro";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  // microcompact | mid | compact(later) | tail — the later compact_boundary wins
+  const content = [
+    microcompactBoundaryLine("m1"),
+    userLine("u-mid", "mid"),
+    compactBoundaryLine("c2"),
+    userLine("u-tail", "tail"),
+  ].join("\n");
+  await writeFile(jsonlPath, `${content}\n`);
+
+  const relay = new Claude2SessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((m) => m.type === "history_start");
+  const historyEnd = messages.findIndex((m) => m.type === "history_end");
+  // only the later compact_boundary block survives (microcompact + mid compacted away)
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 2 });
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages).toEqual([
+    JSON.parse(compactBoundaryLine("c2")),
+    JSON.parse(userLine("u-tail", "tail")),
+  ]);
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay reads the full file when no compact boundary exists", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-tail-none";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  const content = [userLine("u1", "first"), userLine("u2", "second")].join("\n");
+  await writeFile(jsonlPath, `${content}\n`);
+
+  const relay = new Claude2SessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((m) => m.type === "history_start");
+  // never compacted → full file (fallback)
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 2 });
+
+  relay.destroy();
+});
+
 test("Claude2SessionRelay trims history+live buffers on a live compact_boundary", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-trim-session";
@@ -350,6 +427,41 @@ test("Claude2SessionRelay trims history+live buffers on a live compact_boundary"
   const liveMessages = messages.slice(liveStart + 1, liveEnd);
   // only the boundary survived (disk history + liveBefore compacted away)
   expect(liveMessages).toEqual([JSON.parse(compactBoundaryLine("c-live"))]);
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay.handleStdoutLine reuses a caller-provided parse (no re-parse)", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+  // seed a live line so the trim has something to drop
+  await relay.handleStdoutLine(userLine("u-seed", "seed"));
+
+  // The raw line is intentionally non-JSON, but the caller passes a pre-parsed
+  // compact_boundary object. If the relay re-parsed the raw line it would see
+  // garbage and NOT trim; reusing the provided parse means it DOES trim.
+  await relay.handleStdoutLine("this-is-not-json", {
+    type: "system",
+    subtype: "compact_boundary",
+    uuid: "c-parsed",
+  });
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  // Find the live batch markers by string (the buffered line is non-JSON, so we
+  // can't JSON.parse the whole received array).
+  const liveStart = received.findIndex((l) => l.includes('"live_start"'));
+  const liveEnd = received.findIndex((l) => l.includes('"live_end"'));
+  const liveLines = received.slice(liveStart + 1, liveEnd);
+  // pre-compact seed was trimmed; only the boundary line (raw, buffered as-is) survives
+  expect(liveLines).toHaveLength(1);
+  expect(liveLines[0]).toBe("this-is-not-json");
 
   relay.destroy();
 });

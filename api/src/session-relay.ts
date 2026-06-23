@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { COMPACT_BOUNDARY_SUBTYPES, isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claudeJsonlPath } from "./session-routes";
 import type { RuntimeStream } from "./session-registry";
 
@@ -100,50 +101,60 @@ export class Claude2SessionRelay {
     };
   }
 
-  async handleStdoutLine(line: string): Promise<void> {
+  // `parsed` lets the caller (readStdout) reuse a single parse across all three
+  // consumers (capture functions + this) instead of JSON.parsing each line three
+  // times. Undefined ⇒ parse here (direct/test callers); null ⇒ caller already
+  // tried and failed, so skip the system inspection entirely.
+  async handleStdoutLine(line: string, parsed?: Record<string, unknown> | null): Promise<void> {
     await this.activatePromise;
     if (this.isDestroyed) return;
 
-    try {
-      const msg = JSON.parse(line) as Record<string, unknown>;
-      if (msg.type === "system") {
-        const subtype = msg.subtype as string | undefined;
-        // 特殊时期缩容：compact 把之前的块压掉——清空旧 history/live 缓冲，
-        // 该 boundary 行由随后的 push 成为新块首行。
-        if (subtype === "compact_boundary" || subtype === "microcompact_boundary") {
-          this.historyLines = [];
-          this.liveLines = [];
-          console.log("[relay] compact_boundary: trimmed history+live buffers");
-        }
-        const knownSubtypes = new Set([
-          "init",
-          "seed_init",
-          "thinking_tokens",
-          "api_retry",
-          "compact_boundary",
-          "microcompact_boundary",
-          "status",
-          "turn_duration",
-          "api_error",
-          "task_started",
-          "task_updated",
-          "task_notification",
-        ]);
-        if (subtype && !knownSubtypes.has(subtype)) {
-          console.log(
-            `[relay] unknown system subtype: "${subtype}" keys=${Object.keys(msg).sort().join(",")}`,
-          );
-        }
-        if (
-          subtype === "task_started" ||
-          subtype === "task_updated" ||
-          subtype === "task_notification"
-        ) {
-          console.log(`[relay] ${subtype}: ${JSON.stringify(msg)}`);
-        }
+    let msg: Record<string, unknown> | null;
+    if (parsed === undefined) {
+      try {
+        msg = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        msg = null;
       }
-    } catch {
-      /* unparseable — let through to broadcast/buffer */
+    } else {
+      msg = parsed;
+    }
+
+    if (msg && msg.type === "system") {
+      const subtype = msg.subtype as string | undefined;
+      // 特殊时期缩容：compact 把之前的块压掉——清空旧 history/live 缓冲，
+      // 该 boundary 行由随后的 push 成为新块首行。
+      if (isCompactBoundarySubtype(subtype)) {
+        this.historyLines = [];
+        this.liveLines = [];
+        console.log("[relay] compact_boundary: trimmed history+live buffers");
+      }
+      const knownSubtypes = new Set([
+        "init",
+        "seed_init",
+        "thinking_tokens",
+        "api_retry",
+        "compact_boundary",
+        "microcompact_boundary",
+        "status",
+        "turn_duration",
+        "api_error",
+        "task_started",
+        "task_updated",
+        "task_notification",
+      ]);
+      if (subtype && !knownSubtypes.has(subtype)) {
+        console.log(
+          `[relay] unknown system subtype: "${subtype}" keys=${Object.keys(msg).sort().join(",")}`,
+        );
+      }
+      if (
+        subtype === "task_started" ||
+        subtype === "task_updated" ||
+        subtype === "task_notification"
+      ) {
+        console.log(`[relay] ${subtype}: ${JSON.stringify(msg)}`);
+      }
     }
 
     this.liveLines.push(line);
@@ -198,34 +209,38 @@ export class Claude2SessionRelay {
 
     try {
       const jsonlPath = claudeJsonlPath(this.projectPath, this.claudeSessionId);
-      const raw = readFileSync(jsonlPath, "utf8");
-      const lines: string[] = [];
-      // compact-block windowing: keep only the last compact block. Track the index
-      // of the last compact_boundary — it starts the new (post-compact) block, so
-      // we slice from it (inclusive). No boundary ⇒ return full file (fallback).
-      let lastBoundaryIndex = -1;
-      for (const line of raw.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (parsed && typeof parsed === "object") {
-            if (
-              parsed.type === "system" &&
-              (parsed.subtype === "compact_boundary" || parsed.subtype === "microcompact_boundary")
-            ) {
-              lastBoundaryIndex = lines.length;
-            }
-            lines.push(trimmed);
-          }
-        } catch {
-          /* skip malformed */
-        }
+      const buf = readFileSync(jsonlPath);
+      // compact-block windowing: keep only the last compact block. Locate the last
+      // boundary by backward-scanning the raw buffer for each boundary subtype's
+      // wire marker — one lastIndexOf pass per subtype (two total), no full-file
+      // line parse — then slice from that boundary's line start (inclusive) to EOF.
+      // No boundary ⇒ the session was never compacted: parse the whole file.
+      let lastBoundary = -1;
+      for (const subtype of COMPACT_BOUNDARY_SUBTYPES) {
+        const off = buf.lastIndexOf(`"subtype":"${subtype}"`);
+        if (off > lastBoundary) lastBoundary = off;
       }
-      return lastBoundaryIndex >= 0 ? lines.slice(lastBoundaryIndex) : lines;
+      const segment =
+        lastBoundary < 0 ? buf : buf.subarray(buf.lastIndexOf(0x0a, lastBoundary) + 1);
+      return this.parseJsonlLines(segment.toString("utf8"));
     } catch {
       return [];
     }
+  }
+
+  private parseJsonlLines(raw: string): string[] {
+    const lines: string[] = [];
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object") lines.push(trimmed);
+      } catch {
+        /* skip malformed */
+      }
+    }
+    return lines;
   }
 
   private broadcast(line: string): void {
