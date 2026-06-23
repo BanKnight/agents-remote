@@ -310,8 +310,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     loading,
     liveThinkingTokens,
     tasks,
-    slashCommands,
-    skills,
     retryInfo,
   } = useClaude2Session(
     projectName,
@@ -462,8 +460,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                             modelSwitchVersion={modelSwitchVersion}
                             permissionMode={permissionMode}
                             availablePermissionModes={availablePermissionModes}
-                            slashCommands={slashCommands}
-                            skills={skills}
                             projectName={projectName}
                             sessionId={sessionId}
                             aiTitle={aiTitle}
@@ -2950,8 +2946,6 @@ function ComposerWithInterrupt({
   modelSwitchVersion,
   permissionMode,
   availablePermissionModes,
-  slashCommands,
-  skills,
   projectName,
   sessionId,
   aiTitle,
@@ -2963,8 +2957,6 @@ function ComposerWithInterrupt({
   modelSwitchVersion: number;
   permissionMode?: string;
   availablePermissionModes: string[];
-  slashCommands: string[];
-  skills: string[];
   projectName: string;
   sessionId: string;
   aiTitle?: string | null;
@@ -2972,48 +2964,36 @@ function ComposerWithInterrupt({
 }) {
   const { t } = useT();
 
-  // Full skill+slash catalog = the description source. slashItems below filters
-  // it by the session's availability list (slashCommands/skills props), so the
-  // menu shows only what the CLI reports as available, with real descriptions
-  // (skills from SKILL.md, not a placeholder). Works under windowing where
-  // system.init may be absent from the replayed tail.
+  // Full skill+slash catalog is the sole source for the slash menu (project +
+  // user + plugin + builtin). Always fetched on open — it does not depend on the
+  // session's availability list, so the menu is identical on first load and on
+  // reconnect (windowing may drop system.init from the replayed tail).
   const descQuery = useQuery({
     queryKey: ["projects", projectName, "agent-sessions", sessionId, "skill-slash-catalog"],
     queryFn: async () => {
       const { getSkillSlashCatalog } = await import("../api/client");
       return getSkillSlashCatalog(projectName, sessionId);
     },
-    enabled: slashCommands.length > 0 || skills.length > 0,
     staleTime: Infinity,
   });
 
+  // Catalog is the single source for descriptions, kinds, and the item list.
+  // Plugin entries are namespaced (`plugin:entry`); same-named command + skill
+  // carry independent descriptions (no Map clobber), keyed apart by kind.
+  const slashItems = useMemo<readonly Unstable_SlashCommand[]>(
+    () =>
+      (descQuery.data?.commands ?? []).map((info) => ({
+        id: info.name,
+        description: info.description,
+        execute: () => undefined,
+      })),
+    [descQuery.data],
+  );
   const kindById = useMemo(() => {
     const map = new Map<string, "command" | "skill">();
-    for (const cmd of slashCommands) map.set(cmd.replace(/^\/+/, ""), "command");
-    for (const skill of skills) map.set(skill.replace(/^\/+/, ""), "skill");
-    return map;
-  }, [slashCommands, skills]);
-
-  const descMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const info of descQuery.data?.commands ?? []) {
-      if (info.description) map.set(info.name, info.description);
-    }
+    for (const info of descQuery.data?.commands ?? []) map.set(info.name, info.kind);
     return map;
   }, [descQuery.data]);
-
-  const slashItems = useMemo<readonly Unstable_SlashCommand[]>(() => {
-    const items: Unstable_SlashCommand[] = [];
-    for (const cmd of slashCommands) {
-      const id = cmd.replace(/^\/+/, "");
-      items.push({ id, description: descMap.get(id) ?? "", execute: () => undefined });
-    }
-    for (const skill of skills) {
-      const id = skill.replace(/^\/+/, "");
-      items.push({ id, description: descMap.get(id) ?? "Skill", execute: () => undefined });
-    }
-    return items;
-  }, [slashCommands, skills, descMap]);
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
   return (

@@ -1310,23 +1310,6 @@ describe("useClaude2Session attachment subtypes", () => {
     expect(result.current.storeAdapter.messages.length).toBe(before);
   });
 
-  test("skill_listing populates skills state", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
-    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
-    const socket = MockSocket.instances[0];
-    act(() => socket.open());
-
-    act(() => {
-      socket.emit(
-        attMsg("skill_listing", {
-          content: "- skill-x: desc\n- skill-y: another",
-        }),
-      );
-    });
-
-    expect(result.current.skills).toEqual(["skill-x", "skill-y"]);
-  });
-
   test("mcp_instructions_delta accumulates mcpServers", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
@@ -1338,29 +1321,6 @@ describe("useClaude2Session attachment subtypes", () => {
     });
 
     expect(result.current.mcpServers).toEqual(["a", "b"]);
-  });
-
-  test("invoked_skills merges into skills", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
-    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
-    const socket = MockSocket.instances[0];
-    act(() => socket.open());
-
-    act(() => {
-      socket.emit(
-        attMsg("skill_listing", {
-          content: "- base-skill: desc",
-        }),
-      );
-      socket.emit(
-        attMsg("invoked_skills", {
-          skills: [{ name: "extra-skill", path: "/tmp" }],
-        }),
-      );
-    });
-
-    expect(result.current.skills).toContain("base-skill");
-    expect(result.current.skills).toContain("extra-skill");
   });
 
   test("file adds system bubble with attachmentType", async () => {
@@ -1380,7 +1340,7 @@ describe("useClaude2Session attachment subtypes", () => {
     expect(custom?.attachmentType).toBe("file");
   });
 
-  test("session_init resets mcpServers and skills", async () => {
+  test("session_init resets mcpServers", async () => {
     const { result } = renderHook(() => useClaude2Session("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -1388,17 +1348,14 @@ describe("useClaude2Session attachment subtypes", () => {
 
     act(() => {
       socket.emit(attMsg("mcp_instructions_delta", { addedNames: ["srv"], addedBlocks: [] }));
-      socket.emit(attMsg("skill_listing", { content: "- old-skill: desc" }));
     });
 
     expect(result.current.mcpServers).toEqual(["srv"]);
-    expect(result.current.skills).toEqual(["old-skill"]);
 
     act(() => {
       socket.emit({ type: "session_init", resume: false } as SessionStreamServerMessage);
     });
 
     expect(result.current.mcpServers).toEqual([]);
-    expect(result.current.skills).toEqual([]);
   });
 });

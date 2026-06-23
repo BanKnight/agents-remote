@@ -2675,8 +2675,6 @@ export function useClaude2Session(
         setResolvedModel(init.model);
       }
       if (init.permissionMode) setPermissionMode(init.permissionMode);
-      if (init.slash_commands?.length) setSlashCommands(init.slash_commands);
-      if (init.skills?.length) setSkills(init.skills);
       if (init.mcp_servers?.length) {
         setMcpServers(init.mcp_servers.map((s) => s.name ?? "").filter(Boolean));
       }
@@ -2788,9 +2786,6 @@ export function useClaude2Session(
                 : t,
             ),
           );
-        if (ops.skills) setSkills(ops.skills);
-        if (ops.skillsAdd) setSkills((prev) => [...new Set([...prev, ...ops.skillsAdd!])]);
-        if (ops.slashCommands) setSlashCommands(ops.slashCommands);
         if (ops.mcpServersAdd)
           setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
       }
@@ -2866,8 +2861,6 @@ export function useClaude2Session(
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
-  const [slashCommands, setSlashCommands] = useState<string[]>([]);
-  const [skills, setSkills] = useState<string[]>([]);
   const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [inputQueue, setInputQueue] = useState<QueueEntry[]>([]);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
@@ -2880,8 +2873,6 @@ export function useClaude2Session(
     setRawMessages([]);
     messageMapRef.current = new Map();
     setTasks([]);
-    setSlashCommands([]);
-    setSkills([]);
     setMcpServers([]);
     setInputQueue([]);
     setLastPrompt(null);
@@ -3379,8 +3370,6 @@ export function useClaude2Session(
     loading,
     liveThinkingTokens,
     tasks,
-    slashCommands,
-    skills,
     mcpServers,
     inputQueue,
     lastPrompt,
