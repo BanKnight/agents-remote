@@ -269,16 +269,42 @@ const findMissingTailByUuid = (
 */
 
 /**
- * Whether an assistant response is currently in-flight (isRunning).
+ * Whether an assistant response is currently in-flight (isRunning), counted
+ * over the live + instantaneous segments ONLY.
  *
- * Opens on the first assistant delta or the first thinking_tokens event of a
- * response; closes when a result arrives. Multiple assistant deltas in the
- * same response count as one, not N.
+ * Opens on the first assistant delta / thinking_tokens event of a response,
+ * closes when a `result` arrives. Multiple assistant deltas in the same
+ * response count as one, not N.
+ *
+ * Segment scope (see docs/design/message-replay.md "服务端状态"):
+ * - history (JSONL archive): NEVER scanned. `result` is stdout-only and never
+ *   persisted to JSONL, so history has no turn-close signal. Scanning it would
+ *   leave responseOpen stuck true on any archive ending in an assistant message
+ *   (e.g. a resumed session's tail block) and falsely show running — the
+ *   "three-dot animation + stop button on resume entry" bug.
+ * - live + instantaneous (CLI stdout during this process lifetime): scanned.
+ *   Both contain `result`, so opens/closes resolve correctly.
+ *
+ * `liveStart` is the rawMessages index where the live+instantaneous region
+ * begins (= history segment length, captured at the `history_end` protocol
+ * signal by the adapter). Defaults to 0 (no history segment — fresh session,
+ * or history empty), so existing callers that omit it scan the whole array.
+ *
+ * Why resume shows idle: a resumed CLI is a fresh process; its live +
+ * instantaneous region holds no open turn until the user sends a new prompt,
+ * so the count is 0 on entry. Same invariant applyToolLifecycle encodes via
+ * isResume (resume ⇒ turn already ended) — running and tool-interrupted are
+ * two branches of one semantic tree.
  */
-export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): number {
+export function computeRunningCount(
+  rawMessages: SessionStreamServerMessage[],
+  opts?: { liveStart?: number },
+): number {
+  const liveStart = opts?.liveStart ?? 0;
   let responseOpen = false;
 
-  for (const msg of rawMessages) {
+  for (let i = liveStart; i < rawMessages.length; i++) {
+    const msg = rawMessages[i];
     if (!msg) continue;
 
     if (msg.type === "result") {
@@ -310,13 +336,21 @@ export function computeRunningCount(rawMessages: SessionStreamServerMessage[]): 
  * block arrives this returns null and the reasoning part (ReasoningGroup, with
  * the final stamped count) takes over. Null when idle, in replay, or when the
  * turn has no thinking_tokens at all.
+ *
+ * Same segment scope as computeRunningCount: only the live + instantaneous
+ * region (from `liveStart`) is considered — history thinking_tokens belong to
+ * archived turns and must not drive the live indicator.
  */
-export function deriveLiveThinkingTokens(rawMessages: SessionStreamServerMessage[]): number | null {
-  if (computeRunningCount(rawMessages) === 0) return null;
+export function deriveLiveThinkingTokens(
+  rawMessages: SessionStreamServerMessage[],
+  opts?: { liveStart?: number },
+): number | null {
+  const liveStart = opts?.liveStart ?? 0;
+  if (computeRunningCount(rawMessages, { liveStart }) === 0) return null;
   let lastAssistantIdx = -1;
   let lastThinkingTokensIdx = -1;
   let lastEstimated: number | null = null;
-  for (let i = 0; i < rawMessages.length; i++) {
+  for (let i = liveStart; i < rawMessages.length; i++) {
     const msg = rawMessages[i];
     if (!msg) continue;
     if (msg.type === "assistant") {
@@ -331,14 +365,16 @@ export function deriveLiveThinkingTokens(rawMessages: SessionStreamServerMessage
 }
 
 // ── Agent container status derivation ────────────────────────────────
-// Pure function: derives an Agent container's lifecycle status from
-// whether its tool_result (tail) has arrived + the socket connection
-// state. No independent container state — this is a projection of
-// rawMessages + connection, per UI = f(state).
-// Tool/Agent status derives ONLY from server-side CLI execution signals in
-// the message stream — never from client socket state. The CLI signals
-// turn-end via the `result` message; applyToolLifecycle marks unresolved
-// tools `isInterrupted` when their turn ended (or on resume).
+// Pure function: derives an Agent container's lifecycle status from its
+// tool signals alone — no socket state, no independent container state.
+// This is a projection of rawMessages, per UI = f(state).
+//
+// Tool/Agent status derives ONLY from server-side CLI execution signals:
+// - COMPLETION is by tool_use_id pairing (hasTail = the tail tool_result
+//   arrived).
+// - INTERRUPTION timing is by turn-end: applyToolLifecycle marks a
+//   still-unresolved tool `isInterrupted` once the turn has ended (the
+//   `result` message's position), or unconditionally on resume.
 //   hasTail + !isError     → complete
 //   hasTail + isError      → error
 //   !hasTail + interrupted → interrupted (turn ended / resumed without result)
@@ -872,16 +908,35 @@ export function applyToolResultsToMessages(
 }
 
 /**
- * Apply the tool execution lifecycle: mark unresolved tools `isInterrupted`
- * when their turn has ended. A tool's turn ends when a `result` message
- * (turn-end boundary) appears after it, or unconditionally on resume (the
- * history is from a concluded invocation whose pending tools will never
- * receive results). Tool status derives ONLY from these server-side CLI
- * signals — never from client socket state.
+ * Apply the tool execution lifecycle: mark still-unresolved tools
+ * `isInterrupted` once their turn has ended, so a tool whose `tool_result`
+ * never arrived doesn't render as "running" forever.
+ *
+ * Two separate mechanisms — do NOT conflate them (this was a recurring source
+ * of confusion):
+ * - Tool COMPLETION is by `tool_use_id` pairing: normalizeChatStream fills
+ *   `custom.result` / `custom.tailResult` when the matching result arrives.
+ *   A tool with a result is complete regardless of any turn boundary.
+ * - Tool INTERRUPTION timing is by turn-end: a tool still missing its result
+ *   when the turn ends is marked `isInterrupted`. The turn-end signal is the
+ *   `result` message's position (captured in `turnEndBoundaries`); a tool at
+ *   render index `i < lastBoundary` belongs to a turn that already ended.
+ *
+ * So tool↔result association is by id, NOT by turn-end; turn-end only decides
+ * WHEN an unresolved tool is considered interrupted.
+ *
+ * `result` is stdout-only (never persisted to JSONL — see docs/research/
+ * claude-cli-stream-protocol.md), so resumed history has no turn-end markers.
+ * On resume every still-unresolved tool is therefore marked interrupted
+ * unconditionally via `opts.isResume` — matching the invariant that a resumed
+ * CLI is a fresh process whose prior pending tools will never receive results.
+ * Tool status derives ONLY from these server-side CLI signals — never from
+ * client socket state. (The running indicator shares this same resume
+ * invariant in `computeRunningCount`, but via live+instantaneous segment
+ * scope rather than isResume directly.)
  *
  * `turnEndBoundaries` are render-list indices captured by renderChatStream
- * at each `turn-end` item (= messages.length at that point); a tool at index
- * `i < lastBoundary` belongs to a turn that already ended.
+ * at each `turn-end` item (= messages.length at that point).
  *
  * Returns `{ messages: prev, changed: false }` when nothing was marked
  * (no-alloc pass to avoid needless re-render).
@@ -2677,6 +2732,15 @@ export function useClaude2Session(
   // Server-authoritative: whether this session instance was spawned with --resume.
   // Populated on session_init; used at history_end to decide orphan marking.
   const isResumeRef = useRef(false);
+  // rawMessages index where the live + instantaneous region begins (= history
+  // segment length). Set at history_end (history is 1:1 appended by processBatch,
+  // so batch.length is the exact live-region start). Reset on session_init. Used
+  // to scope computeRunningCount / deriveLiveThinkingTokens to live+instantaneous
+  // only — history (JSONL archive) has no `result` and must not drive running.
+  // Like isResumeRef, this is a ref coupled to rawMessages changes (history_end
+  // sets it synchronously right before processBatch's setRawMessages triggers a
+  // re-render), so it intentionally is not a useMemo dependency.
+  const liveStartRef = useRef(0);
 
   // ── Shared helper: push a bubble + drain pending API errors ──
 
@@ -2855,8 +2919,14 @@ export function useClaude2Session(
   );
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isRunning = useMemo(() => computeRunningCount(rawMessages) > 0, [rawMessages]);
-  const liveThinkingTokens = useMemo(() => deriveLiveThinkingTokens(rawMessages), [rawMessages]);
+  const isRunning = useMemo(
+    () => computeRunningCount(rawMessages, { liveStart: liveStartRef.current }) > 0,
+    [rawMessages],
+  );
+  const liveThinkingTokens = useMemo(
+    () => deriveLiveThinkingTokens(rawMessages, { liveStart: liveStartRef.current }),
+    [rawMessages],
+  );
   const [loading, setLoading] = useState(true);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
@@ -2914,6 +2984,7 @@ export function useClaude2Session(
     compactActiveRef.current = false;
     compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
+    liveStartRef.current = 0;
     // NOTE: this callback never reads initialModel/initialPermissionMode (the
     // initial values are applied by the dedicated effects below), so its deps
     // must be empty. Listing them here made the TanStack Query resolve
@@ -3196,6 +3267,11 @@ export function useClaude2Session(
           // Break historyRecv down: how much was client processing vs waiting for
           // frames to arrive. procTotal ≪ recvMs + even gaps ⇒ network, not client.
           reportArrival(recvMs);
+          // The history segment occupies rawMessages[0..batch.length) (processBatch
+          // appends 1:1). The live + instantaneous region starts at batch.length —
+          // capture it BEFORE processBatch so the re-render it triggers reads the
+          // new value. Empty history (non-resume) leaves liveStart at its 0 reset.
+          liveStartRef.current = batch.length;
           processBatch(batch);
           // Inject a batch divider whenever the batch carried any messages at
           // all; whether it actually renders is decided in renderChatStream

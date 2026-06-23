@@ -60,6 +60,8 @@ relay 持有两个字符串数组缓冲：
 | **live** | 空启动 | 瞬时消息到达即缓存（`handleStdoutLine`），cap 5000 | **消息合并压实**：多个 `thinking_token` 自合并、最后与 `thinking` 合并 |
 | **瞬时消息** | — | CLI 当前正在产生、尚未沉淀的数据，产生即流入 live（概念性上游阶段，实现里折叠进 live） | — |
 
+**live 与瞬时同源**：二者都是 CLI **存活期**产生的 stdout——live 是 connect 时已缓冲的部分，瞬时是 connect 后实时到达的部分（瞬时在实现里折叠进 live），只是时间切片不同。它们都含 `result`（turn-close 信号），因此客户端 `computeRunningCount` 的 running 判定**只扫 live + 瞬时段**；history（JSONL 归档，无 `result`）永不参与——否则扫到归档里未闭合的 assistant 会误判为 running（resume 进入显示假动画的根因）。这与 tool interrupted 共享同一 resume 不变量，见下文「system.init 与 turn 边界」。
+
 **关键区分**：初始化是「把状态建立起来」；特殊时期是「为业务/性能目的**主动改写**已建立的状态」。二者不是一回事——API 重启、`--resume` 重读都只是初始化。
 
 **核心问题**：history + live 合起来量太大，是我们当前的性能瓶颈。解决方向是**服务端先用特殊时期管理自身 history/live 的大小**（先缩服务端状态），再决定对客户端的同步策略（全量 / 按需）。具体缩容与同步方案见下文「特殊时期 history 缩容」小节。
@@ -150,6 +152,7 @@ injectLine(line): broadcast only（不缓冲，用于注入合成消息）
 
 - **system.init 捕获**：两路——`claude2-runtime.ts` `captureSystemInitFromLine`（写进程元数据 + `onSystemInit` 回调）；`claude2-stream.ts` realtime 分支（捕获 claudeSessionId/model 写 registry）。`system.init` 与 `result` 都是 **stdout 实时消息，不写入 JSONL**（见 [CLI stream-json 协议](../research/claude-cli-stream-protocol.md) 持久化表）。
 - **turn 边界**：持久化 JSONL 里 turn 尾是 `assistant.message.stop_reason === "end_turn"`，**不是** `result`（result 仅在 live 流）。resume 回放的 turn-end 由客户端 `isResume` 标志推导（`applyToolLifecycle` 对所有未收 tool_result 的工具无条件标 interrupted），不依赖 result 边界。
+- **running 状态**（与 tool interrupted 共享同一 resume 不变量，二者是同一棵语义树的两支）：`computeRunningCount` 只在 **live + 瞬时段**计数——`result` 是 stdout-only、不在 history，所以只有 live + 瞬时（都含 `result`）能正确开/关 turn；history 段（JSONL 归档，无 `result`）**永不参与**，否则扫到归档里未闭合的 assistant 会误判为 running（这正是 resume 进入显示假三点动画 + 停止按钮的根因）。resume 进入时 running=false 的依据与 tool interrupted 同源：resume 后 CLI 是新进程，live + 瞬时段无未关闭 turn，并非靠"扫到 result"。详见 `claude2-adapter.ts` `computeRunningCount` docstring。
 
 ## 正常运行时序
 

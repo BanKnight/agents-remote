@@ -324,6 +324,55 @@ describe("deriveLiveThinkingTokens", () => {
   });
 });
 
+// ── liveStart segment scope (resume: history excluded) ───────────────
+// History segment (JSONL archive) has no `result` and must not drive running.
+// Only live + instantaneous (from liveStart) do. This locks down the
+// resume-entry "three-dot animation + stop button" bug: history tail ends in
+// assistant with no closing result, but it belongs to an archived turn.
+
+describe("computeRunningCount — liveStart segment scope", () => {
+  test("history-only assistant tail is not running when excluded by liveStart", () => {
+    const historyTail = [
+      assistant("h-1", [{ type: "text", text: "archived" }]),
+      assistant("h-2", [{ type: "text", text: "archived end" }]),
+    ];
+    // liveStart = 2 excludes the whole history segment; live region is empty.
+    expect(computeRunningCount(historyTail, { liveStart: 2 })).toBe(0);
+    // Default (no liveStart) scans everything → 1, which is exactly the bug.
+    expect(computeRunningCount(historyTail)).toBe(1);
+  });
+
+  test("live-segment assistant after history drives running; live result closes it", () => {
+    const msgs = [
+      assistant("h-1", [{ type: "text", text: "archived" }]), // history
+      assistant("l-1", [{ type: "text", text: "live" }]), // live
+    ];
+    expect(computeRunningCount(msgs, { liveStart: 1 })).toBe(1);
+    expect(computeRunningCount([...msgs, result("success")], { liveStart: 1 })).toBe(0);
+  });
+
+  test("liveStart defaults to 0 — fresh session scans everything", () => {
+    expect(computeRunningCount([assistant("l-1", [{ type: "text", text: "hi" }])])).toBe(1);
+  });
+});
+
+describe("deriveLiveThinkingTokens — liveStart segment scope", () => {
+  test("ignores history thinking_tokens when excluded by liveStart", () => {
+    // History thinking_tokens from an archived turn; live region empty → null.
+    expect(
+      deriveLiveThinkingTokens([thinkingTokens(39), thinkingTokens(50)], { liveStart: 2 }),
+    ).toBeNull();
+  });
+
+  test("uses live-region thinking_tokens only", () => {
+    expect(
+      deriveLiveThinkingTokens([thinkingTokens(39), thinkingTokens(50), thinkingTokens(7)], {
+        liveStart: 2,
+      }),
+    ).toBe(7);
+  });
+});
+
 // ── messageToThreadLike tests ─────────────────────────────────────────
 
 describe("deriveStatus", () => {
