@@ -50,22 +50,35 @@ const BATCH_END_TYPES: ReadonlySet<string> = new Set(["history_end", "live_end"]
 const BATCH_CHUNK_TARGET_BYTES = 256 * 1024;
 
 /**
+ * Don't split batches whose total raw size falls below this threshold. The
+ * multi-frame pipeline gain only matters for large payloads; a compact window's
+ * tail block (e.g. 428 lines, ~850 KB raw → ~33 KB gzip) is too small to stall
+ * cloudflared — splitting it into 4 tiny frames just adds socket.send and
+ * DecompressionStream overhead with no throughput benefit.
+ */
+const BATCH_CHUNK_MIN_TOTAL_BYTES = 2 * BATCH_CHUNK_TARGET_BYTES; // 512 KB
+
+/**
  * Split raw JSONL batch lines into chunks whose joined size stays at or below
  * `targetBytes` (the last chunk may be smaller; a single line larger than the
- * target becomes its own chunk since lines can't be split). JSON rows never
- * contain a raw newline, so re-joining all chunks with `"\n"` round-trips the
- * original batch losslessly regardless of how it was chunked.
+ * target becomes its own chunk since lines can't be split). If the total batch
+ * is under `minTotalBytes` the whole batch stays as a single chunk — compact
+ * windowing already shrunk the tail, and the multi-frame pipeline only pays off
+ * for large payloads.
  */
 export function chunkBatchLines(
   lines: string[],
   targetBytes: number = BATCH_CHUNK_TARGET_BYTES,
+  minTotalBytes: number = BATCH_CHUNK_MIN_TOTAL_BYTES,
 ): string[] {
+  let totalBytes = 0;
   const chunks: string[] = [];
   let current: string[] = [];
   let currentBytes = 0;
   for (const line of lines) {
     // +1 accounts for the "\n" separator join will insert between lines.
     const lineBytes = Buffer.byteLength(line) + 1;
+    totalBytes += lineBytes;
     if (currentBytes > 0 && currentBytes + lineBytes > targetBytes) {
       chunks.push(current.join("\n"));
       current = [];
@@ -75,6 +88,11 @@ export function chunkBatchLines(
     currentBytes += lineBytes;
   }
   if (current.length > 0) chunks.push(current.join("\n"));
+  // Windowing already shrinks the tail — small batches don't need multi-frame
+  // pipelining. Combine into one chunk to reduce socket.send round-trips.
+  if (chunks.length > 1 && totalBytes < minTotalBytes) {
+    return [lines.join("\n")];
+  }
   return chunks;
 }
 

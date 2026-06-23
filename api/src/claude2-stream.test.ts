@@ -120,7 +120,8 @@ describe("chunkBatchLines", () => {
 
   test("splits when cumulative size exceeds target and round-trips the original rows", () => {
     // Target 10 bytes; with "\n" separators the lines are "aaa"(4) "bbbb"(5) "cc"(3) "dddddd"(7).
-    const chunks = chunkBatchLines(["aaa", "bbbb", "cc", "dddddd"], 10);
+    // Pass minTotalBytes=0 to disable the "small batch → single chunk" heuristic.
+    const chunks = chunkBatchLines(["aaa", "bbbb", "cc", "dddddd"], 10, 0);
     expect(chunks.join("\n")).toBe("aaa\nbbbb\ncc\ndddddd");
     expect(chunks.length).toBeGreaterThan(1);
     for (const chunk of chunks) {
@@ -134,9 +135,25 @@ describe("chunkBatchLines", () => {
 
   test("oversized single line becomes its own chunk", () => {
     const long = "x".repeat(100);
-    const chunks = chunkBatchLines(["a", long, "b"], 10);
+    // minTotalBytes=0 disables the small-batch merge so we test splitting behavior.
+    const chunks = chunkBatchLines(["a", long, "b"], 10, 0);
     expect(chunks.join("\n")).toBe(`a\n${long}\nb`);
     expect(chunks.length).toBe(3);
     expect(Buffer.byteLength(chunks[1]!)).toBe(Buffer.byteLength(long));
+  });
+
+  test("batch under minTotalBytes stays as one chunk even when targetBytes would split it", () => {
+    // targetBytes=10 would normally split these 4 lines (each 4+1=5 bytes → 20 total > 10),
+    // but minTotalBytes=50 keeps them as a single chunk.
+    const chunks = chunkBatchLines(["aaaa", "bbbb", "cccc", "dddd"], 10, 50);
+    expect(chunks).toEqual(["aaaa\nbbbb\ncccc\ndddd"]);
+  });
+
+  test("batch at or above minTotalBytes still splits on targetBytes", () => {
+    // targetBytes=10, minTotalBytes=20. Each line = 5 bytes (4 chars + "\n").
+    // Lines: "aaaa"(5) "bbbb"(5) "cccc"(5) "dddd"(5) "eeee"(5) = 25 total ≥ 20 → split normally.
+    const chunks = chunkBatchLines(["aaaa", "bbbb", "cccc", "dddd", "eeee"], 10, 20);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("\n")).toBe("aaaa\nbbbb\ncccc\ndddd\neeee");
   });
 });
