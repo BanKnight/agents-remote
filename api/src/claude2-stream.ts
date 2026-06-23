@@ -43,47 +43,24 @@ const BATCH_END_TYPES: ReadonlySet<string> = new Set(["history_end", "live_end"]
  * while the old per-line text frames (≈2 KB each) reached ~11 Mbps — the tunnel
  * appears to buffer whole messages before forwarding, so splitting the batch
  * into several smaller independently-gzipped frames lets them pipeline through
- * the tunnel instead of stalling on one giant message. Tunable: lower = more
- * frames / better pipelining (until per-frame overhead returns). Each chunk is
- * gzipped independently so the client decompresses each without reassembly.
+ * the tunnel instead of stalling on one giant message. 512 KB keeps windowed
+ * tail blocks to 2–4 chunks (reasonable) while still giving large sessions
+ * enough frames for multi-frame pipelining. Each chunk is gzipped independently
+ * so the client decompresses each without reassembly.
  */
-const BATCH_CHUNK_TARGET_BYTES = 256 * 1024;
-
-/**
- * Max compressed size for a single-chunk batch. If the whole batch gzips below
- * this, send it as one frame — cloudflared won't stall on a sub-128KB message
- * (≤170ms at 6 Mbps), and the socket.send + DecompressionStream savings
- * outweigh any pipelining gain. Windowed tail blocks typically hit 30–60 KB
- * gzip, well under this.
- */
-const BATCH_SINGLE_CHUNK_MAX_COMPRESSED = 128 * 1024;
+const BATCH_CHUNK_TARGET_BYTES = 512 * 1024;
 
 /**
  * Split raw JSONL batch lines into chunks whose joined size stays at or below
- * `targetBytes`. Before chunking, gzip the full batch: if the compressed output
- * is under 128 KB, return it as a single chunk — compact windowing already
- * shrunk the tail, and the extra socket.send / DecompressionStream round-trips
- * cost more than any multi-frame pipeline gain for such a small payload.
- * JSON rows never contain a raw newline, so re-joining all chunks with `"\n"`
- * round-trips the original batch losslessly regardless of how it's chunked.
+ * `targetBytes` (the last chunk may be smaller; a single line larger than the
+ * target becomes its own chunk since lines can't be split). JSON rows never
+ * contain a raw newline, so re-joining all chunks with `"\n"` round-trips the
+ * original batch losslessly regardless of how it's chunked.
  */
 export function chunkBatchLines(
   lines: string[],
   targetBytes: number = BATCH_CHUNK_TARGET_BYTES,
-  maxCompressedBytes: number = BATCH_SINGLE_CHUNK_MAX_COMPRESSED,
 ): string[] {
-  if (lines.length === 0) return [];
-
-  // Gzip the full batch to decide: small compressed → single frame is fine.
-  const joined = lines.join("\n");
-  try {
-    if (Bun.gzipSync(Buffer.from(joined)).byteLength < maxCompressedBytes) {
-      return [joined];
-    }
-  } catch {
-    // gzip failed — fall through to regular chunking (text fallback).
-  }
-
   const chunks: string[] = [];
   let current: string[] = [];
   let currentBytes = 0;

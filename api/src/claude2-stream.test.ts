@@ -115,14 +115,12 @@ describe("createBatchEmitter", () => {
 
 describe("chunkBatchLines", () => {
   test("single chunk when total under target", () => {
-    // Small data gzips well under the 128KB default → single chunk.
     expect(chunkBatchLines(["a", "b", "c"], 1024)).toEqual(["a\nb\nc"]);
   });
 
-  test("splits when gzip probe is disabled (maxCompressedBytes=0)", () => {
-    // maxCompressedBytes=0 disables the gzip-probe shortcut — every non-empty
-    // batch will be > 0 bytes gzip, so it falls through to targetBytes splitting.
-    const chunks = chunkBatchLines(["aaa", "bbbb", "cc", "dddddd"], 10, 0);
+  test("splits when cumulative size exceeds target and round-trips the original rows", () => {
+    // Target 10 bytes; with "\n" separators the lines are "aaa"(4) "bbbb"(5) "cc"(3) "dddddd"(7).
+    const chunks = chunkBatchLines(["aaa", "bbbb", "cc", "dddddd"], 10);
     expect(chunks.join("\n")).toBe("aaa\nbbbb\ncc\ndddddd");
     expect(chunks.length).toBeGreaterThan(1);
     for (const chunk of chunks) {
@@ -134,26 +132,11 @@ describe("chunkBatchLines", () => {
     expect(chunkBatchLines([])).toEqual([]);
   });
 
-  test("oversized single line becomes its own chunk when gzip probe disabled", () => {
+  test("oversized single line becomes its own chunk", () => {
     const long = "x".repeat(100);
-    const chunks = chunkBatchLines(["a", long, "b"], 10, 0);
+    const chunks = chunkBatchLines(["a", long, "b"], 10);
     expect(chunks.join("\n")).toBe(`a\n${long}\nb`);
     expect(chunks.length).toBe(3);
     expect(Buffer.byteLength(chunks[1]!)).toBe(Buffer.byteLength(long));
-  });
-
-  test("gzip probe merges a split-prone batch when compressed output is small", () => {
-    // targetBytes=10 would split these 4 lines, but the joined+gzipped payload
-    // is a few dozen bytes — well under the default 128 KB — so it stays as one.
-    const chunks = chunkBatchLines(["aaaa", "bbbb", "cccc", "dddd"], 10);
-    expect(chunks).toEqual(["aaaa\nbbbb\ncccc\ndddd"]);
-  });
-
-  test("gzip probe falls through to splitting when compressed output exceeds threshold", () => {
-    // maxCompressedBytes=10 forces the gzip probe to reject (most gzip outputs
-    // are >10 bytes), so the batch splits by targetBytes=10.
-    const chunks = chunkBatchLines(["aaaa", "bbbb", "cccc", "dddd", "eeee"], 10, 10);
-    expect(chunks.length).toBeGreaterThan(1);
-    expect(chunks.join("\n")).toBe("aaaa\nbbbb\ncccc\ndddd\neeee");
   });
 });
