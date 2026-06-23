@@ -87,3 +87,40 @@ test("resolveSkillSlashCatalog lets a project command override a builtin name", 
   expect(reviews).toHaveLength(1);
   expect(reviews[0].description).toBe("project-specific review");
 });
+
+test("resolveSkillSlashCatalog scans plugin commands and skills under a namespace", async () => {
+  const pluginsRoot = resolve(`/tmp/agents-remote-catalog-plugins-${Date.now()}`);
+  cleanupDirs.add(pluginsRoot);
+  const installPath = resolve(pluginsRoot, "cache", "my-marketplace", "my-plugin", "1.0.0");
+  await mkdir(resolve(installPath, ".claude-plugin"), { recursive: true });
+  await mkdir(resolve(installPath, "commands"), { recursive: true });
+  await mkdir(resolve(installPath, "skills", "cool-skill"), { recursive: true });
+  await writeFile(
+    resolve(installPath, ".claude-plugin", "plugin.json"),
+    JSON.stringify({ name: "my-plugin", description: "x" }),
+  );
+  await writeFile(resolve(installPath, "commands", "greet.md"), commandMd("plugin greet"));
+  await writeFile(
+    resolve(installPath, "skills", "cool-skill", "SKILL.md"),
+    skillMd("cool-skill", "plugin skill desc"),
+  );
+  await writeFile(
+    resolve(pluginsRoot, "installed_plugins.json"),
+    JSON.stringify({
+      version: 2,
+      plugins: { "my-plugin@my-marketplace": [{ installPath }] },
+    }),
+  );
+
+  const result = await resolveSkillSlashCatalog(NOEXIST, {
+    commands: NOEXIST,
+    skills: NOEXIST,
+    pluginsJson: resolve(pluginsRoot, "installed_plugins.json"),
+  });
+  const greet = result.find((c) => c.name === "my-plugin:greet");
+  expect(greet?.kind).toBe("command");
+  expect(greet?.description).toBe("plugin greet");
+  const skill = result.find((c) => c.name === "my-plugin:cool-skill");
+  expect(skill?.kind).toBe("skill");
+  expect(skill?.description).toBe("plugin skill desc");
+});
