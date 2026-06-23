@@ -1372,6 +1372,32 @@ export type ChatStreamItem =
 const AGENT_TOOL_NAMES = new Set(["Agent", "agent", "Task", "task"]);
 
 /**
+ * User messages that are CLI command artifacts (not real user input) and should
+ * be dropped as noise by an open compact window so the window stays open for
+ * the trailing attachments. Only invoked while a compact window is open, so it
+ * never affects real user prompts.
+ *
+ * Two shapes:
+ * - isMeta/isSynthetic: caveats, hook echoes (CLI already flags these).
+ * - Manual `/compact` text command: the CLI emits a `<command-name>` echo and a
+ *   `<local-command-stdout>` reply WITHOUT isMeta, so content-shape detection is
+ *   required. Auto/programmatic compaction never emits these, which is why a
+ *   manual compact used to break attachment merging while auto didn't.
+ */
+export function isCompactWindowUserNoise(msg: SessionStreamServerMessage): boolean {
+  if (msg.type !== "user") return false;
+  const meta = msg as Record<string, unknown>;
+  if (meta.isMeta === true || meta.isSynthetic === true) return true;
+  const content = (meta.message as { content?: unknown } | undefined)?.content;
+  if (typeof content !== "string") return false;
+  return (
+    content.startsWith("<command-name>") ||
+    content.startsWith("<local-command-stdout>") ||
+    content.startsWith("<local-command-caveat>")
+  );
+}
+
+/**
  * Layer 1 — state. Walks rawMessages once, performs all merging /
  * association / folding, emits a domain model (ChatStreamItem[]).
  *
@@ -1670,11 +1696,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
-      // In-window isMeta/isSynthetic user noise (command-caveat, /compact
-      // echo, local-command-stdout) → drop, keep the window open. Handled here
-      // rather than via attachSkillBody so a stale lastToolUseId can't inject
-      // this noise into the preceding tool card.
-      if (msg.type === "user" && (cmeta.isMeta === true || cmeta.isSynthetic === true)) {
+      // In-window user noise (command-caveat, isMeta/isSynthetic echoes, manual
+      // `/compact` command echo + local-command-stdout) → drop, keep the window
+      // open. Handled here rather than via attachSkillBody so a stale
+      // lastToolUseId can't inject this noise into the preceding tool card.
+      if (isCompactWindowUserNoise(msg)) {
         continue;
       }
 

@@ -35,6 +35,7 @@ import {
   normalizeChatStream,
   renderChatStream,
   resolveAutoPermissionMode,
+  isCompactWindowUserNoise,
 } from "./claude2-adapter";
 import type {
   ApiErrorAttachment,
@@ -2761,6 +2762,59 @@ describe("normalizeChatStream", () => {
     const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
     // noise dropped; the following attachment is still absorbed
     expect(block.attachments).toHaveLength(1);
+  });
+
+  test("manual /compact command noise is dropped and attachments stay merged", () => {
+    const commandEcho: SessionStreamServerMessage = {
+      type: "user",
+      message: {
+        role: "user",
+        content:
+          "<command-name>/compact</command-name>\n<command-message>compact</command-message>",
+      },
+    } as unknown as SessionStreamServerMessage;
+    const localStdout: SessionStreamServerMessage = {
+      type: "user",
+      message: {
+        role: "user",
+        content:
+          "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>",
+      },
+    } as unknown as SessionStreamServerMessage;
+
+    const items = normalizeChatStream([
+      compactBoundary(),
+      compactSummary("Summary..."),
+      makeUser("caveat", { isMeta: true }),
+      commandEcho,
+      localStdout,
+      attachment("file", { displayPath: "a.ts" }),
+      attachment("plan_file_reference", { planFilePath: "plan.md" }),
+    ]);
+    expect(items).toHaveLength(1);
+    const block = items[0] as Extract<ChatStreamItem, { kind: "compact-block" }>;
+    expect(block.trigger).toBe("manual");
+    expect(block.attachments).toHaveLength(2);
+  });
+
+  test("isCompactWindowUserNoise only matches user command artifacts", () => {
+    expect(isCompactWindowUserNoise(makeUser("hi", { isMeta: true }))).toBe(true);
+    expect(
+      isCompactWindowUserNoise({
+        type: "user",
+        message: { role: "user", content: "<command-name>/compact</command-name>" },
+      } as unknown as SessionStreamServerMessage),
+    ).toBe(true);
+    expect(
+      isCompactWindowUserNoise({
+        type: "user",
+        message: { role: "user", content: "<local-command-stdout>x</local-command-stdout>" },
+      } as unknown as SessionStreamServerMessage),
+    ).toBe(true);
+    expect(isCompactWindowUserNoise(makeUser("real prompt"))).toBe(false);
+    expect(isCompactWindowUserNoise({ type: "assistant" } as SessionStreamServerMessage)).toBe(
+      false,
+    );
   });
 
   test("microcompact_boundary maps to trigger 'micro'", () => {
