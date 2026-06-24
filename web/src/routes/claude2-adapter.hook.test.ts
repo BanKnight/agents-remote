@@ -353,11 +353,19 @@ describe("useClaude2Session websocket lifecycle", () => {
     expect(socket.sent.some((s) => s.includes('"tool_use_id":"tool-1"'))).toBe(true);
     expect(socket.sent.some((s) => s.includes('"text":"world"'))).toBe(true);
     expect(
-      socket.sent.some((s) => s.includes('"type":"switch_model"') && s.includes('"model":"opus"')),
+      socket.sent.some(
+        (s) =>
+          s.includes('"type":"control_request"') &&
+          s.includes('"subtype":"set_model"') &&
+          s.includes('"model":"opus"'),
+      ),
     ).toBe(true);
     expect(
       socket.sent.some(
-        (s) => s.includes('"type":"permission_mode"') && s.includes('"mode":"default"'),
+        (s) =>
+          s.includes('"type":"control_request"') &&
+          s.includes('"subtype":"set_permission_mode"') &&
+          s.includes('"mode":"default"'),
       ),
     ).toBe(true);
 

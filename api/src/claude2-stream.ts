@@ -276,58 +276,13 @@ export class Claude2StreamController {
         parsed.type === "control_response" ||
         parsed.type === "control_request"
       ) {
+        // All client→CLI messages are forwarded verbatim to stdin: user text,
+        // permission control_response (allow/deny), and control_request actions
+        // (set_model / set_permission_mode / interrupt). The CLI switches
+        // model/mode in-process and replies control_response on stdout, which
+        // the relay forwards automatically. The CLI process stays alive.
         console.log(`[claude2-stream] message ${parsed.type}: ${data.runtimeKey}`);
         await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(parsed) + "\n");
-      } else if (parsed.type === "switch_model") {
-        console.log(`[claude2-stream] switch_model: ${data.runtimeKey} → ${parsed.model}`);
-        // Close existing stream before switching
-        const existingStream = this.streams.get(socket);
-        if (existingStream) {
-          existingStream.close();
-          this.streams.delete(socket);
-        }
-        const result = await this.claude2Runtime.switchModel(data.runtimeKey, parsed.model);
-        if (result) {
-          // Update session metadata with new model
-          void this.sessionRegistry.setClaudeSessionId(
-            data.sessionId,
-            result.claudeSessionId ?? "",
-            parsed.model,
-          );
-          // Restart stream with new process
-          try {
-            await this.startStream(socket, data);
-            send(socket, { type: "switch_model_result", model: parsed.model, success: true });
-          } catch (e) {
-            console.error(`[claude2-stream] restart stream after model switch failed`, e);
-            send(socket, {
-              type: "switch_model_result",
-              model: parsed.model,
-              success: false,
-              error: String(e),
-            });
-          }
-        }
-      } else if (parsed.type === "permission_mode") {
-        console.log(`[claude2-stream] permission_mode: ${data.runtimeKey} → ${parsed.mode}`);
-        const existingStream = this.streams.get(socket);
-        if (existingStream) {
-          existingStream.close();
-          this.streams.delete(socket);
-        }
-        const result = await this.claude2Runtime.switchPermissionMode(data.runtimeKey, parsed.mode);
-        if (result) {
-          try {
-            await this.startStream(socket, data);
-          } catch (e) {
-            console.error(`[claude2-stream] restart stream after permission_mode switch failed`, e);
-            send(socket, {
-              type: "error",
-              code: "SESSION_RUNTIME_ERROR",
-              message: "Failed to restart stream after permission mode switch",
-            });
-          }
-        }
       }
     } catch {
       send(socket, {

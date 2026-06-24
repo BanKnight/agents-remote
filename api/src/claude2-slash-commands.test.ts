@@ -88,7 +88,7 @@ test("resolveSkillSlashCatalog lets a project command override a builtin name", 
   expect(reviews[0].description).toBe("project-specific review");
 });
 
-test("resolveSkillSlashCatalog scans plugin commands and skills under a namespace", async () => {
+test("resolveSkillSlashCatalog scans plugin commands (namespaced) and skills (bare name)", async () => {
   const pluginsRoot = resolve(`/tmp/agents-remote-catalog-plugins-${Date.now()}`);
   cleanupDirs.add(pluginsRoot);
   const installPath = resolve(pluginsRoot, "cache", "my-marketplace", "my-plugin", "1.0.0");
@@ -120,7 +120,8 @@ test("resolveSkillSlashCatalog scans plugin commands and skills under a namespac
   const greet = result.find((c) => c.name === "my-plugin:greet");
   expect(greet?.kind).toBe("command");
   expect(greet?.description).toBe("plugin greet");
-  const skill = result.find((c) => c.name === "my-plugin:cool-skill");
+  // Plugin skills show by their bare SKILL.md name (no namespace) — CLI parity.
+  const skill = result.find((c) => c.name === "cool-skill");
   expect(skill?.kind).toBe("skill");
   expect(skill?.description).toBe("plugin skill desc");
 });

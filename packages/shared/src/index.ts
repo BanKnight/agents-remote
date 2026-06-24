@@ -925,6 +925,26 @@ export type Claude2PermissionMode =
   | "auto"
   | "dontAsk";
 
+// Client → server control actions (model switch, permission mode switch, interrupt).
+// These become stdin control_request messages to the CLI; the CLI replies with
+// control_response on stdout. request_id is used to match response to request.
+export type Claude2StreamControlRequest = {
+  type: "control_request";
+  request_id: string;
+  request:
+    | {
+        subtype: "set_model";
+        model: string;
+      }
+    | {
+        subtype: "set_permission_mode";
+        mode: Claude2PermissionMode;
+      }
+    | {
+        subtype: "interrupt";
+      };
+};
+
 export type Claude2StreamClientMessage =
   | {
       type: "user";
@@ -934,21 +954,7 @@ export type Claude2StreamClientMessage =
       };
     }
   | Claude2ControlResponse
-  | {
-      type: "switch_model";
-      model: string;
-    }
-  | {
-      type: "permission_mode";
-      mode: Claude2PermissionMode;
-    }
-  | {
-      type: "control_request";
-      request_id: string;
-      request: {
-        subtype: "interrupt";
-      };
-    };
+  | Claude2StreamControlRequest;
 
 export type SessionStreamServerMessage =
   | {
@@ -993,12 +999,7 @@ export type SessionStreamServerMessage =
   | Claude2TaskProgress
   | Claude2Result
   | Claude2ControlRequest
-  | {
-      type: "switch_model_result";
-      model: string;
-      success: boolean;
-      error?: string;
-    }
+  | Claude2ControlResponse
   | {
       type: "history_start";
       count: number;

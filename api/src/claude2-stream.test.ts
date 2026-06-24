@@ -1,6 +1,13 @@
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { describe, expect, mock, test } from "bun:test";
-import { chunkBatchLines, createBatchEmitter, type BatchEmit } from "./claude2-stream";
+import {
+  chunkBatchLines,
+  createBatchEmitter,
+  Claude2StreamController,
+  type BatchEmit,
+} from "./claude2-stream";
+import type { Claude2Runtime } from "./claude2-runtime";
+import type { RuntimeResources, SessionRegistry } from "./session-registry";
 
 // A minimal legal non-batch row. createBatchEmitter only branches on `type`, so
 // the row payload is irrelevant to the batch logic under test.
@@ -138,5 +145,97 @@ describe("chunkBatchLines", () => {
     expect(chunks.join("\n")).toBe(`a\n${long}\nb`);
     expect(chunks.length).toBe(3);
     expect(Buffer.byteLength(chunks[1]!)).toBe(Buffer.byteLength(long));
+  });
+});
+
+describe("Claude2StreamController.message routes CLI stdin inputs", () => {
+  // The fix for the model-switch bug: model/mode switches are sent as
+  // control_request{set_model / set_permission_mode} per the CLI's real
+  // stream-json protocol, forwarded verbatim to stdin. They are NOT a kill +
+  // respawn (restartWith). The old path destroyed the relay + replayed history
+  // (stream refresh) and left the pre-switch turn with no `result` (running stuck).
+  // This test pins the forwarding behavior and asserts no fabricated
+  // switch_model_result is emitted back to the socket.
+
+  type FakeSocket = { data: unknown; sends: string[]; send: (m: string) => void };
+
+  const makeSocket = (): FakeSocket => {
+    const sends: string[] = [];
+    return {
+      data: {
+        kind: "claude2-stream",
+        sessionType: "agent",
+        projectName: "demo",
+        sessionId: "sess-1",
+        runtimeKey: "ar-claude2-claude-demo-sess-1",
+        status: "running",
+      },
+      sends,
+      send: (m: string) => {
+        sends.push(m);
+      },
+    };
+  };
+
+  const makeController = () => {
+    const writes: string[] = [];
+    const claude2Runtime = {
+      write: async (_key: string, data: string) => {
+        writes.push(data);
+      },
+    };
+    const controller = new Claude2StreamController(
+      claude2Runtime as unknown as Claude2Runtime,
+      {} as RuntimeResources,
+      {} as SessionRegistry,
+    );
+    return { controller, writes };
+  };
+
+  test("set_model control_request is forwarded to CLI stdin (in-process switch, no restart)", async () => {
+    const { controller, writes } = makeController();
+    const socket = makeSocket();
+    const msg = {
+      type: "control_request",
+      request_id: "req-model",
+      request: { subtype: "set_model", model: "opus" },
+    };
+    await controller.message(socket, JSON.stringify(msg));
+    expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
+    // No error frame, no fabricated switch_model_result — the CLI replies on stdout
+    // and the relay forwards it; the controller must not synthesize one.
+    expect(socket.sends).toEqual([]);
+  });
+
+  test("set_permission_mode control_request is forwarded to CLI stdin", async () => {
+    const { controller, writes } = makeController();
+    const msg = {
+      type: "control_request",
+      request_id: "req-mode",
+      request: { subtype: "set_permission_mode", mode: "plan" },
+    };
+    await controller.message(makeSocket(), JSON.stringify(msg));
+    expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
+  });
+
+  test("user / interrupt control_request / control_response are forwarded to CLI stdin", async () => {
+    const { controller, writes } = makeController();
+    const cases = [
+      { type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+      { type: "control_request", request_id: "r1", request: { subtype: "interrupt" } },
+      { type: "control_response", response: { subtype: "success", request_id: "r2" } },
+    ];
+    for (const c of cases) {
+      await controller.message(makeSocket(), JSON.stringify(c));
+    }
+    expect(writes).toEqual(cases.map((c) => `${JSON.stringify(c)}\n`));
+  });
+
+  test("unrecognized message type is silently dropped (not forwarded, no error)", async () => {
+    const { controller, writes } = makeController();
+    const socket = makeSocket();
+    await controller.message(socket, JSON.stringify({ type: "result", subtype: "success" }));
+    expect(writes).toEqual([]);
+    expect(socket.sends).toEqual([]);
   });
 });

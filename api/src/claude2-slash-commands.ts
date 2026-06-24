@@ -157,8 +157,14 @@ async function scanPlugins(pluginsJsonPath: string): Promise<SlashCommandInfo[]>
       seen.add(name);
       result.push({ name, description: desc, kind: "command" });
     }
+    // Plugin SKILLs display by their SKILL.md `name` WITHOUT the plugin
+    // namespace — the CLI shows `claude-automation-recommender`, not
+    // `claude-code-setup:claude-automation-recommender`. Plugin COMMANDs keep
+    // `plugin:command` (above) because their .md files carry no frontmatter
+    // `name`; the rule is "frontmatter name wins, else `plugin:file`". Skills
+    // virtually always have a frontmatter name, so they end up bare here.
     for (const s of skills) {
-      const name = `${pluginName}:${s.name}`;
+      const name = s.name;
       if (seen.has(name)) continue;
       seen.add(name);
       result.push({ name, description: s.description, kind: "skill" });
