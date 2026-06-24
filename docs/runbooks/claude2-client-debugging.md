@@ -51,12 +51,12 @@ localStorage.setItem("ar-debug:debug-button", "0") // 关闭
 
 ### socket 日志（`ar-debug:socket-log`）
 
-控制 `web/src/routes/claude2-adapter.ts` 中 7 条 `console.log`，覆盖 socket 流量与批次边界：
+控制 `web/src/routes/claude2-adapter.ts` 中覆盖 socket 流量与批次边界的 `console.log`：
 
 | 日志 | 位置 | 含义 |
 |------|------|------|
 | `ws send: readyState=… msg=…` | `sendToSocket` | 浏览器 → 服务端发送的每条消息（前 200 字符） |
-| `ws recv` | `socket.onmessage` | 服务端 → 浏览器收到的每条原始消息对象 |
+| `ws recv` | `socket.onmessage`（文本帧） + `handleBinaryBatch`（gzip batch 解压后） | 服务端 → 浏览器收到的每条原始消息对象，文本帧与压缩 batch 两条路径都覆盖 |
 | `session_init resume=` | session_init 分支 | 本次连接是否为历史回放（resume） |
 | `history batch start/end` | 历史批次 | 回放批次的条数与处理结果 |
 | `live batch start/end` | 实时批次 | 实时追加批次的条数与处理结果 |

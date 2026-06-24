@@ -41,7 +41,7 @@ import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
-import { ToolHead } from "../components/assistant-ui/tool-head";
+import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
@@ -2440,6 +2440,82 @@ function ModeChangeNotice({ headIndex }: { headIndex: number }) {
   );
 }
 
+type CommandOutputCustom = {
+  systemMessageType: "command-output";
+  commandName?: string;
+  args?: string;
+  stdout?: string;
+  stderr?: string;
+  input?: string;
+  sourceType: "local-command" | "bash";
+};
+
+// Command-output card reuses the shared ToolHead row (icon + badge + detail +
+// trailing debug button) so it matches the existing tool-card / CompactBlock
+// design language. Body shows parsed stdout/stderr/args/input inline (no
+// Dialog popup); long output scrolls within a max-height.
+function CommandOutputCard({ headIndex }: { headIndex: number }) {
+  const { t } = useT();
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as CommandOutputCustom,
+  );
+  const isBash = custom.sourceType === "bash";
+  const title = isBash
+    ? custom.input
+      ? `! ${custom.input}`
+      : t("claude2.command.title")
+    : custom.commandName
+      ? `/${custom.commandName}`
+      : t("claude2.command.title");
+  const sections: Array<{ label: string; value: string; tone: "default" | "error" }> = [];
+  if (custom.args)
+    sections.push({ label: t("claude2.command.args"), value: custom.args, tone: "default" });
+  if (custom.input && !isBash)
+    sections.push({ label: t("claude2.command.input"), value: custom.input, tone: "default" });
+  if (custom.stdout)
+    sections.push({ label: t("claude2.command.stdout"), value: custom.stdout, tone: "default" });
+  if (custom.stderr)
+    sections.push({ label: t("claude2.command.stderr"), value: custom.stderr, tone: "error" });
+
+  return (
+    <div className="px-3 py-1 sm:px-5">
+      <div className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <ToolHead
+            icon={isBash ? "terminal" : "command"}
+            badge={isBash ? "BASH" : "COMMAND"}
+            detail={title}
+            status="completed"
+            trailing={<RawDebugTooltip custom={custom} className="-mr-1" />}
+          />
+        </div>
+        {sections.length === 0 ? (
+          <p className="mt-1 text-xs text-slate-500">{t("claude2.command.empty")}</p>
+        ) : (
+          <div className="mt-2 flex flex-col gap-2 border-t border-slate-700/30 pt-2">
+            {sections.map((s, i) => (
+              <div key={i}>
+                <div className="mb-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-slate-500">
+                  {s.label}
+                </div>
+                <pre
+                  className={
+                    s.tone === "error"
+                      ? "max-h-60 overflow-auto rounded-md bg-red-900/20 p-2 text-xs text-red-300"
+                      : "max-h-60 overflow-auto rounded-md bg-slate-950/40 p-2 text-xs text-slate-300"
+                  }
+                >
+                  {s.value}
+                </pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Unified message router: top-level turn rendering and Agent body rendering
 // both go through this. agent-container → recursive AgentContainer. At the
 // top level (renderAbsorbed=false) absorbed children return null — they are
@@ -2461,6 +2537,8 @@ function MessageRouter({
   if (custom?.systemMessageType === "ask-user-question")
     return <AskUserQuestionCard headIndex={index} />;
   if (custom?.systemMessageType === "mode-change") return <ModeChangeNotice headIndex={index} />;
+  if (custom?.systemMessageType === "command-output")
+    return <CommandOutputCard headIndex={index} />;
   if (!renderAbsorbed && custom?.absorbed === true) return null;
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }
@@ -2699,9 +2777,9 @@ function ModelSelector({
 
   // Clear the spinner when the server confirms the switch:
   //   a) currentResolved changes from its pre-switch baseline (system.init
-  //      from the new CLI process carries the resolved model name), OR
-  //   b) modelSwitchVersion increments (switch_model_result {success:true}
-  //      from backend — explicit confirmation that the new process started).
+  //      carries the resolved model name), OR
+  //   b) modelSwitchVersion increments after a control_response confirms the
+  //      set_model control_request succeeded (in-process switch, no restart).
   //   c) modelSwitchVersion also covers failure: the adapter increments it
   //      on error too, so the spinner clears and the model reverts.
   const preSwitchVersionRef = useRef(modelSwitchVersion);
@@ -3030,35 +3108,16 @@ function ComposerWithInterrupt({
                       index={index}
                       className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100 data-[highlighted]:bg-slate-800/80 data-[highlighted]:text-slate-100"
                     >
-                      {kind === "skill" ? (
-                        <svg
-                          className="h-3.5 w-3.5 shrink-0 text-amber-400/70"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" fill="currentColor" />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="h-3.5 w-3.5 shrink-0 text-cyan-400/70"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M5 3l6 5-6 5"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                      <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                        <span className="shrink-0 font-medium">{item.label}</span>
+                      <ToolIcon
+                        name={kind === "skill" ? "skill" : "command"}
+                        className={kind === "skill" ? "text-amber-400/70" : "text-cyan-400/70"}
+                      />
+                      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
+                        <span className="min-w-0 break-all text-xs font-medium text-slate-200">
+                          {item.label}
+                        </span>
                         {item.description ? (
-                          <span className="truncate text-xs text-slate-500">
+                          <span className="min-w-0 break-words text-xs text-slate-500">
                             {item.description}
                           </span>
                         ) : null}

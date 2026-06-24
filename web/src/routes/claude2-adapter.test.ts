@@ -5,7 +5,6 @@ import {
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
   isSyntheticAssistantMessage,
-  applySwitchModelResult,
   computeRunningCount,
   convertContentToBubble,
   deriveLiveThinkingTokens,
@@ -214,21 +213,6 @@ describe("helper functions", () => {
     ).toBe(false);
   });
 
-  test("switch model result helper increments version and clears current model on failure", () => {
-    expect(
-      applySwitchModelResult({ currentModel: "sonnet", modelSwitchVersion: 2 }, { success: true }),
-    ).toEqual({
-      currentModel: "sonnet",
-      modelSwitchVersion: 3,
-    });
-    expect(
-      applySwitchModelResult({ currentModel: "sonnet", modelSwitchVersion: 2 }, { success: false }),
-    ).toEqual({
-      currentModel: undefined,
-      modelSwitchVersion: 3,
-    });
-  });
-
   test("control_request helper input matches ask question routing shape", () => {
     expect(controlRequest("req-7", "Bash", "toolu-7", { command: "pwd" })).toMatchObject({
       type: "control_request",
@@ -285,6 +269,48 @@ describe("computeRunningCount", () => {
         result("success"),
       ]),
     ).toBe(0);
+  });
+
+  test("result with any subtype (interrupted / error) closes the turn", () => {
+    // computeRunningCount keys off type === "result", not its subtype — an
+    // interrupt (result.interrupted) or error (result.error) ends the running
+    // turn just like a normal success. This is the close signal the model-switch
+    // path relies on (the old restartWith left no result, so the pre-switch turn
+    // stuck running) and that the interrupt path emits per the CLI protocol.
+    expect(
+      computeRunningCount([
+        assistant("msg-1", [{ type: "text", text: "x" }]),
+        result("interrupted"),
+      ]),
+    ).toBe(0);
+    expect(
+      computeRunningCount([assistant("msg-1", [{ type: "text", text: "x" }]), result("error")]),
+    ).toBe(0);
+  });
+
+  test("interruptAtIndex closes a running turn when CLI replies control_response", () => {
+    // The CLI replies to an interrupt control_request with control_response,
+    // not result. The adapter records the index of that response so
+    // computeRunningCount treats it as a turn-close boundary.
+    const messages = [assistant("msg-1", [{ type: "text", text: "x" }])];
+    expect(computeRunningCount(messages)).toBe(1);
+    expect(computeRunningCount(messages, { interruptAtIndex: 0 })).toBe(0);
+    // Does not close before the boundary.
+    expect(computeRunningCount([...messages, assistant("msg-2", [])])).toBe(1);
+    expect(
+      computeRunningCount([...messages, assistant("msg-2", [])], { interruptAtIndex: 1 }),
+    ).toBe(0);
+    // A new assistant after the boundary starts a new turn.
+    expect(
+      computeRunningCount(
+        [
+          assistant("msg-1", [{ type: "text", text: "x" }]),
+          { type: "control_response", response: { subtype: "success", request_id: "r1" } },
+          assistant("msg-2", [{ type: "text", text: "y" }]),
+        ],
+        { interruptAtIndex: 1 },
+      ),
+    ).toBe(1);
   });
 });
 
@@ -479,6 +505,73 @@ describe("resolveAutoPermissionMode", () => {
 
   test("falls back to acceptEdits on an empty list", () => {
     expect(resolveAutoPermissionMode([])).toBe("acceptEdits");
+  });
+});
+
+describe("command-output (local-command / bash echo) pipeline", () => {
+  test("<local-command-stdout> renders as a command-output card, not dropped", () => {
+    const items = normalizeChatStream([
+      makeUser(
+        "<local-command-stdout>Set model to sonnet (claude-sonnet-4-6)</local-command-stdout>",
+      ),
+    ]);
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd).toBeDefined();
+    expect(cmd?.stdout).toBe("Set model to sonnet (claude-sonnet-4-6)");
+    expect(cmd?.sourceType).toBe("local-command");
+  });
+
+  test("adjacent <command-name> input + <local-command-stdout> output merge into one card", () => {
+    const items = normalizeChatStream([
+      makeUser("<command-name>cost</command-name><command-message>cost</command-message>"),
+      makeUser("<local-command-stdout>Total: $1.23</local-command-stdout>"),
+    ]);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBe("cost");
+    expect(cmd.stdout).toBe("Total: $1.23");
+  });
+
+  test("<bash-input> + <bash-stdout> is recognized as sourceType bash", () => {
+    const items = normalizeChatStream([
+      makeUser("<bash-input>ls</bash-input><bash-stdout>file.txt</bash-stdout>"),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd).toBeDefined();
+    expect(cmd?.sourceType).toBe("bash");
+    expect(cmd?.input).toBe("ls");
+    expect(cmd?.stdout).toBe("file.txt");
+  });
+
+  test("<local-command-caveat> (isMeta) is still dropped", () => {
+    const items = normalizeChatStream([
+      makeUser("<local-command-caveat>do not respond</local-command-caveat>", { isMeta: true }),
+    ]);
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
+  });
+
+  test("renderChatStream maps command-output to role:system + systemMessageType command-output", () => {
+    const items = normalizeChatStream([
+      makeUser("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
+    ]);
+    const rendered = renderChatStream(items);
+    const cmd = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "command-output",
+    );
+    expect(cmd).toBeDefined();
+    expect(cmd?.role).toBe("system");
+    const custom = cmd?.metadata?.custom as Record<string, unknown>;
+    expect(custom.stdout).toBe("Set model to sonnet");
+    expect(custom.sourceType).toBe("local-command");
   });
 });
 

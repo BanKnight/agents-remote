@@ -59,11 +59,6 @@ export const buildAllowAllControlResponse = (requestId: string): Claude2ControlR
   },
 });
 
-export type SwitchModelResultState = {
-  currentModel?: string;
-  modelSwitchVersion: number;
-};
-
 export type RetryInfo = {
   attempt: number;
   maxRetries: number;
@@ -73,13 +68,14 @@ export type RetryInfo = {
   startTime: number;
 };
 
-export const applySwitchModelResult = (
-  state: SwitchModelResultState,
-  result: { success: boolean },
-): SwitchModelResultState => ({
-  currentModel: result.success ? state.currentModel : undefined,
-  modelSwitchVersion: state.modelSwitchVersion + 1,
-});
+// Tracks client-initiated control_request actions (set_model /
+// set_permission_mode / interrupt) awaiting the CLI's control_response. Keyed
+// by request_id so the response can be matched to the originating action and
+// rolled back on error.
+export type PendingControlAction =
+  | { kind: "set_model"; priorModel: string | undefined }
+  | { kind: "set_permission_mode"; priorMode: string | undefined }
+  | { kind: "interrupt" };
 
 export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {
   // task_started: always creates. TaskCreate-originated ops carry no id
@@ -238,10 +234,55 @@ const _extractUserTextBlocks = (content: unknown): string[] => {
 const _isHiddenSkillContent = (texts: string[]): boolean =>
   texts.some((text) => text.startsWith(_SKILL_CONTENT_PREFIX));
 
+// Tags emitted by CLI slash commands / !bash and echoed back as user messages.
+// <local-command-caveat> is isMeta and is dropped upstream; the rest are
+// rendered as a command-output card.
+const COMMAND_ARTIFACT_TAG_PATTERN =
+  "(?:local-command-(?:stdout|stderr)|command-(?:name|message|args)|bash-(?:input|stdout|stderr))";
+
+const commandArtifactRegex = (): RegExp =>
+  new RegExp(`<(${COMMAND_ARTIFACT_TAG_PATTERN})>([\\s\\S]*?)</\\1>`, "gi");
+
+function parseCommandArtifactTags(content: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of content.matchAll(commandArtifactRegex())) {
+    const tag = m[1]!;
+    const value = m[2]!.trim();
+    if (value) out[tag] = value;
+  }
+  return out;
+}
+
+function hasCommandArtifactTags(content: string): boolean {
+  return commandArtifactRegex().test(content);
+}
+
 const getMessageUuid = (msg: SessionStreamServerMessage): string | null => {
   const uuid = (msg as Record<string, unknown>).uuid;
   return typeof uuid === "string" ? uuid : null;
 };
+
+// Build a command-output ChatStreamItem from a user message whose string
+// content carries CLI command / bash echo tags. commandName falls back to
+// command-message; stdout/stderr collapse the local-command and bash variants.
+function buildCommandOutputItem(
+  content: string,
+  msg: SessionStreamServerMessage,
+): Extract<ChatStreamItem, { kind: "command-output" }> {
+  const tags = parseCommandArtifactTags(content);
+  const isBash = "bash-input" in tags || "bash-stdout" in tags || "bash-stderr" in tags;
+  return {
+    kind: "command-output",
+    commandName: tags["command-name"] ?? tags["command-message"],
+    args: tags["command-args"],
+    stdout: tags["local-command-stdout"] ?? tags["bash-stdout"],
+    stderr: tags["local-command-stderr"] ?? tags["bash-stderr"],
+    input: tags["bash-input"],
+    sourceType: isBash ? "bash" : "local-command",
+    sourceUuids: getMessageUuid(msg) ? [getMessageUuid(msg)!] : [],
+    _rawSnapshots: [msg],
+  };
+}
 
 // KEPT: 后续需要去重时启用
 /*
@@ -290,6 +331,11 @@ const findMissingTailByUuid = (
  * signal by the adapter). Defaults to 0 (no history segment — fresh session,
  * or history empty), so existing callers that omit it scan the whole array.
  *
+ * `interruptAtIndex`: the index of a confirmed interrupt control_response.
+ * The CLI replies control_response (not result) to an interrupt, so without
+ * this boundary a stopped turn would never close; when the scan reaches this
+ * index it closes the turn exactly like a `result`.
+ *
  * Why resume shows idle: a resumed CLI is a fresh process; its live +
  * instantaneous region holds no open turn until the user sends a new prompt,
  * so the count is 0 on entry. Same invariant applyToolLifecycle encodes via
@@ -298,14 +344,23 @@ const findMissingTailByUuid = (
  */
 export function computeRunningCount(
   rawMessages: SessionStreamServerMessage[],
-  opts?: { liveStart?: number },
+  opts?: { liveStart?: number; interruptAtIndex?: number },
 ): number {
   const liveStart = opts?.liveStart ?? 0;
+  const interruptAtIndex = opts?.interruptAtIndex;
   let responseOpen = false;
 
   for (let i = liveStart; i < rawMessages.length; i++) {
     const msg = rawMessages[i];
     if (!msg) continue;
+
+    // A confirmed interrupt closes the turn just like `result`: the CLI replies
+    // control_response (not result) to an interrupt, so without this boundary
+    // the running indicator would stick after stop.
+    if (i === interruptAtIndex) {
+      responseOpen = false;
+      continue;
+    }
 
     if (msg.type === "result") {
       responseOpen = false;
@@ -1408,6 +1463,25 @@ export type ChatStreamItem =
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | {
+      // CLI slash-command / bash echo feedback rendered as a command card
+      // (Dialog popup). Aggregates the command-input tags (<command-name>,
+      // <command-message>, <command-args>, <bash-input>) and the command-output
+      // tags (<local-command-stdout>/<local-command-stderr>, <bash-stdout>/
+      // <bash-stderr>). Adjacent input+output messages for one command are
+      // merged into a single item by the post-walk merge pass. The isMeta
+      // <local-command-caveat> is dropped upstream (it addresses the model,
+      // not the user).
+      kind: "command-output";
+      commandName?: string;
+      args?: string;
+      stdout?: string;
+      stderr?: string;
+      input?: string;
+      sourceType: "local-command" | "bash";
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
       // Turn-end marker: emitted for every `result` message (success /
       // interrupted / error). Renders no bubble — only records a turn
       // boundary so applyToolLifecycle can mark unresolved tools interrupted.
@@ -1930,6 +2004,12 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       const texts = _extractUserTextBlocks(msg.message.content);
 
+      // CLI slash-command / bash echo embedded in text blocks → command-output.
+      if (texts.some((t) => hasCommandArtifactTags(t))) {
+        items.push(buildCommandOutputItem(texts.join("\n"), msg));
+        continue;
+      }
+
       // Skill content via prefix detection (isMeta/isSynthetic may be absent).
       if (_isHiddenSkillContent(texts)) {
         const sourceToolUseId = msg.sourceToolUseID;
@@ -1950,9 +2030,18 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
-      // String-content user message (skip CLI command tags).
+      // String-content user message.
       const rawContent = msg.message.content;
       if (typeof rawContent === "string" && rawContent.trim()) {
+        // CLI slash-command / bash echo: parse tags into a command-output item
+        // rendered as a card. <local-command-caveat> is isMeta and was already
+        // dropped upstream by the skill-body branch.
+        if (hasCommandArtifactTags(rawContent)) {
+          items.push(buildCommandOutputItem(rawContent, msg));
+          continue;
+        }
+
+        // Other bare CLI command tags without parseable content → drop.
         if (
           rawContent.startsWith("<local-command") ||
           rawContent.startsWith("<command-name>") ||
@@ -2233,6 +2322,35 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   // Flush a compact window still open at end of stream (boundary as the final
   // message, or window absorbing with no subsequent real content).
   flushCompactWindow();
+
+  // Merge adjacent command-output items: a slash command's input echo
+  // (<command-name>/<command-args>, no stdout) followed immediately by its
+  // output (<local-command-stdout>, no command-name) collapses into a single
+  // card. CLI emits them back-to-back; only direct neighbors are merged.
+  for (let i = 0; i + 1 < items.length; i++) {
+    const a = items[i];
+    const b = items[i + 1];
+    if (
+      a?.kind === "command-output" &&
+      b?.kind === "command-output" &&
+      a.sourceType === b.sourceType &&
+      a.commandName != null &&
+      a.stdout == null &&
+      b.commandName == null &&
+      b.stdout != null
+    ) {
+      items.splice(i, 2, {
+        ...a,
+        args: a.args ?? b.args,
+        stdout: b.stdout,
+        stderr: a.stderr ?? b.stderr,
+        input: a.input ?? b.input,
+        sourceUuids: [...a.sourceUuids, ...b.sourceUuids],
+        _rawSnapshots: [...a._rawSnapshots, ...b._rawSnapshots],
+      });
+      i--; // re-check in case a third fragment follows
+    }
+  }
 
   // Derive hasAgentBody: any tool-call that collected subagent child
   // messages (bodyChildUuids) becomes an Agent container. Pure projection
@@ -2605,6 +2723,26 @@ export function renderChatStream(
         });
         break;
       }
+      case "command-output": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "command-output",
+              commandName: item.commandName,
+              args: item.args,
+              stdout: item.stdout,
+              stderr: item.stderr,
+              input: item.input,
+              sourceType: item.sourceType,
+            },
+          },
+        });
+        break;
+      }
       case "turn-end": {
         // Stamp per-turn stats onto the turn's last assistant bubble (the
         // footer caption), scoped to this turn's message range so we never
@@ -2726,6 +2864,10 @@ export function useClaude2Session(
   // ── Unified message state ──────────────────────────────────────────
   // ── Unified raw message state ────────────────────────────────────
   const [rawMessages, setRawMessages] = useState<SessionStreamServerMessage[]>([]);
+  const rawMessagesRef = useRef<SessionStreamServerMessage[]>([]);
+  useEffect(() => {
+    rawMessagesRef.current = rawMessages;
+  }, [rawMessages]);
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const liveBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
@@ -2816,6 +2958,48 @@ export function useClaude2Session(
     // permission-mode
     if (msg.type === "permission-mode") {
       setPermissionMode((msg as { permissionMode: string }).permissionMode);
+      return;
+    }
+
+    // control_response: CLI's reply to client-initiated control_request actions
+    // (set_model / set_permission_mode / interrupt). Match by request_id and
+    // apply/rollback the corresponding scalar state. Responses to CLI-initiated
+    // can_use_tool requests are sent by us, never received, so they never
+    // reach this handler.
+    if (msg.type === "control_response") {
+      const r = msg as unknown as Claude2ControlResponse;
+      const requestId = r.response?.request_id;
+      if (!requestId) return;
+      const pending = pendingControlRequestsRef.current.get(requestId);
+      if (!pending) return;
+      setPendingControlRequests((prev) => {
+        const next = new Map(prev);
+        next.delete(requestId);
+        return next;
+      });
+      switch (pending.kind) {
+        case "set_model":
+          if (r.response.subtype === "success") {
+            setResolvedModel(currentModelRef.current);
+            setModelSwitchVersion((v) => v + 1);
+          } else if (pending.priorModel != null) {
+            setCurrentModel(pending.priorModel);
+            setResolvedModel(pending.priorModel);
+          }
+          break;
+        case "set_permission_mode":
+          if (r.response.subtype === "error" && pending.priorMode != null) {
+            setPermissionMode(pending.priorMode);
+          }
+          break;
+        case "interrupt":
+          if (r.response.subtype === "success") {
+            // setRawMessages runs before applyMessageScalarState, so the
+            // control_response message is already the last item in rawMessages.
+            setInterruptAtIndex(rawMessagesRef.current.length - 1);
+          }
+          break;
+      }
       return;
     }
 
@@ -2919,9 +3103,17 @@ export function useClaude2Session(
   );
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Index of the last confirmed interrupt control_response, or undefined. When
+  // set, computeRunningCount treats that message position as a turn-close
+  // boundary (the CLI replies control_response — not result — to an interrupt).
+  const [interruptAtIndex, setInterruptAtIndex] = useState<number | undefined>();
   const isRunning = useMemo(
-    () => computeRunningCount(rawMessages, { liveStart: liveStartRef.current }) > 0,
-    [rawMessages],
+    () =>
+      computeRunningCount(rawMessages, {
+        liveStart: liveStartRef.current,
+        interruptAtIndex,
+      }) > 0,
+    [rawMessages, interruptAtIndex],
   );
   const liveThinkingTokens = useMemo(
     () => deriveLiveThinkingTokens(rawMessages, { liveStart: liveStartRef.current }),
@@ -2930,18 +3122,36 @@ export function useClaude2Session(
   const [loading, setLoading] = useState(true);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
-  const [modelSwitchVersion, _setModelSwitchVersion] = useState(0);
+  const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
   const [aiTitle, setAiTitle] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
   const lastAiTitleRef = useRef<string | null>(null);
   const lastAgentNameRef = useRef<string | null>(null);
+  // Refs mirror the latest state so callbacks/useMemo with empty deps don't
+  // close over stale values.
+  const currentModelRef = useRef(currentModel);
+  const permissionModeRef = useRef(permissionMode);
+  const pendingControlRequestsRef = useRef<Map<string, PendingControlAction>>(new Map());
+
+  const [pendingControlRequests, setPendingControlRequests] = useState<
+    Map<string, PendingControlAction>
+  >(new Map());
 
   useEffect(() => {
     if (initialModel !== undefined && resolvedModel === undefined) {
       setResolvedModel(initialModel);
     }
   }, [initialModel, resolvedModel]);
+  useEffect(() => {
+    currentModelRef.current = currentModel;
+  }, [currentModel]);
+  useEffect(() => {
+    permissionModeRef.current = permissionMode;
+  }, [permissionMode]);
+  useEffect(() => {
+    pendingControlRequestsRef.current = pendingControlRequests;
+  }, [pendingControlRequests]);
   useEffect(() => {
     if (initialPermissionMode !== undefined && permissionMode === undefined) {
       setPermissionMode(initialPermissionMode);
@@ -3129,12 +3339,35 @@ export function useClaude2Session(
         });
       },
       switchModel(model) {
+        const requestId = crypto.randomUUID();
+        setPendingControlRequests((prev) => {
+          const next = new Map(prev);
+          next.set(requestId, { kind: "set_model", priorModel: currentModelRef.current });
+          return next;
+        });
         setCurrentModel(model);
-        sendToSocket({ type: "switch_model", model });
+        sendToSocket({
+          type: "control_request",
+          request_id: requestId,
+          request: { subtype: "set_model", model },
+        });
       },
       switchPermissionMode(mode) {
+        const requestId = crypto.randomUUID();
+        setPendingControlRequests((prev) => {
+          const next = new Map(prev);
+          next.set(requestId, {
+            kind: "set_permission_mode",
+            priorMode: permissionModeRef.current,
+          });
+          return next;
+        });
         setPermissionMode(mode);
-        sendToSocket({ type: "permission_mode", mode });
+        sendToSocket({
+          type: "control_request",
+          request_id: requestId,
+          request: { subtype: "set_permission_mode", mode },
+        });
       },
       onCompact: null,
     }),
@@ -3202,7 +3435,12 @@ export function useClaude2Session(
       if (text.length > 0) {
         for (const line of text.split("\n")) {
           try {
-            target.push(JSON.parse(line) as SessionStreamServerMessage);
+            const parsed = JSON.parse(line) as SessionStreamServerMessage;
+            target.push(parsed);
+            // Mirror handleTextFrame's ws recv log so the (compressed) history
+            // and live batches are also visible row-by-row when socket logging
+            // is on — otherwise only the text-frame batch markers show up.
+            if (isSocketLoggingEnabled()) console.log("[claude2-adapter] ws recv", parsed);
             rows++;
           } catch {
             // skip malformed batch line
@@ -3440,9 +3678,15 @@ export function useClaude2Session(
     if (compactPhaseRef.current === "compacting") {
       compactInterruptedRef.current = true;
     }
+    const requestId = crypto.randomUUID();
+    setPendingControlRequests((prev) => {
+      const next = new Map(prev);
+      next.set(requestId, { kind: "interrupt" });
+      return next;
+    });
     sendToSocket({
       type: "control_request",
-      request_id: crypto.randomUUID(),
+      request_id: requestId,
       request: { subtype: "interrupt" },
     });
   }, [sendToSocket]);
