@@ -23,6 +23,34 @@ export function buildSeedInitLine(model?: string, permissionMode?: string): stri
   });
 }
 
+// Extract the model id from a CLI in-process model-switch echo. After a
+// control_request{set_model} switch the CLI emits a user message:
+//   <local-command-stdout>Set model to <name> (<model_id>)</local-command-stdout>
+// but never re-sends system.init (the switch is in-process). This echo is the
+// ONLY stdout signal of the new model id (control_response carries no model;
+// system.init is spawn-time only), so folding it keeps state.model current —
+// symmetric to capturePermissionModeFromLine. Extracted as a pure function so
+// the parse is unit-testable without a Claude2Runtime instance (cf.
+// buildSeedInitLine). rewind emits no model signal, so the folded scalar stays
+// current, matching CLI behavior.
+export function extractModelFromStdoutLine(
+  parsed: Record<string, unknown> | null,
+): string | undefined {
+  if (!parsed || parsed.type !== "user") return undefined;
+  const message = parsed.message as { content?: unknown } | undefined;
+  if (!message) return undefined;
+  const contents = Array.isArray(message.content) ? message.content : [message.content];
+  for (const block of contents) {
+    const text = typeof block === "string" ? block : (block as { text?: string } | null)?.text;
+    if (typeof text !== "string") continue;
+    const match = text.match(
+      /<local-command-stdout>\s*Set model to [^(]*\(([^)]+)\)\s*<\/local-command-stdout>/,
+    );
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
+}
+
 type Claude2Process = {
   proc: BunSubprocess;
   generation: number;
@@ -41,6 +69,7 @@ export class Claude2Runtime implements RuntimeResources {
   private onSystemInit:
     | ((sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void)
     | null = null;
+  private onModelChange: ((sessionId: string, model: string) => void) | null = null;
 
   constructor(runDir: string) {
     this.runDir = runDir;
@@ -50,6 +79,10 @@ export class Claude2Runtime implements RuntimeResources {
     cb: (sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void,
   ) {
     this.onSystemInit = cb;
+  }
+
+  setOnModelChange(cb: (sessionId: string, model: string) => void) {
+    this.onModelChange = cb;
   }
 
   getSessionState(sessionName: string) {
@@ -147,20 +180,6 @@ export class Claude2Runtime implements RuntimeResources {
       throw new Error(`stdin not available for session "${sessionName}"`);
     }
     stdin.write(data);
-  }
-
-  async switchModel(
-    sessionName: string,
-    model: string,
-  ): Promise<{ claudeSessionId?: string; projectPath: string } | null> {
-    return this.restartWith(sessionName, { model });
-  }
-
-  async switchPermissionMode(
-    sessionName: string,
-    permissionMode: string,
-  ): Promise<{ claudeSessionId?: string; projectPath: string } | null> {
-    return this.restartWith(sessionName, { permissionMode });
   }
 
   async stream(
@@ -359,6 +378,7 @@ export class Claude2Runtime implements RuntimeResources {
     }
     this.captureSystemInitFromLine(sessionName, parsed);
     this.capturePermissionModeFromLine(sessionName, parsed);
+    this.captureModelFromLine(sessionName, parsed);
     console.log(`[claude2-stdout] ${trimmed}`);
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed && this.isCurrentGeneration(sessionName, generation)) {
@@ -415,37 +435,21 @@ export class Claude2Runtime implements RuntimeResources {
     }
   }
 
-  private async restartWith(
-    sessionName: string,
-    updates: { model?: string; permissionMode?: string },
-  ): Promise<{ claudeSessionId?: string; projectPath: string } | null> {
+  // Fold current model from live stdout so the replay seed init carries the
+  // CURRENT model. In-process model switches (control_request{set_model}) emit
+  // a <local-command-stdout>Set model to … (id)</local-command-stdout> echo but
+  // never re-send system.init; without this fold state.model stays at the
+  // spawn-time value and reconnect seeds a stale model. Symmetric to
+  // capturePermissionModeFromLine above. The same signal also persists the
+  // switch to metadata.model via onModelChange, so API restart / session
+  // reopen spawn the CLI with the switched model.
+  private captureModelFromLine(sessionName: string, parsed: Record<string, unknown> | null): void {
+    const next = extractModelFromStdoutLine(parsed);
+    if (!next) return;
     const state = this.processes.get(sessionName);
-    if (!state) return null;
-
-    // Destroy old relay
-    const relay = this.relays.get(sessionName);
-    if (relay) {
-      relay.destroy();
-      this.relays.delete(sessionName);
-    }
-
-    // Kill old process
-    state.proc.kill();
-    this.processes.delete(sessionName);
-
-    if (updates.model) state.model = updates.model;
-    if (updates.permissionMode) state.permissionMode = updates.permissionMode;
-
-    await this.spawnAndStart(
-      sessionName,
-      state.projectPath,
-      state.sessionId,
-      state.claudeSessionId,
-      state.model,
-      state.permissionMode,
-    );
-
-    return { claudeSessionId: state.claudeSessionId, projectPath: state.projectPath };
+    if (!state) return;
+    state.model = next;
+    this.onModelChange?.(state.sessionId, next);
   }
 }
 

@@ -108,7 +108,7 @@ claude --output-format stream-json --input-format stream-json \
 
 ### generation 守卫
 
-每次 spawn 递增 `nextGeneration`。`readStdout` 把 generation 闭包进读取循环，遇到非当前 generation 立即 return。`switchModel`/`switchPermissionMode` 重启时旧 stdout reader 自动停止，避免把旧进程输出灌进新 relay。
+每次 spawn 递增 `nextGeneration`。`readStdout` 把 generation 闭包进读取循环，遇到非当前 generation 立即 return，避免把旧进程输出灌进新 relay（API 重启 `--resume` 重拉 CLI 时生效）。`switchModel`/`switchPermissionMode` 不再重启 CLI——走 stdin 转发，CLI 进程内切换并回 `switch_model_result`，relay 自动转发，proc.model 由 `captureSwitchModelResultFromLine` 同步。
 
 ### stdin / stderr
 
@@ -186,7 +186,7 @@ API 重启：
 | `startAgent(metadata)` / `ensureRunning()` | 复用或 spawn + 建 relay + 读 stdout |
 | `write(session, data)` | `proc.stdin.write(data)` |
 | `stream(session, onData, onError)` | 取/建 relay + `addSubscriber` |
-| `switchModel` / `switchPermissionMode` | `restartWith`：destroy relay + kill proc + spawn with `--resume` + 新参数 |
+| `switchModel` / `switchPermissionMode` | stdin 转发：`write()` 把客户端 JSON 写入 proc.stdin，CLI 进程内切换并回 `switch_model_result`；不重启 CLI、不重放 history |
 | `readStdout()` | 读 `proc.stdout` 行流，generation 守卫，喂 relay |
 | `close(session)` | kill proc + `relay.destroy()` |
 
@@ -247,15 +247,36 @@ v1 范围（明确不做的事在末尾）：
 
 | scalar | 来源 | 通路 | 理由 |
 |---|---|---|---|
-| **model** | init（respawn 刷新）+ fold | 种子 init 注入 replay 头 | 协议有、单调（只 respawn 变）、鲁棒 |
+| **model** | init（spawn）+ `local-command-stdout` fold（进程内切换） | 种子 init 注入 replay 头；切换同步写 `metadata.model` | 进程内可切（非只 respawn）；信号带完整 id |
 | **permissionMode** | `permission-mode`(JSONL) + status + EnterPlanMode fold | 种子 init 注入 + 现有 fold | 流里海量修正信号 |
 | **skills / slash** | **自建 discovery**（SKILL.md frontmatter / 命令定义） | **REST**（config 域） | init 无 description、协议补不全 |
 | **mcp** | （v1 不做）后续自建 discovery（.mcp.json + tools/list） | REST | 同上，范围后置 |
 
 **种子 = 当前 model + 当前 permissionMode**（语义等价于「现在发的」system.init，不妥协）：
 - 客户端处理顺序 `[种子] → historyLines → liveLines` 连续到 now；fold 是 **last-wins**，tail+live 最后一条 `permission-mode` = 当前，覆盖种子；整段零 `permission-mode` 事件时种子生效，而此时「当前 = 窗口起点」，种子放当前值也对。
-- model 单调（只 respawn 变）：respawn 在窗口内 → tail 有新 init → fold 到当前；不在窗口内 → 种子（最新 init 的 model）= 当前。不会 regress。
-- 服务端只需 fold 这两个标量（model 已截 init；permissionMode 加 live fold）。API 重启 `--resume` 重发 init 拿当前值，且 tail 的 `permission-mode`（JSONL 持久）也会 fold 纠正，双保险。
+- model 既随 respawn 变、也随进程内 `control_request{set_model}` 切换变（不发新 init，只发 `<local-command-stdout>Set model to (id)` 回显）：fold 该回显到当前；respawn 在窗口内 → tail 有新 init → fold 到当前；都不在窗口 → 种子（最新值）= 当前。不会 regress。model 有两个持久化层面（内存 `state.model` + 磁盘 `metadata.model`），详见下节。
+- 服务端 fold 两个标量：permissionMode 加 live fold（`permission-mode`/`system.status`）；model fold 进程内切换的 `local-command-stdout` 回显（`captureModelFromLine`）。API 重启 `--resume` 重发 init 拿当前值，且 tail 的 `permission-mode`（JSONL 持久）也会 fold 纠正，双保险。
+
+#### model 的两个持久化层面（变化根源）
+
+model 与其他 scalar 不同：它有**两个**独立的持久化层面，各自服务不同的恢复路径，必须同步更新：
+
+| 状态源 | 位置 | 服务路径 | 更新时机 |
+|---|---|---|---|
+| 内存 `state.model` | `Claude2Process.model`（进程级） | reconnect 时的 `seed_init` | spawn 后 `system.init`；进程内切换 `<local-command-stdout>` fold（`captureModelFromLine`） |
+| 磁盘 `metadata.model` | `<sessionId>.json` | API 重启 / 关闭重开 spawn 的 `--model` 参数 | 创建 session（`input.model`）；`system.init` 回填（`setClaudeSessionId`）；进程内切换（`setModel`，由 `onModelChange` 触发） |
+
+**变化根源信号 = `<local-command-stdout>Set model to <name> (<id>)</local-command-stdout>`**：进程内 `control_request{set_model}` 切换后 CLI 发出的唯一权威回显——带完整 model id（如 `claude-haiku-4-5-20251001`），且只在真实切换时发（no-op / 失败不发）。`captureModelFromLine`（`api/src/claude2-runtime.ts`）从这条信号**同时**更新两个状态源：fold 内存 `state.model` + 触发 `onModelChange` 回调（`api/src/index.ts` 注册）写磁盘 `metadata.model`（`api/src/session-registry.ts` `setModel`）。单一信号源，两个状态源同步。`control_response{success}` 不带 model id 且 no-op 也发，不适合作为落盘信号。
+
+**为何不「只 respawn 变」**：早期描述把 model 当作"只随 CLI respawn 变化"。但 `control_request{set_model}` 是进程内切换（CLI 不重启、不发新 `system.init`），只发 local-command-stdout 回显。若不 fold 这条信号，内存 `state.model` 停在 spawn 值 → reconnect seed 带过期 model；若不写 `metadata.model`，API 重启 / 关闭重开会用旧值 spawn，用户切换丢失。rewind 是反例佐证：rewind 不发 model 信号 → 两个状态源都保持 → model 维持当前值，印证 model 是进程级 scalar（独立于消息历史），其变化根源是切换信号而非消息流派生。
+
+**取值链路**（model 在各恢复场景的来源）：
+
+| 场景 | 取值来源 | 链路 |
+|---|---|---|
+| reconnect（刷新，不重启 API） | 内存 `state.model` | `buildSeedInitLine` → `seed_init{model}` → 客户端 `setCurrentModel`（`claude2-adapter.ts`） |
+| API 重启（CLI `--resume` 重拉） | 磁盘 `metadata.model` | `ensureRunning(model=metadata.model)` → `claude --model <metadata.model> --resume` → `system.init` 报告该 model |
+| 关闭 session 重开 | 磁盘 `metadata.model` | 同上（`ensureRunning` 读 metadata） |
 
 **为什么 skills/slash 必须自建、不能靠 init**：`system.init` 的 `skills`/`slash_commands` 是**纯名字数组**、`mcp_servers` 是 `{name,status}`——都**无 description**（deepwiki 核实 `buildSystemInitMessage`）。协议里虽有 `skill_listing`/`skill_discovery` attachment 带 skill 描述、MCP `tools/list` 带 tool 描述，但：(1) slash_command 描述无专门载体；(2) 这些是给模型看的 system-reminder 格式化文本，非结构化 `{name,description}`；(3) `skill_listing` 抑制重复、通常只头部一次 → tail 窗口里没有（实测 = 0），要用得回填。而 CLI 自己 `--resume` 重建这些时**重跑 discovery**（读 SKILL.md / 命令定义 / MCP tools/list），不解析自己的 attachment。所以自建走同款 discovery 是唯一能拿到结构化、完整、带 description 数据的路。skills/slash 属 config 域，走 REST，与消息流解耦。
 

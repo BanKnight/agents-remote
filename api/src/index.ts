@@ -662,6 +662,9 @@ export const startApi = async () => {
   claude2Runtime.setOnSystemInit((sessionId, _runtimeKey, claudeSessionId, model) => {
     void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId, model);
   });
+  claude2Runtime.setOnModelChange((sessionId, model) => {
+    void sessionRegistry.setModel(sessionId, model);
+  });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);

@@ -122,6 +122,22 @@ export class SessionRegistry {
     await this.writeMetadata(updated);
   }
 
+  // Persist a mid-session model switch to metadata.model, so API restart /
+  // session reopen spawns the CLI with the switched model (the --model arg in
+  // claude2-runtime spawnClaudeDirect). Triggered via Claude2Runtime onModelChange
+  // when a <local-command-stdout>Set model to (id)</local-command-stdout> echo is
+  // folded. Only updates model; claudeSessionId is untouched.
+  async setModel(sessionId: string, model: string): Promise<void> {
+    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    if (!metadata) return;
+    const updated: SessionMetadata = {
+      ...metadata,
+      model,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(updated);
+  }
+
   async countSessions(projectName: string) {
     const [agentSessions, terminalSessions] = await Promise.all([
       this.listAgentSessions(projectName),

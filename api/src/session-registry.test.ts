@@ -186,3 +186,33 @@ test("SessionRegistry removes Agent metadata when provider runtime is unavailabl
     readFile(join(runDir, "sessions", "agent_missing123456.json"), "utf8"),
   ).rejects.toThrow();
 });
+
+test("SessionRegistry.setModel persists a mid-session model switch to metadata", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_setmodel456",
+  });
+
+  const agent = await registry.createAgentSession({
+    project,
+    provider: "claude",
+    model: "claude-sonnet-4-6",
+  });
+
+  await registry.setModel(agent.id, "claude-haiku-4-5-20251001");
+
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_setmodel456.json"), "utf8"),
+  );
+  expect(metadata.model).toBe("claude-haiku-4-5-20251001");
+  // setModel only updates model; claudeSessionId is untouched.
+  expect(metadata.claudeSessionId).toBeUndefined();
+});
+
+test("SessionRegistry.setModel is a no-op when the session metadata file is missing", async () => {
+  const registry = new SessionRegistry({ runDir, now: fixedNow });
+  await expect(
+    registry.setModel("agent_nonexistent_id", "claude-haiku-4-5-20251001"),
+  ).resolves.toBeUndefined();
+});
