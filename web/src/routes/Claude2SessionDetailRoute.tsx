@@ -19,7 +19,9 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   unstable_useSlashCommandAdapter,
+  type Unstable_DirectiveFormatter,
   type Unstable_SlashCommand,
+  useAui,
   useAuiState,
   useComposerRuntime,
   useExternalStoreRuntime,
@@ -3017,6 +3019,16 @@ function PermissionModeSelector({
   );
 }
 
+// assistant-ui's default directive formatter writes `:command[/x]{name=x}` into the
+// composer, which is meant for an LLM runtime to parse back into a tool call. Our
+// composer text is piped straight to the Claude CLI stdin, which only understands a
+// plain `/x`. Serialize every slash item (builtin command / plugin command / skill) to
+// its CLI slash form instead — see primitives/references/mentions.md (custom formatter).
+const cliSlashFormatter: Unstable_DirectiveFormatter = {
+  serialize: (item) => item.label ?? `/${item.id}`,
+  parse: (text) => [{ kind: "text", text }],
+};
+
 function ComposerWithInterrupt({
   currentModel,
   currentResolved,
@@ -3072,6 +3084,12 @@ function ComposerWithInterrupt({
     for (const info of descQuery.data?.commands ?? []) map.set(info.name, info.kind);
     return map;
   }, [descQuery.data]);
+  // Enter on a highlighted slash item sends it immediately (IDE-style: Tab completes,
+  // Enter submits). append() drives the message through onNew → sendToSocket without
+  // depending on composer text state, so it races cleanly against insertDirective.
+  const api = useAui();
+  const composer = useComposerRuntime();
+  const lastKeyRef = useRef<string>("");
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
   return (
@@ -3082,6 +3100,9 @@ function ComposerWithInterrupt({
           className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
           rows={1}
           enterKeyHint="send"
+          onKeyDown={(e) => {
+            lastKeyRef.current = e.key;
+          }}
         />
         <AuiIf condition={(s) => s.thread.isRunning}>
           <div className="absolute inset-0 rounded-xl bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center">
@@ -3096,7 +3117,17 @@ function ComposerWithInterrupt({
             adapter={slash.adapter}
             className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
           >
-            <ComposerPrimitive.Unstable_TriggerPopover.Action {...slash.action} />
+            <ComposerPrimitive.Unstable_TriggerPopover.Action
+              formatter={cliSlashFormatter}
+              onExecute={(item) => {
+                slash.action.onExecute?.(item);
+                if (lastKeyRef.current === "Enter") {
+                  api.thread().append(`/${item.id}`);
+                  composer.setText("");
+                }
+                lastKeyRef.current = "";
+              }}
+            />
             <ComposerPrimitive.Unstable_TriggerPopoverItems>
               {(items) =>
                 items.map((item, index) => {
