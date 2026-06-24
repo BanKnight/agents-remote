@@ -166,6 +166,16 @@ export class Claude2SessionRelay {
     this.broadcast(line);
   }
 
+  // Inject a line into the live buffer AND broadcast it. Unlike injectLine
+  // (broadcast-only), this also pushes into liveLines so subscribers that
+  // connect LATER replay it from the live batch. Used to echo user input the
+  // CLI never emits on stream-json stdout (see claude2-stream.ts message()).
+  injectLiveLine(line: string): void {
+    this.liveLines.push(line);
+    this.capLive();
+    this.broadcast(line);
+  }
+
   reportError(error: Error): void {
     this.broadcastError(error);
   }

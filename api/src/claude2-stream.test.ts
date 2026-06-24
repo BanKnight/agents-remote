@@ -179,9 +179,13 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
 
   const makeController = () => {
     const writes: string[] = [];
+    const injections: Array<{ key: string; line: string }> = [];
     const claude2Runtime = {
       write: async (_key: string, data: string) => {
         writes.push(data);
+      },
+      injectLiveLine: (key: string, line: string) => {
+        injections.push({ key, line });
       },
     };
     const controller = new Claude2StreamController(
@@ -189,7 +193,7 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
       {} as RuntimeResources,
       {} as SessionRegistry,
     );
-    return { controller, writes };
+    return { controller, writes, injections };
   };
 
   test("set_model control_request is forwarded to CLI stdin (in-process switch, no restart)", async () => {
@@ -237,5 +241,37 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     await controller.message(socket, JSON.stringify({ type: "result", subtype: "success" }));
     expect(writes).toEqual([]);
     expect(socket.sends).toEqual([]);
+  });
+
+  test("user message is echoed into the live cache (CLI never echoes user input on stdout)", async () => {
+    const { controller, writes, injections } = makeController();
+    const msg = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hello" }] },
+    };
+    await controller.message(makeSocket(), JSON.stringify(msg));
+    // forwarded to stdin verbatim (no uuid — CLI accepts it, generates its own in JSONL)
+    expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
+    // echoed into the relay live cache with a synthetic injected- uuid so the
+    // client (which dedupes by uuid) renders the user bubble.
+    expect(injections).toHaveLength(1);
+    expect(injections[0]!.key).toBe("ar-claude2-claude-demo-sess-1");
+    const echoed = JSON.parse(injections[0]!.line) as Record<string, unknown>;
+    expect(echoed).toMatchObject({ type: "user", message: msg.message });
+    expect(typeof echoed.uuid).toBe("string");
+    expect((echoed.uuid as string).startsWith("injected-")).toBe(true);
+  });
+
+  test("control_request and control_response are forwarded but NOT echoed into the live cache", async () => {
+    const { controller, writes, injections } = makeController();
+    const cases = [
+      { type: "control_request", request_id: "r1", request: { subtype: "interrupt" } },
+      { type: "control_response", response: { subtype: "success", request_id: "r2" } },
+    ];
+    for (const c of cases) {
+      await controller.message(makeSocket(), JSON.stringify(c));
+    }
+    expect(writes).toEqual(cases.map((c) => `${JSON.stringify(c)}\n`));
+    expect(injections).toEqual([]);
   });
 });

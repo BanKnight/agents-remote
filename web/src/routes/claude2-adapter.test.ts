@@ -573,6 +573,113 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(custom.stdout).toBe("Set model to sonnet");
     expect(custom.sourceType).toBe("local-command");
   });
+
+  // ── synthetic assistant (model "<synthetic>") → command-output ──
+  // CLI slash commands (/cost /help /status …) come back only as a synthetic
+  // assistant message + result on stream-json stdout; the command-input user
+  // message is filtered. Command name is recovered positionally from the most
+  // recent "/" user prompt (FIFO queue).
+
+  test("synthetic assistant body renders as a command-output card", () => {
+    const items = normalizeChatStream([
+      makeUser("/cost"),
+      assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "Total cost: $0.42" }]),
+      result("success"),
+    ]);
+    expect(items.filter((i) => i.kind === "assistant")).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(1);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBe("cost");
+    expect(cmd.stdout).toBe("Total cost: $0.42");
+    expect(cmd.sourceType).toBe("local-command");
+  });
+
+  test("synthetic recovers commandName from a preceding slash prompt with args", () => {
+    const items = normalizeChatStream([
+      makeUser("/model sonnet"),
+      assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "ok" }]),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBe("model");
+  });
+
+  test("synthetic with no preceding slash prompt yields a generic command-output", () => {
+    const items = normalizeChatStream([
+      assistantWithModel("synth", "<synthetic>", [
+        { type: "text", text: "No response requested." },
+      ]),
+    ]);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBeUndefined();
+    expect(cmd.stdout).toBe("No response requested.");
+  });
+
+  test("synthetic does not steal commandName from a non-slash user prompt", () => {
+    const items = normalizeChatStream([
+      makeUser("hello there"),
+      assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "body" }]),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBeUndefined();
+  });
+
+  test("API-error synthetic (isApiErrorMessage) is not cardified", () => {
+    const items = normalizeChatStream([
+      {
+        type: "assistant",
+        message: {
+          id: "synth-err",
+          role: "assistant",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "API Error: boom" }],
+        },
+        isApiErrorMessage: true,
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
+  });
+
+  test("rapid-fire slash commands recover names FIFO", () => {
+    const items = normalizeChatStream([
+      makeUser("/cost"),
+      makeUser("/help"),
+      assistantWithModel("synth1", "<synthetic>", [{ type: "text", text: "cost body" }]),
+      assistantWithModel("synth2", "<synthetic>", [{ type: "text", text: "help body" }]),
+    ]);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(2);
+    const first = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    const second = cmds[1] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(first.commandName).toBe("cost");
+    expect(first.stdout).toBe("cost body");
+    expect(second.commandName).toBe("help");
+    expect(second.stdout).toBe("help body");
+  });
+
+  test("renderChatStream maps synthetic-origin command-output with commandName", () => {
+    const items = normalizeChatStream([
+      makeUser("/cost"),
+      assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "Total cost: $0.42" }]),
+    ]);
+    const rendered = renderChatStream(items);
+    const cmd = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "command-output",
+    );
+    expect(cmd).toBeDefined();
+    const custom = cmd?.metadata?.custom as Record<string, unknown>;
+    expect(custom.commandName).toBe("cost");
+    expect(custom.stdout).toBe("Total cost: $0.42");
+  });
 });
 
 describe("agent-container pipeline", () => {
@@ -2781,7 +2888,7 @@ describe("normalizeChatStream", () => {
     expect(assistantItems(items)).toHaveLength(0);
   });
 
-  test("synthetic assistant (model=<synthetic>) produces no item", () => {
+  test("synthetic assistant (model=<synthetic>) renders as a command-output item", () => {
     const items = normalizeChatStream([
       {
         type: "assistant",
@@ -2793,7 +2900,7 @@ describe("normalizeChatStream", () => {
         },
       } as unknown as SessionStreamServerMessage,
     ]);
-    expect(items).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(1);
   });
 
   test("task_started produces no item (scalar-only)", () => {

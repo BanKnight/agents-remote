@@ -182,6 +182,17 @@ export class Claude2Runtime implements RuntimeResources {
     stdin.write(data);
   }
 
+  // Buffer a line into the relay's live cache + broadcast, so a user-message
+  // echo reaches current AND future subscribers (replayed on reconnect). No-op
+  // if the session/relay isn't registered (e.g. race with close) — the echo is
+  // best-effort; the CLI turn still proceeds via write().
+  injectLiveLine(sessionName: string, line: string): void {
+    const relay = this.relays.get(sessionName);
+    if (relay && !relay.isDestroyed) {
+      relay.injectLiveLine(line);
+    }
+  }
+
   async stream(
     sessionName: string,
     onData: (data: string) => void,

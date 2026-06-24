@@ -283,6 +283,19 @@ export class Claude2StreamController {
         // the relay forwards automatically. The CLI process stays alive.
         console.log(`[claude2-stream] message ${parsed.type}: ${data.runtimeKey}`);
         await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(parsed) + "\n");
+
+        // The CLI never echoes user input on stream-json stdout (live capture:
+        // 0 user-type stdout lines, for both plain text and slash commands).
+        // hapi self-injects via onUserMessage + persists to SQLite so reconnects
+        // see user messages; we mirror by buffering the user message into the
+        // relay's live cache (injectLiveLine) so current AND future subscribers
+        // see it. control_response/control_request are permission/model actions,
+        // not chat content — not injected. The echo gets a synthetic uuid
+        // (client sends none; CLI generates one only in JSONL, never on stdout).
+        if (parsed.type === "user") {
+          const echo = JSON.stringify({ ...parsed, uuid: `injected-${crypto.randomUUID()}` });
+          this.claude2Runtime.injectLiveLine(data.runtimeKey, echo);
+        }
       }
     } catch {
       send(socket, {

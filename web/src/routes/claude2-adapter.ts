@@ -1584,6 +1584,12 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   let lastToolUseId: string | null = null;
   // api_error messages whose parent isn't emitted yet; resolved lazily.
   const pendingApiErrors: SessionStreamServerMessage[] = [];
+  // Slash-command names awaiting their synthetic response, in send order.
+  // The CLI filters the user command-input message from stream-json stdout
+  // (only assistant {model:"<synthetic>"} + result come back), so the command
+  // name can't be recovered from the wire — it's recovered positionally:
+  // each "/" user prompt enqueues, each synthetic assistant dequeues (FIFO).
+  const pendingSlash: string[] = [];
 
   // Compact window: opened at a compact/microcompact_boundary, absorbs the
   // boundary's trailing compaction messages (isCompactSummary user message +
@@ -1859,8 +1865,23 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
-      // Synthetic assistant (model === "<synthetic>"): skip entirely.
-      if (isSyntheticAssistantMessage(msg)) continue;
+      // Synthetic assistant (model === "<synthetic>"): the CLI's universal
+      // echo container for non-LLM output — slash-command responses (/cost,
+      // /help, /status, …), "No response requested.", etc. Render its body as
+      // a command-output card; the command name is recovered positionally
+      // from the most recent "/" user prompt (pendingSlash FIFO). API-error
+      // synthetics (isApiErrorMessage) are caught above at the ApiError branch.
+      if (isSyntheticAssistantMessage(msg)) {
+        items.push({
+          kind: "command-output",
+          commandName: pendingSlash.shift(),
+          stdout: extractSyntheticBody(msg) || undefined,
+          sourceType: "local-command",
+          sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
+        });
+        continue;
+      }
 
       // Hidden / internal assistant (isMeta / isSynthetic): fold into parent
       // or tool-call; no standalone item.
@@ -2021,12 +2042,15 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // UserPrompt: text content → user-prompt item.
       if (texts.length > 0) {
+        const promptText = texts.join("\n");
         items.push({
           kind: "user-prompt",
-          text: texts.join("\n"),
+          text: promptText,
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
           _rawSnapshots: [msg],
         });
+        const trimmed = promptText.trim();
+        if (trimmed.startsWith("/")) pendingSlash.push(trimmed.split(/\s+/)[0]!.slice(1));
         continue;
       }
 
@@ -2055,6 +2079,9 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
           _rawSnapshots: [msg],
         });
+        if (rawContent.trim().startsWith("/")) {
+          pendingSlash.push(rawContent.trim().split(/\s+/)[0]!.slice(1));
+        }
         continue;
       }
 

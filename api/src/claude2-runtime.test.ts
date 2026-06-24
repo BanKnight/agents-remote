@@ -145,3 +145,34 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
   expect(calls).toEqual([]);
   expect(runtime.getSessionState("rt-key")?.model).toBe("old");
 });
+
+test("injectLiveLine forwards the line to the registered relay", () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const injected: string[] = [];
+  const fakeRelay = {
+    isDestroyed: false,
+    injectLiveLine: (line: string) => injected.push(line),
+  };
+  const internal = runtime as unknown as { relays: Map<string, unknown> };
+  internal.relays.set("rt-key", fakeRelay);
+
+  const line = JSON.stringify({ type: "user", uuid: "injected-x" });
+  runtime.injectLiveLine("rt-key", line);
+  expect(injected).toEqual([line]);
+});
+
+test("injectLiveLine is a no-op when the relay is missing or destroyed", () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  // missing relay — no throw
+  expect(() => runtime.injectLiveLine("missing", '{"type":"user"}')).not.toThrow();
+
+  // destroyed relay — not forwarded, no throw
+  const internal = runtime as unknown as { relays: Map<string, unknown> };
+  internal.relays.set("dead", {
+    isDestroyed: true,
+    injectLiveLine: () => {
+      throw new Error("should not be called on a destroyed relay");
+    },
+  });
+  expect(() => runtime.injectLiveLine("dead", '{"type":"user"}')).not.toThrow();
+});

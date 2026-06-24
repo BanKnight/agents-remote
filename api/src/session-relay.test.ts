@@ -253,6 +253,48 @@ test("Claude2SessionRelay injectLine broadcasts but does not enter output", asyn
   relay.destroy();
 });
 
+test("Claude2SessionRelay injectLiveLine buffers into liveLines for later subscribers", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  const injectedLine = JSON.stringify({
+    type: "user",
+    uuid: "injected-1",
+    message: { role: "user", content: [{ type: "text", text: "hi" }] },
+  });
+
+  // Current subscriber — receives the real-time broadcast.
+  const live: string[] = [];
+  relay.addSubscriber(
+    (line) => live.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  relay.injectLiveLine(injectedLine);
+
+  // 1) current subscriber got the broadcast after the live batch.
+  const liveEndIdx = live.findIndex((l) => l.includes('"live_end"'));
+  expect(live.slice(liveEndIdx + 1)).toContain(injectedLine);
+
+  // 2) a subscriber joining LATER replays the injected line from the live
+  //    batch — this is the key difference from injectLine (broadcast-only).
+  const replayed: string[] = [];
+  relay.addSubscriber(
+    (line) => replayed.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = replayed.map((l) => JSON.parse(l) as Record<string, unknown>);
+  const liveStart = messages.findIndex((m) => m.type === "live_start");
+  const liveEnd = messages.findIndex((m) => m.type === "live_end");
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
+  expect(messages.slice(liveStart + 1, liveEnd)).toEqual([JSON.parse(injectedLine)]);
+
+  relay.destroy();
+});
+
 // compact-block windowing: keep only the last compact block.
 const compactBoundaryLine = (uuid: string) =>
   JSON.stringify({
