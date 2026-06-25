@@ -26,7 +26,7 @@
 ### State/Render 分离（两条管道，通用原则）
 
 - **消息 = state，不是气泡**。全部原始消息（包括内部/合成消息）先进入唯一的 state 有序日志（`rawMessages: SessionStreamServerMessage[]`），不在此阶段做渲染决策或丢弃。
-- **渲染 = state 的投影（子集）**。渲染列表通过纯函数（如 `deriveThread(rawMessages): ThreadMessageLike[]`）从 state 派生，由 `useMemo` 管理。收 100 条消息渲染 50 条是正常的（HiddenDropped 语义）。
+- **渲染 = state 的投影（子集）**。渲染列表通过纯函数（如 `normalizeChatStream(rawMessages): ChatStreamItem[]`）从 state 派生，由 `useMemo` 管理。收 100 条消息渲染 50 条是正常的（HiddenDropped 语义）。
 - **关联在 state 层用有序关系表达，不进渲染 metadata**。synthetic→parent、tool_result→tool_use、thinking_tokens→assistant 等关联都应从有序 raw 日志中的位置推导（前一条消息、tool_use_id 匹配等），或从消息自身的字段（如 `sourceToolUseID`）解析，而不是塞进气泡的 `metadata.custom` hack。
 - **Pass 1 / Pass 2 是标准范式**：Pass 1 = 批量追加 raw state + 更新独立标量 state（tasks、model、skills 等）；Pass 2 = 纯函数从 raw state 派生渲染列表。不要在第一遍处理时直接 mutate 渲染列表。
 - **设计从语义出发，不要从 type 机械 switch**。先做语义分类（AssistantTurn、ToolResult、SkillBody、UserPrompt、ThinkingTokens、ApiError 等），再为每个语义角色设计渲染投影逻辑，而不是对 `msg.type` 做 switch-case。
