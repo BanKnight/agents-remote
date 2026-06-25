@@ -1003,19 +1003,25 @@ z.type === "tool_result" && z.tool_use_id === H
 
 | | 实时流（live stdout + API echo） | 历史回放（JSONL resume） |
 |---|---|---|
-| 命令输入 | API 注入 `user` echo：`{ role: "user", content: "/cost" }`（纯文本） | JSONL 持久化为 `user`：`{ role: "user", content: "<command-name>/usage</command-name>..." }`（XML 标签） |
+| 命令输入 | API 注入 `user` echo：`{ role: "user", content: "/cost" }`（纯文本） | 多数命令持久化为 `user`：`{ content: "<command-name>/usage</command-name>..." }`（XML 标签）；部分命令（`/status` 等，CLI 未文档化行为）输入持久化为 `system/local_command` 纯文本 `"/status"`（无 XML 标签，form D） |
 | 命令输出 | CLI 发送 `assistant` + `model: "<synthetic>"`，body 为输出文本 | JSONL 持久化为 `system` + `subtype: "local_command"`：`{ content: "<local-command-stdout>Total cost:...</local-command-stdout>" }` |
-| 合并方式 | `pendingSlash` FIFO 从纯文本 user echo 取命令名，与 synthetic assistant 合并 | 把 `user` tag 输入与 `system/local_command` 输出识别为相邻 `command-output` 片段后合并 |
+| 合并方式 | `pendingSlashItemIdx` FIFO 记录纯文本 user echo 的 item 索引；synthetic 到达时就地把该 echo item 改写为 `command-output`（命令名/args 来自 echo 文本，stdout 来自 synthetic body）；命令无 synthetic 输出时 echo 保留为用户气泡（fallback，不丢失） | 把命令输入片段（`user` tag 或 `system/local_command` 纯文本，有 commandName）与输出片段（`system/local_command` stdout，无 commandName）识别为相邻 `command-output` 后由 Pass B 合并 |
 | 典型命令 | `/cost`、`/model`、`/help` | `/cost`、`/model`、`/reload-skills` |
 
 部分命令（如 `/reload-skills`）在 JSONL 中会**双重复制**：既保留了 synthetic assistant 回声，又保留了 `user` tag + `system/local_command`。`normalizeChatStream` 的合并 Pass A 会先把 synthetic echo 折叠进紧随其后的 tag-based `command-output`，再由 Pass B 与 `system/local_command` 输出合并，最终只剩一张卡片。
+
+**form D（纯文本输入）**：部分命令（`/status` 等）的输入在 JSONL 中以 `system/local_command` 纯文本 `"/status"` 持久化（无 XML 标签，CLI 未文档化）。`hasCommandArtifactTags` 不匹配，改由 `/` 前缀检测识别为输入片段（`buildCommandOutputItemFromPlainText`：commandName 取首 token 去斜杠、余下 token 为 args、stdout 留空），再由 Pass B 与紧随的 `<local-command-stdout>` 输出合并成单卡片。非 `/` 开头的纯文本仍落入 fallback，不误卡片化。
+
+**form C（单输出，命令名推断）**：少数命令只有一条 `<local-command-stdout>` 输出、无任何输入回显（既无 `user` tag 也无纯文本 echo），合并后 `commandName` 为空。Pass D（在 Pass A/B 之后）用 `STDOUT_COMMAND_HINTS` 白名单对 stdout 首行做 `^`-anchored 匹配（`Set model to` → `model`、`Reloaded skills:` → `reload-skills`、`Total cost:` → `cost`）启发式推断命令名；未知输出保持 `commandName` 为空（不硬猜），`CommandOutputCard` 渲染通用标题。已有 commandName（form A/B/D/E）在 Pass D 跳过，不会被覆盖。
+
+**form E（live 就地合并 + fallback）**：live 路径下，服务端注入的纯文本 `/status` user echo 不再独立渲染成用户气泡。`normalizeChatStream` 在 walk 时把 `/` 开头的 user-prompt item 索引压入 `pendingSlashItemIdx` FIFO；该命令的 synthetic assistant 到达时，就地把这个 user-prompt item 改写成 `command-output`（命令名/args 来自 echo 文本，stdout 来自 synthetic body，raw 快照合并），从而 live 斜杠命令也只产生一张卡片。若命令没有 synthetic 输出（如无效命令 CLI 无响应），echo item 不被改写、原样保留为用户气泡（fallback），用户输入不会丢失。
 
 **`<command-name>` 标签值的前导 `/`**：JSONL 中 `<command-name>/usage</command-name>` 的 tag 值是 `"/usage"`（含前导斜杠），而 live 路径 `pendingSlash.shift()` 已经去掉斜杠（`"usage"`）。前端在 `buildCommandOutputItem` 中统一 `commandName.replace(/^\//, "")`，避免 `CommandOutputCard` 渲染成 `//usage`。
 
 **渲染处理**（`web/src/routes/claude2-adapter.ts`）：
 1. **识别**（纯函数 `parseCommandArtifactTags` / `hasCommandArtifactTags`）：用带反向引用的正则 `<tag>...</tag>` 提取标签内容，覆盖除 caveat 外的全部标签。string content 与 array text-block 两条路径都检测。
 2. **产出**（`normalizeChatStream`）：识别到的命令回显消息产出 `kind: "command-output"` ChatStreamItem，携带 `commandName` / `args` / `stdout` / `stderr` / `input` / `sourceType: "local-command" | "bash"`。`system/local_command` 不再落入 fallback。
-3. **合并**：两遍扫描。Pass A：synthetic assistant echo（有 stdout，可能无准确 commandName）紧跟 tag-based command-output（有 commandName，无 stdout）时，把 synthetic stdout 折叠进 tag 卡片。Pass B：相邻 `command-output` 输入（有 commandName）与输出（有 stdout 无 commandName）合并成一条，保证一条命令只产生一个卡片。
+3. **合并**：三遍扫描。Pass A：synthetic assistant echo（有 stdout，可能无准确 commandName）紧跟 tag-based command-output（有 commandName，无 stdout）时，把 synthetic stdout 折叠进 tag 卡片。Pass B：相邻 `command-output` 输入（有 commandName）与输出（有 stdout 无 commandName）合并成一条，保证一条命令只产生一个卡片。Pass D：合并后仍无 commandName 的单 stdout 卡片（form C）用 `STDOUT_COMMAND_HINTS` 白名单启发式推断命令名。（form E 的 live echo→synthetic 合并在 walk 阶段就地完成，不经过 Pass A/B/D。）
 4. **投影**（`renderChatStream`）：映射为 `role: "system"` + `content text: ""` + `systemMessageType: "command-output"` 的 ThreadMessageLike（复用 `mode-change` 的「非气泡系统消息」范式）。
 5. **渲染**（`CommandOutputCard`）：列表内卡片预览（终端图标 + `/cmd` 或 `!cmd` 标题 + 输出首行）+ 点击 Dialog 弹窗展示完整 stdout/stderr/args/input 分区。
 

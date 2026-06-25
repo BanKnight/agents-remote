@@ -559,6 +559,41 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(cmd.sourceType).toBe("local-command");
   });
 
+  test("JSONL replay: plain-text /status input (form D) merges with following stdout", () => {
+    // Some CLI commands persist the INPUT as a system/local_command record with
+    // plain-text content (no XML tags). The "/" prefix routes it to an input
+    // fragment that Pass B merges with the next <local-command-stdout>.
+    const items = normalizeChatStream([
+      localCommand("/status"),
+      localCommand("<local-command-stdout>Working directory: /app</local-command-stdout>"),
+    ]);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBe("status");
+    expect(cmd.args).toBeUndefined();
+    expect(cmd.stdout).toBe("Working directory: /app");
+    expect(cmd.sourceType).toBe("local-command");
+  });
+
+  test("form D splits args from a plain-text input echo", () => {
+    const items = normalizeChatStream([
+      localCommand("/model sonnet"),
+      localCommand("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBe("model");
+    expect(cmd?.args).toBe("sonnet");
+  });
+
+  test("form D: non-slash plain-text system/local_command is not cardified", () => {
+    const items = normalizeChatStream([localCommand("plain text no slash")]);
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
+  });
+
   test("system/local_command with command tags is cardified, not fallback", () => {
     const items = normalizeChatStream([
       localCommand("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
@@ -572,11 +607,67 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(cmd?.sourceType).toBe("local-command");
   });
 
+  test("form C: single stdout card infers commandName from 'Set model to'", () => {
+    const items = normalizeChatStream([
+      localCommand(
+        "<local-command-stdout>Set model to sonnet (claude-sonnet-4-6)</local-command-stdout>",
+      ),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBe("model");
+  });
+
+  test("form C: 'Reloaded skills:' stdout infers reload-skills", () => {
+    const items = normalizeChatStream([
+      localCommand(
+        "<local-command-stdout>Reloaded skills: 40 skills available</local-command-stdout>",
+      ),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBe("reload-skills");
+  });
+
+  test("form C: 'Total cost:' stdout infers cost", () => {
+    const items = normalizeChatStream([
+      localCommand("<local-command-stdout>Total cost: $0.42</local-command-stdout>"),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBe("cost");
+  });
+
+  test("form C: unknown stdout leaves commandName undefined (no guess)", () => {
+    const items = normalizeChatStream([
+      localCommand("<local-command-stdout>Some arbitrary output</local-command-stdout>"),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBeUndefined();
+  });
+
+  test("form C inference does not override a real commandName from tags", () => {
+    const items = normalizeChatStream([
+      localCommand(
+        "<command-name>custom</command-name><local-command-stdout>Total cost: $0.42</local-command-stdout>",
+      ),
+    ]);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd?.commandName).toBe("custom");
+  });
+
   test("JSONL replay double-record (synthetic echo + tags + local_command) collapses to one card", () => {
     // /reload-skills is persisted as BOTH a synthetic assistant echo AND
     // user-tag + system/local_command records. The synthetic (empty on replay
-    // since pendingSlash is empty) must fold into the tag-based card, leaving
-    // a single card with the real stdout.
+    // since pendingSlashItemIdx is empty) must fold into the tag-based card,
+    // leaving a single card with the real stdout.
     const items = normalizeChatStream([
       assistantWithModel("synth", "<synthetic>", [
         { type: "text", text: "No response requested." },
@@ -648,19 +739,24 @@ describe("command-output (local-command / bash echo) pipeline", () => {
   // recent "/" user prompt (FIFO queue).
 
   test("synthetic assistant body renders as a command-output card", () => {
-    const items = normalizeChatStream([
-      makeUser("/cost"),
-      assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "Total cost: $0.42" }]),
-      result("success"),
+    const echo = makeUser("/cost");
+    const synth = assistantWithModel("synth", "<synthetic>", [
+      { type: "text", text: "Total cost: $0.42" },
     ]);
+    const items = normalizeChatStream([echo, synth, result("success")]);
     expect(items.filter((i) => i.kind === "assistant")).toHaveLength(0);
-    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(1);
+    // Form E: the "/cost" echo user-prompt is consumed (rewritten in place into
+    // the merged card) — no standalone user bubble survives.
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
     const cmds = items.filter((i) => i.kind === "command-output");
     expect(cmds).toHaveLength(1);
     const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
     expect(cmd.commandName).toBe("cost");
     expect(cmd.stdout).toBe("Total cost: $0.42");
     expect(cmd.sourceType).toBe("local-command");
+    // Merged card carries both the echo and the synthetic raw snapshots.
+    expect(cmd._rawSnapshots).toContain(echo);
+    expect(cmd._rawSnapshots).toContain(synth);
   });
 
   test("synthetic recovers commandName from a preceding slash prompt with args", () => {
@@ -714,6 +810,32 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
   });
 
+  test("form E: live slash echo + synthetic collapse to one card (no user bubble)", () => {
+    const echo = makeUser("/status");
+    const synth = assistantWithModel("synth", "<synthetic>", [
+      { type: "text", text: "Working directory: /app" },
+    ]);
+    const items = normalizeChatStream([echo, synth]);
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBe("status");
+    expect(cmd.stdout).toBe("Working directory: /app");
+    expect(cmd._rawSnapshots).toContain(echo);
+    expect(cmd._rawSnapshots).toContain(synth);
+  });
+
+  test("form E fallback: slash echo with no synthetic stays a user-prompt (not lost)", () => {
+    const items = normalizeChatStream([makeUser("/nonexistent")]);
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
+    const prompts = items.filter((i) => i.kind === "user-prompt");
+    expect(prompts).toHaveLength(1);
+    expect((prompts[0] as Extract<ChatStreamItem, { kind: "user-prompt" }>).text).toBe(
+      "/nonexistent",
+    );
+  });
+
   test("rapid-fire slash commands recover names FIFO", () => {
     const items = normalizeChatStream([
       makeUser("/cost"),
@@ -723,6 +845,8 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     ]);
     const cmds = items.filter((i) => i.kind === "command-output");
     expect(cmds).toHaveLength(2);
+    // Form E FIFO: both slash echoes are consumed by their paired synthetics.
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
     const first = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
     const second = cmds[1] as Extract<ChatStreamItem, { kind: "command-output" }>;
     expect(first.commandName).toBe("cost");

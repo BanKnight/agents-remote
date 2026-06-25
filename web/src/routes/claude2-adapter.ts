@@ -285,6 +285,46 @@ function buildCommandOutputItem(
   };
 }
 
+// Build a command-output INPUT fragment from a plain-text slash-command echo
+// (form D: some CLI commands persist the command INPUT as a system/local_command
+// record with plain-text content like "/status" — no XML tags). commandName is
+// the first token with the leading "/" stripped (matching buildCommandOutputItem);
+// remaining tokens are args. stdout is left undefined so Pass B merges this
+// input fragment with the following <local-command-stdout> output fragment.
+function buildCommandOutputItemFromPlainText(
+  text: string,
+  msg: SessionStreamServerMessage,
+): Extract<ChatStreamItem, { kind: "command-output" }> {
+  const tokens = text.trim().split(/\s+/);
+  return {
+    kind: "command-output",
+    commandName: tokens[0]!.replace(/^\//, ""),
+    args: tokens.length > 1 ? tokens.slice(1).join(" ") : undefined,
+    sourceType: "local-command",
+    sourceUuids: getMessageUuid(msg) ? [getMessageUuid(msg)!] : [],
+    _rawSnapshots: [msg],
+  };
+}
+
+// Heuristic command-name recovery for form C: a single stdout-only
+// command-output card (no input echo, so no commandName from tags/echo). Maps
+// the stdout's first line against a whitelist of known CLI output prefixes.
+// Unknown patterns return undefined (never guessed) → the card keeps its
+// generic title. Extend STDOUT_COMMAND_HINTS to recognize more commands.
+const STDOUT_COMMAND_HINTS: ReadonlyArray<{ test: RegExp; name: string }> = [
+  { test: /^Set model to\b/i, name: "model" },
+  { test: /^Reloaded skills:/i, name: "reload-skills" },
+  { test: /^Total cost:/i, name: "cost" },
+];
+
+function inferCommandNameFromStdout(stdout: string): string | undefined {
+  const head = stdout.trim().split("\n")[0] ?? "";
+  for (const rule of STDOUT_COMMAND_HINTS) {
+    if (rule.test.test(head)) return rule.name;
+  }
+  return undefined;
+}
+
 // Whether a command-output item was derived from a CLI synthetic assistant
 // (model "<synthetic>"). JSONL replay double-records some slash commands
 // (e.g. /reload-skills): a synthetic assistant echo AND separate user-tag +
@@ -1592,8 +1632,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   // The CLI filters the user command-input message from stream-json stdout
   // (only assistant {model:"<synthetic>"} + result come back), so the command
   // name can't be recovered from the wire — it's recovered positionally:
-  // each "/" user prompt enqueues, each synthetic assistant dequeues (FIFO).
-  const pendingSlash: string[] = [];
+  // each "/" user prompt enqueues its ITEM INDEX, each synthetic assistant
+  // dequeues (FIFO) and rewrites that user-prompt item in place into a
+  // command-output card (form E: live slash commands merge into one card). If
+  // no synthetic arrives, the user-prompt stays rendered (fallback — echo kept).
+  const pendingSlashItemIdx: number[] = [];
 
   // Compact window: opened at a compact/microcompact_boundary, absorbs the
   // boundary's trailing compaction messages (isCompactSummary user message +
@@ -1873,17 +1916,38 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // echo container for non-LLM output — slash-command responses (/cost,
       // /help, /status, …), "No response requested.", etc. Render its body as
       // a command-output card; the command name is recovered positionally
-      // from the most recent "/" user prompt (pendingSlash FIFO). API-error
+      // from the most recent "/" user prompt (pendingSlashItemIdx FIFO). API-error
       // synthetics (isApiErrorMessage) are caught above at the ApiError branch.
       if (isSyntheticAssistantMessage(msg)) {
-        items.push({
-          kind: "command-output",
-          commandName: pendingSlash.shift(),
-          stdout: extractSyntheticBody(msg) || undefined,
-          sourceType: "local-command",
-          sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
-          _rawSnapshots: [msg],
-        });
+        const body = extractSyntheticBody(msg) || undefined;
+        const echoIdx = pendingSlashItemIdx.shift();
+        const echoItem = echoIdx != null ? items[echoIdx] : undefined;
+        // Form E: rewrite the preceding slash-echo user-prompt item in place
+        // into a command-output card (command name + args from the echo text,
+        // stdout from the synthetic body, raws merged) — so live slash commands
+        // render as a single card instead of a user bubble + a card.
+        if (echoItem?.kind === "user-prompt") {
+          const tokens = echoItem.text.trim().split(/\s+/);
+          items[echoIdx!] = {
+            kind: "command-output",
+            commandName: tokens[0]!.replace(/^\//, ""),
+            args: tokens.length > 1 ? tokens.slice(1).join(" ") : undefined,
+            stdout: body,
+            sourceType: "local-command",
+            sourceUuids: [...echoItem.sourceUuids, ...(getMsgUuid(msg) ? [getMsgUuid(msg)!] : [])],
+            _rawSnapshots: [...echoItem._rawSnapshots, msg],
+          };
+        } else {
+          // No matching slash echo (replay C-shape, or echo already consumed) —
+          // standalone command-output; commandName left undefined for Pass D.
+          items.push({
+            kind: "command-output",
+            stdout: body,
+            sourceType: "local-command",
+            sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+            _rawSnapshots: [msg],
+          });
+        }
         continue;
       }
 
@@ -2054,7 +2118,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           _rawSnapshots: [msg],
         });
         const trimmed = promptText.trim();
-        if (trimmed.startsWith("/")) pendingSlash.push(trimmed.split(/\s+/)[0]!.slice(1));
+        if (trimmed.startsWith("/")) pendingSlashItemIdx.push(items.length - 1);
         continue;
       }
 
@@ -2084,7 +2148,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           _rawSnapshots: [msg],
         });
         if (rawContent.trim().startsWith("/")) {
-          pendingSlash.push(rawContent.trim().split(/\s+/)[0]!.slice(1));
+          pendingSlashItemIdx.push(items.length - 1);
         }
         continue;
       }
@@ -2245,9 +2309,19 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // the merge pass can combine them with the preceding command-input echo.
       if (subtype === "local_command") {
         const rawContent = (msg as Record<string, unknown>).content;
-        if (typeof rawContent === "string" && hasCommandArtifactTags(rawContent)) {
-          items.push(buildCommandOutputItem(rawContent, msg));
-          continue;
+        if (typeof rawContent === "string" && rawContent.trim()) {
+          // Output fragment: <local-command-stdout>/<bash-stdout> tags.
+          if (hasCommandArtifactTags(rawContent)) {
+            items.push(buildCommandOutputItem(rawContent, msg));
+            continue;
+          }
+          // Form D: plain-text slash-command input echo ("/status", no tags) —
+          // convert to an input fragment so Pass B merges it with the next
+          // stdout output fragment. Non-slash plain text still falls back below.
+          if (rawContent.trim().startsWith("/")) {
+            items.push(buildCommandOutputItemFromPlainText(rawContent, msg));
+            continue;
+          }
         }
       }
 
@@ -2366,7 +2440,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   // Pass A — synthetic echo + tag input: JSONL replay double-records some slash
   // commands (/reload-skills, …) as BOTH a synthetic assistant echo AND separate
   // user-tag + system/local_command records. The synthetic echo (has stdout,
-  // commandName recovered from pendingSlash which is empty/unreliable on replay)
+  // commandName undefined — pendingSlashItemIdx is empty on replay)
   // would otherwise render as an empty duplicate card. Fold its stdout into the
   // following tag-based item (which carries the accurate, slash-stripped name).
   for (let i = 0; i + 1 < items.length; i++) {
@@ -2431,6 +2505,18 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       if (part.type === "tool-call" && part.bodyChildUuids && part.bodyChildUuids.length > 0) {
         part.hasAgentBody = true;
       }
+    }
+  }
+
+  // Pass D — infer commandName for single stdout-only cards (form C: no input
+  // echo, so commandName is null). Whitelist-based, first-line, ^-anchored;
+  // unknown stays undefined. Runs after Pass A/B so real command names from
+  // tags/echo (forms A/B/D/E) are already filled and skipped here.
+  for (const item of items) {
+    if (item.kind !== "command-output" || item.commandName != null) continue;
+    if (item.stdout != null) {
+      const inferred = inferCommandNameFromStdout(item.stdout);
+      if (inferred) item.commandName = inferred;
     }
   }
 
