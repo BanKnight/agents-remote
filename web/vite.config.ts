@@ -27,6 +27,26 @@ function readDeployConfig(): Record<string, string> {
   }
 }
 
+function getVendorChunkName(id: string): string | undefined {
+  if (!id.includes("/node_modules/")) return undefined;
+  if (id.includes("/node_modules/@xterm/")) return "vendor-terminal";
+  if (
+    id.includes("/node_modules/@assistant-ui/") ||
+    id.includes("/node_modules/react-markdown/") ||
+    id.includes("/node_modules/remark-gfm/") ||
+    id.includes("/node_modules/remark-") ||
+    id.includes("/node_modules/hast-util-") ||
+    id.includes("/node_modules/micromark") ||
+    id.includes("/node_modules/mdast-") ||
+    id.includes("/node_modules/unified/") ||
+    id.includes("/node_modules/rehype-") ||
+    id.includes("/node_modules/shiki/")
+  ) {
+    return "vendor-assistant";
+  }
+  return undefined;
+}
+
 const deployConfig = readDeployConfig();
 const apiPort = process.env.API_PORT ?? String(deployConfig.api_port ?? "3001");
 const webPort = Number(process.env.WEB_PORT ?? deployConfig.web_port ?? "3000");
@@ -88,6 +108,15 @@ export default defineConfig({
       "/api": {
         target: apiTarget,
         ws: true,
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          return getVendorChunkName(id);
+        },
       },
     },
   },

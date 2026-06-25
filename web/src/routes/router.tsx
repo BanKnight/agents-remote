@@ -1,10 +1,14 @@
-import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  lazyRouteComponent,
+  Outlet,
+} from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
 import { consoleSectionFromSearch } from "./console-model";
 import { HomeRoute } from "./HomeRoute";
 import { ProjectConsoleRoute } from "./ProjectConsoleRoute";
-import { AgentSessionDetailRoute, TerminalSessionDetailRoute } from "./SessionDetailRoute";
-import { Claude2SessionDetailRoute } from "./Claude2SessionDetailRoute";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -33,13 +37,16 @@ const projectConsoleRoute = createRoute({
 const agentSessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName/agent-sessions/$sessionId",
-  component: AgentSessionDetailRoute,
+  component: lazyRouteComponent(() => import("./SessionDetailRoute"), "AgentSessionDetailRoute"),
 });
 
 const claude2SessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName/agent-sessions/$sessionId/claude2",
-  component: Claude2SessionDetailRoute,
+  component: lazyRouteComponent(
+    () => import("./Claude2SessionDetailRoute"),
+    "Claude2SessionDetailRoute",
+  ),
 });
 
 const terminalSessionDetailRoute = createRoute({
@@ -51,7 +58,7 @@ const terminalSessionDetailRoute = createRoute({
         ? search.fromAgentSession
         : undefined,
   }),
-  component: TerminalSessionDetailRoute,
+  component: lazyRouteComponent(() => import("./SessionDetailRoute"), "TerminalSessionDetailRoute"),
 });
 
 const routeTree = rootRoute.addChildren([
@@ -62,7 +69,20 @@ const routeTree = rootRoute.addChildren([
   terminalSessionDetailRoute,
 ]);
 
-export const router = createRouter({ routeTree });
+function RoutePending() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-slate-300" />
+    </div>
+  );
+}
+
+export const router = createRouter({
+  routeTree,
+  defaultPendingMs: 200,
+  defaultPreload: "intent",
+  defaultPendingComponent: RoutePending,
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
