@@ -102,20 +102,16 @@ const routeTree = rootRoute.addChildren([
   terminalSessionDetailRoute,
 ]);
 
-function RoutePending() {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-slate-300" />
-    </div>
-  );
-}
-
 export const router = createRouter({
   routeTree,
   context: { queryClient },
-  defaultPendingMs: 200,
+  // No defaultPendingComponent on purpose: a router-level pending spinner
+  // stacks on top of each page's own loading state (splash → project skeleton
+  // → terminal reconnect) and reads as multiple chained animations. Each page
+  // owns its own loading UI; the router just keeps the previous view visible
+  // until the next route is ready, then swaps directly. defaultPreload fetches
+  // lazy chunks on hover/focus so entry is instant without any pending UI.
   defaultPreload: "intent",
-  defaultPendingComponent: RoutePending,
 });
 
 declare module "@tanstack/react-router" {
