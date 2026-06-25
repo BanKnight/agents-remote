@@ -273,7 +273,7 @@ function buildCommandOutputItem(
   const isBash = "bash-input" in tags || "bash-stdout" in tags || "bash-stderr" in tags;
   return {
     kind: "command-output",
-    commandName: tags["command-name"] ?? tags["command-message"],
+    commandName: (tags["command-name"] ?? tags["command-message"])?.replace(/^\//, ""),
     args: tags["command-args"],
     stdout: tags["local-command-stdout"] ?? tags["bash-stdout"],
     stderr: tags["local-command-stderr"] ?? tags["bash-stderr"],
@@ -283,6 +283,19 @@ function buildCommandOutputItem(
     _rawSnapshots: [msg],
   };
 }
+
+// Whether a command-output item was derived from a CLI synthetic assistant
+// (model "<synthetic>"). JSONL replay double-records some slash commands
+// (e.g. /reload-skills): a synthetic assistant echo AND separate user-tag +
+// system/local_command records for the same command. The merge pass uses this
+// to collapse the synthetic echo into the tag-based card.
+const isSyntheticCommandOutput = (item: ChatStreamItem): boolean => {
+  if (item.kind !== "command-output") return false;
+  const raw = item._rawSnapshots[0] as Record<string, unknown> | undefined;
+  if (!raw || raw.type !== "assistant") return false;
+  const model = (raw.message as { model?: string } | undefined)?.model;
+  return model === "<synthetic>";
+};
 
 // KEPT: 后续需要去重时启用
 /*
@@ -2240,6 +2253,17 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         // 未知 status 变体 → 继续落到下方既有 fallback（保持现状）。
       }
 
+      // CLI slash-command / bash output messages emitted as system subtype
+      // local_command on JSONL replay. Convert them to command-output items so
+      // the merge pass can combine them with the preceding command-input echo.
+      if (subtype === "local_command") {
+        const rawContent = (msg as Record<string, unknown>).content;
+        if (typeof rawContent === "string" && hasCommandArtifactTags(rawContent)) {
+          items.push(buildCommandOutputItem(rawContent, msg));
+          continue;
+        }
+      }
+
       // Other system messages: fallback.
 
       const ui = messageToThreadLike(msg);
@@ -2350,10 +2374,43 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   // message, or window absorbing with no subsequent real content).
   flushCompactWindow();
 
-  // Merge adjacent command-output items: a slash command's input echo
-  // (<command-name>/<command-args>, no stdout) followed immediately by its
-  // output (<local-command-stdout>, no command-name) collapses into a single
-  // card. CLI emits them back-to-back; only direct neighbors are merged.
+  // Collapse command-output fragments into a single card.
+  //
+  // Pass A — synthetic echo + tag input: JSONL replay double-records some slash
+  // commands (/reload-skills, …) as BOTH a synthetic assistant echo AND separate
+  // user-tag + system/local_command records. The synthetic echo (has stdout,
+  // commandName recovered from pendingSlash which is empty/unreliable on replay)
+  // would otherwise render as an empty duplicate card. Fold its stdout into the
+  // following tag-based item (which carries the accurate, slash-stripped name).
+  for (let i = 0; i + 1 < items.length; i++) {
+    const a = items[i];
+    const b = items[i + 1];
+    if (
+      a?.kind === "command-output" &&
+      b?.kind === "command-output" &&
+      a.sourceType === b.sourceType &&
+      isSyntheticCommandOutput(a) &&
+      !isSyntheticCommandOutput(b) &&
+      b.commandName != null &&
+      b.stdout == null
+    ) {
+      items.splice(i, 2, {
+        ...b,
+        args: a.args ?? b.args,
+        stdout: a.stdout ?? b.stdout,
+        stderr: a.stderr ?? b.stderr,
+        input: a.input ?? b.input,
+        sourceUuids: [...a.sourceUuids, ...b.sourceUuids],
+        _rawSnapshots: [...a._rawSnapshots, ...b._rawSnapshots],
+      });
+      i--; // re-check in case another fragment follows
+    }
+  }
+
+  // Pass B — input + output: a slash command's input echo
+  // (<command-name>/<command-args>) followed immediately by its output
+  // (<local-command-stdout>, no command-name) collapses into a single card.
+  // a.stdout may already be set from Pass A; the output fragment's stdout wins.
   for (let i = 0; i + 1 < items.length; i++) {
     const a = items[i];
     const b = items[i + 1];
@@ -2362,7 +2419,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       b?.kind === "command-output" &&
       a.sourceType === b.sourceType &&
       a.commandName != null &&
-      a.stdout == null &&
       b.commandName == null &&
       b.stdout != null
     ) {

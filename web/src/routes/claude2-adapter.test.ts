@@ -144,6 +144,15 @@ const systemStatus = (
     ...fields,
   }) as unknown as SessionStreamServerMessage;
 
+// JSONL replay shape for a CLI slash command's output: a system message with
+// subtype local_command whose content is the <local-command-stdout> tags.
+const localCommand = (content: string): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "local_command",
+    content,
+  }) as unknown as SessionStreamServerMessage;
+
 const assistantWithModel = (
   id: string,
   model: string,
@@ -534,6 +543,57 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
     expect(cmd.commandName).toBe("cost");
     expect(cmd.stdout).toBe("Total: $1.23");
+  });
+
+  test("JSONL replay: user command echo + system/local_command merge and strip leading slash", () => {
+    const items = normalizeChatStream([
+      makeUser("<command-name>/usage</command-name><command-message>usage</command-message>"),
+      localCommand("<local-command-stdout>Total cost: $0.42</local-command-stdout>"),
+    ]);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBe("usage");
+    expect(cmd.stdout).toBe("Total cost: $0.42");
+    expect(cmd.sourceType).toBe("local-command");
+  });
+
+  test("system/local_command with command tags is cardified, not fallback", () => {
+    const items = normalizeChatStream([
+      localCommand("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
+    ]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const cmd = items.find((i) => i.kind === "command-output") as
+      | Extract<ChatStreamItem, { kind: "command-output" }>
+      | undefined;
+    expect(cmd).toBeDefined();
+    expect(cmd?.stdout).toBe("Set model to sonnet");
+    expect(cmd?.sourceType).toBe("local-command");
+  });
+
+  test("JSONL replay double-record (synthetic echo + tags + local_command) collapses to one card", () => {
+    // /reload-skills is persisted as BOTH a synthetic assistant echo AND
+    // user-tag + system/local_command records. The synthetic (empty on replay
+    // since pendingSlash is empty) must fold into the tag-based card, leaving
+    // a single card with the real stdout.
+    const items = normalizeChatStream([
+      assistantWithModel("synth", "<synthetic>", [
+        { type: "text", text: "No response requested." },
+      ]),
+      makeUser(
+        "<command-name>/reload-skills</command-name><command-message>reload-skills</command-message>",
+      ),
+      localCommand(
+        "<local-command-stdout>Reloaded skills: 40 skills available (no changes)</local-command-stdout>",
+      ),
+    ]);
+    const cmds = items.filter((i) => i.kind === "command-output");
+    expect(cmds).toHaveLength(1);
+    const cmd = cmds[0] as Extract<ChatStreamItem, { kind: "command-output" }>;
+    expect(cmd.commandName).toBe("reload-skills");
+    expect(cmd.stdout).toBe("Reloaded skills: 40 skills available (no changes)");
+    expect(cmd.sourceType).toBe("local-command");
   });
 
   test("<bash-input> + <bash-stdout> is recognized as sourceType bash", () => {
