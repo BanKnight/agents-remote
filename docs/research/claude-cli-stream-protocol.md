@@ -997,11 +997,26 @@ z.type === "tool_result" && z.tool_use_id === H
 - 复杂命令（如 `/compact`、`/cost`）可能产生多条相邻 user 消息：先一条 `<command-name>` + `<command-args>`（命令输入回显），紧跟一条 `<local-command-stdout>`（输出）。
 - `<local-command-caveat>` 始终带 `isMeta:true`，由 isSkillBody 分支 drop（给模型看的，UI 不展示）。
 
+**重要：live stdout 与 JSONL replay 的命令消息形态不同**
+
+同一条 slash 命令在两条路径上的表示并不相同，`normalizeChatStream` 需要把两条路径归一到同一个 `command-output` 语义：
+
+| | 实时流（live stdout + API echo） | 历史回放（JSONL resume） |
+|---|---|---|
+| 命令输入 | API 注入 `user` echo：`{ role: "user", content: "/cost" }`（纯文本） | JSONL 持久化为 `user`：`{ role: "user", content: "<command-name>/usage</command-name>..." }`（XML 标签） |
+| 命令输出 | CLI 发送 `assistant` + `model: "<synthetic>"`，body 为输出文本 | JSONL 持久化为 `system` + `subtype: "local_command"`：`{ content: "<local-command-stdout>Total cost:...</local-command-stdout>" }` |
+| 合并方式 | `pendingSlash` FIFO 从纯文本 user echo 取命令名，与 synthetic assistant 合并 | 把 `user` tag 输入与 `system/local_command` 输出识别为相邻 `command-output` 片段后合并 |
+| 典型命令 | `/cost`、`/model`、`/help` | `/cost`、`/model`、`/reload-skills` |
+
+部分命令（如 `/reload-skills`）在 JSONL 中会**双重复制**：既保留了 synthetic assistant 回声，又保留了 `user` tag + `system/local_command`。`normalizeChatStream` 的合并 Pass A 会先把 synthetic echo 折叠进紧随其后的 tag-based `command-output`，再由 Pass B 与 `system/local_command` 输出合并，最终只剩一张卡片。
+
+**`<command-name>` 标签值的前导 `/`**：JSONL 中 `<command-name>/usage</command-name>` 的 tag 值是 `"/usage"`（含前导斜杠），而 live 路径 `pendingSlash.shift()` 已经去掉斜杠（`"usage"`）。前端在 `buildCommandOutputItem` 中统一 `commandName.replace(/^\//, "")`，避免 `CommandOutputCard` 渲染成 `//usage`。
+
 **渲染处理**（`web/src/routes/claude2-adapter.ts`）：
 1. **识别**（纯函数 `parseCommandArtifactTags` / `hasCommandArtifactTags`）：用带反向引用的正则 `<tag>...</tag>` 提取标签内容，覆盖除 caveat 外的全部标签。string content 与 array text-block 两条路径都检测。
-2. **产出**（`normalizeChatStream`）：识别到的命令回显消息产出 `kind:"command-output"` ChatStreamItem，携带 `commandName` / `args` / `stdout` / `stderr` / `input` / `sourceType:"local-command"|"bash"`。
-3. **合并**：相邻两条 `command-output`（前一条有 `commandName` 无 `stdout`，后一条有 `stdout` 无 `commandName`）合并成一条，保证一条命令只产生一个卡片（CLI 把输入回显和输出分两条消息发）。
-4. **投影**（`renderChatStream`）：映射为 `role:"system"` + `content text:""` + `systemMessageType:"command-output"` 的 ThreadMessageLike（复用 `mode-change` 的「非气泡系统消息」范式）。
+2. **产出**（`normalizeChatStream`）：识别到的命令回显消息产出 `kind: "command-output"` ChatStreamItem，携带 `commandName` / `args` / `stdout` / `stderr` / `input` / `sourceType: "local-command" | "bash"`。`system/local_command` 不再落入 fallback。
+3. **合并**：两遍扫描。Pass A：synthetic assistant echo（有 stdout，可能无准确 commandName）紧跟 tag-based command-output（有 commandName，无 stdout）时，把 synthetic stdout 折叠进 tag 卡片。Pass B：相邻 `command-output` 输入（有 commandName）与输出（有 stdout 无 commandName）合并成一条，保证一条命令只产生一个卡片。
+4. **投影**（`renderChatStream`）：映射为 `role: "system"` + `content text: ""` + `systemMessageType: "command-output"` 的 ThreadMessageLike（复用 `mode-change` 的「非气泡系统消息」范式）。
 5. **渲染**（`CommandOutputCard`）：列表内卡片预览（终端图标 + `/cmd` 或 `!cmd` 标题 + 输出首行）+ 点击 Dialog 弹窗展示完整 stdout/stderr/args/input 分区。
 
 > 参考实现：hapi（`~/repos/hapi`）的 `CliOutputBlock` 是同类设计——正则识别、command-name 块与 stdout 块合并、Dialog 卡片 + shellscript 高亮。本项目在此基础上纳入 bash 标签，并用既有 `command-output` systemMessageType 接入 MessageRouter 分发。
@@ -2766,7 +2781,7 @@ content 本身**不带** source 字段。
 
 #### `system/local_command` — 本地命令执行
 
-**含义**：用户执行本地命令（如 `/clear`、`/compact`、`/config`）的记录。`content` 使用 XML 包裹 CLI TUI 输出。
+**含义**：用户执行本地命令（如 `/clear`、`/compact`、`/config`）的记录。`content` 使用 XML 包裹 CLI TUI 输出。**该类型主要出现在 JSONL 持久化中**：实时 stdout 通常用 `assistant` + `model: "<synthetic>"` 发送命令输出，而 JSONL 回放时同一输出被保存为 `system/local_command` + `<local-command-stdout>`。前端 `normalizeChatStream` 把它识别为 `command-output` 片段，与相邻的 `user` 命令输入标签合并成一张卡片。
 
 **字段**（从实机 JSONL 提取）：
 

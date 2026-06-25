@@ -192,6 +192,24 @@ API 重启：
 
 `claude2-stream.ts`：WS open → `stream()` 订阅 relay；`createBatchEmitter` 在 relay 的 onData 外层做 batch 压缩/分块 + system.init 捕获 + result→ended 注入。WS message → `runtime.write()`。
 
+## 客户端消息归一化：command-output 的 live/replay 双路径
+
+服务端 relay 是「单一数据源」，但**同一条 slash 命令在 live stdout 与 JSONL replay 上的消息形态不同**。客户端 `normalizeChatStream`（`web/src/routes/claude2-adapter.ts`）负责把两条路径归一到同一个 `command-output` 语义，否则 resume 进入会看到拆成两条/重复的卡片。
+
+| | 实时流（live stdout + API echo） | 历史回放（JSONL resume） |
+|---|---|---|
+| 命令输入 | API `injectLiveLine` 注入纯文本 user echo `/cost` | JSONL 持久化为 `user`，content 是 `<command-name>/usage</command-name>...` XML 标签 |
+| 命令输出 | CLI 发送 `assistant` + `model: "<synthetic>"`，body 为输出 | JSONL 持久化为 `system` + `subtype: "local_command"`，content 是 `<local-command-stdout>...</local-command-stdout>` |
+
+`normalizeChatStream` 的 walk + 两遍合并处理这种差异：
+
+1. **walk**：user 消息的 command 标签 → `command-output`（有 commandName）；`system/local_command` → `command-output`（有 stdout，不再落入 fallback）；synthetic assistant → `command-output`（commandName 从 `pendingSlash` FIFO 取，live 路径可靠，replay 路径可能为空）。
+2. **合并 Pass A**：synthetic assistant echo 紧跟 tag-based command-output 时，把 synthetic 的 stdout 折叠进 tag 卡片。专门处理 JSONL 双重复制（如 `/reload-skills`）：CLI 在 JSONL 里既留 synthetic echo 又留 `user`+`system/local_command`，若不折叠，replay 时 synthetic（commandName 空）会渲染成一张重复的空卡片。
+3. **合并 Pass B**：相邻 command-output 输入（有 commandName）与输出（有 stdout 无 commandName）合并成一条，保证一条命令只产生一个卡片。
+4. **commandName 统一去斜杠**：`buildCommandOutputItem` 对 `<command-name>` tag 值 `replace(/^\//, "")`，使 JSONL 的 `"/usage"` 与 live `pendingSlash` 的 `"usage"` 语义一致，`CommandOutputCard` 渲染 `/usage` 而非 `//usage`。
+
+Live 路径不受 Pass A/B 影响：live 的用户输入是 user-prompt（不是 command-output），不会与 synthetic command-output 误合并。协议层细节见 [Claude CLI stream-json 协议 · local-command / bash 命令回显消息族](../research/claude-cli-stream-protocol.md#local-command--bash-命令回显消息族)。
+
 ## 特殊时期 history 缩容（compact-block windowing + 标量重建）
 
 > 本节展开上文「服务端状态：生命周期与膨胀管理」承诺的缩容与同步方案。属于**即将实施的 v1 设计**，部分尚未落地；与上文已稳定的 Gen 3 描述分开存放，便于迭代。
