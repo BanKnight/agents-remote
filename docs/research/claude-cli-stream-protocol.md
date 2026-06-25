@@ -1008,22 +1008,57 @@ z.type === "tool_result" && z.tool_use_id === H
 
 **回显机制**：
 
-CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显到 stdout。用户消息通过以下路径回到客户端：
+CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显到 stdout。当前实现由服务端负责把用户输入重新注入 relay 的 live 缓冲，使当前连接和后续重连的客户端都能看到用户气泡：
 
 ```
 客户端 sendToSocket({type:"user", ...})
   → server Claude2StreamController.message()
   → Claude2Runtime.write()
-    → appendFile(FIFO)  // 写入 CLI stdin
-    → relay.injectLine(msg)  // 注入 relay buffer + 广播
-      → WebSocket → 客户端 onmessage → setRawMessages
+    → proc.stdin  // 直接写入 CLI stdin（pipe，非 FIFO）
+  → Claude2Runtime.injectLiveLine(echo)  // 写入 relay.liveLines + 广播
+    → WebSocket → 客户端 onmessage → setRawMessages
 ```
+
+- 使用 `relay.injectLiveLine`（而非 `injectLine`），保证注入行进入 `liveLines` 并被 cap（5000 条上限），后续 `addSubscriber` 回放时可见。
+- 服务端注入的 echo 会重新生成 `uuid`（`injected-${crypto.randomUUID()}`），避免与 CLI JSONL 中可能存在的同内容消息冲突。
 
 **去重**：
 
-- 前端 `onNew` 做**乐观更新**：在 sendToSocket 之前直接 `setRawMessages` 添加用户消息，消除 WebSocket roundtrip 延迟
-- WebSocket handler 收到 relay 注入的同一消息时——比较 `rawMessages` 最后一条的 `message` 字段，相同则跳过
-- 工具结果（`tool_result` block）不经过乐观更新，由 relay 注入直接传递
+- 前端不再做乐观更新；用户消息完全依赖服务端注入后从 WebSocket 到达。
+- 工具结果（`tool_result` block）不经过乐观更新，由 relay 注入直接传递。
+
+#### `!` bash 命令在 stream-json stdin 下的限制
+
+**结论**：在 `--input-format stream-json` / `--output-format stream-json` 无头模式下，**客户端无法通过 stdin 触发 CLI 的 `!` bash 命令路径**。输入 `!ls` 会被 CLI 当作普通 `mode:'prompt'` 用户文本直接交给模型，模型把它当 prompt 回复。
+
+**源码证据**（`~/repos/claude-code-sourcemap`）：
+
+1. **`!` 前缀检测只在 REPL UI 层**：
+   - `restored-src/src/components/PromptInput/inputModes.ts:16-21`：`getModeFromInput(input)` 对 `input.startsWith('!')` 返回 `'bash'`，否则 `'prompt'`。
+   - `restored-src/src/components/PromptInput/PromptInput.tsx:872`：REPL 输入框在 onChange 中调用 `getModeFromInput(value)` 切换 `inputMode`。
+
+2. **stream-json 输入循环硬编码 `mode:'prompt'`**：
+   - `restored-src/src/cli/print.ts:4102-4109`：当 `structuredInput` 收到 `type:'user'` 消息时，直接 `enqueue({ mode: 'prompt' as const, value: ..., uuid: ... })`，不检查内容是否以 `!` 开头。
+
+3. **无头模式明确拒绝非 prompt 命令**：
+   - `restored-src/src/cli/print.ts:1936-1944`：`run()` 的 `drainCommandQueue` 中，若 `command.mode` 不是 `'prompt'` / `'orphaned-permission'` / `'task-notification'`，直接抛出 `Error('only prompt commands are supported in streaming mode')`。
+
+4. **无头模式绕过 `processUserInput` 的 bash 门**：
+   - `restored-src/src/cli/print.ts:2146-`：`run()` 将 command.value 作为 `prompt` 直接传给 `ask()`（模型查询）。
+   - `restored-src/src/utils/processUserInput/processUserInput.ts:517-529`：只有在 `mode === 'bash'` 时才进入 `processBashCommand`，而无头模式既不会设置 `mode:'bash'`，也会在上一步被拦截。
+
+5. **BashTool 名称**：`restored-src/src/tools/BashTool/toolName.ts:2` 定义 `BASH_TOOL_NAME = 'Bash'`，但这只影响模型发起的 tool_use，不影响 client 直接触发。
+
+**对 probe 结果的解释**：
+
+此前在 `scripts/probe-bash-protocol.ts` 中测试的 4 个候选 stdin 格式全部失败，原因正是上述代码路径不存在：
+- `user content tool_use name=BashTool/Bash`：被 `processLine` 当作普通 `type:'user'` 消息，进入 prompt 路径交给模型。
+- 顶层 `type:'tool_use'`：被 `processLine` 判定为未知类型，直接忽略（`logForDebugging('Ignoring unknown message type')`）。
+- `{tool_name, tool_input}` 简化对象：同样被当作未知类型忽略。
+
+** implication**：
+
+如果产品要求 Web UI 里的 `!ls` 体验与交互式 CLI 完全一致（bash 结果进入对话上下文、可被模型引用），则必须等待 CLI 本身在 stream-json 模式下支持 `!` 解析（例如把 `!` 前缀识别为 bash 模式，或新增 `control_request{bash:...}` 子类型）。在 CLI 原生支持之前，任何 client/API 侧的 workaround 都不是“只对接 CLI”，而是绕过 CLI 自行执行 shell。
 
 ---
 
