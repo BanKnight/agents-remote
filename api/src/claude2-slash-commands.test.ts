@@ -125,3 +125,10 @@ test("resolveSkillSlashCatalog scans plugin commands (namespaced) and skills (ba
   expect(skill?.kind).toBe("skill");
   expect(skill?.description).toBe("plugin skill desc");
 });
+
+test("resolveSkillSlashCatalog includes the /reload-skills builtin", async () => {
+  const result = await resolveSkillSlashCatalog(NOEXIST, { commands: NOEXIST, skills: NOEXIST });
+  const reload = result.find((c) => c.name === "reload-skills");
+  expect(reload?.kind).toBe("command");
+  expect(reload?.description).toBe("Reload skills from disk");
+});

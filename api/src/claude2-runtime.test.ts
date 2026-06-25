@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { tmpdir } from "node:os";
-import { buildSeedInitLine, extractModelFromStdoutLine, Claude2Runtime } from "./claude2-runtime";
+import {
+  buildSeedInitLine,
+  extractModelFromStdoutLine,
+  extractSkillReloadFromStdoutLine,
+  Claude2Runtime,
+} from "./claude2-runtime";
 
 test("buildSeedInitLine uses seed_init subtype so server-side init capture skips it", () => {
   const line = buildSeedInitLine("opus", "plan");
@@ -144,6 +149,99 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
 
   expect(calls).toEqual([]);
   expect(runtime.getSessionState("rt-key")?.model).toBe("old");
+});
+
+test("extractSkillReloadFromStdoutLine detects a /reload-skills synthetic-assistant echo (string content)", () => {
+  // Live carrier: CLI emits /reload-skills output as a synthetic assistant
+  // message (localCommandOutputToSDKAssistantMessage strips the tag), not a
+  // user message. content is the clean, tag-stripped text.
+  const parsed = {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      model: "<synthetic>",
+      content: "Reloaded skills: 40 skills available (no changes)",
+    },
+  } as Record<string, unknown>;
+  expect(extractSkillReloadFromStdoutLine(parsed)).toBe(true);
+});
+
+test("extractSkillReloadFromStdoutLine detects reload echo in array text-block content", () => {
+  const parsed = {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      model: "<synthetic>",
+      content: [{ type: "text", text: "Reloaded skills: 5 skills available" }],
+    },
+  } as Record<string, unknown>;
+  expect(extractSkillReloadFromStdoutLine(parsed)).toBe(true);
+});
+
+test("extractSkillReloadFromStdoutLine ignores non-reload local-command output (e.g. /cost)", () => {
+  // /cost rides the same synthetic-assistant carrier as /reload-skills; only the
+  // text differs, so it must not trigger the skill-reload fold.
+  const parsed = {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      model: "<synthetic>",
+      content: "Total cost: $0.42",
+    },
+  } as Record<string, unknown>;
+  expect(extractSkillReloadFromStdoutLine(parsed)).toBe(false);
+});
+
+test("extractSkillReloadFromStdoutLine ignores null and content-less lines", () => {
+  expect(extractSkillReloadFromStdoutLine(null)).toBe(false);
+  expect(extractSkillReloadFromStdoutLine({ type: "assistant", message: {} })).toBe(false);
+  expect(extractSkillReloadFromStdoutLine({ type: "user", message: {} })).toBe(false);
+});
+
+test("captureSkillReloadFromLine fires onSkillReload with the sessionName", () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const calls: string[] = [];
+  runtime.setOnSkillReload((sessionName) => calls.push(sessionName));
+
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string }>;
+    captureSkillReloadFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id" });
+
+  internal.captureSkillReloadFromLine("rt-key", {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      model: "<synthetic>",
+      content: "Reloaded skills: 40 skills available (no changes)",
+    },
+  });
+
+  expect(calls).toEqual(["rt-key"]);
+});
+
+test("captureSkillReloadFromLine does not fire onSkillReload for non-reload stdout", () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const calls: string[] = [];
+  runtime.setOnSkillReload((sessionName) => calls.push(sessionName));
+
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string }>;
+    captureSkillReloadFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id" });
+
+  internal.captureSkillReloadFromLine("rt-key", {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      model: "<synthetic>",
+      content: "Total cost: $0.42",
+    },
+  });
+
+  expect(calls).toEqual([]);
 });
 
 test("injectLiveLine forwards the line to the registered relay", () => {

@@ -306,6 +306,17 @@ export type Claude2SeedInit = {
   permissionMode?: string;
 };
 
+// Server-synthesized notification that the skill/slash catalog changed (e.g. after
+// /reload-skills succeeded). Broadcast-only — never buffered into liveLines/history
+// (reconnects re-fetch via REST), so it reaches only currently-connected clients.
+// No payload by design: the client invalidates its REST catalog query on receipt
+// rather than trusting an embedded snapshot. See docs/design/message-replay.md
+// 「命令后置处理框架」.
+export type Claude2SkillCatalogChanged = {
+  type: "system";
+  subtype: "skill_catalog_changed";
+};
+
 export type SlashCommandInfo = {
   name: string;
   description: string;
@@ -979,6 +990,7 @@ export type SessionStreamServerMessage =
     }
   | Claude2SystemInit
   | Claude2SeedInit
+  | Claude2SkillCatalogChanged
   | Claude2CompactBoundary
   | Claude2StatusMessage
   | Claude2ApiRetry

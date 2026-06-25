@@ -46,6 +46,7 @@ const BUILTIN: Record<string, string> = {
   vim: "Toggle vim keybindings",
   fast: "Toggle fast mode",
   conversations: "List conversations",
+  "reload-skills": "Reload skills from disk",
 };
 
 type CommandDescs = Record<string, string>;

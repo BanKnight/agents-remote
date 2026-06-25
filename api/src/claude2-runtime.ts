@@ -51,6 +51,44 @@ export function extractModelFromStdoutLine(
   return undefined;
 }
 
+// Detect a successful /reload-skills from its CLI echo.
+//
+// /reload-skills is a local slash command (same class as /cost). On the live
+// stream-json stdout the CLI does NOT echo it as a user message — it persists
+// the output as a system{subtype:"local_command"} record (JSONL), then yields a
+// SYNTHETIC ASSISTANT message for the stream: QueryEngine.ts routes
+// system/local_command through localCommandOutputToSDKAssistantMessage
+// (mappers.ts), which strips the <local-command-stdout> tag and wraps the clean
+// text in an assistant message with model "<synthetic>".
+//
+// So the live carrier is an assistant message whose text content is the STRIPPED
+// output ("Reloaded skills: N skills available ...") — NOT a user message with a
+// <local-command-stdout> tag. This is the key difference from model-switch,
+// whose "Set model to" signal rides a user message (the control_request path).
+// Scan every text location (message.content of any type + top-level content) and
+// match the stripped-text pattern so the fold fires regardless of carrier; the
+// "Reloaded skills: N skills" shape is specific enough that the carrier-agnostic
+// scan does not produce false positives.
+//
+// The catalog is filesystem-scanned (not a process scalar), so this returns only
+// a boolean signal — captureSkillReloadFromLine fires onSkillReload so index.ts
+// can broadcast. Pure function so the parse is unit-testable without a
+// Claude2Runtime instance.
+export function extractSkillReloadFromStdoutLine(parsed: Record<string, unknown> | null): boolean {
+  if (!parsed) return false;
+  const texts: string[] = [];
+  const message = parsed.message as { content?: unknown } | undefined;
+  if (message) {
+    const contents = Array.isArray(message.content) ? message.content : [message.content];
+    for (const block of contents) {
+      const text = typeof block === "string" ? block : (block as { text?: string } | null)?.text;
+      if (typeof text === "string") texts.push(text);
+    }
+  }
+  if (typeof parsed.content === "string") texts.push(parsed.content);
+  return texts.some((t) => /Reloaded skills:\s+\d+\s+skills/i.test(t));
+}
+
 type Claude2Process = {
   proc: BunSubprocess;
   generation: number;
@@ -70,6 +108,7 @@ export class Claude2Runtime implements RuntimeResources {
     | ((sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void)
     | null = null;
   private onModelChange: ((sessionId: string, model: string) => void) | null = null;
+  private onSkillReload: ((sessionName: string) => void) | null = null;
 
   constructor(runDir: string) {
     this.runDir = runDir;
@@ -83,6 +122,10 @@ export class Claude2Runtime implements RuntimeResources {
 
   setOnModelChange(cb: (sessionId: string, model: string) => void) {
     this.onModelChange = cb;
+  }
+
+  setOnSkillReload(cb: (sessionName: string) => void) {
+    this.onSkillReload = cb;
   }
 
   getSessionState(sessionName: string) {
@@ -190,6 +233,17 @@ export class Claude2Runtime implements RuntimeResources {
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed) {
       relay.injectLiveLine(line);
+    }
+  }
+
+  // Broadcast a server-synthesized line to CURRENT subscribers only (no buffering
+  // into liveLines/history). Used for transient notifications like
+  // skill_catalog_changed that must not replay on reconnect — reconnects re-fetch
+  // the catalog via REST instead. No-op if the session/relay isn't registered.
+  injectServerLine(sessionName: string, line: string): void {
+    const relay = this.relays.get(sessionName);
+    if (relay && !relay.isDestroyed) {
+      relay.injectLine(line);
     }
   }
 
@@ -390,6 +444,7 @@ export class Claude2Runtime implements RuntimeResources {
     this.captureSystemInitFromLine(sessionName, parsed);
     this.capturePermissionModeFromLine(sessionName, parsed);
     this.captureModelFromLine(sessionName, parsed);
+    this.captureSkillReloadFromLine(sessionName, parsed);
     console.log(`[claude2-stdout] ${trimmed}`);
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed && this.isCurrentGeneration(sessionName, generation)) {
@@ -461,6 +516,23 @@ export class Claude2Runtime implements RuntimeResources {
     if (!state) return;
     state.model = next;
     this.onModelChange?.(state.sessionId, next);
+  }
+
+  // Fold a successful /reload-skills echo into a catalog-refresh notification.
+  // Unlike model/permissionMode the catalog is not a process scalar (it's
+  // filesystem-scanned), so this stores nothing on state — it only fires
+  // onSkillReload so index.ts re-scans + broadcasts skill_catalog_changed.
+  // Symmetric to captureModelFromLine above. historyLines (JSONL replay) never
+  // reaches processStdoutLine, so this fires only on live stdout — reconnects
+  // refresh via REST instead.
+  private captureSkillReloadFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (!extractSkillReloadFromStdoutLine(parsed)) return;
+    const state = this.processes.get(sessionName);
+    if (!state) return;
+    this.onSkillReload?.(sessionName);
   }
 }
 

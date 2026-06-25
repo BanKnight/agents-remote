@@ -21,6 +21,7 @@ import {
   tickArrival,
   timed,
 } from "../lib/perf-trace";
+import { queryClient } from "../lib/query-client";
 
 export type TaskInfo = {
   id: string;
@@ -2106,6 +2107,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     if (msg.type === "system") {
       const subtype = (msg as Record<string, unknown>).subtype as string | undefined;
 
+      // skill_catalog_changed is a pure server notification (handled by
+      // applyMessageScalarState → invalidateQueries). Never render a bubble.
+      if (subtype === "skill_catalog_changed") continue;
+
       // SessionInit: summary item (scalar state is still updated by the handler).
       if (subtype === "init") {
         const init = msg as unknown as {
@@ -2974,195 +2979,220 @@ export function useClaude2Session(
   // ── Scalar state updater ──────────────────────────────────────────
   // Applies per-message scalar state updates (tasks, model, etc.).
   // Bubble/visibility decisions are handled by renderChatStream, not here.
-  const applyMessageScalarState = useCallback((msg: SessionStreamServerMessage) => {
-    const sm = msg as Record<string, unknown>;
+  const applyMessageScalarState = useCallback(
+    (msg: SessionStreamServerMessage) => {
+      const sm = msg as Record<string, unknown>;
 
-    // system.init
-    if (msg.type === "system" && sm.subtype === "init") {
-      const init = msg as {
-        model?: string;
-        permissionMode?: string;
-        slash_commands?: string[];
-        skills?: string[];
-        mcp_servers?: Array<{ name?: string }>;
-      };
-      if (init.model) {
-        setCurrentModel(init.model);
-        setResolvedModel(init.model);
+      // system.init
+      if (msg.type === "system" && sm.subtype === "init") {
+        const init = msg as {
+          model?: string;
+          permissionMode?: string;
+          slash_commands?: string[];
+          skills?: string[];
+          mcp_servers?: Array<{ name?: string }>;
+        };
+        if (init.model) {
+          setCurrentModel(init.model);
+          setResolvedModel(init.model);
+        }
+        if (init.permissionMode) setPermissionMode(init.permissionMode);
+        if (init.mcp_servers?.length) {
+          setMcpServers(init.mcp_servers.map((s) => s.name ?? "").filter(Boolean));
+        }
+        return;
       }
-      if (init.permissionMode) setPermissionMode(init.permissionMode);
-      if (init.mcp_servers?.length) {
-        setMcpServers(init.mcp_servers.map((s) => s.name ?? "").filter(Boolean));
+
+      // system.seed_init: scalar seed injected on replay. Carries only
+      // model/permissionMode (tools/skills/mcp come from the REST catalog, not the
+      // seed). Distinct subtype so normalizeChatStream renders it as a fallback
+      // amber bubble instead of a real session-init summary.
+      if (msg.type === "system" && sm.subtype === "seed_init") {
+        const seed = msg as { model?: string; permissionMode?: string };
+        if (seed.model) {
+          setCurrentModel(seed.model);
+          setResolvedModel(seed.model);
+        }
+        if (seed.permissionMode) setPermissionMode(seed.permissionMode);
+        return;
       }
-      return;
-    }
 
-    // system.seed_init: scalar seed injected on replay. Carries only
-    // model/permissionMode (tools/skills/mcp come from the REST catalog, not the
-    // seed). Distinct subtype so normalizeChatStream renders it as a fallback
-    // amber bubble instead of a real session-init summary.
-    if (msg.type === "system" && sm.subtype === "seed_init") {
-      const seed = msg as { model?: string; permissionMode?: string };
-      if (seed.model) {
-        setCurrentModel(seed.model);
-        setResolvedModel(seed.model);
+      // Task state
+      if (
+        msg.type === "system" &&
+        (sm.subtype === "task_started" ||
+          sm.subtype === "task_updated" ||
+          sm.subtype === "task_notification")
+      ) {
+        const ops = extractTaskOps(msg);
+        if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+        return;
       }
-      if (seed.permissionMode) setPermissionMode(seed.permissionMode);
-      return;
-    }
 
-    // Task state
-    if (
-      msg.type === "system" &&
-      (sm.subtype === "task_started" ||
-        sm.subtype === "task_updated" ||
-        sm.subtype === "task_notification")
-    ) {
-      const ops = extractTaskOps(msg);
-      if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
-      return;
-    }
-
-    // Compact state
-    if (msg.type === "system" && isCompactBoundarySubtype(sm.subtype as string | undefined)) {
-      compactActiveRef.current = true;
-      if (compactPhaseRef.current === "compacting") compactPhaseRef.current = "replay";
-      return;
-    }
-
-    // system.status: 权限模式切换的权威实时信号（compact 变体无标量副作用，
-    // 仅由 renderChatStream 跳过）。
-    if (msg.type === "system" && sm.subtype === "status") {
-      const s = msg as { permissionMode?: string };
-      if (s.permissionMode) setPermissionMode(s.permissionMode);
-      return;
-    }
-
-    // permission-mode
-    if (msg.type === "permission-mode") {
-      setPermissionMode((msg as { permissionMode: string }).permissionMode);
-      return;
-    }
-
-    // control_response: CLI's reply to client-initiated control_request actions
-    // (set_model / set_permission_mode / interrupt). Match by request_id and
-    // apply/rollback the corresponding scalar state. Responses to CLI-initiated
-    // can_use_tool requests are sent by us, never received, so they never
-    // reach this handler.
-    if (msg.type === "control_response") {
-      const r = msg as unknown as Claude2ControlResponse;
-      const requestId = r.response?.request_id;
-      if (!requestId) return;
-      const pending = pendingControlRequestsRef.current.get(requestId);
-      if (!pending) return;
-      setPendingControlRequests((prev) => {
-        const next = new Map(prev);
-        next.delete(requestId);
-        return next;
-      });
-      switch (pending.kind) {
-        case "set_model":
-          if (r.response.subtype === "success") {
-            setResolvedModel(currentModelRef.current);
-            setModelSwitchVersion((v) => v + 1);
-          } else if (pending.priorModel != null) {
-            setCurrentModel(pending.priorModel);
-            setResolvedModel(pending.priorModel);
-          }
-          break;
-        case "set_permission_mode":
-          if (r.response.subtype === "error" && pending.priorMode != null) {
-            setPermissionMode(pending.priorMode);
-          }
-          break;
-        case "interrupt":
-          if (r.response.subtype === "success") {
-            // setRawMessages runs before applyMessageScalarState, so the
-            // control_response message is already the last item in rawMessages.
-            setInterruptAtIndex(rawMessagesRef.current.length - 1);
-          }
-          break;
+      // Compact state
+      if (msg.type === "system" && isCompactBoundarySubtype(sm.subtype as string | undefined)) {
+        compactActiveRef.current = true;
+        if (compactPhaseRef.current === "compacting") compactPhaseRef.current = "replay";
+        return;
       }
-      return;
-    }
 
-    // mode: skip
-    if (msg.type === "mode") return;
-
-    // ai-title
-    if (msg.type === "ai-title") {
-      const title = (msg as { aiTitle: string }).aiTitle;
-      if (title !== lastAiTitleRef.current) {
-        lastAiTitleRef.current = title;
-        setAiTitle(title);
+      // system.status: 权限模式切换的权威实时信号（compact 变体无标量副作用，
+      // 仅由 renderChatStream 跳过）。
+      if (msg.type === "system" && sm.subtype === "status") {
+        const s = msg as { permissionMode?: string };
+        if (s.permissionMode) setPermissionMode(s.permissionMode);
+        return;
       }
-      return;
-    }
 
-    // agent-name
-    if (msg.type === "agent-name") {
-      const name = (msg as { agentName: string }).agentName;
-      if (name !== lastAgentNameRef.current) {
-        lastAgentNameRef.current = name;
-        setAgentName(name);
+      // permission-mode
+      if (msg.type === "permission-mode") {
+        setPermissionMode((msg as { permissionMode: string }).permissionMode);
+        return;
       }
-      return;
-    }
 
-    // queue-operation
-    if (msg.type === "queue-operation") {
-      setInputQueue((prev) => applyQueueOperation(prev, msg));
-      return;
-    }
+      // control_response: CLI's reply to client-initiated control_request actions
+      // (set_model / set_permission_mode / interrupt). Match by request_id and
+      // apply/rollback the corresponding scalar state. Responses to CLI-initiated
+      // can_use_tool requests are sent by us, never received, so they never
+      // reach this handler.
+      if (msg.type === "control_response") {
+        const r = msg as unknown as Claude2ControlResponse;
+        const requestId = r.response?.request_id;
+        if (!requestId) return;
+        const pending = pendingControlRequestsRef.current.get(requestId);
+        if (!pending) return;
+        setPendingControlRequests((prev) => {
+          const next = new Map(prev);
+          next.delete(requestId);
+          return next;
+        });
+        switch (pending.kind) {
+          case "set_model":
+            if (r.response.subtype === "success") {
+              setResolvedModel(currentModelRef.current);
+              setModelSwitchVersion((v) => v + 1);
+            } else if (pending.priorModel != null) {
+              setCurrentModel(pending.priorModel);
+              setResolvedModel(pending.priorModel);
+            }
+            break;
+          case "set_permission_mode":
+            if (r.response.subtype === "error" && pending.priorMode != null) {
+              setPermissionMode(pending.priorMode);
+            }
+            break;
+          case "interrupt":
+            if (r.response.subtype === "success") {
+              // setRawMessages runs before applyMessageScalarState, so the
+              // control_response message is already the last item in rawMessages.
+              setInterruptAtIndex(rawMessagesRef.current.length - 1);
+            }
+            break;
+        }
+        return;
+      }
 
-    // last-prompt
-    if (msg.type === "last-prompt") {
-      setLastPrompt((msg as { lastPrompt: string }).lastPrompt);
-      setSessionLeafUuid((msg as { leafUuid?: string }).leafUuid ?? null);
-      return;
-    }
+      // mode: skip
+      if (msg.type === "mode") return;
 
-    // attachment: apply stateOps (bubble is handled by renderChatStream)
-    if (msg.type === "attachment") {
-      const result = handleAttachment(msg as Claude2Attachment);
-      if (result.stateOps) {
-        const ops = result.stateOps;
-        if (ops.permissionMode) setPermissionMode(ops.permissionMode);
-        if (ops.replaceTasks) setTasks(ops.replaceTasks);
-        if (ops.taskStatus)
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === ops.taskStatus!.id
-                ? {
-                    ...t,
-                    status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
-                    description: ops.taskStatus!.description,
-                  }
-                : t,
-            ),
+      // ai-title
+      if (msg.type === "ai-title") {
+        const title = (msg as { aiTitle: string }).aiTitle;
+        if (title !== lastAiTitleRef.current) {
+          lastAiTitleRef.current = title;
+          setAiTitle(title);
+        }
+        return;
+      }
+
+      // agent-name
+      if (msg.type === "agent-name") {
+        const name = (msg as { agentName: string }).agentName;
+        if (name !== lastAgentNameRef.current) {
+          lastAgentNameRef.current = name;
+          setAgentName(name);
+        }
+        return;
+      }
+
+      // queue-operation
+      if (msg.type === "queue-operation") {
+        setInputQueue((prev) => applyQueueOperation(prev, msg));
+        return;
+      }
+
+      // last-prompt
+      if (msg.type === "last-prompt") {
+        setLastPrompt((msg as { lastPrompt: string }).lastPrompt);
+        setSessionLeafUuid((msg as { leafUuid?: string }).leafUuid ?? null);
+        return;
+      }
+
+      // attachment: apply stateOps (bubble is handled by renderChatStream)
+      if (msg.type === "attachment") {
+        const result = handleAttachment(msg as Claude2Attachment);
+        if (result.stateOps) {
+          const ops = result.stateOps;
+          if (ops.permissionMode) setPermissionMode(ops.permissionMode);
+          if (ops.replaceTasks) setTasks(ops.replaceTasks);
+          if (ops.taskStatus)
+            setTasks((prev) =>
+              prev.map((t) =>
+                t.id === ops.taskStatus!.id
+                  ? {
+                      ...t,
+                      status: normalizeAttachmentTaskStatus(ops.taskStatus!.status),
+                      description: ops.taskStatus!.description,
+                    }
+                  : t,
+              ),
+            );
+          if (ops.mcpServersAdd)
+            setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
+        }
+        return;
+      }
+
+      // assistant: extract task ops + detect plan mode entry.
+      // Visibility/bubble decisions live in renderChatStream, not here.
+      if (msg.type === "assistant") {
+        if (isExternalApiErrorMessage(msg)) return;
+        if (isSyntheticAssistantMessage(msg)) return;
+        const ops = extractTaskOps(msg);
+        if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
+        if (hasToolUseNamed(msg, "EnterPlanMode")) setPermissionMode("plan");
+        return;
+      }
+
+      // system.skill_catalog_changed: /reload-skills succeeded server-side.
+      // Invalidate the REST catalog query — it re-fetches with the refreshed disk
+      // scan. No payload on the message by design (broadcast-only notification).
+      if (msg.type === "system" && sm.subtype === "skill_catalog_changed") {
+        const catalogKey = [
+          "projects",
+          projectName,
+          "agent-sessions",
+          sessionId,
+          "skill-slash-catalog",
+        ];
+        // hadCached confirms the adapter's queryClient singleton matches the one
+        // the catalog useQuery registered against (false ⇒ HMR instance split).
+        if (isSocketLoggingEnabled())
+          console.log(
+            "[claude2-adapter] skill_catalog_changed hadCached",
+            queryClient.getQueryData(catalogKey) != null,
           );
-        if (ops.mcpServersAdd)
-          setMcpServers((prev) => [...new Set([...prev, ...ops.mcpServersAdd!])]);
+        queryClient.invalidateQueries({ queryKey: catalogKey });
+        return;
       }
-      return;
-    }
 
-    // assistant: extract task ops + detect plan mode entry.
-    // Visibility/bubble decisions live in renderChatStream, not here.
-    if (msg.type === "assistant") {
-      if (isExternalApiErrorMessage(msg)) return;
-      if (isSyntheticAssistantMessage(msg)) return;
-      const ops = extractTaskOps(msg);
-      if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
-      if (hasToolUseNamed(msg, "EnterPlanMode")) setPermissionMode("plan");
-      return;
-    }
-
-    // The remaining types (user, system, result, file-history-snapshot,
-    // control_request) carry no scalar state. Bubble/visibility decisions for
-    // them live entirely in renderChatStream. control_request attaches its
-    // request_id to the matching tool-call part in normalizeChatStream.
-  }, []);
+      // The remaining types (user, system, result, file-history-snapshot,
+      // control_request) carry no scalar state. Bubble/visibility decisions for
+      // them live entirely in renderChatStream. control_request attaches its
+      // request_id to the matching tool-call part in normalizeChatStream.
+    },
+    [projectName, sessionId],
+  );
 
   const processBatch = useCallback(
     (rawMsgs: SessionStreamServerMessage[]) =>

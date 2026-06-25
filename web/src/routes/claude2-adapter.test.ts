@@ -596,6 +596,13 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(cmd.sourceType).toBe("local-command");
   });
 
+  test("skill_catalog_changed notification renders no bubble (pure invalidate trigger)", () => {
+    const items = normalizeChatStream([
+      { type: "system", subtype: "skill_catalog_changed" } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
   test("<bash-input> + <bash-stdout> is recognized as sourceType bash", () => {
     const items = normalizeChatStream([
       makeUser("<bash-input>ls</bash-input><bash-stdout>file.txt</bash-stdout>"),

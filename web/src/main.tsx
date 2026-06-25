@@ -1,9 +1,10 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./i18n";
+import { queryClient } from "./lib/query-client";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
 import "./styles/index.css";
@@ -15,7 +16,6 @@ router.subscribe("onResolved", () => {
   saveCurrentPath(window.location.pathname, window.location.search);
 });
 
-const queryClient = new QueryClient();
 const root = document.getElementById("root");
 
 if (!root) {

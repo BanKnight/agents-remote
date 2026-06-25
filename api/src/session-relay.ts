@@ -132,6 +132,7 @@ export class Claude2SessionRelay {
       const knownSubtypes = new Set([
         "init",
         "seed_init",
+        "skill_catalog_changed",
         "thinking_tokens",
         "api_retry",
         "compact_boundary",

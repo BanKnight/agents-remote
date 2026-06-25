@@ -210,6 +210,55 @@ API 重启：
 
 Live 路径不受 Pass A/B 影响：live 的用户输入是 user-prompt（不是 command-output），不会与 synthetic command-output 误合并。协议层细节见 [Claude CLI stream-json 协议 · local-command / bash 命令回显消息族](../research/claude-cli-stream-protocol.md#local-command--bash-命令回显消息族)。
 
+## 命令后置处理框架
+
+slash 命令按 agents-remote 的处理方式分三类：
+
+| 类型 | 客户端 | 服务端 | 代表 |
+|---|---|---|---|
+| **透传** | 直接发 CLI stdin | 转发，不额外处理 | cost/help/clear |
+| **后置处理** | 透传（无感） | fold 监听 stdout 成功信号 → 副作用（重扫/广播） | reload-skills |
+| **前置处理** | 拦截，弹 UI / 本地处理，可能不转发 CLI | 自研执行端 | rewind（后续） |
+
+**后置处理 = fold 模式**，已在 model/permissionMode 落地，reload-skills 是第三个实例：
+
+```
+stdout line → extractXxxFromStdoutLine()  识别信号（纯函数，可单测）
+            → captureXxxFromLine()        触发 onXxx 回调
+            → index.ts 注册的回调做副作用（broadcast）
+```
+
+任何新后置命令只需加一对 extract + capture，框架结构不变。本轮不引入声明式 registry 标记字段（postHook/clientIntercept/headlessUnsupported）——待 rewind 等第二个不同实例出现时再加（YAGNI）。
+
+**信号载体因命令类型而异，不要照搬**：model 切换（`control_request{set_model}`）的 `Set model to` 回显走 **user message**（带 `<local-command-stdout>` tag）；reload-skills 是 **local command**，CLI 把它经 `localCommandOutputToSDKAssistantMessage`（`QueryEngine.ts` → `utils/messages/mappers.ts`）转成 **合成 assistant 消息**（`model:"<synthetic>"`），并 strip 掉 tag，content 是纯文本 `Reloaded skills: N skills`。所以 `extractSkillReloadFromStdoutLine` **不能**照搬 `extractModelFromStdoutLine` 的 `type==="user"` 门控，而是扫所有 text location（`message.content` 任意 type + 顶层 `content`）匹配 strip 后的纯文本。新增后置命令前，先在 CLI 源码（`QueryEngine.ts` 的 stream yield 分支）确认该命令的信号走哪条载体。
+
+### reload-skills 实例
+
+`/reload-skills` 是 CLI 内置命令，但不在 REST catalog 的硬编码 BUILTIN 表里（也不被磁盘 `.md`/SKILL.md 扫描发现）→ 面板原本缺。本轮把它补进 BUILTIN 表，并建立后置链路：
+
+```
+用户面板选 /reload-skills → 透传 CLI stdin（与 /cost 同路径，客户端无特殊处理）
+CLI 执行 → stdout 合成 assistant 消息（/reload-skills 是 local command：CLI 把 system/local_command 经 localCommandOutputToSDKAssistantMessage 转成 model="<synthetic>" 的 assistant，并 strip 掉 <local-command-stdout> tag），content 纯文本 = "Reloaded skills: N skills available"
+readStdout → processStdoutLine → captureSkillReloadFromLine
+  → onSkillReload(sessionName) 回调
+  → index.ts: injectServerLine(skill_catalog_changed 通知)  [不缓冲，只广播当前在线客户端]
+客户端 adapter 收到 skill_catalog_changed → normalizeChatStream 跳过（不渲染气泡）
+                                        → applyMessageScalarState invalidateQueries(catalogKey)
+                                        → 重取 REST → 面板刷新
+```
+
+| | 实时流（live stdout） | 历史回放（JSONL resume） |
+|---|---|---|
+| 信号 | stdout 合成 assistant，content 纯文本 `Reloaded skills: N skills` → fold 触发 | historyLines 不经 processStdoutLine → 不触发 |
+| 刷新 | broadcast `skill_catalog_changed` → 客户端 invalidate 重取 REST | route 重挂载自然重取 REST |
+
+### 设计取舍
+
+- **后置检测在服务端**（非客户端识别 command-output）：API 是 stdout 权威消费者，符合「单一数据源」。
+- **`skill_catalog_changed` 不带 payload**：服务端只发"catalog 变了"通知，客户端 `invalidateQueries` 重取 REST。复用现有 REST 数据流，零新数据通道；reload-skills 低频，多一次 RTT 无感。服务端回调因此也无需 `getSessionProjectPath` + 主动重扫（纯读无副作用，结果会被客户端 REST 重取覆盖）。
+- **用 `injectLine` 不用 `injectLiveLine`**：catalog 通知是瞬时事件，不进 `liveLines` 被 replay 回放（replay 时 route 重挂载已重取最新 REST）。
+- **`queryClient` 是模块级单例**（`web/src/lib/query-client.ts`）：adapter 在 `applyMessageScalarState` 里直接 import 单例调 `invalidateQueries`，不调 `useQueryClient`——后者要求 `QueryClientProvider` 包裹，会破坏 `useClaude2Session` 的 `renderHook` 测试。单例与 app root 的 `QueryClientProvider` 共用同一实例。
+
 ## 特殊时期 history 缩容（compact-block windowing + 标量重建）
 
 > 本节展开上文「服务端状态：生命周期与膨胀管理」承诺的缩容与同步方案。属于**即将实施的 v1 设计**，部分尚未落地；与上文已稳定的 Gen 3 描述分开存放，便于迭代。

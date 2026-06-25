@@ -665,6 +665,17 @@ export const startApi = async () => {
   claude2Runtime.setOnModelChange((sessionId, model) => {
     void sessionRegistry.setModel(sessionId, model);
   });
+  // Post-hook for /reload-skills: on a successful reload, broadcast
+  // skill_catalog_changed to current subscribers so clients invalidate + re-fetch
+  // the REST catalog. Broadcast-only (no payload) — the client's REST fetch is
+  // authoritative, so the server needn't re-scan here. See docs/design/
+  // message-replay.md 「命令后置处理框架」.
+  claude2Runtime.setOnSkillReload((sessionName) => {
+    claude2Runtime.injectServerLine(
+      sessionName,
+      JSON.stringify({ type: "system", subtype: "skill_catalog_changed" }),
+    );
+  });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);
