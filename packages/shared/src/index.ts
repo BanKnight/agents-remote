@@ -297,8 +297,8 @@ export type Claude2SystemInit = {
 // model/permissionMode even though real system.init is stdout-only (absent from
 // JSONL/tail). Distinct subtype "seed_init" (not "init") so server-side init capture
 // and client render both treat it as a non-init system message: it folds scalars via
-// a dedicated seed_init branch and renders as a fallback amber bubble, never a real
-// session-init summary.
+// a dedicated seed_init branch and is never rendered (model / permissionMode surface
+// in the session header).
 export type Claude2SeedInit = {
   type: "system";
   subtype: "seed_init";

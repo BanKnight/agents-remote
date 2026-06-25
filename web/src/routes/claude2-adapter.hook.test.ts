@@ -309,14 +309,12 @@ describe("useClaude2Session websocket lifecycle", () => {
 
     act(() => {
       socket.emit({
-        type: "system",
-        subtype: "init",
-        model: "claude-sonnet-4-20250514",
-        permissionMode: "bypassPermissions",
+        type: "user",
+        message: { role: "user", content: "hello" },
       } as never);
     });
 
-    // system/init rendered as visible "other" bubble
+    // user prompt rendered as a visible bubble
     expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
 
     await act(async () => {

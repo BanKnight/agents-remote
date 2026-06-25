@@ -1448,16 +1448,6 @@ export type ChatStreamItem =
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | {
-      kind: "session-init";
-      model: string;
-      mode: string;
-      toolsN: number;
-      skillsN: number;
-      mcpN: number;
-      sourceUuids: string[];
-      _rawSnapshots: SessionStreamServerMessage[];
-    }
-  | {
       kind: "result-error";
       text: string;
       sourceUuids: string[];
@@ -1854,7 +1844,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
 
       // Anything else (real assistant turn, real user prompt, another
-      // boundary, session-init, …) ends the window: flush, then fall through.
+      // boundary, …) ends the window: flush, then fall through.
       flushCompactWindow();
     }
 
@@ -2111,27 +2101,19 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // applyMessageScalarState → invalidateQueries). Never render a bubble.
       if (subtype === "skill_catalog_changed") continue;
 
-      // SessionInit: summary item (scalar state is still updated by the handler).
-      if (subtype === "init") {
-        const init = msg as unknown as {
-          model?: string;
-          permissionMode?: string;
-          tools?: string[];
-          skills?: string[];
-          mcp_servers?: Array<{ name?: string }>;
-        };
-        items.push({
-          kind: "session-init",
-          model: init.model ?? "?",
-          mode: init.permissionMode ?? "?",
-          toolsN: init.tools?.length ?? 0,
-          skillsN: init.skills?.length ?? 0,
-          mcpN: init.mcp_servers?.length ?? 0,
-          sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
-          _rawSnapshots: [msg],
-        });
-        continue;
-      }
+      // SessionInit: no bubble. Scalar state (model / permissionMode / skills /
+      // mcp) is folded by applyMessageScalarState, and model / permissionMode
+      // also show in the session header — the summary card carried no unique
+      // value.
+      if (subtype === "init") continue;
+
+      // seed_init: replay-time scalar seed (model / permissionMode). Same as init —
+      // folded by applyMessageScalarState and shown in the session header. No bubble.
+      if (subtype === "seed_init") continue;
+
+      // turn_duration: turn-end stats (durationMs + token budget). Pure display
+      // message with no scalar side effect — drop it.
+      if (subtype === "turn_duration") continue;
 
       // ThinkingTokens: stamp into the current assistant accumulator.
       if (subtype === "thinking_tokens") {
@@ -2743,21 +2725,6 @@ export function renderChatStream(
         });
         break;
       }
-      case "session-init": {
-        const summary = `system.init · ${item.model} · ${item.mode} · ${item.toolsN} tools, ${item.skillsN} skills, ${item.mcpN} mcp`;
-        messages.push({
-          role: "system",
-          content: [{ type: "text", text: summary }],
-          metadata: {
-            custom: {
-              sourceUuids: [...item.sourceUuids],
-              _rawMessages: item._rawSnapshots,
-              systemMessageType: "system-init",
-            },
-          },
-        });
-        break;
-      }
       case "result-error": {
         messages.push({
           role: "system",
@@ -3005,8 +2972,8 @@ export function useClaude2Session(
 
       // system.seed_init: scalar seed injected on replay. Carries only
       // model/permissionMode (tools/skills/mcp come from the REST catalog, not the
-      // seed). Distinct subtype so normalizeChatStream renders it as a fallback
-      // amber bubble instead of a real session-init summary.
+      // seed). Distinct subtype from live system.init so this folds scalar state
+      // without the full init payload.
       if (msg.type === "system" && sm.subtype === "seed_init") {
         const seed = msg as { model?: string; permissionMode?: string };
         if (seed.model) {

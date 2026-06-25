@@ -3019,10 +3019,32 @@ describe("normalizeChatStream", () => {
   });
 
   // ── system.init / compact ───────────────────────────────────────────
-  test("system.init produces a session-init summary item", () => {
+  test("system.init produces no item (scalar-only, folded by applyMessageScalarState)", () => {
     const items = normalizeChatStream([makeSystemInit()]);
-    expect(items).toHaveLength(1);
-    expect(items[0].kind).toBe("session-init");
+    expect(items).toHaveLength(0);
+  });
+
+  test("system.turn_duration produces no item (pure display noise)", () => {
+    const items = normalizeChatStream([
+      {
+        type: "system",
+        subtype: "turn_duration",
+        durationMs: 1234,
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
+  test("system.seed_init produces no item (scalar-only, folded by applyMessageScalarState)", () => {
+    const items = normalizeChatStream([
+      {
+        type: "system",
+        subtype: "seed_init",
+        model: "claude-sonnet-4-20250514",
+        permissionMode: "bypassPermissions",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
   });
 
   test("compact_boundary + summary + attachments merge into one compact-block", () => {
@@ -3321,12 +3343,9 @@ describe("renderChatStream", () => {
     expect(custom?.compactText).toBeUndefined();
   });
 
-  test("session-init item renders a summary bubble", () => {
+  test("system.init renders no bubble (scalar-only)", () => {
     const rendered = renderChatStream(normalizeChatStream([makeSystemInit()]));
-    expect(rendered).toHaveLength(1);
-    expect(rendered[0].role).toBe("system");
-    const custom = rendered[0].metadata?.custom as Record<string, unknown>;
-    expect(custom?.systemMessageType).toBe("system-init");
+    expect(rendered).toHaveLength(0);
   });
 
   test("estimatedTokens carried onto the rendered assistant bubble", () => {
