@@ -19,8 +19,10 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   unstable_useSlashCommandAdapter,
+  unstable_useTriggerPopoverScopeContext,
   type Unstable_DirectiveFormatter,
   type Unstable_SlashCommand,
+  type Unstable_TriggerItem,
   useAui,
   useAuiState,
   useComposerRuntime,
@@ -3029,6 +3031,67 @@ const cliSlashFormatter: Unstable_DirectiveFormatter = {
   parse: (text) => [{ kind: "text", text }],
 };
 
+// VS Code-style: keep the keyboard-highlighted slash item scrolled into view.
+// assistant-ui's trigger popover has no scrollIntoView, so we read
+// highlightedIndex from the scope context and scroll the active item with
+// block:"nearest" (only scrolls when out of view, no jitter).
+function SlashCommandPopoverItem({
+  item,
+  index,
+  kind,
+}: {
+  item: Unstable_TriggerItem;
+  index: number;
+  kind?: "command" | "skill";
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const scope = unstable_useTriggerPopoverScopeContext();
+  const isHighlighted = scope.highlightedIndex === index;
+  useEffect(() => {
+    if (!isHighlighted || !ref.current) return;
+    const listbox = ref.current.closest('[role="listbox"]');
+    if (!(listbox instanceof HTMLElement)) return;
+    const item = ref.current;
+    const paddingTop = Number.parseFloat(getComputedStyle(listbox).paddingTop);
+    const itemTop = item.offsetTop - paddingTop;
+    const itemBottom = itemTop + item.clientHeight;
+    const listTop = listbox.scrollTop;
+    const listBottom =
+      listTop +
+      listbox.clientHeight -
+      paddingTop -
+      Number.parseFloat(getComputedStyle(listbox).paddingBottom);
+    if (itemTop < listTop) {
+      listbox.scrollTop = itemTop;
+    } else if (itemBottom > listBottom) {
+      listbox.scrollTop =
+        itemBottom -
+        (listbox.clientHeight -
+          paddingTop -
+          Number.parseFloat(getComputedStyle(listbox).paddingBottom));
+    }
+  }, [isHighlighted]);
+  return (
+    <ComposerPrimitive.Unstable_TriggerPopoverItem
+      ref={ref}
+      item={item}
+      index={index}
+      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100 data-[highlighted]:bg-slate-800/80 data-[highlighted]:text-slate-100"
+    >
+      <ToolIcon
+        name={kind === "skill" ? "skill" : "command"}
+        className={kind === "skill" ? "text-amber-400/70" : "text-cyan-400/70"}
+      />
+      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
+        <span className="min-w-0 break-all text-xs font-medium text-slate-200">{item.label}</span>
+        {item.description ? (
+          <span className="min-w-0 break-words text-xs text-slate-500">{item.description}</span>
+        ) : null}
+      </span>
+    </ComposerPrimitive.Unstable_TriggerPopoverItem>
+  );
+}
+
 function ComposerWithInterrupt({
   currentModel,
   currentResolved,
@@ -3130,32 +3193,14 @@ function ComposerWithInterrupt({
             />
             <ComposerPrimitive.Unstable_TriggerPopoverItems>
               {(items) =>
-                items.map((item, index) => {
-                  const kind = kindById.get(item.id);
-                  return (
-                    <ComposerPrimitive.Unstable_TriggerPopoverItem
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100 data-[highlighted]:bg-slate-800/80 data-[highlighted]:text-slate-100"
-                    >
-                      <ToolIcon
-                        name={kind === "skill" ? "skill" : "command"}
-                        className={kind === "skill" ? "text-amber-400/70" : "text-cyan-400/70"}
-                      />
-                      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
-                        <span className="min-w-0 break-all text-xs font-medium text-slate-200">
-                          {item.label}
-                        </span>
-                        {item.description ? (
-                          <span className="min-w-0 break-words text-xs text-slate-500">
-                            {item.description}
-                          </span>
-                        ) : null}
-                      </span>
-                    </ComposerPrimitive.Unstable_TriggerPopoverItem>
-                  );
-                })
+                items.map((item, index) => (
+                  <SlashCommandPopoverItem
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    kind={kindById.get(item.id)}
+                  />
+                ))
               }
             </ComposerPrimitive.Unstable_TriggerPopoverItems>
           </ComposerPrimitive.Unstable_TriggerPopover>
