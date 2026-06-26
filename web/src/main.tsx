@@ -34,16 +34,6 @@ createRoot(root).render(
   </StrictMode>,
 );
 
-const splash = document.getElementById("splash");
-if (splash) {
-  // Hide synchronously once render is scheduled (no rAF delay): the PWA app-shell
-  // cache makes the JS load near-instantly on reload, so React commits the first
-  // frame within the same tick and there's no visible blank. The CSS opacity
-  // transition still fades the splash out smoothly.
-  splash.setAttribute("hidden", "");
-  splash.addEventListener("transitionend", () => splash.remove(), { once: true });
-}
-
 registerSW({
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;

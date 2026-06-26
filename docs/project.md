@@ -58,7 +58,7 @@ agents-remote/
 - 系统分为网页控制层与服务器执行层：前者聚焦控制体验，后者聚焦 Agent 调度、tmux/CLI adapter 和执行稳定性。
 - Project 模块统一负责 Project 列表、创建/采用和 `PROJECTS_ROOT` 安全路径解析；Files、Git、Terminal 和 Agent 等下游能力必须复用 Project-safe 解析。
 - 当前 Files/Git inspection 是只读能力；Agent/Terminal Session 是真实运行态能力；二者在 UI 中都属于 Project Console 的辅助工作区。
-- PWA 提供 manifest/icons/meta、standalone 外壳、应用内安装入口和 service worker 静态安装资源缓存；service worker 用 NetworkFirst 缓存导航 HTML（app shell，3s 超时回退缓存）让冷启动与后台恢复 reload 瞬开，`registerType: autoUpdate` 在新版本部署后自动 reload 应用新资源；不拦截 `/api` 与 WebSocket，E2E `page.route()` 拦截不受影响。PWA 标题为「智控 · AI 远程控制台」，使用 AI+远程控制结合的 SVG 图标。
+- PWA 提供 manifest/icons/meta、standalone 外壳、应用内安装入口；service worker 用 `precacheAndRoute` 缓存所有 build 产物（JS/CSS/index.html/图标/字体，含 vendor-terminal/vendor-assistant chunk），`navigateFallback: index.html` 让所有 SPA 导航请求秒开、reload 从 precache 命中不走网络，`registerType: autoUpdate` 新版本部署后自动 reload（SW + HTML + chunk 原子更新，不会新 HTML 配旧 chunk）。不缓存 `/api` 与 WebSocket（不是 navigation 请求，天然不受影响），E2E `page.route()` 拦截不受影响。无 splash 启动屏，后台恢复 reload 时显示深色 radial-gradient 背景直到 React 渲染。PWA 标题为「智控 · AI 远程控制台」，使用 AI+远程控制结合的 SVG 图标。
 - SVG 图标系统（`web/src/components/shell/icons/`）：一个 `.svg` 资源文件对应一个图标，通过 `<ShellIcon name="...">` 组件统一引用（Vite `?raw` import + `dangerouslySetInnerHTML`）。新增图标只需添加 `.svg` 文件并在 `svgMap` 注册。包括厂商 logo（Anthropic/OpenAI）、导航图标、功能图标（close/refresh/terminal/file/folder）等。
 - 当前没有独立数据库模型；Project identity 来自 `PROJECTS_ROOT` 下一级目录，session runtime metadata 存在 runtime dir 边界内。
 

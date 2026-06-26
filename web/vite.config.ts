@@ -66,20 +66,18 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
-        globPatterns: ["**/*.{js,css,ico,png,svg,woff2}"],
+        // Precache every build artifact — JS/CSS chunks (incl. vendor-terminal
+        // and vendor-assistant), index.html, icons, fonts — and serve them
+        // straight from the precache. index.html is included so the SW, the
+        // HTML, and all referenced chunks update atomically on a new deploy
+        // (autoUpdate reloads once); a navigation HTML fetched fresh from the
+        // network could otherwise reference chunk hashes the old SW hasn't
+        // precached yet. navigateFallback routes every SPA navigation to the
+        // precached index.html, so reloads are served from cache with no
+        // network wait. /api fetches and WebSocket upgrades aren't navigation
+        // requests, so they're untouched (E2E page.route() interception too).
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "index.html",
-        runtimeCaching: [
-          {
-            // App shell: prefer the network so fresh deploys win, but fall back
-            // to the cached index.html after 3s (or offline) so PWA cold start
-            // and background-resume reload are instant. Only navigation requests
-            // are intercepted — /api and WebSocket are untouched, and E2E
-            // page.route() interception still works.
-            urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkFirst",
-            options: { networkTimeoutSeconds: 3 },
-          },
-        ],
       },
       manifest: {
         name: "智控 · AI 远程控制台",
