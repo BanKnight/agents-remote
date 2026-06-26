@@ -67,15 +67,17 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         globPatterns: ["**/*.{js,css,ico,png,svg,woff2}"],
-        navigateFallback: null,
+        navigateFallback: "index.html",
         runtimeCaching: [
           {
-            // Only intercept navigation requests — serve HTML straight from network
-            // so stale SW never caches a zombie index.html.
-            // API and other non-precached requests fall through to the browser,
-            // which lets Playwright page.route() intercept them in E2E tests.
+            // App shell: prefer the network so fresh deploys win, but fall back
+            // to the cached index.html after 3s (or offline) so PWA cold start
+            // and background-resume reload are instant. Only navigation requests
+            // are intercepted — /api and WebSocket are untouched, and E2E
+            // page.route() interception still works.
             urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkOnly",
+            handler: "NetworkFirst",
+            options: { networkTimeoutSeconds: 3 },
           },
         ],
       },
