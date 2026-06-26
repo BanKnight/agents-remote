@@ -298,6 +298,7 @@ export const en = {
   "claude2.ask.orphaned": "Question request no longer active",
   "claude2.ask.expand": "Expand",
   "claude2.ask.exitFullscreen": "Exit fullscreen",
+  "claude2.ask.other": "Other",
   "claude2.message.expand": "Expand",
   "claude2.message.exitFullscreen": "Exit fullscreen",
   "claude2.message.roleUser": "User",

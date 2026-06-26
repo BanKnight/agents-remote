@@ -1106,7 +1106,7 @@ describe("ask-user-question pipeline", () => {
       {
         question: "Which color?",
         header: "Color",
-        options: [{ label: "Red" }, { label: "Blue" }],
+        options: [{ label: "Red", preview: "```ts\nconst x = 1;\n```" }, { label: "Blue" }],
       },
       { question: "Notes?", header: "Notes" },
     ];

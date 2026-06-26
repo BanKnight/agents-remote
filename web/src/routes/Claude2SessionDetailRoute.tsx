@@ -768,6 +768,20 @@ function MarkdownString({ text }: { text: string }) {
   );
 }
 
+// Renders a selected AskUserQuestion option's `preview` markdown (often a code
+// block or table) inline beneath the option, accordion-style. max-h + overflow
+// keep long previews from blowing up the card. The caller passes indentation /
+// padding / max-h via className (inline card vs fullscreen reader).
+function OptionPreview({ text, className }: { text: string; className?: string }) {
+  return (
+    <div
+      className={`rounded-lg border border-slate-700/40 bg-slate-950/40 overflow-y-auto ${className ?? ""}`}
+    >
+      <MarkdownString text={text} />
+    </div>
+  );
+}
+
 // tone → localized status word (shown first, colored) for the turn-end footer.
 const TURN_STATUS_LABEL: Record<TurnStatusTone, TranslationKey> = {
   completed: "claude2.turnStatus.completed",
@@ -1991,7 +2005,7 @@ type Question = {
   question: string;
   header?: string;
   multiSelect?: boolean;
-  options?: Array<{ label: string; description?: string }>;
+  options?: Array<{ label: string; description?: string; preview?: string }>;
 };
 
 type AskUserQuestionCustom = {
@@ -2036,9 +2050,16 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   // Track selected options and free-text answers per question index.
   const [selections, setSelections] = useState<Record<number, Set<number>>>({});
   const [freeText, setFreeText] = useState<Record<number, string>>({});
+  // Per question: is the auto-appended "Other" pseudo-option active (showing a
+  // free-text textarea)? Single-select treats Other as mutually exclusive with
+  // the option list; multi-select lets it coexist (custom text appended).
+  const [otherMode, setOtherMode] = useState<Record<number, boolean>>({});
 
   const toggleOption = (qIdx: number, optIdx: number, multi: boolean) => {
     if (!canAnswer) return;
+    // Single-select: picking an option closes the Other textarea (Other is
+    // mutually exclusive with options when active).
+    if (!multi) setOtherMode((prev) => ({ ...prev, [qIdx]: false }));
     setSelections((prev) => {
       const current = new Set(prev[qIdx] ?? []);
       if (multi) {
@@ -2052,23 +2073,38 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
     });
   };
 
+  const toggleOther = (qIdx: number, multi: boolean) => {
+    if (!canAnswer) return;
+    setOtherMode((prev) => ({ ...prev, [qIdx]: !prev[qIdx] }));
+    // Single-select: activating Other clears option selection (mutual exclusion).
+    if (!multi) setSelections((prev) => ({ ...prev, [qIdx]: new Set<number>() }));
+  };
+
   const handleSubmit = () => {
     if (!canAnswer) return;
     const answers: Record<string, string> = {};
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       const hasOptions = q.options && q.options.length > 0;
-      if (hasOptions) {
-        const sel = selections[i];
-        if (!sel || sel.size === 0) continue;
-        const selectedLabels = Array.from(sel)
-          .map((idx) => q.options?.[idx]?.label ?? "")
-          .filter(Boolean);
-        if (selectedLabels.length > 0) answers[q.question] = selectedLabels.join(", ");
-      } else {
+      if (!hasOptions) {
         const text = freeText[i]?.trim();
         if (text) answers[q.question] = text;
+        continue;
       }
+      // Selected option labels (multi-select may carry several). Single-select
+      // Other clears them via mutual exclusion; multi-select Other appends text.
+      const parts: string[] = [];
+      const sel = selections[i];
+      if (sel?.size) {
+        parts.push(
+          ...Array.from(sel)
+            .map((idx) => q.options?.[idx]?.label ?? "")
+            .filter(Boolean),
+        );
+      }
+      const otherText = otherMode[i] ? freeText[i]?.trim() : "";
+      if (otherText) parts.push(otherText);
+      if (parts.length > 0) answers[q.question] = parts.join(", ");
     }
     if (Object.keys(answers).length === 0) return;
 
@@ -2097,9 +2133,18 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
     }
   };
 
-  const hasAnySelection =
-    Object.values(selections).some((s) => s.size > 0) ||
-    Object.values(freeText).some((txt) => txt.trim().length > 0);
+  // Gate: every question must be answered (an option picked, or non-empty
+  // Other text) before submit unlocks. Single-select Other is exclusive
+  // (selections empty, so Other text alone counts); multi-select Other coexists
+  // (either the option set or Other text counts).
+  const answeredCount = questions.reduce((n, q, i) => {
+    const hasOpt = !!q.options?.length;
+    const answered = hasOpt
+      ? (selections[i]?.size ?? 0) > 0 || (!!otherMode[i] && !!freeText[i]?.trim())
+      : !!freeText[i]?.trim();
+    return n + (answered ? 1 : 0);
+  }, 0);
+  const allAnswered = questions.length > 0 && answeredCount === questions.length;
 
   const resultStr =
     typeof custom.result === "string"
@@ -2118,10 +2163,12 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 <button
                   type="button"
                   className="flex-1 rounded-md border border-amber-400/50 bg-amber-500/20 px-3.5 py-1.5 text-xs font-semibold text-amber-200 shadow-sm transition hover:border-amber-400/70 hover:bg-amber-500/30 active:bg-amber-500/40 disabled:opacity-30 disabled:cursor-default cursor-pointer"
-                  disabled={!hasAnySelection}
+                  disabled={!allAnswered}
                   onClick={handleSubmit}
                 >
-                  {t("claude2.ask.submit")}
+                  {questions.length > 1
+                    ? `${t("claude2.ask.submit")} ${answeredCount}/${questions.length}`
+                    : t("claude2.ask.submit")}
                 </button>
                 <button
                   type="button"
@@ -2136,10 +2183,12 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 <button
                   type="button"
                   className="flex-1 rounded-md border border-amber-400/50 bg-amber-500/20 px-3.5 py-1.5 text-xs font-semibold text-amber-200 shadow-sm transition hover:border-amber-400/70 hover:bg-amber-500/30 active:bg-amber-500/40 disabled:opacity-30 disabled:cursor-default cursor-pointer"
-                  disabled={!hasAnySelection}
+                  disabled={!allAnswered}
                   onClick={handleSubmit}
                 >
-                  {t("claude2.ask.submit")}
+                  {questions.length > 1
+                    ? `${t("claude2.ask.submit")} ${answeredCount}/${questions.length}`
+                    : t("claude2.ask.submit")}
                 </button>
                 <button
                   type="button"
@@ -2153,11 +2202,11 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               <button
                 type="button"
                 className={`flex-1 rounded-md px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  hasAnySelection
+                  allAnswered
                     ? "border border-amber-400/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30"
                     : "border border-amber-400/20 bg-amber-500/10 text-amber-400/40 cursor-default"
                 }`}
-                disabled={!hasAnySelection}
+                disabled={!allAnswered}
                 onClick={handleSubmit}
               >
                 {t("claude2.ask.fillComposer")}
@@ -2243,6 +2292,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               const multi = q.multiSelect === true;
               const selected = selections[i] ?? new Set<number>();
               const hasOptions = q.options && q.options.length > 0;
+              const otherActive = !!otherMode[i];
               return (
                 <div
                   key={i}
@@ -2266,35 +2316,76 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                       {q.options!.map((opt, j) => {
                         const isSelected = selected.has(j);
                         return (
-                          <button
-                            key={j}
-                            type="button"
-                            className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
-                              isSelected
-                                ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
-                                : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
-                            } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
-                            disabled={!canAnswer}
-                            onClick={() => toggleOption(i, j, multi)}
-                          >
-                            <span
-                              className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
+                          <Fragment key={j}>
+                            <button
+                              type="button"
+                              className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
                                 isSelected
-                                  ? "border-amber-400 bg-amber-400/30 text-amber-200"
-                                  : "border-slate-500 text-slate-500"
-                              }`}
+                                  ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                                  : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                              } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
+                              disabled={!canAnswer}
+                              onClick={() => toggleOption(i, j, multi)}
                             >
-                              {isSelected ? "✓" : j + 1}
-                            </span>
-                            <span className="flex-1">{opt.label}</span>
-                            {opt.description ? (
-                              <span className="text-[0.55rem] text-slate-500 text-right max-w-[40%]">
-                                {opt.description}
+                              <span
+                                className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
+                                  isSelected
+                                    ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                                    : "border-slate-500 text-slate-500"
+                                }`}
+                              >
+                                {isSelected ? "✓" : j + 1}
                               </span>
+                              <span className="flex-1">{opt.label}</span>
+                              {opt.description ? (
+                                <span className="text-[0.55rem] text-slate-500 text-right max-w-[40%]">
+                                  {opt.description}
+                                </span>
+                              ) : null}
+                            </button>
+                            {isSelected && opt.preview ? (
+                              <OptionPreview
+                                text={opt.preview}
+                                className="ml-6 mt-1 max-h-44 p-2"
+                              />
                             ) : null}
-                          </button>
+                          </Fragment>
                         );
                       })}
+                      <div className="my-1 border-t border-slate-700/40" />
+                      <button
+                        type="button"
+                        className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
+                          otherActive
+                            ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                            : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                        } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
+                        disabled={!canAnswer}
+                        onClick={() => toggleOther(i, multi)}
+                      >
+                        <span
+                          className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
+                            otherActive
+                              ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                              : "border-slate-500 text-slate-500"
+                          }`}
+                        >
+                          ✎
+                        </span>
+                        <span className="flex-1">{t("claude2.ask.other")}</span>
+                      </button>
+                      {otherActive ? (
+                        <textarea
+                          className="w-full rounded-lg bg-slate-900/60 border border-amber-500/20 px-2 py-1.5 text-[0.65rem] text-slate-200 placeholder-slate-600 outline-none resize-none"
+                          rows={2}
+                          placeholder={t("claude2.ask.inputPlaceholder")}
+                          disabled={!canAnswer}
+                          value={freeText[i] ?? ""}
+                          onChange={(e) =>
+                            setFreeText((prev) => ({ ...prev, [i]: e.target.value }))
+                          }
+                        />
+                      ) : null}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">
@@ -2357,6 +2448,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 const multi = q.multiSelect === true;
                 const selected = selections[i] ?? new Set<number>();
                 const hasOptions = q.options && q.options.length > 0;
+                const otherActive = !!otherMode[i];
                 return (
                   <div
                     key={i}
@@ -2380,35 +2472,76 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         {q.options!.map((opt, j) => {
                           const isSelected = selected.has(j);
                           return (
-                            <button
-                              key={j}
-                              type="button"
-                              className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
-                                isSelected
-                                  ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
-                                  : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
-                              } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
-                              disabled={!canAnswer}
-                              onClick={() => toggleOption(i, j, multi)}
-                            >
-                              <span
-                                className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
+                            <Fragment key={j}>
+                              <button
+                                type="button"
+                                className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
                                   isSelected
-                                    ? "border-amber-400 bg-amber-400/30 text-amber-200"
-                                    : "border-slate-500 text-slate-500"
-                                }`}
+                                    ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                                    : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                                } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
+                                disabled={!canAnswer}
+                                onClick={() => toggleOption(i, j, multi)}
                               >
-                                {isSelected ? "✓" : j + 1}
-                              </span>
-                              <span className="flex-1">{opt.label}</span>
-                              {opt.description ? (
-                                <span className="text-xs text-slate-500 text-right max-w-[40%]">
-                                  {opt.description}
+                                <span
+                                  className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
+                                    isSelected
+                                      ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                                      : "border-slate-500 text-slate-500"
+                                  }`}
+                                >
+                                  {isSelected ? "✓" : j + 1}
                                 </span>
+                                <span className="flex-1">{opt.label}</span>
+                                {opt.description ? (
+                                  <span className="text-xs text-slate-500 text-right max-w-[40%]">
+                                    {opt.description}
+                                  </span>
+                                ) : null}
+                              </button>
+                              {isSelected && opt.preview ? (
+                                <OptionPreview
+                                  text={opt.preview}
+                                  className="ml-7 mt-1.5 max-h-64 p-3"
+                                />
                               ) : null}
-                            </button>
+                            </Fragment>
                           );
                         })}
+                        <div className="my-1 border-t border-slate-700/40" />
+                        <button
+                          type="button"
+                          className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
+                            otherActive
+                              ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
+                              : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                          } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
+                          disabled={!canAnswer}
+                          onClick={() => toggleOther(i, multi)}
+                        >
+                          <span
+                            className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
+                              otherActive
+                                ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                                : "border-slate-500 text-slate-500"
+                            }`}
+                          >
+                            ✎
+                          </span>
+                          <span className="flex-1">{t("claude2.ask.other")}</span>
+                        </button>
+                        {otherActive ? (
+                          <textarea
+                            className="w-full rounded-lg bg-slate-900/60 border border-amber-500/20 px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none resize-none"
+                            rows={3}
+                            placeholder={t("claude2.ask.inputPlaceholder")}
+                            disabled={!canAnswer}
+                            value={freeText[i] ?? ""}
+                            onChange={(e) =>
+                              setFreeText((prev) => ({ ...prev, [i]: e.target.value }))
+                            }
+                          />
+                        ) : null}
                       </div>
                     ) : (
                       <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">

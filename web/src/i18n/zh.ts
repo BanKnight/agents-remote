@@ -298,6 +298,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.ask.orphaned": "问题请求已失效",
   "claude2.ask.expand": "展开",
   "claude2.ask.exitFullscreen": "退出全屏",
+  "claude2.ask.other": "其他",
   "claude2.message.expand": "展开",
   "claude2.message.exitFullscreen": "退出全屏",
   "claude2.message.roleUser": "用户",

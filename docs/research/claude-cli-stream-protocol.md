@@ -1346,6 +1346,12 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 
 **历史特性**：`control_request` 是 stdout 运行时控制消息，**不写入 Claude CLI JSONL 历史**。因此 AskUserQuestion 的历史页只来自 assistant `tool_use` 本身和后续 `user.tool_result` 顶层的 `toolUseResult.answers/questions`。`request_id` 注入只发生在实时流。
 
+**AskUserQuestion 卡片 UI 行为**（`AskUserQuestionCard`，客户端实现，非协议要求）：
+
+- `questions[].options[].preview`：markdown 字符串（常含代码块/表格），live 流（snake：`tool_use`/`control_request`）与 JSONL 历史（camel：`toolUseResult.questions`）均携带；adapter 整体透传 `questions` 数组（无白名单过滤）。前端在用户**选中**某选项后于该选项下方就地展开渲染，切换选项时 preview 跟随；不参与提交（提交只发选中的 label）。
+- **Other 选项**：协议 `options` 无此字段，UI 层在每个有 options 的 question 底部自动追加 "Other" 伪选项（对齐 AskUserQuestion 工具"There should be no 'Other' option, that will be provided automatically"）。单选（`multiSelect:false`）下 Other 与选项**互斥**（激活 Other 清空选项选择）；多选（`multiSelect:true`）下与选项**共存**（Other 自定义文本追加到答案）。Other 文本作为该 question 的 answers 值。
+- **全答完门禁**：客户端产品决策——所有 question 都有答案（选中选项，或 Other 文本非空）才解锁提交按钮；多 question 时按钮显示进度 `n/total`。
+
 ---
 
 ### 客户端 → CLI（stdin）
