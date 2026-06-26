@@ -29,7 +29,7 @@ export type TaskInfo = {
   workflowName?: string;
   subject?: string;
   description: string;
-  status: "running" | "completed" | "error" | "backgrounded";
+  status: "pending" | "in_progress" | "completed" | "error" | "backgrounded";
   text?: string;
   summary?: string;
   error?: string;
@@ -96,7 +96,7 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
         workflowName: msg.workflowName,
         subject: msg.subject,
         description: msg.prompt ?? "",
-        status: "running",
+        status: "in_progress",
       },
     ];
   }
@@ -111,19 +111,33 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
   const kind = current.kind;
 
   if (msg.subtype === "task_updated") {
-    const isCompleted = (msg as Record<string, unknown>).isCompleted === true;
-    updated[existing] = {
-      ...current,
-      kind,
-      status: msg.error
-        ? "error"
-        : isCompleted
-          ? "completed"
-          : msg.isBackgrounded
-            ? "backgrounded"
-            : "running",
-      ...(msg.error ? { error: msg.error } : {}),
-    };
+    // Two sources feed this branch:
+    //  (1) TaskUpdate tool calls (via extractTaskOpFromBlock) carry `taskStatus`
+    //      = the raw protocol status (pending/in_progress/completed/deleted, or
+    //      undefined when only editing addBlockedBy/addBlocks dependencies).
+    //  (2) system.task_updated telemetry carries isBackgrounded/error with NO
+    //      taskStatus. Status machine: pending → in_progress → completed; any
+    //      state → deleted (removal). undefined keeps the current status.
+    const rawStatus = (msg as Record<string, unknown>).taskStatus as string | undefined;
+    if (rawStatus === "deleted") return prev.filter((t) => t.id !== msg.task_id);
+    if (msg.error) {
+      updated[existing] = { ...current, kind, status: "error", error: msg.error };
+      return updated;
+    }
+    if (msg.isBackgrounded) {
+      updated[existing] = { ...current, kind, status: "backgrounded" };
+      return updated;
+    }
+    const nextStatus: TaskInfo["status"] | undefined =
+      rawStatus === "completed"
+        ? "completed"
+        : rawStatus === "in_progress"
+          ? "in_progress"
+          : rawStatus === "pending"
+            ? "pending"
+            : undefined; // undefined (system msg / dependency edit) → keep current
+    if (nextStatus === undefined) return prev;
+    updated[existing] = { ...current, kind, status: nextStatus };
     return updated;
   }
 
@@ -616,14 +630,16 @@ function extractTaskOpFromBlock(block: RawContentBlock): TaskSystemMessage | nul
     } as unknown as TaskSystemMessage;
   }
   if (toolName === "TaskUpdate") {
-    const status = input.status as string;
     const taskId = (input.taskId ?? input.task_id ?? input.id) as string;
     return {
       type: "system",
       subtype: "task_updated",
       task_id: taskId,
-      isBackgrounded: status === "backgrounded",
-      isCompleted: status === "completed",
+      // Pass the raw protocol status through untouched (pending/in_progress/
+      // completed/deleted, or undefined when only editing addBlockedBy/
+      // addBlocks). The reducer owns the status machine — no boolean
+      // pre-translation here.
+      taskStatus: input.status as string | undefined,
       error: input.error as string | undefined,
       session_id: "",
     } as unknown as TaskSystemMessage;
@@ -789,12 +805,16 @@ export function normalizeAttachmentTaskStatus(status: string): TaskInfo["status"
   switch (status) {
     case "completed":
       return "completed";
+    case "in_progress":
+      return "in_progress";
+    case "pending":
+      return "pending";
     case "error":
       return "error";
     case "backgrounded":
       return "backgrounded";
     default:
-      return "running";
+      return "in_progress";
   }
 }
 

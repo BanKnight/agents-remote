@@ -1529,6 +1529,72 @@ describe("message processing building blocks", () => {
     expect(tasks).toHaveLength(0);
   });
 
+  test("TaskUpdate status machine: in_progress/pending/completed/deleted driven by raw status", () => {
+    // TaskCreate (temp id = tool_use_id), then exercise each TaskUpdate status
+    // through the same extractTaskOps → reducer path the runtime uses.
+    const taskCreate = {
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "x" } }],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const updateWith = (status: string) =>
+      ({
+        type: "assistant",
+        userType: "external",
+        message: {
+          id: "m2",
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "tu-2", name: "TaskUpdate", input: { taskId: "tu-1", status } },
+          ],
+        },
+      }) as unknown as SessionStreamServerMessage;
+    const apply = (
+      tasks: ReturnType<typeof applyTaskSystemMessage>,
+      msg: SessionStreamServerMessage,
+    ) => extractTaskOps(msg).reduce(applyTaskSystemMessage, tasks);
+
+    let tasks = apply([], taskCreate);
+    expect(tasks[0].status).toBe("in_progress"); // TaskCreate default
+
+    tasks = apply(tasks, updateWith("pending"));
+    expect(tasks[0].status).toBe("pending");
+
+    tasks = apply(tasks, updateWith("in_progress"));
+    expect(tasks[0].status).toBe("in_progress");
+
+    tasks = apply(tasks, updateWith("completed"));
+    expect(tasks[0].status).toBe("completed");
+
+    // undefined status (addBlockedBy/addBlocks dependency edit) must NOT reset a
+    // completed task — the historical bug where it fell through to "running".
+    tasks = apply(tasks, {
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "m3",
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "tu-3",
+            name: "TaskUpdate",
+            input: { taskId: "tu-1", addBlockedBy: ["2"] },
+          },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage);
+    expect(tasks[0].status).toBe("completed"); // unchanged
+
+    // any state → deleted removes from the list
+    tasks = apply(tasks, updateWith("deleted"));
+    expect(tasks).toHaveLength(0);
+  });
+
   test("extractTaskOps returns empty for non-assistant", () => {
     const msg = {
       type: "user",
@@ -1657,7 +1723,7 @@ describe("task system state", () => {
   });
 */
 
-  test("applyTaskSystemMessage updates task status across running backgrounded error completed", () => {
+  test("applyTaskSystemMessage updates task status across in_progress backgrounded error completed", () => {
     let tasks = applyTaskSystemMessage(
       [],
       taskStarted("task-2", { prompt: "Inspect logs" }) as never,
@@ -1665,7 +1731,7 @@ describe("task system state", () => {
     expect(tasks[0]).toMatchObject({
       id: "task-2",
       description: "Inspect logs",
-      status: "running",
+      status: "in_progress",
     });
 
     tasks = applyTaskSystemMessage(tasks, taskUpdated("task-2", { isBackgrounded: true }) as never);
@@ -3639,8 +3705,14 @@ describe("normalizeAttachmentTaskStatus", () => {
   test('maps "backgrounded"', () => {
     expect(normalizeAttachmentTaskStatus("backgrounded")).toBe("backgrounded");
   });
-  test("maps unknown status to running", () => {
-    expect(normalizeAttachmentTaskStatus("unknown")).toBe("running");
+  test('maps "in_progress"', () => {
+    expect(normalizeAttachmentTaskStatus("in_progress")).toBe("in_progress");
+  });
+  test('maps "pending"', () => {
+    expect(normalizeAttachmentTaskStatus("pending")).toBe("pending");
+  });
+  test("maps unknown status to in_progress", () => {
+    expect(normalizeAttachmentTaskStatus("unknown")).toBe("in_progress");
   });
 });
 

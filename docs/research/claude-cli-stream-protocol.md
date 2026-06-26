@@ -800,6 +800,18 @@ Skill 调用产生三条消息的序列，后两条关联同一个 `tool_use_id`
 
 实时流用 snake_case `tool_use_result`、JSONL/回放用 camelCase `toolUseResult`（见上方「字段名注意」），两种写法都要接受。
 
+**TaskUpdate 的 status 状态机**：`TaskUpdate` 工具调用的 `input.status` 驱动任务状态流转，客户端应**直接用该字符串驱动 reducer**，不要预翻译成布尔特例（`isCompleted`/`isDeleted` 等）：
+
+| input.status | 语义 | 处理 |
+| --- | --- | --- |
+| `pending` | 待办 | 设为 pending |
+| `in_progress` | 进行中 | 设为 in_progress（`TaskCreate` 默认即此态） |
+| `completed` | 完成 | 设为 completed |
+| `deleted` | 删除 | **从列表移除**（任意状态 → deleted） |
+| 缺省（仅含 `addBlockedBy`/`addBlocks`） | 改依赖关系，不改状态 | **保留原 status**，绝不能重置为进行中 |
+
+`error` 通过 `input.error`（或 `system.task_updated.error`）表达；`backgrounded` 来自 `system.task_updated.isBackgrounded` telemetry，**不是** TaskUpdate 的 status 取值。`TaskCreate` 的 `tool_result.task` 只有 `{id, subject}`、无 status，初始态由 CLI 内部决定（默认进行中）。
+
 **示例**（错误工具结果）：
 
 ```json

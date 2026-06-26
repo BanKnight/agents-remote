@@ -175,7 +175,7 @@ function TaskPanel({
         title={hasTooltip ? task.description : undefined}
       >
         <span className="mt-0.5 shrink-0">
-          {task.status === "running" ? (
+          {task.status === "in_progress" ? (
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
           ) : task.status === "completed" ? (
             <svg
