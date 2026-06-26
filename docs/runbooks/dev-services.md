@@ -38,9 +38,46 @@ scripts/ar-dev-web.sh
 
 ## 重启
 
-- **重启 api**：在 api pane 发 `C-c`，再 `bun run --filter @agents-remote/api dev`。
-- **重启 web**：在 web pane 发 `C-c`（脚本 trap 会清 watch），再 `scripts/ar-dev-web.sh`。
-- **强制重建 web**：`C-c` 后重跑脚本即可（首步会全量 build）。
+### 人在 tmux 内手动重启
+
+在对应 window/pane 直接操作：
+
+- **api**：`C-c` → `bun run --filter @agents-remote/api dev`。
+- **web**：`C-c`（脚本 trap 会清 watch）→ `scripts/ar-dev-web.sh`。
+- **强制重建 web**：`C-c` 后重跑脚本（首步全量 build）。
+
+### 从外部通过 tmux 重启（脚本 / agent）
+
+> 🔴 **红线：只重启目标 window 内的服务进程，绝不杀 tmux 本身。**
+> 禁止 `tmux kill-server`、`tmux kill-session -t ar-dev`、`kill <tmux-server-pid>`，也不要用 `tmux kill-window` 当作重启手段——服务进程退出后 `remain-on-exit off`（本项目默认，见 `~/.tmux.conf` 未设）已会自动关闭 window，再去 kill window/session 只会把整个开发环境连带毁掉。**重启 = 让目标进程重新跑起来，不是 = 摧毁 window/session。**
+
+脆弱点（踩过的坑）：window **index 会变**（增删 window、renumber、或进程退出导致 window 自动关闭后），硬编码 `ar-dev:0` 作 target 会在「list 完到 send-keys 之间」的任意时刻失效，报 `can't find window: 0`。因此：
+
+1. **用 window name 作 target，不用 index**。name（`api`/`web`）稳定；启动 window 时务必用 `tmux new-window -n api` / `-n web` 固定 name。
+
+2. **send-keys 前即时确认 target 存在**，不要复用几步之前的旧 list 结果（中间隔真实等待时间，状态可能已变）：
+
+   ```bash
+   tmux list-windows -t ar-dev -F '#{window_name} #{pane_current_command}'
+   # 应能看到 api / web
+   ```
+
+3. **确认存在后按 name 发 C-c 再重启**：
+
+   ```bash
+   tmux send-keys -t ar-dev:api C-c
+   sleep 2
+   tmux send-keys -t ar-dev:api 'bun run --filter @agents-remote/api dev' Enter
+   ```
+
+4. **target window 不存在时（进程已退出 → window 被 `remain-on-exit off` 自动关闭）→ 用 `new-window` 重建，不要 kill 任何东西**：
+
+   ```bash
+   tmux new-window -t ar-dev -n api -c /home/deploy/workspace/agents-remote \
+     'bun run --filter @agents-remote/api dev'
+   ```
+
+   `send-keys` 报 `can't find window: api` 本身是无害信号——它说明 tmux 找不到 target 而拒绝发 keys，**没有**真正发出去；此时进程早已不在，直接走 `new-window`。
 
 ## 关闭 / 清理孤儿
 
@@ -50,6 +87,8 @@ scripts/ar-dev-web.sh
 ps -ef | grep -E 'vite|bun' | grep -v grep
 kill <pid>
 ```
+
+> ⚠️ 这里 `kill` 的是**孤儿服务进程**（命令列为 `bun run src/index.ts` / `vite` 等）。**绝不 kill `tmux` server**——它的命令列为 `tmux: server`（`/usr/bin/tmux`），杀掉会让 `ar-dev` 等所有 session 连同 web/api 一起没。拿不准时先看命令列再 kill。
 
 按 `ar-<purpose>` 命名 tmux session（`ar-dev`、`ar-e2e`、`ar-debug`），便于 `tmux list-sessions | grep '^ar-'` 搜索与复用。
 
