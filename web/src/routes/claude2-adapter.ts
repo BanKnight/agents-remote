@@ -2471,6 +2471,12 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // last-prompt: scalar state only (already handled in Pass 1). No item.
     if (msg.type === "last-prompt") continue;
 
+    // permission-mode: global state, not a chat event. mode is set at resume
+    // (--permission-mode / seed_init), not replayed as an update — so this only
+    // updates the permissionMode scalar (Pass 1) and renders no item. The live
+    // mode-change notice comes from system.status{permissionMode} instead.
+    if (msg.type === "permission-mode") continue;
+
     // control_request: attach request_id as controlRequestId to the matching
     // tool-call part. Same pattern as tool_result and task_progress above.
     if (msg.type === "control_request") {
@@ -2495,6 +2501,24 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         }
       }
       continue;
+    }
+
+    // control_response is the CLI's receipt for a client-initiated control
+    // action (set_model / set_permission_mode / interrupt). It carries no chat
+    // content, so the known scalar-only confirmations render no bubble — their
+    // notice comes from the CLI's own echo (system.status{permissionMode} →
+    // mode-change; <local-command-stdout>Set model to → dropped; interrupt →
+    // interruptAtIndex turn-close). Scalar effects/rollback are handled by
+    // applyMessageScalarState. Payload-based identification (not a blind
+    // type skip) so an UNKNOWN future control_response with another payload
+    // still falls through to the fallback debug bubble.
+    //   set_permission_mode → inner {mode}; set_model → empty inner or {model};
+    //   interrupt → empty inner.
+    if (msg.type === "control_response") {
+      const inner = (msg as { response?: { response?: Record<string, unknown> } }).response
+        ?.response;
+      const isEmpty = !inner || Object.keys(inner).length === 0;
+      if (isEmpty || inner.mode !== undefined || inner.model !== undefined) continue;
     }
 
     // ═══ Other (fallback) ═══
