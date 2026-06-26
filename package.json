@@ -9,9 +9,10 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "bun run --parallel --filter @agents-remote/api --filter @agents-remote/web dev",
+    "dev": "bun run dev:api & bun run dev:web",
     "dev:api": "bun run --filter @agents-remote/api dev",
-    "dev:web": "bun run --filter @agents-remote/web dev",
+    "dev:web": "scripts/ar-dev-web.sh",
+    "dev:web:hmr": "bun run --filter @agents-remote/web dev",
     "e2e": "bun run scripts/run-e2e.ts",
     "build": "bun run --sequential --workspaces build",
     "typecheck": "bun run --sequential --workspaces typecheck && tsc -p tsconfig.e2e.json",

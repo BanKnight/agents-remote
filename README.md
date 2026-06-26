@@ -52,16 +52,20 @@ web_port = 43012
 
 ### 3. 启动开发服务
 
-```bash
-# 同时启动 API + Web
-bun run dev
+约定：**web 跑生产构建（prod preview），api 跑 dev**。web 的 service worker（precache、`navigateFallback`）只在生产构建里真实存在，dev 模式 HMR 与生产 PWA 行为不一致，所以本地也用 prod build 跑 web。详见 [Dev Services Runbook](./docs/runbooks/dev-services.md)。
 
-# 或分别启动
-bun run dev:api   # API on port 43011
-bun run dev:web   # Web on port 43012
+```bash
+# 主路径：分两个终端 / tmux 分别启动（推荐，便于独立重启）
+bun run dev:api   # API dev，端口 43011
+bun run dev:web   # Web prod preview（build --watch + vite preview），端口 43012
+
+# 或一键并行启动（api dev + web preview）
+bun run dev
 ```
 
 打开 `http://localhost:43012`，输入密码即可使用。
+
+> 纯 UI 迭代想要 HMR 时，可用逃生口 `bun run dev:web:hmr`，但**不要用它验证 PWA / Service Worker 行为**——那只在 prod build 下成立。
 
 ## 生产部署
 
@@ -105,7 +109,7 @@ tmux send-keys -t ar-dev 'bun run --filter @agents-remote/api dev' Enter
 
 ### PWA
 
-应用支持安装为 PWA（桌面和移动端）。安装后图标为「智控」，支持离线缓存静态资源。Service Worker 仅缓存图标和 manifest，不缓存导航 HTML 和 API 请求。
+应用支持安装为 PWA（桌面和移动端），安装后图标为「智控」。Service Worker 用 `precacheAndRoute` 缓存所有构建产物（`index.html` + JS/CSS chunk + 图标 + 字体），`navigateFallback: index.html` 让 SPA 导航与 reload 秒开（走 precache、无网络等待）。不缓存 `/api` 与 WebSocket（非导航请求，天然不受影响）。
 
 ## 开发
 
@@ -122,9 +126,10 @@ bun run e2e            # Playwright E2E 测试
 ### 常用命令
 
 ```bash
-bun run dev             # 启动 API + Web 开发服务
-bun run dev:api         # 仅启动 API
-bun run dev:web         # 仅启动 Web
+bun run dev             # 并行启动 API dev + Web prod preview
+bun run dev:api         # 仅启动 API（dev，43011）
+bun run dev:web         # 仅启动 Web（prod preview，43012）
+bun run dev:web:hmr     # Web HMR 逃生口（纯 UI 迭代，不代表 PWA 行为）
 bun run build           # 生产构建
 ```
 
