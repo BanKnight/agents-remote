@@ -388,4 +388,5 @@ export const en = {
   "claude2.compact.triggerManual": "manual",
   "claude2.compact.triggerAuto": "auto",
   "claude2.compact.triggerMicro": "micro",
+  "claude2.hook.title": "Hook",
 } as const;

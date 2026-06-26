@@ -388,4 +388,5 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.compact.triggerManual": "手动",
   "claude2.compact.triggerAuto": "自动",
   "claude2.compact.triggerMicro": "微压缩",
+  "claude2.hook.title": "钩子",
 };

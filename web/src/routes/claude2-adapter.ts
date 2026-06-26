@@ -1493,6 +1493,20 @@ export type ChatStreamItem =
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
+  | {
+      // hook_started + hook_response pair, matched by hook_id during normalize
+      // (started emits a running item; response mutates it to complete/error).
+      // Renders as a single default-collapsed HookCard.
+      kind: "hook-event";
+      hookName: string;
+      hookEvent?: string;
+      output?: string;
+      stderr?: string;
+      exitCode?: number;
+      outcome?: string;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
   | { kind: "batch-boundary"; batchKind: "history" | "live" }
   | {
       kind: "attachment";
@@ -1637,6 +1651,9 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   // command-output card (form E: live slash commands merge into one card). If
   // no synthetic arrives, the user-prompt stays rendered (fallback — echo kept).
   const pendingSlashItemIdx: number[] = [];
+  // hook_started → hook_response pairing by hook_id. started emits a running
+  // hook-event item immediately; response mutates the same item (object ref).
+  const pendingHooks = new Map<string, Extract<ChatStreamItem, { kind: "hook-event" }>>();
 
   // Compact window: opened at a compact/microcompact_boundary, absorbs the
   // boundary's trailing compaction messages (isCompactSummary user message +
@@ -2325,6 +2342,60 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         }
       }
 
+      // hook_started / hook_response: pair by hook_id into one hook-event
+      // item. started emits a running item (no output/outcome yet); response
+      // mutates the same item to complete/error.
+      if (subtype === "hook_started" || subtype === "hook_response") {
+        const hm = msg as unknown as {
+          hook_id?: string;
+          hook_name?: string;
+          hook_event?: string;
+          output?: string;
+          stderr?: string;
+          exit_code?: number;
+          outcome?: string;
+        };
+        const hookId = hm.hook_id;
+        const uuid = getMsgUuid(msg);
+        if (subtype === "hook_started") {
+          const item: Extract<ChatStreamItem, { kind: "hook-event" }> = {
+            kind: "hook-event",
+            hookName: hm.hook_name ?? "hook",
+            ...(hm.hook_event ? { hookEvent: hm.hook_event } : {}),
+            sourceUuids: uuid ? [uuid] : [],
+            _rawSnapshots: [msg],
+          };
+          items.push(item);
+          if (hookId) pendingHooks.set(hookId, item);
+        } else {
+          const existing = hookId ? pendingHooks.get(hookId) : undefined;
+          if (existing) {
+            existing.output = hm.output;
+            if (hm.stderr) existing.stderr = hm.stderr;
+            if (hm.exit_code != null) existing.exitCode = hm.exit_code;
+            if (hm.outcome) existing.outcome = hm.outcome;
+            if (uuid) existing.sourceUuids.push(uuid);
+            existing._rawSnapshots.push(msg);
+            if (hookId) pendingHooks.delete(hookId);
+          } else {
+            // response without a preceding started — emit a standalone completed item
+            const item: Extract<ChatStreamItem, { kind: "hook-event" }> = {
+              kind: "hook-event",
+              hookName: hm.hook_name ?? "hook",
+              ...(hm.hook_event ? { hookEvent: hm.hook_event } : {}),
+              ...(hm.output != null ? { output: hm.output } : {}),
+              ...(hm.stderr ? { stderr: hm.stderr } : {}),
+              ...(hm.exit_code != null ? { exitCode: hm.exit_code } : {}),
+              ...(hm.outcome ? { outcome: hm.outcome } : {}),
+              sourceUuids: uuid ? [uuid] : [],
+              _rawSnapshots: [msg],
+            };
+            items.push(item);
+          }
+        }
+        continue;
+      }
+
       // Other system messages: fallback.
 
       const ui = messageToThreadLike(msg);
@@ -2879,6 +2950,26 @@ export function renderChatStream(
               stderr: item.stderr,
               input: item.input,
               sourceType: item.sourceType,
+            },
+          },
+        });
+        break;
+      }
+      case "hook-event": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "hook-card",
+              hookName: item.hookName,
+              hookEvent: item.hookEvent,
+              output: item.output,
+              stderr: item.stderr,
+              exitCode: item.exitCode,
+              outcome: item.outcome,
             },
           },
         });

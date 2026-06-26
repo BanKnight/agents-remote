@@ -48,6 +48,7 @@ import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
+import { HookCard } from "../components/assistant-ui/hook-card";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
@@ -1366,6 +1367,17 @@ function SystemChatBubble() {
     return (
       <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
         <CompactBlock custom={custom} />
+        <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
+      </MessagePrimitive.Root>
+    );
+  }
+
+  // Hook card: hook_started + hook_response pair shown as a single
+  // default-collapsed ToolHead-styled card, consistent with compact-block.
+  if (systemMessageType === "hook-card") {
+    return (
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+        <HookCard custom={custom} />
         <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
       </MessagePrimitive.Root>
     );
