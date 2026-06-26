@@ -79,9 +79,11 @@ export type PendingControlAction =
   | { kind: "interrupt" };
 
 export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {
-  // task_started: always creates. TaskCreate-originated ops carry no id
-  // (empty string) — assign a sequential id (1, 2, 3, ...) by creation order.
-  // Real system/task_started messages keep their own task_id.
+  // task_started: always creates. TaskCreate-originated ops use the tool_use_id
+  // (block.id) as a TEMPORARY id — the real id arrives later in the tool_result
+  // (toolUseResult/task.id, backfilled by applyMessageScalarState's user branch).
+  // Real system/task_started messages keep their own task_id. The
+  // `|| String(prev.length+1)` only covers a never-assigned edge.
   if (msg.subtype === "task_started") {
     const id = msg.task_id || String(prev.length + 1);
     const kind: TaskInfo["kind"] = msg.workflowName ? "workflow" : msg.agentType ? "agent" : "task";
@@ -597,12 +599,15 @@ function extractTaskOpFromBlock(block: RawContentBlock): TaskSystemMessage | nul
   const input = (block.input ?? {}) as Record<string, unknown>;
 
   if (toolName === "TaskCreate") {
-    // No task_id here — the reducer assigns a sequential id (1, 2, 3, …)
-    // in TaskCreate order. TaskUpdate later references that id via input.taskId.
+    // The real task id is assigned by the CLI and only arrives in the
+    // tool_result (user message toolUseResult.task.id). Use the tool_use's
+    // block.id (tool_use_id) as a TEMPORARY id here; applyMessageScalarState's
+    // user branch backfills the real id when the tool_result lands. TaskUpdate
+    // later references the real id via input.taskId.
     return {
       type: "system",
       subtype: "task_started",
-      task_id: "",
+      task_id: (block.id as string) ?? "",
       agentType: input.subagent_type as string | undefined,
       workflowName: input.workflow_name as string | undefined,
       subject: input.subject as string | undefined,
@@ -923,6 +928,32 @@ export function getMsgToolResultIds(msg: SessionStreamServerMessage): string[] {
         b.type === "tool_result" && typeof b.tool_use_id === "string",
     )
     .map((b) => b.tool_use_id);
+}
+
+/**
+ * For a TaskCreate tool_result (user message), pair the tool_use_id with the
+ * REAL task id carried in the structured result envelope. The field name
+ * differs by source — live stdout uses snake_case `tool_use_result`, JSONL/
+ * replay uses camelCase `toolUseResult` (same wire message, different keys on
+ * disk) — so both are accepted. Returns null for non-Task tool_results (no
+ * `.task`, e.g. Write/File) and non-user messages. The temporary task was
+ * created with tool_use_id as its id (see extractTaskOpFromBlock);
+ * applyMessageScalarState uses this mapping to backfill the real id.
+ */
+export function extractTaskIdAssignment(
+  msg: SessionStreamServerMessage,
+): { toolUseId: string; taskId: string } | null {
+  if (msg.type !== "user") return null;
+  const m = msg as Record<string, unknown>;
+  const tur = (m.toolUseResult ?? m.tool_use_result) as { task?: { id?: unknown } } | undefined;
+  const id = tur?.task?.id;
+  if (typeof id !== "string" && typeof id !== "number") return null;
+  const toolUseIds = getMsgToolResultIds(msg);
+  if (toolUseIds.length === 0) return null;
+  // TaskCreate tool_result is single (the tool must wait for its result to get
+  // the id, so it never runs in parallel); the task.id belongs to that one
+  // tool_result → pair with the first (only) tool_use_id.
+  return { toolUseId: toolUseIds[0], taskId: String(id) };
 }
 
 /** Check if a thread message's tool-call parts include a specific tool_use_id. */
@@ -3354,7 +3385,23 @@ export function useClaude2Session(
         return;
       }
 
-      // The remaining types (user, system, result, file-history-snapshot,
+      // user: a TaskCreate tool_result carries the REAL task id in the
+      // structured result envelope (camelCase `toolUseResult` on JSONL/replay,
+      // snake_case `tool_use_result` on live stdout — extractTaskIdAssignment
+      // handles both). Backfill the temporary task (created with tool_use_id as
+      // its id) so a later TaskUpdate(taskId=real id) can match it. Other user
+      // messages (prompts, non-Task tool_results) yield no assignment.
+      if (msg.type === "user") {
+        const assign = extractTaskIdAssignment(msg);
+        if (assign) {
+          setTasks((prev) =>
+            prev.map((t) => (t.id === assign.toolUseId ? { ...t, id: assign.taskId } : t)),
+          );
+        }
+        return;
+      }
+
+      // The remaining types (system, result, file-history-snapshot,
       // control_request) carry no scalar state. Bubble/visibility decisions for
       // them live entirely in renderChatStream. control_request attaches its
       // request_id to the matching tool-call part in normalizeChatStream.

@@ -9,6 +9,7 @@ import {
   convertContentToBubble,
   deriveLiveThinkingTokens,
   deriveStatus,
+  extractTaskIdAssignment,
   extractTaskOps,
   mapTurnStatusTone,
   hasToolUseNamed,
@@ -1378,7 +1379,7 @@ describe("message processing building blocks", () => {
     expect(extractTaskOps(msg)).toEqual([]);
   });
 
-  test("extractTaskOps extracts TaskCreate with subject; reducer assigns sequential id", () => {
+  test("extractTaskOps extracts TaskCreate with subject; reducer uses tool_use_id as temp id", () => {
     const msg = {
       type: "assistant",
       userType: "external",
@@ -1397,14 +1398,16 @@ describe("message processing building blocks", () => {
     } as unknown as SessionStreamServerMessage;
     const ops = extractTaskOps(msg);
     expect(ops).toHaveLength(1);
-    expect(ops[0]).toMatchObject({ subtype: "task_started", task_id: "" });
+    // task_id is the tool_use_id (block.id) as a TEMPORARY id; the real id
+    // arrives later in the tool_result and is backfilled by the user branch.
+    expect(ops[0]).toMatchObject({ subtype: "task_started", task_id: "tu-1" });
     const tasks = applyTaskSystemMessage([], ops[0]);
-    expect(tasks[0].id).toBe("1");
+    expect(tasks[0].id).toBe("tu-1");
     expect(tasks[0].subject).toBe("short title");
     expect(tasks[0].description).toBe("detailed description");
   });
 
-  test("TaskUpdate matches TaskCreate via sequential id, no orphan entries", () => {
+  test("TaskUpdate matches TaskCreate via real id backfilled from tool_result, no orphan entries", () => {
     const createMsg = {
       type: "assistant",
       userType: "external",
@@ -1415,6 +1418,18 @@ describe("message processing building blocks", () => {
           { type: "tool_use", id: "tu-1", name: "TaskCreate", input: { subject: "do thing" } },
         ],
       },
+    } as unknown as SessionStreamServerMessage;
+    // tool_result carries the REAL task id; field name differs by source
+    // (camelCase `toolUseResult` on JSONL/replay, snake_case `tool_use_result`
+    // on live stdout) — extractTaskIdAssignment handles both.
+    const toolResultMsg = {
+      type: "user",
+      message: {
+        id: "m1b",
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tu-1", content: "Task #17 created" }],
+      },
+      toolUseResult: { task: { id: "17", subject: "do thing" } },
     } as unknown as SessionStreamServerMessage;
     const updateMsg = {
       type: "assistant",
@@ -1427,19 +1442,66 @@ describe("message processing building blocks", () => {
             type: "tool_use",
             id: "tu-2",
             name: "TaskUpdate",
-            input: { taskId: "1", status: "completed" },
+            input: { taskId: "17", status: "completed" },
           },
         ],
       },
     } as unknown as SessionStreamServerMessage;
 
+    // 1. TaskCreate → temp id = tool_use_id ("tu-1")
     let tasks: ReturnType<typeof applyTaskSystemMessage> = [];
     for (const op of extractTaskOps(createMsg)) tasks = applyTaskSystemMessage(tasks, op);
+    expect(tasks[0].id).toBe("tu-1");
+
+    // 2. tool_result → backfill the real id (mirrors applyMessageScalarState's
+    //    user branch, which can't run in this pure-reducer test).
+    const assign = extractTaskIdAssignment(toolResultMsg);
+    expect(assign).toEqual({ toolUseId: "tu-1", taskId: "17" });
+    if (assign) {
+      tasks = tasks.map((t) => (t.id === assign.toolUseId ? { ...t, id: assign.taskId } : t));
+    }
+    expect(tasks[0].id).toBe("17");
+
+    // 3. TaskUpdate → now matches the real id → status updates
     for (const op of extractTaskOps(updateMsg)) tasks = applyTaskSystemMessage(tasks, op);
 
     expect(tasks).toHaveLength(1);
-    expect(tasks[0].id).toBe("1");
+    expect(tasks[0].id).toBe("17");
     expect(tasks[0].status).toBe("completed");
+  });
+
+  test("extractTaskIdAssignment pairs tool_use_id with real id (live snake_case, numeric id)", () => {
+    const msg = {
+      type: "user",
+      message: {
+        id: "mr1",
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tu-1", content: "Task #17 created" }],
+      },
+      tool_use_result: { task: { id: 17, subject: "do thing" } },
+    } as unknown as SessionStreamServerMessage;
+    expect(extractTaskIdAssignment(msg)).toEqual({ toolUseId: "tu-1", taskId: "17" });
+  });
+
+  test("extractTaskIdAssignment returns null without a task (non-Task tool_result)", () => {
+    const msg = {
+      type: "user",
+      message: {
+        id: "mr2",
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tu-9", content: "File written" }],
+      },
+      toolUseResult: { filePath: "x.ts", structuredPatch: [] },
+    } as unknown as SessionStreamServerMessage;
+    expect(extractTaskIdAssignment(msg)).toBeNull();
+  });
+
+  test("extractTaskIdAssignment returns null for non-user message", () => {
+    const msg = {
+      type: "assistant",
+      message: { id: "m3", role: "assistant", content: [] },
+    } as unknown as SessionStreamServerMessage;
+    expect(extractTaskIdAssignment(msg)).toBeNull();
   });
 
   test("TaskUpdate for unknown id does not create orphan", () => {
