@@ -1640,29 +1640,69 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
   });
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  const prevScrollTopRef = useRef(0);
   const bodyIndices = custom.bodyIndices ?? [];
   const subagentType = custom.subagentType ?? "Agent";
 
-  // While running, pin body to bottom unless the user scrolled up.
-  useEffect(() => {
-    if (status !== "running") return;
+  // Sticky-to-bottom, same scheme as VirtualizedThreadContent. Our
+  // programmatic auto-scrolls only increase scrollTop (toward bottom), so
+  // unpinning purely on a scrollTop DECREASE makes our own scrolls incapable
+  // of unpinning — no race with content growth during streaming.
+  const stickToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const el = bodyRef.current;
     if (!el) return;
-    if (stickRef.current) el.scrollTop = el.scrollHeight;
+    stickRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
     const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-      stickRef.current = atBottom;
+      if (!el) return;
+      if (prevScrollTopRef.current - el.scrollTop > CHAT_SCROLL_UP_EPS) {
+        stickRef.current = false;
+      }
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < CHAT_BOTTOM_THRESHOLD) {
+        stickRef.current = true;
+      }
+      prevScrollTopRef.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+    prevScrollTopRef.current = el.scrollTop;
     return () => el.removeEventListener("scroll", onScroll);
-  }, [status]);
+  }, []);
 
-  // New body content while running + sticky → scroll to bottom.
+  // Follow body content growth while sticky. MutationObserver (not
+  // ResizeObserver) so NO extra wrapper div is needed — body cards keep their
+  // original parent and spacing. Covers new messages (childList) and in-place
+  // streaming growth of the last message (characterData in subtree).
+  // RAF-coalesced so a burst of streaming deltas scrolls at most once/frame.
   useEffect(() => {
-    if (status === "running" && stickRef.current && bodyRef.current) {
-      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }
-  }, [status, bodyIndices.length]);
+    const el = bodyRef.current;
+    if (!el) return;
+    let raf = 0;
+    const onMutate = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (stickRef.current) stickToBottom("auto");
+      });
+    };
+    const mo = new MutationObserver(onMutate);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => {
+      mo.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [stickToBottom]);
+
+  // Pin to bottom on mount and as body messages arrive while sticky.
+  // MutationObserver has no observe-time callback, so the initial pin lives
+  // here; this also scrolls before paint for new messages (no flicker).
+  useLayoutEffect(() => {
+    if (stickRef.current) stickToBottom("auto");
+  }, [bodyIndices.length, stickToBottom]);
 
   return (
     <div className="my-1 rounded-lg border border-slate-700/60 bg-slate-800/30">
