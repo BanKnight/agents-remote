@@ -665,6 +665,9 @@ export const startApi = async () => {
   claude2Runtime.setOnModelChange((sessionId, model) => {
     void sessionRegistry.setModel(sessionId, model);
   });
+  claude2Runtime.setOnPermissionModeChange((sessionId, permissionMode) => {
+    void sessionRegistry.setPermissionMode(sessionId, permissionMode);
+  });
   // Post-hook for /reload-skills: on a successful reload, broadcast
   // skill_catalog_changed to current subscribers so clients invalidate + re-fetch
   // the REST catalog. Broadcast-only (no payload) — the client's REST fetch is

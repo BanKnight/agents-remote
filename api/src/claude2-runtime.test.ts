@@ -151,6 +151,54 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
   expect(runtime.getSessionState("rt-key")?.model).toBe("old");
 });
 
+test("capturePermissionModeFromLine folds state.permissionMode and fires onPermissionModeChange with the internal sessionId", () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const calls: Array<{ sessionId: string; permissionMode: string }> = [];
+  runtime.setOnPermissionModeChange((sessionId, permissionMode) =>
+    calls.push({ sessionId, permissionMode }),
+  );
+
+  // Drive the private fold: seed a process state, then invoke capturePermissionModeFromLine.
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; permissionMode?: string }>;
+    capturePermissionModeFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id", permissionMode: "old" });
+
+  // system.status{permissionMode} is the live carrier of a successful mode switch.
+  internal.capturePermissionModeFromLine("rt-key", {
+    type: "system",
+    subtype: "status",
+    permissionMode: "acceptEdits",
+  });
+
+  expect(runtime.getSessionState("rt-key")?.permissionMode).toBe("acceptEdits");
+  expect(calls).toEqual([{ sessionId: "internal-session-id", permissionMode: "acceptEdits" }]);
+});
+
+test("capturePermissionModeFromLine does not fire onPermissionModeChange for a non-mode system.status", () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const calls: Array<{ sessionId: string; permissionMode: string }> = [];
+  runtime.setOnPermissionModeChange((sessionId, permissionMode) =>
+    calls.push({ sessionId, permissionMode }),
+  );
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; permissionMode?: string }>;
+    capturePermissionModeFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id", permissionMode: "old" });
+
+  // compact-status variant (status set, no permissionMode) must not fire.
+  internal.capturePermissionModeFromLine("rt-key", {
+    type: "system",
+    subtype: "status",
+    status: "compacting",
+  });
+
+  expect(calls).toEqual([]);
+  expect(runtime.getSessionState("rt-key")?.permissionMode).toBe("old");
+});
+
 test("extractSkillReloadFromStdoutLine detects a /reload-skills synthetic-assistant echo (string content)", () => {
   // Live carrier: CLI emits /reload-skills output as a synthetic assistant
   // message (localCommandOutputToSDKAssistantMessage strips the tag), not a

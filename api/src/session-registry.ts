@@ -138,6 +138,23 @@ export class SessionRegistry {
     await this.writeMetadata(updated);
   }
 
+  // Persist a mid-session permission-mode switch to metadata.permissionMode, so
+  // an API restart (--resume) spawns the CLI with the switched mode (the
+  // --permission-mode arg in claude2-runtime spawnClaudeDirect). Triggered via
+  // Claude2Runtime onPermissionModeChange when a system.status{permissionMode}
+  // echo is folded. Only updates permissionMode; claudeSessionId is untouched.
+  // Symmetric to setModel above.
+  async setPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
+    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    if (!metadata) return;
+    const updated: SessionMetadata = {
+      ...metadata,
+      permissionMode,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(updated);
+  }
+
   async countSessions(projectName: string) {
     const [agentSessions, terminalSessions] = await Promise.all([
       this.listAgentSessions(projectName),

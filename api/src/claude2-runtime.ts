@@ -108,6 +108,8 @@ export class Claude2Runtime implements RuntimeResources {
     | ((sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void)
     | null = null;
   private onModelChange: ((sessionId: string, model: string) => void) | null = null;
+  private onPermissionModeChange: ((sessionId: string, permissionMode: string) => void) | null =
+    null;
   private onSkillReload: ((sessionName: string) => void) | null = null;
 
   constructor(runDir: string) {
@@ -122,6 +124,10 @@ export class Claude2Runtime implements RuntimeResources {
 
   setOnModelChange(cb: (sessionId: string, model: string) => void) {
     this.onModelChange = cb;
+  }
+
+  setOnPermissionModeChange(cb: (sessionId: string, permissionMode: string) => void) {
+    this.onPermissionModeChange = cb;
   }
 
   setOnSkillReload(cb: (sessionName: string) => void) {
@@ -479,7 +485,10 @@ export class Claude2Runtime implements RuntimeResources {
 
   // Fold current permissionMode from live stdout so the replay seed init carries
   // the CURRENT mode (system.init is spawn-time; permission-mode/system.status
-  // messages update it mid-session). See docs/design/message-replay.md.
+  // messages update it mid-session). See docs/design/message-replay.md. The same
+  // signal also persists the switch to metadata.permissionMode via
+  // onPermissionModeChange, so an API restart (--resume) spawns the CLI with
+  // the switched mode. Symmetric to captureModelFromLine.
   private capturePermissionModeFromLine(
     sessionName: string,
     parsed: Record<string, unknown> | null,
@@ -495,10 +504,11 @@ export class Claude2Runtime implements RuntimeResources {
     ) {
       next = parsed.permissionMode;
     }
-    if (next) {
-      const state = this.processes.get(sessionName);
-      if (state) state.permissionMode = next;
-    }
+    if (!next) return;
+    const state = this.processes.get(sessionName);
+    if (!state) return;
+    state.permissionMode = next;
+    this.onPermissionModeChange?.(state.sessionId, next);
   }
 
   // Fold current model from live stdout so the replay seed init carries the
