@@ -206,13 +206,15 @@ function TaskPanel({
                 strokeLinecap="round"
               />
             </svg>
+          ) : task.status === "pending" ? (
+            <span className="inline-block h-3 w-3 rounded-full border border-slate-600" />
           ) : (
             <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
           )}
         </span>
         <div className="min-w-0 flex-1">
           <span
-            className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : "text-slate-200"}`}
+            className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : task.status === "pending" ? "text-slate-500" : "text-slate-200"}`}
           >
             <span className="text-slate-500">#{task.id}</span> {title}
           </span>
