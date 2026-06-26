@@ -839,7 +839,7 @@ function AssistantChatBubble() {
         condition={(s) => s.message.content.length === 0 && s.message.status?.type === "running"}
       >
         {liveThinkingTokens != null ? (
-          <div className="py-1 text-amber-400/90">
+          <div className="flex items-center gap-2 py-1 text-amber-400/90">
             <ToolHead
               icon="thinking"
               badge={t("claude2.thinking.title")}

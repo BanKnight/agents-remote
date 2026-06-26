@@ -95,8 +95,10 @@ export function ToolIcon({ name, className }: { name: string; className?: string
 //
 // Layout: [status?] [icon] [badge] [detail] [trailing?]
 //
-//  status   — reflected on the icon color/animation (running pulses cyan,
-//             completed emerald, interrupted amber, error red).
+//  status   — reflected on icon BRIGHTNESS: running is lit (full opacity +
+//             subtle pulse), completed dims, interrupted dims + amber,
+//             error dims + red. Brightness is the primary signal so what's
+//             active reads instantly; tints keep failures distinguishable.
 //  icon     — per-tool glyph from ToolIcons.
 //  badge    — colored background pill (the tool type / interaction type).
 //  detail   — trailing specific info (path, command, query, description).
@@ -107,13 +109,18 @@ export type ToolHeadStatus = "running" | "completed" | "interrupted" | "error";
 function statusIconClass(status: ToolHeadStatus | null | undefined): string {
   switch (status) {
     case "running":
-      return "text-cyan-400 animate-pulse";
+      // Bright: full opacity + subtle pulse. No hue — the icon keeps its
+      // tool-type color, status is carried by brightness alone.
+      return "animate-pulse";
     case "completed":
-      return "text-emerald-400";
+      // Dim: fade whatever type color the icon has.
+      return "opacity-50";
     case "interrupted":
-      return "text-amber-400";
+      // Dim + amber tint so a resume interrupt stays distinguishable.
+      return "opacity-50 text-amber-400";
     case "error":
-      return "text-red-400";
+      // Dim + red tint so failures stay visible.
+      return "opacity-50 text-red-400";
     default:
       return "";
   }
