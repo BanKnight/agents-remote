@@ -70,7 +70,7 @@ agents-remote/
 - 不要为了移动端布局隐藏问题而只加全局 `overflow-hidden`；应检查动态视口高度、局部滚动区、`min-w-0`、长文本截断/换行和固定区域是否挤占内容。
 - 不要在 Project 工作区常驻固定底部 runtime input；真实输入应进入 Agent/Terminal Session detail 后出现，并且输入区不能遮挡输出。
 - 不要反复启动新的 web/api 端口来验证问题；调试服务必须常驻在明确命名的 tmux session 中，固定使用 API `43011`、Web `43012`，后续测试应复用或重启同一 session，避免端口漂移。
-- **API 和 Web 进程必须在 tmux session 里启动和管理**，不能在 tmux 外直接运行（否则进程变成孤儿进程，无法通过 tmux 控制）。重启 API 的正确方式是：在 `ar-dev:0` 里发 `C-c` 停止当前进程，再重新运行 `bun run --filter @agents-remote/api dev`。如果进程变成孤儿（PPID=1），只能用 `kill <pid>` 清理后再在 tmux 里重启。
+- **web 长期跑生产构建，api 跑 dev**：web 的 SW precache / navigateFallback 只在 prod build 真实存在，dev 模式 HMR 与生产 PWA 行为不一致（splash/缓存/reload 问题只在 prod 暴露），所以本地也用 prod build 验证 web。启动 web 用 `scripts/ar-dev-web.sh`（`vite preview` + `build --watch`），api 用 `bun run --filter @agents-remote/api dev`。API 和 Web 进程都必须在 tmux session 内启动管理，在外面跑会变孤儿（PPID=1），只能 `kill` 再在 tmux 内重启。完整流程见 [Dev Services Runbook](./runbooks/dev-services.md)。
 - 开发/验证用 tmux session 统一使用 `ar-<purpose>` 命名，例如 `ar-dev`、`ar-e2e`、`ar-debug`；不要使用 `agents-remote-*`，避免和 Claude Code 当前会话或其他任务会话混淆，并便于 `tmux list-sessions | grep '^ar-'` 搜索、复用和关闭。
 - Session runtime 的运行时标识符使用 `createRuntimeKey()` 生成 `{prefix}-{type}-{provider}-{projectKey}-{id}` 格式；生产环境默认前缀 `ar-`，E2E 环境通过 `AGENTS_REMOTE_SESSION_PREFIX=e2e-ar` 使用 `e2e-ar-` 前缀，确保 E2E 产生的标识符可区分，不与生产 session 混淆。
 - E2E harness（`scripts/run-e2e.ts`）在独立临时目录启动 API/Web 进程，`finally` 块必须清理产生的 runtime session（按前缀 kill），避免孤儿进程积累导致系统负载升高。
@@ -124,7 +124,7 @@ agents-remote/
 3. 改 web：运行相关 `web/src/**/*.test.ts`，并用浏览器验证对应页面的 golden path 和错误/空状态。
 4. 改 Project/Session/Terminal/WebSocket：运行 `bun run e2e` 或对应 E2E 子路径，确认真实浏览器、tmux 和 stream 行为。
 5. 收尾前按风险运行根级质量门禁：`bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build`；如果改动影响端到端用户路径，再加 `bun run e2e`。
-6. 需要长驻 web/api 调试服务时，用 `ar-dev` tmux session 管理并固定端口：API `43011`、Web `43012`；查看日志、重启、关闭都通过同一 session 完成，避免孤儿进程和端口漂移。
+6. 需要长驻 web/api 调试服务时，用 `ar-dev` tmux session 管理并固定端口：API `43011`、Web `43012`；web 跑生产构建（`scripts/ar-dev-web.sh` = preview + build --watch），api 跑 dev；查看日志、重启、关闭都通过同一 session 完成，避免孤儿进程和端口漂移。详细流程见 [Dev Services Runbook](./runbooks/dev-services.md)。
 
 ## 重要文档列表
 
@@ -166,6 +166,7 @@ agents-remote/
 ### 数据、配置与运维
 
 - [个人部署配置 Runbook](./runbooks/personal-deployment-configuration.md) — 首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。
+- [Dev Services Runbook](./runbooks/dev-services.md) — ar-dev tmux session 启动/重启/关闭流程：web 长期跑生产构建（`scripts/ar-dev-web.sh` = preview + build --watch），api 跑 dev，固定端口 43011/43012。
 - [E2E Quality Baseline Runbook](./runbooks/e2e-quality-baseline.md) — 如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
 - [Claude2 客户端调试开关 Runbook](./runbooks/claude2-client-debugging.md) — 浏览器运行时调试开关（socket 日志、调试按钮，均默认关闭）的控制范围与切换方法。
 - [Agent 接入调研](./research/agent-access-options.md) — hapi/remodex/Codex/Claude 接入路线、证据追溯和统一协议可能性调研。

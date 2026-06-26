@@ -55,6 +55,14 @@ const allowedHosts = (process.env.WEB_ALLOWED_HOSTS ?? "service-remotes-agent.88
   .split(",")
   .map((host) => host.trim())
   .filter(Boolean);
+// Shared by the dev server and the preview server so /api and the session
+// WebSocket reach the api process in either mode.
+const apiProxy = {
+  "/api": {
+    target: apiTarget,
+    ws: true,
+  },
+};
 
 export default defineConfig({
   plugins: [
@@ -104,14 +112,27 @@ export default defineConfig({
   server: {
     allowedHosts,
     port: webPort,
-    proxy: {
-      "/api": {
-        target: apiTarget,
-        ws: true,
-      },
-    },
+    proxy: apiProxy,
+  },
+  // preview serves the prod build and is the long-term way to run web locally:
+  // the SW's precache / navigateFallback only behave like production against
+  // the built dist, so dev-mode HMR diverges from prod PWA behavior. Pair with
+  // `vite build --watch` (see scripts/ar-dev-web.sh) to rebuild on save;
+  // preview reads dist on each request so a refresh picks up the new bundle.
+  // host/allowedHosts/port/proxy mirror server so the tunnel and /api + WS
+  // work identically to dev.
+  preview: {
+    host: true,
+    allowedHosts,
+    port: webPort,
+    proxy: apiProxy,
   },
   build: {
+    // Sourcemaps so prod-build issues are debuggable in DevTools. The .map
+    // files aren't in workbox globPatterns, so they aren't precached — they're
+    // fetched on demand by DevTools only. Private deployment, so exposing
+    // maps on the tunnel is acceptable.
+    sourcemap: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
