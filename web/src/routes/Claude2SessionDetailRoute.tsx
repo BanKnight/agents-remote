@@ -2547,6 +2547,14 @@ function MessageRouter({
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }
 
+// Auto-scroll thresholds for the chat scroller (px).
+// Only a scrollTop DECREASE larger than this unpins (filters sub-pixel jitter);
+// our programmatic auto-scrolls only increase scrollTop, so they can never unpin.
+const CHAT_SCROLL_UP_EPS = 2;
+// Within this distance of the bottom counts as "pinned" → repin is stable
+// even when content keeps growing mid-stream.
+const CHAT_BOTTOM_THRESHOLD = 32;
+
 function VirtualizedThreadContent({
   loading,
   retryInfo,
@@ -2592,42 +2600,59 @@ function VirtualizedThreadContent({
   const contentRef = useRef<HTMLDivElement>(null);
 
   // ── Sticky-to-bottom ──────────────────────────────────────────────
+  // stickyRef = "auto-follow new content". Our programmatic auto-scrolls
+  // only ever increase scrollTop (toward bottom), so unpinning purely on a
+  // scrollTop DECREASE makes our own scrolls incapable of unpinning — no
+  // race with content growth during streaming.
   const stickyRef = useRef(true);
+  const prevScrollTopRef = useRef(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
+
+  const stickToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    stickyRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
 
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     const onScroll = () => {
       if (!el) return;
-      const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) <= 1;
-      stickyRef.current = atBottom;
-      setShowScrollButton(!atBottom);
-    };
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) stickyRef.current = false;
+      // User scrolled up (wheel/touch/keyboard) → stop following.
+      if (prevScrollTopRef.current - el.scrollTop > CHAT_SCROLL_UP_EPS) {
+        if (stickyRef.current) {
+          stickyRef.current = false;
+          setShowScrollButton(true);
+        }
+      }
+      // Back near the bottom → resume following.
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < CHAT_BOTTOM_THRESHOLD) {
+        if (!stickyRef.current) {
+          stickyRef.current = true;
+          setShowScrollButton(false);
+        }
+      }
+      prevScrollTopRef.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("wheel", onWheel, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("wheel", onWheel);
-    };
+    prevScrollTopRef.current = el.scrollTop;
+    return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Pin to bottom while sticky and content resizes.
+  // Follow content growth while sticky (covers streaming, virtualizer
+  // measurement settling, and loading→ready height changes).
   useEffect(() => {
     const wrapper = contentRef.current;
     if (!wrapper) return;
     const ro = new ResizeObserver(() => {
-      if (stickyRef.current && scrollerRef.current) {
-        scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
-      }
+      if (stickyRef.current) stickToBottom("auto");
     });
     ro.observe(wrapper);
     return () => ro.disconnect();
-  }, []);
+  }, [stickToBottom]);
 
   // ── Virtualizer ───────────────────────────────────────────────────
   const virtualizer = useVirtualizer({
@@ -2643,40 +2668,23 @@ function VirtualizedThreadContent({
     },
   });
 
-  // Initial jump to bottom.
-  const didInitialJumpRef = useRef(false);
+  // Pin to bottom as turns mount/stream in while sticky. Replaces the old
+  // one-shot initial jump that raced with virtualizer measurement.
   useLayoutEffect(() => {
-    if (didInitialJumpRef.current || turns.length === 0) return;
-    didInitialJumpRef.current = true;
-    stickyRef.current = true;
-    scrollerRef.current?.scrollTo({
-      top: scrollerRef.current.scrollHeight,
-      behavior: "instant" as ScrollBehavior,
-    });
-  }, [turns.length]);
+    if (turns.length > 0 && stickyRef.current) stickToBottom("auto");
+  }, [turns.length, stickToBottom]);
 
-  // Jump to bottom when streaming starts.
+  // Smooth follow when a run starts.
   const prevIsRunningRef = useRef(false);
   useLayoutEffect(() => {
-    if (isRunning && !prevIsRunningRef.current) {
-      stickyRef.current = true;
-      requestAnimationFrame(() => {
-        scrollerRef.current?.scrollTo({
-          top: scrollerRef.current.scrollHeight,
-          behavior: "smooth" as ScrollBehavior,
-        });
-      });
-    }
+    if (isRunning && !prevIsRunningRef.current) stickToBottom("smooth");
     prevIsRunningRef.current = isRunning;
-  }, [isRunning]);
+  }, [isRunning, stickToBottom]);
 
   const jumpToBottom = useCallback(() => {
-    stickyRef.current = true;
-    scrollerRef.current?.scrollTo({
-      top: scrollerRef.current.scrollHeight,
-      behavior: "smooth" as ScrollBehavior,
-    });
-  }, []);
+    stickToBottom("smooth");
+    setShowScrollButton(false);
+  }, [stickToBottom]);
 
   // ── Render ────────────────────────────────────────────────────────
   const items = virtualizer.getVirtualItems();
