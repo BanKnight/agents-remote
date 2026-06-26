@@ -175,4 +175,9 @@ export async function getLastAssistantMessage(
   }
 }
 
-export const projectToSlug = (projectPath: string): string => projectPath.replace(/\//g, "-");
+// Claude CLI sanitizes the absolute project path into a directory name under
+// ~/.claude/projects/ by replacing every character that is not alphanumeric
+// with a dash. We must match that rule exactly so projects with spaces,
+// CJK characters, or other symbols still resolve to the correct JSONL folder.
+export const projectToSlug = (projectPath: string): string =>
+  projectPath.replace(/[^a-zA-Z0-9]/g, "-");

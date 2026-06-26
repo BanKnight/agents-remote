@@ -16,7 +16,7 @@ import type {
   TerminalSessionDetailResponse,
 } from "@agents-remote/shared";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { listAgentHistory, getLastAssistantMessage } from "./agent-history";
+import { listAgentHistory, getLastAssistantMessage, projectToSlug } from "./agent-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
@@ -385,7 +385,7 @@ const isVisibleMessage = (msg: Record<string, unknown>): boolean => {
 };
 
 export const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string => {
-  const projectDir = projectPath.replace(/\//g, "-");
+  const projectDir = projectToSlug(projectPath);
   return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
 };
 

@@ -17,10 +17,30 @@ const writeJsonl = async (name: string, lines: Record<string, unknown>[]) => {
   await writeFile(join(TEST_DIR, `${name}.jsonl`), content);
 };
 
-test("projectToSlug converts path to slug", () => {
+test("projectToSlug converts ASCII path to slug", () => {
   expect(projectToSlug("/home/deploy/workspace/agents-remote")).toBe(
     "-home-deploy-workspace-agents-remote",
   );
+});
+
+test("projectToSlug replaces spaces with dashes", () => {
+  expect(projectToSlug("/home/deploy/projects/novel ai writing")).toBe(
+    "-home-deploy-projects-novel-ai-writing",
+  );
+});
+
+test("projectToSlug replaces CJK characters with dashes", () => {
+  expect(projectToSlug("/home/deploy/projects/番茄都市轻悬疑日常")).toBe(
+    "-home-deploy-projects----------",
+  );
+});
+
+test("projectToSlug handles mixed ASCII and CJK with spaces", () => {
+  expect(projectToSlug("/home/deploy/projects/鲁班 skill")).toBe("-home-deploy-projects----skill");
+});
+
+test("projectToSlug replaces consecutive non-alphanumeric characters", () => {
+  expect(projectToSlug("/foo//bar baz!")).toBe("-foo--bar-baz-");
 });
 
 test("returns empty for nonexistent directory", async () => {
