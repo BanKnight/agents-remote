@@ -541,3 +541,95 @@ test("Claude2SessionRelay emits seed init between session_init and history_start
 
   relay.destroy();
 });
+
+const thinkingTokensLine = (estimatedTokens: number) =>
+  JSON.stringify({
+    type: "system",
+    subtype: "thinking_tokens",
+    estimated_tokens: estimatedTokens,
+  });
+
+test("Claude2SessionRelay coalesces consecutive thinking_tokens in the live buffer", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  // Current subscriber — receives every thinking_tokens on the live broadcast.
+  const live: string[] = [];
+  relay.addSubscriber(
+    (line) => live.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  await relay.handleStdoutLine(thinkingTokensLine(5));
+  await relay.handleStdoutLine(thinkingTokensLine(20));
+  await relay.handleStdoutLine(thinkingTokensLine(39));
+
+  // 1) Live broadcast still sends each of the 3 rows — the live
+  //    "Thinking… (N tokens)" animation needs the incremental values.
+  const liveEndIdx = live.findIndex((l) => l.includes('"live_end"'));
+  const afterBatch = live
+    .slice(liveEndIdx + 1)
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  expect(afterBatch).toHaveLength(3);
+  expect(afterBatch.map((m) => m.estimated_tokens)).toEqual([5, 20, 39]);
+
+  // 2) A subscriber joining LATER replays only the LAST coalesced row from the
+  //    live batch — earlier cumulative values are superseded and dropped.
+  const replayed: string[] = [];
+  relay.addSubscriber(
+    (line) => replayed.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = replayed.map((l) => JSON.parse(l) as Record<string, unknown>);
+  const liveStart = messages.findIndex((m) => m.type === "live_start");
+  const liveEnd = messages.findIndex((m) => m.type === "live_end");
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
+  expect(messages.slice(liveStart + 1, liveEnd)).toEqual([
+    expect.objectContaining({ subtype: "thinking_tokens", estimated_tokens: 39 }),
+  ]);
+
+  relay.destroy();
+});
+
+test("Claude2SessionRelay does not coalesce thinking_tokens across an intervening message", async () => {
+  const relay = new Claude2SessionRelay();
+  await relay.activate("", undefined);
+
+  await relay.handleStdoutLine(thinkingTokensLine(5));
+  await relay.handleStdoutLine(
+    JSON.stringify({
+      type: "assistant",
+      uuid: "a-between",
+      message: {
+        id: "m1",
+        role: "assistant",
+        content: [{ type: "text", text: "thinking done" }],
+      },
+    }),
+  );
+  await relay.handleStdoutLine(thinkingTokensLine(39));
+
+  const replayed: string[] = [];
+  relay.addSubscriber(
+    (line) => replayed.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = replayed.map((l) => JSON.parse(l) as Record<string, unknown>);
+  const liveStart = messages.findIndex((m) => m.type === "live_start");
+  const liveEnd = messages.findIndex((m) => m.type === "live_end");
+  // The intervening assistant broke the burst → all 3 rows survive in order.
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 3 });
+  expect(messages.slice(liveStart + 1, liveEnd)).toEqual([
+    expect.objectContaining({ subtype: "thinking_tokens", estimated_tokens: 5 }),
+    expect.objectContaining({ type: "assistant" }),
+    expect.objectContaining({ subtype: "thinking_tokens", estimated_tokens: 39 }),
+  ]);
+
+  relay.destroy();
+});

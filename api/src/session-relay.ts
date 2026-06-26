@@ -3,6 +3,11 @@ import { COMPACT_BOUNDARY_SUBTYPES, isCompactBoundarySubtype } from "@agents-rem
 import { claudeJsonlPath } from "./session-routes";
 import type { RuntimeStream } from "./session-registry";
 
+// Maximum raw stdout lines retained in the live replay buffer for late
+// subscribers. Bounds memory on long-lived sessions; consecutive thinking_tokens
+// are coalesced (see appendLive) so a single thinking phase no longer dominates.
+const LIVE_BUFFER_CAP = 10000;
+
 type Subscriber = {
   onData(line: string): void;
   onError(err: Error): void;
@@ -158,8 +163,7 @@ export class Claude2SessionRelay {
       }
     }
 
-    this.liveLines.push(line);
-    this.capLive();
+    this.appendLive(line, msg);
     this.broadcast(line);
   }
 
@@ -172,8 +176,7 @@ export class Claude2SessionRelay {
   // connect LATER replay it from the live batch. Used to echo user input the
   // CLI never emits on stream-json stdout (see claude2-stream.ts message()).
   injectLiveLine(line: string): void {
-    this.liveLines.push(line);
-    this.capLive();
+    this.appendLive(line, null);
     this.broadcast(line);
   }
 
@@ -210,9 +213,32 @@ export class Claude2SessionRelay {
   }
 
   private capLive(): void {
-    if (this.liveLines.length > 5000) {
-      this.liveLines = this.liveLines.slice(-5000);
+    if (this.liveLines.length > LIVE_BUFFER_CAP) {
+      this.liveLines = this.liveLines.slice(-LIVE_BUFFER_CAP);
     }
+  }
+
+  // Append a line to the live replay buffer. Consecutive thinking_tokens in the
+  // same burst are coalesced to the LAST one in place: each carries the
+  // CUMULATIVE estimated_tokens for the in-flight thinking phase, so earlier
+  // ones are superseded and keeping them only burns the capped buffer (LIVE_BUFFER_CAP).
+  // The client (deriveLiveThinkingTokens / pendingEstimatedTokens) consumes
+  // only the last one, so this is lossless. Only an UNBROKEN run merges — any
+  // other message between two thinking_tokens belongs to a different phase.
+  // See docs/research/claude-cli-stream-protocol.md (pushBuffer folds to last).
+  // NOTE: only the replay buffer folds; broadcast still sends every line so the
+  // live "Thinking… (N tokens)" animation can show each incremental value.
+  private appendLive(line: string, parsed: Record<string, unknown> | null): void {
+    if (parsed?.type === "system" && parsed.subtype === "thinking_tokens") {
+      const last = this.liveLines[this.liveLines.length - 1];
+      if (last !== undefined && isThinkingTokensLine(last)) {
+        this.liveLines[this.liveLines.length - 1] = line;
+        this.capLive();
+        return;
+      }
+    }
+    this.liveLines.push(line);
+    this.capLive();
   }
 
   private readHistoryFromJsonl(): string[] {
@@ -274,3 +300,15 @@ export class Claude2SessionRelay {
     }
   }
 }
+
+// True if a raw JSONL line is a system/thinking_tokens row. Called only when the
+// incoming line is itself thinking_tokens (so ~once per coalesce step); parses
+// defensively since liveLines holds arbitrary raw stdout lines.
+const isThinkingTokensLine = (raw: string): boolean => {
+  try {
+    const msg = JSON.parse(raw) as Record<string, unknown>;
+    return msg.type === "system" && msg.subtype === "thinking_tokens";
+  } catch {
+    return false;
+  }
+};
