@@ -29,6 +29,7 @@ import {
   useExternalStoreRuntime,
   useMessage,
   groupPartByType,
+  type ThreadMessageLike,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
@@ -71,38 +72,59 @@ import type { Claude2FileHistorySnapshot } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
-// A compaction shows up in the UI through two completely separate
-// components. They were repeatedly confused during development, so the
-// split is spelled out here once and referenced from both:
+// A compaction shows up in the UI through three separate components. They
+// were repeatedly confused during development, so the split is spelled out
+// here once and referenced from all:
 //
-//   1. CompactIndicator — TRANSIENT banner above the composer. Shows ONLY
-//      ephemeral states: "compacting" (spinner) / "interrupted" / "error".
-//      Auto-dismisses. It has NO success state by design.
+//   1. CompactProgress — INLINE transient card at the stream's tail while a
+//      compaction is in flight (status "compacting"). Spinner + current hook
+//      stage (running → summarizing). Driven by onCompact via bridgeRef
+//      (status:compacting / hook_response / compact_boundary). Live-only:
+//      history has no "compacting" state, so it never appears on replay.
 //
-//   2. CompactDivider — PERMANENT inline divider in the message stream.
-//      The single source of truth that "a compaction happened". Driven by
-//      the compact_boundary record via normalizeChatStream/renderChatStream,
-//      so it appears identically in BOTH live streaming and history load
-//      (one path — the single-source-pipeline rule).
+//   2. CompactIndicator — TRANSIENT banner above the composer. Now shows ONLY
+//      failure states ("interrupted" / "error"), auto-dismissing. The
+//      "compacting" state moved to the inline CompactProgress card.
+//
+//   3. CompactBlock — PERMANENT inline block in the message stream. The
+//      single source of truth that "a compaction happened". Driven by the
+//      compact_boundary record via normalizeChatStream/renderChatStream, so it
+//      appears identically in BOTH live streaming and history load (one path
+//      — the single-source-pipeline rule).
 //
 // Why the split: a successful compaction is a permanent fact about the
-// conversation, so it lives in the durable message stream (the divider).
-// The banner only communicates ephemeral state ("working on it" / "it
-// failed"), which has no place in history. That is why there is NO
-// "compacted" success status below — on success the banner clears to
-// "idle" and the divider carries the record.
+// conversation, so it lives in the durable message stream (the block). The
+// progress card and banner only communicate ephemeral state ("working on
+// it" / "it failed"), which has no place in history. That is why there is NO
+// "compacted" success status below — on success the banner clears to "idle"
+// and the block carries the record.
 type CompactStatus = "idle" | "compacting" | "interrupted" | "error";
 
 type CompactState = {
   status: CompactStatus;
+  // Hook-driven progress stage while status === "compacting".
+  stage: "running" | "summarizing" | null;
+  // Reason the last compaction was aborted, captured live from the compact
+  // lifecycle (compact_result:failed + interrupt flag). Null on replay (JSONL
+  // records no reason). Read by CompactAbortBanner to label the abort.
+  lastAbortReason: "manual" | "system" | null;
   setCompacting: () => void;
   setInterrupted: () => void;
   setCompactError: () => void;
-  // Success path: clear the banner. The divider records the success.
+  // Success path: clear the banner. The block records the success.
   reset: () => void;
 };
 
 const Claude2CompactContext = createContext<CompactState | null>(null);
+
+// Synthetic tail message rendered as the inline CompactProgress card while a
+// compaction is in flight. Appended to storeAdapter.messages only while
+// compactStatus === "compacting"; removed once the compact_boundary lands.
+const COMPACT_PROGRESS_MESSAGE = {
+  role: "system",
+  content: [{ type: "text", text: "" }],
+  metadata: { custom: { systemMessageType: "compact-progress" } },
+} as ThreadMessageLike;
 
 // Permission modes the server CLI advertises (parsed from
 // `claude --help --permission-mode`). ExitPlanMode approval reads this to
@@ -326,22 +348,28 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   );
 
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
+  const [compactStage, setCompactStage] = useState<"running" | "summarizing" | null>(null);
+  const [lastCompactAbortReason, setLastCompactAbortReason] = useState<"manual" | "system" | null>(
+    null,
+  );
   const [tasksExpanded, setTasksExpanded] = useState(true);
 
   const compactState: CompactState = useMemo(
     () => ({
       status: compactStatus,
+      stage: compactStage,
+      lastAbortReason: lastCompactAbortReason,
       setCompacting: () => setCompactStatus("compacting"),
       setInterrupted: () => setCompactStatus("interrupted"),
       setCompactError: () => setCompactStatus("error"),
       reset: () => setCompactStatus("idle"),
     }),
-    [compactStatus],
+    [compactStatus, compactStage, lastCompactAbortReason],
   );
 
   // Auto-dismiss the transient banner. "interrupted"/"error" linger 4s so
   // the user can read them, then clear. ("compacted" is intentionally not a
-  // status — success is shown by the permanent CompactDivider, not here.)
+  // status — success is shown by the permanent CompactBlock, not here.)
   useEffect(() => {
     if (compactStatus === "interrupted" || compactStatus === "error") {
       const timer = setTimeout(() => setCompactStatus("idle"), 4000);
@@ -349,23 +377,43 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     }
   }, [compactStatus]);
 
-  // Bridge from the WebSocket compact lifecycle to the TRANSIENT banner only.
-  //   phase:"start"        → spinner ("compacting")
-  //   phase:"end" + error  → "interrupted" / "error" (lingers, then clears)
-  //   phase:"end" success  → clear the banner; the CompactDivider (driven by
-  //                          the compact_boundary record in the message
-  //                          stream) is what records the successful compaction.
+  // Bridge from the WebSocket compact lifecycle to the route's compact state.
+  //   phase:"start"        → "compacting" + stage "running" → inline CompactProgress
+  //                          card at the stream's tail (drives the progress UI).
+  //   phase:"progress"     → stage "summarizing" (SessionStart:compact hook done).
+  //   phase:"end" + error  → "interrupted"/"error" → CompactIndicator banner (4s).
+  //   phase:"end" success  → reset; CompactBlock (compact_boundary) records it.
   bridge.onCompact = (event) => {
     if (event.phase === "start") {
       setCompactStatus("compacting");
+      setCompactStage("running");
+    } else if (event.phase === "progress") {
+      setCompactStage("summarizing");
     } else if (event.error) {
       setCompactStatus(event.error === "interrupted" ? "interrupted" : "error");
+      setLastCompactAbortReason(event.error === "interrupted" ? "manual" : "system");
+      setCompactStage(null);
     } else {
       setCompactStatus("idle");
+      setCompactStage(null);
     }
   };
 
-  const runtime = useExternalStoreRuntime(storeAdapter);
+  // While a compaction is in flight, append a synthetic tail message so the
+  // CompactProgress card renders inline at the stream's end — same virtualizer
+  // / auto-scroll pipeline as every other message (single-source pipeline).
+  const storeAdapterWithCompact = useMemo(
+    () =>
+      compactStatus === "compacting"
+        ? {
+            ...storeAdapter,
+            messages: [...(storeAdapter.messages ?? []), COMPACT_PROGRESS_MESSAGE],
+          }
+        : storeAdapter,
+    [storeAdapter, compactStatus],
+  );
+
+  const runtime = useExternalStoreRuntime(storeAdapterWithCompact);
 
   const projectNavItems = consoleSections.map((section) => ({
     id: section.id,
@@ -471,6 +519,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                             sessionId={sessionId}
                             aiTitle={aiTitle}
                             agentName={agentName}
+                            compactStatus={compactStatus}
+                            onCancel={storeAdapter.onCancel}
                           />
                         </ComposerPrimitive.Root>
                       </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -1157,9 +1207,11 @@ function extractRetryInfo(err: ApiErrorAttachment): string | null {
 function RawDebugTooltip({
   custom,
   className,
+  compact = false,
 }: {
   custom?: Record<string, unknown>;
   className?: string;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -1179,11 +1231,16 @@ function RawDebugTooltip({
       <button
         ref={btnRef}
         type="button"
-        className={`rounded p-2 text-slate-500 hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
+        className={`rounded ${compact ? "p-0.5" : "p-2"} text-slate-500 hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
         onClick={() => setOpen(!open)}
         aria-label="View raw message"
       >
-        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <svg
+          className={compact ? "h-3 w-3" : "h-4 w-4"}
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
           <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2" />
           <path d="M8 5v0M8 7v4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
@@ -2713,6 +2770,74 @@ function CommandOutputCard({ headIndex }: { headIndex: number }) {
 // rendered inside their parent AgentContainer, not in the top-level stream.
 // Inside a body (renderAbsorbed=true) absorbed children ARE the body's own
 // items, so they render normally.
+// Inline progress card at the stream's tail while a compaction is in flight
+// (compactStatus === "compacting"). Appended as a synthetic compact-progress
+// message so it rides the same virtualizer / auto-scroll pipeline. Replaced by
+// the permanent CompactBlock once the compact_boundary lands. Stage (running →
+// summarizing) comes from the compact context, driven by onCompact via bridgeRef.
+function CompactProgress() {
+  const compact = useContext(Claude2CompactContext);
+  const { t } = useT();
+  const stage = compact?.stage ?? "running";
+  return (
+    <div className="flex justify-start px-3 py-1 sm:px-5">
+      <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1">
+        <ToolHead
+          icon="compact"
+          status="running"
+          iconClassName="text-amber-400"
+          badge={t("claude2.compact.progressBadge")}
+          badgeClassName="bg-amber-500/15 text-amber-200"
+          detail={
+            stage === "summarizing"
+              ? t("claude2.compact.progressSummarizing")
+              : t("claude2.compact.progressRunning")
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+// Persistent inline banner rendered at the /compact command's position when a
+// compaction was aborted. Mirrors CompactProgress's ToolHead + inline-pill
+// shape (width follows content) so the in-flight card and the abort result
+// read as one consistent element, only swapped to the red error tone. Live
+// carries the reason from the compact lifecycle; replay (local_command stderr)
+// records no reason in JSONL, so it is labeled "reason not recorded". Replaces
+// the transient CompactIndicator banner for aborts so the abort stays visible.
+function CompactAbortBanner({
+  source,
+  custom,
+}: {
+  source: "live" | "replay";
+  custom?: Record<string, unknown>;
+}) {
+  const compact = useContext(Claude2CompactContext);
+  const { t } = useT();
+  const reason = source === "live" ? compact?.lastAbortReason : null;
+  const detail =
+    source === "replay"
+      ? t("claude2.compact.abortUnknown")
+      : reason === "system"
+        ? t("claude2.compact.abortSystem")
+        : t("claude2.compact.abortManual");
+  return (
+    <div className="flex justify-start px-3 py-1 sm:px-5">
+      <div className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 px-2.5 py-1">
+        <ToolHead
+          icon="compact"
+          status="error"
+          badge={t("claude2.compact.abortedBadge")}
+          badgeClassName="bg-red-500/15 text-red-200"
+          detail={detail}
+          trailing={<RawDebugTooltip custom={custom} className="-mr-1" compact />}
+        />
+      </div>
+    </div>
+  );
+}
+
 function MessageRouter({
   index,
   renderAbsorbed = false,
@@ -2730,6 +2855,20 @@ function MessageRouter({
   if (custom?.systemMessageType === "mode-change") return <ModeChangeNotice headIndex={index} />;
   if (custom?.systemMessageType === "command-output")
     return <CommandOutputCard headIndex={index} />;
+  if (custom?.systemMessageType === "compact-progress") return <CompactProgress />;
+  if (custom?.systemMessageType === "compact-abort")
+    return (
+      <CompactAbortBanner source={(custom.source as "live" | "replay") ?? "live"} custom={custom} />
+    );
+  // Absorb the SessionStart:compact hook card — its semantics are carried by
+  // CompactProgress (in flight) + CompactBlock (result), so it never renders as
+  // a standalone HookCard, in both live streaming and history replay.
+  if (
+    custom?.systemMessageType === "hook-card" &&
+    (custom?.hookName as string | undefined)?.startsWith("SessionStart:compact")
+  ) {
+    return null;
+  }
   if (!renderAbsorbed && custom?.absorbed === true) return null;
   return <ThreadPrimitive.MessageByIndex index={index} components={MESSAGE_COMPONENTS} />;
 }
@@ -3298,6 +3437,8 @@ function ComposerWithInterrupt({
   sessionId,
   aiTitle,
   agentName,
+  compactStatus,
+  onCancel,
 }: {
   currentModel?: string;
   currentResolved?: string;
@@ -3309,8 +3450,13 @@ function ComposerWithInterrupt({
   sessionId: string;
   aiTitle?: string | null;
   agentName?: string | null;
+  compactStatus: CompactStatus;
+  onCancel?: () => void;
 }) {
   const { t } = useT();
+  // thread.isRunning drives the stop overlay for assistant turns; compactStatus
+  // extends it to compactions (which don't produce an assistant turn).
+  const isRunning = useAuiState((s) => s.thread.isRunning);
 
   // Full skill+slash catalog is the sole source for the slash menu (project +
   // user + plugin + builtin). Always fetched on open — it does not depend on the
@@ -3362,13 +3508,17 @@ function ComposerWithInterrupt({
             lastKeyRef.current = e.key;
           }}
         />
-        <AuiIf condition={(s) => s.thread.isRunning}>
+        {(isRunning || compactStatus === "compacting") && (
           <div className="absolute inset-0 rounded-xl bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center">
-            <ComposerPrimitive.Cancel className="rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-500 shadow-lg cursor-pointer">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-500 shadow-lg cursor-pointer"
+            >
               {t("session.stop")}
-            </ComposerPrimitive.Cancel>
+            </button>
           </div>
-        </AuiIf>
+        )}
         {slashItems.length > 0 ? (
           <ComposerPrimitive.Unstable_TriggerPopover
             char="/"
@@ -3465,67 +3615,12 @@ function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
   );
 }
 
-// successful compaction is recorded permanently by CompactDivider in the
-// message stream, not by this banner.
+// successful compaction is recorded permanently by CompactBlock in the message
+// stream; this banner now surfaces only compact failures.
 function CompactIndicator() {
-  const compact = useContext(Claude2CompactContext);
-  const { t } = useT();
-  const status = compact?.status ?? "idle";
-
-  // idle = nothing in progress; success also lands here (banner hidden, the
-  // divider in the stream carries the record).
-  if (status === "idle") return null;
-
-  return (
-    <div className="shrink-0 px-3 pb-1">
-      <div
-        className={`rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-2 ${
-          status === "compacting"
-            ? "bg-amber-500/10 text-amber-400/90"
-            : status === "interrupted"
-              ? "bg-slate-500/10 text-slate-400/90"
-              : "bg-red-500/10 text-red-400/90"
-        }`}
-      >
-        {status === "compacting" ? (
-          <>
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400 shrink-0" />
-            {t("claude2.compacting")}
-          </>
-        ) : status === "interrupted" ? (
-          <>
-            <svg
-              className="h-3.5 w-3.5 shrink-0"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <rect
-                x="3"
-                y="3"
-                width="10"
-                height="10"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-            </svg>
-            {t("claude2.compactInterrupted")}
-          </>
-        ) : (
-          <>
-            <svg
-              className="h-3.5 w-3.5 shrink-0"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path d="M8 5v4M8 11h0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            {t("claude2.compactError")}
-          </>
-        )}
-      </div>
-    </div>
-  );
+  // All compact feedback now renders inline in the message stream:
+  // CompactProgress (in flight) and CompactAbortBanner (aborted, persistent).
+  // This composer-anchored banner is intentionally a no-op; abort feedback lives
+  // in the stream so it persists across reconnect/replay identically.
+  return null;
 }

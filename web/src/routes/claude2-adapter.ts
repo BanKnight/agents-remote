@@ -234,7 +234,14 @@ export type Claude2Bridge = {
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
   switchPermissionMode: (mode: string) => void;
-  onCompact: ((event: { phase: "start" } | { phase: "end"; error?: string }) => void) | null;
+  onCompact:
+    | ((
+        event:
+          | { phase: "start" }
+          | { phase: "progress"; stage: "summarizing" }
+          | { phase: "end"; error?: "interrupted" | "failed" },
+      ) => void)
+    | null;
 };
 
 export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
@@ -1364,6 +1371,25 @@ function extractSyntheticBody(msg: SessionStreamServerMessage): string {
   return JSON.stringify(msg).slice(0, 2000);
 }
 
+// CLI emits "AbortError: Compaction canceled." when a compaction is aborted
+// (user stop or upstream abort). Live form: assistant {model:"<synthetic>"}
+// echo. Replay form: system local_command <local-command-stderr>…</…>. The
+// merge pass folds either into the /compact echo as one command-output card,
+// which duplicates the CompactIndicator abort feedback — normalizeChatStream
+// drops such cards so the abort surfaces only via the compact lifecycle UI.
+const COMPACT_ABORT_MARKER = "Compaction canceled";
+function isCompactAbortRaw(msg: SessionStreamServerMessage): boolean {
+  if (msg.type === "assistant" && isSyntheticAssistantMessage(msg)) {
+    const body = extractSyntheticBody(msg);
+    return typeof body === "string" && body.includes(COMPACT_ABORT_MARKER);
+  }
+  if (msg.type === "system" && (msg as { subtype?: string }).subtype === "local_command") {
+    const content = (msg as { content?: string }).content;
+    return typeof content === "string" && content.includes(COMPACT_ABORT_MARKER);
+  }
+  return false;
+}
+
 export function drainPendingErrors(
   messages: ThreadMessageLike[],
   pending: SessionStreamServerMessage[],
@@ -1587,6 +1613,19 @@ export type ChatStreamItem =
       stderr?: string;
       input?: string;
       sourceType: "local-command" | "bash";
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
+      // Compact-abort: a compaction was stopped (user interrupt or upstream
+      // error) and the CLI emitted "AbortError: Compaction canceled." — as a
+      // live assistant <synthetic> echo (source "live") or a replay
+      // system/local_command stderr (source "replay"). Both fold into this
+      // single banner item, suppressing the /compact echo, so live and replay
+      // render the same banner. The reason (manual/system) is resolved at
+      // render time from lastAbortReason (live) or marked unknown (replay).
+      kind: "compact-abort";
+      source: "live" | "replay";
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
@@ -1990,6 +2029,31 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         const body = extractSyntheticBody(msg) || undefined;
         const echoIdx = pendingSlashItemIdx.shift();
         const echoItem = echoIdx != null ? items[echoIdx] : undefined;
+        // Compact-abort (live): synthetic "AbortError: Compaction canceled."
+        // becomes a compact-abort banner. Rewrite the /compact echo in place
+        // (Form E style, raws merged) so the abort surfaces as one persistent
+        // banner instead of a command card.
+        if (body && isCompactAbortRaw(msg)) {
+          if (echoItem?.kind === "user-prompt") {
+            items[echoIdx!] = {
+              kind: "compact-abort",
+              source: "live",
+              sourceUuids: [
+                ...echoItem.sourceUuids,
+                ...(getMsgUuid(msg) ? [getMsgUuid(msg)!] : []),
+              ],
+              _rawSnapshots: [...echoItem._rawSnapshots, msg],
+            };
+          } else {
+            items.push({
+              kind: "compact-abort",
+              source: "live",
+              sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+              _rawSnapshots: [msg],
+            });
+          }
+          continue;
+        }
         // Form E: rewrite the preceding slash-echo user-prompt item in place
         // into a command-output card (command name + args from the echo text,
         // stdout from the synthetic body, raws merged) — so live slash commands
@@ -2378,6 +2442,35 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       if (subtype === "local_command") {
         const rawContent = (msg as Record<string, unknown>).content;
         if (typeof rawContent === "string" && rawContent.trim()) {
+          // Compact-abort (replay): local_command stderr "AbortError:
+          // Compaction canceled." becomes a compact-abort banner. Rewrite the
+          // preceding /compact tags echo (command-output, no output) in place
+          // so the abort surfaces as one persistent banner instead of a card.
+          if (isCompactAbortRaw(msg)) {
+            const prev = items[items.length - 1];
+            const abortUuids = getMsgUuid(msg) ? [getMsgUuid(msg)!] : [];
+            if (
+              prev?.kind === "command-output" &&
+              prev.commandName === "compact" &&
+              prev.stdout == null &&
+              prev.stderr == null
+            ) {
+              items[items.length - 1] = {
+                kind: "compact-abort",
+                source: "replay",
+                sourceUuids: [...prev.sourceUuids, ...abortUuids],
+                _rawSnapshots: [...prev._rawSnapshots, msg],
+              };
+            } else {
+              items.push({
+                kind: "compact-abort",
+                source: "replay",
+                sourceUuids: abortUuids,
+                _rawSnapshots: [msg],
+              });
+            }
+            continue;
+          }
           // Output fragment: <local-command-stdout>/<bash-stdout> tags.
           if (hasCommandArtifactTags(rawContent)) {
             items.push(buildCommandOutputItem(rawContent, msg));
@@ -3030,6 +3123,21 @@ export function renderChatStream(
         });
         break;
       }
+      case "compact-abort": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "compact-abort",
+              source: item.source,
+            },
+          },
+        });
+        break;
+      }
       case "hook-event": {
         messages.push({
           role: "system",
@@ -3195,6 +3303,11 @@ export function useClaude2Session(
 
   // ── Content message handlers ──
 
+  // bridgeRef lets applyMessageScalarState (defined above the `bridge` useMemo)
+  // reach the current onCompact handler the route injected into bridge, without
+  // hitting the const TDZ between applyMessageScalarState and bridge.
+  const bridgeRef = useRef<Claude2Bridge | null>(null);
+
   // ── Scalar state updater ──────────────────────────────────────────
   // Applies per-message scalar state updates (tasks, model, etc.).
   // Bubble/visibility decisions are handled by renderChatStream, not here.
@@ -3251,14 +3364,42 @@ export function useClaude2Session(
       // Compact state
       if (msg.type === "system" && isCompactBoundarySubtype(sm.subtype as string | undefined)) {
         compactActiveRef.current = true;
-        if (compactPhaseRef.current === "compacting") compactPhaseRef.current = "replay";
+        bridgeRef.current?.onCompact?.({ phase: "end" });
         return;
       }
 
-      // system.status: 权限模式切换的权威实时信号（compact 变体无标量副作用，
-      // 仅由 renderChatStream 跳过）。
+      // SessionStart:compact hook_response → compact hook finished, the summary
+      // is about to be written. Advances the progress card's stage.
+      if (msg.type === "system" && sm.subtype === "hook_response") {
+        const hm = msg as { hook_name?: string };
+        if (hm.hook_name?.startsWith("SessionStart:compact")) {
+          bridgeRef.current?.onCompact?.({ phase: "progress", stage: "summarizing" });
+        }
+        return;
+      }
+
+      // system.status: 权限模式切换的权威实时信号；compact 变体（compacting /
+      // compact_result）在此驱动 onCompact 生命周期（renderChatStream 仍跳过它们）。
       if (msg.type === "system" && sm.subtype === "status") {
-        const s = msg as { permissionMode?: string };
+        const s = msg as { permissionMode?: string; status?: string; compact_result?: string };
+        if (s.status === "compacting") {
+          // Fresh compaction: clear any stale user-interrupt flag so a later
+          // natural failure isn't mislabeled as "stopped".
+          compactInterruptedRef.current = false;
+          bridgeRef.current?.onCompact?.({ phase: "start" });
+          return;
+        }
+        if (s.compact_result === "failed") {
+          // Distinguish user-initiated stop (interrupted) from a natural failure:
+          // onCancel set the flag when the user pressed stop during this compaction.
+          const userStopped = compactInterruptedRef.current;
+          compactInterruptedRef.current = false;
+          bridgeRef.current?.onCompact?.({
+            phase: "end",
+            error: userStopped ? "interrupted" : "failed",
+          });
+          return;
+        }
         if (s.permissionMode) setPermissionMode(s.permissionMode);
         return;
       }
@@ -3509,7 +3650,6 @@ export function useClaude2Session(
   const cursorRef = useRef<string | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
   const compactActiveRef = useRef(false);
-  const compactPhaseRef = useRef<"none" | "compacting" | "replay" | "waiting-live">("none");
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
@@ -3540,7 +3680,6 @@ export function useClaude2Session(
     historyBatchRef.current = null;
     liveBatchRef.current = null;
     compactActiveRef.current = false;
-    compactPhaseRef.current = "none";
     compactInterruptedRef.current = false;
     liveStartRef.current = 0;
     // NOTE: this callback never reads initialModel/initialPermissionMode (the
@@ -3721,6 +3860,10 @@ export function useClaude2Session(
     }),
     [sendToSocket],
   );
+
+  // Keep bridgeRef in sync every render so applyMessageScalarState can invoke
+  // the latest onCompact the route injected into bridge.
+  bridgeRef.current = bridge;
 
   // Clear stale reconnect timer BEFORE the WebSocket effect runs.
   // A timer from a previous session's onclose → scheduleReconnect (500ms)
@@ -4023,9 +4166,10 @@ export function useClaude2Session(
   );
 
   const onCancel = useCallback(async () => {
-    if (compactPhaseRef.current === "compacting") {
-      compactInterruptedRef.current = true;
-    }
+    // Mark any in-flight compaction as user-stopped so its compact_result is
+    // labeled "interrupted" rather than "failed". Harmless when no compaction
+    // is active — a fresh status:compacting clears it before the next result.
+    compactInterruptedRef.current = true;
     const requestId = crypto.randomUUID();
     setPendingControlRequests((prev) => {
       const next = new Map(prev);

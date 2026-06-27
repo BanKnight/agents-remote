@@ -1236,6 +1236,106 @@ describe("system.status pipeline", () => {
   });
 });
 
+describe("compact process pipeline", () => {
+  // Auto-compact sequence: status:compacting → hook_started{SessionStart:compact}
+  // → hook_response{...,success} → compact_boundary → compact summary.
+  // normalizeChatStream skips the compacting status; the SessionStart:compact
+  // hook pair becomes one hook-event item (hookName preserved → the route's
+  // absorb rule keys off it); compact_boundary becomes the compact-block.
+  test("SessionStart:compact hook pair renders one hook-card with hookName", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "do it" }]),
+      assistant("a1", [{ type: "text", text: "ok" }]),
+      {
+        type: "system",
+        subtype: "hook_started",
+        hook_id: "h1",
+        hook_name: "SessionStart:compact",
+        hook_event: "SessionStart",
+      },
+      {
+        type: "system",
+        subtype: "hook_response",
+        hook_id: "h1",
+        hook_name: "SessionStart:compact",
+        output: "summarized",
+        outcome: "success",
+      },
+      result("success"),
+    ] as unknown as SessionStreamServerMessage[];
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const hookCard = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "hook-card",
+    );
+    expect(hookCard).toBeDefined();
+    expect((hookCard?.metadata?.custom as Record<string, unknown> | undefined)?.hookName).toBe(
+      "SessionStart:compact",
+    );
+  });
+
+  test("compact_boundary renders a compact-block", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "do it" }]),
+      assistant("a1", [{ type: "text", text: "ok" }]),
+      compactBoundary(),
+      compactSummary("This session is being continued from a previous conversation."),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const block = rendered.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "compact-block",
+    );
+    expect(block).toBeDefined();
+  });
+
+  test("live: /compact echo + synthetic AbortError → one compact-abort banner (source live)", () => {
+    const items = normalizeChatStream([
+      makeUser("/compact"),
+      assistantWithModel("synth-abort", "<synthetic>", [
+        { type: "text", text: "AbortError: Compaction canceled." },
+      ]),
+    ]);
+    const aborts = items.filter((i) => i.kind === "compact-abort");
+    expect(aborts).toHaveLength(1);
+    expect((aborts[0] as Extract<ChatStreamItem, { kind: "compact-abort" }>).source).toBe("live");
+    // /compact echo is rewritten into the banner — no command card, no user bubble.
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
+  });
+
+  test("replay: /compact tags + local_command AbortError stderr → one compact-abort banner (source replay)", () => {
+    // A stderr-only output fragment has no stdout, so Pass B does NOT merge it
+    // with the preceding /compact tags echo. The local_command branch rewrites
+    // that echo in place into a compact-abort banner, so live and replay produce
+    // the same single banner item.
+    const items = normalizeChatStream([
+      makeUser("<command-name>/compact</command-name><command-message>compact</command-message>"),
+      localCommand("<local-command-stderr>AbortError: Compaction canceled.</local-command-stderr>"),
+    ]);
+    const aborts = items.filter((i) => i.kind === "compact-abort");
+    expect(aborts).toHaveLength(1);
+    expect((aborts[0] as Extract<ChatStreamItem, { kind: "compact-abort" }>).source).toBe("replay");
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(0);
+  });
+
+  test("non-compact slash card is kept (abort recognition is compact-specific)", () => {
+    const items = normalizeChatStream([
+      makeUser("/usage"),
+      assistantWithModel("synth-usage", "<synthetic>", [
+        { type: "text", text: "Total cost: $0.42" },
+      ]),
+    ]);
+    expect(items.filter((i) => i.kind === "command-output")).toHaveLength(1);
+    expect(items.filter((i) => i.kind === "compact-abort")).toHaveLength(0);
+  });
+});
+
 describe("messageToThreadLike", () => {
   test("assistant message maps to assistant role with raw JSON content", () => {
     const msg = {
