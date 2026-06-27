@@ -89,16 +89,33 @@ export function ToolIcon({ name, className }: { name: string; className?: string
   );
 }
 
+// Animated spinner swapped in for the tool glyph while a card is running, so
+// "in progress" is unmistakable instead of relying on a subtle brightness
+// pulse. Same box as ToolIcon (h-3.5 w-3.5); color follows the caller's
+// iconClassName so it inherits each card's accent (amber for compact, etc.).
+function Spinner({ className }: { className?: string }) {
+  return (
+    <svg
+      className={`h-3.5 w-3.5 shrink-0 animate-spin ${className ?? ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+      <path d="M12 4a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ── ToolHead ───────────────────────────────────────────────────────────
 // Shared identity + status row used by tool cards (registry + fallback)
 // AND interactive cards (ExitPlanMode / AskUserQuestion / AgentContainer).
 //
 // Layout: [status?] [icon] [badge] [detail] [trailing?]
 //
-//  status   — reflected on icon BRIGHTNESS: running is lit (full opacity +
-//             subtle pulse), completed dims, interrupted dims + amber,
-//             error dims + red. Brightness is the primary signal so what's
-//             active reads instantly; tints keep failures distinguishable.
+//  status   — running swaps the glyph for an animated Spinner (so "in
+//             progress" reads instantly, not a subtle brightness pulse);
+//             completed dims, interrupted dims + amber, error dims + red.
 //  icon     — per-tool glyph from ToolIcons.
 //  badge    — colored background pill (the tool type / interaction type).
 //  detail   — trailing specific info (path, command, query, description).
@@ -109,9 +126,9 @@ export type ToolHeadStatus = "running" | "completed" | "interrupted" | "error";
 function statusIconClass(status: ToolHeadStatus | null | undefined): string {
   switch (status) {
     case "running":
-      // Bright: full opacity + subtle pulse. No hue — the icon keeps its
-      // tool-type color, status is carried by brightness alone.
-      return "animate-pulse";
+      // running renders a Spinner (see ToolHead) instead of the glyph, so no
+      // brightness class is applied to the icon here.
+      return "";
     case "completed":
       // Dim: fade whatever type color the icon has.
       return "opacity-50";
@@ -149,7 +166,11 @@ export function ToolHead({
   const finalIconClassName = [iconClassName, iconStatusClass].filter(Boolean).join(" ");
   return (
     <>
-      <ToolIcon name={icon} className={finalIconClassName || undefined} />
+      {status === "running" ? (
+        <Spinner className={iconClassName} />
+      ) : (
+        <ToolIcon name={icon} className={finalIconClassName || undefined} />
+      )}
       {badge ? (
         <span
           className={`shrink-0 rounded px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide ${badgeClassName}`}
