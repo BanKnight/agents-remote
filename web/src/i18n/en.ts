@@ -147,6 +147,10 @@ export const en = {
   "files.dirMarker": "DR",
   "files.fileMarker": "FL",
 
+  // ── Markdown (shared code block) ─────────────────────────────
+  "markdown.copy": "Copy code",
+  "markdown.copied": "Copied",
+
   // ── Git ──────────────────────────────────────────────────────
   "git.loading": "Loading Git changes...",
   "git.errorTitle": "Unable to load Git changes.",

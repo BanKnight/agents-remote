@@ -31,9 +31,8 @@ import {
   groupPartByType,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import remarkGfm from "remark-gfm";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { MarkdownString } from "../components/markdown/MarkdownString";
+import { MarkdownText } from "../components/markdown/MarkdownText";
 import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
@@ -752,69 +751,6 @@ function UserChatBubble() {
         </ActionBarPrimitive.Copy>
       </ActionBarPrimitive.Root>
     </MessagePrimitive.Root>
-  );
-}
-
-// Shared markdown styling. MarkdownText renders assistant message parts via
-// assistant-ui context; MarkdownString renders a raw markdown string (e.g. the
-// Agent tool_result). Both reuse the same class + component overrides so Agent
-// results stay visually consistent with the main message stream.
-const MARKDOWN_CLASS =
-  "text-sm text-slate-100 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 [&_li]:mb-1 [&_pre]:relative [&_pre]:bg-slate-950/80 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:pt-7 [&_pre]:mb-2 [&_pre]:overflow-x-auto [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:text-[0.75rem] [&_pre_code]:leading-relaxed [&_a]:text-cyan-400 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 [&_hr]:border-slate-700 [&_hr]:my-3";
-
-const MARKDOWN_COMPONENTS: Components = {
-  table: ({ children }) => (
-    <div className="overflow-x-auto my-2 rounded-lg border border-slate-700/50">
-      <table className="w-full border-collapse text-xs">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-slate-600 px-2 py-1 text-left font-medium text-slate-300 bg-slate-800/50">
-      {children}
-    </th>
-  ),
-  td: ({ children }) => (
-    <td className="border border-slate-600 px-2 py-1 text-slate-300">{children}</td>
-  ),
-  pre: ({ children, node }) => {
-    const className = "relative bg-slate-950/80 rounded-lg p-3 pt-7 mb-2 overflow-x-auto";
-    const codeChild = (node as { children?: Array<{ properties?: { className?: string[] } }> })
-      ?.children?.[0];
-    const langClass = codeChild?.properties?.className
-      ?.find((c: string) => c.startsWith("language-"))
-      ?.replace("language-", "");
-    return (
-      <div className="relative my-3 group/code">
-        {langClass ? (
-          <div className="absolute top-0 left-0 right-0 flex items-center px-3 py-1.5 z-10 pointer-events-none">
-            <span className="text-[0.55rem] font-medium uppercase tracking-wider text-slate-500">
-              {langClass}
-            </span>
-          </div>
-        ) : null}
-        <pre className={className}>{children}</pre>
-      </div>
-    );
-  },
-};
-
-function MarkdownText() {
-  return (
-    <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
-      className={MARKDOWN_CLASS}
-      components={MARKDOWN_COMPONENTS}
-    />
-  );
-}
-
-function MarkdownString({ text }: { text: string }) {
-  return (
-    <div className={MARKDOWN_CLASS}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-        {text}
-      </ReactMarkdown>
-    </div>
   );
 }
 

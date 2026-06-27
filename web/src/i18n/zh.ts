@@ -147,6 +147,10 @@ export const zh: Record<TranslationKey, string> = {
   "files.dirMarker": "DR",
   "files.fileMarker": "FL",
 
+  // ── Markdown（共享代码块） ────────────────────────────────────
+  "markdown.copy": "复制代码",
+  "markdown.copied": "已复制",
+
   // ── Git ──────────────────────────────────────────────────────
   "git.loading": "正在加载 Git 变更...",
   "git.errorTitle": "无法加载 Git 变更。",

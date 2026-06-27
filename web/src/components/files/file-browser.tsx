@@ -2,8 +2,9 @@ import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remot
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { CodeBlock } from "../markdown/CodeBlock";
+import { MarkdownString } from "../markdown/MarkdownString";
+import { extToLang } from "../markdown/prism-languages";
 import {
   listProjectFiles,
   previewProjectFile,
@@ -37,6 +38,13 @@ export const formatBytes = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 };
+
+// 有渲染能力的文件（markdown / html）默认展示渲染结果，其余文本默认 source。
+export function defaultRenderMode(name: string): "source" | "render" {
+  return name.endsWith(".md") || name.endsWith(".html") || name.endsWith(".htm")
+    ? "render"
+    : "source";
+}
 
 // ── ResourceStatePanel ────────────────────────────────────────────
 
@@ -567,8 +575,8 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
     if (renderMode === "render") {
       if (preview.name.endsWith(".md")) {
         return (
-          <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6 text-slate-100 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 [&_li]:mb-1 [&_pre]:bg-slate-900/80 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:mb-2 [&_pre]:overflow-x-auto [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_a]:text-cyan-400 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-slate-600 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-slate-600 [&_td]:px-2 [&_td]:py-1 [&_hr]:border-slate-700 [&_hr]:my-3">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{preview.content}</ReactMarkdown>
+          <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+            <MarkdownString text={preview.content} />
           </div>
         );
       }
@@ -596,9 +604,9 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
       );
     }
     return (
-      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 text-slate-100 sm:text-sm bg-[#05080d]/80">
-        {preview.content}
-      </pre>
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        <CodeBlock code={preview.content} language={extToLang(preview.name)} />
+      </div>
     );
   }
 
@@ -795,7 +803,10 @@ export function FilesPanel({
   );
 
   useEffect(() => {
-    setRenderMode("source");
+    if (selectedFilePath !== undefined) {
+      const name = selectedFilePath.split("/").pop() ?? "";
+      setRenderMode(defaultRenderMode(name));
+    }
   }, [selectedFilePath]);
 
   const renderToggle = showRenderToggle ? (
