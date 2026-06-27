@@ -205,7 +205,9 @@ describe("useClaude2Session websocket lifecycle", () => {
       socket.emit({ type: "live_end" });
     });
 
-    await waitFor(() => expect(result.current.storeAdapter.messages).toHaveLength(2));
+    // No history (count 0) ⇒ no boundary divider; only the one live assistant
+    // message should render.
+    await waitFor(() => expect(result.current.storeAdapter.messages).toHaveLength(1));
     expect(result.current.loading).toBe(false);
   });
 

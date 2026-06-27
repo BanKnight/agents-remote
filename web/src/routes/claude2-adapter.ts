@@ -1408,12 +1408,12 @@ export function drainPendingErrors(
   return { messages: current, remaining };
 }
 
-/** Build a thin horizontal divider for a batch boundary (history or output). */
-export function makeBoundaryDivider(kind: "history" | "live"): ThreadMessageLike {
+/** Build a thin horizontal divider marking the history/live batch boundary. */
+export function makeBoundaryDivider(): ThreadMessageLike {
   return {
     role: "system",
     content: [{ type: "text", text: "" }],
-    metadata: { custom: { systemMessageType: "batch-boundary", batchBoundary: kind } },
+    metadata: { custom: { systemMessageType: "batch-boundary" } },
   };
 }
 
@@ -1584,7 +1584,7 @@ export type ChatStreamItem =
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
-  | { kind: "batch-boundary"; batchKind: "history" | "live" }
+  | { kind: "batch-boundary" }
   | {
       kind: "attachment";
       bubble: ThreadMessageLike;
@@ -2408,9 +2408,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
       // Batch boundary (synthetic, injected by the handler).
       if (subtype === "batch_boundary") {
-        const batchKind: "history" | "live" =
-          ((msg as Record<string, unknown>).batchKind as "history" | "live") ?? "history";
-        items.push({ kind: "batch-boundary", batchKind });
+        items.push({ kind: "batch-boundary" });
         continue;
       }
 
@@ -3080,7 +3078,7 @@ export function renderChatStream(
           break;
         }
         if (prevVisible || nextVisible) {
-          messages.push(makeBoundaryDivider(item.batchKind));
+          messages.push(makeBoundaryDivider());
         }
         break;
       }
@@ -4011,7 +4009,6 @@ export function useClaude2Session(
               {
                 type: "system",
                 subtype: "batch_boundary",
-                batchKind: "history",
               } as unknown as SessionStreamServerMessage,
             ]);
           }
@@ -4029,16 +4026,8 @@ export function useClaude2Session(
           const batch = liveBatchRef.current ?? [];
           liveBatchRef.current = null;
           processBatch(batch);
-          if (batch.length > 0) {
-            setRawMessages((prev) => [
-              ...prev,
-              {
-                type: "system",
-                subtype: "batch_boundary",
-                batchKind: "live",
-              } as unknown as SessionStreamServerMessage,
-            ]);
-          }
+          // No divider here: the boundary lives at the history/live junction
+          // (injected at history_end), not at the tail of the live batch.
           setLoading(false);
           measureSince("historyLoad", "loadE2E");
           if (isSocketLoggingEnabled())

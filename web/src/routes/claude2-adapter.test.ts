@@ -2367,17 +2367,10 @@ describe("messageToThreadLike batch markers", () => {
 
 describe("makeBoundaryDivider", () => {
   test("returns system role with boundary metadata", () => {
-    const d = makeBoundaryDivider("history");
+    const d = makeBoundaryDivider();
     expect(d.role).toBe("system");
     const custom = d.metadata?.custom as Record<string, unknown>;
     expect(custom.systemMessageType).toBe("batch-boundary");
-    expect(custom.batchBoundary).toBe("history");
-  });
-
-  test("live kind is preserved", () => {
-    const d = makeBoundaryDivider("live");
-    const custom = d.metadata?.custom as Record<string, unknown>;
-    expect(custom.batchBoundary).toBe("live");
   });
 });
 
@@ -3079,11 +3072,10 @@ const makeUser = (
     ...overrides,
   }) as unknown as SessionStreamServerMessage;
 
-const makeBatchBoundary = (kind: "history" | "live" = "history"): SessionStreamServerMessage =>
+const makeBatchBoundary = (): SessionStreamServerMessage =>
   ({
     type: "system",
     subtype: "batch_boundary",
-    batchKind: kind,
   }) as unknown as SessionStreamServerMessage;
 
 const makeSystemInit = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
@@ -3592,10 +3584,9 @@ describe("normalizeChatStream", () => {
 
   // ── batch-boundary passthrough ──────────────────────────────────────
   test("batch_boundary marker passes through as a batch-boundary item", () => {
-    const items = normalizeChatStream([makeBatchBoundary("live")]);
+    const items = normalizeChatStream([makeBatchBoundary()]);
     expect(items).toHaveLength(1);
     expect(items[0].kind).toBe("batch-boundary");
-    expect((items[0] as { batchKind: string }).batchKind).toBe("live");
   });
 
   // ── attachment ──────────────────────────────────────────────────────
@@ -3719,7 +3710,7 @@ describe("renderChatStream", () => {
     const rendered = renderChatStream(
       normalizeChatStream([
         makeAssistant("a1", [{ type: "text", text: "hello" }]),
-        makeBatchBoundary("history"),
+        makeBatchBoundary(),
       ]),
     );
     // assistant bubble + boundary divider
@@ -3730,7 +3721,7 @@ describe("renderChatStream", () => {
   });
 
   test("batch-boundary with no visible neighbor is dropped", () => {
-    const items = normalizeChatStream([makeBatchBoundary("history")]);
+    const items = normalizeChatStream([makeBatchBoundary()]);
     const rendered = renderChatStream(items);
     // A lone boundary with nothing on either side renders nothing.
     expect(rendered).toHaveLength(0);
@@ -3739,7 +3730,7 @@ describe("renderChatStream", () => {
   test("batch-boundary is drawn when a visible neighbor follows it", () => {
     const rendered = renderChatStream(
       normalizeChatStream([
-        makeBatchBoundary("history"),
+        makeBatchBoundary(),
         makeAssistant("a1", [{ type: "text", text: "after boundary" }]),
       ]),
     );
