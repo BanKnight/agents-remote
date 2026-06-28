@@ -160,6 +160,15 @@ export type DeleteFileResponse = {
   path: string;
 };
 
+export type SaveFileRequest = {
+  path: string;
+  content: string;
+};
+
+export type SaveFileResponse = {
+  entry: ProjectFileEntry;
+};
+
 export type AgentProvider = "claude" | "codex" | "claude2";
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
@@ -1055,6 +1064,7 @@ export type ApiErrorCode =
   | "PROJECT_FILE_UPLOAD_TOO_LARGE"
   | "PROJECT_FILE_RENAME_FAILED"
   | "PROJECT_FILE_DELETE_FAILED"
+  | "PROJECT_FILE_SAVE_FAILED"
   | "PROJECT_GIT_NOT_REPOSITORY"
   | "PROJECT_GIT_SCOPE_INVALID"
   | "PROJECT_GIT_FILE_NOT_CHANGED"

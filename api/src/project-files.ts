@@ -9,6 +9,7 @@ import type {
   ProjectFilePreviewResponse,
   ProjectUnsupportedFilePreviewReason,
   RenameFileResponse,
+  SaveFileResponse,
   UploadFileResponse,
 } from "@agents-remote/shared";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -39,6 +40,7 @@ type ProjectFilesErrorCode = Extract<
   | "PROJECT_FILE_UPLOAD_TOO_LARGE"
   | "PROJECT_FILE_RENAME_FAILED"
   | "PROJECT_FILE_DELETE_FAILED"
+  | "PROJECT_FILE_SAVE_FAILED"
   | "PROJECT_FS_ERROR"
 >;
 
@@ -380,6 +382,49 @@ export class ProjectFilesService {
       deleted: true,
       projectName: resolved.project.name,
       path: resolved.relativePath,
+    };
+  }
+
+  // Overwrite an existing project file's text content. Unlike uploadFile (which
+  // refuses an existing name), save targets the file already under preview and
+  // replaces its content in place. Reuses the same path-safe resolver and size
+  // cap as upload so the write stays inside PROJECTS_ROOT and bounded.
+  async saveFile(
+    projectName: string,
+    relativePath: string,
+    content: string,
+  ): Promise<SaveFileResponse> {
+    const resolved = await this.resolvePath(projectName, relativePath);
+    const targetStat = await this.statPath(resolved.path);
+
+    if (!targetStat.isFile()) {
+      throw new ProjectFilesError("PROJECT_FILE_NOT_FILE", "Save target must be a file");
+    }
+
+    if (Buffer.byteLength(content) > UPLOAD_FILE_LIMIT_BYTES) {
+      throw new ProjectFilesError(
+        "PROJECT_FILE_UPLOAD_TOO_LARGE",
+        `File exceeds size limit of ${UPLOAD_FILE_LIMIT_BYTES / (1024 * 1024)} MiB`,
+      );
+    }
+
+    try {
+      await writeFile(resolved.path, content);
+    } catch {
+      throw new ProjectFilesError("PROJECT_FILE_SAVE_FAILED", "Unable to save file");
+    }
+
+    const entryStat = await this.statPath(resolved.path);
+    const name = basename(resolved.path);
+
+    return {
+      entry: {
+        name,
+        path: resolved.relativePath,
+        type: "file",
+        hidden: name.startsWith("."),
+        size: entryStat.size,
+      },
     };
   }
 

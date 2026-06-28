@@ -322,3 +322,51 @@ test("deleteFile rejects missing file", async () => {
     code: "PROJECT_FILE_NOT_FOUND",
   });
 });
+
+test("saveFile overwrites existing content and returns entry", async () => {
+  await writeFile(join(root, "demo", "note.txt"), "old");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.saveFile("demo", "note.txt", "new content")).resolves.toMatchObject({
+    entry: {
+      name: "note.txt",
+      path: "note.txt",
+      type: "file",
+      hidden: false,
+      size: 11,
+    },
+  });
+
+  // Verify the new content actually landed on disk via the same read path preview uses.
+  await expect(service.previewFile("demo", "note.txt")).resolves.toMatchObject({
+    type: "text",
+    content: "new content",
+  });
+});
+
+test("saveFile rejects non-file target", async () => {
+  await mkdir(join(root, "demo", "subdir"));
+  const service = new ProjectFilesService(root);
+
+  await expect(service.saveFile("demo", "subdir", "x")).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_FILE",
+  });
+});
+
+test("saveFile rejects path traversal", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.saveFile("demo", "../escape.txt", "x")).rejects.toMatchObject({
+    code: "PROJECT_PATH_OUTSIDE_ROOT",
+  });
+});
+
+test("saveFile rejects oversized content", async () => {
+  await writeFile(join(root, "demo", "big.txt"), "seed");
+  const service = new ProjectFilesService(root);
+  const large = "x".repeat(UPLOAD_FILE_LIMIT_BYTES + 1);
+
+  await expect(service.saveFile("demo", "big.txt", large)).rejects.toMatchObject({
+    code: "PROJECT_FILE_UPLOAD_TOO_LARGE",
+  });
+});

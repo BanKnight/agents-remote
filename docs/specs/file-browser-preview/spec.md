@@ -4,14 +4,15 @@
 
 ## Purpose
 
-- 在 Project console 内提供只读文件观察能力，让用户无需离开浏览器即可浏览 Project 目录、阅读文本文件和查看常见 Web 图片。
-- 保证 Files 能力始终受 Project 安全路径边界约束，不把文件系统写操作作为第一轮能力暴露给用户。
+- 在 Project console 内提供文件观察能力，让用户无需离开浏览器即可浏览 Project 目录、阅读文本文件和查看常见 Web 图片。
+- 在只读浏览基础上，提供受控的文本文件就地编辑与保存：仅覆盖已预览的文本文件、经 Project 安全路径边界约束、受保存大小上限限制。
+- 删除、重命名、上传等其余文件系统操作有独立行为契约；保存之外的任意写操作不在此 spec 范围。
 
 ## Requirements
 
 ### Requirement: Project files are exposed through read-only browsing
 
-系统 SHALL 允许已认证用户在某个 Project 作用域内浏览目录条目，但第一轮 Files 能力只读，不提供文件写入、编辑、删除、重命名、上传或下载操作。
+系统 SHALL 允许已认证用户在某个 Project 作用域内浏览目录条目。浏览本身只读；删除、重命名、上传各有独立行为契约，文本编辑保存见下文 Requirement，下载不在第一轮范围。
 
 #### Scenario: User opens Files inside a Project console
 
@@ -20,11 +21,11 @@
 - **AND** 用户可以进入子目录或选择文件预览
 - **AND** 页面不展示会修改文件系统的编辑、删除、重命名、上传或下载入口
 
-#### Scenario: User attempts unsupported write behavior
+#### Scenario: User attempts an unsupported write behavior
 
-- **WHEN** 第一轮 Files 页面被评审
-- **THEN** 不应存在可触发文件编辑、删除、重命名、上传或下载的用户操作
-- **AND** API 不应提供这些写操作
+- **WHEN** 用户尝试下载文件，或对目录、图片/二进制等非文本目标发起编辑保存
+- **THEN** 系统不提供下载入口
+- **AND** 编辑保存只接受已预览的文本文件，非文件目标被 API 拒绝
 
 ### Requirement: File browsing uses project-safe relative paths
 
@@ -87,6 +88,29 @@
 - **WHEN** 用户选择的文件不是支持的文本预览类型或无法安全解码为文本
 - **THEN** 系统提示该文件暂不支持文本预览
 - **AND** 不把二进制内容作为乱码文本展示
+
+### Requirement: Text file edit is a controlled save over project-safe paths
+
+系统 SHALL 允许已认证用户在文本文件预览的 source 模式就地编辑内容，并通过显式 Save 覆盖保存到服务器；保存是受控写操作，仅作用于已预览的文本文件、经 Project 安全路径解析、受保存大小上限约束。
+
+#### Scenario: User edits and saves a text file
+
+- **WHEN** 用户在 source 模式编辑已预览的文本文件并点击 Save
+- **THEN** 系统将编辑后内容覆盖写回同一 Project 内文件
+- **AND** 保存后刷新预览与目录列表（大小/修改时间）
+- **AND** 渲染模式（markdown/html）保持只读，不提供编辑入口
+
+#### Scenario: User switches away from a file with unsaved edits
+
+- **WHEN** 用户在当前文件有未保存改动时切换到其他文件或关闭预览
+- **THEN** 系统提示将丢弃未保存改动
+- **AND** 用户确认后才切换并丢弃，取消则停留在当前文件
+
+#### Scenario: Save is rejected for unsafe or invalid target
+
+- **WHEN** 保存目标路径越界、指向目录或超过保存大小上限
+- **THEN** API 拒绝保存并返回对应错误
+- **AND** 不写入 Project 外部或非文件目标
 
 ### Requirement: Image preview supports common web image formats on mobile
 
@@ -151,8 +175,9 @@
 #### Scenario: User inspects compact Files view
 
 - **WHEN** 用户在手机窄屏查看 Files 列表或文件预览
-- **THEN** 页面不展示编辑、删除、重命名、上传或下载入口
-- **AND** 紧凑布局不通过隐藏菜单引入任何文件写操作
+- **THEN** 页面不展示下载入口
+- **AND** 文本编辑保存入口只在文本预览的 source 模式出现，不挤占目录列表首屏
+- **AND** 紧凑布局不通过隐藏菜单引入下载或不受控的写操作
 
 ### Requirement: Files mobile direct page and preview detail use distinct navigation levels
 
@@ -176,7 +201,7 @@
 ## Notes
 
 - 第一轮文本预览上限为 256 KiB，图片预览上限为 5 MiB。
-- 文件浏览能力属于只读观察入口；任何写操作都必须通过后续 change 重新定义 WHAT 与安全边界。
+- 文件浏览属于只读观察；文本编辑保存是唯一的就地写能力，经 Project 安全路径与保存大小上限（与上传一致的 50 MiB）约束；删除、重命名、上传等其余文件操作有独立行为契约。
 - 移动端 Files inspection 应优先保证目录列表和预览内容可见，避免用大块说明文案或重复 metadata 挤占首屏。
 
 ## 来源

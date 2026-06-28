@@ -274,6 +274,30 @@ const handleProjects = async (
     if (
       projectFilesMatch &&
       request.method === "POST" &&
+      projectFilesMatch.save &&
+      projectFilesService
+    ) {
+      const body = (await request.json()) as { path?: string; content?: string };
+
+      if (typeof body.path !== "string" || body.path.length === 0) {
+        return jsonError("PROJECT_TARGET_INVALID", "File path is required", 400);
+      }
+
+      if (typeof body.content !== "string") {
+        return jsonError("PROJECT_TARGET_INVALID", "File content is required", 400);
+      }
+
+      const response = await projectFilesService.saveFile(
+        projectFilesMatch.projectName,
+        body.path,
+        body.content,
+      );
+      return Response.json(response);
+    }
+
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
       projectFilesMatch.delete &&
       projectFilesService
     ) {
@@ -449,6 +473,7 @@ type ProjectFilesPathMatch = {
   mkdir: boolean;
   preview: boolean;
   rename: boolean;
+  save: boolean;
   upload: boolean;
 };
 
@@ -465,6 +490,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
   const mkdirSuffix = "/files/mkdir";
   const uploadSuffix = "/files/upload";
   const previewSuffix = "/files/preview";
+  const saveSuffix = "/files/save";
   const filesSuffix = "/files";
   const encodedName = suffix.endsWith(renameSuffix)
     ? suffix.slice(0, -renameSuffix.length)
@@ -476,9 +502,11 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
           ? suffix.slice(0, -uploadSuffix.length)
           : suffix.endsWith(previewSuffix)
             ? suffix.slice(0, -previewSuffix.length)
-            : suffix.endsWith(filesSuffix)
-              ? suffix.slice(0, -filesSuffix.length)
-              : undefined;
+            : suffix.endsWith(saveSuffix)
+              ? suffix.slice(0, -saveSuffix.length)
+              : suffix.endsWith(filesSuffix)
+                ? suffix.slice(0, -filesSuffix.length)
+                : undefined;
 
   if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
     return undefined;
@@ -496,6 +524,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
     mkdir: suffix.endsWith(mkdirSuffix),
     preview: suffix.endsWith(previewSuffix),
     rename: suffix.endsWith(renameSuffix),
+    save: suffix.endsWith(saveSuffix),
     upload: suffix.endsWith(uploadSuffix),
   };
 };
@@ -563,7 +592,8 @@ const projectFilesErrorResponse = (error: ProjectFilesError) => {
     error.code === "PROJECT_FILE_UPLOAD_FAILED" ||
     error.code === "PROJECT_FILE_UPLOAD_TOO_LARGE" ||
     error.code === "PROJECT_FILE_RENAME_FAILED" ||
-    error.code === "PROJECT_FILE_DELETE_FAILED"
+    error.code === "PROJECT_FILE_DELETE_FAILED" ||
+    error.code === "PROJECT_FILE_SAVE_FAILED"
   ) {
     return jsonError(error.code, error.message, 500);
   }

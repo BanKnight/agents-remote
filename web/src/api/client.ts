@@ -28,6 +28,8 @@ import type {
   ProjectFilePreviewResponse,
   ProjectListResponse,
   RenameFileResponse,
+  SaveFileRequest,
+  SaveFileResponse,
   SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
   UploadFileResponse,
@@ -125,6 +127,18 @@ export async function renameFile(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, name }),
+  });
+}
+
+export async function saveFileContent(
+  projectName: string,
+  path: string,
+  content: string,
+): Promise<SaveFileResponse> {
+  return fetchJson(projectFileSavePath(projectName), "api.projectFileSaveFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, content } satisfies SaveFileRequest),
   });
 }
 
@@ -328,6 +342,9 @@ const projectFileMkdirPath = (projectName: string, path: string) =>
 
 const projectFileRenamePath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/files/rename`;
+
+const projectFileSavePath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/files/save`;
 
 const projectFileDeletePath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/files/delete`;

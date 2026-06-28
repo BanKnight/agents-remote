@@ -1,19 +1,18 @@
 import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remote/shared";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
-import { CodeBlock } from "../markdown/CodeBlock";
 import { MarkdownString } from "../markdown/MarkdownString";
-import { extToLang } from "../markdown/prism-languages";
+import { useT } from "../../i18n";
 import {
   listProjectFiles,
   previewProjectFile,
+  saveFileContent,
   uploadFile,
   createFolder,
   renameFile,
   deleteFile,
 } from "../../api/client";
-import { useT } from "../../i18n";
 import { useConfirm } from "../shell/confirm-dialog";
 import { ActionButton, IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
@@ -23,6 +22,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+
+// CodeMirror 体积较大，只在用户打开文本文件 source 预览时按需加载，避免进首屏 chunk。
+const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
 // ── Utilities ────────────────────────────────────────────────────
 
@@ -45,6 +47,9 @@ export function defaultRenderMode(name: string): "source" | "render" {
     ? "render"
     : "source";
 }
+
+// 保存成功后 Save 按钮短暂显示 "Saved" 反馈的时长。
+const SAVED_FLASH_MS = 1500;
 
 // ── ResourceStatePanel ────────────────────────────────────────────
 
@@ -333,9 +338,12 @@ type FilePreviewPanelProps = {
   preview: ProjectFilePreviewResponse | undefined;
   renderMode: "source" | "render";
   renderToggle: ReactNode;
+  saveToggle: ReactNode;
   isHtml: boolean;
   isMarkdown: boolean;
   fileName?: string;
+  editValue: string;
+  onEditChange: (value: string) => void;
   onBack: () => void;
   onRenderModeChange: (mode: "source" | "render") => void;
 };
@@ -346,9 +354,12 @@ function FilePreviewPanel({
   preview,
   renderMode,
   renderToggle,
+  saveToggle,
   isHtml,
   isMarkdown,
   fileName,
+  editValue,
+  onEditChange,
   onBack,
   onRenderModeChange,
 }: FilePreviewPanelProps) {
@@ -386,10 +397,11 @@ function FilePreviewPanel({
           </svg>
           {t("nav.back")}
         </button>
-        <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
+        <h4 className="pointer-events-none absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
           {displayName.split("/").pop() ?? displayName}
         </h4>
         <div className="flex items-center gap-2">
+          {saveToggle}
           <div className="hidden sm:block">{renderToggle}</div>
           <FilePreviewMenu
             isHtml={isHtml}
@@ -419,7 +431,12 @@ function FilePreviewPanel({
             />
           </div>
         ) : preview ? (
-          <PreviewBody preview={preview} renderMode={renderMode} />
+          <PreviewBody
+            preview={preview}
+            renderMode={renderMode}
+            editValue={editValue}
+            onEditChange={onEditChange}
+          />
         ) : null}
       </div>
     </section>
@@ -518,12 +535,24 @@ function FilePreviewMenuItem({ active = false, children, onClick }: FilePreviewM
 
 // ── PreviewBody ───────────────────────────────────────────────────
 
+// CodeMirror chunk（按需加载）首次挂载前的占位，视觉与编辑器容器一致；precache 命中下瞬时。
+function CodeEditorFallback() {
+  const { t } = useT();
+  return (
+    <div className="flex flex-1 items-center justify-center rounded-lg border border-slate-700/40 bg-slate-950/80">
+      <span className="text-xs font-semibold text-slate-400">{t("files.loadingEditor")}</span>
+    </div>
+  );
+}
+
 type PreviewBodyProps = {
   preview: ProjectFilePreviewResponse;
   renderMode: "source" | "render";
+  editValue: string;
+  onEditChange: (value: string) => void;
 };
 
-function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
+function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
   const { t } = useT();
   const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
 
@@ -604,8 +633,10 @@ function PreviewBody({ preview, renderMode }: PreviewBodyProps) {
       );
     }
     return (
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        <CodeBlock code={preview.content} language={extToLang(preview.name)} />
+      <div className="flex min-h-0 flex-1 flex-col p-3">
+        <Suspense fallback={<CodeEditorFallback />}>
+          <CodeEditor value={editValue} name={preview.name} onChange={onEditChange} />
+        </Suspense>
       </div>
     );
   }
@@ -651,6 +682,10 @@ export function FilesPanel({
   const { t } = useT();
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
+  // Local text edits to the file under preview. undefined = untouched (mirror preview content).
+  const [editContent, setEditContent] = useState<string | undefined>();
+  // Brief "Saved" feedback after a successful save; cleared on file switch.
+  const [savedFlash, setSavedFlash] = useState(false);
 
   const files = useQuery({
     queryKey: ["projects", projectName, queryScope, currentPath],
@@ -662,6 +697,20 @@ export function FilesPanel({
     queryFn: () => previewProjectFile(projectName, selectedFilePath ?? ""),
   });
 
+  const previewData = preview.data;
+  const previewTextContent = previewData?.type === "text" ? previewData.content : undefined;
+  // Dirty only while editing the current text preview; switching files resets editContent.
+  const isDirty =
+    editContent !== undefined &&
+    previewTextContent !== undefined &&
+    editContent !== previewTextContent;
+  const editValue = editContent ?? previewTextContent ?? "";
+  const isHtml =
+    previewData?.type === "text" &&
+    (previewData.name.endsWith(".html") || previewData.name.endsWith(".htm"));
+  const isMarkdown = previewData?.type === "text" && previewData.name.endsWith(".md");
+  const showRenderToggle = isHtml || isMarkdown;
+
   const goToPath = (path: string) => {
     setCurrentPath(path);
     setSelectedFilePath(undefined);
@@ -670,6 +719,24 @@ export function FilesPanel({
 
   const selectFile = (path: string) => {
     if (!enablePreview) return;
+    // Guard against losing unsaved edits when jumping to another file.
+    if (isDirty && selectedFilePath !== undefined && path !== selectedFilePath) {
+      confirm({
+        title: t("files.discard"),
+        message: t("files.discardConfirm", {
+          name: selectedFilePath.split("/").pop() ?? selectedFilePath,
+        }),
+        cancelLabel: t("cancel"),
+        confirmLabel: t("files.discard"),
+        tone: "default",
+      }).then((ok) => {
+        if (ok) {
+          setSelectedFilePath(path);
+          onMobilePreviewChange?.(true);
+        }
+      });
+      return;
+    }
     setSelectedFilePath(path);
     onMobilePreviewChange?.(true);
   };
@@ -678,13 +745,6 @@ export function FilesPanel({
     setSelectedFilePath(undefined);
     onMobilePreviewChange?.(false);
   };
-
-  const previewData = preview.data;
-  const isHtml =
-    previewData?.type === "text" &&
-    (previewData.name.endsWith(".html") || previewData.name.endsWith(".htm"));
-  const isMarkdown = previewData?.type === "text" && previewData.name.endsWith(".md");
-  const showRenderToggle = isHtml || isMarkdown;
   const [renderMode, setRenderMode] = useState<"source" | "render">("source");
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -736,6 +796,21 @@ export function FilesPanel({
     onSuccess: () => invalidateFiles(),
   });
 
+  const save = useMutation({
+    mutationFn: ({ path, content }: { path: string; content: string }) =>
+      saveFileContent(projectName, path, content),
+    onSuccess: () => {
+      // Refresh both the preview (new content/size) and the list (size/mtime).
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectName, queryScope, "preview", selectedFilePath],
+      });
+      invalidateFiles();
+      setEditContent(undefined);
+      setSavedFlash(true);
+      window.setTimeout(() => setSavedFlash(false), SAVED_FLASH_MS);
+    },
+  });
+
   const { confirm, holder: confirmHolder } = useConfirm();
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -770,6 +845,11 @@ export function FilesPanel({
     },
     [confirm, del, t],
   );
+
+  const handleSave = useCallback(() => {
+    if (!isDirty || selectedFilePath === undefined || editContent === undefined) return;
+    save.mutate({ path: selectedFilePath, content: editContent });
+  }, [isDirty, selectedFilePath, editContent, save]);
 
   const handleFileDrop = useCallback(
     (file: File) => {
@@ -807,6 +887,9 @@ export function FilesPanel({
       const name = selectedFilePath.split("/").pop() ?? "";
       setRenderMode(defaultRenderMode(name));
     }
+    // Switching files (or closing the preview) drops any in-flight local edits.
+    setEditContent(undefined);
+    setSavedFlash(false);
   }, [selectedFilePath]);
 
   const renderToggle = showRenderToggle ? (
@@ -826,6 +909,45 @@ export function FilesPanel({
         </button>
       ))}
     </div>
+  ) : null;
+
+  // Save only applies to editable text in source mode (markdown/html render mode is read-only).
+  const canEditText =
+    previewData?.type === "text" && (!showRenderToggle || renderMode === "source");
+
+  // Ctrl/Cmd+S 在文本编辑态触发保存并拦截浏览器默认「保存网页」。用 ref 持有最新状态，
+  // listener 只挂载一次，避免每次输入改动都重绑 document 监听；Mac 走 metaKey（⌘），其余走 ctrlKey。
+  const saveShortcutRef = useRef({ canEditText, handleSave });
+  saveShortcutRef.current = { canEditText, handleSave };
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
+      const { canEditText, handleSave } = saveShortcutRef.current;
+      if (!canEditText) return;
+      e.preventDefault();
+      handleSave();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const saveButton = canEditText ? (
+    <button
+      type="button"
+      disabled={!isDirty || save.isPending}
+      onClick={handleSave}
+      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
+        save.isPending
+          ? "border-slate-700/50 bg-slate-950/50 text-slate-400"
+          : savedFlash
+            ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+            : isDirty
+              ? "cursor-pointer border-cyan-300/30 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/20"
+              : "border-slate-700/50 bg-slate-950/50 text-slate-500"
+      }`}
+    >
+      {save.isPending ? t("files.saving") : savedFlash ? t("files.saved") : t("files.save")}
+    </button>
   ) : null;
 
   const isPreviewOpen = selectedFilePath !== undefined && enablePreview;
@@ -861,9 +983,12 @@ export function FilesPanel({
       preview={previewData}
       renderMode={showRenderToggle ? renderMode : "source"}
       renderToggle={renderToggle}
+      saveToggle={saveButton}
       isHtml={isHtml}
       isMarkdown={isMarkdown}
       fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
+      editValue={editValue}
+      onEditChange={setEditContent}
       onBack={clearPreview}
       onRenderModeChange={setRenderMode}
     />
