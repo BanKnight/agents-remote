@@ -647,6 +647,8 @@ function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
   const { t } = useT();
   const providerTone = session.provider === "codex" ? "success" : "accent";
   const isClaude2 = session.provider === "claude2";
+  // running 是常态，列表层不显示状态标签；仅在等待输入/已关闭/错误等需要关注的异常状态才提示
+  const isRunning = session.status === "running";
   return (
     <Link
       className="block"
@@ -671,8 +673,8 @@ function AgentInstanceRow({ projectName, session }: AgentInstanceRowProps) {
           </IconMarker>
         }
         preview={session.lastAssistantMessage}
-        statusTone={sessionStatusTone(session.status)}
-        status={t(sessionStatusLabel(session.status))}
+        statusTone={isRunning ? undefined : sessionStatusTone(session.status)}
+        status={isRunning ? undefined : t(sessionStatusLabel(session.status))}
         subtitle={relativeTime(session.createdAt, t)}
         title={session.displayName}
       />
@@ -822,8 +824,8 @@ type SessionInstanceRowProps = {
   actions?: ReactNode;
   marker: ReactNode;
   preview?: string;
-  status: ReactNode;
-  statusTone: ShellTone;
+  status?: ReactNode;
+  statusTone?: ShellTone;
   subtitle?: ReactNode;
   title: ReactNode;
 };
@@ -857,7 +859,7 @@ function SessionInstanceRow({
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              <StatusPill tone={statusTone} value={status} />
+              {status ? <StatusPill tone={statusTone} value={status} /> : null}
               {actions}
             </div>
           </div>
