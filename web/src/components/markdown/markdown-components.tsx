@@ -35,7 +35,42 @@ function extractCodeBlock(
   return { code: collectText(codeNode), language };
 }
 
+// 判断 markdown 链接是否为外部域名 → 决定是否 target="_blank" 新标签打开。
+// currentHostname 默认渲染时取 window.location.hostname（部署无关，自动适配当前访问域名）；
+// 作为参数暴露便于单测注入，避免依赖 DOM。
+export function isExternalLink(
+  href: string | undefined,
+  currentHostname: string = typeof window !== "undefined" ? window.location.hostname : "",
+): boolean {
+  if (!href) return false;
+  let url: URL;
+  try {
+    // 用 currentHostname 构造 base，使相对路径解析与 hostname 比对同源（测试/运行时一致）。
+    url = new URL(href, `https://${currentHostname}`);
+  } catch {
+    return false;
+  }
+  // 仅 http(s) 外部链接新标签；mailto/tel/相对路径/anchor/同源都保持本页。
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  // 用 hostname（不含端口），避免同站不同端口被误判为外部。
+  return url.hostname !== currentHostname;
+}
+
 export const MARKDOWN_COMPONENTS: Components = {
+  a: ({ href, children, node: _node, ...rest }) => {
+    if (isExternalLink(href)) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+          {children}
+        </a>
+      );
+    }
+    return (
+      <a href={href} {...rest}>
+        {children}
+      </a>
+    );
+  },
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto rounded-lg border border-slate-700/50">
       <table className="w-full border-collapse text-xs">{children}</table>
