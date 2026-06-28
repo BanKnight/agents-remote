@@ -273,6 +273,7 @@ export const en = {
 
   // ── Claude2 ────────────────────────────────────────────────────
   "claude2.inputPlaceholder": "Ask Claude...",
+  "claude2.blockedByPendingAction": "Please confirm the action above first",
   "claude2.permissionRequired": "Permission required",
   "claude2.allow": "Allow",
   "claude2.deny": "Deny",

@@ -19,6 +19,7 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   unstable_useSlashCommandAdapter,
+  unstable_useTriggerPopoverRootContextOptional,
   unstable_useTriggerPopoverScopeContext,
   type Unstable_DirectiveFormatter,
   type Unstable_SlashCommand,
@@ -339,6 +340,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     liveThinkingTokens,
     tasks,
     retryInfo,
+    pendingInteraction,
   } = useClaude2Session(
     projectName,
     sessionId,
@@ -519,6 +521,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                             aiTitle={aiTitle}
                             agentName={agentName}
                             compactStatus={compactStatus}
+                            pendingInteraction={pendingInteraction}
                             onCancel={storeAdapter.onCancel}
                           />
                         </ComposerPrimitive.Root>
@@ -3374,6 +3377,7 @@ function ComposerWithInterrupt({
   aiTitle,
   agentName,
   compactStatus,
+  pendingInteraction,
   onCancel,
 }: {
   currentModel?: string;
@@ -3387,6 +3391,7 @@ function ComposerWithInterrupt({
   aiTitle?: string | null;
   agentName?: string | null;
   compactStatus: CompactStatus;
+  pendingInteraction: boolean;
   onCancel?: () => void;
 }) {
   const { t } = useT();
@@ -3432,62 +3437,66 @@ function ComposerWithInterrupt({
   const lastKeyRef = useRef<string>("");
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
+  // When a trigger popover (the slash menu) is active, Enter must reach the
+  // popover to submit the highlighted command — not the composer.
+  const triggerCtx = unstable_useTriggerPopoverRootContextOptional();
+  const slashOpenRef = useRef(false);
+  useEffect(() => {
+    if (!triggerCtx) {
+      slashOpenRef.current = false;
+      return;
+    }
+    const update = () => {
+      slashOpenRef.current = triggerCtx.getActiveAria() !== null;
+    };
+    update();
+    return triggerCtx.subscribeAria(update);
+  }, [triggerCtx]);
+
+  // Three composer states, mutually exclusive: blocked (awaiting user action)
+  // takes priority over running, which takes priority over idle.
+  const blocked = pendingInteraction;
+  const running = isRunning || compactStatus === "compacting";
+  const showStop = running && !!onCancel && !blocked;
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="relative">
-        <ComposerPrimitive.Input
-          placeholder={t("claude2.inputPlaceholder")}
-          className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none rounded-xl border border-white/10 bg-[#141b28]/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-cyan-500/50 focus:bg-[#141b28]"
-          rows={1}
-          enterKeyHint="send"
-          onKeyDown={(e) => {
-            lastKeyRef.current = e.key;
-          }}
-        />
-        {(isRunning || compactStatus === "compacting") && (
-          <div className="absolute inset-0 rounded-xl bg-slate-900/60 backdrop-blur-[1px] flex items-center justify-center">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-500 shadow-lg cursor-pointer"
-            >
-              {t("session.stop")}
-            </button>
-          </div>
-        )}
-        {slashItems.length > 0 ? (
-          <ComposerPrimitive.Unstable_TriggerPopover
-            char="/"
-            adapter={slash.adapter}
-            className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
-          >
-            <ComposerPrimitive.Unstable_TriggerPopover.Action
-              formatter={cliSlashFormatter}
-              onExecute={(item) => {
-                slash.action.onExecute?.(item);
-                if (lastKeyRef.current === "Enter") {
-                  api.thread().append(`/${item.id}`);
-                  composer.setText("");
-                }
-                lastKeyRef.current = "";
-              }}
-            />
-            <ComposerPrimitive.Unstable_TriggerPopoverItems>
-              {(items) =>
-                items.map((item, index) => (
-                  <SlashCommandPopoverItem
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    kind={kindById.get(item.id)}
-                  />
-                ))
-              }
-            </ComposerPrimitive.Unstable_TriggerPopoverItems>
-          </ComposerPrimitive.Unstable_TriggerPopover>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-2">
+    <div className="relative flex flex-col rounded-xl border border-white/10 bg-[#141b28]/80 transition focus-within:border-cyan-500/50 focus-within:bg-[#141b28]">
+      {aiTitle ? (
+        <span className="pointer-events-none absolute right-3 top-2 z-10 max-w-[45%] select-none truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.6rem] text-amber-300/80 whitespace-nowrap">
+          {agentName ? (
+            <span className="mr-1.5 text-[0.55rem] font-semibold text-amber-400/60">
+              {agentName}
+            </span>
+          ) : null}
+          {aiTitle}
+        </span>
+      ) : null}
+      <ComposerPrimitive.Input
+        placeholder={blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")}
+        disabled={blocked}
+        enterKeyHint="send"
+        className={`block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-slate-100 placeholder-slate-500 outline-none ${
+          aiTitle ? "pr-24" : ""
+        }`}
+        rows={1}
+        onKeyDown={(e) => {
+          // Record key for slash command's Enter-submit (see Action.onExecute).
+          lastKeyRef.current = e.key;
+          if (e.key !== "Enter") return;
+          // Hand Enter off to these paths first (let them newline/handle it):
+          if (e.nativeEvent.isComposing) return; // mid-IME composition → newline
+          if (e.shiftKey) return; // Shift+Enter → newline (desktop; mobile has no Shift)
+          if (slashOpenRef.current) return; // slash menu open → popover handles it
+          if (blocked) return; // awaiting user action → disabled anyway
+          // Enter → send on both desktop and mobile. preventDefault short-circuits
+          // the library's handleKeyPress, which would otherwise no-op on isRunning
+          // (its queue capability is false in external-store mode) and drop Enter to
+          // a newline. composer.send() bypasses that guard — it only checks canSend.
+          e.preventDefault();
+          composer.send();
+        }}
+      />
+      <div className="flex items-center gap-2 px-2.5 pb-2 pt-0.5">
         <ModelSelector
           currentModel={currentModel}
           currentResolved={currentResolved}
@@ -3498,20 +3507,48 @@ function ComposerWithInterrupt({
           currentMode={permissionMode}
           availableModes={availablePermissionModes}
         />
-        {aiTitle ? (
-          <span
-            className="ml-auto max-w-[50%] select-none truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.65rem] text-amber-300/80 whitespace-nowrap"
-            title={aiTitle}
+        {showStop ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-amber-600/90 px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-amber-500 cursor-pointer"
           >
-            {agentName ? (
-              <span className="mr-1.5 text-[0.55rem] font-semibold text-amber-400/60">
-                {agentName}
-              </span>
-            ) : null}
-            {aiTitle}
-          </span>
+            <span className="h-2 w-2 rounded-[2px] bg-white/90" />
+            {t("session.stop")}
+          </button>
         ) : null}
       </div>
+      {slashItems.length > 0 ? (
+        <ComposerPrimitive.Unstable_TriggerPopover
+          char="/"
+          adapter={slash.adapter}
+          className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
+        >
+          <ComposerPrimitive.Unstable_TriggerPopover.Action
+            formatter={cliSlashFormatter}
+            onExecute={(item) => {
+              slash.action.onExecute?.(item);
+              if (lastKeyRef.current === "Enter") {
+                api.thread().append(`/${item.id}`);
+                composer.setText("");
+              }
+              lastKeyRef.current = "";
+            }}
+          />
+          <ComposerPrimitive.Unstable_TriggerPopoverItems>
+            {(items) =>
+              items.map((item, index) => (
+                <SlashCommandPopoverItem
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  kind={kindById.get(item.id)}
+                />
+              ))
+            }
+          </ComposerPrimitive.Unstable_TriggerPopoverItems>
+        </ComposerPrimitive.Unstable_TriggerPopover>
+      ) : null}
     </div>
   );
 }

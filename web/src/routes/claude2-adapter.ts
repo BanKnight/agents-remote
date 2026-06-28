@@ -4137,6 +4137,29 @@ export function useClaude2Session(
     [chatStream],
   );
 
+  // A control_request is pending when some tool-call part carries an injected
+  // controlRequestId that is still unresolved (no result, not interrupted). This
+  // is the session-level "agent is waiting on the user" signal shared by
+  // AskUserQuestion / ExitPlanMode / permission prompts; it gates the composer
+  // into its blocked state. control_request is stdout-only (never in JSONL), so
+  // replayed history has no controlRequestId and cannot false-positive here.
+  const pendingInteraction = useMemo(() => {
+    for (const item of chatStream) {
+      if (item.kind !== "assistant") continue;
+      for (const part of item.parts) {
+        if (
+          part.type === "tool-call" &&
+          part.controlRequestId &&
+          !part.result &&
+          !part.isInterrupted
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [chatStream]);
+
   const onNew = useCallback(
     async (message: AppendMessage) => {
       const textContent = (Array.isArray(message.content) ? message.content : [])
@@ -4200,5 +4223,6 @@ export function useClaude2Session(
     lastPrompt,
     sessionLeafUuid,
     retryInfo,
+    pendingInteraction,
   };
 }

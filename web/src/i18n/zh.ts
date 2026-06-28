@@ -273,6 +273,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // ── Claude2 ────────────────────────────────────────────────────
   "claude2.inputPlaceholder": "向 Claude 提问...",
+  "claude2.blockedByPendingAction": "请先确认上方操作",
   "claude2.permissionRequired": "需要权限",
   "claude2.allow": "允许",
   "claude2.deny": "拒绝",
