@@ -19,6 +19,27 @@ export type AttachmentBubbleConfig = {
   accent?: string;
 };
 
+// queued_command.prompt (and potentially other attachment text fields) can arrive
+// as either a plain string or a Claude content-block array. Coerce to a single
+// string before rendering badges / snippets.
+function attachmentTextValue(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  const parts: string[] = [];
+  for (const block of value as Array<Record<string, unknown>>) {
+    if (!block || typeof block !== "object") continue;
+    if (block.type === "text" && typeof block.text === "string") {
+      parts.push(block.text);
+    } else if (typeof block.content === "string") {
+      parts.push(block.content);
+    } else if (typeof block.content === "object" && block.content !== null) {
+      const nested = attachmentTextValue(block.content);
+      if (nested) parts.push(nested);
+    }
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
 function fileBody(raw: Record<string, unknown>): ReactNode | null {
   const content = raw.attachment as Record<string, unknown> | undefined;
   const inner = content?.content as Record<string, unknown> | undefined;
@@ -244,8 +265,11 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   queued_command: {
     icon: "queue",
     labelKey: "claude2.attachment.queued_command",
-    badge: (raw) =>
-      ((raw.attachment as Record<string, unknown>)?.prompt as string)?.slice(0, 60) ?? null,
+    badge: (raw) => {
+      const prompt = (raw.attachment as Record<string, unknown>)?.prompt;
+      const text = attachmentTextValue(prompt);
+      return text ? text.slice(0, 60) : null;
+    },
   },
   opened_file_in_ide: {
     icon: "file",
