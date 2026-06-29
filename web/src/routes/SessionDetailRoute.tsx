@@ -672,8 +672,32 @@ function SessionDetailActions({
     setOpen(false);
   };
 
-  const buttonClass = `inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`;
-  const iconBtn = `inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`;
+  const buttonClass =
+    "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200";
+  const iconBtn =
+    "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition hover:text-slate-200 disabled:opacity-40";
+
+  // Close 之外还有其他操作（Files/Git/+Terminal/Retry）时才用 ⋯ 菜单收起；
+  // terminal 详情页正常状态下只有 Close，直接展开（与 claude2 详情页一致）
+  const hasExtraActions = sessionType === "agent" || connectionStatus === "error";
+
+  // 统一的 Close 按钮（h-8 + 16px 图标 + 桌面文字）：桌面端那排与移动端展开共用，
+  // 并与 claude2 详情页 ChatHeader 的 Close 完全一致
+  const closeButton = (
+    <button
+      className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
+      disabled={closePending}
+      title={closePending ? t("session.closing") : t("session.close")}
+      aria-label={t("session.close")}
+      type="button"
+      onClick={onClose}
+    >
+      <ShellIcon name="close" className="h-4 w-4" />
+      <span className="hidden sm:inline">
+        {closePending ? t("session.closing") : t("session.close")}
+      </span>
+    </button>
+  );
 
   return (
     <>
@@ -718,86 +742,83 @@ function SessionDetailActions({
             <ShellIcon name="refresh" className="h-4 w-4" />
           </button>
         ) : null}
-        <button
-          className={`${iconBtn} border-rose-300/30 text-rose-200 hover:border-rose-300/60 hover:bg-rose-300/10`}
-          disabled={closePending}
-          title={closePending ? t("session.closing") : t("session.close")}
-          type="button"
-          onClick={onClose}
-        >
-          <ShellIcon name="close" className="h-4 w-4" />
-        </button>
+        {closeButton}
         {createTerminalError instanceof Error ? (
           <p className="text-xs text-rose-200">{createTerminalError.message}</p>
         ) : null}
       </div>
 
-      {/* Mobile: dropdown menu */}
-      <div ref={menuRef} className="relative shrink-0 sm:hidden">
-        <button
-          className={buttonClass}
-          type="button"
-          aria-expanded={open}
-          aria-haspopup="menu"
-          aria-label={t("session.actionsAria")}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <MoreVertical className="h-4 w-4" aria-hidden="true" />
-        </button>
-        {open ? (
-          <div
-            className="absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl border border-white/10 bg-slate-950/90 p-2 shadow-2xl shadow-black/40"
-            role="menu"
+      {/* Mobile: inline Close when it's the only action (terminal, no error);
+          otherwise collapse into ⋯ menu */}
+      {hasExtraActions ? (
+        <div ref={menuRef} className="relative shrink-0 sm:hidden">
+          <button
+            className={buttonClass}
+            type="button"
+            aria-expanded={open}
+            aria-haspopup="menu"
+            aria-label={t("session.actionsAria")}
+            onClick={() => setOpen((value) => !value)}
           >
-            {sessionType === "agent" ? (
-              <>
-                <ActionMenuItem
-                  active={detailView === "files"}
-                  marker={<ShellIcon name="files-nav" className="h-4 w-4" />}
-                  onClick={() => selectView("files")}
-                >
-                  {t("session.files")}
-                </ActionMenuItem>
-                <ActionMenuItem
-                  active={detailView === "git"}
-                  marker={<ShellIcon name="git-nav" className="h-4 w-4" />}
-                  onClick={() => selectView("git")}
-                >
-                  {t("session.git")}
-                </ActionMenuItem>
-                <ActionMenuItem
-                  disabled={createTerminalPending}
-                  marker={<ShellIcon name="terminal" className="h-4 w-4" />}
-                  onClick={createTerminal}
-                >
-                  {createTerminalPending ? t("session.creating") : t("session.terminal")}
-                </ActionMenuItem>
-              </>
-            ) : null}
-            {connectionStatus === "error" ? (
-              <ActionMenuItem
-                marker={<ShellIcon name="refresh" className="h-4 w-4" />}
-                onClick={reconnect}
-              >
-                {t("session.retry")}
-              </ActionMenuItem>
-            ) : null}
-            <ActionMenuItem
-              danger
-              marker={<ShellIcon name="close" className="h-4 w-4" />}
-              disabled={closePending}
-              onClick={close}
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+          </button>
+          {open ? (
+            <div
+              className="absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl border border-white/10 bg-slate-950/90 p-2 shadow-2xl shadow-black/40"
+              role="menu"
             >
-              {closePending ? t("session.closing") : t("session.close")}
-            </ActionMenuItem>
-            {createTerminalError instanceof Error ? (
-              <p className="px-2 py-1 text-xs leading-5 text-rose-200">
-                {createTerminalError.message}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+              {sessionType === "agent" ? (
+                <>
+                  <ActionMenuItem
+                    active={detailView === "files"}
+                    marker={<ShellIcon name="files-nav" className="h-4 w-4" />}
+                    onClick={() => selectView("files")}
+                  >
+                    {t("session.files")}
+                  </ActionMenuItem>
+                  <ActionMenuItem
+                    active={detailView === "git"}
+                    marker={<ShellIcon name="git-nav" className="h-4 w-4" />}
+                    onClick={() => selectView("git")}
+                  >
+                    {t("session.git")}
+                  </ActionMenuItem>
+                  <ActionMenuItem
+                    disabled={createTerminalPending}
+                    marker={<ShellIcon name="terminal" className="h-4 w-4" />}
+                    onClick={createTerminal}
+                  >
+                    {createTerminalPending ? t("session.creating") : t("session.terminal")}
+                  </ActionMenuItem>
+                </>
+              ) : null}
+              {connectionStatus === "error" ? (
+                <ActionMenuItem
+                  marker={<ShellIcon name="refresh" className="h-4 w-4" />}
+                  onClick={reconnect}
+                >
+                  {t("session.retry")}
+                </ActionMenuItem>
+              ) : null}
+              <ActionMenuItem
+                danger
+                marker={<ShellIcon name="close" className="h-4 w-4" />}
+                disabled={closePending}
+                onClick={close}
+              >
+                {closePending ? t("session.closing") : t("session.close")}
+              </ActionMenuItem>
+              {createTerminalError instanceof Error ? (
+                <p className="px-2 py-1 text-xs leading-5 text-rose-200">
+                  {createTerminalError.message}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="shrink-0 sm:hidden">{closeButton}</div>
+      )}
     </>
   );
 }

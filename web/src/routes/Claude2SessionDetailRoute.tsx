@@ -579,11 +579,11 @@ function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderPro
         <button
           type="button"
           disabled={closePending}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
+          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
           onClick={onClose}
           aria-label={t("session.close")}
         >
-          <ShellIcon name="close" />
+          <ShellIcon name="close" className="h-4 w-4" />
           <span className="hidden sm:inline">
             {closePending ? t("session.closing") : t("session.close")}
           </span>
