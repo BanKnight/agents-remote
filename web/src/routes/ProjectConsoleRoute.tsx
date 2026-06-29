@@ -293,94 +293,19 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
       }
     >
       <div className={hiddenOnMobileResourceDetail ? "sm:contents hidden" : "contents"}>
-        <WorkspaceHeader
-          project={project}
-          section={selectedSection}
-          summary={summary}
-          actions={
-            activeSection === "agents" ? (
-              <div
-                className="hidden flex-wrap justify-end gap-2 sm:flex"
-                aria-label="Create Agent instance"
-              >
-                <CreateButton
-                  disabled={createAgent.isPending}
-                  tone="accent"
-                  onClick={() => handleCreateAgent("claude")}
-                >
-                  <ShellIcon name="anthropic" />
-                  {t("project.createClaude")}
-                </CreateButton>
-                <CreateButton
-                  disabled={createAgent.isPending}
-                  onClick={() => handleCreateAgent("codex")}
-                >
-                  <ShellIcon name="openai" />
-                  {t("project.createCodex")}
-                </CreateButton>
-                <CreateButton
-                  disabled={createAgent.isPending}
-                  tone="accent"
-                  onClick={() => handleCreateAgent("claude2")}
-                >
-                  <ShellIcon name="anthropic" />
-                  {t("project.createClaude2")}
-                </CreateButton>
-              </div>
-            ) : activeSection === "terminal" ? (
-              <div
-                className="hidden flex-wrap justify-end gap-2 sm:flex"
-                aria-label="Create Terminal instance"
-              >
-                <CreateButton
-                  disabled={createTerminal.isPending}
-                  tone="accent"
-                  onClick={() => handleCreateTerminal()}
-                >
-                  <ShellIcon name="terminal" />
-                  {createTerminal.isPending ? t("project.creating") : t("project.newTerminal")}
-                </CreateButton>
-              </div>
-            ) : activeSection === "files" || activeSection === "git" ? null : undefined
-          }
-        />
+        <WorkspaceHeader project={project} section={selectedSection} summary={summary} />
       </div>
 
       {activeSection === "agents" ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
-          <div
-            className="grid grid-cols-3 gap-2 sm:hidden"
-            aria-label="Create Agent instance mobile"
-          >
-            <CreateButton
-              disabled={createAgent.isPending}
-              tone="accent"
-              onClick={() => handleCreateAgent("claude")}
-              className="py-3 text-sm"
-            >
-              <ShellIcon name="anthropic" />
-              {t("project.createClaude")}
-            </CreateButton>
-            <CreateButton
-              disabled={createAgent.isPending}
-              onClick={() => handleCreateAgent("codex")}
-              className="py-3 text-sm"
-            >
-              <ShellIcon name="openai" />
-              {t("project.createCodex")}
-            </CreateButton>
-            <CreateButton
-              disabled={createAgent.isPending}
-              tone="accent"
-              onClick={() => handleCreateAgent("claude2")}
-              className="py-3 text-sm"
-            >
-              <ShellIcon name="anthropic" />
-              {t("project.createClaude2")}
-            </CreateButton>
-          </div>
+          <WorkspaceCreateActions
+            isCreatingClaude={createAgent.isPending}
+            isCreatingTerminal={createTerminal.isPending}
+            onCreateClaude={() => handleCreateAgent("claude2")}
+            onCreateTerminal={() => handleCreateTerminal()}
+          />
 
-          <div className="mt-4 flex gap-1 rounded-xl bg-white/[0.03] p-1 sm:mt-0">
+          <div className="mt-4 flex gap-1 rounded-xl bg-white/[0.03] p-1 sm:mt-6">
             <button
               className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                 agentTab === "instances"
@@ -391,8 +316,9 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
               onClick={() => setAgentTab("instances")}
             >
               {t("project.activeInstances")}
-              <span className="ml-1.5 text-xs text-slate-500">
-                {agentSessions.data?.sessions.length ?? 0}
+              <span className="ml-1.5 text-xs font-bold tabular-nums text-slate-500">
+                {agentSessions.data?.sessions.length ?? 0} ·{" "}
+                {terminalSessions.data?.sessions.length ?? 0}
               </span>
             </button>
             <button
@@ -405,38 +331,39 @@ function ProjectConsole({ project }: ProjectConsoleProps) {
               onClick={() => setAgentTab("history")}
             >
               {t("project.historyTitle")}
-              <span className="ml-1.5 text-xs text-slate-500">{historyCount}</span>
+              <span className="ml-1.5 text-xs font-bold tabular-nums text-slate-500">
+                {historyCount}
+              </span>
             </button>
           </div>
 
           {agentTab === "instances" ? (
             <>
-              <ErrorText error={createAgent.error ?? closeAgent.error} />
-              <AgentInstanceList
+              <ErrorText
+                error={
+                  createAgent.error ??
+                  createTerminal.error ??
+                  closeTerminal.error ??
+                  closeAgent.error
+                }
+              />
+              {closeTerminal.isPending ? (
+                <p className="mt-3 text-sm text-amber-200">{t("project.closingTerminal")}</p>
+              ) : null}
+              <InstanceWorkspace
                 projectName={project.name}
-                sessions={agentSessions.data?.sessions ?? []}
-                isLoading={agentSessions.isLoading}
+                agentSessions={agentSessions.data?.sessions ?? []}
+                terminalSessions={terminalSessions.data?.sessions ?? []}
+                agentLoading={agentSessions.isLoading}
+                terminalLoading={terminalSessions.isLoading}
+                confirm={confirm}
+                onCloseTerminal={(sessionId) => closeTerminal.mutate(sessionId)}
               />
             </>
           ) : (
             <AgentSessionHistoryPanel projectName={project.name} />
           )}
         </div>
-      ) : null}
-
-      {activeSection === "terminal" ? (
-        <TerminalPanel
-          projectName={project.name}
-          sessions={terminalSessions.data?.sessions ?? []}
-          isLoading={terminalSessions.isLoading}
-          isCreating={createTerminal.isPending}
-          isClosing={closeTerminal.isPending}
-          createError={createTerminal.error}
-          closeError={closeTerminal.error}
-          confirm={confirm}
-          onCreate={() => handleCreateTerminal()}
-          onClose={(sessionId) => closeTerminal.mutate(sessionId)}
-        />
       ) : null}
 
       {activeSection === "files" || activeSection === "git" ? (
@@ -536,13 +463,23 @@ type WorkspaceHeaderProps = {
 function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeaderProps) {
   const { t } = useT();
   const sectionLabel = t(section.labelKey);
-  const fallbackActions = (
-    <div className="hidden grid-cols-3 gap-2 sm:grid">
-      <SummaryBadge label={t("section.agents")} value={summary.agentCount} />
-      <SummaryBadge label={t("section.terminal")} value={summary.terminalCount} />
-      <SummaryBadge label="Runtime" value={t(summary.runtimeStatus)} />
-    </div>
-  );
+  const fallbackActions =
+    section.id === "agents" ? (
+      <div className="flex flex-wrap gap-1.5">
+        <SummaryBadge
+          label={t("section.agents")}
+          shortLabel={t("section.markerAgents")}
+          tone="accent"
+          value={summary.agentCount}
+        />
+        <SummaryBadge
+          label={t("section.terminal")}
+          shortLabel={t("section.markerTerminal")}
+          tone="default"
+          value={summary.terminalCount}
+        />
+      </div>
+    ) : null;
 
   return (
     <ShellHeaderSurface
@@ -555,20 +492,16 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
           <span className="sm:hidden">
             {section.id === "agents"
               ? t("project.mobileEyebrowAgent", { count: summary.agentCount })
-              : section.id === "terminal"
-                ? t("project.mobileEyebrowTerminal", { count: summary.terminalCount })
-                : sectionLabel}
+              : sectionLabel}
           </span>
         </>
       }
       mobileMeta={undefined}
       title={
-        section.id === "agents" || section.id === "terminal" ? (
+        section.id === "agents" ? (
           <>
             <span className="sm:hidden">{project.name}</span>
-            <span className="hidden sm:inline">
-              {section.id === "agents" ? t("section.agents") : t("section.terminal")} instances
-            </span>
+            <span className="hidden sm:inline">{t("section.agents")} instances</span>
           </>
         ) : section.id === "git" ? (
           t("section.gitStatus")
@@ -581,28 +514,57 @@ function WorkspaceHeader({ actions, project, section, summary }: WorkspaceHeader
   );
 }
 
+const summaryAccentChipClasses = "border-cyan-300/30 bg-cyan-300/10 text-cyan-100";
+const summaryDefaultChipClasses = "border-slate-700/60 bg-slate-950/70 text-slate-400";
+
 type SummaryBadgeProps = {
   label: string;
+  shortLabel?: string;
+  tone?: "accent" | "default";
   value: number | string;
 };
 
-function SummaryBadge({ label, value }: SummaryBadgeProps) {
-  return <StatusPill label={label} tone="muted" value={value} />;
+function SummaryBadge({ label, shortLabel, tone = "default", value }: SummaryBadgeProps) {
+  const colorClass = tone === "accent" ? summaryAccentChipClasses : summaryDefaultChipClasses;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${colorClass}`}
+    >
+      <span className="sm:hidden">{shortLabel ?? label}</span>
+      <span className="hidden sm:inline">{label}</span>
+      <span className="text-[0.62rem] font-bold tabular-nums opacity-80">{value}</span>
+    </span>
+  );
 }
 
-type AgentInstanceListProps = {
+type InstanceWorkspaceProps = {
+  agentLoading: boolean;
+  agentSessions: AgentSession[];
+  confirm: ReturnType<typeof useConfirm>["confirm"];
+  onCloseTerminal: (sessionId: string) => void;
   projectName: string;
-  sessions: AgentSession[];
-  isLoading: boolean;
+  terminalLoading: boolean;
+  terminalSessions: TerminalSession[];
 };
 
-function AgentInstanceList({ projectName, sessions, isLoading }: AgentInstanceListProps) {
+function InstanceWorkspace({
+  agentLoading,
+  agentSessions,
+  confirm,
+  onCloseTerminal,
+  projectName,
+  terminalLoading,
+  terminalSessions,
+}: InstanceWorkspaceProps) {
   const { t } = useT();
-  if (isLoading) {
+  const showAgent = agentSessions.length > 0;
+  const showTerminal = terminalSessions.length > 0;
+
+  if (agentLoading && terminalLoading && !showAgent && !showTerminal) {
     return <p className="mt-5 text-sm text-slate-400">{t("project.loading")}</p>;
   }
 
-  if (sessions.length === 0) {
+  if (!showAgent && !showTerminal) {
     return (
       <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
         <div className="w-full lg:w-auto">
@@ -616,10 +578,71 @@ function AgentInstanceList({ projectName, sessions, isLoading }: AgentInstanceLi
   }
 
   return (
-    <div className="mt-4 grid gap-3 lg:grid-cols-2" aria-label="Agent instances">
-      {sessions.map((session) => (
-        <AgentInstanceRow key={session.id} projectName={projectName} session={session} />
-      ))}
+    <>
+      {showAgent ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-2" aria-label="Agent instances">
+          {agentSessions.map((session) => (
+            <AgentInstanceRow key={session.id} projectName={projectName} session={session} />
+          ))}
+        </div>
+      ) : null}
+      {showAgent && showTerminal ? <div className="my-4 border-t border-white/5" /> : null}
+      {showTerminal ? (
+        <div
+          className={`grid gap-3 lg:grid-cols-2${showAgent ? "" : " mt-4"}`}
+          aria-label="Terminal instances"
+        >
+          {terminalSessions.map((session) => (
+            <TerminalInstanceRow
+              key={session.id}
+              confirm={confirm}
+              projectName={projectName}
+              session={session}
+              onClose={() => onCloseTerminal(session.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+type WorkspaceCreateActionsProps = {
+  isCreatingClaude: boolean;
+  isCreatingTerminal: boolean;
+  onCreateClaude: () => void;
+  onCreateTerminal: () => void;
+};
+
+function WorkspaceCreateActions({
+  isCreatingClaude,
+  isCreatingTerminal,
+  onCreateClaude,
+  onCreateTerminal,
+}: WorkspaceCreateActionsProps) {
+  const { t } = useT();
+  return (
+    <div
+      className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end sm:gap-2"
+      aria-label="Create instance"
+    >
+      <CreateButton
+        className="py-3 text-sm sm:py-1.5 sm:text-xs"
+        disabled={isCreatingClaude}
+        tone="accent"
+        onClick={onCreateClaude}
+      >
+        <ShellIcon name="anthropic" />
+        {isCreatingClaude ? t("project.creating") : t("project.createClaude2")}
+      </CreateButton>
+      <CreateButton
+        className="py-3 text-sm sm:py-1.5 sm:text-xs"
+        disabled={isCreatingTerminal}
+        onClick={onCreateTerminal}
+      >
+        <ShellIcon name="terminal" />
+        {isCreatingTerminal ? t("project.creating") : t("project.newTerminalMobile")}
+      </CreateButton>
     </div>
   );
 }
@@ -727,17 +750,6 @@ function AgentSessionHistoryPanel({ projectName }: AgentSessionHistoryPanelProps
 
   return (
     <>
-      <div className="mt-6 flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-100">{t("project.historyTitle")}</h3>
-          {entries.length > 0 ? (
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {t("project.historySubtitle", { count: entries.length })}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
       {history.isLoading ? (
         <div className="mt-3 grid gap-2" aria-hidden="true">
           <SkeletonCard />
@@ -883,121 +895,6 @@ function sessionStatusTone(status: AgentSession["status"] | TerminalSession["sta
   }
 
   return "muted";
-}
-
-type TerminalPanelProps = {
-  confirm: ReturnType<typeof useConfirm>["confirm"];
-  projectName: string;
-  sessions: TerminalSession[];
-  isLoading: boolean;
-  isCreating: boolean;
-  isClosing: boolean;
-  createError: Error | null;
-  closeError: Error | null;
-  onCreate: () => void;
-  onClose: (sessionId: string) => void;
-};
-
-function TerminalPanel({
-  confirm,
-  projectName,
-  sessions,
-  isLoading,
-  isCreating,
-  isClosing,
-  createError,
-  closeError,
-  onCreate,
-  onClose,
-}: TerminalPanelProps) {
-  const { t } = useT();
-  return (
-    <ShellPanel
-      className="flex flex-col px-3.5 pt-4 sm:px-5 lg:px-6 lg:py-5"
-      density="compact"
-      docked
-    >
-      <div className="grid gap-2 sm:hidden" aria-label="Create Terminal instance mobile">
-        <CreateButton
-          disabled={isCreating}
-          tone="accent"
-          onClick={onCreate}
-          className="py-3 sm:py-1.5 text-sm sm:text-xs"
-        >
-          <ShellIcon name="terminal" />
-          {isCreating ? t("project.creating") : t("project.newTerminalMobile")}
-        </CreateButton>
-      </div>
-      <div className="mt-4 flex min-w-0 items-center justify-between gap-3 sm:mt-0">
-        <h3 className="text-base font-semibold">{t("project.activeInstances")}</h3>
-        <span className="text-xs text-slate-400">
-          {t("project.agentCount", { count: sessions.length })}
-        </span>
-      </div>
-      <ErrorText error={createError ?? closeError} />
-      {isClosing ? (
-        <p className="mt-3 text-sm text-amber-200">{t("project.closingTerminal")}</p>
-      ) : null}
-      <TerminalInstanceList
-        confirm={confirm}
-        projectName={projectName}
-        sessions={sessions}
-        isLoading={isLoading}
-        onClose={onClose}
-      />
-    </ShellPanel>
-  );
-}
-
-type TerminalInstanceListProps = {
-  confirm: ReturnType<typeof useConfirm>["confirm"];
-  projectName: string;
-  sessions: TerminalSession[];
-  isLoading: boolean;
-  onClose: (sessionId: string) => void;
-};
-
-function TerminalInstanceList({
-  confirm,
-  projectName,
-  sessions,
-  isLoading,
-  onClose,
-}: TerminalInstanceListProps) {
-  const { t } = useT();
-  if (isLoading) {
-    return <p className="mt-5 text-sm text-slate-400">{t("project.loading")}</p>;
-  }
-
-  if (sessions.length === 0) {
-    return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
-        <div className="w-full lg:w-auto">
-          <div className={`rounded-2xl p-4 text-center ${shellSurfaceClasses.dashed}`}>
-            <p className="text-lg font-semibold text-slate-100">{t("project.noTerminals")}</p>
-            <p className="mt-2 text-sm leading-6 text-slate-400">{t("project.noTerminalsDesc")}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-1 lg:grid-cols-2"
-      aria-label="Terminal instances"
-    >
-      {sessions.map((session) => (
-        <TerminalInstanceRow
-          key={session.id}
-          confirm={confirm}
-          projectName={projectName}
-          session={session}
-          onClose={() => onClose(session.id)}
-        />
-      ))}
-    </div>
-  );
 }
 
 type TerminalInstanceRowProps = {

@@ -13,8 +13,9 @@ test("authenticated user can create and interact with a Terminal Session", async
   await page.getByRole("link", { name: projectName }).click();
 
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
-  await page.getByRole("button", { name: /^Terminal/ }).click();
-  await page.getByRole("button", { name: "New Terminal" }).click();
+  // Terminal instances are merged into the Agent workspace (the default section
+  // on project entry); create directly from the "+ Terminal" action there.
+  await page.getByRole("button", { name: "+ Terminal" }).click();
   // Creating a session opens an optional-name prompt; confirm to create.
   // createTerminal's onSuccess navigates straight to the session detail,
   // so there is no need to click the "Open stream" link manually.

@@ -8,7 +8,7 @@ import type {
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 
-export type ConsoleSection = "agents" | "terminal" | "git" | "files";
+export type ConsoleSection = "agents" | "git" | "files";
 
 export const inputDrawerCollapsedAtom = atomWithStorage("inputDrawerCollapsed", false);
 
@@ -46,12 +46,6 @@ export const consoleSections: ConsoleSectionDefinition[] = [
     labelKey: "section.git",
     descriptionKey: "section.gitDesc",
     statusKey: "section.gitStatus",
-  },
-  {
-    id: "terminal",
-    labelKey: "section.terminal",
-    descriptionKey: "section.terminalDesc",
-    statusKey: "section.terminalStatus",
   },
 ];
 

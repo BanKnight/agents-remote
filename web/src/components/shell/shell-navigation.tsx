@@ -259,7 +259,7 @@ export function PrimaryShellBottomNavigation({
 }
 
 type ProjectShellNavigationItem = ShellNavigationItem & {
-  id: "agents" | "files" | "git" | "terminal";
+  id: "agents" | "files" | "git";
 };
 
 type ProjectShellNavigationProps = {
@@ -333,7 +333,7 @@ export function ProjectShellBottomNavigation({
 }: ProjectShellBottomNavigationProps) {
   const { t } = useT();
   return (
-    <ShellMobileBottomNavigation ref={ref} ariaLabel={t("nav.projectMobileAria")} columns={5}>
+    <ShellMobileBottomNavigation ref={ref} ariaLabel={t("nav.projectMobileAria")} columns={4}>
       <Link className="min-w-0 cursor-pointer" to="/">
         <ShellMobileNavItemContent
           interactive

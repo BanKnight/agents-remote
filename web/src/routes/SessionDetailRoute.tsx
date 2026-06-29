@@ -204,7 +204,7 @@ function SessionDetail({
         to: "/projects/$projectName",
         params: { projectName },
         search: {
-          workspace: sessionType === "terminal" ? "terminal" : defaultConsoleSection,
+          workspace: defaultConsoleSection,
           filesPath: "",
         },
       });
@@ -419,7 +419,7 @@ function SessionDetail({
       sidebar={
         <ShellSidebar display="flex">
           <ProjectShellNavigation
-            activeItemId={sessionType === "agent" ? "agents" : "terminal"}
+            activeItemId="agents"
             items={projectNavItems}
             projectPath={projectName}
             projectTitle={projectName}
@@ -545,7 +545,7 @@ function SessionDetailHeader({
 }: SessionDetailHeaderProps) {
   const { t } = useT();
   const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
-  const returnWorkspace = sessionType === "terminal" ? "terminal" : defaultConsoleSection;
+  const returnWorkspace = defaultConsoleSection;
 
   return (
     <header
