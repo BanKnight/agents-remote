@@ -45,7 +45,6 @@ export const shellSurfaceClasses = {
   workspace: "border border-white/10 bg-[#141b28]/15",
   header: "border border-white/10 bg-slate-950/20",
   floatingHeader: "sm:border sm:border-white/10 sm:bg-slate-950/20",
-  bottomNav: "border-t border-slate-700/80",
   runtimeHeader: "border-b border-slate-700/80",
   runtimeBody: "bg-[#05080d]/15",
   runtimeComposer: "border-t border-slate-700/80",
