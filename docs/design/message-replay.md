@@ -108,7 +108,7 @@ claude --output-format stream-json --input-format stream-json \
 
 ### generation 守卫
 
-每次 spawn 递增 `nextGeneration`。`readStdout` 把 generation 闭包进读取循环，遇到非当前 generation 立即 return，避免把旧进程输出灌进新 relay（API 重启 `--resume` 重拉 CLI 时生效）。`switchModel`/`switchPermissionMode` 不再重启 CLI——走 stdin 转发，CLI 进程内切换并回 `switch_model_result`，relay 自动转发，proc.model 由 `captureSwitchModelResultFromLine` 同步。
+每次 spawn 递增 `nextGeneration`。`readStdout` 把 generation 闭包进读取循环，遇到非当前 generation 立即 return，避免把旧进程输出灌进新 relay（API 重启 `--resume` 重拉 CLI 时生效）。`switchModel`/`switchPermissionMode` 不再重启 CLI——走 stdin 转发（`control_request{set_model / set_permission_mode}`），CLI 进程内切换并回 `control_response`，relay 自动转发；proc.model 由 `captureModelFromLine` fold `<local-command-stdout>` 回显同步。
 
 ### stdin / stderr
 
@@ -186,7 +186,7 @@ API 重启：
 | `startAgent(metadata)` / `ensureRunning()` | 复用或 spawn + 建 relay + 读 stdout |
 | `write(session, data)` | `proc.stdin.write(data)` |
 | `stream(session, onData, onError)` | 取/建 relay + `addSubscriber` |
-| `switchModel` / `switchPermissionMode` | stdin 转发：`write()` 把客户端 JSON 写入 proc.stdin，CLI 进程内切换并回 `switch_model_result`；不重启 CLI、不重放 history |
+| `switchModel` / `switchPermissionMode` | stdin 转发：`write()` 把客户端 JSON 写入 proc.stdin，CLI 进程内切换并回 `control_response`；不重启 CLI、不重放 history |
 | `readStdout()` | 读 `proc.stdout` 行流，generation 守卫，喂 relay |
 | `close(session)` | kill proc + `relay.destroy()` |
 
@@ -258,6 +258,49 @@ readStdout → processStdoutLine → captureSkillReloadFromLine
 - **`skill_catalog_changed` 不带 payload**：服务端只发"catalog 变了"通知，客户端 `invalidateQueries` 重取 REST。复用现有 REST 数据流，零新数据通道；reload-skills 低频，多一次 RTT 无感。服务端回调因此也无需 `getSessionProjectPath` + 主动重扫（纯读无副作用，结果会被客户端 REST 重取覆盖）。
 - **用 `injectLine` 不用 `injectLiveLine`**：catalog 通知是瞬时事件，不进 `liveLines` 被 replay 回放（replay 时 route 重挂载已重取最新 REST）。
 - **`queryClient` 是模块级单例**（`web/src/lib/query-client.ts`）：adapter 在 `applyMessageScalarState` 里直接 import 单例调 `invalidateQueries`，不调 `useQueryClient`——后者要求 `QueryClientProvider` 包裹，会破坏 `useClaude2Session` 的 `renderHook` 测试。单例与 app root 的 `QueryClientProvider` 共用同一实例。
+
+## control 协议实现状态
+
+claude2 web 接入的 CLI control 协议范围。CLI 共 21 种 `control_request` subtype（见 [CLI stream-json 协议 · control_request subtype 全表](../research/claude-cli-stream-protocol.md#control_request-subtype-全表)），当前实现状态：
+
+**已实现（4）**：
+
+| subtype | 方向 | 实现 |
+|---|---|---|
+| `can_use_tool` | CLI→host | 权限确认卡片：adapter 注入 `request_id` 到 tool_use，前端 allow/deny 回 `control_response` |
+| `interrupt` | host→CLI | 停止按钮中断当前 turn，CLI 回 `result{interrupted}` |
+| `set_model` | host→CLI | 模型切换（进程内，CLI 回 `control_response`），失败回退 |
+| `set_permission_mode` | host→CLI | 权限模式切换（进程内），失败回退 |
+
+> `set_model` / `set_permission_mode` 走 stdin `control_request` 在 CLI 进程内切换（不再杀进程重启）；后端 `claude2-stream.ts` 的 `message()` 只透传，subtype 语义在前端 adapter。
+
+**未实现（17）**：
+
+| 类别 | subtype | 未做原因 |
+|---|---|---|
+| 会话 / 配置查询 | `initialize` / `get_settings` / `get_context_usage` / `apply_flag_settings` | 由 CLI 启动参数 + `system.init` 承载，当前无需 host 主动查询 / 下发 |
+| 推理设置 | `set_max_thinking_tokens` | 产品暂未暴露 thinking 预算控制 |
+| MCP 管理 | `mcp_message` / `mcp_set_servers` / `mcp_reconnect` / `mcp_toggle` / `mcp_status` | MCP 走 CLI 启动配置文件，web 控制台暂无运行时 MCP 管理面 |
+| 文件 / 队列操作 | `rewind_files` / `cancel_async_message` / `seed_read_state` | 文件回滚 / 队列撤销是高级编辑能力，当前无入口 |
+| 任务 | `stop_task` | task 仅展示，无独立停止入口（停止走 `interrupt`） |
+| 交互 / 钩子 | `hook_callback` / `elicitation` | elicitation 是 MCP 侧用户输入，当前 MCP 不启用交互；hook 回调未接入 |
+| 插件 | `reload_plugins` | 插件重载走 skills refresh 路径（`skill_catalog_changed`），不走此 RPC |
+
+> `cancel_async_message` 是唯一携带命令队列状态的 RPC（返回 `{cancelled: bool}`）；未实现意味着无法撤销已排队但未处理的 user 消息。当前产品无此入口，故不实现。
+
+## 用户消息回显与队列
+
+CLI 在 stream-json 模式**不 echo user、不回执排队状态**（见 [CLI stream-json 协议 · 命令队列与消费语义](../research/claude-cli-stream-protocol.md#命令队列与消费语义)）。为了让用户实时看到自己发送的消息，我们用 `injectLiveLine`（`api/src/claude2-stream.ts`）在发送 user 消息时，向 relay live buffer 注入一条合成 echo（`uuid: injected-<random>`）并广播。
+
+**设计决策**：
+
+- **inject 而非本地乐观追加**：user 气泡完全来自这条 injected echo 的 stdout 广播，保证 live / replay 双路径同一来源（subscribe 到 relay 的任意客户端都能看到，含重连的）。前端 `onNew`（`claude2-adapter.ts`）只 `sendToSocket`，不本地追加。
+- **`injectLiveLine` 而非 `injectLine`**：echo 要进 live buffer，让重连 / 新 subscriber 也能看到（与瞬时事件用 `injectLine` 的取舍相反）。
+
+**已知限制（不修复）**：turn 进行中追加消息时，UI 可能呈现 `user user thinking` 而非 `user thinking user` 的顺序。
+
+- **根因**：CLI 不回执排队状态，我们只能在**发送时** inject，但发送时无法得知 assistant 流何时结束、turn2 何时开始——injected user 与 assistant 流在 relay buffer 的相对位置无法保证对齐。
+- **为何不修复**：根因是协议缺失（CLI 在 stream-json 不暴露排队状态），客户端排序无论怎么调都是猜测，无法可靠对齐。属可接受取舍——功能正确（CLI 确实按序处理了两条消息并分别回复），仅追加场景视觉顺序偶发偏差。
 
 ## 特殊时期 history 缩容（compact-block windowing + 标量重建）
 
