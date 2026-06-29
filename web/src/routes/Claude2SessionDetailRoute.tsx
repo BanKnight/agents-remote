@@ -337,6 +337,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     aiTitle,
     agentName,
     loading,
+    hasRenderedContent,
     liveThinkingTokens,
     tasks,
     retryInfo,
@@ -495,7 +496,11 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   ) : null}
 
                   <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+                    <VirtualizedThreadContent
+                      loading={loading}
+                      hasRenderedContent={hasRenderedContent}
+                      retryInfo={retryInfo}
+                    />
 
                     <CompactIndicator />
                     {tasks.length > 0 && (
@@ -2822,9 +2827,11 @@ const CHAT_BOTTOM_THRESHOLD = 32;
 
 function VirtualizedThreadContent({
   loading,
+  hasRenderedContent,
   retryInfo,
 }: {
   loading: boolean;
+  hasRenderedContent: boolean;
   retryInfo: RetryInfo | null;
 }) {
   // ── Turn builder ──────────────────────────────────────────────────
@@ -2957,7 +2964,14 @@ function VirtualizedThreadContent({
   return (
     <div className="relative flex-1 min-h-0 overflow-hidden">
       <div ref={scrollerRef} className="h-full overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5">
-        {loading ? <ChatSkeleton /> : null}
+        {/* Gate the skeleton on painted content (turns), not the loading flag:
+            useExternalStoreRuntime pushes storeAdapter→thread.messages inside
+            a useEffect, so turns trails loading/renderedMessages by one frame.
+            Gating on turns.length===0 keeps the skeleton mounted exactly until
+            real content is painted, closing the blank gap. hasRenderedContent
+            (sync) covers the one-frame window where content has arrived in
+            rawMessages but the runtime hasn't painted it yet. */}
+        {turns.length === 0 && (loading || hasRenderedContent) ? <ChatSkeleton /> : null}
         <div ref={contentRef}>
           <div style={{ position: "relative", height: virtualizer.getTotalSize() }}>
             {items.map((virtualItem) => {
@@ -3014,17 +3028,23 @@ function VirtualizedThreadContent({
 }
 
 function ChatSkeleton() {
+  // Each row mirrors a real bubble: a MessagePrimitive-shaped wrapper
+  // (px-3 sm:px-5 py-1.5) around a bubble div (rounded-2xl + single-corner
+  // variant, px-4 py-2.5) so padding/width/corners line up with live bubbles.
   const rows = [
-    { align: "end", width: "w-2/3", height: "h-10", bg: "bg-cyan-700/30" },
-    { align: "start", width: "w-3/4", height: "h-12", bg: "bg-slate-800/40" },
-    { align: "end", width: "w-1/2", height: "h-9", bg: "bg-cyan-700/30" },
-    { align: "start", width: "w-5/6", height: "h-14", bg: "bg-slate-800/40" },
+    { align: "end", width: "w-3/5", bg: "bg-cyan-700/50", corner: "rounded-br-md" },
+    { align: "start", width: "w-4/5", bg: "bg-slate-800/60", corner: "rounded-bl-md" },
+    { align: "end", width: "w-[45%]", bg: "bg-cyan-700/50", corner: "rounded-br-md" },
+    { align: "start", width: "w-[85%]", bg: "bg-slate-800/60", corner: "rounded-bl-md" },
   ];
   return (
-    <div className="space-y-3 px-3 py-2 animate-pulse" aria-hidden="true">
+    <div className="animate-pulse px-3 sm:px-5" aria-hidden="true">
       {rows.map((row, i) => (
-        <div key={i} className={`flex ${row.align === "end" ? "justify-end" : "justify-start"}`}>
-          <div className={`${row.height} ${row.width} rounded-2xl ${row.bg} px-4 py-3`}>
+        <div
+          key={i}
+          className={`flex py-1.5 ${row.align === "end" ? "justify-end" : "justify-start"}`}
+        >
+          <div className={`${row.width} rounded-2xl ${row.corner} ${row.bg} px-4 py-2.5`}>
             <div className="h-2.5 w-24 rounded bg-slate-600/40" />
             <div className="mt-1.5 h-2.5 w-16 rounded bg-slate-600/25" />
           </div>

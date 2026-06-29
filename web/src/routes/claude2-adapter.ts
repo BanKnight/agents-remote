@@ -4206,6 +4206,13 @@ export function useClaude2Session(
     [renderedMessages, isRunning, onNew, onCancel],
   );
 
+  // Synchronous "content is queued" signal: true the same render rawMessages
+  // first yields a renderable message. Unlike `turns` (which trails by one
+  // effect — see VirtualizedThreadContent), this is computed during render, so
+  // it lets the skeleton cover the one-frame window where content has arrived
+  // but the runtime hasn't pushed it into thread.messages yet.
+  const hasRenderedContent = renderedMessages.length > 0;
+
   return {
     storeAdapter,
     bridge,
@@ -4216,6 +4223,7 @@ export function useClaude2Session(
     aiTitle,
     agentName,
     loading,
+    hasRenderedContent,
     liveThinkingTokens,
     tasks,
     mcpServers,
