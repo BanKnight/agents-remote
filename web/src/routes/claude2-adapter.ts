@@ -96,7 +96,11 @@ export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage)
         workflowName: msg.workflowName,
         subject: msg.subject,
         description: msg.prompt ?? "",
-        status: "in_progress",
+        // pending = implicit initial state. TaskCreate's tool input/result carry
+        // NO status (confirmed across session JSONLs); TaskUpdate always sends an
+        // explicit in_progress/completed afterward. Don't switch to in_progress —
+        // that skips the pending phase the CLI's lifecycle actually has.
+        status: "pending",
       },
     ];
   }

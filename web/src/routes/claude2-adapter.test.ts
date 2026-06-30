@@ -1659,7 +1659,7 @@ describe("message processing building blocks", () => {
     ) => extractTaskOps(msg).reduce(applyTaskSystemMessage, tasks);
 
     let tasks = apply([], taskCreate);
-    expect(tasks[0].status).toBe("in_progress"); // TaskCreate default
+    expect(tasks[0].status).toBe("pending"); // TaskCreate → pending (implicit initial)
 
     tasks = apply(tasks, updateWith("pending"));
     expect(tasks[0].status).toBe("pending");
@@ -1823,7 +1823,7 @@ describe("task system state", () => {
   });
 */
 
-  test("applyTaskSystemMessage updates task status across in_progress backgrounded error completed", () => {
+  test("applyTaskSystemMessage updates task status across pending backgrounded error completed", () => {
     let tasks = applyTaskSystemMessage(
       [],
       taskStarted("task-2", { prompt: "Inspect logs" }) as never,
@@ -1831,7 +1831,7 @@ describe("task system state", () => {
     expect(tasks[0]).toMatchObject({
       id: "task-2",
       description: "Inspect logs",
-      status: "in_progress",
+      status: "pending",
     });
 
     tasks = applyTaskSystemMessage(tasks, taskUpdated("task-2", { isBackgrounded: true }) as never);
