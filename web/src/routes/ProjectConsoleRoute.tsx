@@ -968,7 +968,7 @@ function SectionDetail({
   const isGit = section.id === "git";
 
   return (
-    <ShellPanel className="overflow-hidden !p-0" density="compact" docked>
+    <ShellPanel className="overflow-hidden !p-0 max-lg:!pb-0" density="compact" docked>
       {isGit ? (
         <GitDiffPanel projectName={projectName} onDeepDetailChange={onDeepDetailChange} />
       ) : null}

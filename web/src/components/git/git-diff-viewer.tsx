@@ -446,7 +446,7 @@ export function GitDiffPanel({
         <aside
           className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
-          <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col">
+          <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
             {fileList}
           </div>
         </aside>
