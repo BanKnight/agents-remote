@@ -8,6 +8,7 @@
 - 实现一个优化版本的 hapi，使用户可以通过网页控制服务器上的 agent，包括 Codex 和 Claude。
 
 ## 前端实现约定
+- @frontend-notes.md
 - 执行 React 前端或 prototype UI alignment 的 `implement-change` 时，必须先加载 `vercel-react-best-practices` skill，并把它作为组件编写、重构和代码评审约束。
 - Prototype UI alignment 必须先读原型 HTML，再在实现过程中持续对照 prototype/app 截图；不能只依赖最终 verify 才发现视觉漂移。
 - 原型一致性必须通过横向和纵向两层抽象落地：横向复用同一套 Home/Project/Agent/Files/Git/Terminal 设计语言，纵向抽取 shell、workspace、navigation、surface、row、status、action、input、terminal/code 等层级 primitive。
