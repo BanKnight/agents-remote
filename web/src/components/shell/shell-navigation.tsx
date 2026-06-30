@@ -129,7 +129,7 @@ export function ShellMobileBottomNavigation({
   return (
     <nav
       ref={ref}
-      className="absolute inset-x-0 bottom-0 z-20 px-3 pb-0 lg:hidden"
+      className="absolute inset-x-0 bottom-0 z-20 px-3 pb-[var(--shell-safe-area-bottom)] lg:hidden"
       aria-label={ariaLabel}
     >
       <div

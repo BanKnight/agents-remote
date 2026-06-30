@@ -9,6 +9,7 @@
   color-scheme: dark;
   color: #e2e8f0;
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
+  --shell-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   font-family:
     Inter,
     ui-sans-serif,
