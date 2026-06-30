@@ -806,13 +806,13 @@ Skill 调用产生三条消息的序列，后两条关联同一个 `tool_use_id`
 
 | input.status | 语义 | 处理 |
 | --- | --- | --- |
-| `pending` | 待办 | 设为 pending |
-| `in_progress` | 进行中 | 设为 in_progress（`TaskCreate` 默认即此态） |
+| `pending` | 待办 | 设为 pending；也是 `TaskCreate` 的隐式初始态（见下文末句） |
+| `in_progress` | 进行中 | 设为 in_progress |
 | `completed` | 完成 | 设为 completed |
 | `deleted` | 删除 | **从列表移除**（任意状态 → deleted） |
 | 缺省（仅含 `addBlockedBy`/`addBlocks`） | 改依赖关系，不改状态 | **保留原 status**，绝不能重置为进行中 |
 
-`error` 通过 `input.error`（或 `system.task_updated.error`）表达；`backgrounded` 来自 `system.task_updated.isBackgrounded` telemetry，**不是** TaskUpdate 的 status 取值。`TaskCreate` 的 `tool_result.task` 只有 `{id, subject}`、无 status，初始态由 CLI 内部决定（默认进行中）。
+`error` 通过 `input.error`（或 `system.task_updated.error`）表达；`backgrounded` 来自 `system.task_updated.isBackgrounded` telemetry，**不是** TaskUpdate 的 status 取值。`TaskCreate` 的 `tool_result.task` 只有 `{id, subject}`、无 status。跨 session JSONL 实测：`TaskUpdate` 的 `input.status` 永远是 `in_progress` 或 `completed`、从不为 `pending`，故 `pending` 是 `TaskCreate` 后、首次 `TaskUpdate(in_progress)` 前的**隐式初始态**（并非"默认进行中"——早先文档此处有误）。
 
 **示例**（错误工具结果）：
 
