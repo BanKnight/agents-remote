@@ -10,6 +10,7 @@
   color: #e2e8f0;
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
   --shell-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --app-viewport-height: 100dvh;
   font-family:
     Inter,
     ui-sans-serif,
@@ -50,6 +51,15 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* PWA standalone 下 100dvh 会扣 home indicator chin (~34px), 100vh 不扣;
+   反之非 PWA 浏览器需要 dvh 回避动态地址栏, 否则胶囊/输入框被遮挡。
+   故 PWA=vh, 非 PWA=dvh (frontend-notes §1)。*/
+@media (display-mode: standalone) {
+  :root {
+    --app-viewport-height: 100vh;
+  }
 }
 
 html,

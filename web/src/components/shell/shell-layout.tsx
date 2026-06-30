@@ -8,8 +8,8 @@ import { shellSurfaceClasses } from "./shell-primitives";
 type ShellLayoutVariant = "home" | "project";
 
 const shellMainClasses: Record<ShellLayoutVariant, string> = {
-  home: "relative h-screen overflow-hidden text-slate-100",
-  project: "relative h-screen overflow-hidden text-slate-100",
+  home: "relative h-[var(--app-viewport-height)] overflow-hidden text-slate-100",
+  project: "relative h-[var(--app-viewport-height)] overflow-hidden text-slate-100",
 };
 
 const shellGridClasses: Record<ShellLayoutVariant, string> = {
