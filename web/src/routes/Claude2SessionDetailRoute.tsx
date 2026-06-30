@@ -230,7 +230,7 @@ function TaskPanel({
               />
             </svg>
           ) : task.status === "pending" ? (
-            <span className="inline-block h-3 w-3 rounded-full border border-slate-600" />
+            <span className="inline-block h-3 w-3 rounded-full border border-dashed border-slate-600" />
           ) : (
             <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
           )}
@@ -254,7 +254,7 @@ function TaskPanel({
   };
 
   return (
-    <div className="shrink-0 border-t border-slate-700/80 px-3 py-2">
+    <div className="mb-1.5 shrink-0 rounded-xl border border-white/10 bg-[#141b28]/60 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 lg:bg-[#141b28]/80 lg:shadow-none lg:backdrop-blur-none">
       <button
         className="mb-1 flex w-full items-center gap-1.5 text-left"
         onClick={onToggle}
@@ -3023,7 +3023,7 @@ function VirtualizedThreadContent({
           type="button"
           onClick={jumpToBottom}
           aria-label="Scroll to bottom"
-          className="pointer-events-auto absolute bottom-4 right-3 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition-all duration-300 ease-out hover:bg-slate-600/90 hover:scale-110 cursor-pointer"
+          className="pointer-events-auto absolute bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] right-3 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition-all duration-300 ease-out hover:bg-slate-600/90 hover:scale-110 lg:bottom-4 cursor-pointer"
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
