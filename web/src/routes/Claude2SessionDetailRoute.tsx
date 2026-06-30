@@ -38,6 +38,7 @@ import { closeAgentSession, getAgentSession } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
+import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
 import { measureFrom, timed } from "../lib/perf-trace";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { defaultConsoleSection, consoleSections } from "./console-model";
@@ -294,6 +295,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   const queryClient = useQueryClient();
   const { confirm, holder } = useConfirm();
 
+  useComposerKeyboardAvoidance();
+
   const detail = useQuery({
     queryKey: ["projects", projectName, "agent-sessions", sessionId],
     queryFn: () => getAgentSession(projectName, sessionId),
@@ -495,7 +498,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                     </div>
                   ) : null}
 
-                  <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                     <VirtualizedThreadContent
                       loading={loading}
                       hasRenderedContent={hasRenderedContent}
@@ -503,34 +506,44 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                     />
 
                     <CompactIndicator />
-                    {tasks.length > 0 && (
-                      <TaskPanel
-                        collapsed={!tasksExpanded}
-                        t={t}
-                        tasks={tasks}
-                        onToggle={() => setTasksExpanded((v) => !v)}
-                      />
-                    )}
-                    <div className="shrink-0 border-t border-slate-700/80 px-3 py-2.5 sm:px-4">
-                      <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                        <ComposerPrimitive.Root>
-                          <ComposerWithInterrupt
-                            currentModel={currentModel}
-                            currentResolved={resolvedModel ?? session?.model}
-                            availableModels={availableModels}
-                            modelSwitchVersion={modelSwitchVersion}
-                            permissionMode={permissionMode}
-                            availablePermissionModes={availablePermissionModes}
-                            projectName={projectName}
-                            sessionId={sessionId}
-                            aiTitle={aiTitle}
-                            agentName={agentName}
-                            compactStatus={compactStatus}
-                            pendingInteraction={pendingInteraction}
-                            onCancel={storeAdapter.onCancel}
+                    <div
+                      data-composer-float
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
+                    >
+                      <div
+                        className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
+                        style={{
+                          transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))",
+                        }}
+                      >
+                        {tasks.length > 0 && (
+                          <TaskPanel
+                            collapsed={!tasksExpanded}
+                            t={t}
+                            tasks={tasks}
+                            onToggle={() => setTasksExpanded((v) => !v)}
                           />
-                        </ComposerPrimitive.Root>
-                      </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                        )}
+                        <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                          <ComposerPrimitive.Root>
+                            <ComposerWithInterrupt
+                              currentModel={currentModel}
+                              currentResolved={resolvedModel ?? session?.model}
+                              availableModels={availableModels}
+                              modelSwitchVersion={modelSwitchVersion}
+                              permissionMode={permissionMode}
+                              availablePermissionModes={availablePermissionModes}
+                              projectName={projectName}
+                              sessionId={sessionId}
+                              aiTitle={aiTitle}
+                              agentName={agentName}
+                              compactStatus={compactStatus}
+                              pendingInteraction={pendingInteraction}
+                              onCancel={storeAdapter.onCancel}
+                            />
+                          </ComposerPrimitive.Root>
+                        </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                      </div>
                     </div>
                   </ThreadPrimitive.Root>
                 </div>
@@ -3003,7 +3016,7 @@ function VirtualizedThreadContent({
           </div>
         </div>
         <RetryIndicator retryInfo={retryInfo} />
-        <div className="h-4" />
+        <div aria-hidden style={{ height: "var(--composer-float-inset, 1rem)" }} />
       </div>
       {showScrollButton && (
         <button
@@ -3480,7 +3493,7 @@ function ComposerWithInterrupt({
   const showStop = running && !!onCancel && !blocked;
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-white/10 bg-[#141b28]/80 transition focus-within:border-cyan-500/50 focus-within:bg-[#141b28]">
+    <div className="relative flex flex-col rounded-xl border border-white/10 bg-[#141b28]/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-cyan-500/50 focus-within:bg-[#141b28]/80 lg:bg-[#141b28]/80 lg:backdrop-blur-none lg:shadow-none">
       {aiTitle ? (
         <span className="pointer-events-none absolute right-3 top-2 z-10 max-w-[45%] select-none truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.6rem] text-amber-300/80 whitespace-nowrap">
           {agentName ? (
