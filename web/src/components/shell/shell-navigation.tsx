@@ -129,11 +129,11 @@ export function ShellMobileBottomNavigation({
   return (
     <nav
       ref={ref}
-      className="fixed inset-x-0 bottom-0 z-20 px-3 pb-[var(--shell-safe-area-bottom)] lg:hidden"
+      className="absolute inset-x-0 bottom-0 z-20 px-3 pb-0 lg:hidden"
       aria-label={ariaLabel}
     >
       <div
-        className={`mx-auto mb-2 grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/70 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}
+        className={`mx-auto grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/70 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}
       >
         {children}
       </div>
