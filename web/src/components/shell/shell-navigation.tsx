@@ -133,7 +133,7 @@ export function ShellMobileBottomNavigation({
       aria-label={ariaLabel}
     >
       <div
-        className={`mx-auto grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/70 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}
+        className={`mx-auto grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}
       >
         {children}
       </div>
