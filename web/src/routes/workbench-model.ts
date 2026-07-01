@@ -1,0 +1,54 @@
+import { atomWithStorage } from "jotai/utils";
+
+/**
+ * 工作台作用域 —— URL `/workbench/$scope` 的语义核心
+ * （见 docs/design/workbench-redesign.md §1）。
+ *
+ * - `project`：限定单个项目。左栏树聚焦该项目，实例区只承载该项目的实例。
+ * - `global`：跨项目混排（Stage 4 全局实例区），实例来源合并所有项目。
+ *
+ * 这是工作台与旧换页模型（Home → Project → detail）的根本区别：进入工作台后
+ * 作用域常驻，切项目/实例是同屏换面板内容，而非换页。
+ */
+export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global" };
+
+/**
+ * 右栏 inspection tab 标识。V1 三个第一方 tab（设计文档 §6）：
+ * `files` / `git` / `prototype`。Stage 3 以 RightPanelPlugin 契约落地注册表。
+ */
+export type WorkbenchRightTab = "files" | "git" | "prototype";
+
+/** 左右栏宽度基线（rem），沿用 ShellLayout project sidebar 的 13.125rem，保持视觉密度一致。 */
+export const WORKBENCH_LEFT_PANEL_DEFAULT_REM = 13.125;
+export const WORKBENCH_RIGHT_PANEL_DEFAULT_REM = 13.125;
+
+// ── 持久化的个人布局（atomWithStorage → localStorage，刷新保持）──────────────
+// 设计文档 §2：栏收起 + 宽度是个人布局（localStorage 编码），不进 URL
+// （URL 只编码语义核心：scope / focusId / rightTab）。
+
+/** 左栏（项目 + 实例树）折叠态。 */
+export const workbenchLeftCollapsedAtom = atomWithStorage("workbenchLeftCollapsed", false);
+
+/** 右栏（inspection tab）折叠态。 */
+export const workbenchRightCollapsedAtom = atomWithStorage("workbenchRightCollapsed", false);
+
+/** 左栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
+export const workbenchLeftWidthAtom = atomWithStorage(
+  "workbenchLeftWidth",
+  WORKBENCH_LEFT_PANEL_DEFAULT_REM,
+);
+
+/** 右栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
+export const workbenchRightWidthAtom = atomWithStorage(
+  "workbenchRightWidth",
+  WORKBENCH_RIGHT_PANEL_DEFAULT_REM,
+);
+
+/**
+ * 右栏当前 tab。Stage 3 起 URL `rightTab` 优先（语义核心、刷新可分享），
+ * 此 atom 作「记忆上次 tab」的回退（首次进入 / URL 未指定时）。
+ */
+export const workbenchRightTabAtom = atomWithStorage<WorkbenchRightTab>(
+  "workbenchRightTab",
+  "files",
+);
