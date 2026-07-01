@@ -3051,13 +3051,15 @@ function ChatSkeleton() {
     { align: "start", width: "w-[85%]", bg: "bg-slate-800/60", corner: "rounded-bl-md" },
   ];
   return (
-    <div className="animate-pulse px-3 sm:px-5" aria-hidden="true">
+    <div className="px-3 sm:px-5" aria-hidden="true">
       {rows.map((row, i) => (
         <div
           key={i}
           className={`flex py-1.5 ${row.align === "end" ? "justify-end" : "justify-start"}`}
         >
-          <div className={`${row.width} rounded-2xl ${row.corner} ${row.bg} px-4 py-2.5`}>
+          <div
+            className={`${row.width} rounded-2xl ${row.corner} ${row.bg} skeleton-shimmer px-4 py-2.5`}
+          >
             <div className="h-2.5 w-24 rounded bg-slate-600/40" />
             <div className="mt-1.5 h-2.5 w-16 rounded bg-slate-600/25" />
           </div>

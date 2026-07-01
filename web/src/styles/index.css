@@ -11,6 +11,17 @@
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
   --shell-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --app-viewport-height: 100dvh;
+  /* Motion design tokens — single source of truth; mirrors EASE/DURATION in
+     motion/tokens.ts. Plain :root vars (NOT @theme) so var(--ease-standard)
+     resolves everywhere: @theme inline would inline values into utilities and
+     drop the variable (verified — --ease-* never reached the built CSS),
+     breaking var() refs in keyframes and arbitrary-value utilities. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
   font-family:
     Inter,
     ui-sans-serif,
@@ -267,5 +278,46 @@ body {
   html::-webkit-scrollbar-corner,
   body::-webkit-scrollbar-corner {
     background: transparent;
+  }
+}
+
+/* Skeleton shimmer — a left-to-right highlight sweep. Pure CSS (kept out of the
+   motion lib on purpose: it's a continuous infinite loop rendered across many
+   rows, so JS-driven animation would be wasteful). Converges to static under
+   prefers-reduced-motion (the fallback below zeroes animation-duration). */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@layer utilities {
+  .skeleton-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      rgb(255 255 255 / 0.04) 0%,
+      rgb(255 255 255 / 0.09) 50%,
+      rgb(255 255 255 / 0.04) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s var(--ease-standard) infinite;
+  }
+}
+
+/* Reduced-motion static fallback — site-wide. MotionConfig reducedMotion="user"
+   handles JS-driven animation (disables transform/layout, keeps opacity); this
+   covers everything else: the skeleton shimmer, the plan-awaiting flow, and
+   Tailwind's animate-* utilities. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
