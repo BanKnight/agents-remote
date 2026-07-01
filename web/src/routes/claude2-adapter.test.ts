@@ -82,6 +82,17 @@ const user = (
     },
   }) as unknown as SessionStreamServerMessage;
 
+// A user-message echo our api service injects on the client's submit (carries
+// the isUserInput flag set at inject time). Mirrors `user` but tagged, so
+// computeRunningCount opens running on it before the first assistant event.
+const userEcho = (
+  blocks: Array<
+    | { type: "text"; text: string }
+    | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }
+  >,
+): SessionStreamServerMessage =>
+  ({ ...(user(blocks) as object), isUserInput: true }) as unknown as SessionStreamServerMessage;
+
 const result = (
   subtype: "success" | "interrupted" | "error",
   durationMs?: number,
@@ -261,7 +272,11 @@ describe("computeRunningCount", () => {
     expect(computeRunningCount([thinkingTokens(5), result("success")])).toBe(0);
   });
 
-  test("user text no longer clears isRunning before result", () => {
+  test("CLI user message (no isUserInput) is neutral — neither opens nor closes running", () => {
+    // A user message the CLI produces itself (no isUserInput flag) must not
+    // affect running: it doesn't open (only injected user echoes do) and it
+    // doesn't close (only result/interrupt do). So an assistant turn stays
+    // running through such a user message until result.
     expect(
       computeRunningCount([
         assistant("msg-1", [
@@ -321,6 +336,54 @@ describe("computeRunningCount", () => {
         { interruptAtIndex: 1 },
       ),
     ).toBe(1);
+  });
+
+  test("injected user echo opens running before the first assistant event", () => {
+    // The api service injects a user-message echo (isUserInput: true) the moment
+    // the client submits — before any assistant delta arrives. Opening running
+    // on it covers the network/CLI-startup gap where the UI previously showed no
+    // indicator. The echo opens running exactly like an assistant message, and a
+    // following result closes it.
+    expect(computeRunningCount([userEcho([{ type: "text", text: "hi" }])])).toBe(1);
+    expect(computeRunningCount([userEcho([{ type: "text", text: "hi" }]), result("success")])).toBe(
+      0,
+    );
+    // An assistant event after the echo keeps running (echo → assistant is one turn).
+    expect(
+      computeRunningCount([
+        userEcho([{ type: "text", text: "hi" }]),
+        assistant("msg-1", [{ type: "text", text: "x" }]),
+      ]),
+    ).toBe(1);
+    expect(
+      computeRunningCount([
+        userEcho([{ type: "text", text: "hi" }]),
+        assistant("msg-1", [{ type: "text", text: "x" }]),
+        result("success"),
+      ]),
+    ).toBe(0);
+    // thinking_tokens after the echo also keeps running.
+    expect(computeRunningCount([userEcho([{ type: "text", text: "hi" }]), thinkingTokens(5)])).toBe(
+      1,
+    );
+    // An interrupt control_response closes the echo-opened turn.
+    expect(
+      computeRunningCount(
+        [
+          userEcho([{ type: "text", text: "hi" }]),
+          { type: "control_response", response: { subtype: "success", request_id: "r1" } },
+        ],
+        { interruptAtIndex: 1 },
+      ),
+    ).toBe(0);
+  });
+
+  test("a user message without isUserInput does not open running", () => {
+    // CLI-internal user messages (isMeta/isSynthetic skill bodies, compact
+    // summaries, command noise) carry no isUserInput flag, so they stay neutral
+    // and never open running on their own — the natural exclusion that lets us
+    // avoid enumerating CLI user subtypes.
+    expect(computeRunningCount([user([{ type: "text", text: "standalone" }])])).toBe(0);
   });
 });
 

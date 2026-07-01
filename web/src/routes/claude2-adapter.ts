@@ -391,19 +391,23 @@ const findMissingTailByUuid = (
 */
 
 /**
- * Whether an assistant response is currently in-flight (isRunning), counted
- * over the live + instantaneous segments ONLY.
+ * Whether a turn is currently in-flight (isRunning) — i.e. the user is
+ * waiting for / receiving the assistant's answer — counted over the live +
+ * instantaneous segments ONLY.
  *
- * Opens on the first assistant delta / thinking_tokens event of a response,
- * closes when a `result` arrives. Multiple assistant deltas in the same
- * response count as one, not N.
+ * Opens on the first user-input echo (isUserInput) OR assistant delta /
+ * thinking_tokens event of a turn, closes when a `result` arrives. Opening on
+ * the user echo covers the network/CLI-startup gap between sending a message
+ * and the first assistant event (the gap where the UI previously showed no
+ * running indicator). Multiple assistant deltas in the same response count as
+ * one, not N.
  *
  * Segment scope (see docs/design/message-replay.md "服务端状态"):
  * - history (JSONL archive): NEVER scanned. `result` is stdout-only and never
  *   persisted to JSONL, so history has no turn-close signal. Scanning it would
- *   leave responseOpen stuck true on any archive ending in an assistant message
- *   (e.g. a resumed session's tail block) and falsely show running — the
- *   "three-dot animation + stop button on resume entry" bug.
+ *   leave waitingForAnswer stuck true on any archive ending in an assistant
+ *   message (e.g. a resumed session's tail block) and falsely show running —
+ *   the "three-dot animation + stop button on resume entry" bug.
  * - live + instantaneous (CLI stdout during this process lifetime): scanned.
  *   Both contain `result`, so opens/closes resolve correctly.
  *
@@ -429,7 +433,7 @@ export function computeRunningCount(
 ): number {
   const liveStart = opts?.liveStart ?? 0;
   const interruptAtIndex = opts?.interruptAtIndex;
-  let responseOpen = false;
+  let waitingForAnswer = false;
 
   for (let i = liveStart; i < rawMessages.length; i++) {
     const msg = rawMessages[i];
@@ -439,27 +443,40 @@ export function computeRunningCount(
     // control_response (not result) to an interrupt, so without this boundary
     // the running indicator would stick after stop.
     if (i === interruptAtIndex) {
-      responseOpen = false;
+      waitingForAnswer = false;
       continue;
     }
 
     if (msg.type === "result") {
-      responseOpen = false;
+      waitingForAnswer = false;
       continue;
     }
 
     if (msg.type === "assistant") {
-      responseOpen = true;
+      waitingForAnswer = true;
       continue;
     }
 
     if (msg.type === "system" && "subtype" in msg && msg.subtype === "thinking_tokens") {
-      responseOpen = true;
+      waitingForAnswer = true;
+      continue;
+    }
+
+    if (msg.type === "user") {
+      // In the live stream, user messages are echoes our api service injects
+      // when the client submits (the CLI never echoes user input on stdout).
+      // Such an echo arrives before any assistant event, so it is the earliest
+      // "a turn has started" signal — open running here to cover the network/
+      // CLI-startup gap before the first assistant delta. Only trust the
+      // isUserInput flag set at inject time: CLI-internal user messages
+      // (isMeta/isSynthetic skill bodies, compact summaries, command noise) do
+      // not carry it and stay neutral, so they never open running.
+      if ((msg as { isUserInput?: boolean }).isUserInput) waitingForAnswer = true;
       continue;
     }
   }
 
-  return responseOpen ? 1 : 0;
+  return waitingForAnswer ? 1 : 0;
 }
 
 /**

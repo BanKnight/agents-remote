@@ -293,7 +293,11 @@ export class Claude2StreamController {
         // not chat content — not injected. The echo gets a synthetic uuid
         // (client sends none; CLI generates one only in JSONL, never on stdout).
         if (parsed.type === "user") {
-          const echo = JSON.stringify({ ...parsed, uuid: `injected-${crypto.randomUUID()}` });
+          const echo = JSON.stringify({
+            ...parsed,
+            isUserInput: true,
+            uuid: `injected-${crypto.randomUUID()}`,
+          });
           this.claude2Runtime.injectLiveLine(data.runtimeKey, echo);
         }
       }

@@ -253,11 +253,14 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     // forwarded to stdin verbatim (no uuid — CLI accepts it, generates its own in JSONL)
     expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
     // echoed into the relay live cache with a synthetic injected- uuid so the
-    // client (which dedupes by uuid) renders the user bubble.
+    // client (which dedupes by uuid) renders the user bubble. Tagged with
+    // isUserInput so the client can open running on it before the first
+    // assistant event (the CLI's own user messages don't carry this flag).
     expect(injections).toHaveLength(1);
     expect(injections[0]!.key).toBe("ar-claude2-claude-demo-sess-1");
     const echoed = JSON.parse(injections[0]!.line) as Record<string, unknown>;
     expect(echoed).toMatchObject({ type: "user", message: msg.message });
+    expect(echoed.isUserInput).toBe(true);
     expect(typeof echoed.uuid).toBe("string");
     expect((echoed.uuid as string).startsWith("injected-")).toBe(true);
   });

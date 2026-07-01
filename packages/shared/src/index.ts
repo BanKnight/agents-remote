@@ -781,6 +781,11 @@ export type Claude2UserMessage = {
   isMeta?: boolean;
   sourceToolUseID?: string;
   isSynthetic?: boolean;
+  // Set by our api service when it injects the client's user-message echo into
+  // the live stream (the CLI never echoes user input on stdout). Marks "this is
+  // a real user submission" so the client can open running on it without matching
+  // CLI-internal user messages (isMeta/isSynthetic skill bodies, compact summaries).
+  isUserInput?: boolean;
   // JSONL envelope fields (optional — may be absent from stdout stream)
   uuid?: string;
   parentUuid?: string;
