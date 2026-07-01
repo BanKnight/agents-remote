@@ -412,4 +412,10 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
   "workbench.backToList": "实例列表",
+  "workbench.global": "全局",
+  "workbench.projectsAria": "项目",
+  "workbench.agentsSection": "Agent",
+  "workbench.terminalsSection": "终端",
+  "workbench.expandProject": "展开项目",
+  "workbench.collapseProject": "收起项目",
 };

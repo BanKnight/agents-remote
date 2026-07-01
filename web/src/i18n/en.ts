@@ -412,4 +412,10 @@ export const en = {
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
   "workbench.backToList": "Instances",
+  "workbench.global": "Global",
+  "workbench.projectsAria": "Projects",
+  "workbench.agentsSection": "Agents",
+  "workbench.terminalsSection": "Terminals",
+  "workbench.expandProject": "Expand project",
+  "workbench.collapseProject": "Collapse project",
 } as const;
