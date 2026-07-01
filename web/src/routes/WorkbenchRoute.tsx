@@ -1,4 +1,4 @@
-import { useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { InstanceArea } from "../components/workbench/instance-area";
 import { WorkbenchLeftRail } from "../components/workbench/left-rail";
@@ -6,7 +6,11 @@ import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
-import { inferSessionTypeFromId, parseWorkbenchScope } from "./workbench-model";
+import {
+  type WorkbenchRightTab,
+  inferSessionTypeFromId,
+  parseWorkbenchScope,
+} from "./workbench-model";
 
 /**
  * workbench 路由（设计文档 §7）。桌面常驻三栏工作台入口。
@@ -20,21 +24,39 @@ import { inferSessionTypeFromId, parseWorkbenchScope } from "./workbench-model";
  */
 export function WorkbenchScopeRoute() {
   const { scope } = useParams({ from: "/workbench/$scope" });
-  return <WorkbenchContent scope={scope} />;
+  const { rightTab } = useSearch({ from: "/workbench/$scope" });
+  return <WorkbenchContent rightTab={rightTab} scope={scope} />;
 }
 
 export function WorkbenchFocusRoute() {
   const { scope, focusId } = useParams({ from: "/workbench/$scope/$focusId" });
-  return <WorkbenchContent scope={scope} focusId={focusId} />;
+  const { rightTab } = useSearch({ from: "/workbench/$scope/$focusId" });
+  return <WorkbenchContent focusId={focusId} rightTab={rightTab} scope={scope} />;
 }
 
-function WorkbenchContent({ scope, focusId }: { scope: string; focusId?: string }) {
+function WorkbenchContent({
+  focusId,
+  rightTab,
+  scope,
+}: {
+  focusId?: string;
+  rightTab?: WorkbenchRightTab;
+  scope: string;
+}) {
   const workbenchScope = parseWorkbenchScope(scope);
   const isDesktop = useIsDesktopViewport();
+  const navigate = useNavigate();
   const ctx: PluginContext = {
     projectKey: workbenchScope.kind === "project" ? workbenchScope.key : null,
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
+  };
+  const onRightTabChange = (tab: WorkbenchRightTab) => {
+    void navigate({
+      to: focusId ? "/workbench/$scope/$focusId" : "/workbench/$scope",
+      params: focusId ? { focusId, scope } : { scope },
+      search: { rightTab: tab },
+    });
   };
   if (!isDesktop) {
     return <MobileWorkbench focusId={focusId} scope={workbenchScope} />;
@@ -42,7 +64,7 @@ function WorkbenchContent({ scope, focusId }: { scope: string; focusId?: string 
   return (
     <WorkbenchShell
       leftPanel={<WorkbenchLeftRail focusId={focusId} scope={workbenchScope} />}
-      rightPanel={<RightPanelTabs ctx={ctx} />}
+      rightPanel={<RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />}
     >
       <InstanceArea focusId={focusId} scope={workbenchScope} />
     </WorkbenchShell>

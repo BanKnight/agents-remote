@@ -77,6 +77,21 @@ export function workbenchPath(scope: WorkbenchScope, focusId?: string) {
 }
 
 /**
+ * workbench 路由的 search 校验器（白名单 rightTab）。返回类型 `{ rightTab? }`
+ * 把 rightTab 声明为**可选** search param —— 值在白名单内才写入 key，否则返回 {}
+ *（URL 无 rightTab，回退 workbenchRightTabAtom 记忆）。可选性由返回类型的 `?`
+ * 表达（TanStack Router 据 validateSearch 返回类型推断 search schema）。
+ */
+export function validateWorkbenchSearch(search: Record<string, unknown>): {
+  rightTab?: WorkbenchRightTab;
+} {
+  if (search.rightTab === "files" || search.rightTab === "git" || search.rightTab === "prototype") {
+    return { rightTab: search.rightTab };
+  }
+  return {};
+}
+
+/**
  * 从 sessionId 前缀推断 session 类型。
  *
  * workbench 用统一 focusId（`/workbench/$scope/$focusId`），不像旧路由用路径段

@@ -10,6 +10,7 @@ import { AuthGate } from "./AuthGate";
 import { consoleSectionFromSearch } from "./console-model";
 import { HomeRoute } from "./HomeRoute";
 import { ProjectConsoleRoute } from "./ProjectConsoleRoute";
+import { validateWorkbenchSearch } from "./workbench-model";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -83,12 +84,14 @@ const terminalSessionDetailRoute = createRoute({
 const workbenchScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workbench/$scope",
+  validateSearch: validateWorkbenchSearch,
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchScopeRoute"),
 });
 
 const workbenchFocusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workbench/$scope/$focusId",
+  validateSearch: validateWorkbenchSearch,
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchFocusRoute"),
 });
 
