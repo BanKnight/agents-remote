@@ -223,6 +223,10 @@ export const en = {
   "quickKey.upAria": "Send arrow up",
   "quickKey.down": "↓",
   "quickKey.downAria": "Send arrow down",
+  "quickKey.left": "←",
+  "quickKey.leftAria": "Send arrow left",
+  "quickKey.right": "→",
+  "quickKey.rightAria": "Send arrow right",
 
   // ── Provider Markers ─────────────────────────────────────────
   "provider.claude": "CL",

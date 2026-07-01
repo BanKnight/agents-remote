@@ -99,6 +99,13 @@ export const sessionQuickKeys = (_sessionType: SessionType): SessionQuickKey[] =
   { id: "eof", labelKey: "quickKey.eof", ariaLabelKey: "quickKey.eofAria", sequence: "\x04" },
   { id: "up", labelKey: "quickKey.up", ariaLabelKey: "quickKey.upAria", sequence: "\x1b[A" },
   { id: "down", labelKey: "quickKey.down", ariaLabelKey: "quickKey.downAria", sequence: "\x1b[B" },
+  { id: "left", labelKey: "quickKey.left", ariaLabelKey: "quickKey.leftAria", sequence: "\x1b[D" },
+  {
+    id: "right",
+    labelKey: "quickKey.right",
+    ariaLabelKey: "quickKey.rightAria",
+    sequence: "\x1b[C",
+  },
 ];
 
 export function normalizeSessionTextInput(input: string) {

@@ -1568,7 +1568,10 @@ type QuickKeyBarProps = {
 function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
   const { t } = useT();
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5" aria-label={t("session.quickKeys")}>
+    <div
+      className="flex min-w-0 flex-nowrap gap-1.5 overflow-x-auto"
+      aria-label={t("session.quickKeys")}
+    >
       {quickKeys.map((quickKey) => (
         <button
           aria-label={t(quickKey.ariaLabelKey)}

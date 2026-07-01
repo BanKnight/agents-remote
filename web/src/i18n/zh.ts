@@ -223,6 +223,10 @@ export const zh: Record<TranslationKey, string> = {
   "quickKey.upAria": "发送上箭头",
   "quickKey.down": "↓",
   "quickKey.downAria": "发送下箭头",
+  "quickKey.left": "←",
+  "quickKey.leftAria": "发送左箭头",
+  "quickKey.right": "→",
+  "quickKey.rightAria": "发送右箭头",
 
   // ── Provider Markers ─────────────────────────────────────────
   "provider.claude": "CL",

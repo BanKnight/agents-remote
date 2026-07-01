@@ -48,12 +48,14 @@ test("session quick keys are unified across session types and keep stable contro
   const agentKeys = sessionQuickKeys("agent");
   const terminalKeys = sessionQuickKeys("terminal");
 
-  const expectedIds = ["shifttab", "escape", "interrupt", "eof", "up", "down"];
+  const expectedIds = ["shifttab", "escape", "interrupt", "eof", "up", "down", "left", "right"];
   expect(agentKeys.map((key) => key.id)).toEqual(expectedIds);
   expect(terminalKeys.map((key) => key.id)).toEqual(expectedIds);
   expect(agentKeys.find((key) => key.id === "shifttab")?.sequence).toBe("\x1b[Z");
   expect(terminalKeys.find((key) => key.id === "eof")?.sequence).toBe("\x04");
   expect(terminalKeys.find((key) => key.id === "up")?.sequence).toBe("\x1b[A");
+  expect(terminalKeys.find((key) => key.id === "left")?.sequence).toBe("\x1b[D");
+  expect(terminalKeys.find((key) => key.id === "right")?.sequence).toBe("\x1b[C");
 });
 
 test("normalizeSessionTextInput preserves non-empty content and suppresses blank sends", () => {
