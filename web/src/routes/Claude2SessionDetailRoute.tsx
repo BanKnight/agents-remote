@@ -340,7 +340,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     aiTitle,
     agentName,
     loading,
-    replayDone,
     hasRenderedContent,
     liveThinkingTokens,
     tasks,
@@ -502,7 +501,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                     <VirtualizedThreadContent
                       loading={loading}
-                      replayDone={replayDone}
                       hasRenderedContent={hasRenderedContent}
                       retryInfo={retryInfo}
                     />
@@ -2842,12 +2840,10 @@ const CHAT_BOTTOM_THRESHOLD = 32;
 
 function VirtualizedThreadContent({
   loading,
-  replayDone,
   hasRenderedContent,
   retryInfo,
 }: {
   loading: boolean;
-  replayDone: boolean;
   hasRenderedContent: boolean;
   retryInfo: RetryInfo | null;
 }) {
@@ -2987,16 +2983,8 @@ function VirtualizedThreadContent({
             Gating on turns.length===0 keeps the skeleton mounted exactly until
             real content is painted, closing the blank gap. hasRenderedContent
             (sync) covers the one-frame window where content has arrived in
-            rawMessages but the runtime hasn't painted it yet. !replayDone covers
-            the pre-batch window: the relay sends the scalar seed_init between
-            session_init and history_start, and that per-message frame clears
-            `loading` before any content arrives — without !replayDone the gate
-            would hide (loading=false ∧ hasRenderedContent=false ∧ turns=[]) then
-            re-show at live_end, producing the resume-open skeleton flicker.
-            replayDone flips true at live_end and resets on session_init. */}
-        {turns.length === 0 && (loading || hasRenderedContent || !replayDone) ? (
-          <ChatSkeleton />
-        ) : null}
+            rawMessages but the runtime hasn't painted it yet. */}
+        {turns.length === 0 && (loading || hasRenderedContent) ? <ChatSkeleton /> : null}
         <div ref={contentRef}>
           <div style={{ position: "relative", height: virtualizer.getTotalSize() }}>
             {items.map((virtualItem) => {

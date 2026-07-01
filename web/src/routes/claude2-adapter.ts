@@ -3611,12 +3611,6 @@ export function useClaude2Session(
     [rawMessages],
   );
   const [loading, setLoading] = useState(true);
-  // True once the initial replay's live batch has ended (live_end received).
-  // Resets on every session_init (new/reconnect). The skeleton gate uses this to
-  // stay mounted through the pre-batch window where a stray per-message frame
-  // (e.g. the scalar seed_init the relay sends between session_init and
-  // history_start) prematurely clears `loading` before any content has arrived.
-  const [replayDone, setReplayDone] = useState(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
@@ -3683,7 +3677,6 @@ export function useClaude2Session(
       retryCountdownRef.current = null;
     }
     setLoading(true);
-    setReplayDone(false);
     cursorRef.current = null;
     pendingAskRef.current = null;
     historyBatchRef.current = null;
@@ -3982,6 +3975,19 @@ export function useClaude2Session(
             console.log("[claude2-adapter] session_init resume=", isResumeRef.current);
           return;
         }
+        // seed_init: replay-time scalar seed (model/permissionMode), sent between
+        // session_init and history_start (session-relay.ts addSubscriber) so the
+        // scalar fold has a value before the gzip history batch. It is
+        // connection-level metadata, NOT message-stream content — fold its
+        // scalars and return without appending to rawMessages or touching loading.
+        // Falling through to per-message dispatch would setLoading(false) before
+        // any content arrives, opening a window where the skeleton gate hides
+        // (loading=false ∧ hasRenderedContent=false ∧ turns=[]) then re-shows at
+        // live_end — the resume-open skeleton flicker.
+        if (msg.type === "system" && (msg as { subtype?: string }).subtype === "seed_init") {
+          applyMessageScalarState(msg);
+          return;
+        }
         if (msg.type === "history_start") {
           markOnce("historyLoad");
           // Count starts so the report surfaces a StrictMode/reconnect double-load
@@ -4040,7 +4046,6 @@ export function useClaude2Session(
           // No divider here: the boundary lives at the history/live junction
           // (injected at history_end), not at the tail of the live batch.
           setLoading(false);
-          setReplayDone(true);
           measureSince("historyLoad", "loadE2E");
           if (isSocketLoggingEnabled())
             console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
@@ -4235,7 +4240,6 @@ export function useClaude2Session(
     aiTitle,
     agentName,
     loading,
-    replayDone,
     hasRenderedContent,
     liveThinkingTokens,
     tasks,
