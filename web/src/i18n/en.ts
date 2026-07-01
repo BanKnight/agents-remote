@@ -416,6 +416,7 @@ export const en = {
   "workbench.projectsAria": "Projects",
   "workbench.agentsSection": "Agents",
   "workbench.terminalsSection": "Terminals",
+  "workbench.historySection": "History",
   "workbench.expandProject": "Expand project",
   "workbench.collapseProject": "Collapse project",
 } as const;

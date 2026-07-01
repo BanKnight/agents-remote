@@ -416,6 +416,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.projectsAria": "项目",
   "workbench.agentsSection": "Agent",
   "workbench.terminalsSection": "终端",
+  "workbench.historySection": "历史会话",
   "workbench.expandProject": "展开项目",
   "workbench.collapseProject": "收起项目",
 };

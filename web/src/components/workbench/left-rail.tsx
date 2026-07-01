@@ -1,15 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
-import type { AgentProvider, AgentSession, Project, TerminalSession } from "@agents-remote/shared";
+import type {
+  AgentHistoryEntry,
+  AgentProvider,
+  AgentSession,
+  Project,
+  TerminalSession,
+} from "@agents-remote/shared";
 import {
   createAgentSession,
   createTerminalSession,
+  listAgentHistory,
   listAgentSessions,
   listProjects,
   listTerminalSessions,
 } from "../../api/client";
 import { useT } from "../../i18n";
+import type { TranslateFn } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import { ActionButton, IconMarker } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
@@ -205,9 +213,15 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
     queryFn: () => listTerminalSessions(projectName),
     staleTime: 5_000,
   });
+  const history = useQuery({
+    queryKey: ["projects", projectName, "agent-history"],
+    queryFn: () => listAgentHistory(projectName),
+    staleTime: 5_000,
+  });
 
   const agentSessions = agents.data?.sessions ?? [];
   const terminalSessions = terminals.data?.sessions ?? [];
+  const historyEntries = history.data?.entries ?? [];
   const loading = agents.isLoading && terminals.isLoading;
 
   const invalidateSessions = async () => {
@@ -269,6 +283,29 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
     });
   };
 
+  const resumeSession = useMutation({
+    mutationFn: (claudeSessionId: string) =>
+      createAgentSession(projectName, "claude2", { claudeSessionId }),
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-history"] }),
+      ]);
+      await navigate({
+        to: "/workbench/$scope/$focusId",
+        params: { scope: projectName, focusId: data.session.id },
+      });
+    },
+  });
+
+  const handleHistoryClick = (entry: AgentHistoryEntry) => {
+    if (entry.hasActiveSession && entry.activeSessionId) {
+      focus(entry.activeSessionId);
+    } else {
+      resumeSession.mutate(entry.claudeSessionId);
+    }
+  };
+
   return (
     <div className="ml-3 flex flex-col border-l border-white/5 pl-1">
       <LeftRailCreateBar
@@ -300,6 +337,18 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
           key={session.id}
           onSelect={focus}
           session={session}
+        />
+      ))}
+      {historyEntries.length > 0 ? (
+        <SectionLabel>{t("workbench.historySection")}</SectionLabel>
+      ) : null}
+      {historyEntries.map((entry) => (
+        <HistorySessionNode
+          active={entry.hasActiveSession && entry.activeSessionId === focusId}
+          entry={entry}
+          isResuming={resumeSession.isPending}
+          key={entry.claudeSessionId}
+          onClick={() => handleHistoryClick(entry)}
         />
       ))}
     </div>
@@ -400,6 +449,57 @@ function TerminalNavItem({ active, onSelect, session }: TerminalNavItemProps) {
       onClick={() => onSelect(session.id)}
     />
   );
+}
+
+type HistorySessionNodeProps = {
+  active: boolean;
+  entry: AgentHistoryEntry;
+  isResuming: boolean;
+  onClick: () => void;
+};
+
+function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessionNodeProps) {
+  const { t } = useT();
+  const displayTitle = entry.title ?? entry.firstMessage ?? entry.claudeSessionId.slice(0, 8);
+  const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+  const description = isResuming
+    ? t("project.historyResuming")
+    : [
+        time,
+        entry.messageCount > 0 ? t("project.historyTurns", { count: entry.messageCount }) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  return (
+    <ShellNavigationButton
+      active={active}
+      description={description || undefined}
+      label={displayTitle}
+      marker={
+        <IconMarker tone={entry.hasActiveSession ? "success" : "accent"}>
+          <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
+        </IconMarker>
+      }
+      onClick={() => {
+        if (!isResuming) onClick();
+      }}
+    />
+  );
+}
+
+function relativeTime(iso: string, t: TranslateFn): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "";
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return t("time.justNow");
+  if (mins < 60) return t("time.minutesAgo", { count: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return t("time.hoursAgo", { count: hours });
+  const days = Math.floor(hours / 24);
+  if (days < 7) return t("time.daysAgo", { count: days });
+  return date.toLocaleDateString();
 }
 
 function LeftRailSkeleton() {
