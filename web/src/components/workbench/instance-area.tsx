@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import type { WorkbenchScope } from "../../routes/workbench-model";
-import { getAgentSession } from "../../api/client";
+import { type WorkbenchScope, inferSessionTypeFromId } from "../../routes/workbench-model";
+import { getAgentSession, getTerminalSession } from "../../api/client";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
-import { ChatPanel } from "./instance-panel";
+import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 
 type InstanceAreaProps = {
   scope: WorkbenchScope;
@@ -28,11 +28,25 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
 }
 
 /**
- * 项目作用域实例路由：查 agent session 详情，按 provider 分发到对应面板。
- * claude2 → ChatPanel；其他 provider / terminal → 占位
- *（commit ③ 接 AgentTerminalPanel/TerminalPanel）。
+ * 项目作用域实例路由：按 sessionId 前缀（`agent_` / `terminal_`，见 workbench-model）
+ * 分发到对应实例路由，单次查询无 404 噪音。
  */
 function ProjectInstanceRouter({ focusId, projectName }: { focusId: string; projectName: string }) {
+  const sessionType = inferSessionTypeFromId(focusId);
+  if (sessionType === "agent") {
+    return <AgentInstanceRouter focusId={focusId} projectName={projectName} />;
+  }
+  if (sessionType === "terminal") {
+    return <TerminalInstanceRouter focusId={focusId} projectName={projectName} />;
+  }
+  return <PlaceholderPanel focusId={focusId} />;
+}
+
+/**
+ * agent 实例路由：查 agent session 详情，按 provider 分发 ——
+ * claude2 → ChatPanel；其他 provider（codex/claude）→ AgentTerminalPanel。
+ */
+function AgentInstanceRouter({ focusId, projectName }: { focusId: string; projectName: string }) {
   const detail = useQuery({
     queryKey: ["projects", projectName, "agent-sessions", focusId],
     queryFn: () => getAgentSession(projectName, focusId),
@@ -48,7 +62,36 @@ function ProjectInstanceRouter({ focusId, projectName }: { focusId: string; proj
     return <ChatPanel projectName={projectName} sessionId={focusId} />;
   }
 
-  // 非 claude2 agent（codex/claude）/ terminal（getAgentSession 404）→ commit ③ 接入
+  if (detail.data?.session) {
+    return <AgentTerminalPanel projectName={projectName} sessionId={focusId} />;
+  }
+
+  return <PlaceholderPanel focusId={focusId} />;
+}
+
+/** terminal 实例路由：查 terminal session 详情 → TerminalPanel。 */
+function TerminalInstanceRouter({
+  focusId,
+  projectName,
+}: {
+  focusId: string;
+  projectName: string;
+}) {
+  const detail = useQuery({
+    queryKey: ["projects", projectName, "terminal-sessions", focusId],
+    queryFn: () => getTerminalSession(projectName, focusId),
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  if (detail.isLoading) {
+    return <LoadingPanel />;
+  }
+
+  if (detail.data?.session) {
+    return <TerminalPanel projectName={projectName} sessionId={focusId} />;
+  }
+
   return <PlaceholderPanel focusId={focusId} />;
 }
 

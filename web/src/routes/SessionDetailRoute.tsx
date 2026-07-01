@@ -95,6 +95,11 @@ type SessionDetailProps = {
   sessionId: string;
   sessionType: SessionType;
   sourceAgentSession?: string;
+  /**
+   * 嵌入模式（workbench 中栏用）：跳过 ShellLayout/sidebar，直接渲染面板主体，
+   * 由 WorkbenchShell 提供外壳。默认 false（旧路由用 ShellLayout）。
+   */
+  embedded?: boolean;
 };
 
 type StreamConnectionStatus = "connecting" | TransportStatus;
@@ -108,11 +113,12 @@ type SessionDetailResponse =
       session: TerminalSession;
     };
 
-function SessionDetail({
+export function SessionDetail({
   projectName,
   sessionId,
   sessionType,
   sourceAgentSession,
+  embedded = false,
 }: SessionDetailProps) {
   const { t } = useT();
   const navigate = useNavigate();
@@ -414,27 +420,8 @@ function SessionDetail({
     ),
   }));
 
-  return (
-    <ShellLayout
-      sidebar={
-        <ShellSidebar display="flex">
-          <ProjectShellNavigation
-            activeItemId="agents"
-            items={projectNavItems}
-            projectPath={projectName}
-            projectTitle={projectName}
-            onSelectItem={(section) => {
-              void navigate({
-                to: "/projects/$projectName",
-                params: { projectName },
-                search: { workspace: section, filesPath: "" },
-              });
-            }}
-          />
-        </ShellSidebar>
-      }
-      variant="project"
-    >
+  const content = (
+    <>
       <SessionDetailHeader
         connectionStatus={connectionStatus}
         createTerminalError={createTerminal.error}
@@ -506,6 +493,35 @@ function SessionDetail({
         />
       ) : null}
       {holder}
+    </>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <ShellLayout
+      sidebar={
+        <ShellSidebar display="flex">
+          <ProjectShellNavigation
+            activeItemId="agents"
+            items={projectNavItems}
+            projectPath={projectName}
+            projectTitle={projectName}
+            onSelectItem={(section) => {
+              void navigate({
+                to: "/projects/$projectName",
+                params: { projectName },
+                search: { workspace: section, filesPath: "" },
+              });
+            }}
+          />
+        </ShellSidebar>
+      }
+      variant="project"
+    >
+      {content}
     </ShellLayout>
   );
 }

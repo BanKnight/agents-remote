@@ -1,4 +1,5 @@
 import { atomWithStorage } from "jotai/utils";
+import type { SessionType } from "@agents-remote/shared";
 
 /**
  * 工作台作用域 —— URL `/workbench/$scope` 的语义核心
@@ -69,4 +70,19 @@ export function workbenchPath(scope: WorkbenchScope, focusId?: string) {
   const scopeSegment = scope.kind === "global" ? "global" : encodeURIComponent(scope.key);
   const base = `/workbench/${scopeSegment}`;
   return focusId ? `${base}/${encodeURIComponent(focusId)}` : base;
+}
+
+/**
+ * 从 sessionId 前缀推断 session 类型。
+ *
+ * workbench 用统一 focusId（`/workbench/$scope/$focusId`），不像旧路由用路径段
+ *（`/agent-sessions/` vs `/terminal-sessions/`）显式区分 type，因此需从 id 反推。
+ * id 由 api/src/session-registry.ts `defaultCreateId` 生成：`agent_${uuid}` /
+ * `terminal_${uuid}` —— 前缀是稳定类型标识，无歧义，比并行查 agent/terminal 两个接口
+ *（其一必然 404）干净。
+ */
+export function inferSessionTypeFromId(sessionId: string): SessionType | undefined {
+  if (sessionId.startsWith("agent_")) return "agent";
+  if (sessionId.startsWith("terminal_")) return "terminal";
+  return undefined;
 }
