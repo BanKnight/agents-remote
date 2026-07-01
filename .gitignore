@@ -10,3 +10,4 @@ test-results/
 .claude/handsoff/
 .claude/worktrees/
 .claude/skills/
+.codegraph/
