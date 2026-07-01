@@ -1,3 +1,4 @@
+import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import type { SessionType } from "@agents-remote/shared";
 
@@ -104,4 +105,150 @@ export function inferSessionTypeFromId(sessionId: string): SessionType | undefin
   if (sessionId.startsWith("agent_")) return "agent";
   if (sessionId.startsWith("terminal_")) return "terminal";
   return undefined;
+}
+
+// ── 中栏 split 布局（Stage 4，设计文档 §4）───────────────────────────────────
+// 实例 = 面板 1:1：活跃实例常驻中栏为一个面板，关闭面板 = 结束实例成历史 session。
+// URL 只编码 focusId（聚焦面板，输入作用于它）；面板布局进 localStorage（§2），
+// 按作用域隔离（project 按项目名分键，global 单份）。
+
+/** 中栏 split 面板引用：一个活跃实例（项目 + session id）。 */
+export type WorkbenchPanelRef = {
+  projectName: string;
+  sessionId: string;
+};
+
+/**
+ * 中栏 split 布局 state（State/Render 分离：raw 有序结构，渲染由纯函数派生）。
+ * - `panels`：有序扁平面板列表（左→右铺开；遇到 `newRows` 标记的 sessionId 起新行）。
+ * - `newRows`：标记「此 sessionId 起一个新行」（split-down）；列表首项忽略此标记。
+ * - `sizes`：每个面板在行内的 flex 宽度权重（默认 1）；resize gutter 单点更新。
+ * - `maximized`：最大化面板的 sessionId（标量，不新增布局树实体）；null = 正常铺开。
+ */
+export type WorkbenchLayout = {
+  panels: WorkbenchPanelRef[];
+  newRows: string[];
+  sizes: Record<string, number>;
+  maximized: string | null;
+};
+
+export const EMPTY_WORKBENCH_LAYOUT: WorkbenchLayout = {
+  panels: [],
+  newRows: [],
+  sizes: {},
+  maximized: null,
+};
+
+/** 默认面板 flex 宽度权重（resize 基线，设计文档 §4）。 */
+export const WORKBENCH_PANEL_DEFAULT_FLEX = 1;
+/** resize 时面板最小 flex 权重（防压溃到 0）。 */
+export const WORKBENCH_PANEL_MIN_FLEX = 0.2;
+
+/**
+ * 从扁平布局派生二维行结构（渲染层纯函数）。`newRows` 标记的 sessionId 起新行；
+ * 首个面板不论标记都进第一行。maximized 时返回单面板单行（派生，不改 state）。
+ */
+export function deriveRows(layout: WorkbenchLayout): WorkbenchPanelRef[][] {
+  if (layout.maximized !== null) {
+    const max = layout.panels.find((p) => p.sessionId === layout.maximized);
+    return max ? [[max]] : [];
+  }
+  const newRowSet = new Set(layout.newRows);
+  const rows: WorkbenchPanelRef[][] = [];
+  let current: WorkbenchPanelRef[] = [];
+  for (const panel of layout.panels) {
+    if (current.length > 0 && newRowSet.has(panel.sessionId)) {
+      rows.push(current);
+      current = [];
+    }
+    current.push(panel);
+  }
+  if (current.length > 0) rows.push(current);
+  return rows;
+}
+
+/**
+ * 向布局加入面板（split-right 默认；`newRow` 起新行 = split-down）。
+ * 已存在的 sessionId 幂等不重复加；`afterSessionId` 指定插入位置（聚焦面板之后）。
+ */
+export function addPanel(
+  layout: WorkbenchLayout,
+  ref: WorkbenchPanelRef,
+  opts: { afterSessionId?: string; newRow?: boolean } = {},
+): WorkbenchLayout {
+  if (layout.panels.some((p) => p.sessionId === ref.sessionId)) return layout;
+  const panels = [...layout.panels];
+  const idx =
+    opts.afterSessionId === undefined
+      ? -1
+      : panels.findIndex((p) => p.sessionId === opts.afterSessionId);
+  if (idx >= 0) panels.splice(idx + 1, 0, ref);
+  else panels.push(ref);
+  const newRows =
+    opts.newRow === true && idx >= 0 ? [...layout.newRows, ref.sessionId] : layout.newRows;
+  const sizes = { ...layout.sizes, [ref.sessionId]: WORKBENCH_PANEL_DEFAULT_FLEX };
+  return { ...layout, panels, newRows, sizes };
+}
+
+/** 移除面板（关闭 = 结束实例）；同步清理 newRows / sizes / maximized。 */
+export function removePanel(layout: WorkbenchLayout, sessionId: string): WorkbenchLayout {
+  const panels = layout.panels.filter((p) => p.sessionId !== sessionId);
+  const newRows = layout.newRows.filter((id) => id !== sessionId);
+  const sizes = { ...layout.sizes };
+  delete sizes[sessionId];
+  const maximized = layout.maximized === sessionId ? null : layout.maximized;
+  return { panels, newRows, sizes, maximized };
+}
+
+/** 切换面板最大化（标量翻转，不新增布局实体）。 */
+export function toggleMaximize(layout: WorkbenchLayout, sessionId: string): WorkbenchLayout {
+  return { ...layout, maximized: layout.maximized === sessionId ? null : sessionId };
+}
+
+/** 设置面板 flex 宽度（resize gutter 单点更新；下限 WORKBENCH_PANEL_MIN_FLEX）。 */
+export function setPanelSize(
+  layout: WorkbenchLayout,
+  sessionId: string,
+  size: number,
+): WorkbenchLayout {
+  return {
+    ...layout,
+    sizes: { ...layout.sizes, [sessionId]: Math.max(WORKBENCH_PANEL_MIN_FLEX, size) },
+  };
+}
+
+// ── 布局 atom（按作用域隔离，localStorage 持久化）─────────────────────────────
+
+/**
+ * 全部作用域的布局 state。`project` 按项目名分键（切项目恢复各自面板），
+ * `global` 单份（跨项目混排，Stage 4 commit ④）。单 atom 便于 useWorkbenchLayout
+ * 按 scope 选 + 原子更新。
+ */
+export type WorkbenchLayoutState = {
+  project: Record<string, WorkbenchLayout>;
+  global: WorkbenchLayout;
+};
+
+export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutState>("workbenchLayout", {
+  project: {},
+  global: EMPTY_WORKBENCH_LAYOUT,
+});
+
+/**
+ * 按作用域读写 workbench 布局。读：project 取 `state.project[key]`（缺省 EMPTY），
+ * global 取 `state.global`。写：`update(fn)` 只改当前作用域的布局，其余 immutable 保留。
+ */
+export function useWorkbenchLayout(scope: WorkbenchScope) {
+  const [state, setState] = useAtom(workbenchLayoutAtom);
+  const layout =
+    scope.kind === "project" ? (state.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT) : state.global;
+  const update = (fn: (layout: WorkbenchLayout) => WorkbenchLayout) =>
+    setState((prev) => {
+      if (scope.kind === "project") {
+        const current = prev.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT;
+        return { ...prev, project: { ...prev.project, [scope.key]: fn(current) } };
+      }
+      return { ...prev, global: fn(prev.global) };
+    });
+  return [layout, update] as const;
 }

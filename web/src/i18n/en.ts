@@ -423,4 +423,7 @@ export const en = {
   "workbench.tabGit": "Git",
   "workbench.tabPrototype": "Prototype",
   "workbench.rightPanelEmpty": "Select an instance to inspect files or changes.",
+  "workbench.panelClose": "Close panel",
+  "workbench.panelMaximize": "Maximize panel",
+  "workbench.panelRestore": "Restore panel",
 } as const;

@@ -423,4 +423,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.tabGit": "Git",
   "workbench.tabPrototype": "原型",
   "workbench.rightPanelEmpty": "选择一个实例以查看文件或变更。",
+  "workbench.panelClose": "关闭面板",
+  "workbench.panelMaximize": "最大化面板",
+  "workbench.panelRestore": "恢复面板",
 };
