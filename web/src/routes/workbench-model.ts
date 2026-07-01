@@ -52,3 +52,21 @@ export const workbenchRightTabAtom = atomWithStorage<WorkbenchRightTab>(
   "workbenchRightTab",
   "files",
 );
+
+/**
+ * 解析 URL scope 段：`global` → 全局作用域；其余 → project 作用域（key = project name）。
+ * 对应路由 `/workbench/$scope`（设计文档 §7）。
+ */
+export function parseWorkbenchScope(scope: string): WorkbenchScope {
+  return scope === "global" ? { kind: "global" } : { kind: "project", key: scope };
+}
+
+/**
+ * 生成 workbench URL：scope = `global` 或 project key（encodeURIComponent），
+ * focusId 可选（聚焦实例 id）。与 projectConsolePath 同编码模式。
+ */
+export function workbenchPath(scope: WorkbenchScope, focusId?: string) {
+  const scopeSegment = scope.kind === "global" ? "global" : encodeURIComponent(scope.key);
+  const base = `/workbench/${scopeSegment}`;
+  return focusId ? `${base}/${encodeURIComponent(focusId)}` : base;
+}

@@ -61,12 +61,26 @@ const terminalSessionDetailRoute = createRoute({
   component: lazyRouteComponent(() => import("./SessionDetailRoute"), "TerminalSessionDetailRoute"),
 });
 
+const workbenchScopeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workbench/$scope",
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchScopeRoute"),
+});
+
+const workbenchFocusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workbench/$scope/$focusId",
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchFocusRoute"),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   projectConsoleRoute,
   agentSessionDetailRoute,
   claude2SessionDetailRoute,
   terminalSessionDetailRoute,
+  workbenchScopeRoute,
+  workbenchFocusRoute,
 ]);
 
 export const router = createRouter({
