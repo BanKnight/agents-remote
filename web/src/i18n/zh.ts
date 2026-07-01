@@ -407,4 +407,8 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.collapseRight": "收起右栏",
   "workbench.expandLeft": "展开左栏",
   "workbench.expandRight": "展开右栏",
+  "workbench.createClaude2": "+ Claude",
+  "workbench.createTerminal": "+ 终端",
+  "workbench.instancesAria": "实例",
+  "workbench.noInstances": "暂无实例，用上方按钮创建。",
 };

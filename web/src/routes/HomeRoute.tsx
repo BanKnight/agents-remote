@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useId, useState, useEffect } from "react";
 import { createProject, deleteProject, listProjects } from "../api/client";
 import { useT } from "../i18n";
-import { defaultConsoleSection } from "./console-model";
 import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell/shell-layout";
 import {
   ActionButton,
@@ -32,9 +31,8 @@ export function HomeRoute() {
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       await navigate({
-        to: "/projects/$projectName",
-        params: { projectName: response.project.name },
-        search: { workspace: defaultConsoleSection, filesPath: "" },
+        to: "/workbench/$scope",
+        params: { scope: response.project.name },
       });
     },
   });
@@ -210,9 +208,8 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
   return (
     <Link
       className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-      params={{ projectName: project.name }}
-      search={{ workspace: defaultConsoleSection, filesPath: "" }}
-      to="/projects/$projectName"
+      params={{ scope: project.name }}
+      to="/workbench/$scope"
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
         <IconMarker tone="success">

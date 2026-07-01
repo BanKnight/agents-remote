@@ -407,4 +407,8 @@ export const en = {
   "workbench.collapseRight": "Collapse right panel",
   "workbench.expandLeft": "Expand left panel",
   "workbench.expandRight": "Expand right panel",
+  "workbench.createClaude2": "+ Claude",
+  "workbench.createTerminal": "+ Terminal",
+  "workbench.instancesAria": "Instances",
+  "workbench.noInstances": "No instances yet — create one above.",
 } as const;

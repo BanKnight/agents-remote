@@ -1,5 +1,6 @@
 import { useParams } from "@tanstack/react-router";
 import { InstanceArea } from "../components/workbench/instance-area";
+import { WorkbenchLeftRail } from "../components/workbench/left-rail";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { parseWorkbenchScope } from "./workbench-model";
 
@@ -26,7 +27,7 @@ export function WorkbenchFocusRoute() {
 function WorkbenchContent({ scope, focusId }: { scope: string; focusId?: string }) {
   const workbenchScope = parseWorkbenchScope(scope);
   return (
-    <WorkbenchShell>
+    <WorkbenchShell leftPanel={<WorkbenchLeftRail scope={workbenchScope} focusId={focusId} />}>
       <InstanceArea focusId={focusId} scope={workbenchScope} />
     </WorkbenchShell>
   );
