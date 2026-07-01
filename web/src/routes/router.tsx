@@ -4,6 +4,7 @@ import {
   createRouter,
   lazyRouteComponent,
   Outlet,
+  redirect,
 } from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
 import { consoleSectionFromSearch } from "./console-model";
@@ -37,12 +38,24 @@ const projectConsoleRoute = createRoute({
 const agentSessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName/agent-sessions/$sessionId",
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/workbench/$scope/$focusId",
+      params: { scope: params.projectName, focusId: params.sessionId },
+    });
+  },
   component: lazyRouteComponent(() => import("./SessionDetailRoute"), "AgentSessionDetailRoute"),
 });
 
 const claude2SessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName/agent-sessions/$sessionId/claude2",
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/workbench/$scope/$focusId",
+      params: { scope: params.projectName, focusId: params.sessionId },
+    });
+  },
   component: lazyRouteComponent(
     () => import("./Claude2SessionDetailRoute"),
     "Claude2SessionDetailRoute",
@@ -58,6 +71,12 @@ const terminalSessionDetailRoute = createRoute({
         ? search.fromAgentSession
         : undefined,
   }),
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/workbench/$scope/$focusId",
+      params: { scope: params.projectName, focusId: params.sessionId },
+    });
+  },
   component: lazyRouteComponent(() => import("./SessionDetailRoute"), "TerminalSessionDetailRoute"),
 });
 
