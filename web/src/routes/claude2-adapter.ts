@@ -36,6 +36,39 @@ export type TaskInfo = {
   kind: "agent" | "workflow" | "task";
 };
 
+/**
+ * Sort tasks for display by status priority, then numeric task id ascending:
+ * in_progress first (the active signal), then pending, then any other
+ * non-completed state (error/backgrounded), with completed tasks last. Grouping
+ * by status — not just completed/not — keeps in_progress tasks clustered at the
+ * top instead of interleaved with pending by id order. Pure; shared by TaskPanel
+ * (expanded list) and the collapsed-header first-in-progress pick so the two
+ * views never disagree on ordering.
+ */
+export function sortTasks(tasks: TaskInfo[]): TaskInfo[] {
+  const numericId = (id: string): number => {
+    const n = Number(id);
+    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+  };
+  const statusRank = (status: TaskInfo["status"]): number => {
+    switch (status) {
+      case "in_progress":
+        return 0;
+      case "pending":
+        return 1;
+      case "completed":
+        return 3;
+      default:
+        return 2;
+    }
+  };
+  return [...tasks].sort((a, b) => {
+    const rankDiff = statusRank(a.status) - statusRank(b.status);
+    if (rankDiff !== 0) return rankDiff;
+    return numericId(a.id) - numericId(b.id);
+  });
+}
+
 type TaskSystemMessage = Extract<
   SessionStreamServerMessage,
   { type: "system"; subtype: "task_started" | "task_updated" | "task_notification" }

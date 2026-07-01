@@ -11,6 +11,10 @@ import type { TranslationKey } from "../i18n/types";
 export type ConsoleSection = "agents" | "git" | "files";
 
 export const inputDrawerCollapsedAtom = atomWithStorage("inputDrawerCollapsed", false);
+// TaskPanel expand state, persisted across session enter/leave. Defaults to
+// collapsed — the header shows the first in-progress task, the panel body stays
+// hidden until the user expands it.
+export const tasksExpandedAtom = atomWithStorage("tasksExpanded", false);
 
 export type ConsoleSectionDefinition = {
   id: ConsoleSection;

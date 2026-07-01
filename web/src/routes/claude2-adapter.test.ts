@@ -36,6 +36,7 @@ import {
   renderChatStream,
   resolveAutoPermissionMode,
   isCompactWindowUserNoise,
+  sortTasks,
 } from "./claude2-adapter";
 import type {
   ApiErrorAttachment,
@@ -43,6 +44,7 @@ import type {
   ExtractedToolResult,
   ChatStreamItem,
   NormalizedPart,
+  TaskInfo,
 } from "./claude2-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -384,6 +386,60 @@ describe("computeRunningCount", () => {
     // and never open running on their own — the natural exclusion that lets us
     // avoid enumerating CLI user subtypes.
     expect(computeRunningCount([user([{ type: "text", text: "standalone" }])])).toBe(0);
+  });
+});
+
+describe("sortTasks", () => {
+  const task = (id: string, status: TaskInfo["status"], subject = `task-${id}`): TaskInfo => ({
+    id,
+    status,
+    description: subject,
+    kind: "task",
+  });
+
+  test("non-completed come before completed", () => {
+    const sorted = sortTasks([
+      task("3", "completed"),
+      task("1", "in_progress"),
+      task("2", "pending"),
+    ]);
+    expect(sorted.map((t) => t.id)).toEqual(["1", "2", "3"]);
+  });
+
+  test("status priority: in_progress → pending → other → completed, id ascending within a rank (no in_progress/pending interleaving)", () => {
+    const sorted = sortTasks([
+      task("5", "completed"),
+      task("3", "pending"),
+      task("1", "in_progress"),
+      task("6", "backgrounded"),
+      task("2", "in_progress"),
+      task("4", "pending"),
+    ]);
+    expect(sorted.map((t) => t.id)).toEqual(["1", "2", "3", "4", "6", "5"]);
+  });
+
+  test("within the same group, numeric id ascending", () => {
+    const sorted = sortTasks([
+      task("10", "in_progress"),
+      task("2", "in_progress"),
+      task("1", "in_progress"),
+    ]);
+    expect(sorted.map((t) => t.id)).toEqual(["1", "2", "10"]);
+  });
+
+  test("non-numeric ids sort after numeric ones", () => {
+    const sorted = sortTasks([
+      task("abc", "in_progress"),
+      task("2", "in_progress"),
+      task("1", "in_progress"),
+    ]);
+    expect(sorted.map((t) => t.id)).toEqual(["1", "2", "abc"]);
+  });
+
+  test("does not mutate the input", () => {
+    const input = [task("2", "in_progress"), task("1", "in_progress")];
+    sortTasks(input);
+    expect(input.map((t) => t.id)).toEqual(["2", "1"]);
   });
 });
 

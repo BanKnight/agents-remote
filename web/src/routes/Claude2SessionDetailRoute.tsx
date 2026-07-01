@@ -40,8 +40,9 @@ import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
 import { measureFrom, timed } from "../lib/perf-trace";
+import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
-import { defaultConsoleSection, consoleSections } from "./console-model";
+import { defaultConsoleSection, consoleSections, tasksExpandedAtom } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
@@ -60,6 +61,7 @@ import {
   deriveStatus,
   mapTurnStatusTone,
   resolveAutoPermissionMode,
+  sortTasks,
   type AgentContainerStatus,
   type AgentTailStats,
   type ApiErrorAttachment,
@@ -164,22 +166,23 @@ function TaskPanel({
   tasks: TaskInfo[];
   onToggle: () => void;
 }) {
-  // Sort: non-completed first, completed last; within the same group, by numeric task id ascending.
-  const numericId = (id: string): number => {
-    const n = Number(id);
-    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-  };
-  const sorted = [...tasks].sort((a, b) => {
-    const aDone = a.status === "completed" ? 1 : 0;
-    const bDone = b.status === "completed" ? 1 : 0;
-    if (aDone !== bDone) return aDone - bDone;
-    return numericId(a.id) - numericId(b.id);
-  });
+  // Sort: non-completed first, completed last; within the same group, by numeric
+  // task id ascending. Shared with the collapsed-header first-in-progress pick.
+  const sorted = sortTasks(tasks);
 
   const runningTasks = sorted.filter((t) => t.status !== "completed");
   const doneCount = sorted.length - runningTasks.length;
-  const visible = collapsed ? runningTasks : sorted;
-  const totalHeight = Math.min(visible.length, collapsed ? 3 : 4) * 1.75;
+  // First in-progress task, shown under the collapsed title bar. Undefined when
+  // nothing is in_progress → the row is omitted. Same sort order as the list.
+  const firstInProgress = sorted.find((t) => t.status === "in_progress");
+  // Collapsed: body hidden, only the title bar (+ optional first in-progress)
+  // shows. Expanded: full list, capped at 3 visible rows — the rest scrolls.
+  // Row height is ~1.5rem (text-xs line + icon); 3 rows = 4.5rem. The earlier
+  // 1.75rem/row estimate let a 4th row fit inside the maxHeight, defeating the cap.
+  const TASK_ROW_REM = 1.5;
+  const TASK_MAX_VISIBLE = 3;
+  const visible = collapsed ? [] : sorted;
+  const totalHeight = Math.min(visible.length, TASK_MAX_VISIBLE) * TASK_ROW_REM;
 
   const renderRow = (task: TaskInfo) => {
     const title =
@@ -256,7 +259,7 @@ function TaskPanel({
   return (
     <div className="mb-1.5 shrink-0 rounded-xl border border-white/10 bg-[#141b28]/60 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 lg:bg-[#141b28]/80 lg:shadow-none lg:backdrop-blur-none">
       <button
-        className="mb-1 flex w-full items-center gap-1.5 text-left"
+        className={`flex w-full cursor-pointer items-center gap-1.5 text-left ${collapsed ? "" : "mb-1"}`}
         onClick={onToggle}
         type="button"
       >
@@ -276,8 +279,23 @@ function TaskPanel({
         </svg>
         <span className="text-xs font-medium text-slate-400">{t("claude2.tasks")}</span>
         <span className="text-[0.65rem] text-slate-600">
-          {collapsed ? `${runningTasks.length}/${doneCount}` : tasks.length}
+          {collapsed ? `${doneCount}/${sorted.length}` : sorted.length}
         </span>
+        {collapsed && firstInProgress && (
+          <>
+            <span className="text-slate-700">·</span>
+            <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
+            <span className="min-w-0 truncate text-xs text-slate-200">
+              <span className="text-slate-500">#{firstInProgress.id}</span>{" "}
+              {firstInProgress.subject ||
+                firstInProgress.description ||
+                firstInProgress.summary ||
+                firstInProgress.agentType ||
+                firstInProgress.workflowName ||
+                t("claude2.taskFallback", { id: firstInProgress.id.slice(0, 6) })}
+            </span>
+          </>
+        )}
       </button>
       <div
         className="flex flex-col gap-1 overflow-y-auto"
@@ -356,7 +374,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
   const [lastCompactAbortReason, setLastCompactAbortReason] = useState<"manual" | "system" | null>(
     null,
   );
-  const [tasksExpanded, setTasksExpanded] = useState(true);
+  const [tasksExpanded, setTasksExpanded] = useAtom(tasksExpandedAtom);
 
   const compactState: CompactState = useMemo(
     () => ({
