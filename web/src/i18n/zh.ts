@@ -411,4 +411,5 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.createTerminal": "+ 终端",
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
+  "workbench.backToList": "实例列表",
 };

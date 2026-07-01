@@ -411,4 +411,5 @@ export const en = {
   "workbench.createTerminal": "+ Terminal",
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
+  "workbench.backToList": "Instances",
 } as const;

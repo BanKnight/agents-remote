@@ -1,6 +1,8 @@
 import { useParams } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { InstanceArea } from "../components/workbench/instance-area";
 import { WorkbenchLeftRail } from "../components/workbench/left-rail";
+import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { parseWorkbenchScope } from "./workbench-model";
 
@@ -26,9 +28,31 @@ export function WorkbenchFocusRoute() {
 
 function WorkbenchContent({ scope, focusId }: { scope: string; focusId?: string }) {
   const workbenchScope = parseWorkbenchScope(scope);
+  const isDesktop = useIsDesktopViewport();
+  if (!isDesktop) {
+    return <MobileWorkbench focusId={focusId} scope={workbenchScope} />;
+  }
   return (
     <WorkbenchShell leftPanel={<WorkbenchLeftRail scope={workbenchScope} focusId={focusId} />}>
       <InstanceArea focusId={focusId} scope={workbenchScope} />
     </WorkbenchShell>
   );
+}
+
+/**
+ * 桌面视口检测（lg = 1024px，与 WorkbenchShell 三栏/单列断点一致）。
+ * 移动端（<lg）走 MobileWorkbench 线性退化；桌面走三栏。Stage 5 提到 lib/ 复用。
+ */
+function useIsDesktopViewport() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => window.matchMedia?.("(min-width: 1024px)").matches ?? true,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.("(min-width: 1024px)");
+    if (!media) return;
+    const handler = () => setIsDesktop(media.matches);
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
+  return isDesktop;
 }
