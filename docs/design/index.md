@@ -19,4 +19,5 @@
 - [message-replay.md](./message-replay.md) — 定义 Claude2 Agent Session 的进程模型（`Bun.spawn` 直拉 CLI，非 tmux）与消息回放管线（JSONL history + 内存 live 双缓冲 relay + 单一 WS 流），含 system.init/turn 边界、reconnect/API 重启时序、特殊时期 history 缩容（compact-block windowing + 标量重建）与已废弃的 Gen 2 机制。
 - [mobile-session-interaction.md](./mobile-session-interaction.md) — 定义 Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 直发、真实能力边界和恢复状态规则。
 - [session-runtime-boundaries.md](./session-runtime-boundaries.md) — 定义 Agent Session、Terminal Session、transport connection 和 runtime lifecycle 的长期设计边界。
+- [workbench-redesign.md](./workbench-redesign.md) — WIP 草案：桌面端从单列三层重设计为常驻三栏工作台（左=项目+实例树、中=自由 split 画布、右=文件/Git/原型/插件 tab），含走向决策、ASCII、Codex 插件研究结论与待定项。
 - [工作流和技能的大纲设计.md](./工作流和技能的大纲设计.md) — 定义工作流阶段链路、技能职责、`.workflow/versions` 运行态结构、change context 看板上下文与长期沉淀边界。
