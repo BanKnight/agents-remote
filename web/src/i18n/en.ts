@@ -401,4 +401,10 @@ export const en = {
   "claude2.compact.progressRunning": "Processing context…",
   "claude2.compact.progressSummarizing": "Generating summary…",
   "claude2.hook.title": "Hook",
+
+  // ── Workbench（三栏工作台外壳）──────────────────────────────
+  "workbench.collapseLeft": "Collapse left panel",
+  "workbench.collapseRight": "Collapse right panel",
+  "workbench.expandLeft": "Expand left panel",
+  "workbench.expandRight": "Expand right panel",
 } as const;
