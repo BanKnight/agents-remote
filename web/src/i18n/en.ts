@@ -419,4 +419,8 @@ export const en = {
   "workbench.historySection": "History",
   "workbench.expandProject": "Expand project",
   "workbench.collapseProject": "Collapse project",
+  "workbench.tabFiles": "Files",
+  "workbench.tabGit": "Git",
+  "workbench.tabPrototype": "Prototype",
+  "workbench.rightPanelEmpty": "Select an instance to inspect files or changes.",
 } as const;
