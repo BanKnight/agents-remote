@@ -307,7 +307,19 @@ function TaskPanel({
   );
 }
 
-function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionId: string }) {
+export function Claude2Chat({
+  projectName,
+  sessionId,
+  embedded = false,
+}: {
+  projectName: string;
+  sessionId: string;
+  /**
+   * 嵌入模式（workbench 中栏用）：跳过 ShellLayout/sidebar，直接渲染面板主体，
+   * 由 WorkbenchShell 提供外壳。默认 false（旧路由 Claude2SessionDetailRoute 用 ShellLayout）。
+   */
+  embedded?: boolean;
+}) {
   const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -455,27 +467,8 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     ),
   }));
 
-  return (
-    <ShellLayout
-      sidebar={
-        <ShellSidebar display="flex">
-          <ProjectShellNavigation
-            activeItemId="agents"
-            items={projectNavItems}
-            projectPath={projectName}
-            projectTitle={projectName}
-            onSelectItem={(section) => {
-              void navigate({
-                to: "/projects/$projectName",
-                params: { projectName },
-                search: { workspace: section, filesPath: "" },
-              });
-            }}
-          />
-        </ShellSidebar>
-      }
-      variant="project"
-    >
+  const content = (
+    <>
       <ChatHeader
         closePending={closeSession.isPending}
         projectName={projectName}
@@ -566,6 +559,35 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
         </Claude2BridgeContext.Provider>
       </AssistantRuntimeProvider>
       {holder}
+    </>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <ShellLayout
+      sidebar={
+        <ShellSidebar display="flex">
+          <ProjectShellNavigation
+            activeItemId="agents"
+            items={projectNavItems}
+            projectPath={projectName}
+            projectTitle={projectName}
+            onSelectItem={(section) => {
+              void navigate({
+                to: "/projects/$projectName",
+                params: { projectName },
+                search: { workspace: section, filesPath: "" },
+              });
+            }}
+          />
+        </ShellSidebar>
+      }
+      variant="project"
+    >
+      {content}
     </ShellLayout>
   );
 }
