@@ -199,20 +199,15 @@ export function SessionDetail({
       ]);
       if (sessionType === "terminal" && sourceAgentSession) {
         await navigate({
-          to: "/projects/$projectName/agent-sessions/$sessionId",
-          params: { projectName, sessionId: sourceAgentSession },
-          search: { workspace: defaultConsoleSection, filesPath: "" },
+          to: "/workbench/$scope/$focusId",
+          params: { scope: projectName, focusId: sourceAgentSession },
         });
         return;
       }
 
       await navigate({
-        to: "/projects/$projectName",
-        params: { projectName },
-        search: {
-          workspace: defaultConsoleSection,
-          filesPath: "",
-        },
+        to: "/workbench/$scope",
+        params: { scope: projectName },
       });
     },
   });
@@ -225,9 +220,8 @@ export function SessionDetail({
         queryKey: ["projects", projectName, "terminal-sessions"],
       });
       await navigate({
-        to: "/projects/$projectName/terminal-sessions/$sessionId",
-        params: { projectName, sessionId: result.session.id },
-        search: { fromAgentSession: sessionId },
+        to: "/workbench/$scope/$focusId",
+        params: { scope: projectName, focusId: result.session.id },
       });
     },
   });

@@ -353,9 +353,8 @@ export function Claude2Chat({
         }),
       ]);
       await navigate({
-        to: "/projects/$projectName",
-        params: { projectName },
-        search: { workspace: defaultConsoleSection, filesPath: "" },
+        to: "/workbench/$scope",
+        params: { scope: projectName },
       });
     },
   });
