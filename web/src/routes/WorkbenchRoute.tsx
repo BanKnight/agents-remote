@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { InstanceArea } from "../components/workbench/instance-area";
 import { WorkbenchLeftRail } from "../components/workbench/left-rail";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
+import { type PluginContext } from "../components/workbench/right-panel-plugin";
+import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
-import { parseWorkbenchScope } from "./workbench-model";
+import { inferSessionTypeFromId, parseWorkbenchScope } from "./workbench-model";
 
 /**
  * workbench 路由（设计文档 §7）。桌面常驻三栏工作台入口。
@@ -29,11 +31,19 @@ export function WorkbenchFocusRoute() {
 function WorkbenchContent({ scope, focusId }: { scope: string; focusId?: string }) {
   const workbenchScope = parseWorkbenchScope(scope);
   const isDesktop = useIsDesktopViewport();
+  const ctx: PluginContext = {
+    projectKey: workbenchScope.kind === "project" ? workbenchScope.key : null,
+    focusId,
+    sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
+  };
   if (!isDesktop) {
     return <MobileWorkbench focusId={focusId} scope={workbenchScope} />;
   }
   return (
-    <WorkbenchShell leftPanel={<WorkbenchLeftRail scope={workbenchScope} focusId={focusId} />}>
+    <WorkbenchShell
+      leftPanel={<WorkbenchLeftRail focusId={focusId} scope={workbenchScope} />}
+      rightPanel={<RightPanelTabs ctx={ctx} />}
+    >
       <InstanceArea focusId={focusId} scope={workbenchScope} />
     </WorkbenchShell>
   );

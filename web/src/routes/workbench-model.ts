@@ -19,9 +19,13 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
  */
 export type WorkbenchRightTab = "files" | "git" | "prototype";
 
-/** 左右栏宽度基线（rem），沿用 ShellLayout project sidebar 的 13.125rem，保持视觉密度一致。 */
+/**
+ * 左右栏宽度基线（rem）。左栏（项目树）沿用 ShellLayout project sidebar 的 13.125rem。
+ * 右栏需容纳 FilesPanel browser（19.375rem）+ padding，故宽于左栏；Stage 4 resize
+ * gutter 落地后用户可单点调整。
+ */
 export const WORKBENCH_LEFT_PANEL_DEFAULT_REM = 13.125;
-export const WORKBENCH_RIGHT_PANEL_DEFAULT_REM = 13.125;
+export const WORKBENCH_RIGHT_PANEL_DEFAULT_REM = 22;
 
 // ── 持久化的个人布局（atomWithStorage → localStorage，刷新保持）──────────────
 // 设计文档 §2：栏收起 + 宽度是个人布局（localStorage 编码），不进 URL
