@@ -340,7 +340,6 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
     aiTitle,
     agentName,
     loading,
-    hasRenderedContent,
     liveThinkingTokens,
     tasks,
     retryInfo,
@@ -499,11 +498,7 @@ function Claude2Chat({ projectName, sessionId }: { projectName: string; sessionI
                   ) : null}
 
                   <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <VirtualizedThreadContent
-                      loading={loading}
-                      hasRenderedContent={hasRenderedContent}
-                      retryInfo={retryInfo}
-                    />
+                    <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
 
                     <CompactIndicator />
                     <div
@@ -2840,11 +2835,9 @@ const CHAT_BOTTOM_THRESHOLD = 32;
 
 function VirtualizedThreadContent({
   loading,
-  hasRenderedContent,
   retryInfo,
 }: {
   loading: boolean;
-  hasRenderedContent: boolean;
   retryInfo: RetryInfo | null;
 }) {
   // ── Turn builder ──────────────────────────────────────────────────
@@ -2977,14 +2970,12 @@ function VirtualizedThreadContent({
   return (
     <div className="relative flex-1 min-h-0 overflow-hidden">
       <div ref={scrollerRef} className="h-full overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5">
-        {/* Gate the skeleton on painted content (turns), not the loading flag:
-            useExternalStoreRuntime pushes storeAdapter→thread.messages inside
-            a useEffect, so turns trails loading/renderedMessages by one frame.
-            Gating on turns.length===0 keeps the skeleton mounted exactly until
-            real content is painted, closing the blank gap. hasRenderedContent
-            (sync) covers the one-frame window where content has arrived in
-            rawMessages but the runtime hasn't painted it yet. */}
-        {turns.length === 0 && (loading || hasRenderedContent) ? <ChatSkeleton /> : null}
+        {/* Skeleton shows while turns===0 (nothing painted yet). loading is
+            flipped false by a deferred effect on the render after live_end, so
+            it stays true through the one-frame window where assistant-ui hasn't
+            pushed storeAdapter→thread.messages yet — keeping the skeleton
+            mounted exactly until real content is painted, no blank gap. */}
+        {turns.length === 0 && loading ? <ChatSkeleton /> : null}
         <div ref={contentRef}>
           <div style={{ position: "relative", height: virtualizer.getTotalSize() }}>
             {items.map((virtualItem) => {

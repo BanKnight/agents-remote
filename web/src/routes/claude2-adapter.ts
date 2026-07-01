@@ -3611,6 +3611,9 @@ export function useClaude2Session(
     [rawMessages],
   );
   const [loading, setLoading] = useState(true);
+  // Pending live_end: set synchronously when the live batch ends, consumed by the
+  // deferred-loading effect to flip loading=false on the next render.
+  const liveEndPendingRef = useRef(false);
   const [currentModel, setCurrentModel] = useState<string | undefined>();
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
@@ -3677,6 +3680,7 @@ export function useClaude2Session(
       retryCountdownRef.current = null;
     }
     setLoading(true);
+    liveEndPendingRef.current = false;
     cursorRef.current = null;
     pendingAskRef.current = null;
     historyBatchRef.current = null;
@@ -4045,8 +4049,13 @@ export function useClaude2Session(
           processBatch(batch);
           // No divider here: the boundary lives at the history/live junction
           // (injected at history_end), not at the tail of the live batch.
-          setLoading(false);
-          measureSince("historyLoad", "loadE2E");
+          // Defer setLoading(false) to the next render (the effect below): flipping
+          // it synchronously here would land loading=false in the same batch as
+          // setRawMessages, one frame before assistant-ui pushes storeAdapter→
+          // thread.messages, so the gate (turns===0 && loading) would drop the
+          // skeleton with turns still empty — a blank flash. The effect runs after
+          // commit, landing loading=false on the same render turns catches up.
+          liveEndPendingRef.current = true;
           if (isSocketLoggingEnabled())
             console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
           return;
@@ -4223,12 +4232,17 @@ export function useClaude2Session(
     [renderedMessages, isRunning, onNew, onCancel],
   );
 
-  // Synchronous "content is queued" signal: true the same render rawMessages
-  // first yields a renderable message. Unlike `turns` (which trails by one
-  // effect — see VirtualizedThreadContent), this is computed during render, so
-  // it lets the skeleton cover the one-frame window where content has arrived
-  // but the runtime hasn't pushed it into thread.messages yet.
-  const hasRenderedContent = renderedMessages.length > 0;
+  // Defer loading→false to the render after live_end. live_end sets
+  // liveEndPendingRef synchronously (same batch as setRawMessages); this effect
+  // runs after commit, so loading=false lands on the same render assistant-ui
+  // pushes storeAdapter→thread.messages and turns catches up — closing the
+  // one-frame blank window a synchronous setLoading(false) would open.
+  useEffect(() => {
+    if (!liveEndPendingRef.current) return;
+    liveEndPendingRef.current = false;
+    setLoading(false);
+    measureSince("historyLoad", "loadE2E");
+  }, [rawMessages]);
 
   return {
     storeAdapter,
@@ -4240,7 +4254,6 @@ export function useClaude2Session(
     aiTitle,
     agentName,
     loading,
-    hasRenderedContent,
     liveThinkingTokens,
     tasks,
     mcpServers,
