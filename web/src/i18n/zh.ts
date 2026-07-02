@@ -419,6 +419,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.historySection": "历史会话",
   "workbench.expandProject": "展开项目",
   "workbench.collapseProject": "收起项目",
+  "workbench.tabOutput": "输出",
   "workbench.tabFiles": "文件",
   "workbench.tabGit": "Git",
   "workbench.tabPrototype": "原型",

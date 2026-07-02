@@ -66,6 +66,20 @@ export const workbenchRightTabAtom = atomWithStorage<WorkbenchRightTab>(
 );
 
 /**
+ * 移动端聚焦态 header tab（设计文档 §7）。窄屏无法像桌面那样「实例常驻中栏 + inspection
+ * 并列右栏」，故实例与 inspection 共占同一区域、tab 切换：`output` = 实例 runtime body
+ *（PanelRouter），其余值 = inspection（复用 FIRST_PARTY_PLUGINS 的 render）。默认 `output`
+ *（进入聚焦先看实例本体）。localStorage 记忆，不进 URL —— 移动聚焦态的语义核心已是 URL
+ * `focusId`（看哪个实例），header tab 是「在该实例上看输出还是文件」的局部视图偏好。
+ */
+export type WorkbenchMobileFocusTab = "output" | WorkbenchRightTab;
+
+export const workbenchMobileFocusTabAtom = atomWithStorage<WorkbenchMobileFocusTab>(
+  "workbenchMobileFocusTab",
+  "output",
+);
+
+/**
  * 解析 URL scope 段：`global` → 全局作用域；其余 → project 作用域（key = project name）。
  * 对应路由 `/workbench/$scope`（设计文档 §7）。
  */

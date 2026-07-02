@@ -419,6 +419,7 @@ export const en = {
   "workbench.historySection": "History",
   "workbench.expandProject": "Expand project",
   "workbench.collapseProject": "Collapse project",
+  "workbench.tabOutput": "Output",
   "workbench.tabFiles": "Files",
   "workbench.tabGit": "Git",
   "workbench.tabPrototype": "Prototype",
