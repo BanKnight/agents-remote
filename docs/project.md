@@ -109,7 +109,7 @@ agents-remote/
 
 ### 前端与移动端开发
 
-1. 先从 design/prototype 和对应能力 spec 理解目标信息架构，不要只根据当前组件外观猜测布局。
+1. 先从 app 真实路由/组件（`web/src/routes/WorkbenchRoute.tsx` 等）+ `design/DESIGN.md` + `design/workbench-redesign.md` 理解目标信息架构，不要只根据当前组件外观猜测布局。
 2. 手机竖屏优先：检查首屏密度、返回路径、主要内容滚动区、输入区是否遮挡输出、长文本是否导致横向溢出。
 3. Home / Projects 首屏优先服务打开已有 Project；不要用大块说明、厚卡片或常驻创建表单挤占 Project 列表。
 4. Project Agent workspace 首屏优先服务创建、扫描和进入当前 Agent instances；不要用假历史、假摘要或过多 metadata 替代真实 `AgentSession` 字段。
@@ -131,10 +131,10 @@ agents-remote/
 ### 原型与产品体验
 
 - [DESIGN.md](./design/DESIGN.md) — **设计系统权威源**（Google DESIGN.md 格式）：统一颜色/字体/圆角/间距/component variant 的 token，是 UI 样式细节的唯一标尺，Phase 2+ 据此收敛散写值。
-- [导航结构 HTML 原型](./design/prototype/index.md) — 当前 UI/UX 对齐的主入口，覆盖首页一级导航、Project 二级导航、Agent/Files/Git/Terminal 页面、terminal-first instance detail，以及桌面端/移动端布局形态。
-- [Frontend UI architecture](./design/frontend-ui-architecture.md) — UI/UX prototype alignment 的长期设计基线，定义来源优先级、三层页面模型、移动端返回规则、共享 UI 边界和视觉密度基线。
-- [Prototype 设计规范](./design/prototype/guidelines.md) — 定义 prototype 页面的导航、布局、组件、配色、间距和移动端直接二级页/深层详情页返回规则。
-- [Prototype 截图索引](./design/prototype/screenshots/index.md) — 保存各独立原型页的桌面端和移动端浏览器渲染截图，用于评审、对齐和回归对比。
+- [导航结构 HTML 原型](./design/prototype/index.md) — （历史归档）旧三层单列模型的导航结构 HTML 原型与截图，已被 app 三栏工作台 + `design/workbench-redesign.md` 取代，仅作历史参考。
+- [Frontend UI architecture](./design/frontend-ui-architecture.md) — UI/UX prototype alignment 的长期设计基线，定义来源优先级、三层页面模型、移动端返回规则、共享 UI 边界和视觉密度基线（导航模型部分已被 `design/workbench-redesign.md` 取代，shell primitive/状态规则/密度基线仍有效）。
+- [Prototype 设计规范](./design/prototype/guidelines.md) — （历史归档）prototype 页面的导航、布局、组件、配色、间距规范；token 值已由 `design/DESIGN.md` 接管为权威，导航/布局/响应式规范反映旧三层单列模型、已过时不再维护。
+- [Prototype 截图索引](./design/prototype/screenshots/index.md) — （历史归档）各独立原型页的桌面端和移动端浏览器渲染截图，反映旧原型，仅作历史参考，不再作为对齐/回归基线。
 - [Console Shell 设计](./design/console-shell.md) — 登录后 Project Console 的信息架构、移动 Project 工作区顺序、输入职责边界和 PWA 外壳设计。
 - [移动端 Session 交互设计](./design/mobile-session-interaction.md) — Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 和恢复状态规则。
 - [前端栈设计](./design/frontend-stack.md) — `web` 前端路由、服务端状态、本地 UI 状态和 `/api` 调用职责边界。

@@ -1,5 +1,11 @@
 # prototype 设计规范
 
+> **历史归档（区分两类内容）**：
+> - **token 部分仍有效**：颜色（`--bg`/`--panel`/`--accent` 等）、圆角、字体等 token 的**值**仍有效，已由 [`../DESIGN.md`](../DESIGN.md) 提炼为权威源（DESIGN.md 中的 hex 正取自这些 token）。
+> - **导航/布局/组件/响应式规范已过时**：本文件的导航项、桌面布局、实例呈现、inspection 位置与移动结构反映**旧三层单列模型**，已被 app 三栏工作台取代，**不再维护**。
+>
+> 当前 UI 权威 = app 真实实现（`web/src/routes/WorkbenchRoute.tsx` 等 `web/src/components/workbench/` 组件）+ [`../DESIGN.md`](../DESIGN.md)（设计系统 token）+ [`../workbench-redesign.md`](../workbench-redesign.md)（新导航模型权威，已落地）。
+
 本文件说明 `docs/design/prototype/` 下 HTML 原型的基础设计规范。HTML 原型用于对齐产品结构与交互方向，不是最终实现代码。
 
 > **App 实现侧的设计系统权威源是 [../DESIGN.md](../DESIGN.md)（Google DESIGN.md 格式）**。本文件的 token 是 prototype HTML 资产基础；app 实现以 DESIGN.md 收敛后的 token（颜色/圆角/间距/component variant）为准，二者值保持一致，但不强行让 prototype HTML 引用 DESIGN.md。

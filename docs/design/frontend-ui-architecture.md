@@ -1,5 +1,9 @@
 # Frontend UI architecture
 
+> **权威转移（导航模型部分已过时）**：本文件的「三层页面模型」「桌面左侧导航 + 工作区」「移动底部二级导航」导航叙事，以及「先读 prototype HTML / 对照 prototype 截图」的 alignment 流程，已被 workbench 三栏重构（[`./workbench-redesign.md`](./workbench-redesign.md)，已落地）取代。当前导航/布局权威 = app 真实实现（`web/src/routes/WorkbenchRoute.tsx` 等 `web/src/components/workbench/` 组件）+ [`./workbench-redesign.md`](./workbench-redesign.md)（新导航模型）+ [`./DESIGN.md`](./DESIGN.md)（设计系统 token）。
+>
+> 本文件其余内容仍有效：shell primitive 边界（`web/src/components/shell/`）、TanStack Query/Jotai/URL 状态规则、移动端非遮挡输入、视觉密度基线、安全/运行边界。正文按新导航模型重写留作后续单独决策。
+
 本文件记录经过验证后沉淀下来的 frontend UI architecture / prototype alignment 设计基线。它面向后续 UI/UX 对齐 changes 复用，不复制单次 change 的过程记录。
 
 ## 背景

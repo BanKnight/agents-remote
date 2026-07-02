@@ -1,5 +1,7 @@
 # prototype 索引
 
+> **历史归档**：这批 HTML 原型已完成「驱动 app 实现」的历史使命，现归档不再维护。当前 UI 权威 = app 真实实现（`web/src/routes/WorkbenchRoute.tsx` 等 `web/src/components/workbench/` 组件）+ [`../DESIGN.md`](../DESIGN.md)（设计系统 token）；新导航/布局模型见 [`../workbench-redesign.md`](../workbench-redesign.md)（已落地，桌面三栏 + 移动两层）。下列各 standalone HTML 条目保留作历史资产，其一级导航项、桌面布局、实例呈现、inspection 位置与移动结构均反映旧三层单列模型，已被 app 三栏工作台取代。
+
 本层保存导航结构 HTML 原型，用于对齐首页一级导航与 Project 二级导航的桌面/移动端布局。
 
 ## 使用方式

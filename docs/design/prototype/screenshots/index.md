@@ -1,5 +1,7 @@
 # screenshots 索引
 
+> **历史归档**：下列截图反映旧原型 HTML 的渲染（旧三层单列模型），仅作历史参考，**不再作为对齐/回归基线**。当前 UI 权威与对齐基线 = app 真实实现（`web/src/routes/WorkbenchRoute.tsx` 等 `web/src/components/workbench/` 组件）+ [`../../DESIGN.md`](../../DESIGN.md)（设计系统 token）+ [`../../workbench-redesign.md`](../../workbench-redesign.md)（新导航模型，已落地）。
+
 本层保存 `docs/design/prototype/` 下 standalone HTML 原型的浏览器渲染截图，用于评审和对齐页面布局。
 
 ## 截图来源

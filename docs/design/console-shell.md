@@ -1,5 +1,9 @@
 # Console shell design
 
+> **权威转移（布局模型部分已过时）**：本文件的「移动端单列顺序 Project context / Files-Git / Agent / Terminal」「桌面增强为多列」布局模型，已被 workbench 重构（[`./workbench-redesign.md`](./workbench-redesign.md)，已落地）取代——移动端演化为两层导航，桌面演化为常驻三栏。当前导航/布局权威 = app 真实实现（`web/src/routes/WorkbenchRoute.tsx` 等 `web/src/components/workbench/` 组件）+ [`./workbench-redesign.md`](./workbench-redesign.md)（新布局模型）+ [`./DESIGN.md`](./DESIGN.md)（设计系统 token）。
+>
+> 本文件其余内容仍有效：PWA 外壳、输入职责边界、Project-safe 边界、状态表达规则。正文按新布局模型重写留作后续单独决策。
+
 本文件记录经过验证后沉淀下来的 Project console shell 长期 design。它面向后续版本复用，不复制单次 change 的过程记录。
 
 ## 背景

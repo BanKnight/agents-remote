@@ -1,6 +1,6 @@
 # 三栏工作台重设计（WIP 草案）
 
-> 状态：**设计草案（Work In Progress）**。本文记录桌面 + 移动端布局重设计的协商结论与未决项，仅处于「布局设计」阶段，尚未进入实现。定型后将回写 [frontend-ui-architecture.md](./frontend-ui-architecture.md) 与 [console-shell.md](./console-shell.md) 的桌面部分，并由 distill 流程确认。
+> 状态：**已落地**：桌面三栏 + 移动两层主体已实现于 app（`WorkbenchShell` 桌面三栏 grid + 栏折叠/resize、`InstanceArea`/`SplitLayout` 中栏自由 split、`RightPanelTabs`/`FIRST_PARTY_PLUGINS` 右栏 files/git/prototype、`mobile-workbench` 移动两层 + ‹› 切实例、`WorkbenchRoute` URL 模型 `/projects/$key`、`/global`、`/projects/$key/session/$id`）。本文是新导航模型的权威设计记录。剩余待定项见 §9（原型 tab、marketplace）。
 >
 > 协商方式：ASCII 草图 + 逐点决策。本文保留关键 ASCII 以承载设计意图。
 
@@ -302,6 +302,7 @@ URL 编码语义核心，localStorage 编码个人布局：
 - [message-replay.md](./message-replay.md)、[claude2-provider-protocol.md](./claude2-provider-protocol.md) 等运行态/协议设计**不受布局重设计影响**，实例面板内部的消息渲染、回放管线沿用。
 - 设计契约（配色/间距/圆角/safe-area/surface 角色 token）延续 [prototype/guidelines.md](./prototype/guidelines.md) 与 `shellSurfaceClasses`，重设计复用既有 primitive，不另起设计语言。
 - 设计系统的唯一权威源已沉淀为 [DESIGN.md](./DESIGN.md)（Google DESIGN.md 格式）：配色/间距/圆角/safe-area/surface 角色 token 与 component variant 以其为标尺；本节的 primitive 复用约定对应 DESIGN.md 的 variants（`surface-*` / `nav-item-*` / `button-*`），Phase 3 起据此收敛。
+- [prototype/guidelines.md](./prototype/guidelines.md) 的 token 已由 DESIGN.md 接管为权威，prototype HTML 本身（旧三层单列模型）已归档（见 [prototype/index.md](./prototype/index.md)），不再维护。
 
 ## 9. 待定项汇总（WIP）
 
