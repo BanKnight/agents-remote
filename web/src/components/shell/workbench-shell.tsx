@@ -1,7 +1,11 @@
 import { useAtom } from "jotai";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type PointerEvent, type ReactNode, useRef } from "react";
 import { useT } from "../../i18n";
 import {
+  WORKBENCH_LEFT_PANEL_MAX_REM,
+  WORKBENCH_LEFT_PANEL_MIN_REM,
+  WORKBENCH_RIGHT_PANEL_MAX_REM,
+  WORKBENCH_RIGHT_PANEL_MIN_REM,
   workbenchLeftCollapsedAtom,
   workbenchLeftWidthAtom,
   workbenchRightCollapsedAtom,
@@ -32,12 +36,29 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
   const { t } = useT();
   const [leftCollapsed, setLeftCollapsed] = useAtom(workbenchLeftCollapsedAtom);
   const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
-  const [leftWidth] = useAtom(workbenchLeftWidthAtom);
-  const [rightWidth] = useAtom(workbenchRightWidthAtom);
+  const [leftWidth, setLeftWidth] = useAtom(workbenchLeftWidthAtom);
+  const [rightWidth, setRightWidth] = useAtom(workbenchRightWidthAtom);
 
   // grid 列宽：栏收起 → 0px（栏 aside display none + 列塌缩）；展开 → atom 记忆宽度。
   const leftColumn = leftCollapsed ? "0px" : `${leftWidth}rem`;
   const rightColumn = rightCollapsed ? "0px" : `${rightWidth}rem`;
+
+  // 栏 resize gutter：拖拽改宽度 atom（clamp 到 MIN/MAX，防压溃自身或吃掉中栏）。
+  // 右栏翻转方向 —— 向左拖（−delta）才增宽。
+  const onResizeLeft = (deltaRem: number) =>
+    setLeftWidth((prev) =>
+      Math.min(
+        Math.max(prev + deltaRem, WORKBENCH_LEFT_PANEL_MIN_REM),
+        WORKBENCH_LEFT_PANEL_MAX_REM,
+      ),
+    );
+  const onResizeRight = (deltaRem: number) =>
+    setRightWidth((prev) =>
+      Math.min(
+        Math.max(prev + deltaRem, WORKBENCH_RIGHT_PANEL_MIN_REM),
+        WORKBENCH_RIGHT_PANEL_MAX_REM,
+      ),
+    );
 
   return (
     <main className="relative h-[var(--app-viewport-height)] overflow-hidden text-slate-100">
@@ -51,7 +72,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
         }
       >
         <aside
-          className={`hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-slate-700/80 lg:flex ${shellSurfaceClasses.sidebar}`}
+          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-slate-700/80 lg:flex ${shellSurfaceClasses.sidebar}`}
         >
           <PanelHeader
             chevron="left"
@@ -59,6 +80,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
             onCollapse={() => setLeftCollapsed(true)}
           />
           <div className="min-h-0 flex-1 overflow-hidden">{leftPanel}</div>
+          {leftCollapsed ? null : <ColumnResizeGutter onResize={onResizeLeft} side="left" />}
         </aside>
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
@@ -80,7 +102,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
         </section>
 
         <aside
-          className={`hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-slate-700/80 lg:flex ${shellSurfaceClasses.sidebar}`}
+          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-slate-700/80 lg:flex ${shellSurfaceClasses.sidebar}`}
         >
           <PanelHeader
             chevron="right"
@@ -88,6 +110,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
             onCollapse={() => setRightCollapsed(true)}
           />
           <div className="min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
+          {rightCollapsed ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
         </aside>
       </div>
     </main>
@@ -165,5 +188,53 @@ function ChevronRight() {
         stroke="currentColor"
       />
     </svg>
+  );
+}
+
+type ColumnResizeGutterProps = {
+  side: "left" | "right";
+  onResize: (deltaRem: number) => void;
+};
+
+/**
+ * 栏与中栏之间的 resize 分隔条（贴 aside 内侧边缘，全高 absolute）。pointer-event
+ * 拖拽：增量式（每次 move 算 deltaX / rootFontSize → deltaRem → onResize），上层
+ * clamp 到 MIN/MAX。setPointerCapture 锁定指针，拖拽时即使滑过中栏仍持续。右栏翻转
+ * 方向（向左拖才增宽）。栏收起时不渲染（改由 RailButton 唤出）。
+ */
+function ColumnResizeGutter({ onResize, side }: ColumnResizeGutterProps) {
+  const dragRef = useRef<{ lastX: number; rootFont: number } | null>(null);
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rootFont = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    dragRef.current = { lastX: event.clientX, rootFont };
+    void event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const delta = event.clientX - drag.lastX;
+    drag.lastX = event.clientX;
+    const deltaRem = delta / drag.rootFont;
+    onResize(side === "left" ? deltaRem : -deltaRem);
+  };
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    void event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  return (
+    <div
+      aria-hidden
+      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-cyan-300/30 ${
+        side === "left" ? "right-0" : "left-0"
+      }`}
+      onPointerCancel={endDrag}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+    />
   );
 }
