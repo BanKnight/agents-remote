@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
@@ -140,9 +141,9 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activePlugin ? (
-          activePlugin.render(ctx)
+          <Fragment key={projectName ?? "none"}>{activePlugin.render(ctx)}</Fragment>
         ) : projectName ? (
-          <PanelRouter panelRef={{ projectName, sessionId: focusId }} />
+          <PanelRouter key={focusId} panelRef={{ projectName, sessionId: focusId }} />
         ) : null}
       </div>
     </div>

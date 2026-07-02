@@ -45,7 +45,9 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
           />
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">{current.render(ctx)}</div>
+      <div className="min-h-0 flex-1 overflow-hidden" key={ctx.projectKey ?? "none"}>
+        {current.render(ctx)}
+      </div>
     </div>
   );
 }
