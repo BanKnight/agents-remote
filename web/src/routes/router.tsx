@@ -7,9 +7,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
-import { consoleSectionFromSearch } from "./console-model";
 import { HomeRoute } from "./HomeRoute";
-import { ProjectConsoleRoute } from "./ProjectConsoleRoute";
 import { validateWorkbenchSearch } from "./workbench-model";
 
 const rootRoute = createRootRoute({
@@ -26,14 +24,18 @@ const indexRoute = createRoute({
   component: HomeRoute,
 });
 
+// 旧换页模型 ProjectConsole（/projects/$name）已由 workbench 三栏 + 左栏树 + InstanceArea
+// 取代（设计文档 §1-7）。路由保留为 redirect-only：旧 URL/书签兼容 → workbench 同项目作用域。
+// ProjectConsoleRoute.tsx 文件已无路由入口，后续清理（见 workbench-redesign 淘汰清单）。
 const projectConsoleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectName",
-  validateSearch: (search: Record<string, unknown>) => ({
-    workspace: consoleSectionFromSearch(search.workspace),
-    filesPath: typeof search.filesPath === "string" ? search.filesPath : "",
-  }),
-  component: ProjectConsoleRoute,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/workbench/$scope",
+      params: { scope: params.projectName },
+    });
+  },
 });
 
 const agentSessionDetailRoute = createRoute({
