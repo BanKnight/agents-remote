@@ -58,7 +58,6 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
     <main
       className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-slate-100 ${shellSurfaceClasses.shell}`}
     >
-      <MobileBackBar scope={scope} />
       <MobileFocusBody focusId={focusId} scope={scope} />
     </main>
   );
@@ -70,13 +69,15 @@ type MobileFocusBodyProps = {
 };
 
 /**
- * 移动端聚焦态主体。Stage A：单实例面板（PanelRouter），不走桌面 split 布局 —— 移动窄屏
- * 不 split 多面板（避免挤压），只渲染 focusId 对应实例。Stage B：header tab 切换 output /
- * 文件 / Git / 原型 —— 窄屏无法像桌面那样「实例常驻中栏 + inspection 并列右栏」，故实例与
- * inspection 共占同一区域、tab 切换；inspection 内容复用 FIRST_PARTY_PLUGINS 的 render
- *（FilesPanel/GitDiffPanel 已内置移动响应式，无需 wrapper）。projectName：project 作用域
- * 直接 scope.key；global 作用域从布局面板查 focusId 所属项目。容器 flex-col 让面板内部
- * flex-1 runtime body 撑满（与桌面 SplitPanel 同撑满契约）。
+ * 移动端聚焦态主体（设计文档 §7）。统一 header = ◄ 返回列表 + 项目名 + 二级 tab 行
+ *（输出/文件/Git/原型），与列表态 MobileProjectOverview header 同设计语言。Stage A：单实例
+ * 面板（PanelRouter），不走桌面 split —— 窄屏不 split 多面板（避免挤压），只渲染 focusId
+ * 对应实例。Stage B：header tab 切 output / inspection —— 窄屏无法像桌面「实例常驻中栏 +
+ * inspection 并列右栏」，故实例与 inspection 共占同一区域、tab 切换；inspection 复用
+ * FIRST_PARTY_PLUGINS render（FilesPanel/GitDiffPanel 已内置移动响应式）。projectName：
+ * project 作用域直接 scope.key；global 作用域从布局面板查 focusId 所属项目，缺失回退
+ *「全局」。header 标题暂用 projectName（项目上下文）；实例 displayName 精确化是 follow-up。
+ * ‹› 浮动切实例 overlay 在 header 之上方内容区，z-30 不遮挡 header。
  */
 function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const { t } = useT();
@@ -125,6 +126,27 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
           prevLabel={t("workbench.switchPrev")}
         />
       ) : null}
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-white/5 px-2">
+        <button
+          aria-label={t("workbench.backToList")}
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+          onClick={() => void navigateWorkbench(scope)}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </button>
+        <span className="truncate text-sm font-semibold text-slate-100">
+          {projectName ?? t("workbench.global")}
+        </span>
+      </header>
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/5 px-1.5 py-1.5">
         <MobileFocusTabButton
           active={activeTab === "output"}
@@ -167,31 +189,6 @@ function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonPr
     >
       {label}
     </button>
-  );
-}
-
-function MobileBackBar({ scope }: { scope: WorkbenchScope }) {
-  const { t } = useT();
-  const navigateWorkbench = useWorkbenchNavigate();
-  return (
-    <div className="flex h-11 shrink-0 items-center border-b border-white/5 px-2">
-      <button
-        type="button"
-        onClick={() => void navigateWorkbench(scope)}
-        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
-      >
-        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M10 3L5 8l5 5"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        {t("workbench.backToList")}
-      </button>
-    </div>
   );
 }
 
