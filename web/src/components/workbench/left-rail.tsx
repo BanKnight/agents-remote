@@ -200,7 +200,7 @@ type ProjectInstancesProps = {
   projectName: string;
 };
 
-function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
+export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

@@ -81,6 +81,19 @@ export const workbenchMobileFocusTabAtom = atomWithStorage<WorkbenchMobileFocusT
 );
 
 /**
+ * 移动端项目列表态二级 header tab（设计文档 §7）。`overview` = 活跃实例 + 历史 session +
+ * 创建入口（ProjectInstances），其余值 = inspection（复用 FIRST_PARTY_PLUGINS render）。
+ * 默认 `overview`（进入项目先看实例概览）。localStorage 记忆，不进 URL —— 列表态 URL 语义
+ * 核心已是 scope（哪个项目），header tab 是「看概览还是文件/Git」的局部视图偏好。
+ */
+export type WorkbenchMobileOverviewTab = "overview" | WorkbenchRightTab;
+
+export const workbenchMobileOverviewTabAtom = atomWithStorage<WorkbenchMobileOverviewTab>(
+  "workbenchMobileOverviewTab",
+  "overview",
+);
+
+/**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
  * 新路由树以中栏语义命名（`/global` / `/projects/$key`，见 workbench-redesign §7），
  * scope 由路由段直接决定，无需解析；此函数仅用于旧 `/workbench/$scope` redirect 兼容。

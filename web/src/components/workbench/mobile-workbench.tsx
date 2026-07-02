@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { useAtom } from "jotai";
+import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import { IconMarker, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
@@ -9,13 +10,15 @@ import {
   addPanel,
   type GlobalInstanceCandidate,
   type WorkbenchMobileFocusTab,
+  type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
   inferSessionTypeFromId,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   workbenchMobileFocusTabAtom,
+  workbenchMobileOverviewTabAtom,
 } from "../../routes/workbench-model";
-import { WorkbenchLeftRail } from "./left-rail";
+import { ProjectInstances } from "./left-rail";
 import { PanelRouter, useGlobalInstanceCandidates, useScopeInstanceOrder } from "./instance-area";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
@@ -44,7 +47,7 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
         {scope.kind === "global" ? (
           <MobileGlobalOverview />
         ) : (
-          <WorkbenchLeftRail focusId={focusId} scope={scope} />
+          <MobileProjectOverview scope={scope} />
         )}
         <MobilePrimaryNav />
       </main>
@@ -244,6 +247,80 @@ function MobileInstanceSwitcher({
         </svg>
       </button>
     </>
+  );
+}
+
+type MobileProjectOverviewProps = {
+  scope: { kind: "project"; key: string };
+};
+
+/**
+ * 移动项目列表态（设计文档 §7）：替代旧列表态复用的 WorkbenchLeftRail（跨项目树），改为
+ * 单项目聚焦视图。header（◄ 返回项目列表 + 项目名 + 二级 tab：总览/文件/Git/原型）+ 内容区
+ * tab 切换。总览 = ProjectInstances（活跃实例 + 历史 session + 创建入口，复用左栏同款）；
+ * 文件/Git/原型 = FIRST_PARTY_PLUGINS render（FilesPanel/GitDiffPanel 已内置移动响应式，
+ * 单一数据管道）。tab 记忆在 workbenchMobileOverviewTabAtom，不进 URL（列表态 URL 语义核心
+ * 是 scope）。key={scope.key} 切项目 remount，重置 ProjectInstances/inspection 内部 state。
+ * 底部 pb-24 lg:pb-0 避让一级底部胶囊（桌面 lg:pb-0 抵消）。
+ */
+function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
+  const { t } = useT();
+  const navigate = useNavigate();
+  const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
+  const ctx: PluginContext = { projectKey: scope.key, focusId: undefined, sessionType: undefined };
+  const visiblePlugins = FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx));
+  // 记忆 tab 若在当前 ctx 不可见（理论上 project scope 列表态 files/git/prototype 均可见，
+  // 除非未来加 when 约束）→ 回退 overview，避免内容区空白。
+  const activeTab: WorkbenchMobileOverviewTab =
+    tab === "overview" || visiblePlugins.some((p) => p.id === tab) ? tab : "overview";
+  const activePlugin =
+    activeTab === "overview" ? null : (visiblePlugins.find((p) => p.id === activeTab) ?? null);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-white/5 px-2">
+        <button
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+          onClick={() => void navigate({ to: "/" })}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </button>
+        <span className="truncate text-sm font-semibold text-slate-100">{scope.key}</span>
+      </header>
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/5 px-1.5 py-1.5">
+        <MobileFocusTabButton
+          active={activeTab === "overview"}
+          label={t("workbench.tabOverview")}
+          onClick={() => setTab("overview")}
+        />
+        {visiblePlugins.map((plugin) => (
+          <MobileFocusTabButton
+            active={activeTab === plugin.id}
+            key={plugin.id}
+            label={t(plugin.labelKey)}
+            onClick={() => setTab(plugin.id)}
+          />
+        ))}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden" key={scope.key}>
+        {activePlugin ? (
+          <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
+        ) : (
+          <div className="flex-1 overflow-y-auto pb-24 lg:pb-0">
+            <ProjectInstances projectName={scope.key} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
