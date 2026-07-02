@@ -20,9 +20,15 @@ import {
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
-import { ActionButton, IconMarker } from "../shell/shell-primitives";
+import { actionButtonClasses, IconMarker } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
@@ -39,7 +45,8 @@ type LeftRailProps = {
  * 工作台左栏（设计文档 §3）。跨项目 VSCode explorer 式树：全局节点 + 项目展开
  * （Agents/Terminals 段 + per-project 创建入口）。Stage 1 的单项目扁平列表已升级
  * 为常驻跨项目树，scope 决定选中哪个项目；点项目行切 scope 并展开，chevron 收折。
- * 历史 session 段（commit ②）、+ 新建 ▾ dropdown 与设置浮窗（commit ③）后续接入。
+ * 每项目段含 + 新建 ▾ dropdown（Claude/Codex/Terminal）、活跃实例、历史 session 段；
+ * 树底部「设置」入口 toggle 桌面 SettingsFlyout（移动走 /settings 全屏页）。
  */
 export function WorkbenchLeftRail({ focusId, scope }: LeftRailProps) {
   return <ProjectTree focusId={focusId} scope={scope} />;
@@ -333,9 +340,8 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
   return (
     <div className="ml-3 flex flex-col border-l border-white/5 pl-1">
       <LeftRailCreateBar
-        isCreatingClaude={createAgent.isPending}
-        isCreatingTerminal={createTerminal.isPending}
-        onCreateClaude={() => handleCreateAgent("claude2")}
+        isCreating={createAgent.isPending || createTerminal.isPending}
+        onCreateAgent={handleCreateAgent}
         onCreateTerminal={handleCreateTerminal}
       />
       {loading && agentSessions.length === 0 && terminalSessions.length === 0 ? (
@@ -389,38 +395,59 @@ function SectionLabel({ children }: { children: ReactNode }) {
 }
 
 type LeftRailCreateBarProps = {
-  isCreatingClaude: boolean;
-  isCreatingTerminal: boolean;
-  onCreateClaude: () => void;
+  isCreating: boolean;
+  onCreateAgent: (provider: AgentProvider) => void;
   onCreateTerminal: () => void;
 };
 
 function LeftRailCreateBar({
-  isCreatingClaude,
-  isCreatingTerminal,
-  onCreateClaude,
+  isCreating,
+  onCreateAgent,
   onCreateTerminal,
 }: LeftRailCreateBarProps) {
   const { t } = useT();
   return (
-    <div className="grid grid-cols-2 gap-1 px-2 py-1.5">
-      <ActionButton
-        className="justify-center"
-        disabled={isCreatingClaude}
-        tone="accent"
-        onClick={onCreateClaude}
-      >
-        <ShellIcon className="h-3 w-3" name="anthropic" />
-        {isCreatingClaude ? t("project.creating") : t("workbench.createClaude2")}
-      </ActionButton>
-      <ActionButton
-        className="justify-center"
-        disabled={isCreatingTerminal}
-        onClick={onCreateTerminal}
-      >
-        <ShellIcon className="h-3 w-3" name="terminal" />
-        {isCreatingTerminal ? t("project.creating") : t("workbench.createTerminal")}
-      </ActionButton>
+    <div className="px-2 py-1.5">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className={actionButtonClasses({
+            tone: "accent",
+            className:
+              "w-full justify-center group disabled:cursor-not-allowed disabled:opacity-50",
+          })}
+          disabled={isCreating}
+        >
+          {isCreating ? t("project.creating") : t("workbench.createMenu")}
+          <svg
+            aria-hidden="true"
+            className="h-3 w-3 transition group-data-[state=open]:rotate-180"
+            fill="none"
+            viewBox="0 0 16 16"
+          >
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+          <DropdownMenuItem onSelect={() => onCreateAgent("claude2")}>
+            <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
+            {t("workbench.createClaude2")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onCreateAgent("codex")}>
+            <ShellIcon className="h-3.5 w-3.5" name="openai" />
+            {t("workbench.createCodex")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onCreateTerminal}>
+            <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+            {t("workbench.createTerminal")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

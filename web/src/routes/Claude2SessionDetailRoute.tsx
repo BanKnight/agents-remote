@@ -345,8 +345,8 @@ export function Claude2Chat({
         }),
       ]);
       await navigate({
-        to: "/workbench/$scope",
-        params: { scope: projectName },
+        to: "/projects/$key",
+        params: { key: projectName },
       });
     },
   });
