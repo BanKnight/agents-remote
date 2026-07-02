@@ -197,7 +197,7 @@ function TaskPanel({
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
           ) : task.status === "completed" ? (
             <svg
-              className="h-3 w-3 text-emerald-400"
+              className="h-3 w-3 text-success"
               viewBox="0 0 16 16"
               fill="none"
               aria-hidden="true"
@@ -211,12 +211,7 @@ function TaskPanel({
               />
             </svg>
           ) : task.status === "error" ? (
-            <svg
-              className="h-3 w-3 text-red-400"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
+            <svg className="h-3 w-3 text-error" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
                 d="M4 4l8 8M12 4l-8 8"
                 stroke="currentColor"
@@ -225,19 +220,19 @@ function TaskPanel({
               />
             </svg>
           ) : task.status === "pending" ? (
-            <span className="inline-block h-3 w-3 rounded-full border border-dashed border-slate-600" />
+            <span className="inline-block h-3 w-3 rounded-full border border-dashed border-neutral-line" />
           ) : (
-            <span className="inline-block h-3 w-3 rounded-full border border-slate-500" />
+            <span className="inline-block h-3 w-3 rounded-full border border-neutral-line" />
           )}
         </span>
         <div className="min-w-0 flex-1">
           <span
-            className={`block truncate ${task.status === "completed" ? "text-slate-400" : task.status === "error" ? "text-red-300" : task.status === "pending" ? "text-slate-500" : "text-slate-200"}`}
+            className={`block truncate ${task.status === "completed" ? "text-on-surface-muted" : task.status === "error" ? "text-error" : task.status === "pending" ? "text-on-surface-muted" : "text-on-surface-soft"}`}
           >
-            <span className="text-slate-500">#{task.id}</span> {title}
+            <span className="text-on-surface-muted">#{task.id}</span> {title}
           </span>
           {(task.text || meta.length > 0) && (
-            <span className="block truncate text-[0.65rem] text-slate-500">
+            <span className="block truncate text-[0.65rem] text-on-surface-muted">
               {task.text}
               {task.text && meta.length > 0 ? " · " : ""}
               {meta.join(" · ")}
@@ -249,14 +244,14 @@ function TaskPanel({
   };
 
   return (
-    <div className="mb-1.5 shrink-0 rounded-xl border border-white/10 bg-[#141b28]/60 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 lg:bg-[#141b28]/80 lg:shadow-none lg:backdrop-blur-none">
+    <div className="mb-1.5 shrink-0 rounded-xl border border-on-surface/10 bg-surface-raised/60 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 lg:bg-surface-raised/80 lg:shadow-none lg:backdrop-blur-none">
       <button
         className={`flex w-full cursor-pointer items-center gap-1.5 text-left ${collapsed ? "" : "mb-1"}`}
         onClick={onToggle}
         type="button"
       >
         <svg
-          className={`h-3 w-3 shrink-0 text-slate-500 transition ${collapsed ? "" : "rotate-90"}`}
+          className={`h-3 w-3 shrink-0 text-on-surface-muted transition ${collapsed ? "" : "rotate-90"}`}
           viewBox="0 0 16 16"
           fill="none"
           aria-hidden="true"
@@ -269,16 +264,16 @@ function TaskPanel({
             strokeLinejoin="round"
           />
         </svg>
-        <span className="text-xs font-medium text-slate-400">{t("claude2.tasks")}</span>
-        <span className="text-[0.65rem] text-slate-600">
+        <span className="text-xs font-medium text-on-surface-muted">{t("claude2.tasks")}</span>
+        <span className="text-[0.65rem] text-on-surface-muted">
           {collapsed ? `${doneCount}/${sorted.length}` : sorted.length}
         </span>
         {collapsed && firstInProgress && (
           <>
-            <span className="text-slate-700">·</span>
+            <span className="text-on-surface-muted">·</span>
             <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-400/40 border-t-amber-400" />
-            <span className="min-w-0 truncate text-xs text-slate-200">
-              <span className="text-slate-500">#{firstInProgress.id}</span>{" "}
+            <span className="min-w-0 truncate text-xs text-on-surface-soft">
+              <span className="text-on-surface-muted">#{firstInProgress.id}</span>{" "}
               {firstInProgress.subject ||
                 firstInProgress.description ||
                 firstInProgress.summary ||
@@ -487,14 +482,14 @@ export function Claude2Chat({
                 >
                   {detail.error instanceof Error ? (
                     <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                      <p className="rounded-xl bg-error/30 px-3 py-2 text-xs text-error">
                         {detail.error.message}
                       </p>
                     </div>
                   ) : null}
                   {closeSession.error instanceof Error ? (
                     <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-red-900/30 px-3 py-2 text-xs text-red-300">
+                      <p className="rounded-xl bg-error/30 px-3 py-2 text-xs text-error">
                         {closeSession.error.message}
                       </p>
                     </div>
@@ -612,7 +607,7 @@ function ChatHeader({
       <div className="flex min-w-0 items-center gap-2">
         {!embedded && (
           <Link
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft"
             aria-label={t("session.backToProject")}
             params={{ key: projectName }}
             to="/projects/$key"
@@ -630,14 +625,14 @@ function ChatHeader({
           </Link>
         )}
         <div className={`min-w-0 flex-1 text-center ${embedded ? "text-left" : ""}`}>
-          <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
-          <p className="truncate text-[0.65rem] leading-4 text-slate-500">{projectName}</p>
+          <p className="truncate text-xs font-semibold text-on-surface">{title}</p>
+          <p className="truncate text-[0.65rem] leading-4 text-on-surface-muted">{projectName}</p>
         </div>
         {!embedded && (
           <button
             type="button"
             disabled={closePending}
-            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
+            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-error disabled:opacity-40"
             onClick={onClose}
             aria-label={t("session.close")}
           >
@@ -681,7 +676,7 @@ function FullscreenReader({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex flex-col bg-surface-inset/95 backdrop-blur-sm"
       style={{
         paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
         paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
@@ -689,12 +684,12 @@ function FullscreenReader({
         paddingRight: "max(env(safe-area-inset-right, 0px), 0.75rem)",
       }}
     >
-      <div className="flex items-center gap-2 rounded-t-lg border-b border-slate-700/60 bg-slate-800/60 px-3 py-2 sm:px-5">
+      <div className="flex items-center gap-2 rounded-t-lg border-b border-neutral-line/60 bg-surface-raised/60 px-3 py-2 sm:px-5">
         {header}
         <button
           type="button"
           onClick={onClose}
-          className="ml-auto cursor-pointer rounded p-2 text-slate-400 transition hover:bg-slate-700/60 hover:text-slate-100"
+          className="ml-auto cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
           aria-label={closeLabel}
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -770,7 +765,7 @@ function UserChatBubble() {
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="text-xs font-medium text-slate-200">
+              <span className="text-xs font-medium text-on-surface-soft">
                 {t("claude2.message.roleUser")}
               </span>
             </>
@@ -787,12 +782,12 @@ function UserChatBubble() {
         <button
           type="button"
           onClick={() => setFullscreen(true)}
-          className="cursor-pointer rounded p-1 text-slate-400 transition hover:text-slate-200"
+          className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:text-on-surface-soft"
           aria-label={t("claude2.message.expand")}
         >
           <ExpandGlyph />
         </button>
-        <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+        <ActionBarPrimitive.Copy className="rounded p-1 text-on-surface-muted hover:text-on-surface-soft transition">
           <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <rect
               x="5"
@@ -823,7 +818,7 @@ function UserChatBubble() {
 function OptionPreview({ text, className }: { text: string; className?: string }) {
   return (
     <div
-      className={`rounded-lg border border-slate-700/40 bg-slate-950/40 overflow-y-auto ${className ?? ""}`}
+      className={`rounded-lg border border-neutral-line/40 bg-surface-inset/40 overflow-y-auto ${className ?? ""}`}
     >
       <MarkdownString text={text} />
     </div>
@@ -843,13 +838,13 @@ const TURN_STATUS_LABEL: Record<TurnStatusTone, TranslationKey> = {
 
 // tone → status-word color. Cost/tokens/duration stay muted slate.
 const TURN_STATUS_COLOR: Record<TurnStatusTone, string> = {
-  completed: "text-emerald-400",
-  interrupted: "text-amber-400",
-  maxTurns: "text-amber-400",
-  error: "text-red-400",
-  rateLimited: "text-amber-400",
-  hookStopped: "text-amber-400",
-  toolDeferred: "text-slate-400",
+  completed: "text-success",
+  interrupted: "text-warning",
+  maxTurns: "text-warning",
+  error: "text-error",
+  rateLimited: "text-warning",
+  hookStopped: "text-warning",
+  toolDeferred: "text-on-surface-muted",
 };
 
 // Compact caption under the turn's final assistant bubble summarizing what the
@@ -874,7 +869,7 @@ function TurnStatsFooter({ stats }: { stats: TurnStats }) {
   if (!tone && tailParts.length === 0) return null;
 
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6rem] text-slate-500">
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6rem] text-on-surface-muted">
       {tone ? <span className={TURN_STATUS_COLOR[tone]}>{t(TURN_STATUS_LABEL[tone])}</span> : null}
       {tailParts.map((p, i) => (
         <Fragment key={i}>
@@ -964,7 +959,7 @@ function AssistantChatBubble() {
   return (
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
       <div
-        className="max-w-[90%] rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
+        className="max-w-[90%] rounded-2xl rounded-bl-md bg-surface-raised/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
         {renderBody()}
@@ -986,7 +981,7 @@ function AssistantChatBubble() {
                   strokeLinejoin="round"
                 />
               </svg>
-              <span className="text-xs font-medium text-slate-200">
+              <span className="text-xs font-medium text-on-surface-soft">
                 {t("claude2.message.roleAssistant")}
               </span>
             </>
@@ -995,7 +990,7 @@ function AssistantChatBubble() {
           closeLabel={t("claude2.message.exitFullscreen")}
         >
           <div className="mx-auto max-w-4xl">
-            <div className="rounded-2xl rounded-bl-md bg-slate-800/70 px-4 py-3">
+            <div className="rounded-2xl rounded-bl-md bg-surface-raised/70 px-4 py-3">
               {renderBody()}
             </div>
           </div>
@@ -1008,12 +1003,12 @@ function AssistantChatBubble() {
             <button
               type="button"
               onClick={() => setFullscreen(true)}
-              className="cursor-pointer rounded p-1 text-slate-400 transition hover:text-slate-200"
+              className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:text-on-surface-soft"
               aria-label={t("claude2.message.expand")}
             >
               <ExpandGlyph />
             </button>
-            <ActionBarPrimitive.Copy className="rounded p-1 text-slate-400 hover:text-slate-200 transition">
+            <ActionBarPrimitive.Copy className="rounded p-1 text-on-surface-muted hover:text-on-surface-soft transition">
               <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <rect
                   x="5"
@@ -1077,7 +1072,7 @@ function SyntheticBodyView() {
 
   return (
     <>
-      <div className="border-t border-dashed border-slate-500/20 my-1.5" />
+      <div className="border-t border-dashed border-neutral-line/20 my-1.5" />
       <SyntheticBodyRow body={syntheticBody} />
     </>
   );
@@ -1091,14 +1086,14 @@ function SyntheticBodyRow({ body }: { body: string }) {
     <div>
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-slate-500/5 rounded transition cursor-pointer min-w-0"
+        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-neutral-line/5 rounded transition cursor-pointer min-w-0"
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="text-slate-500 text-[0.55rem] shrink-0 leading-none">
+        <span className="text-on-surface-muted text-[0.55rem] shrink-0 leading-none">
           {expanded ? "▾" : "▸"}
         </span>
         <svg
-          className="h-3 w-3 shrink-0 text-slate-400/70"
+          className="h-3 w-3 shrink-0 text-on-surface-muted/70"
           viewBox="0 0 24 24"
           fill="none"
           aria-hidden="true"
@@ -1111,14 +1106,14 @@ function SyntheticBodyRow({ body }: { body: string }) {
             strokeLinecap="round"
           />
         </svg>
-        <span className="text-[0.65rem] text-slate-400/80 truncate min-w-0">{preview}</span>
-        <span className="text-[0.6rem] text-slate-400/50 ml-auto shrink-0 whitespace-nowrap">
+        <span className="text-[0.65rem] text-on-surface-muted/80 truncate min-w-0">{preview}</span>
+        <span className="text-[0.6rem] text-on-surface-muted/50 ml-auto shrink-0 whitespace-nowrap">
           {!expanded ? " ▸" : null}
         </span>
       </button>
       {expanded && (
-        <div className="ml-7 pl-2 border-l-2 border-slate-700/30">
-          <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-slate-300/50 max-h-60 overflow-y-auto">
+        <div className="ml-7 pl-2 border-l-2 border-neutral-line/30">
+          <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-on-surface-soft/50 max-h-60 overflow-y-auto">
             {body}
           </pre>
         </div>
@@ -1135,7 +1130,7 @@ function ApiErrorAttachments() {
 
   return (
     <>
-      <div className="border-t border-dashed border-red-500/20 my-1.5" />
+      <div className="border-t border-dashed border-error/20 my-1.5" />
       {apiErrors.map((err, i) => (
         <ApiErrorRow key={i} attachment={err} />
       ))}
@@ -1153,14 +1148,14 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
     <div>
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-red-500/5 rounded transition cursor-pointer min-w-0"
+        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-error/5 rounded transition cursor-pointer min-w-0"
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="text-slate-500 text-[0.55rem] shrink-0 leading-none">
+        <span className="text-on-surface-muted text-[0.55rem] shrink-0 leading-none">
           {expanded ? "▾" : "▸"}
         </span>
         <svg
-          className="h-3 w-3 shrink-0 text-red-400/70"
+          className="h-3 w-3 shrink-0 text-error/70"
           viewBox="0 0 24 24"
           fill="none"
           aria-hidden="true"
@@ -1173,15 +1168,15 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
             strokeLinecap="round"
           />
         </svg>
-        <span className="text-[0.65rem] text-red-400/80 truncate min-w-0">{label}</span>
-        <span className="text-[0.6rem] text-red-400/50 ml-auto shrink-0 whitespace-nowrap">
+        <span className="text-[0.65rem] text-error/80 truncate min-w-0">{label}</span>
+        <span className="text-[0.6rem] text-error/50 ml-auto shrink-0 whitespace-nowrap">
           {retry ? retry : null}
           {!expanded ? " ▸" : null}
         </span>
       </button>
       {expanded && (
-        <div className="ml-7 pl-2 border-l-2 border-red-800/20">
-          <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-red-300/50">
+        <div className="ml-7 pl-2 border-l-2 border-error/20">
+          <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-error/50">
             {detail}
           </pre>
         </div>
@@ -1229,7 +1224,7 @@ function RawDebugTooltip({
       <button
         ref={btnRef}
         type="button"
-        className={`rounded ${compact ? "p-0.5" : "p-2"} text-slate-500 hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
+        className={`rounded ${compact ? "p-0.5" : "p-2"} text-on-surface-muted hover:text-amber-400 transition cursor-pointer ${className ?? ""}`}
         onClick={() => setOpen(!open)}
         aria-label="View raw message"
       >
@@ -1310,9 +1305,9 @@ function RawDebugPopover({
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         style={style}
-        className="max-h-[min(80vh,48rem)] overflow-y-auto overflow-x-hidden rounded-lg border border-slate-600/50 bg-slate-900 p-3 shadow-xl"
+        className="max-h-[min(80vh,48rem)] overflow-y-auto overflow-x-hidden rounded-lg border border-neutral-line/50 bg-surface-inset p-3 shadow-xl"
       >
-        <pre className="text-[0.6rem] leading-relaxed text-slate-300 whitespace-pre-wrap break-all">
+        <pre className="text-[0.6rem] leading-relaxed text-on-surface-soft whitespace-pre-wrap break-all">
           {text}
         </pre>
       </div>
@@ -1369,10 +1364,10 @@ function SystemChatBubble() {
     const indent = custom?.toolIndent !== false;
     const needsPermission = typeof controlRequestId === "string" && controlRequestId.length > 0;
     const cardBorder: Record<string, string> = {
-      solo: "rounded-lg border border-slate-700/60",
-      first: "rounded-t-lg border-l border-r border-t border-slate-700/60",
-      middle: "border-l border-r border-slate-700/60 border-t border-slate-700/50",
-      last: "rounded-b-lg border-l border-r border-b border-slate-700/60 border-t border-slate-700/50",
+      solo: "rounded-lg border border-neutral-line/60",
+      first: "rounded-t-lg border-l border-r border-t border-neutral-line/60",
+      middle: "border-l border-r border-neutral-line/60 border-t border-neutral-line/50",
+      last: "rounded-b-lg border-l border-r border-b border-neutral-line/60 border-t border-neutral-line/50",
     };
     const rootPy: Record<string, string> = {
       solo: "py-1.5",
@@ -1386,19 +1381,21 @@ function SystemChatBubble() {
       : "";
     const pulseClass = needsPermission ? "animate-pulse" : "";
     const inner = (
-      <div className={`${baseBorder} ${amberRing} ${pulseClass} bg-slate-800/40 overflow-hidden`}>
+      <div
+        className={`${baseBorder} ${amberRing} ${pulseClass} bg-surface-raised/40 overflow-hidden`}
+      >
         <div className="px-3 py-2">
           <ToolUIAny {...toolProps} />
         </div>
         {progress ? (
-          <div className="px-3 pb-2 flex items-center gap-2 text-xs border-t border-slate-700/50 pt-2 mx-3">
+          <div className="px-3 pb-2 flex items-center gap-2 text-xs border-t border-neutral-line/50 pt-2 mx-3">
             {progress.subagentType ? (
               <span className="shrink-0 rounded bg-amber-600/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-300">
                 {progress.subagentType}
               </span>
             ) : null}
-            <span className="truncate text-slate-300">{progress.description}</span>
-            <span className="shrink-0 text-slate-500 ml-auto tabular-nums">
+            <span className="truncate text-on-surface-soft">{progress.description}</span>
+            <span className="shrink-0 text-on-surface-muted ml-auto tabular-nums">
               {progress.usage.tool_uses} tools · {formatTokenCount(progress.usage.total_tokens)}{" "}
               tokens ·{" "}
               {progress.usage.duration_ms >= 10000
@@ -1414,7 +1411,7 @@ function SystemChatBubble() {
         className={`flex justify-start px-3 sm:px-5 group relative ${rootPy[groupPos] ?? rootPy.solo}`}
       >
         {indent ? (
-          <div className="w-full border-l-2 border-slate-700/50 pl-3">{inner}</div>
+          <div className="w-full border-l-2 border-neutral-line/50 pl-3">{inner}</div>
         ) : (
           <div className="w-full">{inner}</div>
         )}
@@ -1427,7 +1424,7 @@ function SystemChatBubble() {
   if (systemMessageType === "batch-boundary") {
     return (
       <MessagePrimitive.Root className="flex w-full px-3 sm:px-5 py-1.5">
-        <div className="w-full border-t border-slate-700/50" />
+        <div className="w-full border-t border-neutral-line/50" />
       </MessagePrimitive.Root>
     );
   }
@@ -1503,7 +1500,7 @@ function SystemChatBubble() {
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="text-xs font-medium text-slate-200">
+              <span className="text-xs font-medium text-on-surface-soft">
                 {t("claude2.message.roleSystem")}
               </span>
             </>
@@ -1678,10 +1675,10 @@ function AgentTailBar({
   const durationMs = tailStats?.totalDurationMs ?? progress?.usage.duration_ms;
   const hasStats = tools != null || tokens != null || durationMs != null;
   return (
-    <div className="rounded-b-lg border-t border-slate-700/50 bg-slate-800/40">
+    <div className="rounded-b-lg border-t border-neutral-line/50 bg-surface-raised/40">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 pt-2 pb-1.5 sm:px-5">
         {hasStats ? (
-          <div className="flex flex-wrap gap-3 text-[0.65rem] text-slate-400">
+          <div className="flex flex-wrap gap-3 text-[0.65rem] text-on-surface-muted">
             {tools != null ? <span>{tools} tools</span> : null}
             {tokens != null ? <span>{formatTokenCount(tokens)} tokens</span> : null}
             {durationMs != null ? <span>{Math.round(durationMs / 1000)}s</span> : null}
@@ -1692,13 +1689,13 @@ function AgentTailBar({
             <button
               type="button"
               onClick={() => setResultOpen(!resultOpen)}
-              className="cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+              className="cursor-pointer text-[0.65rem] text-on-surface-muted hover:text-on-surface-soft"
             >
               {resultOpen ? "▾" : "▸"} {tailIsError ? "Error details" : "Final result"}
             </button>
           ) : null}
           {status === "error" && !content ? (
-            <span className="text-xs text-red-300">Agent execution failed</span>
+            <span className="text-xs text-error">Agent execution failed</span>
           ) : null}
           <RawDebugTooltip custom={{ _rawMessages: tailRawMessages }} />
         </div>
@@ -1788,13 +1785,13 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
   }, [bodyIndices.length, stickToBottom]);
 
   return (
-    <div className="my-1 rounded-lg border border-slate-700/60 bg-slate-800/30">
-      <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
+    <div className="my-1 rounded-lg border border-neutral-line/60 bg-surface-raised/30">
+      <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
         <ToolHead
           icon="agent"
           iconClassName="text-cyan-400"
           badge={subagentType}
-          badgeClassName="bg-slate-700/60 text-slate-300"
+          badgeClassName="bg-neutral-line/60 text-on-surface-soft"
           detail={custom.description ?? (status === "running" ? "Working..." : "Agent")}
           status={status === "complete" ? null : status}
           trailing={<RawDebugTooltip custom={custom} className="-mr-1" />}
@@ -1886,28 +1883,28 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   };
 
   const renderTail = () => (
-    <div className="rounded-b-lg border-t border-slate-700/50 bg-slate-800/40">
+    <div className="rounded-b-lg border-t border-neutral-line/50 bg-surface-raised/40">
       {awaiting ? (
         <div className="px-3 py-2 sm:px-5">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => onApprove(autoMode)}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-emerald-400/50 bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-200 shadow-sm transition hover:border-emerald-400/70 hover:bg-emerald-500/30 active:bg-emerald-500/40"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-success/50 bg-success/20 px-3.5 py-1.5 text-xs font-semibold text-success shadow-sm transition hover:border-success/70 hover:bg-success/30 active:bg-success/40"
             >
               ✓ {t("claude2.plan.modeAuto")}
             </button>
             <button
               type="button"
               onClick={() => onApprove("default")}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-emerald-400/30 px-3.5 py-1.5 text-xs font-semibold text-emerald-200/90 transition hover:border-emerald-400/50 hover:bg-emerald-500/15 active:bg-emerald-500/25"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-success/30 px-3.5 py-1.5 text-xs font-semibold text-success/90 transition hover:border-success/50 hover:bg-success/15 active:bg-success/25"
             >
               ✓ {t("claude2.plan.modeManual")}
             </button>
             <button
               type="button"
               onClick={() => setFeedbackOpen(!feedbackOpen)}
-              className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-600/60 px-3.5 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-500 hover:bg-slate-700/50 active:bg-slate-700/70"
+              className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-neutral-line/60 px-3.5 py-1.5 text-xs font-medium text-on-surface-soft transition hover:border-neutral-line hover:bg-neutral-line/50 active:bg-neutral-line/70"
             >
               ✎ {t("claude2.plan.feedback")}
             </button>
@@ -1925,16 +1922,16 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
                 }}
                 placeholder={t("claude2.plan.feedbackPlaceholder")}
                 rows={2}
-                className="w-full resize-none rounded-md border border-slate-600/60 bg-slate-900/50 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:border-amber-400/60 focus:outline-none"
+                className="w-full resize-none rounded-md border border-neutral-line/60 bg-surface-inset/50 px-2 py-1.5 text-xs text-on-surface-soft placeholder:text-on-surface-muted focus:border-amber-400/60 focus:outline-none"
               />
               <div className="flex items-center justify-end gap-2">
-                <span className="text-[0.6rem] text-slate-500">
+                <span className="text-[0.6rem] text-on-surface-muted">
                   {t("claude2.plan.enterToSend")}
                 </span>
                 <button
                   type="button"
                   onClick={onReject}
-                  className="cursor-pointer rounded-md bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-200 hover:bg-red-500/35 transition"
+                  className="cursor-pointer rounded-md bg-error/20 px-3 py-1 text-xs font-semibold text-error hover:bg-error/35 transition"
                 >
                   {t("claude2.plan.send")}
                 </button>
@@ -1949,22 +1946,22 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
               ⊘ {t("claude2.plan.rejected")}
             </span>
           ) : (
-            <span className="text-xs text-red-300">{result ?? t("claude2.plan.error")}</span>
+            <span className="text-xs text-error">{result ?? t("claude2.plan.error")}</span>
           )}
           {outcome === "rejected" && result ? (
-            <div className="mt-1 text-[0.65rem] text-slate-400">{result}</div>
+            <div className="mt-1 text-[0.65rem] text-on-surface-muted">{result}</div>
           ) : null}
         </div>
       ) : complete && result ? (
         <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
-          <span className="text-xs font-medium text-emerald-300">
+          <span className="text-xs font-medium text-success">
             ✓ {t("claude2.plan.approved")}
             {approvedModeLabel ? ` · ${approvedModeLabel}` : ""}
           </span>
           <button
             type="button"
             onClick={() => setResultOpen(!resultOpen)}
-            className="ml-2 cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+            className="ml-2 cursor-pointer text-[0.65rem] text-on-surface-muted hover:text-on-surface-soft"
           >
             {resultOpen ? "▾" : "▸"} {t("claude2.plan.result")}
           </button>
@@ -1975,7 +1972,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
           ) : null}
         </div>
       ) : (
-        <div className="px-3 py-1.5 text-[0.65rem] text-slate-500 sm:px-5">
+        <div className="px-3 py-1.5 text-[0.65rem] text-on-surface-muted sm:px-5">
           {t("claude2.plan.orphaned")}
         </div>
       )}
@@ -1985,11 +1982,11 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   return (
     <>
       <div
-        className={`my-1 rounded-lg border bg-slate-800/30 overflow-hidden ${
-          awaiting ? "border-amber-500/40 plan-awaiting-flow" : "border-slate-700/60"
+        className={`my-1 rounded-lg border bg-surface-raised/30 overflow-hidden ${
+          awaiting ? "border-amber-500/40 plan-awaiting-flow" : "border-neutral-line/60"
         }`}
       >
-        <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
+        <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
           <ToolHead
             icon="plan"
             iconClassName="text-amber-300"
@@ -2001,7 +1998,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
           <button
             type="button"
             onClick={() => setFullscreen(true)}
-            className="cursor-pointer rounded p-2 text-slate-500 transition hover:bg-slate-700/50 hover:text-amber-400"
+            className="cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-amber-400"
             aria-label={t("claude2.plan.expand")}
           >
             <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2045,7 +2042,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             {plan ? (
               <MarkdownString text={plan} />
             ) : (
-              <p className="py-8 text-center text-xs text-slate-500">
+              <p className="py-8 text-center text-xs text-on-surface-muted">
                 {t("claude2.plan.orphaned")}
               </p>
             )}
@@ -2209,7 +2206,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
         : "";
 
   const renderTail = () => (
-    <div className="rounded-b-lg border-t border-slate-700/50 bg-slate-800/40">
+    <div className="rounded-b-lg border-t border-neutral-line/50 bg-surface-raised/40">
       {awaiting ? (
         <div className="px-3 py-2 sm:px-5">
           <div className="flex flex-wrap items-center gap-2">
@@ -2227,7 +2224,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-600/50 px-3.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-500 hover:text-slate-200 cursor-pointer"
+                  className="rounded-md border border-neutral-line/50 px-3.5 py-1.5 text-xs font-medium text-on-surface-muted transition hover:border-neutral-line hover:text-on-surface-soft cursor-pointer"
                   onClick={handleCancel}
                 >
                   {t("claude2.ask.skip")}
@@ -2247,7 +2244,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-600/50 px-3.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-500 hover:text-slate-200 cursor-pointer"
+                  className="rounded-md border border-neutral-line/50 px-3.5 py-1.5 text-xs font-medium text-on-surface-muted transition hover:border-neutral-line hover:text-on-surface-soft cursor-pointer"
                   onClick={handleCancel}
                 >
                   {t("claude2.ask.skip")}
@@ -2277,18 +2274,18 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
           {outcome === "skipped" ? (
             <span className="text-xs font-medium text-amber-300">⊘ {t("claude2.ask.skipped")}</span>
           ) : (
-            <span className="text-xs text-red-300">{resultStr || t("claude2.ask.error")}</span>
+            <span className="text-xs text-error">{resultStr || t("claude2.ask.error")}</span>
           )}
         </div>
       ) : complete && resultStr ? (
         <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
-          <span className="text-xs font-medium text-emerald-300">
+          <span className="text-xs font-medium text-success">
             ✓ {t("claude2.ask.statusAnswered")}
           </span>
           <button
             type="button"
             onClick={() => setResultOpen(!resultOpen)}
-            className="ml-2 cursor-pointer text-[0.65rem] text-slate-400 hover:text-slate-300"
+            className="ml-2 cursor-pointer text-[0.65rem] text-on-surface-muted hover:text-on-surface-soft"
           >
             {resultOpen ? "▾" : "▸"} {t("claude2.ask.result")}
           </button>
@@ -2301,7 +2298,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
           ) : null}
         </div>
       ) : (
-        <div className="px-3 py-1.5 text-[0.65rem] text-slate-500 sm:px-5">
+        <div className="px-3 py-1.5 text-[0.65rem] text-on-surface-muted sm:px-5">
           {t("claude2.ask.orphaned")}
         </div>
       )}
@@ -2311,11 +2308,11 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   return (
     <>
       <div
-        className={`my-1 rounded-lg border bg-slate-800/30 overflow-hidden ${
-          awaiting ? "border-amber-500/40 plan-awaiting-flow" : "border-slate-700/60"
+        className={`my-1 rounded-lg border bg-surface-raised/30 overflow-hidden ${
+          awaiting ? "border-amber-500/40 plan-awaiting-flow" : "border-neutral-line/60"
         }`}
       >
-        <div className="flex items-center gap-2 rounded-t-lg bg-slate-800/60 px-3 pt-1.5 pb-2 sm:px-5">
+        <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
           <ToolHead
             icon="question"
             iconClassName="text-amber-300"
@@ -2326,7 +2323,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
           <button
             type="button"
             onClick={() => setFullscreen(true)}
-            className="cursor-pointer rounded p-2 text-slate-500 transition hover:bg-slate-700/50 hover:text-amber-400"
+            className="cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-amber-400"
             aria-label={t("claude2.ask.expand")}
           >
             <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2351,14 +2348,14 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               return (
                 <div
                   key={i}
-                  className="rounded-lg bg-slate-900/40 border border-slate-700/30 p-2.5"
+                  className="rounded-lg bg-surface-inset/40 border border-neutral-line/30 p-2.5"
                 >
                   {q.header ? (
                     <p className="text-[0.6rem] font-semibold text-amber-300/80 uppercase tracking-wide mb-0.5">
                       {q.header}
                     </p>
                   ) : null}
-                  <p className="text-[0.7rem] text-slate-200 leading-relaxed mb-2">
+                  <p className="text-[0.7rem] text-on-surface-soft leading-relaxed mb-2">
                     {q.question}
                     {multi ? (
                       <span className="text-[0.55rem] text-amber-400/60 ml-1">
@@ -2377,7 +2374,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                               className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
                                 isSelected
                                   ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
-                                  : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                                  : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                               } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                               disabled={!canAnswer}
                               onClick={() => toggleOption(i, j, multi)}
@@ -2386,14 +2383,14 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                                 className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
                                   isSelected
                                     ? "border-amber-400 bg-amber-400/30 text-amber-200"
-                                    : "border-slate-500 text-slate-500"
+                                    : "border-neutral-line text-on-surface-muted"
                                 }`}
                               >
                                 {isSelected ? "✓" : j + 1}
                               </span>
                               <span className="flex-1">{opt.label}</span>
                               {opt.description ? (
-                                <span className="text-[0.55rem] text-slate-500 text-right max-w-[40%]">
+                                <span className="text-[0.55rem] text-on-surface-muted text-right max-w-[40%]">
                                   {opt.description}
                                 </span>
                               ) : null}
@@ -2407,13 +2404,13 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           </Fragment>
                         );
                       })}
-                      <div className="my-1 border-t border-slate-700/40" />
+                      <div className="my-1 border-t border-neutral-line/40" />
                       <button
                         type="button"
                         className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
                           otherActive
                             ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
-                            : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                            : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                         } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                         disabled={!canAnswer}
                         onClick={() => toggleOther(i, multi)}
@@ -2422,7 +2419,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
                             otherActive
                               ? "border-amber-400 bg-amber-400/30 text-amber-200"
-                              : "border-slate-500 text-slate-500"
+                              : "border-neutral-line text-on-surface-muted"
                           }`}
                         >
                           ✎
@@ -2431,7 +2428,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                       </button>
                       {otherActive ? (
                         <textarea
-                          className="w-full rounded-lg bg-slate-900/60 border border-amber-500/20 px-2 py-1.5 text-[0.65rem] text-slate-200 placeholder-slate-600 outline-none resize-none"
+                          className="w-full rounded-lg bg-surface-inset/60 border border-amber-500/20 px-2 py-1.5 text-[0.65rem] text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                           rows={2}
                           placeholder={t("claude2.ask.inputPlaceholder")}
                           disabled={!canAnswer}
@@ -2443,7 +2440,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                       ) : null}
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">
+                    <div className="rounded-lg border border-amber-500/20 bg-surface-inset/60 overflow-hidden">
                       <div className="flex items-center gap-1.5 px-2 py-1 border-b border-amber-500/10">
                         <svg
                           className="h-3 w-3 text-amber-400/60"
@@ -2464,7 +2461,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         </span>
                       </div>
                       <textarea
-                        className="w-full bg-transparent px-2 py-1.5 text-[0.65rem] text-slate-200 placeholder-slate-600 outline-none resize-none"
+                        className="w-full bg-transparent px-2 py-1.5 text-[0.65rem] text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                         rows={2}
                         placeholder={t("claude2.ask.inputPlaceholder")}
                         disabled={!canAnswer}
@@ -2507,14 +2504,14 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 return (
                   <div
                     key={i}
-                    className="rounded-lg bg-slate-900/50 border border-slate-700/30 p-3"
+                    className="rounded-lg bg-surface-inset/50 border border-neutral-line/30 p-3"
                   >
                     {q.header ? (
                       <p className="text-[0.7rem] font-semibold text-amber-300/80 uppercase tracking-wide mb-1">
                         {q.header}
                       </p>
                     ) : null}
-                    <p className="text-sm text-slate-200 leading-relaxed mb-3">
+                    <p className="text-sm text-on-surface-soft leading-relaxed mb-3">
                       {q.question}
                       {multi ? (
                         <span className="text-xs text-amber-400/60 ml-1">
@@ -2533,7 +2530,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                                 className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
                                   isSelected
                                     ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
-                                    : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                                    : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                                 } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                                 disabled={!canAnswer}
                                 onClick={() => toggleOption(i, j, multi)}
@@ -2542,14 +2539,14 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                                   className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
                                     isSelected
                                       ? "border-amber-400 bg-amber-400/30 text-amber-200"
-                                      : "border-slate-500 text-slate-500"
+                                      : "border-neutral-line text-on-surface-muted"
                                   }`}
                                 >
                                   {isSelected ? "✓" : j + 1}
                                 </span>
                                 <span className="flex-1">{opt.label}</span>
                                 {opt.description ? (
-                                  <span className="text-xs text-slate-500 text-right max-w-[40%]">
+                                  <span className="text-xs text-on-surface-muted text-right max-w-[40%]">
                                     {opt.description}
                                   </span>
                                 ) : null}
@@ -2563,13 +2560,13 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                             </Fragment>
                           );
                         })}
-                        <div className="my-1 border-t border-slate-700/40" />
+                        <div className="my-1 border-t border-neutral-line/40" />
                         <button
                           type="button"
                           className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
                             otherActive
                               ? "bg-amber-500/20 text-amber-100 border border-amber-500/40"
-                              : "hover:bg-slate-800/50 text-slate-400 border border-transparent"
+                              : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                           } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                           disabled={!canAnswer}
                           onClick={() => toggleOther(i, multi)}
@@ -2578,7 +2575,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                             className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
                               otherActive
                                 ? "border-amber-400 bg-amber-400/30 text-amber-200"
-                                : "border-slate-500 text-slate-500"
+                                : "border-neutral-line text-on-surface-muted"
                             }`}
                           >
                             ✎
@@ -2587,7 +2584,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         </button>
                         {otherActive ? (
                           <textarea
-                            className="w-full rounded-lg bg-slate-900/60 border border-amber-500/20 px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none resize-none"
+                            className="w-full rounded-lg bg-surface-inset/60 border border-amber-500/20 px-3 py-2 text-xs text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                             rows={3}
                             placeholder={t("claude2.ask.inputPlaceholder")}
                             disabled={!canAnswer}
@@ -2599,7 +2596,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         ) : null}
                       </div>
                     ) : (
-                      <div className="rounded-lg border border-amber-500/20 bg-slate-900/60 overflow-hidden">
+                      <div className="rounded-lg border border-amber-500/20 bg-surface-inset/60 overflow-hidden">
                         <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-amber-500/10">
                           <svg
                             className="h-3.5 w-3.5 text-amber-400/60"
@@ -2620,7 +2617,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           </span>
                         </div>
                         <textarea
-                          className="w-full bg-transparent px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none resize-none"
+                          className="w-full bg-transparent px-3 py-2 text-xs text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                           rows={3}
                           placeholder={t("claude2.ask.inputPlaceholder")}
                           disabled={!canAnswer}
@@ -2635,7 +2632,9 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 );
               })
             ) : (
-              <p className="py-8 text-center text-xs text-slate-500">{t("claude2.ask.orphaned")}</p>
+              <p className="py-8 text-center text-xs text-on-surface-muted">
+                {t("claude2.ask.orphaned")}
+              </p>
             )}
           </div>
         </FullscreenReader>
@@ -2725,7 +2724,7 @@ function CommandOutputCard({ headIndex }: { headIndex: number }) {
 
   return (
     <div className="px-3 py-1 sm:px-5">
-      <div className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
+      <div className="rounded-lg border border-neutral-line/60 bg-surface-raised/30 px-3 py-2">
         <div className="flex items-center gap-1.5">
           <ToolHead
             icon={isBash ? "terminal" : "command"}
@@ -2736,19 +2735,19 @@ function CommandOutputCard({ headIndex }: { headIndex: number }) {
           />
         </div>
         {sections.length === 0 ? (
-          <p className="mt-1 text-xs text-slate-500">{t("claude2.command.empty")}</p>
+          <p className="mt-1 text-xs text-on-surface-muted">{t("claude2.command.empty")}</p>
         ) : (
-          <div className="mt-2 flex flex-col gap-2 border-t border-slate-700/30 pt-2">
+          <div className="mt-2 flex flex-col gap-2 border-t border-neutral-line/30 pt-2">
             {sections.map((s, i) => (
               <div key={i}>
-                <div className="mb-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-slate-500">
+                <div className="mb-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-on-surface-muted">
                   {s.label}
                 </div>
                 <pre
                   className={
                     s.tone === "error"
-                      ? "max-h-60 overflow-auto rounded-md bg-red-900/20 p-2 text-xs text-red-300"
-                      : "max-h-60 overflow-auto rounded-md bg-slate-950/40 p-2 text-xs text-slate-300"
+                      ? "max-h-60 overflow-auto rounded-md bg-error/20 p-2 text-xs text-error"
+                      : "max-h-60 overflow-auto rounded-md bg-surface-inset/40 p-2 text-xs text-on-surface-soft"
                   }
                 >
                   {s.value}
@@ -2822,12 +2821,12 @@ function CompactAbortBanner({
         : t("claude2.compact.abortManual");
   return (
     <div className="flex justify-start px-3 py-1 sm:px-5">
-      <div className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 px-2.5 py-1">
+      <div className="inline-flex items-center gap-1.5 rounded-lg bg-error/10 px-2.5 py-1">
         <ToolHead
           icon="compact"
           status="error"
           badge={t("claude2.compact.abortedBadge")}
-          badgeClassName="bg-red-500/15 text-red-200"
+          badgeClassName="bg-error/15 text-error"
           detail={detail}
           trailing={<RawDebugTooltip custom={custom} className="-mr-1" compact />}
         />
@@ -3060,7 +3059,7 @@ function VirtualizedThreadContent({
           type="button"
           onClick={jumpToBottom}
           aria-label="Scroll to bottom"
-          className="pointer-events-auto absolute bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] right-3 z-10 rounded-full bg-slate-700/90 p-2 text-slate-300 shadow-lg transition-all duration-300 ease-out hover:bg-slate-600/90 hover:scale-110 lg:bottom-4 cursor-pointer"
+          className="pointer-events-auto absolute bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] right-3 z-10 rounded-full bg-neutral-line/90 p-2 text-on-surface-soft shadow-lg transition-all duration-300 ease-out hover:bg-neutral-line/90 hover:scale-110 lg:bottom-4 cursor-pointer"
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
@@ -3083,9 +3082,9 @@ function ChatSkeleton() {
   // variant, px-4 py-2.5) so padding/width/corners line up with live bubbles.
   const rows = [
     { align: "end", width: "w-3/5", bg: "bg-cyan-700/50", corner: "rounded-br-md" },
-    { align: "start", width: "w-4/5", bg: "bg-slate-800/60", corner: "rounded-bl-md" },
+    { align: "start", width: "w-4/5", bg: "bg-surface-raised/60", corner: "rounded-bl-md" },
     { align: "end", width: "w-[45%]", bg: "bg-cyan-700/50", corner: "rounded-br-md" },
-    { align: "start", width: "w-[85%]", bg: "bg-slate-800/60", corner: "rounded-bl-md" },
+    { align: "start", width: "w-[85%]", bg: "bg-surface-raised/60", corner: "rounded-bl-md" },
   ];
   return (
     <div className="px-3 sm:px-5" aria-hidden="true">
@@ -3097,8 +3096,8 @@ function ChatSkeleton() {
           <div
             className={`${row.width} rounded-2xl ${row.corner} ${row.bg} skeleton-shimmer px-4 py-2.5`}
           >
-            <div className="h-2.5 w-24 rounded bg-slate-600/40" />
-            <div className="mt-1.5 h-2.5 w-16 rounded bg-slate-600/25" />
+            <div className="h-2.5 w-24 rounded bg-neutral-line/40" />
+            <div className="mt-1.5 h-2.5 w-16 rounded bg-neutral-line/25" />
           </div>
         </div>
       ))}
@@ -3179,7 +3178,7 @@ function ModelSelector({
     <div className="relative shrink-0" ref={ref}>
       <button
         type="button"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-cyan-400/80 hover:text-cyan-300 hover:bg-slate-800/50 transition cursor-pointer"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-cyan-400/80 hover:text-cyan-300 hover:bg-surface-raised/50 transition cursor-pointer"
         onClick={() => setOpen(!open)}
       >
         {label}
@@ -3196,7 +3195,7 @@ function ModelSelector({
       {open ? (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-slate-600/50 bg-slate-800 shadow-xl py-1">
+          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-neutral-line/50 bg-surface-raised shadow-xl py-1">
             {availableModels.map((modelId) => {
               const isActive = modelId === current;
               return (
@@ -3206,7 +3205,7 @@ function ModelSelector({
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
                     isActive
                       ? "text-cyan-400 bg-cyan-500/10 cursor-default"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 cursor-pointer"
+                      : "text-on-surface-muted hover:text-on-surface-soft hover:bg-neutral-line/50 cursor-pointer"
                   }`}
                   disabled={isActive}
                   onClick={() => {
@@ -3296,8 +3295,8 @@ function PermissionModeSelector({
         type="button"
         className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
           pending
-            ? "text-slate-500 cursor-default"
-            : "text-violet-400/80 hover:text-violet-300 hover:bg-slate-800/50 cursor-pointer"
+            ? "text-on-surface-muted cursor-default"
+            : "text-violet-400/80 hover:text-violet-300 hover:bg-surface-raised/50 cursor-pointer"
         }`}
         disabled={pending}
         onClick={() => setOpen(!open)}
@@ -3316,7 +3315,7 @@ function PermissionModeSelector({
       {open ? (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-slate-600/50 bg-slate-800 shadow-xl py-1">
+          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-neutral-line/50 bg-surface-raised shadow-xl py-1">
             {modes.map((pmId) => {
               const isActive = pmId === mode;
               return (
@@ -3326,7 +3325,7 @@ function PermissionModeSelector({
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
                     isActive
                       ? "text-violet-400 bg-violet-500/10 cursor-default"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 cursor-pointer"
+                      : "text-on-surface-muted hover:text-on-surface-soft hover:bg-neutral-line/50 cursor-pointer"
                   }`}
                   disabled={isActive}
                   onClick={() => {
@@ -3421,16 +3420,20 @@ function SlashCommandPopoverItem({
       ref={ref}
       item={item}
       index={index}
-      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-300 transition-colors duration-150 hover:bg-slate-800/80 hover:text-slate-100 data-[highlighted]:bg-slate-800/80 data-[highlighted]:text-slate-100"
+      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-on-surface-soft transition-colors duration-150 hover:bg-surface-raised/80 hover:text-on-surface data-[highlighted]:bg-surface-raised/80 data-[highlighted]:text-on-surface"
     >
       <ToolIcon
         name={kind === "skill" ? "skill" : "command"}
         className={kind === "skill" ? "text-amber-400/70" : "text-cyan-400/70"}
       />
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
-        <span className="min-w-0 break-all text-xs font-medium text-slate-200">{item.label}</span>
+        <span className="min-w-0 break-all text-xs font-medium text-on-surface-soft">
+          {item.label}
+        </span>
         {item.description ? (
-          <span className="min-w-0 break-words text-xs text-slate-500">{item.description}</span>
+          <span className="min-w-0 break-words text-xs text-on-surface-muted">
+            {item.description}
+          </span>
         ) : null}
       </span>
     </ComposerPrimitive.Unstable_TriggerPopoverItem>
@@ -3532,7 +3535,7 @@ function ComposerWithInterrupt({
   const showStop = running && !!onCancel && !blocked;
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-white/10 bg-[#141b28]/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-cyan-500/50 focus-within:bg-[#141b28]/80 lg:bg-[#141b28]/80 lg:backdrop-blur-none lg:shadow-none">
+    <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-cyan-500/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
       {aiTitle ? (
         <span className="pointer-events-none absolute right-3 top-2 z-10 max-w-[45%] select-none truncate rounded-md bg-amber-900/40 px-2 py-0.5 text-[0.6rem] text-amber-300/80 whitespace-nowrap">
           {agentName ? (
@@ -3547,7 +3550,7 @@ function ComposerWithInterrupt({
         placeholder={blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")}
         disabled={blocked}
         enterKeyHint="send"
-        className={`block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-slate-100 placeholder-slate-500 outline-none ${
+        className={`block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none ${
           aiTitle ? "pr-24" : ""
         }`}
         rows={1}
@@ -3594,7 +3597,7 @@ function ComposerWithInterrupt({
         <ComposerPrimitive.Unstable_TriggerPopover
           char="/"
           adapter={slash.adapter}
-          className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 p-1 shadow-2xl backdrop-blur"
+          className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
         >
           <ComposerPrimitive.Unstable_TriggerPopover.Action
             formatter={cliSlashFormatter}
