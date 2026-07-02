@@ -5,65 +5,63 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
 /**
- * Shell surface/tone role layer. Authoritative design system source:
- * docs/design/DESIGN.md (Google DESIGN.md format). `shellSurfaceClasses` and
- * the `*ToneClasses` below map to DESIGN.md component variants (surface-*,
- * nav-item-*, button-*, chip-*). Phase 3 will converge these literal Tailwind
- * values to token references; until then, edits here must stay consistent
- * with DESIGN.md (see its Colors 对照表 and Migration & Mapping 节).
+ * Shell surface/tone role layer. Values reference DESIGN tokens
+ * (docs/design/DESIGN.md, Google DESIGN.md format) via Tailwind v4 @theme inline
+ * utilities — surface-* / on-surface-* / neutral-line / primary / secondary /
+ * success / warning / error. `shellSurfaceClasses` and the `*ToneClasses` map
+ * to DESIGN.md component variants (surface-*, nav-item-*, button-*, chip-*,
+ * selected-row, focus-ring). See its Colors 对照表 and Components 节.
  */
 export type ShellTone = "default" | "accent" | "success" | "warning" | "danger" | "muted";
 
 const markerToneClasses: Record<ShellTone, string> = {
-  default: "border-slate-700 bg-slate-900 text-slate-200",
-  accent: "border-cyan-300/30 bg-cyan-300/10 text-cyan-100",
-  success: "border-emerald-300/30 bg-emerald-300/10 text-emerald-100",
-  warning: "border-amber-300/30 bg-amber-300/10 text-amber-100",
-  danger: "border-rose-300/30 bg-rose-300/10 text-rose-100",
-  muted: "border-slate-800 bg-slate-950/80 text-slate-400",
+  default: "border-neutral-line bg-surface-raised text-on-surface-soft",
+  accent: "border-primary/30 bg-primary/10 text-primary",
+  success: "border-success/30 bg-success/10 text-success",
+  warning: "border-warning/30 bg-warning/10 text-warning",
+  danger: "border-error/30 bg-error/10 text-error",
+  muted: "border-neutral-line bg-surface-inset/80 text-on-surface-muted",
 };
 
 const pillToneClasses: Record<ShellTone, string> = {
-  default: "border-slate-800 bg-slate-950/80 text-slate-100",
-  accent: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
-  success: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
-  warning: "border-amber-300/20 bg-amber-300/10 text-amber-100",
-  danger: "border-rose-300/30 bg-rose-300/10 text-rose-100",
-  muted: "border-slate-800 bg-slate-950/70 text-slate-300",
+  default: "border-neutral-line bg-surface-inset/80 text-on-surface",
+  accent: "border-primary/20 bg-primary/10 text-primary",
+  success: "border-success/20 bg-success/10 text-success",
+  warning: "border-warning/20 bg-warning/10 text-warning",
+  danger: "border-error/30 bg-error/10 text-error",
+  muted: "border-neutral-line bg-surface-inset/70 text-on-surface-soft",
 };
 
 const buttonToneClasses: Record<ShellTone, string> = {
-  default:
-    "border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500 hover:bg-slate-900/80",
+  default: "border-neutral-line bg-surface-raised text-on-surface hover:bg-surface-raised/80",
   accent:
-    "border-transparent bg-gradient-to-br from-cyan-300 to-violet-400 text-slate-950 shadow-lg shadow-cyan-950/25 hover:from-cyan-200 hover:to-violet-300",
+    "border-transparent bg-gradient-to-br from-primary to-secondary text-on-primary shadow-lg shadow-cyan-950/25 hover:brightness-110",
   success:
-    "border-emerald-300/40 bg-emerald-300/10 text-emerald-100 hover:border-emerald-200/70 hover:bg-emerald-300/15",
+    "border-success/40 bg-success/10 text-success hover:border-success/70 hover:bg-success/15",
   warning:
-    "border-amber-300/40 bg-amber-300/10 text-amber-100 hover:border-amber-200/70 hover:bg-amber-300/15",
-  danger:
-    "border-rose-300/40 bg-rose-300/10 text-rose-100 hover:border-rose-200/70 hover:bg-rose-300/15",
+    "border-warning/40 bg-warning/10 text-warning hover:border-warning/70 hover:bg-warning/15",
+  danger: "border-error/40 bg-error/10 text-error hover:border-error/70 hover:bg-error/15",
   muted:
-    "border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-600 hover:bg-slate-900/70",
+    "border-neutral-line bg-surface-inset/60 text-on-surface-muted hover:bg-surface-inset/80 hover:border-on-surface-muted",
 };
 
 export const shellSurfaceClasses = {
-  shell: "bg-[#0f1520]/[0.20]",
-  sidebar: "bg-gradient-to-b from-[#141b28]/[0.25] to-[#0a0e16]/[0.30]",
-  workspace: "border border-white/10 bg-[#141b28]/15",
-  header: "border border-white/10 bg-slate-950/20",
-  floatingHeader: "sm:border sm:border-white/10 sm:bg-slate-950/20",
-  runtimeHeader: "border-b border-slate-700/80",
-  runtimeBody: "bg-[#05080d]/15",
-  runtimeComposer: "border-t border-slate-700/80",
-  terminalTitlebar: "border-b border-slate-700/45 bg-[#141b28]/25",
-  raised: "border border-slate-700/40 bg-[#141b28]/25",
-  raisedHover: "hover:border-cyan-300/60 hover:bg-[#141b28]/40",
-  dashed: "border border-dashed border-slate-700/70 bg-[#141b28]/20",
-  inset: "border border-slate-700/35 bg-[#05080d]/10",
-  code: "border border-slate-700/45",
-  danger: "border border-rose-300/25 bg-rose-950/10",
-  warning: "border border-amber-300/25 bg-amber-950/10",
+  shell: "bg-surface/20",
+  sidebar: "bg-gradient-to-b from-surface-raised/25 to-surface-base/30",
+  workspace: "border border-neutral-line bg-surface-raised/15",
+  header: "border border-neutral-line bg-surface-inset/20",
+  floatingHeader: "sm:border sm:border-neutral-line sm:bg-surface-inset/20",
+  runtimeHeader: "border-b border-neutral-line/80",
+  runtimeBody: "bg-surface-inset/15",
+  runtimeComposer: "border-t border-neutral-line/80",
+  terminalTitlebar: "border-b border-neutral-line/45 bg-surface-raised/25",
+  raised: "border border-neutral-line/40 bg-surface-raised/25",
+  raisedHover: "hover:border-primary/60 hover:bg-surface-raised/40",
+  dashed: "border border-dashed border-neutral-line/70 bg-surface-raised/20",
+  inset: "border border-neutral-line/35 bg-surface-inset/10",
+  code: "border border-neutral-line/45",
+  danger: "border border-error/25 bg-error/10",
+  warning: "border border-warning/25 bg-warning/10",
 };
 
 type IconMarkerProps = {
@@ -73,8 +71,8 @@ type IconMarkerProps = {
 };
 
 const markerSizeClasses: Record<NonNullable<IconMarkerProps["size"]>, string> = {
-  sm: "h-7 w-7 rounded-[0.625rem] text-[0.65rem]",
-  md: "h-10 w-10 rounded-[0.9375rem] text-xs",
+  sm: "h-7 w-7 rounded-sm text-[0.65rem]",
+  md: "h-10 w-10 rounded-lg text-xs",
 };
 
 export function IconMarker({ children, size = "md", tone = "default" }: IconMarkerProps) {
@@ -114,16 +112,16 @@ export function NavItemContent({
   const stateClass =
     orientation === "vertical"
       ? active
-        ? "text-cyan-300"
+        ? "text-primary"
         : interactive
-          ? "text-slate-400 hover:text-slate-100"
-          : "text-slate-500"
+          ? "text-on-surface-muted hover:text-on-surface"
+          : "text-on-surface-muted"
       : active
-        ? "bg-cyan-300/10 text-slate-100"
+        ? "bg-primary/10 text-primary"
         : interactive
-          ? "text-slate-400 hover:bg-slate-800/45 hover:text-slate-100"
-          : "text-slate-500";
-  const shapeClass = orientation === "vertical" ? "" : "rounded-[0.875rem]";
+          ? "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
+          : "text-on-surface-muted";
+  const shapeClass = orientation === "vertical" ? "" : "rounded-lg";
   const interactionClass = interactive ? "cursor-pointer" : "";
 
   return (
@@ -134,7 +132,7 @@ export function NavItemContent({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.68rem] font-bold sm:text-sm">{label}</span>
         {description ? (
-          <span className="mt-0.5 block truncate text-xs text-slate-500">{description}</span>
+          <span className="mt-0.5 block truncate text-xs text-on-surface-muted">{description}</span>
         ) : null}
       </span>
       {meta}
@@ -155,7 +153,9 @@ export function StatusPill({ label, tone = "default", value }: StatusPillProps) 
       variant="outline"
     >
       {label ? (
-        <span className="text-[0.6rem] uppercase tracking-[0.12em] text-slate-500">{label}</span>
+        <span className="text-[0.6rem] uppercase tracking-[0.12em] text-on-surface-muted">
+          {label}
+        </span>
       ) : null}
       <span className="truncate text-xs font-semibold capitalize">{value}</span>
     </Badge>
@@ -207,7 +207,7 @@ export function ShellInput({ className = "", ...props }: ShellInputProps) {
   return (
     <Input
       {...props}
-      className={`h-auto rounded-2xl border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:border-cyan-300 focus-visible:ring-cyan-300/20 ${className}`}
+      className={`h-auto rounded-lg border-neutral-line bg-surface-inset px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-muted/60 focus-visible:border-primary focus-visible:ring-primary/30 ${className}`}
     />
   );
 }
@@ -244,7 +244,7 @@ export function ListRow({
       }}
       className={`flex h-auto w-full min-w-0 cursor-pointer items-center justify-start rounded-xl px-3 py-2.5 text-left transition interactive-row ${
         selected
-          ? "border border-cyan-300/60 bg-cyan-300/10"
+          ? "border border-primary/60 bg-primary/10"
           : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
       } ${className}`}
     >
@@ -252,11 +252,13 @@ export function ListRow({
         <span className="flex min-w-0 items-center gap-3">
           {marker}
           <span className="min-w-0">
-            <span className="block truncate font-semibold text-slate-100" data-list-row-title>
+            <span className="block truncate font-semibold text-on-surface" data-list-row-title>
               {title}
             </span>
             {subtitle ? (
-              <span className="mt-0.5 block truncate text-xs text-slate-500">{subtitle}</span>
+              <span className="mt-0.5 block truncate text-xs text-on-surface-muted">
+                {subtitle}
+              </span>
             ) : null}
           </span>
         </span>
