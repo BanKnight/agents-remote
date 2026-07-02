@@ -13,6 +13,7 @@ import {
 } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
+import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 
 export function HomeRoute() {
   const { t } = useT();
@@ -64,7 +65,7 @@ export function HomeRoute() {
   };
 
   return (
-    <ShellLayout variant="home">
+    <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
       <ShellHeaderSurface
         actions={
           <>

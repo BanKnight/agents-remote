@@ -18,6 +18,7 @@ import {
 import { WorkbenchLeftRail } from "./left-rail";
 import { PanelRouter, useGlobalInstanceCandidates, useScopeInstanceOrder } from "./instance-area";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 
 type MobileWorkbenchProps = {
   scope: WorkbenchScope;
@@ -45,6 +46,7 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
         ) : (
           <WorkbenchLeftRail focusId={focusId} scope={scope} />
         )}
+        <MobilePrimaryNav />
       </main>
     );
   }
@@ -276,7 +278,10 @@ function MobileGlobalOverview() {
       <h2 className="shrink-0 border-b border-white/5 px-3 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-500">
         {t("workbench.globalOverviewTitle")}
       </h2>
-      <nav aria-label={t("workbench.globalOverviewTitle")} className="flex-1 overflow-y-auto">
+      <nav
+        aria-label={t("workbench.globalOverviewTitle")}
+        className="flex-1 overflow-y-auto pb-24 lg:pb-0"
+      >
         {Array.from(grouped.entries()).map(([projectName, items]) => (
           <div key={projectName}>
             <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-600">

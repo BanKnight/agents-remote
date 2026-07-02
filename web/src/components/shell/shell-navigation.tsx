@@ -116,7 +116,7 @@ export function ShellNavigationStaticItem({
 type ShellMobileBottomNavigationProps = {
   ariaLabel: string;
   children: ReactNode;
-  columns: 4 | 5;
+  columns: 3 | 4 | 5;
   ref?: Ref<HTMLElement>;
 };
 
@@ -126,6 +126,7 @@ export function ShellMobileBottomNavigation({
   columns,
   ref,
 }: ShellMobileBottomNavigationProps) {
+  const colsClass = columns === 5 ? "grid-cols-5" : columns === 4 ? "grid-cols-4" : "grid-cols-3";
   return (
     <nav
       ref={ref}
@@ -133,7 +134,7 @@ export function ShellMobileBottomNavigation({
       aria-label={ariaLabel}
     >
       <div
-        className={`mx-auto grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${columns === 5 ? "grid-cols-5" : "grid-cols-4"}`}
+        className={`mx-auto grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${colsClass}`}
       >
         {children}
       </div>

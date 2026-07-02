@@ -1,5 +1,6 @@
 import { useT } from "../i18n";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
+import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 
 /**
  * 设置页（设计文档 §7）。移动端一级底部 tab「设置」的全屏页。本轮（Phase 2）仅骨架占位；
@@ -15,9 +16,10 @@ export function SettingsRoute() {
       <header className="flex h-11 shrink-0 items-center border-b border-white/5 px-3">
         <h1 className="text-sm font-semibold">{t("nav.settings")}</h1>
       </header>
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 lg:pb-4">
         <p className="text-sm text-slate-400">{t("settings.placeholder")}</p>
       </div>
+      <MobilePrimaryNav />
     </main>
   );
 }

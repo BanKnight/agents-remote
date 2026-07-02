@@ -82,7 +82,10 @@ function ProjectTree({ focusId, scope }: ProjectTreeProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <nav aria-label={t("workbench.projectsAria")} className="flex-1 overflow-y-auto">
+      <nav
+        aria-label={t("workbench.projectsAria")}
+        className="flex-1 overflow-y-auto pb-24 lg:pb-0"
+      >
         <GlobalNavNode active={scope.kind === "global"} onSelect={selectGlobal} />
         {projectItems.map((project) => (
           <ProjectNode
