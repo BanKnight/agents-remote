@@ -8,6 +8,7 @@ import {
   deriveRows,
   inferSessionTypeFromId,
   parseWorkbenchScope,
+  rankGlobalInstances,
   removePanel,
   resizePair,
   setPanelSize,
@@ -165,4 +166,29 @@ test("resizePair: 右侧钳到 MIN_FLEX（不能把右拖到 0）", () => {
   const r = resizePair(l, "a", "b", 1); // 想让 b = 0
   expect(r.sizes.b).toBeCloseTo(WORKBENCH_PANEL_MIN_FLEX);
   expect(r.sizes.a).toBeCloseTo(1 + (1 - WORKBENCH_PANEL_MIN_FLEX)); // 守恒
+});
+
+const candidate = (
+  project: string,
+  sessionId: string,
+  status: string,
+  type: "agent" | "terminal",
+) => ({ ref: ref(project, sessionId), status, type });
+
+test("rankGlobalInstances: needs-interaction > running agent > terminal", () => {
+  const ranked = rankGlobalInstances([
+    candidate("p", "term1", "running", "terminal"),
+    candidate("p", "agent-run", "running", "agent"),
+    candidate("p", "agent-idle", "idle", "agent"),
+  ]);
+  expect(ranked.map((r) => r.sessionId)).toEqual(["agent-idle", "agent-run", "term1"]);
+});
+
+test("rankGlobalInstances: 同 rank 保持聚合原序（稳定）", () => {
+  const ranked = rankGlobalInstances([
+    candidate("p1", "a1", "running", "agent"),
+    candidate("p2", "a2", "running", "agent"),
+    candidate("p1", "a3", "running", "agent"),
+  ]);
+  expect(ranked.map((r) => r.sessionId)).toEqual(["a1", "a2", "a3"]);
 });

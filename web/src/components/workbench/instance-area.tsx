@@ -1,11 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  type GlobalInstanceCandidate,
   type WorkbenchPanelRef,
   type WorkbenchScope,
   addPanel,
   inferSessionTypeFromId,
+  rankGlobalInstances,
   removePanel,
   resizePair,
   toggleMaximize,
@@ -16,6 +18,9 @@ import {
   closeTerminalSession,
   getAgentSession,
   getTerminalSession,
+  listAgentSessions,
+  listProjects,
+  listTerminalSessions,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useT } from "../../i18n";
@@ -32,8 +37,9 @@ type InstanceAreaProps = {
 /**
  * 中栏实例区（设计文档 §4）。消费 workbench split 布局 atom，渲染 `SplitLayout`
  *（多面板同屏）。面板 = 活跃实例 1:1；URL focusId 是「聚焦面板」（输入/右栏跟随），
- * 面板布局（哪些实例同屏、排序）是个人布局进 localStorage。全局作用域跨项目混排
- * 在 Stage 4 commit ④ 接入；当前仅 project 作用域 split。
+ * 面板布局（哪些实例同屏、排序）是个人布局进 localStorage。project 作用域按项目分键；
+ * global 作用域（commit ④）聚合所有项目活跃实例自动铺开（rankGlobalInstances 排序），
+ * 面板带项目前缀。
  */
 export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
   const { t } = useT();
@@ -41,9 +47,10 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
   const queryClient = useQueryClient();
   const { confirm, holder } = useConfirm();
   const [layout, update] = useWorkbenchLayout(scope);
+  const candidates = useGlobalInstanceCandidates(scope);
 
   // focus → addPanel：URL focusId 指向的实例若不在布局中，加入面板（split-right 默认）。
-  // 仅 project 作用域；global 的 focusId 缺 projectName，commit ④ 接入。
+  // 仅 project 作用域；global 的 focusId 缺 projectName，靠下方自动铺开填充。
   const scopeKey = scope.kind === "project" ? scope.key : "global";
   useEffect(() => {
     if (scope.kind !== "project" || !focusId) return;
@@ -53,6 +60,19 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
     // layout.panels 入 deps 以便 addPanel 后重检收敛（idempotent，无循环）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, scopeKey, layout.panels]);
+
+  // global 自动铺开（commit ④）：进入全局视图且布局为空时，按 rankGlobalInstances 排序
+  // 把所有项目活跃实例铺成面板。seededRef 防止铺开后 candidates/状态变化触发重铺，
+  // 也防止用户手动清空后被自动回填。localStorage 已恢复非空布局时不介入。
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (scope.kind !== "global" || layout.panels.length > 0 || seededRef.current) return;
+    if (candidates.length === 0) return;
+    seededRef.current = true;
+    const ranked = rankGlobalInstances(candidates);
+    update((prev) => ranked.reduce((acc, ref) => addPanel(acc, ref), prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey, layout.panels.length, candidates]);
 
   // split 级 close = 结束实例：confirm → API close → 失效缓存 → removePanel →
   // 若关的是聚焦面板，焦点切到剩余首面板（无则回 scope 视图）。embedded 面板自带的
@@ -90,43 +110,46 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
     }
     const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
     update((prev) => removePanel(prev, ref.sessionId));
-    if (scope.kind === "project" && focusId === ref.sessionId) {
+    if (focusId === ref.sessionId) {
+      const scopeParam = scope.kind === "project" ? scope.key : "global";
       void navigate(
         remaining.length > 0
           ? {
               to: "/workbench/$scope/$focusId",
-              params: { scope: scope.key, focusId: remaining[0].sessionId },
+              params: { scope: scopeParam, focusId: remaining[0].sessionId },
             }
-          : { to: "/workbench/$scope", params: { scope: scope.key } },
+          : { to: "/workbench/$scope", params: { scope: scopeParam } },
       );
     }
   };
 
   const focusPanel = (ref: WorkbenchPanelRef) => {
-    if (ref.sessionId === focusId || scope.kind !== "project") return;
+    if (ref.sessionId === focusId) return;
+    const scopeParam = scope.kind === "project" ? scope.key : "global";
     void navigate({
       to: "/workbench/$scope/$focusId",
-      params: { scope: scope.key, focusId: ref.sessionId },
+      params: { scope: scopeParam, focusId: ref.sessionId },
     });
   };
 
   const content =
-    scope.kind !== "project" || layout.panels.length === 0 ? (
-      focusId && scope.kind === "project" ? (
-        <PlaceholderPanel focusId={focusId} /> // 布局空但 URL 带 focusId：addPanel effect 尚未收敛，先占位防闪
+    layout.panels.length === 0 ? (
+      focusId ? (
+        <PlaceholderPanel focusId={focusId} /> // 布局空但 URL 带 focusId：addPanel/铺开尚未收敛，先占位防闪
       ) : (
         <EmptyInstanceArea />
       )
     ) : (
       <SplitLayout
-        layout={layout}
         isFocused={(ref) => ref.sessionId === focusId}
+        layout={layout}
         onClosePanel={closePanel}
         onFocusPanel={focusPanel}
         onResizePair={(leftId, rightId, deltaFlex) =>
           update((prev) => resizePair(prev, leftId, rightId, deltaFlex))
         }
         onToggleMaximize={(sessionId) => update((prev) => toggleMaximize(prev, sessionId))}
+        panelLabel={scope.kind === "global" ? (ref) => ref.projectName : undefined}
         renderPanel={(ref) => <PanelRouter key={ref.sessionId} panelRef={ref} />}
       />
     );
@@ -197,6 +220,54 @@ function useTerminalDetail(panelRef: WorkbenchPanelRef) {
     retry: false,
     staleTime: 60_000,
   });
+}
+
+/**
+ * 全局实例区候选聚合（commit ④）。仅在 global 作用域发请求：listProjects → 每项目
+ * listAgentSessions/listTerminalSessions（useQueries 动态查询，复用左栏 query key 缓存），
+ * 扁平化成带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
+ */
+function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandidate[] {
+  const isGlobal = scope.kind === "global";
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: listProjects,
+    enabled: isGlobal,
+  });
+  const names = isGlobal ? (projects.data?.projects.map((p) => p.name) ?? []) : [];
+  const agentQueries = useQueries({
+    queries: names.map((name) => ({
+      queryKey: ["projects", name, "agent-sessions"],
+      queryFn: () => listAgentSessions(name),
+      staleTime: 5_000,
+    })),
+  });
+  const terminalQueries = useQueries({
+    queries: names.map((name) => ({
+      queryKey: ["projects", name, "terminal-sessions"],
+      queryFn: () => listTerminalSessions(name),
+      staleTime: 5_000,
+    })),
+  });
+  if (!isGlobal) return [];
+  const candidates: GlobalInstanceCandidate[] = [];
+  names.forEach((name, index) => {
+    for (const session of agentQueries[index]?.data?.sessions ?? []) {
+      candidates.push({
+        ref: { projectName: name, sessionId: session.id },
+        status: session.status,
+        type: "agent",
+      });
+    }
+    for (const session of terminalQueries[index]?.data?.sessions ?? []) {
+      candidates.push({
+        ref: { projectName: name, sessionId: session.id },
+        status: session.status,
+        type: "terminal",
+      });
+    }
+  });
+  return candidates;
 }
 
 function EmptyInstanceArea() {

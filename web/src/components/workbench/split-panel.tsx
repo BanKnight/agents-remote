@@ -23,6 +23,8 @@ type SplitLayoutProps = {
   onResizePair?: (leftId: string, rightId: string, deltaFlex: number) => void;
   /** 切换面板最大化（标量翻转 maximized，deriveRows 派生单面板全屏）。 */
   onToggleMaximize?: (sessionId: string) => void;
+  /** 面板工具栏左侧标签（global scope 传项目名前缀；project scope 不传 = 隐藏）。 */
+  panelLabel?: (ref: WorkbenchPanelRef) => string | undefined;
 };
 
 /**
@@ -42,6 +44,7 @@ export function SplitLayout({
   onClosePanel,
   onResizePair,
   onToggleMaximize,
+  panelLabel,
 }: SplitLayoutProps) {
   const rows = deriveRows(layout);
   if (rows.length === 0) return null;
@@ -68,6 +71,7 @@ export function SplitLayout({
                   <SplitPanel
                     flex={layout.sizes[ref.sessionId] ?? WORKBENCH_PANEL_DEFAULT_FLEX}
                     focused={isFocused?.(ref) ?? false}
+                    label={panelLabel?.(ref)}
                     maximized={layout.maximized === ref.sessionId}
                     onClose={() => onClosePanel(ref)}
                     onFocus={() => onFocusPanel?.(ref)}
@@ -88,6 +92,7 @@ export function SplitLayout({
 type SplitPanelProps = {
   flex: number;
   focused: boolean;
+  label?: string;
   maximized: boolean;
   onClose: () => void;
   onFocus: () => void;
@@ -96,14 +101,16 @@ type SplitPanelProps = {
 };
 
 /**
- * 单个 split 面板框：薄 split 工具条（最大化/恢复 + 关闭）+ 面板主体。实例内容的领域
- * header（ChatHeader / terminal header 等）由嵌入组件自带；embedded 模式下 header 已隐藏
- * 自带 close/back（见 Claude2Chat / SessionDetail 手术），本工具条承载 split 级
- * 最大化/关闭，避免双 close。focused 时外环高亮。点击面板任意位置聚焦（输入作用于聚焦面板）。
+ * 单个 split 面板框：薄 split 工具条（左侧可选项目前缀 + 最大化/恢复/关闭）+ 面板主体。
+ * 实例内容的领域 header（ChatHeader / terminal header 等）由嵌入组件自带；embedded 模式
+ * 下 header 已隐藏自带 close/back（见 Claude2Chat / SessionDetail 手术），本工具条承载
+ * split 级 最大化/关闭，避免双 close。focused 时外环高亮。点击面板任意位置聚焦
+ * （输入作用于聚焦面板）。
  */
 function SplitPanel({
   flex,
   focused,
+  label,
   maximized,
   onClose,
   onFocus,
@@ -117,16 +124,21 @@ function SplitPanel({
       style={{ flexGrow: flex, flexBasis: 0 }}
       onClick={onFocus}
     >
-      <div className="flex shrink-0 items-center justify-end gap-0.5 border-b border-white/5 px-1 py-0.5">
-        <SplitIconButton
-          label={t(maximized ? "workbench.panelRestore" : "workbench.panelMaximize")}
-          onClick={onToggleMaximize}
-        >
-          {maximized ? RestoreIcon : MaximizeIcon}
-        </SplitIconButton>
-        <SplitIconButton label={t("workbench.panelClose")} onClick={onClose}>
-          <ShellIcon className="h-3 w-3" name="close" />
-        </SplitIconButton>
+      <div className="flex shrink-0 items-center justify-between gap-0.5 border-b border-white/5 px-1 py-0.5">
+        <span className="min-w-0 flex-1 truncate px-1 text-[0.6rem] font-medium text-slate-500">
+          {label}
+        </span>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <SplitIconButton
+            label={t(maximized ? "workbench.panelRestore" : "workbench.panelMaximize")}
+            onClick={onToggleMaximize}
+          >
+            {maximized ? RestoreIcon : MaximizeIcon}
+          </SplitIconButton>
+          <SplitIconButton label={t("workbench.panelClose")} onClick={onClose}>
+            <ShellIcon className="h-3 w-3" name="close" />
+          </SplitIconButton>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>

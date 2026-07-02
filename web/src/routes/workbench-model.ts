@@ -240,6 +240,33 @@ export function resizePair(
   };
 }
 
+// ── 全局实例区（Stage 4 commit ④，跨项目混排）─────────────────────────────────
+
+/** 全局实例区候选：聚合所有项目活跃实例 + 排序所需的状态/类型。 */
+export type GlobalInstanceCandidate = {
+  ref: WorkbenchPanelRef;
+  status: string;
+  type: "agent" | "terminal";
+};
+
+/**
+ * 全局实例区铺开排序（设计文档 §4）：needs-interaction（agent 非运行，如 idle/error）
+ * > running agent > terminal > 其他。最需要关注的实例排最前。稳定排序（同 rank 保持
+ * 聚合顺序，即项目次序 → sessions 次序）。纯函数，便于测试。
+ */
+export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): WorkbenchPanelRef[] {
+  const rank = (candidate: GlobalInstanceCandidate): number => {
+    if (candidate.type === "agent" && candidate.status !== "running") return 0;
+    if (candidate.type === "agent") return 1;
+    if (candidate.type === "terminal") return 2;
+    return 3;
+  };
+  return [...candidates]
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => rank(a.candidate) - rank(b.candidate) || a.index - b.index)
+    .map((entry) => entry.candidate.ref);
+}
+
 // ── 布局 atom（按作用域隔离，localStorage 持久化）─────────────────────────────
 
 /**
