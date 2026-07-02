@@ -231,7 +231,7 @@ function useTerminalDetail(panelRef: WorkbenchPanelRef) {
  * listAgentSessions/listTerminalSessions（useQueries 动态查询，复用左栏 query key 缓存），
  * 扁平化成带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
  */
-function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandidate[] {
+export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandidate[] {
   const isGlobal = scope.kind === "global";
   const projects = useQuery({
     queryKey: ["projects"],
@@ -258,6 +258,8 @@ function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandi
   names.forEach((name, index) => {
     for (const session of agentQueries[index]?.data?.sessions ?? []) {
       candidates.push({
+        displayName: session.displayName,
+        provider: session.provider,
         ref: { projectName: name, sessionId: session.id },
         status: session.status,
         type: "agent",
@@ -265,6 +267,7 @@ function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandi
     }
     for (const session of terminalQueries[index]?.data?.sessions ?? []) {
       candidates.push({
+        displayName: session.displayName,
         ref: { projectName: name, sessionId: session.id },
         status: session.status,
         type: "terminal",

@@ -429,4 +429,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.panelRestore": "恢复面板",
   "workbench.switchPrev": "上一个实例",
   "workbench.switchNext": "下一个实例",
+  "workbench.globalOverviewTitle": "全局实例",
+  "workbench.globalOverviewEmpty": "跨项目暂无活跃实例。",
 };

@@ -1,6 +1,6 @@
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import type { SessionType } from "@agents-remote/shared";
+import type { AgentProvider, AgentSessionStatus, SessionType } from "@agents-remote/shared";
 
 /**
  * 工作台作用域 —— URL `/workbench/$scope` 的语义核心
@@ -262,11 +262,16 @@ export function resizePair(
 
 // ── 全局实例区（Stage 4 commit ④，跨项目混排）─────────────────────────────────
 
-/** 全局实例区候选：聚合所有项目活跃实例 + 排序所需的状态/类型。 */
+/** 全局实例区候选：聚合所有项目活跃实例 + 排序/展示所需字段。 */
 export type GlobalInstanceCandidate = {
   ref: WorkbenchPanelRef;
-  status: string;
+  /** AgentSessionStatus 涵盖 terminal 状态子集，统一 agent/terminal 状态语义。 */
+  status: AgentSessionStatus;
   type: "agent" | "terminal";
+  /** 实例显示名（移动全局列表行 / 全局面板标题）。 */
+  displayName: string;
+  /** agent provider（terminal 无）。 */
+  provider?: AgentProvider;
 };
 
 /**

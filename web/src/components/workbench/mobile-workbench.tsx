@@ -1,9 +1,13 @@
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
-import { shellSurfaceClasses } from "../shell/shell-primitives";
+import { IconMarker, shellSurfaceClasses } from "../shell/shell-primitives";
+import { ShellNavigationButton } from "../shell/shell-navigation";
+import { ShellIcon } from "../shell/icons";
+import { sessionStatusLabel } from "../../routes/console-model";
 import {
   addPanel,
+  type GlobalInstanceCandidate,
   type WorkbenchMobileFocusTab,
   type WorkbenchScope,
   inferSessionTypeFromId,
@@ -11,7 +15,7 @@ import {
   workbenchMobileFocusTabAtom,
 } from "../../routes/workbench-model";
 import { WorkbenchLeftRail } from "./left-rail";
-import { PanelRouter, useScopeInstanceOrder } from "./instance-area";
+import { PanelRouter, useGlobalInstanceCandidates, useScopeInstanceOrder } from "./instance-area";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 
 type MobileWorkbenchProps = {
@@ -35,7 +39,11 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
       <main
         className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-slate-100 ${shellSurfaceClasses.shell}`}
       >
-        <WorkbenchLeftRail focusId={focusId} scope={scope} />
+        {scope.kind === "global" ? (
+          <MobileGlobalOverview />
+        ) : (
+          <WorkbenchLeftRail focusId={focusId} scope={scope} />
+        )}
       </main>
     );
   }
@@ -238,5 +246,91 @@ function MobileInstanceSwitcher({
         </svg>
       </button>
     </>
+  );
+}
+
+/**
+ * 移动全局列表态（设计文档 §7）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
+ * 指定作用域）。按项目分组（稳定：聚合顺序 = 项目次序 → agent(createdAt) → terminal(createdAt)），
+ * 点实例进 `/workbench/global/$focusId` 单实例聚焦。空状态提示。复用 ShellNavigationButton
+ * 与左栏实例行同设计语言。
+ */
+function MobileGlobalOverview() {
+  const { t } = useT();
+  const navigate = useNavigate();
+  const candidates = useGlobalInstanceCandidates({ kind: "global" });
+  const grouped = new Map<string, GlobalInstanceCandidate[]>();
+  for (const candidate of candidates) {
+    const arr = grouped.get(candidate.ref.projectName) ?? [];
+    arr.push(candidate);
+    grouped.set(candidate.ref.projectName, arr);
+  }
+  const focusInstance = (sessionId: string) => {
+    void navigate({
+      to: "/workbench/$scope/$focusId",
+      params: { scope: "global", focusId: sessionId },
+    });
+  };
+  if (candidates.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-center">
+        <p className="text-sm text-slate-500">{t("workbench.globalOverviewEmpty")}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <h2 className="shrink-0 border-b border-white/5 px-3 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-500">
+        {t("workbench.globalOverviewTitle")}
+      </h2>
+      <nav aria-label={t("workbench.globalOverviewTitle")} className="flex-1 overflow-y-auto">
+        {Array.from(grouped.entries()).map(([projectName, items]) => (
+          <div key={projectName}>
+            <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-600">
+              {projectName}
+            </p>
+            {items.map((candidate) => (
+              <GlobalInstanceRow
+                candidate={candidate}
+                key={candidate.ref.sessionId}
+                onSelect={focusInstance}
+              />
+            ))}
+          </div>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+type GlobalInstanceRowProps = {
+  candidate: GlobalInstanceCandidate;
+  onSelect: (sessionId: string) => void;
+};
+
+/** 全局实例行：复用左栏 AgentNavItem/TerminalNavItem 渲染（marker + 状态描述）。 */
+function GlobalInstanceRow({ candidate, onSelect }: GlobalInstanceRowProps) {
+  const { t } = useT();
+  const isAgent = candidate.type === "agent";
+  const isRunning = candidate.status === "running";
+  const marker = isAgent ? (
+    <IconMarker tone={candidate.provider === "codex" ? "success" : "accent"}>
+      <ShellIcon
+        className="h-3.5 w-3.5"
+        name={candidate.provider === "codex" ? "openai" : "anthropic"}
+      />
+    </IconMarker>
+  ) : (
+    <IconMarker tone="muted">
+      <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+    </IconMarker>
+  );
+  return (
+    <ShellNavigationButton
+      description={isRunning ? undefined : t(sessionStatusLabel(candidate.status))}
+      label={candidate.displayName}
+      marker={marker}
+      onClick={() => onSelect(candidate.ref.sessionId)}
+    />
   );
 }

@@ -429,4 +429,6 @@ export const en = {
   "workbench.panelRestore": "Restore panel",
   "workbench.switchPrev": "Previous instance",
   "workbench.switchNext": "Next instance",
+  "workbench.globalOverviewTitle": "Global instances",
+  "workbench.globalOverviewEmpty": "No active instances across projects.",
 } as const;
