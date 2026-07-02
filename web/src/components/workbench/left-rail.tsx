@@ -202,7 +202,7 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { prompt } = usePromptDialog();
+  const { holder: promptHolder, prompt } = usePromptDialog();
   const agents = useQuery({
     queryKey: ["projects", projectName, "agent-sessions"],
     queryFn: () => listAgentSessions(projectName),
@@ -351,6 +351,7 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
           onClick={() => handleHistoryClick(entry)}
         />
       ))}
+      {promptHolder}
     </div>
   );
 }
