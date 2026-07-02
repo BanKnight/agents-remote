@@ -129,7 +129,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
         <button
           aria-label={t("workbench.backToList")}
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="inline-flex h-11 w-11 items-center justify-center gap-1 rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => void navigateWorkbench(scope)}
           type="button"
         >
@@ -186,7 +186,7 @@ type MobileFocusTabButtonProps = {
 function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonProps) {
   return (
     <button
-      className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
+      className={`shrink-0 rounded-lg px-3 py-3 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
       onClick={onClick}
       type="button"
     >
@@ -216,7 +216,7 @@ function MobileInstanceSwitcher({
     <>
       <button
         aria-label={prevLabel}
-        className="absolute left-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
+        className="absolute left-1 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
         onClick={onPrev}
         type="button"
       >
@@ -232,7 +232,7 @@ function MobileInstanceSwitcher({
       </button>
       <button
         aria-label={nextLabel}
-        className="absolute right-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
+        className="absolute right-1 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
         onClick={onNext}
         type="button"
       >
@@ -280,7 +280,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
         <button
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="inline-flex h-11 w-11 items-center justify-center gap-1 rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => void navigate({ to: "/" })}
           type="button"
         >
