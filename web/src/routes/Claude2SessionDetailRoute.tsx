@@ -470,6 +470,7 @@ export function Claude2Chat({
     <>
       <ChatHeader
         closePending={closeSession.isPending}
+        embedded={embedded}
         projectName={projectName}
         title={title}
         onClose={async () => {
@@ -596,9 +597,21 @@ type ChatHeaderProps = {
   projectName: string;
   title: string;
   onClose: () => void;
+  /**
+   * 嵌入模式（workbench split 中栏）：隐藏自带 back 链接 + close 按钮 ——
+   * split 内无「返回」语义（工作台常驻），close 由 SplitPanel 工具条承载（Stage 4 ②），
+   * 避免双 close。默认 false（旧路由独立渲染时保留 back + close）。
+   */
+  embedded?: boolean;
 };
 
-function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderProps) {
+function ChatHeader({
+  closePending,
+  projectName,
+  title,
+  onClose,
+  embedded = false,
+}: ChatHeaderProps) {
   const { t } = useT();
 
   return (
@@ -606,40 +619,44 @@ function ChatHeader({ closePending, projectName, title, onClose }: ChatHeaderPro
       className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <Link
-          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
-          aria-label={t("session.backToProject")}
-          params={{ projectName }}
-          search={{ workspace: defaultConsoleSection, filesPath: "" }}
-          to="/projects/$projectName"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          {t("nav.back")}
-        </Link>
-        <div className="min-w-0 flex-1 text-center">
+        {!embedded && (
+          <Link
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
+            aria-label={t("session.backToProject")}
+            params={{ projectName }}
+            search={{ workspace: defaultConsoleSection, filesPath: "" }}
+            to="/projects/$projectName"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M10 3L5 8l5 5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {t("nav.back")}
+          </Link>
+        )}
+        <div className={`min-w-0 flex-1 text-center ${embedded ? "text-left" : ""}`}>
           <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
           <p className="truncate text-[0.65rem] leading-4 text-slate-500">{projectName}</p>
         </div>
-        <button
-          type="button"
-          disabled={closePending}
-          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
-          onClick={onClose}
-          aria-label={t("session.close")}
-        >
-          <ShellIcon name="close" className="h-4 w-4" />
-          <span className="hidden sm:inline">
-            {closePending ? t("session.closing") : t("session.close")}
-          </span>
-        </button>
+        {!embedded && (
+          <button
+            type="button"
+            disabled={closePending}
+            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
+            onClick={onClose}
+            aria-label={t("session.close")}
+          >
+            <ShellIcon name="close" className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {closePending ? t("session.closing") : t("session.close")}
+            </span>
+          </button>
+        )}
       </div>
     </header>
   );

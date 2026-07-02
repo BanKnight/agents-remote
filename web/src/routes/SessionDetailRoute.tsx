@@ -421,6 +421,7 @@ export function SessionDetail({
         createTerminalError={createTerminal.error}
         createTerminalPending={createTerminal.isPending}
         detailView={detailView}
+        embedded={embedded}
         projectName={projectName}
         sessionId={sessionId}
         sessionType={sessionType}
@@ -535,6 +536,12 @@ type SessionDetailHeaderProps = {
   onCreateTerminal: () => void;
   onReconnect: () => void;
   onViewChange: (view: DetailView) => void;
+  /**
+   * 嵌入模式（workbench split 中栏）：隐藏自带 back 链接 + close（SessionDetailActions
+   * 通过 showClose 收起 close）—— split 内无「返回」语义，close 由 SplitPanel 工具条
+   * 承载（Stage 4 ②），避免双 close。默认 false。
+   */
+  embedded?: boolean;
 };
 
 function SessionDetailHeader({
@@ -543,6 +550,7 @@ function SessionDetailHeader({
   createTerminalError,
   createTerminalPending,
   detailView,
+  embedded = false,
   onClose,
   onCreateTerminal,
   onReconnect: _onReconnect,
@@ -562,46 +570,47 @@ function SessionDetailHeader({
       className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {returnsToAgent ? (
-          <Link
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
-            aria-label={t("session.backToAgent")}
-            params={{ projectName, sessionId: sourceAgentSession }}
-            search={{ workspace: defaultConsoleSection, filesPath: "" }}
-            to="/projects/$projectName/agent-sessions/$sessionId"
-          >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M10 3L5 8l5 5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {t("nav.back")}
-          </Link>
-        ) : (
-          <Link
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
-            aria-label={t("session.backToProject")}
-            params={{ projectName }}
-            search={{ workspace: returnWorkspace, filesPath: "" }}
-            to="/projects/$projectName"
-          >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M10 3L5 8l5 5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {t("nav.back")}
-          </Link>
-        )}
-        <div className="min-w-0 flex-1 text-center">
+        {!embedded &&
+          (returnsToAgent ? (
+            <Link
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
+              aria-label={t("session.backToAgent")}
+              params={{ projectName, sessionId: sourceAgentSession }}
+              search={{ workspace: defaultConsoleSection, filesPath: "" }}
+              to="/projects/$projectName/agent-sessions/$sessionId"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M10 3L5 8l5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {t("nav.back")}
+            </Link>
+          ) : (
+            <Link
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
+              aria-label={t("session.backToProject")}
+              params={{ projectName }}
+              search={{ workspace: returnWorkspace, filesPath: "" }}
+              to="/projects/$projectName"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M10 3L5 8l5 5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {t("nav.back")}
+            </Link>
+          ))}
+        <div className={`min-w-0 flex-1 text-center ${embedded ? "text-left" : ""}`}>
           <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
           <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
             {projectName} · {sessionId.slice(0, 8)}
@@ -614,6 +623,7 @@ function SessionDetailHeader({
           createTerminalPending={createTerminalPending}
           detailView={detailView}
           sessionType={sessionType}
+          showClose={!embedded}
           onClose={onClose}
           onCreateTerminal={onCreateTerminal}
           onReconnect={_onReconnect}
@@ -631,6 +641,7 @@ type SessionDetailActionsMenuProps = {
   createTerminalPending: boolean;
   detailView: DetailView;
   sessionType: SessionType;
+  showClose: boolean;
   onClose: () => void;
   onCreateTerminal: () => void;
   onReconnect: () => void;
@@ -648,6 +659,7 @@ function SessionDetailActions({
   onReconnect,
   onViewChange,
   sessionType,
+  showClose,
 }: SessionDetailActionsMenuProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -692,8 +704,9 @@ function SessionDetailActions({
   const hasExtraActions = sessionType === "agent" || connectionStatus === "error";
 
   // 统一的 Close 按钮（h-8 + 16px 图标 + 桌面文字）：桌面端那排与移动端展开共用，
-  // 并与 claude2 详情页 ChatHeader 的 Close 完全一致
-  const closeButton = (
+  // 并与 claude2 详情页 ChatHeader 的 Close 完全一致。embedded 模式（workbench split）
+  // 由 SplitPanel 工具条承载 close，此处 showClose=false → null，避免双 close。
+  const closeButton = showClose ? (
     <button
       className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
       disabled={closePending}
@@ -707,7 +720,7 @@ function SessionDetailActions({
         {closePending ? t("session.closing") : t("session.close")}
       </span>
     </button>
-  );
+  ) : null;
 
   return (
     <>

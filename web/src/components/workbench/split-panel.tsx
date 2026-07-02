@@ -15,7 +15,9 @@ type SplitLayoutProps = {
   renderPanel: (ref: WorkbenchPanelRef) => ReactNode;
   /** 聚焦判定（URL focusId 命中时高亮面板边框，输入作用于它）。 */
   isFocused?: (ref: WorkbenchPanelRef) => boolean;
-  /** 关闭面板 = 结束实例（Stage 4 commit ② 接入生命周期）。 */
+  /** 点击面板聚焦（更新 URL focusId → 右栏 inspection 跟随）。 */
+  onFocusPanel?: (ref: WorkbenchPanelRef) => void;
+  /** 关闭面板 = 结束实例（confirm → API close → removePanel → focus-aware navigate）。 */
   onClosePanel: (ref: WorkbenchPanelRef) => void;
 };
 
@@ -25,10 +27,16 @@ type SplitLayoutProps = {
  * `sizes[sessionId]` flex 权重分配宽度；行高 V1 等权（flex-1）。maximized 时
  * deriveRows 已收敛为单面板单行，布局自然全屏。
  *
- * Stage 4 commit ①：纯原语（不接 InstanceArea）。gutter 为静态分隔条（视觉占位），
- * resize 拖拽 + 最大化按钮在 commit ③ 落地。
+ * Stage 4 commit ②：接入 InstanceArea 生命周期（focus / close）。gutter 仍为静态
+ * 分隔条，resize 拖拽 + 最大化按钮在 commit ③ 落地。
  */
-export function SplitLayout({ layout, renderPanel, isFocused, onClosePanel }: SplitLayoutProps) {
+export function SplitLayout({
+  layout,
+  renderPanel,
+  isFocused,
+  onFocusPanel,
+  onClosePanel,
+}: SplitLayoutProps) {
   const rows = deriveRows(layout);
   if (rows.length === 0) return null;
   return (
@@ -42,6 +50,7 @@ export function SplitLayout({ layout, renderPanel, isFocused, onClosePanel }: Sp
                 flex={layout.sizes[ref.sessionId] ?? WORKBENCH_PANEL_DEFAULT_FLEX}
                 focused={isFocused?.(ref) ?? false}
                 onClose={() => onClosePanel(ref)}
+                onFocus={() => onFocusPanel?.(ref)}
               >
                 {renderPanel(ref)}
               </SplitPanel>
@@ -57,20 +66,23 @@ type SplitPanelProps = {
   flex: number;
   focused: boolean;
   onClose: () => void;
+  onFocus: () => void;
   children: ReactNode;
 };
 
 /**
  * 单个 split 面板框：薄 split 工具条（关闭按钮）+ 面板主体。实例内容的领域 header
- *（ChatHeader / terminal header 等）由嵌入组件自带，本工具条只承载 split 级操作，
- * 避免双重 header。focused 时外环高亮（输入作用于聚焦面板）。
+ *（ChatHeader / terminal header 等）由嵌入组件自带；embedded 模式下 header 已隐藏
+ * 自带 close/back（见 Claude2Chat / SessionDetail 手术），本工具条承载 split 级
+ * close，避免双 close。focused 时外环高亮。点击面板任意位置聚焦（输入作用于聚焦面板）。
  */
-function SplitPanel({ flex, focused, onClose, children }: SplitPanelProps) {
+function SplitPanel({ flex, focused, onClose, onFocus, children }: SplitPanelProps) {
   const { t } = useT();
   return (
     <div
-      className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${shellSurfaceClasses.shell} ${focused ? "ring-1 ring-cyan-300/40" : ""}`}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${shellSurfaceClasses.shell} ${focused ? "ring-1 ring-cyan-300/40" : "ring-1 ring-white/5"}`}
       style={{ flexGrow: flex, flexBasis: 0 }}
+      onClick={onFocus}
     >
       <div className="flex shrink-0 items-center justify-end gap-0.5 border-b border-white/5 px-1 py-0.5">
         <SplitIconButton label={t("workbench.panelClose")} onClick={onClose}>
