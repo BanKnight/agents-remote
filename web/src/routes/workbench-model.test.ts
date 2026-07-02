@@ -30,10 +30,10 @@ test("parseWorkbenchScope: global literal vs project key", () => {
 });
 
 test("workbenchPath encodes scope + optional focusId", () => {
-  expect(workbenchPath({ kind: "global" })).toBe("/workbench/global");
-  expect(workbenchPath({ kind: "project", key: "my proj" })).toBe("/workbench/my%20proj");
+  expect(workbenchPath({ kind: "global" })).toBe("/global");
+  expect(workbenchPath({ kind: "project", key: "my proj" })).toBe("/projects/my%20proj");
   expect(workbenchPath({ kind: "project", key: "my proj" }, "agent_1")).toBe(
-    "/workbench/my%20proj/agent_1",
+    "/projects/my%20proj/session/agent_1",
   );
 });
 

@@ -42,7 +42,7 @@ import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoid
 import { measureFrom, timed } from "../lib/perf-trace";
 import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
-import { defaultConsoleSection, consoleSections, tasksExpandedAtom } from "./console-model";
+import { consoleSections, tasksExpandedAtom } from "./console-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
@@ -575,11 +575,10 @@ export function Claude2Chat({
             items={projectNavItems}
             projectPath={projectName}
             projectTitle={projectName}
-            onSelectItem={(section) => {
+            onSelectItem={() => {
               void navigate({
-                to: "/projects/$projectName",
-                params: { projectName },
-                search: { workspace: section, filesPath: "" },
+                to: "/projects/$key",
+                params: { key: projectName },
               });
             }}
           />
@@ -623,9 +622,8 @@ function ChatHeader({
           <Link
             className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
             aria-label={t("session.backToProject")}
-            params={{ projectName }}
-            search={{ workspace: defaultConsoleSection, filesPath: "" }}
-            to="/projects/$projectName"
+            params={{ key: projectName }}
+            to="/projects/$key"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path

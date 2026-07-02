@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type GlobalInstanceCandidate,
@@ -12,6 +11,7 @@ import {
   resizePair,
   toggleMaximize,
   useWorkbenchLayout,
+  useWorkbenchNavigate,
 } from "../../routes/workbench-model";
 import {
   closeAgentSession,
@@ -30,7 +30,7 @@ import { SplitLayout } from "./split-panel";
 
 type InstanceAreaProps = {
   scope: WorkbenchScope;
-  /** 聚焦面板 id（URL `/workbench/$scope/$focusId`）。无 focusId = 无聚焦面板。 */
+  /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/global/session/$id`）。无 focusId = 无聚焦面板。 */
   focusId?: string;
 };
 
@@ -43,7 +43,7 @@ type InstanceAreaProps = {
  */
 export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
   const { t } = useT();
-  const navigate = useNavigate();
+  const navigateWorkbench = useWorkbenchNavigate();
   const queryClient = useQueryClient();
   const { confirm, holder } = useConfirm();
   const [layout, update] = useWorkbenchLayout(scope);
@@ -111,25 +111,13 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
     const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
     update((prev) => removePanel(prev, ref.sessionId));
     if (focusId === ref.sessionId) {
-      const scopeParam = scope.kind === "project" ? scope.key : "global";
-      void navigate(
-        remaining.length > 0
-          ? {
-              to: "/workbench/$scope/$focusId",
-              params: { scope: scopeParam, focusId: remaining[0].sessionId },
-            }
-          : { to: "/workbench/$scope", params: { scope: scopeParam } },
-      );
+      void navigateWorkbench(scope, remaining.length > 0 ? remaining[0].sessionId : undefined);
     }
   };
 
   const focusPanel = (ref: WorkbenchPanelRef) => {
     if (ref.sessionId === focusId) return;
-    const scopeParam = scope.kind === "project" ? scope.key : "global";
-    void navigate({
-      to: "/workbench/$scope/$focusId",
-      params: { scope: scopeParam, focusId: ref.sessionId },
-    });
+    void navigateWorkbench(scope, ref.sessionId);
   };
 
   const content =

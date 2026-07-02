@@ -183,6 +183,7 @@ export const en = {
   "nav.primaryMobileAria": "Primary mobile navigation",
   "nav.projectWorkspaceAria": "Project workspace navigation",
   "nav.projectMobileAria": "Project mobile workspace navigation",
+  "nav.settings": "Settings",
 
   // ── Console Sections ─────────────────────────────────────────
   "section.agents": "Agent",
@@ -431,4 +432,7 @@ export const en = {
   "workbench.switchNext": "Next instance",
   "workbench.globalOverviewTitle": "Global instances",
   "workbench.globalOverviewEmpty": "No active instances across projects.",
+
+  // ── Settings ────────────────────────────────────────────────
+  "settings.placeholder": "Settings are coming soon.",
 } as const;

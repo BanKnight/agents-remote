@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useParams, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { InstanceArea } from "../components/workbench/instance-area";
 import { WorkbenchLeftRail } from "../components/workbench/left-rail";
@@ -8,30 +8,38 @@ import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import {
   type WorkbenchRightTab,
+  type WorkbenchScope,
   inferSessionTypeFromId,
-  parseWorkbenchScope,
+  useWorkbenchNavigate,
 } from "./workbench-model";
 
 /**
- * workbench 路由（设计文档 §7）。桌面常驻三栏工作台入口。
- *
- * 两段路由复用同一 WorkbenchContent：
- * - `/workbench/$scope`：作用域视图（无聚焦实例，实例区空状态）。
- * - `/workbench/$scope/$focusId`：聚焦某实例（中栏渲染其面板）。
- *
- * Stage 1：左栏（项目树）/ 右栏（inspection tab）暂占位，commit ②③ 接入实例面板，
- * Stage 2/3 接入左栏树与右栏 tab。
+ * 工作台路由（设计文档 §7）。路由树以中栏语义命名（去 `/workbench` 前缀）：project
+ * 作用域 `/projects/$key`（+ `/session/$id` 聚焦），global 作用域 `/global`（+
+ * `/session/$id` 聚焦）。四个薄壳各自从路由段构造**已解析**的 WorkbenchScope，复用同一
+ * WorkbenchContent。同一 URL 桌面（三栏）/ 移动（线性退化）响应式渲染，无跨端 redirect。
  */
-export function WorkbenchScopeRoute() {
-  const { scope } = useParams({ from: "/workbench/$scope" });
-  const { rightTab } = useSearch({ from: "/workbench/$scope" });
-  return <WorkbenchContent rightTab={rightTab} scope={scope} />;
+export function ProjectScopeRoute() {
+  const { key } = useParams({ from: "/projects/$key" });
+  const { rightTab } = useSearch({ from: "/projects/$key" });
+  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "project", key }} />;
 }
 
-export function WorkbenchFocusRoute() {
-  const { scope, focusId } = useParams({ from: "/workbench/$scope/$focusId" });
-  const { rightTab } = useSearch({ from: "/workbench/$scope/$focusId" });
-  return <WorkbenchContent focusId={focusId} rightTab={rightTab} scope={scope} />;
+export function ProjectFocusRoute() {
+  const { key, id } = useParams({ from: "/projects/$key/session/$id" });
+  const { rightTab } = useSearch({ from: "/projects/$key/session/$id" });
+  return <WorkbenchContent focusId={id} rightTab={rightTab} scope={{ kind: "project", key }} />;
+}
+
+export function GlobalScopeRoute() {
+  const { rightTab } = useSearch({ from: "/global" });
+  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} />;
+}
+
+export function GlobalFocusRoute() {
+  const { id } = useParams({ from: "/global/session/$id" });
+  const { rightTab } = useSearch({ from: "/global/session/$id" });
+  return <WorkbenchContent focusId={id} rightTab={rightTab} scope={{ kind: "global" }} />;
 }
 
 function WorkbenchContent({
@@ -41,32 +49,27 @@ function WorkbenchContent({
 }: {
   focusId?: string;
   rightTab?: WorkbenchRightTab;
-  scope: string;
+  scope: WorkbenchScope;
 }) {
-  const workbenchScope = parseWorkbenchScope(scope);
   const isDesktop = useIsDesktopViewport();
-  const navigate = useNavigate();
+  const navigateWorkbench = useWorkbenchNavigate();
   const ctx: PluginContext = {
-    projectKey: workbenchScope.kind === "project" ? workbenchScope.key : null,
+    projectKey: scope.kind === "project" ? scope.key : null,
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
   };
   const onRightTabChange = (tab: WorkbenchRightTab) => {
-    void navigate({
-      to: focusId ? "/workbench/$scope/$focusId" : "/workbench/$scope",
-      params: focusId ? { focusId, scope } : { scope },
-      search: { rightTab: tab },
-    });
+    void navigateWorkbench(scope, focusId, { rightTab: tab });
   };
   if (!isDesktop) {
-    return <MobileWorkbench focusId={focusId} scope={workbenchScope} />;
+    return <MobileWorkbench focusId={focusId} scope={scope} />;
   }
   return (
     <WorkbenchShell
-      leftPanel={<WorkbenchLeftRail focusId={focusId} scope={workbenchScope} />}
+      leftPanel={<WorkbenchLeftRail focusId={focusId} scope={scope} />}
       rightPanel={<RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />}
     >
-      <InstanceArea focusId={focusId} scope={workbenchScope} />
+      <InstanceArea focusId={focusId} scope={scope} />
     </WorkbenchShell>
   );
 }

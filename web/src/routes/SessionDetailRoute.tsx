@@ -504,11 +504,10 @@ export function SessionDetail({
             items={projectNavItems}
             projectPath={projectName}
             projectTitle={projectName}
-            onSelectItem={(section) => {
+            onSelectItem={() => {
               void navigate({
-                to: "/projects/$projectName",
-                params: { projectName },
-                search: { workspace: section, filesPath: "" },
+                to: "/projects/$key",
+                params: { key: projectName },
               });
             }}
           />
@@ -563,7 +562,6 @@ function SessionDetailHeader({
 }: SessionDetailHeaderProps) {
   const { t } = useT();
   const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
-  const returnWorkspace = defaultConsoleSection;
 
   return (
     <header
@@ -594,9 +592,8 @@ function SessionDetailHeader({
             <Link
               className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
               aria-label={t("session.backToProject")}
-              params={{ projectName }}
-              search={{ workspace: returnWorkspace, filesPath: "" }}
-              to="/projects/$projectName"
+              params={{ key: projectName }}
+              to="/projects/$key"
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path

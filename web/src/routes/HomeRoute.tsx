@@ -31,8 +31,8 @@ export function HomeRoute() {
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       await navigate({
-        to: "/workbench/$scope",
-        params: { scope: response.project.name },
+        to: "/projects/$key",
+        params: { key: response.project.name },
       });
     },
   });
@@ -208,8 +208,8 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
   return (
     <Link
       className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-      params={{ scope: project.name }}
-      to="/workbench/$scope"
+      params={{ key: project.name }}
+      to="/projects/$key"
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
         <IconMarker tone="success">

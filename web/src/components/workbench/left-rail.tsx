@@ -75,11 +75,10 @@ function ProjectTree({ focusId, scope }: ProjectTreeProps) {
       next.add(name);
       return next;
     });
-    void navigate({ to: "/workbench/$scope", params: { scope: name } });
+    void navigate({ to: "/projects/$key", params: { key: name } });
   };
 
-  const selectGlobal = () =>
-    void navigate({ to: "/workbench/$scope", params: { scope: "global" } });
+  const selectGlobal = () => void navigate({ to: "/global" });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -237,8 +236,8 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
     onSuccess: async (data) => {
       await invalidateSessions();
       await navigate({
-        to: "/workbench/$scope/$focusId",
-        params: { scope: projectName, focusId: data.session.id },
+        to: "/projects/$key/session/$id",
+        params: { key: projectName, id: data.session.id },
       });
     },
   });
@@ -248,8 +247,8 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
     onSuccess: async (data) => {
       await invalidateSessions();
       await navigate({
-        to: "/workbench/$scope/$focusId",
-        params: { scope: projectName, focusId: data.session.id },
+        to: "/projects/$key/session/$id",
+        params: { key: projectName, id: data.session.id },
       });
     },
   });
@@ -278,8 +277,8 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
 
   const focus = (sessionId: string) => {
     void navigate({
-      to: "/workbench/$scope/$focusId",
-      params: { scope: projectName, focusId: sessionId },
+      to: "/projects/$key/session/$id",
+      params: { key: projectName, id: sessionId },
     });
   };
 
@@ -292,8 +291,8 @@ function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
         queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-history"] }),
       ]);
       await navigate({
-        to: "/workbench/$scope/$focusId",
-        params: { scope: projectName, focusId: data.session.id },
+        to: "/projects/$key/session/$id",
+        params: { key: projectName, id: data.session.id },
       });
     },
   });

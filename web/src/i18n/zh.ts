@@ -183,6 +183,7 @@ export const zh: Record<TranslationKey, string> = {
   "nav.primaryMobileAria": "移动端主导航",
   "nav.projectWorkspaceAria": "项目工作区导航",
   "nav.projectMobileAria": "项目移动端工作区导航",
+  "nav.settings": "设置",
 
   // ── Console Sections ─────────────────────────────────────────
   "section.agents": "Agent",
@@ -431,4 +432,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.switchNext": "下一个实例",
   "workbench.globalOverviewTitle": "全局实例",
   "workbench.globalOverviewEmpty": "跨项目暂无活跃实例。",
+
+  // ── Settings ────────────────────────────────────────────────
+  "settings.placeholder": "设置功能即将上线。",
 };

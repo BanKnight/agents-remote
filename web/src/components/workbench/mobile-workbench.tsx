@@ -1,6 +1,5 @@
 import { Fragment } from "react";
 import { useAtom } from "jotai";
-import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import { IconMarker, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
@@ -13,6 +12,7 @@ import {
   type WorkbenchScope,
   inferSessionTypeFromId,
   useWorkbenchLayout,
+  useWorkbenchNavigate,
   workbenchMobileFocusTabAtom,
 } from "../../routes/workbench-model";
 import { WorkbenchLeftRail } from "./left-rail";
@@ -75,7 +75,7 @@ type MobileFocusBodyProps = {
  */
 function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const { t } = useT();
-  const navigate = useNavigate();
+  const navigateWorkbench = useWorkbenchNavigate();
   const [layout, updateLayout] = useWorkbenchLayout(scope);
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
   const order = useScopeInstanceOrder(scope);
@@ -106,11 +106,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
     if (scope.kind === "global") {
       updateLayout((prev) => addPanel(prev, next));
     }
-    const scopeParam = scope.kind === "project" ? scope.key : "global";
-    void navigate({
-      to: "/workbench/$scope/$focusId",
-      params: { scope: scopeParam, focusId: next.sessionId },
-    });
+    void navigateWorkbench(scope, next.sessionId);
   };
   const showSwitcher = order.length > 1 && currentIndex >= 0;
 
@@ -171,13 +167,12 @@ function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonPr
 
 function MobileBackBar({ scope }: { scope: WorkbenchScope }) {
   const { t } = useT();
-  const navigate = useNavigate();
-  const scopeSegment = scope.kind === "project" ? scope.key : "global";
+  const navigateWorkbench = useWorkbenchNavigate();
   return (
     <div className="flex h-11 shrink-0 items-center border-b border-white/5 px-2">
       <button
         type="button"
-        onClick={() => void navigate({ to: "/workbench/$scope", params: { scope: scopeSegment } })}
+        onClick={() => void navigateWorkbench(scope)}
         className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
       >
         <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -253,12 +248,12 @@ function MobileInstanceSwitcher({
 /**
  * 移动全局列表态（设计文档 §7）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
  * 指定作用域）。按项目分组（稳定：聚合顺序 = 项目次序 → agent(createdAt) → terminal(createdAt)），
- * 点实例进 `/workbench/global/$focusId` 单实例聚焦。空状态提示。复用 ShellNavigationButton
+ * 点实例进 `/global/session/$focusId` 单实例聚焦。空状态提示。复用 ShellNavigationButton
  * 与左栏实例行同设计语言。
  */
 function MobileGlobalOverview() {
   const { t } = useT();
-  const navigate = useNavigate();
+  const navigateWorkbench = useWorkbenchNavigate();
   const candidates = useGlobalInstanceCandidates({ kind: "global" });
   const grouped = new Map<string, GlobalInstanceCandidate[]>();
   for (const candidate of candidates) {
@@ -267,10 +262,7 @@ function MobileGlobalOverview() {
     grouped.set(candidate.ref.projectName, arr);
   }
   const focusInstance = (sessionId: string) => {
-    void navigate({
-      to: "/workbench/$scope/$focusId",
-      params: { scope: "global", focusId: sessionId },
-    });
+    void navigateWorkbench({ kind: "global" }, sessionId);
   };
   if (candidates.length === 0) {
     return (
