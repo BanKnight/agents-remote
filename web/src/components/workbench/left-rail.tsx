@@ -36,6 +36,15 @@ import { SettingsFlyout } from "./settings-flyout";
 /** 左栏实例段加载骨架的占位行数。 */
 const INSTANCE_SKELETON_ROW_COUNT = 3;
 
+/**
+ * 实例行右侧"活跃中"脉动点。running 实例（AgentNavItem/TerminalNavItem）与
+ * hasActiveSession 历史（HistorySessionNode，已 resume 为活跃实例）共用，让"在跑"
+ * 一眼可辨——marker tone 颜色变化太微妙，正向脉动点作主要活跃标志。
+ */
+const ActiveDot = (
+  <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-success" />
+);
+
 type LeftRailProps = {
   scope: WorkbenchScope;
   focusId?: string;
@@ -474,6 +483,7 @@ function AgentNavItem({ active, onSelect, session }: AgentNavItemProps) {
           <ShellIcon className="h-3.5 w-3.5" name={iconName} />
         </IconMarker>
       }
+      meta={isRunning ? ActiveDot : undefined}
       onClick={() => onSelect(session.id)}
     />
   );
@@ -498,6 +508,7 @@ function TerminalNavItem({ active, onSelect, session }: TerminalNavItemProps) {
           <ShellIcon className="h-3.5 w-3.5" name="terminal" />
         </IconMarker>
       }
+      meta={isRunning ? ActiveDot : undefined}
       onClick={() => onSelect(session.id)}
     />
   );
@@ -532,6 +543,7 @@ function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessi
           <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
         </IconMarker>
       }
+      meta={entry.hasActiveSession ? ActiveDot : undefined}
       onClick={() => {
         if (!isResuming) onClick();
       }}
