@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -140,14 +140,6 @@ const PermissionModesContext = createContext<readonly string[]>([]);
 // block arrives. Thread-level derived state; the placeholder's metadata is not
 // ours to set, so it flows through context.
 const LiveThinkingTokensContext = createContext<number | null>(null);
-
-export function Claude2SessionDetailRoute() {
-  const { projectName, sessionId } = useParams({
-    from: "/projects/$projectName/agent-sessions/$sessionId/claude2",
-  });
-
-  return <Claude2Chat projectName={projectName} sessionId={sessionId} />;
-}
 
 function modelDisplayLabel(modelId: string, resolvedName?: string): string {
   if (resolvedName) return resolvedName;

@@ -6,7 +6,7 @@ import type {
   TerminalSession,
   TransportStatus,
 } from "@agents-remote/shared";
-import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -41,54 +41,6 @@ import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
-
-export function AgentSessionDetailRoute() {
-  const { projectName, sessionId } = useParams({
-    from: "/projects/$projectName/agent-sessions/$sessionId",
-  });
-  const navigate = useNavigate();
-
-  const detail = useQuery({
-    queryKey: ["projects", projectName, "agent-sessions", sessionId],
-    queryFn: () => getAgentSession(projectName, sessionId),
-    staleTime: 60_000,
-  });
-
-  // Redirect claude2 sessions to the chat UI
-  useEffect(() => {
-    if (detail.data?.session.provider === "claude2") {
-      void navigate({
-        to: "/projects/$projectName/agent-sessions/$sessionId/claude2",
-        params: { projectName, sessionId },
-        replace: true,
-      });
-    }
-  }, [detail.data, navigate, projectName, sessionId]);
-
-  if (detail.data?.session.provider === "claude2") {
-    return null;
-  }
-
-  return <SessionDetail projectName={projectName} sessionId={sessionId} sessionType="agent" />;
-}
-
-export function TerminalSessionDetailRoute() {
-  const { projectName, sessionId } = useParams({
-    from: "/projects/$projectName/terminal-sessions/$sessionId",
-  });
-  const { fromAgentSession } = useSearch({
-    from: "/projects/$projectName/terminal-sessions/$sessionId",
-  });
-
-  return (
-    <SessionDetail
-      projectName={projectName}
-      sessionId={sessionId}
-      sessionType="terminal"
-      sourceAgentSession={fromAgentSession}
-    />
-  );
-}
 
 type SessionDetailProps = {
   projectName: string;

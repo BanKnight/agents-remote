@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useAtom } from "jotai";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
 import type {
   AgentHistoryEntry,
@@ -23,7 +24,8 @@ import { ActionButton, IconMarker } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import type { WorkbenchScope } from "../../routes/workbench-model";
+import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
+import { SettingsFlyout } from "./settings-flyout";
 
 /** 左栏实例段加载骨架的占位行数。 */
 const INSTANCE_SKELETON_ROW_COUNT = 3;
@@ -51,6 +53,7 @@ type ProjectTreeProps = {
 function ProjectTree({ focusId, scope }: ProjectTreeProps) {
   const { t } = useT();
   const navigate = useNavigate();
+  const [, setSettingsOpen] = useAtom(workbenchSettingsFlyoutOpenAtom);
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const activeProjectName = scope.kind === "project" ? scope.key : null;
   const [expanded, setExpanded] = useState<Set<string>>(
@@ -100,6 +103,25 @@ function ProjectTree({ focusId, scope }: ProjectTreeProps) {
         ))}
         {projects.isLoading && projectItems.length === 0 ? <LeftRailSkeleton /> : null}
       </nav>
+      <div className="shrink-0 border-t border-white/5 p-1.5">
+        <button
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+          onClick={() => setSettingsOpen(true)}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth={1.5} />
+            <path
+              d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+          {t("nav.settings")}
+        </button>
+      </div>
+      <SettingsFlyout />
     </div>
   );
 }

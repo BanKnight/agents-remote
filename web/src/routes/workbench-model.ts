@@ -1,4 +1,4 @@
-import { useAtom } from "jotai";
+import { atom, useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentProvider, AgentSessionStatus, SessionType } from "@agents-remote/shared";
@@ -92,6 +92,12 @@ export const workbenchMobileOverviewTabAtom = atomWithStorage<WorkbenchMobileOve
   "workbenchMobileOverviewTab",
   "overview",
 );
+
+/**
+ * 桌面设置浮窗开关（设计文档 §7：桌面左栏浮窗，移动走 /settings）。非持久化 —— 刷新关闭，
+ * 不进 URL（设置是临时操作，非语义状态）。false = 关闭。
+ */
+export const workbenchSettingsFlyoutOpenAtom = atom<boolean>(false);
 
 /**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
