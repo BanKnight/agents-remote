@@ -217,6 +217,29 @@ export function setPanelSize(
   };
 }
 
+/**
+ * 拖拽 gutter 调整同行相邻左右面板宽度（resize 主路径，优于对左右分别 setPanelSize）。
+ * 守恒：左增 = 右减（`deltaFlex` 为左的增量，右对称减）；两侧各钳到 `WORKBENCH_PANEL_MIN_FLEX`，
+ * 钳制时 delta 被截到可调范围边界，左右仍守恒。一次原子更新两个 sizes，无中间态。
+ */
+export function resizePair(
+  layout: WorkbenchLayout,
+  leftId: string,
+  rightId: string,
+  deltaFlex: number,
+): WorkbenchLayout {
+  const left = layout.sizes[leftId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const right = layout.sizes[rightId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const clamped = Math.min(
+    Math.max(deltaFlex, WORKBENCH_PANEL_MIN_FLEX - left),
+    right - WORKBENCH_PANEL_MIN_FLEX,
+  );
+  return {
+    ...layout,
+    sizes: { ...layout.sizes, [leftId]: left + clamped, [rightId]: right - clamped },
+  };
+}
+
 // ── 布局 atom（按作用域隔离，localStorage 持久化）─────────────────────────────
 
 /**

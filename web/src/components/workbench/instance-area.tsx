@@ -7,6 +7,8 @@ import {
   addPanel,
   inferSessionTypeFromId,
   removePanel,
+  resizePair,
+  toggleMaximize,
   useWorkbenchLayout,
 } from "../../routes/workbench-model";
 import {
@@ -121,6 +123,10 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
         isFocused={(ref) => ref.sessionId === focusId}
         onClosePanel={closePanel}
         onFocusPanel={focusPanel}
+        onResizePair={(leftId, rightId, deltaFlex) =>
+          update((prev) => resizePair(prev, leftId, rightId, deltaFlex))
+        }
+        onToggleMaximize={(sessionId) => update((prev) => toggleMaximize(prev, sessionId))}
         renderPanel={(ref) => <PanelRouter key={ref.sessionId} panelRef={ref} />}
       />
     );

@@ -9,6 +9,7 @@ import {
   inferSessionTypeFromId,
   parseWorkbenchScope,
   removePanel,
+  resizePair,
   setPanelSize,
   toggleMaximize,
   validateWorkbenchSearch,
@@ -143,4 +144,25 @@ test("setPanelSize: clamps to WORKBENCH_PANEL_MIN_FLEX", () => {
   const l = layout({ panels: [ref("p", "a")], sizes: { a: 1 } });
   expect(setPanelSize(l, "a", 3).sizes.a).toBe(3);
   expect(setPanelSize(l, "a", 0).sizes.a).toBe(WORKBENCH_PANEL_MIN_FLEX);
+});
+
+test("resizePair: 左增右减守恒", () => {
+  const l = layout({ panels: [ref("p", "a"), ref("p", "b")], sizes: { a: 1, b: 1 } });
+  const r = resizePair(l, "a", "b", 0.5);
+  expect(r.sizes.a).toBe(1.5);
+  expect(r.sizes.b).toBe(0.5);
+});
+
+test("resizePair: 左侧钳到 MIN_FLEX（不能把左拖到 0）", () => {
+  const l = layout({ panels: [ref("p", "a"), ref("p", "b")], sizes: { a: 1, b: 1 } });
+  const r = resizePair(l, "a", "b", -1); // 想让 a = 0
+  expect(r.sizes.a).toBeCloseTo(WORKBENCH_PANEL_MIN_FLEX); // 浮点累加：1+(-0.8)≈0.2
+  expect(r.sizes.b).toBeCloseTo(1 + (1 - WORKBENCH_PANEL_MIN_FLEX)); // 守恒：右吸收左的减量
+});
+
+test("resizePair: 右侧钳到 MIN_FLEX（不能把右拖到 0）", () => {
+  const l = layout({ panels: [ref("p", "a"), ref("p", "b")], sizes: { a: 1, b: 1 } });
+  const r = resizePair(l, "a", "b", 1); // 想让 b = 0
+  expect(r.sizes.b).toBeCloseTo(WORKBENCH_PANEL_MIN_FLEX);
+  expect(r.sizes.a).toBeCloseTo(1 + (1 - WORKBENCH_PANEL_MIN_FLEX)); // 守恒
 });
