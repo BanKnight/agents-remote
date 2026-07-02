@@ -2,6 +2,8 @@
 
 本文件说明 `docs/design/prototype/` 下 HTML 原型的基础设计规范。HTML 原型用于对齐产品结构与交互方向，不是最终实现代码。
 
+> **App 实现侧的设计系统权威源是 [../DESIGN.md](../DESIGN.md)（Google DESIGN.md 格式）**。本文件的 token 是 prototype HTML 资产基础；app 实现以 DESIGN.md 收敛后的 token（颜色/圆角/间距/component variant）为准，二者值保持一致，但不强行让 prototype HTML 引用 DESIGN.md。
+
 ## 整体设计原则
 
 - 产品气质是深色 Server Agent Console，而不是传统 SaaS 营销页或后台管理列表。

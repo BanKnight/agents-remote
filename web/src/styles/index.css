@@ -1,3 +1,7 @@
+/* Design system authoritative source: docs/design/DESIGN.md (Google DESIGN.md format).
+   Radius scale, surface colors, and motion tokens defined here must align to
+   DESIGN.md. See "Migration & Mapping (Phase 2)" for the @theme inline namespace
+   plan (oklch→hex, --color-surface-*, --radius-* remap, --spacing-*). */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";

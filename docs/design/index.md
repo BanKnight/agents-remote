@@ -8,6 +8,7 @@
 
 ## 文档
 
+- [DESIGN.md](./DESIGN.md) — agents-remote 的设计系统权威源（Google DESIGN.md 格式）：以 YAML tokens + 8 section prose 统一深色 Server Agent Console 的颜色/字体/圆角/间距/组件，作为人 + AI 编码 agent 持续对齐样式细节的唯一标尺。
 - [agent-provider-experience.md](./agent-provider-experience.md) — 定义 Claude/Codex provider 可见体验、AgentRuntime/provider profile 边界、Agent workspace provider create/current instance 边界和 history/resume 分阶段设计。
 - [agent-session-model.md](./agent-session-model.md) — 定义 AgentSession、TerminalSession、transportSession、conversationThread 与 turn/run 的长期设计边界。
 - [claude2-provider-protocol.md](./claude2-provider-protocol.md) — 定义 Claude2 provider 的完整协议设计，包括双层 ID 架构（tool_use.id 持久化主键 vs request_id 瞬态 RPC key）、缓冲策略、服务端驱动的卡片状态机、与 hapi 的对照，以及预留的 Codex 接入模式。

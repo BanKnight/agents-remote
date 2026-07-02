@@ -4,6 +4,14 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
+/**
+ * Shell surface/tone role layer. Authoritative design system source:
+ * docs/design/DESIGN.md (Google DESIGN.md format). `shellSurfaceClasses` and
+ * the `*ToneClasses` below map to DESIGN.md component variants (surface-*,
+ * nav-item-*, button-*, chip-*). Phase 3 will converge these literal Tailwind
+ * values to token references; until then, edits here must stay consistent
+ * with DESIGN.md (see its Colors 对照表 and Migration & Mapping 节).
+ */
 export type ShellTone = "default" | "accent" | "success" | "warning" | "danger" | "muted";
 
 const markerToneClasses: Record<ShellTone, string> = {

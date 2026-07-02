@@ -130,6 +130,7 @@ agents-remote/
 
 ### 原型与产品体验
 
+- [DESIGN.md](./design/DESIGN.md) — **设计系统权威源**（Google DESIGN.md 格式）：统一颜色/字体/圆角/间距/component variant 的 token，是 UI 样式细节的唯一标尺，Phase 2+ 据此收敛散写值。
 - [导航结构 HTML 原型](./design/prototype/index.md) — 当前 UI/UX 对齐的主入口，覆盖首页一级导航、Project 二级导航、Agent/Files/Git/Terminal 页面、terminal-first instance detail，以及桌面端/移动端布局形态。
 - [Frontend UI architecture](./design/frontend-ui-architecture.md) — UI/UX prototype alignment 的长期设计基线，定义来源优先级、三层页面模型、移动端返回规则、共享 UI 边界和视觉密度基线。
 - [Prototype 设计规范](./design/prototype/guidelines.md) — 定义 prototype 页面的导航、布局、组件、配色、间距和移动端直接二级页/深层详情页返回规则。
