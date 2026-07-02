@@ -522,7 +522,7 @@ function SessionDetailHeader({
         {!embedded &&
           (returnsToAgent ? (
             <Link
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft"
               aria-label={t("session.backToAgent")}
               params={{ key: projectName, id: sourceAgentSession }}
               to="/projects/$key/session/$id"
@@ -540,7 +540,7 @@ function SessionDetailHeader({
             </Link>
           ) : (
             <Link
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200"
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft"
               aria-label={t("session.backToProject")}
               params={{ key: projectName }}
               to="/projects/$key"
@@ -558,8 +558,8 @@ function SessionDetailHeader({
             </Link>
           ))}
         <div className={`min-w-0 flex-1 text-center ${embedded ? "text-left" : ""}`}>
-          <p className="truncate text-xs font-semibold text-slate-100">{title}</p>
-          <p className="truncate font-mono text-[0.65rem] leading-4 text-slate-500">
+          <p className="truncate text-xs font-semibold text-on-surface">{title}</p>
+          <p className="truncate font-mono text-[0.65rem] leading-4 text-on-surface-muted">
             {projectName} · {sessionId.slice(0, 8)}
           </p>
         </div>
@@ -642,9 +642,9 @@ function SessionDetailActions({
   };
 
   const buttonClass =
-    "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200";
+    "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft";
   const iconBtn =
-    "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition hover:text-slate-200 disabled:opacity-40";
+    "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:text-on-surface-soft disabled:opacity-40";
 
   // Close 之外还有其他操作（Files/Git/+Terminal/Retry）时才用 ⋯ 菜单收起；
   // terminal 详情页正常状态下只有 Close，直接展开（与 claude2 详情页一致）
@@ -655,7 +655,7 @@ function SessionDetailActions({
   // 由 SplitPanel 工具条承载 close，此处 showClose=false → null，避免双 close。
   const closeButton = showClose ? (
     <button
-      className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-slate-400 transition hover:text-red-300 disabled:opacity-40"
+      className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-error disabled:opacity-40"
       disabled={closePending}
       title={closePending ? t("session.closing") : t("session.close")}
       aria-label={t("session.close")}
@@ -714,7 +714,7 @@ function SessionDetailActions({
         ) : null}
         {closeButton}
         {createTerminalError instanceof Error ? (
-          <p className="text-xs text-rose-200">{createTerminalError.message}</p>
+          <p className="text-xs text-error">{createTerminalError.message}</p>
         ) : null}
       </div>
 
@@ -734,7 +734,7 @@ function SessionDetailActions({
           </button>
           {open ? (
             <div
-              className="absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl border border-white/10 bg-slate-950/90 p-2 shadow-2xl shadow-black/40"
+              className="absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl border border-on-surface/10 bg-surface-inset/90 p-2 shadow-2xl shadow-black/40"
               role="menu"
             >
               {sessionType === "agent" ? (
@@ -779,7 +779,7 @@ function SessionDetailActions({
                 {closePending ? t("session.closing") : t("session.close")}
               </ActionMenuItem>
               {createTerminalError instanceof Error ? (
-                <p className="px-2 py-1 text-xs leading-5 text-rose-200">
+                <p className="px-2 py-1 text-xs leading-5 text-error">
                   {createTerminalError.message}
                 </p>
               ) : null}
@@ -811,10 +811,10 @@ function ActionMenuItem({
   onClick,
 }: ActionMenuItemProps) {
   const toneClass = danger
-    ? "text-rose-100 hover:bg-rose-300/10"
+    ? "text-error hover:bg-error/10"
     : active
-      ? "bg-cyan-300/10 text-cyan-100"
-      : "text-slate-200 hover:bg-slate-800/70";
+      ? "bg-primary/10 text-primary"
+      : "text-on-surface-soft hover:bg-surface-raised/70";
 
   const markerTone = danger ? "danger" : active ? "accent" : "default";
 
@@ -881,9 +881,9 @@ function DetailWorkspace({
           className="absolute inset-0 z-20 flex flex-col"
           style={{ background: "radial-gradient(circle at top, #0f2d3a 0, #020617 34rem)" }}
         >
-          <div className="flex shrink-0 items-center border-b border-slate-700/40 bg-[#0a0e16]/60 px-3.5 py-2.5">
+          <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
             <button
-              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
+              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-on-surface-muted transition hover:text-on-surface-soft"
               type="button"
               onClick={onReturnToStream}
             >
@@ -909,9 +909,9 @@ function DetailWorkspace({
           className="absolute inset-0 z-20 flex flex-col"
           style={{ background: "radial-gradient(circle at top, #0f2d3a 0, #020617 34rem)" }}
         >
-          <div className="flex shrink-0 items-center border-b border-slate-700/40 bg-[#0a0e16]/60 px-3.5 py-2.5">
+          <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
             <button
-              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-300"
+              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-on-surface-muted transition hover:text-on-surface-soft"
               type="button"
               onClick={onReturnToStream}
             >
@@ -1369,16 +1369,16 @@ type TerminalOverlayState = {
 
 function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
   const pillToneClasses = {
-    accent: "border-cyan-300/25 bg-cyan-300/10 text-cyan-100 shadow-cyan-950/20",
-    danger: "border-rose-300/30 bg-rose-400/10 text-rose-100 shadow-rose-950/20",
-    muted: "border-slate-600/40 bg-slate-950/60 text-slate-300 shadow-black/20",
+    accent: "border-primary/25 bg-primary/10 text-primary shadow-cyan-950/20",
+    danger: "border-error/30 bg-error/10 text-error shadow-rose-950/20",
+    muted: "border-neutral-line/40 bg-surface-inset/60 text-on-surface-soft shadow-black/20",
   } satisfies Record<TerminalOverlayState["tone"], string>;
 
   if (overlay.animated) {
     return (
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/70 backdrop-blur-sm">
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface-inset/70 backdrop-blur-sm">
         <TerminalStatusSpinner size="lg" />
-        <span className="text-xs font-semibold tracking-wide text-cyan-200">{overlay.title}</span>
+        <span className="text-xs font-semibold tracking-wide text-primary">{overlay.title}</span>
       </div>
     );
   }
@@ -1400,9 +1400,9 @@ function TerminalStatusSpinner({ size = "sm" }: { size?: "sm" | "lg" }) {
   return (
     <span className={`relative flex ${sizeClass}`} aria-hidden="true">
       <span
-        className={`absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60`}
+        className={`absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60`}
       />
-      <span className={`relative inline-flex ${dotClass} rounded-full bg-cyan-200`} />
+      <span className={`relative inline-flex ${dotClass} rounded-full bg-primary`} />
     </span>
   );
 }
@@ -1493,7 +1493,7 @@ function SessionInputDrawer({
           <div
             className={`flex min-w-0 items-start gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
           >
-            <span className="shrink-0 font-mono text-xs leading-[1.35] text-slate-500 pt-px">
+            <span className="shrink-0 font-mono text-xs leading-[1.35] text-on-surface-muted pt-px">
               $
             </span>
             <label className="sr-only" htmlFor="session-input">
@@ -1503,7 +1503,7 @@ function SessionInputDrawer({
               autoCapitalize="none"
               autoComplete="off"
               autoCorrect="off"
-              className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!canSend}
               id="session-input"
               placeholder={
@@ -1516,7 +1516,7 @@ function SessionInputDrawer({
               onKeyDown={handleKeyDown}
             />
             <button
-              className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-slate-400 transition enabled:cursor-pointer enabled:hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-on-surface-muted transition enabled:cursor-pointer enabled:hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
               disabled={!canSend || input.trim().length === 0}
               type="submit"
             >
@@ -1545,7 +1545,7 @@ function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
       {quickKeys.map((quickKey) => (
         <button
           aria-label={t(quickKey.ariaLabelKey)}
-          className={`shrink-0 rounded-full px-2.5 py-1.5 font-mono text-[0.62rem] font-semibold text-slate-100 transition enabled:cursor-pointer enabled:hover:border-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2 sm:text-xs ${shellSurfaceClasses.raised}`}
+          className={`shrink-0 rounded-full px-2.5 py-1.5 font-mono text-[0.62rem] font-semibold text-on-surface transition enabled:cursor-pointer enabled:hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2 sm:text-xs ${shellSurfaceClasses.raised}`}
           disabled={!canSend}
           key={quickKey.id}
           type="button"
@@ -1566,8 +1566,8 @@ type NoticeProps = {
 function Notice({ children, tone = "default" }: NoticeProps) {
   const classes =
     tone === "danger"
-      ? `${shellSurfaceClasses.danger} text-rose-100`
-      : "border border-cyan-300/20 bg-cyan-300/10 text-cyan-100";
+      ? `${shellSurfaceClasses.danger} text-error`
+      : "border border-primary/20 bg-primary/10 text-primary";
 
   return <p className={`rounded-2xl px-4 py-3 text-sm ${classes}`}>{children}</p>;
 }

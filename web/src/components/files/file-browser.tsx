@@ -73,13 +73,13 @@ export function ResourceStatePanel({
       className={`min-w-0 rounded-2xl p-4 ${isCompact ? "" : "text-center sm:p-6"} ${surfaceClass}`}
     >
       {title ? (
-        <p className={`font-semibold ${tone === "danger" ? "text-rose-100" : "text-slate-100"}`}>
+        <p className={`font-semibold ${tone === "danger" ? "text-error" : "text-on-surface"}`}>
           {title}
         </p>
       ) : null}
       {message ? (
         <p
-          className={`mt-2 text-sm leading-6 ${tone === "danger" ? "text-rose-200/80" : tone === "warning" ? "text-amber-100" : "text-slate-400"}`}
+          className={`mt-2 text-sm leading-6 ${tone === "danger" ? "text-error/80" : tone === "warning" ? "text-warning" : "text-on-surface-muted"}`}
         >
           {message}
         </p>
@@ -102,7 +102,7 @@ export function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-xs font-semibold">
       <button
-        className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-400 transition hover:bg-slate-700/50 hover:text-cyan-200"
+        className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-primary"
         type="button"
         onClick={() => onNavigate("")}
         aria-label={t("files.goRoot")}
@@ -122,9 +122,9 @@ export function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
         const isLast = index === segments.length - 1;
         return (
           <span key={segmentPath} className="flex items-center gap-0.5">
-            <span className="text-slate-700">/</span>
+            <span className="text-on-surface-muted">/</span>
             <button
-              className={`cursor-pointer rounded-md px-1 py-0.5 transition ${isLast ? "text-slate-200" : "text-slate-400 hover:bg-slate-700/50 hover:text-cyan-200"}`}
+              className={`cursor-pointer rounded-md px-1 py-0.5 transition ${isLast ? "text-on-surface-soft" : "text-on-surface-muted hover:bg-neutral-line/50 hover:text-primary"}`}
               type="button"
               onClick={() => onNavigate(segmentPath)}
             >
@@ -199,7 +199,7 @@ export function FileEntryList({
             type="button"
             aria-label={`${entry.name} actions`}
           >
-            <MoreVertical className="h-3.5 w-3.5 text-slate-400" />
+            <MoreVertical className="h-3.5 w-3.5 text-on-surface-muted" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" side="bottom">
@@ -251,7 +251,7 @@ export function FileEntryList({
             <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
               <input
                 ref={renameInputRef}
-                className="h-7 w-full min-w-0 rounded-lg border border-cyan-300/60 bg-slate-950/70 px-2 text-[0.82rem] font-semibold text-slate-100 font-mono focus:outline-none"
+                className="h-7 w-full min-w-0 rounded-lg border border-primary/60 bg-surface-inset/70 px-2 text-[0.82rem] font-semibold text-on-surface font-mono focus:outline-none"
                 type="text"
                 value={renamingName}
                 autoFocus
@@ -376,12 +376,12 @@ function FilePreviewPanel({
 
   return (
     <section
-      className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/25"
+      className="min-h-0 min-w-0 flex-1 flex flex-col bg-surface-raised/25"
       aria-label="File preview"
     >
-      <div className="relative flex min-w-0 items-center justify-between border-b border-slate-700/40 px-3.5 py-2.5">
+      <div className="relative flex min-w-0 items-center justify-between border-b border-neutral-line/40 px-3.5 py-2.5">
         <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-on-surface-soft sm:hidden"
           type="button"
           onClick={onBack}
           aria-label={t("files.backToFiles")}
@@ -397,7 +397,7 @@ function FilePreviewPanel({
           </svg>
           {t("nav.back")}
         </button>
-        <h4 className="pointer-events-none absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
+        <h4 className="pointer-events-none absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-on-surface sm:static sm:flex-1 sm:text-left sm:min-w-0">
           {displayName.split("/").pop() ?? displayName}
         </h4>
         <div className="flex items-center gap-2">
@@ -415,10 +415,10 @@ function FilePreviewPanel({
         {isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
             </span>
-            <span className="text-xs font-semibold text-slate-400">
+            <span className="text-xs font-semibold text-on-surface-muted">
               {t("files.loadingPreview")}
             </span>
           </div>
@@ -522,7 +522,7 @@ function FilePreviewMenuItem({ active = false, children, onClick }: FilePreviewM
   return (
     <button
       className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
-        active ? "bg-cyan-300/10 text-cyan-100" : "text-slate-200 hover:bg-slate-800/70"
+        active ? "bg-primary/10 text-primary" : "text-on-surface-soft hover:bg-surface-raised/70"
       }`}
       type="button"
       role="menuitem"
@@ -539,8 +539,10 @@ function FilePreviewMenuItem({ active = false, children, onClick }: FilePreviewM
 function CodeEditorFallback() {
   const { t } = useT();
   return (
-    <div className="flex flex-1 items-center justify-center rounded-lg border border-slate-700/40 bg-slate-950/80">
-      <span className="text-xs font-semibold text-slate-400">{t("files.loadingEditor")}</span>
+    <div className="flex flex-1 items-center justify-center rounded-lg border border-neutral-line/40 bg-surface-inset/80">
+      <span className="text-xs font-semibold text-on-surface-muted">
+        {t("files.loadingEditor")}
+      </span>
     </div>
   );
 }
@@ -613,10 +615,10 @@ function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBo
         return (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
             </span>
-            <span className="text-xs font-semibold text-slate-400">
+            <span className="text-xs font-semibold text-on-surface-muted">
               {t("files.preparingRender")}
             </span>
           </div>
@@ -650,12 +652,12 @@ function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBo
 
   if (preview.type === "too_large")
     return (
-      <p className="p-3 text-sm leading-6 text-amber-100">
+      <p className="p-3 text-sm leading-6 text-warning">
         {t("files.tooLarge", { limit: formatBytes(preview.limitBytes) })}
       </p>
     );
 
-  return <p className="p-3 text-sm leading-6 text-slate-300">{t("files.unsupported")}</p>;
+  return <p className="p-3 text-sm leading-6 text-on-surface-soft">{t("files.unsupported")}</p>;
 }
 
 // ── FilesPanel ────────────────────────────────────────────────────
@@ -899,8 +901,8 @@ export function FilesPanel({
           key={mode}
           className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
             renderMode === mode
-              ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
-              : "border-slate-700/50 bg-slate-950/50 text-slate-400 hover:text-slate-200"
+              ? "border-primary/30 bg-primary/10 text-primary"
+              : "border-neutral-line/50 bg-surface-inset/50 text-on-surface-muted hover:text-on-surface-soft"
           }`}
           type="button"
           onClick={() => setRenderMode(mode)}
@@ -938,12 +940,12 @@ export function FilesPanel({
       onClick={handleSave}
       className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
         save.isPending
-          ? "border-slate-700/50 bg-slate-950/50 text-slate-400"
+          ? "border-neutral-line/50 bg-surface-inset/50 text-on-surface-muted"
           : savedFlash
-            ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+            ? "border-success/30 bg-success/10 text-success"
             : isDirty
-              ? "cursor-pointer border-cyan-300/30 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/20"
-              : "border-slate-700/50 bg-slate-950/50 text-slate-500"
+              ? "cursor-pointer border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+              : "border-neutral-line/50 bg-surface-inset/50 text-on-surface-muted"
       }`}
     >
       {save.isPending ? t("files.saving") : savedFlash ? t("files.saved") : t("files.save")}
@@ -953,7 +955,7 @@ export function FilesPanel({
   const isPreviewOpen = selectedFilePath !== undefined && enablePreview;
   const browserPanel = (
     <aside
-      className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
+      className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <FileEntryList
@@ -997,13 +999,13 @@ export function FilesPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
       <div
-        className={`border-b border-slate-700/40 px-3.5 py-3 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
+        className={`border-b border-neutral-line/40 px-3.5 py-3 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
           <div className="flex shrink-0 items-center gap-2">
             {upload.error instanceof Error || mkdir.error instanceof Error ? (
-              <p className="text-xs text-red-300 hidden sm:block">
+              <p className="text-xs text-error hidden sm:block">
                 {upload.error instanceof Error
                   ? upload.error.message
                   : mkdir.error instanceof Error
@@ -1024,7 +1026,7 @@ export function FilesPanel({
             {showFolderInput ? (
               <div className="flex items-center gap-1.5">
                 <input
-                  className="h-8 w-28 rounded-xl border border-slate-700/60 bg-slate-950/70 px-2.5 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:outline-none"
+                  className="h-8 w-28 rounded-xl border border-neutral-line/60 bg-surface-inset/70 px-2.5 text-xs font-semibold text-on-surface placeholder:text-on-surface-muted focus:border-primary/40 focus:outline-none"
                   type="text"
                   placeholder={t("files.newFolder")}
                   value={folderNameInput}
@@ -1071,20 +1073,20 @@ export function FilesPanel({
         </div>
       </div>
       <div
-        className={`relative flex min-h-0 flex-1 flex-col sm:flex-row ${dragOver ? "ring-2 ring-cyan-300/40" : ""}`}
+        className={`relative flex min-h-0 flex-1 flex-col sm:flex-row ${dragOver ? "ring-2 ring-primary/40" : ""}`}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
         {dragOver ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-cyan-300/8 backdrop-blur-[1px]">
-            <p className="rounded-2xl bg-slate-950/90 px-5 py-3 text-sm font-semibold text-cyan-100 shadow-2xl">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/8 backdrop-blur-[1px]">
+            <p className="rounded-2xl bg-surface-inset/90 px-5 py-3 text-sm font-semibold text-primary shadow-2xl">
               {t("files.dropZone")}
             </p>
           </div>
         ) : null}
         {upload.error instanceof Error || mkdir.error instanceof Error ? (
-          <p className="text-xs text-red-300 sm:hidden px-3 pt-2">
+          <p className="text-xs text-error sm:hidden px-3 pt-2">
             {upload.error instanceof Error
               ? upload.error.message
               : mkdir.error instanceof Error

@@ -67,18 +67,18 @@ function ConfirmDialog({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-surface-inset/60 backdrop-blur-sm px-4"
       onClick={onCancel}
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
       }}
     >
       <div
-        className={`w-full max-w-sm rounded-[1.5rem] p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-semibold text-slate-100">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">{message}</p>
+        <h2 className="text-base font-semibold text-on-surface">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-on-surface-muted">{message}</p>
         <div className="mt-5 flex justify-end gap-3">
           <ActionButton tone="muted" onClick={onCancel}>
             {cancelLabel}

@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
-import { IconMarker, ListRow, type ShellTone } from "../shell/shell-primitives";
+import { IconMarker, ListRow, pillToneClasses, type ShellTone } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 
@@ -132,12 +132,12 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
 
   return (
     <section
-      className="min-h-0 min-w-0 flex-1 flex flex-col bg-[#141b28]/25"
+      className="min-h-0 min-w-0 flex-1 flex flex-col bg-surface-raised/25"
       aria-label="Git file diff"
     >
-      <div className="relative flex min-w-0 items-center justify-between border-b border-slate-700/40 px-3.5 py-2.5">
+      <div className="relative flex min-w-0 items-center justify-between border-b border-neutral-line/40 px-3.5 py-2.5">
         <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-slate-700/50 hover:text-slate-200 sm:hidden"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-on-surface-soft sm:hidden"
           type="button"
           onClick={onBack}
           aria-label={t("git.backToFiles")}
@@ -153,7 +153,7 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
           </svg>
           {t("nav.back")}
         </button>
-        <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-slate-100 sm:static sm:flex-1 sm:text-left sm:min-w-0">
+        <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-on-surface sm:static sm:flex-1 sm:text-left sm:min-w-0">
           {displayName.split("/").pop() ?? displayName}
         </h4>
         {displayStatus ? (
@@ -168,10 +168,12 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
         {isLoading ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 pt-10 lg:justify-center lg:pt-0">
             <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
             </span>
-            <span className="text-xs font-semibold text-slate-400">{t("git.loadingDiff")}</span>
+            <span className="text-xs font-semibold text-on-surface-muted">
+              {t("git.loadingDiff")}
+            </span>
           </div>
         ) : error ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
@@ -240,11 +242,11 @@ function parseDiff(diff: string): DiffLine[] {
 }
 
 const diffLineClasses: Record<DiffLineType, string> = {
-  header: "text-slate-500",
-  hunk: "text-cyan-300/80 bg-cyan-300/5",
-  add: "text-emerald-300 bg-emerald-300/5",
-  del: "text-rose-300 bg-rose-300/5",
-  context: "text-slate-300",
+  header: "text-on-surface-muted",
+  hunk: "text-primary/80 bg-primary/5",
+  add: "text-success bg-success/5",
+  del: "text-error bg-error/5",
+  context: "text-on-surface-soft",
 };
 
 function DiffContent({ diff }: { diff: string }) {
@@ -256,10 +258,10 @@ function DiffContent({ diff }: { diff: string }) {
         <tbody>
           {lines.map((line, i) => (
             <tr key={i} className={diffLineClasses[line.type]}>
-              <td className="select-none pr-2 pl-3 text-right w-1 align-top whitespace-nowrap text-slate-600 sm:pl-4 sm:w-12">
+              <td className="select-none pr-2 pl-3 text-right w-1 align-top whitespace-nowrap text-on-surface-muted sm:pl-4 sm:w-12">
                 {line.oldLine !== undefined ? line.oldLine : ""}
               </td>
-              <td className="select-none pr-2 text-right w-1 align-top whitespace-nowrap text-slate-600 sm:w-12">
+              <td className="select-none pr-2 text-right w-1 align-top whitespace-nowrap text-on-surface-muted sm:w-12">
                 {line.newLine !== undefined ? line.newLine : ""}
               </td>
               <td className="pr-3 align-top whitespace-pre-wrap break-words sm:pr-4">
@@ -275,13 +277,8 @@ function DiffContent({ diff }: { diff: string }) {
 
 // ── Layout ────────────────────────────────────────────────────────
 
-const scopeChipToneClasses: Record<"success" | "warning" | "danger", string> = {
-  success: "border-emerald-300/30 bg-emerald-300/10 text-emerald-100",
-  warning: "border-amber-300/30 bg-amber-300/10 text-amber-100",
-  danger: "border-rose-300/30 bg-rose-300/10 text-rose-100",
-};
-
-const scopeChipDefault = "border-slate-700/60 bg-slate-950/70 text-slate-400";
+// scopeChip 的中性默认态（"all" 标签）；tone 态复用共享 pillToneClasses。
+const scopeChipDefault = "border-neutral-line/60 bg-surface-inset/70 text-on-surface-muted";
 
 function GitScopeChip({
   count,
@@ -294,7 +291,7 @@ function GitScopeChip({
   shortLabel?: string;
   tone?: "success" | "warning" | "danger";
 }) {
-  const colorClass = tone ? scopeChipToneClasses[tone] : scopeChipDefault;
+  const colorClass = tone ? pillToneClasses[tone] : scopeChipDefault;
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${colorClass}`}
@@ -359,10 +356,10 @@ export function GitDiffPanel({
     return (
       <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 p-4 pt-10 lg:justify-center lg:pt-0">
         <span className="relative flex h-3 w-3" aria-hidden="true">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-200" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
         </span>
-        <span className="text-xs font-semibold text-slate-400">{t("git.loading")}</span>
+        <span className="text-xs font-semibold text-on-surface-muted">{t("git.loading")}</span>
       </div>
     );
   }
@@ -438,13 +435,13 @@ export function GitDiffPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
       <div
-        className={`border-b border-slate-700/40 px-3.5 py-3 ${isFileSelected ? "hidden sm:block" : "block"}`}
+        className={`border-b border-neutral-line/40 px-3.5 py-3 ${isFileSelected ? "hidden sm:block" : "block"}`}
       >
         {scopeChips}
       </div>
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         <aside
-          className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-slate-700/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
+          className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
           <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
             {fileList}

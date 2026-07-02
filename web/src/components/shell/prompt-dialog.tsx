@@ -63,17 +63,17 @@ function PromptDialog({
 }: PromptConfig & { onCancel: () => void; onConfirm: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-surface-inset/60 backdrop-blur-sm px-4"
       onClick={onCancel}
     >
       <div
-        className={`w-full max-w-sm rounded-[1.5rem] p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-semibold text-slate-100">{title}</h2>
+        <h2 className="text-base font-semibold text-on-surface">{title}</h2>
         <input
           autoFocus
-          className="mt-3 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-white/20 focus:outline-none"
+          className="mt-3 w-full rounded-lg border border-neutral-line bg-surface-inset px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted/60 focus:border-primary focus:outline-none"
           data-prompt-input
           placeholder={placeholder}
           type="text"

@@ -78,7 +78,7 @@ export function HomeRoute() {
               {t("home.newAdopt")}
             </ActionButton>
             <button
-              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-sm font-bold text-slate-950 shadow-lg shadow-cyan-950/30 sm:hidden"
+              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-cyan-950/30 sm:hidden"
               type="button"
               aria-label={t("home.createProjectAria")}
               onClick={() => setSetupOpen(!setupOpen)}
@@ -110,7 +110,7 @@ export function HomeRoute() {
 
         {setupVisible ? (
           <div
-            className="absolute inset-0 z-20 flex flex-col items-center justify-center overflow-y-auto bg-slate-950/60 backdrop-blur-sm"
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center overflow-y-auto bg-surface-inset/60 backdrop-blur-sm"
             onClick={() => setSetupOpen(false)}
             aria-hidden="true"
           >
@@ -167,7 +167,7 @@ function ProjectListCard({
       ) : null}
       {error ? <StatusPanel label={error.message} tone="danger" /> : null}
       {deleteError ? (
-        <p className="mb-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+        <p className="mb-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
           {deleteError.message}
         </p>
       ) : null}
@@ -175,8 +175,8 @@ function ProjectListCard({
         projects.length === 0 ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
             <div className={`rounded-2xl p-4 w-full lg:w-auto ${shellSurfaceClasses.dashed}`}>
-              <p className="text-lg font-semibold text-slate-100">{t("home.emptyTitle")}</p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{t("home.emptyDesc")}</p>
+              <p className="text-lg font-semibold text-on-surface">{t("home.emptyTitle")}</p>
+              <p className="mt-2 text-sm leading-6 text-on-surface-muted">{t("home.emptyDesc")}</p>
             </div>
           </div>
         ) : (
@@ -208,7 +208,7 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
   const { t } = useT();
   return (
     <Link
-      className={`group block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-cyan-300/30 interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      className={`group block min-w-0 rounded-xl px-3.5 py-3.5 transition focus:outline-none focus:ring-2 focus:ring-primary/30 interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
       params={{ key: project.name }}
       to="/projects/$key"
     >
@@ -217,7 +217,7 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
           <ShellIcon name="project" className="h-3.5 w-3.5" />
         </IconMarker>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[0.95rem] font-semibold text-slate-100 group-hover:text-cyan-100">
+          <span className="block truncate text-[0.95rem] font-semibold text-on-surface group-hover:text-primary">
             {project.name}
           </span>
           <span className="mt-1 flex min-w-0 flex-wrap items-center gap-3">
@@ -246,7 +246,7 @@ function ProjectEntryRow({ confirm, isDeleting, onDelete, project }: ProjectEntr
           >
             <ShellIcon name="trash" className="h-3.5 w-3.5" />
           </ActionButton>
-          <span className="text-cyan-300 opacity-60 transition group-hover:opacity-100 group-hover:translate-x-0.5">
+          <span className="text-primary opacity-60 transition group-hover:opacity-100 group-hover:translate-x-0.5">
             <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
                 d="M6 3L11 8l-5 5"
@@ -269,7 +269,7 @@ type ProjectMetaPillProps = {
 
 function ProjectMetaPill({ children }: ProjectMetaPillProps) {
   return (
-    <span className="max-w-full truncate rounded-full border border-slate-700/45 px-2 py-1 text-[0.68rem] font-medium text-slate-300">
+    <span className="max-w-full truncate rounded-full border border-neutral-line/45 px-2 py-1 text-[0.68rem] font-medium text-on-surface-soft">
       {children}
     </span>
   );
@@ -281,9 +281,9 @@ type CountBadgeProps = {
 };
 
 function CountBadge({ count, tone }: CountBadgeProps) {
-  const dotColor = tone === "success" ? "bg-emerald-300" : "bg-cyan-300";
+  const dotColor = tone === "success" ? "bg-success" : "bg-primary";
   return (
-    <span className="inline-flex items-center gap-1 text-[0.68rem] font-medium text-slate-300">
+    <span className="inline-flex items-center gap-1 text-[0.68rem] font-medium text-on-surface-soft">
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
       {count}
     </span>
@@ -315,8 +315,8 @@ function ProjectSetupPanel({
           +
         </IconMarker>
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-100">{t("home.setupTitle")}</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{t("home.setupDesc")}</p>
+          <h2 className="text-base font-semibold text-on-surface">{t("home.setupTitle")}</h2>
+          <p className="mt-1 text-sm leading-6 text-on-surface-muted">{t("home.setupDesc")}</p>
         </div>
       </div>
 
@@ -324,7 +324,7 @@ function ProjectSetupPanel({
         className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
         onSubmit={onSubmit}
       >
-        <label className="min-w-0 text-sm font-medium text-slate-200" htmlFor={inputId}>
+        <label className="min-w-0 text-sm font-medium text-on-surface-soft" htmlFor={inputId}>
           {t("home.folderLabel")}
           <ShellInput
             className="mt-2"
@@ -335,16 +335,16 @@ function ProjectSetupPanel({
           />
         </label>
         <button
-          className="cursor-pointer rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+          className="cursor-pointer rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-neutral-line disabled:text-on-surface-muted"
           disabled={projectPath.trim().length === 0 || isPending}
           type="submit"
         >
           {isPending ? t("home.creating") : t("home.createAndEnter")}
         </button>
       </form>
-      <p className="mt-3 text-xs leading-5 text-slate-500">{t("home.setupHint")}</p>
+      <p className="mt-3 text-xs leading-5 text-on-surface-muted">{t("home.setupHint")}</p>
       {createError ? (
-        <p className="mt-3 rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+        <p className="mt-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
           {createError.message}
         </p>
       ) : null}
@@ -360,20 +360,20 @@ type StatusPanelProps = {
 function StatusPanel({ label, tone = "default" }: StatusPanelProps) {
   const classes =
     tone === "danger"
-      ? `${shellSurfaceClasses.danger} text-red-100`
-      : `${shellSurfaceClasses.inset} text-slate-300`;
+      ? `${shellSurfaceClasses.danger} text-error`
+      : `${shellSurfaceClasses.inset} text-on-surface-soft`;
 
   return <p className={`mt-5 rounded-2xl px-4 py-3 text-sm ${classes}`}>{label}</p>;
 }
 
 function SkeletonPulse({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-lg bg-slate-800/70 ${className}`} />;
+  return <div className={`animate-pulse rounded-lg bg-surface-raised/70 ${className}`} />;
 }
 
 function ProjectCardSkeleton() {
   return (
     <div
-      className={`block min-w-0 rounded-[1.25rem] px-3.5 py-3.5 ${shellSurfaceClasses.raised}`}
+      className={`block min-w-0 rounded-xl px-3.5 py-3.5 ${shellSurfaceClasses.raised}`}
       aria-hidden="true"
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">

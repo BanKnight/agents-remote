@@ -17,19 +17,19 @@ export function SettingsFlyout() {
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-surface-inset/60 p-4 backdrop-blur-sm"
       onClick={() => setOpen(false)}
       role="dialog"
     >
       <div
-        className={`w-full max-w-md rounded-[1.5rem] p-5 ${shellSurfaceClasses.raised}`}
+        className={`w-full max-w-md rounded-2xl p-5 ${shellSurfaceClasses.raised}`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-100">{t("nav.settings")}</h2>
+          <h2 className="text-lg font-semibold text-on-surface">{t("nav.settings")}</h2>
           <button
             aria-label={t("session.close")}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
             onClick={() => setOpen(false)}
             type="button"
           >
@@ -43,7 +43,7 @@ export function SettingsFlyout() {
             </svg>
           </button>
         </header>
-        <p className="mt-4 text-sm text-slate-400">{t("settings.placeholder")}</p>
+        <p className="mt-4 text-sm text-on-surface-muted">{t("settings.placeholder")}</p>
       </div>
     </div>
   );

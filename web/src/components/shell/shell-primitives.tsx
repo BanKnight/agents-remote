@@ -23,7 +23,7 @@ const markerToneClasses: Record<ShellTone, string> = {
   muted: "border-neutral-line bg-surface-inset/80 text-on-surface-muted",
 };
 
-const pillToneClasses: Record<ShellTone, string> = {
+export const pillToneClasses: Record<ShellTone, string> = {
   default: "border-neutral-line bg-surface-inset/80 text-on-surface",
   accent: "border-primary/20 bg-primary/10 text-primary",
   success: "border-success/20 bg-success/10 text-success",
