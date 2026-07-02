@@ -427,4 +427,6 @@ export const en = {
   "workbench.panelClose": "Close panel",
   "workbench.panelMaximize": "Maximize panel",
   "workbench.panelRestore": "Restore panel",
+  "workbench.switchPrev": "Previous instance",
+  "workbench.switchNext": "Next instance",
 } as const;

@@ -427,4 +427,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.panelClose": "关闭面板",
   "workbench.panelMaximize": "最大化面板",
   "workbench.panelRestore": "恢复面板",
+  "workbench.switchPrev": "上一个实例",
+  "workbench.switchNext": "下一个实例",
 };

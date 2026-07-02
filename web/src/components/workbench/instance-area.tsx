@@ -274,6 +274,39 @@ function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandi
   return candidates;
 }
 
+/**
+ * 当前 scope 的活跃实例有序列表（移动 ‹› 切换用，Stage 5-C）。project scope：该项目
+ * agent + terminal sessions（createdAt 升序，agents 在前 terminals 在后，与左栏 Agents/
+ * Terminals 分段一致）；global scope：rankGlobalInstances 排序（needs-interaction >
+ * running > terminal）。query key 复用左栏 / 全局候选缓存（单一数据管道，无并行分支）。
+ * 返回 WorkbenchPanelRef[]，供移动 ‹› 按 index 循环切换。
+ */
+export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[] {
+  const projectKey = scope.kind === "project" ? scope.key : null;
+  const agents = useQuery({
+    enabled: projectKey !== null,
+    queryKey: ["projects", projectKey ?? "", "agent-sessions"],
+    queryFn: () => listAgentSessions(projectKey as string),
+    staleTime: 5_000,
+  });
+  const terminals = useQuery({
+    enabled: projectKey !== null,
+    queryKey: ["projects", projectKey ?? "", "terminal-sessions"],
+    queryFn: () => listTerminalSessions(projectKey as string),
+    staleTime: 5_000,
+  });
+  const candidates = useGlobalInstanceCandidates(scope);
+  if (scope.kind !== "project") return rankGlobalInstances(candidates);
+  const refs: WorkbenchPanelRef[] = [];
+  for (const session of agents.data?.sessions ?? []) {
+    refs.push({ projectName: scope.key, sessionId: session.id });
+  }
+  for (const session of terminals.data?.sessions ?? []) {
+    refs.push({ projectName: scope.key, sessionId: session.id });
+  }
+  return refs;
+}
+
 function EmptyInstanceArea() {
   return (
     <div className="flex h-full items-center justify-center p-6">

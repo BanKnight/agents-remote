@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
 import {
+  addPanel,
   type WorkbenchMobileFocusTab,
   type WorkbenchScope,
   inferSessionTypeFromId,
@@ -10,7 +11,7 @@ import {
   workbenchMobileFocusTabAtom,
 } from "../../routes/workbench-model";
 import { WorkbenchLeftRail } from "./left-rail";
-import { PanelRouter } from "./instance-area";
+import { PanelRouter, useScopeInstanceOrder } from "./instance-area";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 
 type MobileWorkbenchProps = {
@@ -65,8 +66,11 @@ type MobileFocusBodyProps = {
  */
 function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const { t } = useT();
-  const [layout] = useWorkbenchLayout(scope);
+  const navigate = useNavigate();
+  const [layout, updateLayout] = useWorkbenchLayout(scope);
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
+  const order = useScopeInstanceOrder(scope);
+  const currentIndex = order.findIndex((o) => o.sessionId === focusId);
   const projectName =
     scope.kind === "project"
       ? scope.key
@@ -84,8 +88,33 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const activePlugin =
     activeTab === "output" ? null : (visiblePlugins.find((p) => p.id === activeTab) ?? null);
 
+  // ‹› 浮动切实例（设计文档 §7）：范围 = 当前 scope 活跃实例（useScopeInstanceOrder），
+  // 循环切换；tab 不重置（维度正交，workbenchMobileFocusTabAtom 跨切换保持）。global 作用域
+  // 聚焦态 projectName 从 layout.panels 查，切到不在布局的实例需先 addPanel 再导航。
+  const switchInstance = (delta: number) => {
+    if (order.length < 2 || currentIndex < 0) return;
+    const next = order[(currentIndex + delta + order.length) % order.length];
+    if (scope.kind === "global") {
+      updateLayout((prev) => addPanel(prev, next));
+    }
+    const scopeParam = scope.kind === "project" ? scope.key : "global";
+    void navigate({
+      to: "/workbench/$scope/$focusId",
+      params: { scope: scopeParam, focusId: next.sessionId },
+    });
+  };
+  const showSwitcher = order.length > 1 && currentIndex >= 0;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {showSwitcher ? (
+        <MobileInstanceSwitcher
+          nextLabel={t("workbench.switchNext")}
+          onNext={() => switchInstance(1)}
+          onPrev={() => switchInstance(-1)}
+          prevLabel={t("workbench.switchPrev")}
+        />
+      ) : null}
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/5 px-1.5 py-1.5">
         <MobileFocusTabButton
           active={activeTab === "output"}
@@ -154,5 +183,60 @@ function MobileBackBar({ scope }: { scope: WorkbenchScope }) {
         {t("workbench.backToList")}
       </button>
     </div>
+  );
+}
+
+type MobileInstanceSwitcherProps = {
+  nextLabel: string;
+  onNext: () => void;
+  onPrev: () => void;
+  prevLabel: string;
+};
+
+/**
+ * ‹› 浮动切实例（设计文档 §7）：absolute overlay 贴内容区左右边缘中点，不占布局；
+ * 半透明 backdrop-blur 降低对实例输出的遮挡。仅当前 scope 活跃实例 > 1 时由 MobileFocusBody 渲染。
+ */
+function MobileInstanceSwitcher({
+  nextLabel,
+  onNext,
+  onPrev,
+  prevLabel,
+}: MobileInstanceSwitcherProps) {
+  return (
+    <>
+      <button
+        aria-label={prevLabel}
+        className="absolute left-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-slate-900/60 text-slate-300 backdrop-blur transition hover:bg-slate-800/80 hover:text-slate-100"
+        onClick={onPrev}
+        type="button"
+      >
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16">
+          <path
+            d="M10 3L5 8l5 5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+      <button
+        aria-label={nextLabel}
+        className="absolute right-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-slate-900/60 text-slate-300 backdrop-blur transition hover:bg-slate-800/80 hover:text-slate-100"
+        onClick={onNext}
+        type="button"
+      >
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16">
+          <path
+            d="M6 3l5 5-5 5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+    </>
   );
 }
