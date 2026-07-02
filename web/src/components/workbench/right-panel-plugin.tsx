@@ -22,8 +22,8 @@ export type PluginContext = {
 
 /**
  * 右栏 inspection 插件契约（设计文档 §6）。V1 仅编译期第一方注册（Files/Git/原型），
- * 不实装外部插件 / marketplace。`when` 集中表达可见性（全局隐 project-scoped、
- * Terminal 隐 Git 等）；render 由 RightPanelTabs 在 active tab 时调用。Files/Git
+ * 不实装外部插件 / marketplace。`when` 集中表达可见性（全局隐 project-scoped tab）；
+ * render 由 RightPanelTabs 在 active tab 时调用。Files/Git
  * 用 queryScope 隔离与 ProjectConsole section 的缓存（命中单数据管道 / 禁并行过滤分支）。
  */
 export type RightPanelPlugin = {
@@ -58,7 +58,7 @@ export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
       ctx.projectKey ? (
         <GitDiffPanel projectName={ctx.projectKey} queryScope={WORKBENCH_GIT_QUERY_SCOPE} />
       ) : null,
-    when: (ctx) => ctx.projectKey !== null && ctx.sessionType !== "terminal",
+    when: (ctx) => ctx.projectKey !== null,
   },
   {
     id: "prototype",
