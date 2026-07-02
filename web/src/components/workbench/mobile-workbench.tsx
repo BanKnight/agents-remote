@@ -163,10 +163,13 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
         ))}
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {projectName ? (
+          <div className={activePlugin ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
+            <PanelRouter key={focusId} panelRef={{ projectName, sessionId: focusId }} />
+          </div>
+        ) : null}
         {activePlugin ? (
           <Fragment key={projectName ?? "none"}>{activePlugin.render(ctx)}</Fragment>
-        ) : projectName ? (
-          <PanelRouter key={focusId} panelRef={{ projectName, sessionId: focusId }} />
         ) : null}
       </div>
     </div>
