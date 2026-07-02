@@ -1,7 +1,8 @@
 /* Design system authoritative source: docs/design/DESIGN.md (Google DESIGN.md format).
-   Radius scale, surface colors, and motion tokens defined here must align to
-   DESIGN.md. See "Migration & Mapping (Phase 2)" for the @theme inline namespace
-   plan (oklch→hex, --color-surface-*, --radius-* remap, --spacing-*). */
+   DESIGN tokens materialized here: colors (surface, on-surface, neutral-line, code,
+   secondary violet, success, warning, error), radius (DESIGN scale + shell-desktop
+   and shell-mobile), font-mono. shadcn theme vars (:root and .dark) hex-aligned to
+   DESIGN semantics. See DESIGN.md "Migration & Mapping" 节. */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -34,38 +35,41 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
+  /* shadcn theme vars — values aligned to DESIGN.md (docs/design/DESIGN.md):
+     oklch 灰度 → DESIGN surface/on-surface/primary(cyan)/error(rose) hex。
+     chart-* 低优先保留 oklch（业务零消费）。DESIGN secondary(紫 #a78bfa) 是
+     gradient 终点专用，走 @theme inline 的 --color-secondary 直写，不在此处；
+     故 shadcn --secondary/--secondary-foreground 已移除（无消费方）。*/
+  --background: #080b10; /* surface-base */
+  --foreground: #eef4ff; /* on-surface */
+  --card: #141b28; /* surface-raised */
+  --card-foreground: #eef4ff;
+  --popover: #141b28; /* surface-raised */
+  --popover-foreground: #eef4ff;
+  --primary: #7dd3fc; /* primary (Glacier Cyan) */
+  --primary-foreground: #041019; /* on-primary */
+  --muted: #141b28; /* surface-raised */
+  --muted-foreground: #8d99aa; /* on-surface-muted */
+  --accent: #141b28; /* surface-raised（软 hover/focus 底，tint 由组件加）*/
+  --accent-foreground: #eef4ff;
+  --destructive: #fb7185; /* error (rose-400) */
+  --border: #263245; /* neutral-line */
+  --input: #263245; /* neutral-line */
+  --ring: #7dd3fc; /* primary（focus ring 基色）*/
+  --chart-1: oklch(0.87 0 0); /* 低优先，保留 oklch（业务零消费）*/
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --radius: 0.625rem; /* 10px = DESIGN md 基准 */
+  --sidebar: #141b28; /* surface-raised */
+  --sidebar-foreground: #eef4ff;
+  --sidebar-primary: #7dd3fc; /* primary */
+  --sidebar-primary-foreground: #041019;
+  --sidebar-accent: #141b28; /* surface-raised */
+  --sidebar-accent-foreground: #eef4ff;
+  --sidebar-border: #263245; /* neutral-line */
+  --sidebar-ring: #7dd3fc; /* primary */
 }
 
 /* PWA standalone 下 100dvh 会扣 home indicator chin (~34px), 100vh 不扣;
@@ -104,6 +108,9 @@ body {
   --breakpoint-sm: 1024px;
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /* shadcn theme color mappings — values driven by :root/.dark above.
+     --color-secondary 已从此处移除，改由下方 DESIGN 块直写紫（gradient 终点）。*/
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -125,8 +132,6 @@ body {
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
@@ -135,47 +140,68 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* DESIGN.md semantic color namespace — fixed hex（project dark-only）.
+     Source: docs/design/DESIGN.md. 新代码用 bg-surface-* / text-on-surface-* /
+     border-neutral-line / bg-secondary(violet, gradient) 等，勿散写裸 Tailwind。
+     primary 走 shadcn 映射（cyan 一致），不在此重复。*/
+  --color-surface-base: #080b10;
+  --color-surface: #0f1520;
+  --color-surface-raised: #141b28;
+  --color-surface-inset: #05080d;
+  --color-on-surface: #eef4ff;
+  --color-on-surface-soft: #c1cad8;
+  --color-on-surface-muted: #8d99aa;
+  --color-on-primary: #041019;
+  --color-on-error: #041019;
+  --color-neutral-line: #263245;
+  --color-code-text: #d6e4f7;
+  --color-code-muted: #728197;
+  --color-secondary: #a78bfa;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #fb7185;
+  /* Radius — DESIGN scale（docs/design/DESIGN.md Shapes）。方案 A：覆写衍生比例
+     对齐 DESIGN 档；移除无对应档的 3xl/4xl（业务无 rounded-3xl，badge 4xl→full）；
+     新增 frame 专用 shell-*。*/
+  --radius-sm: calc(var(--radius) * 0.6); /* 6px */
+  --radius-md: var(--radius); /* 10px */
+  --radius-lg: calc(var(--radius) * 1.4); /* 14px */
+  --radius-xl: calc(var(--radius) * 2); /* 20px */
+  --radius-2xl: calc(var(--radius) * 2.4); /* 24px */
+  --radius-shell-desktop: 28px;
+  --radius-shell-mobile: 38px;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: #080b10;
+  --foreground: #eef4ff;
+  --card: #141b28;
+  --card-foreground: #eef4ff;
+  --popover: #141b28;
+  --popover-foreground: #eef4ff;
+  --primary: #7dd3fc;
+  --primary-foreground: #041019;
+  --muted: #141b28;
+  --muted-foreground: #8d99aa;
+  --accent: #141b28;
+  --accent-foreground: #eef4ff;
+  --destructive: #fb7185;
+  --border: #263245;
+  --input: #263245;
+  --ring: #7dd3fc;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #141b28;
+  --sidebar-foreground: #eef4ff;
+  --sidebar-primary: #7dd3fc;
+  --sidebar-primary-foreground: #041019;
+  --sidebar-accent: #141b28;
+  --sidebar-accent-foreground: #eef4ff;
+  --sidebar-border: #263245;
+  --sidebar-ring: #7dd3fc;
 }
 
 @layer base {
