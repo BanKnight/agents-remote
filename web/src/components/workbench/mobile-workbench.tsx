@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
-import { type WorkbenchScope } from "../../routes/workbench-model";
+import { type WorkbenchScope, useWorkbenchLayout } from "../../routes/workbench-model";
 import { WorkbenchLeftRail } from "./left-rail";
-import { InstanceArea } from "./instance-area";
+import { PanelRouter } from "./instance-area";
 
 type MobileWorkbenchProps = {
   scope: WorkbenchScope;
@@ -11,11 +11,12 @@ type MobileWorkbenchProps = {
 };
 
 /**
- * 移动端工作台退化呈现（设计文档 §7，Stage 1 最小可用）。Stage 5 升级为正式
- * 两层导航（一级底部 tab + 二级 header tab + 单实例聚焦 + ‹› 悬浮切）。
+ * 移动端工作台（设计文档 §7）。Stage 5 按桌面分 stage 升级：A 聚焦态单实例化
+ *（修窄屏多面板挤压）→ B header tab inspection → C ‹› 悬浮切 → D 列表态二级总览
+ * + 一级底部 tab → E 路由收口。
  *
- * 线性流：无 focusId → 实例列表（WorkbenchLeftRail 全屏 + 创建入口）；
- * 有 focusId → 单实例面板（InstanceArea）+ 顶部返回列表。
+ * 当前：无 focusId → 实例列表（WorkbenchLeftRail 全屏 + 创建入口，Stage D 升级为
+ * MobileProjectOverview）；有 focusId → 单实例聚焦（PanelRouter，不 split）+ 顶部返回。
  */
 export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
   if (!focusId) {
@@ -33,10 +34,32 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
       className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-slate-100 ${shellSurfaceClasses.shell}`}
     >
       <MobileBackBar scope={scope} />
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <InstanceArea focusId={focusId} scope={scope} />
-      </div>
+      <MobileFocusBody focusId={focusId} scope={scope} />
     </main>
+  );
+}
+
+type MobileFocusBodyProps = {
+  focusId: string;
+  scope: WorkbenchScope;
+};
+
+/**
+ * 移动端聚焦态主体（Stage 5-A）：单实例面板（PanelRouter），不走桌面 split 布局 ——
+ * 移动窄屏不 split 多面板（避免挤压），只渲染 focusId 对应实例。projectName：project
+ * 作用域直接 scope.key；global 作用域从布局面板查（focusId 不在布局则空，暂不渲染）。
+ * 容器 flex-col 让面板内部 flex-1 runtime body 撑满（与桌面 SplitPanel 同撑满契约）。
+ */
+function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
+  const [layout] = useWorkbenchLayout(scope);
+  const projectName =
+    scope.kind === "project"
+      ? scope.key
+      : layout.panels.find((p) => p.sessionId === focusId)?.projectName;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {projectName ? <PanelRouter panelRef={{ projectName, sessionId: focusId }} /> : null}
+    </div>
   );
 }
 

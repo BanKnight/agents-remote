@@ -169,8 +169,12 @@ type PanelRouterProps = {
 /**
  * 单面板路由：按 sessionId 前缀推断类型 → 查详情 → 渲染对应面板（claude2→ChatPanel、
  * 其他 agent→AgentTerminalPanel、terminal→TerminalPanel）。复用 Stage 1 的嵌入式面板。
+ *
+ * 桌面 split 与移动单实例聚焦（Stage 5）共用：桌面 SplitLayout 每面板调一次，
+ * 移动聚焦态调一次（不 split，单实例）。面板内部依赖父级 flex-col 让 flex-1 runtime
+ * body 撑满，调用方容器须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
  */
-function PanelRouter({ panelRef }: PanelRouterProps) {
+export function PanelRouter({ panelRef }: PanelRouterProps) {
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
     return <AgentPanelRouter panelRef={panelRef} />;
