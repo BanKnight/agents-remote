@@ -24,7 +24,7 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
 
   if (!current) {
     return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-slate-500">
+      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-on-surface-muted">
         {t("workbench.rightPanelEmpty")}
       </div>
     );
@@ -32,7 +32,7 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-white/5 px-1.5 py-1.5">
+      <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5 py-1.5">
         {visiblePlugins.map((plugin) => (
           <TabButton
             active={plugin.id === current.id}
@@ -61,7 +61,7 @@ type TabButtonProps = {
 function TabButton({ active, label, onClick }: TabButtonProps) {
   return (
     <button
-      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${active ? "bg-cyan-300/10 text-cyan-100" : "text-slate-400 hover:bg-white/5 hover:text-slate-100"}`}
+      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
       onClick={onClick}
       type="button"
     >

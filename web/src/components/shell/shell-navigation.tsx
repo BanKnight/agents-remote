@@ -134,7 +134,7 @@ export function ShellMobileBottomNavigation({
       aria-label={ariaLabel}
     >
       <div
-        className={`mx-auto grid w-full max-w-md gap-1 rounded-[1.75rem] border border-white/10 bg-slate-900/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${colsClass}`}
+        className={`mx-auto grid w-full max-w-md gap-1 rounded-2xl border border-on-surface/10 bg-surface-raised/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${colsClass}`}
       >
         {children}
       </div>
@@ -190,7 +190,7 @@ export function PrimaryShellNavigation({
   const { t } = useT();
   return (
     <>
-      <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-100">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-on-surface">
         {brand}
       </div>
       <ShellNavigationList ariaLabel={t("nav.primaryAria")}>
@@ -282,7 +282,7 @@ export function ProjectShellNavigation({
   return (
     <>
       <Link
-        className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-400 hover:text-cyan-200"
+        className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-on-surface-muted hover:text-primary"
         to="/"
       >
         <IconMarker size="sm" tone="muted">
@@ -299,8 +299,8 @@ export function ProjectShellNavigation({
         <span>{t("nav.projects")}</span>
       </Link>
       <div className={`mb-4 min-w-0 rounded-2xl p-3 ${shellSurfaceClasses.raised}`}>
-        <h2 className="truncate text-sm font-semibold text-slate-100">{projectTitle}</h2>
-        <p className="mt-1 truncate font-mono text-xs text-slate-500">{projectPath}</p>
+        <h2 className="truncate text-sm font-semibold text-on-surface">{projectTitle}</h2>
+        <p className="mt-1 truncate font-mono text-xs text-on-surface-muted">{projectPath}</p>
       </div>
       <ShellNavigationList ariaLabel={t("nav.projectWorkspaceAria")}>
         {items.map((item) => (

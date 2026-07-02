@@ -120,12 +120,12 @@ function SplitPanel({
   const { t } = useT();
   return (
     <div
-      className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${shellSurfaceClasses.shell} ${focused ? "ring-1 ring-cyan-300/40" : "ring-1 ring-white/5"}`}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${shellSurfaceClasses.shell} ${focused ? "ring-1 ring-primary/40" : "ring-1 ring-on-surface/5"}`}
       style={{ flexGrow: flex, flexBasis: 0 }}
       onClick={onFocus}
     >
-      <div className="flex shrink-0 items-center justify-between gap-0.5 border-b border-white/5 px-1 py-0.5">
-        <span className="min-w-0 flex-1 truncate px-1 text-[0.6rem] font-medium text-slate-500">
+      <div className="flex shrink-0 items-center justify-between gap-0.5 border-b border-on-surface/5 px-1 py-0.5">
+        <span className="min-w-0 flex-1 truncate px-1 text-[0.6rem] font-medium text-on-surface-muted">
           {label}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -181,7 +181,7 @@ function SplitGutter({ onResize }: SplitGutterProps) {
   return (
     <div
       aria-hidden
-      className="w-1 shrink-0 cursor-col-resize rounded-full bg-white/5 transition-colors hover:bg-white/20"
+      className="w-1 shrink-0 cursor-col-resize rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20"
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -201,7 +201,7 @@ type SplitIconButtonProps = {
 function SplitIconButton({ label, onClick, children }: SplitIconButtonProps) {
   return (
     <button
-      className="inline-flex h-5 w-5 items-center justify-center rounded-md text-slate-500 transition hover:bg-white/5 hover:text-slate-100"
+      className="inline-flex h-5 w-5 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
       onClick={onClick}
       title={label}
       type="button"

@@ -61,7 +61,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
     );
 
   return (
-    <main className="relative h-[var(--app-viewport-height)] overflow-hidden text-slate-100">
+    <main className="relative h-[var(--app-viewport-height)] overflow-hidden text-on-surface">
       <div
         className={`grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-left-col)_minmax(0,1fr)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
         style={
@@ -72,7 +72,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
         }
       >
         <aside
-          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-slate-700/80 lg:flex ${shellSurfaceClasses.sidebar}`}
+          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
         >
           <PanelHeader
             chevron="left"
@@ -102,7 +102,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
         </section>
 
         <aside
-          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-slate-700/80 lg:flex ${shellSurfaceClasses.sidebar}`}
+          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
         >
           <PanelHeader
             chevron="right"
@@ -131,7 +131,7 @@ function PanelHeader({ chevron, collapseLabel, onCollapse }: PanelHeaderProps) {
         type="button"
         aria-label={collapseLabel}
         onClick={onCollapse}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft"
       >
         {chevron === "left" ? <ChevronLeft /> : <ChevronRight />}
       </button>
@@ -152,10 +152,10 @@ function RailButton({ label, onClick, side }: RailButtonProps) {
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`absolute top-1/2 z-20 flex h-16 w-5 -translate-y-1/2 items-center justify-center bg-slate-900/60 text-slate-400 backdrop-blur transition hover:bg-slate-800/80 hover:text-slate-100 ${
+      className={`absolute top-1/2 z-20 flex h-16 w-5 -translate-y-1/2 items-center justify-center bg-surface-raised/60 text-on-surface-muted backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface ${
         side === "left"
-          ? "left-0 rounded-r-lg border-y border-r border-slate-700/80"
-          : "right-0 rounded-l-lg border-y border-l border-slate-700/80"
+          ? "left-0 rounded-r-lg border-y border-r border-neutral-line/80"
+          : "right-0 rounded-l-lg border-y border-l border-neutral-line/80"
       }`}
     >
       {side === "left" ? <ChevronLeft /> : <ChevronRight />}
@@ -228,7 +228,7 @@ function ColumnResizeGutter({ onResize, side }: ColumnResizeGutterProps) {
   return (
     <div
       aria-hidden
-      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-cyan-300/30 ${
+      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 ${
         side === "left" ? "right-0" : "left-0"
       }`}
       onPointerCancel={endDrag}

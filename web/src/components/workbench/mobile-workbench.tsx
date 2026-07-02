@@ -42,7 +42,7 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
   if (!focusId) {
     return (
       <main
-        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-slate-100 ${shellSurfaceClasses.shell}`}
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
       >
         {scope.kind === "global" ? (
           <MobileGlobalOverview />
@@ -56,7 +56,7 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
 
   return (
     <main
-      className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-slate-100 ${shellSurfaceClasses.shell}`}
+      className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
     >
       <MobileFocusBody focusId={focusId} scope={scope} />
     </main>
@@ -126,10 +126,10 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
           prevLabel={t("workbench.switchPrev")}
         />
       ) : null}
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-white/5 px-2">
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
         <button
           aria-label={t("workbench.backToList")}
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => void navigateWorkbench(scope)}
           type="button"
         >
@@ -143,11 +143,11 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
             />
           </svg>
         </button>
-        <span className="truncate text-sm font-semibold text-slate-100">
+        <span className="truncate text-sm font-semibold text-on-surface">
           {projectName ?? t("workbench.global")}
         </span>
       </header>
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/5 px-1.5 py-1.5">
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
         <MobileFocusTabButton
           active={activeTab === "output"}
           label={t("workbench.tabOutput")}
@@ -186,7 +186,7 @@ type MobileFocusTabButtonProps = {
 function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonProps) {
   return (
     <button
-      className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${active ? "bg-cyan-300/10 text-cyan-100" : "text-slate-400 hover:bg-white/5 hover:text-slate-100"}`}
+      className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
       onClick={onClick}
       type="button"
     >
@@ -216,7 +216,7 @@ function MobileInstanceSwitcher({
     <>
       <button
         aria-label={prevLabel}
-        className="absolute left-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-slate-900/60 text-slate-300 backdrop-blur transition hover:bg-slate-800/80 hover:text-slate-100"
+        className="absolute left-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
         onClick={onPrev}
         type="button"
       >
@@ -232,7 +232,7 @@ function MobileInstanceSwitcher({
       </button>
       <button
         aria-label={nextLabel}
-        className="absolute right-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-slate-900/60 text-slate-300 backdrop-blur transition hover:bg-slate-800/80 hover:text-slate-100"
+        className="absolute right-1 top-1/2 z-30 flex h-10 w-7 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
         onClick={onNext}
         type="button"
       >
@@ -278,9 +278,9 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-white/5 px-2">
+      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
         <button
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => void navigate({ to: "/" })}
           type="button"
         >
@@ -294,9 +294,9 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
             />
           </svg>
         </button>
-        <span className="truncate text-sm font-semibold text-slate-100">{scope.key}</span>
+        <span className="truncate text-sm font-semibold text-on-surface">{scope.key}</span>
       </header>
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/5 px-1.5 py-1.5">
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
         <MobileFocusTabButton
           active={activeTab === "overview"}
           label={t("workbench.tabOverview")}
@@ -346,13 +346,13 @@ function MobileGlobalOverview() {
   if (candidates.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center">
-        <p className="text-sm text-slate-500">{t("workbench.globalOverviewEmpty")}</p>
+        <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
       </div>
     );
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <h2 className="shrink-0 border-b border-white/5 px-3 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-500">
+      <h2 className="shrink-0 border-b border-on-surface/5 px-3 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
         {t("workbench.globalOverviewTitle")}
       </h2>
       <nav
@@ -361,7 +361,7 @@ function MobileGlobalOverview() {
       >
         {Array.from(grouped.entries()).map(([projectName, items]) => (
           <div key={projectName}>
-            <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-600">
+            <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
               {projectName}
             </p>
             {items.map((candidate) => (

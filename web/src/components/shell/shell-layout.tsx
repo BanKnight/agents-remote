@@ -8,8 +8,8 @@ import { shellSurfaceClasses } from "./shell-primitives";
 type ShellLayoutVariant = "home" | "project";
 
 const shellMainClasses: Record<ShellLayoutVariant, string> = {
-  home: "relative h-[var(--app-viewport-height)] overflow-hidden text-slate-100",
-  project: "relative h-[var(--app-viewport-height)] overflow-hidden text-slate-100",
+  home: "relative h-[var(--app-viewport-height)] overflow-hidden text-on-surface",
+  project: "relative h-[var(--app-viewport-height)] overflow-hidden text-on-surface",
 };
 
 const shellGridClasses: Record<ShellLayoutVariant, string> = {
@@ -19,9 +19,9 @@ const shellGridClasses: Record<ShellLayoutVariant, string> = {
 };
 
 const shellHeaderClasses: Record<ShellLayoutVariant, string> = {
-  home: "flex-row min-w-0 items-center justify-between gap-3 border-0 bg-transparent p-0 text-slate-100 shadow-none ring-0",
+  home: "flex-row min-w-0 items-center justify-between gap-3 border-0 bg-transparent p-0 text-on-surface shadow-none ring-0",
   project:
-    "min-w-0 gap-0 rounded-none border-0 border-b border-slate-700/80 bg-transparent px-4 py-3 text-slate-100 shadow-none ring-0 sm:rounded-[1.5rem] sm:px-5 sm:py-4 sm:shadow-2xl sm:shadow-black/30 sm:backdrop-blur lg:rounded-none lg:border-0 lg:border-b lg:border-slate-700/80 lg:bg-transparent lg:px-5 lg:py-4 lg:shadow-none lg:backdrop-blur-0",
+    "min-w-0 gap-0 rounded-none border-0 border-b border-neutral-line/80 bg-transparent px-4 py-3 text-on-surface shadow-none ring-0 sm:rounded-2xl sm:px-5 sm:py-4 sm:shadow-2xl sm:shadow-black/30 sm:backdrop-blur lg:rounded-none lg:border-0 lg:border-b lg:border-neutral-line/80 lg:bg-transparent lg:px-5 lg:py-4 lg:shadow-none lg:backdrop-blur-0",
 };
 
 const shellHeaderTitleClasses: Record<ShellLayoutVariant, string> = {
@@ -94,7 +94,7 @@ export function ShellSidebar({ children, display = "block" }: ShellSidebarProps)
   return (
     <aside className={`hidden min-h-0 min-w-0 overflow-hidden ${displayClass}`}>
       <Card
-        className={`h-full min-h-0 gap-0 rounded-[1.75rem] !bg-transparent p-3 py-3 text-slate-100 shadow-2xl shadow-black/30 ring-0 lg:rounded-none lg:border-0 lg:border-r lg:border-slate-700/80 lg:shadow-none ${shellSurfaceClasses.sidebar}`}
+        className={`h-full min-h-0 gap-0 rounded-2xl !bg-transparent p-3 py-3 text-on-surface shadow-2xl shadow-black/30 ring-0 lg:rounded-none lg:border-0 lg:border-r lg:border-neutral-line/80 lg:shadow-none ${shellSurfaceClasses.sidebar}`}
       >
         {children}
       </Card>
@@ -131,7 +131,7 @@ export function ShellPanel({
     <Card
       {...props}
       className={cn(
-        `min-w-0 gap-0 rounded-[1.5rem] !bg-transparent text-slate-100 shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
+        `min-w-0 gap-0 rounded-2xl !bg-transparent text-on-surface shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
         densityClass,
         dockedClass,
         className,
@@ -161,7 +161,7 @@ export function ShellHeaderSurface({
   const headerContent = (
     <>
       <div className={variant === "project" ? "flex min-w-0 flex-col-reverse sm:block" : "min-w-0"}>
-        <p className="truncate text-xs leading-5 text-slate-400">{eyebrow}</p>
+        <p className="truncate text-xs leading-5 text-on-surface-muted">{eyebrow}</p>
         <h1 className={shellHeaderTitleClasses[variant]}>{title}</h1>
       </div>
       {actions ? <div className="shrink-0">{actions}</div> : null}

@@ -110,9 +110,9 @@ function ProjectTree({ focusId, scope }: ProjectTreeProps) {
         ))}
         {projects.isLoading && projectItems.length === 0 ? <LeftRailSkeleton /> : null}
       </nav>
-      <div className="shrink-0 border-t border-white/5 p-1.5">
+      <div className="shrink-0 border-t border-on-surface/5 p-1.5">
         <button
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => setSettingsOpen(true)}
           type="button"
         >
@@ -176,7 +176,7 @@ function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }:
   return (
     <div className="flex flex-col">
       <div
-        className={`flex w-full cursor-pointer items-center gap-1 px-1.5 py-1.5 transition ${active ? "bg-cyan-300/10" : "hover:bg-white/5"}`}
+        className={`flex w-full cursor-pointer items-center gap-1 px-1.5 py-1.5 transition ${active ? "bg-primary/10" : "hover:bg-on-surface/5"}`}
         onClick={onSelect}
         onKeyDown={handleKeyDown}
         role="button"
@@ -184,7 +184,7 @@ function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }:
       >
         <button
           aria-label={expanded ? t("workbench.collapseProject") : t("workbench.expandProject")}
-          className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-slate-500 hover:text-slate-200"
+          className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted hover:text-on-surface-soft"
           onClick={(event) => {
             event.stopPropagation();
             onToggle();
@@ -210,11 +210,11 @@ function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }:
           <ShellIcon className="h-3 w-3" name="project" />
         </IconMarker>
         <span
-          className={`min-w-0 flex-1 truncate text-sm font-semibold ${active ? "text-cyan-100" : "text-slate-200"}`}
+          className={`min-w-0 flex-1 truncate text-sm font-semibold ${active ? "text-primary" : "text-on-surface-soft"}`}
         >
           {project.name}
         </span>
-        <span className="flex shrink-0 items-center gap-1 text-[0.6rem] font-medium text-slate-500">
+        <span className="flex shrink-0 items-center gap-1 text-[0.6rem] font-medium text-on-surface-muted">
           {project.agentSessionCount > 0 ? <span>{project.agentSessionCount}A</span> : null}
           {project.terminalSessionCount > 0 ? <span>{project.terminalSessionCount}T</span> : null}
         </span>
@@ -338,7 +338,7 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
   };
 
   return (
-    <div className="ml-3 flex flex-col border-l border-white/5 pl-1">
+    <div className="ml-3 flex flex-col border-l border-on-surface/5 pl-1">
       <LeftRailCreateBar
         isCreating={createAgent.isPending || createTerminal.isPending}
         onCreateAgent={handleCreateAgent}
@@ -388,7 +388,7 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-slate-600">
+    <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
       {children}
     </p>
   );
@@ -558,7 +558,7 @@ function LeftRailSkeleton() {
   return (
     <div className="flex flex-col gap-1 p-2">
       {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT }, (_, index) => (
-        <div className="h-8 animate-pulse rounded-lg bg-white/5" key={index} />
+        <div className="h-8 animate-pulse rounded-lg bg-on-surface/5" key={index} />
       ))}
     </div>
   );
