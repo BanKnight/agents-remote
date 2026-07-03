@@ -10,8 +10,6 @@ import type {
   TerminalSession,
 } from "@agents-remote/shared";
 import {
-  closeAgentSession,
-  closeTerminalSession,
   createAgentSession,
   createTerminalSession,
   listAgentHistory,
@@ -26,6 +24,7 @@ import {
   actionButtonClasses,
   IconMarker,
   InstanceCard,
+  sessionMarker,
   statusToTone,
   type ShellTone,
 } from "../shell/shell-primitives";
@@ -38,7 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import { useConfirm } from "../shell/confirm-dialog";
+import { useCloseSession } from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
 
@@ -257,7 +256,7 @@ export function ProjectInstances({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { holder: promptHolder, prompt } = usePromptDialog();
-  const { confirm: confirmClose, holder: closeHolder } = useConfirm();
+  const { close, holder: closeHolder } = useCloseSession();
   const agents = useQuery({
     queryKey: ["projects", projectName, "agent-sessions"],
     queryFn: () => listAgentSessions(projectName),
@@ -361,31 +360,10 @@ export function ProjectInstances({
     }
   };
 
-  // 卡片 close：复用 closePanel（instance-area）三步语义——confirm → close API → invalidate。
+  // 卡片 close：复用 useCloseSession（confirm → close API → 精确失效缓存）。
   // 不调 layout.removePanel：卡片由 query 驱动，invalidate 后列表自然消失。
-  const closeSession = async (sessionId: string, type: "agent" | "terminal") => {
-    const ok = await confirmClose({
-      cancelLabel: t("cancel"),
-      confirmLabel: t("session.close"),
-      message: t("session.closeConfirm"),
-      title: t("session.close"),
-      tone: "danger",
-    });
-    if (!ok) return;
-    try {
-      if (type === "agent") {
-        await closeAgentSession(projectName, sessionId);
-      } else {
-        await closeTerminalSession(projectName, sessionId);
-      }
-    } catch {
-      // 会话已结束 / 不存在（404）——close 幂等，invalidate 后卡片自动消失。
-    }
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["projects", projectName, `${type}-sessions`] }),
-      queryClient.invalidateQueries({ queryKey: ["projects"] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", projectName] }),
-    ]);
+  const closeSession = (sessionId: string, type: "agent" | "terminal") => {
+    void close({ projectName, sessionId }, type);
   };
 
   const statusToPill = (
@@ -431,49 +409,13 @@ export function ProjectInstances({
         activeSessions.length > 0 ? (
           <div className="grid grid-cols-2 gap-2">
             {activeSessions.map(({ session, type }) => {
-              const isAgent = type === "agent";
-              const provider = isAgent ? (session as AgentSession).provider : null;
-              const marker = isAgent ? (
-                <IconMarker size="sm" tone={provider === "codex" ? "success" : "accent"}>
-                  <ShellIcon
-                    className="h-3.5 w-3.5"
-                    name={provider === "codex" ? "openai" : "anthropic"}
-                  />
-                </IconMarker>
-              ) : (
-                <IconMarker size="sm" tone="muted">
-                  <ShellIcon className="h-3.5 w-3.5" name="terminal" />
-                </IconMarker>
-              );
+              const provider = type === "agent" ? (session as AgentSession).provider : undefined;
               return (
                 <InstanceCard
-                  actions={
-                    <button
-                      aria-label={t("session.close")}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void closeSession(session.id, type);
-                      }}
-                      type="button"
-                    >
-                      <svg
-                        aria-hidden="true"
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        viewBox="0 0 16 16"
-                      >
-                        <path
-                          d="M4 4l8 8M12 4l-8 8"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeWidth={1.5}
-                        />
-                      </svg>
-                    </button>
-                  }
+                  closeLabel={t("session.close")}
                   key={session.id}
-                  marker={marker}
+                  marker={sessionMarker(type, provider)}
+                  onClose={() => closeSession(session.id, type)}
                   onSelect={() => focus(session.id)}
                   status={statusToPill(session.status)}
                   title={session.displayName}

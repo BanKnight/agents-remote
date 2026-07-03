@@ -1,18 +1,14 @@
 import { Fragment } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { closeAgentSession, closeTerminalSession } from "../../api/client";
 import { useT } from "../../i18n";
 import {
-  IconMarker,
   InstanceCard,
   MobilePageHeader,
+  sessionMarker,
   shellSurfaceClasses,
   statusToTone,
 } from "../shell/shell-primitives";
-import { useConfirm } from "../shell/confirm-dialog";
-import { ShellIcon } from "../shell/icons";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   addPanel,
@@ -27,7 +23,12 @@ import {
   workbenchMobileOverviewTabAtom,
 } from "../../routes/workbench-model";
 import { ProjectInstances } from "./left-rail";
-import { PanelRouter, useGlobalInstanceCandidates, useScopeInstanceOrder } from "./instance-area";
+import {
+  PanelRouter,
+  useCloseSession,
+  useGlobalInstanceCandidates,
+  useScopeInstanceOrder,
+} from "./instance-area";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 
@@ -313,8 +314,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
-  const queryClient = useQueryClient();
-  const { confirm: confirmClose, holder: closeHolder } = useConfirm();
+  const { close, holder: closeHolder } = useCloseSession();
   const candidates = useGlobalInstanceCandidates({ kind: "global" });
   const grouped = new Map<string, GlobalInstanceCandidate[]>();
   for (const candidate of candidates) {
@@ -324,27 +324,6 @@ function MobileGlobalOverview() {
   }
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
-  };
-  const closeCandidate = async (candidate: GlobalInstanceCandidate) => {
-    const ok = await confirmClose({
-      cancelLabel: t("cancel"),
-      confirmLabel: t("session.close"),
-      message: t("session.closeConfirm"),
-      title: t("session.close"),
-      tone: "danger",
-    });
-    if (!ok) return;
-    const { projectName, sessionId } = candidate.ref;
-    try {
-      if (candidate.type === "agent") {
-        await closeAgentSession(projectName, sessionId);
-      } else {
-        await closeTerminalSession(projectName, sessionId);
-      }
-    } catch {
-      // 会话已结束 / 不存在（404）——close 幂等，invalidate 后卡片自动消失。
-    }
-    await queryClient.invalidateQueries({ queryKey: ["projects"] });
   };
   if (candidates.length === 0) {
     return (
@@ -374,7 +353,7 @@ function MobileGlobalOverview() {
                 <GlobalInstanceCard
                   candidate={candidate}
                   key={candidate.ref.sessionId}
-                  onClose={() => void closeCandidate(candidate)}
+                  onClose={() => void close(candidate.ref, candidate.type)}
                   onSelect={focusInstance}
                 />
               ))}
@@ -396,42 +375,11 @@ type GlobalInstanceCardProps = {
 /** 全局实例卡片：marker（provider/terminal 图标）+ 标题 + StatusPill + close，复用 InstanceCard。 */
 function GlobalInstanceCard({ candidate, onClose, onSelect }: GlobalInstanceCardProps) {
   const { t } = useT();
-  const isAgent = candidate.type === "agent";
-  const marker = isAgent ? (
-    <IconMarker size="sm" tone={candidate.provider === "codex" ? "success" : "accent"}>
-      <ShellIcon
-        className="h-3.5 w-3.5"
-        name={candidate.provider === "codex" ? "openai" : "anthropic"}
-      />
-    </IconMarker>
-  ) : (
-    <IconMarker size="sm" tone="muted">
-      <ShellIcon className="h-3.5 w-3.5" name="terminal" />
-    </IconMarker>
-  );
   return (
     <InstanceCard
-      actions={
-        <button
-          aria-label={t("session.close")}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          type="button"
-        >
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </button>
-      }
-      marker={marker}
+      closeLabel={t("session.close")}
+      marker={sessionMarker(candidate.type, candidate.provider)}
+      onClose={onClose}
       onSelect={() => onSelect(candidate.ref.sessionId)}
       status={{
         label: t(sessionStatusLabel(candidate.status)),

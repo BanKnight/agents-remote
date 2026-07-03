@@ -1,8 +1,10 @@
+import type { AgentProvider } from "@agents-remote/shared";
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { ShellIcon } from "./icons";
 
 /**
  * Shell surface/tone role layer. Values reference DESIGN tokens
@@ -322,8 +324,9 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
 }
 
 type InstanceCardProps = {
-  actions?: ReactNode;
+  closeLabel?: string;
   marker: ReactNode;
+  onClose?: () => void;
   onSelect: () => void;
   status?: { label: string; tone: ShellTone };
   title: ReactNode;
@@ -331,11 +334,19 @@ type InstanceCardProps = {
 
 /**
  * 实例卡片（设计文档 §7 移动总览）。卡片 = IconMarker + 标题（truncate）+ 可选 StatusPill +
- * 可选 actions（close）。raised surface + rounded-lg，点击 onSelect 进详情；close 按钮由
- * 调用方在 actions 内传入（须 stopPropagation 后调 onClose，避免冒泡触发 onSelect）。
- * 移动总览 2 列网格用此 primitive；status 由调用方映射为 {label, tone}（业务 enum → 药丸语义）。
+ * 可选 close 按钮。raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop
+ * 触发，按钮内部渲染并 stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown
+ *（Enter/Space → onSelect）劫持键盘激活。移动总览 2 列网格用此 primitive；status 由调用方
+ * 映射为 {label, tone}（业务 enum → 药丸语义）。
  */
-export function InstanceCard({ actions, marker, onSelect, status, title }: InstanceCardProps) {
+export function InstanceCard({
+  closeLabel,
+  marker,
+  onClose,
+  onSelect,
+  status,
+  title,
+}: InstanceCardProps) {
   return (
     <div
       className={`group flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
@@ -354,9 +365,52 @@ export function InstanceCard({ actions, marker, onSelect, status, title }: Insta
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface group-hover:text-primary">
           {title}
         </span>
-        {actions ? <span className="flex shrink-0 items-center">{actions}</span> : null}
+        {onClose ? (
+          <span className="flex shrink-0 items-center">
+            <button
+              aria-label={closeLabel}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              type="button"
+            >
+              <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+                <path
+                  d="M4 4l8 8M12 4l-8 8"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth={1.5}
+                />
+              </svg>
+            </button>
+          </span>
+        ) : null}
       </div>
       {status ? <StatusPill tone={status.tone} value={status.label} /> : null}
     </div>
+  );
+}
+
+/**
+ * 实例 marker（card 专用）：agent 按 provider 选 tone/icon（codex→success/openai，
+ * 其余→accent/anthropic），terminal→muted/terminal。消化移动卡片总览两处
+ *（ProjectInstances card variant + GlobalInstanceCard）的重复 marker 构造。size 固定 sm
+ *（卡片场景）；桌面 list（AgentNavItem）用 ShellNavigationButton 包 IconMarker，不复用此 helper。
+ */
+export function sessionMarker(type: "agent" | "terminal", provider?: AgentProvider): ReactNode {
+  if (type === "terminal") {
+    return (
+      <IconMarker size="sm" tone="muted">
+        <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+      </IconMarker>
+    );
+  }
+  return (
+    <IconMarker size="sm" tone={provider === "codex" ? "success" : "accent"}>
+      <ShellIcon className="h-3.5 w-3.5" name={provider === "codex" ? "openai" : "anthropic"} />
+    </IconMarker>
   );
 }

@@ -42,10 +42,8 @@ type InstanceAreaProps = {
  * 面板带项目前缀。
  */
 export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
-  const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
-  const queryClient = useQueryClient();
-  const { confirm, holder } = useConfirm();
+  const { close, holder } = useCloseSession();
   const [layout, update] = useWorkbenchLayout(scope);
   const candidates = useGlobalInstanceCandidates(scope);
 
@@ -74,45 +72,19 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, layout.panels.length, candidates]);
 
-  // split 级 close = 结束实例：confirm → API close → 失效缓存 → removePanel →
-  // 若关的是聚焦面板，焦点切到剩余首面板（无则回 scope 视图）。embedded 面板自带的
-  // header close 在 embedded 模式已隐藏（见 Claude2Chat / SessionDetail），此处为唯一 close。
-  const closePanel = async (ref: WorkbenchPanelRef) => {
+  // split 级 close = 结束实例：复用 useCloseSession（confirm → close API → 精确失效缓存），
+  // split 特有尾巴（removePanel + 焦点切换）走 onAfterClose。embedded 面板自带的 header close
+  // 在 embedded 模式已隐藏（见 Claude2Chat / SessionDetail），此处为唯一 close。
+  const closePanel = (ref: WorkbenchPanelRef) => {
     const sessionType = inferSessionTypeFromId(ref.sessionId);
-    const ok = await confirm({
-      cancelLabel: t("cancel"),
-      confirmLabel: t("session.close"),
-      message: t("session.closeConfirm"),
-      title: t("session.close"),
-      tone: "danger",
-    });
-    if (!ok) return;
-    try {
-      if (sessionType === "agent") {
-        await closeAgentSession(ref.projectName, ref.sessionId);
-      } else if (sessionType === "terminal") {
-        await closeTerminalSession(ref.projectName, ref.sessionId);
+    if (sessionType !== "agent" && sessionType !== "terminal") return;
+    void close(ref, sessionType, () => {
+      const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
+      update((prev) => removePanel(prev, ref.sessionId));
+      if (focusId === ref.sessionId) {
+        void navigateWorkbench(scope, remaining.length > 0 ? remaining[0].sessionId : undefined);
       }
-    } catch {
-      // 会话已结束 / 不存在（404）—— close 幂等，仍移除面板
-    }
-    if (sessionType === "agent" || sessionType === "terminal") {
-      queryClient.removeQueries({
-        exact: true,
-        queryKey: ["projects", ref.projectName, `${sessionType}-sessions`, ref.sessionId],
-      });
-      void queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ exact: true, queryKey: ["projects", ref.projectName] });
-      void queryClient.invalidateQueries({
-        exact: true,
-        queryKey: ["projects", ref.projectName, `${sessionType}-sessions`],
-      });
-    }
-    const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
-    update((prev) => removePanel(prev, ref.sessionId));
-    if (focusId === ref.sessionId) {
-      void navigateWorkbench(scope, remaining.length > 0 ? remaining[0].sessionId : undefined);
-    }
+    });
   };
 
   const focusPanel = (ref: WorkbenchPanelRef) => {
@@ -212,6 +184,57 @@ function useTerminalDetail(panelRef: WorkbenchPanelRef) {
     retry: false,
     staleTime: 60_000,
   });
+}
+
+/**
+ * 会话 close 统一流程（confirm → 按 type 调 close API → 精确失效缓存）。三处 close
+ *（split closePanel / 卡片 ProjectInstances / 移动全局 MobileGlobalOverview）复用此 hook，
+ * cache 策略统一为 closePanel 标准：removeQueries detail + exact invalidate
+ *（["projects"] / [name] / [name, type-sessions]），不波及 files/git。`onAfterClose`
+ * 留给 split 场景追加 removePanel + navigate。返回 true=已关闭，false=用户取消。
+ */
+export function useCloseSession() {
+  const { t } = useT();
+  const { confirm, holder } = useConfirm();
+  const queryClient = useQueryClient();
+  const close = async (
+    ref: WorkbenchPanelRef,
+    type: "agent" | "terminal",
+    onAfterClose?: () => void,
+  ): Promise<boolean> => {
+    const ok = await confirm({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("session.close"),
+      message: t("session.closeConfirm"),
+      title: t("session.close"),
+      tone: "danger",
+    });
+    if (!ok) return false;
+    try {
+      if (type === "agent") {
+        await closeAgentSession(ref.projectName, ref.sessionId);
+      } else {
+        await closeTerminalSession(ref.projectName, ref.sessionId);
+      }
+    } catch {
+      // 会话已结束 / 不存在（404）—— close 幂等，仍失效缓存让卡片/面板消失。
+    }
+    queryClient.removeQueries({
+      exact: true,
+      queryKey: ["projects", ref.projectName, `${type}-sessions`, ref.sessionId],
+    });
+    await Promise.all([
+      queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
+      queryClient.invalidateQueries({ exact: true, queryKey: ["projects", ref.projectName] }),
+      queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["projects", ref.projectName, `${type}-sessions`],
+      }),
+    ]);
+    onAfterClose?.();
+    return true;
+  };
+  return { close, holder };
 }
 
 /**
