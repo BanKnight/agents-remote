@@ -426,7 +426,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
   "workbench.backToList": "实例列表",
-  "workbench.global": "全局",
+  "workbench.global": "实例",
   "workbench.projectsAria": "项目",
   "workbench.agentsSection": "Agent",
   "workbench.terminalsSection": "终端",
@@ -444,8 +444,8 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.panelRestore": "恢复面板",
   "workbench.switchPrev": "上一个实例",
   "workbench.switchNext": "下一个实例",
-  "workbench.globalOverviewTitle": "全局实例",
-  "workbench.globalOverviewEmpty": "跨项目暂无活跃实例。",
+  "workbench.globalOverviewTitle": "实例",
+  "workbench.globalOverviewEmpty": "暂无活跃实例。",
 
   // ── Settings ────────────────────────────────────────────────
   "settings.placeholder": "设置功能即将上线。",

@@ -426,7 +426,7 @@ export const en = {
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
   "workbench.backToList": "Instances",
-  "workbench.global": "Global",
+  "workbench.global": "Instances",
   "workbench.projectsAria": "Projects",
   "workbench.agentsSection": "Agents",
   "workbench.terminalsSection": "Terminals",
@@ -444,8 +444,8 @@ export const en = {
   "workbench.panelRestore": "Restore panel",
   "workbench.switchPrev": "Previous instance",
   "workbench.switchNext": "Next instance",
-  "workbench.globalOverviewTitle": "Global instances",
-  "workbench.globalOverviewEmpty": "No active instances across projects.",
+  "workbench.globalOverviewTitle": "Instances",
+  "workbench.globalOverviewEmpty": "No active instances.",
 
   // ── Settings ────────────────────────────────────────────────
   "settings.placeholder": "Settings are coming soon.",
