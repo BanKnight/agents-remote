@@ -254,7 +254,7 @@ export function InstanceArea({
       ) : (
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-on-surface/5 px-3">
           <span className="truncate text-sm font-semibold text-on-surface">
-            {focusDisplayName ?? focusProjectName ?? (focusId ? focusId.slice(0, 8) : "")}
+            {focusDisplayName ?? focusProjectName ?? t("workbench.global")}
           </span>
         </div>
       )}
@@ -347,8 +347,11 @@ export function useFocusSessionName(
     projectName: projectName ?? "",
     sessionId: focusId ?? "",
   };
-  const agent = useAgentDetail(ref, sessionType === "agent");
-  const terminal = useTerminalDetail(ref, sessionType === "terminal");
+  // projectName 未就绪（global scope 布局未收敛 / addPanel 尚未填充）时不发请求 ——
+  // 否则会用空 projectName 发无效 query（getAgentSession("", id) 越界/404）。
+  const projReady = !!projectName;
+  const agent = useAgentDetail(ref, projReady && sessionType === "agent");
+  const terminal = useTerminalDetail(ref, projReady && sessionType === "terminal");
   if (sessionType === "agent") return agent.data?.session.displayName;
   if (sessionType === "terminal") return terminal.data?.session.displayName;
   return undefined;

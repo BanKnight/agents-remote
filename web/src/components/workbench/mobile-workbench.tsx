@@ -296,7 +296,8 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
       : null;
   // 移动 ViewSwitcher（与桌面 2a 对称）：复用桌面 workbenchViewAtom（不新增 mobile view atom），
   // views = filterWorkbenchViews(scope, true) = [table, grid]（grouped/split 自动过滤）。渲染层
-  // view 切换 Phase 4 落地（当前切 view 仅记忆状态，overview 内容暂不响应，非死按钮）。
+  // view 切换 Phase 4 落地（当前切 view 仅写 atom 记忆，overview 渲染层暂不响应；状态记忆
+  // 生效待 Phase 4 落地，非死按钮 —— atom 值已被记录，P4 渲染层接入后即生效）。
   const viewOptions = useMemo(
     () => filterWorkbenchViews(scope, true).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
