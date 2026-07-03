@@ -89,16 +89,24 @@ function WorkbenchContent({
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
   };
+  // 三个 navigate 都传完整 { view, tab, rightTab }（URL 原始值 viewFromUrl/tabFromUrl/
+  // rightTab 合并 + 新值）。TanStack Router navigate 整体替换 search 对象（非 merge），
+  // 若只传单键会丢失其他维 —— 违反设计 §13「view/tab/rightTab 正交」。用 URL 原始值
+  //（而非 view/tab 解析值）合并，避免把 atom 回退值意外写进 URL。
   const onRightTabChange = (rightTabNext: WorkbenchRightTab) => {
-    void navigateWorkbench(scope, focusId, { rightTab: rightTabNext });
+    void navigateWorkbench(scope, focusId, {
+      rightTab: rightTabNext,
+      tab: tabFromUrl,
+      view: viewFromUrl,
+    });
   };
   const onViewChange = (next: WorkbenchView) => {
     setRememberedView(next);
-    void navigateWorkbench(scope, focusId, { view: next });
+    void navigateWorkbench(scope, focusId, { rightTab, tab: tabFromUrl, view: next });
   };
   const onTabChange = (next: WorkbenchMiddleTab) => {
     setRememberedMiddleTab(next);
-    void navigateWorkbench(scope, focusId, { tab: next });
+    void navigateWorkbench(scope, focusId, { rightTab, tab: next, view: viewFromUrl });
   };
   if (!isDesktop) {
     return <MobileWorkbench focusId={focusId} scope={scope} />;
