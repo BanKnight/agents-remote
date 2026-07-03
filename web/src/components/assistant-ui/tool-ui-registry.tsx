@@ -50,12 +50,12 @@ function makeToolRenderer(config: {
       ? "bg-assistant/15 text-assistant-soft"
       : "bg-user/15 text-user-soft";
 
-    const accentColor = isError ? "text-red-400" : needsPermission ? "text-assistant" : "text-user";
+    const accentColor = isError ? "text-error" : needsPermission ? "text-assistant" : "text-user";
     const accentDivider = isError
-      ? "border-red-500/20"
+      ? "border-error/20"
       : needsPermission
         ? "border-assistant/20"
-        : "border-slate-700/50";
+        : "border-neutral-line/50";
 
     const bodyNode = body ? body(args) : null;
     const primaryNode = bodyNode ? (
@@ -66,13 +66,13 @@ function makeToolRenderer(config: {
           <div className="space-y-1.5">
             {Object.entries(args).map(([key, value]) => (
               <div key={key} className="flex gap-2 text-xs">
-                <span className="shrink-0 font-medium text-slate-400">{key}:</span>
-                <span className="text-slate-300 break-all">{formatArg(value)}</span>
+                <span className="shrink-0 font-medium text-on-surface-muted">{key}:</span>
+                <span className="text-on-surface-soft break-all">{formatArg(value)}</span>
               </div>
             ))}
           </div>
         ) : (
-          <pre className="text-[0.6rem] text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
+          <pre className="text-[0.6rem] text-on-surface-muted whitespace-pre-wrap break-all leading-relaxed">
             {argsText}
           </pre>
         )}
@@ -96,7 +96,7 @@ function makeToolRenderer(config: {
               status={toolStatus}
               trailing={
                 !expanded && hasResult ? (
-                  <span className="truncate text-[0.6rem] text-slate-500">
+                  <span className="truncate text-[0.6rem] text-on-surface-muted">
                     {resultStr.length > 1024
                       ? `${(resultStr.length / 1024).toFixed(1)}k`
                       : `${resultStr.length} chars`}
@@ -134,7 +134,7 @@ function makeToolRenderer(config: {
                   className={`max-h-48 overflow-y-auto ${hasPrimary || skillContent ? sectionDivider : ""}`}
                 >
                   <pre
-                    className={`whitespace-pre-wrap break-all text-[0.6rem] leading-relaxed ${isError ? "text-red-300" : "text-slate-300"}`}
+                    className={`whitespace-pre-wrap break-all text-[0.6rem] leading-relaxed ${isError ? "text-error" : "text-on-surface-soft"}`}
                   >
                     {resultStr}
                   </pre>
@@ -156,7 +156,7 @@ function makeToolRenderer(config: {
             </button>
             <button
               type="button"
-              className="rounded-md bg-slate-700/50 px-3 py-1 text-xs font-medium text-slate-400 hover:bg-slate-600/50 hover:text-slate-300 transition"
+              className="rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
               onClick={() => bridge?.cancelControlRequest(controlRequestId)}
             >
               拒绝
@@ -210,14 +210,14 @@ export function lineDiff(oldStr: string, newStr: string): DiffLine[] {
 function EditDiffView({ oldStr, newStr }: { oldStr: string; newStr: string }) {
   const lines = lineDiff(oldStr, newStr);
   return (
-    <div className="rounded border border-slate-700/60 bg-slate-950/60 overflow-x-auto font-mono text-[0.6rem] leading-relaxed">
+    <div className="rounded border border-neutral-line/60 bg-surface-inset/60 overflow-x-auto font-mono text-[0.6rem] leading-relaxed">
       {lines.map((line, idx) => {
         const cls =
           line.type === "add"
             ? "bg-success/10 text-success"
             : line.type === "del"
-              ? "bg-red-500/10 text-red-200"
-              : "text-slate-500";
+              ? "bg-error/10 text-error"
+              : "text-on-surface-muted";
         const sign = line.type === "add" ? "+" : line.type === "del" ? "-" : " ";
         return (
           <div key={idx} className={`flex px-2 whitespace-pre ${cls}`}>
@@ -257,19 +257,19 @@ function agentFooter(result: string, args: Record<string, unknown>, isError: boo
   return (
     <div className="space-y-2">
       {prompt ? (
-        <details className="text-xs text-slate-400">
+        <details className="text-xs text-on-surface-muted">
           <summary className="cursor-pointer">Prompt</summary>
-          <pre className="mt-1 text-[0.6rem] text-slate-300 whitespace-pre-wrap break-all leading-relaxed">
+          <pre className="mt-1 text-[0.6rem] text-on-surface-soft whitespace-pre-wrap break-all leading-relaxed">
             {prompt}
           </pre>
         </details>
       ) : null}
-      <div className="rounded bg-slate-800/50 p-2">
+      <div className="rounded bg-surface/50 p-2">
         <div className="mb-1 text-[0.55rem] font-semibold uppercase tracking-wide text-user/70">
           子 Agent 输出
         </div>
         <pre
-          className={`whitespace-pre-wrap break-all text-[0.65rem] leading-relaxed ${isError ? "text-red-300" : "text-slate-200"}`}
+          className={`whitespace-pre-wrap break-all text-[0.65rem] leading-relaxed ${isError ? "text-error" : "text-on-surface-soft"}`}
         >
           {result}
         </pre>
@@ -339,7 +339,7 @@ function TaskBody({ args }: { args: Record<string, unknown> }) {
         ? args.prompt
         : "";
   if (!desc) return null;
-  return <div className="text-xs text-slate-300 leading-relaxed break-words">{desc}</div>;
+  return <div className="text-xs text-on-surface-soft leading-relaxed break-words">{desc}</div>;
 }
 
 // Subagent Task tool — spawns a child agent. The subagent type is the

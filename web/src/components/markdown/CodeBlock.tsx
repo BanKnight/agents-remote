@@ -53,14 +53,14 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   const copyLabel = copied ? t("markdown.copied") : t("markdown.copy");
 
   return (
-    <div className="group/code relative my-3 overflow-hidden rounded-lg border border-slate-700/40 bg-slate-950/80">
+    <div className="group/code relative my-3 overflow-hidden rounded-lg border border-neutral-line/40 bg-surface-inset/80">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between px-2.5 py-1.5">
-        <span className="text-[0.55rem] font-medium uppercase tracking-wider text-slate-500">
+        <span className="text-[0.55rem] font-medium uppercase tracking-wider text-on-surface-muted">
           {label}
         </span>
         <button
           type="button"
-          className="pointer-events-auto cursor-pointer rounded p-1 text-slate-500 transition hover:bg-slate-700/40 hover:text-slate-200"
+          className="pointer-events-auto cursor-pointer rounded p-1 text-on-surface-muted transition hover:bg-surface-raised/40 hover:text-on-surface-soft"
           aria-label={copyLabel}
           title={copyLabel}
           onClick={onCopy}

@@ -39,7 +39,7 @@ export function HookCard({ custom }: { custom?: Record<string, unknown> }) {
         badge={t("claude2.hook.title")}
         badgeClassName="bg-assistant/15 text-assistant-soft"
         detail={hookName}
-        detailClassName="font-mono text-[0.65rem] font-normal text-slate-400"
+        detailClassName="font-mono text-[0.65rem] font-normal text-on-surface-muted"
       />
     </div>
   );
@@ -48,12 +48,12 @@ export function HookCard({ custom }: { custom?: Record<string, unknown> }) {
     output || stderr ? (
       <div className="space-y-2">
         {output ? (
-          <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap break-all text-xs text-slate-300">
+          <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap break-all text-xs text-on-surface-soft">
             {output}
           </pre>
         ) : null}
         {stderr ? (
-          <pre className="max-h-32 overflow-x-auto whitespace-pre-wrap break-all text-xs text-red-300/80">
+          <pre className="max-h-32 overflow-x-auto whitespace-pre-wrap break-all text-xs text-error/80">
             {stderr}
           </pre>
         ) : null}

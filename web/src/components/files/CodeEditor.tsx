@@ -50,7 +50,7 @@ export function CodeEditor({ value, name, onChange }: CodeEditorProps) {
   // .cm-scroller 无法滚动。用 absolute inset-0 把 wrapper 钉在 flex-1 外层内使其高度确定，
   // .cm-editor height:100% 才能解析、.cm-scroller 才会滚动。
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-700/40 bg-slate-950/80 [&>div]:absolute [&>div]:inset-0">
+    <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-neutral-line/40 bg-surface-inset/80 [&>div]:absolute [&>div]:inset-0">
       <CodeMirror
         value={value}
         onChange={onChange}

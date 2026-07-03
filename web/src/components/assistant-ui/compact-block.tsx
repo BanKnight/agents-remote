@@ -53,7 +53,7 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
         badge={t("claude2.compact.title")}
         badgeClassName="bg-success/15 text-success"
         detail={detailParts.join(" · ")}
-        detailClassName="font-mono text-[0.65rem] font-normal text-slate-400"
+        detailClassName="font-mono text-[0.65rem] font-normal text-on-surface-muted"
       />
     </div>
   );
@@ -66,7 +66,7 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
           <div className="mb-1 text-[0.6rem] text-success/50">
             {t("claude2.compact.summaryLabel")}
           </div>
-          <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap break-all text-xs text-slate-300">
+          <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap break-all text-xs text-on-surface-soft">
             {summaryText}
           </pre>
         </div>

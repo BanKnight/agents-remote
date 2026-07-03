@@ -320,7 +320,7 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
   return (
     <div className="flex h-full items-center justify-center p-6">
       <div
-        className={`rounded-2xl px-4 py-3 font-mono text-xs text-slate-600 ${shellSurfaceClasses.inset}`}
+        className={`rounded-2xl px-4 py-3 font-mono text-xs text-on-surface-muted ${shellSurfaceClasses.inset}`}
       >
         {focusId}
       </div>

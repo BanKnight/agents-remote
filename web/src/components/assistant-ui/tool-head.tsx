@@ -137,7 +137,7 @@ function statusIconClass(status: ToolHeadStatus | null | undefined): string {
       return "opacity-50 text-assistant";
     case "error":
       // Dim + red tint so failures stay visible.
-      return "opacity-50 text-red-400";
+      return "opacity-50 text-error";
     default:
       return "";
   }
@@ -180,7 +180,10 @@ export function ToolHead({
       ) : null}
       {detail ? (
         <span
-          className={cn("min-w-0 truncate text-xs font-medium text-slate-300", detailClassName)}
+          className={cn(
+            "min-w-0 truncate text-xs font-medium text-on-surface-soft",
+            detailClassName,
+          )}
         >
           {detail}
         </span>

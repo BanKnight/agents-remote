@@ -72,17 +72,17 @@ export const MARKDOWN_COMPONENTS: Components = {
     );
   },
   table: ({ children }) => (
-    <div className="my-2 overflow-x-auto rounded-lg border border-slate-700/50">
+    <div className="my-2 overflow-x-auto rounded-lg border border-neutral-line/50">
       <table className="w-full border-collapse text-xs">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-slate-600 bg-slate-800/50 px-2 py-1 text-left font-medium text-slate-300">
+    <th className="border border-neutral-line bg-surface/50 px-2 py-1 text-left font-medium text-on-surface-soft">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="border border-slate-600 px-2 py-1 text-slate-300">{children}</td>
+    <td className="border border-neutral-line px-2 py-1 text-on-surface-soft">{children}</td>
   ),
   pre: ({ children, node }) => {
     const extracted = extractCodeBlock(node as unknown as HastNode | undefined);

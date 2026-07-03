@@ -18,7 +18,7 @@ export function CollapsibleSection({
   children,
   defaultExpanded = false,
   className = "",
-  dividerClassName = "border-slate-700/20",
+  dividerClassName = "border-neutral-line/20",
 }: {
   header: ReactNode | ((expanded: boolean) => ReactNode);
   children: ReactNode;

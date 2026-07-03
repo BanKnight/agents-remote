@@ -90,7 +90,7 @@ function hookStdioBody(raw: Record<string, unknown>): ReactNode | null {
         </pre>
       )}
       {stderr && (
-        <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-32 text-red-300/80">
+        <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-32 text-error/80">
           {stderr}
         </pre>
       )}
@@ -155,9 +155,7 @@ function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
               >
                 {d.severity && (
                   <span
-                    className={
-                      d.severity === "Error" ? "text-red-300/80" : "text-assistant-soft/60"
-                    }
+                    className={d.severity === "Error" ? "text-error/80" : "text-assistant-soft/60"}
                   >
                     [{d.severity}]
                   </span>
@@ -244,7 +242,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   hook_non_blocking_error: {
     icon: "hook",
     labelKey: "claude2.attachment.hook_non_blocking_error",
-    accent: "text-red-300/80",
+    accent: "text-error/80",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       const name = (a?.hookName as string) ?? "";
@@ -344,7 +342,7 @@ export function AttachmentBubble({
   const bodyContent = config.body?.(raw) ?? null;
   // accent now only signals an error subtype → badge renders red instead of cyan.
   const isError = config.accent?.includes("red") ?? false;
-  const badgeClassName = isError ? "bg-red-500/15 text-red-200" : "bg-user/15 text-user-soft";
+  const badgeClassName = isError ? "bg-error/15 text-error" : "bg-user/15 text-user-soft";
 
   const header = (
     <div className="flex items-center gap-1.5 text-xs min-w-0">
@@ -353,7 +351,7 @@ export function AttachmentBubble({
         badge={t(config.labelKey)}
         badgeClassName={badgeClassName}
         detail={badgeText}
-        detailClassName="font-mono text-[0.65rem] font-normal text-slate-400"
+        detailClassName="font-mono text-[0.65rem] font-normal text-on-surface-muted"
         status={null}
       />
     </div>
