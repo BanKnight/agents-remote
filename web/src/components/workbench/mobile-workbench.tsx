@@ -85,11 +85,13 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const [layout, updateLayout] = useWorkbenchLayout(scope);
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
   const order = useScopeInstanceOrder(scope);
+  const globalCandidates = useGlobalInstanceCandidates({ kind: "global" });
   const currentIndex = order.findIndex((o) => o.sessionId === focusId);
   const projectName =
     scope.kind === "project"
       ? scope.key
-      : layout.panels.find((p) => p.sessionId === focusId)?.projectName;
+      : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ??
+        globalCandidates.find((c) => c.ref.sessionId === focusId)?.ref.projectName);
   const ctx: PluginContext = {
     projectKey: projectName ?? null,
     focusId,
