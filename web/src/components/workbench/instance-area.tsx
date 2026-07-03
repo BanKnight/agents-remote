@@ -4,7 +4,9 @@ import {
   type GlobalInstanceCandidate,
   type WorkbenchPanelRef,
   type WorkbenchScope,
+  type WorkbenchView,
   addPanel,
+  filterWorkbenchViews,
   inferSessionTypeFromId,
   rankGlobalInstances,
   removePanel,
@@ -24,14 +26,27 @@ import {
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useT } from "../../i18n";
-import { shellSurfaceClasses } from "../shell/shell-primitives";
+import type { TranslationKey } from "../../i18n/types";
+import { shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { SplitLayout } from "./split-panel";
+
+/** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
+const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
+  grouped: "workbench.viewGrouped",
+  grid: "workbench.viewGrid",
+  table: "workbench.viewTable",
+  split: "workbench.viewSplit",
+};
 
 type InstanceAreaProps = {
   scope: WorkbenchScope;
   /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/global/session/$id`）。无 focusId = 无聚焦面板。 */
   focusId?: string;
+  /** 总览视图（URL `?view` + atom 回退）；聚焦态不用（ViewSwitcher 隐藏）。 */
+  view?: WorkbenchView;
+  /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */
+  onViewChange?: (next: WorkbenchView) => void;
 };
 
 /**
@@ -41,11 +56,18 @@ type InstanceAreaProps = {
  * global 作用域（commit ④）聚合所有项目活跃实例自动铺开（rankGlobalInstances 排序），
  * 面板带项目前缀。
  */
-export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
+export function InstanceArea({ scope, focusId, view, onViewChange }: InstanceAreaProps) {
   const navigateWorkbench = useWorkbenchNavigate();
+  const { t } = useT();
   const { close, holder } = useCloseSession();
   const [layout, update] = useWorkbenchLayout(scope);
   const candidates = useGlobalInstanceCandidates(scope);
+
+  // ViewSwitcher 视图选项（按 scope 过滤；桌面 isMobile=false）。聚焦态不渲染但仍稳定构造。
+  const viewOptions = useMemo(
+    () => filterWorkbenchViews(scope, false).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
+    [scope, t],
+  );
 
   // focus → addPanel：URL focusId 指向的实例若不在布局中，加入面板（split-right 默认）。
   // 仅 project 作用域；global 的 focusId 缺 projectName，靠下方自动铺开填充。
@@ -115,10 +137,20 @@ export function InstanceArea({ scope, focusId }: InstanceAreaProps) {
     );
 
   return (
-    <>
-      {content}
+    <div className="flex h-full min-h-0 flex-col">
+      {!focusId && onViewChange && view ? (
+        <div className="flex h-9 shrink-0 items-center justify-end px-3">
+          <ViewSwitcher
+            ariaLabel={t("workbench.viewSwitcher")}
+            onChange={onViewChange}
+            view={view}
+            views={viewOptions}
+          />
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1">{content}</div>
       {holder}
-    </>
+    </div>
   );
 }
 

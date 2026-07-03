@@ -22,6 +22,38 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
 export type WorkbenchRightTab = "files" | "git" | "prototype";
 
 /**
+ * 中栏总览视图（设计文档 workbench-views.md）。grouped=按项目分组（仅 global）；
+ * grid=自适应卡片网格（project/global 默认）；table=含会话名列的密集表；
+ * split=多实例同屏工作台（P5 重构，P2 全平台隐藏作中间态）。
+ */
+export type WorkbenchView = "grouped" | "grid" | "table" | "split";
+
+/**
+ * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（切 grouped/grid/table）；
+ * history=历史 session；files/git/prototype=复用右栏 inspection plugin。
+ */
+export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "prototype";
+
+/**
+ * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §15）。视觉上从右到左
+ * = grouped · grid · table · split（grouped 最右作 global 默认入口，split 最左）。
+ */
+export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["split", "table", "grid", "grouped"];
+
+/**
+ * 按作用域/视口过滤 ViewSwitcher 可用视图（设计文档 §15）。P2 全平台隐藏 split
+ *（P5 重构前中间态）；project 作用域隐藏 grouped（grouped 仅 global 跨项目分组）；
+ * 移动端隐藏 grouped + split（移动不支持多实例 split，grouped 让位单列分段）。
+ */
+export function filterWorkbenchViews(scope: WorkbenchScope, isMobile: boolean): WorkbenchView[] {
+  return WORKBENCH_VIEW_ORDER.filter((v) => {
+    if (v === "split") return false;
+    if (v === "grouped" && (scope.kind === "project" || isMobile)) return false;
+    return true;
+  });
+}
+
+/**
  * 左右栏宽度基线（rem）。左栏（项目树）沿用 ShellLayout project sidebar 的 13.125rem。
  * 右栏需容纳 FilesPanel browser（19.375rem）+ padding，故宽于左栏；Stage 4 resize
  * gutter 落地后用户可单点调整（MIN/MAX 钳制，避免压溃中栏或自身）。
@@ -64,6 +96,21 @@ export const workbenchRightWidthAtom = atomWithStorage(
 export const workbenchRightTabAtom = atomWithStorage<WorkbenchRightTab>(
   "workbenchRightTab",
   "files",
+);
+
+/**
+ * 中栏总览视图（设计文档 workbench-views.md）。URL `view` 优先（语义核心、刷新可分享），
+ * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grid。
+ */
+export const workbenchViewAtom = atomWithStorage<WorkbenchView>("workbenchView", "grid");
+
+/**
+ * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `tab` 优先，此 atom 作「记忆上次 tab」
+ * 回退。默认 overview（实例总览）。
+ */
+export const workbenchMiddleTabAtom = atomWithStorage<WorkbenchMiddleTab>(
+  "workbenchMiddleTab",
+  "overview",
 );
 
 /**
@@ -131,7 +178,11 @@ export function workbenchPath(scope: WorkbenchScope, focusId?: string) {
  */
 export function useWorkbenchNavigate() {
   const navigate = useNavigate();
-  return (scope: WorkbenchScope, focusId?: string, search?: { rightTab?: WorkbenchRightTab }) => {
+  return (
+    scope: WorkbenchScope,
+    focusId?: string,
+    search?: { rightTab?: WorkbenchRightTab; view?: WorkbenchView; tab?: WorkbenchMiddleTab },
+  ) => {
     if (scope.kind === "global") {
       return navigate(
         focusId === undefined
@@ -159,11 +210,35 @@ export function useWorkbenchNavigate() {
  */
 export function validateWorkbenchSearch(search: Record<string, unknown>): {
   rightTab?: WorkbenchRightTab;
+  view?: WorkbenchView;
+  tab?: WorkbenchMiddleTab;
 } {
+  const result: {
+    rightTab?: WorkbenchRightTab;
+    view?: WorkbenchView;
+    tab?: WorkbenchMiddleTab;
+  } = {};
   if (search.rightTab === "files" || search.rightTab === "git" || search.rightTab === "prototype") {
-    return { rightTab: search.rightTab };
+    result.rightTab = search.rightTab;
   }
-  return {};
+  if (
+    search.view === "grouped" ||
+    search.view === "grid" ||
+    search.view === "table" ||
+    search.view === "split"
+  ) {
+    result.view = search.view;
+  }
+  if (
+    search.tab === "overview" ||
+    search.tab === "history" ||
+    search.tab === "files" ||
+    search.tab === "git" ||
+    search.tab === "prototype"
+  ) {
+    result.tab = search.tab;
+  }
+  return result;
 }
 
 /**

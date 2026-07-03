@@ -453,3 +453,118 @@ export function sessionMarker(type: "agent" | "terminal", provider?: AgentProvid
     </IconMarker>
   );
 }
+
+type ViewSwitcherView<T extends string> = {
+  id: T;
+  label: string;
+};
+
+type ViewSwitcherProps<T extends string> = {
+  /** 整组按钮的可访问名（如「视图切换」）。单个按钮的 aria-label 取每项 `label`。 */
+  ariaLabel?: string;
+  onChange: (next: T) => void;
+  view: T;
+  /** 已按作用域/视口过滤的视图列表，渲染顺序 = 数组顺序（从左到右）。 */
+  views: ViewSwitcherView<T>[];
+};
+
+/**
+ * 视图切换器（设计文档 workbench-views.md §15）：segmented control，icon-only，常驻中栏
+ * 总览 tab 右上角。纯 presentational —— `views`（含 id + label）由调用方构造并完成
+ * scope/视口过滤（`filterWorkbenchViews`），icon 由 `id` 内部映射，避免本层 import routes。
+ * active 项 `aria-pressed` + primary 高亮；非 active hover 转 on-surface。尺寸 h-7 w-7
+ *（与 ActionButton 视觉密度对齐）。
+ */
+export function ViewSwitcher<T extends string>({
+  ariaLabel,
+  onChange,
+  view,
+  views,
+}: ViewSwitcherProps<T>) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+      role="group"
+    >
+      {views.map((v) => {
+        const active = v.id === view;
+        return (
+          <button
+            aria-label={v.label}
+            aria-pressed={active}
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition ${
+              active
+                ? "bg-primary/15 text-primary"
+                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft"
+            }`}
+            key={v.id}
+            onClick={() => onChange(v.id)}
+            title={v.label}
+            type="button"
+          >
+            <ViewSwitcherIcon kind={v.id} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ViewSwitcherIcon({ kind }: { kind: string }) {
+  if (kind === "table") return <TableViewIcon />;
+  if (kind === "grouped") return <GroupedViewIcon />;
+  if (kind === "split") return <SplitViewIcon />;
+  return <GridViewIcon />;
+}
+
+function GridViewIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+      <rect
+        height="4.5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        width="4.5"
+        x="2.5"
+        y="2.5"
+      />
+      <rect height="4.5" rx="1" stroke="currentColor" strokeWidth="1.3" width="4.5" x="9" y="2.5" />
+      <rect height="4.5" rx="1" stroke="currentColor" strokeWidth="1.3" width="4.5" x="2.5" y="9" />
+      <rect height="4.5" rx="1" stroke="currentColor" strokeWidth="1.3" width="4.5" x="9" y="9" />
+    </svg>
+  );
+}
+
+function TableViewIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+      <rect height="10" rx="1" stroke="currentColor" strokeWidth="1.3" width="12" x="2" y="3" />
+      <line stroke="currentColor" strokeWidth="1.3" x1="2" x2="14" y1="6.3" y2="6.3" />
+      <line stroke="currentColor" strokeWidth="1.3" x1="2" x2="14" y1="9.7" y2="9.7" />
+    </svg>
+  );
+}
+
+function GroupedViewIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+      <path
+        d="M2.5 4.5h4M2.5 8h9M2.5 11.5h6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
+function SplitViewIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+      <rect height="10" rx="1" stroke="currentColor" strokeWidth="1.3" width="12" x="2" y="3" />
+      <line stroke="currentColor" strokeWidth="1.3" x1="8" x2="8" y1="3" y2="13" />
+    </svg>
+  );
+}

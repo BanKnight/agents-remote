@@ -1,4 +1,5 @@
 import { useParams, useSearch } from "@tanstack/react-router";
+import { useAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { InstanceArea } from "../components/workbench/instance-area";
 import { WorkbenchLeftRail } from "../components/workbench/left-rail";
@@ -9,8 +10,10 @@ import { WorkbenchShell } from "../components/shell/workbench-shell";
 import {
   type WorkbenchRightTab,
   type WorkbenchScope,
+  type WorkbenchView,
   inferSessionTypeFromId,
   useWorkbenchNavigate,
+  workbenchViewAtom,
 } from "./workbench-model";
 
 /**
@@ -21,38 +24,51 @@ import {
  */
 export function ProjectScopeRoute() {
   const { key } = useParams({ from: "/projects/$key" });
-  const { rightTab } = useSearch({ from: "/projects/$key" });
-  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "project", key }} />;
+  const { rightTab, view } = useSearch({ from: "/projects/$key" });
+  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "project", key }} view={view} />;
 }
 
 export function ProjectFocusRoute() {
   const { key, id } = useParams({ from: "/projects/$key/session/$id" });
-  const { rightTab } = useSearch({ from: "/projects/$key/session/$id" });
-  return <WorkbenchContent focusId={id} rightTab={rightTab} scope={{ kind: "project", key }} />;
+  const { rightTab, view } = useSearch({ from: "/projects/$key/session/$id" });
+  return (
+    <WorkbenchContent
+      focusId={id}
+      rightTab={rightTab}
+      scope={{ kind: "project", key }}
+      view={view}
+    />
+  );
 }
 
 export function GlobalScopeRoute() {
-  const { rightTab } = useSearch({ from: "/global" });
-  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} />;
+  const { rightTab, view } = useSearch({ from: "/global" });
+  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} view={view} />;
 }
 
 export function GlobalFocusRoute() {
   const { id } = useParams({ from: "/global/session/$id" });
-  const { rightTab } = useSearch({ from: "/global/session/$id" });
-  return <WorkbenchContent focusId={id} rightTab={rightTab} scope={{ kind: "global" }} />;
+  const { rightTab, view } = useSearch({ from: "/global/session/$id" });
+  return (
+    <WorkbenchContent focusId={id} rightTab={rightTab} scope={{ kind: "global" }} view={view} />
+  );
 }
 
 function WorkbenchContent({
   focusId,
   rightTab,
   scope,
+  view: viewFromUrl,
 }: {
   focusId?: string;
   rightTab?: WorkbenchRightTab;
   scope: WorkbenchScope;
+  view?: WorkbenchView;
 }) {
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
+  const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
+  const view = viewFromUrl ?? rememberedView;
   const ctx: PluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
     focusId,
@@ -60,6 +76,10 @@ function WorkbenchContent({
   };
   const onRightTabChange = (tab: WorkbenchRightTab) => {
     void navigateWorkbench(scope, focusId, { rightTab: tab });
+  };
+  const onViewChange = (next: WorkbenchView) => {
+    setRememberedView(next);
+    void navigateWorkbench(scope, focusId, { view: next });
   };
   if (!isDesktop) {
     return <MobileWorkbench focusId={focusId} scope={scope} />;
@@ -69,7 +89,7 @@ function WorkbenchContent({
       leftPanel={<WorkbenchLeftRail focusId={focusId} scope={scope} />}
       rightPanel={<RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />}
     >
-      <InstanceArea focusId={focusId} scope={scope} />
+      <InstanceArea focusId={focusId} onViewChange={onViewChange} scope={scope} view={view} />
     </WorkbenchShell>
   );
 }
