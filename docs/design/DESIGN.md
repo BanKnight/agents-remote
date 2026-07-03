@@ -263,6 +263,27 @@ components:
 >
 > **alpha 与 variant 的优先级**：variant 的 YAML 实色是其基底，alpha tint 是 stateful 渲染、在 prose 标注。**当某 variant 的视觉身份主要由 tint 决定时（如 `nav-item-active` 的视觉就是 primary 10% tint），prose 的 tint 描述优先于 YAML 实色**——agent 不要把 `nav-item-active` 当成纯 `surface` 背景实现。
 
+### Content role colors（Claude2 session 消息角色色）
+
+Claude2 session（及用 assistant-ui 渲染的 tool / hook / attachment 组件）用一套**内容角色色**区分消息角色：assistant（Claude 输出）/ user（用户输入）/ permission（permission mode 标记）。它们是**内容语义**，与 `primary`（操作色）正交——不承担 active nav / primary 按钮 / 链接等操作语义，只标识「这条内容属于哪个角色」。
+
+每个角色 3 档（main / soft / deep），用 alpha 表达层次（深 bg / 浅 text 成对），覆盖历史散写的 amber / cyan / violet 色阶：
+
+| token | hex | 对应 Tailwind | 用途 |
+|---|---|---|---|
+| `assistant` | `#fbbf24` | amber-400 | 主色：border / ring / icon / badge 主 |
+| `assistant-soft` | `#fde68a` | amber-200 | 浅文字：badge text / label on deep bg |
+| `assistant-deep` | `#92400e` | amber-800 | 深 bg：plan body 气泡 / hook 容器 |
+| `user` | `#22d3ee` | cyan-400 | 主色：icon / typing dots / active |
+| `user-soft` | `#67e8f9` | cyan-300 | 浅文字 / icon 提亮 |
+| `user-deep` | `#0e7490` | cyan-700 | 深 bg：user 气泡 |
+| `permission` | `#a78bfa` | violet-400 | 主色（permission mode 标记）|
+| `permission-soft` | `#c4b5fd` | violet-300 | hover 提亮 |
+
+**散写 → token 映射**：`amber-400/500` → `assistant`、`amber-200/300` → `assistant-soft`、`amber-600~950` → `assistant-deep`；`cyan-400/500` → `user`、`cyan-200/300` → `user-soft`、`cyan-700` → `user-deep`；`violet-400/500` → `permission`、`violet-300` → `permission-soft`。各档用 `/N` alpha 表达交互层次（badge bg `assistant/20`、hover `assistant/30` 等），复用上方通用透明度叠加约定。
+
+> **`assistant`/`warning` 同 hex（`#fbbf24`）、`permission`/`secondary` 同 hex（`#a78bfa`）是刻意的**——语义独立（角色 vs 状态 / 渐变终点），分开 token 让代码读出「这是 assistant 角色」而非「这是 warning」，且未来可按角色独立调色相（如 codex 接入时 `assistant` 改用 codex 品牌色，不影响 warning）。
+
 ## Typography
 
 字体策略以 **Geist Variable** 为 UI 字族，等宽用 `SFMono-Regular, Consolas, Liberation Mono, monospace`。共 8 个层级，覆盖 headline / body / label / caption / code 五个角色。

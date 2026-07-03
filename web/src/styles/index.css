@@ -160,6 +160,18 @@ body {
   --color-success: #34d399;
   --color-warning: #fbbf24;
   --color-error: #fb7185;
+  /* Content role colors — Claude2 session 消息角色色（docs/design/DESIGN.md Colors 节
+     「Content role colors」）。与 primary 操作色正交：区分 assistant / user / permission
+     三种消息角色，不承担操作语义。assistant/warning 同 hex、permission/secondary 同 hex
+     是刻意——语义独立，分开 token 以便未来按角色独立调色相。*/
+  --color-assistant: #fbbf24;
+  --color-assistant-soft: #fde68a;
+  --color-assistant-deep: #92400e;
+  --color-user: #22d3ee;
+  --color-user-soft: #67e8f9;
+  --color-user-deep: #0e7490;
+  --color-permission: #a78bfa;
+  --color-permission-soft: #c4b5fd;
   /* Radius — DESIGN scale（docs/design/DESIGN.md Shapes）。方案 A：覆写衍生比例
      对齐 DESIGN 档；移除无对应档的 3xl/4xl（业务无 rounded-3xl，badge 4xl→full）；
      新增 frame 专用 shell-*。*/
