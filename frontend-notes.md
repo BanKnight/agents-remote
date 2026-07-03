@@ -52,3 +52,28 @@ iOS 26 真机 standalone（全屏 PWA）下：
 - MDN `env()`：https://developer.mozilla.org/en-US/docs/Web/CSS/env
 - Stack Overflow 79902310（iOS 26 精确复现，0 回答，社区刚撞上）：https://stackoverflow.com/questions/79902310
 - Reddit r/PWA "fighting the chin gap"：https://www.reddit.com/r/PWA/comments/1sdhsbu/
+
+## 2. 色阶收敛工作流（散写 → DESIGN token）
+
+### 现象
+
+新代码与历史代码散写裸 Tailwind 色阶（`bg-cyan-300`、`text-slate-400`、`border-emerald-700`、`shadow-cyan-950/20` 等），绕过 DESIGN token，导致样式不一致、色相漂移、难维护。Phase 3/4/5 收敛过程中 `web/src` 累计发现 ~250 处散写。
+
+### 机制
+
+DESIGN.md（`docs/design/DESIGN.md`）是设计系统唯一权威源；`web/src/styles/index.css` 的 `@theme inline` 块把 DESIGN token 物化为 Tailwind utility（`bg-primary`、`text-on-surface-muted`、`border-neutral-line`、`bg-assistant` 等）。散写裸色阶 = 绕过 token 体系，每处都是未被设计系统管理的色相，累积即「走歪」。CLAUDE.md 前端约定与 DESIGN L385 已明令禁止散写裸 Tailwind 调色板。
+
+### 标准做法
+
+1. **新代码一律用 token**：颜色用 `surface*` / `on-surface*` / `neutral-line` / `primary` / `success` / `warning` / `error` + 内容角色色 `assistant*` / `user*` / `permission*`，禁裸 Tailwind 色阶。
+2. **遇到散写先查 DESIGN 映射表**：`docs/design/DESIGN.md` 三张表覆盖全部 Tailwind 色阶 → token——「DESIGN token ↔ Tailwind 对照」（Phase 3/4 基准）、「Content role colors」（角色色）、「Phase 5 散写收敛映射」（操作色 / 灰度 / 状态色 / shadow / Skill）。先查表定映射，再改。
+3. **分批按色族收敛**：同色族（操作色 / 角色色 / 灰度 / 状态色）一批，每批独立门禁 + CSS 落盘 + Playwright DOM computed 验证 + commit。机械色阶（amber/cyan/violet/emerald/rose）可 sed + oxfmt；灰度按上下文需逐处核对。
+4. **灰度按上下文映射**：slate **不能**机械按档位 sed（同一档在 bg/text/border 不同语义），必须按 `bg → surface 档、text → on-surface 档、border → neutral-line` 分桶替换 + 人工核对。
+5. **验证视觉零变化**（语义对齐非重新设计）：Playwright DOM `getComputedStyle` 取 backgroundColor/color/borderColor，对比 token hex；浏览器对复杂值返回 oklab（需 oklab→rgb 换算），对 sRGB 简单值返回 rgb——`text-assistant-soft` → `rgb(253,230,138)` 这种精确命中即通过。
+6. **每次改 web 后主动验证 CSS 落盘**：`build --watch` 会漏落盘 CSS（preview 用 HTML 冒充 text/css），`touch web/src/index.css` 触发 rebuild + grep `web/dist/assets/*.css` 确认 utility 落盘。
+
+### 来源
+
+- Phase 3（shell 视觉收敛 slate/red/emerald）+ Phase 4（Claude2 角色色 160 处 → 8 token）+ Phase 5（散写全收敛 ~87 处）实践。
+- DESIGN.md L243-285 映射表 + L385 禁散写约束。
+- memory `build-watch-css-not-flushed`、`design-md-authoritative-source`、`verify-css-via-dom-geometry-not-vision`。
