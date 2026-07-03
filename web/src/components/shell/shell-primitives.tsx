@@ -178,6 +178,41 @@ export function statusToTone(
   return "muted";
 }
 
+const statusDotToneBg: Record<ShellTone, string> = {
+  default: "bg-on-surface-muted",
+  accent: "bg-primary",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-error",
+  muted: "bg-on-surface-muted",
+};
+
+const STATUS_DOT_SIZE_CLASS = "h-2 w-2";
+
+type StatusDotProps = {
+  label: string;
+  pulse?: boolean;
+  tone: ShellTone;
+};
+
+/**
+ * 状态小圆点 indicator（设计文档 §10）：纯色圆点 + aria-label 承载文字（不显示），
+ * 替代 InstanceCard 等位置原带背景文字 badge（StatusPill）的「纯状态指示」用法——形态更轻。
+ * tone 由 statusToTone 映射（running→success/idle→warning/error→danger/其余→muted）；
+ * pulse 用于 running/活跃强调（脉动）。StatusPill 保留给需要可见文字 label 的场景。
+ */
+export function StatusDot({ label, pulse = false, tone }: StatusDotProps) {
+  return (
+    <span
+      aria-label={label}
+      className={`inline-block shrink-0 rounded-full ${STATUS_DOT_SIZE_CLASS} ${statusDotToneBg[tone]}${
+        pulse ? " animate-pulse" : ""
+      }`}
+      role="img"
+    />
+  );
+}
+
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: ShellTone;
 };
@@ -298,7 +333,7 @@ type MobilePageHeaderProps = {
  */
 export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps) {
   return (
-    <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
+    <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-3">
       {back ? (
         <button
           aria-label={back.label}
@@ -335,11 +370,11 @@ type InstanceCardProps = {
 };
 
 /**
- * 实例卡片（设计文档 §7 移动总览）。卡片 = IconMarker + 标题（truncate）+ 可选 StatusPill +
+ * 实例卡片（设计文档 §7 移动总览）。卡片 = IconMarker + 标题（truncate）+ 可选 StatusDot +
  * 可选 close 按钮。raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop
  * 触发，按钮内部渲染并 stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown
  *（Enter/Space → onSelect）劫持键盘激活。移动总览 2 列网格用此 primitive；status 由调用方
- * 映射为 {label, tone}（业务 enum → 药丸语义）。
+ * 映射为 {label, tone}（业务 enum → 圆点语义，label 进 StatusDot aria-label）。
  */
 export function InstanceCard({
   closeLabel,
@@ -391,7 +426,9 @@ export function InstanceCard({
           </span>
         ) : null}
       </div>
-      {status ? <StatusPill tone={status.tone} value={status.label} /> : null}
+      {status ? (
+        <StatusDot label={status.label} pulse={status.tone === "success"} tone={status.tone} />
+      ) : null}
     </div>
   );
 }

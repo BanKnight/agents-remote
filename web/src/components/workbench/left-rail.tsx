@@ -25,6 +25,7 @@ import {
   IconMarker,
   InstanceCard,
   sessionMarker,
+  StatusDot,
   statusToTone,
   type ShellTone,
 } from "../shell/shell-primitives";
@@ -544,19 +545,22 @@ function AgentNavItem({ active, onSelect, session }: AgentNavItemProps) {
   const { t } = useT();
   const tone = session.provider === "codex" ? "success" : "accent";
   const iconName = session.provider === "codex" ? "openai" : "anthropic";
-  // running 是常态，列表层仅在异常状态（idle/error/...）提示；复用 AgentInstanceRow 的约定。
-  const isRunning = session.status === "running";
   return (
     <ShellNavigationButton
       active={active}
-      description={isRunning ? undefined : t(sessionStatusLabel(session.status))}
       label={session.displayName}
       marker={
         <IconMarker tone={tone}>
           <ShellIcon className="h-3.5 w-3.5" name={iconName} />
         </IconMarker>
       }
-      meta={isRunning ? ActiveDot : undefined}
+      meta={
+        <StatusDot
+          label={t(sessionStatusLabel(session.status))}
+          pulse={session.status === "running"}
+          tone={statusToTone(session.status)}
+        />
+      }
       onClick={() => onSelect(session.id)}
     />
   );
@@ -570,18 +574,22 @@ type TerminalNavItemProps = {
 
 function TerminalNavItem({ active, onSelect, session }: TerminalNavItemProps) {
   const { t } = useT();
-  const isRunning = session.status === "running";
   return (
     <ShellNavigationButton
       active={active}
-      description={isRunning ? undefined : t(sessionStatusLabel(session.status))}
       label={session.displayName}
       marker={
         <IconMarker tone="success">
           <ShellIcon className="h-3.5 w-3.5" name="terminal" />
         </IconMarker>
       }
-      meta={isRunning ? ActiveDot : undefined}
+      meta={
+        <StatusDot
+          label={t(sessionStatusLabel(session.status))}
+          pulse={session.status === "running"}
+          tone={statusToTone(session.status)}
+        />
+      }
       onClick={() => onSelect(session.id)}
     />
   );
