@@ -2,6 +2,8 @@
 
 > 状态：**已落地**：桌面三栏 + 移动两层主体已实现于 app（`WorkbenchShell` 桌面三栏 grid + 栏折叠/resize、`InstanceArea`/`SplitLayout` 中栏自由 split、`RightPanelTabs`/`FIRST_PARTY_PLUGINS` 右栏 files/git/prototype、`mobile-workbench` 移动两层 + ‹› 切实例、`WorkbenchRoute` URL 模型 `/projects/$key`、`/global`、`/projects/$key/session/$id`）。本文是新导航模型的权威设计记录。剩余待定项见 §9（原型 tab、marketplace）。
 >
+> **演进（2026-07）**：本文「左栏=项目+实例树 / 中栏=自由 split 铺开」的导航模型，已被 [`workbench-views.md`](./workbench-views.md) 进一步演进——左栏收敛为导航条目列表、中栏新增二级导航 5 tab + 视图切换、split 重构为「聚焦展开+其余缩略+底部 dock」的特殊工作视图。新 IA 以 workbench-views.md 为准，实施计划见 [`workbench-views-plan.md`](./workbench-views-plan.md)。本文的桌面三栏 grid / 移动两层 / 右栏 inspection / URL 模型**仍有效**。
+>
 > 协商方式：ASCII 草图 + 逐点决策。本文保留关键 ASCII 以承载设计意图。
 
 ## 1. 背景与走向
