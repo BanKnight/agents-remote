@@ -10,6 +10,8 @@ import type {
   TerminalSession,
 } from "@agents-remote/shared";
 import {
+  closeAgentSession,
+  closeTerminalSession,
   createAgentSession,
   createTerminalSession,
   listAgentHistory,
@@ -20,7 +22,13 @@ import {
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
-import { actionButtonClasses, IconMarker } from "../shell/shell-primitives";
+import {
+  actionButtonClasses,
+  IconMarker,
+  InstanceCard,
+  statusToTone,
+  type ShellTone,
+} from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import {
@@ -30,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { usePromptDialog } from "../shell/prompt-dialog";
+import { useConfirm } from "../shell/confirm-dialog";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
 
@@ -236,13 +245,19 @@ function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }:
 type ProjectInstancesProps = {
   focusId?: string;
   projectName: string;
+  variant?: "list" | "card";
 };
 
-export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
+export function ProjectInstances({
+  focusId,
+  projectName,
+  variant = "list",
+}: ProjectInstancesProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { holder: promptHolder, prompt } = usePromptDialog();
+  const { confirm: confirmClose, holder: closeHolder } = useConfirm();
   const agents = useQuery({
     queryKey: ["projects", projectName, "agent-sessions"],
     queryFn: () => listAgentSessions(projectName),
@@ -346,38 +361,153 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
     }
   };
 
+  // 卡片 close：复用 closePanel（instance-area）三步语义——confirm → close API → invalidate。
+  // 不调 layout.removePanel：卡片由 query 驱动，invalidate 后列表自然消失。
+  const closeSession = async (sessionId: string, type: "agent" | "terminal") => {
+    const ok = await confirmClose({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("session.close"),
+      message: t("session.closeConfirm"),
+      title: t("session.close"),
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      if (type === "agent") {
+        await closeAgentSession(projectName, sessionId);
+      } else {
+        await closeTerminalSession(projectName, sessionId);
+      }
+    } catch {
+      // 会话已结束 / 不存在（404）——close 幂等，invalidate 后卡片自动消失。
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", projectName, `${type}-sessions`] }),
+      queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", projectName] }),
+    ]);
+  };
+
+  const statusToPill = (
+    status: AgentSession["status"] | TerminalSession["status"],
+  ): { label: string; tone: ShellTone } => ({
+    label: t(sessionStatusLabel(status)),
+    tone: statusToTone(status),
+  });
+
+  const isCard = variant === "card";
+  const activeSessions = [
+    ...agentSessions.map((session) => ({
+      session: session as AgentSession,
+      type: "agent" as const,
+    })),
+    ...terminalSessions.map((session) => ({
+      session: session as TerminalSession,
+      type: "terminal" as const,
+    })),
+  ];
+
   return (
-    <div className="ml-3 flex flex-col border-l border-on-surface/5 pl-1">
+    <div
+      className={
+        isCard
+          ? "flex flex-col gap-3 px-3 pt-1"
+          : "ml-3 flex flex-col border-l border-on-surface/5 pl-1"
+      }
+    >
       <LeftRailCreateBar
         isCreating={createAgent.isPending || createTerminal.isPending}
         onCreateAgent={handleCreateAgent}
         onCreateTerminal={handleCreateTerminal}
       />
       {loading && agentSessions.length === 0 && terminalSessions.length === 0 ? (
-        <LeftRailSkeleton />
+        isCard ? (
+          <CardGridSkeleton />
+        ) : (
+          <LeftRailSkeleton />
+        )
       ) : null}
-      {agentSessions.length > 0 ? (
-        <SectionLabel>{t("workbench.agentsSection")}</SectionLabel>
-      ) : null}
-      {agentSessions.map((session) => (
-        <AgentNavItem
-          active={session.id === focusId}
-          key={session.id}
-          onSelect={focus}
-          session={session}
-        />
-      ))}
-      {terminalSessions.length > 0 ? (
-        <SectionLabel>{t("workbench.terminalsSection")}</SectionLabel>
-      ) : null}
-      {terminalSessions.map((session) => (
-        <TerminalNavItem
-          active={session.id === focusId}
-          key={session.id}
-          onSelect={focus}
-          session={session}
-        />
-      ))}
+      {isCard ? (
+        activeSessions.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            {activeSessions.map(({ session, type }) => {
+              const isAgent = type === "agent";
+              const provider = isAgent ? (session as AgentSession).provider : null;
+              const marker = isAgent ? (
+                <IconMarker size="sm" tone={provider === "codex" ? "success" : "accent"}>
+                  <ShellIcon
+                    className="h-3.5 w-3.5"
+                    name={provider === "codex" ? "openai" : "anthropic"}
+                  />
+                </IconMarker>
+              ) : (
+                <IconMarker size="sm" tone="muted">
+                  <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+                </IconMarker>
+              );
+              return (
+                <InstanceCard
+                  actions={
+                    <button
+                      aria-label={t("session.close")}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void closeSession(session.id, type);
+                      }}
+                      type="button"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 16 16"
+                      >
+                        <path
+                          d="M4 4l8 8M12 4l-8 8"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeWidth={1.5}
+                        />
+                      </svg>
+                    </button>
+                  }
+                  key={session.id}
+                  marker={marker}
+                  onSelect={() => focus(session.id)}
+                  status={statusToPill(session.status)}
+                  title={session.displayName}
+                />
+              );
+            })}
+          </div>
+        ) : null
+      ) : (
+        <>
+          {agentSessions.length > 0 ? (
+            <SectionLabel>{t("workbench.agentsSection")}</SectionLabel>
+          ) : null}
+          {agentSessions.map((session) => (
+            <AgentNavItem
+              active={session.id === focusId}
+              key={session.id}
+              onSelect={focus}
+              session={session}
+            />
+          ))}
+          {terminalSessions.length > 0 ? (
+            <SectionLabel>{t("workbench.terminalsSection")}</SectionLabel>
+          ) : null}
+          {terminalSessions.map((session) => (
+            <TerminalNavItem
+              active={session.id === focusId}
+              key={session.id}
+              onSelect={focus}
+              session={session}
+            />
+          ))}
+        </>
+      )}
       {historyEntries.length > 0 ? (
         <SectionLabel>{t("workbench.historySection")}</SectionLabel>
       ) : null}
@@ -391,6 +521,7 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
         />
       ))}
       {promptHolder}
+      {closeHolder}
     </div>
   );
 }
@@ -571,6 +702,17 @@ function LeftRailSkeleton() {
     <div className="flex flex-col gap-1 p-2">
       {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT }, (_, index) => (
         <div className="h-8 animate-pulse rounded-lg bg-on-surface/5" key={index} />
+      ))}
+    </div>
+  );
+}
+
+/** 卡片总览加载骨架：2 列网格（与 InstanceCard 网格同构），INSTANCE_SKELETON_ROW_COUNT 行。 */
+function CardGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
+        <div className="h-20 animate-pulse rounded-lg bg-on-surface/5" key={index} />
       ))}
     </div>
   );

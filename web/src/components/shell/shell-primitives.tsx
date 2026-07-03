@@ -162,6 +162,18 @@ export function StatusPill({ label, tone = "default", value }: StatusPillProps) 
   );
 }
 
+/**
+ * 状态枚举 → StatusPill tone（DESIGN status-pill 四态映射）。running→success、
+ * idle→warning（等待输入）、error→danger、其余（closed 等）→muted。与 StatusPill 配套：
+ * tone 决定药丸配色，label 由调用方用 sessionStatusLabel + t 生成（i18n 不进本层）。
+ */
+export function statusToTone(status: string): ShellTone {
+  if (status === "running") return "success";
+  if (status === "idle") return "warning";
+  if (status === "error") return "danger";
+  return "muted";
+}
+
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: ShellTone;
 };
@@ -306,5 +318,45 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
       </span>
       {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
     </header>
+  );
+}
+
+type InstanceCardProps = {
+  actions?: ReactNode;
+  marker: ReactNode;
+  onSelect: () => void;
+  status?: { label: string; tone: ShellTone };
+  title: ReactNode;
+};
+
+/**
+ * 实例卡片（设计文档 §7 移动总览）。卡片 = IconMarker + 标题（truncate）+ 可选 StatusPill +
+ * 可选 actions（close）。raised surface + rounded-lg，点击 onSelect 进详情；close 按钮由
+ * 调用方在 actions 内传入（须 stopPropagation 后调 onClose，避免冒泡触发 onSelect）。
+ * 移动总览 2 列网格用此 primitive；status 由调用方映射为 {label, tone}（业务 enum → 药丸语义）。
+ */
+export function InstanceCard({ actions, marker, onSelect, status, title }: InstanceCardProps) {
+  return (
+    <div
+      className={`group flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      <div className="flex items-start gap-2">
+        {marker}
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface group-hover:text-primary">
+          {title}
+        </span>
+        {actions ? <span className="flex shrink-0 items-center">{actions}</span> : null}
+      </div>
+      {status ? <StatusPill tone={status.tone} value={status.label} /> : null}
+    </div>
   );
 }

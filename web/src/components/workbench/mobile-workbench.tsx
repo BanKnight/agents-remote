@@ -1,9 +1,17 @@
 import { Fragment } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { closeAgentSession, closeTerminalSession } from "../../api/client";
 import { useT } from "../../i18n";
-import { IconMarker, MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives";
-import { ShellNavigationButton } from "../shell/shell-navigation";
+import {
+  IconMarker,
+  InstanceCard,
+  MobilePageHeader,
+  shellSurfaceClasses,
+  statusToTone,
+} from "../shell/shell-primitives";
+import { useConfirm } from "../shell/confirm-dialog";
 import { ShellIcon } from "../shell/icons";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
@@ -287,7 +295,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
         ) : (
           <div className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-            <ProjectInstances projectName={scope.key} />
+            <ProjectInstances projectName={scope.key} variant="card" />
           </div>
         )}
       </div>
@@ -298,12 +306,15 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 /**
  * 移动全局列表态（设计文档 §7）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
  * 指定作用域）。按项目分组（稳定：聚合顺序 = 项目次序 → agent(createdAt) → terminal(createdAt)），
- * 点实例进 `/global/session/$focusId` 单实例聚焦。空状态提示。复用 ShellNavigationButton
- * 与左栏实例行同设计语言。
+ * 每组 2 列 InstanceCard 网格（marker + StatusPill + close），点卡片进 `/global/session/$focusId`
+ * 单实例聚焦。close 复用 confirm → close API → invalidate 三步（invalidate ["projects"] 触发候选
+ * 重算 + 各 project sessions 刷新）。空状态提示。
  */
 function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
+  const queryClient = useQueryClient();
+  const { confirm: confirmClose, holder: closeHolder } = useConfirm();
   const candidates = useGlobalInstanceCandidates({ kind: "global" });
   const grouped = new Map<string, GlobalInstanceCandidate[]>();
   for (const candidate of candidates) {
@@ -314,10 +325,35 @@ function MobileGlobalOverview() {
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
   };
+  const closeCandidate = async (candidate: GlobalInstanceCandidate) => {
+    const ok = await confirmClose({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("session.close"),
+      message: t("session.closeConfirm"),
+      title: t("session.close"),
+      tone: "danger",
+    });
+    if (!ok) return;
+    const { projectName, sessionId } = candidate.ref;
+    try {
+      if (candidate.type === "agent") {
+        await closeAgentSession(projectName, sessionId);
+      } else {
+        await closeTerminalSession(projectName, sessionId);
+      }
+    } catch {
+      // 会话已结束 / 不存在（404）——close 幂等，invalidate 后卡片自动消失。
+    }
+    await queryClient.invalidateQueries({ queryKey: ["projects"] });
+  };
   if (candidates.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center">
-        <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+      <div className="flex h-full min-h-0 flex-col">
+        <MobilePageHeader title={t("workbench.globalOverviewTitle")} />
+        <div className="flex flex-1 items-center justify-center p-6 text-center">
+          <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+        </div>
+        {closeHolder}
       </div>
     );
   }
@@ -329,52 +365,79 @@ function MobileGlobalOverview() {
         className="flex-1 overflow-y-auto pb-24 lg:pb-0"
       >
         {Array.from(grouped.entries()).map(([projectName, items]) => (
-          <div key={projectName}>
-            <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
+          <div className="flex flex-col gap-2 px-3 py-2" key={projectName}>
+            <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
               {projectName}
             </p>
-            {items.map((candidate) => (
-              <GlobalInstanceRow
-                candidate={candidate}
-                key={candidate.ref.sessionId}
-                onSelect={focusInstance}
-              />
-            ))}
+            <div className="grid grid-cols-2 gap-2">
+              {items.map((candidate) => (
+                <GlobalInstanceCard
+                  candidate={candidate}
+                  key={candidate.ref.sessionId}
+                  onClose={() => void closeCandidate(candidate)}
+                  onSelect={focusInstance}
+                />
+              ))}
+            </div>
           </div>
         ))}
       </nav>
+      {closeHolder}
     </div>
   );
 }
 
-type GlobalInstanceRowProps = {
+type GlobalInstanceCardProps = {
   candidate: GlobalInstanceCandidate;
+  onClose: () => void;
   onSelect: (sessionId: string) => void;
 };
 
-/** 全局实例行：复用左栏 AgentNavItem/TerminalNavItem 渲染（marker + 状态描述）。 */
-function GlobalInstanceRow({ candidate, onSelect }: GlobalInstanceRowProps) {
+/** 全局实例卡片：marker（provider/terminal 图标）+ 标题 + StatusPill + close，复用 InstanceCard。 */
+function GlobalInstanceCard({ candidate, onClose, onSelect }: GlobalInstanceCardProps) {
   const { t } = useT();
   const isAgent = candidate.type === "agent";
-  const isRunning = candidate.status === "running";
   const marker = isAgent ? (
-    <IconMarker tone={candidate.provider === "codex" ? "success" : "accent"}>
+    <IconMarker size="sm" tone={candidate.provider === "codex" ? "success" : "accent"}>
       <ShellIcon
         className="h-3.5 w-3.5"
         name={candidate.provider === "codex" ? "openai" : "anthropic"}
       />
     </IconMarker>
   ) : (
-    <IconMarker tone="muted">
+    <IconMarker size="sm" tone="muted">
       <ShellIcon className="h-3.5 w-3.5" name="terminal" />
     </IconMarker>
   );
   return (
-    <ShellNavigationButton
-      description={isRunning ? undefined : t(sessionStatusLabel(candidate.status))}
-      label={candidate.displayName}
+    <InstanceCard
+      actions={
+        <button
+          aria-label={t("session.close")}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M4 4l8 8M12 4l-8 8"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </button>
+      }
       marker={marker}
-      onClick={() => onSelect(candidate.ref.sessionId)}
+      onSelect={() => onSelect(candidate.ref.sessionId)}
+      status={{
+        label: t(sessionStatusLabel(candidate.status)),
+        tone: statusToTone(candidate.status),
+      }}
+      title={candidate.displayName}
     />
   );
 }
