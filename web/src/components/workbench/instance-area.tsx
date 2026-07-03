@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type GlobalInstanceCandidate,
+  type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
   type WorkbenchScope,
   type WorkbenchView,
@@ -29,6 +30,8 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
+import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import { TabButton } from "./right-panel-tabs";
 import { SplitLayout } from "./split-panel";
 
 /** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
@@ -40,13 +43,19 @@ const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
 };
 
 type InstanceAreaProps = {
+  /** inspection 插件上下文（projectKey/focusId/sessionType）；files/git tab 按 projectKey 过滤可见 + render。 */
+  ctx: PluginContext;
   scope: WorkbenchScope;
   /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/global/session/$id`）。无 focusId = 无聚焦面板。 */
   focusId?: string;
-  /** 总览视图（URL `?view` + atom 回退）；聚焦态不用（ViewSwitcher 隐藏）。 */
+  /** 总览视图（URL `?view` + atom 回退）；仅非聚焦态 overview tab 时 ViewSwitcher 显示。 */
   view?: WorkbenchView;
   /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */
   onViewChange?: (next: WorkbenchView) => void;
+  /** 中栏二级导航 tab（URL `?tab` + atom 回退）；仅非聚焦态渲染 tab bar（聚焦态右栏承载 inspection）。 */
+  tab?: WorkbenchMiddleTab;
+  /** 切换中栏 tab（写 URL + atom，WorkbenchContent 注入）。 */
+  onTabChange?: (next: WorkbenchMiddleTab) => void;
 };
 
 /**
@@ -56,7 +65,15 @@ type InstanceAreaProps = {
  * global 作用域（commit ④）聚合所有项目活跃实例自动铺开（rankGlobalInstances 排序），
  * 面板带项目前缀。
  */
-export function InstanceArea({ scope, focusId, view, onViewChange }: InstanceAreaProps) {
+export function InstanceArea({
+  ctx,
+  scope,
+  focusId,
+  view,
+  onViewChange,
+  tab,
+  onTabChange,
+}: InstanceAreaProps) {
   const navigateWorkbench = useWorkbenchNavigate();
   const { t } = useT();
   const { close, holder } = useCloseSession();
@@ -68,6 +85,24 @@ export function InstanceArea({ scope, focusId, view, onViewChange }: InstanceAre
     () => filterWorkbenchViews(scope, false).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
   );
+
+  // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + 第一方 inspection 插件按 ctx 过滤
+  //（files/git 需 projectKey，prototype 常驻）。复用 plugin.when 作可见性单一来源，避免
+  // 与右栏重复维护 scope 规则。history tab 待批 2b-2 历史拆出后加入。
+  const visibleTabs = useMemo<{ id: WorkbenchMiddleTab; label: string }[]>(() => {
+    const options: { id: WorkbenchMiddleTab; label: string }[] = [
+      { id: "overview", label: t("workbench.tabOverview") },
+    ];
+    for (const plugin of FIRST_PARTY_PLUGINS) {
+      if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
+    }
+    return options;
+    // ctx 由 scope 决定（projectKey = scope.key 或 null），scope/t 变才重算。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, t]);
+  // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=files），回退 overview。
+  const resolvedTab: WorkbenchMiddleTab =
+    tab !== undefined && visibleTabs.some((opt) => opt.id === tab) ? tab : "overview";
 
   // focus → addPanel：URL focusId 指向的实例若不在布局中，加入面板（split-right 默认）。
   // 仅 project 作用域；global 的 focusId 缺 projectName，靠下方自动铺开填充。
@@ -136,19 +171,39 @@ export function InstanceArea({ scope, focusId, view, onViewChange }: InstanceAre
       />
     );
 
+  // 中栏内容按 tab 分支：聚焦态 / overview tab → 实例区（SplitLayout/空态）；
+  // files/git/prototype tab → 复用右栏 inspection plugin 的 render(ctx)（项目级 inspection）。
+  const isOverview = focusId !== undefined || resolvedTab === "overview";
+  const inspectionPlugin = isOverview
+    ? null
+    : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
+  const tabContent = isOverview ? content : (inspectionPlugin?.render(ctx) ?? null);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {!focusId && onViewChange && view ? (
-        <div className="flex h-9 shrink-0 items-center justify-end px-3">
-          <ViewSwitcher
-            ariaLabel={t("workbench.viewSwitcher")}
-            onChange={onViewChange}
-            view={view}
-            views={viewOptions}
-          />
+      {!focusId ? (
+        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+          {visibleTabs.map((opt) => (
+            <TabButton
+              active={opt.id === resolvedTab}
+              key={opt.id}
+              label={opt.label}
+              onClick={() => onTabChange?.(opt.id)}
+            />
+          ))}
+          {resolvedTab === "overview" && onViewChange && view ? (
+            <div className="ml-auto">
+              <ViewSwitcher
+                ariaLabel={t("workbench.viewSwitcher")}
+                onChange={onViewChange}
+                view={view}
+                views={viewOptions}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1">{content}</div>
+      <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
     </div>
   );

@@ -8,11 +8,13 @@ import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import {
+  type WorkbenchMiddleTab,
   type WorkbenchRightTab,
   type WorkbenchScope,
   type WorkbenchView,
   inferSessionTypeFromId,
   useWorkbenchNavigate,
+  workbenchMiddleTabAtom,
   workbenchViewAtom,
 } from "./workbench-model";
 
@@ -24,33 +26,42 @@ import {
  */
 export function ProjectScopeRoute() {
   const { key } = useParams({ from: "/projects/$key" });
-  const { rightTab, view } = useSearch({ from: "/projects/$key" });
-  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "project", key }} view={view} />;
+  const { rightTab, view, tab } = useSearch({ from: "/projects/$key" });
+  return (
+    <WorkbenchContent rightTab={rightTab} scope={{ kind: "project", key }} tab={tab} view={view} />
+  );
 }
 
 export function ProjectFocusRoute() {
   const { key, id } = useParams({ from: "/projects/$key/session/$id" });
-  const { rightTab, view } = useSearch({ from: "/projects/$key/session/$id" });
+  const { rightTab, view, tab } = useSearch({ from: "/projects/$key/session/$id" });
   return (
     <WorkbenchContent
       focusId={id}
       rightTab={rightTab}
       scope={{ kind: "project", key }}
+      tab={tab}
       view={view}
     />
   );
 }
 
 export function GlobalScopeRoute() {
-  const { rightTab, view } = useSearch({ from: "/global" });
-  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} view={view} />;
+  const { rightTab, view, tab } = useSearch({ from: "/global" });
+  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} tab={tab} view={view} />;
 }
 
 export function GlobalFocusRoute() {
   const { id } = useParams({ from: "/global/session/$id" });
-  const { rightTab, view } = useSearch({ from: "/global/session/$id" });
+  const { rightTab, view, tab } = useSearch({ from: "/global/session/$id" });
   return (
-    <WorkbenchContent focusId={id} rightTab={rightTab} scope={{ kind: "global" }} view={view} />
+    <WorkbenchContent
+      focusId={id}
+      rightTab={rightTab}
+      scope={{ kind: "global" }}
+      tab={tab}
+      view={view}
+    />
   );
 }
 
@@ -59,27 +70,35 @@ function WorkbenchContent({
   rightTab,
   scope,
   view: viewFromUrl,
+  tab: tabFromUrl,
 }: {
   focusId?: string;
   rightTab?: WorkbenchRightTab;
   scope: WorkbenchScope;
   view?: WorkbenchView;
+  tab?: WorkbenchMiddleTab;
 }) {
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
+  const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
   const view = viewFromUrl ?? rememberedView;
+  const tab = tabFromUrl ?? rememberedMiddleTab;
   const ctx: PluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
   };
-  const onRightTabChange = (tab: WorkbenchRightTab) => {
-    void navigateWorkbench(scope, focusId, { rightTab: tab });
+  const onRightTabChange = (rightTabNext: WorkbenchRightTab) => {
+    void navigateWorkbench(scope, focusId, { rightTab: rightTabNext });
   };
   const onViewChange = (next: WorkbenchView) => {
     setRememberedView(next);
     void navigateWorkbench(scope, focusId, { view: next });
+  };
+  const onTabChange = (next: WorkbenchMiddleTab) => {
+    setRememberedMiddleTab(next);
+    void navigateWorkbench(scope, focusId, { tab: next });
   };
   if (!isDesktop) {
     return <MobileWorkbench focusId={focusId} scope={scope} />;
@@ -87,9 +106,21 @@ function WorkbenchContent({
   return (
     <WorkbenchShell
       leftPanel={<WorkbenchLeftRail focusId={focusId} scope={scope} />}
-      rightPanel={<RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />}
+      rightPanel={
+        focusId ? (
+          <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
+        ) : null
+      }
     >
-      <InstanceArea focusId={focusId} onViewChange={onViewChange} scope={scope} view={view} />
+      <InstanceArea
+        ctx={ctx}
+        focusId={focusId}
+        onViewChange={onViewChange}
+        onTabChange={onTabChange}
+        scope={scope}
+        tab={tab}
+        view={view}
+      />
     </WorkbenchShell>
   );
 }

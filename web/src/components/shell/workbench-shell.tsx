@@ -41,7 +41,9 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
 
   // grid 列宽：栏收起 → 0px（栏 aside display none + 列塌缩）；展开 → atom 记忆宽度。
   const leftColumn = leftCollapsed ? "0px" : `${leftWidth}rem`;
-  const rightColumn = rightCollapsed ? "0px" : `${rightWidth}rem`;
+  // 右栏无内容（非聚焦态，rightPanel=null）时也塌缩列 —— 右栏是聚焦态专属（设计文档 §4），
+  // 非聚焦时中栏 5 tab 承载项目级内容，右栏 aside 不渲染、列宽 0、无 resize gutter。
+  const rightColumn = rightCollapsed || !rightPanel ? "0px" : `${rightWidth}rem`;
 
   // 栏 resize gutter：拖拽改宽度 atom（clamp 到 MIN/MAX，防压溃自身或吃掉中栏）。
   // 右栏翻转方向 —— 向左拖（−delta）才增宽。
@@ -91,7 +93,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
               side="left"
             />
           ) : null}
-          {rightCollapsed ? (
+          {rightCollapsed && rightPanel ? (
             <RailButton
               label={t("workbench.expandRight")}
               onClick={() => setRightCollapsed(false)}
@@ -101,17 +103,19 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
           {children}
         </section>
 
-        <aside
-          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
-        >
-          <PanelHeader
-            chevron="right"
-            collapseLabel={t("workbench.collapseRight")}
-            onCollapse={() => setRightCollapsed(true)}
-          />
-          <div className="min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
-          {rightCollapsed ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
-        </aside>
+        {rightPanel ? (
+          <aside
+            className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
+          >
+            <PanelHeader
+              chevron="right"
+              collapseLabel={t("workbench.collapseRight")}
+              onCollapse={() => setRightCollapsed(true)}
+            />
+            <div className="min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
+            {rightCollapsed ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
+          </aside>
+        ) : null}
       </div>
     </main>
   );
