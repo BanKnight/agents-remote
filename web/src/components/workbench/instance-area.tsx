@@ -30,6 +30,7 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
+import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SplitLayout } from "./split-panel";
@@ -86,13 +87,18 @@ export function InstanceArea({
     [scope, t],
   );
 
-  // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + 第一方 inspection 插件按 ctx 过滤
-  //（files/git 需 projectKey，prototype 常驻）。复用 plugin.when 作可见性单一来源，避免
-  // 与右栏重复维护 scope 规则。history tab 待批 2b-2 历史拆出后加入。
+  // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + history（project-only，历史是
+  // project-scoped 数据）+ 第一方 inspection 插件按 ctx 过滤（files/git 需 projectKey，
+  // prototype 常驻）。复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate
+  // projectKey（非 FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope 仅
+  // overview + prototype。
   const visibleTabs = useMemo<{ id: WorkbenchMiddleTab; label: string }[]>(() => {
     const options: { id: WorkbenchMiddleTab; label: string }[] = [
       { id: "overview", label: t("workbench.tabOverview") },
     ];
+    if (ctx.projectKey !== null) {
+      options.push({ id: "history", label: t("workbench.tabHistory") });
+    }
     for (const plugin of FIRST_PARTY_PLUGINS) {
       if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
     }
@@ -172,12 +178,24 @@ export function InstanceArea({
     );
 
   // 中栏内容按 tab 分支：聚焦态 / overview tab → 实例区（SplitLayout/空态）；
-  // files/git/prototype tab → 复用右栏 inspection plugin 的 render(ctx)（项目级 inspection）。
+  // history tab → HistoryList（project-scoped 历史 session；showLabel=false 因 tab bar 已
+  //   标识「历史」，避免重复标题）；files/git/prototype tab → 复用右栏 inspection plugin
+  //   的 render(ctx)（项目级 inspection）。
   const isOverview = focusId !== undefined || resolvedTab === "overview";
-  const inspectionPlugin = isOverview
-    ? null
-    : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
-  const tabContent = isOverview ? content : (inspectionPlugin?.render(ctx) ?? null);
+  const isHistory = !isOverview && resolvedTab === "history";
+  const inspectionPlugin =
+    isOverview || isHistory
+      ? null
+      : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
+  const tabContent = isOverview ? (
+    content
+  ) : isHistory && ctx.projectKey !== null ? (
+    <div className="h-full overflow-y-auto p-3">
+      <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
+    </div>
+  ) : (
+    (inspectionPlugin?.render(ctx) ?? null)
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">

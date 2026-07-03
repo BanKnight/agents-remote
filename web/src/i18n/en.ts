@@ -434,6 +434,7 @@ export const en = {
   "workbench.collapseProject": "Collapse project",
   "workbench.tabOutput": "Output",
   "workbench.tabOverview": "Overview",
+  "workbench.tabHistory": "History",
   "workbench.tabFiles": "Files",
   "workbench.tabGit": "Git",
   "workbench.tabPrototype": "Prototype",
