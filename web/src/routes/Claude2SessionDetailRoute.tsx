@@ -1141,6 +1141,7 @@ function ApiErrorAttachments() {
 }
 
 function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(false);
   const label = attachment.error ?? "error";
   const detail = attachment.text;
@@ -1172,7 +1173,15 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
         </svg>
         <span className="text-[0.65rem] text-error/80 truncate min-w-0">{label}</span>
         <span className="text-[0.6rem] text-error/50 ml-auto shrink-0 whitespace-nowrap">
-          {retry ? retry : null}
+          {retry
+            ? retry.seconds
+              ? t("claude2.retry.attemptSeconds", {
+                  attempt: retry.attempt,
+                  max: retry.max,
+                  seconds: retry.seconds,
+                })
+              : t("claude2.retry.attempt", { attempt: retry.attempt, max: retry.max })
+            : null}
           {!expanded ? " ▸" : null}
         </span>
       </button>
@@ -1187,16 +1196,20 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
   );
 }
 
-function extractRetryInfo(err: ApiErrorAttachment): string | null {
+function extractRetryInfo(
+  err: ApiErrorAttachment,
+): { attempt: number; max: number; seconds?: string } | null {
   const raw = err.raw as Record<string, unknown> | undefined;
   if (!raw) return null;
   const attempt = raw.retryAttempt as number | undefined;
   const maxRetries = raw.maxRetries as number | undefined;
   const inMs = raw.retryInMs as number | undefined;
   if (attempt == null || maxRetries == null) return null;
-  let s = `重试 ${attempt}/${maxRetries}`;
-  if (inMs != null) s += `，${(inMs / 1000).toFixed(1)}s 后`;
-  return s;
+  return {
+    attempt,
+    max: maxRetries,
+    seconds: inMs != null ? (inMs / 1000).toFixed(1) : undefined,
+  };
 }
 
 function RawDebugTooltip({
@@ -1379,7 +1392,7 @@ function SystemChatBubble() {
     };
     const baseBorder = cardBorder[groupPos] ?? cardBorder.solo;
     const amberRing = needsPermission
-      ? "ring-2 ring-assistant/40 shadow-[0_0_16px_rgba(245,158,11,0.15)]"
+      ? "ring-2 ring-assistant/40 shadow-[0_0_16px_rgba(251,191,36,0.15)]"
       : "";
     const pulseClass = needsPermission ? "animate-pulse" : "";
     const inner = (
@@ -3635,6 +3648,7 @@ function ComposerWithInterrupt({
 }
 
 function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
+  const { t } = useT();
   const [countdown, setCountdown] = useState<number>(0);
 
   useEffect(() => {
@@ -3662,8 +3676,13 @@ function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
       <span className="inline-flex items-center gap-1.5 rounded-full bg-assistant/10 px-3 py-1 text-[0.65rem] text-assistant/70">
         <span className="h-2 w-2 shrink-0 animate-spin rounded-full border border-assistant/40 border-t-assistant" />
         {retryInfo.maxRetries > 1
-          ? `Retry ${retryInfo.attempt}/${retryInfo.maxRetries}: ${errorText}, ${countdown}s`
-          : `${errorText}, ${countdown}s`}
+          ? t("claude2.retry.bannerMulti", {
+              attempt: retryInfo.attempt,
+              max: retryInfo.maxRetries,
+              error: errorText,
+              seconds: countdown,
+            })
+          : t("claude2.retry.bannerSingle", { error: errorText, seconds: countdown })}
       </span>
     </div>
   );

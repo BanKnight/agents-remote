@@ -403,6 +403,17 @@ export const en = {
   "claude2.compact.progressSummarizing": "Generating summary…",
   "claude2.hook.title": "Hook",
 
+  // ── Permission confirmation / sub-agent footer / retry 状态 ──
+  "claude2.permission.awaiting": "Awaiting confirmation",
+  "claude2.permission.allow": "Allow",
+  "claude2.permission.deny": "Deny",
+  "claude2.subagent.prompt": "Prompt",
+  "claude2.subagent.output": "Sub-agent output",
+  "claude2.retry.attempt": "Retry {{attempt}}/{{max}}",
+  "claude2.retry.attemptSeconds": "Retry {{attempt}}/{{max}}, in {{seconds}}s",
+  "claude2.retry.bannerMulti": "Retry {{attempt}}/{{max}}: {{error}}, {{seconds}}s",
+  "claude2.retry.bannerSingle": "{{error}}, {{seconds}}s",
+
   // ── Workbench（三栏工作台外壳）──────────────────────────────
   "workbench.collapseLeft": "Collapse left panel",
   "workbench.collapseRight": "Collapse right panel",

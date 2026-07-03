@@ -1,7 +1,7 @@
 import { useContext, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Claude2BridgeContext } from "../../routes/claude2-adapter";
-import { useT, type TranslationKey } from "../../i18n";
+import { useT, type TranslateFn, type TranslationKey } from "../../i18n";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus } from "./tool-head";
 
@@ -11,7 +11,12 @@ function makeToolRenderer(config: {
   detail?: (args: Record<string, unknown>, toolName: string) => string | null;
   badge?: (args: Record<string, unknown>, toolName: string) => string | null;
   body?: (args: Record<string, unknown>) => ReactNode | null;
-  footer?: (result: string, args: Record<string, unknown>, isError: boolean) => ReactNode;
+  footer?: (
+    result: string,
+    args: Record<string, unknown>,
+    isError: boolean,
+    t: TranslateFn,
+  ) => ReactNode;
 }): ToolCallMessagePartComponent {
   const { icon, typeLabel, detail, badge, body, footer } = config;
   return ({ toolName, argsText, result, status, ...rest }) => {
@@ -127,7 +132,7 @@ function makeToolRenderer(config: {
                 </div>
               ) : footer ? (
                 <div className={hasPrimary || skillContent ? sectionDivider : ""}>
-                  {footer(resultStr, args, isError)}
+                  {footer(resultStr, args, isError, t)}
                 </div>
               ) : hasResult ? (
                 <div
@@ -146,20 +151,22 @@ function makeToolRenderer(config: {
         {needsPermission ? (
           <div className="flex items-center gap-2 rounded-md bg-assistant/10 border border-assistant/25 px-3 py-2 mt-1">
             <span className="h-2 w-2 shrink-0 rounded-full bg-assistant animate-pulse" />
-            <span className="text-xs font-medium text-assistant-soft flex-1">等待确认</span>
+            <span className="text-xs font-medium text-assistant-soft flex-1">
+              {t("claude2.permission.awaiting")}
+            </span>
             <button
               type="button"
               className="rounded-md bg-assistant/25 px-3 py-1 text-xs font-semibold text-assistant-soft hover:bg-assistant/40 active:bg-assistant/50 transition"
               onClick={() => bridge?.respondToControlRequest(controlRequestId, args)}
             >
-              允许
+              {t("claude2.permission.allow")}
             </button>
             <button
               type="button"
               className="rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
               onClick={() => bridge?.cancelControlRequest(controlRequestId)}
             >
-              拒绝
+              {t("claude2.permission.deny")}
             </button>
           </div>
         ) : null}
@@ -252,13 +259,18 @@ function editDiffBody(args: Record<string, unknown>): ReactNode {
 }
 
 // Footer for Agent tool: renders prompt collapsed + sub-agent response nested.
-function agentFooter(result: string, args: Record<string, unknown>, isError: boolean): ReactNode {
+function agentFooter(
+  result: string,
+  args: Record<string, unknown>,
+  isError: boolean,
+  t: TranslateFn,
+): ReactNode {
   const prompt = typeof args.prompt === "string" ? args.prompt : "";
   return (
     <div className="space-y-2">
       {prompt ? (
         <details className="text-xs text-on-surface-muted">
-          <summary className="cursor-pointer">Prompt</summary>
+          <summary className="cursor-pointer">{t("claude2.subagent.prompt")}</summary>
           <pre className="mt-1 text-[0.6rem] text-on-surface-soft whitespace-pre-wrap break-all leading-relaxed">
             {prompt}
           </pre>
@@ -266,7 +278,7 @@ function agentFooter(result: string, args: Record<string, unknown>, isError: boo
       ) : null}
       <div className="rounded bg-surface/50 p-2">
         <div className="mb-1 text-[0.55rem] font-semibold uppercase tracking-wide text-user/70">
-          子 Agent 输出
+          {t("claude2.subagent.output")}
         </div>
         <pre
           className={`whitespace-pre-wrap break-all text-[0.65rem] leading-relaxed ${isError ? "text-error" : "text-on-surface-soft"}`}

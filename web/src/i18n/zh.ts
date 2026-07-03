@@ -403,6 +403,17 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.compact.progressSummarizing": "生成摘要…",
   "claude2.hook.title": "钩子",
 
+  // ── Permission confirmation / sub-agent footer / retry 状态 ──
+  "claude2.permission.awaiting": "等待确认",
+  "claude2.permission.allow": "允许",
+  "claude2.permission.deny": "拒绝",
+  "claude2.subagent.prompt": "提示词",
+  "claude2.subagent.output": "子 Agent 输出",
+  "claude2.retry.attempt": "重试 {{attempt}}/{{max}}",
+  "claude2.retry.attemptSeconds": "重试 {{attempt}}/{{max}}，{{seconds}}s 后",
+  "claude2.retry.bannerMulti": "重试 {{attempt}}/{{max}}：{{error}}，{{seconds}}s",
+  "claude2.retry.bannerSingle": "{{error}}，{{seconds}}s",
+
   // ── Workbench（三栏工作台外壳）──────────────────────────────
   "workbench.collapseLeft": "收起左栏",
   "workbench.collapseRight": "收起右栏",
