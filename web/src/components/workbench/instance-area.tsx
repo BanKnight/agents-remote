@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type GlobalInstanceCandidate,
@@ -264,28 +264,38 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstan
       staleTime: 5_000,
     })),
   });
-  if (!isGlobal) return [];
-  const candidates: GlobalInstanceCandidate[] = [];
-  names.forEach((name, index) => {
-    for (const session of agentQueries[index]?.data?.sessions ?? []) {
-      candidates.push({
-        displayName: session.displayName,
-        provider: session.provider,
-        ref: { projectName: name, sessionId: session.id },
-        status: session.status,
-        type: "agent",
-      });
-    }
-    for (const session of terminalQueries[index]?.data?.sessions ?? []) {
-      candidates.push({
-        displayName: session.displayName,
-        ref: { projectName: name, sessionId: session.id },
-        status: session.status,
-        type: "terminal",
-      });
-    }
-  });
-  return candidates;
+  // dataUpdatedAt fingerprint：query data 内容变化时 timestamp 才变，作 useMemo 单一 dep，
+  // 让返回引用在 data 不变时稳定（下游 useMemo([candidates]) 才有效；useQueries 每 render
+  // 返回新数组引用，直接进 deps 会每 render 重算）。
+  const dataKey = `${isGlobal}|${projects.dataUpdatedAt}|${agentQueries
+    .map((q) => q.dataUpdatedAt)
+    .join(",")}|${terminalQueries.map((q) => q.dataUpdatedAt).join(",")}`;
+  return useMemo(() => {
+    if (!isGlobal) return [];
+    const candidates: GlobalInstanceCandidate[] = [];
+    names.forEach((name, index) => {
+      for (const session of agentQueries[index]?.data?.sessions ?? []) {
+        candidates.push({
+          displayName: session.displayName,
+          provider: session.provider,
+          ref: { projectName: name, sessionId: session.id },
+          status: session.status,
+          type: "agent",
+        });
+      }
+      for (const session of terminalQueries[index]?.data?.sessions ?? []) {
+        candidates.push({
+          displayName: session.displayName,
+          ref: { projectName: name, sessionId: session.id },
+          status: session.status,
+          type: "terminal",
+        });
+      }
+    });
+    return candidates;
+    // names/agentQueries/terminalQueries/isGlobal 由 dataKey fingerprint 覆盖（data 变 → timestamp 变）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey]);
 }
 
 /**

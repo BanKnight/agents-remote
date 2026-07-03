@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
@@ -94,13 +94,12 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const [layout, updateLayout] = useWorkbenchLayout(scope);
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
   const order = useScopeInstanceOrder(scope);
-  const globalCandidates = useGlobalInstanceCandidates({ kind: "global" });
   const currentIndex = order.findIndex((o) => o.sessionId === focusId);
   const projectName =
     scope.kind === "project"
       ? scope.key
       : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ??
-        globalCandidates.find((c) => c.ref.sessionId === focusId)?.ref.projectName);
+        order.find((r) => r.sessionId === focusId)?.projectName);
   const ctx: PluginContext = {
     projectKey: projectName ?? null,
     focusId,
@@ -316,12 +315,15 @@ function MobileGlobalOverview() {
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
   const candidates = useGlobalInstanceCandidates({ kind: "global" });
-  const grouped = new Map<string, GlobalInstanceCandidate[]>();
-  for (const candidate of candidates) {
-    const arr = grouped.get(candidate.ref.projectName) ?? [];
-    arr.push(candidate);
-    grouped.set(candidate.ref.projectName, arr);
-  }
+  const grouped = useMemo(() => {
+    const map = new Map<string, GlobalInstanceCandidate[]>();
+    for (const candidate of candidates) {
+      const arr = map.get(candidate.ref.projectName) ?? [];
+      arr.push(candidate);
+      map.set(candidate.ref.projectName, arr);
+    }
+    return map;
+  }, [candidates]);
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
   };
