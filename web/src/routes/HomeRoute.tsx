@@ -8,6 +8,7 @@ import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell
 import {
   ActionButton,
   IconMarker,
+  MobilePageHeader,
   ShellInput,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
@@ -66,36 +67,36 @@ export function HomeRoute() {
 
   return (
     <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
-      <ShellHeaderSurface
-        actions={
-          <>
-            <ActionButton
-              className="hidden sm:inline-flex"
-              tone="accent"
-              onClick={() => setSetupOpen(!setupOpen)}
-            >
-              <ShellIcon name="project" className="h-3.5 w-3.5" />
-              {t("home.newAdopt")}
-            </ActionButton>
+      {/* 移动端一级 page header：与实例/Settings 一致（h-11 + text-base + 无 eyebrow）。
+          桌面用下方 ShellHeaderSurface（大标题 + 留白卡片），两套设计语言按断点切换。 */}
+      <div className="sm:hidden">
+        <MobilePageHeader
+          actions={
             <button
-              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30 sm:hidden"
-              type="button"
               aria-label={t("home.createProjectAria")}
+              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
               onClick={() => setSetupOpen(!setupOpen)}
+              type="button"
             >
               +
             </button>
-          </>
-        }
-        eyebrow={
-          <>
-            <span className="hidden sm:inline">{t("home.eyebrowDesktop")}</span>
-            <span className="sm:hidden">{t("home.eyebrowMobile")}</span>
-          </>
-        }
-        title={t("home.title")}
-        variant="home"
-      />
+          }
+          title={t("home.title")}
+        />
+      </div>
+      <div className="hidden sm:contents">
+        <ShellHeaderSurface
+          actions={
+            <ActionButton tone="accent" onClick={() => setSetupOpen(!setupOpen)}>
+              <ShellIcon name="project" className="h-3.5 w-3.5" />
+              {t("home.newAdopt")}
+            </ActionButton>
+          }
+          eyebrow={<span>{t("home.eyebrowDesktop")}</span>}
+          title={t("home.title")}
+          variant="home"
+        />
+      </div>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <ProjectListCard

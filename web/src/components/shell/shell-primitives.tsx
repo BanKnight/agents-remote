@@ -268,3 +268,43 @@ export function ListRow({
     </div>
   );
 }
+
+type MobilePageHeaderProps = {
+  actions?: ReactNode;
+  back?: { label: string; onClick: () => void };
+  title: ReactNode;
+};
+
+/**
+ * 移动端一级 / 二级页面统一 header（设计文档 §7）。结构 = 可选 ◄ 返回 + text-base 大标题 +
+ * 可选右侧 actions，h-11 高、border-b 分隔。无 eyebrow 小标题（与桌面 ShellHeaderSurface 区别）。
+ * 跨页一致性契约：Projects / 实例 / Settings 一级 tab + 项目总览 / 聚焦态二级页都用此 primitive。
+ */
+export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps) {
+  return (
+    <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
+      {back ? (
+        <button
+          aria-label={back.label}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={back.onClick}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </button>
+      ) : null}
+      <span className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
+        {title}
+      </span>
+      {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+    </header>
+  );
+}

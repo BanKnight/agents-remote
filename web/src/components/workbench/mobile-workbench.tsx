@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
-import { IconMarker, shellSurfaceClasses } from "../shell/shell-primitives";
+import { IconMarker, MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import { sessionStatusLabel } from "../../routes/console-model";
@@ -128,27 +128,10 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
           prevLabel={t("workbench.switchPrev")}
         />
       ) : null}
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
-        <button
-          aria-label={t("workbench.backToList")}
-          className="inline-flex h-11 w-11 items-center justify-center gap-1 rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={() => void navigateWorkbench(scope)}
-          type="button"
-        >
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </button>
-        <span className="truncate text-sm font-semibold text-on-surface">
-          {projectName ?? t("workbench.global")}
-        </span>
-      </header>
+      <MobilePageHeader
+        back={{ label: t("workbench.backToList"), onClick: () => void navigateWorkbench(scope) }}
+        title={projectName ?? t("workbench.global")}
+      />
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
         <MobileFocusTabButton
           active={activeTab === "output"}
@@ -280,24 +263,10 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
-        <button
-          className="inline-flex h-11 w-11 items-center justify-center gap-1 rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={() => void navigate({ to: "/" })}
-          type="button"
-        >
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </button>
-        <span className="truncate text-sm font-semibold text-on-surface">{scope.key}</span>
-      </header>
+      <MobilePageHeader
+        back={{ label: t("project.backToProjects"), onClick: () => void navigate({ to: "/" }) }}
+        title={scope.key}
+      />
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
         <MobileFocusTabButton
           active={activeTab === "overview"}
@@ -354,9 +323,7 @@ function MobileGlobalOverview() {
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <h2 className="shrink-0 border-b border-on-surface/5 px-3 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-        {t("workbench.globalOverviewTitle")}
-      </h2>
+      <MobilePageHeader title={t("workbench.globalOverviewTitle")} />
       <nav
         aria-label={t("workbench.globalOverviewTitle")}
         className="flex-1 overflow-y-auto pb-24 lg:pb-0"

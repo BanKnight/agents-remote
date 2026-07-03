@@ -23,7 +23,6 @@ export const en = {
   // ── Home ─────────────────────────────────────────────────────
   "home.title": "Projects",
   "home.eyebrowDesktop": "Open a server Project to continue with Agent, Files, Git, or Terminal.",
-  "home.eyebrowMobile": "Open a Project to continue.",
   "home.newAdopt": "New / Adopt",
   "home.createProjectAria": "Create or adopt Project",
   "home.loading": "Loading Projects...",
