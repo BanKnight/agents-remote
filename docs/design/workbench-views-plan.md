@@ -44,7 +44,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 ## Phase 清单
 
-### Phase 1 · `cleanup-status-dot-header-padding`（独立，先做）
+### Phase 1 · `cleanup-status-dot-header-padding`（独立，先做） ✅ 已交付（`d8a0672`）
 
 **目标**：状态指示从「带背景文字 badge」统一为「纯色小圆点」；移动 header padding 对齐正文区。为 P3/P4/P5 铺好 StatusDot primitive。
 
@@ -59,7 +59,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **依赖**：无。**待拍点**：无（胶囊体用户单独提，不在本 phase）。
 
-### Phase 2 · `workbench-ia-restructure`（IA 基础）
+### Phase 2 · `workbench-ia-restructure`（IA 基础） ✅ 已交付
 
 **目标**：桌面/移动统一「二级导航」理念——左栏重构为导航条目列表，中栏承载 5 tab + 视图切换器。产出 ViewSwitcher primitive + URL 模型，供 P3/P4/P5 落地具体视图。
 
@@ -74,6 +74,19 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 **验证**：门禁全绿；CSS 落盘；Playwright 走 golden path（左栏条目切换 scope、5 tab 切换、URL `?view`/`?tab` 记忆与刷新恢复、视图切换器按 scope 隐藏）；DOM 几何（tab 行/切换器位置）；桌面+移动截图。
 
 **依赖**：建议 P1 先做（StatusDot 给总览实例展示用）。**待拍点**：聚焦态 header 的 session 名位置（建议 header 内联）、project 总览默认视图（建议 grid）、右栏显示时机（建议聚焦态显示、总览/历史 tab 隐藏）、视图切换器 icon 顺序、split 中间态。
+
+**交付记录**（2026-07-04，commits `29e002b` → `b77a677`）：
+- 批 2a `29e002b`：ViewSwitcher primitive + URL `?view`/`?tab` 模型 + `workbenchViewAtom`/`workbenchMiddleTabAtom`（克隆 rightTab 双写模式）。
+- 批 2b `abbf48b`/`d56db01`：中栏 5 tab（overview/history/files/git/prototype）+ 历史拆出 `HistoryList`/`useHistorySessions` + 右栏聚焦态 gate。
+- URL 正交修复 `87d1161`：`navigateWorkbench` 三 handler 传完整 `{view,tab,rightTab}`（TanStack navigate 整体替换 search，单键会丢维）。
+- 批 2c-1 `f61e4d2`：左栏 `ProjectNode` 去展开成纯导航条目（count badges 保留，来自 `listProjects` 零 query）；`ProjectInstances` list variant 清理。
+- 批 2c-2 `6c71879`：`useCreateSession(projectName)` hook（global 短路避免条件 hook）+ `CreateSessionBar` 三处复用（桌面 tab bar / 移动 card / EmptyInstanceArea）。
+- 批 2c-3 `5af1ad5`：移动 history tab + 移动 ViewSwitcher（复用 `workbenchViewAtom`，`filterWorkbenchViews(mobile)` = [table,grid]）+ `useFocusSessionName`（query key 与 PanelRouter 一致，dedupe）+ 桌面/移动聚焦态 header 内联 displayName。
+- 收尾 P1 `b77a677`：`useFocusSessionName` projReady 守卫（避免空 projectName query）+ 桌面 header fallback 与移动对称（`t("workbench.global")`）。
+
+**已知中间态**（P3/P4/P5 消化）：桌面非聚焦 overview tab + 聚焦态均仍渲染旧 `SplitLayout`（多面板），P3 grid/grouped、P4 table 接管非聚焦总览，P5 split 重构（面板三态）接管聚焦态。split 按钮 P2 全平台隐藏（`filterWorkbenchViews` 过滤），死代码 `SplitViewIcon`/`VIEW_LABEL_KEY['split']`/`viewSplit` key 保留待 P5。移动 ViewSwitcher 切 view 仅写 atom，渲染层切换 Phase 4 落地。
+
+**subagent 审查结论**：0 P0，3 P1（均已修，见 `b77a677`），5 P2（多为文档同步或 P3/P4 自然消化的中间态）。Phase 2 收尾，可启动 P3。
 
 ### Phase 3 · `workbench-grid-grouped-views`
 
