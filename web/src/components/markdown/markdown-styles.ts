@@ -14,6 +14,6 @@ export const MARKDOWN_CLASS =
   "[&_li]:mb-1 " +
   "[&_code]:rounded [&_code]:bg-slate-900/60 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:py-0 " +
-  "[&_a]:text-cyan-400 [&_a]:underline " +
+  "[&_a]:text-primary [&_a]:underline " +
   "[&_blockquote]:border-l-2 [&_blockquote]:border-slate-600 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400 " +
   "[&_hr]:my-3 [&_hr]:border-slate-700";

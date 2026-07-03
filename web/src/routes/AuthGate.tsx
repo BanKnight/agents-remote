@@ -159,14 +159,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </label>
           <input
             autoComplete="current-password"
-            className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20"
+            className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-primary focus:ring-2 focus:ring-primary/20"
             id={passwordId}
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
           <button
-            className="mt-4 w-full rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+            className="mt-4 w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             disabled={password.trim().length === 0 || loginMutation.isPending}
             type="submit"
           >
@@ -192,7 +192,7 @@ type InstallPromptBannerProps = {
 function InstallPromptBanner({ onDismiss, onInstall }: InstallPromptBannerProps) {
   const { t } = useT();
   return (
-    <section className="fixed inset-x-3 bottom-3 z-50 rounded-2xl border border-cyan-300/25 bg-slate-950/95 p-3 text-slate-100 shadow-2xl shadow-black/40 backdrop-blur sm:left-auto sm:right-4 sm:w-96">
+    <section className="fixed inset-x-3 bottom-3 z-50 rounded-2xl border border-primary/25 bg-slate-950/95 p-3 text-slate-100 shadow-2xl shadow-black/40 backdrop-blur sm:left-auto sm:right-4 sm:w-96">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{t("auth.installTitle")}</p>
@@ -207,7 +207,7 @@ function InstallPromptBanner({ onDismiss, onInstall }: InstallPromptBannerProps)
         </button>
       </div>
       <button
-        className="mt-3 w-full rounded-xl bg-cyan-300 px-3 py-2 text-xs font-bold text-slate-950 transition hover:bg-cyan-200"
+        className="mt-3 w-full rounded-xl bg-primary px-3 py-2 text-xs font-bold text-slate-950 transition hover:bg-primary/90"
         type="button"
         onClick={onInstall}
       >
@@ -228,7 +228,7 @@ function AuthFrame({ children, description, title }: AuthFrameProps) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] px-4 text-slate-100">
       <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900/85 p-6 shadow-2xl shadow-black/30 backdrop-blur">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
           {t("auth.brand")}
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">{title}</h1>
