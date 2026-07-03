@@ -47,18 +47,18 @@ function makeToolRenderer(config: {
           ? "error"
           : null;
     const badgeBg = needsPermission
-      ? "bg-amber-500/15 text-amber-200"
+      ? "bg-assistant/15 text-assistant-soft"
       : "bg-cyan-500/15 text-cyan-200";
 
     const accentColor = isError
       ? "text-red-400"
       : needsPermission
-        ? "text-amber-400"
+        ? "text-assistant"
         : "text-cyan-400";
     const accentDivider = isError
       ? "border-red-500/20"
       : needsPermission
-        ? "border-amber-500/20"
+        ? "border-assistant/20"
         : "border-slate-700/50";
 
     const bodyNode = body ? body(args) : null;
@@ -125,7 +125,7 @@ function makeToolRenderer(config: {
               ) : null}
               {isInterrupted ? (
                 <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
-                  <span className="text-[0.6rem] text-amber-400">
+                  <span className="text-[0.6rem] text-assistant">
                     {t("claude2.toolInterruptedHint")}
                   </span>
                 </div>
@@ -148,12 +148,12 @@ function makeToolRenderer(config: {
           ) : null}
         </CollapsibleSection>
         {needsPermission ? (
-          <div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/25 px-3 py-2 mt-1">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400 animate-pulse" />
-            <span className="text-xs font-medium text-amber-300 flex-1">等待确认</span>
+          <div className="flex items-center gap-2 rounded-md bg-assistant/10 border border-assistant/25 px-3 py-2 mt-1">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-assistant animate-pulse" />
+            <span className="text-xs font-medium text-assistant-soft flex-1">等待确认</span>
             <button
               type="button"
-              className="rounded-md bg-amber-500/25 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/40 active:bg-amber-500/50 transition"
+              className="rounded-md bg-assistant/25 px-3 py-1 text-xs font-semibold text-assistant-soft hover:bg-assistant/40 active:bg-assistant/50 transition"
               onClick={() => bridge?.respondToControlRequest(controlRequestId, args)}
             >
               允许

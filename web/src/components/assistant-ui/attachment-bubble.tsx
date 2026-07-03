@@ -50,7 +50,7 @@ function fileBody(raw: Record<string, unknown>): ReactNode | null {
   return (
     <div className="space-y-1">
       {numLines != null && (
-        <div className="text-[0.6rem] text-amber-200/50 font-mono">{numLines} lines</div>
+        <div className="text-[0.6rem] text-assistant-soft/50 font-mono">{numLines} lines</div>
       )}
       <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">{text}</pre>
     </div>
@@ -144,7 +144,9 @@ function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
         return (
           <div key={fileKey} className="space-y-0.5">
             {filePath && (
-              <div className="text-[0.6rem] text-amber-200/50 font-mono truncate">{filePath}</div>
+              <div className="text-[0.6rem] text-assistant-soft/50 font-mono truncate">
+                {filePath}
+              </div>
             )}
             {file.diagnostics!.map((d, di) => (
               <div
@@ -153,7 +155,9 @@ function diagnosticsBody(raw: Record<string, unknown>): ReactNode | null {
               >
                 {d.severity && (
                   <span
-                    className={d.severity === "Error" ? "text-red-300/80" : "text-amber-200/60"}
+                    className={
+                      d.severity === "Error" ? "text-red-300/80" : "text-assistant-soft/60"
+                    }
                   >
                     [{d.severity}]
                   </span>

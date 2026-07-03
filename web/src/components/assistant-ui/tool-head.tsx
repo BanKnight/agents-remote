@@ -134,7 +134,7 @@ function statusIconClass(status: ToolHeadStatus | null | undefined): string {
       return "opacity-50";
     case "interrupted":
       // Dim + amber tint so a resume interrupt stays distinguishable.
-      return "opacity-50 text-amber-400";
+      return "opacity-50 text-assistant";
     case "error":
       // Dim + red tint so failures stay visible.
       return "opacity-50 text-red-400";
