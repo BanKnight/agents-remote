@@ -1,19 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { type KeyboardEvent } from "react";
-import type { AgentProvider, AgentSession, Project, TerminalSession } from "@agents-remote/shared";
-import {
-  createAgentSession,
-  createTerminalSession,
-  listAgentSessions,
-  listProjects,
-  listTerminalSessions,
-} from "../../api/client";
+import type { AgentSession, Project, TerminalSession } from "@agents-remote/shared";
+import { listAgentSessions, listProjects, listTerminalSessions } from "../../api/client";
 import { useT } from "../../i18n";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
-  actionButtonClasses,
   IconMarker,
   InstanceCard,
   sessionMarker,
@@ -22,15 +15,8 @@ import {
 } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { usePromptDialog } from "../shell/prompt-dialog";
 import { HistoryList } from "./history-list";
-import { useCloseSession } from "./instance-area";
+import { CreateSessionBar, useCloseSession, useCreateSession } from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
 
@@ -177,9 +163,8 @@ type ProjectInstancesProps = {
 export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
   const { t } = useT();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { holder: promptHolder, prompt } = usePromptDialog();
   const { close, holder: closeHolder } = useCloseSession();
+  const create = useCreateSession(projectName);
   const agents = useQuery({
     queryKey: ["projects", projectName, "agent-sessions"],
     queryFn: () => listAgentSessions(projectName),
@@ -195,58 +180,6 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
   const terminalSessions = terminals.data?.sessions ?? [];
   const loading = agents.isLoading && terminals.isLoading;
 
-  const invalidateSessions = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", projectName, "terminal-sessions"] }),
-    ]);
-  };
-
-  const createAgent = useMutation({
-    mutationFn: ({ displayName, provider }: { displayName: string; provider: AgentProvider }) =>
-      createAgentSession(projectName, provider, { displayName: displayName || undefined }),
-    onSuccess: async (data) => {
-      await invalidateSessions();
-      await navigate({
-        to: "/projects/$key/session/$id",
-        params: { key: projectName, id: data.session.id },
-      });
-    },
-  });
-  const createTerminal = useMutation({
-    mutationFn: (displayName: string) =>
-      createTerminalSession(projectName, displayName || undefined),
-    onSuccess: async (data) => {
-      await invalidateSessions();
-      await navigate({
-        to: "/projects/$key/session/$id",
-        params: { key: projectName, id: data.session.id },
-      });
-    },
-  });
-
-  const handleCreateAgent = (provider: AgentProvider) => {
-    void prompt({
-      title: t("session.namePrompt.createAgent"),
-      placeholder: t("session.namePrompt.placeholder"),
-      confirmLabel: t("session.namePrompt.confirm"),
-      cancelLabel: t("cancel"),
-    }).then((name) => {
-      if (name !== null) createAgent.mutate({ displayName: name, provider });
-    });
-  };
-
-  const handleCreateTerminal = () => {
-    void prompt({
-      title: t("session.namePrompt.createTerminal"),
-      placeholder: t("session.namePrompt.placeholder"),
-      confirmLabel: t("session.namePrompt.confirm"),
-      cancelLabel: t("cancel"),
-    }).then((name) => {
-      if (name !== null) createTerminal.mutate(name);
-    });
-  };
-
   const focus = (sessionId: string) => {
     void navigate({
       to: "/projects/$key/session/$id",
@@ -254,8 +187,6 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
     });
   };
 
-  // 历史 session resume 已移入 useHistorySessions（history-list.tsx），卡片历史段
-  // 直接渲染 <HistoryList>，不再在此维护 resume mutation / invalidate。
   // 卡片 close：复用 useCloseSession（confirm → close API → 精确失效缓存）。
   // 不调 layout.removePanel：卡片由 query 驱动，invalidate 后列表自然消失。
   const closeSession = (sessionId: string, type: "agent" | "terminal") => {
@@ -282,11 +213,14 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
 
   return (
     <div className="flex flex-col gap-3 px-3 pt-1">
-      <LeftRailCreateBar
-        isCreating={createAgent.isPending || createTerminal.isPending}
-        onCreateAgent={handleCreateAgent}
-        onCreateTerminal={handleCreateTerminal}
-      />
+      <div className="px-2 py-1.5">
+        <CreateSessionBar
+          isCreating={create.isCreating}
+          onCreateAgent={create.createAgent}
+          onCreateTerminal={create.createTerminal}
+          triggerClassName="w-full justify-center"
+        />
+      </div>
       {loading && agentSessions.length === 0 && terminalSessions.length === 0 ? (
         <CardGridSkeleton />
       ) : null}
@@ -309,66 +243,8 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
         </div>
       ) : null}
       <HistoryList focusId={focusId} projectName={projectName} />
-      {promptHolder}
+      {create.promptHolder}
       {closeHolder}
-    </div>
-  );
-}
-
-type LeftRailCreateBarProps = {
-  isCreating: boolean;
-  onCreateAgent: (provider: AgentProvider) => void;
-  onCreateTerminal: () => void;
-};
-
-function LeftRailCreateBar({
-  isCreating,
-  onCreateAgent,
-  onCreateTerminal,
-}: LeftRailCreateBarProps) {
-  const { t } = useT();
-  return (
-    <div className="px-2 py-1.5">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className={actionButtonClasses({
-            tone: "accent",
-            className:
-              "w-full justify-center group disabled:cursor-not-allowed disabled:opacity-50",
-          })}
-          disabled={isCreating}
-        >
-          {isCreating ? t("project.creating") : t("workbench.createMenu")}
-          <svg
-            aria-hidden="true"
-            className="h-3 w-3 transition group-data-[state=open]:rotate-180"
-            fill="none"
-            viewBox="0 0 16 16"
-          >
-            <path
-              d="M4 6l4 4 4-4"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-          <DropdownMenuItem onSelect={() => onCreateAgent("claude2")}>
-            <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
-            {t("workbench.createClaude2")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onCreateAgent("codex")}>
-            <ShellIcon className="h-3.5 w-3.5" name="openai" />
-            {t("workbench.createCodex")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onCreateTerminal}>
-            <ShellIcon className="h-3.5 w-3.5" name="terminal" />
-            {t("workbench.createTerminal")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }

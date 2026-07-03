@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AgentProvider } from "@agents-remote/shared";
 import {
   type GlobalInstanceCandidate,
   type WorkbenchMiddleTab,
@@ -19,6 +21,8 @@ import {
 import {
   closeAgentSession,
   closeTerminalSession,
+  createAgentSession,
+  createTerminalSession,
   getAgentSession,
   getTerminalSession,
   listAgentSessions,
@@ -28,12 +32,20 @@ import {
 import { useConfirm } from "../shell/confirm-dialog";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import { shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
+import { actionButtonClasses, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SplitLayout } from "./split-panel";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import { ShellIcon } from "../shell/icons";
+import { usePromptDialog } from "../shell/prompt-dialog";
 
 /** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
 const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
@@ -80,6 +92,7 @@ export function InstanceArea({
   const { close, holder } = useCloseSession();
   const [layout, update] = useWorkbenchLayout(scope);
   const candidates = useGlobalInstanceCandidates(scope);
+  const create = useCreateSession(ctx.projectKey);
 
   // ViewSwitcher 视图选项（按 scope 过滤；桌面 isMobile=false）。聚焦态不渲染但仍稳定构造。
   const viewOptions = useMemo(
@@ -160,7 +173,7 @@ export function InstanceArea({
       focusId ? (
         <PlaceholderPanel focusId={focusId} /> // 布局空但 URL 带 focusId：addPanel/铺开尚未收敛，先占位防闪
       ) : (
-        <EmptyInstanceArea />
+        <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
       )
     ) : (
       <SplitLayout
@@ -209,20 +222,30 @@ export function InstanceArea({
               onClick={() => onTabChange?.(opt.id)}
             />
           ))}
-          {resolvedTab === "overview" && onViewChange && view ? (
-            <div className="ml-auto">
-              <ViewSwitcher
-                ariaLabel={t("workbench.viewSwitcher")}
-                onChange={onViewChange}
-                view={view}
-                views={viewOptions}
-              />
+          {ctx.projectKey !== null || (resolvedTab === "overview" && onViewChange && view) ? (
+            <div className="ml-auto flex items-center gap-1">
+              {ctx.projectKey !== null ? (
+                <CreateSessionBar
+                  isCreating={create.isCreating}
+                  onCreateAgent={create.createAgent}
+                  onCreateTerminal={create.createTerminal}
+                />
+              ) : null}
+              {resolvedTab === "overview" && onViewChange && view ? (
+                <ViewSwitcher
+                  ariaLabel={t("workbench.viewSwitcher")}
+                  onChange={onViewChange}
+                  view={view}
+                  views={viewOptions}
+                />
+              ) : null}
             </div>
           ) : null}
         </div>
       ) : null}
       <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
+      {create.promptHolder}
     </div>
   );
 }
@@ -343,6 +366,159 @@ export function useCloseSession() {
 }
 
 /**
+ * 创建实例统一流程（2c-2 提取，供中栏 InstanceArea tab bar / 空态 EmptyInstanceArea /
+ * 左栏 ProjectInstances card 三处复用）。prompt → 按 type 调 create API → invalidate
+ * agent/terminal-sessions + navigate 聚焦新 session。与 useCloseSession 同文件同模式
+ *（业务 hook 集合）。`projectName === null`（global scope）短路返回 noop + null holder，
+ * 避免 global 误创建。promptHolder 由调用方渲染（与 useCloseSession.holder 并列）。
+ */
+export type CreateSessionApi = {
+  createAgent: (provider: AgentProvider) => void;
+  createTerminal: () => void;
+  isCreating: boolean;
+};
+
+export function useCreateSession(projectName: string | null): CreateSessionApi & {
+  promptHolder: ReactNode;
+} {
+  const { t } = useT();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { holder: promptHolder, prompt } = usePromptDialog();
+  const safeName = projectName ?? "";
+
+  const invalidateSessions = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", safeName, "agent-sessions"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", safeName, "terminal-sessions"] }),
+    ]);
+  };
+
+  const createAgent = useMutation({
+    mutationFn: ({ displayName, provider }: { displayName: string; provider: AgentProvider }) =>
+      createAgentSession(safeName, provider, { displayName: displayName || undefined }),
+    onSuccess: async (data) => {
+      await invalidateSessions();
+      await navigate({
+        to: "/projects/$key/session/$id",
+        params: { key: safeName, id: data.session.id },
+      });
+    },
+  });
+  const createTerminal = useMutation({
+    mutationFn: (displayName: string) => createTerminalSession(safeName, displayName || undefined),
+    onSuccess: async (data) => {
+      await invalidateSessions();
+      await navigate({
+        to: "/projects/$key/session/$id",
+        params: { key: safeName, id: data.session.id },
+      });
+    },
+  });
+
+  const createAgentPrompt = (provider: AgentProvider) => {
+    void prompt({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("session.namePrompt.confirm"),
+      placeholder: t("session.namePrompt.placeholder"),
+      title: t("session.namePrompt.createAgent"),
+    }).then((name) => {
+      if (name !== null) createAgent.mutate({ displayName: name, provider });
+    });
+  };
+
+  const createTerminalPrompt = () => {
+    void prompt({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("session.namePrompt.confirm"),
+      placeholder: t("session.namePrompt.placeholder"),
+      title: t("session.namePrompt.createTerminal"),
+    }).then((name) => {
+      if (name !== null) createTerminal.mutate(name);
+    });
+  };
+
+  if (projectName === null) {
+    return {
+      createAgent: () => {},
+      createTerminal: () => {},
+      isCreating: false,
+      promptHolder: null,
+    };
+  }
+  return {
+    createAgent: createAgentPrompt,
+    createTerminal: createTerminalPrompt,
+    isCreating: createAgent.isPending || createTerminal.isPending,
+    promptHolder,
+  };
+}
+
+type CreateSessionBarProps = {
+  isCreating: boolean;
+  onCreateAgent: (provider: AgentProvider) => void;
+  onCreateTerminal: () => void;
+  /** trigger 额外 className（如全宽 "w-full justify-center"）。默认 inline 紧凑（h-7 px-2）。 */
+  triggerClassName?: string;
+};
+
+/**
+ * 创建实例 dropdown（Claude/Codex/Terminal，2c-2 从 left-rail LeftRailCreateBar 改名迁此
+ * export）。presentational——消费 useCreateSession 的 createAgent/createTerminal/isCreating。
+ * 三处复用：InstanceArea tab bar（inline）、EmptyInstanceArea（inline）、ProjectInstances
+ * card（全宽 triggerClassName="w-full justify-center"）。
+ */
+export function CreateSessionBar({
+  isCreating,
+  onCreateAgent,
+  onCreateTerminal,
+  triggerClassName,
+}: CreateSessionBarProps) {
+  const { t } = useT();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={actionButtonClasses({
+          className: `group disabled:cursor-not-allowed disabled:opacity-50 ${triggerClassName ?? ""}`,
+          tone: "accent",
+        })}
+        disabled={isCreating}
+      >
+        {isCreating ? t("project.creating") : t("workbench.createMenu")}
+        <svg
+          aria-hidden="true"
+          className="h-3 w-3 transition group-data-[state=open]:rotate-180"
+          fill="none"
+          viewBox="0 0 16 16"
+        >
+          <path
+            d="M4 6l4 4 4-4"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+          />
+        </svg>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+        <DropdownMenuItem onSelect={() => onCreateAgent("claude2")}>
+          <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
+          {t("workbench.createClaude2")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onCreateAgent("codex")}>
+          <ShellIcon className="h-3.5 w-3.5" name="openai" />
+          {t("workbench.createCodex")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onCreateTerminal}>
+          <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+          {t("workbench.createTerminal")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
  * 全局实例区候选聚合（commit ④）。仅在 global 作用域发请求：listProjects → 每项目
  * listAgentSessions/listTerminalSessions（useQueries 动态查询，复用左栏 query key 缓存），
  * 扁平化成带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
@@ -436,11 +612,31 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[
   return refs;
 }
 
-function EmptyInstanceArea() {
+function EmptyInstanceArea({
+  create,
+  projectName,
+}: {
+  create: CreateSessionApi;
+  projectName: string | null;
+}) {
+  const { t } = useT();
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className={`min-h-32 flex-1 rounded-2xl ${shellSurfaceClasses.inset}`}>
-        {/* 空状态：左栏树创建实例或点历史 session resume 即可加入面板（设计文档 §4） */}
+      <div
+        className={`flex min-h-32 flex-1 flex-col items-center justify-center gap-3 rounded-2xl ${shellSurfaceClasses.inset}`}
+      >
+        {projectName !== null ? (
+          <>
+            <p className="text-sm text-on-surface-muted">{t("workbench.emptyInstanceHint")}</p>
+            <CreateSessionBar
+              isCreating={create.isCreating}
+              onCreateAgent={create.createAgent}
+              onCreateTerminal={create.createTerminal}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-on-surface-muted">{t("workbench.emptyInstanceGlobalHint")}</p>
+        )}
       </div>
     </div>
   );

@@ -428,6 +428,8 @@ export const en = {
   "workbench.global": "Instances",
   "workbench.projectsAria": "Projects",
   "workbench.historySection": "History",
+  "workbench.emptyInstanceHint": "No active sessions. Create one to get started.",
+  "workbench.emptyInstanceGlobalHint": "Select a project from the left rail.",
   "workbench.tabOutput": "Output",
   "workbench.tabOverview": "Overview",
   "workbench.tabHistory": "History",
