@@ -295,7 +295,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
         ) : (
           <div className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-            <ProjectInstances projectName={scope.key} variant="card" />
+            <ProjectInstances projectName={scope.key} />
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { type KeyboardEvent, type ReactNode, useState } from "react";
+import { type KeyboardEvent } from "react";
 import type { AgentProvider, AgentSession, Project, TerminalSession } from "@agents-remote/shared";
 import {
   createAgentSession,
@@ -17,7 +17,6 @@ import {
   IconMarker,
   InstanceCard,
   sessionMarker,
-  StatusDot,
   statusToTone,
   type ShellTone,
 } from "../shell/shell-primitives";
@@ -40,53 +39,31 @@ const INSTANCE_SKELETON_ROW_COUNT = 3;
 
 type LeftRailProps = {
   scope: WorkbenchScope;
-  focusId?: string;
 };
 
 /**
- * 工作台左栏（设计文档 §3）。跨项目 VSCode explorer 式树：全局节点 + 项目展开
- * （Agents/Terminals 段 + per-project 创建入口）。Stage 1 的单项目扁平列表已升级
- * 为常驻跨项目树，scope 决定选中哪个项目；点项目行切 scope 并展开，chevron 收折。
- * 每项目段含 + 新建 ▾ dropdown（Claude/Codex/Terminal）、活跃实例、历史 session 段；
- * 树底部「设置」入口 toggle 桌面 SettingsFlyout（移动走 /settings 全屏页）。
+ * 工作台左栏（设计文档 §3）。纯导航条目列表：全局总览节点 + 项目条目（点击切 scope）
+ * + 设置入口。活跃实例与历史已进中栏 tab（2b/2c-1），左栏不再展开实例段；项目条目
+ * 保留 count badges（来自 listProjects 聚合字段，零额外 query）作跨项目概览。
  */
-export function WorkbenchLeftRail({ focusId, scope }: LeftRailProps) {
-  return <ProjectTree focusId={focusId} scope={scope} />;
+export function WorkbenchLeftRail({ scope }: LeftRailProps) {
+  return <ProjectTree scope={scope} />;
 }
 
 type ProjectTreeProps = {
   scope: WorkbenchScope;
-  focusId?: string;
 };
 
-function ProjectTree({ focusId, scope }: ProjectTreeProps) {
+function ProjectTree({ scope }: ProjectTreeProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const [, setSettingsOpen] = useAtom(workbenchSettingsFlyoutOpenAtom);
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const activeProjectName = scope.kind === "project" ? scope.key : null;
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(activeProjectName ? [activeProjectName] : []),
-  );
 
   const projectItems = projects.data?.projects ?? [];
 
-  const toggleProject = (name: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-
   const selectProject = (name: string) => {
-    // 选中项目即展开（VSCode explorer 语义），chevron 负责单独收折。
-    setExpanded((prev) => {
-      if (prev.has(name)) return prev;
-      const next = new Set(prev);
-      next.add(name);
-      return next;
-    });
     void navigate({ to: "/projects/$key", params: { key: name } });
   };
 
@@ -102,12 +79,9 @@ function ProjectTree({ focusId, scope }: ProjectTreeProps) {
         {projectItems.map((project) => (
           <ProjectNode
             active={project.name === activeProjectName}
-            expanded={expanded.has(project.name)}
-            focusId={focusId}
             key={project.name}
             project={project}
             onSelect={() => selectProject(project.name)}
-            onToggle={() => toggleProject(project.name)}
           />
         ))}
         {projects.isLoading && projectItems.length === 0 ? <LeftRailSkeleton /> : null}
@@ -160,15 +134,11 @@ function GlobalNavNode({ active, onSelect }: { active: boolean; onSelect: () => 
 
 type ProjectNodeProps = {
   active: boolean;
-  expanded: boolean;
-  focusId?: string;
   project: Project;
   onSelect: () => void;
-  onToggle: () => void;
 };
 
-function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }: ProjectNodeProps) {
-  const { t } = useT();
+function ProjectNode({ active, project, onSelect }: ProjectNodeProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -176,52 +146,25 @@ function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }:
     }
   };
   return (
-    <div className="flex flex-col">
-      <div
-        className={`flex w-full cursor-pointer items-center gap-1 px-1.5 py-1.5 transition ${active ? "bg-primary/10" : "hover:bg-on-surface/5"}`}
-        onClick={onSelect}
-        onKeyDown={handleKeyDown}
-        role="button"
-        tabIndex={0}
+    <div
+      className={`flex w-full cursor-pointer items-center gap-1 px-1.5 py-1.5 transition ${active ? "bg-primary/10" : "hover:bg-on-surface/5"}`}
+      onClick={onSelect}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+    >
+      <IconMarker size="sm" tone="success">
+        <ShellIcon className="h-3 w-3" name="project" />
+      </IconMarker>
+      <span
+        className={`min-w-0 flex-1 truncate text-sm font-semibold ${active ? "text-primary" : "text-on-surface-soft"}`}
       >
-        <button
-          aria-label={expanded ? t("workbench.collapseProject") : t("workbench.expandProject")}
-          className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted hover:text-on-surface-soft"
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggle();
-          }}
-          type="button"
-        >
-          <svg
-            aria-hidden="true"
-            className={`h-3 w-3 transition ${expanded ? "rotate-90" : ""}`}
-            fill="none"
-            viewBox="0 0 16 16"
-          >
-            <path
-              d="M6 3L11 8l-5 5"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </button>
-        <IconMarker size="sm" tone="success">
-          <ShellIcon className="h-3 w-3" name="project" />
-        </IconMarker>
-        <span
-          className={`min-w-0 flex-1 truncate text-sm font-semibold ${active ? "text-primary" : "text-on-surface-soft"}`}
-        >
-          {project.name}
-        </span>
-        <span className="flex shrink-0 items-center gap-1 text-[0.6rem] font-medium text-on-surface-muted">
-          {project.agentSessionCount > 0 ? <span>{project.agentSessionCount}A</span> : null}
-          {project.terminalSessionCount > 0 ? <span>{project.terminalSessionCount}T</span> : null}
-        </span>
-      </div>
-      {expanded ? <ProjectInstances focusId={focusId} projectName={project.name} /> : null}
+        {project.name}
+      </span>
+      <span className="flex shrink-0 items-center gap-1 text-[0.6rem] font-medium text-on-surface-muted">
+        {project.agentSessionCount > 0 ? <span>{project.agentSessionCount}A</span> : null}
+        {project.terminalSessionCount > 0 ? <span>{project.terminalSessionCount}T</span> : null}
+      </span>
     </div>
   );
 }
@@ -229,14 +172,9 @@ function ProjectNode({ active, expanded, focusId, project, onSelect, onToggle }:
 type ProjectInstancesProps = {
   focusId?: string;
   projectName: string;
-  variant?: "list" | "card";
 };
 
-export function ProjectInstances({
-  focusId,
-  projectName,
-  variant = "list",
-}: ProjectInstancesProps) {
+export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -331,7 +269,6 @@ export function ProjectInstances({
     tone: statusToTone(status),
   });
 
-  const isCard = variant === "card";
   const mergedSessions = [
     ...agentSessions.map((session) => ({
       session: session as AgentSession,
@@ -344,82 +281,37 @@ export function ProjectInstances({
   ];
 
   return (
-    <div
-      className={
-        isCard
-          ? "flex flex-col gap-3 px-3 pt-1"
-          : "ml-3 flex flex-col border-l border-on-surface/5 pl-1"
-      }
-    >
+    <div className="flex flex-col gap-3 px-3 pt-1">
       <LeftRailCreateBar
         isCreating={createAgent.isPending || createTerminal.isPending}
         onCreateAgent={handleCreateAgent}
         onCreateTerminal={handleCreateTerminal}
       />
       {loading && agentSessions.length === 0 && terminalSessions.length === 0 ? (
-        isCard ? (
-          <CardGridSkeleton />
-        ) : (
-          <LeftRailSkeleton />
-        )
+        <CardGridSkeleton />
       ) : null}
-      {isCard ? (
-        mergedSessions.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2">
-            {mergedSessions.map(({ session, type }) => {
-              const provider = type === "agent" ? (session as AgentSession).provider : undefined;
-              return (
-                <InstanceCard
-                  closeLabel={t("session.close")}
-                  key={session.id}
-                  marker={sessionMarker(type, provider)}
-                  onClose={() => closeSession(session.id, type)}
-                  onSelect={() => focus(session.id)}
-                  status={statusToPill(session.status)}
-                  title={session.displayName}
-                />
-              );
-            })}
-          </div>
-        ) : null
-      ) : (
-        <>
-          {agentSessions.length > 0 ? (
-            <SectionLabel>{t("workbench.agentsSection")}</SectionLabel>
-          ) : null}
-          {agentSessions.map((session) => (
-            <AgentNavItem
-              active={session.id === focusId}
-              key={session.id}
-              onSelect={focus}
-              session={session}
-            />
-          ))}
-          {terminalSessions.length > 0 ? (
-            <SectionLabel>{t("workbench.terminalsSection")}</SectionLabel>
-          ) : null}
-          {terminalSessions.map((session) => (
-            <TerminalNavItem
-              active={session.id === focusId}
-              key={session.id}
-              onSelect={focus}
-              session={session}
-            />
-          ))}
-        </>
-      )}
-      {isCard ? <HistoryList focusId={focusId} projectName={projectName} /> : null}
+      {mergedSessions.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2">
+          {mergedSessions.map(({ session, type }) => {
+            const provider = type === "agent" ? (session as AgentSession).provider : undefined;
+            return (
+              <InstanceCard
+                closeLabel={t("session.close")}
+                key={session.id}
+                marker={sessionMarker(type, provider)}
+                onClose={() => closeSession(session.id, type)}
+                onSelect={() => focus(session.id)}
+                status={statusToPill(session.status)}
+                title={session.displayName}
+              />
+            );
+          })}
+        </div>
+      ) : null}
+      <HistoryList focusId={focusId} projectName={projectName} />
       {promptHolder}
       {closeHolder}
     </div>
-  );
-}
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-      {children}
-    </p>
   );
 }
 
@@ -478,66 +370,6 @@ function LeftRailCreateBar({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  );
-}
-
-type AgentNavItemProps = {
-  active: boolean;
-  session: AgentSession;
-  onSelect: (sessionId: string) => void;
-};
-
-function AgentNavItem({ active, onSelect, session }: AgentNavItemProps) {
-  const { t } = useT();
-  const tone = session.provider === "codex" ? "success" : "accent";
-  const iconName = session.provider === "codex" ? "openai" : "anthropic";
-  return (
-    <ShellNavigationButton
-      active={active}
-      label={session.displayName}
-      marker={
-        <IconMarker tone={tone}>
-          <ShellIcon className="h-3.5 w-3.5" name={iconName} />
-        </IconMarker>
-      }
-      meta={
-        <StatusDot
-          label={t(sessionStatusLabel(session.status))}
-          pulse={session.status === "running"}
-          tone={statusToTone(session.status)}
-        />
-      }
-      onClick={() => onSelect(session.id)}
-    />
-  );
-}
-
-type TerminalNavItemProps = {
-  active: boolean;
-  session: TerminalSession;
-  onSelect: (sessionId: string) => void;
-};
-
-function TerminalNavItem({ active, onSelect, session }: TerminalNavItemProps) {
-  const { t } = useT();
-  return (
-    <ShellNavigationButton
-      active={active}
-      label={session.displayName}
-      marker={
-        <IconMarker tone="success">
-          <ShellIcon className="h-3.5 w-3.5" name="terminal" />
-        </IconMarker>
-      }
-      meta={
-        <StatusDot
-          label={t(sessionStatusLabel(session.status))}
-          pulse={session.status === "running"}
-          tone={statusToTone(session.status)}
-        />
-      }
-      onClick={() => onSelect(session.id)}
-    />
   );
 }
 

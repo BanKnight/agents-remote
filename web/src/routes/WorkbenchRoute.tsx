@@ -113,7 +113,7 @@ function WorkbenchContent({
   }
   return (
     <WorkbenchShell
-      leftPanel={<WorkbenchLeftRail focusId={focusId} scope={scope} />}
+      leftPanel={<WorkbenchLeftRail scope={scope} />}
       rightPanel={
         focusId ? (
           <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
