@@ -65,6 +65,9 @@ export function HomeRoute() {
     create.mutate(trimmedPath);
   };
 
+  const title = t("home.title");
+  const toggleSetup = () => setSetupOpen((v) => !v);
+
   return (
     <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
       {/* 移动端一级 page header：与实例/Settings 一致（h-11 + text-base + 无 eyebrow）。
@@ -75,25 +78,25 @@ export function HomeRoute() {
             <button
               aria-label={t("home.createProjectAria")}
               className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
-              onClick={() => setSetupOpen(!setupOpen)}
+              onClick={toggleSetup}
               type="button"
             >
               +
             </button>
           }
-          title={t("home.title")}
+          title={title}
         />
       </div>
       <div className="hidden sm:contents">
         <ShellHeaderSurface
           actions={
-            <ActionButton tone="accent" onClick={() => setSetupOpen(!setupOpen)}>
+            <ActionButton tone="accent" onClick={toggleSetup}>
               <ShellIcon name="project" className="h-3.5 w-3.5" />
               {t("home.newAdopt")}
             </ActionButton>
           }
           eyebrow={<span>{t("home.eyebrowDesktop")}</span>}
-          title={t("home.title")}
+          title={title}
           variant="home"
         />
       </div>

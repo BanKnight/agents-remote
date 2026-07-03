@@ -374,7 +374,7 @@ export function ProjectInstances({
   });
 
   const isCard = variant === "card";
-  const activeSessions = [
+  const mergedSessions = [
     ...agentSessions.map((session) => ({
       session: session as AgentSession,
       type: "agent" as const,
@@ -406,9 +406,9 @@ export function ProjectInstances({
         )
       ) : null}
       {isCard ? (
-        activeSessions.length > 0 ? (
+        mergedSessions.length > 0 ? (
           <div className="grid grid-cols-2 gap-2">
-            {activeSessions.map(({ session, type }) => {
+            {mergedSessions.map(({ session, type }) => {
               const provider = type === "agent" ? (session as AgentSession).provider : undefined;
               return (
                 <InstanceCard

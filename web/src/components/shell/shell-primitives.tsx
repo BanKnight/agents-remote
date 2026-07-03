@@ -1,4 +1,4 @@
-import type { AgentProvider } from "@agents-remote/shared";
+import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
 
 import { Badge } from "../ui/badge";
@@ -169,7 +169,9 @@ export function StatusPill({ label, tone = "default", value }: StatusPillProps) 
  * idle→warning（等待输入）、error→danger、其余（closed 等）→muted。与 StatusPill 配套：
  * tone 决定药丸配色，label 由调用方用 sessionStatusLabel + t 生成（i18n 不进本层）。
  */
-export function statusToTone(status: string): ShellTone {
+export function statusToTone(
+  status: AgentSession["status"] | TerminalSession["status"],
+): ShellTone {
   if (status === "running") return "success";
   if (status === "idle") return "warning";
   if (status === "error") return "danger";
