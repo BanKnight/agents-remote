@@ -51,7 +51,7 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
         icon="compact"
         status="completed"
         badge={t("claude2.compact.title")}
-        badgeClassName="bg-emerald-500/15 text-emerald-200"
+        badgeClassName="bg-success/15 text-success"
         detail={detailParts.join(" · ")}
         detailClassName="font-mono text-[0.65rem] font-normal text-slate-400"
       />
@@ -63,7 +63,7 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
     <div className="space-y-2">
       {summaryText ? (
         <div>
-          <div className="mb-1 text-[0.6rem] text-emerald-200/50">
+          <div className="mb-1 text-[0.6rem] text-success/50">
             {t("claude2.compact.summaryLabel")}
           </div>
           <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap break-all text-xs text-slate-300">
@@ -82,10 +82,10 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
   ) : null;
 
   return (
-    <div className="w-full rounded-lg border border-emerald-800/30 bg-emerald-950/10 px-3 py-2">
+    <div className="w-full rounded-lg border border-success/30 bg-success/10 px-3 py-2">
       <CollapsibleSection
         defaultExpanded={false}
-        dividerClassName="border-emerald-700/20"
+        dividerClassName="border-success/20"
         header={header}
       >
         {body}

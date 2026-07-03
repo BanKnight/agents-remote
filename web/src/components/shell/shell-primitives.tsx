@@ -35,7 +35,7 @@ export const pillToneClasses: Record<ShellTone, string> = {
 const buttonToneClasses: Record<ShellTone, string> = {
   default: "border-neutral-line bg-surface-raised text-on-surface hover:bg-surface-raised/80",
   accent:
-    "border-transparent bg-gradient-to-br from-primary to-secondary text-on-primary shadow-lg shadow-cyan-950/25 hover:brightness-110",
+    "border-transparent bg-gradient-to-br from-primary to-secondary text-on-primary shadow-lg shadow-primary/25 hover:brightness-110",
   success:
     "border-success/40 bg-success/10 text-success hover:border-success/70 hover:bg-success/15",
   warning:

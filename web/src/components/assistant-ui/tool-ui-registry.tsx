@@ -111,10 +111,10 @@ function makeToolRenderer(config: {
               {primaryNode}
               {skillContent ? (
                 <div className={hasPrimary ? sectionDivider : ""}>
-                  <span className="text-[0.55rem] font-semibold uppercase tracking-wide text-purple-400/70">
+                  <span className="text-[0.55rem] font-semibold uppercase tracking-wide text-permission/70">
                     Skill
                   </span>
-                  <pre className="mt-1 text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-purple-200/80">
+                  <pre className="mt-1 text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-permission-soft/80">
                     {skillContent}
                   </pre>
                 </div>
@@ -214,7 +214,7 @@ function EditDiffView({ oldStr, newStr }: { oldStr: string; newStr: string }) {
       {lines.map((line, idx) => {
         const cls =
           line.type === "add"
-            ? "bg-emerald-500/10 text-emerald-200"
+            ? "bg-success/10 text-success"
             : line.type === "del"
               ? "bg-red-500/10 text-red-200"
               : "text-slate-500";

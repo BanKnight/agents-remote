@@ -1369,8 +1369,8 @@ type TerminalOverlayState = {
 
 function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
   const pillToneClasses = {
-    accent: "border-primary/25 bg-primary/10 text-primary shadow-cyan-950/20",
-    danger: "border-error/30 bg-error/10 text-error shadow-rose-950/20",
+    accent: "border-primary/25 bg-primary/10 text-primary shadow-primary/20",
+    danger: "border-error/30 bg-error/10 text-error shadow-error/20",
     muted: "border-neutral-line/40 bg-surface-inset/60 text-on-surface-soft shadow-black/20",
   } satisfies Record<TerminalOverlayState["tone"], string>;
 

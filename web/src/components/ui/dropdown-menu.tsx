@@ -54,7 +54,7 @@ function DropdownMenuItem({
         "focus:bg-accent focus:text-accent-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        variant === "destructive" && "text-rose-300 focus:bg-rose-300/10 focus:text-rose-200",
+        variant === "destructive" && "text-error focus:bg-error/10 focus:text-error",
         inset && "pl-8",
         className,
       )}
