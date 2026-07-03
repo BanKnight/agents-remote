@@ -129,11 +129,13 @@ export const workbenchMobileFocusTabAtom = atomWithStorage<WorkbenchMobileFocusT
 
 /**
  * 移动端项目列表态二级 header tab（设计文档 §7）。`overview` = 活跃实例 + 历史 session +
- * 创建入口（ProjectInstances），其余值 = inspection（复用 FIRST_PARTY_PLUGINS render）。
- * 默认 `overview`（进入项目先看实例概览）。localStorage 记忆，不进 URL —— 列表态 URL 语义
- * 核心已是 scope（哪个项目），header tab 是「看概览还是文件/Git」的局部视图偏好。
+ * 创建入口（ProjectInstances）；`history` = project-scoped 历史 session（HistoryList）；
+ * 其余值 = inspection（复用 FIRST_PARTY_PLUGINS render）。默认 `overview`（进入项目先看实例
+ * 概览）。localStorage 记忆，不进 URL —— 列表态 URL 语义核心已是 scope（哪个项目），header
+ * tab 是「看概览还是历史还是文件/Git」的局部视图偏好。值域对齐 WorkbenchMiddleTab（2c-3），
+ * atom 独立 localStorage key，不与桌面 URL `?tab` 互污。
  */
-export type WorkbenchMobileOverviewTab = "overview" | WorkbenchRightTab;
+export type WorkbenchMobileOverviewTab = WorkbenchMiddleTab;
 
 export const workbenchMobileOverviewTabAtom = atomWithStorage<WorkbenchMobileOverviewTab>(
   "workbenchMobileOverviewTab",

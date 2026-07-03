@@ -48,7 +48,7 @@ import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
 /** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
-const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
+export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
   grouped: "workbench.viewGrouped",
   grid: "workbench.viewGrid",
   table: "workbench.viewTable",
@@ -93,6 +93,15 @@ export function InstanceArea({
   const [layout, update] = useWorkbenchLayout(scope);
   const candidates = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
+
+  // 聚焦态 header displayName（设计文档 §15）：focusId 实例的显示名。project scope = scope.key；
+  // global scope 从 layout.panels 查 focusId 所属项目。useFocusSessionName 内部按 sessionType
+  // 控制 enabled，非聚焦态（focusId undefined）零开销。header 仅聚焦态渲染（下方 return 分支）。
+  const focusProjectName =
+    scope.kind === "project"
+      ? scope.key
+      : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ?? undefined);
+  const focusDisplayName = useFocusSessionName(focusId, focusProjectName);
 
   // ViewSwitcher 视图选项（按 scope 过滤；桌面 isMobile=false）。聚焦态不渲染但仍稳定构造。
   const viewOptions = useMemo(
@@ -242,7 +251,13 @@ export function InstanceArea({
             </div>
           ) : null}
         </div>
-      ) : null}
+      ) : (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-on-surface/5 px-3">
+          <span className="truncate text-sm font-semibold text-on-surface">
+            {focusDisplayName ?? focusProjectName ?? (focusId ? focusId.slice(0, 8) : "")}
+          </span>
+        </div>
+      )}
       <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
       {create.promptHolder}
@@ -296,22 +311,47 @@ function TerminalPanelRouter({ panelRef }: PanelRouterProps) {
 
 // ── 详情查询（拆为小 hook，保持 PanelRouter 干净）─────────────────────────────
 
-function useAgentDetail(panelRef: WorkbenchPanelRef) {
+export function useAgentDetail(panelRef: WorkbenchPanelRef, enabled = true) {
   return useQuery({
     queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
     queryFn: () => getAgentSession(panelRef.projectName, panelRef.sessionId),
+    enabled,
     retry: false,
     staleTime: 60_000,
   });
 }
 
-function useTerminalDetail(panelRef: WorkbenchPanelRef) {
+export function useTerminalDetail(panelRef: WorkbenchPanelRef, enabled = true) {
   return useQuery({
     queryKey: ["projects", panelRef.projectName, "terminal-sessions", panelRef.sessionId],
     queryFn: () => getTerminalSession(panelRef.projectName, panelRef.sessionId),
+    enabled,
     retry: false,
     staleTime: 60_000,
   });
+}
+
+/**
+ * 聚焦态 header displayName（设计文档 §15）。按 sessionId 前缀推断类型 → 复用
+ * useAgentDetail/useTerminalDetail（query key 与 PanelRouter 一致，React Query dedupe 零额外
+ * 网络）。focusId/projectName 缺失或类型未知时返 undefined（调用方 fallback projectName /
+ * focusId 前 8 位）。两个 detail hook 都调（hooks 规则），按 sessionType 控制 enabled，
+ * 非聚焦态（focusId undefined）双 enabled=false 零网络开销。
+ */
+export function useFocusSessionName(
+  focusId: string | undefined,
+  projectName: string | undefined,
+): string | undefined {
+  const sessionType = focusId ? inferSessionTypeFromId(focusId) : undefined;
+  const ref: WorkbenchPanelRef = {
+    projectName: projectName ?? "",
+    sessionId: focusId ?? "",
+  };
+  const agent = useAgentDetail(ref, sessionType === "agent");
+  const terminal = useTerminalDetail(ref, sessionType === "terminal");
+  if (sessionType === "agent") return agent.data?.session.displayName;
+  if (sessionType === "terminal") return terminal.data?.session.displayName;
+  return undefined;
 }
 
 /**

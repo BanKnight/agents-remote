@@ -8,27 +8,34 @@ import {
   sessionMarker,
   shellSurfaceClasses,
   statusToTone,
+  ViewSwitcher,
 } from "../shell/shell-primitives";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   addPanel,
+  filterWorkbenchViews,
   type GlobalInstanceCandidate,
   type WorkbenchMobileFocusTab,
   type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
+  type WorkbenchView,
   inferSessionTypeFromId,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   workbenchMobileFocusTabAtom,
   workbenchMobileOverviewTabAtom,
+  workbenchViewAtom,
 } from "../../routes/workbench-model";
 import { ProjectInstances } from "./left-rail";
 import {
   PanelRouter,
   useCloseSession,
+  useFocusSessionName,
   useGlobalInstanceCandidates,
   useScopeInstanceOrder,
+  VIEW_LABEL_KEY,
 } from "./instance-area";
+import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 
@@ -100,6 +107,8 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       ? scope.key
       : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ??
         order.find((r) => r.sessionId === focusId)?.projectName);
+  // 聚焦态 header title 显示实例 displayName（设计文档 §15），fallback projectName / 「实例」。
+  const focusDisplayName = useFocusSessionName(focusId, projectName);
   const ctx: PluginContext = {
     projectKey: projectName ?? null,
     focusId,
@@ -138,7 +147,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       ) : null}
       <MobilePageHeader
         back={{ label: t("workbench.backToList"), onClick: () => void navigateWorkbench(scope) }}
-        title={projectName ?? t("workbench.global")}
+        title={focusDisplayName ?? projectName ?? t("workbench.global")}
       />
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
         <MobileFocusTabButton
@@ -248,26 +257,53 @@ type MobileProjectOverviewProps = {
 };
 
 /**
- * 移动项目列表态（设计文档 §7）：替代旧列表态复用的 WorkbenchLeftRail（跨项目树），改为
- * 单项目聚焦视图。header（◄ 返回项目列表 + 项目名 + 二级 tab：总览/文件/Git/原型）+ 内容区
- * tab 切换。总览 = ProjectInstances（活跃实例 + 历史 session + 创建入口，复用左栏同款）；
- * 文件/Git/原型 = FIRST_PARTY_PLUGINS render（FilesPanel/GitDiffPanel 已内置移动响应式，
- * 单一数据管道）。tab 记忆在 workbenchMobileOverviewTabAtom，不进 URL（列表态 URL 语义核心
- * 是 scope）。key={scope.key} 切项目 remount，重置 ProjectInstances/inspection 内部 state。
- * 底部 pb-24 lg:pb-0 避让一级底部胶囊（桌面 lg:pb-0 抵消）。
+ * 移动项目列表态（设计文档 §7）：单项目聚焦视图。header（◄ 返回项目列表 + 项目名 + 二级
+ * tab：总览/历史/文件/Git/原型）+ 内容区 tab 切换。总览 = ViewSwitcher（视图记忆，Phase 4
+ * 落地渲染切换）+ ProjectInstances（活跃实例 + 创建入口，复用左栏同款）；历史 = HistoryList
+ *（project-scoped 历史 session）；文件/Git/原型 = FIRST_PARTY_PLUGINS render（移动响应式，
+ * 单一数据管道）。tab 记忆在 workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），
+ * 不进 URL（列表态 URL 语义核心是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key}
+ * 切项目 remount，重置 ProjectInstances/inspection 内部 state。底部 pb-24 lg:pb-0 避让一级
+ * 底部胶囊（桌面 lg:pb-0 抵消）。
  */
 function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
+  const [view, setView] = useAtom(workbenchViewAtom);
   const ctx: PluginContext = { projectKey: scope.key, focusId: undefined, sessionType: undefined };
-  const visiblePlugins = FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx));
-  // 记忆 tab 若在当前 ctx 不可见（理论上 project scope 列表态 files/git/prototype 均可见，
-  // 除非未来加 when 约束）→ 回退 overview，避免内容区空白。
-  const activeTab: WorkbenchMobileOverviewTab =
-    tab === "overview" || visiblePlugins.some((p) => p.id === tab) ? tab : "overview";
+  // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
+  //（按 ctx 过滤；files/git 需 projectKey，prototype 常驻）。复用 plugin.when 单一来源。
+  const tabs = useMemo<{ id: WorkbenchMobileOverviewTab; label: string }[]>(() => {
+    const options: { id: WorkbenchMobileOverviewTab; label: string }[] = [
+      { id: "overview", label: t("workbench.tabOverview") },
+      { id: "history", label: t("workbench.tabHistory") },
+    ];
+    for (const plugin of FIRST_PARTY_PLUGINS) {
+      if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
+    }
+    return options;
+    // ctx 由 scope 决定，scope/t 变才重算。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, t]);
+  // 记忆 tab 若在当前 ctx 不可见 → 回退 overview，避免内容区空白。
+  const activeTab: WorkbenchMobileOverviewTab = tabs.some((opt) => opt.id === tab)
+    ? tab
+    : "overview";
   const activePlugin =
-    activeTab === "overview" ? null : (visiblePlugins.find((p) => p.id === activeTab) ?? null);
+    activeTab !== "overview" && activeTab !== "history"
+      ? (FIRST_PARTY_PLUGINS.find((p) => p.id === activeTab) ?? null)
+      : null;
+  // 移动 ViewSwitcher（与桌面 2a 对称）：复用桌面 workbenchViewAtom（不新增 mobile view atom），
+  // views = filterWorkbenchViews(scope, true) = [table, grid]（grouped/split 自动过滤）。渲染层
+  // view 切换 Phase 4 落地（当前切 view 仅记忆状态，overview 内容暂不响应，非死按钮）。
+  const viewOptions = useMemo(
+    () => filterWorkbenchViews(scope, true).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
+    [scope, t],
+  );
+  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view)
+    ? view
+    : (viewOptions[0]?.id ?? "grid");
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -276,25 +312,32 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
         title={scope.key}
       />
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
-        <MobileFocusTabButton
-          active={activeTab === "overview"}
-          label={t("workbench.tabOverview")}
-          onClick={() => setTab("overview")}
-        />
-        {visiblePlugins.map((plugin) => (
+        {tabs.map((opt) => (
           <MobileFocusTabButton
-            active={activeTab === plugin.id}
-            key={plugin.id}
-            label={t(plugin.labelKey)}
-            onClick={() => setTab(plugin.id)}
+            active={opt.id === activeTab}
+            key={opt.id}
+            label={opt.label}
+            onClick={() => setTab(opt.id)}
           />
         ))}
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" key={scope.key}>
         {activePlugin ? (
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
+        ) : activeTab === "history" ? (
+          <div className="h-full overflow-y-auto p-3">
+            <HistoryList focusId={undefined} projectName={scope.key} showLabel={false} />
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto pb-24 lg:pb-0">
+            <div className="flex items-center gap-1 px-3 py-2">
+              <ViewSwitcher
+                ariaLabel={t("workbench.viewSwitcher")}
+                onChange={(next) => setView(next)}
+                view={resolvedView}
+                views={viewOptions}
+              />
+            </div>
             <ProjectInstances projectName={scope.key} />
           </div>
         )}
