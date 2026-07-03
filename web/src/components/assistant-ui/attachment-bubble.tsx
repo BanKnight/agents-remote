@@ -333,7 +333,7 @@ export function AttachmentBubble({
         <ToolHead
           icon="task"
           badge={subtype}
-          badgeClassName="bg-cyan-500/15 text-cyan-200"
+          badgeClassName="bg-user/15 text-user-soft"
           status={null}
         />
       </div>
@@ -344,7 +344,7 @@ export function AttachmentBubble({
   const bodyContent = config.body?.(raw) ?? null;
   // accent now only signals an error subtype → badge renders red instead of cyan.
   const isError = config.accent?.includes("red") ?? false;
-  const badgeClassName = isError ? "bg-red-500/15 text-red-200" : "bg-cyan-500/15 text-cyan-200";
+  const badgeClassName = isError ? "bg-red-500/15 text-red-200" : "bg-user/15 text-user-soft";
 
   const header = (
     <div className="flex items-center gap-1.5 text-xs min-w-0">
@@ -364,7 +364,7 @@ export function AttachmentBubble({
   }
 
   return (
-    <CollapsibleSection className="min-w-0" dividerClassName="border-cyan-700/20" header={header}>
+    <CollapsibleSection className="min-w-0" dividerClassName="border-user-deep/20" header={header}>
       {bodyContent}
     </CollapsibleSection>
   );

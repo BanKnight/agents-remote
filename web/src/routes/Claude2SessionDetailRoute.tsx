@@ -742,7 +742,7 @@ function UserChatBubble() {
     <MessagePrimitive.Root className="flex justify-end pl-3 pr-3 py-1.5 sm:pl-5 sm:pr-5 group relative">
       <RawDebugTooltip custom={custom} className="self-end" />
       <div
-        className="max-w-[90%] rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
+        className="max-w-[90%] rounded-2xl rounded-br-md bg-user-deep/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
         onDoubleClick={() => setFullscreen(true)}
       >
         {renderBody()}
@@ -752,7 +752,7 @@ function UserChatBubble() {
           header={
             <>
               <svg
-                className="h-4 w-4 shrink-0 text-cyan-300"
+                className="h-4 w-4 shrink-0 text-user-soft"
                 viewBox="0 0 24 24"
                 fill="none"
                 aria-hidden="true"
@@ -774,7 +774,9 @@ function UserChatBubble() {
           closeLabel={t("claude2.message.exitFullscreen")}
         >
           <div className="mx-auto max-w-4xl">
-            <div className="rounded-2xl rounded-br-md bg-cyan-700/60 px-4 py-3">{renderBody()}</div>
+            <div className="rounded-2xl rounded-br-md bg-user-deep/60 px-4 py-3">
+              {renderBody()}
+            </div>
           </div>
         </FullscreenReader>
       ) : null}
@@ -910,9 +912,9 @@ function AssistantChatBubble() {
           </div>
         ) : (
           <div className="flex items-center gap-1.5 py-1">
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:0ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:150ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-cyan-400 [animation-delay:300ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-user [animation-delay:0ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-user [animation-delay:150ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-user [animation-delay:300ms]" />
           </div>
         )}
       </AuiIf>
@@ -944,9 +946,9 @@ function AssistantChatBubble() {
         </MessagePrimitive.GroupedParts>
         {isStreaming ? (
           <div className="mt-2 flex items-center gap-1.5 py-1">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:0ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:150ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/60 [animation-delay:300ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-user/60 [animation-delay:0ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-user/60 [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-user/60 [animation-delay:300ms]" />
           </div>
         ) : null}
       </AuiIf>
@@ -969,7 +971,7 @@ function AssistantChatBubble() {
           header={
             <>
               <svg
-                className="h-4 w-4 shrink-0 text-cyan-300"
+                className="h-4 w-4 shrink-0 text-user-soft"
                 viewBox="0 0 24 24"
                 fill="none"
                 aria-hidden="true"
@@ -1791,7 +1793,7 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
       <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
         <ToolHead
           icon="agent"
-          iconClassName="text-cyan-400"
+          iconClassName="text-user"
           badge={subagentType}
           badgeClassName="bg-neutral-line/60 text-on-surface-soft"
           detail={custom.description ?? (status === "running" ? "Working..." : "Agent")}
@@ -3085,9 +3087,9 @@ function ChatSkeleton() {
   // (px-3 sm:px-5 py-1.5) around a bubble div (rounded-2xl + single-corner
   // variant, px-4 py-2.5) so padding/width/corners line up with live bubbles.
   const rows = [
-    { align: "end", width: "w-3/5", bg: "bg-cyan-700/50", corner: "rounded-br-md" },
+    { align: "end", width: "w-3/5", bg: "bg-user-deep/50", corner: "rounded-br-md" },
     { align: "start", width: "w-4/5", bg: "bg-surface-raised/60", corner: "rounded-bl-md" },
-    { align: "end", width: "w-[45%]", bg: "bg-cyan-700/50", corner: "rounded-br-md" },
+    { align: "end", width: "w-[45%]", bg: "bg-user-deep/50", corner: "rounded-br-md" },
     { align: "start", width: "w-[85%]", bg: "bg-surface-raised/60", corner: "rounded-bl-md" },
   ];
   return (
@@ -3182,7 +3184,7 @@ function ModelSelector({
     <div className="relative shrink-0" ref={ref}>
       <button
         type="button"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-cyan-400/80 hover:text-cyan-300 hover:bg-surface-raised/50 transition cursor-pointer"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
         onClick={() => setOpen(!open)}
       >
         {label}
@@ -3208,7 +3210,7 @@ function ModelSelector({
                   type="button"
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
                     isActive
-                      ? "text-cyan-400 bg-cyan-500/10 cursor-default"
+                      ? "text-user bg-user/10 cursor-default"
                       : "text-on-surface-muted hover:text-on-surface-soft hover:bg-neutral-line/50 cursor-pointer"
                   }`}
                   disabled={isActive}
@@ -3222,7 +3224,7 @@ function ModelSelector({
                 >
                   {isActive ? (
                     <svg
-                      className="h-3 w-3 shrink-0 text-cyan-400"
+                      className="h-3 w-3 shrink-0 text-user"
                       viewBox="0 0 16 16"
                       fill="none"
                       aria-hidden="true"
@@ -3300,7 +3302,7 @@ function PermissionModeSelector({
         className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
           pending
             ? "text-on-surface-muted cursor-default"
-            : "text-violet-400/80 hover:text-violet-300 hover:bg-surface-raised/50 cursor-pointer"
+            : "text-permission/80 hover:text-permission-soft hover:bg-surface-raised/50 cursor-pointer"
         }`}
         disabled={pending}
         onClick={() => setOpen(!open)}
@@ -3328,7 +3330,7 @@ function PermissionModeSelector({
                   type="button"
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
                     isActive
-                      ? "text-violet-400 bg-violet-500/10 cursor-default"
+                      ? "text-permission bg-permission/10 cursor-default"
                       : "text-on-surface-muted hover:text-on-surface-soft hover:bg-neutral-line/50 cursor-pointer"
                   }`}
                   disabled={isActive}
@@ -3342,7 +3344,7 @@ function PermissionModeSelector({
                 >
                   {isActive ? (
                     <svg
-                      className="h-3 w-3 shrink-0 text-violet-400"
+                      className="h-3 w-3 shrink-0 text-permission"
                       viewBox="0 0 16 16"
                       fill="none"
                       aria-hidden="true"
@@ -3428,7 +3430,7 @@ function SlashCommandPopoverItem({
     >
       <ToolIcon
         name={kind === "skill" ? "skill" : "command"}
-        className={kind === "skill" ? "text-assistant/70" : "text-cyan-400/70"}
+        className={kind === "skill" ? "text-assistant/70" : "text-user/70"}
       />
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
         <span className="min-w-0 break-all text-xs font-medium text-on-surface-soft">
@@ -3539,7 +3541,7 @@ function ComposerWithInterrupt({
   const showStop = running && !!onCancel && !blocked;
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-cyan-500/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
+    <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
       {aiTitle ? (
         <span className="pointer-events-none absolute right-3 top-2 z-10 max-w-[45%] select-none truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant-soft/80 whitespace-nowrap">
           {agentName ? (

@@ -147,7 +147,7 @@ export function ToolHead({
   icon,
   iconClassName,
   badge,
-  badgeClassName = "bg-cyan-500/15 text-cyan-200",
+  badgeClassName = "bg-user/15 text-user-soft",
   detail,
   detailClassName,
   status,

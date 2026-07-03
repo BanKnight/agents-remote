@@ -48,13 +48,9 @@ function makeToolRenderer(config: {
           : null;
     const badgeBg = needsPermission
       ? "bg-assistant/15 text-assistant-soft"
-      : "bg-cyan-500/15 text-cyan-200";
+      : "bg-user/15 text-user-soft";
 
-    const accentColor = isError
-      ? "text-red-400"
-      : needsPermission
-        ? "text-assistant"
-        : "text-cyan-400";
+    const accentColor = isError ? "text-red-400" : needsPermission ? "text-assistant" : "text-user";
     const accentDivider = isError
       ? "border-red-500/20"
       : needsPermission
@@ -269,7 +265,7 @@ function agentFooter(result: string, args: Record<string, unknown>, isError: boo
         </details>
       ) : null}
       <div className="rounded bg-slate-800/50 p-2">
-        <div className="mb-1 text-[0.55rem] font-semibold uppercase tracking-wide text-cyan-400/70">
+        <div className="mb-1 text-[0.55rem] font-semibold uppercase tracking-wide text-user/70">
           子 Agent 输出
         </div>
         <pre
