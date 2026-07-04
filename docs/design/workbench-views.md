@@ -1,181 +1,177 @@
-# 工作台多视图重设计（WIP 草案）
+# 工作台多视图重设计
 
-> 状态：设计已与用户对齐（2026-07-04，7 轮讨论），待实现。本文是实施基线，下次会话可直接接手。
-> 演进自 [`workbench-redesign.md`](./workbench-redesign.md)（三栏草案）：左栏从"项目+实例树"收敛为"导航条目列表"，中栏新增二级导航 + 视图切换，split 从"默认铺开"重构为"聚焦展开+其余缩略"的特殊视图。
+> 状态：设计完整（2026-07-05 复盘重构，落地完整 target，无「后续」）。本文是实施基线。
+> 演进自 [`workbench-redesign.md`](./workbench-redesign.md)（三栏草案）与上一版「grid/table/split 三视图互斥 + split 三态状态机」模型。
 > 关联：[DESIGN.md](./DESIGN.md)（设计系统 token 唯一权威源）、[frontend-ui-architecture.md](./frontend-ui-architecture.md)。
 
 ## 1. 背景与动机
 
-`workbench-redesign.md` 的三栏模型（左项目+实例树 / 中 split 铺开 / 右 inspection）落地后暴露两个问题：
+`workbench-redesign.md` 三栏模型（左项目+实例树 / 中 split 铺开 / 右 inspection）落地后，经历两轮问题：
 
-1. **实例多了 split 挤**：桌面 global 用 split 把所有项目所有活跃实例铺成面板，实例一多就拥挤、难扫读；移动端更是无法承载多实例同屏。
-2. **桌面/移动导航不一致**：移动端进项目后有二级 tab（总览/文件/Git/原型），桌面却把"项目树+实例+历史"全塞左栏，两套信息架构割裂。
+1. **实例多了 split 拥挤**（上一版动机）：桌面 global 用 split 把所有活跃实例铺成面板，实例一多拥挤、难扫读；移动端无法承载多实例同屏。
+2. **桌面/移动导航不一致**（上一版动机）：移动端进项目有二级 tab，桌面却把「项目树+实例+历史」全塞左栏，两套信息架构割裂。
+3. **聚焦态挤掉导航和视图**（本轮复盘，2026-07-05）：桌面端点实例进聚焦态时，中栏顶部二级 tab 导航消失、总览视图被单实例 SplitLayout 替换——「导航和视图被挤掉」，破坏三栏结构。
 
-用户手测反馈（2026-07-04）据此提出重设计：**实例展示抽象成可切换的"视图模式"**，桌面/移动统一"二级导航"理念，split 降级为其中一种特殊视图。
+复盘结论：上一版把 split 设计成「独立视图 + 面板三态状态机（expanded/缩略/最小化）+ 底部 dock」，操作复杂、状态机死角多；聚焦态与 split 耦合（`focusId` 强制走 `splitContent`），导致点实例 = 整个中栏被替换。本轮重构为**统一的中栏左右结构**模型，取消独立 split 视图与三态状态机。
 
-## 2. 核心理念
+## 2. 核心理念（重构）
 
-- **多视图切换**：实例区支持多种视图（分组/网格/表格/分屏），用户按场景切换，视图选择记 URL。
-- **二级导航统一**：桌面和移动都在中栏承载二级导航（总览/历史/文件/Git/原型），左栏只放导航条目（不再塞实例/历史）。
-- **split 是特殊视图**：不再是默认铺开，而是"多实例同屏工作台"——聚焦面板展开，其余缩略/最小化，仿 Windows 任务栏的底部 dock 收最小化面板。
-- **桌面/移动能力差异化**：split 是桌面专属（移动窄屏做不了复杂分屏）；grouped 在桌面 global 与移动 global 都可切，移动 project 不分段故无 grouped。
+- **中栏永远左右结构**：左侧 = 总览（实例卡片清单，固定单列宽），右侧 = 工作区（实例 output 面板，可拖放分屏）。两者常驻并存，不互斥。
+- **取消独立 split 视图**：右侧工作区常驻，多实例同屏靠「拖左总览卡片到右侧分屏」实现，不再有独立的 `?view=split`。
+- **视图 = 左总览的卡片样式**：grid/table/grouped 不再是互斥布局，而是同一单列内的卡片呈现样式（详细卡 / 紧凑行 / 分段）。
+- **group 二态**：右侧工作区的面板（group）只有「存在/不存在」，取消 expanded/缩略/最小化三态与底部 dock。
+- **聚焦 = 激活某 group**：`focusId` = 右工作区当前活动 group 的实例，驱动右栏 inspection + 左总览高亮；不再是「中栏换成单实例」。
+- **桌面/移动差异化**：桌面中栏左右分屏工作区；移动中栏窄不分左右，保持「列表态 → 全屏聚焦态」线性模型。
 
 ## 3. 信息架构
 
 ```
-桌面三栏：
-┌─────────────┬───────────────────────────────────────────┬──────────┐
-│ 左栏         │ 中栏                                       │ 右栏      │
-│ [置顶固定]   │ 二级导航(5 tab) + 视图切换 + 视图内容       │ (保留)   │
-│  全局总览    │                                            │ 聚焦态   │
-│ § 项目       │                                            │ instance │
-│   项目A/B…  │                                            │ inspection│
-│ (未来 §)     │                                            │          │
-└─────────────┴───────────────────────────────────────────┴──────────┘
-
-移动线性：header → 二级导航(5 tab) → 视图切换行 → 视图内容（→ 底部一级 nav）
+桌面三栏（中栏内部分左右）：
+┌─────────┬──────────────────────────────────────────────┬──────────┐
+│ 左栏     │ 中栏                                          │ 右栏      │
+│         │ ┌─[总览][历史][文件][Git][原型]── ▦≡视图切换─┐  │          │
+│ 导航   │ │                                            │  │ inspection│
+│         │ │ ┌──────────┬─────────────────────────┐    │  │ 常驻     │
+│ [置顶]  │ │ │ 左：总览  │ 右：工作区（group 分屏）  │    │  │ 跟随活动 │
+│  全局   │ │ │ 固定单列  │ flex-1                   │    │  │ group    │
+│ § 项目  │ │ │ 卡片清单  │ ┌────────┬────────┐    │    │  │          │
+│   A/B… │ │ │          │ │ group A│ group B│    │    │  │ [文件]   │
+│ (未来§) │ │ │ 单击=激活 │ │ output │ output │    │    │  │ [Git]    │
+│         │ │ │ 拖动=分屏 │ │ ▌输入   │ ▌输入   │    │    │  │ [原型]   │
+│         │ │ └──────────┴ └────────┴────────┘    │    │  │          │
+│         │ │            ←gutter 可拖拽调左右比例→      │    │  │          │
+│         │ └────────────────────────────────────────┘  │          │
+└─────────┴──────────────────────────────────────────────┴──────────┘
+│←左栏→││←左总览固定宽─→│←──── 右工作区 flex-1 ────→││← 右栏 →│
 ```
 
-**左栏 = 置顶固定条目 + section 分组（可扩展）**，不硬编码"项目列表"。结构为：置顶固定区（全局总览，独立于任何 section）+ 若干带 section header 的分组（「项目」是第一个，未来加收藏/最近 = 新增 section header）。
+- **左总览**：固定单列宽（~220–240px，贴合 InstanceGrid `minmax(220px,1fr)` 单列），卡片纵向堆叠。
+- **右工作区**：flex-1 吃满中栏剩余。group 网格分屏（详见 §7）。活动 group = `focusId`。
+- **左右比例**：左总览与右工作区之间有 gutter，可拖拽调节（与左栏导航 / 右栏 inspection 的 resize 同一设计语言）。左总览默认贴合一栏卡片宽。
+- **右栏**：inspection（files/git/prototype）常驻，跟随右工作区活动 group。
+- **左栏**（不变）：置顶固定（全局总览）+ section 分组（「项目」+ 未来扩展），见 [workbench-views §3 上一版] 与 `left-rail.tsx` 现状。
 
-| 条目类型 | 所属 section | 说明 | 点去向 |
-|---------|-------------|------|--------|
-| `global-overview` | 置顶固定（不属于 section） | 固定条目「全局总览」 | global scope（跨项目所有实例） |
-| `project` | 「项目」section | 动态条目，每个项目一个 | project scope |
-| `(未来)` | 各自独立 section | 收藏 / 最近 / 自定义聚合… | section header 槽位已就位，具体条目待实现 |
-
-> 扩展信号 = section 结构本身。置顶全局总览独立于 section；未来新增收藏/最近等分组 = 新增 section header（如「§ 收藏」「§ 最近」），不动置顶全局总览。当前仅「项目」一个 section。
-> 关键纠正（用户）：跨项目总览也是左栏条目，未来还会加更多不同条目——左栏是"导航条目列表"，不是"项目列表+过滤"。
-
-**右栏**：本批保留不动（聚焦态 instance inspection）。后续单独设计。
+移动线性：header → 二级 tab → 总览卡片列表（→ 点卡片全屏聚焦态 → 底部一级 nav）。中栏不分左右。
 
 ## 4. 二级导航（5 tab）
 
-桌面中栏顶部 / 移动 header 下一行，统一 5 个 tab：
+桌面中栏顶部 / 移动 header 下一行，统一 5 个 tab。**tab 导航在中栏顶部常驻，聚焦/非聚焦都不消失**（修复旧版聚焦态挤掉 tab 导航的问题）。
 
-| tab | 内容 | 数据源 |
-|-----|------|--------|
-| 总览 | 当前作用域实例的多视图（分组/网格/表格/分屏） | useGlobalInstanceCandidates / project sessions |
-| 历史 | 已关闭 session 列表（从 ProjectInstances 拆出独立 tab） | 历史 session API |
-| 文件 | FilesPanel（项目级只读 inspection） | FIRST_PARTY_PLUGINS |
-| Git | GitDiffPanel（项目级） | FIRST_PARTY_PLUGINS |
-| 原型 | prototype plugin | FIRST_PARTY_PLUGINS |
+| tab | 中栏呈现 | 数据源 |
+|-----|---------|--------|
+| 总览 | 左右结构：左总览（实例卡片）+ 右工作区（group 分屏） | useGlobalInstanceCandidates / project sessions |
+| 历史 | 左右结构：左总览（历史 session 列表）+ 右工作区（不变） | 历史 session API |
+| 文件 | 全宽 FilesPanel（项目级只读 inspection） | FIRST_PARTY_PLUGINS |
+| Git | 全宽 GitDiffPanel（项目级） | FIRST_PARTY_PLUGINS |
+| 原型 | 全宽 prototype plugin | FIRST_PARTY_PLUGINS |
 
-> 用户决定：实例和历史放一起过于拥挤，历史独立成 tab。移动端也加历史 tab（现在移动总览的历史混在 ProjectInstances 里）。
+> tab 分两类：**工作态 tab**（总览/历史）= 左右结构，右工作区常驻；**inspection tab**（文件/Git/原型）= 全宽 inspection，右工作区临时让位（切回总览/历史恢复）。右栏 inspection（跟随活动 group）与中栏 inspection tab 并存不冲突——右栏是快捷跟随，中栏 tab 是深度浏览。
+>
+> 用户决定（上一版）：实例和历史放一起过于拥挤，历史独立成 tab。移动端也加历史 tab。
 
-## 5. 视图矩阵
+## 5. 左总览视图样式
 
-|  | grouped | grid | table | split |
-|--|:--:|:--:|:--:|:--:|
-| 桌面 global | ✓ | ✓ | ✓ | ✓ |
-| 桌面 project | — | ✓ | ✓ | ✓ |
-| 移动 global | ✓ | ✓ | ✓ | — |
-| 移动 project | — | ✓ | ✓ | — |
+view switcher 切换的是**同一单列内的卡片呈现样式**（不再是列数/布局差异，因左总览固定单列宽）：
 
-- **grouped**：跨项目按项目分组（桌面 global + 移动 global；project 只一个项目无需分组）
-- **grid**：自适应列数卡片网格（见 §8）
-- **table**：紧凑表格（见 §9）
-- **split**：多实例同屏工作台（仅桌面，见 §7）
+| 样式 | 呈现 | scope 可见 |
+|------|------|-----------|
+| grid | 详细卡片：marker + 会话名 + 状态点 + 末行 output 预览 | 全 scope |
+| table | 紧凑行：marker + 会话名 + 状态点（单行，密度高，无预览） | 全 scope |
+| grouped | 按项目分段（项目名 ShellSectionLabel + 单列详细卡） | 仅 global |
 
-移动 global 的 grouped **默认视图即按项目分段**（项目名分隔），且作为可切换视图（与 grid/table 并列）；移动 project 不分段、无 grouped。
+- project scope 无 grouped（单项目无需分段）。
+- 默认：grid（详细卡片最直观）。
+- 三种样式都在 ~220–240px 单列内呈现。
 
 ## 6. 视图切换器
 
-- **形态**：segmented control，icon only，常驻。4 个 icon：`⊞ 分组 / ▦ 网格 / ≡ 表格 / ▣ 分屏`。
-- **位置**：
-  - 桌面：二级导航 tab 行**右上角**（tab 行右侧）
-  - 移动：二级导航 tab 行**下一行右侧**（窄屏 tab 行右侧放不下，独立一行）
-- **按 scope 隐藏不适用的视图**：project 隐藏 grouped；移动隐藏 split（移动 global 三视图 grouped/grid/table 全可切）。
-- **记忆**：视图选择记 **URL search param**（可分享/书签，对齐现有 rightTab 做法）。key 暂定 `?view=grouped|grid|table|split`。
-- **顺序**：靠右上角，从右到左排开（顺序细节：默认/最常用靠右；最终顺序实现时与用户确认）。
+- **形态**：segmented control，icon only。3 个 icon：`▦ 详细(grid) / ≡ 紧凑(table) / ▤ 分段(grouped)`。
+- **位置**：中栏顶部二级 tab 行右侧（左总览区上方对齐）。
+- **按 scope 隐藏**：project 隐藏 grouped（只剩 grid/table）。
+- **记忆**：视图选择记 URL `?view=grid|table|grouped`（可分享/书签）。
+- 移动端：view switcher 在移动列表态 header 下一行右侧（保持现状，移动无左右结构）。
 
-## 7. split 视图（桌面特殊工作视图）
+## 7. 中栏右侧工作区（核心）
 
-### 7.1 面板三态状态机
+右侧工作区承载实例 output + 输入，支持多 group 分屏。这是取代旧 split 视图 + 三态状态机 + 底部 dock 的完整设计。
 
-```
-          点缩略 header                拖出 / 展开
-  缩略 ───────────────→ expanded ───────────────→ ?
-  ↑                       │                      
-  │ 初始态                │ 最小化               
-  │ (聚焦面板)             ↓                      
-  └─── dock ◀──────── 最小化                     
-  (其余面板)              │                      
-                         │ 点 chip 恢复          
-                         ↓                       
-                       缩略                       
-```
+### 7.1 group 模型（二态）
 
 | 状态 | 内容 | 触发 |
 |------|------|------|
-| **expanded**（聚焦） | 完整 output（面板全功能） | URL focusId 指向 / 点缩略 header |
-| **缩略** | header + output 末 2 行预览 | 初始态（非聚焦面板）/ 点 expanded 的"缩略"按钮 |
-| **最小化** | 收进底部 dock 的 chip | 点面板"最小化"按钮 |
+| **存在** | 完整 output + 输入区（面板全功能） | 拖卡片创建 / 左总览单击激活 / 初始首个活跃实例 |
+| **不存在** | group 消失，剩余 group 重新填充 | 点 group × 关闭 |
 
-**初始态**：进 split 视图，URL focusId 指向的面板 = expanded，其余面板 = 缩略。无 focusId 时第一个实例 expanded。
+- **取消旧三态**：无 expanded/缩略/最小化，无底部 dock。group 要么全功能展示，要么不存在。
+- **初始态**：进入 scope 时，右工作区打开 scope 首个活跃实例（单 group），不空着。scope 无活跃实例 → 右工作区空态提示（§14）。
+- **活动 group**：同一时刻有且仅有一个活动 group（= `focusId`）。点 group 任意处 = 激活。
 
-### 7.2 缩略面板内容（用户决定：header + output）
+### 7.2 拖放分屏（5 drop zone）
 
-```
-┌─[marker] provider · session名 · 状态点 ── □ 展开/最小化 · ✕ 关闭─┐
-│  > output 末 2 行预览                                           │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-操作按钮：`□`（展开/最小化切换）、`✕`（关闭，走 useCloseSession）。
-
-### 7.3 底部 dock（Windows 任务栏式，用户决定）
+拖左总览卡片到右工作区，悬停在某个 group 上时显示 5 个半透明 drop zone：
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ [▲ Claude demo]  [▲ Term build]  [▲ Codex refactor]      │  ← 最小化面板 chip
-└──────────────────────────────────────────────────────────┘
+         ┌─────── 上 ───────┐
+         │   (在该组上方     │
+         │    插入新行)      │
+    ┌────┼───────────────────┼────┐
+    │左  │                   │ 右 │
+    │(在 │     中心           │(在 │
+    │该组│   (替换该组实例)    │该组│
+    │左侧│                   │右侧│
+    │插新│                   │插新│
+    │列) │                   │列) │
+    └────┼───────────────────┼────┘
+         │   (在该组下方     │
+         │    插入新行)      │
+         └─────── 下 ───────┘
 ```
 
-- chip = marker + session 名（截断）；点击 → 恢复为缩略面板。
-- dock 只在 split 视图 + 有最小化面板时出现；横跨中栏底部（桌面）/ 中栏底部一级 nav 之上（移动——但移动无 split，所以仅桌面）。
-- 面板可拖动 resize（已有 resizePair）、可 maximize（已有 toggleMaximize），新增缩略/最小化两态。
+| drop zone | 效果 |
+|-----------|------|
+| 上 | 行方向分裂：在该 group 上方插入新行，放新 group |
+| 下 | 行方向分裂：在该 group 下方插入新行，放新 group |
+| 左 | 列方向分裂：在该 group 左侧插入新列，放新 group |
+| 右 | 列方向分裂：在该 group 右侧插入新列，放新 group |
+| 中心 | 替换该 group 当前实例 |
+| 空白区（无 group） | 创建首个 group |
 
-### 7.4 现有能力复用
-
-- `SplitLayout`（split-panel.tsx）的 resize/maximize 保留。
-- `useCloseSession`（instance-area.tsx）的 close 流程复用（confirm → API → exact invalidate）。
-- 改造点：面板状态（expanded/缩略/最小化）需进 layout atom（workbench-model 的 layout state），持久化到 localStorage；初始态逻辑从"全部铺开"改为"聚焦 expanded + 其余缩略"。
-
-## 8. grid 视图（自适应列数）
-
-用户决定：**CSS 自适应**（容器驱动，不用断点枚举）。
-
-```css
-grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-```
-
-- 卡片最小宽 220px（marker + session 名 + 状态点 + close 不挤）。
-- 手机中栏 ~360px → 1 列；平板 ~600px → 2 列；桌面中栏 ~600-900px → 2-3 列；总览全宽 ~900px+ → 3-4 列。
-- 右栏开合导致中栏宽度跳变时，列数平滑过渡（优于断点式）。
-
-> Tailwind v4 实现：`grid-cols-[repeat(auto-fill,minmax(220px,1fr))]`（任意值语法），或 `@theme` 注册 container query utility。实现时定。
-
-## 9. table 视图
+### 7.3 group 操作
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ 项目       │ 类型    │ 会话名      │ 最后活动 │  操作   │
-├───────────────────────────────────────────────────────────│
-│ agents-rem │Claude ●│ demo-sess   │ 2m ago  │  ▶  ✕   │
-│ agents-rem │Codex  ●│ refactor    │ 5m ago  │  ▶  ✕   │
-│ agents-rem │Term   ○│ build       │ 1h ago  │  ▶  ✕   │
-│ projB      │Claude ○│ debug       │ 2d ago  │  ▶  ✕   │
-└──────────────────────────────────────────────────────────┘
+┌──────────────┬──────────────┐
+│ [A    □][×] │ [B◆   □][×] │ ← □ maximize   × close
+│  output     │  output     │   ◆ = 活动 group
+│  ▌输入        │  ▌输入        │
+├──────────────┴──────────────┤ ← gutter 拖拽 = resize
+│ [C    □][×]                │
+│  output                    │
+└─────────────────────────────┘
 ```
 
-- 列：项目（global 才显示，project 隐藏）/ 类型（marker + 状态圆点叠加右上角，`StatusMarker`）/ **会话名**（displayName，主列）/ 最后活动 / 操作（▶ 进聚焦态、✕ 关闭）。无独立状态列——圆点并入类型列 marker 右上角 badge。
-- 桌面 + 移动都用（移动窄屏可横向滚动或隐藏部分列）。
-- 行点 ▶ → 进单实例聚焦态（不进 split）。
+- **激活**：点 group 任意处 = 活动组 → `focusId` = 该实例 → 右栏 inspection 跟随 + 左总览对应卡片高亮。
+- **resize**：group 间 gutter 拖拽。行内 gutter（同行相邻 group 之间）调列宽；行间 gutter（相邻行之间）调行高。复用现有 `resizePair` 扩展到网格。
+- **maximize**：点 group 的 □ → 该 group 全屏（其他 group 临时收起），再点 □ 恢复。复用现有 `toggleMaximize`。
+- **close**：点 group 的 × → 结束实例 session（走 `useCloseSession`：confirm → close API → 精确失效缓存）+ 移除 group + 焦点切换到剩余首个 group（若无剩余，`focusId` 清空，回非聚焦态）。实例从左总览消失（session 已结束）。
 
-## 10. 状态指示：marker 右上角 badge（议题 2）
+> close 语义注：旧版 split 面板 close = 结束 session（`useCloseSession`），不是「最小化到 dock」。新模型延续「close = 结束 session」语义，无 dock 回收。若用户只想暂移出工作区不结束 session，用 maximize（临时全屏）或直接切活动 group（其他 group 留在后台）。
 
-用户决定：带背景文字 badge（`StatusPill`）累赘，且独立状态列/独立圆点占位割裂。**统一成叠加在 marker（IconMarker）右上角的小圆点 badge**——圆点不再独占一格或一行，密度更精简。
+### 7.4 布局算法
+
+- group 组织成**行×列网格**：每行含若干 group，行内 group 等分列宽（flex），行间等分行高（flex）。
+- 拖放分裂（§7.2 上/下）= 在目标行上/下插入新行；分裂（左/右）= 在目标行内目标 group 旁插入新列。
+- 复用现有 `SplitLayout` 的 `deriveRows`（按 panel flex 权重分行）扩展支持拖放分裂的网格位置计算。
+- group close 后，空行自动合并（行内 group 数减至 0 时该行消除，剩余行重新分配高度）。
+
+### 7.5 持久化
+
+- group 布局（哪些实例在哪个 group、网格位置、flex 权重、maximize 态）存 `workbench-model` 的 layout atom（`atomWithStorage` 持久化到 localStorage，scope-scoped）。
+- 复用现有 `WorkbenchPanelRef` / `addPanel` / `removePanel` / `resizePair` / `toggleMaximize`，扩展网格位置字段（row/col 或 group id + 邻接关系）。
+- scope 切换（global ↔ project）各自独立布局。
+
+## 8. 状态指示：marker 右上角 badge
+
+统一叠加在 marker（IconMarker）右上角的小圆点 badge——圆点不独占一格或一行，密度精简。
 
 | 状态 | 颜色 |
 |------|------|
@@ -184,89 +180,88 @@ grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 | error | error（红） |
 | closed 等 | muted（灰） |
 
-- 形态：纯色小圆点（dot），无背景框、无文字，叠加在 marker 右上角（`-right-1 -top-1`），`ring-2 ring-surface-raised` 描边与所在 surface 融合（视觉挖空）。
+- 形态：纯色小圆点（dot），无背景框、无文字，叠加 marker 右上角（`-right-1 -top-1`），`ring-2 ring-surface-raised` 描边与所在 surface 融合（视觉挖空）。
 - 文字 label 留给 `aria-label`（a11y）/ hover tooltip。
-- **跨位置统一**：InstanceCard（卡片 marker）、split 面板 header（marker）、table 类型列（marker）都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
-- 复用 `statusToTone` 映射状态→颜色；`StatusMarker` 包 `StatusDot`（加 `className` 支持 absolute 定位），替代 InstanceCard 底部 / split header label 后 / table 独立状态列三处旧散点位置。`StatusDot` 仍可单独用于需要圆点独立占位的场景。
+- **跨位置统一**：左总览卡片 marker、右工作区 group header marker、移动列表卡片 marker 都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
+- 复用 `statusToTone` 映射状态→颜色；`StatusMarker` 包 `StatusDot`（加 `className` 支持 absolute 定位）。
 
-## 11. 移动端差异汇总
+## 9. 移动端差异
 
 | 项 | 桌面 | 移动 |
 |----|------|------|
-| split 视图 | ✓ | ✗（窄屏做不了复杂分屏） |
-| grouped 视图 | ✓（global 可切） | ✓（global 默认按项目分段，可切） |
-| grid/table | ✓ | ✓ |
-| grid 列数 | 自适应（中栏宽） | 手机 1 列、平板 2 列（自适应） |
-| 视图切换器位置 | tab 行右上角 | tab 行下一行右侧 |
-| 二级导航 5 tab | ✓（中栏顶部） | ✓（header 下一行，横向滚动） |
-| 移动 global 分段 | — | grouped 默认按项目分段（项目名分隔），grouped/grid/table 可切 |
+| 中栏左右结构 | ✓（左总览 + 右工作区） | ✗（窄屏不分左右） |
+| 右工作区分屏 | ✓（拖放 5 zone） | ✗（窄屏做不了分屏） |
+| 点卡片行为 | 激活（右工作区切活动 group） | 全屏切聚焦态 |
+| 总览视图样式 | grid/table/grouped（左总览单列） | grid/table/grouped（全宽列表） |
+| 二级导航 5 tab | 中栏顶部常驻 | header 下一行横向滚动 |
+| 右栏 inspection | 常驻跟随活动 group | 聚焦态 tab 切（output/文件/Git/原型） |
 
-## 12. 会话名（displayName）统一呈现
+移动端聚焦态（点卡片全屏切）：header（◄ 返回 + 实例名）+ tab 行（output/文件/Git/原型）+ body（PanelRouter 或 inspection plugin render）。已是 output+inspection tab 模型，本轮不动。
 
-用户强调：会话名是一等显示元素，所有视图都要清晰呈现：
-- 卡片标题（grid/grouped）
-- table 主列
-- split 缩略面板 header
-- dock chip（截断）
-- 左栏 list 标题
+## 10. 会话名（displayName）统一呈现
+
+会话名是一等显示元素，所有位置清晰呈现：
+- 左总览卡片标题（grid/table/grouped）
+- 右工作区 group header
+- 移动列表卡片标题
+- 移动聚焦态 header
 
 来源：`session.displayName`（已存在于 AgentSession/TerminalSession）。
 
-## 13. 路由 / URL 模型
+## 11. 路由 / URL 模型
 
-视图选择记 URL search param（对齐 rightTab 现有做法）：
+四个正交 URL 维度（对齐现有 rightTab/tab 做法）：
 
-- `/projects/$key?view=grid`（project 总览 grid 视图）
-- `/global?view=grouped`（global 总览分组视图）
-- `/global/session/$id?view=split`（global 聚焦 split，split 内聚焦 id）
+- `focusId`（path 段 `/global/session/$id` / `/projects/$key/session/$id`）= 右工作区**活动 group** 的实例
+- `?view=grid|table|grouped` = 左总览卡片样式
+- `?tab=overview|history|files|git|prototype` = 中栏二级 tab
+- `?rightTab=files|git|prototype` = 右栏 inspection tab
 
-二级导航 tab 也记 URL（总览/历史/文件/Git/原型，暂定 `?tab=overview|history|files|git|prototype`，与 rightTab 正交）。
+四者正交。TanStack Router navigate 整体替换 search 对象（非 merge），故 navigate 需传完整四维（见 `WorkbenchRoute.onViewChange/onTabChange/onRightTabChange` 现有做法）。
 
-## 14. header padding 统一（议题 3，独立小改）
+> `focusId` 语义变化（vs 旧版）：从「中栏换成单实例 SplitLayout」变为「右工作区活动 group」。中栏左总览 + tab 导航 + view 切换 在聚焦/非聚焦都常驻——这是本轮修复「导航/视图被挤掉」的核心。
+
+## 12. header padding（独立小改）
 
 `MobilePageHeader` 现是 `px-2`，正文内容区 `px-3` → header 比正文窄。统一为 `px-3`（所有移动 header 一致对齐正文）。
 
-> + 按钮胶囊体重设计：用户将单独提出，**不在本批**。
+## 13. 激活与聚焦语义
 
-## 15. 待定项 / 后续
+- **活动 group** = `focusId` = 右工作区当前激活的 group 实例。
+- **激活路径**：
+  - **左总览单击卡片** → 切右工作区活动 group 为该实例：若该实例已在工作区，激活其 group；否则替换当前活动 group 内容为该实例（不新增 group，保持单 group 除非用户拖动分屏）。
+  - **右工作区点 group** → 激活该 group（= 设 `focusId`）。
+- **激活驱动**：
+  - 右栏 inspection 跟随活动 group（files/git/prototype）
+  - 左总览对应卡片高亮（◆ 标记 + ring）
+- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区显示 scope 首个活跃实例（单 group，非活动态）或空态；右栏 inspection 空态。点左总览卡片或 group 才进入聚焦态。
 
-> 以下待定点源自 2026-07-04 对齐过程中未一锤定音的细节（jsonl L30923/L30934/L30939），实现各 change 前需与用户确认。
+## 14. 空态
 
-- **聚焦态 header 的 session 名位置**（L30923 #3）：用户指出我早期 ASCII 的聚焦态 header 漏画 session 名，暂定「收在侧边 dock」。注意此 dock 与 §7.3 的 split 最小化**底部** dock 是两回事——这是**聚焦态实例** session 名的位置（header 内联 vs 侧边小 dock），待最终拍板。建议：聚焦态 header 内联显示 session 名（最简单，与会话名 §12 统一呈现一致），侧边 dock 不做。
-- **project 总览默认视图**（L30934 #3）：project 无 grouped 已定，但 grid/table/split 三者哪个是 project 进总览的默认未定。建议：grid（卡片最直观），split 作为用户主动切的深度工作态。
-- **右栏显示时机**（L30934 #1）：用户说「先保留右栏」= 保留右栏组件不删，但「总览/历史 tab 时右栏是否显示」未明（L270 我曾提议总览 tab 时无右栏、仅聚焦态出右栏，用户未直接回应）。建议：聚焦态显示右栏（跟随聚焦实例 inspection），总览/历史 tab 时右栏隐藏（中栏全宽）；文件/Git/原型 tab 因已在中栏，右栏本批不动。
-- **右栏设计**：本批保留不动，后续单独考虑（中栏已有文件/Git/原型 tab 后，右栏 instance inspection 的角色）。
-- **左栏未来条目**：收藏/最近/聚合等。section 结构已落地承载扩展（「项目」section header 槽位已就位，置顶全局总览独立），具体条目待实现。
-- **+ 按钮胶囊体**：用户单独提需求。
-- **视图切换器 icon 顺序**：靠右上角从右到左的精确顺序（grouped/grid/table/split 谁最右），实现时与用户确认。
-- **split 多 expanded**：是否允许多个面板同时 expanded（拖出缩略），还是严格单 expanded（点缩略 → 原 expanded 自动缩略）。初版建议**单 expanded**（聚焦语义清晰），多 expanded 后续。
-- **split 重构前的中间态**：在 change 5（split 重构）落地前，change 2-4 期间桌面「split 视图」按钮是**隐藏**（split 暂不可用，待 change 5）还是保留旧 InstanceArea 行为？建议隐藏并标「即将上线」，避免用户进入未重构的旧 split。
+| 区域 | 空态条件 | 呈现 |
+|------|---------|------|
+| 左总览 | scope 无活跃实例 | EmptyInstanceArea（创建入口：+ Claude / + Codex / + Terminal） |
+| 右工作区 | scope 无活跃实例 / 所有 group 被 close | 占位提示「从左总览选实例，或拖卡片到这里分屏」 |
+| 右栏 inspection | 无活动 group | 空态提示文案 |
 
-## 16. 实施 phase（多 change，长任务）
+## 15. 实施 phase（执行分阶段，非设计后续）
 
-进 `.workflow/versions/v0.10-workbench-multi-views/`，5 个 change，依赖关系：
+> 设计完整（§1–§14 无「后续/留待」）。实现按 phase 渐进靠拢完整 target，每 phase 独立交付 + 独立验证（门禁 + CSS 落盘 + Playwright DOM）。phase 之间是「实现完整设计的哪一部分」，不是「先做简化版后续补」。
 
-```
-change 1 (独立) ────────────────────────────────┐
-change 2 (IA 基础) ─────┬─ change 3 (grid+grouped)
-                       ├─ change 4 (table)
-                       └─ change 5 (split)
-```
+| phase | 范围 | 对应完整设计章节 |
+|-------|------|----------------|
+| **A 中栏左右骨架** | 中栏分左右（左总览固定单列 + 右工作区 flex-1，gutter 调比例）+ 左总览单列卡片（grid/table/grouped）+ 右工作区单 group（首个活跃实例，PanelRouter）+ 左总览单击/右工作区点 group 激活 + 右栏 inspection 跟随 + tab 导航常驻 + URL 四维模型 | §2 §3 §4 §5 §6 §11 §13 §14 |
+| **B 拖放分屏** | 5 drop zone 拖放（上/下/左/右/中心/空白）+ group 网格布局算法（deriveRows 扩展）+ 多 group 同屏 + 左总览拖动送入分屏 | §7.2 §7.4 |
+| **C group 操作 + 持久化** | group resize（行内/行间 gutter）+ maximize + close（useCloseSession）+ group 布局持久化（localStorage，scope-scoped） | §7.3 §7.5 |
 
-| change | 范围 | 依赖 | 关键产出 |
-|--------|------|------|---------|
-| `cleanup-status-dot-header-padding` | 状态小圆点（§10）+ header padding（§14） | 无 | StatusDot primitive；MobilePageHeader px-3 |
-| `workbench-ia-restructure` | 左栏条目列表（§3）+ 二级导航 5 tab（§4）+ 视图切换器 primitive（§6）+ 历史 tab 拆分 + URL 模型（§13） | 无（但建议先 change 1） | 左栏新结构；中栏 tab 导航；ViewSwitcher primitive；?view/?tab search param |
-| `workbench-grid-grouped-views` | grid 自适应（§8）+ grouped（§5） | change 2（+ change 1 的 StatusDot） | grid 视图；grouped 视图（桌面 global）；移动 global 默认分段 |
-| `workbench-table-view` | table 视图（§9） | change 2 | table 视图（桌面+移动） |
-| `workbench-split-redesign` | split 面板状态机（§7）+ 底部 dock | change 2 | 面板三态；缩略 header+output；底部 dock chip；初始态聚焦展开 |
+每个 phase 自包含 context.md + plan.md + tasks.md + verify.md（或等价轻量承载，见 [workbench-multiview-plan memory]），独立交付、独立验证。
 
-每个 change 自包含 context.md + plan.md + tasks.md + verify.md，独立交付、独立验证（门禁 + CSS 落盘 + Playwright）。跨 change 共享设计基线放 `.workflow/versions/v0.10-workbench-multi-views/shared/`，引用本文。
+## 16. ASCII 图集
 
-## 17. ASCII 图集
-
-（见上方 §3 IA 全景、§7.2 缩略面板、§7.3 dock、§9 table；移动端对照图见 §11。完整 ASCII 集见对齐过程的设计讨论记录，已沉淀进本文各节。）
+见 §3 IA 全景、§7.2 drop zone、§7.3 group 操作、§9 移动端对照。
 
 ---
 
-**对齐记录**：2026-07-04 与用户 7 轮讨论锁定。设计决策均标注「用户决定」。后续实现严格按本文，偏离需重新与用户对齐。
+**对齐记录**：
+- 2026-07-04：初版 7 轮讨论锁定（grid/table/split 三视图 + split 三态状态机 + dock）。
+- 2026-07-05：复盘重构。用户手测反馈「桌面聚焦态挤掉导航和视图」+「split 三态 + dock 不好操作」，改为统一中栏左右结构（左总览固定单列 + 右工作区拖放分屏），取消独立 split 视图与三态状态机。设计决策均标注「用户决定」。**设计完整，无「后续」；实现分 phase（A/B/C）渐进靠拢。**

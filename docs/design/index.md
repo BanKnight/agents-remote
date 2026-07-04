@@ -21,6 +21,6 @@
 - [mobile-session-interaction.md](./mobile-session-interaction.md) — 定义 Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 直发、真实能力边界和恢复状态规则。
 - [session-runtime-boundaries.md](./session-runtime-boundaries.md) — 定义 Agent Session、Terminal Session、transport connection 和 runtime lifecycle 的长期设计边界。
 - [workbench-redesign.md](./workbench-redesign.md) — 已落地的三栏工作台权威设计：桌面端从单列三层重设计为常驻三栏工作台（左=项目+实例树、中=自由 split 画布、右=文件/Git/原型/插件 tab）+ 移动两层导航，含走向决策、ASCII、Codex 插件研究结论与剩余待定项；导航模型已被 workbench-views.md 进一步演进。
-- [workbench-views.md](./workbench-views.md) — 工作台多视图重设计（WIP 草案，待实现）：演进自 workbench-redesign.md——实例展示抽象成可切换视图（grouped/grid/table/split），左栏收敛为导航条目列表，中栏新增二级导航 5 tab + 视图切换器，split 重构为聚焦展开+其余缩略+底部 dock 的特殊工作视图。含视图矩阵、split 面板状态机、移动端差异与所有「用户决定」标注，是本轮 IA 重构的设计权威。
-- [workbench-views-plan.md](./workbench-views-plan.md) — 工作台多视图重设计的实施计划：5 phase（cleanup / IA 重构 / grid+grouped / table / split）的执行顺序、每 phase 任务、依赖、验证、待拍点与关键代码入口，下次会话可直接照此接手。
+- [workbench-views.md](./workbench-views.md) — 工作台多视图重设计（设计完整，实现分 phase 渐进）：演进自 workbench-redesign.md——中栏永远左右结构（左总览固定单列卡片 + 右工作区拖放分屏），取消独立 split 视图与面板三态状态机，grid/table/grouped 收归左总览卡片样式。含信息架构、右工作区 5 drop zone 自由分屏、激活语义、URL 模型与所有「用户决定」标注，是本轮 IA 重构的设计权威。
+- [workbench-views-plan.md](./workbench-views-plan.md) — 工作台多视图重设计的实施计划：3 phase（A 中栏左右骨架 / B 拖放分屏 / C group 操作+持久化）的执行顺序、每 phase 任务、依赖、验证与关键代码入口，下次会话可直接照此接手。
 - [工作流和技能的大纲设计.md](./工作流和技能的大纲设计.md) — 定义工作流阶段链路、技能职责、`.workflow/versions` 运行态结构、change context 看板上下文与长期沉淀边界。
