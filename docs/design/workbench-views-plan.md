@@ -113,7 +113,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **subagent 审查结论**：4 发现——移动 project `resolvedView` 回退偏离 §15（已修）、plan.md 缺交付记录（本次补）、`groupByProject` 无测试（已补）、`useProjectInstances.isLoading` AND 语义（低优先，不改，影响面需单独验证）。Phase 3 收尾，可启动 P4。
 
-### Phase 4 · `workbench-table-view`
+### Phase 4 · `workbench-table-view` ✅ 已交付
 
 **目标**：table 视图（含会话名列），桌面+移动。
 
@@ -126,6 +126,18 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 **验证**：门禁全绿；CSS 落盘；Playwright（table 列正确、▶ 聚焦导航、✕ close 流程、移动窄屏不溢出）；DOM 几何；截图。
 
 **依赖**：P2（ViewSwitcher + URL）+ P1（StatusDot）。**待拍点**：移动窄屏隐藏哪些列（建议隐藏「最后活动」或「项目」）。
+
+**交付记录**（2026-07-04，commits `115ca57` → `d55f83b` + 收尾 `b836a1c`）：
+- 批 4a `115ca57`：数据层 `updatedAt` 端到端暴露——shared `AgentSession`/`TerminalSession` 加 `updatedAt?`（optional 向后兼容）；api `session-registry.ts` `agentSessionFromMetadata`/`terminalSessionFromMetadata` 映射 runtime `SessionMetadata.updatedAt`（L27，create + 各 mutation 点维护，agent/terminal 共用结构）进 DTO；web `GlobalInstanceCandidate` 加 `updatedAt?`+`createdAt?` + `useGlobalInstanceCandidates` 透传；api test 加 `updatedAt` 断言。为 table「最后活动」列数据源准备。
+- 批 4b `787a706`：桌面 table 视图——`history-list.tsx` `relativeTime` export（复用不复制，table activity 列 + 历史 list 共用）；新建 `web/src/components/workbench/workbench-table.tsx`（`SessionTable` presentational 组件 + `TableColumn`/`SessionTableRow` 类型，语义 `<table>/<thead>/<tbody>` 列头 sticky，行不整体 clickable——▶ button 触发 focus，§9 + a11y 避免 `<tr onClick>` 键盘不可达 + nested interactive `<tr role=button>` 内含 button 非法；▶/✕ 各 stopPropagation 与 InstanceCard close 同款防冒泡；桌面/移动共用 `columns` prop 裁剪）；`instance-area.tsx` 加 `instanceToTableRow`/`candidateToTableRow`/`TableRowCallbacks` helper（紧邻 grid helper，t 用 `TranslateFn` 带 params 给 `relativeTime` `time.minutesAgo {count}`，区别 `GridItemCallbacks` 窄签名）+ `overviewContent` `showTable` 分支（project 5 列 / global 6 列，空 → EmptyInstanceArea）；i18n `table.col*` + `table.focus`（en/zh）。
+- 批 4c `d55f83b`：移动 project table 视图——`MobileProjectOverview` overview 内容按 `resolvedView` 分支（grid → `ProjectInstances` 保留自含 close holder + 创建入口；table → `SessionTable` 4 列 `[type,name,status,actions]` 隐藏 project + activity，§11 用户决策）+ 复用桌面 4b 的 `SessionTable`/`instanceToTableRow`/`TableRowCallbacks`（桌面/移动同源 presentational）+ `useCloseSession`+`useProjectInstances`+`navigateWorkbench` 回调。移动 global 不涉（`MobileGlobalOverview` 固定分段 grid，§11 不可切；`filterWorkbenchViews` 含 table 但无 ViewSwitcher 对用户不可见）。
+- 收尾 `b836a1c`：subagent 审查 minor 修复——`MobileProjectOverview` 的 `{closeHolder}` 原在 overview div 末尾无条件渲染，grid 分支 `<ProjectInstances>` 已自含 holder 导致双挂载；收进 table 分支 `<Fragment>` 内消除双 holder。
+
+**待拍点决议**：移动窄屏隐藏「项目名 + 最后活动」（4 列 `[type,name,status,actions]`，用户拍板，§11 落地）。
+
+**验证**：门禁全绿（format/lint 0-0/typecheck/test api 173 + shared 7 + web 404）+ CSS 落盘（build --watch 漏落盘，`touch main.tsx` 后 text/css）+ Playwright DOM 25/25（4b 桌面 15 + 4c 移动 10：global 6 列顺序 / project 5 列无 Project / 移动 4 列无 Project+activity / 行数=活跃实例 / ▶ Focus + ✕ Close 按钮 / ▶ click 进聚焦态 URL / ✕ click 弹 confirm / activity 列 updatedAt 非空 / status 列 StatusDot 渲染 / 空态 → EmptyInstanceArea/提示 / grid 切换恢复 InstanceGrid / 移动 global 固定分段 grid 不渲染 table）。
+
+**subagent 审查结论**：10 项要点全部 ✓（§9 列规格 / §10 StatusDot 一致性 / §11 移动差异 / §12 displayName 主列 / §15 resolvedView 守卫回退 grid + split 隐藏 / 单一数据管道复用 grid 数据源 / a11y 行不整体 clickable / 复用约束 relativeTime export + close className + callbacks 类型差异 / 移动 view 不读 URL 是 §13 设计非 bug）；唯一 minor closeHolder 双挂载已收尾修复。Phase 4 完整落地设计 §9-§12 + §15 待拍点，可启动 P5。
 
 ### Phase 5 · `workbench-split-redesign`
 
