@@ -2,21 +2,23 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { type KeyboardEvent } from "react";
-import type { AgentSession, Project, TerminalSession } from "@agents-remote/shared";
-import { listAgentSessions, listProjects, listTerminalSessions } from "../../api/client";
+import type { Project } from "@agents-remote/shared";
+import { listProjects } from "../../api/client";
 import { useT } from "../../i18n";
-import { sessionStatusLabel } from "../../routes/console-model";
-import {
-  IconMarker,
-  InstanceCard,
-  sessionMarker,
-  statusToTone,
-  type ShellTone,
-} from "../shell/shell-primitives";
+import { IconMarker } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import { HistoryList } from "./history-list";
-import { CreateSessionBar, useCloseSession, useCreateSession } from "./instance-area";
+import {
+  CreateSessionBar,
+  type GridItemCallbacks,
+  INSTANCE_GRID_STYLE,
+  InstanceGrid,
+  instanceToGridItem,
+  useCloseSession,
+  useCreateSession,
+  useProjectInstances,
+} from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
 
@@ -165,20 +167,8 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
   const navigate = useNavigate();
   const { close, holder: closeHolder } = useCloseSession();
   const create = useCreateSession(projectName);
-  const agents = useQuery({
-    queryKey: ["projects", projectName, "agent-sessions"],
-    queryFn: () => listAgentSessions(projectName),
-    staleTime: 5_000,
-  });
-  const terminals = useQuery({
-    queryKey: ["projects", projectName, "terminal-sessions"],
-    queryFn: () => listTerminalSessions(projectName),
-    staleTime: 5_000,
-  });
-
-  const agentSessions = agents.data?.sessions ?? [];
-  const terminalSessions = terminals.data?.sessions ?? [];
-  const loading = agents.isLoading && terminals.isLoading;
+  // P3：query + merge 提取到 useProjectInstances（与桌面 grid 共享同一数据管道，React Query dedupe）。
+  const { instances, isLoading } = useProjectInstances(projectName);
 
   const focus = (sessionId: string) => {
     void navigate({
@@ -193,23 +183,7 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
     void close({ projectName, sessionId }, type);
   };
 
-  const statusToPill = (
-    status: AgentSession["status"] | TerminalSession["status"],
-  ): { label: string; tone: ShellTone } => ({
-    label: t(sessionStatusLabel(status)),
-    tone: statusToTone(status),
-  });
-
-  const mergedSessions = [
-    ...agentSessions.map((session) => ({
-      session: session as AgentSession,
-      type: "agent" as const,
-    })),
-    ...terminalSessions.map((session) => ({
-      session: session as TerminalSession,
-      type: "terminal" as const,
-    })),
-  ];
+  const gridCallbacks: GridItemCallbacks = { onClose: closeSession, onSelect: focus, t };
 
   return (
     <div className="flex flex-col gap-3 px-3 pt-1">
@@ -221,26 +195,9 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
           triggerClassName="w-full justify-center"
         />
       </div>
-      {loading && agentSessions.length === 0 && terminalSessions.length === 0 ? (
-        <CardGridSkeleton />
-      ) : null}
-      {mergedSessions.length > 0 ? (
-        <div className="grid grid-cols-2 gap-2">
-          {mergedSessions.map(({ session, type }) => {
-            const provider = type === "agent" ? (session as AgentSession).provider : undefined;
-            return (
-              <InstanceCard
-                closeLabel={t("session.close")}
-                key={session.id}
-                marker={sessionMarker(type, provider)}
-                onClose={() => closeSession(session.id, type)}
-                onSelect={() => focus(session.id)}
-                status={statusToPill(session.status)}
-                title={session.displayName}
-              />
-            );
-          })}
-        </div>
+      {isLoading && instances.length === 0 ? <CardGridSkeleton /> : null}
+      {instances.length > 0 ? (
+        <InstanceGrid items={instances.map((entry) => instanceToGridItem(entry, gridCallbacks))} />
       ) : null}
       <HistoryList focusId={focusId} projectName={projectName} />
       {create.promptHolder}
@@ -259,10 +216,10 @@ function LeftRailSkeleton() {
   );
 }
 
-/** 卡片总览加载骨架：2 列网格（与 InstanceCard 网格同构），INSTANCE_SKELETON_ROW_COUNT 行。 */
+/** 卡片总览加载骨架：自适应网格（与 InstanceGrid 同构，共享 INSTANCE_GRID_CLASS）。 */
 function CardGridSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
       {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
         <div className="h-20 animate-pulse rounded-lg bg-on-surface/5" key={index} />
       ))}

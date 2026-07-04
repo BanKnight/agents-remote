@@ -1,7 +1,7 @@
-import { type ReactNode, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentProvider } from "@agents-remote/shared";
+import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
 import {
   type GlobalInstanceCandidate,
   type WorkbenchMiddleTab,
@@ -32,7 +32,16 @@ import {
 import { useConfirm } from "../shell/confirm-dialog";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import { actionButtonClasses, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
+import { sessionStatusLabel } from "../../routes/console-model";
+import {
+  actionButtonClasses,
+  InstanceCard,
+  type InstanceCardProps,
+  sessionMarker,
+  shellSurfaceClasses,
+  statusToTone,
+  ViewSwitcher,
+} from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
@@ -54,6 +63,21 @@ export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
   table: "workbench.viewTable",
   split: "workbench.viewSplit",
 };
+
+/** grid 卡片最小宽度（设计文档 §8：`minmax(220px,1fr)` 自适应，无断点枚举）。 */
+export const MIN_CARD_WIDTH_PX = 220;
+/**
+ * InstanceCard 自适应网格 inline style（桌面 grid / 移动总览共用同源）。用 inline style 而非
+ * Tailwind 任意值：`repeat(auto-fill, minmax(...))` 含括号/逗号，Tailwind v4 任意值解析不稳定
+ *（dist CSS 实测不落盘 auto-fill 规则）。`auto-fill + minmax` 让列数随容器宽度自适应——手机
+ *（390px）1 列、平板（600px+）2 列、桌面更多，无需媒体查询。配合 `grid gap-2` className 使用。
+ */
+export const INSTANCE_GRID_STYLE: CSSProperties = {
+  gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_CARD_WIDTH_PX}px, 1fr))`,
+};
+
+/** InstanceGrid 项 = InstanceCard props + React key（卡片在网格中的稳定标识）。 */
+type InstanceGridItem = InstanceCardProps & { key: string };
 
 type InstanceAreaProps = {
   /** inspection 插件上下文（projectKey/focusId/sessionType）；files/git tab 按 projectKey 过滤可见 + render。 */
@@ -93,6 +117,8 @@ export function InstanceArea({
   const [layout, update] = useWorkbenchLayout(scope);
   const candidates = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
+  // P3 grid 视图 project scope 数据源（global scope 返空，grid 改用 candidates 跨项目聚合）。
+  const projectInstances = useProjectInstances(ctx.projectKey);
 
   // 聚焦态 header displayName（设计文档 §15）：focusId 实例的显示名。project scope = scope.key；
   // global scope 从 layout.panels 查 focusId 所属项目。useFocusSessionName 内部按 sessionType
@@ -177,10 +203,48 @@ export function InstanceArea({
     void navigateWorkbench(scope, ref.sessionId);
   };
 
-  const content =
+  // P3 总览视图（设计文档 §5/§8）：仅非聚焦 overview tab 渲染卡片网格（grid）；grouped（批 3b）/
+  // table（P4）/ split（P5）后续接管。聚焦态仍走 SplitLayout。view 守卫：URL/atom 的 view 若不在
+  // 当前 scope 可见视图集（如 project scope 残留 ?view=grouped）→ 回退 viewOptions 首项（grid）。
+  const resolvedView: WorkbenchView =
+    view !== undefined && viewOptions.some((opt) => opt.id === view)
+      ? view
+      : (viewOptions[0]?.id ?? "grid");
+
+  // grid 卡片回调：select 复用 focusPanel 进聚焦态；close 走 useCloseSession（卡片由 query 驱动，
+  // invalidate 后自然消失，不调 removePanel —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
+  // global scope 的 projectName 从 candidates 查（candidate.ref.projectName）。
+  const focusInstance = (sessionId: string) => {
+    const projectName = scope.kind === "project" ? scope.key : "";
+    focusPanel({ projectName, sessionId });
+  };
+  const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
+    const projectName =
+      scope.kind === "project"
+        ? scope.key
+        : (candidates.find((c) => c.ref.sessionId === sessionId)?.ref.projectName ?? "");
+    void close({ projectName, sessionId }, type);
+  };
+  const gridCallbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+
+  // grid 数据源：global 用 candidates（跨项目聚合），project 用 useProjectInstances（本项目全览）。
+  const gridItems = useMemo<InstanceGridItem[]>(
+    () =>
+      scope.kind === "global"
+        ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
+        : projectInstances.instances.map((entry) => instanceToGridItem(entry, gridCallbacks)),
+    // gridCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
+    // 引用由 hook 内 dataKey fingerprint 稳定（data 不变时不新建数组）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, candidates, projectInstances.instances, t],
+  );
+
+  // SplitLayout 渲染：聚焦态 / table（P4）/ split（P5）/ grouped（批 3b 前）的回退。布局空 +
+  // 无 focusId → EmptyInstanceArea；布局空 + 有 focusId（addPanel/铺开尚未收敛）→ PlaceholderPanel 防闪。
+  const splitContent =
     layout.panels.length === 0 ? (
       focusId ? (
-        <PlaceholderPanel focusId={focusId} /> // 布局空但 URL 带 focusId：addPanel/铺开尚未收敛，先占位防闪
+        <PlaceholderPanel focusId={focusId} />
       ) : (
         <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
       )
@@ -199,7 +263,20 @@ export function InstanceArea({
       />
     );
 
-  // 中栏内容按 tab 分支：聚焦态 / overview tab → 实例区（SplitLayout/空态）；
+  // 非聚焦 overview tab 按 view 分支：grid → InstanceGrid（空 → EmptyInstanceArea，与 split 共用）。
+  // 聚焦态 / table / split / grouped（批 3b 前回退）→ splitContent。
+  const showGrid = focusId === undefined && resolvedView === "grid";
+  const overviewContent = showGrid ? (
+    gridItems.length === 0 ? (
+      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+    ) : (
+      <InstanceGrid items={gridItems} />
+    )
+  ) : (
+    splitContent
+  );
+
+  // 中栏内容按 tab 分支：聚焦态 / overview tab → overviewContent（grid 卡片网格 / SplitLayout / 空态）；
   // history tab → HistoryList（project-scoped 历史 session；showLabel=false 因 tab bar 已
   //   标识「历史」，避免重复标题）；files/git/prototype tab → 复用右栏 inspection plugin
   //   的 render(ctx)（项目级 inspection）。
@@ -210,7 +287,7 @@ export function InstanceArea({
       ? null
       : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
   const tabContent = isOverview ? (
-    content
+    overviewContent
   ) : isHistory && ctx.projectKey !== null ? (
     <div className="h-full overflow-y-auto p-3">
       <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
@@ -244,7 +321,7 @@ export function InstanceArea({
                 <ViewSwitcher
                   ariaLabel={t("workbench.viewSwitcher")}
                   onChange={onViewChange}
-                  view={view}
+                  view={resolvedView}
                   views={viewOptions}
                 />
               ) : null}
@@ -655,6 +732,53 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[
   return refs;
 }
 
+/**
+ * 项目活跃实例列表（P3 grid 视图 project scope 数据源）。query key 与 ProjectInstances
+ *（left-rail）/ useScopeInstanceOrder 一致，React Query dedupe 零额外网络。merge agent +
+ * terminal sessions 成有序 entries（agents 在前 terminals 在后，与左栏分段一致）。
+ * `projectName === null`（global scope）短路返回空，不发请求——grid 在 global 改用 candidates。
+ * dataKey fingerprint（dataUpdatedAt）让返回引用在 data 不变时稳定（下游 useMemo([instances]) 有效）。
+ */
+export type ProjectInstanceEntry = {
+  session: AgentSession | TerminalSession;
+  type: "agent" | "terminal";
+};
+
+export function useProjectInstances(projectName: string | null): {
+  instances: ProjectInstanceEntry[];
+  isLoading: boolean;
+} {
+  const agents = useQuery({
+    enabled: projectName !== null,
+    queryKey: ["projects", projectName ?? "", "agent-sessions"],
+    queryFn: () => listAgentSessions(projectName as string),
+    staleTime: 5_000,
+  });
+  const terminals = useQuery({
+    enabled: projectName !== null,
+    queryKey: ["projects", projectName ?? "", "terminal-sessions"],
+    queryFn: () => listTerminalSessions(projectName as string),
+    staleTime: 5_000,
+  });
+  const dataKey = `${projectName ?? ""}|${agents.dataUpdatedAt}|${terminals.dataUpdatedAt}`;
+  return useMemo(() => {
+    if (projectName === null) return { instances: [], isLoading: false };
+    const instances: ProjectInstanceEntry[] = [
+      ...(agents.data?.sessions ?? []).map((session) => ({
+        session: session as AgentSession,
+        type: "agent" as const,
+      })),
+      ...(terminals.data?.sessions ?? []).map((session) => ({
+        session: session as TerminalSession,
+        type: "terminal" as const,
+      })),
+    ];
+    return { instances, isLoading: agents.isLoading && terminals.isLoading };
+    // projectName/agents/terminals 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey]);
+}
+
 function EmptyInstanceArea({
   create,
   projectName,
@@ -683,6 +807,65 @@ function EmptyInstanceArea({
       </div>
     </div>
   );
+}
+
+/** grid 卡片回调集合：onSelect/onClose 按 sessionId+type 重建，t 翻译 status label。 */
+export type GridItemCallbacks = {
+  onClose?: (sessionId: string, type: "agent" | "terminal") => void;
+  onSelect: (sessionId: string) => void;
+  t: (key: TranslationKey) => string;
+};
+
+/** InstanceCard 自适应网格（设计文档 §8）。纯 presentational——items 由调用方从 query/candidates 派生。 */
+export function InstanceGrid({ items }: { items: InstanceGridItem[] }) {
+  return (
+    <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
+      {items.map(({ key, ...card }) => (
+        <InstanceCard key={key} {...card} />
+      ))}
+    </div>
+  );
+}
+
+/** 项目实例 → InstanceGridItem（marker 按 type/provider，status 映射 pill，title=displayName）。 */
+export function instanceToGridItem(
+  entry: ProjectInstanceEntry,
+  cb: GridItemCallbacks,
+): InstanceGridItem {
+  const provider = entry.type === "agent" ? (entry.session as AgentSession).provider : undefined;
+  const onClose = cb.onClose;
+  return {
+    closeLabel: cb.t("session.close"),
+    key: entry.session.id,
+    marker: sessionMarker(entry.type, provider),
+    onClose: onClose ? () => onClose(entry.session.id, entry.type) : undefined,
+    onSelect: () => cb.onSelect(entry.session.id),
+    status: {
+      label: cb.t(sessionStatusLabel(entry.session.status)),
+      tone: statusToTone(entry.session.status),
+    },
+    title: entry.session.displayName,
+  };
+}
+
+/** 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName）。 */
+function candidateToGridItem(
+  candidate: GlobalInstanceCandidate,
+  cb: GridItemCallbacks,
+): InstanceGridItem {
+  const onClose = cb.onClose;
+  return {
+    closeLabel: cb.t("session.close"),
+    key: candidate.ref.sessionId,
+    marker: sessionMarker(candidate.type, candidate.provider),
+    onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
+    onSelect: () => cb.onSelect(candidate.ref.sessionId),
+    status: {
+      label: cb.t(sessionStatusLabel(candidate.status)),
+      tone: statusToTone(candidate.status),
+    },
+    title: candidate.displayName,
+  };
 }
 
 function LoadingPanel() {

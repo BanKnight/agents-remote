@@ -360,7 +360,7 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
   );
 }
 
-type InstanceCardProps = {
+export type InstanceCardProps = {
   closeLabel?: string;
   marker: ReactNode;
   onClose?: () => void;
