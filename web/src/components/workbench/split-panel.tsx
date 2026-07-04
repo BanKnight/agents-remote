@@ -7,9 +7,10 @@ import {
   deriveRows,
 } from "../../routes/workbench-model";
 import { useT } from "../../i18n";
-import { shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { PanelPreview } from "./panel-preview";
+import { shellSurfaceClasses, StatusDot } from "../shell/shell-primitives";
+import { usePanelMeta } from "./instance-area";
 
 type SplitLayoutProps = {
   layout: WorkbenchLayout;
@@ -27,8 +28,8 @@ type SplitLayoutProps = {
   onToggleMaximize?: (sessionId: string) => void;
   /** 切换面板三态（Phase 5，setPanelState 单 expanded 守卫）。 */
   onToggleState?: (sessionId: string, state: PanelViewState) => void;
-  /** 面板工具栏左侧标签（global scope 传项目名前缀；project scope 不传 = 隐藏）。 */
-  panelLabel?: (ref: WorkbenchPanelRef) => string | undefined;
+  /** global scope 时在 marker 后追加项目名前缀（project scope 不传 = 仅实例元数据）。 */
+  projectPrefix?: (ref: WorkbenchPanelRef) => string | undefined;
 };
 
 /**
@@ -39,6 +40,10 @@ type SplitLayoutProps = {
  * Phase 5：面板三态（expanded/collapsed/minimized）。`deriveRows` 已过滤 minimized 面板
  *（dock 承载，不占行布局）；expanded/collapsed 面板正常铺开。底部 dock 渲染 minimized 面板 chip。
  * gutter resize / maximize 保留不重写（设计 §7.4 复用）。
+ *
+ * header/dock chip 元数据（marker + displayName + statusDot）由 SplitPanel/SplitDock 内部各自调
+ * `usePanelMeta(ref)` 派生（与 PanelRouter/useFocusSessionName 同源 query key，React Query dedupe
+ * 零额外网络）—— P1#1/#2 + P2#7/#8 根因修复：不再用 raw sessionId + 固定 terminal 图标。
  */
 export function SplitLayout({
   layout,
@@ -49,9 +54,8 @@ export function SplitLayout({
   onResizePair,
   onToggleMaximize,
   onToggleState,
-  panelLabel,
+  projectPrefix,
 }: SplitLayoutProps) {
-  const { t } = useT();
   const rows = deriveRows(layout);
   // minimized 面板 = panels 中存在但被 deriveRows 过滤的（panelStates=minimized）。
   const minimizedPanels = layout.panels.filter(
@@ -85,13 +89,13 @@ export function SplitLayout({
                         <SplitPanel
                           flex={layout.sizes[ref.sessionId] ?? WORKBENCH_PANEL_DEFAULT_FLEX}
                           focused={isFocused?.(ref) ?? false}
-                          label={panelLabel?.(ref)}
                           maximized={layout.maximized === ref.sessionId}
                           onClose={() => onClosePanel(ref)}
                           onFocus={() => onFocusPanel?.(ref)}
                           onToggleMaximize={() => onToggleMaximize?.(ref.sessionId)}
                           onToggleState={(next) => onToggleState?.(ref.sessionId, next)}
-                          sessionId={ref.sessionId}
+                          panelRef={ref}
+                          prefix={projectPrefix?.(ref)}
                           state={state}
                         >
                           {renderPanel(ref)}
@@ -107,7 +111,7 @@ export function SplitLayout({
         <SplitDock
           onRestore={(sessionId) => onToggleState?.(sessionId, "collapsed")}
           panels={minimizedPanels}
-          restoreLabel={t("workbench.dockChipRestore")}
+          projectPrefix={projectPrefix}
         />
       ) : null}
     </div>
@@ -117,13 +121,14 @@ export function SplitLayout({
 type SplitPanelProps = {
   flex: number;
   focused: boolean;
-  label?: string;
   maximized: boolean;
   onClose: () => void;
   onFocus: () => void;
   onToggleMaximize: () => void;
   onToggleState: (next: PanelViewState) => void;
-  sessionId: string;
+  panelRef: WorkbenchPanelRef;
+  /** global scope 时 marker 后追加的项目名前缀；project scope = undefined。 */
+  prefix?: string;
   state: PanelViewState;
   children: ReactNode;
 };
@@ -133,23 +138,32 @@ type SplitPanelProps = {
  * collapsed = header + 末 2 行预览 + 展开 + 关闭（无最大化——缩略态不 maximize）；minimized
  * 不渲染（dock chip 承载）。focused 时外环高亮。点击面板任意位置聚焦（输入作用于聚焦面板）。
  *
+ * header 左侧 = marker + displayName + 状态点（设计 §7.2/§12 一等显示，用户决策「聚焦 session 名
+ * expanded header 内联显示」）。marker/label/statusDot 由 `usePanelMeta(panelRef)` 从实例 detail
+ * 派生（与 PanelRouter/useFocusSessionName 同源 query key，React Query dedupe 零额外网络）；
+ * detail 未就绪时 fallback sessionId 前 12 位（避免空 header）。
+ *
  * children 保留 mount（不 unmount），仅 collapsed 态 CSS 隐藏（`hidden` class）——避免 PanelRouter
  * 内部 query/WS 重连抖动（设计 §7.4 复用 + 状态进 layout atom，不动实例生命周期）。
  */
 function SplitPanel({
   flex,
   focused,
-  label,
   maximized,
   onClose,
   onFocus,
   onToggleMaximize,
   onToggleState,
-  sessionId,
+  panelRef,
+  prefix,
   state,
   children,
 }: SplitPanelProps) {
   const { t } = useT();
+  const meta = usePanelMeta(panelRef);
+  const label = prefix
+    ? `${prefix} · ${meta?.label ?? panelRef.sessionId.slice(0, 12)}`
+    : (meta?.label ?? panelRef.sessionId.slice(0, 12));
   return (
     <div
       className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${shellSurfaceClasses.shell} ${focused ? "ring-1 ring-primary/40" : "ring-1 ring-on-surface/5"}`}
@@ -157,8 +171,16 @@ function SplitPanel({
       onClick={onFocus}
     >
       <div className="flex shrink-0 items-center justify-between gap-0.5 border-b border-on-surface/5 px-1 py-0.5">
-        <span className="min-w-0 flex-1 truncate px-1 text-[0.6rem] font-medium text-on-surface-muted">
-          {label}
+        <span className="flex min-w-0 flex-1 items-center gap-1 px-1 text-[0.6rem] font-medium text-on-surface-muted">
+          {meta?.marker}
+          <span className="truncate">{label}</span>
+          {meta?.statusDot ? (
+            <StatusDot
+              label={meta.statusDot.label}
+              pulse={meta.statusDot.pulse}
+              tone={meta.statusDot.tone}
+            />
+          ) : null}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           {state === "expanded" ? (
@@ -202,7 +224,7 @@ function SplitPanel({
         <>
           {/* collapsed：children 保留 mount 仅隐藏，避免 query/WS 重连；预览在下方渲染。 */}
           <div className="hidden">{children}</div>
-          <PanelPreview sessionId={sessionId} />
+          <PanelPreview sessionId={panelRef.sessionId} />
         </>
       )}
     </div>
@@ -212,34 +234,60 @@ function SplitPanel({
 type SplitDockProps = {
   panels: WorkbenchPanelRef[];
   onRestore: (sessionId: string) => void;
-  restoreLabel: string;
+  projectPrefix?: (ref: WorkbenchPanelRef) => string | undefined;
 };
 
 /**
- * 底部 dock（设计 §7.3，仅桌面 split + 有最小化面板）。chip 横排，chip = label（项目名/session 名
- * 截断）；点击 → onRestore（恢复为 collapsed）。无最小化面板时 SplitLayout 不渲染本组件。
+ * 底部 dock（设计 §7.3，仅桌面 split + 有最小化面板）。chip 横排，chip = marker + session 名截断；
+ * 点击 → onRestore（恢复为 collapsed）。无最小化面板时 SplitLayout 不渲染本组件。
+ *
+ * 每个 chip 独立组件（DockChip），内部调 `usePanelMeta(ref)` 派生 marker + displayName（与
+ * SplitPanel header 同源，React Query dedupe）；detail 未就绪时 fallback raw sessionId 前 12 位。
  */
-function SplitDock({ panels, onRestore, restoreLabel }: SplitDockProps) {
+function SplitDock({ panels, onRestore, projectPrefix }: SplitDockProps) {
   const { t } = useT();
+  const restoreLabel = t("workbench.dockChipRestore");
   return (
     <nav
       aria-label={t("workbench.dock")}
       className="flex shrink-0 items-center gap-1 rounded-xl border-t border-on-surface/5 px-1.5 py-1"
     >
       {panels.map((p) => (
-        <button
-          aria-label={restoreLabel}
-          className="inline-flex h-7 max-w-[10rem] items-center gap-1 rounded-lg bg-on-surface/5 px-2 text-[0.65rem] font-medium text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface"
+        <DockChip
           key={p.sessionId}
-          onClick={() => onRestore(p.sessionId)}
-          title={restoreLabel}
-          type="button"
-        >
-          <ShellIcon className="h-3 w-3 shrink-0" name="terminal" />
-          <span className="truncate">{p.sessionId.slice(0, 12)}</span>
-        </button>
+          onRestore={() => onRestore(p.sessionId)}
+          panelRef={p}
+          prefix={projectPrefix?.(p)}
+          restoreLabel={restoreLabel}
+        />
       ))}
     </nav>
+  );
+}
+
+type DockChipProps = {
+  onRestore: () => void;
+  panelRef: WorkbenchPanelRef;
+  prefix?: string;
+  restoreLabel: string;
+};
+
+function DockChip({ onRestore, panelRef, prefix, restoreLabel }: DockChipProps) {
+  const meta = usePanelMeta(panelRef);
+  const label = prefix
+    ? `${prefix} · ${meta?.label ?? panelRef.sessionId.slice(0, 12)}`
+    : (meta?.label ?? panelRef.sessionId.slice(0, 12));
+  return (
+    <button
+      aria-label={restoreLabel}
+      className="inline-flex h-7 max-w-[10rem] items-center gap-1 rounded-lg bg-on-surface/5 px-2 text-[0.65rem] font-medium text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface"
+      onClick={onRestore}
+      title={restoreLabel}
+      type="button"
+    >
+      {meta?.marker ?? <ShellIcon className="h-3 w-3 shrink-0" name="terminal" />}
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 

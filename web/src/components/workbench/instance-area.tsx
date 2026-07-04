@@ -42,6 +42,7 @@ import {
   type InstanceCardProps,
   sessionMarker,
   shellSurfaceClasses,
+  type ShellTone,
   statusToTone,
   ViewSwitcher,
 } from "../shell/shell-primitives";
@@ -50,6 +51,7 @@ import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SplitLayout } from "./split-panel";
+import { clearPanelPreview } from "./panel-preview-cache";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import {
   DropdownMenu,
@@ -222,6 +224,8 @@ export function InstanceArea({
     void close(ref, sessionType, () => {
       const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
       update((prev) => removePanel(prev, ref.sessionId));
+      // 清 panel preview cache，防 close 后 cache 条目残留内存泄漏（subagent 审查 P1#3）。
+      clearPanelPreview(ref.sessionId);
       if (focusId === ref.sessionId) {
         void navigateWorkbench(scope, remaining.length > 0 ? remaining[0].sessionId : undefined);
       }
@@ -291,7 +295,7 @@ export function InstanceArea({
             void navigateWorkbench(scope, sessionId);
           }
         }}
-        panelLabel={scope.kind === "global" ? (ref) => ref.projectName : undefined}
+        projectPrefix={scope.kind === "global" ? (ref) => ref.projectName : undefined}
         renderPanel={(ref) => <PanelRouter key={ref.sessionId} panelRef={ref} />}
       />
     );
@@ -494,6 +498,59 @@ export function useFocusSessionName(
   const terminal = useTerminalDetail(ref, projReady && sessionType === "terminal");
   if (sessionType === "agent") return agent.data?.session.displayName;
   if (sessionType === "terminal") return terminal.data?.session.displayName;
+  return undefined;
+}
+
+/**
+ * split 面板元数据（设计 §7.2/§7.3/§10/§12）。按 sessionId 前缀推断类型 → 复用
+ * useAgentDetail/useTerminalDetail（query key 与 PanelRouter/useFocusSessionName 一致，React Query
+ * dedupe 零额外网络）。返回 SplitPanel header（marker + label + statusDot）与 SplitDock chip
+ *（marker + label）共用的元数据；detail 未就绪时返 undefined，调用方 fallback 到 sessionId 前 12 位。
+ * 两个 detail hook 都调（hooks 规则），按 sessionType 控制 enabled；projectName 未就绪时双
+ * enabled=false 零网络开销。这是 P1#1/#2 + P2#7/#8 的根因修复：SplitLayout 不再只接收
+ * WorkbenchPanelRef{projectName,sessionId}，而是从实例 detail 派生 marker/displayName/status。
+ */
+export type PanelMeta = {
+  /** 实例 marker（agent 按 provider，terminal 固定）；与 InstanceCard 同源（设计 §10/§12）。 */
+  marker: ReactNode;
+  /** 显示名（detail.displayName；未就绪时 undefined，调用方 fallback sessionId 前 12 位）。 */
+  label?: string;
+  /** 状态点（detail.status → tone + i18n label；running 时 pulse）。未就绪时 undefined。 */
+  statusDot?: { label: string; pulse: boolean; tone: ShellTone };
+};
+
+export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
+  const { t } = useT();
+  const sessionType = inferSessionTypeFromId(panelRef.sessionId);
+  const projReady = !!panelRef.projectName;
+  const agent = useAgentDetail(panelRef, projReady && sessionType === "agent");
+  const terminal = useTerminalDetail(panelRef, projReady && sessionType === "terminal");
+  if (sessionType === "agent") {
+    const session = agent.data?.session;
+    if (!session) return undefined;
+    return {
+      label: session.displayName,
+      marker: sessionMarker("agent", session.provider),
+      statusDot: {
+        label: t(sessionStatusLabel(session.status)),
+        pulse: session.status === "running",
+        tone: statusToTone(session.status),
+      },
+    };
+  }
+  if (sessionType === "terminal") {
+    const session = terminal.data?.session;
+    if (!session) return undefined;
+    return {
+      label: session.displayName,
+      marker: sessionMarker("terminal"),
+      statusDot: {
+        label: t(sessionStatusLabel(session.status)),
+        pulse: session.status === "running",
+        tone: statusToTone(session.status),
+      },
+    };
+  }
   return undefined;
 }
 

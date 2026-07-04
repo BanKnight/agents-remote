@@ -210,6 +210,26 @@ test("setPanelState: 无原 expanded 时设 expanded 不动其他", () => {
   });
 });
 
+test("setPanelState: minimized 该面板 === maximized 时同步清 maximized（状态机死角修复）", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    panelStates: { a: "expanded", b: "collapsed" },
+    maximized: "a",
+  });
+  const r = setPanelState(l, "a", "minimized");
+  expect(r.panelStates.a).toBe("minimized");
+  expect(r.maximized).toBeNull(); // minimized 面板的 maximized 清空，避免 deriveRows 死角
+});
+
+test("setPanelState: minimized 其他面板时 maximized 不动", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    panelStates: { a: "expanded", b: "collapsed" },
+    maximized: "a",
+  });
+  expect(setPanelState(l, "b", "minimized").maximized).toBe("a");
+});
+
 test("initPanelStates: focusSessionId = expanded，其余 collapsed", () => {
   const l = layout({ panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")] });
   const r = initPanelStates(l, "b");

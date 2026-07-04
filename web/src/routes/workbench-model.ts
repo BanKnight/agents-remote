@@ -41,13 +41,13 @@ export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "pro
 export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["split", "table", "grid", "grouped"];
 
 /**
- * 按作用域/视口过滤 ViewSwitcher 可用视图（设计文档 §15）。P2 全平台隐藏 split
- *（P5 重构前中间态）；project 作用域隐藏 grouped（grouped 仅 global 跨项目分组）；
+ * 按作用域/视口过滤 ViewSwitcher 可用视图（设计文档 §15）。Phase 5 落地后桌面恢复 split 可见
+ *（面板三态 + dock 已就绪）；project 作用域隐藏 grouped（grouped 仅 global 跨项目分组）；
  * 移动端隐藏 grouped + split（移动不支持多实例 split，grouped 让位单列分段）。
  */
 export function filterWorkbenchViews(scope: WorkbenchScope, isMobile: boolean): WorkbenchView[] {
   return WORKBENCH_VIEW_ORDER.filter((v) => {
-    if (v === "split") return false;
+    if (v === "split" && isMobile) return false;
     if (v === "grouped" && (scope.kind === "project" || isMobile)) return false;
     return true;
   });
@@ -391,15 +391,20 @@ export function setPanelState(
   sessionId: string,
   state: PanelViewState,
 ): WorkbenchLayout {
+  // minimized 与 maximized 正交但若 minimized 面板 === maximized，deriveRows 仍 early-return
+  // 该面板（maximized 优先），渲染 minimized 态空白 + dock chip restore 后仍 maximized+collapsed
+  // 渲染预览态而非全屏（状态机死角）。设 minimized 时若该面板 === maximized，同步清 maximized。
+  const maximized =
+    state === "minimized" && layout.maximized === sessionId ? null : layout.maximized;
   if (state === "expanded") {
     const panelStates = { ...layout.panelStates };
     for (const id of Object.keys(panelStates)) {
       if (id !== sessionId && panelStates[id] === "expanded") panelStates[id] = "collapsed";
     }
     panelStates[sessionId] = "expanded";
-    return { ...layout, panelStates };
+    return { ...layout, maximized, panelStates };
   }
-  return { ...layout, panelStates: { ...layout.panelStates, [sessionId]: state } };
+  return { ...layout, maximized, panelStates: { ...layout.panelStates, [sessionId]: state } };
 }
 
 /**
