@@ -18,7 +18,7 @@
 - **多视图切换**：实例区支持多种视图（分组/网格/表格/分屏），用户按场景切换，视图选择记 URL。
 - **二级导航统一**：桌面和移动都在中栏承载二级导航（总览/历史/文件/Git/原型），左栏只放导航条目（不再塞实例/历史）。
 - **split 是特殊视图**：不再是默认铺开，而是"多实例同屏工作台"——聚焦面板展开，其余缩略/最小化，仿 Windows 任务栏的底部 dock 收最小化面板。
-- **桌面/移动能力差异化**：split 和 grouped 是桌面专属（移动窄屏做不了复杂分屏；grouped 跨项目分组在移动用"默认分段"代替可切换视图）。
+- **桌面/移动能力差异化**：split 是桌面专属（移动窄屏做不了复杂分屏）；grouped 在桌面 global 与移动 global 都可切，移动 project 不分段故无 grouped。
 
 ## 3. 信息架构
 
@@ -67,15 +67,15 @@
 |--|:--:|:--:|:--:|:--:|
 | 桌面 global | ✓ | ✓ | ✓ | ✓ |
 | 桌面 project | — | ✓ | ✓ | ✓ |
-| 移动 global | (默认分段) | ✓ | ✓ | — |
+| 移动 global | ✓ | ✓ | ✓ | — |
 | 移动 project | — | ✓ | ✓ | — |
 
-- **grouped**：跨项目按项目分组（仅桌面 global；project 只一个项目无需分组）
+- **grouped**：跨项目按项目分组（桌面 global + 移动 global；project 只一个项目无需分组）
 - **grid**：自适应列数卡片网格（见 §8）
 - **table**：紧凑表格（见 §9）
 - **split**：多实例同屏工作台（仅桌面，见 §7）
 
-移动 global 的 grid **默认按项目分段显示**（轻分组，项目名做分隔），但不作为可切换视图；移动 project 不分段。
+移动 global 的 grouped **默认视图即按项目分段**（项目名分隔），且作为可切换视图（与 grid/table 并列）；移动 project 不分段、无 grouped。
 
 ## 6. 视图切换器
 
@@ -83,7 +83,7 @@
 - **位置**：
   - 桌面：二级导航 tab 行**右上角**（tab 行右侧）
   - 移动：二级导航 tab 行**下一行右侧**（窄屏 tab 行右侧放不下，独立一行）
-- **按 scope 隐藏不适用的视图**：project 隐藏 grouped；移动隐藏 grouped + split。
+- **按 scope 隐藏不适用的视图**：project 隐藏 grouped；移动隐藏 split（移动 global 三视图 grouped/grid/table 全可切）。
 - **记忆**：视图选择记 **URL search param**（可分享/书签，对齐现有 rightTab 做法）。key 暂定 `?view=grouped|grid|table|split`。
 - **顺序**：靠右上角，从右到左排开（顺序细节：默认/最常用靠右；最终顺序实现时与用户确认）。
 
@@ -192,12 +192,12 @@ grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 | 项 | 桌面 | 移动 |
 |----|------|------|
 | split 视图 | ✓ | ✗（窄屏做不了复杂分屏） |
-| grouped 视图 | ✓（global 可切） | ✗（global 用"默认分段"代替，不可切） |
+| grouped 视图 | ✓（global 可切） | ✓（global 默认按项目分段，可切） |
 | grid/table | ✓ | ✓ |
 | grid 列数 | 自适应（中栏宽） | 手机 1 列、平板 2 列（自适应） |
 | 视图切换器位置 | tab 行右上角 | tab 行下一行右侧 |
 | 二级导航 5 tab | ✓（中栏顶部） | ✓（header 下一行，横向滚动） |
-| 移动 global 分段 | — | grid 默认按项目分段（项目名分隔） |
+| 移动 global 分段 | — | grouped 默认按项目分段（项目名分隔），grouped/grid/table 可切 |
 
 ## 12. 会话名（displayName）统一呈现
 

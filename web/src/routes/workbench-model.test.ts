@@ -6,6 +6,7 @@ import {
   type WorkbenchLayout,
   addPanel,
   deriveRows,
+  filterWorkbenchViews,
   groupByProject,
   inferSessionTypeFromId,
   parseWorkbenchScope,
@@ -338,4 +339,31 @@ test("groupByProject: 空数组 → []；单项目 → 单组", () => {
   expect(groups).toHaveLength(1);
   expect(groups[0].projectName).toBe("solo");
   expect(groups[0].candidates.map((c) => c.ref.sessionId)).toEqual(["a1", "t1"]);
+});
+
+// ── filterWorkbenchViews（§5 视图矩阵：按 scope/isMobile 过滤 ViewSwitcher 可用视图）──
+
+test("filterWorkbenchViews: 桌面 global 四视图全开", () => {
+  expect(filterWorkbenchViews({ kind: "global" }, false)).toEqual([
+    "split",
+    "table",
+    "grid",
+    "grouped",
+  ]);
+});
+
+test("filterWorkbenchViews: 桌面 project 隐藏 grouped", () => {
+  expect(filterWorkbenchViews({ kind: "project", key: "p" }, false)).toEqual([
+    "split",
+    "table",
+    "grid",
+  ]);
+});
+
+test("filterWorkbenchViews: 移动 global 隐藏 split（grouped/grid/table 三视图可切）", () => {
+  expect(filterWorkbenchViews({ kind: "global" }, true)).toEqual(["table", "grid", "grouped"]);
+});
+
+test("filterWorkbenchViews: 移动 project 隐藏 split + grouped（仅 table/grid）", () => {
+  expect(filterWorkbenchViews({ kind: "project", key: "p" }, true)).toEqual(["table", "grid"]);
 });

@@ -149,10 +149,6 @@ function ProjectNode({ active, project, onSelect }: ProjectNodeProps) {
       >
         {project.name}
       </span>
-      <span className="flex shrink-0 items-center gap-1 text-[0.6rem] font-medium text-on-surface-muted">
-        {project.agentSessionCount > 0 ? <span>{project.agentSessionCount}A</span> : null}
-        {project.terminalSessionCount > 0 ? <span>{project.terminalSessionCount}T</span> : null}
-      </span>
     </div>
   );
 }

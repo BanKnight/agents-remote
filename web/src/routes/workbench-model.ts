@@ -43,12 +43,13 @@ export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["split", "table", "grid", 
 /**
  * 按作用域/视口过滤 ViewSwitcher 可用视图（设计文档 §15）。Phase 5 落地后桌面恢复 split 可见
  *（面板三态 + dock 已就绪）；project 作用域隐藏 grouped（grouped 仅 global 跨项目分组）；
- * 移动端隐藏 grouped + split（移动不支持多实例 split，grouped 让位单列分段）。
+ * 移动端隐藏 split（移动不支持多实例 split）。P4：移动 global 保留 grouped（按项目分段作可切
+ * 视图，设计 §11 更新）；移动 project 仍隐藏 grouped（只一个项目无需分组）。
  */
 export function filterWorkbenchViews(scope: WorkbenchScope, isMobile: boolean): WorkbenchView[] {
   return WORKBENCH_VIEW_ORDER.filter((v) => {
     if (v === "split" && isMobile) return false;
-    if (v === "grouped" && (scope.kind === "project" || isMobile)) return false;
+    if (v === "grouped" && scope.kind === "project") return false;
     return true;
   });
 }

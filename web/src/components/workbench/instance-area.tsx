@@ -121,7 +121,7 @@ export function InstanceArea({
   const { t } = useT();
   const { close, holder } = useCloseSession();
   const [layout, update] = useWorkbenchLayout(scope);
-  const candidates = useGlobalInstanceCandidates(scope);
+  const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
   // P3 grid 视图 project scope 数据源（global scope 返空，grid 改用 candidates 跨项目聚合）。
   const projectInstances = useProjectInstances(ctx.projectKey);
@@ -189,15 +189,19 @@ export function InstanceArea({
   // global 自动铺开（commit ④）：进入全局视图且布局为空时，按 rankGlobalInstances 排序
   // 把所有项目活跃实例铺成面板。seededRef 防止铺开后 candidates/状态变化触发重铺，
   // 也防止用户手动清空后被自动回填。localStorage 已恢复非空布局时不介入。
+  // P2 根因修复：等 candidates 加载完整（isLoaded）才铺——useGlobalInstanceCandidates 的
+  // queries（projects → 每项目 agent/terminal）逐步加载，candidates 从 0→部分→完整。若首次
+  // candidates>0 就铺并锁 seededRef，terminal queries 还没回时只铺部分实例，锁死后不再补铺
+  // → 丢实例。isLoaded 守卫确保拿到完整候选再铺。
   const seededRef = useRef(false);
   useEffect(() => {
     if (scope.kind !== "global" || layout.panels.length > 0 || seededRef.current) return;
-    if (candidates.length === 0) return;
+    if (!candidatesLoaded || candidates.length === 0) return;
     seededRef.current = true;
     const ranked = rankGlobalInstances(candidates);
     update((prev) => ranked.reduce((acc, ref) => addPanel(acc, ref), prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, layout.panels.length, candidates]);
+  }, [scopeKey, layout.panels.length, candidates, candidatesLoaded]);
 
   // Phase 5 初始态：进 split 视图且 panelStates 全是默认 collapsed（无 expanded 无 minimized）时，
   // focusId 面板 = expanded，其余 = collapsed（设计 §7.1）。已有 expanded 或 minimized（用户已操作
@@ -745,10 +749,6 @@ export function CreateSessionBar({
           <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
           {t("workbench.createClaude2")}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onCreateAgent("codex")}>
-          <ShellIcon className="h-3.5 w-3.5" name="openai" />
-          {t("workbench.createCodex")}
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onCreateTerminal}>
           <ShellIcon className="h-3.5 w-3.5" name="terminal" />
           {t("workbench.createTerminal")}
@@ -762,8 +762,15 @@ export function CreateSessionBar({
  * 全局实例区候选聚合（commit ④）。仅在 global 作用域发请求：listProjects → 每项目
  * listAgentSessions/listTerminalSessions（useQueries 动态查询，复用左栏 query key 缓存），
  * 扁平化成带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
+ *
+ * P2：返回 `{ candidates, isLoaded }`。`isLoaded` 表示所有底层 queries（projects + 每项目
+ * agent/terminal）都已 settled——自动铺开 effect 用它守卫，避免在 candidates 只加载到部分
+ *（如 agent queries 已回、terminal queries 还没回）时铺开并锁 seededRef 导致丢实例。
  */
-export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstanceCandidate[] {
+export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
+  candidates: GlobalInstanceCandidate[];
+  isLoaded: boolean;
+} {
   const isGlobal = scope.kind === "global";
   const projects = useQuery({
     queryKey: ["projects"],
@@ -792,7 +799,15 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstan
     .map((q) => q.dataUpdatedAt)
     .join(",")}|${terminalQueries.map((q) => q.dataUpdatedAt).join(",")}`;
   return useMemo(() => {
-    if (!isGlobal) return [];
+    if (!isGlobal) return { candidates: [], isLoaded: true };
+    // isLoaded：projects 加载完 + 每项目 agent/terminal queries 都 settled（!isPending && data !== undefined）。
+    // useQueries 在 names 空时返 []，every([])=true；projects 加载完那帧 names 变非空，新 query 立即
+    // pending → isLoaded=false；都 settled 后 true。fingerprint dep 覆盖 queries 引用变化。
+    const isLoaded =
+      !projects.isLoading &&
+      projects.data !== undefined &&
+      agentQueries.every((q) => !q.isPending && q.data !== undefined) &&
+      terminalQueries.every((q) => !q.isPending && q.data !== undefined);
     const candidates: GlobalInstanceCandidate[] = [];
     names.forEach((name, index) => {
       for (const session of agentQueries[index]?.data?.sessions ?? []) {
@@ -816,8 +831,8 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstan
         });
       }
     });
-    return candidates;
-    // names/agentQueries/terminalQueries/isGlobal 由 dataKey fingerprint 覆盖（data 变 → timestamp 变）。
+    return { candidates, isLoaded };
+    // names/agentQueries/terminalQueries/isGlobal/projects 由 dataKey fingerprint 覆盖（data 变 → timestamp 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);
 }
@@ -843,7 +858,7 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[
     queryFn: () => listTerminalSessions(projectKey as string),
     staleTime: 5_000,
   });
-  const candidates = useGlobalInstanceCandidates(scope);
+  const { candidates } = useGlobalInstanceCandidates(scope);
   if (scope.kind !== "project") return rankGlobalInstances(candidates);
   const refs: WorkbenchPanelRef[] = [];
   for (const session of agents.data?.sessions ?? []) {

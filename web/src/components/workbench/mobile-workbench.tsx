@@ -21,6 +21,7 @@ import {
 import { ProjectInstances } from "./left-rail";
 import {
   candidateToGridItem,
+  candidateToTableRow,
   type GridItemCallbacks,
   InstanceGrid,
   instanceToTableRow,
@@ -383,16 +384,30 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
 /**
  * 移动全局列表态（设计文档 §7/§11）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
- * 指定作用域）。按项目分组（groupByProject 稳定排序，与桌面 GroupedView 同源纯函数），每组
- * InstanceGrid 自适应网格（390px 1 列 / 平板 2 列，设计 §11 —— 复用桌面 grid 同款 INSTANCE_GRID_STYLE）。
- * 点卡片进 `/global/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API
- * → invalidate）。空状态提示。
+ * 指定作用域）。P4：加视图切换（grouped/grid/table，split 移动过滤——设计 §11 更新，移动 global
+ * 除 split 外都可切）。grouped = 按项目分段（groupByProject，与桌面 GroupedView 同源纯函数）；
+ * grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。点卡片/行进
+ * `/global/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API → invalidate）。
+ * 视图记忆复用 workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。
  */
 function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
-  const candidates = useGlobalInstanceCandidates({ kind: "global" });
+  const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
+  const [view, setView] = useAtom(workbenchViewAtom);
+  // viewOptions = filterWorkbenchViews(global, true) = [grouped, grid, table]（split 移动过滤）。
+  const viewOptions = useMemo(
+    () =>
+      filterWorkbenchViews({ kind: "global" }, true).map((v) => ({
+        id: v,
+        label: t(VIEW_LABEL_KEY[v]),
+      })),
+    [t],
+  );
+  // resolvedView：atom 值在移动 global viewOptions 内时尊重，否则回退 grouped（当前分段形态）。
+  // atom 默认 "grid"（与桌面 global 一致），首次进移动 global 显示 grid；用户切 grouped 后 atom 持久化。
+  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grouped";
   const groups = useMemo(() => groupByProject(candidates), [candidates]);
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
@@ -402,33 +417,56 @@ function MobileGlobalOverview() {
     if (ref) void close(ref, type);
   };
   const callbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
-  if (candidates.length === 0) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <MobilePageHeader title={t("workbench.globalOverviewTitle")} />
-        <div className="flex flex-1 items-center justify-center p-6 text-center">
-          <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
-        </div>
-        {closeHolder}
-      </div>
-    );
-  }
+  const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  // table 行（global 6 列含 project；复用 candidateToTableRow，与桌面 InstanceArea table 分支同源）。
+  const tableRows = useMemo(
+    () => candidates.map((c) => candidateToTableRow(c, tableCallbacks)),
+    // tableCallbacks 闭包依赖 closeInstance/focusInstance（candidates/navigateWorkbench/close），
+    // 由 [candidates, t] 覆盖（candidates 变 → closeInstance 闭包变）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [candidates, t],
+  );
+  const tableColumns: TableColumn[] = ["project", "type", "name", "status", "activity", "actions"];
   return (
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("workbench.globalOverviewTitle")} />
-      <nav
-        aria-label={t("workbench.globalOverviewTitle")}
-        className="flex-1 overflow-y-auto pb-24 lg:pb-0"
-      >
-        {groups.map((group) => (
-          <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
-            <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-              {group.projectName}
-            </p>
-            <InstanceGrid items={group.candidates.map((c) => candidateToGridItem(c, callbacks))} />
-          </div>
-        ))}
-      </nav>
+      <div className="flex items-center gap-1 px-3 py-2">
+        <ViewSwitcher
+          ariaLabel={t("workbench.viewSwitcher")}
+          onChange={(next) => setView(next)}
+          view={resolvedView}
+          views={viewOptions}
+        />
+      </div>
+      {candidates.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center p-6 text-center">
+          <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+        </div>
+      ) : (
+        <nav
+          aria-label={t("workbench.globalOverviewTitle")}
+          className="flex-1 overflow-y-auto pb-24 lg:pb-0"
+        >
+          {resolvedView === "grouped" ? (
+            groups.map((group) => (
+              <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
+                <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
+                  {group.projectName}
+                </p>
+                <InstanceGrid
+                  items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                />
+              </div>
+            ))
+          ) : resolvedView === "table" ? (
+            <SessionTable columns={tableColumns} rows={tableRows} t={t} />
+          ) : (
+            <div className="px-3 py-2">
+              <InstanceGrid items={candidates.map((c) => candidateToGridItem(c, callbacks))} />
+            </div>
+          )}
+        </nav>
+      )}
       {closeHolder}
     </div>
   );
