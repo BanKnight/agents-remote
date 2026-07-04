@@ -2,7 +2,12 @@ import { Fragment, useMemo } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
-import { MobilePageHeader, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
+import {
+  MobilePageHeader,
+  ShellSectionLabel,
+  shellSurfaceClasses,
+  ViewSwitcher,
+} from "../shell/shell-primitives";
 import {
   addPanel,
   filterWorkbenchViews,
@@ -450,9 +455,7 @@ function MobileGlobalOverview() {
           {resolvedView === "grouped" ? (
             groups.map((group) => (
               <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
-                <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-                  {group.projectName}
-                </p>
+                <ShellSectionLabel>{group.projectName}</ShellSectionLabel>
                 <InstanceGrid
                   items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
                 />

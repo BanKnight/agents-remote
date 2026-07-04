@@ -43,6 +43,7 @@ import {
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
+  ShellSectionLabel,
   statusToTone,
   ViewSwitcher,
 } from "../shell/shell-primitives";
@@ -1083,9 +1084,7 @@ function GroupedView({ candidates, onClose, onFocus, t }: GroupedViewProps) {
     <div className="h-full overflow-y-auto">
       {groups.map((group) => (
         <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
-          <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-            {group.projectName}
-          </p>
+          <ShellSectionLabel>{group.projectName}</ShellSectionLabel>
           <InstanceGrid items={group.candidates.map((c) => candidateToGridItem(c, callbacks))} />
         </div>
       ))}

@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 import type { AgentHistoryEntry } from "@agents-remote/shared";
 import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
-import { IconMarker } from "../shell/shell-primitives";
+import { IconMarker, ShellSectionLabel } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 
@@ -91,7 +90,11 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
   if (entries.length === 0) return null;
   return (
     <>
-      {showLabel ? <SectionLabel>{t("workbench.historySection")}</SectionLabel> : null}
+      {showLabel ? (
+        <ShellSectionLabel className="px-3 pb-1 pt-2">
+          {t("workbench.historySection")}
+        </ShellSectionLabel>
+      ) : null}
       {entries.map((entry) => (
         <HistorySessionNode
           active={entry.hasActiveSession && entry.activeSessionId === focusId}
@@ -102,14 +105,6 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
         />
       ))}
     </>
-  );
-}
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-3 pb-1 pt-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-      {children}
-    </p>
   );
 }
 

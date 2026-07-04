@@ -110,7 +110,7 @@ export function NavItemContent({
   const layoutClass =
     orientation === "vertical"
       ? "grid justify-items-center gap-1 py-1.5 text-center"
-      : "flex items-center gap-2.5 px-3 py-2.5 text-left";
+      : "flex items-center gap-2.5 px-2 py-1.5 text-left";
   const stateClass =
     orientation === "vertical"
       ? active
@@ -123,7 +123,7 @@ export function NavItemContent({
         : interactive
           ? "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
           : "text-on-surface-muted";
-  const shapeClass = orientation === "vertical" ? "" : "rounded-lg";
+  const shapeClass = orientation === "vertical" ? "" : "rounded-md";
   const interactionClass = interactive ? "cursor-pointer" : "";
 
   return (
@@ -139,6 +139,23 @@ export function NavItemContent({
       </span>
       {meta}
     </span>
+  );
+}
+
+type ShellSectionLabelProps = {
+  children: ReactNode;
+  className?: string;
+};
+
+/** 分组小标题（DESIGN Label-caps：700/0.6rem/uppercase/tracking-0.12em）。typography 固定，
+ *  padding 由调用方按所在容器对齐（左栏 px-2 / 中栏 px-3 / 父容器控）。 */
+export function ShellSectionLabel({ children, className }: ShellSectionLabelProps) {
+  return (
+    <p
+      className={`text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted ${className ?? ""}`}
+    >
+      {children}
+    </p>
   );
 }
 

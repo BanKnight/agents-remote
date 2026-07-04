@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { type KeyboardEvent } from "react";
 import type { Project } from "@agents-remote/shared";
 import { listProjects } from "../../api/client";
 import { useT } from "../../i18n";
-import { IconMarker } from "../shell/shell-primitives";
+import { IconMarker, ShellSectionLabel } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import {
@@ -63,6 +62,9 @@ function ProjectTree({ scope }: ProjectTreeProps) {
         className="flex-1 overflow-y-auto pb-24 lg:pb-0"
       >
         <GlobalNavNode active={scope.kind === "global"} onSelect={selectGlobal} />
+        <ShellSectionLabel className="px-2 pb-1 pt-3">
+          {t("workbench.projectsSection")}
+        </ShellSectionLabel>
         {projectItems.map((project) => (
           <ProjectNode
             active={project.name === activeProjectName}
@@ -73,9 +75,9 @@ function ProjectTree({ scope }: ProjectTreeProps) {
         ))}
         {projects.isLoading && projectItems.length === 0 ? <LeftRailSkeleton /> : null}
       </nav>
-      <div className="shrink-0 border-t border-on-surface/5 p-1.5">
+      <div className="shrink-0 border-t border-on-surface/5 p-2">
         <button
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => setSettingsOpen(true)}
           type="button"
         >
@@ -126,29 +128,17 @@ type ProjectNodeProps = {
 };
 
 function ProjectNode({ active, project, onSelect }: ProjectNodeProps) {
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect();
-    }
-  };
   return (
-    <div
-      className={`flex w-full cursor-pointer items-center gap-1 px-1.5 py-1.5 transition ${active ? "bg-primary/10" : "hover:bg-on-surface/5"}`}
+    <ShellNavigationButton
+      active={active}
+      label={project.name}
+      marker={
+        <IconMarker size="sm" tone="success">
+          <ShellIcon className="h-3 w-3" name="project" />
+        </IconMarker>
+      }
       onClick={onSelect}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
-    >
-      <IconMarker size="sm" tone="success">
-        <ShellIcon className="h-3 w-3" name="project" />
-      </IconMarker>
-      <span
-        className={`min-w-0 flex-1 truncate text-sm font-semibold ${active ? "text-primary" : "text-on-surface-soft"}`}
-      >
-        {project.name}
-      </span>
-    </div>
+    />
   );
 }
 

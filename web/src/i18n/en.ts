@@ -427,6 +427,7 @@ export const en = {
   "workbench.backToList": "Instances",
   "workbench.global": "Instances",
   "workbench.projectsAria": "Projects",
+  "workbench.projectsSection": "Projects",
   "workbench.historySection": "History",
   "workbench.emptyInstanceHint": "No active sessions. Create one to get started.",
   "workbench.emptyInstanceGlobalHint": "Select a project from the left rail.",

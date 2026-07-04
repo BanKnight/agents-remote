@@ -427,6 +427,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.backToList": "实例列表",
   "workbench.global": "实例",
   "workbench.projectsAria": "项目",
+  "workbench.projectsSection": "项目",
   "workbench.historySection": "历史会话",
   "workbench.emptyInstanceHint": "没有活跃会话，创建一个开始。",
   "workbench.emptyInstanceGlobalHint": "从左栏选择一个项目。",
