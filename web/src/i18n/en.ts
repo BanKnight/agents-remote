@@ -450,6 +450,15 @@ export const en = {
   "workbench.globalOverviewTitle": "Instances",
   "workbench.globalOverviewEmpty": "No active instances.",
 
+  // ── Table view (workbench overview) ─────────────────────────
+  "table.colProject": "Project",
+  "table.colType": "Type",
+  "table.colName": "Session",
+  "table.colStatus": "Status",
+  "table.colActivity": "Last activity",
+  "table.colActions": "Actions",
+  "table.focus": "Focus",
+
   // ── Settings ────────────────────────────────────────────────
   "settings.placeholder": "Settings are coming soon.",
 } as const;

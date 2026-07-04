@@ -150,7 +150,7 @@ function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessi
   );
 }
 
-function relativeTime(iso: string, t: TranslateFn): string {
+export function relativeTime(iso: string, t: TranslateFn): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (isNaN(date.getTime())) return "";

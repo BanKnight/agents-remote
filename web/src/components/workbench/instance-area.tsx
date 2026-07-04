@@ -32,7 +32,7 @@ import {
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useT } from "../../i18n";
-import type { TranslationKey } from "../../i18n/types";
+import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   actionButtonClasses,
@@ -48,6 +48,7 @@ import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SplitLayout } from "./split-panel";
+import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -264,10 +265,30 @@ export function InstanceArea({
     );
 
   // 非聚焦 overview tab 按 view 分支：grid → InstanceGrid（空 → EmptyInstanceArea，与 split 共用）；
-  // grouped → GroupedView（仅 global scope，按项目分段）；聚焦态 / table / split → splitContent。
+  // grouped → GroupedView（仅 global scope，按项目分段）；table → SessionTable（空 → EmptyInstanceArea）；
+  // 聚焦态 / split → splitContent。
   const showGrid = focusId === undefined && resolvedView === "grid";
   const showGrouped =
     focusId === undefined && resolvedView === "grouped" && scope.kind === "global";
+  const showTable = focusId === undefined && resolvedView === "table";
+  // table 列回调（与 gridCallbacks 同源：select 进聚焦态 / close 走 useCloseSession）；t 用
+  // TranslateFn（带 params，给 relativeTime 的 time.minutesAgo {count} 用，比 GridItemCallbacks 窄签名宽）。
+  const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const tableRows = useMemo<SessionTableRow[]>(
+    () =>
+      scope.kind === "global"
+        ? candidates.map((candidate) => candidateToTableRow(candidate, tableCallbacks))
+        : projectInstances.instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
+    // tableCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
+    // 引用由 hook 内 dataKey fingerprint 稳定（与 gridItems 同款）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, candidates, projectInstances.instances, t],
+  );
+  // table 列：global 6 列（含 project）/ project 5 列（隐藏 project，设计 §9）。
+  const tableColumns: TableColumn[] =
+    scope.kind === "global"
+      ? ["project", "type", "name", "status", "activity", "actions"]
+      : ["type", "name", "status", "activity", "actions"];
   const overviewContent = showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
@@ -276,6 +297,12 @@ export function InstanceArea({
     )
   ) : showGrouped ? (
     <GroupedView candidates={candidates} onClose={closeInstance} onFocus={focusInstance} t={t} />
+  ) : showTable ? (
+    tableRows.length === 0 ? (
+      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+    ) : (
+      <SessionTable columns={tableColumns} rows={tableRows} t={t} />
+    )
   ) : (
     splitContent
   );
@@ -872,6 +899,63 @@ export function candidateToGridItem(
       tone: statusToTone(candidate.status),
     },
     title: candidate.displayName,
+  };
+}
+
+/**
+ * table 列回调：与 GridItemCallbacks 同源语义（onSelect 进聚焦 / onClose 走 useCloseSession），
+ * 但 `t` 用 TranslateFn（带 params）——relativeTime 内部 `t("time.minutesAgo", {count})` 需要第二
+ * 参数；GridItemCallbacks.t 是无 params 窄签名（仅够 statusLabel），故 table 独立 callbacks 类型。
+ */
+export type TableRowCallbacks = {
+  onClose?: (sessionId: string, type: "agent" | "terminal") => void;
+  onSelect: (sessionId: string) => void;
+  t: TranslateFn;
+};
+
+/** 项目实例 → SessionTableRow（activityIso = updatedAt ?? createdAt；terminal 无 createdAt）。 */
+export function instanceToTableRow(
+  entry: ProjectInstanceEntry,
+  cb: TableRowCallbacks,
+): SessionTableRow {
+  const session = entry.session;
+  const activityIso =
+    session.updatedAt ?? (entry.type === "agent" ? (session as AgentSession).createdAt : undefined);
+  const onClose = cb.onClose;
+  return {
+    activityIso,
+    displayName: session.displayName,
+    key: session.id,
+    onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
+    onFocus: () => cb.onSelect(session.id),
+    provider: entry.type === "agent" ? (session as AgentSession).provider : undefined,
+    status: {
+      label: cb.t(sessionStatusLabel(session.status)),
+      tone: statusToTone(session.status),
+    },
+    type: entry.type,
+  };
+}
+
+/** 全局候选 → SessionTableRow（candidate 已带 updatedAt/createdAt/provider/projectName）。 */
+export function candidateToTableRow(
+  candidate: GlobalInstanceCandidate,
+  cb: TableRowCallbacks,
+): SessionTableRow {
+  const onClose = cb.onClose;
+  return {
+    activityIso: candidate.updatedAt ?? candidate.createdAt,
+    displayName: candidate.displayName,
+    key: candidate.ref.sessionId,
+    onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
+    onFocus: () => cb.onSelect(candidate.ref.sessionId),
+    projectName: candidate.ref.projectName,
+    provider: candidate.provider,
+    status: {
+      label: cb.t(sessionStatusLabel(candidate.status)),
+      tone: statusToTone(candidate.status),
+    },
+    type: candidate.type,
   };
 }
 

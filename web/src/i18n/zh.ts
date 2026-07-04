@@ -450,6 +450,15 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.globalOverviewTitle": "实例",
   "workbench.globalOverviewEmpty": "暂无活跃实例。",
 
+  // ── Table 视图（工作台总览）─────────────────────────────────
+  "table.colProject": "项目",
+  "table.colType": "类型",
+  "table.colName": "会话名",
+  "table.colStatus": "状态",
+  "table.colActivity": "最后活动",
+  "table.colActions": "操作",
+  "table.focus": "聚焦",
+
   // ── Settings ────────────────────────────────────────────────
   "settings.placeholder": "设置功能即将上线。",
 };
