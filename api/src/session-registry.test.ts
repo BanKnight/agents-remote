@@ -41,6 +41,8 @@ test("SessionRegistry creates Agent and Terminal metadata with separate DTO sema
   expect(terminal.displayName).toBe("Terminal abcdef");
   expect(agents).toEqual([agent]);
   expect(terminals).toEqual([terminal]);
+  expect(agents[0].updatedAt).toBe(metadata.updatedAt);
+  expect(terminals[0]).toHaveProperty("updatedAt");
   expect(metadata.projectName).toBe("hello world 中文");
   expect(metadata.projectPath).toBe("/projects/hello world 中文");
   expect(metadata.type).toBe("agent");

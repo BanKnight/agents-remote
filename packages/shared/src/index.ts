@@ -190,6 +190,7 @@ export type AgentSession = {
   permissionMode?: string;
   claudeSessionId?: string;
   lastAssistantMessage?: string;
+  updatedAt?: string;
 };
 
 export type TerminalSession = {
@@ -197,6 +198,7 @@ export type TerminalSession = {
   projectName: string;
   displayName: string;
   status: TerminalSessionStatus;
+  updatedAt?: string;
 };
 
 export type ListAgentSessionsResponse = {

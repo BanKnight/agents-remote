@@ -681,11 +681,13 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstan
     names.forEach((name, index) => {
       for (const session of agentQueries[index]?.data?.sessions ?? []) {
         candidates.push({
+          createdAt: session.createdAt,
           displayName: session.displayName,
           provider: session.provider,
           ref: { projectName: name, sessionId: session.id },
           status: session.status,
           type: "agent",
+          updatedAt: session.updatedAt,
         });
       }
       for (const session of terminalQueries[index]?.data?.sessions ?? []) {
@@ -694,6 +696,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): GlobalInstan
           ref: { projectName: name, sessionId: session.id },
           status: session.status,
           type: "terminal",
+          updatedAt: session.updatedAt,
         });
       }
     });

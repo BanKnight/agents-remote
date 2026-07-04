@@ -403,6 +403,10 @@ export type GlobalInstanceCandidate = {
   displayName: string;
   /** agent provider（terminal 无）。 */
   provider?: AgentProvider;
+  /** 最后活动时间（table 视图"最后活动"列，ISO；来自 session.updatedAt）。 */
+  updatedAt?: string;
+  /** 创建时间（table "最后活动"列 fallback；AgentSession 有，terminal 无）。 */
+  createdAt?: string;
 };
 
 /**

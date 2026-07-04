@@ -511,6 +511,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   model: metadata.model,
   permissionMode: metadata.permissionMode,
   claudeSessionId: metadata.claudeSessionId,
+  updatedAt: metadata.updatedAt,
 });
 
 const terminalSessionFromMetadata = (metadata: SessionMetadata): TerminalSession => ({
@@ -518,6 +519,7 @@ const terminalSessionFromMetadata = (metadata: SessionMetadata): TerminalSession
   projectName: metadata.projectName,
   displayName: metadata.displayName,
   status: metadata.status as TerminalSessionStatus,
+  updatedAt: metadata.updatedAt,
 });
 
 const isNotFoundError = (error: unknown) =>
