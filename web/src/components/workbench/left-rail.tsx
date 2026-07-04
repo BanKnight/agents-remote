@@ -8,7 +8,6 @@ import { useT } from "../../i18n";
 import { IconMarker } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
-import { HistoryList } from "./history-list";
 import {
   CreateSessionBar,
   type GridItemCallbacks,
@@ -154,11 +153,10 @@ function ProjectNode({ active, project, onSelect }: ProjectNodeProps) {
 }
 
 type ProjectInstancesProps = {
-  focusId?: string;
   projectName: string;
 };
 
-export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps) {
+export function ProjectInstances({ projectName }: ProjectInstancesProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const { close, holder: closeHolder } = useCloseSession();
@@ -195,7 +193,6 @@ export function ProjectInstances({ focusId, projectName }: ProjectInstancesProps
       {instances.length > 0 ? (
         <InstanceGrid items={instances.map((entry) => instanceToGridItem(entry, gridCallbacks))} />
       ) : null}
-      <HistoryList focusId={focusId} projectName={projectName} />
       {create.promptHolder}
       {closeHolder}
     </div>

@@ -324,7 +324,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [instances, t],
   );
-  const tableColumns: TableColumn[] = ["type", "name", "status", "actions"];
+  const tableColumns: TableColumn[] = ["type", "name", "actions"];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -426,7 +426,7 @@ function MobileGlobalOverview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [candidates, t],
   );
-  const tableColumns: TableColumn[] = ["project", "type", "name", "status", "activity", "actions"];
+  const tableColumns: TableColumn[] = ["project", "type", "name", "activity", "actions"];
   return (
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("workbench.globalOverviewTitle")} />

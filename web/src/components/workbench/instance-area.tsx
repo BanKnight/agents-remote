@@ -324,11 +324,12 @@ export function InstanceArea({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scope, candidates, projectInstances.instances, t],
   );
-  // table 列：global 6 列（含 project）/ project 5 列（隐藏 project，设计 §9）。
+  // table 列：global 5 列（含 project）/ project 4 列（隐藏 project，设计 §9）。状态圆点并入 type
+  // 列 marker 右上角（StatusMarker），无独立 status 列。
   const tableColumns: TableColumn[] =
     scope.kind === "global"
-      ? ["project", "type", "name", "status", "activity", "actions"]
-      : ["type", "name", "status", "activity", "actions"];
+      ? ["project", "type", "name", "activity", "actions"]
+      : ["type", "name", "activity", "actions"];
   const overviewContent = showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />

@@ -1,19 +1,18 @@
 import type { AgentProvider } from "@agents-remote/shared";
 import type { ReactNode } from "react";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
-import { type ShellTone, sessionMarker, StatusDot } from "../shell/shell-primitives";
+import { type ShellTone, sessionMarker, StatusMarker } from "../shell/shell-primitives";
 import { relativeTime } from "./history-list";
 
 /**
  * table 视图列标识（设计文档 §9）。
  * - `project`：项目名（仅 global scope，project scope 隐藏）。
- * - `type`：实例类型 marker（sessionMarker）。
+ * - `type`：实例类型 marker + 状态圆点叠加右上角（StatusMarker 包 sessionMarker，§10）。
  * - `name`：会话名（displayName，主列，§12 一等显示）。
- * - `status`：状态小圆点（StatusDot，§10）。
  * - `activity`：最后活动（relativeTime，数据源 session.updatedAt ?? createdAt）。
  * - `actions`：▶ 进聚焦态 + ✕ 关闭。
  */
-export type TableColumn = "project" | "type" | "name" | "status" | "activity" | "actions";
+export type TableColumn = "project" | "type" | "name" | "activity" | "actions";
 
 /**
  * table 行数据（presentational：action 回调已由调用方绑定，组件不接触 session 业务字段，
@@ -33,7 +32,7 @@ export type SessionTableRow = {
 
 type SessionTableProps = {
   rows: SessionTableRow[];
-  /** 按作用域/视口裁剪的列顺序（project scope 5 列无 project；global 6 列；移动 4 列）。 */
+  /** 按作用域/视口裁剪的列顺序（project scope 4 列无 project；global 5 列；移动 project 3 列）。 */
   columns: TableColumn[];
   t: TranslateFn;
 };
@@ -42,7 +41,6 @@ const COL_HEADER_KEY: Record<TableColumn, TranslationKey> = {
   project: "table.colProject",
   type: "table.colType",
   name: "table.colName",
-  status: "table.colStatus",
   activity: "table.colActivity",
   actions: "table.colActions",
 };
@@ -94,18 +92,10 @@ function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): Rea
     case "project":
       return <span className="whitespace-nowrap text-on-surface-soft">{row.projectName}</span>;
     case "type":
-      return sessionMarker(row.type, row.provider);
+      return <StatusMarker marker={sessionMarker(row.type, row.provider)} status={row.status} />;
     case "name":
       return (
         <span className="whitespace-nowrap font-semibold text-on-surface">{row.displayName}</span>
-      );
-    case "status":
-      return (
-        <StatusDot
-          label={row.status.label}
-          pulse={row.status.tone === "success"}
-          tone={row.status.tone}
-        />
       );
     case "activity": {
       const text = relativeTime(row.activityIso ?? "", t);

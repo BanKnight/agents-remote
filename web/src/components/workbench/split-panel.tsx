@@ -9,7 +9,7 @@ import {
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
 import { PanelPreview } from "./panel-preview";
-import { shellSurfaceClasses, StatusDot } from "../shell/shell-primitives";
+import { shellSurfaceClasses, StatusMarker } from "../shell/shell-primitives";
 import { usePanelMeta } from "./instance-area";
 
 type SplitLayoutProps = {
@@ -172,15 +172,8 @@ function SplitPanel({
     >
       <div className="flex shrink-0 items-center justify-between gap-0.5 border-b border-on-surface/5 px-1 py-0.5">
         <span className="flex min-w-0 flex-1 items-center gap-1 px-1 text-[0.6rem] font-medium text-on-surface-muted">
-          {meta?.marker}
+          <StatusMarker marker={meta?.marker} status={meta?.statusDot} />
           <span className="truncate">{label}</span>
-          {meta?.statusDot ? (
-            <StatusDot
-              label={meta.statusDot.label}
-              pulse={meta.statusDot.pulse}
-              tone={meta.statusDot.tone}
-            />
-          ) : null}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           {state === "expanded" ? (

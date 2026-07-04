@@ -157,23 +157,23 @@ grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 ## 9. table 视图
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ 项目       │ 类型  │ 会话名      │ 状态  │ 最后活动 │  操作   │
-├───────────────────────────────────────────────────────────────│
-│ agents-rem │ Claude│ demo-sess   │ ●运行 │ 2m ago  │  ▶  ✕   │
-│ agents-rem │ Codex │ refactor    │ ●运行 │ 5m ago  │  ▶  ✕   │
-│ agents-rem │ Term  │ build       │ ○空闲 │ 1h ago  │  ▶  ✕   │
-│ projB      │ Claude│ debug       │ ○关闭 │ 2d ago  │  ▶  ✕   │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ 项目       │ 类型    │ 会话名      │ 最后活动 │  操作   │
+├───────────────────────────────────────────────────────────│
+│ agents-rem │Claude ●│ demo-sess   │ 2m ago  │  ▶  ✕   │
+│ agents-rem │Codex  ●│ refactor    │ 5m ago  │  ▶  ✕   │
+│ agents-rem │Term   ○│ build       │ 1h ago  │  ▶  ✕   │
+│ projB      │Claude ○│ debug       │ 2d ago  │  ▶  ✕   │
+└──────────────────────────────────────────────────────────┘
 ```
 
-- 列：项目（global 才显示，project 隐藏）/ 类型（marker）/ **会话名**（displayName，主列）/ 状态（小圆点 + 可选 label）/ 最后活动 / 操作（▶ 进聚焦态、✕ 关闭）。
+- 列：项目（global 才显示，project 隐藏）/ 类型（marker + 状态圆点叠加右上角，`StatusMarker`）/ **会话名**（displayName，主列）/ 最后活动 / 操作（▶ 进聚焦态、✕ 关闭）。无独立状态列——圆点并入类型列 marker 右上角 badge。
 - 桌面 + 移动都用（移动窄屏可横向滚动或隐藏部分列）。
 - 行点 ▶ → 进单实例聚焦态（不进 split）。
 
-## 10. 状态指示：统一小圆点（议题 2）
+## 10. 状态指示：marker 右上角 badge（议题 2）
 
-用户决定：带背景文字 badge（现 `StatusPill`）累赘，**统一成小圆点**。
+用户决定：带背景文字 badge（`StatusPill`）累赘，且独立状态列/独立圆点占位割裂。**统一成叠加在 marker（IconMarker）右上角的小圆点 badge**——圆点不再独占一格或一行，密度更精简。
 
 | 状态 | 颜色 |
 |------|------|
@@ -182,10 +182,10 @@ grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 | error | error（红） |
 | closed 等 | muted（灰） |
 
-- 形态：纯色小圆点（dot），无背景框、无文字。
+- 形态：纯色小圆点（dot），无背景框、无文字，叠加在 marker 右上角（`-right-1 -top-1`），`ring-2 ring-surface-raised` 描边与所在 surface 融合（视觉挖空）。
 - 文字 label 留给 `aria-label`（a11y）/ hover tooltip。
-- **跨位置统一**：InstanceCard（卡片）、左栏 list（活跃实例）、历史 session 列表、table 状态列、split 缩略 header 都用同一小圆点 primitive。
-- 复用 `statusToTone`（已改 union 类型）映射状态→颜色；新增 `StatusDot` primitive（替代 `StatusPill` 的当前用法，StatusPill 可保留给别的需要文字 label 的场景或废弃）。
+- **跨位置统一**：InstanceCard（卡片 marker）、split 面板 header（marker）、table 类型列（marker）都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
+- 复用 `statusToTone` 映射状态→颜色；`StatusMarker` 包 `StatusDot`（加 `className` 支持 absolute 定位），替代 InstanceCard 底部 / split header label 后 / table 独立状态列三处旧散点位置。`StatusDot` 仍可单独用于需要圆点独立占位的场景。
 
 ## 11. 移动端差异汇总
 
