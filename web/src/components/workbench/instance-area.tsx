@@ -10,6 +10,7 @@ import {
   type WorkbenchView,
   addPanel,
   filterWorkbenchViews,
+  groupByProject,
   inferSessionTypeFromId,
   rankGlobalInstances,
   removePanel,
@@ -204,12 +205,11 @@ export function InstanceArea({
   };
 
   // P3 总览视图（设计文档 §5/§8）：仅非聚焦 overview tab 渲染卡片网格（grid）；grouped（批 3b）/
-  // table（P4）/ split（P5）后续接管。聚焦态仍走 SplitLayout。view 守卫：URL/atom 的 view 若不在
-  // 当前 scope 可见视图集（如 project scope 残留 ?view=grouped）→ 回退 viewOptions 首项（grid）。
+  // table（P4）/ split（P5）后续接管。聚焦态仍走 SplitLayout。view 守卫：URL/atom 的 view 若不在当前
+  // scope 可见视图集（如 project scope 残留 ?view=grouped）→ 回退 "grid"（设计 §15 project 默认 grid，
+  // 且 grid 全 scope 可见；不取 viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使 project 首项 = table）。
   const resolvedView: WorkbenchView =
-    view !== undefined && viewOptions.some((opt) => opt.id === view)
-      ? view
-      : (viewOptions[0]?.id ?? "grid");
+    view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
   // grid 卡片回调：select 复用 focusPanel 进聚焦态；close 走 useCloseSession（卡片由 query 驱动，
   // invalidate 后自然消失，不调 removePanel —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
@@ -263,15 +263,19 @@ export function InstanceArea({
       />
     );
 
-  // 非聚焦 overview tab 按 view 分支：grid → InstanceGrid（空 → EmptyInstanceArea，与 split 共用）。
-  // 聚焦态 / table / split / grouped（批 3b 前回退）→ splitContent。
+  // 非聚焦 overview tab 按 view 分支：grid → InstanceGrid（空 → EmptyInstanceArea，与 split 共用）；
+  // grouped → GroupedView（仅 global scope，按项目分段）；聚焦态 / table / split → splitContent。
   const showGrid = focusId === undefined && resolvedView === "grid";
+  const showGrouped =
+    focusId === undefined && resolvedView === "grouped" && scope.kind === "global";
   const overviewContent = showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
     ) : (
       <InstanceGrid items={gridItems} />
     )
+  ) : showGrouped ? (
+    <GroupedView candidates={candidates} onClose={closeInstance} onFocus={focusInstance} t={t} />
   ) : (
     splitContent
   );
@@ -866,6 +870,35 @@ function candidateToGridItem(
     },
     title: candidate.displayName,
   };
+}
+
+type GroupedViewProps = {
+  candidates: GlobalInstanceCandidate[];
+  onClose: (sessionId: string, type: "agent" | "terminal") => void;
+  onFocus: (sessionId: string) => void;
+  t: (key: TranslationKey) => string;
+};
+
+/**
+ * grouped 视图（设计文档 §5：仅桌面 global 跨项目分组）。groupByProject 按项目分段，每组
+ * 项目名标题（与移动 MobileGlobalOverview 同款 className）+ InstanceGrid。回调复用 InstanceArea
+ * 的 focusInstance/closeInstance（与 grid 视图同源，select 进聚焦态 / close 走 useCloseSession）。
+ */
+function GroupedView({ candidates, onClose, onFocus, t }: GroupedViewProps) {
+  const groups = groupByProject(candidates);
+  const callbacks: GridItemCallbacks = { onClose, onSelect: onFocus, t };
+  return (
+    <div className="h-full overflow-y-auto">
+      {groups.map((group) => (
+        <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
+          <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
+            {group.projectName}
+          </p>
+          <InstanceGrid items={group.candidates.map((c) => candidateToGridItem(c, callbacks))} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function LoadingPanel() {

@@ -423,6 +423,33 @@ export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): Work
     .map((entry) => entry.candidate.ref);
 }
 
+/**
+ * 按项目名分组全局候选（设计文档 §5 grouped 视图 + 移动 global 默认分段）。返回**稳定数组**
+ *（非 Map）：组顺序 = candidates 首次出现的项目名顺序（与 rankGlobalInstances 同源稳定排序，
+ * 即聚合时的项目次序 → 项目内 sessions 次序）。纯函数，桌面 GroupedView / 移动 MobileGlobalOverview
+ * 共用，避免两处内联 Map 逻辑。
+ */
+export type ProjectGroup = {
+  projectName: string;
+  candidates: GlobalInstanceCandidate[];
+};
+
+export function groupByProject(candidates: GlobalInstanceCandidate[]): ProjectGroup[] {
+  const groups: ProjectGroup[] = [];
+  const indexByName = new Map<string, number>();
+  for (const candidate of candidates) {
+    const name = candidate.ref.projectName;
+    const idx = indexByName.get(name);
+    if (idx === undefined) {
+      indexByName.set(name, groups.length);
+      groups.push({ projectName: name, candidates: [candidate] });
+    } else {
+      groups[idx].candidates.push(candidate);
+    }
+  }
+  return groups;
+}
+
 // ── 布局 atom（按作用域隔离，localStorage 持久化）─────────────────────────────
 
 /**
