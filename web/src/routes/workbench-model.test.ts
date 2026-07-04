@@ -3,9 +3,12 @@ import {
   EMPTY_WORKBENCH_LAYOUT,
   WORKBENCH_PANEL_DEFAULT_FLEX,
   WORKBENCH_PANEL_MIN_FLEX,
+  type DropZone,
   type WorkbenchLayout,
   addPanel,
   deriveRows,
+  deriveZone,
+  dropPanel,
   filterWorkbenchViews,
   groupByProject,
   inferSessionTypeFromId,
@@ -226,4 +229,179 @@ test("filterWorkbenchViews: global 三视图全开（table/grid/grouped）", () 
 
 test("filterWorkbenchViews: project 隐藏 grouped（仅 table/grid）", () => {
   expect(filterWorkbenchViews({ kind: "project", key: "p" })).toEqual(["table", "grid"]);
+});
+
+// ── deriveZone（§7.2 5 zone：边缘 15% + 中心 70%，上下优先于左右）──────────────
+
+const rect = (width: number, height: number, left = 0, top = 0) => ({ width, height, left, top });
+
+test("deriveZone: 中心 70% → center", () => {
+  expect(deriveZone(rect(100, 100), 50, 50)).toBe("center");
+  expect(deriveZone(rect(100, 100), 20, 20)).toBe("center"); // 20% > 15%
+  expect(deriveZone(rect(100, 100), 80, 80)).toBe("center");
+});
+
+test("deriveZone: 上边缘 < 15% → up", () => {
+  expect(deriveZone(rect(100, 100), 50, 5)).toBe("up");
+  expect(deriveZone(rect(100, 100), 50, 14)).toBe("up");
+});
+
+test("deriveZone: 下边缘 > 85% → down", () => {
+  expect(deriveZone(rect(100, 100), 50, 95)).toBe("down");
+  expect(deriveZone(rect(100, 100), 50, 86)).toBe("down");
+});
+
+test("deriveZone: 左边缘 < 15% → left（中段高度）", () => {
+  expect(deriveZone(rect(100, 100), 5, 50)).toBe("left");
+  expect(deriveZone(rect(100, 100), 14, 50)).toBe("left");
+});
+
+test("deriveZone: 右边缘 > 85% → right（中段高度）", () => {
+  expect(deriveZone(rect(100, 100), 95, 50)).toBe("right");
+  expect(deriveZone(rect(100, 100), 86, 50)).toBe("right");
+});
+
+test("deriveZone: 上下优先于左右（角落归上/下）", () => {
+  // 左上角（relX<0.15, relY<0.15）→ up（先判 up/down）
+  expect(deriveZone(rect(100, 100), 5, 5)).toBe("up");
+  // 右下角（relX>0.85, relY>0.85）→ down
+  expect(deriveZone(rect(100, 100), 95, 95)).toBe("down");
+  // 左下角（relX<0.15, relY>0.85）→ down
+  expect(deriveZone(rect(100, 100), 5, 95)).toBe("down");
+});
+
+test("deriveZone: 指针在 rect 外 → null", () => {
+  expect(deriveZone(rect(100, 100), -1, 50)).toBeNull();
+  expect(deriveZone(rect(100, 100), 101, 50)).toBeNull();
+  expect(deriveZone(rect(100, 100), 50, -1)).toBeNull();
+  expect(deriveZone(rect(100, 100), 50, 101)).toBeNull();
+});
+
+test("deriveZone: zero-size rect → null（防御）", () => {
+  expect(deriveZone(rect(0, 100), 0, 0)).toBeNull();
+  expect(deriveZone(rect(100, 0), 0, 0)).toBeNull();
+});
+
+test("deriveZone: 偏移 rect 用绝对坐标算相对位置", () => {
+  expect(deriveZone(rect(100, 100, 200, 300), 250, 305)).toBe("up"); // 中心 x，relY=5%
+});
+
+// ── dropPanel（§7.4 拖放分屏主路径）──────────────────────────────────────────
+
+test("dropPanel: 空白区 drop = addPanel 末尾（首个 group）", () => {
+  const r = dropPanel(EMPTY_WORKBENCH_LAYOUT, ref("p", "a"), null, "center");
+  expect(r.panels).toEqual([ref("p", "a")]);
+  expect(r.newRows).toEqual([]);
+  expect(r.sizes.a).toBe(WORKBENCH_PANEL_DEFAULT_FLEX);
+});
+
+test("dropPanel: 空白区 drop 已存在的 ref → noop 返回原引用", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  const r = dropPanel(l, ref("p", "a"), null, "center");
+  expect(r).toBe(l);
+});
+
+test("dropPanel: 自身 drop（ref===target）所有 zone noop 返回原引用", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  for (const zone of ["up", "down", "left", "right", "center"] as DropZone[]) {
+    expect(dropPanel(l, ref("p", "a"), "a", zone)).toBe(l);
+  }
+});
+
+test("dropPanel: target 不在 panels → 返回原引用（防御）", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  expect(dropPanel(l, ref("p", "b"), "zzz", "up")).toBe(l);
+});
+
+test("dropPanel: up 给 target 加 newRows（ref 留旧行在上方）", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  const r = dropPanel(l, ref("p", "b"), "a", "up");
+  expect(r.panels).toEqual([ref("p", "b"), ref("p", "a")]);
+  expect(r.newRows).toEqual(["a"]);
+  expect(deriveRows(r)).toEqual([[ref("p", "b")], [ref("p", "a")]]);
+});
+
+test("dropPanel: down 给 ref 加 newRows（ref 起新行在 target 下方）", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  const r = dropPanel(l, ref("p", "b"), "a", "down");
+  expect(r.panels).toEqual([ref("p", "a"), ref("p", "b")]);
+  expect(r.newRows).toEqual(["b"]);
+  expect(deriveRows(r)).toEqual([[ref("p", "a")], [ref("p", "b")]]);
+});
+
+test("dropPanel: left 同行插 target 之前（ref 在左）", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  const r = dropPanel(l, ref("p", "b"), "a", "left");
+  expect(r.panels).toEqual([ref("p", "b"), ref("p", "a")]);
+  expect(r.newRows).toEqual([]);
+  expect(deriveRows(r)).toEqual([[ref("p", "b"), ref("p", "a")]]);
+});
+
+test("dropPanel: right 同行插 target 之后（ref 在右）", () => {
+  const l = layout({ panels: [ref("p", "a")] });
+  const r = dropPanel(l, ref("p", "b"), "a", "right");
+  expect(r.panels).toEqual([ref("p", "a"), ref("p", "b")]);
+  expect(r.newRows).toEqual([]);
+  expect(deriveRows(r)).toEqual([[ref("p", "a"), ref("p", "b")]]);
+});
+
+test("dropPanel: center 替换 target 位置 + 继承 size", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    sizes: { a: 2, b: 1 },
+    newRows: ["b"],
+  });
+  const r = dropPanel(l, ref("p", "c"), "a", "center");
+  expect(r.panels).toEqual([ref("p", "c"), ref("p", "b")]);
+  expect(r.sizes.c).toBe(2); // 继承 target 的 size
+  expect(r.sizes.a).toBeUndefined(); // target size 已删
+  expect(r.sizes.b).toBe(1);
+});
+
+test("dropPanel: center 替换行首时 newRows 里 target 换成 ref（ref 接管行首）", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    newRows: ["b"],
+  });
+  const r = dropPanel(l, ref("p", "c"), "b", "center");
+  expect(r.panels).toEqual([ref("p", "a"), ref("p", "c")]);
+  expect(r.newRows).toEqual(["c"]);
+  expect(deriveRows(r)).toEqual([[ref("p", "a")], [ref("p", "c")]]);
+});
+
+test("dropPanel: center 替换非行首 → newRows 不变", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    newRows: ["b"],
+  });
+  const r = dropPanel(l, ref("p", "c"), "a", "center");
+  expect(r.panels).toEqual([ref("p", "c"), ref("p", "b")]);
+  expect(r.newRows).toEqual(["b"]);
+});
+
+test("dropPanel: ref 已在 layout（重排现有 group）→ removePanel 再插入不重复", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    sizes: { a: 1, b: 1 },
+  });
+  // 把 a 拖到 b 的右侧（同行重排，ref a 已在 layout）
+  const r = dropPanel(l, ref("p", "a"), "b", "right");
+  expect(r.panels).toEqual([ref("p", "b"), ref("p", "a")]);
+  expect(r.sizes).toEqual({ a: 1, b: 1 });
+  expect(r.newRows).toEqual([]);
+});
+
+test("dropPanel: ref 已在 layout + up 跨行重排，ref 的旧 newRows 标记被清", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    newRows: ["c"],
+    sizes: { a: 1, b: 1, c: 1 },
+  });
+  // 把 c 拖到 a 上方（up）：c 先被 removePanel（清掉 c 的 newRows 标记 + size），
+  // 再插在 a 之前 + 给 a 加 newRows。最终 c 在第一行，a 在第二行（a 起新行），b 跟 a。
+  const r = dropPanel(l, ref("p", "c"), "a", "up");
+  expect(r.panels).toEqual([ref("p", "c"), ref("p", "a"), ref("p", "b")]);
+  expect(r.newRows).toEqual(["a"]);
+  expect(r.sizes).toEqual({ a: 1, b: 1, c: 1 });
+  expect(deriveRows(r)).toEqual([[ref("p", "c")], [ref("p", "a"), ref("p", "b")]]);
 });

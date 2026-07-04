@@ -403,6 +403,129 @@ export function resizePair(
   };
 }
 
+// ── Phase B 拖放分屏（设计 §7.2 5 drop zone + §7.4 网格布局）──────────────────
+// dropZone 是布局 state 的纯函数变换：把 ref 按 zone 相对 target 插入 panels/newRows/sizes。
+// 不扩展 addPanel opts —— addPanel/deriveRows/removePanel 零改动，dropPanel 独立编排
+// 6 zone 全部映射到现有 panels/newRows/sizes 操作（保持单一布局模型）。
+
+/** drop zone：拖卡片悬停 group 上的 5 个分裂位 + 空白区（targetSessionId=null）。 */
+export type DropZone = "up" | "down" | "left" | "right" | "center";
+
+/** 边缘判定阈值（相对 group rect 的宽/高比例）：<15% 进 up/down/left/right，否则 center。 */
+export const DROP_ZONE_EDGE_RATIO = 0.15;
+
+/** 拖动 vs 单击区分阈值（px）：pointermove 累计位移 < 4 视为单击激活（Phase A 行为）。 */
+export const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * 从指针位置推导 drop zone（纯函数，设计 §7.2）。上下优先于左右（角落归上/下）。
+ * 指针不在 rect 内 → null。`relY` 先判 up/down，再 `relX` 判 left/right，否则 center。
+ */
+export function deriveZone(
+  rect: { width: number; height: number; left: number; top: number },
+  pointerX: number,
+  pointerY: number,
+): DropZone | null {
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const relX = (pointerX - rect.left) / rect.width;
+  const relY = (pointerY - rect.top) / rect.height;
+  if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
+  if (relY < DROP_ZONE_EDGE_RATIO) return "up";
+  if (relY > 1 - DROP_ZONE_EDGE_RATIO) return "down";
+  if (relX < DROP_ZONE_EDGE_RATIO) return "left";
+  if (relX > 1 - DROP_ZONE_EDGE_RATIO) return "right";
+  return "center";
+}
+
+/**
+ * 按 drop zone 把 ref 相对 target 插入布局（Phase B 拖放主路径，纯函数）。
+ *
+ * newRows 语义（deriveRows）：标记的 sessionId **起新行**。
+ * - `up`（target 上方插新行）：ref 插在 target 之前 + 给 **target** 加 newRows
+ *   → target 起新行，ref 留旧行在上方。rows=[...[ref],[target,...]]。
+ * - `down`（target 下方插新行）：ref 插在 target 之后 + 给 **ref** 加 newRows
+ *   → ref 起新行在 target 下方。rows=[...[target,...],[ref]]。
+ * - `left`（target 左侧插同列）：ref 插在 target 之前，newRows 不动 → 同行 ref 在左。
+ * - `right`（target 右侧插同列）：ref 插在 target 之后，newRows 不动 → 同行 ref 在右。
+ * - `center`（替换）：target 位置 panelRef 换成 ref；若 target 是行首（在 newRows）→
+ *   newRows 里 target 换成 ref；ref 继承 target 的 size（保持列宽）；target 的 size 删除。
+ *
+ * 边界：
+ * - 自身 drop（ref.sessionId === targetSessionId）：所有 zone noop（返回原引用）。
+ * - ref 已在 layout（重排现有 group）：先 removePanel(ref) 再在 cleaned 上插入。
+ * - target 不在 panels：返回原 layout（防御）。
+ * - 空白区（targetSessionId === null）：等价 addPanel 末尾（layout 空时成首个 group）。
+ * - noop 返回原引用，让 onDrop 用 `next === prev` 跳过无意义 navigate。
+ */
+export function dropPanel(
+  layout: WorkbenchLayout,
+  ref: WorkbenchPanelRef,
+  targetSessionId: string | null,
+  zone: DropZone,
+): WorkbenchLayout {
+  // 空白区 drop：等价 addPanel 末尾（无 newRow）。layout 空时成首个 group。
+  if (targetSessionId === null) {
+    if (layout.panels.some((p) => p.sessionId === ref.sessionId)) return layout;
+    return addPanel(layout, ref);
+  }
+  // 自身 drop：所有 zone noop（自身不能与自己分裂/替换）。
+  if (ref.sessionId === targetSessionId) return layout;
+  // target 不在 panels：防御，返回原样。
+  if (!layout.panels.some((p) => p.sessionId === targetSessionId)) return layout;
+
+  // ref 已在 layout（重排现有 group）：先移除再插入，避免重复。
+  const cleaned = layout.panels.some((p) => p.sessionId === ref.sessionId)
+    ? removePanel(layout, ref.sessionId)
+    : layout;
+  const targetIdx = cleaned.panels.findIndex((p) => p.sessionId === targetSessionId);
+  // cleaned 后 target 仍在（target ≠ ref）。
+  const panels = [...cleaned.panels];
+  const newRows = [...cleaned.newRows];
+  const sizes = { ...cleaned.sizes };
+
+  if (zone === "center") {
+    // 替换：target 位置 panelRef 换成 ref，继承 target 的 size；target 的 size 删除。
+    const targetSize = sizes[targetSessionId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+    panels[targetIdx] = ref;
+    delete sizes[targetSessionId];
+    sizes[ref.sessionId] = targetSize;
+    // 若 target 是行首（在 newRows）→ newRows 里 target 换成 ref（ref 接管行首职责）。
+    const newRowIdx = newRows.indexOf(targetSessionId);
+    if (newRowIdx >= 0) newRows[newRowIdx] = ref.sessionId;
+    // 若 ref 之前在 newRows（removePanel 已清掉 ref 的 newRows 标记，但 cleaned.newRows
+    // 已 filter 过 ref.sessionId，此处不需要再处理）。
+    return { ...cleaned, panels, newRows, sizes };
+  }
+
+  // 插入位置 + 是否起新行。
+  let insertIdx: number;
+  let newRowSessionId: string | null;
+  if (zone === "up") {
+    // ref 插在 target 之前；target 起新行（ref 留旧行在上方）。
+    insertIdx = targetIdx;
+    newRowSessionId = targetSessionId;
+  } else if (zone === "down") {
+    // ref 插在 target 之后；ref 起新行（在 target 下方）。
+    insertIdx = targetIdx + 1;
+    newRowSessionId = ref.sessionId;
+  } else if (zone === "left") {
+    // ref 插在 target 之前，同行。
+    insertIdx = targetIdx;
+    newRowSessionId = null;
+  } else {
+    // right：ref 插在 target 之后，同行。
+    insertIdx = targetIdx + 1;
+    newRowSessionId = null;
+  }
+
+  panels.splice(insertIdx, 0, ref);
+  sizes[ref.sessionId] = WORKBENCH_PANEL_DEFAULT_FLEX;
+  if (newRowSessionId !== null && !newRows.includes(newRowSessionId)) {
+    newRows.push(newRowSessionId);
+  }
+  return { ...cleaned, panels, newRows, sizes };
+}
+
 // ── 全局实例区（Stage 4 commit ④，跨项目混排）─────────────────────────────────
 
 /** 全局实例区候选：聚合所有项目活跃实例 + 排序/展示所需字段。 */

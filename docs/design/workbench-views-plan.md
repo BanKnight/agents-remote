@@ -99,7 +99,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **依赖**：Phase A。**待拍点**：无（4 项决策用户已拍板，见设计同步节）。
 
-### Phase B · `workbench-drag-split`（拖放分屏）
+### Phase B · `workbench-drag-split`（拖放分屏）✅ 已交付
 
 **目标**：5 drop zone 拖放分屏 + group 网格布局算法 + 多 group 同屏。对应设计 §7.2 §7.4。
 
@@ -113,7 +113,13 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **验证**：门禁全绿；CSS 落盘；Playwright（5 drop zone 视觉 + 拖放分裂：上/下/左/右/中心/空白各验证；多 group 网格布局几何；拖动 vs 单击区分）+ 桌面截图。
 
-**依赖**：Phase A。
+**交付摘要**（本 phase 已落地）：
+- **纯函数**（`workbench-model.ts`）：新增 `DropZone` 类型 + `DROP_ZONE_EDGE_RATIO`(0.15)/`DRAG_THRESHOLD_PX`(4) 常量 + `deriveZone(rect, x, y)`（边缘 15% + 中心 70%，上下优先于左右）+ `dropPanel(layout, ref, targetSessionId, zone)`。`addPanel`/`deriveRows`/`removePanel`/`resizePair` 零改动。
+- **组件层**（`instance-area.tsx`）：`DragSourceCard`（pointer events + 4px 阈值区分单击/拖动，close 按钮内起始跳过，touch pointerType 不拦截）+ `WorkspaceGrid`/`GroupCell`（多 group 网格，`data-drop-group`/`data-drop-empty` 标注）+ `DropZoneOverlay`（`pointer-events:none`，window pointermove + `elementFromPoint` hit-test，pointer-capture 友好）+ `DropZoneHighlight`（zone 高亮，`role=status` + i18n aria-label）+ `DragGhost`（跟随指针，`usePanelMeta` 派生 marker + label）。focus→活动组 effect 重写（focusId 不在 panels 时替换活动组 ref，不踢其他 group）。
+- **i18n**：8 key（`dropUp`/`dropDown`/`dropLeft`/`dropRight`/`dropCenter` 5 zone aria-label + `dropToEmpty` 空白区 aria/可见文本 + `dragging` ghost aria + `dropZoneLabel` overlay 容器 aria）。
+- **验证**：门禁全绿（428 test pass，含 dropPanel 13 case + deriveZone 8 case）；CSS 落盘 text/css；Playwright DOM 几何 14/14（up drop → 2 group + URL focusId=源 + localStorage 持久化 + ghost 渲染 + 单击不分屏 group=1 + 0 React 运行时错误）；subagent 审查 1 high + 3 medium + 3 low 全修。
+
+**依赖**：Phase A。**待拍点**：无（4 项决策用户已拍板，见 `velvety-soaring-sedgewick.md` plan）。
 
 ### Phase C · `workbench-group-ops-persist`（group 操作 + 持久化）
 

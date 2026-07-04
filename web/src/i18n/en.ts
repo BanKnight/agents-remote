@@ -457,6 +457,14 @@ export const en = {
   "workbench.switchNext": "Next instance",
   "workbench.globalOverviewTitle": "Instances",
   "workbench.globalOverviewEmpty": "No active instances.",
+  "workbench.dropUp": "Drop above: split into a new row",
+  "workbench.dropDown": "Drop below: split into a new row",
+  "workbench.dropLeft": "Drop left: split into a new column",
+  "workbench.dropRight": "Drop right: split into a new column",
+  "workbench.dropCenter": "Drop center: replace this instance",
+  "workbench.dropToEmpty": "Drop here: open as first instance",
+  "workbench.dragging": "Dragging instance",
+  "workbench.dropZoneLabel": "Drop zones",
 
   // ── Table view (workbench overview) ─────────────────────────
   "table.colProject": "Project",
