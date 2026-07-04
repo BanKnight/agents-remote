@@ -32,6 +32,8 @@ import {
   DRAG_THRESHOLD_PX,
   rankGlobalInstances,
   removePanel,
+  resizePair,
+  toggleMaximize,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   workbenchMiddleLeftWidthAtom,
@@ -278,6 +280,16 @@ export function InstanceArea({
     void navigateWorkbench(scope, ref.sessionId);
   };
 
+  // Phase C group 操作（设计 §7.3）：maximize 全屏/恢复（toggleMaximize 标量翻转，deriveRows
+  // maximized 时返单 panel 单行 = 纯派生全屏）；行内列宽 resize（resizePair 守恒钳制左增右减）。
+  // sizes + maximized 由 useWorkbenchLayout 持久化，刷新恢复。
+  const onToggleMaximize = (sessionId: string) => {
+    update((prev) => toggleMaximize(prev, sessionId));
+  };
+  const onResizePair = (leftId: string, rightId: string, deltaFlex: number) => {
+    update((prev) => resizePair(prev, leftId, rightId, deltaFlex));
+  };
+
   // P3 总览视图（设计文档 §5/§8）：overview tab 左总览按 view 渲染（grid 卡片 / grouped 分段 /
   // table 紧凑行）。resolvedView 已在上方定义（初始态 effect 复用）。
 
@@ -448,8 +460,11 @@ export function InstanceArea({
       activeZone={activeZone}
       create={create}
       draggingRef={draggingRef}
+      maximized={layout.maximized}
       onActivateGroup={focusPanel}
       onCloseGroup={closePanel}
+      onResizePair={onResizePair}
+      onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       rows={rows}
       sizes={layout.sizes}
@@ -1272,13 +1287,20 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
 /**
  * 右工作区活动组 header（设计 §7）。嵌入式面板（ChatPanel/AgentTerminalPanel/TerminalPanel）
  * 自身不带 header（原由 SplitPanel 承载），Phase A 改单 group 右工作区后由本组件统一渲染
- * marker + 实例名 + close。statusDot/maximize 留 Phase C。usePanelMeta 从实例 detail query
- * 派生（与 PanelRouter/useFocusSessionName 同源 query key，React Query dedupe）。
+ * marker + 实例名 + maximize + close。usePanelMeta 从实例 detail query 派生（与
+ * PanelRouter/useFocusSessionName 同源 query key，React Query dedupe）。
  */
-function GroupHeader({ onClose, onActivate, panelRef }: GroupHeaderProps) {
+function GroupHeader({
+  isMaximized,
+  onActivate,
+  onClose,
+  onToggleMaximize,
+  panelRef,
+}: GroupHeaderProps) {
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
   const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
+  const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
   return (
     <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b border-on-surface/5 px-2">
       {/* header 左侧点击 = 激活该 group（设计 §7.3 精确为 header 激活，不抢 PanelRouter 内部交互）。 */}
@@ -1290,22 +1312,35 @@ function GroupHeader({ onClose, onActivate, panelRef }: GroupHeaderProps) {
         {meta?.marker ?? null}
         <span className="truncate text-sm font-medium text-on-surface">{label}</span>
       </button>
-      <button
-        aria-label={t("workbench.panelClose")}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-        onClick={onClose}
-        title={t("workbench.panelClose")}
-        type="button"
-      >
-        <ShellIcon className="h-3 w-3" name="close" />
-      </button>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          aria-label={t(maximizeLabelKey)}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={onToggleMaximize}
+          title={t(maximizeLabelKey)}
+          type="button"
+        >
+          <ShellIcon className="h-3 w-3" name={isMaximized ? "restore" : "maximize"} />
+        </button>
+        <button
+          aria-label={t("workbench.panelClose")}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={onClose}
+          title={t("workbench.panelClose")}
+          type="button"
+        >
+          <ShellIcon className="h-3 w-3" name="close" />
+        </button>
+      </div>
     </div>
   );
 }
 
 type GroupHeaderProps = {
-  onClose: () => void;
+  isMaximized: boolean;
   onActivate: () => void;
+  onClose: () => void;
+  onToggleMaximize: () => void;
   panelRef: WorkbenchPanelRef;
 };
 
@@ -1389,12 +1424,62 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
   );
 }
 
+type SplitGutterProps = {
+  /** 拖拽增量（本次 move 的 deltaX / 行宽，无量纲比例）；上层按行 totalFlex 转 deltaFlex。 */
+  onResize: (ratioDelta: number) => void;
+};
+
+/**
+ * 同行相邻 group 间的列宽分隔条（设计 §7.3）。flex item（w-1 shrink-0），pointer-event 增量
+ * 拖拽：每次 move 算 deltaX / 行宽（parentElement.getBoundingClientRect）→ onResize(ratioDelta)；
+ * 上层 resizePair 基于当前 layout 增量更新左右 sizes，守恒钳制。setPointerCapture 锁指针到 gutter，
+ * 拖拽时即使滑过面板仍持续触发。复活自 P5 split-panel.tsx（三态已废弃，gutter 通用）。
+ */
+function SplitGutter({ onResize }: SplitGutterProps) {
+  const gutterRef = useRef<HTMLDivElement>(null);
+  const lastX = useRef<number | null>(null);
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    lastX.current = event.clientX;
+    void gutterRef.current?.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (lastX.current === null) return;
+    const row = gutterRef.current?.parentElement;
+    const width = row?.getBoundingClientRect().width ?? 1;
+    const delta = event.clientX - lastX.current;
+    lastX.current = event.clientX;
+    onResize(delta / width);
+  };
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    lastX.current = null;
+    void gutterRef.current?.releasePointerCapture(event.pointerId);
+  };
+
+  return (
+    <div
+      aria-hidden
+      className="w-1 shrink-0 cursor-col-resize rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20"
+      onPointerCancel={endDrag}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      ref={gutterRef}
+    />
+  );
+}
+
 type WorkspaceGridProps = {
   activeZone: { targetSessionId: string | null; zone: DropZone } | null;
   create: CreateSessionApi | null;
   draggingRef: WorkbenchPanelRef | null;
+  maximized: string | null;
   onActivateGroup: (ref: WorkbenchPanelRef) => void;
   onCloseGroup: (ref: WorkbenchPanelRef) => void;
+  onResizePair: (leftId: string, rightId: string, deltaFlex: number) => void;
+  onToggleMaximize: (sessionId: string) => void;
   projectName: string | null;
   rows: WorkbenchPanelRef[][];
   sizes: Record<string, number>;
@@ -1410,8 +1495,11 @@ function WorkspaceGrid({
   activeZone,
   create,
   draggingRef,
+  maximized,
   onActivateGroup,
   onCloseGroup,
+  onResizePair,
+  onToggleMaximize,
   projectName,
   rows,
   sizes,
@@ -1421,21 +1509,40 @@ function WorkspaceGrid({
   }
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 p-1">
-      {rows.map((row, rowIdx) => (
-        <div className="flex min-h-0 flex-1 gap-1" key={`row-${rowIdx}`}>
-          {row.map((panelRef) => (
-            <GroupCell
-              activeZone={activeZone}
-              dragRef={draggingRef}
-              flex={sizes[panelRef.sessionId] ?? 1}
-              key={panelRef.sessionId}
-              onActivate={() => onActivateGroup(panelRef)}
-              onClose={() => onCloseGroup(panelRef)}
-              panelRef={panelRef}
-            />
-          ))}
-        </div>
-      ))}
+      {rows.map((row, rowIdx) => {
+        const totalFlex = row.reduce((sum, p) => sum + (sizes[p.sessionId] ?? 1), 0);
+        return (
+          <div className="flex min-h-0 flex-1 gap-1" key={`row-${rowIdx}`}>
+            {row.flatMap((panelRef, colIdx) => {
+              const cells: ReactNode[] = [
+                <GroupCell
+                  activeZone={activeZone}
+                  dragRef={draggingRef}
+                  flex={sizes[panelRef.sessionId] ?? 1}
+                  isMaximized={maximized === panelRef.sessionId}
+                  key={`cell-${panelRef.sessionId}`}
+                  onActivate={() => onActivateGroup(panelRef)}
+                  onClose={() => onCloseGroup(panelRef)}
+                  onToggleMaximize={() => onToggleMaximize(panelRef.sessionId)}
+                  panelRef={panelRef}
+                />,
+              ];
+              if (colIdx < row.length - 1) {
+                const next = row[colIdx + 1];
+                cells.push(
+                  <SplitGutter
+                    key={`gutter-${panelRef.sessionId}-${next.sessionId}`}
+                    onResize={(ratio) =>
+                      onResizePair(panelRef.sessionId, next.sessionId, ratio * totalFlex)
+                    }
+                  />,
+                );
+              }
+              return cells;
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1444,8 +1551,10 @@ type GroupCellProps = {
   activeZone: { targetSessionId: string | null; zone: DropZone } | null;
   dragRef: WorkbenchPanelRef | null;
   flex: number;
+  isMaximized: boolean;
   onActivate: () => void;
   onClose: () => void;
+  onToggleMaximize: () => void;
   panelRef: WorkbenchPanelRef;
 };
 
@@ -1455,7 +1564,16 @@ type GroupCellProps = {
  * 落到 overlay 下层 group（pointer capture 在源卡片，overlay 不接 pointer 事件，仅视觉高亮）。
  * 非拖动态正常接交互（PanelRouter 输入框/终端点击）。
  */
-function GroupCell({ activeZone, dragRef, flex, onActivate, onClose, panelRef }: GroupCellProps) {
+function GroupCell({
+  activeZone,
+  dragRef,
+  flex,
+  isMaximized,
+  onActivate,
+  onClose,
+  onToggleMaximize,
+  panelRef,
+}: GroupCellProps) {
   const isDraggingThis = dragRef?.sessionId === panelRef.sessionId;
   const isDropTarget = activeZone?.targetSessionId === panelRef.sessionId;
   return (
@@ -1466,7 +1584,13 @@ function GroupCell({ activeZone, dragRef, flex, onActivate, onClose, panelRef }:
       data-drop-group={panelRef.sessionId}
       style={{ flex: `${flex} 1 0` }}
     >
-      <GroupHeader onClose={onClose} onActivate={onActivate} panelRef={panelRef} />
+      <GroupHeader
+        isMaximized={isMaximized}
+        onActivate={onActivate}
+        onClose={onClose}
+        onToggleMaximize={onToggleMaximize}
+        panelRef={panelRef}
+      />
       <div className="min-h-0 flex-1">
         <PanelRouter key={panelRef.sessionId} panelRef={panelRef} />
       </div>

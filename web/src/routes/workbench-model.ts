@@ -494,7 +494,10 @@ export function dropPanel(
     if (newRowIdx >= 0) newRows[newRowIdx] = ref.sessionId;
     // 若 ref 之前在 newRows（removePanel 已清掉 ref 的 newRows 标记，但 cleaned.newRows
     // 已 filter 过 ref.sessionId，此处不需要再处理）。
-    return { ...cleaned, panels, newRows, sizes };
+    // target 被 ref 替换后从 panels 消失；若 target 正是 maximized 的 group，必须清空
+    // maximized，否则 deriveRows 找不到 maximized 对应 panel 会返 [] → 工作区空态死锁。
+    const maximized = cleaned.maximized === targetSessionId ? null : cleaned.maximized;
+    return { ...cleaned, panels, newRows, sizes, maximized };
   }
 
   // 插入位置 + 是否起新行。

@@ -6,10 +6,12 @@ import file from "./file.svg?raw";
 import filesNav from "./files-nav.svg?raw";
 import folderPlus from "./folder-plus.svg?raw";
 import gitNav from "./git-nav.svg?raw";
+import maximize from "./maximize.svg?raw";
 import openai from "./openai.svg?raw";
 import plus from "./plus.svg?raw";
 import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
+import restore from "./restore.svg?raw";
 import terminal from "./terminal.svg?raw";
 import trash from "./trash.svg?raw";
 import upload from "./upload.svg?raw";
@@ -23,10 +25,12 @@ const svgMap: Record<string, string> = {
   "files-nav": filesNav,
   "folder-plus": folderPlus,
   "git-nav": gitNav,
+  maximize,
   openai,
   plus,
   project,
   refresh,
+  restore,
   terminal,
   trash,
   upload,

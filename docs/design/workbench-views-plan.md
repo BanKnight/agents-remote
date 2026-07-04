@@ -121,7 +121,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **依赖**：Phase A。**待拍点**：无（4 项决策用户已拍板，见 `velvety-soaring-sedgewick.md` plan）。
 
-### Phase C · `workbench-group-ops-persist`（group 操作 + 持久化）
+### Phase C · `workbench-group-ops-persist`（group 操作 + 持久化）✅ 已交付
 
 **目标**：group resize/maximize/close + 布局持久化。对应设计 §7.3 §7.5。
 
@@ -135,7 +135,20 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **验证**：门禁全绿；CSS 落盘；Playwright（resize/maximize/close 行为 + 持久化：刷新恢复布局 + scope 切换独立 + 空行合并）+ 桌面截图。
 
-**依赖**：Phase B。
+**偏离注**（实施时对任务 1 的收窄，用户已拍板）：
+- **行间行高 resize 未做**：任务 1 原「行内列宽 + 行间行高」收窄为**只做行内列宽 gutter + maximize**。理由：列宽是高频操作（同屏多 group 横向并排最常见），行间行高是低频操作；`rowSizes` 需要稳定的行 id（当前 `newRows` 用 sessionId 标记行首，行增删时 id 漂移会让 `rowSizes` 错配），引入的复杂度不值得。后续若需求明确再补 `rowSizes` + 行 id 稳定方案。设计 §7.3 原文不改（设计完整，实现渐进靠拢）。
+- **close/持久化/空行合并（任务 3/4/5）已在 Phase A/B 顺手落地**，本期不重做：close = `closePanel`（Phase A）走 `useCloseSession` + `removePanel` + 焦点切换；持久化 = `useWorkbenchLayout(scope)` atomWithStorage（Phase A/B 已验证 localStorage 含 panels/sizes/maximized）；空行合并 = `removePanel` 清 `newRows` + `deriveRows` 自然不产生空行。
+
+**交付摘要**（本 phase 已落地）：
+- **图标**（`shell/icons/`）：新增 `maximize.svg`（14×14 外框）+ `restore.svg`（外框+内框）；`icons/index.tsx` `svgMap` 注册 maximize + restore。
+- **组件层**（`instance-area.tsx`）：`GroupHeader` 加 □ 按钮（close 左侧，顺序 `[name □][×]`），props +`isMaximized` +`onToggleMaximize`，isMaximized 时换 restore 图标 + `panelRestore` aria；`GroupCell` 透传 maximize props；`WorkspaceGrid` props +`maximized` +`onResizePair` +`onToggleMaximize`，行内 `row.flatMap` 在相邻 GroupCell 间插 `SplitGutter`（`totalFlex = sum(row.sizes)`，`onResize(ratio) => onResizePair(leftId, rightId, ratio * totalFlex)`），单 group 行无 gutter，maximized 时 `deriveRows` 返单 panel 单行 → 自然无 gutter；复活 `SplitGutter` 组件（来自 P5 `5a05f97:split-panel.tsx`，flex item `w-1 shrink-0 cursor-col-resize`，`parentElement.getBoundingClientRect().width` 算 ratioDelta，`setPointerCapture` 锁指针）；`InstanceArea` 加 `onToggleMaximize = update(toggleMaximize)` + `onResizePair = update(resizePair)`。
+- **maximize 全屏纯派生**：`deriveRows(maximized)` 返 `[[max]]` 单行 → WorkspaceGrid 只渲染 maximized group 全屏；其他 group 不渲染（仍留在 panels，restore 后回原布局）。零新增状态。
+- **纯函数复用**（`workbench-model.ts` 零改动）：`toggleMaximize`(L367)、`resizePair`(L388，守恒钳制)、`deriveRows`(L313，maximized 返单行)。
+- **i18n 复用**：`workbench.panelMaximize`/`panelRestore`（Phase A 已加 en/zh）。
+- **bug 修复**（subagent 审查发现）：`dropPanel` center 替换 target 后未清 `maximized` —— 若 target 正是 maximized 的 group，target 从 panels 消失但 maximized 仍指向它，`deriveRows` 返 `[]` → 工作区空态死锁（Phase B §风险1 待验证点，证实 plan 当时预期在 center 分支不成立）。修复：center 分支补 `cleaned.maximized === targetSessionId ? null : cleaned.maximized`，+ 2 个回归测试（替换 maximized target → 清空；替换非 maximized target → 不变）。
+- **验证**：门禁全绿（430 test pass，含 2 新回归）；CSS 落盘 text/css；Playwright DOM 几何 16/16（行内 SplitGutter 渲染 + maximize 全屏/恢复 + gutter resize 左增右减守恒 A+58/B-59/总不变 + 刷新持久化恢复 + 单 group 无 gutter + 0 React 运行时错误）；subagent 审查 1 medium（dropPanel center maximized 死锁，已修）+ 2 low（SplitGutter parentElement 隐式耦合 / ratioDelta 含 gap 精度，均 plan §风险已记录、功能不坏、不修）。
+
+**依赖**：Phase B。**待拍点**：2 项决策用户已拍板（见 `velvety-soaring-sedgewick.md` plan：① resize 只做行内列宽 + maximize；② maximize 时其他 group 不渲染，恢复回原布局）。
 
 ## 旧 phase 交付记录（P1-P5，2026-07-04，归档基线）
 

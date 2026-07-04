@@ -379,6 +379,32 @@ test("dropPanel: center 替换非行首 → newRows 不变", () => {
   expect(r.newRows).toEqual(["b"]);
 });
 
+test("dropPanel: center 替换 maximized 的 target → 清空 maximized（防空态死锁）", () => {
+  // panels=[A,B,C]、A 全屏（maximized）。从左总览拖 B 到全屏 A 中央 = 用 B 替换 A。
+  // 若不清 maximized：A 从 panels 消失但 maximized 仍指向 A → deriveRows 返 [] → 空态。
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    maximized: "a",
+  });
+  const r = dropPanel(l, ref("p", "b"), "a", "center");
+  expect(r.panels).toEqual([ref("p", "b"), ref("p", "c")]);
+  expect(r.maximized).toBeNull();
+  // deriveRows 应回到正常网格（非空、含 B/C）。
+  expect(deriveRows(r)).toEqual([[ref("p", "b"), ref("p", "c")]]);
+});
+
+test("dropPanel: center 替换非 maximized 的 target → maximized 不变", () => {
+  // A 全屏，B 在 panels 但不可见；从左总览拖 C 到 B 中央替换 B → A 仍全屏。
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    maximized: "a",
+  });
+  const r = dropPanel(l, ref("p", "c"), "b", "center");
+  expect(r.panels).toEqual([ref("p", "a"), ref("p", "c")]);
+  expect(r.maximized).toBe("a");
+  expect(deriveRows(r)).toEqual([[ref("p", "a")]]);
+});
+
 test("dropPanel: ref 已在 layout（重排现有 group）→ removePanel 再插入不重复", () => {
   const l = layout({
     panels: [ref("p", "a"), ref("p", "b")],
