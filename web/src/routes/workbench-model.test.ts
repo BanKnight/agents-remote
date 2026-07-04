@@ -13,6 +13,8 @@ import {
   removePanel,
   resizePair,
   setPanelSize,
+  setPanelState,
+  initPanelStates,
   toggleMaximize,
   validateWorkbenchSearch,
   workbenchPath,
@@ -167,6 +169,107 @@ test("resizePair: 右侧钳到 MIN_FLEX（不能把右拖到 0）", () => {
   const r = resizePair(l, "a", "b", 1); // 想让 b = 0
   expect(r.sizes.b).toBeCloseTo(WORKBENCH_PANEL_MIN_FLEX);
   expect(r.sizes.a).toBeCloseTo(1 + (1 - WORKBENCH_PANEL_MIN_FLEX)); // 守恒
+});
+
+// ── Phase 5 面板三态（setPanelState / initPanelStates / panelStates 清理 / deriveRows 过滤）──
+
+test("setPanelState: 设 expanded 时原 expanded 自动 collapsed（单 expanded 守卫）", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    panelStates: { a: "expanded", b: "collapsed", c: "collapsed" },
+  });
+  const r = setPanelState(l, "b", "expanded");
+  expect(r.panelStates.b).toBe("expanded");
+  expect(r.panelStates.a).toBe("collapsed"); // 原 expanded 降级
+  expect(r.panelStates.c).toBe("collapsed"); // 不影响其他
+});
+
+test("setPanelState: 设 collapsed/minimized 不影响其他面板", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    panelStates: { a: "expanded", b: "collapsed" },
+  });
+  expect(setPanelState(l, "b", "minimized").panelStates).toEqual({
+    a: "expanded",
+    b: "minimized",
+  });
+  expect(setPanelState(l, "a", "collapsed").panelStates).toEqual({
+    a: "collapsed",
+    b: "collapsed",
+  });
+});
+
+test("setPanelState: 无原 expanded 时设 expanded 不动其他", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    panelStates: { a: "collapsed", b: "collapsed" },
+  });
+  expect(setPanelState(l, "a", "expanded").panelStates).toEqual({
+    a: "expanded",
+    b: "collapsed",
+  });
+});
+
+test("initPanelStates: focusSessionId = expanded，其余 collapsed", () => {
+  const l = layout({ panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")] });
+  const r = initPanelStates(l, "b");
+  expect(r.panelStates).toEqual({ a: "collapsed", b: "expanded", c: "collapsed" });
+});
+
+test("initPanelStates: 无 focusSessionId 时 panels[0] = expanded", () => {
+  const l = layout({ panels: [ref("p", "a"), ref("p", "b")] });
+  const r = initPanelStates(l);
+  expect(r.panelStates).toEqual({ a: "expanded", b: "collapsed" });
+});
+
+test("initPanelStates: 已有 panelStates 不覆盖（持久化恢复保留用户自定义）", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    panelStates: { a: "minimized", b: "expanded" }, // c 缺失
+  });
+  const r = initPanelStates(l, "c");
+  expect(r.panelStates).toEqual({ a: "minimized", b: "expanded", c: "collapsed" });
+});
+
+test("initPanelStates: 空面板返回原 layout", () => {
+  const l = EMPTY_WORKBENCH_LAYOUT;
+  expect(initPanelStates(l, "x")).toBe(l);
+});
+
+test("addPanel: 新面板默认 collapsed", () => {
+  const l = addPanel(EMPTY_WORKBENCH_LAYOUT, ref("p", "a"));
+  expect(l.panelStates.a).toBe("collapsed");
+  const l2 = addPanel(l, ref("p", "b"));
+  expect(l2.panelStates.b).toBe("collapsed");
+  expect(l2.panelStates.a).toBe("collapsed");
+});
+
+test("removePanel: 清理 panelStates", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b")],
+    panelStates: { a: "expanded", b: "minimized" },
+  });
+  const r = removePanel(l, "b");
+  expect(r.panelStates).toEqual({ a: "expanded" });
+});
+
+test("deriveRows: minimized 面板过滤出布局区（仍 in panels）", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    panelStates: { a: "expanded", b: "minimized", c: "collapsed" },
+  });
+  const rows = deriveRows(l);
+  expect(rows).toEqual([[ref("p", "a"), ref("p", "c")]]); // b 被过滤
+});
+
+test("deriveRows: minimized + newRows 交互（过滤后行布局正确）", () => {
+  const l = layout({
+    panels: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    newRows: ["c"],
+    panelStates: { a: "expanded", b: "minimized", c: "collapsed" },
+  });
+  // b minimized 过滤；c 起新行；剩 a + c 两行
+  expect(deriveRows(l)).toEqual([[ref("p", "a")], [ref("p", "c")]]);
 });
 
 const candidate = (

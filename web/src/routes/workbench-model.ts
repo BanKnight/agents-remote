@@ -270,17 +270,30 @@ export type WorkbenchPanelRef = {
 };
 
 /**
+ * split 面板三态（设计文档 §7.1）：
+ * - `expanded`：聚焦面板，完整 output（= URL focusId 指向，单 expanded 守卫）。
+ * - `collapsed`：缩略面板，header + output 末 2 行预览（设计 §7.1「缩略」）。
+ * - `minimized`：收进底部 dock 的 chip（设计 §7.3），不占布局区。
+ */
+export type PanelViewState = "expanded" | "collapsed" | "minimized";
+
+/**
  * 中栏 split 布局 state（State/Render 分离：raw 有序结构，渲染由纯函数派生）。
  * - `panels`：有序扁平面板列表（左→右铺开；遇到 `newRows` 标记的 sessionId 起新行）。
  * - `newRows`：标记「此 sessionId 起一个新行」（split-down）；列表首项忽略此标记。
  * - `sizes`：每个面板在行内的 flex 宽度权重（默认 1）；resize gutter 单点更新。
  * - `maximized`：最大化面板的 sessionId（标量，不新增布局树实体）；null = 正常铺开。
+ *   与 `panelStates` 的 `expanded` 正交——maximized 是临时全屏，expanded 是常态聚焦。
+ * - `panelStates`：per-panel 三态 map（key = sessionId，Phase 5）。minimized 面板由
+ *   `deriveRows` 过滤出布局区（dock 承载）；expanded/collapsed 正常铺开。缺失条目
+ *   视为 `collapsed`（初始态由 `initPanelStates` 填充）。
  */
 export type WorkbenchLayout = {
   panels: WorkbenchPanelRef[];
   newRows: string[];
   sizes: Record<string, number>;
   maximized: string | null;
+  panelStates: Record<string, PanelViewState>;
 };
 
 export const EMPTY_WORKBENCH_LAYOUT: WorkbenchLayout = {
@@ -288,6 +301,7 @@ export const EMPTY_WORKBENCH_LAYOUT: WorkbenchLayout = {
   newRows: [],
   sizes: {},
   maximized: null,
+  panelStates: {},
 };
 
 /** 默认面板 flex 宽度权重（resize 基线，设计文档 §4）。 */
@@ -298,6 +312,8 @@ export const WORKBENCH_PANEL_MIN_FLEX = 0.2;
 /**
  * 从扁平布局派生二维行结构（渲染层纯函数）。`newRows` 标记的 sessionId 起新行；
  * 首个面板不论标记都进第一行。maximized 时返回单面板单行（派生，不改 state）。
+ * `minimized` 面板（`panelStates[sessionId] === "minimized"`）过滤出布局区——由
+ * 底部 dock 承载（设计 §7.3），不占行布局；仍保留在 `panels` 列表（dock chip 渲染）。
  */
 export function deriveRows(layout: WorkbenchLayout): WorkbenchPanelRef[][] {
   if (layout.maximized !== null) {
@@ -308,6 +324,7 @@ export function deriveRows(layout: WorkbenchLayout): WorkbenchPanelRef[][] {
   const rows: WorkbenchPanelRef[][] = [];
   let current: WorkbenchPanelRef[] = [];
   for (const panel of layout.panels) {
+    if (layout.panelStates[panel.sessionId] === "minimized") continue;
     if (current.length > 0 && newRowSet.has(panel.sessionId)) {
       rows.push(current);
       current = [];
@@ -321,6 +338,8 @@ export function deriveRows(layout: WorkbenchLayout): WorkbenchPanelRef[][] {
 /**
  * 向布局加入面板（split-right 默认；`newRow` 起新行 = split-down）。
  * 已存在的 sessionId 幂等不重复加；`afterSessionId` 指定插入位置（聚焦面板之后）。
+ * 新面板默认 `collapsed`（Phase 5 三态）——首个面板的 expanded 由 `initPanelStates` 统一处理；
+ * addPanel 只负责入列 + 默认 collapsed 态，避免与初始态逻辑耦合。
  */
 export function addPanel(
   layout: WorkbenchLayout,
@@ -338,22 +357,69 @@ export function addPanel(
   const newRows =
     opts.newRow === true && idx >= 0 ? [...layout.newRows, ref.sessionId] : layout.newRows;
   const sizes = { ...layout.sizes, [ref.sessionId]: WORKBENCH_PANEL_DEFAULT_FLEX };
-  return { ...layout, panels, newRows, sizes };
+  const panelStates: Record<string, PanelViewState> = {
+    ...layout.panelStates,
+    [ref.sessionId]: "collapsed",
+  };
+  return { ...layout, panels, newRows, sizes, panelStates };
 }
 
-/** 移除面板（关闭 = 结束实例）；同步清理 newRows / sizes / maximized。 */
+/** 移除面板（关闭 = 结束实例）；同步清理 newRows / sizes / maximized / panelStates。 */
 export function removePanel(layout: WorkbenchLayout, sessionId: string): WorkbenchLayout {
   const panels = layout.panels.filter((p) => p.sessionId !== sessionId);
   const newRows = layout.newRows.filter((id) => id !== sessionId);
   const sizes = { ...layout.sizes };
   delete sizes[sessionId];
   const maximized = layout.maximized === sessionId ? null : layout.maximized;
-  return { panels, newRows, sizes, maximized };
+  const panelStates = { ...layout.panelStates };
+  delete panelStates[sessionId];
+  return { panels, newRows, sizes, maximized, panelStates };
 }
 
 /** 切换面板最大化（标量翻转，不新增布局实体）。 */
 export function toggleMaximize(layout: WorkbenchLayout, sessionId: string): WorkbenchLayout {
   return { ...layout, maximized: layout.maximized === sessionId ? null : sessionId };
+}
+
+/**
+ * 设置面板三态（设计文档 §7.1）。**单 expanded 守卫**：设为 `"expanded"` 时，原 expanded
+ * 面板（若有且 ≠ sessionId）自动降为 `"collapsed"`（严格单 expanded 决策——聚焦语义与
+ * URL focusId 一致）。设 `collapsed`/`minimized` 不影响其他面板。返回新 layout（immutable）。
+ */
+export function setPanelState(
+  layout: WorkbenchLayout,
+  sessionId: string,
+  state: PanelViewState,
+): WorkbenchLayout {
+  if (state === "expanded") {
+    const panelStates = { ...layout.panelStates };
+    for (const id of Object.keys(panelStates)) {
+      if (id !== sessionId && panelStates[id] === "expanded") panelStates[id] = "collapsed";
+    }
+    panelStates[sessionId] = "expanded";
+    return { ...layout, panelStates };
+  }
+  return { ...layout, panelStates: { ...layout.panelStates, [sessionId]: state } };
+}
+
+/**
+ * 初始化所有面板三态（设计 §7.1 初始态）：`focusSessionId`（或 `panels[0].sessionId` 若无）
+ * = `"expanded"`，其余 = `"collapsed"`。**不覆盖**已有 panelStates 条目——持久化恢复时
+ * 保留用户自定义三态。**单 expanded 守卫**：若已有面板是 `expanded`，focusSessionId 面板
+ * 补 `collapsed`（避免双 expanded）；若无已有 expanded，focusSessionId 面板补 `expanded`。
+ * 返回新 layout。
+ */
+export function initPanelStates(layout: WorkbenchLayout, focusSessionId?: string): WorkbenchLayout {
+  if (layout.panels.length === 0) return layout;
+  const expandedId = focusSessionId ?? layout.panels[0].sessionId;
+  const hasExistingExpanded = Object.values(layout.panelStates).some((s) => s === "expanded");
+  const panelStates = { ...layout.panelStates };
+  for (const panel of layout.panels) {
+    if (panelStates[panel.sessionId] !== undefined) continue;
+    panelStates[panel.sessionId] =
+      !hasExistingExpanded && panel.sessionId === expandedId ? "expanded" : "collapsed";
+  }
+  return { ...layout, panelStates };
 }
 
 /** 设置面板 flex 宽度（resize gutter 单点更新；下限 WORKBENCH_PANEL_MIN_FLEX）。 */
