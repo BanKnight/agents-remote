@@ -139,7 +139,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **subagent 审查结论**：10 项要点全部 ✓（§9 列规格 / §10 StatusDot 一致性 / §11 移动差异 / §12 displayName 主列 / §15 resolvedView 守卫回退 grid + split 隐藏 / 单一数据管道复用 grid 数据源 / a11y 行不整体 clickable / 复用约束 relativeTime export + close className + callbacks 类型差异 / 移动 view 不读 URL 是 §13 设计非 bug）；唯一 minor closeHolder 双挂载已收尾修复。Phase 4 完整落地设计 §9-§12 + §15 待拍点，可启动 P5。
 
-### Phase 5 · `workbench-split-redesign`
+### Phase 5 · `workbench-split-redesign` ✅ 已交付
 
 **目标**：split 重构为「聚焦展开 + 其余缩略 + 底部 dock 收最小化」的多实例同屏工作台（仅桌面）。
 
@@ -157,6 +157,13 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 **验证**：门禁全绿；CSS 落盘；Playwright（面板三态切换、初始态聚焦展开、dock chip 恢复、close 流程、resize/maximize 不回归）；DOM 几何（缩略面板高度、dock 位置）；桌面截图（移动无 split）。
 
 **依赖**：P2（URL focusId + ViewSwitcher）。**待拍点**：split 单/多 expanded（建议单）、视图切换器进入 split 的 icon 顺序。
+
+**交付记录**（2026-07-04，commits `2b57fa3` → `3bf9730` → `5a05f97`）：
+- 批 5a `2b57fa3`：`workbench-model.ts` `PanelViewState` 类型 + `panelStates` 字段 + `setPanelState`/`initPanelStates` 纯函数（单 expanded 守卫 + focusId 展开 + 持久化恢复不覆盖）+ `deriveRows`/`addPanel`/`removePanel` 改造（过滤 minimized / 新面板默认 collapsed / 清理 panelStates）+ 11 测试。
+- 批 5b `3bf9730`：`SplitPanel` 三态渲染（expanded 完整 output + 最大化/最小化/关闭；collapsed header + 末 2 行预览 + 展开/关闭；minimized 不渲染）+ `SplitDock`（chip 横排，点击恢复）+ `panel-preview-cache.ts`（模块级 Map + useSyncExternalStore，终端 snapshot/输出 + chat rawMessages 双数据源同一缓存）+ `panel-preview.tsx`（纯展示）+ `claude2-adapter` 导出 `rawMessagesRef` + `lastAssistantTextLines` 纯函数 + `SessionDetailRoute` onmessage 写 cache + `instance-area` 初始态 effect + i18n 7 keys。Playwright DOM 10/10。
+- 批 5c `5a05f97`：`filterWorkbenchViews` 改 `split && isMobile`（桌面恢复 split 可见，移动仍隐藏）+ `usePanelMeta` hook（复用 useAgentDetail/useTerminalDetail，React Query dedupe 零额外网络）派生 `{marker, label, statusDot}` + `SplitPanel` header marker+displayName+StatusDot 一等显示（设计 §7.2/§12，用户决策「聚焦 session 名 expanded header 内联显示」）+ `SplitDock` 拆 `DockChip` 组件每 chip 调 usePanelMeta 派生 marker（按 type/provider）+displayName（非 raw sessionId）+ `setPanelState` minimized 清 maximized 死角（+2 测试）+ `closePanel` 清 `clearPanelPreview` 内存泄漏修复。子代理审查 P1#1/#2/#3 + P2#4/#7/#8 全部修复无新偏差。门禁全绿 + Playwright 10/10。
+
+**Phase 5 完成**：split 视图重构 3 批全部交付，5 阶段长任务收尾。
 
 ## 待拍点汇总（实现前与用户确认）
 
