@@ -1,5 +1,11 @@
 import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
-import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type ComponentProps,
+  type PointerEvent,
+  type ReactNode,
+  useRef,
+} from "react";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -273,6 +279,55 @@ export function actionButtonClasses({
   tone = "default",
 }: ActionButtonClassOptions = {}) {
   return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition ${buttonToneClasses[tone]} ${className}`;
+}
+
+type ResizeGutterProps = {
+  edge: "left" | "right";
+  onResize: (deltaRem: number) => void;
+};
+
+/**
+ * 通用 resize 分隔条 primitive（贴容器某侧边缘，全高 absolute）。pointer-event 拖拽：
+ * 增量式（每次 move 算 deltaX / rootFontSize → deltaRem → onResize），上层 clamp 到 MIN/MAX。
+ * setPointerCapture 锁定指针，拖拽时即使滑出容器仍持续。edge="right" 贴右边缘（向右拖
+ * deltaRem 正 = 增宽左侧容器）；edge="left" 贴左边缘（向左拖增宽，翻转 deltaRem）。与
+ * workbench-shell `ColumnResizeGutter` 同源 pointer 逻辑，edge 语义面向容器内侧边缘。
+ */
+export function ResizeGutter({ edge, onResize }: ResizeGutterProps) {
+  const dragRef = useRef<{ lastX: number; rootFont: number } | null>(null);
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rootFont = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    dragRef.current = { lastX: event.clientX, rootFont };
+    void event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const delta = event.clientX - drag.lastX;
+    drag.lastX = event.clientX;
+    const deltaRem = delta / drag.rootFont;
+    onResize(edge === "right" ? deltaRem : -deltaRem);
+  };
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    void event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  return (
+    <div
+      aria-hidden
+      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 ${
+        edge === "right" ? "right-0" : "left-0"
+      }`}
+      onPointerCancel={endDrag}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+    />
+  );
 }
 
 export function ActionButton({
@@ -557,7 +612,6 @@ export function ViewSwitcher<T extends string>({
 function ViewSwitcherIcon({ kind }: { kind: string }) {
   if (kind === "table") return <TableViewIcon />;
   if (kind === "grouped") return <GroupedViewIcon />;
-  if (kind === "split") return <SplitViewIcon />;
   return <GridViewIcon />;
 }
 
@@ -599,15 +653,6 @@ function GroupedViewIcon() {
         strokeLinecap="round"
         strokeWidth="1.3"
       />
-    </svg>
-  );
-}
-
-function SplitViewIcon() {
-  return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-      <rect height="10" rx="1" stroke="currentColor" strokeWidth="1.3" width="12" x="2" y="3" />
-      <line stroke="currentColor" strokeWidth="1.3" x1="8" x2="8" y1="3" y2="13" />
     </svg>
   );
 }

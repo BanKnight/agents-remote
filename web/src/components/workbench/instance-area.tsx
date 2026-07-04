@@ -1,4 +1,5 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo } from "react";
+import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
@@ -8,18 +9,17 @@ import {
   type WorkbenchPanelRef,
   type WorkbenchScope,
   type WorkbenchView,
+  WORKBENCH_MIDDLE_LEFT_MAX_REM,
+  WORKBENCH_MIDDLE_LEFT_MIN_REM,
   addPanel,
   filterWorkbenchViews,
   groupByProject,
   inferSessionTypeFromId,
-  initPanelStates,
   rankGlobalInstances,
   removePanel,
-  resizePair,
-  setPanelState,
-  toggleMaximize,
   useWorkbenchLayout,
   useWorkbenchNavigate,
+  workbenchMiddleLeftWidthAtom,
 } from "../../routes/workbench-model";
 import {
   closeAgentSession,
@@ -40,6 +40,7 @@ import {
   actionButtonClasses,
   InstanceCard,
   type InstanceCardProps,
+  ResizeGutter,
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
@@ -51,8 +52,6 @@ import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { HistoryList } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
-import { SplitLayout } from "./split-panel";
-import { clearPanelPreview } from "./panel-preview-cache";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import {
   DropdownMenu,
@@ -68,7 +67,6 @@ export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
   grouped: "workbench.viewGrouped",
   grid: "workbench.viewGrid",
   table: "workbench.viewTable",
-  split: "workbench.viewSplit",
 };
 
 /** grid 卡片最小宽度（设计文档 §8：`minmax(220px,1fr)` 自适应，无断点枚举）。 */
@@ -103,11 +101,11 @@ type InstanceAreaProps = {
 };
 
 /**
- * 中栏实例区（设计文档 §4）。消费 workbench split 布局 atom，渲染 `SplitLayout`
- *（多面板同屏）。面板 = 活跃实例 1:1；URL focusId 是「聚焦面板」（输入/右栏跟随），
- * 面板布局（哪些实例同屏、排序）是个人布局进 localStorage。project 作用域按项目分键；
- * global 作用域（commit ④）聚合所有项目活跃实例自动铺开（rankGlobalInstances 排序），
- * 面板带项目前缀。
+ * 中栏实例区（设计文档 §4）。永远左右结构：左总览（固定单列卡片，view 切 grid/table/grouped
+ * 样式）+ 右工作区（活动组 = layout.panels[0]，GroupHeader + PanelRouter）。tab 导航常驻
+ *（聚焦/非聚焦都不消失——Phase A 痛点修复）。URL focusId = 右工作区活动组（语义不变，
+ * 渲染层从单实例 fallthrough 改为左右结构活动组）。layout 进 localStorage，project 按
+ * 项目分键；global 聚合所有项目活跃实例（rankGlobalInstances 排序）。
  */
 export function InstanceArea({
   ctx,
@@ -127,18 +125,10 @@ export function InstanceArea({
   // P3 grid 视图 project scope 数据源（global scope 返空，grid 改用 candidates 跨项目聚合）。
   const projectInstances = useProjectInstances(ctx.projectKey);
 
-  // 聚焦态 header displayName（设计文档 §15）：focusId 实例的显示名。project scope = scope.key；
-  // global scope 从 layout.panels 查 focusId 所属项目。useFocusSessionName 内部按 sessionType
-  // 控制 enabled，非聚焦态（focusId undefined）零开销。header 仅聚焦态渲染（下方 return 分支）。
-  const focusProjectName =
-    scope.kind === "project"
-      ? scope.key
-      : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ?? undefined);
-  const focusDisplayName = useFocusSessionName(focusId, focusProjectName);
-
-  // ViewSwitcher 视图选项（按 scope 过滤；桌面 isMobile=false）。聚焦态不渲染但仍稳定构造。
+  // ViewSwitcher 视图选项（按 scope 过滤，设计 §6）。聚焦态也构造（tab bar 常驻，ViewSwitcher
+  // 在 overview tab 时显示，与聚焦态无关）。
   const viewOptions = useMemo(
-    () => filterWorkbenchViews(scope, false).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
+    () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
   );
 
@@ -170,55 +160,60 @@ export function InstanceArea({
   const resolvedView: WorkbenchView =
     view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
-  // focus → addPanel：URL focusId 指向的实例若不在布局中，加入面板（split-right 默认）。
-  // 仅 project 作用域；global 的 focusId 缺 projectName，靠下方自动铺开填充。
-  // Phase 5：addPanel 默认 collapsed，紧接着 setPanelState(focusId, "expanded") 把聚焦面板设为
-  // expanded（单 expanded 守卫把其他 expanded 自动降 collapsed）——聚焦语义 = URL focusId 一致。
   const scopeKey = scope.kind === "project" ? scope.key : "global";
+  const refs = useScopeInstanceOrder(scope);
+
+  // 中栏左总览宽度（设计 §3：固定单列卡片 + gutter 调比例）。atomWithStorage 持久化，
+  // MIN/DEFAULT/MAX 钳制（MIN=14rem 放得下一张 220px 卡）。
+  const [middleLeftWidth, setMiddleLeftWidth] = useAtom(workbenchMiddleLeftWidthAtom);
+  const onResizeMiddleLeft = useCallback(
+    (deltaRem: number) =>
+      setMiddleLeftWidth((prev) =>
+        Math.min(
+          Math.max(prev + deltaRem, WORKBENCH_MIDDLE_LEFT_MIN_REM),
+          WORKBENCH_MIDDLE_LEFT_MAX_REM,
+        ),
+      ),
+    [setMiddleLeftWidth],
+  );
+
+  // 活动组实例（设计 §13）。layout.panels[0] 始终承载活动组：聚焦态由 focus effect 同步
+  // focusId → panels[0]；非聚焦态由 auto-populate 铺 refs[0]。聚焦态首帧（effect 未跑）时
+  // panels[0] 可能为空，rightWorkspace fallback PlaceholderPanel。
+  const activeRef = layout.panels[0] ?? null;
+
+  // focus → 活动组：URL focusId 变化时同步到 layout.panels[0]（替换或新增，单 group 语义）。
+  // project scope projectName = scope.key；global scope 从 refs 查 focusId 所属项目（refs 未加载
+  // 时跳过，加载后 effect 重跑同步）。幂等（panels[0] 已是 focusId 不动），无循环。
   useEffect(() => {
-    if (scope.kind !== "project" || !focusId) return;
-    if (layout.panels.some((p) => p.sessionId === focusId)) return;
+    if (!focusId) return;
+    if (layout.panels[0]?.sessionId === focusId) return;
+    const projectName =
+      scope.kind === "project" ? scope.key : refs.find((r) => r.sessionId === focusId)?.projectName;
+    if (!projectName) return;
     update((prev) => {
-      const added = addPanel(prev, { projectName: scope.key, sessionId: focusId });
-      return setPanelState(added, focusId, "expanded");
+      if (prev.panels[0]?.sessionId === focusId) return prev;
+      const newFirst: WorkbenchPanelRef = { projectName, sessionId: focusId };
+      if (prev.panels.length === 0) return addPanel(prev, newFirst);
+      return { ...prev, panels: [newFirst, ...prev.panels.slice(1)] };
     });
-    // update 是 useWorkbenchLayout 返回的 setState 包装（闭包捕获 scope），稳定足够；
-    // layout.panels 入 deps 以便 addPanel 后重检收敛（idempotent，无循环）。
+    // refs 引用每 render 可能变（useScopeInstanceOrder 返新数组），用 refs.length（number）+ idempotent
+    // 守卫稳住；refs.find 读闭包最新值（refs.length 变 → re-render → 新闭包）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId, scopeKey, layout.panels]);
+  }, [focusId, scopeKey, layout.panels.length, refs.length]);
 
-  // global 自动铺开（commit ④）：进入全局视图且布局为空时，按 rankGlobalInstances 排序
-  // 把所有项目活跃实例铺成面板。seededRef 防止铺开后 candidates/状态变化触发重铺，
-  // 也防止用户手动清空后被自动回填。localStorage 已恢复非空布局时不介入。
-  // P2 根因修复：等 candidates 加载完整（isLoaded）才铺——useGlobalInstanceCandidates 的
-  // queries（projects → 每项目 agent/terminal）逐步加载，candidates 从 0→部分→完整。若首次
-  // candidates>0 就铺并锁 seededRef，terminal queries 还没回时只铺部分实例，锁死后不再补铺
-  // → 丢实例。isLoaded 守卫确保拿到完整候选再铺。
-  const seededRef = useRef(false);
+  // 非聚焦态进入空 scope：铺首个活跃实例作活动组（设计 §13「右工作区显示 scope 首个活跃
+  // 实例」）。聚焦态 / layout 非空（持久化恢复 / focus effect 已填）不介入。candidatesLoaded
+  // 守卫：global scope candidates 逐步聚合（projects → 每项目 agent/terminal），未 settled 时
+  // refs[0] 是临时首个，铺入 panels[0] 后锁死（length>0 不重铺），后续更紧急实例回来活动组
+  // 也不更新；等 isLoaded 再铺最终排序首个。project scope hook 始终返 isLoaded=true，守卫无影响。
+  // 无 seededRef：close 当前组后 layout 空 → 铺下一个 refs[0]（设计 §7.3 close 切剩余首个）。
   useEffect(() => {
-    if (scope.kind !== "global" || layout.panels.length > 0 || seededRef.current) return;
-    if (!candidatesLoaded || candidates.length === 0) return;
-    seededRef.current = true;
-    const ranked = rankGlobalInstances(candidates);
-    update((prev) => ranked.reduce((acc, ref) => addPanel(acc, ref), prev));
+    if (focusId || layout.panels.length > 0) return;
+    if (!candidatesLoaded || refs.length === 0) return;
+    update((prev) => addPanel(prev, refs[0]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, layout.panels.length, candidates, candidatesLoaded]);
-
-  // Phase 5 初始态：进 split 视图且 panelStates 全是默认 collapsed（无 expanded 无 minimized）时，
-  // focusId 面板 = expanded，其余 = collapsed（设计 §7.1）。已有 expanded 或 minimized（用户已操作
-  // / 持久化恢复）不重复初始化——避免最小化后无 expanded 时反复把 focusId 设回 expanded 覆盖用户
-  // 操作。project scope focus→addPanel 已在 addPanel 后 setPanelState(focusId, expanded)，本 effect
-  // 主要兜底 global 自动铺开（全 collapsed 无 focusId）+ 持久化恢复空布局首次进 split。
-  const isSplitView = focusId !== undefined || resolvedView === "split";
-  useEffect(() => {
-    if (!isSplitView || layout.panels.length === 0) return;
-    const states = Object.values(layout.panelStates);
-    const hasExpanded = states.some((s) => s === "expanded");
-    const hasMinimized = states.some((s) => s === "minimized");
-    if (hasExpanded || hasMinimized) return; // 已有用户操作态，不初始化
-    update((prev) => initPanelStates(prev, focusId));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSplitView, layout.panels.length, layout.panelStates, focusId]);
+  }, [scopeKey, layout.panels.length, refs.length, focusId, candidatesLoaded]);
 
   // split 级 close = 结束实例：复用 useCloseSession（confirm → close API → 精确失效缓存），
   // split 特有尾巴（removePanel + 焦点切换）走 onAfterClose。embedded 面板自带的 header close
@@ -229,8 +224,6 @@ export function InstanceArea({
     void close(ref, sessionType, () => {
       const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
       update((prev) => removePanel(prev, ref.sessionId));
-      // 清 panel preview cache，防 close 后 cache 条目残留内存泄漏（subagent 审查 P1#3）。
-      clearPanelPreview(ref.sessionId);
       if (focusId === ref.sessionId) {
         void navigateWorkbench(scope, remaining.length > 0 ? remaining[0].sessionId : undefined);
       }
@@ -242,8 +235,8 @@ export function InstanceArea({
     void navigateWorkbench(scope, ref.sessionId);
   };
 
-  // P3 总览视图（设计文档 §5/§8）：仅非聚焦 overview tab 渲染卡片网格（grid）；grouped（批 3b）/
-  // table（P4）/ split（P5）后续接管。聚焦态仍走 SplitLayout。resolvedView 已在上方定义（初始态 effect 复用）。
+  // P3 总览视图（设计文档 §5/§8）：overview tab 左总览按 view 渲染（grid 卡片 / grouped 分段 /
+  // table 紧凑行）。resolvedView 已在上方定义（初始态 effect 复用）。
 
   // grid 卡片回调：select 复用 focusPanel 进聚焦态；close 走 useCloseSession（卡片由 query 驱动，
   // invalidate 后自然消失，不调 removePanel —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
@@ -273,45 +266,11 @@ export function InstanceArea({
     [scope, candidates, projectInstances.instances, t],
   );
 
-  // SplitLayout 渲染：聚焦态 / table（P4）/ split（P5）/ grouped（批 3b 前）的回退。布局空 +
-  // 无 focusId → EmptyInstanceArea；布局空 + 有 focusId（addPanel/铺开尚未收敛）→ PlaceholderPanel 防闪。
-  const splitContent =
-    layout.panels.length === 0 ? (
-      focusId ? (
-        <PlaceholderPanel focusId={focusId} />
-      ) : (
-        <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
-      )
-    ) : (
-      <SplitLayout
-        isFocused={(ref) => ref.sessionId === focusId}
-        layout={layout}
-        onClosePanel={closePanel}
-        onFocusPanel={focusPanel}
-        onResizePair={(leftId, rightId, deltaFlex) =>
-          update((prev) => resizePair(prev, leftId, rightId, deltaFlex))
-        }
-        onToggleMaximize={(sessionId) => update((prev) => toggleMaximize(prev, sessionId))}
-        onToggleState={(sessionId, state) => {
-          update((prev) => setPanelState(prev, sessionId, state));
-          // expanded 与 URL focusId 一致（设计 §7.1 单 expanded = 聚焦语义）：点 □ 展开某面板
-          // → 同步 navigate focusId 到该面板，保持 URL 与三态一致（右栏 inspection 跟随）。
-          if (state === "expanded" && sessionId !== focusId) {
-            void navigateWorkbench(scope, sessionId);
-          }
-        }}
-        projectPrefix={scope.kind === "global" ? (ref) => ref.projectName : undefined}
-        renderPanel={(ref) => <PanelRouter key={ref.sessionId} panelRef={ref} />}
-      />
-    );
-
-  // 非聚焦 overview tab 按 view 分支：grid → InstanceGrid（空 → EmptyInstanceArea，与 split 共用）；
-  // grouped → GroupedView（仅 global scope，按项目分段）；table → SessionTable（空 → EmptyInstanceArea）；
-  // 聚焦态 / split → splitContent。
-  const showGrid = focusId === undefined && resolvedView === "grid";
-  const showGrouped =
-    focusId === undefined && resolvedView === "grouped" && scope.kind === "global";
-  const showTable = focusId === undefined && resolvedView === "table";
+  // 左总览 overview 内容按 view 分支（设计 §5）：grid → InstanceGrid（空 → EmptyInstanceArea）；
+  // grouped → GroupedView（仅 global scope，按项目分段）；table → SessionTable（空 → EmptyInstanceArea）。
+  const showGrid = resolvedView === "grid";
+  const showGrouped = resolvedView === "grouped" && scope.kind === "global";
+  const showTable = resolvedView === "table";
   // table 列回调（与 gridCallbacks 同源：select 进聚焦态 / close 走 useCloseSession）；t 用
   // TranslateFn（带 params，给 relativeTime 的 time.minutesAgo {count} 用，比 GridItemCallbacks 窄签名宽）。
   const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
@@ -331,7 +290,7 @@ export function InstanceArea({
     scope.kind === "global"
       ? ["project", "type", "name", "activity", "actions"]
       : ["type", "name", "activity", "actions"];
-  const overviewContent = showGrid ? (
+  const leftOverviewContent = showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
     ) : (
@@ -345,25 +304,54 @@ export function InstanceArea({
     ) : (
       <SessionTable columns={tableColumns} rows={tableRows} t={t} />
     )
-  ) : (
-    splitContent
-  );
+  ) : null;
 
-  // 中栏内容按 tab 分支：聚焦态 / overview tab → overviewContent（grid 卡片网格 / SplitLayout / 空态）；
-  // history tab → HistoryList（project-scoped 历史 session；showLabel=false 因 tab bar 已
-  //   标识「历史」，避免重复标题）；files/git/prototype tab → 复用右栏 inspection plugin
-  //   的 render(ctx)（项目级 inspection）。
-  const isOverview = focusId !== undefined || resolvedTab === "overview";
+  // 中栏内容按 tab 分支（设计 §4）：工作态 tab（overview/history）= 左右结构（左总览固定宽 +
+  //   右工作区常驻活动组）；inspection tab（files/git/prototype）= 全宽 inspection，右工作区临时让位。
+  //   history 左总览 = HistoryList（project-scoped 历史 session，showLabel=false 因 tab bar 已标识）。
+  const isOverview = resolvedTab === "overview";
   const isHistory = !isOverview && resolvedTab === "history";
-  const inspectionPlugin =
-    isOverview || isHistory
-      ? null
-      : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
-  const tabContent = isOverview ? (
-    overviewContent
-  ) : isHistory && ctx.projectKey !== null ? (
-    <div className="h-full overflow-y-auto p-3">
-      <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
+  const isWorkTab = isOverview || isHistory;
+  const inspectionPlugin = isWorkTab
+    ? null
+    : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
+  const leftColumnContent =
+    isHistory && ctx.projectKey !== null ? (
+      <div className="h-full overflow-y-auto p-3">
+        <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
+      </div>
+    ) : isOverview ? (
+      leftOverviewContent
+    ) : null;
+  // 右工作区 = 活动组（GroupHeader + PanelRouter，设计 §7）；activeRef 空（聚焦态 effect 未收敛）→
+  // PlaceholderPanel（focusId 存在）；非聚焦无实例 → EmptyInstanceArea（设计 §14）。
+  const rightWorkspace = activeRef ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <GroupHeader
+        onClose={() => {
+          if (activeRef) closePanel(activeRef);
+        }}
+        panelRef={activeRef}
+      />
+      <div className="min-h-0 flex-1">
+        <PanelRouter key={activeRef.sessionId} panelRef={activeRef} />
+      </div>
+    </div>
+  ) : focusId ? (
+    <PlaceholderPanel focusId={focusId} />
+  ) : (
+    <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+  );
+  const tabContent = isWorkTab ? (
+    <div className="flex h-full min-h-0">
+      <div
+        className="relative h-full shrink-0 overflow-hidden"
+        style={{ width: `${middleLeftWidth}rem` }}
+      >
+        {leftColumnContent}
+        <ResizeGutter edge="right" onResize={onResizeMiddleLeft} />
+      </div>
+      <div className="min-w-0 flex-1">{rightWorkspace}</div>
     </div>
   ) : (
     (inspectionPlugin?.render(ctx) ?? null)
@@ -371,43 +359,35 @@ export function InstanceArea({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {!focusId ? (
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-          {visibleTabs.map((opt) => (
-            <TabButton
-              active={opt.id === resolvedTab}
-              key={opt.id}
-              label={opt.label}
-              onClick={() => onTabChange?.(opt.id)}
-            />
-          ))}
-          {ctx.projectKey !== null || (resolvedTab === "overview" && onViewChange && view) ? (
-            <div className="ml-auto flex items-center gap-1">
-              {ctx.projectKey !== null ? (
-                <CreateSessionBar
-                  isCreating={create.isCreating}
-                  onCreateAgent={create.createAgent}
-                  onCreateTerminal={create.createTerminal}
-                />
-              ) : null}
-              {resolvedTab === "overview" && onViewChange && view ? (
-                <ViewSwitcher
-                  ariaLabel={t("workbench.viewSwitcher")}
-                  onChange={onViewChange}
-                  view={resolvedView}
-                  views={viewOptions}
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-on-surface/5 px-3">
-          <span className="truncate text-sm font-semibold text-on-surface">
-            {focusDisplayName ?? focusProjectName ?? t("workbench.global")}
-          </span>
-        </div>
-      )}
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+        {visibleTabs.map((opt) => (
+          <TabButton
+            active={opt.id === resolvedTab}
+            key={opt.id}
+            label={opt.label}
+            onClick={() => onTabChange?.(opt.id)}
+          />
+        ))}
+        {ctx.projectKey !== null || (resolvedTab === "overview" && onViewChange && view) ? (
+          <div className="ml-auto flex items-center gap-1">
+            {ctx.projectKey !== null ? (
+              <CreateSessionBar
+                isCreating={create.isCreating}
+                onCreateAgent={create.createAgent}
+                onCreateTerminal={create.createTerminal}
+              />
+            ) : null}
+            {resolvedTab === "overview" && onViewChange && view ? (
+              <ViewSwitcher
+                ariaLabel={t("workbench.viewSwitcher")}
+                onChange={onViewChange}
+                view={resolvedView}
+                views={viewOptions}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
       {create.promptHolder}
@@ -423,7 +403,7 @@ type PanelRouterProps = {
  * 单面板路由：按 sessionId 前缀推断类型 → 查详情 → 渲染对应面板（claude2→ChatPanel、
  * 其他 agent→AgentTerminalPanel、terminal→TerminalPanel）。复用 Stage 1 的嵌入式面板。
  *
- * 桌面 split 与移动单实例聚焦（Stage 5）共用：桌面 SplitLayout 每面板调一次，
+ * 右工作区活动组 + 移动单实例聚焦共用：桌面右工作区 GroupHeader 下调一次，
  * 移动聚焦态调一次（不 split，单实例）。面板内部依赖父级 flex-col 让 flex-1 runtime
  * body 撑满，调用方容器须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
  */
@@ -1108,6 +1088,40 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
       >
         {focusId}
       </div>
+    </div>
+  );
+}
+
+type GroupHeaderProps = {
+  onClose: () => void;
+  panelRef: WorkbenchPanelRef;
+};
+
+/**
+ * 右工作区活动组 header（设计 §7）。嵌入式面板（ChatPanel/AgentTerminalPanel/TerminalPanel）
+ * 自身不带 header（原由 SplitPanel 承载），Phase A 改单 group 右工作区后由本组件统一渲染
+ * marker + 实例名 + close。statusDot/maximize 留 Phase C。usePanelMeta 从实例 detail query
+ * 派生（与 PanelRouter/useFocusSessionName 同源 query key，React Query dedupe）。
+ */
+function GroupHeader({ onClose, panelRef }: GroupHeaderProps) {
+  const { t } = useT();
+  const meta = usePanelMeta(panelRef);
+  const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
+  return (
+    <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b border-on-surface/5 px-2">
+      <div className="flex min-w-0 items-center gap-1.5">
+        {meta?.marker ?? null}
+        <span className="truncate text-sm font-medium text-on-surface">{label}</span>
+      </div>
+      <button
+        aria-label={t("workbench.panelClose")}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+        onClick={onClose}
+        title={t("workbench.panelClose")}
+        type="button"
+      >
+        <ShellIcon className="h-3 w-3" name="close" />
+      </button>
     </div>
   );
 }

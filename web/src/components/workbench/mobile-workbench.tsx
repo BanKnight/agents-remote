@@ -300,11 +300,11 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
       ? (FIRST_PARTY_PLUGINS.find((p) => p.id === activeTab) ?? null)
       : null;
   // 移动 ViewSwitcher（与桌面 2a 对称）：复用桌面 workbenchViewAtom（不新增 mobile view atom），
-  // views = filterWorkbenchViews(scope, true) = [table, grid]（grouped/split 自动过滤）。渲染层
-  // view 切换 Phase 4 落地（当前切 view 仅写 atom 记忆，overview 渲染层暂不响应；状态记忆
-  // 生效待 Phase 4 落地，非死按钮 —— atom 值已被记录，P4 渲染层接入后即生效）。
+  // views = filterWorkbenchViews(scope)（project 自动过滤 grouped）。渲染层 view 切换 Phase 4
+  // 落地（当前切 view 仅写 atom 记忆，overview 渲染层暂不响应；状态记忆生效待 Phase 4 落地，
+  // 非死按钮 —— atom 值已被记录，P4 渲染层接入后即生效）。
   const viewOptions = useMemo(
-    () => filterWorkbenchViews(scope, true).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
+    () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
   );
   // §15：project 总览默认 grid（不取 viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使移动 project
@@ -389,8 +389,8 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
 /**
  * 移动全局列表态（设计文档 §7/§11）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
- * 指定作用域）。P4：加视图切换（grouped/grid/table，split 移动过滤——设计 §11 更新，移动 global
- * 除 split 外都可切）。grouped = 按项目分段（groupByProject，与桌面 GroupedView 同源纯函数）；
+ * 指定作用域）。P4：加视图切换（grouped/grid/table，global 三视图全开——设计 §11）。
+ * grouped = 按项目分段（groupByProject，与桌面 GroupedView 同源纯函数）；
  * grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。点卡片/行进
  * `/global/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API → invalidate）。
  * 视图记忆复用 workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。
@@ -401,10 +401,10 @@ function MobileGlobalOverview() {
   const { close, holder: closeHolder } = useCloseSession();
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   const [view, setView] = useAtom(workbenchViewAtom);
-  // viewOptions = filterWorkbenchViews(global, true) = [grouped, grid, table]（split 移动过滤）。
+  // viewOptions = filterWorkbenchViews(global) = [table, grid, grouped]（global 三视图全开）。
   const viewOptions = useMemo(
     () =>
-      filterWorkbenchViews({ kind: "global" }, true).map((v) => ({
+      filterWorkbenchViews({ kind: "global" }).map((v) => ({
         id: v,
         label: t(VIEW_LABEL_KEY[v]),
       })),

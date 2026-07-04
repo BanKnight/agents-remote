@@ -40,7 +40,6 @@ import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
-import { setPanelPreview, writePanelPreview } from "../components/workbench/panel-preview-cache";
 
 type SessionDetailProps = {
   projectName: string;
@@ -218,12 +217,6 @@ export function SessionDetail({
         if (message.type === "snapshot" || message.type === "output") {
           terminalDataRef.current = { type: message.type, data: message.data };
           terminalWriteRef.current?.(message.type, message.data);
-          // Phase 5 缩略预览缓存：terminal stream → module cache → PanelPreview
-          //（单一数据管道延伸，不伪造数据）。snapshot 全屏重置 / output 增量追加，
-          // 均取末 PREVIEW_LINE_COUNT 行（非空），由 cache 内部截断。
-          const lines = message.data.split("\n").filter((line) => line.trim().length > 0);
-          if (message.type === "snapshot") setPanelPreview(sessionId, lines);
-          else writePanelPreview(sessionId, lines);
           return;
         }
 
