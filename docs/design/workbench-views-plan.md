@@ -88,7 +88,7 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **subagent 审查结论**：0 P0，3 P1（均已修，见 `b77a677`），5 P2（多为文档同步或 P3/P4 自然消化的中间态）。Phase 2 收尾，可启动 P3。
 
-### Phase 3 · `workbench-grid-grouped-views`
+### Phase 3 · `workbench-grid-grouped-views` ✅ 已交付
 
 **目标**：落地 grid 视图（CSS 自适应）+ grouped 视图（桌面 global 跨项目分组）+ 移动 global 默认按项目分段。
 
@@ -101,7 +101,17 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **验证**：门禁全绿；CSS 落盘；Playwright DOM 几何（grid 列数随容器宽度变化，`getBoundingClientRect` 验证卡片宽度 ≥220px 且自适应）；grouped 分组标题正确；移动 global 分段；桌面+移动+平板截图。
 
-**依赖**：P2（ViewSwitcher + URL）+ P1（StatusDot）。**待拍点**：project 默认视图（建议 grid，影响 P2 默认值）。
+**依赖**：P2（ViewSwitcher + URL）+ P1（StatusDot）。**待拍点**：project 默认视图（建议 grid，影响 P2 默认值）—— **已拍板 grid**（`resolvedView` 守卫回退 `"grid"`，`workbenchViewAtom` 默认 `"grid"`，桌面/移动对称）。
+
+**交付记录**（2026-07-04，commits `6168e64` → `17473f5` + 收尾）：
+- 批 3a `6168e64`：桌面 grid 视图（`InstanceGrid` + `INSTANCE_GRID_STYLE` inline `minmax(220px,1fr)`，Tailwind v4 不编译任意值类名故用 inline style）+ `useProjectInstances` hook 提取（桌面 InstanceArea + 左栏 ProjectInstances 共享，React Query dedupe）+ `instanceToGridItem`/`candidateToGridItem` helper + content `overviewContent` view 分支 + `resolvedView` 守卫（回退 `"grid"`）+ `shell-primitives` export `InstanceCardProps`。
+- 批 3b `43ec90a`：`groupByProject` 纯函数（`workbench-model`，稳定数组——组顺序 = candidates 首次出现项目名顺序）+ `GroupedView` 内联组件（`instance-area`）+ content `showGrouped` 分支（仅 global scope）。
+- 批 3c `17473f5`：移动 `MobileGlobalOverview` 复用 `groupByProject` + `InstanceGrid` + `candidateToGridItem`（删 `GlobalInstanceCard` + 内联 Map + 固定 `grid-cols-2`）+ `instance-area` export `candidateToGridItem`（批 3a 时仅内部用）。
+- 收尾（本次提交）：移动 project `resolvedView` 回退改 `"grid"`（与桌面 + §15 对称，原 `viewOptions[0]?.id` = table 偏离）+ `groupByProject` 单元测试（2 test，稳定排序契约）。
+
+**已知中间态**（P4/P5 消化）：移动 ViewSwitcher 切 view 仅写 atom，渲染层切换 Phase 4 落地（同 Phase 2 已知中间态）；聚焦态仍走旧 `SplitLayout`（P5 接管）；`useProjectInstances.isLoading` 用 AND 语义（任一 query resolve 即 false，先展示部分实例，低优先不改）。
+
+**subagent 审查结论**：4 发现——移动 project `resolvedView` 回退偏离 §15（已修）、plan.md 缺交付记录（本次补）、`groupByProject` 无测试（已补）、`useProjectInstances.isLoading` AND 语义（低优先，不改，影响面需单独验证）。Phase 3 收尾，可启动 P4。
 
 ### Phase 4 · `workbench-table-view`
 

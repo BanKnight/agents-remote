@@ -6,6 +6,7 @@ import {
   type WorkbenchLayout,
   addPanel,
   deriveRows,
+  groupByProject,
   inferSessionTypeFromId,
   parseWorkbenchScope,
   rankGlobalInstances,
@@ -191,4 +192,27 @@ test("rankGlobalInstances: 同 rank 保持聚合原序（稳定）", () => {
     candidate("p1", "a3", "running", "agent"),
   ]);
   expect(ranked.map((r) => r.sessionId)).toEqual(["a1", "a2", "a3"]);
+});
+
+test("groupByProject: 按首次出现项目名建组（稳定，组内保聚合原序）", () => {
+  const groups = groupByProject([
+    candidate("p2", "a1", "running", "agent"),
+    candidate("p1", "a2", "running", "agent"),
+    candidate("p2", "a3", "running", "agent"),
+    candidate("p1", "a4", "running", "agent"),
+  ]);
+  expect(groups.map((g) => g.projectName)).toEqual(["p2", "p1"]);
+  expect(groups[0].candidates.map((c) => c.ref.sessionId)).toEqual(["a1", "a3"]);
+  expect(groups[1].candidates.map((c) => c.ref.sessionId)).toEqual(["a2", "a4"]);
+});
+
+test("groupByProject: 空数组 → []；单项目 → 单组", () => {
+  expect(groupByProject([])).toEqual([]);
+  const groups = groupByProject([
+    candidate("solo", "a1", "running", "agent"),
+    candidate("solo", "t1", "running", "terminal"),
+  ]);
+  expect(groups).toHaveLength(1);
+  expect(groups[0].projectName).toBe("solo");
+  expect(groups[0].candidates.map((c) => c.ref.sessionId)).toEqual(["a1", "t1"]);
 });

@@ -297,9 +297,9 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     () => filterWorkbenchViews(scope, true).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
   );
-  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view)
-    ? view
-    : (viewOptions[0]?.id ?? "grid");
+  // §15：project 总览默认 grid（不取 viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使移动 project
+  // viewOptions = [table, grid]，[0] = table 会与默认 grid 冲突；与桌面 InstanceArea 同款守卫）。
+  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
