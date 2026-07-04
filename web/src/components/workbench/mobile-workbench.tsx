@@ -23,14 +23,18 @@ import {
   candidateToGridItem,
   type GridItemCallbacks,
   InstanceGrid,
+  instanceToTableRow,
   PanelRouter,
+  type TableRowCallbacks,
   useCloseSession,
   useFocusSessionName,
   useGlobalInstanceCandidates,
+  useProjectInstances,
   useScopeInstanceOrder,
   VIEW_LABEL_KEY,
 } from "./instance-area";
 import { HistoryList } from "./history-list";
+import { SessionTable, type TableColumn } from "./workbench-table";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 
@@ -300,6 +304,26 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   // §15：project 总览默认 grid（不取 viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使移动 project
   // viewOptions = [table, grid]，[0] = table 会与默认 grid 冲突；与桌面 InstanceArea 同款守卫）。
   const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grid";
+  // table 视图数据 + 回调（设计 §9/§11：移动 project table 4 列，隐藏 project + 最后活动）。
+  // grid 分支仍走 ProjectInstances（自含 useProjectInstances + close holder + 创建入口）；
+  // table 分支在本组件直接消费 useProjectInstances → instanceToTableRow（React Query dedupe）。
+  const { close, holder: closeHolder } = useCloseSession();
+  const { instances } = useProjectInstances(scope.key);
+  const navigateWorkbench = useWorkbenchNavigate();
+  const focusInstance = (sessionId: string) => {
+    void navigateWorkbench(scope, sessionId);
+  };
+  const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
+    void close({ projectName: scope.key, sessionId }, type);
+  };
+  const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const tableRows = useMemo(
+    () => instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
+    // tableCallbacks 闭包依赖 scope/t；instances 引用由 hook 内 dataKey fingerprint 稳定。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [instances, t],
+  );
+  const tableColumns: TableColumn[] = ["type", "name", "status", "actions"];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -334,7 +358,18 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                 views={viewOptions}
               />
             </div>
-            <ProjectInstances projectName={scope.key} />
+            {resolvedView === "table" ? (
+              tableRows.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                  {t("workbench.emptyInstanceHint")}
+                </p>
+              ) : (
+                <SessionTable columns={tableColumns} rows={tableRows} t={t} />
+              )
+            ) : (
+              <ProjectInstances projectName={scope.key} />
+            )}
+            {closeHolder}
           </div>
         )}
       </div>
