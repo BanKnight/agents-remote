@@ -853,7 +853,7 @@ export function instanceToGridItem(
 }
 
 /** 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName）。 */
-function candidateToGridItem(
+export function candidateToGridItem(
   candidate: GlobalInstanceCandidate,
   cb: GridItemCallbacks,
 ): InstanceGridItem {

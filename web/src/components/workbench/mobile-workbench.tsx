@@ -2,19 +2,11 @@ import { Fragment, useMemo } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
-import {
-  InstanceCard,
-  MobilePageHeader,
-  sessionMarker,
-  shellSurfaceClasses,
-  statusToTone,
-  ViewSwitcher,
-} from "../shell/shell-primitives";
-import { sessionStatusLabel } from "../../routes/console-model";
+import { MobilePageHeader, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import {
   addPanel,
   filterWorkbenchViews,
-  type GlobalInstanceCandidate,
+  groupByProject,
   type WorkbenchMobileFocusTab,
   type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
@@ -28,6 +20,9 @@ import {
 } from "../../routes/workbench-model";
 import { ProjectInstances } from "./left-rail";
 import {
+  candidateToGridItem,
+  type GridItemCallbacks,
+  InstanceGrid,
   PanelRouter,
   useCloseSession,
   useFocusSessionName,
@@ -348,29 +343,26 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 }
 
 /**
- * 移动全局列表态（设计文档 §7）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
- * 指定作用域）。按项目分组（稳定：聚合顺序 = 项目次序 → agent(createdAt) → terminal(createdAt)），
- * 每组 2 列 InstanceCard 网格（marker + StatusPill + close），点卡片进 `/global/session/$focusId`
- * 单实例聚焦。close 复用 confirm → close API → invalidate 三步（invalidate ["projects"] 触发候选
- * 重算 + 各 project sessions 刷新）。空状态提示。
+ * 移动全局列表态（设计文档 §7/§11）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
+ * 指定作用域）。按项目分组（groupByProject 稳定排序，与桌面 GroupedView 同源纯函数），每组
+ * InstanceGrid 自适应网格（390px 1 列 / 平板 2 列，设计 §11 —— 复用桌面 grid 同款 INSTANCE_GRID_STYLE）。
+ * 点卡片进 `/global/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API
+ * → invalidate）。空状态提示。
  */
 function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
   const candidates = useGlobalInstanceCandidates({ kind: "global" });
-  const grouped = useMemo(() => {
-    const map = new Map<string, GlobalInstanceCandidate[]>();
-    for (const candidate of candidates) {
-      const arr = map.get(candidate.ref.projectName) ?? [];
-      arr.push(candidate);
-      map.set(candidate.ref.projectName, arr);
-    }
-    return map;
-  }, [candidates]);
+  const groups = useMemo(() => groupByProject(candidates), [candidates]);
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
   };
+  const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
+    const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
+    if (ref) void close(ref, type);
+  };
+  const callbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
   if (candidates.length === 0) {
     return (
       <div className="flex h-full min-h-0 flex-col">
@@ -389,49 +381,16 @@ function MobileGlobalOverview() {
         aria-label={t("workbench.globalOverviewTitle")}
         className="flex-1 overflow-y-auto pb-24 lg:pb-0"
       >
-        {Array.from(grouped.entries()).map(([projectName, items]) => (
-          <div className="flex flex-col gap-2 px-3 py-2" key={projectName}>
+        {groups.map((group) => (
+          <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
             <p className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted">
-              {projectName}
+              {group.projectName}
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              {items.map((candidate) => (
-                <GlobalInstanceCard
-                  candidate={candidate}
-                  key={candidate.ref.sessionId}
-                  onClose={() => void close(candidate.ref, candidate.type)}
-                  onSelect={focusInstance}
-                />
-              ))}
-            </div>
+            <InstanceGrid items={group.candidates.map((c) => candidateToGridItem(c, callbacks))} />
           </div>
         ))}
       </nav>
       {closeHolder}
     </div>
-  );
-}
-
-type GlobalInstanceCardProps = {
-  candidate: GlobalInstanceCandidate;
-  onClose: () => void;
-  onSelect: (sessionId: string) => void;
-};
-
-/** 全局实例卡片：marker（provider/terminal 图标）+ 标题 + StatusPill + close，复用 InstanceCard。 */
-function GlobalInstanceCard({ candidate, onClose, onSelect }: GlobalInstanceCardProps) {
-  const { t } = useT();
-  return (
-    <InstanceCard
-      closeLabel={t("session.close")}
-      marker={sessionMarker(candidate.type, candidate.provider)}
-      onClose={onClose}
-      onSelect={() => onSelect(candidate.ref.sessionId)}
-      status={{
-        label: t(sessionStatusLabel(candidate.status)),
-        tone: statusToTone(candidate.status),
-      }}
-      title={candidate.displayName}
-    />
   );
 }
