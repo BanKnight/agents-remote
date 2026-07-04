@@ -18,8 +18,14 @@ type WorkbenchShellProps = {
   children: ReactNode;
   /** 左栏：项目 + 实例树（Stage 2 接入）。 */
   leftPanel?: ReactNode;
-  /** 右栏：inspection tab（Stage 3 接入）。 */
+  /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
   rightPanel?: ReactNode;
+  /**
+   * 右栏是否可收起/唤出（默认 !!rightPanel）。解耦「可唤出」与「内容渲染」：收起时
+   * rightPanel=null（aside 不渲染，零 query），但 RailButton 仍渲染依赖 collapsible。
+   * project scope 传 true（非聚焦态唤出看 project-scoped inspection）；global 传 false。
+   */
+  rightPanelCollapsible?: boolean;
 };
 
 /**
@@ -32,18 +38,26 @@ type WorkbenchShellProps = {
  * 纯布局容器，不持业务 state：栏折叠态 + 宽度来自 workbench-model.ts 的 atom，
  * 三栏内容由 props 注入（Stage 1/2/3 分别接入）。
  */
-export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShellProps) {
+export function WorkbenchShell({
+  children,
+  leftPanel,
+  rightPanel,
+  rightPanelCollapsible,
+}: WorkbenchShellProps) {
   const { t } = useT();
   const [leftCollapsed, setLeftCollapsed] = useAtom(workbenchLeftCollapsedAtom);
   const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
   const [leftWidth, setLeftWidth] = useAtom(workbenchLeftWidthAtom);
   const [rightWidth, setRightWidth] = useAtom(workbenchRightWidthAtom);
+  // 右栏可唤出 = 显式 prop 或有内容（向后兼容）。与 rightPanel 解耦：收起时 rightPanel=null
+  //（aside 不渲染、零 inspection query），但 collapsible=true 仍在中栏边缘渲染 RailButton 唤出。
+  const rightCollapsible = rightPanelCollapsible ?? !!rightPanel;
 
   // grid 列宽：栏收起 → 0px（栏 aside display none + 列塌缩）；展开 → atom 记忆宽度。
   const leftColumn = leftCollapsed ? "0px" : `${leftWidth}rem`;
-  // 右栏无内容（非聚焦态，rightPanel=null）时也塌缩列 —— 右栏是聚焦态专属（设计文档 §4），
-  // 非聚焦时中栏 5 tab 承载项目级内容，右栏 aside 不渲染、列宽 0、无 resize gutter。
-  const rightColumn = rightCollapsed || !rightPanel ? "0px" : `${rightWidth}rem`;
+  // 右栏列宽：收起 / 不可唤出 → 0px；展开 → atom 记忆宽度。rightPanel null 不决定列宽
+  //（由 rightCollapsible 决定）—— 收起态 rightPanel=null 但列保持唤出能力（RailButton 占位）。
+  const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `${rightWidth}rem`;
 
   // 栏 resize gutter：拖拽改宽度 atom（clamp 到 MIN/MAX，防压溃自身或吃掉中栏）。
   // 右栏翻转方向 —— 向左拖（−delta）才增宽。
@@ -93,7 +107,7 @@ export function WorkbenchShell({ children, leftPanel, rightPanel }: WorkbenchShe
               side="left"
             />
           ) : null}
-          {rightCollapsed && rightPanel ? (
+          {rightCollapsed && rightCollapsible ? (
             <RailButton
               label={t("workbench.expandRight")}
               onClick={() => setRightCollapsed(false)}

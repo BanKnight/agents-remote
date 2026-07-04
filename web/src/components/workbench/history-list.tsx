@@ -42,6 +42,9 @@ export function useHistorySessions(projectName: string) {
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: projectName, id: data.session.id },
+        // resume 后聚焦新实例，切回 overview tab 看活动组 output（否则停在 history 全宽列表）。
+        // 函数式 search 保留 view/rightTab 等其他维度（设计 §13 正交）。
+        search: (prev) => ({ ...prev, tab: "overview" }),
       });
     },
   });
@@ -76,6 +79,8 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
     void navigate({
       to: "/projects/$key/session/$id",
       params: { key: projectName, id: sessionId },
+      // 聚焦活跃实例，切回 overview tab 看活动组 output（设计 §4：history 点会话切 overview）。
+      search: (prev) => ({ ...prev, tab: "overview" }),
     });
   };
 

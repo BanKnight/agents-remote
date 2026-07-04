@@ -15,6 +15,7 @@ import {
   inferSessionTypeFromId,
   useWorkbenchNavigate,
   workbenchMiddleTabAtom,
+  workbenchRightCollapsedAtom,
   workbenchViewAtom,
 } from "./workbench-model";
 
@@ -82,6 +83,9 @@ function WorkbenchContent({
   const navigateWorkbench = useWorkbenchNavigate();
   const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
+  // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件写入（effect
+  // + 下方 gate），Shell 读到新值重渲染。无需受控 props 传递。
+  const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
   const view = viewFromUrl ?? rememberedView;
   const tab = tabFromUrl ?? rememberedMiddleTab;
   const ctx: PluginContext = {
@@ -108,17 +112,30 @@ function WorkbenchContent({
     setRememberedMiddleTab(next);
     void navigateWorkbench(scope, focusId, { rightTab, tab: next, view: viewFromUrl });
   };
+  // 右栏可见性跟随 focusId：聚焦态自动展开（看聚焦实例 inspection），非聚焦态默认收起
+  //（中栏 5 tab 承载项目级内容；用户可 RailButton 唤出看 project-scoped inspection）。
+  // 切 tab 不触发（focusId 不变）→ 保留用户手动唤出；切聚焦态再回非聚焦 → effect 重置收起。
+  // 仅桌面端写入：移动端 MobileWorkbench 不读 rightCollapsed atom，避免多余 localStorage 写入。
+  useEffect(() => {
+    if (!isDesktop) return;
+    setRightCollapsed(!focusId);
+  }, [focusId, isDesktop, setRightCollapsed]);
   if (!isDesktop) {
     return <MobileWorkbench focusId={focusId} scope={scope} />;
   }
+  // project 可唤出右栏（inspection 只依赖 projectKey，非聚焦态唤出看 files/git）；
+  // global inspection 仅 prototype 占位（render null），不唤出。收起态 rightPanel=null
+  //（aside 不渲染、零 query），由 RailButton 唤出。
+  const rightPanelCollapsible = scope.kind === "project";
+  const rightPanel =
+    rightPanelCollapsible && !rightCollapsed ? (
+      <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
+    ) : null;
   return (
     <WorkbenchShell
       leftPanel={<WorkbenchLeftRail scope={scope} />}
-      rightPanel={
-        focusId ? (
-          <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
-        ) : null
-      }
+      rightPanel={rightPanel}
+      rightPanelCollapsible={rightPanelCollapsible}
     >
       <InstanceArea
         ctx={ctx}

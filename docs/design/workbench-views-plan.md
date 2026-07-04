@@ -83,6 +83,22 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **依赖**：P1-P4 基线。**待拍点**：无（设计 §13 已定激活语义；左总览单击 = 激活替换活动 group，拖动分屏在 Phase B）。
 
+### Phase A 收尾 · `workbench-phase-a-followup`（4 项 UI/语义修订）
+
+**背景**：Phase A（`dfa280a`）落地后用户实测报 4 个问题。属 Phase A 遗漏/回归，非 Phase B/C 范畴，作为收尾一次修清。B/C 原计划不变。
+
+**4 项修订**（设计 `workbench-views.md` §3/§4/§6 已同步）：
+1. **history tab 全宽** —— 旧实现 history 归 `isWorkTab`（左右分栏：左 HistoryList + 右活动 group）。改：history 全宽历史列表，点会话 → resume + 切 overview tab + 聚焦（`history-list.tsx` navigate 函数式 `search: (prev) => ({...prev, tab:"overview"})`）。
+2. **CreateSessionBar + ViewSwitcher 移到左总览顶部 header** —— 旧实现两者在 tab 行右侧 `ml-auto`。改：tab 行只剩纯 tab；左总览改 `flex flex-col`，顶部 header（CreateSessionBar project only + ViewSwitcher ml-auto），下方 overflow-y-auto 承载卡片。两者随左总览只在 overview tab 渲染。
+3. **右栏非聚焦态可唤出** —— 旧实现 `rightPanel = focusId ? RightPanelTabs : null`，非聚焦态无唤出按钮（Phase A 让非聚焦成默认体验后暴露）。改：`WorkbenchShell` 新增 `rightPanelCollapsible` prop（解耦「可唤出」与「内容渲染」）；`WorkbenchRoute` `rightPanelCollapsible = scope.kind === "project"`，收起时 rightPanel=null（零 inspection query）但 RailButton 唤出；focusId effect（聚焦态展开 / 非聚焦默认收起）。关键简化：files/git inspection 只依赖 projectKey 不依赖 focusId，非聚焦唤出也能显示。
+4. **global 一致** —— 修订 2/3 自然覆盖：global overview header 仅 ViewSwitcher（无 CreateSessionBar）；global `rightPanelCollapsible=false`（prototype 占位 render null，不唤出）。
+
+**改动文件**：`instance-area.tsx`（修订 1+2）、`history-list.tsx`（修订 1 navigate）、`WorkbenchRoute.tsx` + `workbench-shell.tsx`（修订 3）、`workbench-views.md`（设计同步）。
+
+**验证**：门禁全绿 + CSS 落盘 + Playwright DOM 几何（history 全宽无左右结构 + 点会话 URL `tab=overview`；CreateSessionBar/ViewSwitcher 在左总览 header `boundingBox().y` < 卡片 y，tab 行内无此两控件；project 非聚焦态右栏 RailButton 存在 + 点击展开 + 聚焦态自动展开；global 无 RailButton；移动端无回归）+ subagent 审查。
+
+**依赖**：Phase A。**待拍点**：无（4 项决策用户已拍板，见设计同步节）。
+
 ### Phase B · `workbench-drag-split`（拖放分屏）
 
 **目标**：5 drop zone 拖放分屏 + group 网格布局算法 + 多 group 同屏。对应设计 §7.2 §7.4。

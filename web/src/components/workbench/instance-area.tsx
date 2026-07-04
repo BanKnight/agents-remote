@@ -311,18 +311,15 @@ export function InstanceArea({
   //   history 左总览 = HistoryList（project-scoped 历史 session，showLabel=false 因 tab bar 已标识）。
   const isOverview = resolvedTab === "overview";
   const isHistory = !isOverview && resolvedTab === "history";
-  const isWorkTab = isOverview || isHistory;
-  const inspectionPlugin = isWorkTab
-    ? null
-    : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
-  const leftColumnContent =
-    isHistory && ctx.projectKey !== null ? (
-      <div className="h-full overflow-y-auto p-3">
-        <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
-      </div>
-    ) : isOverview ? (
-      leftOverviewContent
-    ) : null;
+  // 左右结构仅 overview：history 全宽呈现历史列表（点会话 → 切 overview + 聚焦，设计 §4），
+  // inspection tab 全宽 plugin.render。故 inspectionPlugin 只在非 overview/非 history 时查。
+  const inspectionPlugin =
+    isOverview || isHistory
+      ? null
+      : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
+  // 左总览仅 overview 存在；history / inspection tab 全宽，无左总览。CreateSessionBar +
+  // ViewSwitcher 随左总览 header 一起只在 overview 渲染（设计 §6）。
+  const leftColumnContent = isOverview ? leftOverviewContent : null;
   // 右工作区 = 活动组（GroupHeader + PanelRouter，设计 §7）；activeRef 空（聚焦态 effect 未收敛）→
   // PlaceholderPanel（focusId 存在）；非聚焦无实例 → EmptyInstanceArea（设计 §14）。
   const rightWorkspace = activeRef ? (
@@ -342,16 +339,42 @@ export function InstanceArea({
   ) : (
     <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
   );
-  const tabContent = isWorkTab ? (
+  const tabContent = isOverview ? (
     <div className="flex h-full min-h-0">
       <div
-        className="relative h-full shrink-0 overflow-hidden"
+        className="relative flex h-full shrink-0 flex-col overflow-hidden"
         style={{ width: `${middleLeftWidth}rem` }}
       >
-        {leftColumnContent}
+        {/* 左总览顶部 header：CreateSessionBar（project only）+ ViewSwitcher（overview only）。
+            tab 行只剩纯 tab，控件随左总览只在 overview 渲染（设计 §6）。ViewSwitcher 用
+            ml-auto wrapper 推到 header 右侧（global 无 CreateSessionBar 时独占右侧）。 */}
+        <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
+          {ctx.projectKey !== null ? (
+            <CreateSessionBar
+              isCreating={create.isCreating}
+              onCreateAgent={create.createAgent}
+              onCreateTerminal={create.createTerminal}
+            />
+          ) : null}
+          {onViewChange ? (
+            <div className="ml-auto">
+              <ViewSwitcher
+                ariaLabel={t("workbench.viewSwitcher")}
+                onChange={onViewChange}
+                view={resolvedView}
+                views={viewOptions}
+              />
+            </div>
+          ) : null}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{leftColumnContent}</div>
         <ResizeGutter edge="right" onResize={onResizeMiddleLeft} />
       </div>
       <div className="min-w-0 flex-1">{rightWorkspace}</div>
+    </div>
+  ) : isHistory && ctx.projectKey !== null ? (
+    <div className="h-full overflow-y-auto p-3">
+      <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
     </div>
   ) : (
     (inspectionPlugin?.render(ctx) ?? null)
@@ -368,25 +391,6 @@ export function InstanceArea({
             onClick={() => onTabChange?.(opt.id)}
           />
         ))}
-        {ctx.projectKey !== null || (resolvedTab === "overview" && onViewChange && view) ? (
-          <div className="ml-auto flex items-center gap-1">
-            {ctx.projectKey !== null ? (
-              <CreateSessionBar
-                isCreating={create.isCreating}
-                onCreateAgent={create.createAgent}
-                onCreateTerminal={create.createTerminal}
-              />
-            ) : null}
-            {resolvedTab === "overview" && onViewChange && view ? (
-              <ViewSwitcher
-                ariaLabel={t("workbench.viewSwitcher")}
-                onChange={onViewChange}
-                view={resolvedView}
-                views={viewOptions}
-              />
-            ) : null}
-          </div>
-        ) : null}
       </div>
       <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
