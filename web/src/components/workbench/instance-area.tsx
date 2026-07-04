@@ -12,9 +12,11 @@ import {
   filterWorkbenchViews,
   groupByProject,
   inferSessionTypeFromId,
+  initPanelStates,
   rankGlobalInstances,
   removePanel,
   resizePair,
+  setPanelState,
   toggleMaximize,
   useWorkbenchLayout,
   useWorkbenchNavigate,
@@ -159,14 +161,24 @@ export function InstanceArea({
   // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=files），回退 overview。
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && visibleTabs.some((opt) => opt.id === tab) ? tab : "overview";
+  // P3 总览视图守卫：URL/atom 的 view 若不在当前 scope 可见视图集（如 project scope 残留
+  // ?view=grouped）→ 回退 "grid"（设计 §15 project 默认 grid，且 grid 全 scope 可见；不取
+  // viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使 project 首项 = table）。提前定义供初始态 effect 用。
+  const resolvedView: WorkbenchView =
+    view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
   // focus → addPanel：URL focusId 指向的实例若不在布局中，加入面板（split-right 默认）。
   // 仅 project 作用域；global 的 focusId 缺 projectName，靠下方自动铺开填充。
+  // Phase 5：addPanel 默认 collapsed，紧接着 setPanelState(focusId, "expanded") 把聚焦面板设为
+  // expanded（单 expanded 守卫把其他 expanded 自动降 collapsed）——聚焦语义 = URL focusId 一致。
   const scopeKey = scope.kind === "project" ? scope.key : "global";
   useEffect(() => {
     if (scope.kind !== "project" || !focusId) return;
     if (layout.panels.some((p) => p.sessionId === focusId)) return;
-    update((prev) => addPanel(prev, { projectName: scope.key, sessionId: focusId }));
+    update((prev) => {
+      const added = addPanel(prev, { projectName: scope.key, sessionId: focusId });
+      return setPanelState(added, focusId, "expanded");
+    });
     // update 是 useWorkbenchLayout 返回的 setState 包装（闭包捕获 scope），稳定足够；
     // layout.panels 入 deps 以便 addPanel 后重检收敛（idempotent，无循环）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,6 +196,22 @@ export function InstanceArea({
     update((prev) => ranked.reduce((acc, ref) => addPanel(acc, ref), prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, layout.panels.length, candidates]);
+
+  // Phase 5 初始态：进 split 视图且 panelStates 全是默认 collapsed（无 expanded 无 minimized）时，
+  // focusId 面板 = expanded，其余 = collapsed（设计 §7.1）。已有 expanded 或 minimized（用户已操作
+  // / 持久化恢复）不重复初始化——避免最小化后无 expanded 时反复把 focusId 设回 expanded 覆盖用户
+  // 操作。project scope focus→addPanel 已在 addPanel 后 setPanelState(focusId, expanded)，本 effect
+  // 主要兜底 global 自动铺开（全 collapsed 无 focusId）+ 持久化恢复空布局首次进 split。
+  const isSplitView = focusId !== undefined || resolvedView === "split";
+  useEffect(() => {
+    if (!isSplitView || layout.panels.length === 0) return;
+    const states = Object.values(layout.panelStates);
+    const hasExpanded = states.some((s) => s === "expanded");
+    const hasMinimized = states.some((s) => s === "minimized");
+    if (hasExpanded || hasMinimized) return; // 已有用户操作态，不初始化
+    update((prev) => initPanelStates(prev, focusId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSplitView, layout.panels.length, layout.panelStates, focusId]);
 
   // split 级 close = 结束实例：复用 useCloseSession（confirm → close API → 精确失效缓存），
   // split 特有尾巴（removePanel + 焦点切换）走 onAfterClose。embedded 面板自带的 header close
@@ -206,11 +234,7 @@ export function InstanceArea({
   };
 
   // P3 总览视图（设计文档 §5/§8）：仅非聚焦 overview tab 渲染卡片网格（grid）；grouped（批 3b）/
-  // table（P4）/ split（P5）后续接管。聚焦态仍走 SplitLayout。view 守卫：URL/atom 的 view 若不在当前
-  // scope 可见视图集（如 project scope 残留 ?view=grouped）→ 回退 "grid"（设计 §15 project 默认 grid，
-  // 且 grid 全 scope 可见；不取 viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使 project 首项 = table）。
-  const resolvedView: WorkbenchView =
-    view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
+  // table（P4）/ split（P5）后续接管。聚焦态仍走 SplitLayout。resolvedView 已在上方定义（初始态 effect 复用）。
 
   // grid 卡片回调：select 复用 focusPanel 进聚焦态；close 走 useCloseSession（卡片由 query 驱动，
   // invalidate 后自然消失，不调 removePanel —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
@@ -259,6 +283,14 @@ export function InstanceArea({
           update((prev) => resizePair(prev, leftId, rightId, deltaFlex))
         }
         onToggleMaximize={(sessionId) => update((prev) => toggleMaximize(prev, sessionId))}
+        onToggleState={(sessionId, state) => {
+          update((prev) => setPanelState(prev, sessionId, state));
+          // expanded 与 URL focusId 一致（设计 §7.1 单 expanded = 聚焦语义）：点 □ 展开某面板
+          // → 同步 navigate focusId 到该面板，保持 URL 与三态一致（右栏 inspection 跟随）。
+          if (state === "expanded" && sessionId !== focusId) {
+            void navigateWorkbench(scope, sessionId);
+          }
+        }}
         panelLabel={scope.kind === "global" ? (ref) => ref.projectName : undefined}
         renderPanel={(ref) => <PanelRouter key={ref.sessionId} panelRef={ref} />}
       />

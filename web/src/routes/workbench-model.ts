@@ -414,10 +414,15 @@ export function initPanelStates(layout: WorkbenchLayout, focusSessionId?: string
   const expandedId = focusSessionId ?? layout.panels[0].sessionId;
   const hasExistingExpanded = Object.values(layout.panelStates).some((s) => s === "expanded");
   const panelStates = { ...layout.panelStates };
+  // 无已有 expanded 时，focusId 面板强制 expanded（即使 addPanel 已设 collapsed —— addPanel 默认
+  // collapsed 不能让 focusId 面板卡在 collapsed，否则初始态无 expanded）。已有 expanded 时不动
+  //（保留用户自定义，focusId 面板补 collapsed 由下方循环处理）。
+  if (!hasExistingExpanded) {
+    panelStates[expandedId] = "expanded";
+  }
   for (const panel of layout.panels) {
     if (panelStates[panel.sessionId] !== undefined) continue;
-    panelStates[panel.sessionId] =
-      !hasExistingExpanded && panel.sessionId === expandedId ? "expanded" : "collapsed";
+    panelStates[panel.sessionId] = "collapsed";
   }
   return { ...layout, panelStates };
 }

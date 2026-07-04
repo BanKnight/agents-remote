@@ -22,6 +22,7 @@ import {
   timed,
 } from "../lib/perf-trace";
 import { queryClient } from "../lib/query-client";
+import { setPanelPreview } from "../components/workbench/panel-preview-cache";
 
 export type TaskInfo = {
   id: string;
@@ -3320,6 +3321,32 @@ export function renderChatStream(
   return applyToolLifecycle(messages, turnEndBoundaries, { isResume: !!opts?.isResume }).messages;
 }
 
+/**
+ * 取最后一条 assistant 消息的 text content，split 行取末 2 行（设计 §7.2 缩略预览数据源）。
+ * 纯函数，零 AUI 依赖——直接读 rawMessages（SessionStreamServerMessage[]）倒序找第一条
+ * `type === "assistant"`，提取其 content 中 `type === "text"` block 的 text，join 后 split 末 2 行。
+ * 用于 useClaude2Session rawMessages effect 写 panel preview cache。无 assistant 文本时返空数组。
+ */
+export function lastAssistantTextLines(rawMessages: SessionStreamServerMessage[]): string[] {
+  for (let i = rawMessages.length - 1; i >= 0; i--) {
+    const msg = rawMessages[i];
+    if (msg.type !== "assistant") continue;
+    const content = (msg as { message?: { content?: { type: string; text?: string }[] } }).message
+      ?.content;
+    if (!content) continue;
+    const text = content
+      .filter((b) => b.type === "text" && typeof b.text === "string" && b.text.trim().length > 0)
+      .map((b) => b.text as string)
+      .join("\n");
+    if (text.length === 0) continue;
+    return text
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .slice(-2);
+  }
+  return [];
+}
+
 export function useClaude2Session(
   projectName: string,
   sessionId: string,
@@ -3334,7 +3361,11 @@ export function useClaude2Session(
   const rawMessagesRef = useRef<SessionStreamServerMessage[]>([]);
   useEffect(() => {
     rawMessagesRef.current = rawMessages;
-  }, [rawMessages]);
+    // Phase 5 缩略预览缓存：rawMessages → 末 2 行 assistant text → PanelPreview
+    //（单一数据管道延伸，ref 模式零 AUI 依赖，SplitPanel header 在 AssistantRuntimeProvider 外读）。
+    // 全量替换语义（rawMessages 是全量 state，每次 effect 都用最新全量重算末几行）。
+    setPanelPreview(sessionId, lastAssistantTextLines(rawMessages));
+  }, [rawMessages, sessionId]);
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const liveBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
@@ -4312,5 +4343,12 @@ export function useClaude2Session(
     sessionLeafUuid,
     retryInfo,
     pendingInteraction,
+    /**
+     * 原始消息数组 ref（chat 版 terminalDataRef，Phase 5 缩略预览数据源）。当前 raw state 的
+     * ref 镜像（useEffect 同步），供 SplitPanel header 在 AssistantRuntimeProvider 外读取末 2 行
+     * assistant 文本（零 AUI 依赖，ref 模式）。仅读：`.current` 在 render 间稳定，不触发重渲染
+     *（预览随 live message 自然刷新——previewLines 经 useMemo 依赖 rawMessages.length 变化）。
+     */
+    rawMessagesRef,
   };
 }
