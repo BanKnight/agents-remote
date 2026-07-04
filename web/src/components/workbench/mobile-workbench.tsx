@@ -359,17 +359,21 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
               />
             </div>
             {resolvedView === "table" ? (
-              tableRows.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                  {t("workbench.emptyInstanceHint")}
-                </p>
-              ) : (
-                <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-              )
+              <Fragment>
+                {tableRows.length === 0 ? (
+                  <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                    {t("workbench.emptyInstanceHint")}
+                  </p>
+                ) : (
+                  <SessionTable columns={tableColumns} rows={tableRows} t={t} />
+                )}
+                {/* closeHolder 仅 table 分支需要：grid 分支 <ProjectInstances> 自含 holder，
+                    收进此 Fragment 避免双 useCloseSession holder 同挂（审查 minor 修复）。 */}
+                {closeHolder}
+              </Fragment>
             ) : (
               <ProjectInstances projectName={scope.key} />
             )}
-            {closeHolder}
           </div>
         )}
       </div>
