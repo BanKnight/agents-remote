@@ -1078,7 +1078,10 @@ export function useProjectInstances(projectName: string | null): {
         type: "terminal" as const,
       })),
     ];
-    return { instances, isLoading: agents.isLoading && terminals.isLoading };
+    // isLoading = 任一 query pending 即算加载中（||）：agent pending + terminal 已回空时，
+    // instances 仍空 + isLoading true → 显示骨架；用 && 会让先 resolved 的那个把 isLoading 提前置 false，
+    // 首屏空数据时误显空态而非骨架。
+    return { instances, isLoading: agents.isLoading || terminals.isLoading };
     // projectName/agents/terminals 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);

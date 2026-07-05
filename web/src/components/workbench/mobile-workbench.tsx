@@ -23,16 +23,19 @@ import {
   workbenchMobileOverviewTabAtom,
   workbenchViewAtom,
 } from "../../routes/workbench-model";
-import { ProjectInstances } from "./left-rail";
 import {
   candidateToGridItem,
   candidateToTableRow,
+  CardGridSkeleton,
+  CreateSessionBar,
   type GridItemCallbacks,
   InstanceGrid,
+  instanceToGridItem,
   instanceToTableRow,
   PanelRouter,
   type TableRowCallbacks,
   useCloseSession,
+  useCreateSession,
   useFocusSessionName,
   useGlobalInstanceCandidates,
   useProjectInstances,
@@ -263,13 +266,13 @@ type MobileProjectOverviewProps = {
 
 /**
  * 移动项目列表态（设计文档 §7）：单项目聚焦视图。header（◄ 返回项目列表 + 项目名 + 二级
- * tab：总览/历史/文件/Git/原型）+ 内容区 tab 切换。总览 = ViewSwitcher（视图记忆，Phase 4
- * 落地渲染切换）+ ProjectInstances（活跃实例 + 创建入口，复用左栏同款）；历史 = HistoryList
- *（project-scoped 历史 session）；文件/Git/原型 = FIRST_PARTY_PLUGINS render（移动响应式，
- * 单一数据管道）。tab 记忆在 workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），
- * 不进 URL（列表态 URL 语义核心是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key}
- * 切项目 remount，重置 ProjectInstances/inspection 内部 state。底部 pb-24 lg:pb-0 避让一级
- * 底部胶囊（桌面 lg:pb-0 抵消）。
+ * tab：总览/历史/文件/Git/原型）+ 内容区 tab 切换。总览 = 创建入口（左）+ ViewSwitcher（右，
+ * 两端对齐，设计 §6）+ 活跃实例 grid/table（本组件直渲 InstanceGrid/SessionTable，单一数据
+ * 管道 useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git/原型
+ * = FIRST_PARTY_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
+ * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
+ * 是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key} 切项目 remount，重置
+ * inspection 内部 state。底部 pb-24 lg:pb-0 避让一级底部胶囊（桌面 lg:pb-0 抵消）。
  */
 function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const { t } = useT();
@@ -310,11 +313,12 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   // §15：project 总览默认 grid（WORKBENCH_VIEW_ORDER 反转后移动 project viewOptions = [grid, table]，
   // [0] = grid 已是默认；守卫仍保留以抵挡 atom 残留非法值，与桌面 InstanceArea 同款）。
   const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grid";
-  // table 视图数据 + 回调（设计 §9/§11：移动 project table 4 列，隐藏 project + 最后活动）。
-  // grid 分支仍走 ProjectInstances（自含 useProjectInstances + close holder + 创建入口）；
-  // table 分支在本组件直接消费 useProjectInstances → instanceToTableRow（React Query dedupe）。
+  // 总览实例数据 + 回调（设计 §9/§11）：grid/table 两视图共用 useProjectInstances 单一来源
+  //（React Query dedupe）。创建入口 useCreateSession 提至 ViewSwitcher 行（与桌面 §6 两端对齐），
+  // 不再走 ProjectInstances 组件（避免重复 useCloseSession/useCreateSession 双 holder）。
   const { close, holder: closeHolder } = useCloseSession();
-  const { instances } = useProjectInstances(scope.key);
+  const { instances, isLoading } = useProjectInstances(scope.key);
+  const create = useCreateSession(scope.key);
   const navigateWorkbench = useWorkbenchNavigate();
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench(scope, sessionId);
@@ -326,6 +330,13 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const tableRows = useMemo(
     () => instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
     // tableCallbacks 闭包依赖 scope/t；instances 引用由 hook 内 dataKey fingerprint 稳定。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [instances, t],
+  );
+  const gridCallbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const gridItems = useMemo(
+    () => instances.map((entry) => instanceToGridItem(entry, gridCallbacks)),
+    // gridCallbacks 闭包依赖 scope/t；instances 引用同 tableRows（hook 内 dataKey fingerprint 稳定）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [instances, t],
   );
@@ -356,30 +367,50 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto pb-24 lg:pb-0">
+            {/* 创建入口（左）+ ViewSwitcher（右 ml-auto）两端对齐（设计 §6）：
+                CreateSessionBar 从原 ProjectInstances 提到此行，table/grid 两视图都可见创建入口。 */}
             <div className="flex items-center gap-1 px-3 py-2">
-              <ViewSwitcher
-                ariaLabel={t("workbench.viewSwitcher")}
-                onChange={(next) => setView(next)}
-                view={resolvedView}
-                views={viewOptions}
+              <CreateSessionBar
+                isCreating={create.isCreating}
+                onCreateAgent={create.createAgent}
+                onCreateTerminal={create.createTerminal}
               />
+              <div className="ml-auto">
+                <ViewSwitcher
+                  ariaLabel={t("workbench.viewSwitcher")}
+                  onChange={(next) => setView(next)}
+                  view={resolvedView}
+                  views={viewOptions}
+                />
+              </div>
             </div>
             {resolvedView === "table" ? (
-              <Fragment>
-                {tableRows.length === 0 ? (
+              tableRows.length === 0 ? (
+                isLoading ? (
+                  <div className="px-3">
+                    <CardGridSkeleton />
+                  </div>
+                ) : (
                   <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
                     {t("workbench.emptyInstanceHint")}
                   </p>
-                ) : (
-                  <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-                )}
-                {/* closeHolder 仅 table 分支需要：grid 分支 <ProjectInstances> 自含 holder，
-                    收进此 Fragment 避免双 useCloseSession holder 同挂（审查 minor 修复）。 */}
-                {closeHolder}
-              </Fragment>
-            ) : (
-              <ProjectInstances projectName={scope.key} />
-            )}
+                )
+              ) : (
+                <SessionTable columns={tableColumns} rows={tableRows} t={t} />
+              )
+            ) : isLoading && gridItems.length === 0 ? (
+              <div className="px-3 py-2">
+                <CardGridSkeleton />
+              </div>
+            ) : gridItems.length > 0 ? (
+              <div className="px-3 py-2">
+                <InstanceGrid items={gridItems} />
+              </div>
+            ) : null}
+            {/* closeHolder + promptHolder 统一渲染（grid/table 两视图共用；
+                原 ProjectInstances 自含 holder 已随组件删除，无双 holder）。 */}
+            {closeHolder}
+            {create.promptHolder}
           </div>
         )}
       </div>
@@ -399,7 +430,7 @@ function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
-  const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
+  const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   const [view, setView] = useAtom(workbenchViewAtom);
   // viewOptions = filterWorkbenchViews(global) = [grouped, grid, table]（global 三视图全开）。
   const viewOptions = useMemo(
@@ -436,17 +467,26 @@ function MobileGlobalOverview() {
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("workbench.globalOverviewTitle")} />
       <div className="flex items-center gap-1 px-3 py-2">
-        <ViewSwitcher
-          ariaLabel={t("workbench.viewSwitcher")}
-          onChange={(next) => setView(next)}
-          view={resolvedView}
-          views={viewOptions}
-        />
+        {/* global 不可创建（需先进项目指定作用域），仅 ViewSwitcher 右对齐（设计 §6）。 */}
+        <div className="ml-auto">
+          <ViewSwitcher
+            ariaLabel={t("workbench.viewSwitcher")}
+            onChange={(next) => setView(next)}
+            view={resolvedView}
+            views={viewOptions}
+          />
+        </div>
       </div>
       {candidates.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-center">
-          <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
-        </div>
+        !isLoaded ? (
+          <div className="px-3 py-2">
+            <CardGridSkeleton />
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6 text-center">
+            <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+          </div>
+        )
       ) : (
         <nav
           aria-label={t("workbench.globalOverviewTitle")}

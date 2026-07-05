@@ -7,17 +7,7 @@ import { useT } from "../../i18n";
 import { IconMarker, ShellSectionLabel } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
-import {
-  CardGridSkeleton,
-  CreateSessionBar,
-  type GridItemCallbacks,
-  INSTANCE_SKELETON_ROW_COUNT,
-  InstanceGrid,
-  instanceToGridItem,
-  useCloseSession,
-  useCreateSession,
-  useProjectInstances,
-} from "./instance-area";
+import { INSTANCE_SKELETON_ROW_COUNT } from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
 
@@ -137,53 +127,6 @@ function ProjectNode({ active, project, onSelect }: ProjectNodeProps) {
       }
       onClick={onSelect}
     />
-  );
-}
-
-type ProjectInstancesProps = {
-  projectName: string;
-};
-
-export function ProjectInstances({ projectName }: ProjectInstancesProps) {
-  const { t } = useT();
-  const navigate = useNavigate();
-  const { close, holder: closeHolder } = useCloseSession();
-  const create = useCreateSession(projectName);
-  // P3：query + merge 提取到 useProjectInstances（与桌面 grid 共享同一数据管道，React Query dedupe）。
-  const { instances, isLoading } = useProjectInstances(projectName);
-
-  const focus = (sessionId: string) => {
-    void navigate({
-      to: "/projects/$key/session/$id",
-      params: { key: projectName, id: sessionId },
-    });
-  };
-
-  // 卡片 close：复用 useCloseSession（confirm → close API → 精确失效缓存）。
-  // 不调 layout.removePanel：卡片由 query 驱动，invalidate 后列表自然消失。
-  const closeSession = (sessionId: string, type: "agent" | "terminal") => {
-    void close({ projectName, sessionId }, type);
-  };
-
-  const gridCallbacks: GridItemCallbacks = { onClose: closeSession, onSelect: focus, t };
-
-  return (
-    <div className="flex flex-col gap-3 px-3 pt-1">
-      <div className="px-2 py-1.5">
-        <CreateSessionBar
-          isCreating={create.isCreating}
-          onCreateAgent={create.createAgent}
-          onCreateTerminal={create.createTerminal}
-          triggerClassName="w-full justify-center"
-        />
-      </div>
-      {isLoading && instances.length === 0 ? <CardGridSkeleton /> : null}
-      {instances.length > 0 ? (
-        <InstanceGrid items={instances.map((entry) => instanceToGridItem(entry, gridCallbacks))} />
-      ) : null}
-      {create.promptHolder}
-      {closeHolder}
-    </div>
   );
 }
 
