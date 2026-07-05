@@ -182,9 +182,10 @@ export function InstanceArea({
   );
 
   // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + history（project-only，历史是
-  // project-scoped 数据）+ 第一方 inspection 插件按 ctx 过滤（files/git 需 projectKey）。
-  // 复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate projectKey（非
-  // FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope 仅 overview。
+  // project-scoped 数据）+ 第一方 inspection 插件按 ctx 过滤（files 全局可见根目录浏览；
+  // git 需 projectKey）。复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate
+  // projectKey（非 FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope =
+  // overview + files。
   const visibleTabs = useMemo<{ id: WorkbenchMiddleTab; label: string }[]>(() => {
     const options: { id: WorkbenchMiddleTab; label: string }[] = [
       { id: "overview", label: t("workbench.tabOverview") },
@@ -199,7 +200,7 @@ export function InstanceArea({
     // ctx 由 scope 决定（projectKey = scope.key 或 null），scope/t 变才重算。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, t]);
-  // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=files），回退 overview。
+  // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=git），回退 overview。
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && visibleTabs.some((opt) => opt.id === tab) ? tab : "overview";
   // P3 总览视图守卫：URL/atom 的 view 若不在当前 scope 可见视图集（如 project scope 残留

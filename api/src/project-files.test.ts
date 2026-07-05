@@ -42,6 +42,27 @@ test("listFiles excludes hidden entries and returns directories first with names
   });
 });
 
+test("listRootFiles lists PROJECTS_ROOT top-level entries (directories first, hidden excluded)", async () => {
+  // root 已含 demo 目录（beforeEach）；补几个同级项目目录 + 隐藏项 + 散落文件
+  await mkdir(join(root, "alpha"));
+  await mkdir(join(root, ".config"));
+  await writeFile(join(root, "README.md"), "root readme");
+  await writeFile(join(root, ".env"), "SECRET=example");
+
+  const service = new ProjectFilesService(root);
+
+  await expect(service.listRootFiles()).resolves.toEqual({
+    projectName: "",
+    path: "",
+    parentPath: null,
+    entries: [
+      { name: "alpha", path: "alpha", type: "directory", hidden: false, size: null },
+      { name: "demo", path: "demo", type: "directory", hidden: false, size: null },
+      { name: "README.md", path: "README.md", type: "file", hidden: false, size: 11 },
+    ],
+  });
+});
+
 test("listFiles reports parent paths for nested directories", async () => {
   await mkdir(join(root, "demo", "src", "nested"), { recursive: true });
   const service = new ProjectFilesService(root);

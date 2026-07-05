@@ -14,7 +14,7 @@ import type {
 } from "@agents-remote/shared";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
-import { ProjectPathError, resolveProjectRelativePath } from "./project-paths";
+import { ProjectPathError, resolveProjectRelativePath, resolveProjectsRoot } from "./project-paths";
 
 export const TEXT_PREVIEW_LIMIT_BYTES = 256 * 1024;
 export const IMAGE_PREVIEW_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -56,6 +56,42 @@ export class ProjectFilesError extends Error {
 
 export class ProjectFilesService {
   constructor(private readonly projectsRoot: string) {}
+
+  /**
+   * 列 PROJECTS_ROOT 一级目录（项目目录），用于全局 files tab 的根目录浏览。
+   * 只读入口（用户权限边界：根目录层只读，写操作进入项目子目录后走 project-scoped API）。
+   * 复用 listFiles 的 entryFromDirent + compareEntries + 隐藏过滤；projectName 返回 ""
+   *（根层无所属项目，客户端按 currentPath 第一段切换数据源）。
+   */
+  async listRootFiles(): Promise<ProjectFileListResponse> {
+    const rootPath = await resolveProjectsRoot(this.projectsRoot);
+
+    try {
+      const entries = await readdir(rootPath, { withFileTypes: true });
+      const files = await Promise.all(
+        entries.flatMap((entry) => {
+          if (!entry.isDirectory() && !entry.isFile()) {
+            return [];
+          }
+
+          if (entry.name.startsWith(".")) {
+            return [];
+          }
+
+          return [this.entryFromDirent(rootPath, rootPath, entry)];
+        }),
+      );
+
+      return {
+        projectName: "",
+        path: "",
+        parentPath: null,
+        entries: files.sort(compareEntries),
+      };
+    } catch {
+      throw new ProjectFilesError("PROJECT_FS_ERROR", "Unable to list root files");
+    }
+  }
 
   async listFiles(projectName: string, relativePath = ""): Promise<ProjectFileListResponse> {
     const resolved = await this.resolvePath(projectName, relativePath);

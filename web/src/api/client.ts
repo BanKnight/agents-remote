@@ -105,6 +105,14 @@ export async function listProjectFiles(
   return fetchJson(projectFilesPath(projectName, path), "api.projectFilesFailed");
 }
 
+/**
+ * 列 PROJECTS_ROOT 一级目录（全局 files tab 根目录浏览，只读）。
+ * 进入项目子目录后客户端切到 listProjectFiles（含写）。
+ */
+export async function listRootFiles(): Promise<ProjectFileListResponse> {
+  return fetchJson("/api/root/files", "api.projectFilesFailed");
+}
+
 export async function createFolder(
   projectName: string,
   parentPath: string,

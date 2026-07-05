@@ -245,6 +245,13 @@ const handleProjects = async (
       return new Response(new Uint8Array(content), { headers: { "Content-Type": mimeType } });
     }
 
+    // 全局根目录列表（GET /api/root/files）：只读，列 PROJECTS_ROOT 一级项目目录。
+    // 进入项目子目录后客户端切到 project-scoped files API（含写）。
+    if (url.pathname === "/api/root/files" && request.method === "GET" && projectFilesService) {
+      const response = await projectFilesService.listRootFiles();
+      return Response.json(response);
+    }
+
     const projectFilesMatch = matchProjectFilesPath(url.pathname);
 
     if (

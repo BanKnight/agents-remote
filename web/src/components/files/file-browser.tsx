@@ -6,6 +6,7 @@ import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
 import {
   listProjectFiles,
+  listRootFiles,
   previewProjectFile,
   saveFileContent,
   uploadFile,
@@ -143,6 +144,8 @@ type FileEntryListProps = {
   entries: ProjectFileEntry[];
   error: Error | null;
   filesClickable?: boolean;
+  // 根目录只读模式：隐藏 ⋯ 操作菜单与右键上下文菜单（rename/delete 入口）。
+  readOnly?: boolean;
   isLoading: boolean;
   renamingName: string;
   renamingPath: string | null;
@@ -160,6 +163,7 @@ export function FileEntryList({
   entries,
   error,
   filesClickable = true,
+  readOnly = false,
   isLoading,
   renamingName,
   renamingPath,
@@ -287,7 +291,7 @@ export function FileEntryList({
                     : undefined
               }
               onContextMenu={
-                isRenaming
+                isRenaming || readOnly
                   ? undefined
                   : (e) => {
                       e.preventDefault();
@@ -299,7 +303,7 @@ export function FileEntryList({
                       });
                     }
               }
-              actions={isRenaming ? undefined : renderActions(entry)}
+              actions={isRenaming || readOnly ? undefined : renderActions(entry)}
             />
           );
         })}
@@ -662,13 +666,41 @@ function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBo
 
 // ── FilesPanel ────────────────────────────────────────────────────
 
+/**
+ * rootBrowse 模式数据源解析（设计 workbench-views §4.1）。全局 files tab 根目录 = PROJECTS_ROOT：
+ * - currentPath 空 → root listing（只读，列所有项目目录）。
+ * - currentPath 第一段 = 项目名 → 切换为该项目的可写 files（复用 project API）。
+ *
+ * 单一数据管道：rootBrowse 模式按 currentPath 派生 {projectName, relativePath, isRootListing}，
+ * 不为 root 维护平行渲染组件。进入项目后 selectedFilePath / entry.path 均为项目内相对路径
+ *（不含项目名前缀），与 project 模式同构。
+ */
+export type RootBrowseTarget =
+  | { kind: "root" }
+  | { kind: "project"; projectName: string; relativePath: string };
+
+export function resolveRootBrowseTarget(currentPath: string): RootBrowseTarget {
+  const trimmed = currentPath.trim();
+  if (trimmed.length === 0) return { kind: "root" };
+  const slashIdx = trimmed.indexOf("/");
+  const projectName = slashIdx === -1 ? trimmed : trimmed.slice(0, slashIdx);
+  const relativePath = slashIdx === -1 ? "" : trimmed.slice(slashIdx + 1);
+  return { kind: "project", projectName, relativePath };
+}
+
 export type FilesPanelProps = {
   initialPath: string;
-  projectName: string;
+  /** 项目作用域（非 rootBrowse 模式必填）。rootBrowse 模式按 currentPath 第一段派生。 */
+  projectName?: string;
   /** Show file preview panel when a file is clicked. Default true. */
   enablePreview?: boolean;
   /** Query-key segment to isolate caches between different consumers. Default "files". */
   queryScope?: string;
+  /**
+   * 全局根目录浏览模式（设计 workbench-views §4.1）。true 时根目录层只读列所有项目目录，
+   * 进入项目子目录后切换为该项目的可写 files（复用 project API）。默认 false（项目作用域）。
+   */
+  rootBrowse?: boolean;
   onPathChange?: (path: string) => void;
   onMobilePreviewChange?: (open: boolean) => void;
 };
@@ -678,6 +710,7 @@ export function FilesPanel({
   projectName,
   enablePreview = true,
   queryScope = "files",
+  rootBrowse = false,
   onPathChange,
   onMobilePreviewChange,
 }: FilesPanelProps) {
@@ -689,14 +722,28 @@ export function FilesPanel({
   // Brief "Saved" feedback after a successful save; cleared on file switch.
   const [savedFlash, setSavedFlash] = useState(false);
 
+  // rootBrowse 模式按 currentPath 派生数据源（设计 §4.1）。非 rootBrowse 模式退化为项目作用域：
+  // effectiveProjectName = projectName，effectiveRelativePath = currentPath，readOnly 恒 false。
+  const target = rootBrowse ? resolveRootBrowseTarget(currentPath) : null;
+  const isRootListing = target?.kind === "root";
+  const effectiveProjectName = target?.kind === "project" ? target.projectName : projectName;
+  const effectiveRelativePath = target?.kind === "project" ? target.relativePath : currentPath;
+  // 根目录层只读（用户权限边界）；进入项目子目录后可写。
+  const readOnly = isRootListing;
+
   const files = useQuery({
-    queryKey: ["projects", projectName, queryScope, currentPath],
-    queryFn: () => listProjectFiles(projectName, currentPath),
+    queryKey: isRootListing
+      ? ["root", "files"]
+      : ["projects", effectiveProjectName, queryScope, effectiveRelativePath],
+    queryFn: () =>
+      isRootListing
+        ? listRootFiles()
+        : listProjectFiles(effectiveProjectName ?? "", effectiveRelativePath),
   });
   const preview = useQuery({
-    enabled: enablePreview && selectedFilePath !== undefined,
-    queryKey: ["projects", projectName, queryScope, "preview", selectedFilePath],
-    queryFn: () => previewProjectFile(projectName, selectedFilePath ?? ""),
+    enabled: enablePreview && selectedFilePath !== undefined && effectiveProjectName !== undefined,
+    queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
+    queryFn: () => previewProjectFile(effectiveProjectName ?? "", selectedFilePath ?? ""),
   });
 
   const previewData = preview.data;
@@ -753,10 +800,10 @@ export function FilesPanel({
   const [dragOver, setDragOver] = useState(false);
 
   const upload = useMutation({
-    mutationFn: (file: File) => uploadFile(projectName, currentPath, file),
+    mutationFn: (file: File) => uploadFile(effectiveProjectName ?? "", effectiveRelativePath, file),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["projects", projectName, queryScope, currentPath],
+        queryKey: ["projects", effectiveProjectName, queryScope, effectiveRelativePath],
       });
     },
   });
@@ -765,10 +812,11 @@ export function FilesPanel({
   const [showFolderInput, setShowFolderInput] = useState(false);
 
   const mkdir = useMutation({
-    mutationFn: (name: string) => createFolder(projectName, currentPath, name),
+    mutationFn: (name: string) =>
+      createFolder(effectiveProjectName ?? "", effectiveRelativePath, name),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["projects", projectName, queryScope, currentPath],
+        queryKey: ["projects", effectiveProjectName, queryScope, effectiveRelativePath],
       });
       setFolderNameInput("");
       setShowFolderInput(false);
@@ -783,28 +831,28 @@ export function FilesPanel({
 
   const invalidateFiles = useCallback(() => {
     queryClient.invalidateQueries({
-      queryKey: ["projects", projectName, queryScope, currentPath],
+      queryKey: ["projects", effectiveProjectName, queryScope, effectiveRelativePath],
     });
-  }, [queryClient, projectName, queryScope, currentPath]);
+  }, [queryClient, effectiveProjectName, queryScope, effectiveRelativePath]);
 
   const rename = useMutation({
     mutationFn: ({ path, name }: { path: string; name: string }) =>
-      renameFile(projectName, path, name),
+      renameFile(effectiveProjectName ?? "", path, name),
     onSuccess: () => invalidateFiles(),
   });
 
   const del = useMutation({
-    mutationFn: (path: string) => deleteFile(projectName, path),
+    mutationFn: (path: string) => deleteFile(effectiveProjectName ?? "", path),
     onSuccess: () => invalidateFiles(),
   });
 
   const save = useMutation({
     mutationFn: ({ path, content }: { path: string; content: string }) =>
-      saveFileContent(projectName, path, content),
+      saveFileContent(effectiveProjectName ?? "", path, content),
     onSuccess: () => {
       // Refresh both the preview (new content/size) and the list (size/mtime).
       queryClient.invalidateQueries({
-        queryKey: ["projects", projectName, queryScope, "preview", selectedFilePath],
+        queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
       });
       invalidateFiles();
       setEditContent(undefined);
@@ -962,6 +1010,7 @@ export function FilesPanel({
           entries={files.data?.entries ?? []}
           error={files.error}
           filesClickable={enablePreview}
+          readOnly={readOnly}
           isLoading={files.isLoading}
           renamingName={renamingName}
           renamingPath={renamingPath}
@@ -1003,73 +1052,77 @@ export function FilesPanel({
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
-          <div className="flex shrink-0 items-center gap-2">
-            {upload.error instanceof Error || mkdir.error instanceof Error ? (
-              <p className="text-xs text-error hidden sm:block">
-                {upload.error instanceof Error
-                  ? upload.error.message
-                  : mkdir.error instanceof Error
-                    ? mkdir.error.message
-                    : null}
-              </p>
-            ) : null}
-            <input
-              ref={fileInputRef}
-              className="hidden"
-              type="file"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileDrop(file);
-                e.target.value = "";
-              }}
-            />
-            {showFolderInput ? (
-              <div className="flex items-center gap-1.5">
-                <input
-                  className="h-8 w-28 rounded-xl border border-neutral-line/60 bg-surface-inset/70 px-2.5 text-xs font-semibold text-on-surface placeholder:text-on-surface-muted focus:border-primary/40 focus:outline-none"
-                  type="text"
-                  placeholder={t("files.newFolder")}
-                  value={folderNameInput}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleMkdir();
-                    if (e.key === "Escape") {
-                      setShowFolderInput(false);
-                      setFolderNameInput("");
-                    }
-                  }}
-                  onChange={(e) => setFolderNameInput(e.target.value)}
-                />
+          {readOnly ? null : (
+            <div className="flex shrink-0 items-center gap-2">
+              {upload.error instanceof Error || mkdir.error instanceof Error ? (
+                <p className="text-xs text-error hidden sm:block">
+                  {upload.error instanceof Error
+                    ? upload.error.message
+                    : mkdir.error instanceof Error
+                      ? mkdir.error.message
+                      : null}
+                </p>
+              ) : null}
+              <input
+                ref={fileInputRef}
+                className="hidden"
+                type="file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileDrop(file);
+                  e.target.value = "";
+                }}
+              />
+              {showFolderInput ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    className="h-8 w-28 rounded-xl border border-neutral-line/60 bg-surface-inset/70 px-2.5 text-xs font-semibold text-on-surface placeholder:text-on-surface-muted focus:border-primary/40 focus:outline-none"
+                    type="text"
+                    placeholder={t("files.newFolder")}
+                    value={folderNameInput}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleMkdir();
+                      if (e.key === "Escape") {
+                        setShowFolderInput(false);
+                        setFolderNameInput("");
+                      }
+                    }}
+                    onChange={(e) => setFolderNameInput(e.target.value)}
+                  />
+                  <ActionButton
+                    disabled={mkdir.isPending || folderNameInput.trim().length === 0}
+                    tone="accent"
+                    onClick={handleMkdir}
+                  >
+                    <span className="px-0.5 text-xs font-bold">
+                      {mkdir.isPending ? "..." : "✓"}
+                    </span>
+                  </ActionButton>
+                </div>
+              ) : (
                 <ActionButton
-                  disabled={mkdir.isPending || folderNameInput.trim().length === 0}
-                  tone="accent"
-                  onClick={handleMkdir}
+                  title={t("files.newFolderTooltip")}
+                  tone="muted"
+                  onClick={() => setShowFolderInput(true)}
                 >
-                  <span className="px-0.5 text-xs font-bold">{mkdir.isPending ? "..." : "✓"}</span>
+                  <ShellIcon name="folder-plus" className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline pr-0.5">{t("files.newFolder")}</span>
                 </ActionButton>
-              </div>
-            ) : (
+              )}
               <ActionButton
-                title={t("files.newFolderTooltip")}
-                tone="muted"
-                onClick={() => setShowFolderInput(true)}
+                title={t("files.uploadTooltip")}
+                disabled={upload.isPending}
+                tone="accent"
+                onClick={() => fileInputRef.current?.click()}
               >
-                <ShellIcon name="folder-plus" className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline pr-0.5">{t("files.newFolder")}</span>
+                <ShellIcon name="upload" className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline pr-0.5">
+                  {upload.isPending ? t("files.uploading") : t("files.upload")}
+                </span>
               </ActionButton>
-            )}
-            <ActionButton
-              title={t("files.uploadTooltip")}
-              disabled={upload.isPending}
-              tone="accent"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ShellIcon name="upload" className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline pr-0.5">
-                {upload.isPending ? t("files.uploading") : t("files.upload")}
-              </span>
-            </ActionButton>
-          </div>
+            </div>
+          )}
         </div>
       </div>
       <div

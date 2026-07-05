@@ -12,7 +12,8 @@ const WORKBENCH_GIT_QUERY_SCOPE = "workbench-git";
 
 /**
  * 右栏插件渲染上下文（设计文档 §6）。当前作用域 + 聚焦实例决定 tab 可见性与
- * 内容作用域。projectKey 为 null（全局作用域）时 project-scoped tab（Files/Git）隐藏。
+ * 内容作用域。projectKey 为 null（全局作用域）时 Git 隐藏；Files 全局可见（根目录
+ * = PROJECTS_ROOT 只读浏览，进入项目子目录后切项目作用域可写，见 FilesPanel rootBrowse）。
  */
 export type PluginContext = {
   projectKey: string | null;
@@ -22,8 +23,8 @@ export type PluginContext = {
 
 /**
  * 右栏 inspection 插件契约（设计文档 §6）。V1 仅编译期第一方注册（Files/Git），
- * 不实装外部插件 / marketplace。`when` 集中表达可见性（全局隐 project-scoped tab）；
- * render 由 RightPanelTabs 在 active tab 时调用。Files/Git
+ * 不实装外部插件 / marketplace。`when` 集中表达可见性（Git 全局隐、Files 全局显）；
+ * render 由 RightPanelTabs / 中栏 visibleTabs 在 active tab 时调用。Files/Git
  * 用 queryScope 隔离与 ProjectConsole section 的缓存（命中单数据管道 / 禁并行过滤分支）。
  */
 export type RightPanelPlugin = {
@@ -35,7 +36,8 @@ export type RightPanelPlugin = {
 
 /**
  * 第一方右栏插件注册表（设计文档 §5、§6）。Stage 3 commit ② 由 RightPanelTabs
- * 消费。Files/Git 均项目作用域（when: ctx.projectKey !== null）。
+ * 与中栏 visibleTabs 消费。Files 全局可见（项目作用域可写 + 全局根目录只读）；
+ * Git 仅项目作用域（when: ctx.projectKey !== null）。
  */
 export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
   {
@@ -48,8 +50,10 @@ export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
           projectName={ctx.projectKey}
           queryScope={WORKBENCH_FILES_QUERY_SCOPE}
         />
-      ) : null,
-    when: (ctx) => ctx.projectKey !== null,
+      ) : (
+        <FilesPanel rootBrowse initialPath="" queryScope={WORKBENCH_FILES_QUERY_SCOPE} />
+      ),
+    when: () => true,
   },
   {
     id: "git",
