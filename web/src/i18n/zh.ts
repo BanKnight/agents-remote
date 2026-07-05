@@ -103,6 +103,10 @@ export const zh: Record<TranslationKey, string> = {
   "session.namePrompt.createTerminal": "创建终端",
   "session.namePrompt.placeholder": "会话名称（可选）",
   "session.namePrompt.confirm": "创建",
+  "session.rename": "重命名",
+  "session.actions": "操作",
+  "session.renamePrompt.title": "重命名会话",
+  "session.renamePrompt.placeholder": "会话名称",
 
   // ── 移动聚焦态实例信息浮窗 (ℹ) ──────────────────────────────
   "session.instanceInfo.title": "实例信息",
@@ -267,10 +271,12 @@ export const zh: Record<TranslationKey, string> = {
   "api.agentSessionCreationFailed": "Agent 会话创建失败",
   "api.agentSessionDetailFailed": "Agent 会话详情获取失败",
   "api.agentSessionCloseFailed": "Agent 会话关闭失败",
+  "api.agentSessionRenameFailed": "Agent 会话重命名失败",
   "api.terminalSessionListFailed": "Terminal 会话列表获取失败",
   "api.terminalSessionCreationFailed": "Terminal 会话创建失败",
   "api.terminalSessionDetailFailed": "Terminal 会话详情获取失败",
   "api.terminalSessionCloseFailed": "Terminal 会话关闭失败",
+  "api.terminalSessionRenameFailed": "Terminal 会话重命名失败",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "刚刚",

@@ -48,6 +48,8 @@ import {
   listAgentSessions,
   listProjects,
   listTerminalSessions,
+  renameAgentSession,
+  renameTerminalSession,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useT } from "../../i18n";
@@ -165,6 +167,7 @@ export function InstanceArea({
   const navigateWorkbench = useWorkbenchNavigate();
   const { t } = useT();
   const { close, holder } = useCloseSession();
+  const { rename, holder: renameHolder } = useRenameSession();
   const [layout, update] = useWorkbenchLayout(scope);
   const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
@@ -329,6 +332,15 @@ export function InstanceArea({
     if (!projectName) return;
     void close({ projectName, sessionId }, type);
   };
+  const renameInstance = (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => {
+    if (!projectName) return;
+    void rename({ projectName, sessionId }, type, currentName);
+  };
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────
   // dragState = 拖动源 ref + 起始 pointer；进态后 elementFromPoint hit-test data-drop-group/
@@ -381,14 +393,21 @@ export function InstanceArea({
     },
     [],
   );
-  const gridCallbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const gridCallbacks: GridItemCallbacks = {
+    onClose: closeInstance,
+    onRename: renameInstance,
+    onSelect: focusInstance,
+    t,
+  };
 
   // grid 数据源：global 用 candidates（跨项目聚合），project 用 useProjectInstances（本项目全览）。
   const gridItems = useMemo<InstanceGridItem[]>(
     () =>
       scope.kind === "global"
         ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
-        : projectInstances.instances.map((entry) => instanceToGridItem(entry, gridCallbacks)),
+        : projectInstances.instances.map((entry) =>
+            instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
+          ),
     // gridCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
     // 引用由 hook 内 dataKey fingerprint 稳定（data 不变时不新建数组）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -454,6 +473,7 @@ export function InstanceArea({
       dragAdapter={dragAdapter}
       onClose={closeInstance}
       onFocus={focusInstance}
+      onRename={renameInstance}
       t={t}
     />
   ) : showTable ? (
@@ -575,6 +595,7 @@ export function InstanceArea({
       </div>
       <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
+      {renameHolder}
       {create.promptHolder}
     </div>
   );
@@ -772,6 +793,59 @@ export function useCloseSession() {
     return true;
   };
   return { close, holder };
+}
+
+/**
+ * 改名实例统一流程（任务 E）。prompt 预填当前 displayName → 按 type 调 rename API → 失效
+ * list + detail + global 顶层。与 useCloseSession 同文件同模式（业务 hook 集合）。promptHolder
+ * 由调用方渲染（与 closeHolder 并列）。空名 / 未改名 / 用户取消 → no-op（prompt 返回 null）。
+ */
+export function useRenameSession() {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const { holder: promptHolder, prompt } = usePromptDialog();
+
+  const rename = useCallback(
+    async (
+      ref: WorkbenchPanelRef,
+      type: "agent" | "terminal",
+      currentName: string,
+    ): Promise<boolean> => {
+      const next = await prompt({
+        cancelLabel: t("cancel"),
+        confirmLabel: t("session.rename"),
+        initialValue: currentName,
+        placeholder: t("session.renamePrompt.placeholder"),
+        title: t("session.renamePrompt.title"),
+      });
+      // null=取消；空名/未改动 → 不调 API（路由会 400，避免无谓请求与静默失败）。
+      if (next === null || next === currentName || next.length === 0) return false;
+      try {
+        if (type === "agent") {
+          await renameAgentSession(ref.projectName, ref.sessionId, next);
+        } else {
+          await renameTerminalSession(ref.projectName, ref.sessionId, next);
+        }
+      } catch {
+        // 路由已返回错误码（404 / 400）；UI 不额外提示，失败仍失效缓存让列表自愈。
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ exact: true, queryKey: ["projects", ref.projectName] }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", ref.projectName, `${type}-sessions`],
+        }),
+        queryClient.invalidateQueries({
+          exact: true,
+          queryKey: ["projects", ref.projectName, `${type}-sessions`, ref.sessionId],
+        }),
+      ]);
+      return true;
+    },
+    [prompt, queryClient, t],
+  );
+
+  return { rename, holder: promptHolder };
 }
 
 /**
@@ -1126,6 +1200,12 @@ function EmptyInstanceArea({
  */
 export type GridItemCallbacks = {
   onClose?: (sessionId: string, type: "agent" | "terminal") => void;
+  onRename?: (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => void;
   onSelect: (sessionId: string) => void;
   t: TranslateFn;
 };
@@ -1167,11 +1247,13 @@ export function InstanceGrid({
  * 项目实例 → InstanceGridItem（marker 按 type/provider，status 映射 pill，title=displayName）。
  * activity = relativeTime(updatedAt ?? agent.createdAt)，terminal 无 createdAt 故仅 updatedAt。
  * subtitle = agent.lastAssistantMessage / terminal.lastCommand（卡片第二行，缺失则不显）。
- * **不传 projectName**：project scope 卡片所在总览 header 已显项目名（scope.key），卡片再显冗余。
+ * **不传 projectName prop**：project scope 卡片所在总览 header 已显项目名（scope.key），卡片再显冗余。
+ * 但 onRename 闭包需 projectName 调 rename API，故 projectName 作为函数参数显式传入（调用方从 scope 取）。
  */
 export function instanceToGridItem(
   entry: ProjectInstanceEntry,
   cb: GridItemCallbacks,
+  projectName: string,
 ): InstanceGridItem {
   const provider = entry.type === "agent" ? (entry.session as AgentSession).provider : undefined;
   const session = entry.session;
@@ -1182,13 +1264,19 @@ export function instanceToGridItem(
       ? (session as AgentSession).lastAssistantMessage
       : (session as TerminalSession).lastCommand;
   const onClose = cb.onClose;
+  const onRename = cb.onRename;
   return {
+    actionsLabel: cb.t("session.actions"),
     activity: relativeTime(activityIso ?? "", cb.t),
     closeLabel: cb.t("session.close"),
     key: session.id,
     marker: sessionMarker(entry.type, provider, "lg"),
     onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
+    onRename: onRename
+      ? () => onRename(session.id, entry.type, session.displayName, projectName)
+      : undefined,
     onSelect: () => cb.onSelect(session.id),
+    renameLabel: cb.t("session.rename"),
     status: {
       label: cb.t(sessionStatusLabel(session.status)),
       tone: statusToTone(session.status),
@@ -1207,14 +1295,26 @@ export function candidateToGridItem(
   cb: GridItemCallbacks,
 ): InstanceGridItem {
   const onClose = cb.onClose;
+  const onRename = cb.onRename;
   return {
+    actionsLabel: cb.t("session.actions"),
     activity: relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", cb.t),
     closeLabel: cb.t("session.close"),
     key: candidate.ref.sessionId,
     marker: sessionMarker(candidate.type, candidate.provider, "lg"),
     onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
+    onRename: onRename
+      ? () =>
+          onRename(
+            candidate.ref.sessionId,
+            candidate.type,
+            candidate.displayName,
+            candidate.ref.projectName,
+          )
+      : undefined,
     onSelect: () => cb.onSelect(candidate.ref.sessionId),
     projectName: candidate.ref.projectName,
+    renameLabel: cb.t("session.rename"),
     status: {
       label: cb.t(sessionStatusLabel(candidate.status)),
       tone: statusToTone(candidate.status),
@@ -1286,6 +1386,12 @@ type GroupedViewProps = {
   candidates: GlobalInstanceCandidate[];
   onClose: (sessionId: string, type: "agent" | "terminal") => void;
   onFocus: (sessionId: string) => void;
+  onRename: (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => void;
   t: TranslateFn;
   dragAdapter?: DragSourceAdapter;
 };
@@ -1293,12 +1399,12 @@ type GroupedViewProps = {
 /**
  * grouped 视图（设计文档 §5：仅桌面 global 跨项目分组）。groupByProject 按项目分段，每组
  * 项目名标题（与移动 MobileGlobalOverview 同款 className）+ InstanceGrid。回调复用 InstanceArea
- * 的 focusInstance/closeInstance（与 grid 视图同源，select 进聚焦态 / close 走 useCloseSession）。
- * dragAdapter 桌面左总览传时启用拖放（每个 candidate.ref 进 dragRefs）。
+ * 的 focusInstance/closeInstance/renameInstance（与 grid 视图同源）。dragAdapter 桌面左总览
+ * 传时启用拖放（每个 candidate.ref 进 dragRefs）。
  */
-function GroupedView({ candidates, onClose, onFocus, t, dragAdapter }: GroupedViewProps) {
+function GroupedView({ candidates, onClose, onFocus, onRename, t, dragAdapter }: GroupedViewProps) {
   const groups = groupByProject(candidates);
-  const callbacks: GridItemCallbacks = { onClose, onSelect: onFocus, t };
+  const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
   return (
     <div className="h-full overflow-y-auto">
       {groups.map((group) => {

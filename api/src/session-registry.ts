@@ -295,6 +295,46 @@ export class SessionRegistry {
     return terminalSessionFromMetadata({ ...metadata, status: "closed" });
   }
 
+  async renameAgentSession(
+    projectName: string,
+    sessionId: string,
+    displayName: string,
+  ): Promise<AgentSession | undefined> {
+    const metadata = await this.getMetadata(projectName, "agent", sessionId);
+
+    if (!metadata) {
+      return undefined;
+    }
+
+    const renamed: SessionMetadata = {
+      ...metadata,
+      displayName,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(renamed);
+    return agentSessionFromMetadata(renamed);
+  }
+
+  async renameTerminalSession(
+    projectName: string,
+    sessionId: string,
+    displayName: string,
+  ): Promise<TerminalSession | undefined> {
+    const metadata = await this.getMetadata(projectName, "terminal", sessionId);
+
+    if (!metadata) {
+      return undefined;
+    }
+
+    const renamed: SessionMetadata = {
+      ...metadata,
+      displayName,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(renamed);
+    return terminalSessionFromMetadata(renamed);
+  }
+
   async markConnected(projectName: string, type: SessionType, sessionId: string) {
     const metadata = await this.getLiveMetadata(projectName, type, sessionId);
 

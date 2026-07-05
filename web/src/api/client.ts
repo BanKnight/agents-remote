@@ -27,7 +27,10 @@ import type {
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
   ProjectListResponse,
+  RenameAgentSessionResponse,
   RenameFileResponse,
+  RenameSessionRequest,
+  RenameTerminalSessionResponse,
   SaveFileRequest,
   SaveFileResponse,
   SlashCommandDescriptionsResponse,
@@ -271,6 +274,22 @@ export async function closeAgentSession(
   );
 }
 
+export async function renameAgentSession(
+  projectName: string,
+  sessionId: string,
+  displayName: string,
+): Promise<RenameAgentSessionResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/rename`,
+    "api.agentSessionRenameFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName } satisfies RenameSessionRequest),
+    },
+  );
+}
+
 export async function listTerminalSessions(
   projectName: string,
 ): Promise<ListTerminalSessionsResponse> {
@@ -307,6 +326,22 @@ export async function closeTerminalSession(
     "api.terminalSessionCloseFailed",
     {
       method: "POST",
+    },
+  );
+}
+
+export async function renameTerminalSession(
+  projectName: string,
+  sessionId: string,
+  displayName: string,
+): Promise<RenameTerminalSessionResponse> {
+  return fetchJson(
+    `${terminalSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/rename`,
+    "api.terminalSessionRenameFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName } satisfies RenameSessionRequest),
     },
   );
 }

@@ -2,6 +2,7 @@ import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
 import closeIcon from "./close.svg?raw";
 import edit from "./edit.svg?raw";
+import ellipsis from "./ellipsis.svg?raw";
 import file from "./file.svg?raw";
 import filesNav from "./files-nav.svg?raw";
 import folderPlus from "./folder-plus.svg?raw";
@@ -22,6 +23,7 @@ const svgMap: Record<string, string> = {
   anthropic,
   close: closeIcon,
   edit,
+  ellipsis,
   file,
   "files-nav": filesNav,
   "folder-plus": folderPlus,

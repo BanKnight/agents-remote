@@ -4,6 +4,8 @@ import { ActionButton, shellSurfaceClasses } from "./shell-primitives";
 type PromptConfig = {
   cancelLabel: string;
   confirmLabel: string;
+  /** 预填值（如改名时填入当前 displayName）；缺失则空 input。 */
+  initialValue?: string;
   placeholder?: string;
   title: string;
   tone?: "accent" | "default";
@@ -41,6 +43,7 @@ export function usePromptDialog() {
     <PromptDialog
       cancelLabel={pending.cancelLabel}
       confirmLabel={pending.confirmLabel}
+      initialValue={pending.initialValue}
       placeholder={pending.placeholder}
       title={pending.title}
       tone={pending.tone}
@@ -55,6 +58,7 @@ export function usePromptDialog() {
 function PromptDialog({
   cancelLabel,
   confirmLabel,
+  initialValue,
   onCancel,
   onConfirm,
   placeholder,
@@ -75,8 +79,10 @@ function PromptDialog({
           autoFocus
           className="mt-3 w-full rounded-lg border border-neutral-line bg-surface-inset px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted/60 focus:border-primary focus:outline-none"
           data-prompt-input
+          defaultValue={initialValue}
           placeholder={placeholder}
           type="text"
+          onFocus={(e) => e.target.select()}
           onKeyDown={(e) => {
             if (e.key === "Enter") onConfirm();
             if (e.key === "Escape") onCancel();

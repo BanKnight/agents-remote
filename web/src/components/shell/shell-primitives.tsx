@@ -4,7 +4,9 @@ import {
   type ComponentProps,
   type PointerEvent,
   type ReactNode,
+  useEffect,
   useRef,
+  useState,
 } from "react";
 
 import { Badge } from "../ui/badge";
@@ -464,12 +466,17 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
 }
 
 export type InstanceCardProps = {
+  /** 折叠操作区触发器（⋯）aria-label。 */
+  actionsLabel?: string;
   activity?: string;
   closeLabel?: string;
   marker: ReactNode;
   onClose?: () => void;
   onSelect: () => void;
   projectName?: string;
+  /** 改名回调；缺失则展开后不渲染改名按钮。 */
+  onRename?: () => void;
+  renameLabel?: string;
   status?: { label: string; tone: ShellTone };
   /** 第二行内容（agent=AI 回复 / terminal=最近命令），1 行截断；缺失则不渲染第二行。 */
   subtitle?: ReactNode;
@@ -479,27 +486,54 @@ export type InstanceCardProps = {
 /**
  * 实例卡片（设计文档 §7）。微信朋友圈式头像布局：左侧 marker 头像（lg=36px，`items-start` 上下
  * 置顶）独占一列 + 右侧内容区竖排 3 行：① title（会话名）；② subtitle（agent lastAssistantMessage
- * / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 · 最后活动时间，弱化色 + close
- * 按钮右侧 `ml-auto`）。subtitle 缺失退化 2 行；meta 文本缺失 close 单独右对齐；两者都缺失不渲染
- * meta 行。raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop 触发，按钮
- * 内部渲染并 stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown（Enter/Space →
- * onSelect）劫持键盘激活。status 由调用方映射为 {label, tone}（业务 enum → 圆点语义，label 进
- * StatusDot aria-label）；圆点叠加 marker 右上角（`-right-1 -top-1`，4px 偏移不依赖 marker 尺寸）。
- * meta 行：projectName truncate（flex 容器内可收缩），activity whitespace-nowrap（相对时间短文本
- * 不换行），两者用 · 分隔；项目 scope 调用方可省略 projectName（header 已显，避免冗余）。
+ * / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 · 最后活动时间，弱化色 + 折叠
+ * 操作区右侧 `ml-auto`）。subtitle 缺失退化 2 行；meta 文本缺失操作区单独右对齐；两者都缺失不渲染
+ * meta 行。raised surface + rounded-lg，点击 onSelect 进详情。
+ *
+ * **折叠操作区**（任务 E）：meta 行右侧 ⋯ 触发按钮，点击后**向左展开**「改名 + 关闭」两个按钮。
+ * 替代旧独立 ✕。展开是局部 state（每卡独立），外部点击 / Esc 收起（conditional effect，仅 expanded
+ * 时挂 listener，避免每卡常驻）。各按钮 stopPropagation（click + keydown 两路），与卡片 onKeyDown
+ * （Enter/Space → onSelect）隔离。`onRename`/`onClose` 缺省时对应按钮不渲染；两者都缺省时不渲染
+ * 触发器（退化纯展示卡）。展开时 meta 文字让位 `min-w-0 flex-1 truncate`，操作区 `shrink-0`。
  */
 export function InstanceCard({
+  actionsLabel,
   activity,
   closeLabel,
   marker,
   onClose,
   onSelect,
+  onRename,
   projectName,
+  renameLabel,
   status,
   subtitle,
   title,
 }: InstanceCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
   const hasMetaText = projectName || activity;
+  const hasActions = onRename || onClose;
+
+  // 外部点击 / Esc 收起展开态。conditional effect——仅 expanded 时挂 listener，避免每卡常驻。
+  useEffect(() => {
+    if (!expanded) return;
+    const onMouseDown = (event: MouseEvent) => {
+      if (actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
+        setExpanded(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [expanded]);
+
   return (
     <div
       className={`group flex min-w-0 cursor-pointer items-start gap-3 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
@@ -521,31 +555,65 @@ export function InstanceCard({
         {subtitle ? (
           <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
         ) : null}
-        {hasMetaText || onClose ? (
+        {hasMetaText || hasActions ? (
           <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
-            {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
+            {projectName ? <span className="min-w-0 truncate flex-1">{projectName}</span> : null}
             {projectName && activity ? <span aria-hidden="true">·</span> : null}
             {activity ? <span className="whitespace-nowrap">{activity}</span> : null}
-            {onClose ? (
-              <button
-                aria-label={closeLabel}
-                className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose();
-                }}
-                onKeyDown={(e) => e.stopPropagation()}
-                type="button"
-              >
-                <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-                  <path
-                    d="M4 4l8 8M12 4l-8 8"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeWidth={1.5}
-                  />
-                </svg>
-              </button>
+            {hasActions ? (
+              <div className="ml-auto flex shrink-0 items-center gap-0.5" ref={actionsRef}>
+                {expanded && onRename ? (
+                  <button
+                    aria-label={renameLabel}
+                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpanded(false);
+                      onRename();
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    type="button"
+                  >
+                    <ShellIcon className="h-3.5 w-3.5" name="edit" />
+                    <span className="text-xs">{renameLabel}</span>
+                  </button>
+                ) : null}
+                {expanded && onClose ? (
+                  <button
+                    aria-label={closeLabel}
+                    className="inline-flex h-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpanded(false);
+                      onClose();
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    type="button"
+                  >
+                    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+                      <path
+                        d="M4 4l8 8M12 4l-8 8"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeWidth={1.5}
+                      />
+                    </svg>
+                  </button>
+                ) : null}
+                <button
+                  aria-expanded={expanded}
+                  aria-label={actionsLabel}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded((prev) => !prev);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  type="button"
+                >
+                  <ShellIcon className="h-4 w-4" name="ellipsis" />
+                </button>
+              </div>
             ) : null}
           </div>
         ) : null}

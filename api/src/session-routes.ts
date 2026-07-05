@@ -14,6 +14,9 @@ import type {
   ListTerminalSessionsResponse,
   AgentSessionDetailResponse,
   TerminalSessionDetailResponse,
+  RenameSessionRequest,
+  RenameAgentSessionResponse,
+  RenameTerminalSessionResponse,
 } from "@agents-remote/shared";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { listAgentHistory, getLastAssistantMessage, projectToSlug } from "./agent-history";
@@ -209,6 +212,24 @@ const handleAgentSessionRoute = async (
     return Response.json(response);
   }
 
+  if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/rename")) {
+    const body = await readJson<RenameSessionRequest>(request);
+    const displayName = normalizeDisplayName(body.displayName);
+
+    if (!displayName) {
+      return jsonError("SESSION_METADATA_ERROR", "Display name must not be empty", 400);
+    }
+
+    const session = await registry.renameAgentSession(project.name, sessionId, displayName);
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+
+    const response: RenameAgentSessionResponse = { session };
+    return Response.json(response);
+  }
+
   return undefined;
 };
 
@@ -258,6 +279,24 @@ const handleTerminalSessionRoute = async (
     return Response.json(response);
   }
 
+  if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/rename")) {
+    const body = await readJson<RenameSessionRequest>(request);
+    const displayName = normalizeDisplayName(body.displayName);
+
+    if (!displayName) {
+      return jsonError("SESSION_METADATA_ERROR", "Display name must not be empty", 400);
+    }
+
+    const session = await registry.renameTerminalSession(project.name, sessionId, displayName);
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Terminal session not found", 404);
+    }
+
+    const response: RenameTerminalSessionResponse = { session };
+    return Response.json(response);
+  }
+
   return undefined;
 };
 
@@ -295,6 +334,11 @@ const matchSessionRoute = (pathname: string) => {
   }
 
   if (segments.length === 6 && segments[5] === "close") {
+    const sessionId = decodePathSegment(segments[4]);
+    return sessionId ? { projectName, resource, sessionId } : undefined;
+  }
+
+  if (segments.length === 6 && segments[5] === "rename") {
     const sessionId = decodePathSegment(segments[4]);
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }

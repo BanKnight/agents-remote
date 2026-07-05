@@ -15,6 +15,8 @@ import {
   listTerminalSessions,
   login,
   previewProjectFile,
+  renameAgentSession,
+  renameTerminalSession,
   sessionStreamUrl,
 } from "./client";
 
@@ -233,6 +235,36 @@ test("web api client calls Project-scoped Terminal session routes", async () => 
     displayName: "Project shell",
   });
   expect(calls[2][0]).toBe("/api/projects/demo/terminal-sessions/terminal_123/close");
+});
+
+test("web api client calls rename routes with JSON body and encoded paths", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({
+      session: {
+        id: "agent_123",
+        projectName: "hello world 中文",
+        provider: "claude",
+        displayName: "新会话名",
+        status: "running",
+      },
+    });
+  }) as typeof fetch;
+
+  await renameAgentSession("hello world 中文", "agent_123", "新会话名");
+  await renameTerminalSession("demo", "terminal_123", "新终端名");
+
+  expect(calls[0][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/agent-sessions/agent_123/rename",
+  );
+  expect(JSON.parse(calls[0][1]?.body?.toString() ?? "{}")).toEqual({
+    displayName: "新会话名",
+  });
+  expect(calls[1][0]).toBe("/api/projects/demo/terminal-sessions/terminal_123/rename");
+  expect(JSON.parse(calls[1][1]?.body?.toString() ?? "{}")).toEqual({
+    displayName: "新终端名",
+  });
 });
 
 test("web api client builds same-origin session stream URLs", () => {

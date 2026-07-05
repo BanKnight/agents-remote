@@ -43,6 +43,7 @@ import {
   useCreateSession,
   useGlobalInstanceCandidates,
   useProjectInstances,
+  useRenameSession,
   useScopeInstanceOrder,
   useTerminalDetail,
   VIEW_LABEL_KEY,
@@ -477,6 +478,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   //（React Query dedupe）。创建入口 useCreateSession 提至 ViewSwitcher 行（与桌面 §6 两端对齐），
   // 不再走 ProjectInstances 组件（避免重复 useCloseSession/useCreateSession 双 holder）。
   const { close, holder: closeHolder } = useCloseSession();
+  const { rename, holder: renameHolder } = useRenameSession();
   const { instances, isLoading } = useProjectInstances(scope.key);
   const create = useCreateSession(scope.key);
   const navigateWorkbench = useWorkbenchNavigate();
@@ -486,6 +488,9 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
     void close({ projectName: scope.key, sessionId }, type);
   };
+  const renameInstance = (sessionId: string, type: "agent" | "terminal", currentName: string) => {
+    void rename({ projectName: scope.key, sessionId }, type, currentName);
+  };
   const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
   const tableRows = useMemo(
     () => instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
@@ -493,9 +498,14 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [instances, t],
   );
-  const gridCallbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const gridCallbacks: GridItemCallbacks = {
+    onClose: closeInstance,
+    onRename: renameInstance,
+    onSelect: focusInstance,
+    t,
+  };
   const gridItems = useMemo(
-    () => instances.map((entry) => instanceToGridItem(entry, gridCallbacks)),
+    () => instances.map((entry) => instanceToGridItem(entry, gridCallbacks, scope.key)),
     // gridCallbacks 闭包依赖 scope/t；instances 引用同 tableRows（hook 内 dataKey fingerprint 稳定）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [instances, t],
@@ -570,6 +580,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
             {/* closeHolder + promptHolder 统一渲染（grid/table 两视图共用；
                 原 ProjectInstances 自含 holder 已随组件删除，无双 holder）。 */}
             {closeHolder}
+            {renameHolder}
             {create.promptHolder}
           </div>
         )}
@@ -590,6 +601,7 @@ function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
+  const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   const [view, setView] = useAtom(workbenchViewAtom);
   // viewOptions = filterWorkbenchViews(global) = [grouped, grid, table]（global 三视图全开）。
@@ -612,7 +624,21 @@ function MobileGlobalOverview() {
     const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
     if (ref) void close(ref, type);
   };
-  const callbacks: GridItemCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const renameInstance = (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    _projectName: string,
+  ) => {
+    const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
+    if (ref) void rename(ref, type, currentName);
+  };
+  const callbacks: GridItemCallbacks = {
+    onClose: closeInstance,
+    onRename: renameInstance,
+    onSelect: focusInstance,
+    t,
+  };
   const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
   // table 行（global 6 列含 project；复用 candidateToTableRow，与桌面 InstanceArea table 分支同源）。
   const tableRows = useMemo(
@@ -671,6 +697,7 @@ function MobileGlobalOverview() {
         </nav>
       )}
       {closeHolder}
+      {renameHolder}
     </div>
   );
 }

@@ -286,6 +286,20 @@ export type CloseTerminalSessionResponse = {
   session: TerminalSession;
 };
 
+// -- Session Rename (agent + terminal 共用请求体；displayName 持久化到 SessionMetadata) --
+
+export type RenameSessionRequest = {
+  displayName: string;
+};
+
+export type RenameAgentSessionResponse = {
+  session: AgentSession;
+};
+
+export type RenameTerminalSessionResponse = {
+  session: TerminalSession;
+};
+
 // -- Claude2 Stream Messages (Claude CLI --output-format stream-json protocol) --
 
 export type Claude2SystemInit = {

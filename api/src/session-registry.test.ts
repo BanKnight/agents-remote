@@ -218,3 +218,43 @@ test("SessionRegistry.setModel is a no-op when the session metadata file is miss
     registry.setModel("agent_nonexistent_id", "claude-haiku-4-5-20251001"),
   ).resolves.toBeUndefined();
 });
+
+test("SessionRegistry.renameAgentSession persists new displayName to metadata", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_rename123456",
+  });
+
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  const renamed = await registry.renameAgentSession(project.name, agent.id, "我的新会话名");
+
+  expect(renamed?.displayName).toBe("我的新会话名");
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_rename123456.json"), "utf8"),
+  );
+  expect(metadata.displayName).toBe("我的新会话名");
+  expect(metadata.updatedAt).toBe(fixedNow().toISOString());
+  // rename 只更新 displayName + updatedAt；其他字段不动。
+  expect(metadata.provider).toBe("claude");
+  expect(metadata.type).toBe("agent");
+});
+
+test("SessionRegistry.renameTerminalSession persists and scopes by project", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "terminal_rename123456",
+  });
+
+  const terminal = await registry.createTerminalSession({ project });
+  const renamed = await registry.renameTerminalSession(project.name, terminal.id, "新终端名");
+
+  expect(renamed?.displayName).toBe("新终端名");
+  // 跨 project 改名失败（getMetadata 校验 projectName + type）。
+  const crossProject = await registry.renameTerminalSession("other", terminal.id, "不应改");
+  expect(crossProject).toBeUndefined();
+  // 缺失 session 返回 undefined。
+  const missing = await registry.renameTerminalSession(project.name, "nonexistent", "无");
+  expect(missing).toBeUndefined();
+});

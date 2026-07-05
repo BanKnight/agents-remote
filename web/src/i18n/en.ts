@@ -103,6 +103,10 @@ export const en = {
   "session.namePrompt.createTerminal": "Create Terminal",
   "session.namePrompt.placeholder": "Session name (optional)",
   "session.namePrompt.confirm": "Create",
+  "session.rename": "Rename",
+  "session.actions": "Actions",
+  "session.renamePrompt.title": "Rename session",
+  "session.renamePrompt.placeholder": "Session name",
 
   // ── Mobile focus instance info sheet (ℹ) ───────────────────
   "session.instanceInfo.title": "Instance info",
@@ -267,10 +271,12 @@ export const en = {
   "api.agentSessionCreationFailed": "Agent session creation failed",
   "api.agentSessionDetailFailed": "Agent session detail failed",
   "api.agentSessionCloseFailed": "Agent session close failed",
+  "api.agentSessionRenameFailed": "Failed to rename agent session",
   "api.terminalSessionListFailed": "Terminal session list failed",
   "api.terminalSessionCreationFailed": "Terminal session creation failed",
   "api.terminalSessionDetailFailed": "Terminal session detail failed",
   "api.terminalSessionCloseFailed": "Terminal session close failed",
+  "api.terminalSessionRenameFailed": "Failed to rename terminal session",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "just now",
