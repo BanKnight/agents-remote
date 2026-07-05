@@ -74,13 +74,15 @@ export const shellSurfaceClasses = {
 
 type IconMarkerProps = {
   children: ReactNode;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   tone?: ShellTone;
 };
 
 const markerSizeClasses: Record<NonNullable<IconMarkerProps["size"]>, string> = {
   sm: "h-7 w-7 rounded-sm text-[0.65rem]",
   md: "h-10 w-10 rounded-lg text-xs",
+  // card 头像式：36px，rounded-md 在 @theme inline 覆写下 = 10px = DESIGN md 档（与 md marker 的 rounded-lg 14px 区分）
+  lg: "h-9 w-9 rounded-md text-xs",
 };
 
 export function IconMarker({ children, size = "md", tone = "default" }: IconMarkerProps) {
@@ -475,14 +477,16 @@ export type InstanceCardProps = {
 };
 
 /**
- * 实例卡片（设计文档 §7）。3 行结构：① title 行（marker + 会话名 + 可选 close）；② subtitle 行
- *（agent lastAssistantMessage / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 ·
- * 最后活动时间，弱化色）。subtitle 缺失时退化 2 行（不显空第二行，不伪造占位）。
- * raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop 触发，按钮内部渲染并
- * stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown（Enter/Space → onSelect）劫持
- * 键盘激活。status 由调用方映射为 {label, tone}（业务 enum → 圆点语义，label 进 StatusDot aria-label）。
- * meta 行：projectName truncate（flex 容器内可收缩），activity whitespace-nowrap（相对时间短文本不
- * 换行），两者用 · 分隔；项目 scope 调用方可省略 projectName（header 已显，避免冗余）。
+ * 实例卡片（设计文档 §7）。微信朋友圈式头像布局：左侧 marker 头像（lg=36px，`items-start` 上下
+ * 置顶）独占一列 + 右侧内容区竖排 3 行：① title（会话名）；② subtitle（agent lastAssistantMessage
+ * / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 · 最后活动时间，弱化色 + close
+ * 按钮右侧 `ml-auto`）。subtitle 缺失退化 2 行；meta 文本缺失 close 单独右对齐；两者都缺失不渲染
+ * meta 行。raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop 触发，按钮
+ * 内部渲染并 stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown（Enter/Space →
+ * onSelect）劫持键盘激活。status 由调用方映射为 {label, tone}（业务 enum → 圆点语义，label 进
+ * StatusDot aria-label）；圆点叠加 marker 右上角（`-right-1 -top-1`，4px 偏移不依赖 marker 尺寸）。
+ * meta 行：projectName truncate（flex 容器内可收缩），activity whitespace-nowrap（相对时间短文本
+ * 不换行），两者用 · 分隔；项目 scope 调用方可省略 projectName（header 已显，避免冗余）。
  */
 export function InstanceCard({
   activity,
@@ -495,9 +499,10 @@ export function InstanceCard({
   subtitle,
   title,
 }: InstanceCardProps) {
+  const hasMetaText = projectName || activity;
   return (
     <div
-      className={`group flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      className={`group flex min-w-0 cursor-pointer items-start gap-3 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -508,66 +513,70 @@ export function InstanceCard({
       role="button"
       tabIndex={0}
     >
-      <div className="flex items-start gap-2">
-        <StatusMarker marker={marker} status={status} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface group-hover:text-primary">
+      <StatusMarker marker={marker} status={status} />
+      <div className="min-w-0 flex-1 flex flex-col gap-1">
+        <span className="min-w-0 truncate text-sm font-semibold text-on-surface group-hover:text-primary">
           {title}
         </span>
-        {onClose ? (
-          <span className="flex shrink-0 items-center">
-            <button
-              aria-label={closeLabel}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-              onKeyDown={(e) => e.stopPropagation()}
-              type="button"
-            >
-              <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-                <path
-                  d="M4 4l8 8M12 4l-8 8"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth={1.5}
-                />
-              </svg>
-            </button>
-          </span>
+        {subtitle ? (
+          <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
+        ) : null}
+        {hasMetaText || onClose ? (
+          <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
+            {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
+            {projectName && activity ? <span aria-hidden="true">·</span> : null}
+            {activity ? <span className="whitespace-nowrap">{activity}</span> : null}
+            {onClose ? (
+              <button
+                aria-label={closeLabel}
+                className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                type="button"
+              >
+                <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+                  <path
+                    d="M4 4l8 8M12 4l-8 8"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeWidth={1.5}
+                  />
+                </svg>
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
-      {subtitle ? (
-        <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
-      ) : null}
-      {projectName || activity ? (
-        <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
-          {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
-          {projectName && activity ? <span aria-hidden="true">·</span> : null}
-          {activity ? <span className="whitespace-nowrap">{activity}</span> : null}
-        </div>
-      ) : null}
     </div>
   );
 }
 
 /**
- * 实例 marker（card 专用）：agent 按 provider 选 tone/icon（codex→success/openai，
- * 其余→accent/anthropic），terminal→muted/terminal。消化移动卡片总览两处
- *（ProjectInstances card variant + GlobalInstanceCard）的重复 marker 构造。size 固定 sm
- *（卡片场景）；桌面 list（AgentNavItem）用 ShellNavigationButton 包 IconMarker，不复用此 helper。
+ * 实例 marker：agent 按 provider 选 tone/icon（codex→success/openai，其余→accent/anthropic），
+ * terminal→muted/terminal。size 默认 sm（GroupHeader h-9 紧凑 header、table 紧凑行场景）；card
+ * 场景显式传 `"lg"`（h-9 w-9=36px 头像式独立左列，icon h-4 w-4）。消化移动卡片总览两处
+ *（ProjectInstances card variant + GlobalInstanceCard）的重复 marker 构造。桌面 list（AgentNavItem）
+ * 用 ShellNavigationButton 包 IconMarker，不复用此 helper。
  */
-export function sessionMarker(type: "agent" | "terminal", provider?: AgentProvider): ReactNode {
+export function sessionMarker(
+  type: "agent" | "terminal",
+  provider?: AgentProvider,
+  size: "sm" | "lg" = "sm",
+): ReactNode {
+  const iconClass = size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5";
   if (type === "terminal") {
     return (
-      <IconMarker size="sm" tone="muted">
-        <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+      <IconMarker size={size} tone="muted">
+        <ShellIcon className={iconClass} name="terminal" />
       </IconMarker>
     );
   }
   return (
-    <IconMarker size="sm" tone={provider === "codex" ? "success" : "accent"}>
-      <ShellIcon className="h-3.5 w-3.5" name={provider === "codex" ? "openai" : "anthropic"} />
+    <IconMarker size={size} tone={provider === "codex" ? "success" : "accent"}>
+      <ShellIcon className={iconClass} name={provider === "codex" ? "openai" : "anthropic"} />
     </IconMarker>
   );
 }

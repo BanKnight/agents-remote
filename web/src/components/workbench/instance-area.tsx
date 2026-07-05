@@ -1188,7 +1188,7 @@ export function instanceToGridItem(
     activity: relativeTime(activityIso ?? "", cb.t),
     closeLabel: cb.t("session.close"),
     key: session.id,
-    marker: sessionMarker(entry.type, provider),
+    marker: sessionMarker(entry.type, provider, "lg"),
     onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
     onSelect: () => cb.onSelect(session.id),
     status: {
@@ -1213,7 +1213,7 @@ export function candidateToGridItem(
     activity: relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", cb.t),
     closeLabel: cb.t("session.close"),
     key: candidate.ref.sessionId,
-    marker: sessionMarker(candidate.type, candidate.provider),
+    marker: sessionMarker(candidate.type, candidate.provider, "lg"),
     onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
     onSelect: () => cb.onSelect(candidate.ref.sessionId),
     projectName: candidate.ref.projectName,
