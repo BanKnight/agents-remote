@@ -98,6 +98,24 @@ export const INSTANCE_GRID_STYLE: CSSProperties = {
   gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_CARD_WIDTH_PX}px, 1fr))`,
 };
 
+/** 卡片总览加载骨架的占位卡片数（行级骨架 HistoryListSkeleton 用 3，卡片网格翻倍 6）。 */
+export const INSTANCE_SKELETON_ROW_COUNT = 3;
+
+/**
+ * 卡片总览加载骨架：自适应网格（与 InstanceGrid 同构，共享 INSTANCE_GRID_STYLE）。
+ * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——
+ * 单一 skeleton 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
+ */
+export function CardGridSkeleton() {
+  return (
+    <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
+      {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
+        <div className="h-20 animate-pulse rounded-lg bg-on-surface/5" key={index} />
+      ))}
+    </div>
+  );
+}
+
 /** InstanceGrid 项 = InstanceCard props + React key（卡片在网格中的稳定标识）。 */
 type InstanceGridItem = InstanceCardProps & { key: string };
 
@@ -415,7 +433,16 @@ export function InstanceArea({
     scope.kind === "global"
       ? ["project", "type", "name", "activity", "actions"]
       : ["type", "name", "activity", "actions"];
-  const leftOverviewContent = showGrid ? (
+  // 总览加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea
+  //（后者是"创建实例"空态，加载中显示会误导用户以为无实例）。project 用 useProjectInstances
+  // 的 isLoading，global 用 candidatesLoaded（聚合多 query 的 settled 标量）。
+  const overviewLoading =
+    scope.kind === "project"
+      ? projectInstances.isLoading && projectInstances.instances.length === 0
+      : !candidatesLoaded && candidates.length === 0;
+  const leftOverviewContent = overviewLoading ? (
+    <CardGridSkeleton />
+  ) : showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
     ) : (

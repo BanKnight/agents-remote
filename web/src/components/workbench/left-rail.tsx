@@ -8,9 +8,10 @@ import { IconMarker, ShellSectionLabel } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import {
+  CardGridSkeleton,
   CreateSessionBar,
   type GridItemCallbacks,
-  INSTANCE_GRID_STYLE,
+  INSTANCE_SKELETON_ROW_COUNT,
   InstanceGrid,
   instanceToGridItem,
   useCloseSession,
@@ -19,9 +20,6 @@ import {
 } from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
-
-/** 左栏实例段加载骨架的占位行数。 */
-const INSTANCE_SKELETON_ROW_COUNT = 3;
 
 type LeftRailProps = {
   scope: WorkbenchScope;
@@ -194,17 +192,6 @@ function LeftRailSkeleton() {
     <div className="flex flex-col gap-1 p-2">
       {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT }, (_, index) => (
         <div className="h-8 animate-pulse rounded-lg bg-on-surface/5" key={index} />
-      ))}
-    </div>
-  );
-}
-
-/** 卡片总览加载骨架：自适应网格（与 InstanceGrid 同构，共享 INSTANCE_GRID_CLASS）。 */
-function CardGridSkeleton() {
-  return (
-    <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
-      {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
-        <div className="h-20 animate-pulse rounded-lg bg-on-surface/5" key={index} />
       ))}
     </div>
   );
