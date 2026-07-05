@@ -1,7 +1,8 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, type ReactNode, useMemo } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
+import type { TranslationKey } from "../../i18n/types";
 import { ShellSectionLabel, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
@@ -290,55 +291,35 @@ function MobileFocusHeader({
 }: MobileFocusHeaderProps) {
   const { t } = useT();
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-      <button
-        aria-label={t("workbench.backToList")}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
-        onClick={onBack}
-        type="button"
-      >
-        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M15 18l-6-6 6-6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            stroke="currentColor"
-          />
-        </svg>
-      </button>
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {tabs.map((opt) => (
-          <MobileFocusTabButton
-            active={opt.id === activeTab}
-            key={opt.id}
-            label={opt.label}
-            onClick={() => onTabSelect(opt.id)}
-          />
-        ))}
-      </div>
-      <div
-        className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-        role="group"
-      >
-        <button
-          aria-label={t("session.instanceInfo.title")}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={onInfo}
-          type="button"
+    <MobileTabHeader
+      activeTabId={activeTab}
+      back={{ ariaLabelKey: "workbench.backToList", onClick: onBack }}
+      onTabSelect={onTabSelect}
+      tabs={tabs}
+      trailing={
+        <div
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+          role="group"
         >
-          <ShellIcon className="h-4 w-4" name="info" />
-        </button>
-        <button
-          aria-label={t("session.close")}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-          onClick={onClose}
-          type="button"
-        >
-          <ShellIcon className="h-4 w-4" name="close" />
-        </button>
-      </div>
-    </header>
+          <button
+            aria-label={t("session.instanceInfo.title")}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+            onClick={onInfo}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="info" />
+          </button>
+          <button
+            aria-label={t("session.close")}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+            onClick={onClose}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="close" />
+          </button>
+        </div>
+      }
+    />
   );
 }
 
@@ -358,6 +339,65 @@ function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonPr
     >
       {label}
     </button>
+  );
+}
+
+type MobileTabHeaderProps<TabId extends string> = {
+  // ◄ 返回按钮：统一容器 + SVG，aria-label key 与 onClick 由调用方注入区分去向
+  //（聚焦态回列表 / 列表态回 Home）。
+  back: { ariaLabelKey: TranslationKey; onClick: () => void };
+  tabs: { id: TabId; label: string }[];
+  activeTabId: TabId;
+  onTabSelect: (id: TabId) => void;
+  // 右侧 slot：聚焦态填 ℹ✕ 胶囊，列表态填标题 span。
+  trailing?: ReactNode;
+};
+
+/**
+ * 移动单行 header 容器（设计文档 §7）：◄ 返回 + tab 横滚区（flex-1 overflow-x-auto 隐藏
+ * 滚动条）+ 右侧 slot。聚焦态（MobileFocusHeader ℹ✕ 胶囊）与列表态（Project/Global Overview
+ * 标题）共用此容器，避免三处逐字重复 header className / 返回按钮 SVG / tab 横滚 div。
+ * 泛型 TabId 让聚焦态（WorkbenchMobileFocusTab）与列表态（WorkbenchMobileOverviewTab）
+ * 复用同一容器且保持各自 tab id 的类型安全。
+ */
+function MobileTabHeader<TabId extends string>({
+  back,
+  tabs,
+  activeTabId,
+  onTabSelect,
+  trailing,
+}: MobileTabHeaderProps<TabId>) {
+  const { t } = useT();
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+      <button
+        aria-label={t(back.ariaLabelKey)}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+        onClick={back.onClick}
+        type="button"
+      >
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+          <path
+            d="M15 18l-6-6 6-6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {tabs.map((opt) => (
+          <MobileFocusTabButton
+            active={opt.id === activeTabId}
+            key={opt.id}
+            label={opt.label}
+            onClick={() => onTabSelect(opt.id)}
+          />
+        ))}
+      </div>
+      {trailing}
+    </header>
   );
 }
 
@@ -510,37 +550,20 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-        <button
-          aria-label={t("project.backToProjects")}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={() => void navigate({ to: "/" })}
-          type="button"
-        >
-          <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-            <path
-              d="M15 18l-6-6 6-6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              stroke="currentColor"
-            />
-          </svg>
-        </button>
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {tabs.map((opt) => (
-            <MobileFocusTabButton
-              active={opt.id === activeTab}
-              key={opt.id}
-              label={opt.label}
-              onClick={() => setTab(opt.id)}
-            />
-          ))}
-        </div>
-        <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
-          {scope.key}
-        </span>
-      </header>
+      <MobileTabHeader
+        activeTabId={activeTab}
+        back={{
+          ariaLabelKey: "project.backToProjects",
+          onClick: () => void navigate({ to: "/" }),
+        }}
+        onTabSelect={setTab}
+        tabs={tabs}
+        trailing={
+          <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
+            {scope.key}
+          </span>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" key={scope.key}>
         {activePlugin ? (
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
@@ -689,37 +712,20 @@ function MobileGlobalOverview() {
   const tableColumns: TableColumn[] = ["name", "project", "activity", "actions"];
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-        <button
-          aria-label={t("project.backToProjects")}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={() => void navigate({ to: "/" })}
-          type="button"
-        >
-          <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-            <path
-              d="M15 18l-6-6 6-6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              stroke="currentColor"
-            />
-          </svg>
-        </button>
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {tabs.map((opt) => (
-            <MobileFocusTabButton
-              active={opt.id === activeTab}
-              key={opt.id}
-              label={opt.label}
-              onClick={() => setTab(opt.id)}
-            />
-          ))}
-        </div>
-        <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
-          {t("workbench.globalOverviewTitle")}
-        </span>
-      </header>
+      <MobileTabHeader
+        activeTabId={activeTab}
+        back={{
+          ariaLabelKey: "project.backToProjects",
+          onClick: () => void navigate({ to: "/" }),
+        }}
+        onTabSelect={setTab}
+        tabs={tabs}
+        trailing={
+          <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
+            {t("workbench.globalOverviewTitle")}
+          </span>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activePlugin ? (
           <Fragment>{activePlugin.render(ctx)}</Fragment>
