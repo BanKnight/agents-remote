@@ -1,43 +1,32 @@
 import type { Project } from "@agents-remote/shared";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useId, useState, useEffect } from "react";
-import { createProject, deleteProject, listProjects } from "../api/client";
+import { deleteProject, listProjects } from "../api/client";
 import { useT } from "../i18n";
 import { ShellHeaderSurface, ShellLayout, ShellPanel } from "../components/shell/shell-layout";
 import {
   ActionButton,
   IconMarker,
   MobilePageHeader,
-  ShellInput,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
+import { ProjectSetupPanel, useCreateProject } from "../components/shell/project-setup";
 
 export function HomeRoute() {
   const { t } = useT();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const inputId = useId();
-  const [projectPath, setProjectPath] = useState("");
   const [setupOpen, setSetupOpen] = useState(false);
   const projects = useQuery({
     queryKey: ["projects"],
     queryFn: listProjects,
   });
   const projectItems = projects.data?.projects ?? [];
-  const create = useMutation({
-    mutationFn: createProject,
-    onSuccess: async (response) => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      await navigate({
-        to: "/projects/$key",
-        params: { key: response.project.name },
-      });
-    },
-  });
+  const { create, projectPath, setProjectPath } = useCreateProject();
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
@@ -291,68 +280,6 @@ function CountBadge({ count, tone }: CountBadgeProps) {
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
       {count}
     </span>
-  );
-}
-
-type ProjectSetupPanelProps = {
-  createError: Error | null;
-  inputId: string;
-  isPending: boolean;
-  projectPath: string;
-  onProjectPathChange: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-};
-
-function ProjectSetupPanel({
-  createError,
-  inputId,
-  isPending,
-  onProjectPathChange,
-  onSubmit,
-  projectPath,
-}: ProjectSetupPanelProps) {
-  const { t } = useT();
-  return (
-    <ShellPanel density="default">
-      <div className="flex min-w-0 items-start gap-3">
-        <IconMarker size="sm" tone="muted">
-          +
-        </IconMarker>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-on-surface">{t("home.setupTitle")}</h2>
-          <p className="mt-1 text-sm leading-6 text-on-surface-muted">{t("home.setupDesc")}</p>
-        </div>
-      </div>
-
-      <form
-        className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
-        onSubmit={onSubmit}
-      >
-        <label className="min-w-0 text-sm font-medium text-on-surface-soft" htmlFor={inputId}>
-          {t("home.folderLabel")}
-          <ShellInput
-            className="mt-2"
-            id={inputId}
-            placeholder={t("home.folderPlaceholder")}
-            value={projectPath}
-            onChange={(event) => onProjectPathChange(event.target.value)}
-          />
-        </label>
-        <button
-          className="cursor-pointer rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-neutral-line disabled:text-on-surface-muted"
-          disabled={projectPath.trim().length === 0 || isPending}
-          type="submit"
-        >
-          {isPending ? t("home.creating") : t("home.createAndEnter")}
-        </button>
-      </form>
-      <p className="mt-3 text-xs leading-5 text-on-surface-muted">{t("home.setupHint")}</p>
-      {createError ? (
-        <p className="mt-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
-          {createError.message}
-        </p>
-      ) : null}
-    </ShellPanel>
   );
 }
 

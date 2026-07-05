@@ -193,7 +193,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "返回",
-  "nav.projects": "项目列表",
+  "nav.projects": "项目",
   "nav.primaryAria": "主导航",
   "nav.primaryMobileAria": "移动端主导航",
   "nav.projectWorkspaceAria": "项目工作区导航",

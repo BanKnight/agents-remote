@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
+import { useEffect, useState, type FormEvent, useId } from "react";
 import type { Project } from "@agents-remote/shared";
 import { listProjects } from "../../api/client";
 import { useT } from "../../i18n";
@@ -10,6 +11,7 @@ import { ShellIcon } from "../shell/icons";
 import { INSTANCE_SKELETON_ROW_COUNT } from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
+import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
 
 type LeftRailProps = {
   scope: WorkbenchScope;
@@ -32,6 +34,9 @@ function ProjectTree({ scope }: ProjectTreeProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const [, setSettingsOpen] = useAtom(workbenchSettingsFlyoutOpenAtom);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const inputId = useId();
+  const { create, projectPath, setProjectPath } = useCreateProject();
   const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const activeProjectName = scope.kind === "project" ? scope.key : null;
 
@@ -43,6 +48,24 @@ function ProjectTree({ scope }: ProjectTreeProps) {
 
   const selectGlobal = () => void navigate({ to: "/global" });
 
+  useEffect(() => {
+    if (!setupOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSetupOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [setupOpen]);
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedPath = projectPath.trim();
+    if (trimmedPath.length === 0 || create.isPending) return;
+    create.mutate(trimmedPath);
+  };
+
+  const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <nav
@@ -50,6 +73,21 @@ function ProjectTree({ scope }: ProjectTreeProps) {
         className="flex-1 overflow-y-auto pb-24 lg:pb-0"
       >
         <GlobalNavNode active={scope.kind === "global"} onSelect={selectGlobal} />
+        <button
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={() => setSetupOpen(true)}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M8 3v10M3 8h10"
+              strokeLinecap="round"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            />
+          </svg>
+          {t("home.newAdopt")}
+        </button>
         <ShellSectionLabel className="px-2 pb-1 pt-3">
           {t("workbench.projectsSection")}
         </ShellSectionLabel>
@@ -81,6 +119,24 @@ function ProjectTree({ scope }: ProjectTreeProps) {
           {t("nav.settings")}
         </button>
       </div>
+      {setupVisible ? (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto bg-surface-inset/60 backdrop-blur-sm"
+          onClick={() => setSetupOpen(false)}
+          aria-hidden="true"
+        >
+          <div className="p-4" onClick={(e) => e.stopPropagation()} aria-hidden="true">
+            <ProjectSetupPanel
+              createError={create.error instanceof Error ? create.error : null}
+              inputId={inputId}
+              isPending={create.isPending}
+              onProjectPathChange={setProjectPath}
+              onSubmit={handleSubmit}
+              projectPath={projectPath}
+            />
+          </div>
+        </div>
+      ) : null}
       <SettingsFlyout />
     </div>
   );
