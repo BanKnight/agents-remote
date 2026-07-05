@@ -21,7 +21,7 @@ export type PluginContext = {
 };
 
 /**
- * 右栏 inspection 插件契约（设计文档 §6）。V1 仅编译期第一方注册（Files/Git/原型），
+ * 右栏 inspection 插件契约（设计文档 §6）。V1 仅编译期第一方注册（Files/Git），
  * 不实装外部插件 / marketplace。`when` 集中表达可见性（全局隐 project-scoped tab）；
  * render 由 RightPanelTabs 在 active tab 时调用。Files/Git
  * 用 queryScope 隔离与 ProjectConsole section 的缓存（命中单数据管道 / 禁并行过滤分支）。
@@ -35,7 +35,7 @@ export type RightPanelPlugin = {
 
 /**
  * 第一方右栏插件注册表（设计文档 §5、§6）。Stage 3 commit ② 由 RightPanelTabs
- * 消费。原型 tab V1 占位（不伪造数据），后续实装原型预览。
+ * 消费。Files/Git 均项目作用域（when: ctx.projectKey !== null）。
  */
 export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
   {
@@ -60,15 +60,4 @@ export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
       ) : null,
     when: (ctx) => ctx.projectKey !== null,
   },
-  {
-    id: "prototype",
-    labelKey: "workbench.tabPrototype",
-    render: () => <PrototypePlaceholder />,
-    when: () => true,
-  },
 ];
-
-function PrototypePlaceholder(): ReactNode {
-  // 原型 tab V1 占位（设计文档 §5）。不伪造数据，后续实装原型预览。
-  return null;
-}

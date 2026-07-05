@@ -26,7 +26,7 @@ const indexRoute = createRoute({
 
 // ── workbench 主动路由（中栏语义命名，去 /workbench 前缀，设计文档 §7）──────────────
 // 同一 URL 桌面三栏 / 移动线性退化响应式渲染（WorkbenchRoute.useIsDesktopViewport），
-// 无跨端 redirect。?rightTab=files|git|prototype search param 两端共用（桌面读作右栏
+// 无跨端 redirect。?rightTab=files|git search param 两端共用（桌面读作右栏
 // tab、移动读作 header tab）。旧 /projects/$name（ProjectConsole）已与此 project scope
 // 路由合并 —— /projects/$key 即 workbench project 作用域，不再单独 redirect。
 const projectScopeRoute = createRoute({

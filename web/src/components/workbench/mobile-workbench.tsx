@@ -65,7 +65,7 @@ type MobileWorkbenchProps = {
  *
  * 当前：无 focusId → 实例列表（WorkbenchLeftRail 全屏 + 创建入口，Stage D 升级为
  * MobileProjectOverview）；有 focusId → 单实例聚焦（Stage A：PanelRouter 不 split；
- * Stage B：header tab 切 output/文件/Git/原型，inspection 复用 FIRST_PARTY_PLUGINS）
+ * Stage B：header tab 切 output/文件/Git，inspection 复用 FIRST_PARTY_PLUGINS）
  * + 顶部返回。
  */
 export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
@@ -430,7 +430,7 @@ type MobileProjectOverviewProps = {
  * 项目名右侧 shrink-0 truncate，对齐聚焦态 MobileFocusHeader 同款结构，替代旧 MobilePageHeader
  * + 二级 tab 行两块）+ 内容区 tab 切换。总览 = 创建入口（左）+ ViewSwitcher（右，两端对齐，
  * 设计 §6）+ 活跃实例 grid/table（本组件直渲 InstanceGrid/SessionTable，单一数据管道
- * useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git/原型
+ * useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git
  * = FIRST_PARTY_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
  * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
  * 是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key} 切项目 remount，重置
@@ -443,7 +443,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const [view, setView] = useAtom(workbenchViewAtom);
   const ctx: PluginContext = { projectKey: scope.key, focusId: undefined, sessionType: undefined };
   // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
-  //（按 ctx 过滤；files/git 需 projectKey，prototype 常驻）。复用 plugin.when 单一来源。
+  //（按 ctx 过滤；files/git 需 projectKey）。复用 plugin.when 单一来源。
   const tabs = useMemo<{ id: WorkbenchMobileOverviewTab; label: string }[]>(() => {
     const options: { id: WorkbenchMobileOverviewTab; label: string }[] = [
       { id: "overview", label: t("workbench.tabOverview") },

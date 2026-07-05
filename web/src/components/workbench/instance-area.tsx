@@ -182,10 +182,9 @@ export function InstanceArea({
   );
 
   // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + history（project-only，历史是
-  // project-scoped 数据）+ 第一方 inspection 插件按 ctx 过滤（files/git 需 projectKey，
-  // prototype 常驻）。复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate
-  // projectKey（非 FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope 仅
-  // overview + prototype。
+  // project-scoped 数据）+ 第一方 inspection 插件按 ctx 过滤（files/git 需 projectKey）。
+  // 复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate projectKey（非
+  // FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope 仅 overview。
   const visibleTabs = useMemo<{ id: WorkbenchMiddleTab; label: string }[]>(() => {
     const options: { id: WorkbenchMiddleTab; label: string }[] = [
       { id: "overview", label: t("workbench.tabOverview") },
@@ -485,7 +484,7 @@ export function InstanceArea({
   ) : null;
 
   // 中栏内容按 tab 分支（设计 §4）：工作态 tab（overview/history）= 左右结构（左总览固定宽 +
-  //   右工作区常驻活动组）；inspection tab（files/git/prototype）= 全宽 inspection，右工作区临时让位。
+  //   右工作区常驻活动组）；inspection tab（files/git）= 全宽 inspection，右工作区临时让位。
   //   history 左总览 = HistoryList（project-scoped 历史 session，showLabel=false 因 tab bar 已标识）。
   const isOverview = resolvedTab === "overview";
   const isHistory = !isOverview && resolvedTab === "history";

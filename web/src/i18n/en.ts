@@ -454,7 +454,6 @@ export const en = {
   "workbench.tabHistory": "History",
   "workbench.tabFiles": "Files",
   "workbench.tabGit": "Git",
-  "workbench.tabPrototype": "Prototype",
   "workbench.viewSwitcher": "View",
   "workbench.viewGrid": "Grid",
   "workbench.viewTable": "Table",

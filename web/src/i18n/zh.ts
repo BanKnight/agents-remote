@@ -454,7 +454,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.tabHistory": "历史",
   "workbench.tabFiles": "文件",
   "workbench.tabGit": "Git",
-  "workbench.tabPrototype": "原型",
   "workbench.viewSwitcher": "视图",
   "workbench.viewGrid": "网格",
   "workbench.viewTable": "表格",

@@ -124,8 +124,8 @@ function WorkbenchContent({
     return <MobileWorkbench focusId={focusId} scope={scope} />;
   }
   // project 可唤出右栏（inspection 只依赖 projectKey，非聚焦态唤出看 files/git）；
-  // global inspection 仅 prototype 占位（render null），不唤出。收起态 rightPanel=null
-  //（aside 不渲染、零 query），由 RailButton 唤出。
+  // global scope 不唤出右栏（全局 inspection 走中栏 files tab，见 workbench-views §4.1）。
+  // 收起态 rightPanel=null（aside 不渲染、零 query），由 RailButton 唤出。
   const rightPanelCollapsible = scope.kind === "project";
   const rightPanel =
     rightPanelCollapsible && !rightCollapsed ? (
