@@ -104,6 +104,18 @@ export const en = {
   "session.namePrompt.placeholder": "Session name (optional)",
   "session.namePrompt.confirm": "Create",
 
+  // ── Mobile focus instance info sheet (ℹ) ───────────────────
+  "session.instanceInfo.title": "Instance info",
+  "session.instanceInfo.name": "Name",
+  "session.instanceInfo.project": "Project",
+  "session.instanceInfo.type": "Type",
+  "session.instanceInfo.terminal": "Terminal",
+  "session.instanceInfo.status": "Status",
+  "session.instanceInfo.model": "Model",
+  "session.instanceInfo.permission": "Permission",
+  "session.instanceInfo.createdAt": "Created",
+  "session.connectionError": "Connection failed",
+
   // ── Files ────────────────────────────────────────────────────
   "files.loading": "Loading files...",
   "files.errorTitle": "Unable to load this directory.",

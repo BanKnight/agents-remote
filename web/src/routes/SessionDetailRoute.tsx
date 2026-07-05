@@ -51,6 +51,13 @@ type SessionDetailProps = {
    * 由 WorkbenchShell 提供外壳。默认 false（旧路由用 ShellLayout）。
    */
   embedded?: boolean;
+  /**
+   * 省略面板自带 header（SessionDetailHeader 整个不渲染）。移动端聚焦态用：header 由
+   * MobileFocusBody 统一渲染，避免 title/projectName 双显冗余，operational actions
+   *（Files/Git 已在 tab、+Terminal 列表态覆盖、Retry 移内容区错误态）不再塞 header。
+   * 与 embedded 正交：桌面 split 传 embedded 但不传 embeddedHeader，header 仍渲染。默认 false。
+   */
+  embeddedHeader?: boolean;
 };
 
 type StreamConnectionStatus = "connecting" | TransportStatus;
@@ -70,6 +77,7 @@ export function SessionDetail({
   sessionType,
   sourceAgentSession,
   embedded = false,
+  embeddedHeader = false,
 }: SessionDetailProps) {
   const { t } = useT();
   const navigate = useNavigate();
@@ -367,38 +375,57 @@ export function SessionDetail({
 
   const content = (
     <>
-      <SessionDetailHeader
-        connectionStatus={connectionStatus}
-        createTerminalError={createTerminal.error}
-        createTerminalPending={createTerminal.isPending}
-        detailView={detailView}
-        embedded={embedded}
-        projectName={projectName}
-        sessionId={sessionId}
-        sessionType={sessionType}
-        sourceAgentSession={sourceAgentSession}
-        title={title}
-        closePending={closeSession.isPending}
-        onClose={async () => {
-          const ok = await confirm({
-            cancelLabel: t("cancel"),
-            confirmLabel: t("session.close"),
-            message: t("session.closeConfirm"),
-            title: t("session.close"),
-            tone: "danger",
-          });
-          if (ok) closeSession.mutate();
-        }}
-        onCreateTerminal={() => createTerminal.mutate()}
-        onReconnect={() => setReconnectKey((value) => value + 1)}
-        onViewChange={setDetailView}
-      />
+      {!embeddedHeader ? (
+        <SessionDetailHeader
+          connectionStatus={connectionStatus}
+          createTerminalError={createTerminal.error}
+          createTerminalPending={createTerminal.isPending}
+          detailView={detailView}
+          embedded={embedded}
+          projectName={projectName}
+          sessionId={sessionId}
+          sessionType={sessionType}
+          sourceAgentSession={sourceAgentSession}
+          title={title}
+          closePending={closeSession.isPending}
+          onClose={async () => {
+            const ok = await confirm({
+              cancelLabel: t("cancel"),
+              confirmLabel: t("session.close"),
+              message: t("session.closeConfirm"),
+              title: t("session.close"),
+              tone: "danger",
+            });
+            if (ok) closeSession.mutate();
+          }}
+          onCreateTerminal={() => createTerminal.mutate()}
+          onReconnect={() => setReconnectKey((value) => value + 1)}
+          onViewChange={setDetailView}
+        />
+      ) : null}
 
       <div
         className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden gap-0 p-0 ${shellSurfaceClasses.runtimeBody}`}
       >
-        {detail.error || fatalError || isEnded || closeSession.error ? (
+        {detail.error ||
+        fatalError ||
+        isEnded ||
+        closeSession.error ||
+        (embeddedHeader && connectionStatus === "error") ? (
           <div className="flex shrink-0 flex-col gap-2 p-2 sm:p-3">
+            {embeddedHeader && connectionStatus === "error" ? (
+              <>
+                <Notice tone="danger">{t("session.connectionError")}</Notice>
+                <button
+                  className="inline-flex shrink-0 items-center self-start gap-1.5 rounded-lg border border-error/30 bg-error/10 px-3 py-1.5 text-xs font-semibold text-error transition hover:bg-error/20"
+                  onClick={() => setReconnectKey((value) => value + 1)}
+                  type="button"
+                >
+                  <ShellIcon className="h-3.5 w-3.5" name="refresh" />
+                  {t("session.retry")}
+                </button>
+              </>
+            ) : null}
             {detail.error instanceof Error ? (
               <Notice tone="danger">{detail.error.message}</Notice>
             ) : null}

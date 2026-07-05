@@ -4,6 +4,8 @@ import { SessionDetail } from "../../routes/SessionDetailRoute";
 type PanelProps = {
   projectName: string;
   sessionId: string;
+  /** 省略面板自带 header（移动端聚焦态用）；透传给 Claude2Chat/SessionDetail。默认 false。 */
+  embeddedHeader?: boolean;
 };
 
 /**
@@ -16,8 +18,15 @@ type PanelProps = {
  * 注：closeSession.onSuccess 已统一导航到 /projects/$key（Phase 4 URL 统一）。embedded 模式下
  * ChatHeader 隐藏自带 close，close 由 SplitPanel 工具条承载。
  */
-export function ChatPanel({ projectName, sessionId }: PanelProps) {
-  return <Claude2Chat embedded projectName={projectName} sessionId={sessionId} />;
+export function ChatPanel({ projectName, sessionId, embeddedHeader }: PanelProps) {
+  return (
+    <Claude2Chat
+      embedded
+      embeddedHeader={embeddedHeader}
+      projectName={projectName}
+      sessionId={sessionId}
+    />
+  );
 }
 
 /**
@@ -31,9 +40,15 @@ export function ChatPanel({ projectName, sessionId }: PanelProps) {
  * embedded 模式下 header 自带 close 按钮隐藏（close 由 SplitPanel 工具条承载），但移动端 ⋯ 菜单
  * 的 Close 仍触发 closeSession，导航回项目作用域。
  */
-export function AgentTerminalPanel({ projectName, sessionId }: PanelProps) {
+export function AgentTerminalPanel({ projectName, sessionId, embeddedHeader }: PanelProps) {
   return (
-    <SessionDetail embedded projectName={projectName} sessionId={sessionId} sessionType="agent" />
+    <SessionDetail
+      embedded
+      embeddedHeader={embeddedHeader}
+      projectName={projectName}
+      sessionId={sessionId}
+      sessionType="agent"
+    />
   );
 }
 
@@ -42,10 +57,11 @@ export function AgentTerminalPanel({ projectName, sessionId }: PanelProps) {
  *
  * 注：closeSession.onSuccess 已统一导航到 /projects/$key[/session/$id]（Phase 4 URL 统一）。
  */
-export function TerminalPanel({ projectName, sessionId }: PanelProps) {
+export function TerminalPanel({ projectName, sessionId, embeddedHeader }: PanelProps) {
   return (
     <SessionDetail
       embedded
+      embeddedHeader={embeddedHeader}
       projectName={projectName}
       sessionId={sessionId}
       sessionType="terminal"

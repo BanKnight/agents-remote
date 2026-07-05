@@ -104,6 +104,18 @@ export const zh: Record<TranslationKey, string> = {
   "session.namePrompt.placeholder": "会话名称（可选）",
   "session.namePrompt.confirm": "创建",
 
+  // ── 移动聚焦态实例信息浮窗 (ℹ) ──────────────────────────────
+  "session.instanceInfo.title": "实例信息",
+  "session.instanceInfo.name": "名称",
+  "session.instanceInfo.project": "项目",
+  "session.instanceInfo.type": "类型",
+  "session.instanceInfo.terminal": "终端",
+  "session.instanceInfo.status": "状态",
+  "session.instanceInfo.model": "模型",
+  "session.instanceInfo.permission": "权限",
+  "session.instanceInfo.createdAt": "创建时间",
+  "session.connectionError": "连接失败",
+
   // ── Files ────────────────────────────────────────────────────
   "files.loading": "正在加载文件...",
   "files.errorTitle": "无法加载此目录。",

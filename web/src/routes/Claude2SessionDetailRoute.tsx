@@ -298,6 +298,7 @@ export function Claude2Chat({
   projectName,
   sessionId,
   embedded = false,
+  embeddedHeader = false,
 }: {
   projectName: string;
   sessionId: string;
@@ -306,6 +307,12 @@ export function Claude2Chat({
    * 由 WorkbenchShell 提供外壳。默认 false（旧路由 Claude2SessionDetailRoute 用 ShellLayout）。
    */
   embedded?: boolean;
+  /**
+   * 省略面板自带 header（ChatHeader 整个不渲染）。移动端聚焦态用：header 由 MobileFocusBody
+   * 统一渲染（◄ 返回 + tab + ℹ✕ 胶囊），避免 title/projectName 双显冗余。与 embedded 正交：
+   * 桌面 split 传 embedded 但不传 embeddedHeader，header 仍渲染（现状不变）。默认 false。
+   */
+  embeddedHeader?: boolean;
 }) {
   const { t } = useT();
   const navigate = useNavigate();
@@ -455,22 +462,24 @@ export function Claude2Chat({
 
   const content = (
     <>
-      <ChatHeader
-        closePending={closeSession.isPending}
-        embedded={embedded}
-        projectName={projectName}
-        title={title}
-        onClose={async () => {
-          const ok = await confirm({
-            cancelLabel: t("cancel"),
-            confirmLabel: t("session.close"),
-            message: t("session.closeConfirm"),
-            title: t("session.close"),
-            tone: "danger",
-          });
-          if (ok) closeSession.mutate();
-        }}
-      />
+      {!embeddedHeader ? (
+        <ChatHeader
+          closePending={closeSession.isPending}
+          embedded={embedded}
+          projectName={projectName}
+          title={title}
+          onClose={async () => {
+            const ok = await confirm({
+              cancelLabel: t("cancel"),
+              confirmLabel: t("session.close"),
+              message: t("session.closeConfirm"),
+              title: t("session.close"),
+              tone: "danger",
+            });
+            if (ok) closeSession.mutate();
+          }}
+        />
+      ) : null}
 
       <AssistantRuntimeProvider runtime={runtime}>
         <Claude2BridgeContext.Provider value={bridge}>

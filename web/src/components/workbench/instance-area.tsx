@@ -582,6 +582,12 @@ export function InstanceArea({
 
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
+  /**
+   * 省略面板自带 header（移动端聚焦态用）：透传给 ChatPanel/AgentTerminalPanel/TerminalPanel
+   * → Claude2Chat/SessionDetail 的 embeddedHeader。桌面右工作区 GroupHeader 下不传（header
+   * 仍渲染，现状不变）；移动 MobileFocusBody 传 true（header 由 MobileFocusHeader 统一渲染）。
+   */
+  embeddedHeader?: boolean;
 };
 
 /**
@@ -592,34 +598,52 @@ type PanelRouterProps = {
  * 移动聚焦态调一次（不 split，单实例）。面板内部依赖父级 flex-col 让 flex-1 runtime
  * body 撑满，调用方容器须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
  */
-export function PanelRouter({ panelRef }: PanelRouterProps) {
+export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
-    return <AgentPanelRouter panelRef={panelRef} />;
+    return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
   }
   if (sessionType === "terminal") {
-    return <TerminalPanelRouter panelRef={panelRef} />;
+    return <TerminalPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
 
-function AgentPanelRouter({ panelRef }: PanelRouterProps) {
+function AgentPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   const detail = useAgentDetail(panelRef);
   if (detail.isLoading) return <LoadingPanel />;
   if (detail.data?.session.provider === "claude2") {
-    return <ChatPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
+    return (
+      <ChatPanel
+        embeddedHeader={embeddedHeader}
+        projectName={panelRef.projectName}
+        sessionId={panelRef.sessionId}
+      />
+    );
   }
   if (detail.data?.session) {
-    return <AgentTerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
+    return (
+      <AgentTerminalPanel
+        embeddedHeader={embeddedHeader}
+        projectName={panelRef.projectName}
+        sessionId={panelRef.sessionId}
+      />
+    );
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
 
-function TerminalPanelRouter({ panelRef }: PanelRouterProps) {
+function TerminalPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   const detail = useTerminalDetail(panelRef);
   if (detail.isLoading) return <LoadingPanel />;
   if (detail.data?.session) {
-    return <TerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
+    return (
+      <TerminalPanel
+        embeddedHeader={embeddedHeader}
+        projectName={panelRef.projectName}
+        sessionId={panelRef.sessionId}
+      />
+    );
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
@@ -647,35 +671,9 @@ export function useTerminalDetail(panelRef: WorkbenchPanelRef, enabled = true) {
 }
 
 /**
- * 聚焦态 header displayName（设计文档 §15）。按 sessionId 前缀推断类型 → 复用
- * useAgentDetail/useTerminalDetail（query key 与 PanelRouter 一致，React Query dedupe 零额外
- * 网络）。focusId/projectName 缺失或类型未知时返 undefined（调用方 fallback projectName /
- * focusId 前 8 位）。两个 detail hook 都调（hooks 规则），按 sessionType 控制 enabled，
- * 非聚焦态（focusId undefined）双 enabled=false 零网络开销。
- */
-export function useFocusSessionName(
-  focusId: string | undefined,
-  projectName: string | undefined,
-): string | undefined {
-  const sessionType = focusId ? inferSessionTypeFromId(focusId) : undefined;
-  const ref: WorkbenchPanelRef = {
-    projectName: projectName ?? "",
-    sessionId: focusId ?? "",
-  };
-  // projectName 未就绪（global scope 布局未收敛 / addPanel 尚未填充）时不发请求 ——
-  // 否则会用空 projectName 发无效 query（getAgentSession("", id) 越界/404）。
-  const projReady = !!projectName;
-  const agent = useAgentDetail(ref, projReady && sessionType === "agent");
-  const terminal = useTerminalDetail(ref, projReady && sessionType === "terminal");
-  if (sessionType === "agent") return agent.data?.session.displayName;
-  if (sessionType === "terminal") return terminal.data?.session.displayName;
-  return undefined;
-}
-
-/**
  * split 面板元数据（设计 §7.2/§7.3/§10/§12）。按 sessionId 前缀推断类型 → 复用
- * useAgentDetail/useTerminalDetail（query key 与 PanelRouter/useFocusSessionName 一致，React Query
- * dedupe 零额外网络）。返回 SplitPanel header（marker + label + statusDot）与 SplitDock chip
+ * useAgentDetail/useTerminalDetail（query key 与 PanelRouter 一致，React Query dedupe 零额外
+ * 网络）。返回 SplitPanel header（marker + label + statusDot）与 SplitDock chip
  *（marker + label）共用的元数据；detail 未就绪时返 undefined，调用方 fallback 到 sessionId 前 12 位。
  * 两个 detail hook 都调（hooks 规则），按 sessionType 控制 enabled；projectName 未就绪时双
  * enabled=false 零网络开销。这是 P1#1/#2 + P2#7/#8 的根因修复：SplitLayout 不再只接收
@@ -1345,7 +1343,7 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
  * 右工作区活动组 header（设计 §7）。嵌入式面板（ChatPanel/AgentTerminalPanel/TerminalPanel）
  * 自身不带 header（原由 SplitPanel 承载），Phase A 改单 group 右工作区后由本组件统一渲染
  * marker + 实例名 + maximize + close。usePanelMeta 从实例 detail query 派生（与
- * PanelRouter/useFocusSessionName 同源 query key，React Query dedupe）。
+ * PanelRouter 同源 query key，React Query dedupe）。
  */
 function GroupHeader({
   isMaximized,

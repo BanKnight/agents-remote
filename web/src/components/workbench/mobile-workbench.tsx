@@ -8,6 +8,9 @@ import {
   shellSurfaceClasses,
   ViewSwitcher,
 } from "../shell/shell-primitives";
+import { ShellIcon } from "../shell/icons";
+import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
+import { sessionStatusLabel } from "../../routes/console-model";
 import {
   addPanel,
   filterWorkbenchViews,
@@ -19,6 +22,7 @@ import {
   inferSessionTypeFromId,
   useWorkbenchLayout,
   useWorkbenchNavigate,
+  type WorkbenchPanelRef,
   workbenchMobileFocusTabAtom,
   workbenchMobileOverviewTabAtom,
   workbenchViewAtom,
@@ -34,12 +38,13 @@ import {
   instanceToTableRow,
   PanelRouter,
   type TableRowCallbacks,
+  useAgentDetail,
   useCloseSession,
   useCreateSession,
-  useFocusSessionName,
   useGlobalInstanceCandidates,
   useProjectInstances,
   useScopeInstanceOrder,
+  useTerminalDetail,
   VIEW_LABEL_KEY,
 } from "./instance-area";
 import { HistoryList } from "./history-list";
@@ -93,15 +98,17 @@ type MobileFocusBodyProps = {
 };
 
 /**
- * 移动端聚焦态主体（设计文档 §7）。统一 header = ◄ 返回列表 + 项目名 + 二级 tab 行
- *（输出/文件/Git/原型），与列表态 MobileProjectOverview header 同设计语言。Stage A：单实例
- * 面板（PanelRouter），不走桌面 split —— 窄屏不 split 多面板（避免挤压），只渲染 focusId
- * 对应实例。Stage B：header tab 切 output / inspection —— 窄屏无法像桌面「实例常驻中栏 +
- * inspection 并列右栏」，故实例与 inspection 共占同一区域、tab 切换；inspection 复用
- * FIRST_PARTY_PLUGINS render（FilesPanel/GitDiffPanel 已内置移动响应式）。projectName：
- * project 作用域直接 scope.key；global 作用域从布局面板查 focusId 所属项目，缺失回退
- *「全局」。header 标题暂用 projectName（项目上下文）；实例 displayName 精确化是 follow-up。
- * ‹› 浮动切实例 overlay 在 header 之上方内容区，z-30 不遮挡 header。
+ * 移动端聚焦态主体（设计文档 §7，5g 重构）。单行 header = ◄ 返回 + tab 横滚区 + ℹ✕ 胶囊
+ *（MobileFocusHeader），替代旧 MobilePageHeader + 二级 tab 行两块；面板自带 header 在聚焦态
+ * 隐藏（PanelRouter embeddedHeader），消除 title 重复 / Files·Git 与 tab 重复 / meta 独占行
+ * 三处冗余。Stage A：单实例面板（PanelRouter），不走桌面 split —— 窄屏不 split 多面板（避免
+ * 挤压）。Stage B：tab 切 output / inspection —— 实例与 inspection 共占同一区域、tab 切换；
+ * inspection 复用 FIRST_PARTY_PLUGINS render。ℹ 触发底部 info sheet 显实例 meta（agent 显
+ * model/permission/createdAt，terminal 不显这些行 —— UI=f(state) 不伪造）；✕ 触发 useCloseSession
+ *（confirm → close API → navigate 回列表）。projectName：project 作用域直接 scope.key；global
+ * 作用域从布局面板查 focusId 所属项目。detail 查询（useAgentDetail/useTerminalDetail）query key
+ * 与 PanelRouter 一致，React Query dedupe 零额外网络。‹› 浮动切实例 overlay 在内容区中点，
+ * z-30 不遮挡 header。
  */
 function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const { t } = useT();
@@ -115,12 +122,22 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       ? scope.key
       : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ??
         order.find((r) => r.sessionId === focusId)?.projectName);
-  // 聚焦态 header title 显示实例 displayName（设计文档 §15），fallback projectName / 「实例」。
-  const focusDisplayName = useFocusSessionName(focusId, projectName);
+  const sessionType = inferSessionTypeFromId(focusId);
+  // detail 查询（query key 与 PanelRouter 一致，React Query dedupe 零额外网络）。两个 hook 都调
+  //（hooks 规则），按 sessionType 控制 enabled；projectName 未就绪时双 enabled=false 零网络开销。
+  const panelRef: WorkbenchPanelRef = { projectName: projectName ?? "", sessionId: focusId };
+  const projReady = !!projectName;
+  const agentDetail = useAgentDetail(panelRef, projReady && sessionType === "agent");
+  const terminalDetail = useTerminalDetail(panelRef, projReady && sessionType === "terminal");
+  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
+  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
+  const focusDisplayName = agentSession?.displayName ?? terminalSession?.displayName;
+  const infoSheet = useInstanceInfoSheet();
+  const { close, holder: closeHolder } = useCloseSession();
   const ctx: PluginContext = {
     projectKey: projectName ?? null,
     focusId,
-    sessionType: inferSessionTypeFromId(focusId),
+    sessionType,
   };
   const visiblePlugins = FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx));
   // 记忆的 tab 若在当前 ctx 不可见（如全局作用域下 project-scoped 的 files/git 隐藏，
@@ -143,6 +160,62 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   };
   const showSwitcher = order.length > 1 && currentIndex >= 0;
 
+  // ℹ sheet 字段装配（UI=f(state)：terminal 无 model/permissionMode/createdAt，不伪造占位行）。
+  const openInfo = () => {
+    const fields: InfoField[] = [];
+    if (focusDisplayName) {
+      fields.push({ label: t("session.instanceInfo.name"), value: focusDisplayName });
+    }
+    if (projectName) {
+      fields.push({ label: t("session.instanceInfo.project"), value: projectName });
+    }
+    if (sessionType === "agent" && agentSession) {
+      fields.push({
+        label: t("session.instanceInfo.type"),
+        value: providerDisplayName(agentSession.provider),
+      });
+      if (agentSession.model) {
+        fields.push({ label: t("session.instanceInfo.model"), value: agentSession.model });
+      }
+      if (agentSession.permissionMode) {
+        fields.push({
+          label: t("session.instanceInfo.permission"),
+          value: agentSession.permissionMode,
+        });
+      }
+      if (agentSession.createdAt) {
+        fields.push({
+          label: t("session.instanceInfo.createdAt"),
+          value: formatCreatedAt(agentSession.createdAt),
+        });
+      }
+      fields.push({
+        label: t("session.instanceInfo.status"),
+        value: t(sessionStatusLabel(agentSession.status)),
+      });
+    } else if (sessionType === "terminal" && terminalSession) {
+      fields.push({
+        label: t("session.instanceInfo.type"),
+        value: t("session.instanceInfo.terminal"),
+      });
+      fields.push({
+        label: t("session.instanceInfo.status"),
+        value: t(sessionStatusLabel(terminalSession.status)),
+      });
+    }
+    infoSheet.open(t("session.instanceInfo.title"), fields);
+  };
+
+  const onClose = () => {
+    if (!sessionType) return;
+    void close(panelRef, sessionType, () => void navigateWorkbench(scope));
+  };
+
+  const tabs = [
+    { id: "output" as const, label: t("workbench.tabOutput") },
+    ...visiblePlugins.map((p) => ({ id: p.id, label: t(p.labelKey) })),
+  ];
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {showSwitcher ? (
@@ -153,36 +226,123 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
           prevLabel={t("workbench.switchPrev")}
         />
       ) : null}
-      <MobilePageHeader
-        back={{ label: t("workbench.backToList"), onClick: () => void navigateWorkbench(scope) }}
-        title={focusDisplayName ?? projectName ?? t("workbench.global")}
+      <MobileFocusHeader
+        activeTab={activeTab}
+        onBack={() => void navigateWorkbench(scope)}
+        onClose={onClose}
+        onInfo={openInfo}
+        onTabSelect={setTab}
+        tabs={tabs}
       />
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
-        <MobileFocusTabButton
-          active={activeTab === "output"}
-          label={t("workbench.tabOutput")}
-          onClick={() => setTab("output")}
-        />
-        {visiblePlugins.map((plugin) => (
-          <MobileFocusTabButton
-            active={activeTab === plugin.id}
-            key={plugin.id}
-            label={t(plugin.labelKey)}
-            onClick={() => setTab(plugin.id)}
-          />
-        ))}
-      </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {projectName ? (
           <div className={activePlugin ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
-            <PanelRouter key={focusId} panelRef={{ projectName, sessionId: focusId }} />
+            <PanelRouter
+              embeddedHeader
+              key={focusId}
+              panelRef={{ projectName, sessionId: focusId }}
+            />
           </div>
         ) : null}
         {activePlugin ? (
           <Fragment key={projectName ?? "none"}>{activePlugin.render(ctx)}</Fragment>
         ) : null}
       </div>
+      {infoSheet.holder}
+      {closeHolder}
     </div>
+  );
+}
+
+/** Agent provider 全名（claude2 → "Claude 2"；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
+function providerDisplayName(provider: string | undefined): string {
+  if (!provider) return "—";
+  if (provider === "claude") return "Claude";
+  if (provider === "codex") return "Codex";
+  if (provider === "claude2") return "Claude 2";
+  return provider;
+}
+
+/** createdAt ISO → 本地可读格式（toLocaleString 跟随浏览器 locale，与 navigator.language 检测一致）。 */
+function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+type MobileFocusHeaderProps = {
+  activeTab: WorkbenchMobileFocusTab;
+  tabs: { id: WorkbenchMobileFocusTab; label: string }[];
+  onBack: () => void;
+  onInfo: () => void;
+  onClose: () => void;
+  onTabSelect: (id: WorkbenchMobileFocusTab) => void;
+};
+
+/**
+ * 移动聚焦态单行 header（设计文档 §7，5g 重构）：◄ 返回 + tab 横滚区（flex-1 overflow-x-auto
+ * 隐藏滚动条）+ ℹ✕ 胶囊操作区（ViewSwitcher 同款容器）。替代旧 MobilePageHeader + 二级 tab 行。
+ * tab 区可横滚（tab 多时不换行挤压胶囊）；胶囊 shrink-0 永远可见。ℹ 触发底部 info sheet；
+ * ✕ 触发 useCloseSession（confirm → close API → navigate 回列表）。
+ */
+function MobileFocusHeader({
+  activeTab,
+  tabs,
+  onBack,
+  onInfo,
+  onClose,
+  onTabSelect,
+}: MobileFocusHeaderProps) {
+  const { t } = useT();
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+      <button
+        aria-label={t("workbench.backToList")}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+        onClick={onBack}
+        type="button"
+      >
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+          <path
+            d="M15 18l-6-6 6-6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {tabs.map((opt) => (
+          <MobileFocusTabButton
+            active={opt.id === activeTab}
+            key={opt.id}
+            label={opt.label}
+            onClick={() => onTabSelect(opt.id)}
+          />
+        ))}
+      </div>
+      <div
+        className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+        role="group"
+      >
+        <button
+          aria-label={t("session.instanceInfo.title")}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={onInfo}
+          type="button"
+        >
+          <ShellIcon className="h-4 w-4" name="info" />
+        </button>
+        <button
+          aria-label={t("session.close")}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+          onClick={onClose}
+          type="button"
+        >
+          <ShellIcon className="h-4 w-4" name="close" />
+        </button>
+      </div>
+    </header>
   );
 }
 
@@ -192,11 +352,11 @@ type MobileFocusTabButtonProps = {
   onClick: () => void;
 };
 
-/** 移动聚焦态 header tab 按钮（与右栏 RightPanelTabs.TabButton 同设计语言，触摸目标略大）。 */
+/** 移动聚焦态 header tab 按钮（与右栏 RightPanelTabs.TabButton 同设计语言，5g 紧凑化匹配 h-12 单行 header）。 */
 function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonProps) {
   return (
     <button
-      className={`shrink-0 rounded-lg px-3 py-3 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
+      className={`shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
       onClick={onClick}
       type="button"
     >
