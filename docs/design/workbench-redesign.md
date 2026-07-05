@@ -48,18 +48,17 @@
 
 ```
 全局                       ← 全局实例区入口(跨项目 split 监控)
-项目
-├─ ▼ projA       [⋯]        ← 项目行：点选=切该项目实例区，[⋯]=项目菜单
-│   ├─ Agents
-│   │   ├─ agent1 ●  running     ← 活跃实例（状态徽章）
-│   │   └─ agent2 ◻  idle
-│   ├─ Terminals
-│   │   └─ term1             ← terminal 无状态徽章（恒活跃）
-│   ├─ 历史 session (2)
-│   │   └─ agent0 (已结束)        ← 历史 session，点开 = resume 成实例
-│   └─ + 新建 ▾               ← 新建 agent / terminal
-├─ ▶ projB                   ← 折叠
-├─ + 新建项目                  ← 全局节点下方，Projects section 上方
+v 项目              [+]      ← section label = ShellNavigationButton 同款行（text-sm + marker），点击收起/展开，右侧 + 新建按钮
+    ├─ ▼ projA     [⋯]      ← 项目行：点选=切该项目实例区，[⋯]=项目菜单（缩进表达母子从属）
+    │   ├─ Agents
+    │   │   ├─ agent1 ●  running     ← 活跃实例（状态徽章）
+    │   │   └─ agent2 ◻  idle
+    │   ├─ Terminals
+    │   │   └─ term1             ← terminal 无状态徽章（恒活跃）
+    │   ├─ 历史 session (2)
+    │   │   └─ agent0 (已结束)        ← 历史 session，点开 = resume 成实例
+    │   └─ + 新建 ▾               ← 新建 agent / terminal
+    └─ ▶ projB                   ← 折叠
 ─────────────────
 ⚙ 设置                        ← 触发独立浮窗
 ```
@@ -72,7 +71,8 @@
 |---|---|---|
 | 进入全局实例区 | 左栏顶部「全局」 | 实例区切跨项目作用域，可 split 任意项目的实例并排监控 |
 | 切换项目 | 点项目行 | 展开/折叠 + 选中 → 实例区切到该项目 |
-| 新建项目 | 左栏全局节点下方「+ 新建项目」按钮（顶部，全局与项目列表之间） | 点开 ProjectSetupPanel overlay |
+| 收起/展开项目列表 | 点「项目」section label 行 | label 行可折叠，收起时隐藏项目列表；展开时项目项缩进表达母子从属（全局=母，项目=子） |
+| 新建项目 | 「项目」section label 行右侧「+」按钮 | 点开 ProjectSetupPanel overlay；label 行同款 `ShellNavigationButton` 行样式（与全局节点对齐 text-sm + marker） |
 | 新建 agent/终端 | 项目下「+ 新建 ▾」 | 创建后默认 split 进实例区 |
 | 打开/聚焦实例 | 点活跃实例 → 实例区聚焦其面板 | 可拖拽调宽 / 最大化 / 关闭（关闭 = 结束实例，成历史 session） |
 | 打开历史 session | 点历史 session 某条 → resume 成实例 | **= 现在 `--resume` 行为**：作为可继续的 agent 实例打开，与活跃实例同模型，不是只读回放 |
