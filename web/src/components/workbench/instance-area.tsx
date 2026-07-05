@@ -984,6 +984,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
           provider: session.provider,
           ref: { projectName: name, sessionId: session.id },
           status: session.status,
+          subtitle: session.lastAssistantMessage,
           type: "agent",
           updatedAt: session.updatedAt,
         });
@@ -993,6 +994,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
           displayName: session.displayName,
           ref: { projectName: name, sessionId: session.id },
           status: session.status,
+          subtitle: session.lastCommand,
           type: "terminal",
           updatedAt: session.updatedAt,
         });
@@ -1166,6 +1168,7 @@ export function InstanceGrid({
 /**
  * 项目实例 → InstanceGridItem（marker 按 type/provider，status 映射 pill，title=displayName）。
  * activity = relativeTime(updatedAt ?? agent.createdAt)，terminal 无 createdAt 故仅 updatedAt。
+ * subtitle = agent.lastAssistantMessage / terminal.lastCommand（卡片第二行，缺失则不显）。
  * **不传 projectName**：project scope 卡片所在总览 header 已显项目名（scope.key），卡片再显冗余。
  */
 export function instanceToGridItem(
@@ -1176,6 +1179,10 @@ export function instanceToGridItem(
   const session = entry.session;
   const activityIso =
     session.updatedAt ?? (entry.type === "agent" ? (session as AgentSession).createdAt : undefined);
+  const subtitle =
+    entry.type === "agent"
+      ? (session as AgentSession).lastAssistantMessage
+      : (session as TerminalSession).lastCommand;
   const onClose = cb.onClose;
   return {
     activity: relativeTime(activityIso ?? "", cb.t),
@@ -1188,12 +1195,13 @@ export function instanceToGridItem(
       label: cb.t(sessionStatusLabel(session.status)),
       tone: statusToTone(session.status),
     },
+    subtitle,
     title: session.displayName,
   };
 }
 
 /**
- * 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName）。
+ * 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName/subtitle）。
  * 卡片 meta 行显 projectName + activity（跨项目总览需项目名区分归属；relativeTime(updatedAt ?? createdAt)）。
  */
 export function candidateToGridItem(
@@ -1213,6 +1221,7 @@ export function candidateToGridItem(
       label: cb.t(sessionStatusLabel(candidate.status)),
       tone: statusToTone(candidate.status),
     },
+    subtitle: candidate.subtitle,
     title: candidate.displayName,
   };
 }

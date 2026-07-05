@@ -266,3 +266,24 @@ export class TmuxRuntimeError extends Error {
 const shellCommand = () => process.env.SHELL ?? "/bin/bash";
 
 const trimTrailingBlankLines = (pane: string) => pane.replace(/[ \t\r\n]+$/g, "");
+
+/** ANSI escape 序列正则：SGR（`\x1b[...m`）/ 光标移动 / OSC（`\x1b]...\x07`）/ bel，用于剥离 pane 文本色码。 */
+// eslint-disable-next-line no-control-regex -- ANSI 剥离必需含控制字符 \x1b/\x07，无绕过必要
+const ANSI_ESCAPE = /\x1b\[[0-9;?]*[A-Za-z]|\x1b[=>]|\x1b\][^\x07]*\x07|\x07/g;
+
+/** 去 ANSI escape 序列，返回纯可见文本。 */
+const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE, "");
+
+/**
+ * 从 capture-pane 文本提取最后一行非空内容作为 lastCommand（忠实显示，不去 prompt 符）。
+ * capture 返回的文本已是 trimTrailingBlankLines + `\r\n` 行分隔（见 TmuxRuntime.capture L211）。
+ * 倒序找首个 trim 后非空行，stripAnsi 后返回；全空返回 undefined。
+ */
+export const extractLastCommand = (pane: string): string | undefined => {
+  const lines = pane.split("\r\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const stripped = stripAnsi(lines[i] ?? "").trim();
+    if (stripped.length > 0) return stripped;
+  }
+  return undefined;
+};

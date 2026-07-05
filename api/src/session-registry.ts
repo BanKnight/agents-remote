@@ -12,6 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { ResolvedProjectPath } from "./project-paths";
+import { extractLastCommand } from "./tmux-runtime";
 
 export type SessionMetadata = {
   schemaVersion: 1;
@@ -185,7 +186,22 @@ export class SessionRegistry {
 
   async listTerminalSessions(projectName: string): Promise<TerminalSession[]> {
     const metadata = await this.listMetadata("terminal", projectName);
-    return metadata.map(terminalSessionFromMetadata);
+    // 并发对每个 terminal capture pane，提取最后一行非空作 lastCommand。capture 抛错容错
+    //（session 已死 / tmux 不可用）→ lastCommand 留空，不阻塞列表。list 是 one-shot query
+    //（staleTime 5s 无 refetchInterval），N 次 capture-pane spawn（~1-5ms）用户进 workbench 才触发。
+    return Promise.all(
+      metadata.map(async (m) => {
+        let lastCommand: string | undefined;
+        if (m.runtimeKey && this.runtime.capture) {
+          try {
+            lastCommand = extractLastCommand(await this.runtime.capture(m.runtimeKey));
+          } catch {
+            // 容错：capture 失败 → lastCommand undefined，卡片退化 2 行
+          }
+        }
+        return terminalSessionFromMetadata(m, lastCommand);
+      }),
+    );
   }
 
   async getAgentSession(projectName: string, sessionId: string): Promise<AgentSession | undefined> {
@@ -198,7 +214,16 @@ export class SessionRegistry {
     sessionId: string,
   ): Promise<TerminalSession | undefined> {
     const metadata = await this.getLiveMetadata(projectName, "terminal", sessionId);
-    return metadata ? terminalSessionFromMetadata(metadata) : undefined;
+    if (!metadata) return undefined;
+    let lastCommand: string | undefined;
+    if (metadata.runtimeKey && this.runtime.capture) {
+      try {
+        lastCommand = extractLastCommand(await this.runtime.capture(metadata.runtimeKey));
+      } catch {
+        // 容错同 list
+      }
+    }
+    return terminalSessionFromMetadata(metadata, lastCommand);
   }
 
   async createAgentSession(input: CreateAgentSessionInput): Promise<AgentSession> {
@@ -514,12 +539,16 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   updatedAt: metadata.updatedAt,
 });
 
-const terminalSessionFromMetadata = (metadata: SessionMetadata): TerminalSession => ({
+const terminalSessionFromMetadata = (
+  metadata: SessionMetadata,
+  lastCommand?: string,
+): TerminalSession => ({
   id: metadata.id,
   projectName: metadata.projectName,
   displayName: metadata.displayName,
   status: metadata.status as TerminalSessionStatus,
   updatedAt: metadata.updatedAt,
+  lastCommand,
 });
 
 const isNotFoundError = (error: unknown) =>

@@ -469,18 +469,20 @@ export type InstanceCardProps = {
   onSelect: () => void;
   projectName?: string;
   status?: { label: string; tone: ShellTone };
+  /** 第二行内容（agent=AI 回复 / terminal=最近命令），1 行截断；缺失则不渲染第二行。 */
+  subtitle?: ReactNode;
   title: ReactNode;
 };
 
 /**
- * 实例卡片（设计文档 §7 移动总览）。卡片 = StatusMarker（marker + 状态圆点叠加右上角）+ 标题
- *（truncate）+ 可选 close 按钮 + 可选 meta 行（项目名 + 最后活动时间，弱化色，§7 信息补充）。
+ * 实例卡片（设计文档 §7）。3 行结构：① title 行（marker + 会话名 + 可选 close）；② subtitle 行
+ *（agent lastAssistantMessage / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 ·
+ * 最后活动时间，弱化色）。subtitle 缺失时退化 2 行（不显空第二行，不伪造占位）。
  * raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop 触发，按钮内部渲染并
  * stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown（Enter/Space → onSelect）劫持
- * 键盘激活。移动总览 2 列网格用此 primitive；status 由调用方映射为 {label, tone}（业务 enum →
- * 圆点语义，label 进 StatusDot aria-label）。meta 行：projectName truncate（flex 容器内可收缩），
- * activity whitespace-nowrap（相对时间短文本不换行），两者用 · 分隔；项目 scope 调用方可省略
- * projectName（header 已显，避免冗余）。
+ * 键盘激活。status 由调用方映射为 {label, tone}（业务 enum → 圆点语义，label 进 StatusDot aria-label）。
+ * meta 行：projectName truncate（flex 容器内可收缩），activity whitespace-nowrap（相对时间短文本不
+ * 换行），两者用 · 分隔；项目 scope 调用方可省略 projectName（header 已显，避免冗余）。
  */
 export function InstanceCard({
   activity,
@@ -490,6 +492,7 @@ export function InstanceCard({
   onSelect,
   projectName,
   status,
+  subtitle,
   title,
 }: InstanceCardProps) {
   return (
@@ -534,6 +537,9 @@ export function InstanceCard({
           </span>
         ) : null}
       </div>
+      {subtitle ? (
+        <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
+      ) : null}
       {projectName || activity ? (
         <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
           {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}

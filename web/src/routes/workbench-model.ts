@@ -545,6 +545,8 @@ export type GlobalInstanceCandidate = {
   updatedAt?: string;
   /** 创建时间（table "最后活动"列 fallback；AgentSession 有，terminal 无）。 */
   createdAt?: string;
+  /** 卡片第二行（agent=lastAssistantMessage / terminal=lastCommand）；缺失则卡片不显第二行。 */
+  subtitle?: string;
 };
 
 /**

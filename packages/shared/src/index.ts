@@ -199,6 +199,8 @@ export type TerminalSession = {
   displayName: string;
   status: TerminalSessionStatus;
   updatedAt?: string;
+  /** 最近 pane 活动行（tmux capture 最后一行非空，含 prompt+命令，忠实显示，不去 ANSI 后的纯文本）。 */
+  lastCommand?: string;
 };
 
 export type ListAgentSessionsResponse = {
