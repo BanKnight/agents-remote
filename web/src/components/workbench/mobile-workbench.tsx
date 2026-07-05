@@ -343,9 +343,9 @@ function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonPr
 }
 
 type MobileTabHeaderProps<TabId extends string> = {
-  // ◄ 返回按钮：统一容器 + SVG，aria-label key 与 onClick 由调用方注入区分去向
-  //（聚焦态回列表 / 列表态回 Home）。
-  back: { ariaLabelKey: TranslationKey; onClick: () => void };
+  // ◄ 返回按钮：可选，不传则不渲染。二级页面（项目总览 ◄ 回项目列表、聚焦态 ◄ 回列表）
+  // 传 back；一级页面（全局总览）不传，靠底部 tab 切换。
+  back?: { ariaLabelKey: TranslationKey; onClick: () => void };
   tabs: { id: TabId; label: string }[];
   activeTabId: TabId;
   onTabSelect: (id: TabId) => void;
@@ -370,22 +370,24 @@ function MobileTabHeader<TabId extends string>({
   const { t } = useT();
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-      <button
-        aria-label={t(back.ariaLabelKey)}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
-        onClick={back.onClick}
-        type="button"
-      >
-        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M15 18l-6-6 6-6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            stroke="currentColor"
-          />
-        </svg>
-      </button>
+      {back ? (
+        <button
+          aria-label={t(back.ariaLabelKey)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={back.onClick}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+            <path
+              d="M15 18l-6-6 6-6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            />
+          </svg>
+        </button>
+      ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((opt) => (
           <MobileFocusTabButton
@@ -629,7 +631,6 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
  */
 function MobileGlobalOverview() {
   const { t } = useT();
-  const navigate = useNavigate();
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
@@ -638,7 +639,7 @@ function MobileGlobalOverview() {
   const [view, setView] = useAtom(workbenchViewAtom);
   // global ctx：projectKey=null。files 全局可见（根目录 = PROJECTS_ROOT 只读浏览，render
   // 走 rootBrowse 分支），git 需 projectKey 故 when 过滤掉；global 无 history（跨项目历史
-  // 不属列表态）。tab 行对齐 MobileProjectOverview 单行 header（◄ 返回 + tab 横滚 + 标题）。
+  // 不属列表态）。一级页面：header 仅 tab 行（无 ◄ 返回、无标题），靠底部 tab 切换。
   const ctx: PluginContext = { projectKey: null, focusId: undefined, sessionType: undefined };
   const tabs = useMemo(
     () => buildOverviewTabs(t, ctx, false),
@@ -701,20 +702,7 @@ function MobileGlobalOverview() {
   const tableColumns: TableColumn[] = ["name", "project", "activity", "actions"];
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MobileTabHeader
-        activeTabId={activeTab}
-        back={{
-          ariaLabelKey: "project.backToProjects",
-          onClick: () => void navigate({ to: "/" }),
-        }}
-        onTabSelect={setTab}
-        tabs={tabs}
-        trailing={
-          <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
-            {t("workbench.globalOverviewTitle")}
-          </span>
-        }
-      />
+      <MobileTabHeader activeTabId={activeTab} onTabSelect={setTab} tabs={tabs} />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activePlugin ? (
           <Fragment>{activePlugin.render(ctx)}</Fragment>

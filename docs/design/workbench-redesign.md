@@ -223,7 +223,7 @@ type PluginContext = {
 - **全局**：跨项目活跃实例聚合列表（按项目分组 + 关注程度排序），点实例进单实例聚焦。**全局列表只读监控，不可创建实例**（创建需先进项目指定作用域）。
 - **设置**：应用级设置页。
 
-底部 tab 在「单实例聚焦」时让位给输出 + 输入；要回一级导航，靠 ◄ 逐级返回（聚焦 → 总览 → 项目列表）。
+底部 tab 在「单实例聚焦」时让位给输出 + 输入；要回一级导航，靠 ◄ 逐级返回（聚焦 → 项目总览 → 项目列表 `/`）。全局总览（`/global`）本身是一级页面，不在此返回链，靠底部 tab 切换。
 
 ### 二级导航（单行 header，仅项目内）
 
@@ -247,7 +247,7 @@ type PluginContext = {
 - **文件 / git** = 该项目只读 inspection（同桌面右栏 tab 内容）。
 - tab 多时横滚不换行（`overflow-x-auto` 隐藏滚动条），项目名右侧 `truncate` `max-w-40%`。
 
-> 全局总览（`/global`）的二级 header tab = `总览 / 文件`（无 history——全局无项目历史；无 git——根目录非 git repo）。全局 files tab 根目录 = `PROJECTS_ROOT`，只读列所有项目目录；进入某项目子目录后切换为该项目的可写 files（复用项目 files API）。
+> 全局总览（`/global`）是一级页面，header 仅 tab 行（**无 ◄ 返回、无标题**），区别于项目页二级 header（◄ 返回 + 项目名 trailing）。tab = `总览 / 文件`（无 history——全局无项目历史；无 git——根目录非 git repo）。全局 files tab 根目录 = `PROJECTS_ROOT`，只读列所有项目目录；进入某项目子目录后切换为该项目的可写 files（复用项目 files API）。
 
 ### 单实例聚焦
 
