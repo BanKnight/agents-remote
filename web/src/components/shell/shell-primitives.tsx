@@ -486,15 +486,15 @@ export type InstanceCardProps = {
 /**
  * 实例卡片（设计文档 §7）。微信朋友圈式头像布局：左侧 marker 头像（lg=36px，`items-start` 上下
  * 置顶）独占一列 + 右侧内容区竖排 3 行：① title（会话名）；② subtitle（agent lastAssistantMessage
- * / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 · 最后活动时间，弱化色 + 折叠
- * 操作区右侧 `ml-auto`）。subtitle 缺失退化 2 行；meta 文本缺失操作区单独右对齐；两者都缺失不渲染
- * meta 行。raised surface + rounded-lg，点击 onSelect 进详情。
+ * / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 · 最后活动时间，弱化色，从左往右
+ * 紧凑排列）。subtitle 缺失退化 2 行；meta 文本缺失不渲染 meta 行。raised surface + rounded-lg，
+ * 点击 onSelect 进详情。
  *
- * **折叠操作区**（任务 E）：meta 行右侧 ⋯ 触发按钮，点击后**向左展开**「改名 + 关闭」两个按钮。
- * 替代旧独立 ✕。展开是局部 state（每卡独立），外部点击 / Esc 收起（conditional effect，仅 expanded
- * 时挂 listener，避免每卡常驻）。各按钮 stopPropagation（click + keydown 两路），与卡片 onKeyDown
- * （Enter/Space → onSelect）隔离。`onRename`/`onClose` 缺省时对应按钮不渲染；两者都缺省时不渲染
- * 触发器（退化纯展示卡）。展开时 meta 文字让位 `min-w-0 flex-1 truncate`，操作区 `shrink-0`。
+ * **折叠操作区**：卡片右上角 absolute ⋯ 触发按钮（`absolute top-2 right-2`），点击后向下方展开
+ * **纵向 dropdown menu**（改名 / 关闭两项）。展开是局部 state（每卡独立），外部点击 / Esc 收起
+ * （conditional effect，仅 expanded 时挂 listener，避免每卡常驻）。各菜单项 stopPropagation（click
+ * + keydown 两路），与卡片 onKeyDown（Enter/Space → onSelect）隔离。`onRename`/`onClose` 缺省时
+ * 对应菜单项不渲染；两者都缺省时不渲染触发器（退化纯展示卡）。
  */
 export function InstanceCard({
   actionsLabel,
@@ -536,7 +536,7 @@ export function InstanceCard({
 
   return (
     <div
-      className={`group flex min-w-0 cursor-pointer items-start gap-3 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      className={`group relative flex min-w-0 cursor-pointer items-start gap-3 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -549,75 +549,88 @@ export function InstanceCard({
     >
       <StatusMarker marker={marker} status={status} />
       <div className="min-w-0 flex-1 flex flex-col gap-1">
-        <span className="min-w-0 truncate text-sm font-semibold text-on-surface group-hover:text-primary">
+        <span className="min-w-0 truncate pr-6 text-sm font-semibold text-on-surface group-hover:text-primary">
           {title}
         </span>
         {subtitle ? (
           <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
         ) : null}
-        {hasMetaText || hasActions ? (
+        {hasMetaText ? (
           <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
-            {projectName ? <span className="min-w-0 truncate flex-1">{projectName}</span> : null}
+            {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
             {projectName && activity ? <span aria-hidden="true">·</span> : null}
-            {activity ? <span className="whitespace-nowrap">{activity}</span> : null}
-            {hasActions ? (
-              <div className="ml-auto flex shrink-0 items-center gap-0.5" ref={actionsRef}>
-                {expanded && onRename ? (
-                  <button
-                    aria-label={renameLabel}
-                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpanded(false);
-                      onRename();
-                    }}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    type="button"
-                  >
-                    <ShellIcon className="h-3.5 w-3.5" name="edit" />
-                    <span className="text-xs">{renameLabel}</span>
-                  </button>
-                ) : null}
-                {expanded && onClose ? (
-                  <button
-                    aria-label={closeLabel}
-                    className="inline-flex h-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpanded(false);
-                      onClose();
-                    }}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    type="button"
-                  >
-                    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-                      <path
-                        d="M4 4l8 8M12 4l-8 8"
-                        stroke="currentColor"
-                        strokeLinecap="round"
-                        strokeWidth={1.5}
-                      />
-                    </svg>
-                  </button>
-                ) : null}
-                <button
-                  aria-expanded={expanded}
-                  aria-label={actionsLabel}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpanded((prev) => !prev);
-                  }}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  type="button"
-                >
-                  <ShellIcon className="h-4 w-4" name="ellipsis" />
-                </button>
-              </div>
-            ) : null}
+            {activity ? <span className="whitespace-nowrap shrink-0">{activity}</span> : null}
           </div>
         ) : null}
       </div>
+      {hasActions ? (
+        <div className="absolute right-2 top-2 z-10" ref={actionsRef}>
+          <button
+            aria-expanded={expanded}
+            aria-label={actionsLabel}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((prev) => !prev);
+            }}
+            onKeyDown={(e) => {
+              // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发；
+              // Esc 放行让 window listener 收起菜单。
+              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+            }}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="ellipsis" />
+          </button>
+          {expanded ? (
+            <div className="absolute right-0 top-full mt-1 flex min-w-[120px] flex-col gap-0.5 rounded-lg border border-neutral-line bg-surface-raised p-1 shadow-2xl shadow-black/40 z-20">
+              {onRename ? (
+                <button
+                  aria-label={renameLabel}
+                  className="inline-flex h-8 items-center gap-2 rounded-md px-2 text-sm text-on-surface transition hover:bg-on-surface/5"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded(false);
+                    onRename();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                  }}
+                  type="button"
+                >
+                  <ShellIcon className="h-3.5 w-3.5" name="edit" />
+                  <span>{renameLabel}</span>
+                </button>
+              ) : null}
+              {onClose ? (
+                <button
+                  aria-label={closeLabel}
+                  className="inline-flex h-8 items-center gap-2 rounded-md px-2 text-sm text-on-surface transition hover:bg-error/10 hover:text-error"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded(false);
+                    onClose();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                  }}
+                  type="button"
+                >
+                  <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+                    <path
+                      d="M4 4l8 8M12 4l-8 8"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeWidth={1.5}
+                    />
+                  </svg>
+                  <span>{closeLabel}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
