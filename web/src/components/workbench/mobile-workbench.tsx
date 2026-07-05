@@ -369,7 +369,7 @@ function MobileTabHeader<TabId extends string>({
 }: MobileTabHeaderProps<TabId>) {
   const { t } = useT();
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+    <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-3">
       {back ? (
         <button
           aria-label={t(back.ariaLabelKey)}

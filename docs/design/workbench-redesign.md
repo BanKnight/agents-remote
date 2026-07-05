@@ -227,7 +227,7 @@ type PluginContext = {
 
 ### 二级导航（单行 header，仅项目内）
 
-进入项目后，单行 header（◄ 返回 + tab 横滚区 flex-1 + 项目名右侧 shrink-0 truncate，对齐聚焦态同款结构）：
+进入项目后，单行 header（◄ 返回 + tab 横滚区 flex-1 + 项目名右侧 shrink-0 truncate，高度统一 `h-11 px-3` 与一级页面 MobilePageHeader 一致，对齐聚焦态同款结构）：
 
 ```
 ┌─────────────────────┐
@@ -262,7 +262,7 @@ type PluginContext = {
 └─────────────────────┘
 ```
 
-- 单行 header（◄ 返回 + tab 横滚区 flex-1 + ℹ✕ 胶囊操作区），实例名在内容区显示而非 header。
+- 单行 header（◄ 返回 + tab 横滚区 flex-1 + ℹ✕ 胶囊操作区），高度统一 `h-11 px-3`（与一级页面 MobilePageHeader 一致对齐正文），实例名在内容区显示而非 header。
 - header 块 tab 切换为实例维度：`输出 / 文件 / git`。
 - **输出 tab = agent 实例本身**（输出流 + 输入区一体，输入区是实例的组成，不独立）。
 - **文件 / git = 项目级 inspection**（跟随当前聚焦实例所属项目；与桌面右栏、全局实例区统一项目级语义）。
