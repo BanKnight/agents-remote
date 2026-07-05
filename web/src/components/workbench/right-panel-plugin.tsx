@@ -43,16 +43,13 @@ export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
   {
     id: "files",
     labelKey: "workbench.tabFiles",
-    render: (ctx) =>
-      ctx.projectKey ? (
-        <FilesPanel
-          initialPath=""
-          projectName={ctx.projectKey}
-          queryScope={WORKBENCH_FILES_QUERY_SCOPE}
-        />
-      ) : (
-        <FilesPanel rootBrowse initialPath="" queryScope={WORKBENCH_FILES_QUERY_SCOPE} />
-      ),
+    render: (ctx) => (
+      <FilesPanel
+        initialPath=""
+        queryScope={WORKBENCH_FILES_QUERY_SCOPE}
+        {...(ctx.projectKey ? { projectName: ctx.projectKey } : { rootBrowse: true })}
+      />
+    ),
     when: () => true,
   },
   {
