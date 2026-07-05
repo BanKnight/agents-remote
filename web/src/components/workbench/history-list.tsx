@@ -16,6 +16,24 @@ const ActiveDot = (
   <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-success" />
 );
 
+/** 历史 session 加载骨架行数（与左栏 InstanceSkeleton/CardGridSkeleton 同款 UI 常量）。 */
+const HISTORY_SKELETON_ROW_COUNT = 3;
+
+/**
+ * 历史 session 加载骨架（行级，与 ShellNavigationButton 行高对齐）。首次拉取 pending 时
+ * 占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格（CardGridSkeleton）形态
+ * 不同：历史是紧凑导航行（h-8），卡片是高卡（h-20）。
+ */
+function HistoryListSkeleton() {
+  return (
+    <div className="flex flex-col gap-1">
+      {Array.from({ length: HISTORY_SKELETON_ROW_COUNT }, (_, index) => (
+        <div className="h-8 animate-pulse rounded-lg bg-on-surface/5" key={index} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * 项目历史 session 数据管道（单一来源，设计文档 §3/§4）。从中栏 history tab + 左栏项目段
  * 任意位置消费历史都走此 hook：`listAgentHistory` 查询 + resume mutation（claudeSessionId
@@ -50,6 +68,7 @@ export function useHistorySessions(projectName: string) {
   });
   return {
     entries: history.data?.entries ?? [],
+    isLoading: history.isLoading,
     isResuming: resumeSession.isPending,
     resume: resumeSession.mutate,
   };
@@ -73,7 +92,7 @@ type HistoryListProps = {
 export function HistoryList({ focusId, projectName, showLabel = true }: HistoryListProps) {
   const { t } = useT();
   const navigate = useNavigate();
-  const { entries, isResuming, resume } = useHistorySessions(projectName);
+  const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName);
 
   const focus = (sessionId: string) => {
     void navigate({
@@ -92,7 +111,23 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
     }
   };
 
-  if (entries.length === 0) return null;
+  // 加载中（首次拉取，entries 仍空）→ 骨架行占位，避免空白；真空态（!isLoading 且空）→ null
+  // （左栏段落、中栏 tab 自然空态，不伪造占位）。isLoading 区分二者，消除"加载中 = 空态"的误导。
+  if (entries.length === 0) {
+    if (!isLoading) return null;
+    return showLabel ? (
+      <>
+        <ShellSectionLabel className="px-3 pb-1 pt-2">
+          {t("workbench.historySection")}
+        </ShellSectionLabel>
+        <div className="px-3">
+          <HistoryListSkeleton />
+        </div>
+      </>
+    ) : (
+      <HistoryListSkeleton />
+    );
+  }
   return (
     <>
       {showLabel ? (
