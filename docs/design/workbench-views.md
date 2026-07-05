@@ -51,11 +51,11 @@
 - **右栏**：聚焦态自动展开（跟随右工作区活动 group 的 inspection）；非聚焦态默认收起，中栏右边缘 RailButton 唤出（唤出看 project-scoped inspection，因 files/git 只依赖 projectKey 不依赖 focusId）。project scope 可唤出；global inspection 仅 prototype 占位（render null），不唤出。
 - **左栏**（不变）：置顶固定（全局总览）+ section 分组（「项目」+ 未来扩展），见 [workbench-views §3 上一版] 与 `left-rail.tsx` 现状。
 
-移动线性：header → 二级 tab → 总览卡片列表（→ 点卡片全屏聚焦态 → 底部一级 nav）。中栏不分左右。
+移动线性：单行 header（◄ 返回 + tab 横滚区 + 项目名/操作区右侧）→ 总览卡片列表（→ 点卡片全屏聚焦态 → 底部一级 nav）。中栏不分左右。列表态与聚焦态同款单行 header 结构（tab 在 header 内横滚，不再独立一行）。
 
 ## 4. 二级导航（5 tab）
 
-桌面中栏顶部 / 移动 header 下一行，统一 5 个 tab。**tab 导航在中栏顶部常驻，聚焦/非聚焦都不消失**（修复旧版聚焦态挤掉 tab 导航的问题）。
+桌面中栏顶部 / 移动单行 header 内，统一 5 个 tab。**tab 导航常驻，聚焦/非聚焦都不消失**（修复旧版聚焦态挤掉 tab 导航的问题）。
 
 | tab | 中栏呈现 | 数据源 |
 |-----|---------|--------|
