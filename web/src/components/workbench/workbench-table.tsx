@@ -7,12 +7,12 @@ import { relativeTime } from "./history-list";
 /**
  * table 视图列标识（设计文档 §9）。
  * - `project`：项目名（仅 global scope，project scope 隐藏）。
- * - `type`：实例类型 marker + 状态圆点叠加右上角（StatusMarker 包 sessionMarker，§10）。
- * - `name`：会话名（displayName，主列，§12 一等显示）。
+ * - `name`：类型 marker + 会话名（displayName，主列，§12 一等显示；marker 并入此列，
+ *   不再单列 type，§10 StatusMarker 包 sessionMarker）。
  * - `activity`：最后活动（relativeTime，数据源 session.updatedAt ?? createdAt）。
  * - `actions`：▶ 进聚焦态 + ✕ 关闭。
  */
-export type TableColumn = "project" | "type" | "name" | "activity" | "actions";
+export type TableColumn = "project" | "name" | "activity" | "actions";
 
 /**
  * table 行数据（presentational：action 回调已由调用方绑定，组件不接触 session 业务字段，
@@ -32,14 +32,13 @@ export type SessionTableRow = {
 
 type SessionTableProps = {
   rows: SessionTableRow[];
-  /** 按作用域/视口裁剪的列顺序（project scope 4 列无 project；global 5 列；移动 project 3 列）。 */
+  /** 按作用域/视口裁剪的列顺序（project scope 3 列无 project；global 4 列；移动 project 2 列）。 */
   columns: TableColumn[];
   t: TranslateFn;
 };
 
 const COL_HEADER_KEY: Record<TableColumn, TranslationKey> = {
   project: "table.colProject",
-  type: "table.colType",
   name: "table.colName",
   activity: "table.colActivity",
   actions: "table.colActions",
@@ -54,12 +53,12 @@ const COL_HEADER_KEY: Record<TableColumn, TranslationKey> = {
 export function SessionTable({ rows, columns, t }: SessionTableProps) {
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm">
         <thead className="sticky top-0 z-10 bg-surface-raised">
           <tr className="border-b border-neutral-line">
             {columns.map((col) => (
               <th
-                className="whitespace-nowrap px-3 py-2 text-left text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted"
+                className={`px-3 py-2 text-left text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted ${colWidthClass(col)}`}
                 key={col}
                 scope="col"
               >
@@ -75,7 +74,7 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
               key={row.key}
             >
               {columns.map((col) => (
-                <td className="px-3 py-2 align-middle" key={col}>
+                <td className={tdClass(col)} key={col}>
                   {renderCell(col, row, t)}
                 </td>
               ))}
@@ -87,15 +86,37 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
   );
 }
 
+/**
+ * 列宽 class（table-fixed 下严格生效）。name 列 `w-full` 拿走剩余宽度；其余列固定窄宽
+ *（actions 按钮组、activity 相对时间、project 项目名均短文本）。name 列内层 `block truncate`
+ * 按列宽截断 displayName 止水平溢出（§9 止溢）。th 与 td 同款 class 保持列宽一致。
+ */
+function colWidthClass(col: TableColumn): string {
+  if (col === "name") return "w-full";
+  if (col === "actions") return "w-24 whitespace-nowrap";
+  if (col === "activity") return "w-28 whitespace-nowrap";
+  return "w-32 whitespace-nowrap"; // project
+}
+
+/**
+ * 单元格 td className。name 列加 `max-w-0`（双保险：让 td 可收缩，内层 `block truncate`
+ * 尊重 max-width 截断）。其余列短文本 + whitespace-nowrap，不截断。
+ */
+function tdClass(col: TableColumn): string {
+  const base = "px-3 py-2 align-middle";
+  return col === "name" ? `${base} max-w-0 ${colWidthClass(col)}` : `${base} ${colWidthClass(col)}`;
+}
+
 function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): ReactNode {
   switch (col) {
     case "project":
       return <span className="whitespace-nowrap text-on-surface-soft">{row.projectName}</span>;
-    case "type":
-      return <StatusMarker marker={sessionMarker(row.type, row.provider)} status={row.status} />;
     case "name":
       return (
-        <span className="whitespace-nowrap font-semibold text-on-surface">{row.displayName}</span>
+        <span className="flex items-center gap-2">
+          <StatusMarker marker={sessionMarker(row.type, row.provider)} status={row.status} />
+          <span className="block truncate font-semibold text-on-surface">{row.displayName}</span>
+        </span>
       );
     case "activity": {
       const text = relativeTime(row.activityIso ?? "", t);

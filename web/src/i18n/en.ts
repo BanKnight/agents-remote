@@ -468,7 +468,6 @@ export const en = {
 
   // ── Table view (workbench overview) ─────────────────────────
   "table.colProject": "Project",
-  "table.colType": "Type",
   "table.colName": "Session",
   "table.colStatus": "Status",
   "table.colActivity": "Last activity",

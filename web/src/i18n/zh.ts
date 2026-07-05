@@ -468,8 +468,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // ── Table 视图（工作台总览）─────────────────────────────────
   "table.colProject": "项目",
-  "table.colType": "类型",
-  "table.colName": "会话名",
+  "table.colName": "会话",
   "table.colStatus": "状态",
   "table.colActivity": "最后活动",
   "table.colActions": "操作",

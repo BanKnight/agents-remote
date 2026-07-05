@@ -462,26 +462,33 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
 }
 
 export type InstanceCardProps = {
+  activity?: string;
   closeLabel?: string;
   marker: ReactNode;
   onClose?: () => void;
   onSelect: () => void;
+  projectName?: string;
   status?: { label: string; tone: ShellTone };
   title: ReactNode;
 };
 
 /**
  * 实例卡片（设计文档 §7 移动总览）。卡片 = StatusMarker（marker + 状态圆点叠加右上角）+ 标题
- *（truncate）+ 可选 close 按钮。raised surface + rounded-lg，点击 onSelect 进详情；close 由
- * `onClose` prop 触发，按钮内部渲染并 stopPropagation（click + keydown 两路），避免冒泡到卡片
- * onKeyDown（Enter/Space → onSelect）劫持键盘激活。移动总览 2 列网格用此 primitive；status 由
- * 调用方映射为 {label, tone}（业务 enum → 圆点语义，label 进 StatusDot aria-label）。
+ *（truncate）+ 可选 close 按钮 + 可选 meta 行（项目名 + 最后活动时间，弱化色，§7 信息补充）。
+ * raised surface + rounded-lg，点击 onSelect 进详情；close 由 `onClose` prop 触发，按钮内部渲染并
+ * stopPropagation（click + keydown 两路），避免冒泡到卡片 onKeyDown（Enter/Space → onSelect）劫持
+ * 键盘激活。移动总览 2 列网格用此 primitive；status 由调用方映射为 {label, tone}（业务 enum →
+ * 圆点语义，label 进 StatusDot aria-label）。meta 行：projectName truncate（flex 容器内可收缩），
+ * activity whitespace-nowrap（相对时间短文本不换行），两者用 · 分隔；项目 scope 调用方可省略
+ * projectName（header 已显，避免冗余）。
  */
 export function InstanceCard({
+  activity,
   closeLabel,
   marker,
   onClose,
   onSelect,
+  projectName,
   status,
   title,
 }: InstanceCardProps) {
@@ -527,6 +534,13 @@ export function InstanceCard({
           </span>
         ) : null}
       </div>
+      {projectName || activity ? (
+        <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
+          {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
+          {projectName && activity ? <span aria-hidden="true">·</span> : null}
+          {activity ? <span className="whitespace-nowrap">{activity}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

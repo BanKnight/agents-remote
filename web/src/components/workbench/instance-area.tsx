@@ -66,7 +66,7 @@ import {
   ViewSwitcher,
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
-import { HistoryList } from "./history-list";
+import { HistoryList, relativeTime } from "./history-list";
 import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
@@ -427,12 +427,12 @@ export function InstanceArea({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scope, candidates, projectInstances.instances, t],
   );
-  // table 列：global 5 列（含 project）/ project 4 列（隐藏 project，设计 §9）。状态圆点并入 type
-  // 列 marker 右上角（StatusMarker），无独立 status 列。
+  // table 列：global 4 列（name 首列 + project）/ project 3 列（隐藏 project，设计 §9）。
+  // type 已并入 name 列（StatusMarker + 会话名），无独立 type 列；状态圆点并入 name 列 marker 右上角。
   const tableColumns: TableColumn[] =
     scope.kind === "global"
-      ? ["project", "type", "name", "activity", "actions"]
-      : ["type", "name", "activity", "actions"];
+      ? ["name", "project", "activity", "actions"]
+      : ["name", "activity", "actions"];
   // 总览加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea
   //（后者是"创建实例"空态，加载中显示会误导用户以为无实例）。project 用 useProjectInstances
   // 的 isLoading，global 用 candidatesLoaded（聚合多 query 的 settled 标量）。
@@ -1119,11 +1119,15 @@ function EmptyInstanceArea({
   );
 }
 
-/** grid 卡片回调集合：onSelect/onClose 按 sessionId+type 重建，t 翻译 status label。 */
+/**
+ * grid 卡片回调集合：onSelect/onClose 按 sessionId+type 重建，t 翻译 status label + relativeTime。
+ * `t` 用 TranslateFn（带 params）——卡片 meta 行的 activity（relativeTime）内部
+ * `t("time.minutesAgo", {count})` 需要第二参数。调用方 `useT().t` 已是 TranslateFn。
+ */
 export type GridItemCallbacks = {
   onClose?: (sessionId: string, type: "agent" | "terminal") => void;
   onSelect: (sessionId: string) => void;
-  t: (key: TranslationKey) => string;
+  t: TranslateFn;
 };
 
 /** InstanceCard 自适应网格（设计文档 §8）。纯 presentational——items 由调用方从 query/candidates 派生。
@@ -1159,39 +1163,52 @@ export function InstanceGrid({
   );
 }
 
-/** 项目实例 → InstanceGridItem（marker 按 type/provider，status 映射 pill，title=displayName）。 */
+/**
+ * 项目实例 → InstanceGridItem（marker 按 type/provider，status 映射 pill，title=displayName）。
+ * activity = relativeTime(updatedAt ?? agent.createdAt)，terminal 无 createdAt 故仅 updatedAt。
+ * **不传 projectName**：project scope 卡片所在总览 header 已显项目名（scope.key），卡片再显冗余。
+ */
 export function instanceToGridItem(
   entry: ProjectInstanceEntry,
   cb: GridItemCallbacks,
 ): InstanceGridItem {
   const provider = entry.type === "agent" ? (entry.session as AgentSession).provider : undefined;
+  const session = entry.session;
+  const activityIso =
+    session.updatedAt ?? (entry.type === "agent" ? (session as AgentSession).createdAt : undefined);
   const onClose = cb.onClose;
   return {
+    activity: relativeTime(activityIso ?? "", cb.t),
     closeLabel: cb.t("session.close"),
-    key: entry.session.id,
+    key: session.id,
     marker: sessionMarker(entry.type, provider),
-    onClose: onClose ? () => onClose(entry.session.id, entry.type) : undefined,
-    onSelect: () => cb.onSelect(entry.session.id),
+    onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
+    onSelect: () => cb.onSelect(session.id),
     status: {
-      label: cb.t(sessionStatusLabel(entry.session.status)),
-      tone: statusToTone(entry.session.status),
+      label: cb.t(sessionStatusLabel(session.status)),
+      tone: statusToTone(session.status),
     },
-    title: entry.session.displayName,
+    title: session.displayName,
   };
 }
 
-/** 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName）。 */
+/**
+ * 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName）。
+ * 卡片 meta 行显 projectName + activity（跨项目总览需项目名区分归属；relativeTime(updatedAt ?? createdAt)）。
+ */
 export function candidateToGridItem(
   candidate: GlobalInstanceCandidate,
   cb: GridItemCallbacks,
 ): InstanceGridItem {
   const onClose = cb.onClose;
   return {
+    activity: relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", cb.t),
     closeLabel: cb.t("session.close"),
     key: candidate.ref.sessionId,
     marker: sessionMarker(candidate.type, candidate.provider),
     onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
     onSelect: () => cb.onSelect(candidate.ref.sessionId),
+    projectName: candidate.ref.projectName,
     status: {
       label: cb.t(sessionStatusLabel(candidate.status)),
       tone: statusToTone(candidate.status),
@@ -1202,8 +1219,9 @@ export function candidateToGridItem(
 
 /**
  * table 列回调：与 GridItemCallbacks 同源语义（onSelect 进聚焦 / onClose 走 useCloseSession），
- * 但 `t` 用 TranslateFn（带 params）——relativeTime 内部 `t("time.minutesAgo", {count})` 需要第二
- * 参数；GridItemCallbacks.t 是无 params 窄签名（仅够 statusLabel），故 table 独立 callbacks 类型。
+ * `t` 用 TranslateFn（带 params）——relativeTime 内部 `t("time.minutesAgo", {count})` 需要第二参数。
+ * 与 GridItemCallbacks 等价；保留独立类型因 table 行映射（instanceToTableRow/candidateToTableRow）
+ * 与 grid 映射是平行的两套 presentational 投影。
  */
 export type TableRowCallbacks = {
   onClose?: (sessionId: string, type: "agent" | "terminal") => void;
@@ -1261,7 +1279,7 @@ type GroupedViewProps = {
   candidates: GlobalInstanceCandidate[];
   onClose: (sessionId: string, type: "agent" | "terminal") => void;
   onFocus: (sessionId: string) => void;
-  t: (key: TranslationKey) => string;
+  t: TranslateFn;
   dragAdapter?: DragSourceAdapter;
 };
 
