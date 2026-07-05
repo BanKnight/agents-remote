@@ -426,10 +426,11 @@ type MobileProjectOverviewProps = {
 };
 
 /**
- * 移动项目列表态（设计文档 §7）：单项目聚焦视图。header（◄ 返回项目列表 + 项目名 + 二级
- * tab：总览/历史/文件/Git/原型）+ 内容区 tab 切换。总览 = 创建入口（左）+ ViewSwitcher（右，
- * 两端对齐，设计 §6）+ 活跃实例 grid/table（本组件直渲 InstanceGrid/SessionTable，单一数据
- * 管道 useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git/原型
+ * 移动项目列表态（设计文档 §7）：单项目聚焦视图。单行 header（◄ 返回 + tab 横滚区 flex-1 +
+ * 项目名右侧 shrink-0 truncate，对齐聚焦态 MobileFocusHeader 同款结构，替代旧 MobilePageHeader
+ * + 二级 tab 行两块）+ 内容区 tab 切换。总览 = 创建入口（左）+ ViewSwitcher（右，两端对齐，
+ * 设计 §6）+ 活跃实例 grid/table（本组件直渲 InstanceGrid/SessionTable，单一数据管道
+ * useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git/原型
  * = FIRST_PARTY_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
  * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
  * 是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key} 切项目 remount，重置
@@ -514,20 +515,37 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MobilePageHeader
-        back={{ label: t("project.backToProjects"), onClick: () => void navigate({ to: "/" }) }}
-        title={scope.key}
-      />
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5 py-1.5">
-        {tabs.map((opt) => (
-          <MobileFocusTabButton
-            active={opt.id === activeTab}
-            key={opt.id}
-            label={opt.label}
-            onClick={() => setTab(opt.id)}
-          />
-        ))}
-      </div>
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+        <button
+          aria-label={t("project.backToProjects")}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={() => void navigate({ to: "/" })}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+            <path
+              d="M15 18l-6-6 6-6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            />
+          </svg>
+        </button>
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tabs.map((opt) => (
+            <MobileFocusTabButton
+              active={opt.id === activeTab}
+              key={opt.id}
+              label={opt.label}
+              onClick={() => setTab(opt.id)}
+            />
+          ))}
+        </div>
+        <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
+          {scope.key}
+        </span>
+      </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" key={scope.key}>
         {activePlugin ? (
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
