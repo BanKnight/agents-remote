@@ -35,10 +35,10 @@ export type WorkbenchView = "grouped" | "grid" | "table";
 export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "prototype";
 
 /**
- * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §6）。视觉上从右到左
- * = grouped · grid · table（grouped 最右作 global 默认入口，table 最左）。
+ * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §6）。
+ * = grouped · grid · table（grouped 最左作 global 默认入口，table 最右）。
  */
-export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["table", "grid", "grouped"];
+export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["grouped", "grid", "table"];
 
 /**
  * 按作用域过滤 ViewSwitcher 可用视图（设计文档 §6）。project 作用域隐藏 grouped

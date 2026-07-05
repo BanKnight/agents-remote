@@ -307,8 +307,8 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
   );
-  // §15：project 总览默认 grid（不取 viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使移动 project
-  // viewOptions = [table, grid]，[0] = table 会与默认 grid 冲突；与桌面 InstanceArea 同款守卫）。
+  // §15：project 总览默认 grid（WORKBENCH_VIEW_ORDER 反转后移动 project viewOptions = [grid, table]，
+  // [0] = grid 已是默认；守卫仍保留以抵挡 atom 残留非法值，与桌面 InstanceArea 同款）。
   const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grid";
   // table 视图数据 + 回调（设计 §9/§11：移动 project table 4 列，隐藏 project + 最后活动）。
   // grid 分支仍走 ProjectInstances（自含 useProjectInstances + close holder + 创建入口）；
@@ -401,7 +401,7 @@ function MobileGlobalOverview() {
   const { close, holder: closeHolder } = useCloseSession();
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   const [view, setView] = useAtom(workbenchViewAtom);
-  // viewOptions = filterWorkbenchViews(global) = [table, grid, grouped]（global 三视图全开）。
+  // viewOptions = filterWorkbenchViews(global) = [grouped, grid, table]（global 三视图全开）。
   const viewOptions = useMemo(
     () =>
       filterWorkbenchViews({ kind: "global" }).map((v) => ({

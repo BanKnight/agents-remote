@@ -223,12 +223,12 @@ test("groupByProject: 空数组 → []；单项目 → 单组", () => {
 
 // ── filterWorkbenchViews（§5 视图矩阵：按 scope 过滤 ViewSwitcher 可用视图）──
 
-test("filterWorkbenchViews: global 三视图全开（table/grid/grouped）", () => {
-  expect(filterWorkbenchViews({ kind: "global" })).toEqual(["table", "grid", "grouped"]);
+test("filterWorkbenchViews: global 三视图全开（grouped/grid/table）", () => {
+  expect(filterWorkbenchViews({ kind: "global" })).toEqual(["grouped", "grid", "table"]);
 });
 
-test("filterWorkbenchViews: project 隐藏 grouped（仅 table/grid）", () => {
-  expect(filterWorkbenchViews({ kind: "project", key: "p" })).toEqual(["table", "grid"]);
+test("filterWorkbenchViews: project 隐藏 grouped（仅 grid/table）", () => {
+  expect(filterWorkbenchViews({ kind: "project", key: "p" })).toEqual(["grid", "table"]);
 });
 
 // ── deriveZone（§7.2 5 zone：边缘 15% + 中心 70%，上下优先于左右）──────────────
