@@ -46,7 +46,7 @@ import {
 } from "./instance-area";
 import { HistoryList } from "./history-list";
 import { SessionTable, type TableColumn } from "./workbench-table";
-import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 
 type MobileWorkbenchProps = {
@@ -479,18 +479,12 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const ctx: PluginContext = { projectKey: scope.key, focusId: undefined, sessionType: undefined };
   // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
   //（按 ctx 过滤；files/git 需 projectKey）。复用 plugin.when 单一来源。
-  const tabs = useMemo<{ id: WorkbenchMobileOverviewTab; label: string }[]>(() => {
-    const options: { id: WorkbenchMobileOverviewTab; label: string }[] = [
-      { id: "overview", label: t("workbench.tabOverview") },
-      { id: "history", label: t("workbench.tabHistory") },
-    ];
-    for (const plugin of FIRST_PARTY_PLUGINS) {
-      if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
-    }
-    return options;
+  const tabs = useMemo(
+    () => buildOverviewTabs(t, ctx, true),
     // ctx 由 scope 决定，scope/t 变才重算。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, t]);
+    [scope, t],
+  );
   // 记忆 tab 若在当前 ctx 不可见 → 回退 overview，避免内容区空白。
   const activeTab: WorkbenchMobileOverviewTab = tabs.some((opt) => opt.id === tab)
     ? tab
@@ -646,17 +640,12 @@ function MobileGlobalOverview() {
   // 走 rootBrowse 分支），git 需 projectKey 故 when 过滤掉；global 无 history（跨项目历史
   // 不属列表态）。tab 行对齐 MobileProjectOverview 单行 header（◄ 返回 + tab 横滚 + 标题）。
   const ctx: PluginContext = { projectKey: null, focusId: undefined, sessionType: undefined };
-  const tabs = useMemo<{ id: WorkbenchMobileOverviewTab; label: string }[]>(() => {
-    const options: { id: WorkbenchMobileOverviewTab; label: string }[] = [
-      { id: "overview", label: t("workbench.tabOverview") },
-    ];
-    for (const plugin of FIRST_PARTY_PLUGINS) {
-      if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
-    }
-    return options;
+  const tabs = useMemo(
+    () => buildOverviewTabs(t, ctx, false),
     // ctx 恒 global（projectKey=null），仅 t 变重算。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t]);
+    [t],
+  );
   // 记忆 tab 若在当前 ctx 不可见（如 project 残留 history 切到 global）→ 回退 overview。
   const activeTab: WorkbenchMobileOverviewTab = tabs.some((opt) => opt.id === tab)
     ? tab

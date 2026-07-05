@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { SessionType } from "@agents-remote/shared";
-import type { TranslationKey } from "../../i18n/types";
-import type { WorkbenchRightTab } from "../../routes/workbench-model";
+import type { TranslateFn, TranslationKey } from "../../i18n/types";
+import type { WorkbenchMiddleTab, WorkbenchRightTab } from "../../routes/workbench-model";
 import { FilesPanel } from "../files/file-browser";
 import { GitDiffPanel } from "../git/git-diff-viewer";
 
@@ -65,3 +65,28 @@ export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
     when: (ctx) => ctx.projectKey !== null,
   },
 ];
+
+/**
+ * 构建中栏 / 移动列表态的 overview tab 列表（设计文档 §4）：overview 常驻 + history
+ * （includeHistory=true 时；列表态 project scope 恒传 true、global scope 传 false）+
+ * 第一方 inspection 插件按 ctx 过滤。桌面 instance-area visibleTabs 与移动
+ * MobileProjectOverview / MobileGlobalOverview tabs 共用此构建逻辑，plugin visibility
+ * 收敛为单一来源（plugin.when），避免三处循环 + push 重复。返回类型对齐
+ * WorkbenchMiddleTab（= WorkbenchMobileOverviewTab，见 workbench-model 别名）。
+ */
+export function buildOverviewTabs(
+  t: TranslateFn,
+  ctx: PluginContext,
+  includeHistory: boolean,
+): { id: WorkbenchMiddleTab; label: string }[] {
+  const options: { id: WorkbenchMiddleTab; label: string }[] = [
+    { id: "overview", label: t("workbench.tabOverview") },
+  ];
+  if (includeHistory) {
+    options.push({ id: "history", label: t("workbench.tabHistory") });
+  }
+  for (const plugin of FIRST_PARTY_PLUGINS) {
+    if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
+  }
+  return options;
+}

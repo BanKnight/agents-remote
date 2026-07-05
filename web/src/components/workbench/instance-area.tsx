@@ -69,7 +69,7 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { HistoryList, relativeTime } from "./history-list";
-import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import {
@@ -186,20 +186,12 @@ export function InstanceArea({
   // git 需 projectKey）。复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate
   // projectKey（非 FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope =
   // overview + files。
-  const visibleTabs = useMemo<{ id: WorkbenchMiddleTab; label: string }[]>(() => {
-    const options: { id: WorkbenchMiddleTab; label: string }[] = [
-      { id: "overview", label: t("workbench.tabOverview") },
-    ];
-    if (ctx.projectKey !== null) {
-      options.push({ id: "history", label: t("workbench.tabHistory") });
-    }
-    for (const plugin of FIRST_PARTY_PLUGINS) {
-      if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
-    }
-    return options;
+  const visibleTabs = useMemo(
+    () => buildOverviewTabs(t, ctx, ctx.projectKey !== null),
     // ctx 由 scope 决定（projectKey = scope.key 或 null），scope/t 变才重算。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, t]);
+    [scope, t],
+  );
   // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=git），回退 overview。
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && visibleTabs.some((opt) => opt.id === tab) ? tab : "overview";
