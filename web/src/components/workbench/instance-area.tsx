@@ -508,6 +508,7 @@ export function InstanceArea({
         update((prev) => setActiveTab(prev, groupId, tabId));
         if (tabId !== focusId) void navigateWorkbench(scope, tabId);
       }}
+      onTabDragStart={onCardDragStart}
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       rows={rows}
@@ -1447,6 +1448,7 @@ function GroupHeader({
   isMaximized,
   onCloseTab,
   onSelectTab,
+  onTabDragStart,
   onToggleMaximize,
 }: GroupHeaderProps) {
   const { t } = useT();
@@ -1459,6 +1461,7 @@ function GroupHeader({
             isActive={tab.sessionId === group.activeTabId}
             key={tab.sessionId}
             onClose={() => onCloseTab(tab.sessionId)}
+            onDragStart={onTabDragStart}
             onSelect={() => onSelectTab(tab.sessionId)}
             panelRef={tab}
           />
@@ -1482,12 +1485,14 @@ type GroupHeaderProps = {
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
+  onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: () => void;
 };
 
 type TabChipProps = {
   isActive: boolean;
   onClose: () => void;
+  onDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onSelect: () => void;
   panelRef: WorkbenchPanelRef;
 };
@@ -1495,35 +1500,41 @@ type TabChipProps = {
 /**
  * group 内单个 tab chip（设计 §7.1）：marker + 实例名（点击 = 切活动 tab）+ ✕（最小化）。
  * active tab ✕ 常显，非 active hover 才显（减少视觉噪音）。usePanelMeta 派生 marker + label。
+ *
+ * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
+ * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
+ * button 仍走各自 onClick（DragSourceCard.inClose=true 跳过其 onSelect，避免双触发）。
  */
-function TabChip({ isActive, onClose, onSelect, panelRef }: TabChipProps) {
+function TabChip({ isActive, onClose, onDragStart, onSelect, panelRef }: TabChipProps) {
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
   const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
   return (
-    <div
-      className={`group/tab flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm transition ${
-        isActive
-          ? "bg-on-surface/10 text-on-surface"
-          : "text-on-surface-muted hover:bg-on-surface/5"
-      }`}
-    >
-      <button className="flex min-w-0 items-center gap-1.5" onClick={onSelect} type="button">
-        {meta?.marker ?? null}
-        <span className="max-w-[8rem] truncate">{label}</span>
-      </button>
-      <button
-        aria-label={t("workbench.tabClose")}
-        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
-          isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100"
+    <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
+      <div
+        className={`group/tab flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm transition ${
+          isActive
+            ? "bg-on-surface/10 text-on-surface"
+            : "text-on-surface-muted hover:bg-on-surface/5"
         }`}
-        onClick={onClose}
-        title={t("workbench.tabClose")}
-        type="button"
       >
-        <ShellIcon className="h-3 w-3" name="close" />
-      </button>
-    </div>
+        <button className="flex min-w-0 items-center gap-1.5" onClick={onSelect} type="button">
+          {meta?.marker ?? null}
+          <span className="max-w-[8rem] truncate">{label}</span>
+        </button>
+        <button
+          aria-label={t("workbench.tabClose")}
+          className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
+            isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100"
+          }`}
+          onClick={onClose}
+          title={t("workbench.tabClose")}
+          type="button"
+        >
+          <ShellIcon className="h-3 w-3" name="close" />
+        </button>
+      </div>
+    </DragSourceCard>
   );
 }
 
@@ -1672,6 +1683,7 @@ type WorkspaceGridProps = {
   onResizeGroups: (leftGroupId: string, rightGroupId: string, deltaFlex: number) => void;
   onResizeRows: (topRowHeadId: string, bottomRowHeadId: string, deltaFlex: number) => void;
   onSelectTab: (groupId: string, tabId: string) => void;
+  onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: (groupId: string) => void;
   projectName: string | null;
   rows: WorkbenchGroup[][];
@@ -1696,6 +1708,7 @@ function WorkspaceGrid({
   onResizeGroups,
   onResizeRows,
   onSelectTab,
+  onTabDragStart,
   onToggleMaximize,
   projectName,
   rows,
@@ -1728,6 +1741,7 @@ function WorkspaceGrid({
                   key={`cell-${group.id}`}
                   onCloseTab={(tabId) => onCloseTab(group.id, tabId)}
                   onSelectTab={(tabId) => onSelectTab(group.id, tabId)}
+                  onTabDragStart={onTabDragStart}
                   onToggleMaximize={() => onToggleMaximize(group.id)}
                 />,
               ];
@@ -1768,6 +1782,7 @@ type GroupCellProps = {
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
+  onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: () => void;
 };
 
@@ -1787,6 +1802,7 @@ function GroupCell({
   isMaximized,
   onCloseTab,
   onSelectTab,
+  onTabDragStart,
   onToggleMaximize,
 }: GroupCellProps) {
   const isDraggingThis = dragRef
@@ -1806,6 +1822,7 @@ function GroupCell({
         isMaximized={isMaximized}
         onCloseTab={onCloseTab}
         onSelectTab={onSelectTab}
+        onTabDragStart={onTabDragStart}
         onToggleMaximize={onToggleMaximize}
       />
       <div className="relative min-h-0 flex-1">
