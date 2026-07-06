@@ -36,6 +36,7 @@ import {
   rankGlobalInstances,
   removeTabFromGroup,
   resizeGroups,
+  resizeRows,
   setActiveTab,
   toggleGroupMaximize,
   useWorkbenchLayout,
@@ -284,12 +285,16 @@ export function InstanceArea({
 
   // group 操作（设计 §7.3/§7.4）：maximize = group 级独占（toggleGroupMaximize 标量翻转，
   // deriveGroupRows maximized 时返单 group 单行 = 纯派生全屏）；行内列宽 resize（resizeGroups
-  // 守恒钳制左增右减，键=groupId）。sizes + maximized 由 useWorkbenchLayout 持久化，刷新恢复。
+  // 守恒钳制左增右减，键=groupId）；行间纵向 resize（resizeRows 守恒钳制上增下减，键=行首 groupId）。
+  // sizes/rowSizes + maximized 由 useWorkbenchLayout 持久化，刷新恢复。
   const onToggleMaximize = (groupId: string) => {
     update((prev) => toggleGroupMaximize(prev, groupId));
   };
   const onResizeGroups = (leftGroupId: string, rightGroupId: string, deltaFlex: number) => {
     update((prev) => resizeGroups(prev, leftGroupId, rightGroupId, deltaFlex));
+  };
+  const onResizeRows = (topRowHeadId: string, bottomRowHeadId: string, deltaFlex: number) => {
+    update((prev) => resizeRows(prev, topRowHeadId, bottomRowHeadId, deltaFlex));
   };
 
   // P3 总览视图（设计文档 §5/§8）：overview tab 左总览按 view 渲染（grid 卡片 / grouped 分段 /
@@ -483,9 +488,9 @@ export function InstanceArea({
   // 左总览仅 overview 存在；history / inspection tab 全宽，无左总览。CreateSessionBar +
   // ViewSwitcher 随左总览 header 一起只在 overview 渲染（设计 §6）。
   const leftColumnContent = isOverview ? leftOverviewContent : null;
-  // 右工作区 = deriveGroupRows 全网格（设计 §7.4）。多 group 同屏：行 flex-1 等分高度，
-  // 行内 group flex 按 sizes 权重（key=groupId）等分宽度。maximized 时 deriveGroupRows 返单
-  // group 单行全屏。
+  // 右工作区 = deriveGroupRows 全网格（设计 §7.4）。多 group 同屏：行 flex 按 rowSizes 权重
+  //（key=行首 groupId）等分高度 + 行间纵向 gutter，行内 group flex 按 sizes 权重（key=groupId）
+  // 等分宽度。maximized 时 deriveGroupRows 返单 group 单行全屏。
   // dragState 期间整个 WorkspaceGrid 用 pointer-events:none 让 elementFromPoint 命中 overlay
   // 下层 group 的 data-drop-group（pointer capture 在源卡片，overlay 不接 pointer 事件）。
   const rightWorkspace = (
@@ -496,6 +501,7 @@ export function InstanceArea({
       maximized={layout.maximized}
       onCloseTab={onCloseTab}
       onResizeGroups={onResizeGroups}
+      onResizeRows={onResizeRows}
       onSelectTab={(groupId, tabId) => {
         // 点 tab = 切活动 tab（setActiveTab 即时切视觉）+ navigate（URL focusId 同步）。navigate
         // 会再触发 focus effect，但 setActiveTab 幂等，无副作用。
@@ -505,6 +511,7 @@ export function InstanceArea({
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       rows={rows}
+      rowSizes={layout.rowSizes}
       sizes={layout.sizes}
     />
   );
@@ -1602,43 +1609,51 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
 }
 
 type SplitGutterProps = {
-  /** 拖拽增量（本次 move 的 deltaX / 行宽，无量纲比例）；上层按行 totalFlex 转 deltaFlex。 */
+  /** gutter 朝向（设计 §7.4）：col=同行相邻 group 间横向列宽（cursor-col-resize， deltaX/父宽）；
+   * row=行间纵向高度（cursor-row-resize， deltaY/父高）。父 = parentElement（行 div / 外网格 div）。 */
+  orientation: "col" | "row";
+  /** 拖拽增量（本次 move 的 delta / 父尺寸，无量纲比例）；上层按行/列 totalFlex 转 deltaFlex。 */
   onResize: (ratioDelta: number) => void;
 };
 
 /**
- * 同行相邻 group 间的列宽分隔条（设计 §7.3）。flex item（w-1 shrink-0），pointer-event 增量
- * 拖拽：每次 move 算 deltaX / 行宽（parentElement.getBoundingClientRect）→ onResize(ratioDelta)；
- * 上层 resizeGroups 基于当前 layout 增量更新左右 sizes（key=groupId），守恒钳制。setPointerCapture 锁指针到 gutter，
- * 拖拽时即使滑过面板仍持续触发。复活自 P5 split-panel.tsx（三态已废弃，gutter 通用）。
+ * 相邻区域分隔条（设计 §7.3/§7.4）。flex item（w-1 col / h-1 row，shrink-0），pointer-event 增量
+ * 拖拽：每次 move 算 delta（col=clientX/父宽，row=clientY/父高，parentElement.getBoundingClientRect）
+ * → onResize(ratioDelta)；上层 resizeGroups/resizeRows 基于当前 layout 增量更新 sizes/rowSizes
+ *（key=groupId / 行首 groupId），守恒钳制。setPointerCapture 锁指针到 gutter，拖拽时即使滑过面板
+ * 仍持续触发。复活自 P5 split-panel.tsx（三态已废弃，gutter 通用）。
  */
-function SplitGutter({ onResize }: SplitGutterProps) {
+function SplitGutter({ orientation, onResize }: SplitGutterProps) {
   const gutterRef = useRef<HTMLDivElement>(null);
-  const lastX = useRef<number | null>(null);
+  const lastPos = useRef<number | null>(null);
+  const isRow = orientation === "row";
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    lastX.current = event.clientX;
+    lastPos.current = isRow ? event.clientY : event.clientX;
     void gutterRef.current?.setPointerCapture(event.pointerId);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (lastX.current === null) return;
-    const row = gutterRef.current?.parentElement;
-    const width = row?.getBoundingClientRect().width ?? 1;
-    const delta = event.clientX - lastX.current;
-    lastX.current = event.clientX;
-    onResize(delta / width);
+    if (lastPos.current === null) return;
+    const parent = gutterRef.current?.parentElement;
+    const size = isRow
+      ? (parent?.getBoundingClientRect().height ?? 1)
+      : (parent?.getBoundingClientRect().width ?? 1);
+    const current = isRow ? event.clientY : event.clientX;
+    const delta = current - lastPos.current;
+    lastPos.current = current;
+    onResize(delta / size);
   };
   const endDrag = (event: PointerEvent<HTMLDivElement>) => {
-    lastX.current = null;
+    lastPos.current = null;
     void gutterRef.current?.releasePointerCapture(event.pointerId);
   };
 
   return (
     <div
       aria-hidden
-      className="w-1 shrink-0 cursor-col-resize rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20"
+      className={`${isRow ? "h-1 cursor-row-resize" : "w-1 cursor-col-resize"} shrink-0 rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20`}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -1655,17 +1670,20 @@ type WorkspaceGridProps = {
   maximized: string | null;
   onCloseTab: (groupId: string, tabId: string) => void;
   onResizeGroups: (leftGroupId: string, rightGroupId: string, deltaFlex: number) => void;
+  onResizeRows: (topRowHeadId: string, bottomRowHeadId: string, deltaFlex: number) => void;
   onSelectTab: (groupId: string, tabId: string) => void;
   onToggleMaximize: (groupId: string) => void;
   projectName: string | null;
   rows: WorkbenchGroup[][];
+  rowSizes: Record<string, number>;
   sizes: Record<string, number>;
 };
 
 /**
- * 右工作区网格（设计 §7.4）：deriveGroupRows 全网格渲染。行 flex-1 等分高度（Phase D 不引入
- * rowSizes，纵向 resize 留后续），行内 group flex 按 sizes 权重（key=groupId）等分宽度。
- * maximized 时 deriveGroupRows 返单 group 单行 → 自动全屏。空 groups → EmptyInstanceArea
+ * 右工作区网格（设计 §7.4）：deriveGroupRows 全网格渲染。行 flex 按 rowSizes 权重（key=行首 groupId）
+ * 等分高度，行间纵向 gutter（SplitGutter orientation="row"）拖拽调上下行高（resizeRows 守恒钳制）；
+ * 行内 group flex 按 sizes 权重（key=groupId）等分宽度，同行 gutter 横向调宽（resizeGroups）。
+ * maximized 时 deriveGroupRows 返单 group 单行 → 自动全屏（无 gutter）。空 groups → EmptyInstanceArea
  *（标注 data-drop-empty 让空白区 drop 命中）。GroupCell 标注 data-drop-group={groupId} 让
  * DropZoneOverlay 的 elementFromPoint hit-test 命中。
  */
@@ -1676,21 +1694,29 @@ function WorkspaceGrid({
   maximized,
   onCloseTab,
   onResizeGroups,
+  onResizeRows,
   onSelectTab,
   onToggleMaximize,
   projectName,
   rows,
+  rowSizes,
   sizes,
 }: WorkspaceGridProps) {
   if (rows.length === 0) {
     return <EmptyInstanceArea create={create} projectName={projectName} />;
   }
+  const totalRowFlex = rows.reduce((sum, row) => sum + (rowSizes[row[0].id] ?? 1), 0);
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 p-1">
-      {rows.map((row, rowIdx) => {
+      {rows.flatMap((row, rowIdx) => {
         const totalFlex = row.reduce((sum, g) => sum + (sizes[g.id] ?? 1), 0);
-        return (
-          <div className="flex min-h-0 flex-1 gap-1" key={`row-${rowIdx}`}>
+        const rowHeadId = row[0].id;
+        const rowDiv = (
+          <div
+            className="flex min-h-0 gap-1"
+            key={`row-${rowIdx}`}
+            style={{ flex: `${rowSizes[rowHeadId] ?? 1} 1 0` }}
+          >
             {row.flatMap((group, colIdx) => {
               const cells: ReactNode[] = [
                 <GroupCell
@@ -1711,6 +1737,7 @@ function WorkspaceGrid({
                   <SplitGutter
                     key={`gutter-${group.id}-${next.id}`}
                     onResize={(ratio) => onResizeGroups(group.id, next.id, ratio * totalFlex)}
+                    orientation="col"
                   />,
                 );
               }
@@ -1718,6 +1745,16 @@ function WorkspaceGrid({
             })}
           </div>
         );
+        if (rowIdx >= rows.length - 1) return [rowDiv];
+        const nextRowHeadId = rows[rowIdx + 1][0].id;
+        return [
+          rowDiv,
+          <SplitGutter
+            key={`rowgutter-${rowIdx}`}
+            onResize={(ratio) => onResizeRows(rowHeadId, nextRowHeadId, ratio * totalRowFlex)}
+            orientation="row"
+          />,
+        ];
       })}
     </div>
   );
