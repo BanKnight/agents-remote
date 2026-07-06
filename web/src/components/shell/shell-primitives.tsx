@@ -119,7 +119,7 @@ export function NavItemContent({
 }: NavItemContentProps) {
   const layoutClass =
     orientation === "vertical"
-      ? "grid justify-items-center gap-1 py-1.5 text-center"
+      ? "grid justify-items-center gap-1 px-4 py-1.5 text-center"
       : "flex items-center gap-2.5 px-2 py-1.5 text-left";
   const stateClass =
     orientation === "vertical"
