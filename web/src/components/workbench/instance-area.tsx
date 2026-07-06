@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
   useCallback,
@@ -278,6 +279,35 @@ export function InstanceArea({
     }
   };
 
+  // stale-tab prune（设计 §7.1）：kill session 后该 session 的 tab 不会自动从 layout 消失
+  //（V2 localStorage 持久化，刷新也不清）。监听活跃实例集（refs）变化，遍历 layout 所有 tab，
+  // sessionId 不在活跃集 → removeTabFromGroup 清理（可能触发 group 合并 / 删空 group）。
+  // focusId 指向被清 tab 时回退到剩余活动 tab（activeTabRef 派生）或清空回非聚焦态。
+  useEffect(() => {
+    if (layout.groups.length === 0) return;
+    const activeIds = new Set(refs.map((r) => r.sessionId));
+    // 收集所有 stale tab（跨 group）。
+    const stale: { groupId: string; tabId: string }[] = [];
+    for (const g of layout.groups) {
+      for (const tab of g.tabs) {
+        if (!activeIds.has(tab.sessionId)) stale.push({ groupId: g.id, tabId: tab.sessionId });
+      }
+    }
+    if (stale.length === 0) return;
+    let next = layout;
+    for (const { groupId, tabId } of stale) {
+      next = removeTabFromGroup(next, groupId, tabId);
+    }
+    if (next === layout) return;
+    update(() => next);
+    // 当前聚焦 tab 被清 → 回退到剩余活动 tab（或清空回非聚焦态）。
+    if (focusId && stale.some((s) => s.tabId === focusId)) {
+      void navigateWorkbench(scope, activeTabRef(next)?.sessionId);
+    }
+    // refs/layout 引用敏感；refs.length 守卫避免 refs 内容未变（如同序变动）时误触。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey, focusId, layout, refs]);
+
   const focusPanel = (ref: WorkbenchPanelRef) => {
     if (ref.sessionId === focusId) return;
     void navigateWorkbench(scope, ref.sessionId);
@@ -345,6 +375,32 @@ export function InstanceArea({
   } | null>(null);
   // ghost 跟随指针的 ref（拖动态显示 marker + 实例名）。
   const draggingRef = dragState?.ref ?? null;
+
+  // tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。
+  // minimize 复用 onCloseTab（removeTabFromGroup，session 存活）；kill 走 closeInstance
+  //（useCloseSession，自带 confirm → close API → 失效缓存）。菜单锚定右键 pointer 坐标，
+  // document pointerdown 外点 / Esc 关闭（仿 SessionDetailActionsMenu）。
+  const [contextMenu, setContextMenu] = useState<{
+    groupId: string;
+    tabId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const onTabContextMenu = useCallback((groupId: string, tabId: string, x: number, y: number) => {
+    setContextMenu({ groupId, tabId, x, y });
+  }, []);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const onMinimizeTab = useCallback(() => {
+    if (!contextMenu) return;
+    onCloseTab(contextMenu.groupId, contextMenu.tabId);
+    setContextMenu(null);
+  }, [contextMenu, onCloseTab]);
+  const onKillTab = useCallback(() => {
+    if (!contextMenu) return;
+    const type = inferSessionTypeFromId(contextMenu.tabId);
+    if (type) closeInstance(contextMenu.tabId, type);
+    setContextMenu(null);
+  }, [contextMenu, closeInstance]);
 
   const onDrop = useCallback(() => {
     const drag = dragState;
@@ -508,6 +564,7 @@ export function InstanceArea({
         update((prev) => setActiveTab(prev, groupId, tabId));
         if (tabId !== focusId) void navigateWorkbench(scope, tabId);
       }}
+      onTabContextMenu={onTabContextMenu}
       onTabDragStart={onCardDragStart}
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
@@ -595,6 +652,14 @@ export function InstanceArea({
       <div className="min-h-0 flex-1">{tabContent}</div>
       {holder}
       {renameHolder}
+      {contextMenu ? (
+        <TabContextMenu
+          anchor={contextMenu}
+          onClose={closeContextMenu}
+          onKill={onKillTab}
+          onMinimize={onMinimizeTab}
+        />
+      ) : null}
       {create.promptHolder}
     </div>
   );
@@ -1448,6 +1513,7 @@ function GroupHeader({
   isMaximized,
   onCloseTab,
   onSelectTab,
+  onTabContextMenu,
   onTabDragStart,
   onToggleMaximize,
 }: GroupHeaderProps) {
@@ -1461,6 +1527,7 @@ function GroupHeader({
             isActive={tab.sessionId === group.activeTabId}
             key={tab.sessionId}
             onClose={() => onCloseTab(tab.sessionId)}
+            onContextMenu={(event) => onTabContextMenu(tab.sessionId, event)}
             onDragStart={onTabDragStart}
             onSelect={() => onSelectTab(tab.sessionId)}
             panelRef={tab}
@@ -1485,6 +1552,7 @@ type GroupHeaderProps = {
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
+  onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: () => void;
 };
@@ -1492,6 +1560,7 @@ type GroupHeaderProps = {
 type TabChipProps = {
   isActive: boolean;
   onClose: () => void;
+  onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
   onDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onSelect: () => void;
   panelRef: WorkbenchPanelRef;
@@ -1504,8 +1573,18 @@ type TabChipProps = {
  * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
  * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
  * button 仍走各自 onClick（DragSourceCard.inClose=true 跳过其 onSelect，避免双触发）。
+ *
+ * 右键 tab（设计 §7.1）弹轻量菜单「最小化」+「关闭实例 kill」（onContextMenu 上传坐标，
+ * InstanceArea 渲染 TabContextMenu）。浏览器原生 contextmenu 默认行为 preventDefault 抑制。
  */
-function TabChip({ isActive, onClose, onDragStart, onSelect, panelRef }: TabChipProps) {
+function TabChip({
+  isActive,
+  onClose,
+  onContextMenu,
+  onDragStart,
+  onSelect,
+  panelRef,
+}: TabChipProps) {
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
   const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
@@ -1517,18 +1596,22 @@ function TabChip({ isActive, onClose, onDragStart, onSelect, panelRef }: TabChip
             ? "bg-on-surface/10 text-on-surface"
             : "text-on-surface-muted hover:bg-on-surface/5"
         }`}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onContextMenu(event);
+        }}
       >
         <button className="flex min-w-0 items-center gap-1.5" onClick={onSelect} type="button">
           {meta?.marker ?? null}
           <span className="max-w-[8rem] truncate">{label}</span>
         </button>
         <button
-          aria-label={t("workbench.tabClose")}
+          aria-label={t("workbench.tabMinimize")}
           className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
             isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100"
           }`}
           onClick={onClose}
-          title={t("workbench.tabClose")}
+          title={t("workbench.tabMinimize")}
           type="button"
         >
           <ShellIcon className="h-3 w-3" name="close" />
@@ -1683,6 +1766,7 @@ type WorkspaceGridProps = {
   onResizeGroups: (leftGroupId: string, rightGroupId: string, deltaFlex: number) => void;
   onResizeRows: (topRowHeadId: string, bottomRowHeadId: string, deltaFlex: number) => void;
   onSelectTab: (groupId: string, tabId: string) => void;
+  onTabContextMenu: (groupId: string, tabId: string, x: number, y: number) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: (groupId: string) => void;
   projectName: string | null;
@@ -1708,6 +1792,7 @@ function WorkspaceGrid({
   onResizeGroups,
   onResizeRows,
   onSelectTab,
+  onTabContextMenu,
   onTabDragStart,
   onToggleMaximize,
   projectName,
@@ -1741,6 +1826,9 @@ function WorkspaceGrid({
                   key={`cell-${group.id}`}
                   onCloseTab={(tabId) => onCloseTab(group.id, tabId)}
                   onSelectTab={(tabId) => onSelectTab(group.id, tabId)}
+                  onTabContextMenu={(tabId, event) =>
+                    onTabContextMenu(group.id, tabId, event.clientX, event.clientY)
+                  }
                   onTabDragStart={onTabDragStart}
                   onToggleMaximize={() => onToggleMaximize(group.id)}
                 />,
@@ -1782,6 +1870,7 @@ type GroupCellProps = {
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
+  onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: () => void;
 };
@@ -1802,6 +1891,7 @@ function GroupCell({
   isMaximized,
   onCloseTab,
   onSelectTab,
+  onTabContextMenu,
   onTabDragStart,
   onToggleMaximize,
 }: GroupCellProps) {
@@ -1822,6 +1912,7 @@ function GroupCell({
         isMaximized={isMaximized}
         onCloseTab={onCloseTab}
         onSelectTab={onSelectTab}
+        onTabContextMenu={onTabContextMenu}
         onTabDragStart={onTabDragStart}
         onToggleMaximize={onToggleMaximize}
       />
@@ -1876,6 +1967,70 @@ function DropZoneHighlight({ zone }: { zone: DropZone }) {
       className={`pointer-events-none absolute ${positionClass} z-10 border-2 border-dashed border-primary/50 bg-primary/10`}
       role="status"
     />
+  );
+}
+
+type TabContextMenuProps = {
+  anchor: { groupId: string; tabId: string; x: number; y: number };
+  onClose: () => void;
+  onKill: () => void;
+  onMinimize: () => void;
+};
+
+/**
+ * tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。自绘（仿
+ * SessionDetailActionsMenu），不引入 Radix（与现有模式一致、零新依赖）。absolute 定位在右键
+ * pointer 坐标（fixed 锚定视口，不受祖先 transform 影响）；document pointerdown 外点 / Esc 关闭。
+ * 「最小化」= removeTabFromGroup（session 存活，同 tab ✕）；「关闭实例」= useCloseSession
+ *（自带 confirm → close API → 失效缓存，菜单内不再 confirm）。
+ */
+function TabContextMenu({ anchor, onClose, onKill, onMinimize }: TabContextMenuProps) {
+  const { t } = useT();
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [onClose]);
+  const minimize = () => {
+    onMinimize();
+  };
+  const kill = () => {
+    onKill();
+  };
+  // 钳制菜单不超出视口（1280×800 桌面 + 375×812 移动端，菜单宽 ~160px 高 ~88px）。
+  const left = Math.min(anchor.x, window.innerWidth - 170);
+  const top = Math.min(anchor.y, window.innerHeight - 100);
+  return (
+    <div
+      className={`fixed z-50 min-w-[10rem] overflow-hidden rounded-lg py-1 text-sm shadow-lg ${shellSurfaceClasses.raised}`}
+      ref={menuRef}
+      style={{ left, top }}
+    >
+      <button
+        className="flex w-full items-center px-3 py-1.5 text-left text-on-surface transition hover:bg-on-surface/10"
+        onClick={minimize}
+        type="button"
+      >
+        {t("workbench.tabMinimize")}
+      </button>
+      <button
+        className="flex w-full items-center px-3 py-1.5 text-left text-error transition hover:bg-error/10"
+        onClick={kill}
+        type="button"
+      >
+        {t("workbench.tabKill")}
+      </button>
+    </div>
   );
 }
 
