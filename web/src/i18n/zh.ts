@@ -449,6 +449,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.historySection": "历史会话",
   "workbench.emptyInstanceHint": "没有活跃会话，创建一个开始。",
   "workbench.emptyInstanceGlobalHint": "从左栏选择一个项目。",
+  "workbench.emptyInstanceNoTab": "点击左侧实例查看，或拖卡片到这里分屏。",
   "workbench.tabOutput": "输出",
   "workbench.tabOverview": "总览",
   "workbench.tabHistory": "历史",

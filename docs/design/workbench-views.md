@@ -295,7 +295,7 @@ type WorkbenchLayout = {
 - **激活驱动**：
   - 右栏 inspection 跟随活动 tab（files/git）
   - 左总览对应卡片高亮（◆ 标记 + ring）
-- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区在活动 group 显示 scope 首个活跃实例（单 tab，非活动态）或空态；右栏 inspection 空态。点左总览卡片或 group 才进入聚焦态。
+- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区默认空态（不自动铺首个活跃实例，避免最小化最后 tab 后又被自动重开的循环，详见 §14）；右栏 inspection 空态。点左总览卡片或 group 才进入聚焦态。
 - **focusId 反查失败兜底**：`findTabBySessionId` 返 null（该 session 已最小化，不在任何 group）：URL `focusId` 保留不动（不死循环），右栏 inspection 跟随 `activeTabRef`（活动 group 的活动 tab，非 URL focusId）——最小化是用户主动移出，inspection 跟活动 tab 更合理。
 
 ## 14. 空态

@@ -449,6 +449,8 @@ export const en = {
   "workbench.historySection": "History",
   "workbench.emptyInstanceHint": "No active sessions. Create one to get started.",
   "workbench.emptyInstanceGlobalHint": "Select a project from the left rail.",
+  "workbench.emptyInstanceNoTab":
+    "Click an instance on the left to view it, or drag a card here to split.",
   "workbench.tabOutput": "Output",
   "workbench.tabOverview": "Overview",
   "workbench.tabHistory": "History",

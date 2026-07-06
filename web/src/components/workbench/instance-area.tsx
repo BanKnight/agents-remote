@@ -253,19 +253,6 @@ export function InstanceArea({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, scopeKey, refs.length]);
 
-  // 非聚焦态进入空 scope：铺首个活跃实例（VSCode explorer 语义，设计 §13「右工作区显示 scope
-  // 首个活跃实例」）。聚焦态 / layout 非空（持久化恢复 / focus effect 已填）不介入。
-  // candidatesLoaded 守卫：global scope candidates 逐步聚合，未 settled 时 refs[0] 是临时首个，
-  // 铺入后锁死（groups.length>0 不重铺），后续更紧急实例回来也不更新。project scope hook 始终
-  // isLoaded=true，守卫无影响。无 seededRef：minimize 掉最后一个 tab 后 layout 空 → 铺下一个
-  // refs[0]。
-  useEffect(() => {
-    if (focusId || layout.groups.length > 0) return;
-    if (!candidatesLoaded || refs.length === 0) return;
-    update((prev) => (prev.groups.length > 0 ? prev : ensureTabOpen(prev, refs[0])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, layout.groups.length, refs.length, focusId, candidatesLoaded]);
-
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromGroup 从 group 移除 tab，session 存活（不 kill，
   // kill 走左总览卡片 close = closeInstance）。minimize 当前聚焦 tab → navigate 到剩余活动 tab
   //（activeTabRef 派生活动 group 的活动 tab），避免 focus effect 在 minimized focusId 上重开
@@ -554,6 +541,7 @@ export function InstanceArea({
       activeZone={activeZone}
       create={create}
       draggingRef={draggingRef}
+      hasActiveInstances={refs.length > 0}
       maximized={layout.maximized}
       onCloseTab={onCloseTab}
       onResizeGroups={onResizeGroups}
@@ -1228,9 +1216,13 @@ export function useProjectInstances(projectName: string | null): {
 
 function EmptyInstanceArea({
   create,
+  hasActiveInstances = false,
   projectName,
 }: {
   create: CreateSessionApi | null;
+  /** 右侧无 tab 时区分双语义（设计 §14）：true=有活跃实例但未打开（空态提示，无创建入口）；
+   * false=真无活跃实例（创建态 + CreateSessionBar）。左总览调用默认 false。 */
+  hasActiveInstances?: boolean;
   projectName: string | null;
 }) {
   const { t } = useT();
@@ -1239,7 +1231,11 @@ function EmptyInstanceArea({
       <div
         className={`flex min-h-32 flex-1 flex-col items-center justify-center gap-3 rounded-2xl ${shellSurfaceClasses.inset}`}
       >
-        {projectName !== null && create ? (
+        {hasActiveInstances ? (
+          // 双语义（设计 §14）：有活跃实例但右侧无 tab（全最小化 / 刚进 scope 无 focusId）→ 空态提示，
+          // 不显示创建入口（实例已存在，只是未打开）。global 同理。
+          <p className="text-sm text-on-surface-muted">{t("workbench.emptyInstanceNoTab")}</p>
+        ) : projectName !== null && create ? (
           <>
             <p className="text-sm text-on-surface-muted">{t("workbench.emptyInstanceHint")}</p>
             <CreateSessionBar
@@ -1761,6 +1757,9 @@ type WorkspaceGridProps = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   create: CreateSessionApi | null;
   draggingRef: WorkbenchPanelRef | null;
+  /** 右侧无 tab 时 EmptyInstanceArea 双语义（设计 §14）：true=有活跃实例但未打开（空态提示）；
+   * false=真无活跃实例（创建态）。InstanceArea 传 refs.length > 0。 */
+  hasActiveInstances: boolean;
   maximized: string | null;
   onCloseTab: (groupId: string, tabId: string) => void;
   onResizeGroups: (leftGroupId: string, rightGroupId: string, deltaFlex: number) => void;
@@ -1787,6 +1786,7 @@ function WorkspaceGrid({
   activeZone,
   create,
   draggingRef,
+  hasActiveInstances,
   maximized,
   onCloseTab,
   onResizeGroups,
@@ -1801,7 +1801,13 @@ function WorkspaceGrid({
   sizes,
 }: WorkspaceGridProps) {
   if (rows.length === 0) {
-    return <EmptyInstanceArea create={create} projectName={projectName} />;
+    return (
+      <EmptyInstanceArea
+        create={create}
+        hasActiveInstances={hasActiveInstances}
+        projectName={projectName}
+      />
+    );
   }
   const totalRowFlex = rows.reduce((sum, row) => sum + (rowSizes[row[0].id] ?? 1), 0);
   return (
