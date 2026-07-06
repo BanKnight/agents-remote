@@ -119,7 +119,7 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 - **tab = 实例**：每个 group 含 1-N tab（每个 tab = 一个 agent/terminal session），同 group 同时只渲染 active tab 的内容；其他 tab 用 CSS `hidden` 保留（**不 unmount**，保 WebSocket/relay 长连，避免 claude2 relay 重连丢早消息 + xterm dispose/重建抖动）。
 - **取消旧「group=实例 1:1」假设**：旧 §7.1「group 二态（存在/不存在）」把 group 等同于实例；新模型 group 是分屏容器，tab 才是实例。实例一多不再强制铺满屏幕——同 group 多 tab 切换，或最小化移出工作区。
 - **左总览 ↔ 工作区**：点左总览卡片 = 已开则激活该 tab（不新 tab），未开则在活动 group 开新 tab（不新建 group）；拖卡片 = 开新 group 分屏（§7.3）。
-- **初始态**：进入 scope 时，活动 group 打开 scope 首个活跃实例（单 tab），不空着。scope 无活跃实例 → 右工作区空态（§14）。
+- **初始态**：进入 scope 时，右工作区默认空态（§14），不自动铺首个实例——用户主动点左总览卡片或拖卡片才打开（避免「最小化最后 tab → 又被自动重开」的循环）。URL 带 `focusId` 进入时，由 focus effect 兜底在活动 group 开对应 tab。scope 无活跃实例 → 右工作区空态（§14）。
 - **活动 group**：同一时刻有且仅有一个活动 group（`activeGroupId`，显式存布局）。点 group 任意处激活：点 tab 栏某 tab = 切该 tab 为 active 并激活该 group；点 group 其他空白处 = 仅激活该 group，不改 active tab。URL `focusId` = 活动 group 的活动 tab sessionId，用于反查与右栏 inspection 跟随。
 
 ### 7.2 tab 操作语义表（核心）
@@ -134,10 +134,11 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 | 关闭实例（kill） | 左总览卡片 close / tab 右键菜单 | `useCloseSession`（confirm → close API → 失效缓存）；**不放 tab ✕**（避免高频按钮触发破坏性 kill） | 否 |
 | 拖卡片 → group | 左总览拖卡片到 group | center zone = 在该 group 开新 tab（不替换）；左/右 zone = 开新 group 同行；上/下 zone = 开新 group 新行 | 是 |
 | 拖卡片 → 空白 | 左总览拖卡片到空白 | 创建首个 group（单 tab） | 是 |
+| 拖 tab → 另一 group | tab 栏拖 tab 到另一 group | center zone = 加入目标 group tab 栏（`dropIntoGroup` 跨组迁移，原组空则合并消失）+ URL focusId | 是 |
 
 - **最小化后左总览不加标记**：已开/未开视觉一致（类 vscode explorer：不区分 editor 是否已打开），区分靠「点已开 = 激活不新 tab」的行为。
-- **kill 走低频入口**：tab ✕ 高频但非破坏性（最小化可恢复）；kill session 破坏性，走左总览卡片 close + tab 右键菜单，避免误触。
-- **首期不做跨 group 拖 tab**：tab 只能最小化（移出 group），不能在 group 间拖动。`moveTab` 留接口标「后续」。
+- **tab 右键菜单**（最小化 + 关闭实例）：右键 tab 栏 tab 弹出轻量菜单——「最小化」= 同 tab ✕（`removeTabFromGroup`，session 存活）；「关闭实例」= `useCloseSession`（自带 confirm → close API → 失效缓存）。kill 走此低频入口 + 左总览卡片 close，避免高频 tab ✕ 误触破坏性 kill。
+- **tab 可跨 group 拖动**：tab 栏的 tab 可拖到另一 group（复用 §7.3 drop zone 的 center 语义 = `dropIntoGroup` 跨组迁移，原 group 空则合并消失）。tab ✕ 仍是最小化（移出工作区回左总览，session 存活）。单击 tab = 切换 active（拖动与单击靠 4px 阈值区分，复用 `DragSourceCard`）。
 
 ### 7.3 drop zone 新语义
 
@@ -171,7 +172,7 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 | 空白区（无 group） | 创建首个 group（单 tab） |
 
 - `deriveZone` 不变（边缘 15% + 中心，上/下优先于左/右，`DROP_ZONE_EDGE_RATIO = 0.15` 沿用）。
-- 拖动期间若被拖实例已在某 group 的 tab 中，drop 到另一 group = 先从旧 group `removeTabFromGroup`（可能触发旧 group 合并）再加入目标，等价「跨 group 移动实例」（drop 路径支持；tab 栏直接拖不支持，见 §7.2）。
+- 拖动期间若被拖实例已在某 group 的 tab 中（无论拖源是左总览卡片还是 tab 栏 tab），drop 到另一 group = 先从旧 group `removeTabFromGroup`（可能触发旧 group 合并）再加入目标，等价「跨 group 移动实例」。tab 栏 tab 拖动复用同一 drop zone + `dropIntoGroup`（见 §7.2「拖 tab → 另一 group」）。
 
 ### 7.4 group 操作
 
@@ -191,7 +192,8 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 - **resize**：group 间 gutter 拖拽。**行内 gutter**（同行相邻 group 之间）调列宽，操作 `sizes[groupId]`；**行间 gutter**（相邻行之间）调行高，操作 `rowSizes[行首 groupId]`。两者复用同一守恒钳制逻辑（`resizeGroups` / `resizeRows`）。
 - **maximize（group 级）**：点 group header 的 ▢ → 该 group 独占右工作区（其他 group `hidden` 不 unmount，保 session），group 内 tab 栏仍在可切 tab；再点 ▢ 还原（`sizes` / `rowSizes` / `newRowAfter` 未动，布局完整还原）。
 - **最小化 tab**：点 tab ✕ → `removeTabFromGroup`（session 存活）；若是该 group 最后一个 tab → group 消失（`removeGroup`），剩余 group 重排，`activeGroupId` 回退 `groups[0]`。
-- **关闭实例（kill）**：左总览卡片 close / tab 右键菜单 → `useCloseSession`（confirm → close API → 失效缓存）+ 从所在 group `removeTabFromGroup` + 焦点切到剩余活动 tab（`activeTabRef` 兜底）。实例从左总览消失（session 已结束）。
+- **关闭实例（kill）**：左总览卡片 close / tab 右键菜单 → `useCloseSession`（confirm → close API → 失效缓存）。实例从左总览消失（session 已结束）。
+- **stale-tab prune**（kill 后清理孤儿 tab）：kill session 后该 session 的 tab 不会自动从 layout 消失（V2 localStorage 持久化，刷新也不清）。InstanceArea 监听活跃实例集（refs/candidates）变化，遍历 layout 所有 tab，sessionId 不在活跃集 → `removeTabFromGroup` 清理（可能触发 group 合并）；`focusId` 指向被清 tab 时回退到剩余活动 tab（`activeTabRef` 兜底）或清空回非聚焦态。
 
 > 三种「移出」语义区分：**最小化**（tab ✕）= 移出工作区但 session 存活，可重新点开；**最大化**（group ▢）= 临时独占，其他 group 隐藏可还原；**关闭**（卡片 close / 右键）= kill session，不可恢复。
 
@@ -300,9 +302,12 @@ type WorkbenchLayout = {
 
 | 区域 | 空态条件 | 呈现 |
 |------|---------|------|
-| 左总览 | scope 无活跃实例 | EmptyInstanceArea（创建入口：+ Claude / + Codex / + Terminal） |
-| 右工作区 | scope 无活跃实例 / 所有 group 被 close | 占位提示「从左总览选实例，或拖卡片到这里分屏」 |
+| 左总览 | scope 无活跃实例（refs.length === 0） | EmptyInstanceArea 创建态（+ Claude / + Codex / + Terminal） |
+| 右工作区 | scope 无活跃实例（refs.length === 0） | EmptyInstanceArea 创建态（同左总览，引导创建首个实例） |
+| 右工作区 | 有活跃实例但右侧无 tab（refs.length > 0，全最小化 / 刚进 scope 无 focusId / 所有 group 被 close） | EmptyInstanceArea 空态提示（「点击左侧实例查看，或拖卡片到这里分屏」，不显示创建入口——实例已存在，只是未打开） |
 | 右栏 inspection | 无活动 group | 空态提示文案 |
+
+**EmptyInstanceArea 双语义**（按 `refs.length` 区分）：`refs.length === 0`（真无活跃实例）→ 创建态（CreateSessionBar + 空提示）；`refs.length > 0` 但右侧无 tab → 空态提示（无 CreateSessionBar，引导点左侧实例）。初次进 scope 不再自动铺首个实例——右侧默认空态，用户主动点卡片/拖卡片才打开（避免最小化最后 tab 后又被自动重开的循环）。
 
 ## 14.1 加载态（detail pending）
 
