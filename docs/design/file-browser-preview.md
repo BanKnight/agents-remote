@@ -18,8 +18,8 @@
 
 - Files section 保持在 Project console route 内，不新增独立 Files route；当前目录 path 与选中文件 path 是单页本地 state。
 - 目录列表和文件预览由 TanStack Query 管理 server state，query key 包含 projectName、currentPath 和 selectedFilePath。
-- Files UI 使用“紧凑当前 path 操作区 + compact row 文件列表 + 内容优先同页预览 panel”的结构；桌面端可保留 list + preview 同页扫读，手机窄屏选择文件后切换为 content-first preview detail。
-- 移动端 Files 直接二级页和文件预览深层 detail 使用不同导航层级：目录列表页保留 Project 二级底部导航，文件预览 detail 使用顶部返回 Files list 并隐藏 Project 二级底部导航。
+- Files UI 使用“紧凑当前 path 操作区 + compact row 文件列表 + 内容优先同页预览 panel”的结构；桌面端可保留 list + preview 同页扫读，手机窄屏选择文件后弹出全屏 sheet（从下往上滑入）覆盖目录列表与底部导航。
+- 移动端文件预览是覆盖式全屏 sheet（`fixed inset-0 z-50`，从底部滑入），遮挡 Project 二级底部导航；通过 header 右上角「关闭」按钮返回目录列表（仅清本地 selected file state，不新增 route）。桌面端保持 list + preview 同页扫读。
 - 目录条目点击语义按类型区分：目录进入下级目录，文件打开预览。
 - 预览 panel 使用 discriminated union 渲染：`text`、`image`、`unsupported`、`too_large`。
 - 文本预览以 `<pre>` 纯文本方式展示；图片预览使用 `<img>`，SVG 不 inline 到 DOM。
@@ -29,7 +29,7 @@
 
 - `web` 只通过同源 `/api` client 访问 Files API，不拼接或展示服务器绝对路径作为导航依据。
 - 只影响 Files section 的 path、selected file 和 loading/error 状态保留为本地 state，不引入 Jotai atom。
-- 预览 deep detail 的返回只清除本地 selected file state，不新增 route；如后续需要刷新恢复或分享链接，应重新设计 route/search。
+- 预览 sheet 的关闭只清除本地 selected file state，不新增 route；如后续需要刷新恢复或分享链接，应重新设计 route/search。
 - 页面不得出现编辑、删除、重命名、上传、下载按钮或拖拽上传 affordance。
 - 移动端可读性优先：文件列表采用可扫读的紧凑行，触控目标仍需充足；文本预览允许换行并优先占据可用空间，图片适应容器宽度。
 - Files compact row 中主信息是文件/目录名称，类型、大小、hidden 等辅助信息应压缩为短文字或 badge；长名称/path 使用 `min-w-0`、truncate、break-all/break-words 或局部滚动避免页面级横向溢出。

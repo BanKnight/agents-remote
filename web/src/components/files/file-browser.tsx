@@ -348,7 +348,7 @@ type FilePreviewPanelProps = {
   fileName?: string;
   editValue: string;
   onEditChange: (value: string) => void;
-  onBack: () => void;
+  onClose: () => void;
   onRenderModeChange: (mode: "source" | "render") => void;
 };
 
@@ -364,7 +364,7 @@ function FilePreviewPanel({
   fileName,
   editValue,
   onEditChange,
-  onBack,
+  onClose,
   onRenderModeChange,
 }: FilePreviewPanelProps) {
   const { t } = useT();
@@ -383,28 +383,11 @@ function FilePreviewPanel({
       className="min-h-0 min-w-0 flex-1 flex flex-col bg-surface-raised/25"
       aria-label="File preview"
     >
-      <div className="relative flex min-w-0 items-center justify-between border-b border-neutral-line/40 px-3.5 py-2.5">
-        <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-on-surface-soft sm:hidden"
-          type="button"
-          onClick={onBack}
-          aria-label={t("files.backToFiles")}
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          {t("nav.back")}
-        </button>
-        <h4 className="pointer-events-none absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-on-surface sm:static sm:flex-1 sm:text-left sm:min-w-0">
+      <div className="flex min-w-0 items-center justify-between border-b border-neutral-line/40 px-3.5 py-2.5">
+        <h4 className="min-w-0 flex-1 truncate text-left font-mono text-sm font-semibold text-on-surface">
           {displayName.split("/").pop() ?? displayName}
         </h4>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {saveToggle}
           <div className="hidden sm:block">{renderToggle}</div>
           <FilePreviewMenu
@@ -413,6 +396,14 @@ function FilePreviewPanel({
             renderMode={renderMode}
             onRenderModeChange={onRenderModeChange}
           />
+          <button
+            className="flex shrink-0 cursor-pointer items-center rounded-lg px-2 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/10 sm:hidden"
+            type="button"
+            onClick={onClose}
+            aria-label={t("session.close")}
+          >
+            {t("session.close")}
+          </button>
         </div>
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-y-auto">
@@ -1059,7 +1050,7 @@ export function FilesPanel({
       fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
       editValue={editValue}
       onEditChange={setEditContent}
-      onBack={clearPreview}
+      onClose={clearPreview}
       onRenderModeChange={setRenderMode}
     />
   );
@@ -1069,7 +1060,7 @@ export function FilesPanel({
       <div
         className={`border-b border-neutral-line/40 px-3.5 py-3 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
-        <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-h-7 min-w-0 items-center justify-between gap-3">
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
           {readOnly ? null : (
             <div className="flex shrink-0 items-center gap-2">
@@ -1169,7 +1160,17 @@ export function FilesPanel({
         {browserPanel}
         {enablePreview ? (
           <div
-            className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFilePath === undefined ? "hidden sm:flex" : "flex"}`}
+            key={selectedFilePath !== undefined ? "preview-open" : "preview-closed"}
+            className={
+              selectedFilePath === undefined
+                ? "hidden sm:flex sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col"
+                : [
+                    "fixed inset-0 z-50 flex flex-col bg-surface",
+                    "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
+                    "animate-in slide-in-from-bottom-full duration-300 ease-out",
+                    "sm:static sm:inset-auto sm:z-auto sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col sm:bg-transparent sm:pt-0 sm:pb-0 sm:animate-none",
+                  ].join(" ")
+            }
           >
             <div className="min-h-0 flex-1 flex flex-col overflow-hidden">{previewPanel}</div>
           </div>
