@@ -528,6 +528,400 @@ export function dropPanel(
   return { ...cleaned, panels, newRows, sizes };
 }
 
+// ── 中栏 group+tab 布局（VSCode 两级模型，设计文档 §7.5/§7.6）─────────────────
+// group = 分屏区域（行×列网格），tab = 实例（每 group 1-N，同 group 只显 active tab）。
+// 取代旧 panels/newRows 1:1 模型。commit 2 仅新增：旧 WorkbenchLayout（4 字段）与
+// addPanel/deriveRows/dropPanel/resizePair/toggleMaximize 等保留至 commit 3 渲染层切换，
+// 避免中间态编译断裂。函数名用语义化新名（deriveGroupRows/dropIntoGroup/...）规避与旧函数撞名；
+// commit 3 删旧后再视情况 rename 回 deriveRows/dropPanel。
+//
+// flex 权重常量复用旧 WORKBENCH_PANEL_DEFAULT_FLEX/MIN_FLEX（数值语义一致：横向 group 宽度与
+// 纵向行高度都用同一 min/default）；commit 3 删旧函数后可 rename 为通用 WORKBENCH_FLEX_*。
+
+/** VSCode 两级模型：group = 分屏区域，含 N 个 tab（实例），同 group 只显 active tab。 */
+export type WorkbenchGroup = {
+  id: string;
+  tabs: WorkbenchPanelRef[];
+  activeTabId: string;
+};
+
+/**
+ * 中栏 group+tab 布局 state（设计 §7.6）。State/Render 分离：raw 有序结构，渲染由纯函数派生。
+ * - `groups`：有序扁平 group 列表（左→右铺开；`newRowAfter` 标记的 groupId 之后起新行）。
+ * - `newRowAfter`：标记「此 groupId 之后换行」（split-down）；列表首项忽略标记。
+ *   语义与旧 `newRows`（标记自己起新行）相反——这里标记的是「行尾 group」，其下一个 group 起新行。
+ * - `sizes`：每个 group 在行内的横向 flex 宽度权重（key=groupId，**非 sessionId**——切 tab 不改 group 宽度）。
+ * - `rowSizes`：每行的纵向 flex 高度权重（key=**行首 groupId**）。
+ * - `activeGroupId`：当前激活 group（点 tab / 点卡片 / maximize 都设它）；maximized 时它 = maximized。
+ *   显式存（不能只从 focusId 反查：minimized 时 tab 不在 layout，反查会崩）。
+ * - `maximized`：独占 group 的 groupId（group 级，非 tab 级）；独占时该 group tab 栏仍在可切 tab，
+ *   其他 group 用 CSS `hidden` 隐藏（不 unmount，保 WebSocket 长连 / claude2 relay 早消息）。
+ */
+export type WorkbenchLayoutV2 = {
+  groups: WorkbenchGroup[];
+  newRowAfter: string[];
+  sizes: Record<string, number>;
+  rowSizes: Record<string, number>;
+  activeGroupId: string | null;
+  maximized: string | null;
+};
+
+export const EMPTY_WORKBENCH_LAYOUT_V2: WorkbenchLayoutV2 = {
+  groups: [],
+  newRowAfter: [],
+  sizes: {},
+  rowSizes: {},
+  activeGroupId: null,
+  maximized: null,
+};
+
+/** 生成 group id（crypto.randomUUID，与 claude2-adapter 一致，无新依赖）。 */
+function createGroupId(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * 创建一个含单 tab 的 group（dropIntoGroup 开新 group / 首次进入工作区用）。
+ * `id` 可选（测试传固定值断言；生产用 crypto.randomUUID）。
+ */
+export function createGroup(tab: WorkbenchPanelRef, id: string = createGroupId()): WorkbenchGroup {
+  return { id, tabs: [tab], activeTabId: tab.sessionId };
+}
+
+/**
+ * 从 group 布局派生二维行结构（渲染层纯函数，设计 §7.5）。`newRowAfter` 标记的 groupId 之后起新行。
+ * maximized 时返回单 group 单行（派生，不改 state；maximized 的 group 不存在则返 []）。
+ */
+export function deriveGroupRows(layout: WorkbenchLayoutV2): WorkbenchGroup[][] {
+  if (layout.maximized !== null) {
+    const max = layout.groups.find((g) => g.id === layout.maximized);
+    return max ? [[max]] : [];
+  }
+  const breakAfter = new Set(layout.newRowAfter);
+  const rows: WorkbenchGroup[][] = [];
+  let current: WorkbenchGroup[] = [];
+  for (const group of layout.groups) {
+    current.push(group);
+    if (breakAfter.has(group.id)) {
+      rows.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) rows.push(current);
+  return rows;
+}
+
+/**
+ * 重算 rowSizes 键（私有 normalize）：groups/newRowAfter 变更后，行首集合可能变，
+ * 只保留仍存在的行首 groupId 的值，新行首用默认权重。被 addGroup/removeGroup/dropIntoGroup 调用。
+ */
+function normalizeRowSizes(layout: WorkbenchLayoutV2): WorkbenchLayoutV2 {
+  const rowSizes: Record<string, number> = {};
+  for (const row of deriveGroupRows({ ...layout, maximized: null })) {
+    const headId = row[0].id;
+    rowSizes[headId] = layout.rowSizes[headId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  }
+  return { ...layout, rowSizes };
+}
+
+/**
+ * 按 sessionId 反查 tab 位置（设计 §7.13 focusId 反查）。返回 { groupId, tabIndex } 或 null
+ *（tab minimized / 不存在）。minimized 时 URL focusId 不动（不死循环），右栏 inspection 跟活动 tab。
+ */
+export function findTabBySessionId(
+  layout: WorkbenchLayoutV2,
+  sessionId: string,
+): { groupId: string; tabIndex: number } | null {
+  for (const group of layout.groups) {
+    const tabIndex = group.tabs.findIndex((t) => t.sessionId === sessionId);
+    if (tabIndex >= 0) return { groupId: group.id, tabIndex };
+  }
+  return null;
+}
+
+/** 派生活动 group 的活动 tab 引用（渲染层右栏 inspection / 输入作用域用）。无活动 group → null。 */
+export function activeTabRef(layout: WorkbenchLayoutV2): WorkbenchPanelRef | null {
+  if (layout.activeGroupId === null) return null;
+  const group = layout.groups.find((g) => g.id === layout.activeGroupId);
+  if (!group) return null;
+  return group.tabs.find((t) => t.sessionId === group.activeTabId) ?? null;
+}
+
+/**
+ * 向布局加入 group（split-right 默认；`newRow` 起新行 = split-down）。`afterGroupId` 指定插入位置，
+ * 缺省 push 末尾。首个 group 设 activeGroupId（后续 addGroup 不抢 active）。newRow 时把
+ * 「新 group 的前一个 group」加入 newRowAfter（它之后换行 → 新 group 起新行）。
+ */
+export function addGroup(
+  layout: WorkbenchLayoutV2,
+  group: WorkbenchGroup,
+  opts: { afterGroupId?: string; newRow?: boolean } = {},
+): WorkbenchLayoutV2 {
+  const groups = [...layout.groups];
+  const idx =
+    opts.afterGroupId === undefined ? -1 : groups.findIndex((g) => g.id === opts.afterGroupId);
+  const insertIdx = idx >= 0 ? idx + 1 : groups.length;
+  // anchorId = 新 group 插入前的前一个 group（newRow 时作 newRowAfter 锚点）。
+  const anchorId = insertIdx > 0 ? groups[insertIdx - 1].id : null;
+  groups.splice(insertIdx, 0, group);
+  const newRowAfter =
+    opts.newRow === true && anchorId !== null && !layout.newRowAfter.includes(anchorId)
+      ? [...layout.newRowAfter, anchorId]
+      : layout.newRowAfter;
+  const sizes = { ...layout.sizes, [group.id]: WORKBENCH_PANEL_DEFAULT_FLEX };
+  const activeGroupId = layout.activeGroupId ?? group.id;
+  return normalizeRowSizes({ ...layout, groups, newRowAfter, sizes, activeGroupId });
+}
+
+/**
+ * 删除 group（设计 §7.4 group 操作）。联动清理 sizes/newRowAfter/rowSizes/maximized/activeGroupId。
+ * - newRowAfter：删 groupId 自身（它作过换行锚点）。
+ * - rowSizes：normalizeRowSizes 按新行结构重算（删行首 group 时下一行上移，行首变更）。
+ * - maximized：删的是 maximized → null。
+ * - activeGroupId：删的是 active → 回退第一个剩余 group（或 null）。
+ */
+export function removeGroup(layout: WorkbenchLayoutV2, groupId: string): WorkbenchLayoutV2 {
+  if (!layout.groups.some((g) => g.id === groupId)) return layout;
+  const groups = layout.groups.filter((g) => g.id !== groupId);
+  const sizes = { ...layout.sizes };
+  delete sizes[groupId];
+  const newRowAfter = layout.newRowAfter.filter((id) => id !== groupId);
+  const maximized = layout.maximized === groupId ? null : layout.maximized;
+  const activeGroupId =
+    layout.activeGroupId === groupId ? (groups[0]?.id ?? null) : layout.activeGroupId;
+  return normalizeRowSizes({ ...layout, groups, newRowAfter, sizes, activeGroupId, maximized });
+}
+
+/**
+ * 在 group 队尾加 tab + 设为 active（点卡片未开 = 活动组开新 tab，设计 §7.3）。重复 sessionId
+ * 仅激活不重复加（点卡片已开 = 激活该 tab）。
+ */
+export function addTabToGroup(
+  layout: WorkbenchLayoutV2,
+  groupId: string,
+  tab: WorkbenchPanelRef,
+): WorkbenchLayoutV2 {
+  const idx = layout.groups.findIndex((g) => g.id === groupId);
+  if (idx < 0) return layout;
+  const group = layout.groups[idx];
+  if (group.tabs.some((t) => t.sessionId === tab.sessionId)) {
+    return setActiveTab(layout, groupId, tab.sessionId);
+  }
+  const groups = [...layout.groups];
+  groups[idx] = { ...group, tabs: [...group.tabs, tab], activeTabId: tab.sessionId };
+  return { ...layout, groups };
+}
+
+/** 激活 group 的指定 tab（点 tab 切换）。同时设 activeGroupId（点 tab 也激活 group）。 */
+export function setActiveTab(
+  layout: WorkbenchLayoutV2,
+  groupId: string,
+  tabId: string,
+): WorkbenchLayoutV2 {
+  const idx = layout.groups.findIndex((g) => g.id === groupId);
+  if (idx < 0) return layout;
+  const group = layout.groups[idx];
+  if (!group.tabs.some((t) => t.sessionId === tabId)) return layout;
+  if (group.activeTabId === tabId && layout.activeGroupId === groupId) return layout;
+  const groups = [...layout.groups];
+  groups[idx] = { ...group, activeTabId: tabId };
+  return { ...layout, groups, activeGroupId: groupId };
+}
+
+/**
+ * 从 group 移除 tab（= 最小化，设计 §7.2：tab ✕ = 移除 tab，session 存活回左总览）。
+ * 删的是 active → activeTabId 切剩余 [0]；group 空 → removeGroup（合并清理）。
+ */
+export function removeTabFromGroup(
+  layout: WorkbenchLayoutV2,
+  groupId: string,
+  tabId: string,
+): WorkbenchLayoutV2 {
+  const idx = layout.groups.findIndex((g) => g.id === groupId);
+  if (idx < 0) return layout;
+  const group = layout.groups[idx];
+  const newTabs = group.tabs.filter((t) => t.sessionId !== tabId);
+  if (newTabs.length === 0) return removeGroup(layout, groupId);
+  const newActiveTabId = group.activeTabId === tabId ? newTabs[0].sessionId : group.activeTabId;
+  const groups = [...layout.groups];
+  groups[idx] = { ...group, tabs: newTabs, activeTabId: newActiveTabId };
+  return { ...layout, groups };
+}
+
+/**
+ * 拖 gutter 调整同行相邻 group 横向宽度（设计 §7.5，复用旧 resizePair 守恒钳制逻辑，键改 groupId）。
+ * 守恒：左增 = 右减（deltaFlex 为左的增量）；两侧各钳到 MIN_FLEX，钳制时 delta 截到可调边界仍守恒。
+ */
+export function resizeGroups(
+  layout: WorkbenchLayoutV2,
+  leftGroupId: string,
+  rightGroupId: string,
+  deltaFlex: number,
+): WorkbenchLayoutV2 {
+  const left = layout.sizes[leftGroupId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const right = layout.sizes[rightGroupId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const clamped = Math.min(
+    Math.max(deltaFlex, WORKBENCH_PANEL_MIN_FLEX - left),
+    right - WORKBENCH_PANEL_MIN_FLEX,
+  );
+  return {
+    ...layout,
+    sizes: { ...layout.sizes, [leftGroupId]: left + clamped, [rightGroupId]: right - clamped },
+  };
+}
+
+/** 拖行间 gutter 调整相邻行纵向高度（设计 §7.5，纵向 resize，同款守恒钳制，key=行首 groupId）。 */
+export function resizeRows(
+  layout: WorkbenchLayoutV2,
+  topRowHeadId: string,
+  bottomRowHeadId: string,
+  deltaFlex: number,
+): WorkbenchLayoutV2 {
+  const top = layout.rowSizes[topRowHeadId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const bottom = layout.rowSizes[bottomRowHeadId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const clamped = Math.min(
+    Math.max(deltaFlex, WORKBENCH_PANEL_MIN_FLEX - top),
+    bottom - WORKBENCH_PANEL_MIN_FLEX,
+  );
+  return {
+    ...layout,
+    rowSizes: {
+      ...layout.rowSizes,
+      [topRowHeadId]: top + clamped,
+      [bottomRowHeadId]: bottom - clamped,
+    },
+  };
+}
+
+/** 切换 group 最大化（group 级，设计 §7.2：▢ = 独占右侧，其他 group hidden 不卸载）。maximize 时设 activeGroupId。 */
+export function toggleGroupMaximize(layout: WorkbenchLayoutV2, groupId: string): WorkbenchLayoutV2 {
+  if (layout.maximized === groupId) return { ...layout, maximized: null };
+  return { ...layout, maximized: groupId, activeGroupId: groupId };
+}
+
+/**
+ * 按 drop zone 把 ref 放入布局（Phase B 拖放主路径，设计 §7.3。纯函数）。
+ *
+ * - `targetGroupId === null`（空白区）：开首个 group（ref 已在某 group → 激活该 tab 不新 group）。
+ * - `center`：在 target group 开新 tab（tab 模型下「替换」无意义；ref 已在 target → 激活；ref 在他组 → 迁移）。
+ * - `left`/`right`：开新 group 与 target 同行（right 时若 target 是行尾，换行标记迁移到新 group）。
+ * - `up`/`down`：开新 group 起新行（up 时新 group 单独一行：上下都换行）。
+ *
+ * ref 已在 layout（重排/跨 group 迁移）：先 removeTabFromGroup 从原 group 移除再插入。
+ * 改 groups/newRowAfter 后 normalizeRowSizes 重算行首 rowSizes。
+ */
+export function dropIntoGroup(
+  layout: WorkbenchLayoutV2,
+  ref: WorkbenchPanelRef,
+  targetGroupId: string | null,
+  zone: DropZone,
+): WorkbenchLayoutV2 {
+  // 空白区：开首个 group（或激活已存在 tab）。
+  if (targetGroupId === null) {
+    const existing = findTabBySessionId(layout, ref.sessionId);
+    if (existing) return setActiveTab(layout, existing.groupId, ref.sessionId);
+    return addGroup(layout, createGroup(ref));
+  }
+  const targetIdx = layout.groups.findIndex((g) => g.id === targetGroupId);
+  if (targetIdx < 0) return layout;
+
+  // center：在 target group 开新 tab（已存在则激活/迁移）。
+  if (zone === "center") {
+    const existing = findTabBySessionId(layout, ref.sessionId);
+    if (existing && existing.groupId === targetGroupId) {
+      return setActiveTab(layout, targetGroupId, ref.sessionId);
+    }
+    let next = layout;
+    if (existing) {
+      // ref 在他组 → 先从原组移除（minimize），再加到 target（原组空则自动 removeGroup）。
+      next = removeTabFromGroup(next, existing.groupId, ref.sessionId);
+    }
+    return addTabToGroup(next, targetGroupId, ref);
+  }
+
+  // up/down/left/right：开新 group 分屏。先从原位置移除 ref（若已存在）。
+  let next = layout;
+  const existing = findTabBySessionId(layout, ref.sessionId);
+  if (existing) {
+    next = removeTabFromGroup(next, existing.groupId, ref.sessionId);
+  }
+  // 重定位 target（removeTabFromGroup 可能缩短 groups 数组）。
+  const tIdx = next.groups.findIndex((g) => g.id === targetGroupId);
+  if (tIdx < 0) return next;
+
+  const newGroup = createGroup(ref);
+  const groups = [...next.groups];
+  const newRowAfter = [...next.newRowAfter];
+  const sizes = { ...next.sizes, [newGroup.id]: WORKBENCH_PANEL_DEFAULT_FLEX };
+
+  if (zone === "left") {
+    // 新 group 插 target 之前，同行（newRowAfter 不动；target 原行首换行标记自然让新 group 接管行首）。
+    groups.splice(tIdx, 0, newGroup);
+  } else if (zone === "right") {
+    // 新 group 插 target 之后，同行；若 target 是行尾（在 newRowAfter），换行标记迁移到新 group。
+    groups.splice(tIdx + 1, 0, newGroup);
+    const i = newRowAfter.indexOf(targetGroupId);
+    if (i >= 0) newRowAfter.splice(i, 1, newGroup.id);
+  } else if (zone === "up") {
+    // up：新 group 在 target 所在行上方独占新行（行=整行分裂）。插该行行首之前；行首前后都换行。
+    const targetRow = deriveGroupRows({ ...next, maximized: null }).find((row) =>
+      row.some((g) => g.id === targetGroupId),
+    );
+    if (!targetRow) return next;
+    const headIdx = groups.findIndex((g) => g.id === targetRow[0].id);
+    groups.splice(headIdx, 0, newGroup);
+    if (!newRowAfter.includes(newGroup.id)) newRowAfter.push(newGroup.id);
+    const prevId = headIdx > 0 ? groups[headIdx - 1].id : null;
+    if (prevId !== null && !newRowAfter.includes(prevId)) newRowAfter.push(prevId);
+  } else {
+    // down：新 group 在 target 所在行下方独占新行。插该行行尾之后；行尾之后换行 + 新 group 之后换行（独占）。
+    const targetRow = deriveGroupRows({ ...next, maximized: null }).find((row) =>
+      row.some((g) => g.id === targetGroupId),
+    );
+    if (!targetRow) return next;
+    const tailId = targetRow[targetRow.length - 1].id;
+    const tailIdx = groups.findIndex((g) => g.id === tailId);
+    groups.splice(tailIdx + 1, 0, newGroup);
+    if (!newRowAfter.includes(tailId)) newRowAfter.push(tailId);
+    if (!newRowAfter.includes(newGroup.id)) newRowAfter.push(newGroup.id);
+  }
+
+  const activeGroupId = next.activeGroupId ?? newGroup.id;
+  return normalizeRowSizes({ ...next, groups, newRowAfter, sizes, activeGroupId });
+}
+
+/**
+ * 旧 4 字段布局（panels/newRows，1 group=1 instance）→ 新 7 字段 group+tab 布局（无损迁移）。
+ * 每个 panel → 1 group（含 1 tab）。**用 sessionId 作 group id**（确定性，便于 maximized/sizes 映射；
+ * 后续新 group 用 crypto.randomUUID，id 空间不冲突）。newRows（自己起新行）→ newRowAfter（前一个之后换行）。
+ * maximized/sessionId 直接映射到 group id；rowSizes 每行行首默认权重（旧模型无纵向 resize）。
+ */
+export function migrateLegacyLayout(legacy: WorkbenchLayout): WorkbenchLayoutV2 {
+  const groups: WorkbenchGroup[] = legacy.panels.map((panel) => ({
+    id: panel.sessionId,
+    tabs: [panel],
+    activeTabId: panel.sessionId,
+  }));
+  const newRowSet = new Set(legacy.newRows);
+  const newRowAfter: string[] = [];
+  for (let i = 0; i < legacy.panels.length; i++) {
+    const next = legacy.panels[i + 1];
+    if (next && newRowSet.has(next.sessionId)) {
+      // next 起新行（旧 newRows 语义）= 当前 panel 之后换行（新 newRowAfter 语义）。
+      newRowAfter.push(legacy.panels[i].sessionId);
+    }
+  }
+  const sizes: Record<string, number> = {};
+  for (const panel of legacy.panels) {
+    sizes[panel.sessionId] = legacy.sizes[panel.sessionId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  }
+  const rowSizes: Record<string, number> = {};
+  if (legacy.panels.length > 0) rowSizes[legacy.panels[0].sessionId] = WORKBENCH_PANEL_DEFAULT_FLEX;
+  for (const sid of legacy.newRows) rowSizes[sid] = WORKBENCH_PANEL_DEFAULT_FLEX;
+  const activeGroupId = groups[0]?.id ?? null;
+  return { groups, newRowAfter, sizes, rowSizes, activeGroupId, maximized: legacy.maximized };
+}
+
 // ── 全局实例区（Stage 4 commit ④，跨项目混排）─────────────────────────────────
 
 /** 全局实例区候选：聚合所有项目活跃实例 + 排序/展示所需字段。 */
