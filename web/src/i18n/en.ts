@@ -464,6 +464,7 @@ export const en = {
   "workbench.panelMaximize": "Maximize panel",
   "workbench.panelRestore": "Restore panel",
   "workbench.panelExpand": "Expand panel",
+  "workbench.tabClose": "Close tab",
   "workbench.panelCollapse": "Collapse panel",
   "workbench.panelMinimize": "Minimize panel",
   "workbench.dock": "Docked panels",

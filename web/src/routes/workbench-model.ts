@@ -919,7 +919,36 @@ export function migrateLegacyLayout(legacy: WorkbenchLayout): WorkbenchLayoutV2 
   if (legacy.panels.length > 0) rowSizes[legacy.panels[0].sessionId] = WORKBENCH_PANEL_DEFAULT_FLEX;
   for (const sid of legacy.newRows) rowSizes[sid] = WORKBENCH_PANEL_DEFAULT_FLEX;
   const activeGroupId = groups[0]?.id ?? null;
-  return { groups, newRowAfter, sizes, rowSizes, activeGroupId, maximized: legacy.maximized };
+  return {
+    groups,
+    newRowAfter,
+    sizes,
+    rowSizes,
+    activeGroupId,
+    maximized: legacy.maximized ?? null,
+  };
+}
+
+/**
+ * 确保 ref 在 layout 中打开（focus effect / 移动切实例共用，设计 §7.3/§7.13 vscode explorer 语义）。
+ * ref 已在某 group → 激活该 tab + 设活动 group（已开激活，不新 tab）；不在 → 加到活动 group 开新 tab
+ *（无活动 group → 新建首个 group）。返回新 layout（幂等：ref 已是活动 tab 返回原引用）。
+ */
+export function ensureTabOpen(
+  layout: WorkbenchLayoutV2,
+  ref: WorkbenchPanelRef,
+): WorkbenchLayoutV2 {
+  const existing = findTabBySessionId(layout, ref.sessionId);
+  if (existing) return setActiveTab(layout, existing.groupId, ref.sessionId);
+  if (layout.activeGroupId) return addTabToGroup(layout, layout.activeGroupId, ref);
+  return addGroup(layout, createGroup(ref));
+}
+
+/** 查 sessionId 对应完整 tab 引用（含 projectName）。移动端 global scope 查 projectName 用。 */
+export function findTabRef(layout: WorkbenchLayoutV2, sessionId: string): WorkbenchPanelRef | null {
+  const found = findTabBySessionId(layout, sessionId);
+  if (!found) return null;
+  return layout.groups.find((g) => g.id === found.groupId)?.tabs[found.tabIndex] ?? null;
 }
 
 // ── 全局实例区（Stage 4 commit ④，跨项目混排）─────────────────────────────────
@@ -987,35 +1016,93 @@ export function groupByProject(candidates: GlobalInstanceCandidate[]): ProjectGr
   return groups;
 }
 
-// ── 布局 atom（按作用域隔离，localStorage 持久化）─────────────────────────────
+// ── 布局 atom（V2 group+tab，按作用域隔离，localStorage 持久化 + V1→V2 一次性迁移）─────
+
+/** 旧 atom key（commit 3 前的 V1 panels/newRows 模型），迁移源。 */
+const LEGACY_WORKBENCH_LAYOUT_KEY = "workbenchLayout";
 
 /**
- * 全部作用域的布局 state。`project` 按项目名分键（切项目恢复各自面板），
- * `global` 单份（跨项目混排，Stage 4 commit ④）。单 atom 便于 useWorkbenchLayout
- * 按 scope 选 + 原子更新。
+ * 全部作用域的布局 state（V2）。`project` 按项目名分键（切项目恢复各自布局），
+ * `global` 单份（跨项目混排）。单 atom 便于 useWorkbenchLayout 按 scope 选 + 原子更新。
  */
 export type WorkbenchLayoutState = {
-  project: Record<string, WorkbenchLayout>;
-  global: WorkbenchLayout;
+  project: Record<string, WorkbenchLayoutV2>;
+  global: WorkbenchLayoutV2;
 };
 
-export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutState>("workbenchLayout", {
-  project: {},
-  global: EMPTY_WORKBENCH_LAYOUT,
-});
+/** V1 state（每作用域旧 4 字段 layout）→ V2 state（每作用域 migrateLegacyLayout）。 */
+function migrateLayoutState(legacy: {
+  project: Record<string, WorkbenchLayout>;
+  global: WorkbenchLayout;
+}): WorkbenchLayoutState {
+  const project: Record<string, WorkbenchLayoutV2> = {};
+  for (const [k, v] of Object.entries(legacy.project)) {
+    project[k] = migrateLegacyLayout(v);
+  }
+  return { project, global: migrateLegacyLayout(legacy.global) };
+}
 
 /**
- * 按作用域读写 workbench 布局。读：project 取 `state.project[key]`（缺省 EMPTY），
+ * 自定义 storage 实现 V1→V2 一次性迁移：读 V2 key（"workbenchLayoutV2"），不存在则读 V1
+ * key（"workbenchLayout"）→ migrateLayoutState → 持久化 V2 + 删 V1。结构匹配 jotai 的
+ * SyncStorage<Value>（getItem 返 Value、用 initialValue 兜底），让 atomWithStorage 选中 sync
+ * 重载 → atom 类型窄化为 WritableAtom<WorkbenchLayoutState>（非 Promise），下游 state.project
+ * 取值不报错；不用 createJSONStorage（其返回 `Storage<T> | AsyncStorage<T>` 联合，atom 值含
+ * Promise）。SSR（无 localStorage）getItem 返 initialValue（atom 用初始值 hydration）。迁移后
+ * V2 存在，后续读取走首分支不再迁移。layout 持久化跨刷新恢复（设计 §7.6）。
+ */
+const workbenchLayoutStorage = {
+  getItem: (key: string, initialValue: WorkbenchLayoutState): WorkbenchLayoutState => {
+    if (typeof localStorage === "undefined") return initialValue;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      try {
+        return JSON.parse(raw) as WorkbenchLayoutState;
+      } catch {
+        return initialValue;
+      }
+    }
+    const v1Raw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_KEY);
+    if (!v1Raw) return initialValue;
+    try {
+      const v2 = migrateLayoutState(JSON.parse(v1Raw));
+      localStorage.setItem(key, JSON.stringify(v2));
+      localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_KEY);
+      return v2;
+    } catch {
+      return initialValue;
+    }
+  },
+  setItem: (key: string, value: WorkbenchLayoutState): void => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(value));
+  },
+  removeItem: (key: string): void => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem(key);
+  },
+};
+
+export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutState>(
+  "workbenchLayoutV2",
+  { project: {}, global: EMPTY_WORKBENCH_LAYOUT_V2 },
+  workbenchLayoutStorage,
+);
+
+/**
+ * 按作用域读写 workbench 布局（V2）。读：project 取 `state.project[key]`（缺省 EMPTY_V2），
  * global 取 `state.global`。写：`update(fn)` 只改当前作用域的布局，其余 immutable 保留。
  */
 export function useWorkbenchLayout(scope: WorkbenchScope) {
   const [state, setState] = useAtom(workbenchLayoutAtom);
   const layout =
-    scope.kind === "project" ? (state.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT) : state.global;
-  const update = (fn: (layout: WorkbenchLayout) => WorkbenchLayout) =>
+    scope.kind === "project"
+      ? (state.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT_V2)
+      : state.global;
+  const update = (fn: (layout: WorkbenchLayoutV2) => WorkbenchLayoutV2) =>
     setState((prev) => {
       if (scope.kind === "project") {
-        const current = prev.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT;
+        const current = prev.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT_V2;
         return { ...prev, project: { ...prev.project, [scope.key]: fn(current) } };
       }
       return { ...prev, global: fn(prev.global) };

@@ -8,8 +8,9 @@ import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
-  addPanel,
+  ensureTabOpen,
   filterWorkbenchViews,
+  findTabRef,
   groupByProject,
   type WorkbenchMobileFocusTab,
   type WorkbenchMobileOverviewTab,
@@ -131,7 +132,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const projectName =
     scope.kind === "project"
       ? scope.key
-      : (layout.panels.find((p) => p.sessionId === focusId)?.projectName ??
+      : (findTabRef(layout, focusId)?.projectName ??
         order.find((r) => r.sessionId === focusId)?.projectName);
   const sessionType = inferSessionTypeFromId(focusId);
   // detail 查询（query key 与 PanelRouter 一致，React Query dedupe 零额外网络）。两个 hook 都调
@@ -160,12 +161,12 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
 
   // ‹› 浮动切实例（设计文档 §7）：范围 = 当前 scope 活跃实例（useScopeInstanceOrder），
   // 循环切换；tab 不重置（维度正交，workbenchMobileFocusTabAtom 跨切换保持）。global 作用域
-  // 聚焦态 projectName 从 layout.panels 查，切到不在布局的实例需先 addPanel 再导航。
+  // 聚焦态 projectName 从 findTabRef 查，切到不在布局的实例需先 ensureTabOpen 再导航。
   const switchInstance = (delta: number) => {
     if (order.length < 2 || currentIndex < 0) return;
     const next = order[(currentIndex + delta + order.length) % order.length];
     if (scope.kind === "global") {
-      updateLayout((prev) => addPanel(prev, next));
+      updateLayout((prev) => ensureTabOpen(prev, next));
     }
     void navigateWorkbench(scope, next.sessionId);
   };

@@ -15,25 +15,29 @@ import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remot
 import {
   type DropZone,
   type GlobalInstanceCandidate,
-  type WorkbenchLayout,
+  type WorkbenchGroup,
+  type WorkbenchLayoutV2,
   type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
   type WorkbenchScope,
   type WorkbenchView,
+  DRAG_THRESHOLD_PX,
   WORKBENCH_MIDDLE_LEFT_MAX_REM,
   WORKBENCH_MIDDLE_LEFT_MIN_REM,
-  addPanel,
-  deriveRows,
+  activeTabRef,
+  deriveGroupRows,
   deriveZone,
-  dropPanel,
+  dropIntoGroup,
+  ensureTabOpen,
   filterWorkbenchViews,
+  findTabBySessionId,
   groupByProject,
   inferSessionTypeFromId,
-  DRAG_THRESHOLD_PX,
   rankGlobalInstances,
-  removePanel,
-  resizePair,
-  toggleMaximize,
+  removeTabFromGroup,
+  resizeGroups,
+  setActiveTab,
+  toggleGroupMaximize,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   workbenchMiddleLeftWidthAtom,
@@ -151,10 +155,11 @@ type InstanceAreaProps = {
 
 /**
  * 中栏实例区（设计文档 §4）。永远左右结构：左总览（固定单列卡片，view 切 grid/table/grouped
- * 样式）+ 右工作区（活动组 = layout.panels[0]，GroupHeader + PanelRouter）。tab 导航常驻
- *（聚焦/非聚焦都不消失——Phase A 痛点修复）。URL focusId = 右工作区活动组（语义不变，
- * 渲染层从单实例 fallthrough 改为左右结构活动组）。layout 进 localStorage，project 按
- * 项目分键；global 聚合所有项目活跃实例（rankGlobalInstances 排序）。
+ * 样式）+ 右工作区（VSCode group+tab 模型：deriveGroupRows 行×列网格，每 group = GroupHeader
+ * tab 栏 + N 个 PanelRouter，active tab 可见其他 hidden 保 session）。tab 导航常驻（聚焦/非聚焦
+ * 都不消失）。URL focusId = 活动组活动 tab（findTabBySessionId 反查）。layout 进 localStorage
+ *（V2 schema，V1 自动迁移），project 按项目分键；global 聚合所有项目活跃实例（rankGlobalInstances
+ * 排序）。
  */
 export function InstanceArea({
   ctx,
@@ -219,74 +224,57 @@ export function InstanceArea({
     [setMiddleLeftWidth],
   );
 
-  // 活动组实例（设计 §13）。多 group 后 focusId 指向活动 group，不一定是 panels[0]。
-  // activeRef = focusId 命中的 panel（无 focusId 时取 panels[0] 作非聚焦态展示组）。
-  const activeRef = useMemo(
-    () =>
-      focusId
-        ? (layout.panels.find((p) => p.sessionId === focusId) ?? null)
-        : (layout.panels[0] ?? null),
-    [focusId, layout.panels],
-  );
-  const rows = useMemo(() => deriveRows(layout), [layout]);
+  // 右工作区网格行（设计 §7.4）：deriveGroupRows 从 layout.groups + newRowAfter + maximized
+  // 派生行×列网格。maximized 时返 [[group]] 单 group 单行全屏。
+  const rows = useMemo(() => deriveGroupRows(layout), [layout]);
 
-  // focus → 活动组（多 group 语义，Phase B 重写）：URL focusId 变化时确保 focusId 在 panels 中；
-  // 不在则替换当前活动组 ref（不踢其他 group）。project scope projectName = scope.key；global
-  // scope 从 refs 查 focusId 所属项目（refs 未加载时跳过，加载后 effect 重跑同步）。幂等
-  //（focusId 已在 panels 不动），无循环。
+  // focus → 活动 group tab（VSCode explorer 语义，设计 §7.1/§13）：URL focusId 变化时确保
+  // focusId 在某 group 的 tab 中。已开 → 激活该 tab（setActiveTab 幂等，同 active 返回原引用，
+  // setState 跳过，无循环）；未开 → ensureTabOpen（活动 group 开新 tab；无活动 group 则新建
+  // group）。project scope projectName = scope.key；global scope 从 refs 查 focusId 所属项目
+  //（refs 未加载时 return prev 不变，加载后 refs.length 变 → effect 重跑同步）。effect 体用
+  // update(prev => ...) 读最新 layout，避免闭包 layout 过时判断错。依赖只 focusId/scope/refs
+  //（不含 layout）：minimize 改 layout 但不改 focusId，effect 不重跑 → 不会在 minimized focusId
+  // 上重开（minimize 自身 navigate 到剩余活动 tab 同步 URL，见 onCloseTab）。
   useEffect(() => {
     if (!focusId) return;
-    if (layout.panels.some((p) => p.sessionId === focusId)) return;
-    const projectName =
-      scope.kind === "project" ? scope.key : refs.find((r) => r.sessionId === focusId)?.projectName;
-    if (!projectName) return;
     update((prev) => {
-      if (prev.panels.some((p) => p.sessionId === focusId)) return prev;
-      const newRef: WorkbenchPanelRef = { projectName, sessionId: focusId };
-      // 替换当前活动组（activeRef）：保留其位置（panels 索引）+ 行首职责（newRows）+ size。
-      const activeIdx = prev.panels.findIndex((p) => p.sessionId === activeRef?.sessionId);
-      if (activeIdx < 0) return addPanel(prev, newRef);
-      const panels = [...prev.panels];
-      const replaced = panels[activeIdx];
-      panels[activeIdx] = newRef;
-      const newRows = prev.newRows.map((id) => (id === replaced.sessionId ? focusId : id));
-      const sizes = { ...prev.sizes };
-      const inheritedSize = sizes[replaced.sessionId] ?? prev.sizes[focusId];
-      delete sizes[replaced.sessionId];
-      if (inheritedSize !== undefined) sizes[focusId] = inheritedSize;
-      return { ...prev, panels, newRows, sizes };
+      const found = findTabBySessionId(prev, focusId);
+      if (found) return setActiveTab(prev, found.groupId, focusId);
+      const projectName =
+        scope.kind === "project"
+          ? scope.key
+          : (refs.find((r) => r.sessionId === focusId)?.projectName ?? null);
+      if (!projectName) return prev;
+      return ensureTabOpen(prev, { projectName, sessionId: focusId });
     });
-    // refs 引用每 render 可能变（useScopeInstanceOrder 返新数组），用 refs.length（number）+ idempotent
-    // 守卫稳住；refs.find 读闭包最新值（refs.length 变 → re-render → 新闭包）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId, scopeKey, layout.panels.length, refs.length, activeRef?.sessionId]);
+  }, [focusId, scopeKey, refs.length]);
 
-  // 非聚焦态进入空 scope：铺首个活跃实例作活动组（设计 §13「右工作区显示 scope 首个活跃
-  // 实例」）。聚焦态 / layout 非空（持久化恢复 / focus effect 已填）不介入。candidatesLoaded
-  // 守卫：global scope candidates 逐步聚合（projects → 每项目 agent/terminal），未 settled 时
-  // refs[0] 是临时首个，铺入 panels[0] 后锁死（length>0 不重铺），后续更紧急实例回来活动组
-  // 也不更新；等 isLoaded 再铺最终排序首个。project scope hook 始终返 isLoaded=true，守卫无影响。
-  // 无 seededRef：close 当前组后 layout 空 → 铺下一个 refs[0]（设计 §7.3 close 切剩余首个）。
+  // 非聚焦态进入空 scope：铺首个活跃实例（VSCode explorer 语义，设计 §13「右工作区显示 scope
+  // 首个活跃实例」）。聚焦态 / layout 非空（持久化恢复 / focus effect 已填）不介入。
+  // candidatesLoaded 守卫：global scope candidates 逐步聚合，未 settled 时 refs[0] 是临时首个，
+  // 铺入后锁死（groups.length>0 不重铺），后续更紧急实例回来也不更新。project scope hook 始终
+  // isLoaded=true，守卫无影响。无 seededRef：minimize 掉最后一个 tab 后 layout 空 → 铺下一个
+  // refs[0]。
   useEffect(() => {
-    if (focusId || layout.panels.length > 0) return;
+    if (focusId || layout.groups.length > 0) return;
     if (!candidatesLoaded || refs.length === 0) return;
-    update((prev) => addPanel(prev, refs[0]));
+    update((prev) => (prev.groups.length > 0 ? prev : ensureTabOpen(prev, refs[0])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, layout.panels.length, refs.length, focusId, candidatesLoaded]);
+  }, [scopeKey, layout.groups.length, refs.length, focusId, candidatesLoaded]);
 
-  // split 级 close = 结束实例：复用 useCloseSession（confirm → close API → 精确失效缓存），
-  // split 特有尾巴（removePanel + 焦点切换）走 onAfterClose。embedded 面板自带的 header close
-  // 在 embedded 模式已隐藏（见 Claude2Chat / SessionDetail），此处为唯一 close。
-  const closePanel = (ref: WorkbenchPanelRef) => {
-    const sessionType = inferSessionTypeFromId(ref.sessionId);
-    if (sessionType !== "agent" && sessionType !== "terminal") return;
-    void close(ref, sessionType, () => {
-      const remaining = layout.panels.filter((p) => p.sessionId !== ref.sessionId);
-      update((prev) => removePanel(prev, ref.sessionId));
-      if (focusId === ref.sessionId) {
-        void navigateWorkbench(scope, remaining.length > 0 ? remaining[0].sessionId : undefined);
-      }
-    });
+  // tab ✕ = 最小化（设计 §7.2）：removeTabFromGroup 从 group 移除 tab，session 存活（不 kill，
+  // kill 走左总览卡片 close = closeInstance）。minimize 当前聚焦 tab → navigate 到剩余活动 tab
+  //（activeTabRef 派生活动 group 的活动 tab），避免 focus effect 在 minimized focusId 上重开
+  //（= 循环）。next 用当前 layout 闭包算（事件处理即时，layout 是本 render 的），update 传 next，
+  // navigate 用 next 派生活动 tab。
+  const onCloseTab = (groupId: string, tabId: string) => {
+    const next = removeTabFromGroup(layout, groupId, tabId);
+    update(() => next);
+    if (focusId === tabId) {
+      void navigateWorkbench(scope, activeTabRef(next)?.sessionId);
+    }
   };
 
   const focusPanel = (ref: WorkbenchPanelRef) => {
@@ -294,14 +282,14 @@ export function InstanceArea({
     void navigateWorkbench(scope, ref.sessionId);
   };
 
-  // Phase C group 操作（设计 §7.3）：maximize 全屏/恢复（toggleMaximize 标量翻转，deriveRows
-  // maximized 时返单 panel 单行 = 纯派生全屏）；行内列宽 resize（resizePair 守恒钳制左增右减）。
-  // sizes + maximized 由 useWorkbenchLayout 持久化，刷新恢复。
-  const onToggleMaximize = (sessionId: string) => {
-    update((prev) => toggleMaximize(prev, sessionId));
+  // group 操作（设计 §7.3/§7.4）：maximize = group 级独占（toggleGroupMaximize 标量翻转，
+  // deriveGroupRows maximized 时返单 group 单行 = 纯派生全屏）；行内列宽 resize（resizeGroups
+  // 守恒钳制左增右减，键=groupId）。sizes + maximized 由 useWorkbenchLayout 持久化，刷新恢复。
+  const onToggleMaximize = (groupId: string) => {
+    update((prev) => toggleGroupMaximize(prev, groupId));
   };
-  const onResizePair = (leftId: string, rightId: string, deltaFlex: number) => {
-    update((prev) => resizePair(prev, leftId, rightId, deltaFlex));
+  const onResizeGroups = (leftGroupId: string, rightGroupId: string, deltaFlex: number) => {
+    update((prev) => resizeGroups(prev, leftGroupId, rightGroupId, deltaFlex));
   };
 
   // P3 总览视图（设计文档 §5/§8）：overview tab 左总览按 view 渲染（grid 卡片 / grouped 分段 /
@@ -337,7 +325,7 @@ export function InstanceArea({
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────
   // dragState = 拖动源 ref + 起始 pointer；进态后 elementFromPoint hit-test data-drop-group/
-  // data-drop-zone 得 activeZone，pointerup 时 onDrop 调 dropPanel。pointermove < 4px 视为单击
+  // data-drop-zone 得 activeZone，pointerup 时 onDrop 调 dropIntoGroup。pointermove < 4px 视为单击
   //（Phase A 行为，手动调 onSelect 不依赖 click 合成）。touch pointerType 不进拖动态（移动端无拖放）。
   const [dragState, setDragState] = useState<{
     ref: WorkbenchPanelRef;
@@ -347,7 +335,7 @@ export function InstanceArea({
     currentY: number;
   } | null>(null);
   const [activeZone, setActiveZone] = useState<{
-    targetSessionId: string | null;
+    targetGroupId: string | null;
     zone: DropZone;
   } | null>(null);
   // ghost 跟随指针的 ref（拖动态显示 marker + 实例名）。
@@ -360,10 +348,10 @@ export function InstanceArea({
     setActiveZone(null);
     if (!drag || !zone) return;
     const prev = layout;
-    const next = dropPanel(prev, drag.ref, zone.targetSessionId, zone.zone);
+    const next = dropIntoGroup(prev, drag.ref, zone.targetGroupId, zone.zone);
     if (next === prev) return; // noop（自身 drop / target 不在）：跳过 navigate
     update(() => next);
-    // drop 后自动聚焦新 group（用户刚拖的实例，预期看其 output）。
+    // drop 后自动聚焦新 group/tab（用户刚拖的实例，预期看其 output）。
     void navigateWorkbench(scope, drag.ref.sessionId);
   }, [dragState, activeZone, layout, update, navigateWorkbench, scope]);
 
@@ -495,8 +483,9 @@ export function InstanceArea({
   // 左总览仅 overview 存在；history / inspection tab 全宽，无左总览。CreateSessionBar +
   // ViewSwitcher 随左总览 header 一起只在 overview 渲染（设计 §6）。
   const leftColumnContent = isOverview ? leftOverviewContent : null;
-  // 右工作区 = deriveRows 全网格（设计 §7.4）。多 group 同屏：行 flex-1 等分高度，
-  // 行内 panel flex 按 sizes 权重等分宽度。maximized 时 deriveRows 返单 panel 单行全屏。
+  // 右工作区 = deriveGroupRows 全网格（设计 §7.4）。多 group 同屏：行 flex-1 等分高度，
+  // 行内 group flex 按 sizes 权重（key=groupId）等分宽度。maximized 时 deriveGroupRows 返单
+  // group 单行全屏。
   // dragState 期间整个 WorkspaceGrid 用 pointer-events:none 让 elementFromPoint 命中 overlay
   // 下层 group 的 data-drop-group（pointer capture 在源卡片，overlay 不接 pointer 事件）。
   const rightWorkspace = (
@@ -505,9 +494,14 @@ export function InstanceArea({
       create={create}
       draggingRef={draggingRef}
       maximized={layout.maximized}
-      onActivateGroup={focusPanel}
-      onCloseGroup={closePanel}
-      onResizePair={onResizePair}
+      onCloseTab={onCloseTab}
+      onResizeGroups={onResizeGroups}
+      onSelectTab={(groupId, tabId) => {
+        // 点 tab = 切活动 tab（setActiveTab 即时切视觉）+ navigate（URL focusId 同步）。navigate
+        // 会再触发 focus effect，但 setActiveTab 幂等，无副作用。
+        update((prev) => setActiveTab(prev, groupId, tabId));
+        if (tabId !== focusId) void navigateWorkbench(scope, tabId);
+      }}
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       rows={rows}
@@ -550,7 +544,7 @@ export function InstanceArea({
           渲染 EmptyInstanceArea（也标注 data-drop-empty 让空白区 drop 命中）。 */}
       <div
         className="relative min-w-0 flex-1"
-        data-drop-empty={layout.panels.length === 0 ? "" : undefined}
+        data-drop-empty={layout.groups.length === 0 ? "" : undefined}
       >
         {rightWorkspace}
         {dragState ? (
@@ -743,10 +737,11 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
 
 /**
  * 会话 close 统一流程（confirm → 按 type 调 close API → 精确失效缓存）。三处 close
- *（split closePanel / 卡片 ProjectInstances / 移动全局 MobileGlobalOverview）复用此 hook，
- * cache 策略统一为 closePanel 标准：removeQueries detail + exact invalidate
- *（["projects"] / [name] / [name, type-sessions]），不波及 files/git。`onAfterClose`
- * 留给 split 场景追加 removePanel + navigate。返回 true=已关闭，false=用户取消。
+ *（左总览卡片 ProjectInstances / 移动全局 MobileGlobalOverview / 历史列表）复用此 hook，
+ * cache 策略统一：removeQueries detail + exact invalidate（["projects"] / [name] /
+ * [name, type-sessions]），不波及 files/git。`onAfterClose` 留给调用方追加副作用。tab ✕
+ *（最小化）不走此 hook —— 走 removeTabFromGroup（session 存活，不 close）。返回 true=已关闭，
+ * false=用户取消。
  */
 export function useCloseSession() {
   const { t } = useT();
@@ -1435,64 +1430,95 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
 }
 
 /**
- * 右工作区活动组 header（设计 §7）。嵌入式面板（ChatPanel/AgentTerminalPanel/TerminalPanel）
- * 自身不带 header（原由 SplitPanel 承载），Phase A 改单 group 右工作区后由本组件统一渲染
- * marker + 实例名 + maximize + close。usePanelMeta 从实例 detail query 派生（与
- * PanelRouter 同源 query key，React Query dedupe）。
+ * 右工作区活动组 header = tab 栏（设计 §7.1）：每个 tab 一个实例 chip（marker + 名 + ✕），
+ * 右侧 ▢ 最大化（group 级独占）。tab ✕ = 最小化（移除 tab，session 存活回左总览，设计 §7.2）；
+ * 关闭实例 kill 不放 tab ✕（走左总览卡片 close，避免高频按钮触发破坏性 kill）。usePanelMeta
+ * 从实例 detail query 派生（与 PanelRouter 同源 query key，React Query dedupe）。
  */
 function GroupHeader({
+  group,
   isMaximized,
-  onActivate,
-  onClose,
+  onCloseTab,
+  onSelectTab,
   onToggleMaximize,
-  panelRef,
 }: GroupHeaderProps) {
   const { t } = useT();
-  const meta = usePanelMeta(panelRef);
-  const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
   const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
   return (
-    <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b border-on-surface/5 px-2">
-      {/* header 左侧点击 = 激活该 group（设计 §7.3 精确为 header 激活，不抢 PanelRouter 内部交互）。 */}
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        {group.tabs.map((tab) => (
+          <TabChip
+            isActive={tab.sessionId === group.activeTabId}
+            key={tab.sessionId}
+            onClose={() => onCloseTab(tab.sessionId)}
+            onSelect={() => onSelectTab(tab.sessionId)}
+            panelRef={tab}
+          />
+        ))}
+      </div>
       <button
-        className="flex min-w-0 grow items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition hover:bg-on-surface/5"
-        onClick={onActivate}
+        aria-label={t(maximizeLabelKey)}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+        onClick={onToggleMaximize}
+        title={t(maximizeLabelKey)}
         type="button"
       >
-        {meta?.marker ?? null}
-        <span className="truncate text-sm font-medium text-on-surface">{label}</span>
+        <ShellIcon className="h-3 w-3" name={isMaximized ? "restore" : "maximize"} />
       </button>
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          aria-label={t(maximizeLabelKey)}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={onToggleMaximize}
-          title={t(maximizeLabelKey)}
-          type="button"
-        >
-          <ShellIcon className="h-3 w-3" name={isMaximized ? "restore" : "maximize"} />
-        </button>
-        <button
-          aria-label={t("workbench.panelClose")}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-          onClick={onClose}
-          title={t("workbench.panelClose")}
-          type="button"
-        >
-          <ShellIcon className="h-3 w-3" name="close" />
-        </button>
-      </div>
     </div>
   );
 }
 
 type GroupHeaderProps = {
+  group: WorkbenchGroup;
   isMaximized: boolean;
-  onActivate: () => void;
-  onClose: () => void;
+  onCloseTab: (tabId: string) => void;
+  onSelectTab: (tabId: string) => void;
   onToggleMaximize: () => void;
+};
+
+type TabChipProps = {
+  isActive: boolean;
+  onClose: () => void;
+  onSelect: () => void;
   panelRef: WorkbenchPanelRef;
 };
+
+/**
+ * group 内单个 tab chip（设计 §7.1）：marker + 实例名（点击 = 切活动 tab）+ ✕（最小化）。
+ * active tab ✕ 常显，非 active hover 才显（减少视觉噪音）。usePanelMeta 派生 marker + label。
+ */
+function TabChip({ isActive, onClose, onSelect, panelRef }: TabChipProps) {
+  const { t } = useT();
+  const meta = usePanelMeta(panelRef);
+  const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
+  return (
+    <div
+      className={`group/tab flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm transition ${
+        isActive
+          ? "bg-on-surface/10 text-on-surface"
+          : "text-on-surface-muted hover:bg-on-surface/5"
+      }`}
+    >
+      <button className="flex min-w-0 items-center gap-1.5" onClick={onSelect} type="button">
+        {meta?.marker ?? null}
+        <span className="max-w-[8rem] truncate">{label}</span>
+      </button>
+      <button
+        aria-label={t("workbench.tabClose")}
+        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
+          isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100"
+        }`}
+        onClick={onClose}
+        title={t("workbench.tabClose")}
+        type="button"
+      >
+        <ShellIcon className="h-3 w-3" name="close" />
+      </button>
+    </div>
+  );
+}
 
 // ── Phase B 拖放分屏组件（设计 §7.2/§7.4）────────────────────────────────────
 
@@ -1583,7 +1609,7 @@ type SplitGutterProps = {
 /**
  * 同行相邻 group 间的列宽分隔条（设计 §7.3）。flex item（w-1 shrink-0），pointer-event 增量
  * 拖拽：每次 move 算 deltaX / 行宽（parentElement.getBoundingClientRect）→ onResize(ratioDelta)；
- * 上层 resizePair 基于当前 layout 增量更新左右 sizes，守恒钳制。setPointerCapture 锁指针到 gutter，
+ * 上层 resizeGroups 基于当前 layout 增量更新左右 sizes（key=groupId），守恒钳制。setPointerCapture 锁指针到 gutter，
  * 拖拽时即使滑过面板仍持续触发。复活自 P5 split-panel.tsx（三态已废弃，gutter 通用）。
  */
 function SplitGutter({ onResize }: SplitGutterProps) {
@@ -1623,33 +1649,34 @@ function SplitGutter({ onResize }: SplitGutterProps) {
 }
 
 type WorkspaceGridProps = {
-  activeZone: { targetSessionId: string | null; zone: DropZone } | null;
+  activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   create: CreateSessionApi | null;
   draggingRef: WorkbenchPanelRef | null;
   maximized: string | null;
-  onActivateGroup: (ref: WorkbenchPanelRef) => void;
-  onCloseGroup: (ref: WorkbenchPanelRef) => void;
-  onResizePair: (leftId: string, rightId: string, deltaFlex: number) => void;
-  onToggleMaximize: (sessionId: string) => void;
+  onCloseTab: (groupId: string, tabId: string) => void;
+  onResizeGroups: (leftGroupId: string, rightGroupId: string, deltaFlex: number) => void;
+  onSelectTab: (groupId: string, tabId: string) => void;
+  onToggleMaximize: (groupId: string) => void;
   projectName: string | null;
-  rows: WorkbenchPanelRef[][];
+  rows: WorkbenchGroup[][];
   sizes: Record<string, number>;
 };
 
 /**
- * 右工作区网格（设计 §7.4）：deriveRows 全网格渲染。行 flex-1 等分高度（Phase B 不引入
- * rowSizes），行内 panel flex 按 sizes 权重等分宽度。maximized 时 deriveRows 返单 panel
- * 单行 → 自动全屏。空 panels → EmptyInstanceArea（标注 data-drop-empty 让空白区 drop 命中）。
- * GroupCell 标注 data-drop-group={sessionId} 让 DropZoneOverlay 的 elementFromPoint hit-test 命中。
+ * 右工作区网格（设计 §7.4）：deriveGroupRows 全网格渲染。行 flex-1 等分高度（Phase D 不引入
+ * rowSizes，纵向 resize 留后续），行内 group flex 按 sizes 权重（key=groupId）等分宽度。
+ * maximized 时 deriveGroupRows 返单 group 单行 → 自动全屏。空 groups → EmptyInstanceArea
+ *（标注 data-drop-empty 让空白区 drop 命中）。GroupCell 标注 data-drop-group={groupId} 让
+ * DropZoneOverlay 的 elementFromPoint hit-test 命中。
  */
 function WorkspaceGrid({
   activeZone,
   create,
   draggingRef,
   maximized,
-  onActivateGroup,
-  onCloseGroup,
-  onResizePair,
+  onCloseTab,
+  onResizeGroups,
+  onSelectTab,
   onToggleMaximize,
   projectName,
   rows,
@@ -1661,31 +1688,29 @@ function WorkspaceGrid({
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 p-1">
       {rows.map((row, rowIdx) => {
-        const totalFlex = row.reduce((sum, p) => sum + (sizes[p.sessionId] ?? 1), 0);
+        const totalFlex = row.reduce((sum, g) => sum + (sizes[g.id] ?? 1), 0);
         return (
           <div className="flex min-h-0 flex-1 gap-1" key={`row-${rowIdx}`}>
-            {row.flatMap((panelRef, colIdx) => {
+            {row.flatMap((group, colIdx) => {
               const cells: ReactNode[] = [
                 <GroupCell
                   activeZone={activeZone}
                   dragRef={draggingRef}
-                  flex={sizes[panelRef.sessionId] ?? 1}
-                  isMaximized={maximized === panelRef.sessionId}
-                  key={`cell-${panelRef.sessionId}`}
-                  onActivate={() => onActivateGroup(panelRef)}
-                  onClose={() => onCloseGroup(panelRef)}
-                  onToggleMaximize={() => onToggleMaximize(panelRef.sessionId)}
-                  panelRef={panelRef}
+                  flex={sizes[group.id] ?? 1}
+                  group={group}
+                  isMaximized={maximized === group.id}
+                  key={`cell-${group.id}`}
+                  onCloseTab={(tabId) => onCloseTab(group.id, tabId)}
+                  onSelectTab={(tabId) => onSelectTab(group.id, tabId)}
+                  onToggleMaximize={() => onToggleMaximize(group.id)}
                 />,
               ];
               if (colIdx < row.length - 1) {
                 const next = row[colIdx + 1];
                 cells.push(
                   <SplitGutter
-                    key={`gutter-${panelRef.sessionId}-${next.sessionId}`}
-                    onResize={(ratio) =>
-                      onResizePair(panelRef.sessionId, next.sessionId, ratio * totalFlex)
-                    }
+                    key={`gutter-${group.id}-${next.id}`}
+                    onResize={(ratio) => onResizeGroups(group.id, next.id, ratio * totalFlex)}
                   />,
                 );
               }
@@ -1699,51 +1724,66 @@ function WorkspaceGrid({
 }
 
 type GroupCellProps = {
-  activeZone: { targetSessionId: string | null; zone: DropZone } | null;
+  activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   dragRef: WorkbenchPanelRef | null;
   flex: number;
+  group: WorkbenchGroup;
   isMaximized: boolean;
-  onActivate: () => void;
-  onClose: () => void;
+  onCloseTab: (tabId: string) => void;
+  onSelectTab: (tabId: string) => void;
   onToggleMaximize: () => void;
-  panelRef: WorkbenchPanelRef;
 };
 
 /**
- * 单个 group 单元格 = GroupHeader + PanelRouter。标注 data-drop-group={sessionId} 让
- * DropZoneOverlay 的 elementFromPoint 命中。拖动态期间 pointer-events:none 让 elementFromPoint
- * 落到 overlay 下层 group（pointer capture 在源卡片，overlay 不接 pointer 事件，仅视觉高亮）。
- * 非拖动态正常接交互（PanelRouter 输入框/终端点击）。
+ * 单个 group 单元格 = GroupHeader（tab 栏）+ N 个 PanelRouter（active 可见，其他 hidden 保
+ * WebSocket/relay）。标注 data-drop-group={groupId} 让 DropZoneOverlay 的 elementFromPoint 命中。
+ * 拖动态期间整体 pointer-events:none 让 elementFromPoint 落到 overlay 下层 group（pointer
+ * capture 在源卡片，overlay 不接 pointer 事件，仅视觉高亮）。非拖动态正常接交互（PanelRouter
+ * 输入框/终端点击）。tab 用 CSS hidden 不 unmount —— claude2 relay 从不重读 JSONL，unmount
+ * 重连丢早消息；xterm dispose/重建抖动（设计 §7.4）。
  */
 function GroupCell({
   activeZone,
   dragRef,
   flex,
+  group,
   isMaximized,
-  onActivate,
-  onClose,
+  onCloseTab,
+  onSelectTab,
   onToggleMaximize,
-  panelRef,
 }: GroupCellProps) {
-  const isDraggingThis = dragRef?.sessionId === panelRef.sessionId;
-  const isDropTarget = activeZone?.targetSessionId === panelRef.sessionId;
+  const isDraggingThis = dragRef
+    ? group.tabs.some((t) => t.sessionId === dragRef.sessionId)
+    : false;
+  const isDropTarget = activeZone?.targetGroupId === group.id;
   return (
     <div
       className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg ${shellSurfaceClasses.workspace} ${
         isDraggingThis ? "opacity-40" : ""
       }`}
-      data-drop-group={panelRef.sessionId}
+      data-drop-group={group.id}
       style={{ flex: `${flex} 1 0` }}
     >
       <GroupHeader
+        group={group}
         isMaximized={isMaximized}
-        onActivate={onActivate}
-        onClose={onClose}
+        onCloseTab={onCloseTab}
+        onSelectTab={onSelectTab}
         onToggleMaximize={onToggleMaximize}
-        panelRef={panelRef}
       />
-      <div className="min-h-0 flex-1">
-        <PanelRouter key={panelRef.sessionId} panelRef={panelRef} />
+      <div className="relative min-h-0 flex-1">
+        {group.tabs.map((tab) => (
+          <div
+            className={
+              tab.sessionId === group.activeTabId
+                ? "absolute inset-0 flex min-h-0 flex-col"
+                : "hidden"
+            }
+            key={tab.sessionId}
+          >
+            <PanelRouter panelRef={tab} />
+          </div>
+        ))}
       </div>
       {isDropTarget ? <DropZoneHighlight zone={activeZone?.zone ?? "center"} /> : null}
     </div>
@@ -1786,14 +1826,14 @@ function DropZoneHighlight({ zone }: { zone: DropZone }) {
 }
 
 type DropZoneOverlayProps = {
-  activeZone: { targetSessionId: string | null; zone: DropZone } | null;
+  activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   dragPointer: { x: number; y: number };
   dragSourceRef: WorkbenchPanelRef | null;
-  layout: WorkbenchLayout;
+  layout: WorkbenchLayoutV2;
   onCancel: () => void;
   onDrop: () => void;
   onPointerMove: (x: number, y: number) => void;
-  onZoneChange: (zone: { targetSessionId: string | null; zone: DropZone } | null) => void;
+  onZoneChange: (zone: { targetGroupId: string | null; zone: DropZone } | null) => void;
   t: (key: TranslationKey) => string;
 };
 
@@ -1802,10 +1842,10 @@ type DropZoneOverlayProps = {
  * GroupCell（默认 pointer-events auto）正常命中。在 window pointermove 上 hit-test：
  * elementFromPoint → 找带 data-drop-group 的祖先 → deriveZone(group rect, pointer) → setActiveZone；
  * 同时调 onPointerMove 把指针位置回传给 InstanceArea 更新 dragState（ghost 跟随指针）。
- * pointerup 调 onDrop（dropPanel + 自动聚焦）。
+ * pointerup 调 onDrop（dropIntoGroup + 自动聚焦）。
  *
- * 空白区（layout.panels 空）：elementFromPoint 命中 data-drop-empty 容器 → zone=center +
- * targetSessionId=null（addPanel 首个 group）。
+ * 空白区（layout.groups 空）：elementFromPoint 命中 data-drop-empty 容器 → zone=center +
+ * targetGroupId=null（dropIntoGroup 开首个 group）。
  */
 function DropZoneOverlay({
   activeZone,
@@ -1829,7 +1869,7 @@ function DropZoneOverlay({
       // 找带 data-drop-group 的祖先（group 单元格）或 data-drop-empty（空白区）。
       const groupEl = el.closest("[data-drop-group]") as HTMLElement | null;
       if (groupEl) {
-        const targetSessionId = groupEl.getAttribute("data-drop-group") as string;
+        const targetGroupId = groupEl.getAttribute("data-drop-group") as string;
         const rect = groupEl.getBoundingClientRect();
         const zone = deriveZone(
           { width: rect.width, height: rect.height, left: rect.left, top: rect.top },
@@ -1837,7 +1877,7 @@ function DropZoneOverlay({
           event.clientY,
         );
         if (zone) {
-          onZoneChange({ targetSessionId, zone });
+          onZoneChange({ targetGroupId, zone });
         } else {
           onZoneChange(null);
         }
@@ -1845,7 +1885,7 @@ function DropZoneOverlay({
       }
       const emptyEl = el.closest("[data-drop-empty]") as HTMLElement | null;
       if (emptyEl) {
-        onZoneChange({ targetSessionId: null, zone: "center" });
+        onZoneChange({ targetGroupId: null, zone: "center" });
         return;
       }
       onZoneChange(null);
@@ -1880,8 +1920,8 @@ function DropZoneOverlay({
       aria-label={t("workbench.dropZoneLabel")}
       className="pointer-events-none fixed inset-0 z-30"
     >
-      {/* 空白区高亮（layout 空 + activeZone targetSessionId=null）*/}
-      {layout.panels.length === 0 && activeZone?.targetSessionId === null ? (
+      {/* 空白区高亮（layout 空 + activeZone targetGroupId=null）*/}
+      {layout.groups.length === 0 && activeZone?.targetGroupId === null ? (
         <div
           role="status"
           aria-label={t("workbench.dropToEmpty")}
