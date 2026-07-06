@@ -1,6 +1,6 @@
 # 工作台多视图重设计
 
-> 状态：设计完整（2026-07-05 复盘重构，落地完整 target，无「后续」）。本文是实施基线。
+> 状态：设计完整（2026-07-06 §7 重写为 VSCode group+tab 两级模型，落地完整 target，无「后续」）。本文是实施基线。
 > 演进自 [`workbench-redesign.md`](./workbench-redesign.md)（三栏草案）与上一版「grid/table/split 三视图互斥 + split 三态状态机」模型。
 > 关联：[DESIGN.md](./DESIGN.md)（设计系统 token 唯一权威源）、[frontend-ui-architecture.md](./frontend-ui-architecture.md)。
 
@@ -35,7 +35,7 @@
 │ [置顶]  │ │ │ 左：总览  │ 右：工作区（group 分屏）  │    │  │ 跟随活动 │
 │  全局   │ │ │ 固定单列  │ flex-1                   │    │  │ group    │
 │ § 项目  │ │ │ 卡片清单  │ ┌────────┬────────┐    │    │  │          │
-│   A/B… │ │ │          │ │ group A│ group B│    │    │  │ [文件]   │
+│   A/B… │ │ │          │ │[●A ✕][B ✕]│ [C ✕]   │    │    │  │ [文件]   │
 │ (未来§) │ │ │ 单击=激活 │ │ output │ output │    │    │  │ [Git]    │
 │         │ │ │ 拖动=分屏 │ │ ▌输入   │ ▌输入   │    │    │  │          │
 │         │ │ └──────────┴ └────────┴────────┘    │    │  │          │
@@ -111,81 +111,121 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 
 ## 7. 中栏右侧工作区（核心）
 
-右侧工作区承载实例 output + 输入，支持多 group 分屏。这是取代旧 split 视图 + 三态状态机 + 底部 dock 的完整设计。
+右侧工作区承载实例 output + 输入，采用 **VSCode editor-group + tab 两级模型**：group = 分屏区域（行×列网格，group 间横/纵 gutter resize），tab = 实例（每个 group 含 1-N tab，同 group 同时只显示一个 active tab）。左总览 ↔ 工作区 = vscode explorer ↔ editor group。本节是 Phase D 取代旧「1 group = 1 实例」铺开模型（2026-07-06 重写）的完整设计。
 
-### 7.1 group 模型（二态）
+### 7.1 两级模型：group + tab
 
-| 状态 | 内容 | 触发 |
-|------|------|------|
-| **存在** | 完整 output + 输入区（面板全功能） | 拖卡片创建 / 左总览单击激活 / 初始首个活跃实例 |
-| **不存在** | group 消失，剩余 group 重新填充 | 点 group × 关闭 |
+- **group = 分屏区域**：1-N 个，行×列网格排布。group 是稳定的分屏容器，自身不是实例。
+- **tab = 实例**：每个 group 含 1-N tab（每个 tab = 一个 agent/terminal session），同 group 同时只渲染 active tab 的内容；其他 tab 用 CSS `hidden` 保留（**不 unmount**，保 WebSocket/relay 长连，避免 claude2 relay 重连丢早消息 + xterm dispose/重建抖动）。
+- **取消旧「group=实例 1:1」假设**：旧 §7.1「group 二态（存在/不存在）」把 group 等同于实例；新模型 group 是分屏容器，tab 才是实例。实例一多不再强制铺满屏幕——同 group 多 tab 切换，或最小化移出工作区。
+- **左总览 ↔ 工作区**：点左总览卡片 = 已开则激活该 tab（不新 tab），未开则在活动 group 开新 tab（不新建 group）；拖卡片 = 开新 group 分屏（§7.3）。
+- **初始态**：进入 scope 时，活动 group 打开 scope 首个活跃实例（单 tab），不空着。scope 无活跃实例 → 右工作区空态（§14）。
+- **活动 group**：同一时刻有且仅有一个活动 group（`activeGroupId`，显式存布局）。点 group 任意处激活：点 tab 栏某 tab = 切该 tab 为 active 并激活该 group；点 group 其他空白处 = 仅激活该 group，不改 active tab。URL `focusId` = 活动 group 的活动 tab sessionId，用于反查与右栏 inspection 跟随。
 
-- **取消旧三态**：无 expanded/缩略/最小化，无底部 dock。group 要么全功能展示，要么不存在。
-- **初始态**：进入 scope 时，右工作区打开 scope 首个活跃实例（单 group），不空着。scope 无活跃实例 → 右工作区空态提示（§14）。
-- **活动 group**：同一时刻有且仅有一个活动 group（= `focusId`）。点 group 任意处 = 激活。
+### 7.2 tab 操作语义表（核心）
 
-### 7.2 拖放分屏（5 drop zone）
+| 操作 | 触发 | 语义 | session 存活 |
+|------|------|------|-------------|
+| 点卡片（已开） | 左总览卡片单击 | 激活该 tab（`setActiveTab` + `activeGroupId` 指向其 group）+ URL focusId | 是 |
+| 点卡片（未开） | 左总览卡片单击 | 在活动 group 开新 tab（`addTabToGroup` 队尾 + 设 active）+ URL focusId | 是 |
+| 切 tab | group 内 tab 栏点另一 tab | 设该 group `activeTabId` + URL focusId | 是 |
+| tab ✕（最小化） | tab 栏 ✕ | 移除该 tab（`removeTabFromGroup`）；session 存活，回左总览，可重新点开；group 最后一个 tab → group 合并消失 | 是 |
+| group ▢（最大化） | group header ▢ | group 级独占（其他 group `hidden`，布局保留可还原）；独占时该 group tab 栏仍在，可切 tab | 是 |
+| 关闭实例（kill） | 左总览卡片 close / tab 右键菜单 | `useCloseSession`（confirm → close API → 失效缓存）；**不放 tab ✕**（避免高频按钮触发破坏性 kill） | 否 |
+| 拖卡片 → group | 左总览拖卡片到 group | center zone = 在该 group 开新 tab（不替换）；左/右 zone = 开新 group 同行；上/下 zone = 开新 group 新行 | 是 |
+| 拖卡片 → 空白 | 左总览拖卡片到空白 | 创建首个 group（单 tab） | 是 |
 
-拖左总览卡片到右工作区，悬停在某个 group 上时显示 5 个半透明 drop zone：
+- **最小化后左总览不加标记**：已开/未开视觉一致（类 vscode explorer：不区分 editor 是否已打开），区分靠「点已开 = 激活不新 tab」的行为。
+- **kill 走低频入口**：tab ✕ 高频但非破坏性（最小化可恢复）；kill session 破坏性，走左总览卡片 close + tab 右键菜单，避免误触。
+- **首期不做跨 group 拖 tab**：tab 只能最小化（移出 group），不能在 group 间拖动。`moveTab` 留接口标「后续」。
+
+### 7.3 drop zone 新语义
+
+拖左总览卡片到右工作区，悬停在某个 group 上时显示 5 个半透明 drop zone（几何沿用，**center 语义改**）：
 
 ```
          ┌─────── 上 ───────┐
-         │   (在该组上方     │
-         │    插入新行)      │
+         │ (在该 group 上方  │
+         │  插入新行+新 group)│
     ┌────┼───────────────────┼────┐
     │左  │                   │ 右 │
     │(在 │     中心           │(在 │
-    │该组│   (替换该组实例)    │该组│
+    │该 │ (在该 group 开新 tab)│该 │
+    │group│                   │group│
     │左侧│                   │右侧│
     │插新│                   │插新│
-    │列) │                   │列) │
+    │group│                  │group│
     └────┼───────────────────┼────┘
-         │   (在该组下方     │
-         │    插入新行)      │
+         │ (在该 group 下方  │
+         │  插入新行+新 group)│
          └─────── 下 ───────┘
 ```
 
 | drop zone | 效果 |
 |-----------|------|
-| 上 | 行方向分裂：在该 group 上方插入新行，放新 group |
+| 上 | 行方向分裂：在该 group 上方插入新行，放新 group（含被拖实例） |
 | 下 | 行方向分裂：在该 group 下方插入新行，放新 group |
-| 左 | 列方向分裂：在该 group 左侧插入新列，放新 group |
-| 右 | 列方向分裂：在该 group 右侧插入新列，放新 group |
-| 中心 | 替换该 group 当前实例 |
-| 空白区（无 group） | 创建首个 group |
+| 左 | 列方向分裂：在该 group 左侧插入新列，放新 group（同行） |
+| 右 | 列方向分裂：在该 group 右侧插入新列，放新 group（同行） |
+| 中心 | **在该 group 开新 tab**（非替换；tab 模型下「换实例」= 开新 tab + 最小化旧 tab 两步操作，不内置一键替换） |
+| 空白区（无 group） | 创建首个 group（单 tab） |
 
-### 7.3 group 操作
+- `deriveZone` 不变（边缘 15% + 中心，上/下优先于左/右，`DROP_ZONE_EDGE_RATIO = 0.15` 沿用）。
+- 拖动期间若被拖实例已在某 group 的 tab 中，drop 到另一 group = 先从旧 group `removeTabFromGroup`（可能触发旧 group 合并）再加入目标，等价「跨 group 移动实例」（drop 路径支持；tab 栏直接拖不支持，见 §7.2）。
+
+### 7.4 group 操作
 
 ```
-┌──────────────┬──────────────┐
-│ [A    □][×] │ [B◆   □][×] │ ← □ maximize   × close
-│  output     │  output     │   ◆ = 活动 group
-│  ▌输入        │  ▌输入        │
-├──────────────┴──────────────┤ ← gutter 拖拽 = resize
-│ [C    □][×]                │
-│  output                    │
-└─────────────────────────────┘
+┌────────────────────────────┬────────────────────────────┐
+│ [● A ✕] [ B ✕] [ C ✕]  ▢  │ [● D ✕]            ▢      │ ← tab 栏 + ▢ maximize
+│  A 的 output                │  D 的 output               │   ● = 活动 tab
+│  ▌输入                       │  ▌输入                      │
+├────────────────────────────┴────────────────────────────┤ ← 行内 gutter（横向 resize）
+│ [● E ✕]                                        ▢        │
+│  E 的 output                                             │
+└──────────────────────────────────────────────────────────┘
+   ↑ 行间 gutter（纵向 resize）
 ```
 
-- **激活**：点 group 任意处 = 活动组 → `focusId` = 该实例 → 右栏 inspection 跟随 + 左总览对应卡片高亮。
-- **resize**：group 间 gutter 拖拽。行内 gutter（同行相邻 group 之间）调列宽；行间 gutter（相邻行之间）调行高。复用现有 `resizePair` 扩展到网格。
-- **maximize**：点 group 的 □ → 该 group 全屏（其他 group 临时收起），再点 □ 恢复。复用现有 `toggleMaximize`。
-- **close**：点 group 的 × → 结束实例 session（走 `useCloseSession`：confirm → close API → 精确失效缓存）+ 移除 group + 焦点切换到剩余首个 group（若无剩余，`focusId` 清空，回非聚焦态）。实例从左总览消失（session 已结束）。
+- **激活**：点 group 任意处 → `activeGroupId` = 该 group + URL `focusId` = 该 group active tab → 右栏 inspection 跟随 + 左总览对应卡片高亮。点 tab 栏某 tab = 切该 tab 为 active 并激活该 group。
+- **resize**：group 间 gutter 拖拽。**行内 gutter**（同行相邻 group 之间）调列宽，操作 `sizes[groupId]`；**行间 gutter**（相邻行之间）调行高，操作 `rowSizes[行首 groupId]`。两者复用同一守恒钳制逻辑（`resizeGroups` / `resizeRows`）。
+- **maximize（group 级）**：点 group header 的 ▢ → 该 group 独占右工作区（其他 group `hidden` 不 unmount，保 session），group 内 tab 栏仍在可切 tab；再点 ▢ 还原（`sizes` / `rowSizes` / `newRowAfter` 未动，布局完整还原）。
+- **最小化 tab**：点 tab ✕ → `removeTabFromGroup`（session 存活）；若是该 group 最后一个 tab → group 消失（`removeGroup`），剩余 group 重排，`activeGroupId` 回退 `groups[0]`。
+- **关闭实例（kill）**：左总览卡片 close / tab 右键菜单 → `useCloseSession`（confirm → close API → 失效缓存）+ 从所在 group `removeTabFromGroup` + 焦点切到剩余活动 tab（`activeTabRef` 兜底）。实例从左总览消失（session 已结束）。
 
-> close 语义注：旧版 split 面板 close = 结束 session（`useCloseSession`），不是「最小化到 dock」。新模型延续「close = 结束 session」语义，无 dock 回收。若用户只想暂移出工作区不结束 session，用 maximize（临时全屏）或直接切活动 group（其他 group 留在后台）。
+> 三种「移出」语义区分：**最小化**（tab ✕）= 移出工作区但 session 存活，可重新点开；**最大化**（group ▢）= 临时独占，其他 group 隐藏可还原；**关闭**（卡片 close / 右键）= kill session，不可恢复。
 
-### 7.4 布局算法
+### 7.5 布局算法
 
-- group 组织成**行×列网格**：每行含若干 group，行内 group 等分列宽（flex），行间等分行高（flex）。
-- 拖放分裂（§7.2 上/下）= 在目标行上/下插入新行；分裂（左/右）= 在目标行内目标 group 旁插入新列。
-- 复用现有 `SplitLayout` 的 `deriveRows`（按 panel flex 权重分行）扩展支持拖放分裂的网格位置计算。
-- group close 后，空行自动合并（行内 group 数减至 0 时该行消除，剩余行重新分配高度）。
+- group 组织成**行×列网格**：`groups[]` 按行优先顺序，`newRowAfter: string[]`（groupId 之后换行）标记分行；行内 group 按 `sizes[groupId]`（横向 flex）等分列宽；行间按 `rowSizes[行首 groupId]`（纵向 flex）等分行高。
+- `deriveRows(layout)` 返回 `WorkbenchGroup[][]`（不再是 `WorkbenchPanelRef[][]`）；`maximized` 非空时返回 `[[maximizedGroup]]`（其他 group 由渲染层 `hidden` 保留，不 unmount）。
+- 拖放分裂（§7.3 上/下）= `addGroup({ newRow: true })` 在目标行上/下插入新行；分裂（左/右）= `addGroup({ newRow: false })` 在目标 group 旁插入新列。
+- group 最后 tab 被最小化/kill → `removeGroup`，该 group 从 `groups` / `sizes` / `rowSizes` / `newRowAfter` / `activeGroupId` / `maximized` 联动清理（删行首 group 时 `rowSizes` 键迁移到后续行首，`newRowAfter` 清该 groupId），剩余 group 重排。
 
-### 7.5 持久化
+### 7.6 持久化 schema
 
-- group 布局（哪些实例在哪个 group、网格位置、flex 权重、maximize 态）存 `workbench-model` 的 layout atom（`atomWithStorage` 持久化到 localStorage，scope-scoped）。
-- 复用现有 `WorkbenchPanelRef` / `addPanel` / `removePanel` / `resizePair` / `toggleMaximize`，扩展网格位置字段（row/col 或 group id + 邻接关系）。
+布局 atom 存 `WorkbenchLayout`（`atomWithStorage` 持久化到 localStorage，scope-scoped：project 按 key 分键，global 单份）：
+
+```ts
+type WorkbenchGroup = { id: string; tabs: WorkbenchPanelRef[]; activeTabId: string };
+type WorkbenchLayout = {
+  groups: WorkbenchGroup[];
+  newRowAfter: string[];            // groupId 之后换行
+  sizes: Record<string, number>;    // key=groupId，横向 flex
+  rowSizes: Record<string, number>; // key=行首 groupId，纵向 flex
+  activeGroupId: string | null;     // 活动编辑组
+  maximized: string | null;         // groupId（group 级）
+};
+```
+
+- **URL `focusId` 不变**（= sessionId，唯一反查 group+tab），布局进 localStorage、不进 URL。
+- **迁移**：atom key 从 `"workbenchLayout"` 升级到 `"workbenchLayoutV2"`，旧 V1（1 group = 1 instance，`panels/newRows/sizes/maximized`）由 `migrateLegacyLayout` 无损迁移——每个旧 panel → 一个新 group（含 1 tab，`activeTabId` = 该 sessionId）+ sizes/newRowAfter/maximized 键从 sessionId 改 groupId + `activeGroupId` = 首 group。`atomWithStorage` deserialize 钩子：读 V2 失败 → 读 V1 → 迁移 → 写 V2 删 V1。
+- **移动端也读同一 atom**（`mobile-workbench.tsx` `useWorkbenchLayout`），迁移后移动端用新 API（`findTabBySessionId` / `addTabToGroup`）读写，语义不变（单实例聚焦，group/tab 透明）。
 - scope 切换（global ↔ project）各自独立布局。
+
+### 7.7 移动端不变
+
+移动端保持现有「列表态 → 全屏聚焦态」线性模型（`mobile-workbench.tsx`），不渲染多 group / tab 栏（窄屏不分屏）。group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），但只关心单实例聚焦（`activeTabRef` 派生活动 tab）。
 
 ## 8. 状态指示：marker 右上角 badge
 
@@ -200,8 +240,8 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 
 - 形态：纯色小圆点（dot），无背景框、无文字，叠加 marker 右上角（`-right-1 -top-1`），`ring-2 ring-surface-raised` 描边与所在 surface 融合（视觉挖空）。
 - 文字 label 留给 `aria-label`（a11y）/ hover tooltip。
-- **跨位置统一**：左总览卡片 marker、右工作区 group header marker、移动列表卡片 marker 都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
-- **marker 尺寸按场景区分**：左总览卡片用 `lg`（h-9 w-9=36px，头像式独立左列）；右工作区 group header 与 table 紧凑行用 `sm`（h-7 w-7=28px）。圆点 `-right-1 -top-1` 定位为固定 4px 偏移，不依赖 marker 尺寸，放大后无需调整。`sessionMarker` 加 `size` 参数（默认 `sm`，不破坏 GroupHeader/table 紧凑行高），card 两处调用方（`instanceToGridItem` / `candidateToGridItem`）显式传 `lg`。
+- **跨位置统一**：左总览卡片 marker、右工作区 group tab marker、移动列表卡片 marker 都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
+- **marker 尺寸按场景区分**：左总览卡片用 `lg`（h-9 w-9=36px，头像式独立左列）；右工作区 group tab 与 table 紧凑行用 `sm`（h-7 w-7=28px）。圆点 `-right-1 -top-1` 定位为固定 4px 偏移，不依赖 marker 尺寸，放大后无需调整。`sessionMarker` 加 `size` 参数（默认 `sm`，不破坏 GroupHeader/table 紧凑行高），card 两处调用方（`instanceToGridItem` / `candidateToGridItem`）显式传 `lg`。
 - 复用 `statusToTone` 映射状态→颜色；`StatusMarker` 包 `StatusDot`（加 `className` 支持 absolute 定位）。
 
 ## 9. 移动端差异
@@ -221,7 +261,7 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 
 会话名是一等显示元素，所有位置清晰呈现：
 - 左总览卡片标题（grid/table/grouped）
-- 右工作区 group header
+- 右工作区 group tab 栏
 - 移动列表卡片标题
 - 移动聚焦态 ℹ 信息 sheet
 
@@ -231,14 +271,14 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 
 四个正交 URL 维度（对齐现有 rightTab/tab 做法）：
 
-- `focusId`（path 段 `/global/session/$id` / `/projects/$key/session/$id`）= 右工作区**活动 group** 的实例
+- `focusId`（path 段 `/global/session/$id` / `/projects/$key/session/$id`）= 右工作区**活动 group 的活动 tab** 实例 sessionId（唯一反查 group+tab）；group/tab 布局进 localStorage、不进 URL（§7.6）
 - `?view=grid|table|grouped` = 左总览卡片样式
 - `?tab=overview|history|files|git` = 中栏二级 tab
 - `?rightTab=files|git` = 右栏 inspection tab
 
 四者正交。TanStack Router navigate 整体替换 search 对象（非 merge），故 navigate 需传完整四维（见 `WorkbenchRoute.onViewChange/onTabChange/onRightTabChange` 现有做法）。
 
-> `focusId` 语义变化（vs 旧版）：从「中栏换成单实例 SplitLayout」变为「右工作区活动 group」。中栏左总览 + tab 导航 + view 切换 在聚焦/非聚焦都常驻——这是本轮修复「导航/视图被挤掉」的核心。
+> `focusId` 语义变化（vs 旧版）：从「中栏换成单实例 SplitLayout」变为「右工作区活动 group 的活动 tab」。中栏左总览 + tab 导航 + view 切换 在聚焦/非聚焦都常驻——这是修复「导航/视图被挤掉」的核心。Phase D 进一步把活动 group 升级为含多 tab 的容器（§7），focusId 仍 = sessionId，唯一反查 group+tab。
 
 ## 12. header padding（独立小改）
 
@@ -246,14 +286,15 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 
 ## 13. 激活与聚焦语义
 
-- **活动 group** = `focusId` = 右工作区当前激活的 group 实例。
-- **激活路径**：
-  - **左总览单击卡片** → 切右工作区活动 group 为该实例：若该实例已在工作区，激活其 group；否则替换当前活动 group 内容为该实例（不新增 group，保持单 group 除非用户拖动分屏）。
-  - **右工作区点 group** → 激活该 group（= 设 `focusId`）。
+- **活动 group** = `activeGroupId`（显式存布局）= 右工作区当前激活的 group；其 **活动 tab** = 该 group 的 `activeTabId`；URL `focusId` = 活动 tab 的 sessionId（唯一反查 group+tab）。
+- **激活路径**（vs code explorer 语义，§7.2）：
+  - **左总览单击卡片** → `findTabBySessionId` 命中（已开）= 激活该 tab（`setActiveTab` + `activeGroupId` 指向其 group），不新 tab；未命中（未开）= 在活动 group `addTabToGroup` 开新 tab（不新建 group）。
+  - **右工作区点 group tab 栏某 tab** → 切该 tab 为 active + 激活该 group；**点 group 其他空白处** → 仅激活该 group（不改 active tab）。
 - **激活驱动**：
-  - 右栏 inspection 跟随活动 group（files/git）
+  - 右栏 inspection 跟随活动 tab（files/git）
   - 左总览对应卡片高亮（◆ 标记 + ring）
-- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区显示 scope 首个活跃实例（单 group，非活动态）或空态；右栏 inspection 空态。点左总览卡片或 group 才进入聚焦态。
+- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区在活动 group 显示 scope 首个活跃实例（单 tab，非活动态）或空态；右栏 inspection 空态。点左总览卡片或 group 才进入聚焦态。
+- **focusId 反查失败兜底**：`findTabBySessionId` 返 null（该 session 已最小化，不在任何 group）：URL `focusId` 保留不动（不死循环），右栏 inspection 跟随 `activeTabRef`（活动 group 的活动 tab，非 URL focusId）——最小化是用户主动移出，inspection 跟活动 tab 更合理。
 
 ## 14. 空态
 
@@ -274,17 +315,19 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 | phase | 范围 | 对应完整设计章节 |
 |-------|------|----------------|
 | **A 中栏左右骨架** | 中栏分左右（左总览固定单列 + 右工作区 flex-1，gutter 调比例）+ 左总览单列卡片（grid/table/grouped）+ 右工作区单 group（首个活跃实例，PanelRouter）+ 左总览单击/右工作区点 group 激活 + 右栏 inspection 跟随 + tab 导航常驻 + URL 四维模型 | §2 §3 §4 §5 §6 §11 §13 §14 |
-| **B 拖放分屏** | 5 drop zone 拖放（上/下/左/右/中心/空白）+ group 网格布局算法（deriveRows 扩展）+ 多 group 同屏 + 左总览拖动送入分屏 | §7.2 §7.4 |
-| **C group 操作 + 持久化** | group resize（行内/行间 gutter）+ maximize + close（useCloseSession）+ group 布局持久化（localStorage，scope-scoped） | §7.3 §7.5 |
+| **B 拖放分屏** | 5 drop zone 拖放（上/下/左/右/中心/空白）+ group 网格布局算法（deriveRows 扩展）+ 多 group 同屏 + 左总览拖动送入分屏 | §7.3 §7.5 |
+| **C group 操作 + 持久化** | group resize（行内/行间 gutter）+ maximize + close（useCloseSession）+ group 布局持久化（localStorage，scope-scoped） | §7.4 §7.6 |
+| **D VSCode group+tab 两级模型** | §7 重写为 group（分屏区）+ tab（实例）两级：group 含 N tab 切换（hidden 保 session）+ tab ✕ 最小化（session 存活）+ group ▢ 最大化（group 级）+ 纵向 resize（行间 gutter）+ drop center 开 tab + 关闭实例 kill 走卡片/右键 + 持久化 atom V2 迁移 + 移动端 API 对齐 | §7.1 §7.2 §7.3 §7.4 §7.5 §7.6 §7.7 |
 
 每个 phase 自包含 context.md + plan.md + tasks.md + verify.md（或等价轻量承载，见 [workbench-multiview-plan memory]），独立交付、独立验证。
 
 ## 16. ASCII 图集
 
-见 §3 IA 全景、§7.2 drop zone、§7.3 group 操作、§9 移动端对照。
+见 §3 IA 全景、§7.3 drop zone、§7.4 group 操作、§9 移动端对照。
 
 ---
 
 **对齐记录**：
 - 2026-07-04：初版 7 轮讨论锁定（grid/table/split 三视图 + split 三态状态机 + dock）。
-- 2026-07-05：复盘重构。用户手测反馈「桌面聚焦态挤掉导航和视图」+「split 三态 + dock 不好操作」，改为统一中栏左右结构（左总览固定单列 + 右工作区拖放分屏），取消独立 split 视图与三态状态机。设计决策均标注「用户决定」。**设计完整，无「后续」；实现分 phase（A/B/C）渐进靠拢。**
+- 2026-07-05：复盘重构。用户手测反馈「桌面聚焦态挤掉导航和视图」+「split 三态 + dock 不好操作」，改为统一中栏左右结构（左总览固定单列 + 右工作区拖放分屏），取消独立 split 视图与三态状态机。设计决策均标注「用户决定」。
+- 2026-07-06：VSCode group+tab 两级模型重构。用户反馈中栏右侧「1 group = 1 实例」铺开模型 ui/ux 奇怪，要求完全参考 vscode。§7 重写为 group（分屏区，行×列网格，横/纵 resize）+ tab（实例，同 group 多 tab 切换）两级模型：tab ✕ = 最小化（session 存活回左总览）/ group ▢ = 最大化（group 级独占，独占时可切 tab）/ 关闭实例 kill 走左总览卡片 close + tab 右键（不放 tab ✕，避免高频按钮触发破坏性 kill）；左总览 ↔ 工作区 = vscode explorer ↔ editor group（点卡片已开激活/未开活动 group 开新 tab，拖卡片开新 group 分屏）；切 tab 用 CSS hidden 保 WebSocket 长连（不 unmount）；持久化 atom key 升级 workbenchLayoutV2 + migrateLegacyLayout 无损迁移；移动端读写同一 atom 但 group/tab 模型透明。新增 Phase D（§7.1-§7.7）。**设计完整，无「后续」；实现分 phase（A/B/C/D）渐进靠拢。**
