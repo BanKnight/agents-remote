@@ -19,7 +19,7 @@
 - Files section 保持在 Project console route 内，不新增独立 Files route；当前目录 path 与选中文件 path 是单页本地 state。
 - 目录列表和文件预览由 TanStack Query 管理 server state，query key 包含 projectName、currentPath 和 selectedFilePath。
 - Files UI 使用“紧凑当前 path 操作区 + compact row 文件列表 + 内容优先同页预览 panel”的结构；桌面端可保留 list + preview 同页扫读，手机窄屏选择文件后弹出全屏 sheet（从下往上滑入）覆盖目录列表与底部导航。
-- 移动端文件预览是覆盖式全屏 sheet（`fixed inset-0 z-50`，从底部滑入），遮挡 Project 二级底部导航；通过 header 右上角「关闭」按钮返回目录列表（仅清本地 selected file state，不新增 route）。桌面端保持 list + preview 同页扫读。
+- 移动端文件预览是覆盖式全屏 sheet（`fixed inset-0 z-50`，从底部滑入），遮挡 Project 二级底部导航；通过 header 右侧胶囊内的 close 图标返回目录列表（仅清本地 selected file state，不新增 route）。桌面端保持 list + preview 同页扫读（close 图标 `sm:hidden`，桌面 inline preview 无关闭入口）。
 - 目录条目点击语义按类型区分：目录进入下级目录，文件打开预览。
 - 预览 panel 使用 discriminated union 渲染：`text`、`image`、`unsupported`、`too_large`。
 - 文本预览以 `<pre>` 纯文本方式展示；图片预览使用 `<img>`，SVG 不 inline 到 DOM。
@@ -33,7 +33,7 @@
 - 页面不得出现编辑、删除、重命名、上传、下载按钮或拖拽上传 affordance。
 - 移动端可读性优先：文件列表采用可扫读的紧凑行，触控目标仍需充足；文本预览允许换行并优先占据可用空间，图片适应容器宽度。
 - Files compact row 中主信息是文件/目录名称，类型、大小、hidden 等辅助信息应压缩为短文字或 badge；长名称/path 使用 `min-w-0`、truncate、break-all/break-words 或局部滚动避免页面级横向溢出。
-- 预览 panel header 只保留定位所需的文件名、path、类型和大小，避免把说明性文本置于预览内容之前。
+- 预览 panel header 采用三段式：左侧文件名（truncate）、中间 source/render 分段切换（仅 html/markdown 文件出现，作为导航而非右侧操作）、右侧胶囊操作区（`capsule-actions` variant，含 save 文字按钮 + close 图标）。操作区复用 MobileFocusHeader 同款胶囊容器（`rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5`），与 agent/终端聚焦态 header 视觉一致；不用独立的 MoreVertical 下拉承担 source/render 切换（与中间分段重复）。header 高度 `h-11`（44px）与一级页面 header 一致。
 - 状态表达必须有文字说明，不只依赖颜色。
 - 错误状态应提供可恢复路径，例如 Retry、Root 或 Up one level。
 

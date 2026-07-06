@@ -24,7 +24,7 @@
 - 本轮 UI/UX alignment 的来源优先级是：`docs/design/prototype/guidelines.md`、prototype HTML、prototype screenshots、已验证长期 docs、当前实现外观。
 - 页面层级采用三层模型：一级应用 shell、Project 直接二级 workspace、深层/contextual detail。
 - 桌面端一级/二级页面使用左侧导航 + 工作区；移动端一级页面使用底部一级导航，Project 直接二级页面使用带 Back 项的底部二级导航。
-- 移动端直接二级页不在顶部重复 Back；深层/contextual detail 隐藏底部二级导航——Agent/Terminal instance detail 使用顶部返回，file preview 用全屏 sheet（header 右上「关闭」按钮，非顶部返回，从下滑入遮挡父页面）。
+- 移动端直接二级页不在顶部重复 Back；深层/contextual detail 隐藏底部二级导航——Agent/Terminal instance detail 使用顶部返回，file preview 和 Git single-file diff 用全屏 sheet（header 右侧胶囊内 close 图标，非顶部返回，从下滑入遮挡父页面）。
 - Project workspace 不承载 shell-level runtime input；真实输入归 Agent/Terminal instance detail。
 - Files/Git 是 Project-scoped 只读 inspection；Agent/Terminal 是 runtime session。两类页面共享 Project scope，但不共享输入语义。
 - 后续实现应先收敛 route/workspace 与共享 shell，再对齐具体页面，避免每个页面各自创建导航、状态、列表和操作结构。
@@ -40,7 +40,7 @@
 - Agent-derived Terminal detail 应保留来源 Agent context 的返回路径；直接从 Project Terminal workspace 打开的 Terminal detail 默认回 Terminal workspace。
 - Agent detail Meta 使用本地 overlay 展示真实 project/session/provider/status/stream 字段，不新增 API，不伪造 provider-native metadata。
 - Project resource workspace 的已验证边界：Files、Git、Terminal 都是 Project 直接二级 workspace；Files/Git 保持只读 inspection，Terminal workspace 展示 live Terminal instances 并提供 create/open/close 入口。
-- 移动端 Files preview 是全屏 sheet（从下滑入 + 右上「关闭」按钮，遮挡 Project 二级底部导航）；Git single-file diff 仍为顶部返回 detail（待同步）。Files/Git 的 selected file/diff state 仍是组件本地状态，不进入 route/search。
+- 移动端 Files preview 和 Git single-file diff 都用全屏 sheet（从下滑入 + 右侧胶囊内 close 图标，遮挡 Project 二级底部导航）；二者复用同一 `mobile-sheet-fullscreen` + `capsule-actions` variant。Files/Git 的 selected file/diff state 仍是组件本地状态，不进入 route/search。
 - 桌面端 Files/Git 可以保留同页 compact list + preview/diff 结构，以提高扫读效率；移动端 direct secondary 默认展示列表和当前 workspace context，进入内容 detail 后 content-first。
 - Terminal workspace 不承载 shell input、quick keys 或 runtime output；这些属于 Terminal instance detail。Terminal direct secondary 在移动端仍显示 Project 二级底部导航。
 - 已验证的共享 UI component 边界是 `web/src/components/shell/` 中的轻量 shell 组件库入口：`shell-layout.tsx` 承载连续桌面 shell、sidebar、workspace header 和 panel surface，`shell-navigation.tsx` 承载一级/二级 desktop 与 mobile bottom navigation，`shell-primitives.tsx` 承载 nav item、icon marker、status pill、action button、input 和 list row；它们只服务跨 Home、Project workspace、Session detail 复用，不构成泛化设计系统。

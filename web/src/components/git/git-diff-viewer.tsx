@@ -112,10 +112,16 @@ type GitFileDiffPanelProps = {
   fileDiff: GitFileDiffResponse | undefined;
   isLoading: boolean;
   fileName?: string;
-  onBack: () => void;
+  onClose: () => void;
 };
 
-function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitFileDiffPanelProps) {
+function GitFileDiffPanel({
+  error,
+  fileDiff,
+  isLoading,
+  fileName,
+  onClose,
+}: GitFileDiffPanelProps) {
   const { t } = useT();
 
   if (!fileDiff && !isLoading && !error)
@@ -135,34 +141,31 @@ function GitFileDiffPanel({ error, fileDiff, isLoading, fileName, onBack }: GitF
       className="min-h-0 min-w-0 flex-1 flex flex-col bg-surface-raised/25"
       aria-label="Git file diff"
     >
-      <div className="relative flex min-w-0 items-center justify-between border-b border-neutral-line/40 px-3.5 py-2.5">
-        <button
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-on-surface-soft sm:hidden"
-          type="button"
-          onClick={onBack}
-          aria-label={t("git.backToFiles")}
+      <div className="grid h-11 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-neutral-line/40 px-3.5">
+        <div className="flex min-w-0 items-center gap-2">
+          {displayStatus ? (
+            <IconMarker size="sm" tone={gitStatusTone(displayStatus)}>
+              {statusShortLabel(displayStatus)}
+            </IconMarker>
+          ) : null}
+          <h4 className="min-w-0 truncate font-mono text-sm font-semibold text-on-surface">
+            {displayName.split("/").pop() ?? displayName}
+          </h4>
+        </div>
+        <div className="justify-self-center" aria-hidden="true" />
+        <div
+          className="inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 sm:hidden"
+          role="group"
         >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M10 3L5 8l5 5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          {t("nav.back")}
-        </button>
-        <h4 className="absolute left-12 right-12 truncate text-center font-mono text-sm font-semibold text-on-surface sm:static sm:flex-1 sm:text-left sm:min-w-0">
-          {displayName.split("/").pop() ?? displayName}
-        </h4>
-        {displayStatus ? (
-          <IconMarker size="sm" tone={gitStatusTone(displayStatus)}>
-            {statusShortLabel(displayStatus)}
-          </IconMarker>
-        ) : (
-          <span className="w-7 sm:w-0" aria-hidden="true" />
-        )}
+          <button
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+            type="button"
+            onClick={onClose}
+            aria-label={t("session.close")}
+          >
+            <ShellIcon name="close" className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
@@ -428,7 +431,7 @@ export function GitDiffPanel({
       isLoading={fileDiff.isLoading}
       fileDiff={fileDiff.data}
       fileName={selectedFile?.path.split("/").pop() ?? selectedFile?.path}
-      onBack={clearDiff}
+      onClose={clearDiff}
     />
   );
 
@@ -448,7 +451,17 @@ export function GitDiffPanel({
           </div>
         </aside>
         <div
-          className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedFile === undefined ? "hidden sm:flex" : "flex"}`}
+          key={selectedFile !== undefined ? "diff-open" : "diff-closed"}
+          className={
+            selectedFile === undefined
+              ? "hidden sm:flex sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col"
+              : [
+                  "fixed inset-0 z-50 flex flex-col bg-surface",
+                  "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
+                  "animate-in slide-in-from-bottom-full duration-300 ease-out",
+                  "sm:static sm:inset-auto sm:z-auto sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col sm:bg-transparent sm:pt-0 sm:pb-0 sm:animate-none",
+                ].join(" ")
+          }
         >
           <div className="min-h-0 flex-1 flex flex-col overflow-hidden">{diffPanel}</div>
         </div>

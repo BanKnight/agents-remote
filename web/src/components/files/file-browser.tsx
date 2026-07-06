@@ -341,7 +341,6 @@ type FilePreviewPanelProps = {
   isLoading: boolean;
   preview: ProjectFilePreviewResponse | undefined;
   renderMode: "source" | "render";
-  renderToggle: ReactNode;
   saveToggle: ReactNode;
   isHtml: boolean;
   isMarkdown: boolean;
@@ -357,7 +356,6 @@ function FilePreviewPanel({
   isLoading,
   preview,
   renderMode,
-  renderToggle,
   saveToggle,
   isHtml,
   isMarkdown,
@@ -383,26 +381,45 @@ function FilePreviewPanel({
       className="min-h-0 min-w-0 flex-1 flex flex-col bg-surface-raised/25"
       aria-label="File preview"
     >
-      <div className="flex min-w-0 items-center justify-between border-b border-neutral-line/40 px-3.5 py-2.5">
-        <h4 className="min-w-0 flex-1 truncate text-left font-mono text-sm font-semibold text-on-surface">
+      <div className="grid h-11 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-neutral-line/40 px-3.5">
+        <h4 className="min-w-0 truncate font-mono text-sm font-semibold text-on-surface">
           {displayName.split("/").pop() ?? displayName}
         </h4>
-        <div className="flex shrink-0 items-center gap-2">
+        {isHtml || isMarkdown ? (
+          <div
+            className="inline-flex shrink-0 justify-self-center items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+            role="group"
+          >
+            {(["source", "render"] as const).map((mode) => (
+              <button
+                key={mode}
+                className={`flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-semibold transition ${
+                  renderMode === mode
+                    ? "bg-primary/10 text-primary"
+                    : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
+                }`}
+                type="button"
+                onClick={() => onRenderModeChange(mode)}
+              >
+                {mode === "source" ? t("files.sourceMode") : t("files.renderMode")}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="justify-self-center" aria-hidden="true" />
+        )}
+        <div
+          className={`inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 ${saveToggle === null ? "sm:hidden" : ""}`}
+          role="group"
+        >
           {saveToggle}
-          <div className="hidden sm:block">{renderToggle}</div>
-          <FilePreviewMenu
-            isHtml={isHtml}
-            isMarkdown={isMarkdown}
-            renderMode={renderMode}
-            onRenderModeChange={onRenderModeChange}
-          />
           <button
-            className="flex shrink-0 cursor-pointer items-center rounded-lg px-2 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/10 sm:hidden"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
             type="button"
             onClick={onClose}
             aria-label={t("session.close")}
           >
-            {t("session.close")}
+            <ShellIcon name="close" className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -435,96 +452,6 @@ function FilePreviewPanel({
         ) : null}
       </div>
     </section>
-  );
-}
-
-type FilePreviewMenuProps = {
-  isHtml: boolean;
-  isMarkdown: boolean;
-  renderMode: "source" | "render";
-  onRenderModeChange: (mode: "source" | "render") => void;
-};
-
-function FilePreviewMenu({
-  isHtml,
-  isMarkdown,
-  renderMode,
-  onRenderModeChange,
-}: FilePreviewMenuProps) {
-  const { t } = useT();
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  if (!isHtml && !isMarkdown) return null;
-
-  return (
-    <div ref={menuRef} className="relative shrink-0 sm:hidden">
-      <button
-        className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl border text-xs font-bold transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={t("files.fileActions")}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <MoreVertical className="h-4 w-4" aria-hidden="true" />
-      </button>
-      {open ? (
-        <div
-          className={`absolute right-0 top-10 z-20 grid w-36 gap-1 rounded-2xl p-2 shadow-2xl shadow-black/40 ${shellSurfaceClasses.header}`}
-          role="menu"
-        >
-          <FilePreviewMenuItem
-            active={renderMode === "source"}
-            onClick={() => {
-              onRenderModeChange("source");
-              setOpen(false);
-            }}
-          >
-            {t("files.sourceMode")}
-          </FilePreviewMenuItem>
-          <FilePreviewMenuItem
-            active={renderMode === "render"}
-            onClick={() => {
-              onRenderModeChange("render");
-              setOpen(false);
-            }}
-          >
-            {t("files.renderMode")}
-          </FilePreviewMenuItem>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-type FilePreviewMenuItemProps = {
-  active?: boolean;
-  children: string;
-  onClick: () => void;
-};
-
-function FilePreviewMenuItem({ active = false, children, onClick }: FilePreviewMenuItemProps) {
-  return (
-    <button
-      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
-        active ? "bg-primary/10 text-primary" : "text-on-surface-soft hover:bg-surface-raised/70"
-      }`}
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -952,25 +879,6 @@ export function FilesPanel({
     setSavedFlash(false);
   }, [selectedFilePath]);
 
-  const renderToggle = showRenderToggle ? (
-    <div className="flex shrink-0 gap-1">
-      {(["source", "render"] as const).map((mode) => (
-        <button
-          key={mode}
-          className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
-            renderMode === mode
-              ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-neutral-line/50 bg-surface-inset/50 text-on-surface-muted hover:text-on-surface-soft"
-          }`}
-          type="button"
-          onClick={() => setRenderMode(mode)}
-        >
-          {mode === "source" ? t("files.sourceMode") : t("files.renderMode")}
-        </button>
-      ))}
-    </div>
-  ) : null;
-
   // Save only applies to editable text in source mode (markdown/html render mode is read-only).
   const canEditText =
     previewData?.type === "text" && (!showRenderToggle || renderMode === "source");
@@ -996,14 +904,14 @@ export function FilesPanel({
       type="button"
       disabled={!isDirty || save.isPending}
       onClick={handleSave}
-      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[0.65rem] font-semibold transition ${
+      className={`flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold transition disabled:opacity-50 ${
         save.isPending
-          ? "border-neutral-line/50 bg-surface-inset/50 text-on-surface-muted"
+          ? "text-on-surface-muted"
           : savedFlash
-            ? "border-success/30 bg-success/10 text-success"
+            ? "text-success"
             : isDirty
-              ? "cursor-pointer border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
-              : "border-neutral-line/50 bg-surface-inset/50 text-on-surface-muted"
+              ? "cursor-pointer text-primary hover:bg-primary/10"
+              : "text-on-surface-muted"
       }`}
     >
       {save.isPending ? t("files.saving") : savedFlash ? t("files.saved") : t("files.save")}
@@ -1043,7 +951,6 @@ export function FilesPanel({
       isLoading={preview.isLoading}
       preview={previewData}
       renderMode={showRenderToggle ? renderMode : "source"}
-      renderToggle={renderToggle}
       saveToggle={saveButton}
       isHtml={isHtml}
       isMarkdown={isMarkdown}
