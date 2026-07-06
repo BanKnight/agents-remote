@@ -688,6 +688,25 @@ export function resolveRootBrowseTarget(currentPath: string): RootBrowseTarget {
   return { kind: "project", projectName, relativePath };
 }
 
+/**
+ * rootBrowse 项目层目录导航：把 `listProjectFiles` 返回的项目根相对 `entry.path`
+ *（无 projectName 前缀）拼回完整 currentPath = "projectName/relativePath" 格式
+ * （`resolveRootBrowseTarget` 的逆运算）。rootBrowse 根层（entry.path=项目名本身）
+ * 与非 rootBrowse 模式（currentPath 本就是项目相对）原样返回。
+ *
+ * 调用方语义统一（设计 workbench-views §4.1）：`FileEntryList.onOpenDirectory` 传项目
+ * 相对 entry.path，经本函数转成完整 currentPath 后再调 `goToPath`；
+ * `PathBreadcrumb.onNavigate` 传的 segmentPath 已是完整格式，直接调 `goToPath`。
+ * `goToPath` 单一逻辑直接 `setCurrentPath`，避免单一函数同时服务两种 path 语义
+ * 导致某种来源被双前缀或丢前缀。
+ */
+export function joinRootBrowseDirectoryPath(
+  target: RootBrowseTarget | null,
+  entryPath: string,
+): string {
+  return target?.kind === "project" ? `${target.projectName}/${entryPath}` : entryPath;
+}
+
 export type FilesPanelProps = {
   initialPath: string;
   /** 项目作用域（非 rootBrowse 模式必填）。rootBrowse 模式按 currentPath 第一段派生。 */
@@ -761,16 +780,9 @@ export function FilesPanel({
   const showRenderToggle = isHtml || isMarkdown;
 
   const goToPath = (path: string) => {
-    // rootBrowse 项目内目录导航：entry.path 是项目根相对（无项目名前缀），
-    // 须拼回 projectName 前缀以维持 currentPath = "projectName/relativePath" 契约
-    // （设计 workbench-views §4.1）。根目录层 path=项目名（本身就是第一段），不拼前缀。
-    const nextPath =
-      rootBrowse && target?.kind === "project" && path.length > 0
-        ? `${target.projectName}/${path}`
-        : path;
-    setCurrentPath(nextPath);
+    setCurrentPath(path);
     setSelectedFilePath(undefined);
-    onPathChange?.(nextPath);
+    onPathChange?.(path);
   };
 
   const selectFile = (path: string) => {
@@ -1024,7 +1036,7 @@ export function FilesPanel({
           selectedFilePath={selectedFilePath}
           onCancelRename={() => setRenamingPath(null)}
           onDelete={handleDelete}
-          onOpenDirectory={goToPath}
+          onOpenDirectory={(entryPath) => goToPath(joinRootBrowseDirectoryPath(target, entryPath))}
           onPreviewFile={selectFile}
           onRenameSubmit={handleRenameSubmit}
           onRenamingNameChange={setRenamingName}

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { defaultRenderMode, resolveRootBrowseTarget } from "./file-browser";
+import {
+  defaultRenderMode,
+  joinRootBrowseDirectoryPath,
+  resolveRootBrowseTarget,
+} from "./file-browser";
 
 describe("defaultRenderMode", () => {
   test("markdown / html default to render", () => {
@@ -35,6 +39,32 @@ describe("resolveRootBrowseTarget", () => {
       kind: "project",
       projectName: "lang-partner",
       relativePath: "src/components",
+    });
+  });
+});
+
+describe("joinRootBrowseDirectoryPath", () => {
+  test("项目层 → 拼 projectName 前缀（项目根相对 entry.path）", () => {
+    const target = { kind: "project", projectName: "lang-partner", relativePath: "" } as const;
+    expect(joinRootBrowseDirectoryPath(target, "apps")).toBe("lang-partner/apps");
+    expect(joinRootBrowseDirectoryPath(target, "apps/web")).toBe("lang-partner/apps/web");
+  });
+
+  test("根层 → entry.path 即项目名，原样返回", () => {
+    expect(joinRootBrowseDirectoryPath({ kind: "root" }, "lang-partner")).toBe("lang-partner");
+  });
+
+  test("非 rootBrowse（target=null）→ 原样返回", () => {
+    expect(joinRootBrowseDirectoryPath(null, "apps")).toBe("apps");
+  });
+
+  test("逆运算不变式：join → resolve 还原 projectName + relativePath", () => {
+    const target = { kind: "project", projectName: "lang-partner", relativePath: "" } as const;
+    const joined = joinRootBrowseDirectoryPath(target, "apps/web");
+    expect(resolveRootBrowseTarget(joined)).toEqual({
+      kind: "project",
+      projectName: "lang-partner",
+      relativePath: "apps/web",
     });
   });
 });
