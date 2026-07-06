@@ -88,16 +88,17 @@ export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
   table: "workbench.viewTable",
 };
 
-/** grid 卡片最小宽度（设计文档 §8：`minmax(220px,1fr)` 自适应，无断点枚举）。 */
+/** InstanceCard 内容最小可读宽度（左总览 MIN_REM 的设计依据：放得下一张 220px 卡）。 */
 export const MIN_CARD_WIDTH_PX = 220;
 /**
- * InstanceCard 自适应网格 inline style（桌面 grid / 移动总览共用同源）。用 inline style 而非
- * Tailwind 任意值：`repeat(auto-fill, minmax(...))` 含括号/逗号，Tailwind v4 任意值解析不稳定
- *（dist CSS 实测不落盘 auto-fill 规则）。`auto-fill + minmax` 让列数随容器宽度自适应——手机
- *（390px）1 列、平板（600px+）2 列、桌面更多，无需媒体查询。配合 `grid gap-2` className 使用。
+ * InstanceCard 固定单列网格 inline style（桌面左总览 / 移动总览共用同源）。设计 §5：左总览
+ * 固定单列卡片清单，`gridTemplateColumns: 1fr` 让卡片宽度始终 = 容器宽，拖宽左总览只让卡片
+ * 变宽不增列。不用 `auto-fill minmax`——它会在 ≥440px 自动变 2 列，卡片缩到 minmax 下限
+ * 内容拥挤，违反"父容器默认单列宽度排布"。用 inline style 而非 Tailwind 任意值：含括号/
+ * 逗号时 Tailwind v4 任意值解析不稳定（dist CSS 实测不落盘规则）。配合 `grid gap-2` className。
  */
 export const INSTANCE_GRID_STYLE: CSSProperties = {
-  gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_CARD_WIDTH_PX}px, 1fr))`,
+  gridTemplateColumns: "1fr",
 };
 
 /** 卡片总览加载骨架的占位卡片数（行级骨架 HistoryListSkeleton 用 3，卡片网格翻倍 6）。 */
@@ -452,12 +453,16 @@ export function InstanceArea({
       ? projectInstances.isLoading && projectInstances.instances.length === 0
       : !candidatesLoaded && candidates.length === 0;
   const leftOverviewContent = overviewLoading ? (
-    <CardGridSkeleton />
+    <div className="px-3 py-2">
+      <CardGridSkeleton />
+    </div>
   ) : showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
     ) : (
-      <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} />
+      <div className="px-3 py-2">
+        <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} />
+      </div>
     )
   ) : showGrouped ? (
     <GroupedView
