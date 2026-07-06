@@ -304,108 +304,8 @@ export const WORKBENCH_PANEL_DEFAULT_FLEX = 1;
 /** resize 时面板最小 flex 权重（防压溃到 0）。 */
 export const WORKBENCH_PANEL_MIN_FLEX = 0.2;
 
-/**
- * 从扁平布局派生二维行结构（渲染层纯函数）。`newRows` 标记的 sessionId 起新行；
- * 首个面板不论标记都进第一行。maximized 时返回单面板单行（派生，不改 state）。
- * Phase A：group 二态（设计 §7.1，无 minimized），所有 panels 均参与行布局。
- */
-export function deriveRows(layout: WorkbenchLayout): WorkbenchPanelRef[][] {
-  if (layout.maximized !== null) {
-    const max = layout.panels.find((p) => p.sessionId === layout.maximized);
-    return max ? [[max]] : [];
-  }
-  const newRowSet = new Set(layout.newRows);
-  const rows: WorkbenchPanelRef[][] = [];
-  let current: WorkbenchPanelRef[] = [];
-  for (const panel of layout.panels) {
-    if (current.length > 0 && newRowSet.has(panel.sessionId)) {
-      rows.push(current);
-      current = [];
-    }
-    current.push(panel);
-  }
-  if (current.length > 0) rows.push(current);
-  return rows;
-}
-
-/**
- * 向布局加入面板（split-right 默认；`newRow` 起一个新行 = split-down）。
- * 已存在的 sessionId 幂等不重复加；`afterSessionId` 指定插入位置（聚焦面板之后）。
- * Phase A：group 二态（无三态），addPanel 只入列 + 默认 flex 权重。
- */
-export function addPanel(
-  layout: WorkbenchLayout,
-  ref: WorkbenchPanelRef,
-  opts: { afterSessionId?: string; newRow?: boolean } = {},
-): WorkbenchLayout {
-  if (layout.panels.some((p) => p.sessionId === ref.sessionId)) return layout;
-  const panels = [...layout.panels];
-  const idx =
-    opts.afterSessionId === undefined
-      ? -1
-      : panels.findIndex((p) => p.sessionId === opts.afterSessionId);
-  if (idx >= 0) panels.splice(idx + 1, 0, ref);
-  else panels.push(ref);
-  const newRows =
-    opts.newRow === true && idx >= 0 ? [...layout.newRows, ref.sessionId] : layout.newRows;
-  const sizes = { ...layout.sizes, [ref.sessionId]: WORKBENCH_PANEL_DEFAULT_FLEX };
-  return { ...layout, panels, newRows, sizes };
-}
-
-/** 移除面板（关闭 = 结束实例）；同步清理 newRows / sizes / maximized。 */
-export function removePanel(layout: WorkbenchLayout, sessionId: string): WorkbenchLayout {
-  const panels = layout.panels.filter((p) => p.sessionId !== sessionId);
-  const newRows = layout.newRows.filter((id) => id !== sessionId);
-  const sizes = { ...layout.sizes };
-  delete sizes[sessionId];
-  const maximized = layout.maximized === sessionId ? null : layout.maximized;
-  return { panels, newRows, sizes, maximized };
-}
-
-/** 切换面板最大化（标量翻转，不新增布局实体）。 */
-export function toggleMaximize(layout: WorkbenchLayout, sessionId: string): WorkbenchLayout {
-  return { ...layout, maximized: layout.maximized === sessionId ? null : sessionId };
-}
-
-/** 设置面板 flex 宽度（resize gutter 单点更新；下限 WORKBENCH_PANEL_MIN_FLEX）。 */
-export function setPanelSize(
-  layout: WorkbenchLayout,
-  sessionId: string,
-  size: number,
-): WorkbenchLayout {
-  return {
-    ...layout,
-    sizes: { ...layout.sizes, [sessionId]: Math.max(WORKBENCH_PANEL_MIN_FLEX, size) },
-  };
-}
-
-/**
- * 拖拽 gutter 调整同行相邻左右面板宽度（resize 主路径，优于对左右分别 setPanelSize）。
- * 守恒：左增 = 右减（`deltaFlex` 为左的增量，右对称减）；两侧各钳到 `WORKBENCH_PANEL_MIN_FLEX`，
- * 钳制时 delta 被截到可调范围边界，左右仍守恒。一次原子更新两个 sizes，无中间态。
- */
-export function resizePair(
-  layout: WorkbenchLayout,
-  leftId: string,
-  rightId: string,
-  deltaFlex: number,
-): WorkbenchLayout {
-  const left = layout.sizes[leftId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
-  const right = layout.sizes[rightId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
-  const clamped = Math.min(
-    Math.max(deltaFlex, WORKBENCH_PANEL_MIN_FLEX - left),
-    right - WORKBENCH_PANEL_MIN_FLEX,
-  );
-  return {
-    ...layout,
-    sizes: { ...layout.sizes, [leftId]: left + clamped, [rightId]: right - clamped },
-  };
-}
-
-// ── Phase B 拖放分屏（设计 §7.2 5 drop zone + §7.4 网格布局）──────────────────
-// dropZone 是布局 state 的纯函数变换：把 ref 按 zone 相对 target 插入 panels/newRows/sizes。
-// 不扩展 addPanel opts —— addPanel/deriveRows/removePanel 零改动，dropPanel 独立编排
-// 6 zone 全部映射到现有 panels/newRows/sizes 操作（保持单一布局模型）。
+// ── drop zone 判定（设计 §7.2 5 drop zone，V2 dropIntoGroup 的 building block）────
+// deriveZone 把指针位置映射到 5 zone；V2 dropIntoGroup 按返回的 zone 编排 group 增删/换行。
 
 /** drop zone：拖卡片悬停 group 上的 5 个分裂位 + 空白区（targetSessionId=null）。 */
 export type DropZone = "up" | "down" | "left" | "right" | "center";
@@ -436,107 +336,11 @@ export function deriveZone(
   return "center";
 }
 
-/**
- * 按 drop zone 把 ref 相对 target 插入布局（Phase B 拖放主路径，纯函数）。
- *
- * newRows 语义（deriveRows）：标记的 sessionId **起新行**。
- * - `up`（target 上方插新行）：ref 插在 target 之前 + 给 **target** 加 newRows
- *   → target 起新行，ref 留旧行在上方。rows=[...[ref],[target,...]]。
- * - `down`（target 下方插新行）：ref 插在 target 之后 + 给 **ref** 加 newRows
- *   → ref 起新行在 target 下方。rows=[...[target,...],[ref]]。
- * - `left`（target 左侧插同列）：ref 插在 target 之前，newRows 不动 → 同行 ref 在左。
- * - `right`（target 右侧插同列）：ref 插在 target 之后，newRows 不动 → 同行 ref 在右。
- * - `center`（替换）：target 位置 panelRef 换成 ref；若 target 是行首（在 newRows）→
- *   newRows 里 target 换成 ref；ref 继承 target 的 size（保持列宽）；target 的 size 删除。
- *
- * 边界：
- * - 自身 drop（ref.sessionId === targetSessionId）：所有 zone noop（返回原引用）。
- * - ref 已在 layout（重排现有 group）：先 removePanel(ref) 再在 cleaned 上插入。
- * - target 不在 panels：返回原 layout（防御）。
- * - 空白区（targetSessionId === null）：等价 addPanel 末尾（layout 空时成首个 group）。
- * - noop 返回原引用，让 onDrop 用 `next === prev` 跳过无意义 navigate。
- */
-export function dropPanel(
-  layout: WorkbenchLayout,
-  ref: WorkbenchPanelRef,
-  targetSessionId: string | null,
-  zone: DropZone,
-): WorkbenchLayout {
-  // 空白区 drop：等价 addPanel 末尾（无 newRow）。layout 空时成首个 group。
-  if (targetSessionId === null) {
-    if (layout.panels.some((p) => p.sessionId === ref.sessionId)) return layout;
-    return addPanel(layout, ref);
-  }
-  // 自身 drop：所有 zone noop（自身不能与自己分裂/替换）。
-  if (ref.sessionId === targetSessionId) return layout;
-  // target 不在 panels：防御，返回原样。
-  if (!layout.panels.some((p) => p.sessionId === targetSessionId)) return layout;
-
-  // ref 已在 layout（重排现有 group）：先移除再插入，避免重复。
-  const cleaned = layout.panels.some((p) => p.sessionId === ref.sessionId)
-    ? removePanel(layout, ref.sessionId)
-    : layout;
-  const targetIdx = cleaned.panels.findIndex((p) => p.sessionId === targetSessionId);
-  // cleaned 后 target 仍在（target ≠ ref）。
-  const panels = [...cleaned.panels];
-  const newRows = [...cleaned.newRows];
-  const sizes = { ...cleaned.sizes };
-
-  if (zone === "center") {
-    // 替换：target 位置 panelRef 换成 ref，继承 target 的 size；target 的 size 删除。
-    const targetSize = sizes[targetSessionId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
-    panels[targetIdx] = ref;
-    delete sizes[targetSessionId];
-    sizes[ref.sessionId] = targetSize;
-    // 若 target 是行首（在 newRows）→ newRows 里 target 换成 ref（ref 接管行首职责）。
-    const newRowIdx = newRows.indexOf(targetSessionId);
-    if (newRowIdx >= 0) newRows[newRowIdx] = ref.sessionId;
-    // 若 ref 之前在 newRows（removePanel 已清掉 ref 的 newRows 标记，但 cleaned.newRows
-    // 已 filter 过 ref.sessionId，此处不需要再处理）。
-    // target 被 ref 替换后从 panels 消失；若 target 正是 maximized 的 group，必须清空
-    // maximized，否则 deriveRows 找不到 maximized 对应 panel 会返 [] → 工作区空态死锁。
-    const maximized = cleaned.maximized === targetSessionId ? null : cleaned.maximized;
-    return { ...cleaned, panels, newRows, sizes, maximized };
-  }
-
-  // 插入位置 + 是否起新行。
-  let insertIdx: number;
-  let newRowSessionId: string | null;
-  if (zone === "up") {
-    // ref 插在 target 之前；target 起新行（ref 留旧行在上方）。
-    insertIdx = targetIdx;
-    newRowSessionId = targetSessionId;
-  } else if (zone === "down") {
-    // ref 插在 target 之后；ref 起新行（在 target 下方）。
-    insertIdx = targetIdx + 1;
-    newRowSessionId = ref.sessionId;
-  } else if (zone === "left") {
-    // ref 插在 target 之前，同行。
-    insertIdx = targetIdx;
-    newRowSessionId = null;
-  } else {
-    // right：ref 插在 target 之后，同行。
-    insertIdx = targetIdx + 1;
-    newRowSessionId = null;
-  }
-
-  panels.splice(insertIdx, 0, ref);
-  sizes[ref.sessionId] = WORKBENCH_PANEL_DEFAULT_FLEX;
-  if (newRowSessionId !== null && !newRows.includes(newRowSessionId)) {
-    newRows.push(newRowSessionId);
-  }
-  return { ...cleaned, panels, newRows, sizes };
-}
-
 // ── 中栏 group+tab 布局（VSCode 两级模型，设计文档 §7.5/§7.6）─────────────────
 // group = 分屏区域（行×列网格），tab = 实例（每 group 1-N，同 group 只显 active tab）。
-// 取代旧 panels/newRows 1:1 模型。commit 2 仅新增：旧 WorkbenchLayout（4 字段）与
-// addPanel/deriveRows/dropPanel/resizePair/toggleMaximize 等保留至 commit 3 渲染层切换，
-// 避免中间态编译断裂。函数名用语义化新名（deriveGroupRows/dropIntoGroup/...）规避与旧函数撞名；
-// commit 3 删旧后再视情况 rename 回 deriveRows/dropPanel。
-//
-// flex 权重常量复用旧 WORKBENCH_PANEL_DEFAULT_FLEX/MIN_FLEX（数值语义一致：横向 group 宽度与
-// 纵向行高度都用同一 min/default）；commit 3 删旧函数后可 rename 为通用 WORKBENCH_FLEX_*。
+// WorkbenchLayout（4 字段 panels/newRows）仅保留作 migrateLegacyLayout 的 legacy 输入类型；
+// 渲染/编辑全走 WorkbenchLayoutV2 + deriveGroupRows/dropIntoGroup 等纯函数。
+// flex 权重常量 WORKBENCH_PANEL_DEFAULT_FLEX/MIN_FLEX 横向 group 宽度与纵向行高度共用。
 
 /** VSCode 两级模型：group = 分屏区域，含 N 个 tab（实例），同 group 只显 active tab。 */
 export type WorkbenchGroup = {
@@ -749,7 +553,7 @@ export function removeTabFromGroup(
 }
 
 /**
- * 拖 gutter 调整同行相邻 group 横向宽度（设计 §7.5，复用旧 resizePair 守恒钳制逻辑，键改 groupId）。
+ * 拖 gutter 调整同行相邻 group 横向宽度（设计 §7.5，守恒钳制，键为 groupId）。
  * 守恒：左增 = 右减（deltaFlex 为左的增量）；两侧各钳到 MIN_FLEX，钳制时 delta 截到可调边界仍守恒。
  */
 export function resizeGroups(

@@ -301,7 +301,7 @@ export function InstanceArea({
   // table 紧凑行）。resolvedView 已在上方定义（初始态 effect 复用）。
 
   // grid 卡片回调：select 复用 focusPanel 进聚焦态；close 走 useCloseSession（卡片由 query 驱动，
-  // invalidate 后自然消失，不调 removePanel —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
+  // invalidate 后自然消失，不操作 layout —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
   // global scope 的 projectName 从 candidates 查（candidate.ref.projectName）—— 与 closeInstance
   // 同源，避免旧实现在 global 误传空 projectName（focusInstance bug 修复）。
   const resolveProjectName = (sessionId: string): string =>
