@@ -479,7 +479,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.dropDown": "放置到下方：分屏到新行",
   "workbench.dropLeft": "放置到左侧：分屏到新列",
   "workbench.dropRight": "放置到右侧：分屏到新列",
-  "workbench.dropCenter": "放置到中心：替换该实例",
+  "workbench.dropCenter": "放置到中心：开新标签页",
   "workbench.dropToEmpty": "放置到此处：作为首个实例打开",
   "workbench.dragging": "拖动实例中",
   "workbench.dropZoneLabel": "分屏放置区",

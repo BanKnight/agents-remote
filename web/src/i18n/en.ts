@@ -479,7 +479,7 @@ export const en = {
   "workbench.dropDown": "Drop below: split into a new row",
   "workbench.dropLeft": "Drop left: split into a new column",
   "workbench.dropRight": "Drop right: split into a new column",
-  "workbench.dropCenter": "Drop center: replace this instance",
+  "workbench.dropCenter": "Drop center: open as new tab",
   "workbench.dropToEmpty": "Drop here: open as first instance",
   "workbench.dragging": "Dragging instance",
   "workbench.dropZoneLabel": "Drop zones",
