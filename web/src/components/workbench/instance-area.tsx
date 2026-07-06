@@ -1563,6 +1563,7 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
 
   return (
     <div
+      className="min-w-0"
       onPointerCancel={endPointer}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
