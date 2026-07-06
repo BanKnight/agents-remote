@@ -15,28 +15,31 @@
 | P4 table | ✅ `115ca57`→`b836a1c` | **仍有效**（SessionTable 收归左总览紧凑行） |
 | P5 split 三态 + dock | ✅ `2b57fa3`→`5a05f97` | **废弃**（被中栏左右结构 + 自由分屏取代）；`SplitLayout` 的 resize/maximize/`PanelRouter` 复用，三态状态机/dock/`panel-preview-cache` 删除 |
 
-新 Phase A/B/C 在 P1-P4 基线上重构中栏，取代旧 P5：
+新 Phase A/B/C/D 在 P1-P4 基线上重构中栏，取代旧 P5：
 
 ```
-P1-P4（已交付基线）─→ Phase A（中栏左右骨架 + 单 group + 激活）─→ Phase B（拖放分屏）─→ Phase C（group 操作+持久化）
+P1-P4（已交付基线）─→ Phase A（中栏左右骨架 + 单 group + 激活）─→ Phase B（拖放分屏）─→ Phase C（group 操作+持久化）─→ Phase D（VSCode group+tab 两级模型）
                             │ 取代旧 P5 聚焦态 SplitLayout + 三态/dock
-                            └─ 修复「聚焦态挤掉导航/视图」痛点
+                            └─ 修复「聚焦态挤掉导航/视图」痛点；D 进一步把 1 group 1 实例升级为 group+tab 两级
 ```
 
 ## 执行顺序与依赖
 
 ```
 Phase A workbench-middle-left-right   (中栏左右骨架 + 单 group + 激活语义)
-    │  产出中栏左右结构 + 活动 group 模型，供 B/C 复用
+    │  产出中栏左右结构 + 活动 group 模型，供 B/C/D 复用
     ▼
 Phase B workbench-drag-split          (5 drop zone 拖放 + group 网格布局)
     │
     ▼
 Phase C workbench-group-ops-persist   (resize/maximize/close + 持久化)
+    │
+    ▼
+Phase D workbench-vscode-group-tab    (group+tab 两级模型：tab 切换/minimize/maximize/纵 resize/drop center 开 tab)
 ```
 
-- 严格顺序 **A → B → C**：B 依赖 A 的左右结构与活动 group 模型；C 依赖 B 的多 group 网格。
-- **A 是核心重构**（解决「聚焦态挤掉导航/视图」痛点 + 废弃旧 P5 三态）；B/C 在 A 基础上叠加分屏能力。
+- 严格顺序 **A → B → C → D**：B 依赖 A 的左右结构与活动 group 模型；C 依赖 B 的多 group 网格；D 依赖 C 的持久化与 group 操作（在其上把 1 group 1 实例升级为 group+tab 两级）。
+- **A 是核心重构**（解决「聚焦态挤掉导航/视图」痛点 + 废弃旧 P5 三态）；B/C 在 A 基础上叠加分屏能力；D 取代旧「1 group = 1 实例」铺开模型为 VSCode 两级。
 
 ## 跨 phase 约定（每个 phase 都遵守）
 
@@ -150,6 +153,30 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 **依赖**：Phase B。**待拍点**：2 项决策用户已拍板（见 `velvety-soaring-sedgewick.md` plan：① resize 只做行内列宽 + maximize；② maximize 时其他 group 不渲染，恢复回原布局）。
 
+### Phase D · `workbench-vscode-group-tab`（VSCode group+tab 两级模型）✅ 已交付
+
+**目标**：用户反馈中栏右侧「1 group = 1 实例」铺开模型 ui/ux 奇怪，要求完全参考 vscode。§7 重写为 group（分屏区，行×列网格，横/纵 resize）+ tab（实例，同 group 多 tab 切换）两级模型，取代旧 panels/newRows 1:1 模型。对应设计 §7.1-§7.7。
+
+**任务**（详见 `velvety-soaring-sedgewick.md` plan，6 commit 渐进交付）
+1. **§7 设计重写**：两级模型 / tab 操作语义表 / drop 新语义 / group 操作 / 布局算法 / 持久化 schema / 移动端不变 + §3/§11/§13/§15 同步。
+2. **state 模型 + 纯函数 + 单测**（新增不删旧）：`WorkbenchLayoutV2` 7 字段（groups/newRowAfter/sizes/rowSizes/activeGroupId/maximized + WorkbenchGroup{id,tabs,activeTabId}）+ 12 纯函数（createGroup/deriveGroupRows/addGroup/removeGroup/addTabToGroup/removeTabFromGroup/setActiveTab/resizeGroups/resizeRows/toggleGroupMaximize/dropIntoGroup/findTabBySessionId/activeTabRef/migrateLegacyLayout/ensureTabOpen/findTabRef）+ 单测。
+3. **渲染切 tab 模型 + mobile API + 持久化 V2**：tab 容器（active tab 外 `hidden` 保 WebSocket/relay 长连，不 unmount）+ GroupHeader tab 栏 + ▢ group 级 maximize（独占时可切 tab）+ tab ✕ minimize（session 存活回左总览，kill 走卡片 close/右键）+ ensureTabOpen vscode explorer 语义（已开激活/未开活动 group 开新 tab）+ atom key `workbenchLayoutV2` + deserialize 迁移钩子（读 V2 失败→读 V1→migrate→写 V2）+ mobile 切新 API（findTabBySessionId 查 projectName / addTabToGroup 替 addPanel）+ 删旧 V1 函数。
+4. **纵向 resize + 行间 gutter**：`SplitGutter` 加 `orientation:"col"|"row"`（row=行间 cursor-row-resize）+ WorkspaceGrid 用 `rowSizes[行首]` 行 flex + 行间纵向 gutter + `resizeRows` 守恒钳制。
+5. **drop zone 新语义**：DropZoneOverlay `data-drop-group=groupId` + onDrop 调 `dropIntoGroup(targetGroupId, zone)`；center = 开新 tab（非替换，tab 模型下「替换」无意义）；空白 = 首 group；minimize 后左总览不加标记（vscode explorer 语义）。
+6. **V1 死代码清理**（收尾）：删 7 个 V1 函数（deriveRows/addPanel/removePanel/toggleMaximize/setPanelSize/resizePair/dropPanel）+ 30 个 V1 测试，保留 `WorkbenchLayout` 类型 + `EMPTY_WORKBENCH_LAYOUT`（migrateLegacyLayout 输入）。
+
+**交付摘要**（6 commit 全部落地）：
+- `4d8b4fe` docs §7 重写：两级模型 + tab 操作语义 + drop 新语义 + 持久化 schema + §3/§11/§13/§15 同步。
+- `6388253` state + 纯函数 + 单测：V2 7 字段 + 12 纯函数 + migrateLegacyLayout（每 panel → 1 group 1 tab，sessionId 作 groupId）+ 单测（deriveGroupRows 各分支 / add/remove 联动 / addTab 重复激活 / minimize 各分支 / dropIntoGroup 6 zone center 开 tab / resize 守恒钳制 / findTab / migrate）。
+- `383cabb` 渲染切 + mobile + 持久化 V2：tab `hidden` 保 session + GroupHeader tab 栏（▢ maximize + tab ✕ minimize）+ ensureTabOpen vscode explorer + focus effect 未开在活动 group 开 tab + closePanel 走 removeTabFromGroup + atom key V2 + 迁移钩子 + mobile 切新 API。
+- `2c12413` 纵向 resize + 行间 gutter：SplitGutter orientation col|row + WorkspaceGrid rowSizes 行 flex + 行间纵向 gutter + resizeRows 守恒钳制。
+- `27f8294` drop center 新语义文案：center = 开新标签页（i18n `workbench.dropCenter` 改「放置到中心：开新标签页」/「Drop center: open as new tab」）。
+- `e4821ba` V1 死代码清理：删 7 V1 函数 + 30 V1 测试 + layout() helper + V1 imports + 更新章节注释；保留 WorkbenchLayout 类型 + EMPTY_WORKBENCH_LAYOUT + flex 常量 + DropZone/deriveZone。
+
+**验证**：门禁全绿（最终 446 pass 0 fail，446 = 476 − 30 删掉的 V1 测试）；CSS 落盘 text/css；Playwright DOM 几何 14/14（多 group tab 切换 active 可见 + 非 active `display:none` 保 session；横向 resize 左增右减守恒；纵向 resize 上增下减守恒；maximize 独占其他 hidden + 还原 sizes/rowSizes 不变；minimize tab 消失 session 存活 + 最后 tab ✕ group 消失 active 迁移；点卡片已开激活不新 tab / 未开活动 group 开新 tab；drop center 开新 tab 非替换 / 左右新 group 同行 / 上下新行 / 空白首 group；minimize 左总览无标记；持久化刷新恢复 + V1→V2 迁移 V2 shape 正确；移动端 375×812 零回归不渲染 tab 栏；active group header 高亮 token；0 console error/warning）。
+
+**依赖**：Phase C。**待拍点**：12 项决策用户已拍板（见 `velvety-soaring-sedgewick.md` plan 决策表：① 两级模型 ② group header 方案 1（tab ✕ minimize / group ▢ maximize / kill 不放 tab ✕）③ maximize group 级 ④ 点卡片 vscode explorer ⑤ minimize 不加标记 ⑥ tab 切换 hidden 不 unmount ⑦ drop center 开 tab ⑧ activeGroupId 必需 ⑨ sizes/rowSizes 键 groupId ⑩ 持久化 V2 + 迁移含移动端 ⑪ 首期不做跨 group 拖 tab ⑫ focusId 反查失败兜底）。
+
 ## 旧 phase 交付记录（P1-P5，2026-07-04，归档基线）
 
 > 详细 commit 链保留作为基线参考。P1-P4 产出仍有效，P5 已废弃（Phase A 删除）。
@@ -177,4 +204,4 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 
 ## 完成定义
 
-每个 phase：门禁全绿 + CSS 落盘 + Playwright DOM 几何验证 + 桌面截图（移动端无回归） + commit（+ push，用户已授权）+ subagent 审查（实现 vs 设计/plan 查漏补缺）。全部 A/B/C 完成后，workbench-views.md §1–§14 完整落地。
+每个 phase：门禁全绿 + CSS 落盘 + Playwright DOM 几何验证 + 桌面截图（移动端无回归） + commit（+ push，用户已授权）+ subagent 审查（实现 vs 设计/plan 查漏补缺）。全部 A/B/C/D 完成后，workbench-views.md §1–§14 完整落地。
