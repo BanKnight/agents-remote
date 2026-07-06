@@ -761,9 +761,16 @@ export function FilesPanel({
   const showRenderToggle = isHtml || isMarkdown;
 
   const goToPath = (path: string) => {
-    setCurrentPath(path);
+    // rootBrowse 项目内目录导航：entry.path 是项目根相对（无项目名前缀），
+    // 须拼回 projectName 前缀以维持 currentPath = "projectName/relativePath" 契约
+    // （设计 workbench-views §4.1）。根目录层 path=项目名（本身就是第一段），不拼前缀。
+    const nextPath =
+      rootBrowse && target?.kind === "project" && path.length > 0
+        ? `${target.projectName}/${path}`
+        : path;
+    setCurrentPath(nextPath);
     setSelectedFilePath(undefined);
-    onPathChange?.(path);
+    onPathChange?.(nextPath);
   };
 
   const selectFile = (path: string) => {

@@ -75,6 +75,7 @@ global scope 的 files tab 是「跨项目根目录浏览器」，与 project sc
 - **根目录层（currentPath = ""）**：列 `PROJECTS_ROOT` 下所有项目目录（一级目录），**只读**——不渲染 upload/mkdir/rename/delete/save 任何写操作 UI。后端走 `GET /api/root/files`（只读端点，不递归、不 preview、不可写）。
 - **进入项目子目录（currentPath 第一段 = 项目名）**：自动切换为该项目的可写 files，完全复用现有 project files API（`listProjectFiles` / `previewProjectFile` / upload / mkdir / rename / delete / save）。即「全局视角点进某项目 = 该项目 files tab」。
 - **数据源切换**：FilesPanel `rootBrowse` 模式下，纯函数 `resolveRootBrowseTarget(currentPath)` 按 currentPath 第一段决定走 root 只读端点还是 project 可写 API（单一数据管道，无平行渲染分支）。
+- **目录导航前缀不变式**：项目内点子目录须保持 currentPath 的 `"projectName/relativePath"` 前缀格式。`FileEntryList.onOpenDirectory` 传入的 `entry.path` 是项目根相对（无项目名前缀，`listProjectFiles` 返回 `relative(projectPath, ...)`），`goToPath` 须在 rootBrowse 项目层拼回当前 projectName 前缀；否则 `resolveRootBrowseTarget` 会把子目录名误判为 projectName → 404。根目录层 `entry.path` 即项目名（本身就是第一段），不拼前缀。
 - **移动端**：`MobileGlobalOverview` 加 tab 行（`总览 / 文件`），结构与项目总览对齐。无 history（全局无项目历史）、无 git（根目录非 git repo）。
 
 ## 5. 左总览视图样式
