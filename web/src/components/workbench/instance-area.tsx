@@ -624,7 +624,7 @@ export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
 
 function AgentPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   const detail = useAgentDetail(panelRef);
-  if (detail.isLoading) return <LoadingPanel />;
+  if (detail.isLoading) return null;
   if (detail.data?.session.provider === "claude2") {
     return (
       <ChatPanel
@@ -648,7 +648,7 @@ function AgentPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
 
 function TerminalPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   const detail = useTerminalDetail(panelRef);
-  if (detail.isLoading) return <LoadingPanel />;
+  if (detail.isLoading) return null;
   if (detail.data?.session) {
     return (
       <TerminalPanel
@@ -1413,14 +1413,6 @@ function GroupedView({ candidates, onClose, onFocus, onRename, t, dragAdapter }:
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function LoadingPanel() {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className={`min-h-32 flex-1 animate-pulse rounded-2xl ${shellSurfaceClasses.inset}`} />
     </div>
   );
 }
