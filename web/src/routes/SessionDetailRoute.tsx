@@ -12,7 +12,6 @@ import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import {
@@ -986,7 +985,6 @@ function XtermOutput({
 }: TerminalCoreProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
@@ -1059,9 +1057,6 @@ function XtermOutput({
       rightClickSelectsWord: true,
       logLevel: "warn",
     });
-
-    const fit = new FitAddon();
-    term.loadAddon(fit);
 
     // Use WebGL renderer for smoother scrolling on mobile. Falls back to the
     // DOM renderer if WebGL is unavailable.
@@ -1258,8 +1253,36 @@ function XtermOutput({
       }
     };
 
+    // addon-fit 的 proposeDimensions 在 scrollback>0 时会预留 14px 给 scrollbar
+    // (`overviewRuler?.width || 14`)，但 xterm viewport scrollbar 是 overlay —— 实测
+    // .xterm-viewport 宽度 === container 宽度，不占布局空间。这 14px 预留会让 canvas
+    // 比 container 窄 ~2 cols，terminal 右侧永久留白（桌面 workbench 单 group 单
+    // terminal 右侧露白同根因；container 越宽绝对留白越大，2 group 更窄时不明显）。
+    // 这里复制 fit 的尺寸算法但不减 scrollbar 宽度，让 canvas 顶到 container 右边。
+    const customFit = () => {
+      if (!term.element || !term.element.parentElement) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fitCore = (term as any)._core;
+      const dims = fitCore?._renderService?.dimensions;
+      if (!dims || dims.css.cell.width === 0 || dims.css.cell.height === 0) return;
+      const parentStyle = window.getComputedStyle(term.element.parentElement);
+      const elementStyle = window.getComputedStyle(term.element);
+      const height =
+        parseInt(parentStyle.height) -
+        (parseInt(elementStyle.paddingTop) + parseInt(elementStyle.paddingBottom));
+      const width =
+        parseInt(parentStyle.width) -
+        (parseInt(elementStyle.paddingLeft) + parseInt(elementStyle.paddingRight));
+      const cols = Math.max(2, Math.floor(width / dims.css.cell.width));
+      const rows = Math.max(1, Math.floor(height / dims.css.cell.height));
+      if (term.cols !== cols || term.rows !== rows) {
+        fitCore?._renderService?.clear?.();
+        term.resize(cols, rows);
+      }
+    };
+
     const fitAndNotifyResize = () => {
-      fit.fit();
+      customFit();
       notifyResize();
     };
 
@@ -1286,7 +1309,6 @@ function XtermOutput({
     scheduleInitialFit();
 
     termRef.current = term;
-    fitRef.current = fit;
 
     const write = (data: string) =>
       new Promise<void>((resolve) => {
@@ -1370,7 +1392,6 @@ function XtermOutput({
       terminalWriteRef.current = null;
       term.dispose();
       termRef.current = null;
-      fitRef.current = null;
       lastResizeRef.current = null;
     };
     // onSendInput and onResize are stable (useCallback); terminalWriteRef/terminalDataRef are refs
