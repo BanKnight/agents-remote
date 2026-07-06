@@ -1,4 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
+import type { Ref } from "react";
 
 import { useT } from "../../i18n";
 import { ShellIcon } from "./icons";
@@ -12,8 +13,11 @@ import { ShellMobileBottomNavigation, ShellMobileNavItemContent } from "./shell-
  * active 跟随当前 URL pathname：项目维度 = `/` 或 `/projects/*`，全局 = `/global*`，
  * 设置 = `/settings`。聚焦态（`/projects/$key/session/$id`、`/global/session/$id`）
  * 不渲染本组件（§7：单实例聚焦时一级 tab 让位给输入区）——由调用方按 focusId 决定。
+ *
+ * `ref` 透传给底层 `<nav>`，供 `ShellLayout`/`MobileWorkbench` 的 `useMeasuredBottomNav`
+ * 测量实际高度并注入 `--shell-mobile-bottom-nav-space`（移动滚动容器底部避让胶囊）。
  */
-export function MobilePrimaryNav() {
+export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
   const { t } = useT();
   const { pathname } = useLocation();
   const projectsActive = pathname === "/" || pathname.startsWith("/projects/");
@@ -21,7 +25,7 @@ export function MobilePrimaryNav() {
   const settingsActive = pathname === "/settings";
 
   return (
-    <ShellMobileBottomNavigation ariaLabel={t("nav.primaryMobileAria")} columns={3}>
+    <ShellMobileBottomNavigation ariaLabel={t("nav.primaryMobileAria")} columns={3} ref={ref}>
       <Link className="min-w-0 cursor-pointer" to="/">
         <ShellMobileNavItemContent
           active={projectsActive}

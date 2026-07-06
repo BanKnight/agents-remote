@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useMemo } from "react";
+import { Fragment, type CSSProperties, type ReactNode, useMemo } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
@@ -48,6 +48,7 @@ import { HistoryList } from "./history-list";
 import { SessionTable, type TableColumn } from "./workbench-table";
 import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
+import { useMeasuredBottomNav } from "../shell/shell-layout";
 
 type MobileWorkbenchProps = {
   scope: WorkbenchScope;
@@ -65,17 +66,29 @@ type MobileWorkbenchProps = {
  * + 顶部返回。
  */
 export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
+  // workbench 不走 ShellLayout，这里自行测量一级底部 nav 高度并注入
+  // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
+  // Git diff 等）底部正确避让胶囊（参考 ShellLayout 同款 useMeasuredBottomNav）。
+  // 聚焦态（focusId）无一级底部 nav（底部让位给输入区），传 null → height=0 → var=0px。
+  const { height: bottomNavHeight, measured: measuredBottomNav } = useMeasuredBottomNav(
+    focusId ? null : <MobilePrimaryNav />,
+  );
+  const mainStyle = {
+    "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
+  } as CSSProperties;
+
   if (!focusId) {
     return (
       <main
         className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        style={mainStyle}
       >
         {scope.kind === "global" ? (
           <MobileGlobalOverview />
         ) : (
           <MobileProjectOverview scope={scope} />
         )}
-        <MobilePrimaryNav />
+        {measuredBottomNav}
       </main>
     );
   }
@@ -83,6 +96,7 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
   return (
     <main
       className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+      style={mainStyle}
     >
       <MobileFocusBody focusId={focusId} scope={scope} />
     </main>
@@ -564,7 +578,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
         {activePlugin ? (
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
         ) : activeTab === "history" ? (
-          <div className="h-full overflow-y-auto p-3">
+          <div className="h-full overflow-y-auto p-3 pb-24 lg:pb-3">
             <HistoryList focusId={undefined} projectName={scope.key} showLabel={false} />
           </div>
         ) : (

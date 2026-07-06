@@ -38,19 +38,27 @@ type ShellLayoutProps = {
 
 type BottomNavigationElement = ReactElement<{ ref?: Ref<HTMLElement> }>;
 
-export function ShellLayout({ bottomNavigation, children, sidebar, variant }: ShellLayoutProps) {
-  const bottomNavigationRef = useRef<HTMLElement>(null);
-  const [bottomNavigationHeight, setBottomNavigationHeight] = useState(0);
+/**
+ * 测量底部导航元素实际高度（含 safe-area），供滚动容器底部避让。
+ * `cloneElement` 把 ref 注入到底部 nav 元素（需透传 ref 到底层 `<nav>`，如
+ * `MobilePrimaryNav`），`ResizeObserver` 跟踪高度变化。返回 `measured`（带 ref 的
+ * 可渲染节点）与 `height`（px，0 表示无 nav 或未挂载）。调用方把 `height` 作
+ * `--shell-mobile-bottom-nav-space` 注入到容器 style，滚动容器用
+ * `pb-[var(--shell-mobile-bottom-nav-space,0px)]` 消费。
+ */
+export function useMeasuredBottomNav(bottomNavigation: ReactNode) {
+  const ref = useRef<HTMLElement>(null);
+  const [height, setHeight] = useState(0);
 
   useLayoutEffect(() => {
-    const element = bottomNavigationRef.current;
+    const element = ref.current;
 
     if (!element) {
-      setBottomNavigationHeight(0);
+      setHeight(0);
       return;
     }
 
-    const updateHeight = () => setBottomNavigationHeight(element.getBoundingClientRect().height);
+    const updateHeight = () => setHeight(element.getBoundingClientRect().height);
 
     updateHeight();
     const observer = new ResizeObserver(updateHeight);
@@ -59,9 +67,16 @@ export function ShellLayout({ bottomNavigation, children, sidebar, variant }: Sh
     return () => observer.disconnect();
   }, [bottomNavigation]);
 
-  const measuredBottomNavigation = isValidElement(bottomNavigation)
-    ? cloneElement(bottomNavigation as BottomNavigationElement, { ref: bottomNavigationRef })
+  const measured = isValidElement(bottomNavigation)
+    ? cloneElement(bottomNavigation as BottomNavigationElement, { ref })
     : bottomNavigation;
+
+  return { height, measured };
+}
+
+export function ShellLayout({ bottomNavigation, children, sidebar, variant }: ShellLayoutProps) {
+  const { height: bottomNavigationHeight, measured: measuredBottomNavigation } =
+    useMeasuredBottomNav(bottomNavigation);
 
   return (
     <main
