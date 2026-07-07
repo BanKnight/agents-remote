@@ -16,6 +16,8 @@ import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remot
 import {
   type DropZone,
   type GlobalInstanceCandidate,
+  type LeafNode,
+  type TreeNode,
   type WorkbenchGroup,
   type WorkbenchLayoutV2,
   type WorkbenchMiddleTab,
@@ -25,12 +27,14 @@ import {
   DRAG_THRESHOLD_PX,
   WORKBENCH_MIDDLE_LEFT_MAX_REM,
   WORKBENCH_MIDDLE_LEFT_MIN_REM,
+  WORKBENCH_PANEL_DEFAULT_FLEX,
   activeTabRef,
   deriveGroupRows,
   deriveZone,
   dropIntoGroup,
   ensureTabOpen,
   filterWorkbenchViews,
+  findLeafNode,
   findTabBySessionId,
   groupByProject,
   inferSessionTypeFromId,
@@ -1864,6 +1868,142 @@ function WorkspaceGrid({
           />,
         ];
       })}
+    </div>
+  );
+}
+
+// ── V3 n 叉树渲染（设计 §7.5，C3 新增，C4 切换启用；InstanceArea 仍走 V2 WorkspaceGrid）──────────
+
+type WorkspaceTreeHandlers = {
+  activeZone: { targetGroupId: string | null; zone: DropZone } | null;
+  draggingRef: WorkbenchPanelRef | null;
+  onCloseLeafTab: (leafId: string, tabId: string) => void;
+  onResizeSplit: (
+    splitId: string,
+    leftChildId: string,
+    rightChildId: string,
+    deltaFlex: number,
+  ) => void;
+  onSelectTab: (leafId: string, tabId: string) => void;
+  onTabContextMenu: (leafId: string, tabId: string, x: number, y: number) => void;
+  onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
+  onToggleMaximize: (leafId: string) => void;
+};
+
+type WorkspaceTreeProps = WorkspaceTreeHandlers & {
+  create: CreateSessionApi | null;
+  hasActiveInstances: boolean;
+  maximized: string | null;
+  projectName: string | null;
+  root: TreeNode | null;
+};
+
+/** 把 leaf 适配成 GroupCell props（TreeNodeRender leaf 分支与 maximized 短路共用）。 */
+function renderLeaf(leaf: LeafNode, isMaximized: boolean, handlers: WorkspaceTreeHandlers) {
+  return (
+    <GroupCell
+      activeZone={handlers.activeZone}
+      dragRef={handlers.draggingRef}
+      flex={1}
+      group={leaf}
+      isMaximized={isMaximized}
+      onCloseTab={(tabId) => handlers.onCloseLeafTab(leaf.id, tabId)}
+      onSelectTab={(tabId) => handlers.onSelectTab(leaf.id, tabId)}
+      onTabContextMenu={(tabId, event) =>
+        handlers.onTabContextMenu(leaf.id, tabId, event.clientX, event.clientY)
+      }
+      onTabDragStart={handlers.onTabDragStart}
+      onToggleMaximize={() => handlers.onToggleMaximize(leaf.id)}
+    />
+  );
+}
+
+type TreeNodeRenderProps = {
+  flexWeight: number;
+  node: TreeNode;
+} & WorkspaceTreeHandlers;
+
+/**
+ * 递归渲染 TreeNode（设计 §7.5）。leaf → wrapper div（设 flex 权重）+ GroupCell(flex=1 填满)；
+ * split → flex 容器（horizontal=flex-row / vertical=flex-col）+ children 间插 SplitGutter
+ *（orientation 由 direction 决定；onResize 把 ratio×totalFlex 转 deltaFlex 给 resizeSplitChildren）。
+ * wrapper 与 split div 均 min-h-0 min-w-0 防 flex 压溃；gap-1 与 V2 WorkspaceGrid 一致。
+ */
+function TreeNodeRender({ flexWeight, node, ...handlers }: TreeNodeRenderProps): ReactNode {
+  if (node.kind === "leaf") {
+    return (
+      <div className="flex min-h-0 min-w-0" style={{ flex: `${flexWeight} 1 0` }}>
+        {renderLeaf(node, false, handlers)}
+      </div>
+    );
+  }
+  const orientation: "col" | "row" = node.direction === "horizontal" ? "col" : "row";
+  const containerClass =
+    node.direction === "horizontal"
+      ? "flex min-h-0 min-w-0 gap-1"
+      : "flex min-h-0 min-w-0 flex-col gap-1";
+  const totalFlex = node.children.reduce(
+    (sum, c) => sum + (node.sizes[c.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX),
+    0,
+  );
+  return (
+    <div className={containerClass} style={{ flex: `${flexWeight} 1 0` }}>
+      {node.children.flatMap((child, i) => {
+        const childWeight = node.sizes[child.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+        const cells: ReactNode[] = [
+          <TreeNodeRender flexWeight={childWeight} key={child.id} node={child} {...handlers} />,
+        ];
+        if (i < node.children.length - 1) {
+          const next = node.children[i + 1];
+          cells.push(
+            <SplitGutter
+              key={`gutter-${child.id}-${next.id}`}
+              onResize={(ratio) =>
+                handlers.onResizeSplit(node.id, child.id, next.id, ratio * totalFlex)
+              }
+              orientation={orientation}
+            />,
+          );
+        }
+        return cells;
+      })}
+    </div>
+  );
+}
+
+/**
+ * 右工作区 n 叉树渲染（V3，设计 §7.5）。root=null → EmptyInstanceArea；maximized 短路只渲染该
+ * leaf（对齐 V2 WorkspaceGrid 经 deriveGroupRows 收敛单 group 的行为）；否则递归 TreeNodeRender。
+ * C3 新增但未启用：InstanceArea 仍渲染 V2 WorkspaceGrid，C4 切换数据流后接管。
+ */
+export function WorkspaceTree({
+  root,
+  maximized,
+  create,
+  hasActiveInstances,
+  projectName,
+  ...handlers
+}: WorkspaceTreeProps) {
+  if (root === null) {
+    return (
+      <EmptyInstanceArea
+        create={create}
+        hasActiveInstances={hasActiveInstances}
+        projectName={projectName}
+      />
+    );
+  }
+  if (maximized !== null) {
+    const maxLeaf = findLeafNode(root, maximized);
+    if (maxLeaf) {
+      return (
+        <div className="flex h-full min-h-0 w-full p-1">{renderLeaf(maxLeaf, true, handlers)}</div>
+      );
+    }
+  }
+  return (
+    <div className="flex h-full min-h-0 w-full p-1">
+      <TreeNodeRender flexWeight={WORKBENCH_PANEL_DEFAULT_FLEX} node={root} {...handlers} />
     </div>
   );
 }

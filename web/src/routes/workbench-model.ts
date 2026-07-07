@@ -843,7 +843,7 @@ function findNode(node: TreeNode | null, id: string): TreeNode | null {
 }
 
 /** 按 id 查叶子（非 leaf 或不存在返 null）。 */
-function findLeafNode(node: TreeNode | null, leafId: string): LeafNode | null {
+export function findLeafNode(node: TreeNode | null, leafId: string): LeafNode | null {
   const found = findNode(node, leafId);
   return found && found.kind === "leaf" ? found : null;
 }
