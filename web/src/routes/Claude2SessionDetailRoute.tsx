@@ -3106,14 +3106,29 @@ function VirtualizedThreadContent({
 }
 
 function ChatSkeleton() {
-  // Each row mirrors a real bubble: a MessagePrimitive-shaped wrapper
-  // (px-3 sm:px-5 py-1.5) around a bubble div (rounded-2xl + single-corner
-  // variant, px-4 py-2.5) so padding/width/corners line up with live bubbles.
+  // 每行镜像真实气泡（L752 user / L972 assistant）：MessagePrimitive.Root 行（px-3 py-1.5
+  // sm:px-5 + justify-end/start）+ 气泡（max-w-[90%] rounded-2xl 单角 variant bg-* px-4 py-2.5
+  // self-start）。alpha 对齐真实（user-deep/60、surface-raised/70），宽度用 max-w-[90%] 而非
+  // 早期固定百分比（w-3/5 等不对应真实 max-w-[90%]）。内部行用 skeleton-shimmer（与
+  // NavItemSkeleton/CardGridSkeleton 范式一致），替代早期 bg-neutral-line 灰条 + 气泡层
+  // skeleton-shimmer 的双重处理——气泡只留底色，扫光交给内部文字行占位条。user 行短
+  //（1-2 行）、assistant 行长（3-4 行）模拟典型对话节奏；行宽不一让气泡宽度由内容决定
+  //（flex item），加载完真实气泡宽度由文字长度决定，行为一致。
   const rows = [
-    { align: "end", width: "w-3/5", bg: "bg-user-deep/50", corner: "rounded-br-md" },
-    { align: "start", width: "w-4/5", bg: "bg-surface-raised/60", corner: "rounded-bl-md" },
-    { align: "end", width: "w-[45%]", bg: "bg-user-deep/50", corner: "rounded-br-md" },
-    { align: "start", width: "w-[85%]", bg: "bg-surface-raised/60", corner: "rounded-bl-md" },
+    { align: "end", bg: "bg-user-deep/60", corner: "rounded-br-md", lines: ["w-28", "w-20"] },
+    {
+      align: "start",
+      bg: "bg-surface-raised/70",
+      corner: "rounded-bl-md",
+      lines: ["w-40", "w-32", "w-36"],
+    },
+    { align: "end", bg: "bg-user-deep/60", corner: "rounded-br-md", lines: ["w-24"] },
+    {
+      align: "start",
+      bg: "bg-surface-raised/70",
+      corner: "rounded-bl-md",
+      lines: ["w-44", "w-40", "w-36", "w-28"],
+    },
   ];
   return (
     <div className="px-3 sm:px-5" aria-hidden="true">
@@ -3122,11 +3137,13 @@ function ChatSkeleton() {
           key={i}
           className={`flex py-1.5 ${row.align === "end" ? "justify-end" : "justify-start"}`}
         >
-          <div
-            className={`${row.width} rounded-2xl ${row.corner} ${row.bg} skeleton-shimmer px-4 py-2.5`}
-          >
-            <div className="h-2.5 w-24 rounded bg-neutral-line/40" />
-            <div className="mt-1.5 h-2.5 w-16 rounded bg-neutral-line/25" />
+          <div className={`max-w-[90%] self-start rounded-2xl ${row.corner} ${row.bg} px-4 py-2.5`}>
+            {row.lines.map((w, j) => (
+              <div
+                className={`skeleton-shimmer h-2.5 rounded ${w}${j > 0 ? " mt-1.5" : ""}`}
+                key={j}
+              />
+            ))}
           </div>
         </div>
       ))}
