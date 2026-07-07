@@ -4,7 +4,7 @@ import type { AgentHistoryEntry } from "@agents-remote/shared";
 import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
-import { IconMarker, ShellSectionLabel } from "../shell/shell-primitives";
+import { IconMarker, NavItemSkeleton, ShellSectionLabel } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 
@@ -20,16 +20,14 @@ const ActiveDot = (
 const HISTORY_SKELETON_ROW_COUNT = 3;
 
 /**
- * 历史 session 加载骨架（行级，与 ShellNavigationButton 行高对齐）。首次拉取 pending 时
- * 占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格（CardGridSkeleton）形态
- * 不同：历史是紧凑导航行（h-8），卡片是高卡（h-20）。
+ * 历史 session 加载骨架（行级，复用 NavItemSkeleton，与 ShellNavigationButton 行高对齐）。
+ * 首次拉取 pending 时占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格
+ *（CardGridSkeleton）形态不同：历史是紧凑导航行，卡片是高卡。
  */
 function HistoryListSkeleton() {
   return (
     <div className="flex flex-col gap-1">
-      {Array.from({ length: HISTORY_SKELETON_ROW_COUNT }, (_, index) => (
-        <div className="h-8 animate-pulse rounded-lg bg-on-surface/5" key={index} />
-      ))}
+      <NavItemSkeleton count={HISTORY_SKELETON_ROW_COUNT} />
     </div>
   );
 }

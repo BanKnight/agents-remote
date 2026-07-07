@@ -5,7 +5,7 @@ import { useEffect, useState, type FormEvent, useId } from "react";
 import type { Project } from "@agents-remote/shared";
 import { listProjects } from "../../api/client";
 import { useT } from "../../i18n";
-import { IconMarker } from "../shell/shell-primitives";
+import { IconMarker, NavItemSkeleton } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import { INSTANCE_SKELETON_ROW_COUNT } from "./instance-area";
@@ -236,9 +236,7 @@ function ProjectsSectionHeader({ collapsed, onCreate, onToggle }: ProjectsSectio
 function LeftRailSkeleton() {
   return (
     <div className="flex flex-col gap-1 p-2">
-      {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT }, (_, index) => (
-        <div className="h-8 animate-pulse rounded-lg bg-on-surface/5" key={index} />
-      ))}
+      <NavItemSkeleton count={INSTANCE_SKELETON_ROW_COUNT} />
     </div>
   );
 }

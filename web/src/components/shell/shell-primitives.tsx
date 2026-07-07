@@ -152,6 +152,25 @@ export function NavItemContent({
   );
 }
 
+/**
+ * NavItem 骨架行（对齐 NavItemContent horizontal：marker + label，`px-2 py-1.5 rounded-md`）。
+ * 左栏项目节点 + 历史列表项加载占位复用——行高与真实 NavItemContent 一致（~52px：py-1.5 24px
+ * + marker h-7 28px），替代早期 h-8（32px）矮条，避免加载完跳到真实行高的视觉跳动。
+ * skeleton-shimmer 与 ChatSkeleton 一致（替代 animate-pulse）。
+ */
+export function NavItemSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }, (_, index) => (
+        <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5" key={index}>
+          <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
+          <span aria-hidden="true" className="skeleton-shimmer h-3.5 w-3/4 rounded" />
+        </div>
+      ))}
+    </>
+  );
+}
+
 type ShellSectionLabelProps = {
   children: ReactNode;
   className?: string;
