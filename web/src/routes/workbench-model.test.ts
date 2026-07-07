@@ -13,21 +13,15 @@ import {
   type WorkbenchLayout,
   type WorkbenchLayoutV2,
   type WorkbenchLayoutV3,
-  activeTabRef,
   activeTabRefLeaf,
-  addGroup,
-  addTabToGroup,
   addTabToLeaf,
-  createGroup,
   createLeaf,
   deriveGroupRows,
   deriveZone,
-  dropIntoGroup,
   dropIntoLeaf,
   ensureTabOpenLeaf,
   filterWorkbenchViews,
   findLeafBySessionId,
-  findTabBySessionId,
   findTabRefLeaf,
   groupByProject,
   inferSessionTypeFromId,
@@ -35,16 +29,10 @@ import {
   migrateV2ToV3,
   parseWorkbenchScope,
   rankGlobalInstances,
-  removeGroup,
   removeLeaf,
-  removeTabFromGroup,
   removeTabFromLeaf,
-  resizeGroups,
-  resizeRows,
   resizeSplitChildren,
-  setActiveTab,
   setActiveTabInLeaf,
-  toggleGroupMaximize,
   toggleLeafMaximize,
   validateLayoutV3,
   validateWorkbenchSearch,
@@ -205,13 +193,6 @@ const grp = (id: string, sessionIds: string[], projectName = "p"): WorkbenchGrou
   activeTabId: sessionIds[0],
 });
 
-test("createGroup: 单 tab + activeTabId", () => {
-  const g = createGroup(ref("p", "a"), "g1");
-  expect(g.id).toBe("g1");
-  expect(g.tabs).toEqual([ref("p", "a")]);
-  expect(g.activeTabId).toBe("a");
-});
-
 test("deriveGroupRows: flat groups 一行", () => {
   const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"]), grp("g3", ["c"])] });
   expect(deriveGroupRows(l)).toEqual([[grp("g1", ["a"]), grp("g2", ["b"]), grp("g3", ["c"])]]);
@@ -233,250 +214,6 @@ test("deriveGroupRows: maximized 收敛到单 group 单行", () => {
 test("deriveGroupRows: maximized 不存在 → []", () => {
   const l = v2({ groups: [grp("g1", ["a"])], maximized: "zzz" });
   expect(deriveGroupRows(l)).toEqual([]);
-});
-
-test("addGroup: 首个 group 设 activeGroupId + 默认 flex", () => {
-  const l = addGroup(EMPTY_WORKBENCH_LAYOUT_V2, grp("g1", ["a"]));
-  expect(l.groups).toEqual([grp("g1", ["a"])]);
-  expect(l.activeGroupId).toBe("g1");
-  expect(l.sizes.g1).toBe(WORKBENCH_PANEL_DEFAULT_FLEX);
-});
-
-test("addGroup: 第二个不抢 active；afterGroupId 指定位置", () => {
-  const l1 = addGroup(EMPTY_WORKBENCH_LAYOUT_V2, grp("g1", ["a"]));
-  const l2 = addGroup(l1, grp("g2", ["b"]));
-  expect(l2.activeGroupId).toBe("g1");
-  expect(l2.groups.map((g) => g.id)).toEqual(["g1", "g2"]);
-  const l3 = addGroup(l1, grp("g3", ["c"]), { afterGroupId: "g1" });
-  expect(l3.groups.map((g) => g.id)).toEqual(["g1", "g3"]);
-});
-
-test("addGroup: newRow 起新行（前一个加入 newRowAfter）", () => {
-  const l1 = addGroup(EMPTY_WORKBENCH_LAYOUT_V2, grp("g1", ["a"]));
-  const l2 = addGroup(l1, grp("g2", ["b"]), { newRow: true });
-  expect(l2.newRowAfter).toEqual(["g1"]);
-  expect(deriveGroupRows(l2).map((row) => row.map((g) => g.id))).toEqual([["g1"], ["g2"]]);
-});
-
-test("removeGroup: 删 active 回退 groups[0] + 清 sizes/newRowAfter", () => {
-  const l = v2({
-    groups: [grp("g1", ["a"]), grp("g2", ["b"]), grp("g3", ["c"])],
-    newRowAfter: ["g2"],
-    sizes: { g1: 1, g2: 2, g3: 3 },
-    activeGroupId: "g2",
-  });
-  const r = removeGroup(l, "g2");
-  expect(r.groups.map((g) => g.id)).toEqual(["g1", "g3"]);
-  expect(r.activeGroupId).toBe("g1");
-  expect(r.sizes).toEqual({ g1: 1, g3: 3 });
-  expect(r.newRowAfter).toEqual([]);
-});
-
-test("removeGroup: 删 maximized 的 group → null", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], maximized: "g2" });
-  expect(removeGroup(l, "g2").maximized).toBeNull();
-});
-
-test("removeGroup: 删行首 group → rowSizes 联动重算（下一行上移）", () => {
-  const l = v2({
-    groups: [grp("g1", ["a"]), grp("g2", ["b"]), grp("g3", ["c"])],
-    newRowAfter: ["g1"], // 行 [g1],[g2,g3]
-    rowSizes: { g1: 2, g2: 1 }, // g2 是第二行行首
-  });
-  // 删 g2（第二行行首）→ g3 上移成第二行行首；g3 之前不是行首 → rowSizes[g3] 用默认。
-  const r = removeGroup(l, "g2");
-  expect(deriveGroupRows(r).map((row) => row.map((g) => g.id))).toEqual([["g1"], ["g3"]]);
-  expect(r.rowSizes).toEqual({ g1: 2, g3: WORKBENCH_PANEL_DEFAULT_FLEX });
-});
-
-test("addTabToGroup: 队尾加 tab + 设 active", () => {
-  const l = v2({ groups: [grp("g1", ["a"])], activeGroupId: "g1" });
-  const r = addTabToGroup(l, "g1", ref("p", "b"));
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["a", "b"]);
-  expect(r.groups[0].activeTabId).toBe("b");
-});
-
-test("addTabToGroup: 重复 sessionId 仅激活不重复加", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"])], activeGroupId: "g1" });
-  const r = addTabToGroup(l, "g1", ref("p", "b"));
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["a", "b"]);
-  expect(r.groups[0].activeTabId).toBe("b");
-});
-
-test("setActiveTab: 切 active + 设 activeGroupId", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"])], activeGroupId: "g2" });
-  const r = setActiveTab(l, "g1", "b");
-  expect(r.groups[0].activeTabId).toBe("b");
-  expect(r.activeGroupId).toBe("g1");
-});
-
-test("setActiveTab: 不存在的 tab → noop", () => {
-  const l = v2({ groups: [grp("g1", ["a"])], activeGroupId: "g1" });
-  expect(setActiveTab(l, "g1", "zzz")).toBe(l);
-});
-
-test("removeTabFromGroup: 删非 active tab 不改 active", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"])], activeGroupId: "g1" });
-  const r = removeTabFromGroup(l, "g1", "b");
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["a"]);
-  expect(r.groups[0].activeTabId).toBe("a");
-});
-
-test("removeTabFromGroup: 删 active → 切剩余 [0]", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b", "c"])], activeGroupId: "g1" });
-  const r = removeTabFromGroup(l, "g1", "a");
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["b", "c"]);
-  expect(r.groups[0].activeTabId).toBe("b");
-});
-
-test("removeTabFromGroup: group 空 → removeGroup（active 迁移）", () => {
-  const l = v2({
-    groups: [grp("g1", ["a"]), grp("g2", ["b"])],
-    activeGroupId: "g1",
-    sizes: { g1: 1, g2: 1 },
-  });
-  const r = removeTabFromGroup(l, "g1", "a");
-  expect(r.groups.map((g) => g.id)).toEqual(["g2"]);
-  expect(r.sizes).toEqual({ g2: 1 });
-  expect(r.activeGroupId).toBe("g2");
-});
-
-test("resizeGroups: 守恒（左增 = 右减）", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], sizes: { g1: 1, g2: 1 } });
-  const r = resizeGroups(l, "g1", "g2", 0.3);
-  expect(r.sizes.g1).toBeCloseTo(1.3);
-  expect(r.sizes.g2).toBeCloseTo(0.7);
-});
-
-test("resizeGroups: 钳制到 MIN_FLEX（右不小于 MIN）", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], sizes: { g1: 1, g2: 1 } });
-  const r = resizeGroups(l, "g1", "g2", 5);
-  expect(r.sizes.g2).toBeCloseTo(WORKBENCH_PANEL_MIN_FLEX);
-  expect(r.sizes.g1).toBeCloseTo(1 + (1 - WORKBENCH_PANEL_MIN_FLEX));
-});
-
-test("resizeRows: 纵向守恒（key=行首 groupId）", () => {
-  const l = v2({
-    groups: [grp("g1", ["a"]), grp("g2", ["b"])],
-    newRowAfter: ["g1"],
-    rowSizes: { g1: 1, g2: 1 },
-  });
-  const r = resizeRows(l, "g1", "g2", 0.4);
-  expect(r.rowSizes.g1).toBeCloseTo(1.4);
-  expect(r.rowSizes.g2).toBeCloseTo(0.6);
-});
-
-test("toggleGroupMaximize: 设 maximized + activeGroupId；再 toggle 还原", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], activeGroupId: "g1" });
-  const r1 = toggleGroupMaximize(l, "g2");
-  expect(r1.maximized).toBe("g2");
-  expect(r1.activeGroupId).toBe("g2");
-  expect(toggleGroupMaximize(r1, "g2").maximized).toBeNull();
-});
-
-test("findTabBySessionId: 找到 / 没找到", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"]), grp("g2", ["c"])] });
-  expect(findTabBySessionId(l, "b")).toEqual({ groupId: "g1", tabIndex: 1 });
-  expect(findTabBySessionId(l, "zzz")).toBeNull();
-});
-
-test("activeTabRef: 活动 group 的活动 tab / 无活动 group → null", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"])], activeGroupId: "g1" });
-  expect(activeTabRef(l)).toEqual(ref("p", "a"));
-  const l2 = v2({ groups: [grp("g1", ["a"])], activeGroupId: null });
-  expect(activeTabRef(l2)).toBeNull();
-});
-
-test("dropIntoGroup: 空白区 = 首个 group（ref 不在 layout）", () => {
-  const r = dropIntoGroup(EMPTY_WORKBENCH_LAYOUT_V2, ref("p", "a"), null, "center");
-  expect(r.groups).toHaveLength(1);
-  expect(r.groups[0].tabs).toEqual([ref("p", "a")]);
-  expect(r.activeGroupId).toBe(r.groups[0].id);
-});
-
-test("dropIntoGroup: 空白区 ref 已存在 → 激活该 tab（不新 group）", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "b"), null, "center");
-  expect(r.groups).toHaveLength(1);
-  expect(r.groups[0].activeTabId).toBe("b");
-});
-
-test("dropIntoGroup: center 在 target group 开新 tab", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "c"), "g1", "center");
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["a", "c"]);
-  expect(r.groups[0].activeTabId).toBe("c");
-});
-
-test("dropIntoGroup: center ref 已在 target → 仅激活", () => {
-  const l = v2({ groups: [grp("g1", ["a", "b"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "b"), "g1", "center");
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["a", "b"]);
-  expect(r.groups[0].activeTabId).toBe("b");
-});
-
-test("dropIntoGroup: center 跨 group 迁移（原组空则删）", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "b"), "g1", "center");
-  expect(r.groups).toHaveLength(1);
-  expect(r.groups[0].id).toBe("g1");
-  expect(r.groups[0].tabs.map((t) => t.sessionId)).toEqual(["a", "b"]);
-});
-
-test("dropIntoGroup: left 同行（新 group 插 target 之前）", () => {
-  const l = v2({ groups: [grp("g1", ["a"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "b"), "g1", "left");
-  expect(r.groups[0].tabs).toEqual([ref("p", "b")]);
-  expect(r.groups[1].id).toBe("g1");
-  expect(deriveGroupRows(r)).toHaveLength(1);
-});
-
-test("dropIntoGroup: right 同行（新 group 插 target 之后）", () => {
-  const l = v2({ groups: [grp("g1", ["a"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "b"), "g1", "right");
-  expect(r.groups[0].id).toBe("g1");
-  expect(r.groups[1].tabs).toEqual([ref("p", "b")]);
-  expect(deriveGroupRows(r)).toHaveLength(1);
-});
-
-test("dropIntoGroup: right target 是行尾 → 换行标记迁移到新 group", () => {
-  const l = v2({
-    groups: [grp("g1", ["a"]), grp("g2", ["b"]), grp("g3", ["c"])],
-    newRowAfter: ["g2"], // 行 [g1,g2],[g3]
-    activeGroupId: "g1",
-  });
-  const r = dropIntoGroup(l, ref("p", "d"), "g2", "right");
-  expect(r.newRowAfter).not.toContain("g2");
-  expect(deriveGroupRows(r).map((row) => row.map((g) => g.id))).toHaveLength(2);
-});
-
-test("dropIntoGroup: up 新 group 在 target 所在行上方独占新行", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "c"), "g2", "up");
-  const gcId = r.groups.find((g) => g.tabs.some((t) => t.sessionId === "c"))!.id;
-  expect(deriveGroupRows(r).map((row) => row.map((g) => g.id))).toEqual([[gcId], ["g1", "g2"]]);
-});
-
-test("dropIntoGroup: down 新 group 在 target 所在行下方独占新行", () => {
-  const l = v2({ groups: [grp("g1", ["a"]), grp("g2", ["b"])], activeGroupId: "g1" });
-  const r = dropIntoGroup(l, ref("p", "c"), "g1", "down");
-  const gcId = r.groups.find((g) => g.tabs.some((t) => t.sessionId === "c"))!.id;
-  expect(deriveGroupRows(r).map((row) => row.map((g) => g.id))).toEqual([["g1", "g2"], [gcId]]);
-});
-
-test("dropIntoGroup: down 到中间行 → 新 group 独占新行，下方行保持", () => {
-  const l = v2({
-    groups: [grp("g1", ["a"]), grp("g2", ["b"]), grp("g3", ["c"]), grp("g4", ["d"])],
-    newRowAfter: ["g2"], // 行 [g1,g2],[g3,g4]
-    activeGroupId: "g1",
-  });
-  const r = dropIntoGroup(l, ref("p", "e"), "g1", "down");
-  const gcId = r.groups.find((g) => g.tabs.some((t) => t.sessionId === "e"))!.id;
-  expect(deriveGroupRows(r).map((row) => row.map((g) => g.id))).toEqual([
-    ["g1", "g2"],
-    [gcId],
-    ["g3", "g4"],
-  ]);
 });
 
 test("migrateLegacyLayout: 每 panel → 1 group 1 tab；sizes 映射", () => {
