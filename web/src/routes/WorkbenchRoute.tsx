@@ -1,18 +1,20 @@
 import { useParams, useSearch } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { InstanceArea } from "../components/workbench/instance-area";
 import { WorkbenchLeftRail } from "../components/workbench/left-rail";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
+import { HomeRoute } from "./HomeRoute";
 import {
   type WorkbenchMiddleTab,
   type WorkbenchRightTab,
   type WorkbenchScope,
   type WorkbenchView,
   inferSessionTypeFromId,
+  useIsDesktopViewport,
   useWorkbenchNavigate,
   workbenchMiddleTabAtom,
   workbenchRightCollapsedAtom,
@@ -47,9 +49,21 @@ export function ProjectFocusRoute() {
   );
 }
 
+export function GlobalScopeContent({
+  rightTab,
+  tab,
+  view,
+}: {
+  rightTab?: WorkbenchRightTab;
+  tab?: WorkbenchMiddleTab;
+  view?: WorkbenchView;
+}) {
+  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} tab={tab} view={view} />;
+}
+
 export function GlobalScopeRoute() {
   const { rightTab, view, tab } = useSearch({ from: "/global" });
-  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} tab={tab} view={view} />;
+  return <GlobalScopeContent rightTab={rightTab} tab={tab} view={view} />;
 }
 
 export function GlobalFocusRoute() {
@@ -64,6 +78,18 @@ export function GlobalFocusRoute() {
       view={view}
     />
   );
+}
+
+/**
+ * 应用入口路由 `/`（设计文档 §11）：viewport 分流——桌面（≥lg）渲染 global scope
+ * 工作台（IDE 化常驻，对齐 workbench-redesign.md §1），移动（<lg）渲染项目列表（HomeRoute）。
+ * useIsDesktopViewport 客户端首 render 即真实视口，移动端无闪屏。由 router.tsx indexRoute lazy 挂载。
+ */
+export function IndexRoute() {
+  const { rightTab, view, tab } = useSearch({ from: "/" });
+  const isDesktop = useIsDesktopViewport();
+  if (!isDesktop) return <HomeRoute />;
+  return <GlobalScopeContent rightTab={rightTab} tab={tab} view={view} />;
 }
 
 function WorkbenchContent({
@@ -148,22 +174,4 @@ function WorkbenchContent({
       />
     </WorkbenchShell>
   );
-}
-
-/**
- * 桌面视口检测（lg = 1024px，与 WorkbenchShell 三栏/单列断点一致）。
- * 移动端（<lg）走 MobileWorkbench 线性退化；桌面走三栏。Stage 5 提到 lib/ 复用。
- */
-function useIsDesktopViewport() {
-  const [isDesktop, setIsDesktop] = useState(
-    () => window.matchMedia?.("(min-width: 1024px)").matches ?? true,
-  );
-  useEffect(() => {
-    const media = window.matchMedia?.("(min-width: 1024px)");
-    if (!media) return;
-    const handler = () => setIsDesktop(media.matches);
-    media.addEventListener("change", handler);
-    return () => media.removeEventListener("change", handler);
-  }, []);
-  return isDesktop;
 }

@@ -358,6 +358,8 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 > `focusId` 语义变化（vs 旧版）：从「中栏换成单实例 SplitLayout」变为「右工作区活动 group 的活动 tab」。中栏左总览 + tab 导航 + view 切换 在聚焦/非聚焦都常驻——这是修复「导航/视图被挤掉」的核心。Phase D 进一步把活动 group 升级为含多 tab 的容器（§7），focusId 仍 = sessionId，唯一反查 group+tab。
 
+**入口路由 `/`（viewport 分流，非 redirect）**：`/` 是应用入口，由 `IndexRoute` + `useIsDesktopViewport` 在组件层分流——桌面（≥lg）渲染 **global scope 工作台**（IDE 化常驻，对齐 §1「桌面抛弃 Home→Project→detail 换页模型，进入即常驻三栏」），移动（<lg）渲染**项目列表**（`HomeRoute`，对应移动端底部 nav「项目」一级入口）。`useIsDesktopViewport` 客户端首 render 即真实 viewport（CSR 无 hydrate mismatch），移动端不会先闪工作台再切列表。`/global` 路由保留：移动端底部 nav「全局」一级入口 + 旧 URL 兼容；桌面端 `/global` 与 `/` 等价渲染（桌面底部 nav `lg:hidden`，桌面用户不手访 `/global`，冗余无害）。桌面 `/` 取 global scope 而非「最近 project」——左栏项目 section（§52）已提供项目切换入口，避免引入「记忆最近 projectKey」的隐式状态。
+
 ## 12. header padding（独立小改）
 
 `MobilePageHeader` 现是 `px-2`，正文内容区 `px-3` → header 比正文窄。统一为 `px-3`（所有移动 header 一致对齐正文）。**高度也统一 `h-11`**：`MobilePageHeader`（大标题式）与 `MobileTabHeader`（tab 横滚式）两套 primitive 并存但视觉高度对齐 `h-11`，覆盖三个一级页面（项目列表 / 全局 / 设置）+ 项目总览 + 聚焦态所有移动 header。

@@ -7,7 +7,6 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
-import { HomeRoute } from "./HomeRoute";
 import { parseWorkbenchScope, validateWorkbenchSearch } from "./workbench-model";
 
 const rootRoute = createRootRoute({
@@ -18,10 +17,13 @@ const rootRoute = createRootRoute({
   ),
 });
 
+// `/` 入口路由（设计文档 §11）：桌面渲染 global 工作台 / 移动渲染项目列表，由 IndexRoute
+// + useIsDesktopViewport 在组件层分流（非 redirect——beforeLoad 不知视口，跨端同 URL）。
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomeRoute,
+  validateSearch: validateWorkbenchSearch,
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "IndexRoute"),
 });
 
 // ── workbench 主动路由（中栏语义命名，去 /workbench 前缀，设计文档 §7）──────────────

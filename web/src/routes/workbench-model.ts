@@ -1,5 +1,6 @@
 import { atom, useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentProvider, AgentSessionStatus, SessionType } from "@agents-remote/shared";
 
@@ -248,6 +249,28 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     result.tab = search.tab;
   }
   return result;
+}
+
+/**
+ * 桌面视口检测（lg = 1024px，与 WorkbenchShell 三栏/单列断点一致）。
+ * 移动端（<lg）走 MobileWorkbench 线性退化；桌面走三栏。供 `IndexRoute` 在 `/` 入口
+ * 按视口分流（桌面 global 工作台 / 移动项目列表），以及 `WorkbenchContent` 选三栏/线性。
+ *
+ * 客户端首 render 即真实 viewport（CSR 无 hydrate mismatch，移动端不会先闪工作台再切列表）；
+ * `?? true` 仅为 jsdom 等无 matchMedia 环境的 fallback。
+ */
+export function useIsDesktopViewport() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => window.matchMedia?.("(min-width: 1024px)").matches ?? true,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.("(min-width: 1024px)");
+    if (!media) return;
+    const handler = () => setIsDesktop(media.matches);
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
+  return isDesktop;
 }
 
 /**
