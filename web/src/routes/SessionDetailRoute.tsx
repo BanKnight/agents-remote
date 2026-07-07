@@ -1261,6 +1261,12 @@ function XtermOutput({
     // 这里复制 fit 的尺寸算法但不减 scrollbar 宽度，让 canvas 顶到 container 右边。
     const customFit = () => {
       if (!term.element || !term.element.parentElement) return;
+      // GroupCell 多 tab：非活动 tab 用 display:none 保留 xterm 不卸载（claude2 relay 不重读
+      // JSONL，避免丢早消息）。display:none / 未挂载的容器不参与布局，computed height/width 解析为
+      // "auto" → parseInt 得 NaN → term.resize 触发 xterm "only accepts integers"。offsetParent
+      // === null 涵盖 display:none 与脱离布局；这些场景跳过本次 fit，等 tab 切回可见（ResizeObserver
+      // 因 size 0→非0 触发补 fit）或布局稳定后再算。
+      if (term.element.parentElement.offsetParent === null) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fitCore = (term as any)._core;
       const dims = fitCore?._renderService?.dimensions;
@@ -1273,6 +1279,7 @@ function XtermOutput({
       const width =
         parseInt(parentStyle.width) -
         (parseInt(elementStyle.paddingLeft) + parseInt(elementStyle.paddingRight));
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
       const cols = Math.max(2, Math.floor(width / dims.css.cell.width));
       const rows = Math.max(1, Math.floor(height / dims.css.cell.height));
       if (term.cols !== cols || term.rows !== rows) {
