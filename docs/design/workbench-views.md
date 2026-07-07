@@ -360,6 +360,8 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 **入口路由 `/`（viewport 分流，非 redirect）**：`/` 是应用入口，由 `IndexRoute` + `useIsDesktopViewport` 在组件层分流——桌面（≥lg）渲染 **global scope 工作台**（IDE 化常驻，对齐 §1「桌面抛弃 Home→Project→detail 换页模型，进入即常驻三栏」），移动（<lg）渲染**项目列表**（`HomeRoute`，对应移动端底部 nav「项目」一级入口）。`useIsDesktopViewport` 客户端首 render 即真实 viewport（CSR 无 hydrate mismatch），移动端不会先闪工作台再切列表。`/global` 路由保留：移动端底部 nav「全局」一级入口 + 旧 URL 兼容；桌面端 `/global` 与 `/` 等价渲染（桌面底部 nav `lg:hidden`，桌面用户不手访 `/global`，冗余无害）。桌面 `/` 取 global scope 而非「最近 project」——左栏项目 section（§52）已提供项目切换入口，避免引入「记忆最近 projectKey」的隐式状态。
 
+**两端同一个 workbench（移动 3 tab = 桌面左栏 3 部分）**：移动端底部 nav 三 tab（项目 / 全局 / 设置）并非独立产品，而是桌面三栏**左栏**三部分在窄屏的 tab 化拆分——「项目」= 左栏项目 section（§52），「全局」= 左栏全局节点，「设置」= 左栏设置入口。窄屏把左栏垂直堆叠拆成底部 tab 横向切换，桌面左栏则三者同屏常驻。故移动 `/`（项目切面）即桌面 `/`（global workbench）左栏项目部分的窄屏形态——同一 workbench 的两种视口适配，非两套页面。`/global` 是 global scope 的规范 URL，`/` 是桌面入口别名；桌面用户在 `/` 点左栏全局节点会归一到 `/global`（`left-rail.tsx selectGlobal`），交互后 URL 一致、非 bug。
+
 ## 12. header padding（独立小改）
 
 `MobilePageHeader` 现是 `px-2`，正文内容区 `px-3` → header 比正文窄。统一为 `px-3`（所有移动 header 一致对齐正文）。**高度也统一 `h-11`**：`MobilePageHeader`（大标题式）与 `MobileTabHeader`（tab 横滚式）两套 primitive 并存但视觉高度对齐 `h-11`，覆盖三个一级页面（项目列表 / 全局 / 设置）+ 项目总览 + 聚焦态所有移动 header。
