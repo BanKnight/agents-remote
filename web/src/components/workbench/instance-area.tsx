@@ -621,7 +621,7 @@ export function InstanceArea({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className={`flex h-full min-h-0 flex-col${dragState ? " select-none" : ""}`}>
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
         {visibleTabs.map((opt) => (
           <TabButton
@@ -1662,6 +1662,15 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
     draggingRef.current = false;
   };
 
+  const onMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    // 抑制原生鼠标拖动选中文本：mousedown 启动 selection tracking，preventDefault 在源头
+    // 阻止（pointerdown 的 preventDefault 不传递到 mousedown 默认行为，必须 mousedown 自己）。
+    // close 按钮内起始不阻止（保留其原生 click 合成路径）。
+    if (event.button !== 0) return;
+    const inClose = !!(event.target as HTMLElement).closest("button");
+    if (!inClose) event.preventDefault();
+  };
+
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const start = startRef.current;
     if (!start || draggingRef.current) return;
@@ -1693,6 +1702,7 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
   return (
     <div
       className="min-w-0"
+      onMouseDown={onMouseDown}
       onPointerCancel={endPointer}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
