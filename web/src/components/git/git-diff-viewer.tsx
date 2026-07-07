@@ -8,7 +8,13 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
-import { IconMarker, ListRow, pillToneClasses, type ShellTone } from "../shell/shell-primitives";
+import {
+  IconMarker,
+  ListRow,
+  ListRowSkeleton,
+  pillToneClasses,
+  type ShellTone,
+} from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 
@@ -356,13 +362,26 @@ export function GitDiffPanel({
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
 
   if (diff.isLoading) {
+    // 结构已知（scope chips 行 + ListRow 文件列表），按 loaded 布局 mirror 骨架，
+    // 避免加载完从 ping spinner 跳到真实结构的视觉断层。右侧 diff panel 不渲染
+    //（首次加载无 selectedFile，与 loaded 未选态一致，不叠占位）。
     return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 p-4 pt-10 lg:justify-center lg:pt-0">
-        <span className="relative flex h-3 w-3" aria-hidden="true">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
-        </span>
-        <span className="text-xs font-semibold text-on-surface-muted">{t("git.loading")}</span>
+      <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
+        <div aria-hidden="true" className="border-b border-neutral-line/40 px-3.5 py-3">
+          <div className="flex flex-wrap gap-1.5">
+            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
+            <span className="skeleton-shimmer h-6 w-20 rounded-full" />
+            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
+            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+          <aside className="min-h-0 flex-1 flex flex-col sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60">
+            <div className="min-h-0 overflow-y-auto p-3">
+              <ListRowSkeleton count={4} />
+            </div>
+          </aside>
+        </div>
       </div>
     );
   }

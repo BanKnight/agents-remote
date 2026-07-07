@@ -444,6 +444,29 @@ export function ListRow({
   );
 }
 
+/**
+ * ListRow 骨架行（对齐 ListRow：marker + title，`rounded-xl px-3 py-2.5 raised`）。
+ * Git 文件列表 + File 列表加载占位复用——行高与真实 ListRow 一致（~48px：py-2.5 20px
+ * + marker h-7 28px），替代文案/spinner，避免加载完跳到真实行结构的视觉跳动。
+ * 不模拟 meta/actions（Git status 标签、File dropdown 各异，占位反失真）；外层
+ * `grid gap-1.5` 与真实列表容器一致，padding 由调用方提供。
+ */
+export function ListRowSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div aria-hidden="true" className="grid gap-1.5">
+      {Array.from({ length: count }, (_, index) => (
+        <div
+          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${shellSurfaceClasses.raised}`}
+          key={index}
+        >
+          <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-md" />
+          <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/2 rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type MobilePageHeaderProps = {
   actions?: ReactNode;
   back?: { label: string; onClick: () => void };

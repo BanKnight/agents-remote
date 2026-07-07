@@ -15,7 +15,13 @@ import {
   deleteFile,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
-import { ActionButton, IconMarker, ListRow, shellSurfaceClasses } from "../shell/shell-primitives";
+import {
+  ActionButton,
+  IconMarker,
+  ListRow,
+  ListRowSkeleton,
+  shellSurfaceClasses,
+} from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import {
   DropdownMenu,
@@ -228,7 +234,8 @@ export function FileEntryList({
     [t, onDelete, onStartRename],
   );
 
-  if (isLoading) return <ResourceStatePanel tone="inset" message={t("files.loading")} />;
+  // 结构已知（ListRow 网格），用骨架 mirror loaded 网格，padding 由外层 p-3 提供。
+  if (isLoading) return <ListRowSkeleton count={5} />;
   if (error)
     return (
       <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
