@@ -755,6 +755,607 @@ export function findTabRef(layout: WorkbenchLayoutV2, sessionId: string): Workbe
   return layout.groups.find((g) => g.id === found.groupId)?.tabs[found.tabIndex] ?? null;
 }
 
+// ── 中栏 n 叉树布局（V3，VSCode 同构，设计文档 §7.5/§7.6）─────────────────────
+// V2 规则行模型「新起一行 = 占满整行」绑定不可分，无法表达单 group 内部上下分屏；
+// V3 改 n 叉树：每次 split 在某 leaf 一侧插兄弟 leaf，同方向追加到现有 split（不嵌套），
+// 不同方向用 wrap(target,newLeaf) 替换 target。LeafNode 复用 WorkbenchGroup 结构
+//（GroupCell 零改动）；SplitNode 持 sizes（父控子占比，支持嵌套）。
+// V2 编辑函数保留至 C5（迁移 building block）；V2→V3 由 migrateV2ToV3 一次性迁移。
+
+/** split 方向：horizontal=flex-row 左右排，vertical=flex-col 上下排。 */
+export type SplitDirection = "horizontal" | "vertical";
+
+/** 叶节点 = group（含 N tab，同 group 只显 active tab）。复用 WorkbenchGroup 结构。 */
+export type LeafNode = WorkbenchGroup & { kind: "leaf" };
+
+/** split 节点：按 direction 排布 children，sizes 控各 child 占比（key=child.id，默认权重）。 */
+export type SplitNode = {
+  kind: "split";
+  id: string;
+  direction: SplitDirection;
+  children: TreeNode[];
+  sizes: Record<string, number>;
+};
+
+export type TreeNode = LeafNode | SplitNode;
+
+/**
+ * 中栏 n 叉树布局 state（设计 §7.6）。State/Render 分离：raw 树结构，渲染由 WorkspaceTree 递归。
+ * - `root`：树根（null=空工作区）。叶=group，split=按方向排布的子树。
+ * - `activeGroupId`：当前激活 leaf（必为树中某 leaf id 或 null）。
+ * - `maximized`：独占 leaf 的 id（leaf 级）；独占时该 leaf tab 栏仍可切 tab，其他 leaf hidden 不卸载。
+ */
+export type WorkbenchLayoutV3 = {
+  root: TreeNode | null;
+  activeGroupId: string | null;
+  maximized: string | null;
+};
+
+export const EMPTY_WORKBENCH_LAYOUT_V3: WorkbenchLayoutV3 = {
+  root: null,
+  activeGroupId: null,
+  maximized: null,
+};
+
+/** 生成 split id（crypto.randomUUID，稳定：children 重组后 sizes key 不错位）。 */
+function createSplitId(): string {
+  return crypto.randomUUID();
+}
+
+/** 创建含单 tab 的 leaf（dropIntoLeaf 开新 group / 首次进入用）。id 可选（测试断言用）。 */
+export function createLeaf(tab: WorkbenchPanelRef, id: string = createGroupId()): LeafNode {
+  return { kind: "leaf", id, tabs: [tab], activeTabId: tab.sessionId };
+}
+
+// ── 树遍历辅助（私有，纯函数）─────────────────────────────────────────────────
+
+/** 子树是否含某 id。 */
+function containsId(node: TreeNode, id: string): boolean {
+  if (node.id === id) return true;
+  if (node.kind === "leaf") return false;
+  return node.children.some((c) => containsId(c, id));
+}
+
+/** 前序收集所有叶子（渲染/查找/不变式校验用）。 */
+function collectLeaves(node: TreeNode | null): LeafNode[] {
+  if (!node) return [];
+  if (node.kind === "leaf") return [node];
+  return node.children.flatMap(collectLeaves);
+}
+
+/** 前序首个叶子（active/maximized 回退用）。 */
+function firstLeaf(node: TreeNode | null): LeafNode | null {
+  if (!node) return null;
+  if (node.kind === "leaf") return node;
+  return firstLeaf(node.children[0]);
+}
+
+/** 按 id 查任意节点。 */
+function findNode(node: TreeNode | null, id: string): TreeNode | null {
+  if (!node) return null;
+  if (node.id === id) return node;
+  if (node.kind === "leaf") return null;
+  for (const child of node.children) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** 按 id 查叶子（非 leaf 或不存在返 null）。 */
+function findLeafNode(node: TreeNode | null, leafId: string): LeafNode | null {
+  const found = findNode(node, leafId);
+  return found && found.kind === "leaf" ? found : null;
+}
+
+/** 找直接含 leafId 的 split（leafId 是其直接 child）。null = leafId 是 root 自身或不在树。 */
+function findParentSplit(
+  node: TreeNode,
+  leafId: string,
+): { parent: SplitNode; index: number } | null {
+  if (node.kind === "leaf") return null;
+  const directIdx = node.children.findIndex((c) => c.id === leafId);
+  if (directIdx !== -1) return { parent: node, index: directIdx };
+  for (const child of node.children) {
+    if (child.kind === "split" && containsId(child, leafId)) {
+      return findParentSplit(child, leafId);
+    }
+  }
+  return null;
+}
+
+/** 把树中 oldId 节点替换成 replacement（不可变，返回新树；oldId 不在则原样返回）。 */
+function replaceInTree(root: TreeNode, oldId: string, replacement: TreeNode): TreeNode {
+  if (root.id === oldId) return replacement;
+  if (root.kind === "leaf") return root;
+  let changed = false;
+  const newChildren = root.children.map((c) => {
+    if (containsId(c, oldId)) {
+      changed = true;
+      return replaceInTree(c, oldId, replacement);
+    }
+    return c;
+  });
+  return changed ? { ...root, children: newChildren } : root;
+}
+
+// ── 树编辑辅助（私有，递归不可变）─────────────────────────────────────────────
+
+/**
+ * 从子树删 leaf 的某 tab（leaf 清空则整 leaf 删，触发子树提升）。
+ * 返回新子树（null = 此子树整体被删空）。child 退化提升（剩 1 child）时返回该 sole child，
+ * id 变，调用方据 `result.id !== child.id` 迁移 sizes 权重。
+ *
+ * 正常 layout（不变式：同方向不嵌套）下，removeLeaf/removeTab 不会产生新的同方向嵌套：
+ * 退化提升的 sole child 方向必与其新祖父不同（祖父与原父不同方向，原父与 sole 同方向才退化，
+ * 故祖父与 sole 不同方向），无需主动合并。
+ */
+function removeTabFromLeafTree(node: TreeNode, leafId: string, tabId: string): TreeNode | null {
+  if (node.kind === "leaf") {
+    if (node.id !== leafId) return node;
+    const newTabs = node.tabs.filter((t) => t.sessionId !== tabId);
+    if (newTabs.length === 0) return null;
+    const newActive = node.activeTabId === tabId ? newTabs[0].sessionId : node.activeTabId;
+    return { ...node, tabs: newTabs, activeTabId: newActive };
+  }
+  if (!containsId(node, leafId)) return node;
+  const newSizes: Record<string, number> = {};
+  const newChildren: TreeNode[] = [];
+  for (const child of node.children) {
+    const result = removeTabFromLeafTree(child, leafId, tabId);
+    if (result === null) continue; // child 整体被删，sizes key 不迁移
+    const key = result.id === child.id ? child.id : result.id; // 退化提升 → 权重迁移给新 id
+    newSizes[key] = node.sizes[child.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+    newChildren.push(result);
+  }
+  if (newChildren.length === 0) return null;
+  if (newChildren.length === 1) return newChildren[0]; // 退化提升 sole，丢弃本层 sizes
+  return { ...node, children: newChildren, sizes: newSizes };
+}
+
+/** 删整个 leaf（不管 tab，kill prune / 测试用）。子树提升同 removeTabFromLeafTree。 */
+function removeLeafFromTree(node: TreeNode, leafId: string): TreeNode | null {
+  if (node.kind === "leaf") return node.id === leafId ? null : node;
+  if (!containsId(node, leafId)) return node;
+  const newSizes: Record<string, number> = {};
+  const newChildren: TreeNode[] = [];
+  for (const child of node.children) {
+    const result = removeLeafFromTree(child, leafId);
+    if (result === null) continue;
+    const key = result.id === child.id ? child.id : result.id;
+    newSizes[key] = node.sizes[child.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+    newChildren.push(result);
+  }
+  if (newChildren.length === 0) return null;
+  if (newChildren.length === 1) return newChildren[0];
+  return { ...node, children: newChildren, sizes: newSizes };
+}
+
+/** 激活 leaf 的指定 tab（树内替换，不变结构）。leafId/tabId 不匹配则原样。 */
+function setActiveTabInLeafTree(node: TreeNode, leafId: string, tabId: string): TreeNode {
+  if (node.kind === "leaf") {
+    if (node.id !== leafId || !node.tabs.some((t) => t.sessionId === tabId)) return node;
+    if (node.activeTabId === tabId) return node;
+    return { ...node, activeTabId: tabId };
+  }
+  if (!containsId(node, leafId)) return node;
+  let changed = false;
+  const newChildren = node.children.map((c) => {
+    if (containsId(c, leafId)) {
+      changed = true;
+      return setActiveTabInLeafTree(c, leafId, tabId);
+    }
+    return c;
+  });
+  return changed ? { ...node, children: newChildren } : node;
+}
+
+/** 向 leaf 加 tab（重复 sessionId 转激活）。leafId 不匹配则原样。 */
+function addTabToLeafTree(node: TreeNode, leafId: string, tab: WorkbenchPanelRef): TreeNode {
+  if (node.kind === "leaf") {
+    if (node.id !== leafId) return node;
+    if (node.tabs.some((t) => t.sessionId === tab.sessionId)) {
+      return setActiveTabInLeafTree(node, leafId, tab.sessionId);
+    }
+    return { ...node, tabs: [...node.tabs, tab], activeTabId: tab.sessionId };
+  }
+  if (!containsId(node, leafId)) return node;
+  let changed = false;
+  const newChildren = node.children.map((c) => {
+    if (containsId(c, leafId)) {
+      changed = true;
+      return addTabToLeafTree(c, leafId, tab);
+    }
+    return c;
+  });
+  return changed ? { ...node, children: newChildren } : node;
+}
+
+/** 用新 split（a/b 两 child）替换 a（不同方向分屏）。aFirst=true → [a, b]，否则 [b, a]。 */
+function wrapInSplit(
+  a: TreeNode,
+  b: LeafNode,
+  direction: SplitDirection,
+  aFirst: boolean,
+): SplitNode {
+  const children = aFirst ? [a, b] : [b, a];
+  return {
+    kind: "split",
+    id: createSplitId(),
+    direction,
+    children,
+    sizes: {
+      [a.id]: WORKBENCH_PANEL_DEFAULT_FLEX,
+      [b.id]: WORKBENCH_PANEL_DEFAULT_FLEX,
+    },
+  };
+}
+
+/**
+ * 在 targetLeafId 一侧分屏插 newLeaf（drop edge 核心）。
+ * - 同方向（父 split.direction === direction）→ 在父 split 的 target 索引前/后插 newLeaf（不嵌套）。
+ * - 不同方向 → wrap(target, newLeaf, direction) 替换 target。
+ * - targetLeafId 是 root 自身（leaf）→ wrap(root, newLeaf) 作新 root。
+ * - targetLeafId 不在树（drop 预处理删空）→ 兜底返回 newLeaf 作新 root。
+ */
+function splitLeafInTree(
+  root: TreeNode,
+  targetLeafId: string,
+  newLeaf: LeafNode,
+  direction: SplitDirection,
+  newLeafFirst: boolean,
+): TreeNode {
+  if (root.kind === "leaf" && root.id === targetLeafId) {
+    return wrapInSplit(root, newLeaf, direction, !newLeafFirst);
+  }
+  const found = findParentSplit(root, targetLeafId);
+  if (!found) return newLeaf;
+  const { parent, index } = found;
+  if (parent.direction === direction) {
+    const at = newLeafFirst ? index : index + 1;
+    const children = [...parent.children];
+    children.splice(at, 0, newLeaf);
+    const sizes = { ...parent.sizes, [newLeaf.id]: WORKBENCH_PANEL_DEFAULT_FLEX };
+    return replaceInTree(root, parent.id, { ...parent, children, sizes });
+  }
+  const target = parent.children[index];
+  const wrapped = wrapInSplit(target, newLeaf, direction, !newLeafFirst);
+  // wrap 替换 target：parent.sizes 须把 target.id 改成 wrapped.id（继承权重），否则 sizes key 错位。
+  const targetWeight = parent.sizes[target.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const newSizes = { ...parent.sizes };
+  delete newSizes[target.id];
+  newSizes[wrapped.id] = targetWeight;
+  const newChildren = [...parent.children];
+  newChildren[index] = wrapped;
+  return replaceInTree(root, parent.id, { ...parent, children: newChildren, sizes: newSizes });
+}
+
+// ── V3 公开编辑 API ───────────────────────────────────────────────────────────
+
+/** 向 leaf 加 tab（设计 §7.3 center）。重复 sessionId 转激活。leaf 不在树 → 原样。 */
+export function addTabToLeaf(
+  layout: WorkbenchLayoutV3,
+  leafId: string,
+  tab: WorkbenchPanelRef,
+): WorkbenchLayoutV3 {
+  if (!layout.root || !findLeafNode(layout.root, leafId)) return layout;
+  const newRoot = addTabToLeafTree(layout.root, leafId, tab);
+  return { ...layout, root: newRoot, activeGroupId: leafId };
+}
+
+/** 激活 leaf 的指定 tab（点 tab 切换，同时设 activeGroupId）。leaf 不在树 → 原样。 */
+export function setActiveTabInLeaf(
+  layout: WorkbenchLayoutV3,
+  leafId: string,
+  tabId: string,
+): WorkbenchLayoutV3 {
+  if (!layout.root || !findLeafNode(layout.root, leafId)) return layout;
+  const newRoot = setActiveTabInLeafTree(layout.root, leafId, tabId);
+  return { ...layout, root: newRoot, activeGroupId: leafId };
+}
+
+/**
+ * 从 leaf 移除 tab（= 最小化，设计 §7.4）。leaf 清空 → 子树提升。
+ * active/maximized 指向被删 leaf → 回退前序首 leaf / null。
+ */
+export function removeTabFromLeaf(
+  layout: WorkbenchLayoutV3,
+  leafId: string,
+  tabId: string,
+): WorkbenchLayoutV3 {
+  if (!layout.root || !containsId(layout.root, leafId)) return layout;
+  const newRoot = removeTabFromLeafTree(layout.root, leafId, tabId);
+  const leafGone = !newRoot || !findLeafNode(newRoot, leafId);
+  const maximized = leafGone && layout.maximized === leafId ? null : layout.maximized;
+  let activeGroupId = layout.activeGroupId;
+  if (leafGone && activeGroupId === leafId) {
+    const first = firstLeaf(newRoot);
+    activeGroupId = first ? first.id : null;
+  }
+  return { root: newRoot, activeGroupId, maximized };
+}
+
+/** 删除整个 leaf（kill prune stale 清理 / 测试用）。子树提升 + active/maximized 回退。 */
+export function removeLeaf(layout: WorkbenchLayoutV3, leafId: string): WorkbenchLayoutV3 {
+  if (!layout.root || !containsId(layout.root, leafId)) return layout;
+  const newRoot = removeLeafFromTree(layout.root, leafId);
+  const maximized = layout.maximized === leafId ? null : layout.maximized;
+  let activeGroupId = layout.activeGroupId;
+  if (activeGroupId === leafId) {
+    const first = firstLeaf(newRoot);
+    activeGroupId = first ? first.id : null;
+  }
+  return { root: newRoot, activeGroupId, maximized };
+}
+
+/**
+ * 按 drop zone 把 ref 放入 V3 布局（设计 §7.3 局部分屏。纯函数）。
+ *
+ * - `targetLeafId === null`（空白）：ref 已在某 leaf → 激活该 tab；否则 root=createLeaf(ref)。
+ * - `center`：addTabToLeaf(target)（ref 已在 target → 激活；在他 leaf → 迁移）。
+ * - `left/right/up/down`：单 leaf 局部分屏。同方向追加到现有 split；不同方向 wrap(target, newLeaf)。
+ *   drop 后 activeGroupId=newLeaf.id；maximized 清空（分屏退出独占）。
+ *
+ * 预处理：ref 已在某 leaf 且非「target=center 自身」→ 先 removeTabFromLeaf（重排/迁移）。
+ * 边界：预处理后 targetLeafId 不在树（拖自己唯一 tab 到自己边缘）→ 兜底 root=createLeaf(ref)。
+ */
+export function dropIntoLeaf(
+  layout: WorkbenchLayoutV3,
+  ref: WorkbenchPanelRef,
+  targetLeafId: string | null,
+  zone: DropZone,
+): WorkbenchLayoutV3 {
+  let root = layout.root;
+
+  if (targetLeafId === null) {
+    if (root) {
+      const existing = findLeafBySessionId(
+        { root, activeGroupId: null, maximized: null },
+        ref.sessionId,
+      );
+      if (existing) {
+        return {
+          ...layout,
+          root: setActiveTabInLeafTree(root, existing.leafId, ref.sessionId),
+          activeGroupId: existing.leafId,
+        };
+      }
+    }
+    const leaf = createLeaf(ref);
+    return { ...layout, root: leaf, activeGroupId: leaf.id };
+  }
+
+  if (root && zone === "center") {
+    const existing = findLeafBySessionId(
+      { root, activeGroupId: null, maximized: null },
+      ref.sessionId,
+    );
+    if (existing && existing.leafId === targetLeafId) {
+      return setActiveTabInLeaf(layout, targetLeafId, ref.sessionId);
+    }
+    let next = layout;
+    if (existing) next = removeTabFromLeaf(layout, existing.leafId, ref.sessionId);
+    if (!next.root || !findLeafNode(next.root, targetLeafId)) {
+      // 迁移连带头删了 target → 加到前序首 leaf（或 target 已不在）
+      const first = next.root ? firstLeaf(next.root) : null;
+      if (!first) {
+        const leaf = createLeaf(ref);
+        return { ...next, root: leaf, activeGroupId: leaf.id };
+      }
+      return addTabToLeaf(next, first.id, ref);
+    }
+    return addTabToLeaf(next, targetLeafId, ref);
+  }
+
+  // edge：先移除 ref（若已在树），再分屏。
+  if (root) {
+    const existing = findLeafBySessionId(
+      { root, activeGroupId: null, maximized: null },
+      ref.sessionId,
+    );
+    if (existing) {
+      const after = removeTabFromLeaf(layout, existing.leafId, ref.sessionId);
+      root = after.root;
+    }
+  }
+  if (!root || !containsId(root, targetLeafId)) {
+    const leaf = createLeaf(ref);
+    return { ...layout, root: leaf, activeGroupId: leaf.id, maximized: null };
+  }
+  const direction: SplitDirection = zone === "left" || zone === "right" ? "horizontal" : "vertical";
+  const newLeafFirst = zone === "left" || zone === "up";
+  const newLeaf = createLeaf(ref);
+  const newRoot = splitLeafInTree(root, targetLeafId, newLeaf, direction, newLeafFirst);
+  return { ...layout, root: newRoot, activeGroupId: newLeaf.id, maximized: null };
+}
+
+/**
+ * 拖 gutter 调「某 split 内相邻两 children」的 sizes 占比（设计 §7.4，守恒钳制）。
+ * splitId/leftChildId/rightChildId 须匹配树结构（相邻），否则原样返回。
+ */
+export function resizeSplitChildren(
+  layout: WorkbenchLayoutV3,
+  splitId: string,
+  leftChildId: string,
+  rightChildId: string,
+  deltaFlex: number,
+): WorkbenchLayoutV3 {
+  if (!layout.root) return layout;
+  const split = findNode(layout.root, splitId);
+  if (!split || split.kind !== "split") return layout;
+  const leftIdx = split.children.findIndex((c) => c.id === leftChildId);
+  const rightIdx = split.children.findIndex((c) => c.id === rightChildId);
+  if (leftIdx < 0 || rightIdx !== leftIdx + 1) return layout;
+  const left = split.sizes[leftChildId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const right = split.sizes[rightChildId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+  const clamped = Math.min(
+    Math.max(deltaFlex, WORKBENCH_PANEL_MIN_FLEX - left),
+    right - WORKBENCH_PANEL_MIN_FLEX,
+  );
+  const newSplit = {
+    ...split,
+    sizes: { ...split.sizes, [leftChildId]: left + clamped, [rightChildId]: right - clamped },
+  };
+  return { ...layout, root: replaceInTree(layout.root, splitId, newSplit) };
+}
+
+/** 切换 leaf 最大化（设计 §7.4 ▢ 独占）。maximize 时设 activeGroupId。 */
+export function toggleLeafMaximize(layout: WorkbenchLayoutV3, leafId: string): WorkbenchLayoutV3 {
+  if (layout.maximized === leafId) return { ...layout, maximized: null };
+  return { ...layout, maximized: leafId, activeGroupId: leafId };
+}
+
+/** 按 sessionId 反查 leaf 位置（设计 §7.13 focusId 反查）。 */
+export function findLeafBySessionId(
+  layout: WorkbenchLayoutV3,
+  sessionId: string,
+): { leafId: string; tabIndex: number } | null {
+  if (!layout.root) return null;
+  for (const leaf of collectLeaves(layout.root)) {
+    const tabIndex = leaf.tabs.findIndex((t) => t.sessionId === sessionId);
+    if (tabIndex >= 0) return { leafId: leaf.id, tabIndex };
+  }
+  return null;
+}
+
+/** 查 sessionId 对应完整 tab 引用（含 projectName）。移动端 global scope 查 projectName 用。 */
+export function findTabRefLeaf(
+  layout: WorkbenchLayoutV3,
+  sessionId: string,
+): WorkbenchPanelRef | null {
+  const found = findLeafBySessionId(layout, sessionId);
+  if (!found || !layout.root) return null;
+  return findLeafNode(layout.root, found.leafId)?.tabs[found.tabIndex] ?? null;
+}
+
+/** 派生活动 leaf 的活动 tab 引用（渲染层右栏 inspection / 输入作用域用）。 */
+export function activeTabRefLeaf(layout: WorkbenchLayoutV3): WorkbenchPanelRef | null {
+  if (!layout.root || layout.activeGroupId === null) return null;
+  const leaf = findLeafNode(layout.root, layout.activeGroupId);
+  if (!leaf) return null;
+  return leaf.tabs.find((t) => t.sessionId === leaf.activeTabId) ?? null;
+}
+
+/**
+ * 确保 ref 在 V3 布局中打开（focus effect / 移动切实例共用，设计 §7.3/§7.13）。
+ * ref 已在某 leaf → 激活；不在 → 加到活动 leaf 开新 tab（无活动 → 新建首个 leaf）。
+ */
+export function ensureTabOpenLeaf(
+  layout: WorkbenchLayoutV3,
+  ref: WorkbenchPanelRef,
+): WorkbenchLayoutV3 {
+  if (!layout.root) {
+    const leaf = createLeaf(ref);
+    return { ...layout, root: leaf, activeGroupId: leaf.id };
+  }
+  const existing = findLeafBySessionId(layout, ref.sessionId);
+  if (existing) return setActiveTabInLeaf(layout, existing.leafId, ref.sessionId);
+  const targetLeafId = layout.activeGroupId ?? firstLeaf(layout.root)?.id;
+  if (!targetLeafId) {
+    const leaf = createLeaf(ref);
+    return { ...layout, root: leaf, activeGroupId: leaf.id };
+  }
+  return addTabToLeaf(layout, targetLeafId, ref);
+}
+
+/** WorkbenchGroup → LeafNode（结构 1:1，加 kind 标记）。迁移专用。 */
+function toLeaf(group: WorkbenchGroup): LeafNode {
+  return { kind: "leaf", id: group.id, tabs: group.tabs, activeTabId: group.activeTabId };
+}
+
+/**
+ * V2 规则行布局 → V3 n 叉树（无损迁移，设计 §7.6）。每行单 group → leaf；多 group → horizontal
+ * split（sizes=V2 行内 sizes）；多行 → vertical split（sizes=V2 rowSizes[行首]，多 group 行的
+ * 新 split id 映射该行行首的 rowSizes 值）。active/maximized 直接映射（V2 group id = V3 leaf id）。
+ */
+export function migrateV2ToV3(v2: WorkbenchLayoutV2): WorkbenchLayoutV3 {
+  const rows = deriveGroupRows({ ...v2, maximized: null });
+  if (rows.length === 0) return { root: null, activeGroupId: null, maximized: null };
+
+  const rowNodes: TreeNode[] = rows.map((row) => {
+    if (row.length === 1) return toLeaf(row[0]);
+    const sizes: Record<string, number> = {};
+    for (const g of row) sizes[g.id] = v2.sizes[g.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+    return {
+      kind: "split" as const,
+      id: createSplitId(),
+      direction: "horizontal" as const,
+      children: row.map(toLeaf),
+      sizes,
+    };
+  });
+
+  let root: TreeNode;
+  if (rowNodes.length === 1) {
+    root = rowNodes[0];
+  } else {
+    const sizes: Record<string, number> = {};
+    rowNodes.forEach((node, i) => {
+      const headId = rows[i][0].id; // rowSizes key = 行首 group id
+      sizes[node.id] = v2.rowSizes[headId] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
+    });
+    root = {
+      kind: "split",
+      id: createSplitId(),
+      direction: "vertical",
+      children: rowNodes,
+      sizes,
+    };
+  }
+  return { root, activeGroupId: v2.activeGroupId, maximized: v2.maximized };
+}
+
+/**
+ * 校验 V3 不变式，返回违规描述数组（空=合法）。测试断言 + 运行时自检用。不变式：
+ * - SplitNode.children.length >= 2；LeafNode.tabs.length >= 1。
+ * - 同方向不嵌套（父 split 不含同方向子 split）。
+ * - SplitNode.sizes 的 key 集合 == children id 集合。
+ * - activeGroupId/maximized 必为树中某 leaf id 或 null。
+ */
+export function validateLayoutV3(layout: WorkbenchLayoutV3): string[] {
+  const errors: string[] = [];
+  if (layout.root === null) {
+    if (layout.activeGroupId !== null) errors.push("root null but activeGroupId set");
+    if (layout.maximized !== null) errors.push("root null but maximized set");
+    return errors;
+  }
+  const leafIds = new Set(collectLeaves(layout.root).map((l) => l.id));
+  if (layout.activeGroupId !== null && !leafIds.has(layout.activeGroupId)) {
+    errors.push(`activeGroupId ${layout.activeGroupId} not a leaf`);
+  }
+  if (layout.maximized !== null && !leafIds.has(layout.maximized)) {
+    errors.push(`maximized ${layout.maximized} not a leaf`);
+  }
+  validateNodeV3(layout.root, errors);
+  return errors;
+}
+
+function validateNodeV3(node: TreeNode, errors: string[]): void {
+  if (node.kind === "leaf") {
+    if (node.tabs.length === 0) errors.push(`leaf ${node.id} empty tabs`);
+    return;
+  }
+  if (node.children.length < 2) {
+    errors.push(`split ${node.id} has ${node.children.length} children (< 2)`);
+  }
+  const ids = node.children.map((c) => c.id);
+  if (new Set(ids).size !== ids.length) errors.push(`split ${node.id} duplicate child ids`);
+  const childIdSet = new Set(ids);
+  const sizeKeySet = new Set(Object.keys(node.sizes));
+  for (const cid of childIdSet) {
+    if (!sizeKeySet.has(cid)) errors.push(`split ${node.id} missing size for child ${cid}`);
+  }
+  for (const sk of sizeKeySet) {
+    if (!childIdSet.has(sk)) errors.push(`split ${node.id} stale size key ${sk}`);
+  }
+  for (const child of node.children) {
+    if (child.kind === "split" && child.direction === node.direction) {
+      errors.push(`split ${node.id} nests same-direction split ${child.id}`);
+    }
+    validateNodeV3(child, errors);
+  }
+}
+
 // ── 全局实例区（Stage 4 commit ④，跨项目混排）─────────────────────────────────
 
 /** 全局实例区候选：聚合所有项目活跃实例 + 排序/展示所需字段。 */
