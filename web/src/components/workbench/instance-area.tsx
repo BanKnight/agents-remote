@@ -19,7 +19,7 @@ import {
   type LeafNode,
   type TreeNode,
   type WorkbenchGroup,
-  type WorkbenchLayoutV2,
+  type WorkbenchLayoutV3,
   type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
   type WorkbenchScope,
@@ -28,22 +28,21 @@ import {
   WORKBENCH_MIDDLE_LEFT_MAX_REM,
   WORKBENCH_MIDDLE_LEFT_MIN_REM,
   WORKBENCH_PANEL_DEFAULT_FLEX,
-  activeTabRef,
-  deriveGroupRows,
+  activeTabRefLeaf,
+  collectLeaves,
   deriveZone,
-  dropIntoGroup,
-  ensureTabOpen,
+  dropIntoLeaf,
+  ensureTabOpenLeaf,
   filterWorkbenchViews,
+  findLeafBySessionId,
   findLeafNode,
-  findTabBySessionId,
   groupByProject,
   inferSessionTypeFromId,
   rankGlobalInstances,
-  removeTabFromGroup,
-  resizeGroups,
-  resizeRows,
-  setActiveTab,
-  toggleGroupMaximize,
+  removeTabFromLeaf,
+  resizeSplitChildren,
+  setActiveTabInLeaf,
+  toggleLeafMaximize,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   workbenchMiddleLeftWidthAtom,
@@ -161,11 +160,10 @@ type InstanceAreaProps = {
 
 /**
  * 中栏实例区（设计文档 §4）。永远左右结构：左总览（固定单列卡片，view 切 grid/table/grouped
- * 样式）+ 右工作区（VSCode group+tab 模型：deriveGroupRows 行×列网格，每 group = GroupHeader
- * tab 栏 + N 个 PanelRouter，active tab 可见其他 hidden 保 session）。tab 导航常驻（聚焦/非聚焦
- * 都不消失）。URL focusId = 活动组活动 tab（findTabBySessionId 反查）。layout 进 localStorage
- *（V2 schema，V1 自动迁移），project 按项目分键；global 聚合所有项目活跃实例（rankGlobalInstances
- * 排序）。
+ * 样式）+ 右工作区（VSCode group+tab 模型：n 叉树布局，每 leaf = GroupHeader tab 栏 + N 个
+ * PanelRouter，active tab 可见其他 hidden 保 session）。tab 导航常驻（聚焦/非聚焦都不消失）。
+ * URL focusId = 活动 leaf 活动 tab（findLeafBySessionId 反查）。layout 进 localStorage（V3 schema，
+ * V1/V2 自动迁移），project 按项目分键；global 聚合所有项目活跃实例（rankGlobalInstances 排序）。
  */
 export function InstanceArea({
   ctx,
@@ -230,14 +228,10 @@ export function InstanceArea({
     [setMiddleLeftWidth],
   );
 
-  // 右工作区网格行（设计 §7.4）：deriveGroupRows 从 layout.groups + newRowAfter + maximized
-  // 派生行×列网格。maximized 时返 [[group]] 单 group 单行全屏。
-  const rows = useMemo(() => deriveGroupRows(layout), [layout]);
-
-  // focus → 活动 group tab（VSCode explorer 语义，设计 §7.1/§13）：URL focusId 变化时确保
-  // focusId 在某 group 的 tab 中。已开 → 激活该 tab（setActiveTab 幂等，同 active 返回原引用，
-  // setState 跳过，无循环）；未开 → ensureTabOpen（活动 group 开新 tab；无活动 group 则新建
-  // group）。project scope projectName = scope.key；global scope 从 refs 查 focusId 所属项目
+  // focus → 活动 leaf tab（VSCode explorer 语义，设计 §7.1/§13）：URL focusId 变化时确保
+  // focusId 在某 leaf 的 tab 中。已开 → 激活该 tab（setActiveTabInLeaf 幂等，同 active 返回原
+  // 引用，setState 跳过，无循环）；未开 → ensureTabOpenLeaf（活动 leaf 开新 tab；无活动 leaf 则
+  // 新建 leaf）。project scope projectName = scope.key；global scope 从 refs 查 focusId 所属项目
   //（refs 未加载时 return prev 不变，加载后 refs.length 变 → effect 重跑同步）。effect 体用
   // update(prev => ...) 读最新 layout，避免闭包 layout 过时判断错。依赖只 focusId/scope/refs
   //（不含 layout）：minimize 改 layout 但不改 focusId，effect 不重跑 → 不会在 minimized focusId
@@ -245,55 +239,55 @@ export function InstanceArea({
   useEffect(() => {
     if (!focusId) return;
     update((prev) => {
-      const found = findTabBySessionId(prev, focusId);
-      if (found) return setActiveTab(prev, found.groupId, focusId);
+      const found = findLeafBySessionId(prev, focusId);
+      if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
       const projectName =
         scope.kind === "project"
           ? scope.key
           : (refs.find((r) => r.sessionId === focusId)?.projectName ?? null);
       if (!projectName) return prev;
-      return ensureTabOpen(prev, { projectName, sessionId: focusId });
+      return ensureTabOpenLeaf(prev, { projectName, sessionId: focusId });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, scopeKey, refs.length]);
 
-  // tab ✕ = 最小化（设计 §7.2）：removeTabFromGroup 从 group 移除 tab，session 存活（不 kill，
+  // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活（不 kill，
   // kill 走左总览卡片 close = closeInstance）。minimize 当前聚焦 tab → navigate 到剩余活动 tab
-  //（activeTabRef 派生活动 group 的活动 tab），避免 focus effect 在 minimized focusId 上重开
+  //（activeTabRefLeaf 派生活动 leaf 的活动 tab），避免 focus effect 在 minimized focusId 上重开
   //（= 循环）。next 用当前 layout 闭包算（事件处理即时，layout 是本 render 的），update 传 next，
   // navigate 用 next 派生活动 tab。
   const onCloseTab = (groupId: string, tabId: string) => {
-    const next = removeTabFromGroup(layout, groupId, tabId);
+    const next = removeTabFromLeaf(layout, groupId, tabId);
     update(() => next);
     if (focusId === tabId) {
-      void navigateWorkbench(scope, activeTabRef(next)?.sessionId);
+      void navigateWorkbench(scope, activeTabRefLeaf(next)?.sessionId);
     }
   };
 
   // stale-tab prune（设计 §7.1）：kill session 后该 session 的 tab 不会自动从 layout 消失
-  //（V2 localStorage 持久化，刷新也不清）。监听活跃实例集（refs）变化，遍历 layout 所有 tab，
-  // sessionId 不在活跃集 → removeTabFromGroup 清理（可能触发 group 合并 / 删空 group）。
-  // focusId 指向被清 tab 时回退到剩余活动 tab（activeTabRef 派生）或清空回非聚焦态。
+  //（V3 localStorage 持久化，刷新也不清）。监听活跃实例集（refs）变化，遍历树所有 leaf 的 tab，
+  // sessionId 不在活跃集 → removeTabFromLeaf 清理（可能触发子树提升 / 删空 leaf）。
+  // focusId 指向被清 tab 时回退到剩余活动 tab（activeTabRefLeaf 派生）或清空回非聚焦态。
   useEffect(() => {
-    if (layout.groups.length === 0) return;
+    if (layout.root === null) return;
     const activeIds = new Set(refs.map((r) => r.sessionId));
-    // 收集所有 stale tab（跨 group）。
-    const stale: { groupId: string; tabId: string }[] = [];
-    for (const g of layout.groups) {
-      for (const tab of g.tabs) {
-        if (!activeIds.has(tab.sessionId)) stale.push({ groupId: g.id, tabId: tab.sessionId });
+    // 收集所有 stale tab（遍历树所有 leaf）。
+    const stale: { leafId: string; tabId: string }[] = [];
+    for (const leaf of collectLeaves(layout.root)) {
+      for (const tab of leaf.tabs) {
+        if (!activeIds.has(tab.sessionId)) stale.push({ leafId: leaf.id, tabId: tab.sessionId });
       }
     }
     if (stale.length === 0) return;
     let next = layout;
-    for (const { groupId, tabId } of stale) {
-      next = removeTabFromGroup(next, groupId, tabId);
+    for (const { leafId, tabId } of stale) {
+      next = removeTabFromLeaf(next, leafId, tabId);
     }
     if (next === layout) return;
     update(() => next);
     // 当前聚焦 tab 被清 → 回退到剩余活动 tab（或清空回非聚焦态）。
     if (focusId && stale.some((s) => s.tabId === focusId)) {
-      void navigateWorkbench(scope, activeTabRef(next)?.sessionId);
+      void navigateWorkbench(scope, activeTabRefLeaf(next)?.sessionId);
     }
     // refs/layout 引用敏感；refs.length 守卫避免 refs 内容未变（如同序变动）时误触。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,18 +298,20 @@ export function InstanceArea({
     void navigateWorkbench(scope, ref.sessionId);
   };
 
-  // group 操作（设计 §7.3/§7.4）：maximize = group 级独占（toggleGroupMaximize 标量翻转，
-  // deriveGroupRows maximized 时返单 group 单行 = 纯派生全屏）；行内列宽 resize（resizeGroups
-  // 守恒钳制左增右减，键=groupId）；行间纵向 resize（resizeRows 守恒钳制上增下减，键=行首 groupId）。
-  // sizes/rowSizes + maximized 由 useWorkbenchLayout 持久化，刷新恢复。
+  // leaf 操作（设计 §7.3/§7.5）：maximize = leaf 级独占（toggleLeafMaximize 标量翻转，渲染时
+  // maximized 短路只画该 leaf = 纯派生全屏）；split 内相邻 children resize（resizeSplitChildren
+  // 守恒钳制左增右减，键=splitId+两 childId）。sizes + maximized 由 useWorkbenchLayout 持久化，
+  // 刷新恢复。
   const onToggleMaximize = (groupId: string) => {
-    update((prev) => toggleGroupMaximize(prev, groupId));
+    update((prev) => toggleLeafMaximize(prev, groupId));
   };
-  const onResizeGroups = (leftGroupId: string, rightGroupId: string, deltaFlex: number) => {
-    update((prev) => resizeGroups(prev, leftGroupId, rightGroupId, deltaFlex));
-  };
-  const onResizeRows = (topRowHeadId: string, bottomRowHeadId: string, deltaFlex: number) => {
-    update((prev) => resizeRows(prev, topRowHeadId, bottomRowHeadId, deltaFlex));
+  const onResizeSplit = (
+    splitId: string,
+    leftChildId: string,
+    rightChildId: string,
+    deltaFlex: number,
+  ) => {
+    update((prev) => resizeSplitChildren(prev, splitId, leftChildId, rightChildId, deltaFlex));
   };
 
   // P3 总览视图（设计文档 §5/§8）：overview tab 左总览按 view 渲染（grid 卡片 / grouped 分段 /
@@ -400,10 +396,10 @@ export function InstanceArea({
     setActiveZone(null);
     if (!drag || !zone) return;
     const prev = layout;
-    const next = dropIntoGroup(prev, drag.ref, zone.targetGroupId, zone.zone);
+    const next = dropIntoLeaf(prev, drag.ref, zone.targetGroupId, zone.zone);
     if (next === prev) return; // noop（自身 drop / target 不在）：跳过 navigate
     update(() => next);
-    // drop 后自动聚焦新 group/tab（用户刚拖的实例，预期看其 output）。
+    // drop 后自动聚焦新 leaf/tab（用户刚拖的实例，预期看其 output）。
     void navigateWorkbench(scope, drag.ref.sessionId);
   }, [dragState, activeZone, layout, update, navigateWorkbench, scope]);
 
@@ -535,34 +531,31 @@ export function InstanceArea({
   // 左总览仅 overview 存在；history / inspection tab 全宽，无左总览。CreateSessionBar +
   // ViewSwitcher 随左总览 header 一起只在 overview 渲染（设计 §6）。
   const leftColumnContent = isOverview ? leftOverviewContent : null;
-  // 右工作区 = deriveGroupRows 全网格（设计 §7.4）。多 group 同屏：行 flex 按 rowSizes 权重
-  //（key=行首 groupId）等分高度 + 行间纵向 gutter，行内 group flex 按 sizes 权重（key=groupId）
-  // 等分宽度。maximized 时 deriveGroupRows 返单 group 单行全屏。
-  // dragState 期间整个 WorkspaceGrid 用 pointer-events:none 让 elementFromPoint 命中 overlay
-  // 下层 group 的 data-drop-group（pointer capture 在源卡片，overlay 不接 pointer 事件）。
+  // 右工作区 = n 叉树递归渲染（设计 §7.5）。多 leaf 同屏：split 容器 flex 按 sizes 权重
+  //（key=childId）等分，children 间 gutter 拖拽调占比（resizeSplitChildren 守恒钳制）。
+  // maximized 时 WorkspaceTree 短路只渲染该 leaf 全屏。
+  // dragState 期间 WorkspaceTree 根容器用 pointer-events:none 让 elementFromPoint 命中 overlay
+  // 下层 GroupCell 的 data-drop-group（pointer capture 在源卡片，overlay 不接 pointer 事件）。
   const rightWorkspace = (
-    <WorkspaceGrid
+    <WorkspaceTree
       activeZone={activeZone}
       create={create}
       draggingRef={draggingRef}
       hasActiveInstances={refs.length > 0}
       maximized={layout.maximized}
-      onCloseTab={onCloseTab}
-      onResizeGroups={onResizeGroups}
-      onResizeRows={onResizeRows}
+      onCloseLeafTab={onCloseTab}
+      onResizeSplit={onResizeSplit}
       onSelectTab={(groupId, tabId) => {
-        // 点 tab = 切活动 tab（setActiveTab 即时切视觉）+ navigate（URL focusId 同步）。navigate
-        // 会再触发 focus effect，但 setActiveTab 幂等，无副作用。
-        update((prev) => setActiveTab(prev, groupId, tabId));
+        // 点 tab = 切活动 tab（setActiveTabInLeaf 即时切视觉）+ navigate（URL focusId 同步）。
+        // navigate 会再触发 focus effect，但 setActiveTabInLeaf 幂等，无副作用。
+        update((prev) => setActiveTabInLeaf(prev, groupId, tabId));
         if (tabId !== focusId) void navigateWorkbench(scope, tabId);
       }}
       onTabContextMenu={onTabContextMenu}
       onTabDragStart={onCardDragStart}
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
-      rows={rows}
-      rowSizes={layout.rowSizes}
-      sizes={layout.sizes}
+      root={layout.root}
     />
   );
   const tabContent = isOverview ? (
@@ -601,7 +594,7 @@ export function InstanceArea({
           渲染 EmptyInstanceArea（也标注 data-drop-empty 让空白区 drop 命中）。 */}
       <div
         className="relative min-w-0 flex-1"
-        data-drop-empty={layout.groups.length === 0 ? "" : undefined}
+        data-drop-empty={layout.root === null ? "" : undefined}
       >
         {rightWorkspace}
         {dragState ? (
@@ -1757,122 +1750,7 @@ function SplitGutter({ orientation, onResize }: SplitGutterProps) {
   );
 }
 
-type WorkspaceGridProps = {
-  activeZone: { targetGroupId: string | null; zone: DropZone } | null;
-  create: CreateSessionApi | null;
-  draggingRef: WorkbenchPanelRef | null;
-  /** 右侧无 tab 时 EmptyInstanceArea 双语义（设计 §14）：true=有活跃实例但未打开（空态提示）；
-   * false=真无活跃实例（创建态）。InstanceArea 传 refs.length > 0。 */
-  hasActiveInstances: boolean;
-  maximized: string | null;
-  onCloseTab: (groupId: string, tabId: string) => void;
-  onResizeGroups: (leftGroupId: string, rightGroupId: string, deltaFlex: number) => void;
-  onResizeRows: (topRowHeadId: string, bottomRowHeadId: string, deltaFlex: number) => void;
-  onSelectTab: (groupId: string, tabId: string) => void;
-  onTabContextMenu: (groupId: string, tabId: string, x: number, y: number) => void;
-  onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
-  onToggleMaximize: (groupId: string) => void;
-  projectName: string | null;
-  rows: WorkbenchGroup[][];
-  rowSizes: Record<string, number>;
-  sizes: Record<string, number>;
-};
-
-/**
- * 右工作区网格（设计 §7.4）：deriveGroupRows 全网格渲染。行 flex 按 rowSizes 权重（key=行首 groupId）
- * 等分高度，行间纵向 gutter（SplitGutter orientation="row"）拖拽调上下行高（resizeRows 守恒钳制）；
- * 行内 group flex 按 sizes 权重（key=groupId）等分宽度，同行 gutter 横向调宽（resizeGroups）。
- * maximized 时 deriveGroupRows 返单 group 单行 → 自动全屏（无 gutter）。空 groups → EmptyInstanceArea
- *（标注 data-drop-empty 让空白区 drop 命中）。GroupCell 标注 data-drop-group={groupId} 让
- * DropZoneOverlay 的 elementFromPoint hit-test 命中。
- */
-function WorkspaceGrid({
-  activeZone,
-  create,
-  draggingRef,
-  hasActiveInstances,
-  maximized,
-  onCloseTab,
-  onResizeGroups,
-  onResizeRows,
-  onSelectTab,
-  onTabContextMenu,
-  onTabDragStart,
-  onToggleMaximize,
-  projectName,
-  rows,
-  rowSizes,
-  sizes,
-}: WorkspaceGridProps) {
-  if (rows.length === 0) {
-    return (
-      <EmptyInstanceArea
-        create={create}
-        hasActiveInstances={hasActiveInstances}
-        projectName={projectName}
-      />
-    );
-  }
-  const totalRowFlex = rows.reduce((sum, row) => sum + (rowSizes[row[0].id] ?? 1), 0);
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-1 p-1">
-      {rows.flatMap((row, rowIdx) => {
-        const totalFlex = row.reduce((sum, g) => sum + (sizes[g.id] ?? 1), 0);
-        const rowHeadId = row[0].id;
-        const rowDiv = (
-          <div
-            className="flex min-h-0 gap-1"
-            key={`row-${rowIdx}`}
-            style={{ flex: `${rowSizes[rowHeadId] ?? 1} 1 0` }}
-          >
-            {row.flatMap((group, colIdx) => {
-              const cells: ReactNode[] = [
-                <GroupCell
-                  activeZone={activeZone}
-                  dragRef={draggingRef}
-                  flex={sizes[group.id] ?? 1}
-                  group={group}
-                  isMaximized={maximized === group.id}
-                  key={`cell-${group.id}`}
-                  onCloseTab={(tabId) => onCloseTab(group.id, tabId)}
-                  onSelectTab={(tabId) => onSelectTab(group.id, tabId)}
-                  onTabContextMenu={(tabId, event) =>
-                    onTabContextMenu(group.id, tabId, event.clientX, event.clientY)
-                  }
-                  onTabDragStart={onTabDragStart}
-                  onToggleMaximize={() => onToggleMaximize(group.id)}
-                />,
-              ];
-              if (colIdx < row.length - 1) {
-                const next = row[colIdx + 1];
-                cells.push(
-                  <SplitGutter
-                    key={`gutter-${group.id}-${next.id}`}
-                    onResize={(ratio) => onResizeGroups(group.id, next.id, ratio * totalFlex)}
-                    orientation="col"
-                  />,
-                );
-              }
-              return cells;
-            })}
-          </div>
-        );
-        if (rowIdx >= rows.length - 1) return [rowDiv];
-        const nextRowHeadId = rows[rowIdx + 1][0].id;
-        return [
-          rowDiv,
-          <SplitGutter
-            key={`rowgutter-${rowIdx}`}
-            onResize={(ratio) => onResizeRows(rowHeadId, nextRowHeadId, ratio * totalRowFlex)}
-            orientation="row"
-          />,
-        ];
-      })}
-    </div>
-  );
-}
-
-// ── V3 n 叉树渲染（设计 §7.5，C3 新增，C4 切换启用；InstanceArea 仍走 V2 WorkspaceGrid）──────────
+// ── V3 n 叉树渲染（设计 §7.5）──────────────────────────────────────────────────────────────
 
 type WorkspaceTreeHandlers = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
@@ -2184,7 +2062,7 @@ type DropZoneOverlayProps = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   dragPointer: { x: number; y: number };
   dragSourceRef: WorkbenchPanelRef | null;
-  layout: WorkbenchLayoutV2;
+  layout: WorkbenchLayoutV3;
   onCancel: () => void;
   onDrop: () => void;
   onPointerMove: (x: number, y: number) => void;
@@ -2197,10 +2075,10 @@ type DropZoneOverlayProps = {
  * GroupCell（默认 pointer-events auto）正常命中。在 window pointermove 上 hit-test：
  * elementFromPoint → 找带 data-drop-group 的祖先 → deriveZone(group rect, pointer) → setActiveZone；
  * 同时调 onPointerMove 把指针位置回传给 InstanceArea 更新 dragState（ghost 跟随指针）。
- * pointerup 调 onDrop（dropIntoGroup + 自动聚焦）。
+ * pointerup 调 onDrop（dropIntoLeaf + 自动聚焦）。
  *
- * 空白区（layout.groups 空）：elementFromPoint 命中 data-drop-empty 容器 → zone=center +
- * targetGroupId=null（dropIntoGroup 开首个 group）。
+ * 空白区（layout.root === null）：elementFromPoint 命中 data-drop-empty 容器 → zone=center +
+ * targetGroupId=null（dropIntoLeaf 开首个 leaf）。
  */
 function DropZoneOverlay({
   activeZone,
@@ -2276,7 +2154,7 @@ function DropZoneOverlay({
       className="pointer-events-none fixed inset-0 z-30"
     >
       {/* 空白区高亮（layout 空 + activeZone targetGroupId=null）*/}
-      {layout.groups.length === 0 && activeZone?.targetGroupId === null ? (
+      {layout.root === null && activeZone?.targetGroupId === null ? (
         <div
           role="status"
           aria-label={t("workbench.dropToEmpty")}
