@@ -77,3 +77,47 @@ DESIGN.md（`docs/design/DESIGN.md`）是设计系统唯一权威源；`web/src/
 - Phase 3（shell 视觉收敛 slate/red/emerald）+ Phase 4（Claude2 角色色 160 处 → 8 token）+ Phase 5（散写全收敛 ~87 处）实践。
 - DESIGN.md L243-285 映射表 + L385 禁散写约束。
 - memory `build-watch-css-not-flushed`、`design-md-authoritative-source`、`verify-css-via-dom-geometry-not-vision`。
+
+## 3. 结构关系是 state，不是渲染结构（UI = f(state) 的运用）
+
+### 现象
+
+布局变化（split / 合入塌缩 / 元素跨容器移动）时，本应不受影响的已有元素被 React 卸载重建，连带其内部副作用（WebSocket、xterm、relay 等）全部重连/重放。用户直觉：「新增 group 不应影响已有 group；group 内加 tab 不应影响同 group 其他 tab」——这是理应成立的复用预期，但实现层却重建了。
+
+### 机制
+
+React 实例身份 = **父 + key**。React reconciliation 按「同父下相同 key、相同类型」复用实例；一旦父变了或类型变了，无论 key 多稳定都 unmount + mount。这一点和 `key` 稳定与否无关——`key` 只在同父下生效，**跨父 / 跨类型不复用**是 React 的固有行为。
+
+当我们把「结构关系」（树、分组、嵌套）直接当成「渲染结构」递归渲染时，组件实例的「父」就绑死在了结构路径上。结构一变（leaf→split、split→leaf、元素从 A 容器挪到 B 容器），组件在渲染树里的位置/类型跟着变，React 自然匹配不上 → 重建。
+
+绕开 reconciliation 的尝试（`createPortal` 把子树注入到动态 container）**不能解决**：React `createPortal` 在 `container` prop 变化时仍会卸载并重挂 children 子树，并未真正「DOM 移动」。凡是想「保留实例 + 手动搬 DOM」的方案，都会撞到这堵墙。
+
+### 标准做法：把结构关系当 state，表现层退化成扁平数组
+
+`UI = f(state)` 的真正落点：**结构关系是一种 state，不该是渲染结构**。把树/嵌套关系收敛成 state（唯一真相），表现层用纯函数把它**投影成扁平数组**，再各自 `.map` 渲染。组件在扁平层拥有「位置不随结构变化而变化的稳定身份」，由 React 按相同 key 复用，DOM 不重建。
+
+```
+state（树/嵌套，唯一真相）
+  ↓ 纯函数派生（flatten / project）
+扁平数组（groups / panels / gutters，各带稳定 key + rect）
+  ↓ .map 渲染
+表现层（无递归组件，组件父 = 固定的扁平容器，永不换父）
+```
+
+**铁律**：任何在结构变化中「会跨容器移动」或「父会换」的对象，都不能嵌在随结构变化的递归渲染结构里，必须提到扁平层用稳定 key。判断标准——问自己「这个对象在结构变化时，它在 React 树里的父会不会变？类型会不会被顶替？」如果会，就必须扁平化。
+
+### 何时该用
+
+- 元素有副作用生命周期（WebSocket、长连、播放器、编辑器实例、canvas/WebGL context），重建代价高或有可见闪烁/丢状态。
+- 布局模型本身是递归/嵌套的（树、grid、分组），但元素需要在布局变化中保持实例稳定。
+- 发现自己想用 `createPortal` + 外部 store 来「保留实例」时——这是信号：根因是渲染结构绑了结构关系，扁平化才是正解。
+
+### 何时不必
+
+元素无副作用、重建廉价（纯展示卡片、纯文本行），递归渲染更直观，不必为复用引入扁平层。复用是为「重建代价」服务的，不是目的本身。
+
+### 来源
+
+- 工作台 n 叉树布局（`docs/design/workbench-views.md` §7.5/§7.8）：split / 合入 / tab 跨 group 移动导致 terminal 重连，根因是把树直接递归渲染；解法是 `flattenLayout` 投影成三个并列扁平数组（groups / gutters / panels），group 用 `key=leaf.id`、tab 用 `key=sessionId`，split / 合入 / 移动全不重建。
+- 反例：portal 顶层常驻方案（createPortal 注入动态 slot）实测失败——`container` 变化仍触发子树 unmount+mount，证明绕开 reconciliation 不可行，必须从「渲染结构 = state」这一层修。
+- memory `feedback-Universal-single-pipeline` / `feedback-single-source-pipeline`（同类数据单管道）、项目 `state-sync-principles.md`（上下文充分性：全量同步之所以简单正因为客户端握有全量上下文；按需同步之所以难正因为上下文不足——此条是其在前端渲染层的镜像：把结构关系留在渲染层 = 让组件上下文不充分；提到扁平层 = 让组件始终握有稳定身份这个全量上下文）。

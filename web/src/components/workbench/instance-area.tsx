@@ -16,7 +16,6 @@ import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remot
 import {
   type DropZone,
   type GlobalInstanceCandidate,
-  type LeafNode,
   type TreeNode,
   type WorkbenchGroup,
   type WorkbenchLayoutV3,
@@ -27,7 +26,6 @@ import {
   DRAG_THRESHOLD_PX,
   WORKBENCH_MIDDLE_LEFT_MAX_REM,
   WORKBENCH_MIDDLE_LEFT_MIN_REM,
-  WORKBENCH_PANEL_DEFAULT_FLEX,
   activeTabRefLeaf,
   collectLeaves,
   deriveZone,
@@ -35,7 +33,6 @@ import {
   ensureTabOpenLeaf,
   filterWorkbenchViews,
   findLeafBySessionId,
-  findLeafNode,
   groupByProject,
   inferSessionTypeFromId,
   rankGlobalInstances,
@@ -47,6 +44,7 @@ import {
   useWorkbenchNavigate,
   workbenchMiddleLeftWidthAtom,
 } from "../../routes/workbench-model";
+import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -1696,21 +1694,24 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
 }
 
 type SplitGutterProps = {
-  /** gutter 朝向（设计 §7.4）：col=同行相邻 group 间横向列宽（cursor-col-resize， deltaX/父宽）；
-   * row=行间纵向高度（cursor-row-resize， deltaY/父高）。父 = parentElement（行 div / 外网格 div）。 */
+  /** gutter 朝向（设计 §7.4）：col=横向相邻 group 间列宽（cursor-col-resize）；row=纵向行间高度。 */
   orientation: "col" | "row";
-  /** 拖拽增量（本次 move 的 delta / 父尺寸，无量纲比例）；上层按行/列 totalFlex 转 deltaFlex。 */
+  /** gutter 自身的归一化 rect（0~1，相对共享根容器）——absolute 定位用，是两 children 之间的缝隙位置。 */
+  rect: FlatRect;
+  /** 所属 split 的归一化 rect（0~1）；gutter 算 ratio 时用 splitRect 的主轴像素尺寸作分母。 */
+  splitRect: FlatRect;
+  /** 拖拽增量（本次 move 的 delta / split 主轴像素尺寸，无量纲比例）；上层按 split totalFlex 转 deltaFlex。 */
   onResize: (ratioDelta: number) => void;
 };
 
 /**
- * 相邻区域分隔条（设计 §7.3/§7.4）。flex item（w-1 col / h-1 row，shrink-0），pointer-event 增量
- * 拖拽：每次 move 算 delta（col=clientX/父宽，row=clientY/父高，parentElement.getBoundingClientRect）
- * → onResize(ratioDelta)；上层 resizeGroups/resizeRows 基于当前 layout 增量更新 sizes/rowSizes
- *（key=groupId / 行首 groupId），守恒钳制。setPointerCapture 锁指针到 gutter，拖拽时即使滑过面板
- * 仍持续触发。复活自 P5 split-panel.tsx（三态已废弃，gutter 通用）。
+ * 相邻区域分隔条（设计 §7.3/§7.4，§7.8 扁平化）。absolute 定位到 `rect`（两 children 之间的缝隙），
+ * pointer-event 增量拖拽：每次 move 算 delta（col=clientX / split 像素宽，row=clientY / split 像素高）
+ * → onResize(ratioDelta)；上层 onResizeSplit 基于 split totalFlex 转 deltaFlex 更新 sizes（守恒钳制）。
+ * split 像素尺寸 = splitRect 主轴归一化长度 × 根容器像素尺寸（offsetParent = 共享 relative 根）。
+ * setPointerCapture 锁指针到 gutter，拖拽时即使滑过面板仍持续触发。
  */
-function SplitGutter({ orientation, onResize }: SplitGutterProps) {
+function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProps) {
   const gutterRef = useRef<HTMLDivElement>(null);
   const lastPos = useRef<number | null>(null);
   const isRow = orientation === "row";
@@ -1723,14 +1724,16 @@ function SplitGutter({ orientation, onResize }: SplitGutterProps) {
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (lastPos.current === null) return;
-    const parent = gutterRef.current?.parentElement;
-    const size = isRow
-      ? (parent?.getBoundingClientRect().height ?? 1)
-      : (parent?.getBoundingClientRect().width ?? 1);
+    // 根容器（offsetParent = 共享 relative 根）的像素尺寸；split 主轴像素 = 归一化长度 × 根尺寸。
+    const root = gutterRef.current?.offsetParent as HTMLElement | null;
+    const rootSize = isRow
+      ? (root?.getBoundingClientRect().height ?? 1)
+      : (root?.getBoundingClientRect().width ?? 1);
+    const splitSize = (isRow ? splitRect.h : splitRect.w) * rootSize;
     const current = isRow ? event.clientY : event.clientX;
     const delta = current - lastPos.current;
     lastPos.current = current;
-    onResize(delta / size);
+    onResize(splitSize > 0 ? delta / splitSize : 0);
   };
   const endDrag = (event: PointerEvent<HTMLDivElement>) => {
     lastPos.current = null;
@@ -1740,12 +1743,27 @@ function SplitGutter({ orientation, onResize }: SplitGutterProps) {
   return (
     <div
       aria-hidden
-      className={`${isRow ? "h-1 cursor-row-resize" : "w-1 cursor-col-resize"} shrink-0 rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20`}
+      className={`absolute z-10 rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20 ${isRow ? "cursor-row-resize" : "cursor-col-resize"}`}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       ref={gutterRef}
+      style={
+        isRow
+          ? {
+              height: "4px",
+              left: pct(rect.x),
+              top: pct(rect.y),
+              width: pct(rect.w),
+            }
+          : {
+              height: pct(rect.h),
+              left: pct(rect.x),
+              top: pct(rect.y),
+              width: "4px",
+            }
+      }
     />
   );
 }
@@ -1776,83 +1794,22 @@ type WorkspaceTreeProps = WorkspaceTreeHandlers & {
   root: TreeNode | null;
 };
 
-/** 把 leaf 适配成 GroupCell props（TreeNodeRender leaf 分支与 maximized 短路共用）。 */
-function renderLeaf(leaf: LeafNode, isMaximized: boolean, handlers: WorkspaceTreeHandlers) {
-  return (
-    <GroupCell
-      activeZone={handlers.activeZone}
-      dragRef={handlers.draggingRef}
-      flex={1}
-      group={leaf}
-      isMaximized={isMaximized}
-      onCloseTab={(tabId) => handlers.onCloseLeafTab(leaf.id, tabId)}
-      onSelectTab={(tabId) => handlers.onSelectTab(leaf.id, tabId)}
-      onTabContextMenu={(tabId, event) =>
-        handlers.onTabContextMenu(leaf.id, tabId, event.clientX, event.clientY)
-      }
-      onTabDragStart={handlers.onTabDragStart}
-      onToggleMaximize={() => handlers.onToggleMaximize(leaf.id)}
-    />
-  );
+/** 归一化 0~1 → 百分比字符串（absolute 定位 style 用，相对共享 relative 根容器的 padding box）。 */
+function pct(n: number): string {
+  return `${n * 100}%`;
 }
 
-type TreeNodeRenderProps = {
-  flexWeight: number;
-  node: TreeNode;
-} & WorkspaceTreeHandlers;
-
-/**
- * 递归渲染 TreeNode（设计 §7.5）。leaf → wrapper div（设 flex 权重）+ GroupCell(flex=1 填满)；
- * split → flex 容器（horizontal=flex-row / vertical=flex-col）+ children 间插 SplitGutter
- *（orientation 由 direction 决定；onResize 把 ratio×totalFlex 转 deltaFlex 给 resizeSplitChildren）。
- * wrapper 与 split div 均 min-h-0 min-w-0 防 flex 压溃；gap-1 与 V2 WorkspaceGrid 一致。
- */
-function TreeNodeRender({ flexWeight, node, ...handlers }: TreeNodeRenderProps): ReactNode {
-  if (node.kind === "leaf") {
-    return (
-      <div className="flex min-h-0 min-w-0" style={{ flex: `${flexWeight} 1 0` }}>
-        {renderLeaf(node, false, handlers)}
-      </div>
-    );
-  }
-  const orientation: "col" | "row" = node.direction === "horizontal" ? "col" : "row";
-  const containerClass =
-    node.direction === "horizontal"
-      ? "flex min-h-0 min-w-0 gap-1"
-      : "flex min-h-0 min-w-0 flex-col gap-1";
-  const totalFlex = node.children.reduce(
-    (sum, c) => sum + (node.sizes[c.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX),
-    0,
-  );
-  return (
-    <div className={containerClass} style={{ flex: `${flexWeight} 1 0` }}>
-      {node.children.flatMap((child, i) => {
-        const childWeight = node.sizes[child.id] ?? WORKBENCH_PANEL_DEFAULT_FLEX;
-        const cells: ReactNode[] = [
-          <TreeNodeRender flexWeight={childWeight} key={child.id} node={child} {...handlers} />,
-        ];
-        if (i < node.children.length - 1) {
-          const next = node.children[i + 1];
-          cells.push(
-            <SplitGutter
-              key={`gutter-${child.id}-${next.id}`}
-              onResize={(ratio) =>
-                handlers.onResizeSplit(node.id, child.id, next.id, ratio * totalFlex)
-              }
-              orientation={orientation}
-            />,
-          );
-        }
-        return cells;
-      })}
-    </div>
-  );
+/** 归一化 rect → React absolute 定位 style（left/top/width/height 百分比）。 */
+function rectStyle(r: FlatRect): CSSProperties {
+  return { height: pct(r.h), left: pct(r.x), position: "absolute", top: pct(r.y), width: pct(r.w) };
 }
 
 /**
- * 右工作区 n 叉树渲染（V3，设计 §7.5）。root=null → EmptyInstanceArea；maximized 短路只渲染该
- * leaf（对齐 V2 WorkspaceGrid 经 deriveGroupRows 收敛单 group 的行为）；否则递归 TreeNodeRender。
- * C3 新增但未启用：InstanceArea 仍渲染 V2 WorkspaceGrid，C4 切换数据流后接管。
+ * 右工作区扁平化渲染（设计 §7.8，UI = f(state)）。`flattenLayout(root, maximized)` 把 n 叉树 state
+ * 投影成 groups / gutters / panels 三个并列扁平数组，各自 `.map` 渲染——无递归组件。group 用
+ * `key=leaf.id`、tab 用 `key=sessionId` 稳定，split / 合入塌缩 / tab 跨 group 移动 / 加 tab / 切 active
+ * 时 React 按相同 key 复用 → DOM 不卸载 → WebSocket 不断、xterm 不 dispose、relay 不重放。
+ * root=null → 空态。maximized 时 flattenLayout 已把该 leaf rect 设占满、其他 leaf visible=false（hidden）。
  */
 export function WorkspaceTree({
   root,
@@ -1862,6 +1819,7 @@ export function WorkspaceTree({
   projectName,
   ...handlers
 }: WorkspaceTreeProps) {
+  const flat = useMemo(() => flattenLayout(root, maximized), [root, maximized]);
   if (root === null) {
     return (
       <EmptyInstanceArea
@@ -1871,27 +1829,66 @@ export function WorkspaceTree({
       />
     );
   }
-  if (maximized !== null) {
-    const maxLeaf = findLeafNode(root, maximized);
-    if (maxLeaf) {
-      return (
-        <div className="flex h-full min-h-0 w-full p-1">{renderLeaf(maxLeaf, true, handlers)}</div>
-      );
-    }
-  }
+  // 拖动态（draggingRef 非空）：panel 层 pointer-events:none 让 DropZoneOverlay 的
+  // elementFromPoint 穿透 panel + xterm，命中下层 GroupShell 的 data-drop-group（扁平化后 panel
+  // 不再是 group 的后代，closest 找不到 group，必须靠穿透）。非拖动态 panel 正常接交互。
+  const isDragging = handlers.draggingRef !== null;
   return (
-    <div className="flex h-full min-h-0 w-full p-1">
-      <TreeNodeRender flexWeight={WORKBENCH_PANEL_DEFAULT_FLEX} node={root} {...handlers} />
+    // 共享 relative 根：所有 group/gutter/panel 的 absolute 百分比定位基准。p-1 给 group 边缘留间距。
+    <div className="relative h-full min-h-0 w-full p-1">
+      {flat.groups.map((g) => (
+        <GroupShell
+          activeZone={handlers.activeZone}
+          dragRef={handlers.draggingRef}
+          group={g}
+          key={g.id}
+          onCloseTab={(tabId) => handlers.onCloseLeafTab(g.id, tabId)}
+          onSelectTab={(tabId) => handlers.onSelectTab(g.id, tabId)}
+          onTabContextMenu={(tabId, event) =>
+            handlers.onTabContextMenu(g.id, tabId, event.clientX, event.clientY)
+          }
+          onTabDragStart={handlers.onTabDragStart}
+          onToggleMaximize={() => handlers.onToggleMaximize(g.id)}
+        />
+      ))}
+      {flat.gutters.map((g) => (
+        <SplitGutter
+          key={g.id}
+          onResize={(ratio) =>
+            handlers.onResizeSplit(g.splitId, g.leftChildId, g.rightChildId, ratio * g.totalFlex)
+          }
+          orientation={g.orientation}
+          rect={g.rect}
+          splitRect={g.splitRect}
+        />
+      ))}
+      {flat.panels.map((p) => (
+        <div
+          className={
+            p.visible
+              ? `absolute z-0 flex min-h-0 min-w-0 flex-col ${isDragging ? "pointer-events-none" : ""}`
+              : "hidden"
+          }
+          key={p.sessionId}
+          style={p.visible ? rectStyle(p.rect) : undefined}
+        >
+          <PanelRouter panelRef={{ projectName: p.projectName, sessionId: p.sessionId }} />
+        </div>
+      ))}
     </div>
   );
 }
 
-type GroupCellProps = {
+/**
+ * 右工作区 n 叉树渲染（V3，设计 §7.5/§7.8）。root=null → EmptyInstanceArea；否则 flattenLayout 投影
+ * 成扁平数组渲染（见上方 WorkspaceTree）。maximized 由 flattenLayout 处理（该 leaf rect 占满、
+ * 其他 leaf visible=false hidden），不再渲染层短路。
+ */
+type GroupShellProps = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   dragRef: WorkbenchPanelRef | null;
-  flex: number;
-  group: WorkbenchGroup;
-  isMaximized: boolean;
+  /** flattenLayout 投影出的 group（含 rect / contentRect / isMaximized / tabs）。 */
+  group: FlatGroup;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
   onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
@@ -1900,25 +1897,24 @@ type GroupCellProps = {
 };
 
 /**
- * 单个 group 单元格 = GroupHeader（tab 栏）+ N 个 PanelRouter（active 可见，其他 hidden 保
- * WebSocket/relay）。标注 data-drop-group={groupId} 让 DropZoneOverlay 的 elementFromPoint 命中。
- * 拖动态期间整体 pointer-events:none 让 elementFromPoint 落到 overlay 下层 group（pointer
- * capture 在源卡片，overlay 不接 pointer 事件，仅视觉高亮）。非拖动态正常接交互（PanelRouter
- * 输入框/终端点击）。tab 用 CSS hidden 不 unmount —— claude2 relay 从不重读 JSONL，unmount
- * 重连丢早消息；xterm dispose/重建抖动（设计 §7.4）。
+ * group 壳（设计 §7.8 扁平化）= 边框 + GroupHeader（tab 栏）+ DropZoneHighlight，**不含 PanelRouter**
+ * —— PanelRouter 由 WorkspaceTree 的 panels.map 在扁平层渲染（key=sessionId 稳定，跨 group 移动
+ * 不重挂）。absolute 定位到 group.rect（百分比，相对共享 relative 根容器）。data-drop-group 保留
+ * 在外 div 让 DropZoneOverlay 的 elementFromPoint 命中。拖动态整体 pointer-events:none 让
+ * elementFromPoint 落到 overlay 下层 group。tab 用 CSS hidden 不 unmount 保 WebSocket/relay
+ * 长连（§7.4），hidden 容器现在在扁平层 panels（不在 GroupShell 内），xterm offsetParent===null
+ * 防御（commit 81418c6）行为不变。
  */
-function GroupCell({
+function GroupShell({
   activeZone,
   dragRef,
-  flex,
   group,
-  isMaximized,
   onCloseTab,
   onSelectTab,
   onTabContextMenu,
   onTabDragStart,
   onToggleMaximize,
-}: GroupCellProps) {
+}: GroupShellProps) {
   const isDraggingThis = dragRef
     ? group.tabs.some((t) => t.sessionId === dragRef.sessionId)
     : false;
@@ -1929,31 +1925,17 @@ function GroupCell({
         isDraggingThis ? "opacity-40" : ""
       }`}
       data-drop-group={group.id}
-      style={{ flex: `${flex} 1 0` }}
+      style={rectStyle(group.rect)}
     >
       <GroupHeader
         group={group}
-        isMaximized={isMaximized}
+        isMaximized={group.isMaximized}
         onCloseTab={onCloseTab}
         onSelectTab={onSelectTab}
         onTabContextMenu={onTabContextMenu}
         onTabDragStart={onTabDragStart}
         onToggleMaximize={onToggleMaximize}
       />
-      <div className="relative min-h-0 flex-1">
-        {group.tabs.map((tab) => (
-          <div
-            className={
-              tab.sessionId === group.activeTabId
-                ? "absolute inset-0 flex min-h-0 flex-col"
-                : "hidden"
-            }
-            key={tab.sessionId}
-          >
-            <PanelRouter panelRef={tab} />
-          </div>
-        ))}
-      </div>
       {isDropTarget ? <DropZoneHighlight zone={activeZone?.zone ?? "center"} /> : null}
     </div>
   );

@@ -242,6 +242,67 @@ type WorkbenchLayoutV3 = {
 
 移动端保持现有「列表态 → 全屏聚焦态」线性模型（`mobile-workbench.tsx`），不渲染多 group / tab 栏（窄屏不分屏）。group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），但只关心单实例聚焦（`activeTabRef` 派生活动 tab）。
 
+### 7.8 渲染层：树投影为扁平数组（UI = f(state)）
+
+§7.5 的 n 叉树是 **state**（布局真相，唯一权威），**不是渲染结构**。表现层不递归渲染这棵树，而是用纯函数 `flattenLayout(root)` 把它投影成三个并列扁平数组，再各自 `.map` 渲染。目的：让所有「会跨容器移动的对象」（group / tab）在 React 树里拥有**位置不随布局变化而变化的稳定身份**，由 React 按相同 key 复用，DOM 不重建 —— terminal 不重连、xterm 不 dispose、relay 不重放。
+
+#### 三个并列扁平数组
+
+```ts
+function flattenLayout(root: TreeNode | null, maximized: string | null): {
+  groups:  Array<{ id, tabs, activeTabId, rect, contentRect }>;  // group 壳（边框 + tab 栏 + data-drop-group）
+  gutters: Array<{ id, rect, orientation, splitId, leftChildId, rightChildId }>;
+  panels:  Array<{ sessionId, projectName, rect, visible, groupId }>;  // rect = 所属 group 的 contentRect
+};
+```
+
+表现层三个并列 `.map`，**无嵌套**：
+
+```jsx
+<div className="relative h-full w-full">
+  {groups.map(g => <GroupShell key={g.id} {...g} />)}        // 不含 PanelRouter
+  {gutters.map(g => <SplitGutter key={g.id} {...g} />)}
+  {panels.map(p => (
+    <div key={p.sessionId} className={p.visible ? "absolute inset-0 ..." : "hidden"} style={p.rect}>
+      <PanelRouter panelRef={p} />
+    </div>
+  ))}
+</div>
+```
+
+`GroupShell` = 现 `GroupCell` 去掉 PanelRouter 那段（边框 + GroupHeader tab 栏 + `data-drop-group` + DropZoneHighlight），仅作 group 的视觉容器与拖放落点；PanelRouter 由扁平层直接渲染，absolute 定位到所属 group 的 `contentRect`。
+
+#### 为什么三个场景都不重建
+
+React 实例身份 = 父 + key。**嵌在递归布局树里的组件，其「父」随树结构变化而变化**，导致身份失稳：
+
+| 场景 | 旧（递归渲染）根因 | 新（扁平数组） |
+|------|--------------------|----------------|
+| group 内加 tab | group 位置不变，`tabs.map` key=sessionId 已复用 → 本就不重建 | `panels` 数组里已有 session 的 key 不变 → 复用 |
+| split（leaf → split） | GroupCell 从「div 直接子」变「被 TreeNodeRender 包裹的深层子」，类型身份被顶替 → unmount | `groups` 数组里该 leaf 的 `key=leaf.id` 不变，rect 变 → React 复用 GroupShell，只更新 style |
+| 合入塌缩（split → leaf） | group1 从「split 的子」变「根直接子」，树位置变浅 → GroupCell 身份失稳 → unmount | 同上，`key=leaf.id` 在数组里不变 |
+| tab 跨 group 移动 | PanelRouter 跨父（group1 的 children → group2 的 children），React 跨父不复用 → unmount + mount | `panels` 数组里该 session 的 `key=sessionId` 不变，变的只是 `groupId / rect / visible` → React 复用，只更新 style |
+
+**铁律**：任何在布局变化中「会跨容器移动」的对象，都不能嵌在随布局变化的递归结构里，必须提到扁平层用稳定 key。group 提到 `groups`、tab 提到 `panels`，两层对称，无特例。
+
+#### rect 计算（派生函数的唯一复杂点）
+
+`flattenLayout` 递归树，按 SplitNode 的 `direction` + `sizes` 分配每个 leaf 的 rect（百分比坐标）：
+
+- 横向 split：children 按宽度比占父 rect 的横向份额，纵向填满。
+- 纵向 split：children 按高度比占父 rect 的纵向份额，横向填满。
+- gutter rect = 相邻两个 children 之间的间距条（用 `DROP_ZONE_GUTTER_PX` 或现有 gap 值）。
+- `contentRect` = group rect 去掉 tab 栏高度后的内容区（PanelRouter 的落点）。
+- `maximized` 非空时只投影该 leaf（其他 leaf 仍进 `groups`/`panels` 数组以保实例不卸载，但 `rect` 不参与布局；`visible` = `sessionId === activeTabId` 仅对 max leaf 为真，其他全 false → `hidden`，复用 §7.4 已有不变式「其他 leaf hidden 不 unmount」）。
+
+absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS grid（嵌套坐标的 rowSpan/colSpan + 跨层 fr 归一化更绕）。gutter 拖拽继续改 `sizes`（state）→ `flattenLayout` 重算 rect → gutter 跟着定位，`onResizeSplit` 复用。
+
+#### 与既有不变式的关系
+
+- **§7.4「其他 leaf hidden 不 unmount」继续成立**：扁平化后非 max leaf 的 PanelRouter 仍 `hidden`（`visible=false`），不卸载；xterm 的 `offsetParent === null` 防御（commit `81418c6`）与 `customFit` 行为不变，只是 hidden 容器从「GroupCell 内的 per-tab div」换成「扁平层的 per-panel div」，语义一样。
+- **§7.5 树模型 + 不变式（`validateLayoutV3`）不变**：state 层零改动，`dropIntoLeaf` / `resizeSplitChildren` / `removeLeaf` 等纯函数全部不动。
+- **移动端（§7.7）零改动**：移动端不渲染多 group，不走 `flattenLayout`。
+
 ## 8. 状态指示：marker 右上角 badge
 
 统一叠加在 marker（IconMarker）右上角的小圆点 badge——圆点不独占一格或一行，密度精简。
@@ -351,3 +412,4 @@ type WorkbenchLayoutV3 = {
 - 2026-07-05：复盘重构。用户手测反馈「桌面聚焦态挤掉导航和视图」+「split 三态 + dock 不好操作」，改为统一中栏左右结构（左总览固定单列 + 右工作区拖放分屏），取消独立 split 视图与三态状态机。设计决策均标注「用户决定」。
 - 2026-07-06：VSCode group+tab 两级模型重构。用户反馈中栏右侧「1 group = 1 实例」铺开模型 ui/ux 奇怪，要求完全参考 vscode。§7 重写为 group（分屏区，行×列网格，横/纵 resize）+ tab（实例，同 group 多 tab 切换）两级模型：tab ✕ = 最小化（session 存活回左总览）/ group ▢ = 最大化（group 级独占，独占时可切 tab）/ 关闭实例 kill 走左总览卡片 close + tab 右键（不放 tab ✕，避免高频按钮触发破坏性 kill）；左总览 ↔ 工作区 = vscode explorer ↔ editor group（点卡片已开激活/未开活动 group 开新 tab，拖卡片开新 group 分屏）；切 tab 用 CSS hidden 保 WebSocket 长连（不 unmount）；持久化 atom key 升级 workbenchLayoutV2 + migrateLegacyLayout 无损迁移；移动端读写同一 atom 但 group/tab 模型透明。新增 Phase D（§7.1-§7.7）。**设计完整，无「后续」；实现分 phase（A/B/C/D）渐进靠拢。**
 - 2026-07-07：布局模型 n 叉树重构（bug 修复 + 对齐 VSCode）。用户报「拖卡片虚线框显示单 group 上下分屏，松手却横跨整行底部」——根因是 V2 规则行模型（groups+newRowAfter）下「新起一行」与「占满整行」绑定，`dropIntoGroup` 的 up/down 找整行行首/行尾操作，与 `deriveZone`+`DropZoneHighlight` 按单 group rect 画虚线框的维度不一致（示意撒谎）。用户实测 VSCode 后决策「完全对齐 VSCode：up/down/left/right 全改单 group 局部分屏，不做整行横跨」。§7.3 drop zone 改单 group 局部分屏语义、§7.5 规则行 → n 叉树（leaf/split+方向，同方向不嵌套，局部分屏只分裂目标 leaf，removeLeaf 子树提升/同方向合并）、§7.6 atom key V2→V3 三分支迁移（V1→V2→V3 链式）。新增 Phase E。
+- 2026-07-07：渲染层扁平化重构（UI = f(state)）。用户报「tab 跨 group 移动 / group 切分 / 合入塌缩时 terminal 重连（WebSocket 断 + xterm dispose + relay 重放）」——根因是 §7.5 的 n 叉树被直接当渲染结构递归渲染，GroupCell / PanelRouter 嵌在递归树里，布局变化时其「父 + key」身份失稳，React 跨父 / 跨类型不复用 → unmount + mount → terminal 重连。曾尝试 portal 顶层常驻方案（createPortal 把 PanelRouter 注入 slot）失败：React createPortal 在 container 变化时仍卸载重挂子树，未绕开 reconciliation。用户决策「按 UI = f(state)：树关系是 state，不是渲染结构；表现层退化成扁平数组」。新增 §7.8：`flattenLayout(root)` 纯函数把树投影成 groups / gutters / panels 三个并列扁平数组，各用稳定 key（`leaf.id` / `sessionId`）`.map` 渲染；任何「会跨容器移动的对象」一律提到扁平层，不嵌在递归布局树里。split / 合入 / 跨 group 移动 / 加 tab / 切 active 全不重建。state 层零改动，§7.5 树模型 + §7.4 hidden 不 unmount 不变式保持。
