@@ -400,7 +400,7 @@ function FilePreviewPanel({
             {(["source", "render"] as const).map((mode) => (
               <button
                 key={mode}
-                className={`flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-semibold transition ${
+                className={`flex h-7 shrink-0 cursor-pointer items-center rounded-md px-2.5 text-xs font-semibold transition ${
                   renderMode === mode
                     ? "bg-primary/10 text-primary"
                     : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
@@ -421,7 +421,7 @@ function FilePreviewPanel({
         >
           {saveToggle}
           <button
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
             type="button"
             onClick={onClose}
             aria-label={t("session.close")}
@@ -911,7 +911,7 @@ export function FilesPanel({
       type="button"
       disabled={!isDirty || save.isPending}
       onClick={handleSave}
-      className={`flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold transition disabled:opacity-50 ${
+      className={`flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
         save.isPending
           ? "text-on-surface-muted"
           : savedFlash
