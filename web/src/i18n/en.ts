@@ -101,6 +101,7 @@ export const en = {
   "session.gitAria": "View Git diff",
   "session.namePrompt.createAgent": "Create Agent Session",
   "session.namePrompt.createTerminal": "Create Terminal",
+  "session.namePrompt.resumeTitle": "Resume session",
   "session.namePrompt.placeholder": "Session name (optional)",
   "session.namePrompt.confirm": "Create",
   "session.rename": "Rename",

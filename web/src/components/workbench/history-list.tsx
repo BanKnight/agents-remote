@@ -4,8 +4,10 @@ import type { AgentHistoryEntry } from "@agents-remote/shared";
 import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
+import { formatBytes } from "../files/file-browser";
 import { IconMarker, NavItemSkeleton, ShellSectionLabel } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
+import { usePromptDialog } from "../shell/prompt-dialog";
 import { ShellIcon } from "../shell/icons";
 
 /**
@@ -48,8 +50,17 @@ export function useHistorySessions(projectName: string) {
     staleTime: 5_000,
   });
   const resumeSession = useMutation({
-    mutationFn: (claudeSessionId: string) =>
-      createAgentSession(projectName, "claude2", { claudeSessionId }),
+    mutationFn: ({
+      claudeSessionId,
+      displayName,
+    }: {
+      claudeSessionId: string;
+      displayName: string;
+    }) =>
+      createAgentSession(projectName, "claude2", {
+        claudeSessionId,
+        displayName: displayName || undefined,
+      }),
     onSuccess: async (data) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
@@ -90,6 +101,7 @@ type HistoryListProps = {
 export function HistoryList({ focusId, projectName, showLabel = true }: HistoryListProps) {
   const { t } = useT();
   const navigate = useNavigate();
+  const { holder: promptHolder, prompt } = usePromptDialog();
   const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName);
 
   const focus = (sessionId: string) => {
@@ -103,10 +115,23 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
 
   const handleClick = (entry: AgentHistoryEntry) => {
     if (entry.hasActiveSession && entry.activeSessionId) {
+      // 已有活跃实例 → 直接聚焦，不命名（只是切过去看）。
       focus(entry.activeSessionId);
-    } else {
-      resume(entry.claudeSessionId);
+      return;
     }
+    // 无活跃实例 → 弹命名框（预填历史标题，可选）→ resume 新建。与新建会话同一 prompt 模式
+    //（useCreateSession），命名可选（留空 = 默认 displayName），取消 = 不新建。
+    void prompt({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("session.namePrompt.confirm"),
+      initialValue: entry.title ?? entry.firstMessage ?? "",
+      placeholder: t("session.namePrompt.placeholder"),
+      title: t("session.namePrompt.resumeTitle"),
+    }).then((name) => {
+      if (name !== null) {
+        resume({ claudeSessionId: entry.claudeSessionId, displayName: name });
+      }
+    });
   };
 
   // 加载中（首次拉取，entries 仍空）→ 骨架行占位，避免空白；真空态（!isLoading 且空）→ null
@@ -142,6 +167,7 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
           onClick={() => handleClick(entry)}
         />
       ))}
+      {promptHolder}
     </>
   );
 }
@@ -162,6 +188,7 @@ function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessi
     : [
         time,
         entry.messageCount > 0 ? t("project.historyTurns", { count: entry.messageCount }) : null,
+        entry.fileSize > 0 ? formatBytes(entry.fileSize) : null,
       ]
         .filter(Boolean)
         .join(" · ");

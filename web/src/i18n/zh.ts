@@ -101,6 +101,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.gitAria": "查看 Git 差异",
   "session.namePrompt.createAgent": "创建 Agent 会话",
   "session.namePrompt.createTerminal": "创建终端",
+  "session.namePrompt.resumeTitle": "恢复会话",
   "session.namePrompt.placeholder": "会话名称（可选）",
   "session.namePrompt.confirm": "创建",
   "session.rename": "重命名",

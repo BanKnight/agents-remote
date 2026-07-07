@@ -60,7 +60,7 @@
 | tab | 中栏呈现 | 数据源 | scope 可见 |
 |-----|---------|--------|-----------|
 | 总览 | 左右结构：左总览（实例卡片）+ 右工作区（group 分屏） | useGlobalInstanceCandidates / project sessions | 全 scope |
-| 历史 | 全宽历史 session 列表；点会话 → resume 实例 + 切 overview tab + 聚焦（history 是只读列表，不承载活动组） | 历史 session API（project-only） | 仅 project |
+| 历史 | 全宽历史 session 列表；列表项描述 = 时间 · 轮数 · 大小（fileSize）；点会话 → 弹命名框（预填历史标题，可选）→ resume 实例 + 切 overview tab + 聚焦（已有活跃实例的历史直接聚焦、不命名；history 是只读列表，不承载活动组） | 历史 session API（project-only） | 仅 project |
 | 文件 | 全宽 FilesPanel（项目级只读 inspection） | FIRST_PARTY_PLUGINS | 全 scope（global = 根目录浏览，见下） |
 | Git | 全宽 GitDiffPanel（项目级） | FIRST_PARTY_PLUGINS | 仅 project |
 
