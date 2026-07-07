@@ -317,7 +317,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 - 形态：纯色小圆点（dot），无背景框、无文字，叠加 marker 右上角（`-right-1 -top-1`），`ring-2 ring-surface-raised` 描边与所在 surface 融合（视觉挖空）。
 - 文字 label 留给 `aria-label`（a11y）/ hover tooltip。
 - **跨位置统一**：左总览卡片 marker、右工作区 group tab marker、移动列表卡片 marker 都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
-- **marker 尺寸按场景区分**：左总览卡片用 `lg`（h-9 w-9=36px，头像式独立左列）；右工作区 group tab 与 table 紧凑行用 `sm`（h-7 w-7=28px）。圆点 `-right-1 -top-1` 定位为固定 4px 偏移，不依赖 marker 尺寸，放大后无需调整。`sessionMarker` 加 `size` 参数（默认 `sm`，不破坏 GroupHeader/table 紧凑行高），card 两处调用方（`instanceToGridItem` / `candidateToGridItem`）显式传 `lg`。
+- **marker 尺寸按场景区分**：左总览卡片用 `lg`（h-9 w-9=36px，头像式独立左列）；table 紧凑行用 `sm`（h-7 w-7=28px，带 IconMarker 方框 + tone 背景）；**右工作区 group tab 用 `xs`（h-4 w-4=16px 裸 icon，无 IconMarker 方框，tone 用文字色）—— 与 tab label 14px 同高比例 1:1**（Phase 6 批 6b：旧 tab 用 sm=28px 与 14px label 比例 2:1 视觉失调，marker 比标题大；缩为 xs 裸 icon 后视觉平衡，且 tab 收敛到 nav-item 设计语言）。圆点 `-right-1 -top-1` 定位为固定 4px 偏移，不依赖 marker 尺寸，放大后无需调整。`sessionMarker` 加 `size` 参数（`"xs" | "sm" | "lg"`，默认 `sm`，不破坏 GroupHeader/table 紧凑行高），card 两处调用方（`instanceToGridItem` / `candidateToGridItem`）显式传 `lg`，`usePanelMeta`（服务 TabChip + 拖动 ghost）传 `xs`。
 - 复用 `statusToTone` 映射状态→颜色；`StatusMarker` 包 `StatusDot`（加 `className` 支持 absolute 定位）。
 
 ## 9. 移动端差异
@@ -331,7 +331,9 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 | 二级导航 5 tab | 中栏顶部常驻 | header 下一行横向滚动 |
 | 右栏 inspection | 常驻跟随活动 group | 聚焦态 tab 切（output/文件/Git） |
 
-移动端聚焦态（点卡片全屏切）：**单行合并 header**（◄ 返回 + tab 横滚区 output/文件/Git + ℹ✕ 胶囊操作区），面板自带 header 在聚焦态隐藏（`embeddedHeader` prop），消除旧「返回 header / tab 行 / 面板自带 header」三块冗余。实例名与 meta 进 ℹ 底部 sheet（agent 显 model/permission/createdAt/status，terminal 仅 type/status —— UI=f(state) 不伪造）。✕ 触发 `useCloseSession`（confirm → close API → 回列表）；Retry 在内容区错误态 Notice（`connectionStatus==="error"` 时显示，与桌面 header Retry 共用 `onReconnect`）。+Terminal 在聚焦态去除（列表态 `CreateSessionBar` 已覆盖创建需求；桌面 split header 仍保留）。body 仍是 PanelRouter（output）或 inspection plugin render。
+移动端聚焦态（点卡片全屏切）：**单行合并 header**（◄ 返回 + tab 横滚区 output/文件/Git + ℹ✕ 胶囊操作区），面板自带 header 在聚焦态隐藏（`embeddedHeader` prop），消除旧「返回 header / tab 行 / 面板自带 header」三块冗余。实例名与 meta 进 ℹ 底部 sheet（agent 显 model/permission/createdAt/status，terminal 仅 type/status —— UI=f(state) 不伪造）。✕ 触发 `useCloseSession`（confirm → close API → 回列表）；Retry 在内容区错误态 Notice（`connectionStatus==="error"` 时显示，与桌面 header Retry 共用 `onReconnect`）。+Terminal 在聚焦态去除（列表态 `CreateSessionBar` 已覆盖创建需求）。body 仍是 PanelRouter（output）或 inspection plugin render。
+
+**桌面右工作区对齐移动端**（Phase 6 批 6a）：右工作区 `WorkspaceTree` 的 `PanelRouter` 也传 `embeddedHeader`，面板自带 `SessionDetailHeader`/`ChatHeader` 整个不渲染。操作去向与移动端聚焦态一致：Files/Git 走中栏顶部二级 tab（已覆盖，无重复入口）；+Terminal 走左总览 `CreateSessionBar`（已覆盖）；Retry 走内容区错误态 Notice（`embeddedHeader && connectionStatus==="error"` 分支，现有实现）；Close 由 tab ✕ + 左总览卡片 close 承担（embedded 已 `showClose=false`）。实例名由 group tab 栏 chip 显示（marker + displayName），projectName 由中栏顶部 tab 行所在的 project 作用域显式（聚焦态右工作区不重复显示）。`GroupHeader`（tab 栏 + ▢ maximize）仍在，与移动端 `MobileFocusHeader` 同为 group/scope 级 header，不属于面板自带 header。
 
 ## 10. 会话名（displayName）统一呈现
 

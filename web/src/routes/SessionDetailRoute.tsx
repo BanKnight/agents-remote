@@ -51,10 +51,10 @@ type SessionDetailProps = {
    */
   embedded?: boolean;
   /**
-   * 省略面板自带 header（SessionDetailHeader 整个不渲染）。移动端聚焦态用：header 由
-   * MobileFocusBody 统一渲染，避免 title/projectName 双显冗余，operational actions
-   *（Files/Git 已在 tab、+Terminal 列表态覆盖、Retry 移内容区错误态）不再塞 header。
-   * 与 embedded 正交：桌面 split 传 embedded 但不传 embeddedHeader，header 仍渲染。默认 false。
+   * 省略面板自带 header（SessionDetailHeader 整个不渲染）。桌面右工作区与移动端聚焦态都用：
+   * header 由 GroupHeader（tab 栏 + ▢）/ MobileFocusHeader 承担，避免 title/projectName 双显冗余，
+   * operational actions（Files/Git 走中栏 tab、+Terminal 走左总览 CreateSessionBar、Retry 移内容区
+   * 错误态 Notice、Close 由 tab ✕）不再塞 header（设计 §11 对齐）。默认 false（旧路由用）。
    */
   embeddedHeader?: boolean;
 };

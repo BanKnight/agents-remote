@@ -4,7 +4,7 @@ import { SessionDetail } from "../../routes/SessionDetailRoute";
 type PanelProps = {
   projectName: string;
   sessionId: string;
-  /** 省略面板自带 header（移动端聚焦态用）；透传给 Claude2Chat/SessionDetail。默认 false。 */
+  /** 省略面板自带 header（桌面右工作区 + 移动端聚焦态用）；透传给 Claude2Chat/SessionDetail。默认 false。 */
   embeddedHeader?: boolean;
 };
 

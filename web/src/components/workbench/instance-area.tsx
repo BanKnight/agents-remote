@@ -651,9 +651,11 @@ export function InstanceArea({
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
   /**
-   * 省略面板自带 header（移动端聚焦态用）：透传给 ChatPanel/AgentTerminalPanel/TerminalPanel
-   * → Claude2Chat/SessionDetail 的 embeddedHeader。桌面右工作区 GroupHeader 下不传（header
-   * 仍渲染，现状不变）；移动 MobileFocusBody 传 true（header 由 MobileFocusHeader 统一渲染）。
+   * 省略面板自带 header（SessionDetailHeader/ChatHeader 整个不渲染）：透传给
+   * ChatPanel/AgentTerminalPanel/TerminalPanel → Claude2Chat/SessionDetail 的 embeddedHeader。
+   * 桌面右工作区与移动聚焦态都传 true（设计 §11 对齐）：title/projectName 由 group tab 栏 chip
+   * + 中栏 tab 行显示，Files/Git/+Terminal/Retry/Close 操作按 §11 去向分别由中栏 tab / 左总览
+   * CreateSessionBar / 内容区错误态 Notice / tab ✕ 承担。默认 false（旧路由 ShellLayout 用）。
    */
   embeddedHeader?: boolean;
 };
@@ -767,7 +769,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     if (!session) return undefined;
     return {
       label: session.displayName,
-      marker: sessionMarker("agent", session.provider),
+      marker: sessionMarker("agent", session.provider, "xs"),
       statusDot: {
         label: t(sessionStatusLabel(session.status)),
         pulse: session.status === "running",
@@ -780,7 +782,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     if (!session) return undefined;
     return {
       label: session.displayName,
-      marker: sessionMarker("terminal"),
+      marker: sessionMarker("terminal", undefined, "xs"),
       statusDot: {
         label: t(sessionStatusLabel(session.status)),
         pulse: session.status === "running",
@@ -1558,8 +1560,10 @@ type TabChipProps = {
 };
 
 /**
- * group 内单个 tab chip（设计 §7.1）：marker + 实例名（点击 = 切活动 tab）+ ✕（最小化）。
- * active tab ✕ 常显，非 active hover 才显（减少视觉噪音）。usePanelMeta 派生 marker + label。
+ * group 内单个 tab chip（设计 §7.1，§9 批 6b）：xs 裸 icon marker + 实例名（点击 = 切活动 tab）
+ * + ✕（最小化）。active tab ✕ 常显，非 active hover 才显（减少视觉噪音）。usePanelMeta 派生
+ * marker（xs 裸 icon）+ label。样式对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：
+ * active 用 `bg-primary/10 text-primary` 品牌色，gap/px/py 对齐 nav-item horizontal。
  *
  * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
  * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
@@ -1581,24 +1585,31 @@ function TabChip({
   const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
+      {/* 对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：active 用 primary 品牌色
+          （非旧 bg-on-surface/10 中性灰胶囊）、gap/px/py 对齐 nav-item horizontal。marker 用
+          xs 裸 icon（usePanelMeta 已传 xs）与 label 同高，✕ 是 tab 特有最小化动作（nav-item 无）。 */}
       <div
-        className={`group/tab flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm transition ${
+        className={`group/tab flex shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition ${
           isActive
-            ? "bg-on-surface/10 text-on-surface"
-            : "text-on-surface-muted hover:bg-on-surface/5"
+            ? "bg-primary/10 text-primary"
+            : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
         }`}
         onContextMenu={(event) => {
           event.preventDefault();
           onContextMenu(event);
         }}
       >
-        <button className="flex min-w-0 items-center gap-1.5" onClick={onSelect} type="button">
+        <button
+          className="flex min-w-0 cursor-pointer items-center gap-2"
+          onClick={onSelect}
+          type="button"
+        >
           {meta?.marker ?? null}
-          <span className="max-w-[8rem] truncate">{label}</span>
+          <span className="block max-w-[8rem] truncate text-xs font-bold sm:text-sm">{label}</span>
         </button>
         <button
           aria-label={t("workbench.tabMinimize")}
-          className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
+          className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
             isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100"
           }`}
           onClick={onClose}
@@ -1872,7 +1883,14 @@ export function WorkspaceTree({
           key={p.sessionId}
           style={p.visible ? rectStyle(p.rect) : undefined}
         >
-          <PanelRouter panelRef={{ projectName: p.projectName, sessionId: p.sessionId }} />
+          {/* embeddedHeader 对齐移动端聚焦态：面板自带 SessionDetailHeader/ChatHeader 不渲染，
+              title/projectName 由 group tab 栏 chip + 中栏 tab 行显示，Files/Git 走中栏顶部 tab，
+              +Terminal 走左总览 CreateSessionBar，Retry 走内容区错误态 Notice，Close 由 tab ✕ +
+              左总览卡片 close 承担（设计 §11）。 */}
+          <PanelRouter
+            embeddedHeader
+            panelRef={{ projectName: p.projectName, sessionId: p.sessionId }}
+          />
         </div>
       ))}
     </div>

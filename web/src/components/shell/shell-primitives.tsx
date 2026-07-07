@@ -637,16 +637,33 @@ export function InstanceCard({
 
 /**
  * 实例 marker：agent 按 provider 选 tone/icon（codex→success/openai，其余→accent/anthropic），
- * terminal→muted/terminal。size 默认 sm（GroupHeader h-9 紧凑 header、table 紧凑行场景）；card
- * 场景显式传 `"lg"`（h-9 w-9=36px 头像式独立左列，icon h-4 w-4）。消化移动卡片总览两处
+ * terminal→muted/terminal。size 三档：`"xs"`（h-4 w-4=16px 裸 icon，无 IconMarker 方框，tone 用文字色
+ * —— workbench group tab 用，与 tab label 14px 同高比例 1:1）；`"sm"`（h-7 w-7=28px 带方框，table
+ * 紧凑行 / 默认）；`"lg"`（h-9 w-9=36px 头像式独立左列，icon h-4 w-4，card 用）。消化移动卡片总览两处
  *（ProjectInstances card variant + GlobalInstanceCard）的重复 marker 构造。桌面 list（AgentNavItem）
  * 用 ShellNavigationButton 包 IconMarker，不复用此 helper。
  */
 export function sessionMarker(
   type: "agent" | "terminal",
   provider?: AgentProvider,
-  size: "sm" | "lg" = "sm",
+  size: "xs" | "sm" | "lg" = "sm",
 ): ReactNode {
+  if (size === "xs") {
+    // 裸 icon：tone 用文字色，无 IconMarker 方框（tab 场景与 label 同高，视觉平衡）。
+    const toneText =
+      type === "terminal"
+        ? "text-on-surface-muted"
+        : provider === "codex"
+          ? "text-success"
+          : "text-primary";
+    const iconName =
+      type === "terminal" ? "terminal" : provider === "codex" ? "openai" : "anthropic";
+    return (
+      <span aria-hidden="true" className={`inline-flex shrink-0 items-center ${toneText}`}>
+        <ShellIcon className="h-4 w-4" name={iconName} />
+      </span>
+    );
+  }
   const iconClass = size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5";
   if (type === "terminal") {
     return (
