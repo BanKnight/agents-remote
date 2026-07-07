@@ -112,15 +112,36 @@ export const INSTANCE_GRID_STYLE: CSSProperties = {
 export const INSTANCE_SKELETON_ROW_COUNT = 3;
 
 /**
- * 卡片总览加载骨架：自适应网格（与 InstanceGrid 同构，共享 INSTANCE_GRID_STYLE）。
- * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——
- * 单一 skeleton 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
+ * 卡片总览加载骨架：自适应网格（与 InstanceGrid 同构，共享 INSTANCE_GRID_STYLE）。每张占位卡
+ * 模拟 InstanceCard 结构（设计 §7）：raised surface + rounded-lg + p-3 + flex items-start gap-3——
+ * 左侧 marker 占位（h-9 w-9 rounded-md，对齐 IconMarker lg 36px）+ 右侧内容栈 3 行，行高对齐真实
+ * line-height 行盒（title text-sm h-5=20px / subtitle text-xs h-4=16px / meta text-xs h-4=16px，
+ * gap-1 对齐真实 flex-col gap-1）+ 右上 actions 占位（absolute right-2 top-2 h-7 w-7，对齐 InstanceCard
+ * 折叠触发器）。骨架条用 line-height 而非 font-size——加载完内容栈总高与真实一致（行盒 20+16+16=52，
+ * 实测 InstanceCard contentSum=52），消除卡片高度跳变。skeleton-shimmer 与 NavItemSkeleton/ProjectCardSkeleton 一致。
+ *
+ * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
+ * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
  */
 export function CardGridSkeleton() {
   return (
     <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
       {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
-        <div className="h-20 animate-pulse rounded-lg bg-on-surface/5" key={index} />
+        <div
+          className={`relative flex items-start gap-3 rounded-lg p-3 ${shellSurfaceClasses.raised}`}
+          key={index}
+        >
+          <span aria-hidden="true" className="skeleton-shimmer h-9 w-9 shrink-0 rounded-md" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span aria-hidden="true" className="skeleton-shimmer h-5 w-2/3 rounded" />
+            <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/2 rounded" />
+            <span aria-hidden="true" className="skeleton-shimmer h-4 w-2/5 rounded" />
+          </div>
+          <span
+            aria-hidden="true"
+            className="skeleton-shimmer absolute right-2 top-2 h-7 w-7 rounded-md"
+          />
+        </div>
       ))}
     </div>
   );

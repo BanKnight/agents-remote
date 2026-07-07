@@ -298,7 +298,7 @@ function StatusPanel({ label, tone = "default" }: StatusPanelProps) {
 }
 
 function SkeletonPulse({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-lg bg-surface-raised/70 ${className}`} />;
+  return <span aria-hidden="true" className={`skeleton-shimmer block ${className}`} />;
 }
 
 function ProjectCardSkeleton() {
@@ -308,16 +308,19 @@ function ProjectCardSkeleton() {
       aria-hidden="true"
     >
       <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-        <SkeletonPulse className="h-7 w-7 rounded-full" />
+        <SkeletonPulse className="h-10 w-10 rounded-lg" />
         <span className="min-w-0 flex-1 space-y-2">
-          <SkeletonPulse className="h-4 w-36" />
+          <SkeletonPulse className="h-5 w-36 rounded" />
           <span className="flex items-center gap-3">
-            <SkeletonPulse className="h-3 w-10 rounded-full" />
-            <SkeletonPulse className="h-3 w-10 rounded-full" />
-            <SkeletonPulse className="h-3 w-16 rounded-full" />
+            <SkeletonPulse className="h-3.5 w-8 rounded-full" />
+            <SkeletonPulse className="h-3.5 w-8 rounded-full" />
+            <SkeletonPulse className="h-6 w-20 rounded-full" />
           </span>
         </span>
-        <SkeletonPulse className="h-4 w-4" />
+        <span className="flex shrink-0 items-center gap-2">
+          <SkeletonPulse className="h-7 w-10 rounded-xl" />
+          <SkeletonPulse className="h-4 w-4 rounded" />
+        </span>
       </span>
     </div>
   );
