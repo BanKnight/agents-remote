@@ -237,6 +237,7 @@ type WorkbenchLayoutV3 = {
   V2 group id = V3 leaf id（crypto.randomUUID），`activeGroupId`/`maximized` 直接映射。`migrateLegacyLayout`（V1→V2）+ `deriveGroupRows` 保留作迁移 building block。
 - **移动端也读同一 atom**（`mobile-workbench.tsx` `useWorkbenchLayout`），用树遍历 API（`findTabRefLeaf` / `ensureTabOpenLeaf`）读写，语义不变（单实例聚焦，group/tab 透明）。
 - scope 切换（global ↔ project）各自独立布局。
+- **跨窗口同步已禁用**：所有布局 atom（栏宽 / 折叠 / tab / view 偏好 + WorkbenchLayoutV3）持久化到 localStorage（刷新保持），但**不跨窗口/tab 实时同步**。`atomWithStorage` 默认经 `storage.subscribe` 监听 `window` storage 事件实现多窗口同步；个人布局无需跨窗口一致（多窗口独立布局更符合预期，且避免多窗口测试时互相干扰），故这些 atom 走无 `subscribe` 的 storage（`atomWithLocalOnlyStorage`，见 `workbench-model.ts`）——仍读写 localStorage，但不监听跨窗口广播。WorkbenchLayoutV3 的自定义迁移 storage（本节迁移链）本就无 `subscribe`，行为一致。
 
 ### 7.7 移动端不变
 

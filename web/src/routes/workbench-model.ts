@@ -67,24 +67,59 @@ export const WORKBENCH_LEFT_PANEL_MAX_REM = 24;
 export const WORKBENCH_RIGHT_PANEL_MIN_REM = 16;
 export const WORKBENCH_RIGHT_PANEL_MAX_REM = 40;
 
-// ── 持久化的个人布局（atomWithStorage → localStorage，刷新保持）──────────────
+// ── 持久化的个人布局（localStorage，刷新保持）──────────────────────────────
 // 设计文档 §2：栏收起 + 宽度是个人布局（localStorage 编码），不进 URL
 // （URL 只编码语义核心：scope / focusId / rightTab）。
+//
+// 跨窗口同步已禁用：atomWithStorage 默认经 storage.subscribe 监听 window storage 事件，多窗口/tab
+// 实时同步。个人布局无需跨窗口一致——多窗口独立布局更符合预期，且避免多窗口测试时互相干扰。
+// atomWithLocalOnlyStorage 用无 subscribe 的 storage：仍持久化（刷新保持），但不再跨窗口广播。
+const atomWithLocalOnlyStorage = <T>(key: string, initialValue: T) => {
+  // 直接定义 sync storage（无 subscribe）：
+  // - 无 subscribe → atomWithStorage 不监听 window storage 事件 → 跨窗口不同步。
+  // - 仍读写 localStorage → 刷新保持。
+  // - getItem 返 T（缺值回退 initialValue）让 atomWithStorage 选中 sync 重载、类型窄化为 T
+  //   （不用 createJSONStorage：其返回 Sync|Async 联合会使 atom 值类型含 Promise）。
+  const storage = {
+    getItem(k: string, initialValue: T): T {
+      if (typeof localStorage === "undefined") return initialValue;
+      const stored = localStorage.getItem(k);
+      if (stored === null) return initialValue;
+      try {
+        return JSON.parse(stored) as T;
+      } catch {
+        return initialValue;
+      }
+    },
+    setItem(k: string, value: T): void {
+      if (typeof localStorage === "undefined") return;
+      localStorage.setItem(k, JSON.stringify(value));
+    },
+    removeItem(k: string): void {
+      if (typeof localStorage === "undefined") return;
+      localStorage.removeItem(k);
+    },
+  };
+  return atomWithStorage(key, initialValue, storage);
+};
 
 /** 左栏（项目 + 实例树）折叠态。 */
-export const workbenchLeftCollapsedAtom = atomWithStorage("workbenchLeftCollapsed", false);
+export const workbenchLeftCollapsedAtom = atomWithLocalOnlyStorage("workbenchLeftCollapsed", false);
 
-/** 右栏（inspection tab）折叠态。 */
-export const workbenchRightCollapsedAtom = atomWithStorage("workbenchRightCollapsed", false);
+/** 右栏（inspection tab）折叠态，默认折叠（对齐 §3 非聚焦态收起）。 */
+export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
+  "workbenchRightCollapsed",
+  true,
+);
 
 /** 左栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
-export const workbenchLeftWidthAtom = atomWithStorage(
+export const workbenchLeftWidthAtom = atomWithLocalOnlyStorage(
   "workbenchLeftWidth",
   WORKBENCH_LEFT_PANEL_DEFAULT_REM,
 );
 
 /** 右栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
-export const workbenchRightWidthAtom = atomWithStorage(
+export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
   "workbenchRightWidth",
   WORKBENCH_RIGHT_PANEL_DEFAULT_REM,
 );
@@ -98,7 +133,7 @@ export const WORKBENCH_MIDDLE_LEFT_MIN_REM = 14;
 export const WORKBENCH_MIDDLE_LEFT_DEFAULT_REM = 16;
 export const WORKBENCH_MIDDLE_LEFT_MAX_REM = 30;
 
-export const workbenchMiddleLeftWidthAtom = atomWithStorage(
+export const workbenchMiddleLeftWidthAtom = atomWithLocalOnlyStorage(
   "workbenchMiddleLeftWidth",
   WORKBENCH_MIDDLE_LEFT_DEFAULT_REM,
 );
@@ -107,7 +142,7 @@ export const workbenchMiddleLeftWidthAtom = atomWithStorage(
  * 右栏当前 tab。Stage 3 起 URL `rightTab` 优先（语义核心、刷新可分享），
  * 此 atom 作「记忆上次 tab」的回退（首次进入 / URL 未指定时）。
  */
-export const workbenchRightTabAtom = atomWithStorage<WorkbenchRightTab>(
+export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchRightTab>(
   "workbenchRightTab",
   "files",
 );
@@ -116,13 +151,13 @@ export const workbenchRightTabAtom = atomWithStorage<WorkbenchRightTab>(
  * 中栏总览视图（设计文档 workbench-views.md）。URL `view` 优先（语义核心、刷新可分享），
  * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grid。
  */
-export const workbenchViewAtom = atomWithStorage<WorkbenchView>("workbenchView", "grid");
+export const workbenchViewAtom = atomWithLocalOnlyStorage<WorkbenchView>("workbenchView", "grid");
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `tab` 优先，此 atom 作「记忆上次 tab」
  * 回退。默认 overview（实例总览）。
  */
-export const workbenchMiddleTabAtom = atomWithStorage<WorkbenchMiddleTab>(
+export const workbenchMiddleTabAtom = atomWithLocalOnlyStorage<WorkbenchMiddleTab>(
   "workbenchMiddleTab",
   "overview",
 );
@@ -136,7 +171,7 @@ export const workbenchMiddleTabAtom = atomWithStorage<WorkbenchMiddleTab>(
  */
 export type WorkbenchMobileFocusTab = "output" | WorkbenchRightTab;
 
-export const workbenchMobileFocusTabAtom = atomWithStorage<WorkbenchMobileFocusTab>(
+export const workbenchMobileFocusTabAtom = atomWithLocalOnlyStorage<WorkbenchMobileFocusTab>(
   "workbenchMobileFocusTab",
   "output",
 );
@@ -151,7 +186,7 @@ export const workbenchMobileFocusTabAtom = atomWithStorage<WorkbenchMobileFocusT
  */
 export type WorkbenchMobileOverviewTab = WorkbenchMiddleTab;
 
-export const workbenchMobileOverviewTabAtom = atomWithStorage<WorkbenchMobileOverviewTab>(
+export const workbenchMobileOverviewTabAtom = atomWithLocalOnlyStorage<WorkbenchMobileOverviewTab>(
   "workbenchMobileOverviewTab",
   "overview",
 );
