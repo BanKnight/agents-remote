@@ -79,6 +79,7 @@ import { HistoryList, relativeTime } from "./history-list";
 import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
+import { ActionMenu } from "../ui/action-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1030,41 +1031,48 @@ export function CreateSessionBar({
 }: CreateSessionBarProps) {
   const { t } = useT();
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className={actionButtonClasses({
-          className: `group disabled:cursor-not-allowed disabled:opacity-50 ${triggerClassName ?? ""}`,
-          tone: "accent",
-        })}
-        disabled={isCreating}
-      >
-        {isCreating ? t("project.creating") : t("workbench.createMenu")}
-        <svg
-          aria-hidden="true"
-          className="h-3 w-3 transition group-data-[state=open]:rotate-180"
-          fill="none"
-          viewBox="0 0 16 16"
+    <ActionMenu
+      align="end"
+      cancelLabel={t("cancel")}
+      items={[
+        {
+          label: t("workbench.createClaude2"),
+          icon: <ShellIcon name="anthropic" />,
+          onSelect: () => onCreateAgent("claude2"),
+        },
+        {
+          label: t("workbench.createTerminal"),
+          icon: <ShellIcon name="terminal" />,
+          onSelect: onCreateTerminal,
+        },
+      ]}
+      trigger={
+        <button
+          className={actionButtonClasses({
+            className: `group disabled:cursor-not-allowed disabled:opacity-50 ${triggerClassName ?? ""}`,
+            tone: "accent",
+          })}
+          disabled={isCreating}
+          type="button"
         >
-          <path
-            d="M4 6l4 4 4-4"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-          />
-        </svg>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[var(--radix-dropdown-menu-trigger-width)]">
-        <DropdownMenuItem onSelect={() => onCreateAgent("claude2")}>
-          <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
-          {t("workbench.createClaude2")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onCreateTerminal}>
-          <ShellIcon className="h-3.5 w-3.5" name="terminal" />
-          {t("workbench.createTerminal")}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {isCreating ? t("project.creating") : t("workbench.createMenu")}
+          <svg
+            aria-hidden="true"
+            className="h-3 w-3 transition group-data-[state=open]:rotate-180"
+            fill="none"
+            viewBox="0 0 16 16"
+          >
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </button>
+      }
+    />
   );
 }
 
@@ -1347,6 +1355,7 @@ export function instanceToGridItem(
   return {
     actionsLabel: cb.t("session.actions"),
     activity: relativeTime(activityIso ?? "", cb.t),
+    cancelLabel: cb.t("cancel"),
     closeLabel: cb.t("session.close"),
     key: session.id,
     marker: sessionMarker(entry.type, provider, "lg"),
@@ -1378,6 +1387,7 @@ export function candidateToGridItem(
   return {
     actionsLabel: cb.t("session.actions"),
     activity: relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", cb.t),
+    cancelLabel: cb.t("cancel"),
     closeLabel: cb.t("session.close"),
     key: candidate.ref.sessionId,
     marker: sessionMarker(candidate.type, candidate.provider, "lg"),
@@ -1631,7 +1641,7 @@ function TabChip({
         <button
           aria-label={t("workbench.tabMinimize")}
           className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
-            isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100"
+            isActive ? "opacity-100" : "max-sm:opacity-100 opacity-0 group-hover/tab:opacity-100"
           }`}
           onClick={onClose}
           title={t("workbench.tabMinimize")}
@@ -2033,59 +2043,34 @@ type TabContextMenuProps = {
 };
 
 /**
- * tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。自绘（仿
- * SessionDetailActionsMenu），不引入 Radix（与现有模式一致、零新依赖）。absolute 定位在右键
- * pointer 坐标（fixed 锚定视口，不受祖先 transform 影响）；document pointerdown 外点 / Esc 关闭。
+ * tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。走 Radix
+ * DropdownMenu（与文件右键同模式：open 受控 + 不可见 size-0 trigger 锚定 pointer 坐标 +
+ * avoidCollisions 自带视口钳制 + 外点/Esc 自带关闭），统一消费 DropdownMenuContent/Item token
+ *（不再散写圆角/阴影/padding）。桌面快捷，移动端不可达。
  * 「最小化」= removeTabFromGroup（session 存活，同 tab ✕）；「关闭实例」= useCloseSession
  *（自带 confirm → close API → 失效缓存，菜单内不再 confirm）。
  */
 function TabContextMenu({ anchor, onClose, onKill, onMinimize }: TabContextMenuProps) {
   const { t } = useT();
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose();
-    };
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose]);
-  const minimize = () => {
-    onMinimize();
-  };
-  const kill = () => {
-    onKill();
-  };
-  // 钳制菜单不超出视口（1280×800 桌面 + 375×812 移动端，菜单宽 ~160px 高 ~88px）。
-  const left = Math.min(anchor.x, window.innerWidth - 170);
-  const top = Math.min(anchor.y, window.innerHeight - 100);
   return (
-    <div
-      className={`fixed z-50 min-w-[10rem] overflow-hidden rounded-lg py-1 text-sm shadow-lg ${shellSurfaceClasses.raised}`}
-      ref={menuRef}
-      style={{ left, top }}
+    <DropdownMenu
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <button
-        className="flex w-full items-center px-3 py-1.5 text-left text-on-surface transition hover:bg-on-surface/10"
-        onClick={minimize}
-        type="button"
-      >
-        {t("workbench.tabMinimize")}
-      </button>
-      <button
-        className="flex w-full items-center px-3 py-1.5 text-left text-error transition hover:bg-error/10"
-        onClick={kill}
-        type="button"
-      >
-        {t("workbench.tabKill")}
-      </button>
-    </div>
+      <DropdownMenuTrigger asChild>
+        <div className="fixed size-0" style={{ left: anchor.x, top: anchor.y }} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="bottom">
+        <DropdownMenuItem onSelect={() => onMinimize()}>
+          {t("workbench.tabMinimize")}
+        </DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onSelect={() => onKill()}>
+          {t("workbench.tabKill")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

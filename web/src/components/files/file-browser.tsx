@@ -23,6 +23,7 @@ import {
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
+import { ActionMenu } from "../ui/action-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -202,34 +203,33 @@ export function FileEntryList({
 
   const renderActions = useCallback(
     (entry: ProjectFileEntry) => (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <ActionMenu
+        align="end"
+        cancelLabel={t("cancel")}
+        items={[
+          {
+            label: t("files.rename"),
+            icon: <ShellIcon name="edit" />,
+            onSelect: () => onStartRename(entry.path, entry.name),
+          },
+          {
+            label: t("files.delete"),
+            icon: <ShellIcon name="trash" />,
+            onSelect: () => onDelete(entry.path),
+            variant: "destructive",
+          },
+        ]}
+        trigger={
           <button
-            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition sm:opacity-0 sm:group-hover:opacity-100 ${shellSurfaceClasses.raisedHover}`}
+            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition sm:opacity-0 sm:group-hover:opacity-100 max-sm:h-10 max-sm:w-10 ${shellSurfaceClasses.raisedHover}`}
+            onClick={(e) => e.stopPropagation()}
             type="button"
             aria-label={`${entry.name} actions`}
           >
-            <MoreVertical className="h-3.5 w-3.5 text-on-surface-muted" />
+            <MoreVertical className="h-4 w-4 text-on-surface-muted" />
           </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" side="bottom">
-          <DropdownMenuItem
-            onClick={(e) => e.stopPropagation()}
-            onSelect={() => onStartRename(entry.path, entry.name)}
-          >
-            <ShellIcon name="edit" className="h-4 w-4" />
-            {t("files.rename")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={(e) => e.stopPropagation()}
-            onSelect={() => onDelete(entry.path)}
-          >
-            <ShellIcon name="trash" className="h-4 w-4" />
-            {t("files.delete")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        }
+      />
     ),
     [t, onDelete, onStartRename],
   );
@@ -327,11 +327,11 @@ export function FileEntryList({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="bottom">
             <DropdownMenuItem onSelect={() => onStartRename(ctxMenu.path, ctxMenu.name)}>
-              <ShellIcon name="edit" className="h-4 w-4" />
+              <ShellIcon name="edit" />
               {t("files.rename")}
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onSelect={() => onDelete(ctxMenu.path)}>
-              <ShellIcon name="trash" className="h-4 w-4" />
+              <ShellIcon name="trash" />
               {t("files.delete")}
             </DropdownMenuItem>
           </DropdownMenuContent>

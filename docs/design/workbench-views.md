@@ -137,7 +137,7 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 | 拖 tab → 另一 group | tab 栏拖 tab 到另一 group | center zone = 加入目标 group tab 栏（`dropIntoGroup` 跨组迁移，原组空则合并消失）+ URL focusId | 是 |
 
 - **最小化后左总览不加标记**：已开/未开视觉一致（类 vscode explorer：不区分 editor 是否已打开），区分靠「点已开 = 激活不新 tab」的行为。
-- **tab 右键菜单**（最小化 + 关闭实例）：右键 tab 栏 tab 弹出轻量菜单——「最小化」= 同 tab ✕（`removeTabFromGroup`，session 存活）；「关闭实例」= `useCloseSession`（自带 confirm → close API → 失效缓存）。kill 走此低频入口 + 左总览卡片 close，避免高频 tab ✕ 误触破坏性 kill。
+- **tab 右键菜单**（最小化 + 关闭实例）：右键 tab 栏 tab 弹出轻量菜单——「最小化」= 同 tab ✕（`removeTabFromGroup`，session 存活）；「关闭实例」= `useCloseSession`（自带 confirm → close API → 失效缓存）。kill 走此低频入口 + 左总览卡片 close，避免高频 tab ✕ 误触破坏性 kill。菜单视觉走 DESIGN.md `action-menu` 桌面 popover 变体（移动端不可达，刻意保留为桌面快捷）。
 - **tab 可跨 group 拖动**：tab 栏的 tab 可拖到另一 group（复用 §7.3 drop zone 的 center 语义 = `dropIntoGroup` 跨组迁移，原 group 空则合并消失）。tab ✕ 仍是最小化（移出工作区回左总览，session 存活）。单击 tab = 切换 active（拖动与单击靠 4px 阈值区分，复用 `DragSourceCard`）。
 
 ### 7.3 drop zone 新语义

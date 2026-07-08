@@ -9,7 +9,7 @@ import type {
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { Terminal } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -39,6 +39,7 @@ import { FilesPanel } from "../components/files/file-browser";
 import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
+import { ActionMenu, type ActionMenuItem } from "../components/ui/action-menu";
 
 type SessionDetailProps = {
   projectName: string;
@@ -392,7 +393,6 @@ export function SessionDetail({
           connectionStatus={connectionStatus}
           createTerminalError={createTerminal.error}
           createTerminalPending={createTerminal.isPending}
-          detailView={detailView}
           embedded={embedded}
           projectName={projectName}
           sessionId={sessionId}
@@ -521,7 +521,6 @@ type SessionDetailHeaderProps = {
   connectionStatus: StreamConnectionStatus;
   createTerminalError: Error | null;
   createTerminalPending: boolean;
-  detailView: DetailView;
   projectName: string;
   sessionId: string;
   sessionType: SessionType;
@@ -544,7 +543,6 @@ function SessionDetailHeader({
   connectionStatus: _connectionStatus,
   createTerminalError,
   createTerminalPending,
-  detailView,
   embedded = false,
   onClose,
   onCreateTerminal,
@@ -613,7 +611,6 @@ function SessionDetailHeader({
           connectionStatus={_connectionStatus}
           createTerminalError={createTerminalError}
           createTerminalPending={createTerminalPending}
-          detailView={detailView}
           sessionType={sessionType}
           showClose={!embedded}
           onClose={onClose}
@@ -631,7 +628,6 @@ type SessionDetailActionsMenuProps = {
   connectionStatus: StreamConnectionStatus;
   createTerminalError: Error | null;
   createTerminalPending: boolean;
-  detailView: DetailView;
   sessionType: SessionType;
   showClose: boolean;
   onClose: () => void;
@@ -645,7 +641,6 @@ function SessionDetailActions({
   connectionStatus,
   createTerminalError,
   createTerminalPending,
-  detailView,
   onClose,
   onCreateTerminal,
   onReconnect,
@@ -654,37 +649,44 @@ function SessionDetailActions({
   showClose,
 }: SessionDetailActionsMenuProps) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  const selectView = (view: DetailView) => {
-    onViewChange(view);
-    setOpen(false);
-  };
-
-  const createTerminal = () => {
-    onCreateTerminal();
-    setOpen(false);
-  };
-
-  const close = () => {
-    onClose();
-    setOpen(false);
-  };
-
-  const reconnect = () => {
-    onReconnect();
-    setOpen(false);
-  };
+  // 移动端 ⋯ action sheet 项（DESIGN.md `action-menu`）。active 高亮与 IconMarker
+  // 收敛为裸 size-4 icon；tap 后 ActionMenu 自动收起（替代旧手写 stays-open 行为）。
+  const items: ActionMenuItem[] = [];
+  if (sessionType === "agent") {
+    items.push(
+      {
+        label: t("session.files"),
+        icon: <ShellIcon name="files-nav" />,
+        onSelect: () => onViewChange("files"),
+      },
+      {
+        label: t("session.git"),
+        icon: <ShellIcon name="git-nav" />,
+        onSelect: () => onViewChange("git"),
+      },
+      {
+        label: createTerminalPending ? t("session.creating") : t("session.terminal"),
+        icon: <ShellIcon name="terminal" />,
+        onSelect: onCreateTerminal,
+        disabled: createTerminalPending,
+      },
+    );
+  }
+  if (connectionStatus === "error") {
+    items.push({
+      label: t("session.retry"),
+      icon: <ShellIcon name="refresh" />,
+      onSelect: onReconnect,
+    });
+  }
+  items.push({
+    label: closePending ? t("session.closing") : t("session.close"),
+    icon: <ShellIcon name="close" />,
+    onSelect: onClose,
+    variant: "destructive",
+    disabled: closePending,
+  });
 
   const buttonClass =
     "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft";
@@ -764,120 +766,27 @@ function SessionDetailActions({
       </div>
 
       {/* Mobile: inline Close when it's the only action (terminal, no error);
-          otherwise collapse into ⋯ menu */}
+          otherwise collapse into ⋯ → bottom action sheet (ActionMenu) */}
       {hasExtraActions ? (
-        <div ref={menuRef} className="relative shrink-0 sm:hidden">
-          <button
-            className={buttonClass}
-            type="button"
-            aria-expanded={open}
-            aria-haspopup="menu"
-            aria-label={t("session.actionsAria")}
-            onClick={() => setOpen((value) => !value)}
-          >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {open ? (
-            <div
-              className="absolute right-0 top-10 z-20 grid w-48 gap-1 rounded-2xl border border-on-surface/10 bg-surface-inset/90 p-2 shadow-2xl shadow-black/40"
-              role="menu"
-            >
-              {sessionType === "agent" ? (
-                <>
-                  <ActionMenuItem
-                    active={detailView === "files"}
-                    marker={<ShellIcon name="files-nav" className="h-4 w-4" />}
-                    onClick={() => selectView("files")}
-                  >
-                    {t("session.files")}
-                  </ActionMenuItem>
-                  <ActionMenuItem
-                    active={detailView === "git"}
-                    marker={<ShellIcon name="git-nav" className="h-4 w-4" />}
-                    onClick={() => selectView("git")}
-                  >
-                    {t("session.git")}
-                  </ActionMenuItem>
-                  <ActionMenuItem
-                    disabled={createTerminalPending}
-                    marker={<ShellIcon name="terminal" className="h-4 w-4" />}
-                    onClick={createTerminal}
-                  >
-                    {createTerminalPending ? t("session.creating") : t("session.terminal")}
-                  </ActionMenuItem>
-                </>
-              ) : null}
-              {connectionStatus === "error" ? (
-                <ActionMenuItem
-                  marker={<ShellIcon name="refresh" className="h-4 w-4" />}
-                  onClick={reconnect}
-                >
-                  {t("session.retry")}
-                </ActionMenuItem>
-              ) : null}
-              <ActionMenuItem
-                danger
-                marker={<ShellIcon name="close" className="h-4 w-4" />}
-                disabled={closePending}
-                onClick={close}
-              >
-                {closePending ? t("session.closing") : t("session.close")}
-              </ActionMenuItem>
-              {createTerminalError instanceof Error ? (
-                <p className="px-2 py-1 text-xs leading-5 text-error">
-                  {createTerminalError.message}
-                </p>
-              ) : null}
-            </div>
+        <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
+          <ActionMenu
+            align="end"
+            cancelLabel={t("cancel")}
+            items={items}
+            trigger={
+              <button className={buttonClass} type="button" aria-label={t("session.actionsAria")}>
+                <MoreVertical className="h-4 w-4" aria-hidden="true" />
+              </button>
+            }
+          />
+          {createTerminalError instanceof Error ? (
+            <p className="text-xs text-error">{createTerminalError.message}</p>
           ) : null}
         </div>
       ) : (
         <div className="shrink-0 sm:hidden">{closeButton}</div>
       )}
     </>
-  );
-}
-
-type ActionMenuItemProps = {
-  active?: boolean;
-  children: string;
-  danger?: boolean;
-  disabled?: boolean;
-  marker?: ReactNode;
-  onClick: () => void;
-};
-
-function ActionMenuItem({
-  active = false,
-  children,
-  danger = false,
-  disabled = false,
-  marker,
-  onClick,
-}: ActionMenuItemProps) {
-  const toneClass = danger
-    ? "text-error hover:bg-error/10"
-    : active
-      ? "bg-primary/10 text-primary"
-      : "text-on-surface-soft hover:bg-surface-raised/70";
-
-  const markerTone = danger ? "danger" : active ? "accent" : "default";
-
-  return (
-    <button
-      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${toneClass}`}
-      disabled={disabled}
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-    >
-      {marker && (
-        <IconMarker size="sm" tone={markerTone}>
-          {marker}
-        </IconMarker>
-      )}
-      {children}
-    </button>
   );
 }
 

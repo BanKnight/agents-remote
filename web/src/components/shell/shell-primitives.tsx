@@ -4,14 +4,13 @@ import {
   type ComponentProps,
   type PointerEvent,
   type ReactNode,
-  useEffect,
   useRef,
-  useState,
 } from "react";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { ShellIcon } from "./icons";
 
 /**
@@ -514,6 +513,8 @@ export type InstanceCardProps = {
   /** 折叠操作区触发器（⋯）aria-label。 */
   actionsLabel?: string;
   activity?: string;
+  /** 移动 sheet 末项「取消」文案（caller 传 t("cancel")）。 */
+  cancelLabel?: string;
   closeLabel?: string;
   marker: ReactNode;
   onClose?: () => void;
@@ -535,15 +536,16 @@ export type InstanceCardProps = {
  * 紧凑排列）。subtitle 缺失退化 2 行；meta 文本缺失不渲染 meta 行。raised surface + rounded-lg，
  * 点击 onSelect 进详情。
  *
- * **折叠操作区**：卡片右上角 absolute ⋯ 触发按钮（`absolute top-2 right-2`），点击后向下方展开
- * **纵向 dropdown menu**（改名 / 关闭两项）。展开是局部 state（每卡独立），外部点击 / Esc 收起
- * （conditional effect，仅 expanded 时挂 listener，避免每卡常驻）。各菜单项 stopPropagation（click
- * + keydown 两路），与卡片 onKeyDown（Enter/Space → onSelect）隔离。`onRename`/`onClose` 缺省时
- * 对应菜单项不渲染；两者都缺省时不渲染触发器（退化纯展示卡）。
+ * **折叠操作区**：卡片右上角 absolute ⋯ 触发按钮（`absolute top-2 right-2`），走统一 `<ActionMenu>`
+ * 原语（改名 / 关闭两项；token 见 DESIGN.md `action-menu` 条目）。移动端从底部 action sheet 展开，
+ * 桌面端锚定 popover；open 态由 ActionMenu 自管。触发器 stopPropagation（click + keydown 两路），
+ * 与卡片 onKeyDown（Enter/Space → onSelect）隔离。`onRename`/`onClose` 缺省时对应菜单项不渲染；
+ * 两者都缺省时不渲染触发器（退化纯展示卡）。
  */
 export function InstanceCard({
   actionsLabel,
   activity,
+  cancelLabel,
   closeLabel,
   marker,
   onClose,
@@ -555,29 +557,20 @@ export function InstanceCard({
   subtitle,
   title,
 }: InstanceCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const actionsRef = useRef<HTMLDivElement | null>(null);
   const hasMetaText = projectName || activity;
   const hasActions = onRename || onClose;
-
-  // 外部点击 / Esc 收起展开态。conditional effect——仅 expanded 时挂 listener，避免每卡常驻。
-  useEffect(() => {
-    if (!expanded) return;
-    const onMouseDown = (event: MouseEvent) => {
-      if (actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
-        setExpanded(false);
-      }
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [expanded]);
+  const items: ActionMenuItem[] = [];
+  if (onRename) {
+    items.push({ label: renameLabel ?? "", icon: <ShellIcon name="edit" />, onSelect: onRename });
+  }
+  if (onClose) {
+    items.push({
+      label: closeLabel ?? "",
+      icon: <ShellIcon name="close" />,
+      onSelect: onClose,
+      variant: "destructive",
+    });
+  }
 
   return (
     <div
@@ -609,71 +602,26 @@ export function InstanceCard({
         ) : null}
       </div>
       {hasActions ? (
-        <div className="absolute right-2 top-2 z-10" ref={actionsRef}>
-          <button
-            aria-expanded={expanded}
-            aria-label={actionsLabel}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((prev) => !prev);
-            }}
-            onKeyDown={(e) => {
-              // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发；
-              // Esc 放行让 window listener 收起菜单。
-              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-            }}
-            type="button"
-          >
-            <ShellIcon className="h-4 w-4" name="ellipsis" />
-          </button>
-          {expanded ? (
-            <div className="absolute right-0 top-full mt-1 flex min-w-[120px] flex-col gap-0.5 rounded-lg border border-neutral-line bg-surface-raised p-1 shadow-2xl shadow-black/40 z-20">
-              {onRename ? (
-                <button
-                  aria-label={renameLabel}
-                  className="inline-flex h-8 items-center gap-2 rounded-md px-2 text-sm text-on-surface transition hover:bg-on-surface/5"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpanded(false);
-                    onRename();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-                  }}
-                  type="button"
-                >
-                  <ShellIcon className="h-3.5 w-3.5" name="edit" />
-                  <span>{renameLabel}</span>
-                </button>
-              ) : null}
-              {onClose ? (
-                <button
-                  aria-label={closeLabel}
-                  className="inline-flex h-8 items-center gap-2 rounded-md px-2 text-sm text-on-surface transition hover:bg-error/10 hover:text-error"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpanded(false);
-                    onClose();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-                  }}
-                  type="button"
-                >
-                  <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-                    <path
-                      d="M4 4l8 8M12 4l-8 8"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeWidth={1.5}
-                    />
-                  </svg>
-                  <span>{closeLabel}</span>
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+        <div className="absolute right-2 top-2 z-10">
+          <ActionMenu
+            align="end"
+            cancelLabel={cancelLabel}
+            items={items}
+            trigger={
+              <button
+                aria-label={actionsLabel}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface max-sm:h-10 max-sm:w-10"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
+                  if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                }}
+                type="button"
+              >
+                <ShellIcon className="h-4 w-4" name="ellipsis" />
+              </button>
+            }
+          />
         </div>
       ) : null}
     </div>
