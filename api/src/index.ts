@@ -673,20 +673,9 @@ export const startApi = async () => {
       return agentRuntime.startAgent(metadata);
     },
     startTerminal: (metadata) => tmuxRuntime.startTerminal(metadata),
-    write: async (sessionName, data) => {
-      if (isClaude2SessionName(sessionName)) {
-        return claude2Runtime.write(sessionName, data);
-      }
-      return tmuxRuntime.write(sessionName, data);
-    },
-    resize: (sessionName, cols, rows) => tmuxRuntime.resize(sessionName, cols, rows),
     capture: (sessionName) => tmuxRuntime.capture(sessionName),
-    stream: async (sessionName, onData, onError) => {
-      if (isClaude2SessionName(sessionName)) {
-        return claude2Runtime.stream(sessionName, onData, onError);
-      }
-      return tmuxRuntime.stream(sessionName, onData, onError);
-    },
+    attach: (sessionName, onData, onError, opts) =>
+      tmuxRuntime.attach(sessionName, onData, onError, opts),
   };
   const streamController = new SessionStreamController(runtime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });

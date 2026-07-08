@@ -1001,10 +1001,6 @@ export type Claude2StreamClientMessage =
 
 export type SessionStreamServerMessage =
   | {
-      type: "snapshot";
-      data: string;
-    }
-  | {
       type: "output";
       data: string;
     }

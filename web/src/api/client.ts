@@ -358,10 +358,18 @@ export function sessionStreamUrl(
   projectName: string,
   sessionType: "agent" | "terminal",
   sessionId: string,
+  cols?: number,
+  rows?: number,
 ) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
   const resource = sessionType === "agent" ? "agent-sessions" : "terminal-sessions";
-  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/${resource}/${encodeURIComponent(sessionId)}/stream`;
+  const base = `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/${resource}/${encodeURIComponent(sessionId)}/stream`;
+  // 仅当带有效尺寸时拼 query：后端 open() 在 capture 前先 reflow tmux 到该 cols/rows，
+  // 使首个 snapshot 直接是容器 cols（避免光标错位 / 窄→宽过渡）。
+  if (cols && rows && cols > 0 && rows > 0) {
+    return `${base}?cols=${cols}&rows=${rows}`;
+  }
+  return base;
 }
 
 export function claude2StreamUrl(projectName: string, sessionId: string) {

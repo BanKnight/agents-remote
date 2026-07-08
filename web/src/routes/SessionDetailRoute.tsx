@@ -88,10 +88,11 @@ export function SessionDetail({
   // Only shown for unrecoverable failures (protocol error, session ended)
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
-  const terminalDataRef = useRef<{ type: "snapshot" | "output"; data: string } | null>(null);
-  const terminalWriteRef = useRef<((type: "snapshot" | "output", data: string) => void) | null>(
-    null,
-  );
+  const terminalDataRef = useRef<string | null>(null);
+  const terminalWriteRef = useRef<((data: string) => void) | null>(null);
+  // 最新 fit 出的容器尺寸：sendTerminalResize 写入，connect() 构造 WS URL 时读出，
+  // 让后端 attach() 以容器 cols/rows 作 PTY 初始尺寸（首帧即匹配容器，减少窄→宽跳变）。
+  const terminalSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const [input, setInput] = useState("");
   const [detailView, setDetailView] = useState<DetailView>("terminal");
   const [inputDrawerCollapsed, setInputDrawerCollapsed] = useAtom(inputDrawerCollapsedAtom);
@@ -202,7 +203,15 @@ export function SessionDetail({
     const connect = () => {
       if (!socketIsCurrent()) return;
 
-      socket = new WebSocket(sessionStreamUrl(projectName, sessionType, sessionId));
+      socket = new WebSocket(
+        sessionStreamUrl(
+          projectName,
+          sessionType,
+          sessionId,
+          terminalSizeRef.current?.cols,
+          terminalSizeRef.current?.rows,
+        ),
+      );
       socketRef.current = socket;
 
       socket.onopen = () => {
@@ -221,9 +230,9 @@ export function SessionDetail({
           return;
         }
 
-        if (message.type === "snapshot" || message.type === "output") {
-          terminalDataRef.current = { type: message.type, data: message.data };
-          terminalWriteRef.current?.(message.type, message.data);
+        if (message.type === "output") {
+          terminalDataRef.current = message.data;
+          terminalWriteRef.current?.(message.data);
           return;
         }
 
@@ -328,8 +337,12 @@ export function SessionDetail({
 
   // Stable callback for xterm to notify server of terminal resize
   const sendTerminalResize = useCallback(
-    (cols: number, rows: number) => sendMessage({ type: "resize", cols, rows }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    (cols: number, rows: number) => {
+      // 顺便记录最新容器尺寸，供下次 connect() 构造 WS URL（后端 open() reflow 用）。
+      terminalSizeRef.current = { cols, rows };
+      return sendMessage({ type: "resize", cols, rows });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
     [socketRef],
   );
 
@@ -398,7 +411,10 @@ export function SessionDetail({
             if (ok) closeSession.mutate();
           }}
           onCreateTerminal={() => createTerminal.mutate()}
-          onReconnect={() => setReconnectKey((value) => value + 1)}
+          onReconnect={() => {
+            terminalDataRef.current = null;
+            setReconnectKey((value) => value + 1);
+          }}
           onViewChange={setDetailView}
         />
       ) : null}
@@ -417,7 +433,10 @@ export function SessionDetail({
                 <Notice tone="danger">{t("session.connectionError")}</Notice>
                 <button
                   className="inline-flex shrink-0 items-center self-start gap-1.5 rounded-lg border border-error/30 bg-error/10 px-3 py-1.5 text-xs font-semibold text-error transition hover:bg-error/20"
-                  onClick={() => setReconnectKey((value) => value + 1)}
+                  onClick={() => {
+                    terminalDataRef.current = null;
+                    setReconnectKey((value) => value + 1);
+                  }}
                   type="button"
                 >
                   <ShellIcon className="h-3.5 w-3.5" name="refresh" />
@@ -867,10 +886,8 @@ type DetailWorkspaceProps = {
   projectName: string;
   sessionType: SessionType;
   title: string;
-  terminalWriteRef: React.MutableRefObject<
-    ((type: "snapshot" | "output", data: string) => void) | null
-  >;
-  terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
+  terminalWriteRef: React.MutableRefObject<((data: string) => void) | null>;
+  terminalDataRef: React.MutableRefObject<string | null>;
   connectionStatus: StreamConnectionStatus;
   onSendInput: (data: string) => void;
   onResize: (cols: number, rows: number) => boolean;
@@ -964,10 +981,8 @@ function DetailWorkspace({
 
 type TerminalCoreProps = {
   connectionStatus: StreamConnectionStatus;
-  terminalWriteRef: React.MutableRefObject<
-    ((type: "snapshot" | "output", data: string) => void) | null
-  >;
-  terminalDataRef: React.MutableRefObject<{ type: "snapshot" | "output"; data: string } | null>;
+  terminalWriteRef: React.MutableRefObject<((data: string) => void) | null>;
+  terminalDataRef: React.MutableRefObject<string | null>;
   onSendInput: (data: string) => void;
   onResize: (cols: number, rows: number) => boolean;
 };
@@ -1326,29 +1341,14 @@ function XtermOutput({
       writeQueueRef.current = writeQueueRef.current.catch(() => undefined).then(task);
     };
 
-    const writeSnapshot = (data: string) => {
-      enqueueWrite(async () => {
-        // \x1b[3J clears scrollback, \x1b[H homes cursor, \x1b[2J clears screen.
-        await write("\x1b[3J\x1b[H\x1b[2J" + data);
-        term.scrollToBottom();
-      });
-    };
-
-    terminalWriteRef.current = (type, data) => {
-      if (type === "snapshot") {
-        writeSnapshot(data);
-        return;
-      }
-
+    terminalWriteRef.current = (data) => {
       enqueueWrite(() => write(data));
     };
 
     // Replay any data that arrived before the terminal mounted
     const pending = terminalDataRef.current;
-    if (pending?.type === "snapshot") {
-      writeSnapshot(pending.data);
-    } else if (pending) {
-      enqueueWrite(() => write(pending.data));
+    if (pending) {
+      enqueueWrite(() => write(pending));
     }
 
     // ResizeObserver can fire in response to xterm DOM writes, so coalesce it

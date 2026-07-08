@@ -1,120 +1,10 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { unlink } from "node:fs/promises";
-import { createServer, type Server } from "node:net";
-import { join } from "node:path";
-import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
-
-// ── TmuxSharedPipe ──
-
-type PipeSubscriber = {
-  onData(data: string): void;
-  onError(error: Error): void;
-};
-
-export class TmuxSharedPipe {
-  private readonly subscribers = new Set<PipeSubscriber>();
-  private closed = false;
-
-  private constructor(
-    private readonly runtimeKey: string,
-    private readonly server: Server,
-    private readonly socketPath: string,
-    private readonly onClose: () => void,
-  ) {}
-
-  static async open(runtimeKey: string, runDir: string, onClose: () => void) {
-    const socketPath = join(runDir, `stream-${randomUUID()}.sock`);
-    const pipe = new TmuxSharedPipe(runtimeKey, createServer(), socketPath, onClose);
-    pipe.server.on("connection", (socket) => {
-      socket.on("data", (chunk) => pipe.send(chunk.toString("utf8")));
-      socket.on("error", (error) => pipe.error(error));
-    });
-    await listen(pipe.server, socketPath);
-    const pipeCommand = `socat - UNIX-CONNECT:${shellQuote(socketPath)}`;
-    const result = await runTmux(["pipe-pane", "-O", "-t", runtimeKey, pipeCommand]);
-
-    if (result.exitCode !== 0) {
-      await pipe.close();
-      throw new TmuxPipeError("Unable to stream tmux session", result.stderr);
-    }
-
-    return pipe;
-  }
-
-  subscribe(onData: (data: string) => void, onError: (error: Error) => void): RuntimeStream {
-    const subscriber = { onData, onError };
-    this.subscribers.add(subscriber);
-
-    return {
-      close: () => {
-        this.subscribers.delete(subscriber);
-
-        if (this.subscribers.size === 0) {
-          void this.close();
-        }
-      },
-    };
-  }
-
-  private send(data: string) {
-    for (const subscriber of this.subscribers) {
-      subscriber.onData(data);
-    }
-  }
-
-  private error(error: Error) {
-    for (const subscriber of this.subscribers) {
-      subscriber.onError(error);
-    }
-  }
-
-  private async close() {
-    if (this.closed) {
-      return;
-    }
-
-    this.closed = true;
-    this.onClose();
-    await runTmux(["pipe-pane", "-t", this.runtimeKey]);
-    await closeServer(this.server);
-    await removeSocket(this.socketPath);
-  }
-}
-
-export class TmuxPipeError extends Error {
-  constructor(
-    message: string,
-    readonly detail: string,
-  ) {
-    super(message);
-    this.name = "TmuxPipeError";
-  }
-}
-
-const listen = (server: Server, socketPath: string) =>
-  new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(socketPath, () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
-
-const closeServer = (server: Server) =>
-  new Promise<void>((resolve) => {
-    server.close(() => resolve());
-  });
-
-const removeSocket = async (socketPath: string) => {
-  try {
-    await unlink(socketPath);
-  } catch {
-    // best effort cleanup
-  }
-};
-
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+import type {
+  AttachHandle,
+  AttachOptions,
+  RuntimeResources,
+  SessionMetadata,
+} from "./session-registry";
 
 export const runTmux = (args: string[]) =>
   new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
@@ -137,8 +27,6 @@ export const runTmux = (args: string[]) =>
 // ── TmuxRuntime ──
 
 export class TmuxRuntime implements RuntimeResources {
-  private readonly pipeStreams = new Map<string, Promise<TmuxSharedPipe>>();
-
   constructor(private readonly runDir = "/run/agents-remote") {}
 
   async exists(runtimeKey: string) {
@@ -156,6 +44,10 @@ export class TmuxRuntime implements RuntimeResources {
       "-d",
       "-s",
       metadata.runtimeKey,
+      "-x",
+      "200",
+      "-y",
+      "50",
       "-c",
       metadata.projectPath,
       command,
@@ -164,6 +56,10 @@ export class TmuxRuntime implements RuntimeResources {
     if (result.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to start terminal session", result.stderr);
     }
+
+    // window-size=latest：attached client 的 PTY TIOCSWINSZ 生效，不被 resize-window 钉成 manual。
+    // session scope（-t runtimeKey）非全局，避免影响开发者本机其他 tmux 会话。
+    await runTmux(["set-option", "-t", metadata.runtimeKey, "window-size", "latest"]);
   }
 
   async close(runtimeKey: string) {
@@ -174,82 +70,107 @@ export class TmuxRuntime implements RuntimeResources {
     }
   }
 
-  async write(runtimeKey: string, data: string) {
-    const result = await runTmux(["send-keys", "-t", runtimeKey, "-l", data]);
+  // 只读 capture-pane，用于 list/detail 的 extractLastCommand。attach 模式下不再做主力渲染，
+  // 故不带 cols/rows、不追加 CUP——TUI 全态渲染由 attach 进程的 tmux 原生重绘负责。
+  async capture(runtimeKey: string): Promise<string> {
+    const result = await runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", runtimeKey]);
 
     if (result.exitCode !== 0) {
-      throw new TmuxRuntimeError("Unable to write to terminal session", result.stderr);
+      throw new TmuxRuntimeError("Unable to capture terminal session", result.stderr);
     }
+
+    return trimTrailingBlankLines(result.stdout).replace(/\r?\n/g, "\r\n");
   }
 
-  async resize(runtimeKey: string, cols: number, rows: number) {
-    const result = await runTmux([
-      "resize-window",
-      "-t",
-      runtimeKey,
-      "-x",
-      String(cols),
-      "-y",
-      String(rows),
-    ]);
-
-    if (result.exitCode !== 0) {
-      throw new TmuxRuntimeError("Unable to resize terminal session", result.stderr);
-    }
-  }
-
-  async capture(runtimeKey: string) {
-    const [pane, cursorInfo] = await Promise.all([
-      runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", runtimeKey]),
-      runTmux(["display-message", "-t", runtimeKey, "-p", "#{cursor_x}"]),
-    ]);
-
-    if (pane.exitCode !== 0) {
-      throw new TmuxRuntimeError("Unable to capture terminal session", pane.stderr);
-    }
-
-    const text = trimTrailingBlankLines(pane.stdout).replace(/\r?\n/g, "\r\n");
-
-    const cursorX = parseInt(cursorInfo.stdout.trim(), 10);
-    if (!isNaN(cursorX)) {
-      const lastLineStart = text.lastIndexOf("\r\n");
-      const lastLine = lastLineStart === -1 ? text : text.slice(lastLineStart + 2);
-      const visibleLen = lastLine.replace(/\[[^a-zA-Z]*[a-zA-Z]/g, "").length;
-      if (cursorX > visibleLen) {
-        return text + " ".repeat(cursorX - visibleLen);
-      }
-    }
-
-    return text;
-  }
-
-  async stream(
+  // 每个 WS 客户端 spawn 一个 `tmux attach -t <runtimeKey>` 子进程（Bun 原生 terminal PTY）。
+  // tmux server 原生全态渲染（光标/alt-screen/resize 重绘全对），PTY stdout→data 回调→onData→WS→xterm.js。
+  // PoC 验证：data 回调给 Buffer/Uint8Array 非 string，这里转 string 让 AttachHandle.onData 契约为 string；
+  // 子进程退出靠 proc.exited + 顶层 onExit（双挂 + exited flag 去重），terminal.exit 不可靠不用。
+  async attach(
     runtimeKey: string,
     onData: (data: string) => void,
     onError: (error: Error) => void,
-  ): Promise<RuntimeStream> {
-    const stream = await this.sharedPipe(runtimeKey);
-    return stream.subscribe(onData, onError);
-  }
-
-  private async sharedPipe(runtimeKey: string) {
-    const existing = this.pipeStreams.get(runtimeKey);
-
-    if (existing) {
-      return existing;
+    opts: AttachOptions,
+  ): Promise<AttachHandle> {
+    if (!/^[A-Za-z0-9._-]+$/.test(runtimeKey)) {
+      throw new TmuxRuntimeError("Invalid session name", runtimeKey);
     }
 
-    const next = TmuxSharedPipe.open(runtimeKey, this.runDir, () => {
-      this.pipeStreams.delete(runtimeKey);
+    if (!(await this.exists(runtimeKey))) {
+      throw new TmuxRuntimeError("Session not found", runtimeKey);
+    }
+
+    const cols = opts.cols > 0 ? opts.cols : 80;
+    const rows = opts.rows > 0 ? opts.rows : 24;
+    let exited = false;
+    const exitCbs = new Set<(code: number | null) => void>();
+
+    const proc = Bun.spawn(["tmux", "attach", "-t", runtimeKey], {
+      env: { ...process.env, TERM: "xterm-256color" },
+      terminal: {
+        cols,
+        rows,
+        name: "xterm-256color",
+        data(_terminal, data) {
+          try {
+            onData(typeof data === "string" ? data : Buffer.from(data).toString("utf8"));
+          } catch (error) {
+            onError(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+      },
+      onExit(_subprocess, code) {
+        if (exited) return;
+        exited = true;
+        for (const cb of exitCbs) cb(code ?? null);
+      },
     });
-    this.pipeStreams.set(runtimeKey, next);
 
-    try {
-      return await next;
-    } catch (error) {
-      this.pipeStreams.delete(runtimeKey);
-      throw error;
-    }
+    // proc.exited 与顶层 onExit 双挂去重（Bun 历史有 onExit 不触发 issue）。
+    void proc.exited.then((code) => {
+      if (exited) return;
+      exited = true;
+      for (const cb of exitCbs) cb(code ?? null);
+    });
+
+    return {
+      write(data) {
+        if (exited) return;
+        try {
+          proc.terminal?.write(data);
+        } catch (error) {
+          onError(error instanceof Error ? error : new Error(String(error)));
+        }
+      },
+      resize(nextCols, nextRows) {
+        if (exited) return;
+        try {
+          proc.terminal?.resize(nextCols, nextRows);
+        } catch {
+          // resize 失败（进程已退出等）忽略，onExit 会接管
+        }
+      },
+      close() {
+        if (exited) return;
+        try {
+          proc.kill("SIGTERM");
+        } catch {
+          // 进程已退出则忽略
+        }
+        void proc.exited
+          .catch(() => undefined)
+          .finally(() => {
+            try {
+              proc.terminal?.close();
+            } catch {
+              // best effort
+            }
+          });
+      },
+      onExit(cb) {
+        exitCbs.add(cb);
+      },
+    };
   }
 }
 
@@ -276,7 +197,7 @@ const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE, "");
 
 /**
  * 从 capture-pane 文本提取最后一行非空内容作为 lastCommand（忠实显示，不去 prompt 符）。
- * capture 返回的文本已是 trimTrailingBlankLines + `\r\n` 行分隔（见 TmuxRuntime.capture L211）。
+ * capture 返回的文本已是 trimTrailingBlankLines + `\r\n` 行分隔（见 TmuxRuntime.capture）。
  * 倒序找首个 trim 后非空行，stripAnsi 后返回；全空返回 undefined。
  */
 export const extractLastCommand = (pane: string): string | undefined => {

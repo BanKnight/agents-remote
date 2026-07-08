@@ -9,8 +9,8 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import {
   SessionRegistry,
+  type AttachHandle,
   type RuntimeResources,
-  type RuntimeStream,
   type SessionMetadata,
 } from "./session-registry";
 
@@ -25,11 +25,14 @@ export type SessionWebSocketData = {
   sessionId: string;
   runtimeKey: string;
   status: AgentSessionStatus | TerminalSessionStatus;
+  cols?: number;
+  rows?: number;
 };
 
 type StreamSocket = {
   data?: unknown;
   send(message: string): void;
+  close?(code?: number, reason?: string): void;
 };
 
 type StreamRouteMatch = {
@@ -62,6 +65,9 @@ export const handleSessionStreamUpgrade = async (
       };
     }
 
+    const cols = parsePositiveInt(url.searchParams.get("cols"));
+    const rows = parsePositiveInt(url.searchParams.get("rows"));
+
     if (
       server.upgrade(request, {
         data: {
@@ -71,6 +77,8 @@ export const handleSessionStreamUpgrade = async (
           sessionId: metadata.id,
           runtimeKey: metadata.runtimeKey,
           status: metadata.status,
+          ...(cols !== undefined ? { cols } : {}),
+          ...(rows !== undefined ? { rows } : {}),
         },
       })
     ) {
@@ -87,11 +95,12 @@ export const handleSessionStreamUpgrade = async (
   }
 };
 
+// 每个 WS 客户端 attach 一个 tmux attach 子进程（见 TmuxRuntime.attach）。
+// open→attach 拿 AttachHandle，message→handle.write/resize，close→handle.close。
+// ended 语义从 exists 轮询改为 attach 进程退出（handle.onExit）：tmux session 被 kill / shell
+// exit 时 attach 进程退出，触发 onExit → 发 ended + 关 WS。
 export class SessionStreamController {
-  private readonly timers = new WeakMap<StreamSocket, ReturnType<typeof setInterval>>();
-  private readonly lastSnapshots = new WeakMap<StreamSocket, string>();
-  private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
-  private readonly writeQueues = new Map<string, Promise<void>>();
+  private readonly handles = new WeakMap<StreamSocket, AttachHandle>();
 
   constructor(private readonly runtime: RuntimeResources) {}
 
@@ -102,16 +111,48 @@ export class SessionStreamController {
       return false;
     }
 
-    try {
-      await this.sendSnapshot(socket, data);
-    } catch (e) {
-      console.error(`[stream] sendSnapshot error ${data.sessionId}`, e);
+    if (!this.runtime.attach) {
+      send(socket, {
+        type: "error",
+        code: "SESSION_RUNTIME_ERROR",
+        message: "Terminal attach not supported",
+      });
+      return true;
     }
+
+    const cols = data.cols ?? 80;
+    const rows = data.rows ?? 24;
+
     try {
-      await this.startStream(socket, data);
-    } catch (e) {
-      console.error(`[stream] startStream error ${data.sessionId}`, e);
+      const handle = await this.runtime.attach(
+        data.runtimeKey,
+        (output) => send(socket, { type: "output", data: output }),
+        (error) => {
+          console.error(`[stream] attach error ${data.sessionId}`, error);
+          send(socket, {
+            type: "error",
+            code: "SESSION_RUNTIME_ERROR",
+            message: "Terminal stream failed",
+          });
+        },
+        { cols, rows },
+      );
+      this.handles.set(socket, handle);
+      handle.onExit(() => {
+        this.handles.delete(socket);
+        send(socket, { type: "ended" });
+        socket.close?.();
+      });
+      send(socket, { type: "status", status: "connected" });
+    } catch (error) {
+      console.error(`[stream] attach failed ${data.sessionId}`, error);
+      send(socket, {
+        type: "error",
+        code: "SESSION_RUNTIME_ERROR",
+        message: "Terminal attach failed",
+      });
     }
+
     return true;
   }
 
@@ -135,14 +176,19 @@ export class SessionStreamController {
       return true;
     }
 
+    const handle = this.handles.get(socket);
+
+    if (!handle) {
+      return true;
+    }
+
     try {
       if (parsed.type === "input") {
-        await this.writeInput(data.runtimeKey, parsed.data);
+        handle.write(parsed.data);
       }
 
       if (parsed.type === "resize") {
-        await this.runtime.resize?.(data.runtimeKey, parsed.cols, parsed.rows);
-        await this.sendSnapshot(socket, data);
+        handle.resize(parsed.cols, parsed.rows);
       }
 
       if (parsed.type === "ping") {
@@ -160,101 +206,11 @@ export class SessionStreamController {
   }
 
   close(socket: StreamSocket) {
-    const timer = this.timers.get(socket);
+    const handle = this.handles.get(socket);
 
-    if (timer) {
-      clearInterval(timer);
-      this.timers.delete(socket);
-    }
-
-    const stream = this.streams.get(socket);
-
-    if (stream) {
-      this.streams.delete(socket);
-      void stream.close();
-    }
-  }
-
-  private async sendSnapshot(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
-    if (!(await this.runtime.exists(data.runtimeKey))) {
-      send(socket, { type: "ended" });
-      return;
-    }
-
-    const snapshot = (await this.runtime.capture?.(data.runtimeKey)) ?? "";
-    this.lastSnapshots.set(socket, snapshot);
-    send(socket, { type: "snapshot", data: snapshot });
-  }
-
-  private async writeInput(runtimeKey: string, data: string) {
-    const previous = this.writeQueues.get(runtimeKey) ?? Promise.resolve();
-    const next = previous
-      .catch(() => undefined)
-      .then(async () => {
-        await this.runtime.write?.(runtimeKey, data);
-      });
-    this.writeQueues.set(runtimeKey, next);
-
-    try {
-      await next;
-    } finally {
-      if (this.writeQueues.get(runtimeKey) === next) {
-        this.writeQueues.delete(runtimeKey);
-      }
-    }
-  }
-
-  private async startStream(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
-    if (this.runtime.stream) {
-      const stream = await this.runtime.stream(
-        data.runtimeKey,
-        (output) => send(socket, { type: "output", data: output }),
-        () =>
-          send(socket, {
-            type: "error",
-            code: "SESSION_RUNTIME_ERROR",
-            message: "Terminal stream failed",
-          }),
-      );
-      this.streams.set(socket, stream);
-      return;
-    }
-
-    const timer = setInterval(() => {
-      void this.poll(socket, data);
-    }, 1000);
-    this.timers.set(socket, timer);
-  }
-
-  private async poll(socket: StreamSocket, data: NonNullable<SessionWebSocketData>) {
-    try {
-      if (!(await this.runtime.exists(data.runtimeKey))) {
-        send(socket, { type: "ended" });
-        this.close(socket);
-        return;
-      }
-
-      const snapshot = (await this.runtime.capture?.(data.runtimeKey)) ?? "";
-      const previous = this.lastSnapshots.get(socket);
-
-      if (snapshot === previous) {
-        return;
-      }
-
-      this.lastSnapshots.set(socket, snapshot);
-
-      if (previous !== undefined && snapshot.startsWith(previous)) {
-        send(socket, { type: "output", data: snapshot.slice(previous.length) });
-        return;
-      }
-
-      send(socket, { type: "snapshot", data: snapshot });
-    } catch {
-      send(socket, {
-        type: "error",
-        code: "SESSION_RUNTIME_ERROR",
-        message: "Terminal stream failed",
-      });
+    if (handle) {
+      this.handles.delete(socket);
+      handle.close();
     }
   }
 }
@@ -330,6 +286,14 @@ const decodePathSegment = (value: string | undefined) => {
   } catch {
     return undefined;
   }
+};
+
+const parsePositiveInt = (value: string | null): number | undefined => {
+  if (value === null) {
+    return undefined;
+  }
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 };
 
 const projectPathErrorResponse = (error: ProjectPathError) => {

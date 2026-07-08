@@ -36,19 +36,30 @@ export type RuntimeStream = {
   close(): Promise<void> | void;
 };
 
+// 每个 WebSocket 客户端 attach 一个 tmux attach 子进程（Bun 原生 PTY）的句柄。
+// write→PTY stdin（前端 input），resize→TIOCSWINSZ（前端 resize），close→kill+close（WS close），
+// onExit→子进程退出回调（tmux session 被 kill / shell exit 时触发，作 ended 信号）。
+export type AttachHandle = {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  close(): void;
+  onExit(cb: (exitCode: number | null) => void): void;
+};
+
+export type AttachOptions = { cols: number; rows: number };
+
 export type RuntimeResources = {
   exists(runtimeKey: string): Promise<boolean>;
   close(runtimeKey: string): Promise<void>;
   startTerminal?(metadata: SessionMetadata): Promise<void>;
   startAgent?(metadata: SessionMetadata): Promise<void>;
-  write?(runtimeKey: string, data: string): Promise<void>;
-  resize?(runtimeKey: string, cols: number, rows: number): Promise<void>;
   capture?(runtimeKey: string): Promise<string>;
-  stream?(
+  attach?(
     runtimeKey: string,
     onData: (data: string) => void,
     onError: (error: Error) => void,
-  ): Promise<RuntimeStream>;
+    opts: AttachOptions,
+  ): Promise<AttachHandle>;
 };
 
 export class SessionRegistryError extends Error {
@@ -556,13 +567,16 @@ const assumeRuntimeExists: RuntimeResources = {
   },
   async close() {},
   async startAgent() {},
-  async write() {},
-  async resize() {},
   async capture() {
     return "";
   },
-  async stream() {
-    return { close() {} };
+  async attach() {
+    return {
+      write() {},
+      resize() {},
+      close() {},
+      onExit() {},
+    };
   },
 };
 

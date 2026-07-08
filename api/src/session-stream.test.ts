@@ -82,33 +82,29 @@ test("handleSessionStreamUpgrade returns not found for missing sessions", async 
   }
 });
 
-test("SessionStreamController sends snapshots and handles input resize ping", async () => {
+test("SessionStreamController attaches and handles input resize ping", async () => {
   const writes: string[] = [];
   const resizes: Array<[number, number]> = [];
-  let snapshot = "ready";
-  let streamOutput: ((data: string) => void) | undefined;
   const runtime: RuntimeResources = {
     async exists() {
       return true;
     },
     async close() {},
     async capture() {
-      return snapshot;
+      return "";
     },
-    async write(_runtimeKey, data) {
-      writes.push(data);
-      snapshot = `ready\n${data}`;
-      streamOutput?.(`\n${data}`);
-    },
-    async resize(_runtimeKey, cols, rows) {
-      resizes.push([cols, rows]);
-    },
-    async stream(_runtimeKey, onData) {
-      streamOutput = onData;
+    async attach(_runtimeKey, onData, _onError, _opts) {
       return {
-        close() {
-          streamOutput = undefined;
+        write(data) {
+          writes.push(data);
+          // 模拟 tmux echo 回显
+          onData(`\n${data}`);
         },
+        resize(cols, rows) {
+          resizes.push([cols, rows]);
+        },
+        close() {},
+        onExit() {},
       };
     },
   };
@@ -122,6 +118,8 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
       sessionId: "terminal_stream123456",
       runtimeKey: "ar-terminal-demo-terminal_stream",
       status: "running" as const,
+      cols: 130,
+      rows: 24,
     },
     send(message: string) {
       messages.push(JSON.parse(message));
@@ -134,15 +132,14 @@ test("SessionStreamController sends snapshots and handles input resize ping", as
   await controller.message(socket, JSON.stringify({ type: "ping" }));
   controller.close(socket);
 
-  expect(messages).toContainEqual({ type: "snapshot", data: "ready" });
-  expect(messages).toContainEqual({ type: "output", data: "\npwd\n" });
-  expect(messages).toContainEqual({ type: "snapshot", data: "ready\npwd\n" });
   expect(messages).toContainEqual({ type: "status", status: "connected" });
+  expect(messages).toContainEqual({ type: "output", data: "\npwd\n" });
   expect(writes).toEqual(["pwd\n"]);
   expect(resizes).toEqual([[120, 40]]);
+  expect(messages.some((m) => (m as { type: string }).type === "snapshot")).toBe(false);
 });
 
-test("SessionStreamController reports ended when runtime disappears", async () => {
+test("SessionStreamController reports error when attach fails", async () => {
   const runtime: RuntimeResources = {
     async exists() {
       return false;
@@ -150,6 +147,9 @@ test("SessionStreamController reports ended when runtime disappears", async () =
     async close() {},
     async capture() {
       return "";
+    },
+    async attach() {
+      throw new Error("attach failed");
     },
   };
   const messages: unknown[] = [];
@@ -169,7 +169,58 @@ test("SessionStreamController reports ended when runtime disappears", async () =
   };
 
   await controller.open(socket);
-  controller.close(socket);
+
+  expect(messages).toContainEqual({
+    type: "error",
+    code: "SESSION_RUNTIME_ERROR",
+    message: "Terminal attach failed",
+  });
+});
+
+test("SessionStreamController reports ended when attach process exits", async () => {
+  const exitCbs = new Set<(code: number | null) => void>();
+  const runtime: RuntimeResources = {
+    async exists() {
+      return true;
+    },
+    async close() {},
+    async capture() {
+      return "";
+    },
+    async attach(_runtimeKey, _onData, _onError, _opts) {
+      return {
+        write() {},
+        resize() {},
+        close() {},
+        onExit(cb) {
+          exitCbs.add(cb);
+        },
+      };
+    },
+  };
+  const messages: unknown[] = [];
+  let closed = false;
+  const controller = new SessionStreamController(runtime);
+  const socket = {
+    data: {
+      kind: "session-stream" as const,
+      sessionType: "terminal" as const,
+      projectName: "demo",
+      sessionId: "terminal_stream123456",
+      runtimeKey: "ar-terminal-demo-terminal_stream",
+      status: "running" as const,
+    },
+    send(message: string) {
+      messages.push(JSON.parse(message));
+    },
+    close() {
+      closed = true;
+    },
+  };
+
+  await controller.open(socket);
+  for (const cb of exitCbs) cb(0);
 
   expect(messages).toContainEqual({ type: "ended" });
+  expect(closed).toBe(true);
 });
