@@ -53,7 +53,11 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "pointer-events-auto z-50 outline-none",
+          // 默认居中卡片定位（fixed 居中 + translate）。点卡片外（Overlay 全屏 scrim 区）
+          // 由 Radix onPointerDownOutside 判为 outside → dismiss（scrim 关闭）。
+          // 底部 sheet 靠 className 覆盖为 `inset-x-0 bottom-0 top-auto translate-x-0 translate-y-0`；
+          // 全屏 reader 靠 className 覆盖为 `inset-0 translate-0`（无 outside 区，靠 ✕/Esc 关）。
+          "pointer-events-auto fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 outline-none",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
           className,
         )}

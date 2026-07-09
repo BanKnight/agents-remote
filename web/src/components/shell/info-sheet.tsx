@@ -57,7 +57,7 @@ export function useInstanceInfoSheet() {
 function InfoSheetDialog({ fields, onClose, title }: PendingInfo & { onClose: () => void }) {
   return (
     <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex items-end justify-center">
+      <DialogContent className="fixed inset-x-0 bottom-0 translate-x-0 translate-y-0 flex items-end justify-center">
         <div
           className={`w-full max-w-md rounded-t-2xl border-t border-neutral-line/60 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >

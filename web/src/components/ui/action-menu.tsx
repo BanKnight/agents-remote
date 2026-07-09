@@ -58,7 +58,7 @@ export function ActionMenu({ items, trigger, align = "end", cancelLabel }: Actio
         <DialogTrigger asChild>{trigger}</DialogTrigger>
         <DialogContent
           className={cn(
-            "fixed inset-x-0 bottom-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
+            "fixed inset-x-0 bottom-0 translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
             "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
             "shadow-2xl shadow-black/40",
             "slide-in-from-bottom duration-200 ease-out",
