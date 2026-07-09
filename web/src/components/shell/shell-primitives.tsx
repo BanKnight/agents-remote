@@ -7,6 +7,8 @@ import {
   useRef,
 } from "react";
 
+import { cn } from "@/lib/utils";
+
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -389,6 +391,32 @@ export function ShellInput({ className = "", ...props }: ShellInputProps) {
   );
 }
 
+type ListGroupProps = {
+  ariaLabel?: string;
+  children: ReactNode;
+  className?: string;
+};
+
+/**
+ * ListGroup 容器 className（DESIGN.md `list` 契约）。iOS Files 范式：plain 连续行，两端
+ * 一致 `divide-y divide-neutral-line/40`（Tailwind v4 实现 = 除末行外每行底部 1px separator，
+ * 选择器 `> :not(:last-child)`，**非每行 gap**），无外框/圆角/卡片，贴外部 `p-3`——服务长/会
+ * 滚动的内容列表（Files / Git 文件列表）。圆角卡片（grouped）留给未来固定/短选项列表，本契约
+ * 不实现。**ListRow 必须是直接子**（`.map` + `key`，禁中间包 div/Fragment），否则 divide-y 的
+ * `> :not(:last-child)` 选择器失效。抽纯函数便于单测（见 shell-primitives.test.ts）。
+ */
+export function listGroupClasses(className?: string): string {
+  return cn("divide-y divide-neutral-line/40", className);
+}
+
+export function ListGroup({ ariaLabel, children, className }: ListGroupProps) {
+  return (
+    <div aria-label={ariaLabel} className={listGroupClasses(className)}>
+      {children}
+    </div>
+  );
+}
+
 type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
   actions?: ReactNode;
   marker?: ReactNode;
@@ -398,9 +426,27 @@ type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
   title: ReactNode;
 };
 
+/**
+ * ListRow 行样式（DESIGN.md `list` 行 token）。连续行去 `rounded-xl`/独立 `raised`
+ * 背景（共享 ListGroup 底）；保留 `px-3 py-2.5`（≈50px 行高）；非 selected 用
+ * `hover:bg-on-surface/5`；selected 用纯 `bg-primary/10` 去 border（连续行里
+ * `border-primary/60` 与 separator 打架，是 `selected-row` 通用契约的连续行特化覆盖）。
+ * 抽纯函数便于单测。
+ */
+export function listRowClasses({
+  selected = false,
+  className,
+}: { selected?: boolean; className?: string } = {}): string {
+  return cn(
+    "flex h-auto w-full min-w-0 cursor-pointer items-center justify-start px-3 py-2.5 text-left transition interactive-row",
+    selected ? "bg-primary/10" : "hover:bg-on-surface/5",
+    className,
+  );
+}
+
 export function ListRow({
   actions,
-  className = "",
+  className,
   marker,
   meta,
   selected = false,
@@ -419,11 +465,7 @@ export function ListRow({
           (e.currentTarget as HTMLDivElement).click();
         }
       }}
-      className={`flex h-auto w-full min-w-0 cursor-pointer items-center justify-start rounded-xl px-3 py-2.5 text-left transition interactive-row ${
-        selected
-          ? "border border-primary/60 bg-primary/10"
-          : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
-      } ${className}`}
+      className={listRowClasses({ selected, className })}
     >
       <span className="flex min-w-0 grow items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-3">
@@ -447,22 +489,26 @@ export function ListRow({
 }
 
 /**
- * ListRow 骨架行（对齐 ListRow：marker + title，`rounded-xl px-3 py-2.5 raised`）。
- * Git 文件列表 + File 列表加载占位复用——行高与真实 ListRow 一致（~48px：py-2.5 20px
- * + marker h-7 28px），替代文案/spinner，避免加载完跳到真实行结构的视觉跳动。
- * 不模拟 meta/actions（Git status 标签、File dropdown 各异，占位反失真）；外层
- * `grid gap-1.5` 与真实列表容器一致，padding 由调用方提供。
+ * ListRow 骨架行（mirror 真实 ListRow DOM：行根与 listRowClasses 同构 + 内部 grow span
+ * justify-between，左 marker + title bar，右尾小占位）。marker 圆角对齐 IconMarker sm
+ * （rounded-sm，旧值 rounded-md 偏圆与真实不搭）；行高与真实一致（py-2.5 + marker h-7 ≈
+ * 49px）。右尾占位模拟 Git status / Files actions 的右侧小元素——加载后真实右尾替换占位、
+ * 尺寸接近不跳（Git status 两端常显、Files 移动 ⋮ 常显，占位贴合；Files 桌面 actions 默认
+ * 透明占位，加载后淡出，轻微可接受）。外层 listGroupClasses()（plain divide-y）与真实
+ * ListGroup 一致，padding 由调用方提供。
  */
 export function ListRowSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div aria-hidden="true" className="grid gap-1.5">
+    <div aria-hidden="true" className={listGroupClasses()}>
       {Array.from({ length: count }, (_, index) => (
-        <div
-          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${shellSurfaceClasses.raised}`}
-          key={index}
-        >
-          <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-md" />
-          <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/2 rounded" />
+        <div className="flex h-auto w-full items-center px-3 py-2.5" key={index}>
+          <span className="flex min-w-0 grow items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-3">
+              <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
+              <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/2 rounded" />
+            </span>
+            <span aria-hidden="true" className="skeleton-shimmer h-6 w-6 shrink-0 rounded-md" />
+          </span>
         </div>
       ))}
     </div>

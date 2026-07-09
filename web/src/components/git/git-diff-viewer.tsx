@@ -10,6 +10,7 @@ import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
 import {
   IconMarker,
+  ListGroup,
   ListRow,
   ListRowSkeleton,
   pillToneClasses,
@@ -84,7 +85,7 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
     );
 
   return (
-    <div className="grid gap-1.5" aria-label="Git changed files">
+    <ListGroup ariaLabel="Git changed files">
       {files.map((file) => {
         const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
         return (
@@ -109,7 +110,7 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
           />
         );
       })}
-    </div>
+    </ListGroup>
   );
 }
 

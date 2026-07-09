@@ -18,6 +18,7 @@ import { useConfirm } from "../shell/confirm-dialog";
 import {
   ActionButton,
   IconMarker,
+  ListGroup,
   ListRow,
   ListRowSkeleton,
   shellSurfaceClasses,
@@ -251,7 +252,7 @@ export function FileEntryList({
 
   return (
     <>
-      <div className="grid gap-1.5" aria-label="Project files">
+      <ListGroup ariaLabel="Project files">
         {entries.map((entry) => {
           const selected = entry.path === selectedFilePath;
           const isDirectory = entry.type === "directory";
@@ -314,7 +315,7 @@ export function FileEntryList({
             />
           );
         })}
-      </div>
+      </ListGroup>
       {ctxMenu ? (
         <DropdownMenu
           open
