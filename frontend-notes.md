@@ -122,27 +122,40 @@ state（树/嵌套，唯一真相）
 - 反例：portal 顶层常驻方案（createPortal 注入动态 slot）实测失败——`container` 变化仍触发子树 unmount+mount，证明绕开 reconciliation 不可行，必须从「渲染结构 = state」这一层修。
 - memory `feedback-Universal-single-pipeline` / `feedback-single-source-pipeline`（同类数据单管道）、项目 `state-sync-principles.md`（上下文充分性：全量同步之所以简单正因为客户端握有全量上下文；按需同步之所以难正因为上下文不足——此条是其在前端渲染层的镜像：把结构关系留在渲染层 = 让组件上下文不充分；提到扁平层 = 让组件始终握有稳定身份这个全量上下文）。
 
-## 4. scrim-only overlay 真机点击穿透（modal pointer-events 锁定）
+## 4. modal scrim overlay 与 portal fiber 冒泡（统一走 Radix Dialog）
 
-### 现象（本项目真机实测 + 调查）
+### 现象（本项目真机实测 + 探针铁证）
 
-移动端底部 action sheet（⋯ 弹出）打开后，点 sheet 外空白区域会穿透到下层元素。但 Playwright/Chromium（移动视口 + touch 模拟）**完全复现不了**——`composedPath()[0]` 显示点击被 scrim 正确拦截（在触发按钮正后方 (55,69) 与纯 scrim 顶部 (50,80) 点击/触摸，path 全是 scrim 自身）。代码静态也正确（`fixed inset-0 z-50` + `onClick` + 内层 `stopPropagation`）。仅在真机（iOS 26 standalone PWA）的 touch/层叠时序下出现。
+移动端 InstanceCard ⋯ 底部 action sheet 打开后，点 sheet 外空白（scrim）会**导航打开下方实例卡片**，且打开的卡片与点击位置不一一对应。最初怀疑是 scrim-only overlay 的"真机 touch 穿透"（scrim 漏拦 → 点击落到下层 DOM），上一轮加了手写 body pointer-events 锁仍未消除。
 
-### 机制（scrim-only vs modal pointer-lock）
+### 机制（真根因 = React createPortal 合成事件按 fiber 树冒泡，非 DOM 穿透）
 
-自写 overlay（scrim 全屏 div + onClick 关闭 + 内层 stopPropagation）只靠「scrim 在顶层拦截点击」。这在 Chromium 成立，但真机有失败模式（touch 事件时序、层叠上下文、scroll/repaint）使 scrim 偶发漏拦 → 点击落到下层。
+**这不是 scrim 漏拦的 DOM 穿透 ghost-click**，而是 React `createPortal` 的合成事件按 **fiber 树**冒泡（React 保证 portal 事件冒泡回组件树，好像没 portal）：
 
-Radix 的 modal 走另一条机制：`@radix-ui/react-dismissable-layer`（`modal=true`，dist index.js L133-148）打开时把 `document.body.style.pointerEvents = "none"`，并让 modal 内容自身显式 `pointerEvents: "auto"`（L170）—— body 内**任何**元素都不可能收到 pointer 事件，从机制上封死穿透（不依赖 scrim 是否拦到）。
+- ActionMenu 的 portal content（移动 sheet/scrim、桌面 popover、Radix `Dialog.Portal` 的 overlay/items）DOM 在 body，但 **fiber 嵌在 InstanceCard div 内**。
+- scrim click 的合成事件按 fiber 冒泡到 InstanceCard div 的 `onClick={onSelect}` → `focusInstance` → navigate。
+- **探针铁证**：卡片 DOM 上零事件（`cardPE=none`、click target=overlay、`composedPath=overlay>body>html` 不含卡片），但 navigate 仍发生——因为是 fiber 冒泡，不是 DOM 事件命中。
+- **关键**：Radix Dialog（`modal=true`，body pointer-lock 全开）**也同病**——迁移到 Radix Dialog 后 navigate 仍发生。body pointer-lock 挡的是 DOM pointer events，**挡不住 fiber 合成冒泡**。所以"手写 scrim 的 ghost-click（click 阶段关闭、剩余合成 click 落下方 DOM）"这个最初假设是错的。
 
-本项目「下拉菜单改 sheet」时把桌面 Radix `DropdownMenu`(modal) 换成移动自写 `MobileActionSheet`(scrim-only)，**丢了这层 modal pointer-lock**，于是回归。
+对照实验（同一探针）：Esc 关闭 sheet **不**导航（keydown 只匹配 InstanceCard 的 Enter/Space，Esc 不触发 onSelect）；scrim tap 关闭**才**导航（click 走 fiber 冒泡）。证明 navigate 来自 click 的 fiber 冒泡，与 dismiss 路径无关。
 
-### 标准做法（overlay 打开锁 body pointer-events）
+### 标准做法（两层：Dialog primitive 统一 modal 语义 + 调用方 contains 判断阻断 fiber 冒泡）
 
-任何 modal 语义的 overlay（背景不可交互的 sheet / modal / action-sheet）打开期间锁 `body { pointer-events: none }`，overlay 自身（scrim + 内容）显式 `pointer-events: auto`（portal 到 body 默认继承 none，**必须显式 auto** 才能接收点击，否则连 scrim 的 onClick 都失效、sheet 无法关闭）。mount 锁、unmount 还原（`const prev = body.style.pointerEvents; body.style.pointerEvents = "none"; return () => { body.style.pointerEvents = prev; };`）。
+**1. modal 语义统一走共享 `ui/dialog.tsx`（Radix `Dialog`，`modal=true`）**：所有"背景不可交互"的 overlay（居中 modal / 底部 sheet / 全屏 reader）用同一 primitive，scrim 点击关闭 / Esc / focus trap / body pointer-lock 全交 Radix dismissable-layer，**不再手写 scrim + onClick + window keydown + useEffect body-lock**。形态靠 `className` 覆盖（居中 / 底部 sheet / 全屏），封装不硬编码 variant。`onOpenChange` 是关闭统一入口（promise-API dialog 在此 resolve）。
 
-这是「机制级」修复，覆盖所有穿透失败模式（z-index / touch 幽灵 / 层叠），而非 scrim-only 的「祈祷拦到」。直接镜像 Radix dismissable-layer 即可。**判定**：overlay 是 modal 语义（背景不可交互）才上锁；非 modal（hover popover 背景仍可点）不要锁。
+**2. 调用方阻断 portal fiber 冒泡（关键，Dialog 管不到）**：当 portal overlay 嵌在带 `onClick` 的祖先内（如 InstanceCard div `onClick={onSelect}`），在祖先的 `onClick` 加 **DOM `contains` 判断**：`if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;`——portal 的 click（DOM target 在 body，不在祖先内）被忽略，祖先内的真实 click 正常触发。这**不破坏** Radix scrim dismiss（走 document listener 独立路径，不经过祖先 onClick；探针验证 `sheetAfter` 保持 0）。
+
+**⚠️ 不能用 Overlay/Content `onClick stopPropagation` 兜底**：实测它同时阻断 Radix scrim dismiss（`sheetAfter: 0→1`），因为 navigate 和 dismiss 共享同一个 overlay click 事件——React 合成 `stopPropagation` 在 portal 场景下连带阻断了 Radix 的 dismiss 检测。fiber 冒泡必须在"接收冒泡的祖先"层用 contains 判断，不在 portal content 层 stopPropagation。
+
+**判定**：overlay 是 modal 语义（背景不可交互）才走 Dialog + 锁；非 modal（按坐标定位的锚定 popover、hover popover 背景仍可点）用裸 `createPortal`，不锁、不进 Dialog。
+
+### 诊断方法
+
+源码导航入口（如 `useWorkbenchNavigate`）临时加 `console.log("[nav-wb]", ..., new Error().stack)`，Playwright `page.on("console")` 抓栈，直接看到 `onSelect ← React dispatch ← portal click` 链。`pushState` 的 stack 因 TanStack microtask commit 截断（commit 用 `Promise.resolve().then(()=>v())` 推迟到微任务），但 navigate→commit 同步，trace 不受影响。
 
 ### 来源
 
-- Radix `react-dismissable-layer` 源码 `node_modules/.bun/@radix-ui+react-dismissable-layer@1.1.13+.../dist/index.js` L133-148（body lock save/restore）、L170（modal 内容 `pointerEvents: "auto"`）。
-- 修复 commit `fix(web): 移动 action sheet 点击穿透——补 body pointer-events 锁定`（`web/src/components/ui/action-menu.tsx` `MobileActionSheet`）；DESIGN.md `action-menu / action-sheet` 条目补 modal pointer-lock 契约。
+- 探针 `scripts/_probe-sheet-ghost.mjs`（已删）：登录 → test 项目造 terminal session → 移动视口 /global → 开 InstanceCard ⋯ sheet → hook 卡片全事件 + pushState + 注入 navigateWorkbench trace → tap scrim。
+- Radix `react-dialog@1.1.17`（`DialogContentModal` L199 `disableOutsidePointerEvents`、L204 `onPointerDownOutside`、L281 `deferPointerDownOutside`）+ `react-dismissable-layer` touch `once` dismiss（L191-200）。
+- 修复 commit `fix(web): InstanceCard ⋯ sheet 误导航——阻断 portal fiber 冒泡`（`shell-primitives.tsx` InstanceCard `contains` 判断 + `ui/dialog.tsx` 共享 primitive + ActionMenu 移动端迁 Dialog）。
+- memory `react-portal-fiber-click-bubbling`（真根因 + 修复闭环）。

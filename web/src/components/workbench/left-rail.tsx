@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { useEffect, useState, type FormEvent, useId } from "react";
+import { useState, type FormEvent, useId } from "react";
 import type { Project } from "@agents-remote/shared";
 import { listProjects } from "../../api/client";
 import { useT } from "../../i18n";
@@ -12,6 +12,7 @@ import { INSTANCE_SKELETON_ROW_COUNT } from "./instance-area";
 import { type WorkbenchScope, workbenchSettingsFlyoutOpenAtom } from "../../routes/workbench-model";
 import { SettingsFlyout } from "./settings-flyout";
 import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
+import { Dialog, DialogContent } from "../ui/dialog";
 
 type LeftRailProps = {
   scope: WorkbenchScope;
@@ -48,15 +49,6 @@ function ProjectTree({ scope }: ProjectTreeProps) {
   };
 
   const selectGlobal = () => void navigate({ to: "/global" });
-
-  useEffect(() => {
-    if (!setupOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSetupOpen(false);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [setupOpen]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -111,24 +103,18 @@ function ProjectTree({ scope }: ProjectTreeProps) {
           {t("nav.settings")}
         </button>
       </div>
-      {setupVisible ? (
-        <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto bg-surface-inset/60 backdrop-blur-sm"
-          onClick={() => setSetupOpen(false)}
-          aria-hidden="true"
-        >
-          <div className="p-4" onClick={(e) => e.stopPropagation()} aria-hidden="true">
-            <ProjectSetupPanel
-              createError={create.error instanceof Error ? create.error : null}
-              inputId={inputId}
-              isPending={create.isPending}
-              onProjectPathChange={setProjectPath}
-              onSubmit={handleSubmit}
-              projectPath={projectPath}
-            />
-          </div>
-        </div>
-      ) : null}
+      <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
+        <DialogContent className="flex flex-col items-center justify-center overflow-y-auto p-4">
+          <ProjectSetupPanel
+            createError={create.error instanceof Error ? create.error : null}
+            inputId={inputId}
+            isPending={create.isPending}
+            onProjectPathChange={setProjectPath}
+            onSubmit={handleSubmit}
+            projectPath={projectPath}
+          />
+        </DialogContent>
+      </Dialog>
       <SettingsFlyout />
     </div>
   );

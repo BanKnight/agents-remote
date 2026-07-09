@@ -47,6 +47,7 @@ import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primi
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
+import { Dialog, DialogContent } from "../components/ui/dialog";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
@@ -675,47 +676,39 @@ function FullscreenReader({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-[100] flex flex-col bg-surface-inset/95 backdrop-blur-sm"
-      style={{
-        paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
-        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
-        paddingLeft: "max(env(safe-area-inset-left, 0px), 0.75rem)",
-        paddingRight: "max(env(safe-area-inset-right, 0px), 0.75rem)",
-      }}
-    >
-      <div className="flex items-center gap-2 rounded-t-lg border-b border-neutral-line/60 bg-surface-raised/60 px-3 py-2 sm:px-5">
-        {header}
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-auto cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
-          aria-label={closeLabel}
-        >
-          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">{children}</div>
-      {footer}
-    </div>,
-    document.body,
+  return (
+    <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="fixed inset-0 z-[100] flex flex-col bg-surface-inset/95 backdrop-blur-sm"
+        style={{
+          paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
+          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
+          paddingLeft: "max(env(safe-area-inset-left, 0px), 0.75rem)",
+          paddingRight: "max(env(safe-area-inset-right, 0px), 0.75rem)",
+        }}
+      >
+        <div className="flex items-center gap-2 rounded-t-lg border-b border-neutral-line/60 bg-surface-raised/60 px-3 py-2 sm:px-5">
+          {header}
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
+            aria-label={closeLabel}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M4 4l8 8M12 4l-8 8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">{children}</div>
+        {footer}
+      </DialogContent>
+    </Dialog>
   );
 }
 

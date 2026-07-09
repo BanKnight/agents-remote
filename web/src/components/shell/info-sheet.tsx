@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { Dialog, DialogContent } from "../ui/dialog";
 import { shellSurfaceClasses } from "./shell-primitives";
 
 /**
@@ -53,36 +55,24 @@ export function useInstanceInfoSheet() {
 }
 
 function InfoSheetDialog({ fields, onClose, title }: PendingInfo & { onClose: () => void }) {
-  // Esc 关闭：backdrop div 不可聚焦（无 tabIndex），onKeyDown 依赖焦点落入内部，但 sheet 内无按钮
-  // 时焦点停在触发按钮上 → Esc 不触发。改用 window 监听，不依赖焦点位置（标准 modal Escape 模式）。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-surface-inset/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className={`w-full max-w-md rounded-t-2xl border-t border-neutral-line/60 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-on-surface/15" aria-hidden="true" />
-        <h2 className="text-base font-semibold text-on-surface">{title}</h2>
-        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
-          {fields.map((field) => (
-            <div className="contents" key={field.label}>
-              <dt className="text-xs text-on-surface-muted">{field.label}</dt>
-              <dd className="truncate text-xs font-medium text-on-surface">{field.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </div>
+    <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex items-end justify-center">
+        <div
+          className={`w-full max-w-md rounded-t-2xl border-t border-neutral-line/60 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
+          <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-on-surface/15" aria-hidden="true" />
+          <h2 className="text-base font-semibold text-on-surface">{title}</h2>
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+            {fields.map((field) => (
+              <div className="contents" key={field.label}>
+                <dt className="text-xs text-on-surface-muted">{field.label}</dt>
+                <dd className="truncate text-xs font-medium text-on-surface">{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
