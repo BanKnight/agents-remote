@@ -124,15 +124,28 @@ function MobileActionSheet({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // modal pointer-lock（镜像 Radix dismissable-layer `modal=true`，L135-146）：sheet 打开期间
+  // 把 body 锁成 `pointer-events: none`，body 内任何元素都不可能收到 pointer 事件，机制上杜绝
+  // 空白区域点击穿透到下层（scrim-only 在真机 touch/层叠时序下会失效）。scrim/sheet 自身显式
+  // `pointer-events-auto` 才能接收点击（portal 到 body，默认继承 none）。对齐桌面 Radix modal 契约。
+  useEffect(() => {
+    const body = document.body;
+    const prev = body.style.pointerEvents;
+    body.style.pointerEvents = "none";
+    return () => {
+      body.style.pointerEvents = prev;
+    };
+  }, []);
+
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end bg-black/60"
+      className="pointer-events-auto fixed inset-0 z-50 flex items-end bg-black/60"
       role="presentation"
       onClick={onClose}
     >
       <div
         className={cn(
-          "w-full rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
+          "pointer-events-auto w-full rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
           "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
           "shadow-2xl shadow-black/40",
           "animate-in slide-in-from-bottom duration-200 ease-out",
