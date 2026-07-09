@@ -154,21 +154,25 @@ export function NavItemContent({
 }
 
 /**
- * NavItem 骨架行（对齐 NavItemContent horizontal：marker + label + description，`px-2 py-1.5
- * rounded-md`）。左栏实例节点 + 历史列表项加载占位复用——双行结构（label 条 + description 条）
- * 对齐含 description 的真实 NavItemContent 行高，避免加载完从单行跳到双行的视觉跳动。
- * skeleton-shimmer 与 ChatSkeleton 一致（替代 animate-pulse）。
+ * NavItem 骨架行（对齐 NavItemContent horizontal：marker + label，`px-2 py-1.5 rounded-md`）。
+ * 左栏项目子项加载占位——单行结构（marker + label 条）对齐真实单行 NavItemContent
+ *（项目子项无 description），避免加载完从双行占位跳到单行真实的视觉跳动。label 占位条
+ * `h-5` 对齐 `text-sm` 行盒 20px（DESIGN 对齐铁律）。行 `border border-transparent` 对齐
+ * 真实 `ShellNavigationButton` 的 `Button` border 模型——骨架行自身 marker/行高与真实
+ * `Button` outer 一致（border + `px-2 py-1.5` + marker `h-7` = 42px），由外层 `pl-4`
+ * 容器提供子项缩进（与真实项目子项同容器），骨架→真实无横向跳动。skeleton-shimmer 与
+ * ChatSkeleton 一致。
  */
 export function NavItemSkeleton({ count = 3 }: { count?: number }) {
   return (
     <>
       {Array.from({ length: count }, (_, index) => (
-        <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5" key={index}>
+        <div
+          className="flex items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5"
+          key={index}
+        >
           <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
-          <span className="min-w-0 flex-1">
-            <span aria-hidden="true" className="skeleton-shimmer block h-3.5 w-3/4 rounded" />
-            <span aria-hidden="true" className="skeleton-shimmer mt-1 block h-2.5 w-1/2 rounded" />
-          </span>
+          <span aria-hidden="true" className="skeleton-shimmer block h-5 w-3/4 rounded" />
         </div>
       ))}
     </>

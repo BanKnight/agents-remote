@@ -93,13 +93,13 @@ function ProjectTree({ scope }: ProjectTreeProps) {
           </div>
         ) : null}
       </nav>
-      <div className="shrink-0 border-t border-on-surface/5 p-2">
+      <div className="shrink-0 border-t border-on-surface/5 py-2">
         <button
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="flex w-full items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={() => setSettingsOpen(true)}
           type="button"
         >
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+          <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
             <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth={1.5} />
             <path
               d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"
@@ -142,7 +142,7 @@ function GlobalNavNode({ active, onSelect }: { active: boolean; onSelect: () => 
       label={t("workbench.global")}
       marker={
         <IconMarker size="sm" tone="default">
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+          <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
             <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth={1.5} />
             <path
               d="M2 8h12M8 2c1.8 2 1.8 10 0 12M8 2c-1.8 2-1.8 10 0 12"
@@ -170,7 +170,7 @@ function ProjectNode({ active, project, onSelect }: ProjectNodeProps) {
       label={project.name}
       marker={
         <IconMarker size="sm" tone="success">
-          <ShellIcon className="h-3 w-3" name="project" />
+          <ShellIcon className="size-3.5" name="project" />
         </IconMarker>
       }
       onClick={onSelect}
@@ -191,22 +191,22 @@ type ProjectsSectionHeaderProps = {
 function ProjectsSectionHeader({ collapsed, onCreate, onToggle }: ProjectsSectionHeaderProps) {
   const { t } = useT();
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5">
+    <div className="flex items-center gap-1 px-2">
       <button
         aria-expanded={!collapsed}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md py-1.5 pl-2 pr-1 text-left text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md border border-transparent py-1.5 pr-1 text-left text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
         onClick={onToggle}
         type="button"
       >
         <IconMarker size="sm" tone="success">
-          <ShellIcon className="h-3 w-3" name="project" />
+          <ShellIcon className="size-3.5" name="project" />
         </IconMarker>
         <span className="min-w-0 flex-1 truncate text-xs font-bold sm:text-sm">
           {t("workbench.projectsSection")}
         </span>
         <svg
           aria-hidden="true"
-          className={`h-3 w-3 shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`}
+          className={`size-3 shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`}
           fill="none"
           viewBox="0 0 16 16"
         >
@@ -225,7 +225,7 @@ function ProjectsSectionHeader({ collapsed, onCreate, onToggle }: ProjectsSectio
         onClick={onCreate}
         type="button"
       >
-        <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+        <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
           <path d="M8 3v10M3 8h10" strokeLinecap="round" strokeWidth={1.5} stroke="currentColor" />
         </svg>
       </button>
@@ -234,9 +234,5 @@ function ProjectsSectionHeader({ collapsed, onCreate, onToggle }: ProjectsSectio
 }
 
 function LeftRailSkeleton() {
-  return (
-    <div className="flex flex-col gap-1 p-2">
-      <NavItemSkeleton count={INSTANCE_SKELETON_ROW_COUNT} />
-    </div>
-  );
+  return <NavItemSkeleton count={INSTANCE_SKELETON_ROW_COUNT} />;
 }

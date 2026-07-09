@@ -43,7 +43,7 @@ const svgMap: Record<string, string> = {
 export type ShellIconName = keyof typeof svgMap;
 
 export function ShellIcon({
-  className = "h-5 w-5",
+  className = "size-4",
   name,
 }: {
   className?: string;
@@ -51,10 +51,15 @@ export function ShellIcon({
 }) {
   const raw = svgMap[name];
   if (!raw) return null;
+  // 给注入的 svg 标 size-full：class 含 "size-" 才能绕过 shadcn Button base 的
+  // `[&_svg:not([class*='size-'])]:size-4`——否则 Button 内的 ShellIcon svg 被强制 16px，
+  // 调用方传的尺寸失效（IconMarker sm 的 h-3.5=14px 被覆盖成 16）。svg size-full 跟随
+  // 外层 span（span 由 className 定尺寸），全栈 Button>ShellIcon 的 icon 尺寸由此可靠。
+  const html = raw.replace(/^<svg\b/, `<svg class="size-full"`);
   return (
     <span
       className={"inline-flex items-center justify-center " + className}
-      dangerouslySetInnerHTML={{ __html: raw }}
+      dangerouslySetInnerHTML={{ __html: html }}
       aria-hidden="true"
     />
   );
