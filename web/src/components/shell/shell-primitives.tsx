@@ -51,7 +51,7 @@ const buttonToneClasses: Record<ShellTone, string> = {
     "border-success/40 bg-success/10 text-success hover:border-success/70 hover:bg-success/15",
   warning:
     "border-warning/40 bg-warning/10 text-warning hover:border-warning/70 hover:bg-warning/15",
-  danger: "border-error/40 bg-error/10 text-error hover:border-error/70 hover:bg-error/15",
+  danger: "border-transparent bg-error text-on-error hover:bg-error/90",
   muted:
     "border-neutral-line bg-surface-inset/60 text-on-surface-muted hover:bg-surface-inset/80 hover:border-on-surface-muted",
 };
