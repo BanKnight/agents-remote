@@ -121,3 +121,28 @@ state（树/嵌套，唯一真相）
 - 工作台 n 叉树布局（`docs/design/workbench-views.md` §7.5/§7.8）：split / 合入 / tab 跨 group 移动导致 terminal 重连，根因是把树直接递归渲染；解法是 `flattenLayout` 投影成三个并列扁平数组（groups / gutters / panels），group 用 `key=leaf.id`、tab 用 `key=sessionId`，split / 合入 / 移动全不重建。
 - 反例：portal 顶层常驻方案（createPortal 注入动态 slot）实测失败——`container` 变化仍触发子树 unmount+mount，证明绕开 reconciliation 不可行，必须从「渲染结构 = state」这一层修。
 - memory `feedback-Universal-single-pipeline` / `feedback-single-source-pipeline`（同类数据单管道）、项目 `state-sync-principles.md`（上下文充分性：全量同步之所以简单正因为客户端握有全量上下文；按需同步之所以难正因为上下文不足——此条是其在前端渲染层的镜像：把结构关系留在渲染层 = 让组件上下文不充分；提到扁平层 = 让组件始终握有稳定身份这个全量上下文）。
+
+## 4. scrim-only overlay 真机点击穿透（modal pointer-events 锁定）
+
+### 现象（本项目真机实测 + 调查）
+
+移动端底部 action sheet（⋯ 弹出）打开后，点 sheet 外空白区域会穿透到下层元素。但 Playwright/Chromium（移动视口 + touch 模拟）**完全复现不了**——`composedPath()[0]` 显示点击被 scrim 正确拦截（在触发按钮正后方 (55,69) 与纯 scrim 顶部 (50,80) 点击/触摸，path 全是 scrim 自身）。代码静态也正确（`fixed inset-0 z-50` + `onClick` + 内层 `stopPropagation`）。仅在真机（iOS 26 standalone PWA）的 touch/层叠时序下出现。
+
+### 机制（scrim-only vs modal pointer-lock）
+
+自写 overlay（scrim 全屏 div + onClick 关闭 + 内层 stopPropagation）只靠「scrim 在顶层拦截点击」。这在 Chromium 成立，但真机有失败模式（touch 事件时序、层叠上下文、scroll/repaint）使 scrim 偶发漏拦 → 点击落到下层。
+
+Radix 的 modal 走另一条机制：`@radix-ui/react-dismissable-layer`（`modal=true`，dist index.js L133-148）打开时把 `document.body.style.pointerEvents = "none"`，并让 modal 内容自身显式 `pointerEvents: "auto"`（L170）—— body 内**任何**元素都不可能收到 pointer 事件，从机制上封死穿透（不依赖 scrim 是否拦到）。
+
+本项目「下拉菜单改 sheet」时把桌面 Radix `DropdownMenu`(modal) 换成移动自写 `MobileActionSheet`(scrim-only)，**丢了这层 modal pointer-lock**，于是回归。
+
+### 标准做法（overlay 打开锁 body pointer-events）
+
+任何 modal 语义的 overlay（背景不可交互的 sheet / modal / action-sheet）打开期间锁 `body { pointer-events: none }`，overlay 自身（scrim + 内容）显式 `pointer-events: auto`（portal 到 body 默认继承 none，**必须显式 auto** 才能接收点击，否则连 scrim 的 onClick 都失效、sheet 无法关闭）。mount 锁、unmount 还原（`const prev = body.style.pointerEvents; body.style.pointerEvents = "none"; return () => { body.style.pointerEvents = prev; };`）。
+
+这是「机制级」修复，覆盖所有穿透失败模式（z-index / touch 幽灵 / 层叠），而非 scrim-only 的「祈祷拦到」。直接镜像 Radix dismissable-layer 即可。**判定**：overlay 是 modal 语义（背景不可交互）才上锁；非 modal（hover popover 背景仍可点）不要锁。
+
+### 来源
+
+- Radix `react-dismissable-layer` 源码 `node_modules/.bun/@radix-ui+react-dismissable-layer@1.1.13+.../dist/index.js` L133-148（body lock save/restore）、L170（modal 内容 `pointerEvents: "auto"`）。
+- 修复 commit `fix(web): 移动 action sheet 点击穿透——补 body pointer-events 锁定`（`web/src/components/ui/action-menu.tsx` `MobileActionSheet`）；DESIGN.md `action-menu / action-sheet` 条目补 modal pointer-lock 契约。
