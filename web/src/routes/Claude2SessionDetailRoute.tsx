@@ -48,6 +48,12 @@ import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
@@ -3157,10 +3163,8 @@ function ModelSelector({
 }) {
   const { t } = useT();
   const bridge = useContext(Claude2BridgeContext);
-  const [open, setOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const preSwitchResolvedRef = useRef<string | undefined>(undefined);
-  const ref = useRef<HTMLDivElement>(null);
 
   // Clear the spinner when the server confirms the switch:
   //   a) currentResolved changes from its pre-switch baseline (system.init
@@ -3214,73 +3218,62 @@ function ModelSelector({
   }
 
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
-        onClick={() => setOpen(!open)}
-      >
-        {label}
-        <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M4 6l4 4 4-4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {open ? (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-neutral-line/50 bg-surface-raised shadow-xl py-1">
-            {availableModels.map((modelId) => {
-              const isActive = modelId === current;
-              return (
-                <button
-                  key={modelId}
-                  type="button"
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
-                    isActive
-                      ? "text-user bg-user/10 cursor-default"
-                      : "text-on-surface-muted hover:text-on-surface-soft hover:bg-neutral-line/50 cursor-pointer"
-                  }`}
-                  disabled={isActive}
-                  onClick={() => {
-                    setOpen(false);
-                    if (!isActive && bridge) {
-                      setSwitchingTo(modelId);
-                      bridge.switchModel(modelId);
-                    }
-                  }}
-                >
-                  {isActive ? (
-                    <svg
-                      className="h-3 w-3 shrink-0 text-user"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M3 8l3.5 3.5L13 5"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : (
-                    <span className="w-3 shrink-0" />
-                  )}
-                  {modelDisplayLabel(modelId)}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      ) : null}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
+        >
+          {label}
+          <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" sideOffset={4}>
+        {availableModels.map((modelId) => {
+          const isActive = modelId === current;
+          return (
+            <DropdownMenuItem
+              key={modelId}
+              disabled={isActive}
+              className={
+                isActive
+                  ? "text-user bg-user/10 data-[disabled]:opacity-100"
+                  : "text-on-surface-muted"
+              }
+              onSelect={() => {
+                if (bridge) {
+                  setSwitchingTo(modelId);
+                  bridge.switchModel(modelId);
+                }
+              }}
+            >
+              {isActive ? (
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 8l3.5 3.5L13 5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                <span className="size-4 shrink-0" />
+              )}
+              {modelDisplayLabel(modelId)}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -3301,9 +3294,7 @@ function PermissionModeSelector({
   availableModes: string[];
 }) {
   const bridge = useContext(Claude2BridgeContext);
-  const [open, setOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
 
   const modes =
     availableModes.length > 0
@@ -3329,78 +3320,67 @@ function PermissionModeSelector({
   }
 
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button
-        type="button"
-        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
-          pending
-            ? "text-on-surface-muted cursor-default"
-            : "text-permission/80 hover:text-permission-soft hover:bg-surface-raised/50 cursor-pointer"
-        }`}
-        disabled={pending}
-        onClick={() => setOpen(!open)}
-      >
-        {label}
-        <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M4 6l4 4 4-4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {open ? (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[7rem] rounded-lg border border-neutral-line/50 bg-surface-raised shadow-xl py-1">
-            {modes.map((pmId) => {
-              const isActive = pmId === mode;
-              return (
-                <button
-                  key={pmId}
-                  type="button"
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
-                    isActive
-                      ? "text-permission bg-permission/10 cursor-default"
-                      : "text-on-surface-muted hover:text-on-surface-soft hover:bg-neutral-line/50 cursor-pointer"
-                  }`}
-                  disabled={isActive}
-                  onClick={() => {
-                    setOpen(false);
-                    if (!isActive && bridge) {
-                      setSwitchingTo(pmId);
-                      bridge.switchPermissionMode(pmId);
-                    }
-                  }}
-                >
-                  {isActive ? (
-                    <svg
-                      className="h-3 w-3 shrink-0 text-permission"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M3 8l3.5 3.5L13 5"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : (
-                    <span className="w-3 shrink-0" />
-                  )}
-                  {PERMISSION_MODE_LABELS[pmId] ?? pmId}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      ) : null}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
+            pending
+              ? "text-on-surface-muted cursor-default"
+              : "text-permission/80 hover:text-permission-soft hover:bg-surface-raised/50 cursor-pointer"
+          }`}
+          disabled={pending}
+        >
+          {label}
+          <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" sideOffset={4}>
+        {modes.map((pmId) => {
+          const isActive = pmId === mode;
+          return (
+            <DropdownMenuItem
+              key={pmId}
+              disabled={isActive}
+              className={
+                isActive
+                  ? "text-permission bg-permission/10 data-[disabled]:opacity-100"
+                  : "text-on-surface-muted"
+              }
+              onSelect={() => {
+                if (bridge) {
+                  setSwitchingTo(pmId);
+                  bridge.switchPermissionMode(pmId);
+                }
+              }}
+            >
+              {isActive ? (
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 8l3.5 3.5L13 5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                <span className="size-4 shrink-0" />
+              )}
+              {PERMISSION_MODE_LABELS[pmId] ?? pmId}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
