@@ -632,9 +632,18 @@ export function InstanceCard({
   return (
     <div
       className={`group relative flex min-w-0 cursor-pointer items-start gap-3 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-      onClick={onSelect}
+      onClick={(e) => {
+        // 忽略来自 ActionMenu portal（移动 sheet/scrim、桌面 popover、⋯ trigger 经 asChild）的 click：
+        // 它们 portal 到 body，DOM 上 target 不在本卡片内，但 React 合成事件按 fiber 冒泡到此会误
+        // 触发 onSelect 导航（ghost-click）。用 DOM contains 判断只接受确实落在卡片内的 click——
+        // 这不影响 Radix scrim dismiss（走 document listener，不经过本 onClick）。trigger 自身已
+        // stopPropagation，这里兜底 portal content 的合成冒泡。
+        if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;
+        onSelect();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
+          if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;
           e.preventDefault();
           onSelect();
         }
