@@ -5,10 +5,14 @@ import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
 import { formatBytes } from "../files/file-browser";
-import { IconMarker, NavItemSkeleton, ShellSectionLabel } from "../shell/shell-primitives";
-import { ShellNavigationButton } from "../shell/shell-navigation";
+import {
+  ListGroup,
+  ListRow,
+  ListRowSkeleton,
+  sessionMarker,
+  ShellSectionLabel,
+} from "../shell/shell-primitives";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import { ShellIcon } from "../shell/icons";
 
 /**
  * 历史 session「活跃中」脉动点。hasActiveSession 的历史（已 resume 为活跃实例）共用
@@ -22,21 +26,17 @@ const ActiveDot = (
 const HISTORY_SKELETON_ROW_COUNT = 3;
 
 /**
- * 历史 session 加载骨架（行级，复用 NavItemSkeleton，与 ShellNavigationButton 行高对齐）。
+ * 历史 session 加载骨架（复用 ListRowSkeleton，与真实 ListRow 行高对齐，plain divide-y 连续行）。
  * 首次拉取 pending 时占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格
- *（CardGridSkeleton）形态不同：历史是紧凑导航行，卡片是高卡。
+ *（CardGridSkeleton）形态不同：历史是紧凑连续行，卡片是高卡。
  */
 function HistoryListSkeleton() {
-  return (
-    <div className="flex flex-col gap-1">
-      <NavItemSkeleton count={HISTORY_SKELETON_ROW_COUNT} />
-    </div>
-  );
+  return <ListRowSkeleton count={HISTORY_SKELETON_ROW_COUNT} />;
 }
 
 /**
- * 项目历史 session 数据管道（单一来源，设计文档 §3/§4）。从中栏 history tab + 左栏项目段
- * 任意位置消费历史都走此 hook：`listAgentHistory` 查询 + resume mutation（claudeSessionId
+ * 项目历史 session 数据管道（单一来源，设计文档 §3/§4）。桌面 + 移动中栏 history tab 消费
+ * 历史都走此 hook：`listAgentHistory` 查询 + resume mutation（claudeSessionId
  * → 新活跃实例 + invalidate agent-sessions/agent-history + navigate 聚焦）。resume onSuccess
  * 的 navigate 固定到 `/projects/$key/...`，故本 hook 仅适用于 project scope（history 是
  * project-scoped 数据，global 不可见）。
@@ -94,9 +94,9 @@ type HistoryListProps = {
 };
 
 /**
- * 历史 session 列表（设计文档 §3/§4）。从原 left-rail ProjectInstances 提取，供左栏项目段
- * + 中栏 history tab 共用——单一数据管道（useHistorySessions）+ 单一渲染，消除两处历史
- * 维护分支。entries 为空时返回 null（左栏段落、中栏 tab 都自然空态，不伪造占位）。
+ * 历史 session 列表（设计文档 §3/§4）。供桌面 + 移动中栏 history tab 共用——单一数据管道
+ *（useHistorySessions）+ 单一渲染（ListGroup/ListRow plain 连续行 + sessionMarker sm，
+ * 与总览 table 行同款 marker）。entries 为空时返回 null（中栏 tab 自然空态，不伪造占位）。
  */
 export function HistoryList({ focusId, projectName, showLabel = true }: HistoryListProps) {
   const { t } = useT();
@@ -158,15 +158,17 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
           {t("workbench.historySection")}
         </ShellSectionLabel>
       ) : null}
-      {entries.map((entry) => (
-        <HistorySessionNode
-          active={entry.hasActiveSession && entry.activeSessionId === focusId}
-          entry={entry}
-          isResuming={isResuming}
-          key={entry.claudeSessionId}
-          onClick={() => handleClick(entry)}
-        />
-      ))}
+      <ListGroup ariaLabel={t("workbench.historySection")}>
+        {entries.map((entry) => (
+          <HistorySessionNode
+            active={entry.hasActiveSession && entry.activeSessionId === focusId}
+            entry={entry}
+            isResuming={isResuming}
+            key={entry.claudeSessionId}
+            onClick={() => handleClick(entry)}
+          />
+        ))}
+      </ListGroup>
       {promptHolder}
     </>
   );
@@ -193,19 +195,15 @@ function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessi
         .filter(Boolean)
         .join(" · ");
   return (
-    <ShellNavigationButton
-      active={active}
-      description={description || undefined}
-      label={displayTitle}
-      marker={
-        <IconMarker tone={entry.hasActiveSession ? "success" : "accent"}>
-          <ShellIcon className="h-3.5 w-3.5" name="anthropic" />
-        </IconMarker>
-      }
+    <ListRow
+      marker={sessionMarker("agent", "claude", "sm")}
       meta={entry.hasActiveSession ? ActiveDot : undefined}
       onClick={() => {
         if (!isResuming) onClick();
       }}
+      selected={active}
+      subtitle={description || undefined}
+      title={displayTitle}
     />
   );
 }
