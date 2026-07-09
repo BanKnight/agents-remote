@@ -15,3 +15,4 @@
 - [claude-code-integration-projects.md](./claude-code-integration-projects.md) — 调研 hapi、xylocopa、claude-squad、claude-code-sdk-ts、claude-code-webui 等 5 个 Claude CLI 集成项目的 model 和 permission mode 处理策略对比。
 - [xylocopa-analysis.md](./xylocopa-analysis.md) — xylocopa 项目深度分析：多实例 Claude Code 编排系统，tmux + git worktree 隔离，四层消息同步管线，模型硬编码与权限系统的完整剖析。
 - [web-terminal-tmux-attach.md](./web-terminal-tmux-attach.md) — Web terminal 共享终端的 attach 模式架构调研：capture-pane 半态根因、竞品对照（ttyd/gotty vs VSCode 系 vs orca）、tmux 多端尺寸协调（window-size/resize-window/aggressive-resize）、Bun 原生 PTY 落地、orca 可丢/可借鉴清单，结论是废弃 capture-pane 改 tmux attach。
+- [design-prototyping-tool-research.md](./design-prototyping-tool-research.md) — AI 设计/原型工具赛道调研（OpenDesign 嵌入可行性）：三派竞品全景（设计编辑器派 / Prompt→产物 agent 派 / App builder 派）+ Reddit 社区评价；OpenDesign 源码逐行深剖（DESIGN.md 契约、skills/CLI/MCP 三件套、AG-UI adapter、GenUI surface 两套机制、iframe sandbox 渲染），结论是 npm 上零个可装包、只能 fork，最小复刻切入点为 GenUI declarative surface + iframe sandbox 预览。
