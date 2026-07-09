@@ -48,12 +48,7 @@ import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
+import { OptionMenu } from "../components/ui/option-menu";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
@@ -3218,8 +3213,11 @@ function ModelSelector({
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <OptionMenu
+      accent="user"
+      align="start"
+      cancelLabel={t("cancel")}
+      trigger={
         <button
           type="button"
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
@@ -3235,45 +3233,18 @@ function ModelSelector({
             />
           </svg>
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" sideOffset={4}>
-        {availableModels.map((modelId) => {
-          const isActive = modelId === current;
-          return (
-            <DropdownMenuItem
-              key={modelId}
-              disabled={isActive}
-              className={
-                isActive
-                  ? "text-user bg-user/10 data-[disabled]:opacity-100"
-                  : "text-on-surface-muted"
-              }
-              onSelect={() => {
-                if (bridge) {
-                  setSwitchingTo(modelId);
-                  bridge.switchModel(modelId);
-                }
-              }}
-            >
-              {isActive ? (
-                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M3 8l3.5 3.5L13 5"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              ) : (
-                <span className="size-4 shrink-0" />
-              )}
-              {modelDisplayLabel(modelId)}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      }
+      items={availableModels.map((modelId) => ({
+        label: modelDisplayLabel(modelId),
+        isActive: modelId === current,
+        onSelect: () => {
+          if (bridge) {
+            setSwitchingTo(modelId);
+            bridge.switchModel(modelId);
+          }
+        },
+      }))}
+    />
   );
 }
 
@@ -3293,6 +3264,7 @@ function PermissionModeSelector({
   currentMode?: string;
   availableModes: string[];
 }) {
+  const { t } = useT();
   const bridge = useContext(Claude2BridgeContext);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
 
@@ -3320,8 +3292,11 @@ function PermissionModeSelector({
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <OptionMenu
+      accent="permission"
+      align="start"
+      cancelLabel={t("cancel")}
+      trigger={
         <button
           type="button"
           className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
@@ -3342,45 +3317,18 @@ function PermissionModeSelector({
             />
           </svg>
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" sideOffset={4}>
-        {modes.map((pmId) => {
-          const isActive = pmId === mode;
-          return (
-            <DropdownMenuItem
-              key={pmId}
-              disabled={isActive}
-              className={
-                isActive
-                  ? "text-permission bg-permission/10 data-[disabled]:opacity-100"
-                  : "text-on-surface-muted"
-              }
-              onSelect={() => {
-                if (bridge) {
-                  setSwitchingTo(pmId);
-                  bridge.switchPermissionMode(pmId);
-                }
-              }}
-            >
-              {isActive ? (
-                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M3 8l3.5 3.5L13 5"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              ) : (
-                <span className="size-4 shrink-0" />
-              )}
-              {PERMISSION_MODE_LABELS[pmId] ?? pmId}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      }
+      items={modes.map((pmId) => ({
+        label: PERMISSION_MODE_LABELS[pmId] ?? pmId,
+        isActive: pmId === mode,
+        onSelect: () => {
+          if (bridge) {
+            setSwitchingTo(pmId);
+            bridge.switchPermissionMode(pmId);
+          }
+        },
+      }))}
+    />
   );
 }
 
