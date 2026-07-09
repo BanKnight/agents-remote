@@ -34,7 +34,7 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownString } from "../components/markdown/MarkdownString";
 import { MarkdownText } from "../components/markdown/MarkdownText";
-import { closeAgentSession, getAgentSession } from "../api/client";
+import { closeAgentSession, getAgentSession, getSkillSlashCatalog } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
@@ -3519,10 +3519,7 @@ function ComposerWithInterrupt({
   // reconnect (windowing may drop system.init from the replayed tail).
   const descQuery = useQuery({
     queryKey: ["projects", projectName, "agent-sessions", sessionId, "skill-slash-catalog"],
-    queryFn: async () => {
-      const { getSkillSlashCatalog } = await import("../api/client");
-      return getSkillSlashCatalog(projectName, sessionId);
-    },
+    queryFn: () => getSkillSlashCatalog(projectName, sessionId),
     staleTime: Infinity,
   });
 
