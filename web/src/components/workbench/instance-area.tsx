@@ -232,7 +232,7 @@ export function InstanceArea({
     view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
   const scopeKey = scope.kind === "project" ? scope.key : "global";
-  const refs = useScopeInstanceOrder(scope);
+  const { refs, isLoaded: refsLoaded } = useScopeInstanceOrder(scope);
 
   // 中栏左总览宽度（设计 §3：固定单列卡片 + gutter 调比例）。atomWithStorage 持久化，
   // MIN/DEFAULT/MAX 钳制（MIN=14rem 放得下一张 220px 卡）。
@@ -290,6 +290,9 @@ export function InstanceArea({
   // focusId 指向被清 tab 时回退到剩余活动 tab（activeTabRefLeaf 派生）或清空回非聚焦态。
   useEffect(() => {
     if (layout.root === null) return;
+    // refs 上下文不足（活跃实例 query 还 loading）时不 prune——否则刷新后 refs 还空会把全部
+    // 持久化 tab 误判 stale 清光、把空布局写回 localStorage，持久化恢复失效。
+    if (!refsLoaded) return;
     const activeIds = new Set(refs.map((r) => r.sessionId));
     // 收集所有 stale tab（遍历树所有 leaf）。
     const stale: { leafId: string; tabId: string }[] = [];
@@ -311,7 +314,7 @@ export function InstanceArea({
     }
     // refs/layout 引用敏感；refs.length 守卫避免 refs 内容未变（如同序变动）时误触。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, focusId, layout, refs]);
+  }, [scopeKey, focusId, layout, refs, refsLoaded]);
 
   const focusPanel = (ref: WorkbenchPanelRef) => {
     if (ref.sessionId === focusId) return;
@@ -1162,9 +1165,15 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
  * agent + terminal sessions（createdAt 升序，agents 在前 terminals 在后，与左栏 Agents/
  * Terminals 分段一致）；global scope：rankGlobalInstances 排序（needs-interaction >
  * running > terminal）。query key 复用左栏 / 全局候选缓存（单一数据管道，无并行分支）。
- * 返回 WorkbenchPanelRef[]，供移动 ‹› 按 index 循环切换。
+ * 返回 `{ refs, isLoaded }`：`refs` = WorkbenchPanelRef[] 供移动 ‹› 按 index 循环切换；
+ * `isLoaded` 表示活跃实例 query 已 settle（project: agents+terminals isSuccess；global:
+ * candidatesLoaded），供 InstanceArea prune effect gate——避免刷新后 refs 还空（上下文不足）
+ * 把全部持久化 tab 误判 stale 清光、持久化恢复失效（见 state-sync-principles 按需同步）。
  */
-export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[] {
+export function useScopeInstanceOrder(scope: WorkbenchScope): {
+  refs: WorkbenchPanelRef[];
+  isLoaded: boolean;
+} {
   const projectKey = scope.kind === "project" ? scope.key : null;
   const agents = useQuery({
     enabled: projectKey !== null,
@@ -1178,8 +1187,10 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[
     queryFn: () => listTerminalSessions(projectKey as string),
     staleTime: 5_000,
   });
-  const { candidates } = useGlobalInstanceCandidates(scope);
-  if (scope.kind !== "project") return rankGlobalInstances(candidates);
+  const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates(scope);
+  if (scope.kind !== "project") {
+    return { refs: rankGlobalInstances(candidates), isLoaded: candidatesLoaded };
+  }
   const refs: WorkbenchPanelRef[] = [];
   for (const session of agents.data?.sessions ?? []) {
     refs.push({ projectName: scope.key, sessionId: session.id });
@@ -1187,7 +1198,10 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): WorkbenchPanelRef[
   for (const session of terminals.data?.sessions ?? []) {
     refs.push({ projectName: scope.key, sessionId: session.id });
   }
-  return refs;
+  // isLoaded 用 isSuccess 而非 !isLoading：query 出错时不 prune，避免 API 抖动误清持久化 tab；
+  // 留待下次成功加载再判定。gate 在 InstanceArea 的 stale-tab prune effect。
+  const isLoaded = agents.isSuccess && terminals.isSuccess;
+  return { refs, isLoaded };
 }
 
 /**
