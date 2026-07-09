@@ -60,6 +60,17 @@ export class TmuxRuntime implements RuntimeResources {
     // window-size=latest：attached client 的 PTY TIOCSWINSZ 生效，不被 resize-window 钉成 manual。
     // session scope（-t runtimeKey）非全局，避免影响开发者本机其他 tmux 会话。
     await runTmux(["set-option", "-t", metadata.runtimeKey, "window-size", "latest"]);
+
+    // 移动端触屏滚动走 tmux copy-mode（server scrollback）。移动端后连、`tmux attach` 不重放 scrollback，
+    // 本地 buffer 天生空，故触屏经 attach stdin 发按键序列触发 copy-mode 滚 server 历史，用户无感。
+    // set-option 走 -t 仅本 session；bind-key 是 tmux 全局（无法 per-session），故选冷门 M-Up/M-Down、
+    // 不覆盖默认 Up/Down（开发者本机 copy-mode 选词不受影响）。prefix None 让 Ctrl-B 等透传 pane，
+    // vim/readline 的 Ctrl-B 不被截获。
+    await runTmux(["set-option", "-t", metadata.runtimeKey, "history-limit", "50000"]);
+    await runTmux(["set-option", "-t", metadata.runtimeKey, "prefix", "None"]);
+    await runTmux(["bind-key", "-n", "M-Up", "copy-mode"]);
+    await runTmux(["bind-key", "-T", "copy-mode", "M-Up", "send-keys", "-X", "scroll-up"]);
+    await runTmux(["bind-key", "-T", "copy-mode", "M-Down", "send-keys", "-X", "scroll-down"]);
   }
 
   async close(runtimeKey: string) {

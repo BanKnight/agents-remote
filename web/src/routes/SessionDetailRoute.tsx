@@ -1056,14 +1056,20 @@ function XtermOutput({
       onSendInput(data);
     });
 
-    // xterm.js 6.x Gesture class calls preventDefault() on touch events at
-    // the document level, which blocks native browser scroll. The custom
-    // scrollbar (SmoothScrollableElement) only handles mouse wheel events,
-    // not touch gesture events — so touch scroll is a dead path in v6.
-    // Workaround: track touch deltas and drive term.scrollLines() manually,
-    // with inertia after release. Scrolling follows the traditional direction:
-    // swipe up → scroll up (older content), swipe down → scroll down (newer).
+    // 移动端触屏滚动走 tmux copy-mode（server scrollback）。`tmux attach` 不重放 scrollback，移动端后连
+    // 本地 buffer 天生空，故触屏经 attach stdin 发 tmux copy-mode 按键序列滚 server 历史：首次滑动发
+    // M-Up 进 copy-mode，逐个发 M-Up/M-Down 逐行滚（连续 escape sequence 批量发会粘连，50ms 逐个发），
+    // 停止滑动 1.5s 后发 q 自动退 copy-mode 回 live。用户无感（不用手动按键）。桌面端滚轮维持 xterm
+    // 本地 buffer 现状，不在此处理。方向沿用直觉：swipe up（dy<0）→ 看更早（M-Up 上滚），
+    // swipe down（dy>0）→ 看更新（M-Down 下滚）。
     const LINE_HEIGHT_PX = 16.2; // fontSize 12 × lineHeight 1.35
+    const COPY_MODE_ENTER = "\x1b[1;3A"; // M-Up：root table 进 copy-mode / copy-mode table scroll-up
+    const COPY_MODE_SCROLL_DOWN = "\x1b[1;3B"; // M-Down：copy-mode table scroll-down
+    const COPY_MODE_EXIT = "q";
+    const SCROLL_KEY_INTERVAL_MS = 50; // 连续 escape sequence 粘连解除实测下限
+    const COPY_MODE_AUTO_EXIT_MS = 1500; // 停止滑动后自动退 copy-mode
+    const SCROLL_QUEUE_CAP = 40; // 队列限幅防积压（快速滑动丢多保跟手）
+
     let touchStartY = 0;
     let touchStartX = 0;
     let touchScrollAccum = 0;
@@ -1072,6 +1078,10 @@ function XtermOutput({
     let touchLastY = 0;
     let touchLastT = 0;
     let inertiaFrame: number | null = null;
+    let inCopyMode = false;
+    let scrollQueue = 0; // 正=待下滚行数，负=待上滚
+    let keyTimer: ReturnType<typeof setTimeout> | null = null;
+    let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
     const stopInertia = () => {
       if (inertiaFrame !== null) {
@@ -1080,13 +1090,54 @@ function XtermOutput({
       }
     };
 
+    const scheduleKeyFlush = () => {
+      if (keyTimer === null) {
+        keyTimer = setTimeout(flushScrollQueue, SCROLL_KEY_INTERVAL_MS);
+      }
+    };
+
+    const resetExitTimer = () => {
+      if (exitTimer !== null) clearTimeout(exitTimer);
+      exitTimer = setTimeout(exitCopyMode, COPY_MODE_AUTO_EXIT_MS);
+    };
+
+    const exitCopyMode = () => {
+      if (!inCopyMode) return;
+      onSendInput(COPY_MODE_EXIT);
+      inCopyMode = false;
+      scrollQueue = 0;
+      if (keyTimer !== null) {
+        clearTimeout(keyTimer);
+        keyTimer = null;
+      }
+      exitTimer = null;
+    };
+
+    const flushScrollQueue = () => {
+      keyTimer = null;
+      if (!inCopyMode || scrollQueue === 0) return;
+      // 限幅：队列过大截断、保留方向（快速滑动丢多，保跟手）
+      if (scrollQueue > SCROLL_QUEUE_CAP) scrollQueue = SCROLL_QUEUE_CAP;
+      else if (scrollQueue < -SCROLL_QUEUE_CAP) scrollQueue = -SCROLL_QUEUE_CAP;
+      // scrollQueue > 0（下滚，看更新）→ M-Down；< 0（上滚，看更早）→ M-Up
+      onSendInput(scrollQueue > 0 ? COPY_MODE_SCROLL_DOWN : COPY_MODE_ENTER);
+      scrollQueue += scrollQueue > 0 ? -1 : 1;
+      if (scrollQueue !== 0) scheduleKeyFlush();
+    };
+
+    // px → 行数 → 入队 + 进 copy-mode + 节流发 + 重置 exit 计时（替代原 term.scrollLines 滚本地 buffer）
     const applyScroll = (px: number) => {
       touchScrollAccum += px;
       const lines = Math.trunc(touchScrollAccum / LINE_HEIGHT_PX);
-      if (lines !== 0) {
-        term.scrollLines(lines);
-        touchScrollAccum -= lines * LINE_HEIGHT_PX;
+      if (lines === 0) return;
+      touchScrollAccum -= lines * LINE_HEIGHT_PX;
+      if (!inCopyMode) {
+        onSendInput(COPY_MODE_ENTER); // 首次进 copy-mode（M-Up，root table）
+        inCopyMode = true;
       }
+      scrollQueue += lines; // lines>0 下滚，<0 上滚
+      scheduleKeyFlush();
+      resetExitTimer();
     };
 
     const startInertia = (velocityPxMs: number) => {
@@ -1292,6 +1343,15 @@ function XtermOutput({
     return () => {
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchend", onTouchEnd);
+      stopInertia();
+      if (keyTimer !== null) {
+        clearTimeout(keyTimer);
+        keyTimer = null;
+      }
+      if (exitTimer !== null) {
+        clearTimeout(exitTimer);
+        exitTimer = null;
+      }
       ro.disconnect();
       if (resizeFrameRef.current !== null) {
         cancelAnimationFrame(resizeFrameRef.current);
