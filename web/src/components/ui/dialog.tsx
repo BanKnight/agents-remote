@@ -53,11 +53,13 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          // 默认居中卡片定位（fixed 居中 + translate）。点卡片外（Overlay 全屏 scrim 区）
-          // 由 Radix onPointerDownOutside 判为 outside → dismiss（scrim 关闭）。
-          // 底部 sheet 靠 className 覆盖为 `inset-x-0 bottom-0 top-auto translate-x-0 translate-y-0`；
-          // 全屏 reader 靠 className 覆盖为 `inset-0 translate-0`（无 outside 区，靠 ✕/Esc 关）。
-          "pointer-events-auto fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 outline-none",
+          // shadcn 居中卡片模型：Content 即卡片本身（非全屏容器），自带宽度约束
+          // w-full max-w-[calc(100%-2rem)] sm:max-w-lg（移动端留 1rem 缝、桌面 512px）。
+          // 点卡片外（Overlay 全屏 scrim 区）= outside → Radix onPointerDownOutside dismiss。
+          // 非居中形态必须中和默认 top/left/translate 并解除 max-w：
+          //   底部 sheet = `inset-x-0 bottom-0 top-auto translate-x-0 translate-y-0 w-full max-w-none`；
+          //   全屏 reader = `inset-0 translate-x-0 translate-y-0 max-w-none`（无 outside 区，靠 ✕/Esc 关）。
+          "pointer-events-auto fixed left-1/2 top-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 outline-none sm:max-w-lg",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
           className,
         )}

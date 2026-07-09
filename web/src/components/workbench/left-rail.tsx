@@ -104,7 +104,7 @@ function ProjectTree({ scope }: ProjectTreeProps) {
         </button>
       </div>
       <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
-        <DialogContent className="flex flex-col items-center justify-center overflow-y-auto p-4">
+        <DialogContent className="overflow-y-auto p-0">
           <ProjectSetupPanel
             createError={create.error instanceof Error ? create.error : null}
             inputId={inputId}

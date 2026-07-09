@@ -69,9 +69,9 @@ function PromptDialog({
 }: PromptConfig & { onCancel: () => void; onConfirm: () => void }) {
   return (
     <Dialog defaultOpen onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="flex items-center justify-center p-4">
+      <DialogContent>
         <div
-          className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+          className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
           <h2 className="text-base font-semibold text-on-surface">{title}</h2>
           <input

@@ -679,7 +679,7 @@ function FullscreenReader({
   return (
     <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="fixed inset-0 z-[100] translate-x-0 translate-y-0 flex flex-col bg-surface-inset/95 backdrop-blur-sm"
+        className="fixed inset-0 z-[100] max-w-none w-full translate-x-0 translate-y-0 flex flex-col bg-surface-inset/95 backdrop-blur-sm"
         style={{
           paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
           paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",

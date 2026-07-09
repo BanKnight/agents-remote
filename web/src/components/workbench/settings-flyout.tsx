@@ -16,8 +16,8 @@ export function SettingsFlyout() {
   const [open, setOpen] = useAtom(workbenchSettingsFlyoutOpenAtom);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="flex items-center justify-center p-4">
-        <div className={`w-full max-w-md rounded-2xl p-5 ${shellSurfaceClasses.raised}`}>
+      <DialogContent>
+        <div className={`rounded-2xl p-5 ${shellSurfaceClasses.raised}`}>
           <header className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-on-surface">{t("nav.settings")}</h2>
             <button
