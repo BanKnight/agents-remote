@@ -8,6 +8,7 @@ import {
   computeRunningCount,
   convertContentToBubble,
   deriveLiveThinkingTokens,
+  deriveRetryInfo,
   deriveStatus,
   extractTaskIdAssignment,
   extractTaskOps,
@@ -2209,10 +2210,74 @@ describe("API error detection", () => {
     expect(isExternalApiErrorMessage(m)).toBe(false);
   });
 
-  test("isExternalApiErrorMessage false when isApiErrorMessage missing", () => {
+  test("isExternalApiErrorMessage false when both isApiErrorMessage and top-level error missing", () => {
+    // 拓宽后：model=<synthetic> 且 (isApiErrorMessage===true 或 顶层 error 非空)。
+    // 两者都缺才 false。原"isApiErrorMessage missing → false"语义收窄到这里。
     const m = apiErrorMsg();
     delete (m as Record<string, unknown>).isApiErrorMessage;
+    delete (m as Record<string, unknown>).error;
     expect(isExternalApiErrorMessage(m)).toBe(false);
+  });
+
+  test("isExternalApiErrorMessage true for live-stream synthetic error (top-level error, no isApiErrorMessage)", () => {
+    // 实时流 rate_limit/server_error synthetic 带 top-level error 分类字符串，
+    // 不带 isApiErrorMessage 标记（JSONL 回放才带）。拓宽后命中 → 走 receiveApiError，
+    // 不再误判成 command-output 卡片。apiErrorMsg() 默认 error: "server_error"。
+    const m = apiErrorMsg();
+    delete (m as Record<string, unknown>).isApiErrorMessage;
+    expect(isExternalApiErrorMessage(m)).toBe(true);
+  });
+
+  test("isExternalApiErrorMessage false for normal model (non-synthetic) even with error field", () => {
+    // model 不是 <synthetic>（真实 assistant）即使带 error 字段也不当 API 错误注解。
+    const m = apiErrorMsg({
+      message: { id: "e", role: "assistant", model: "claude-sonnet-4", content: [] },
+    });
+    expect(isExternalApiErrorMessage(m)).toBe(false);
+  });
+});
+
+describe("deriveRetryInfo", () => {
+  test("完整字段映射：attempt/max_retries/retry_delay_ms → RetryInfo，error/error_status 透传", () => {
+    const info = deriveRetryInfo(makeApiRetry(), 12345);
+    expect(info).toEqual({
+      attempt: 1,
+      maxRetries: 10,
+      retryDelayMs: 2000,
+      error: "rate_limit",
+      errorStatus: 429,
+      startTime: 12345,
+    });
+  });
+
+  test("startTime 默认 Date.now()（不注入时为当前时间戳）", () => {
+    const info = deriveRetryInfo(makeApiRetry());
+    expect(info).not.toBeNull();
+    expect(typeof info?.startTime).toBe("number");
+    expect(info!.startTime).toBeGreaterThan(0);
+  });
+
+  test("缺 attempt → null（必要字段缺失不更新标量）", () => {
+    expect(deriveRetryInfo(makeApiRetry({ attempt: undefined }))).toBeNull();
+  });
+
+  test("缺 max_retries → null", () => {
+    expect(deriveRetryInfo(makeApiRetry({ max_retries: undefined }))).toBeNull();
+  });
+
+  test("缺 retry_delay_ms → null", () => {
+    expect(deriveRetryInfo(makeApiRetry({ retry_delay_ms: undefined }))).toBeNull();
+  });
+
+  test("缺 error/error_status → 仍派生（二者可选，值为 undefined）", () => {
+    const info = deriveRetryInfo(makeApiRetry({ error: undefined, error_status: undefined }), 99);
+    expect(info).not.toBeNull();
+    expect(info!.attempt).toBe(1);
+    expect(info!.maxRetries).toBe(10);
+    expect(info!.retryDelayMs).toBe(2000);
+    expect(info!.startTime).toBe(99);
+    expect(info!.error).toBeUndefined();
+    expect(info!.errorStatus).toBeUndefined();
   });
 });
 
@@ -3250,6 +3315,18 @@ const makeApiError = (parentUuid: string, uuid = "err-uuid"): SessionStreamServe
     parentUuid,
   }) as unknown as SessionStreamServerMessage;
 
+const makeApiRetry = (overrides: Record<string, unknown> = {}): SessionStreamServerMessage =>
+  ({
+    type: "system",
+    subtype: "api_retry",
+    attempt: 1,
+    max_retries: 10,
+    retry_delay_ms: 2000,
+    error: "rate_limit",
+    error_status: 429,
+    ...overrides,
+  }) as unknown as SessionStreamServerMessage;
+
 const assistantItems = (items: ChatStreamItem[]) =>
   items.filter((i): i is Extract<ChatStreamItem, { kind: "assistant" }> => i.kind === "assistant");
 
@@ -3484,6 +3561,20 @@ describe("normalizeChatStream", () => {
   // ── system.init / compact ───────────────────────────────────────────
   test("system.init produces no item (scalar-only, folded by applyMessageScalarState)", () => {
     const items = normalizeChatStream([makeSystemInit()]);
+    expect(items).toHaveLength(0);
+  });
+
+  test("system.api_retry produces no item (transient RetryIndicator state, not a bubble)", () => {
+    // api_retry 是纯实时流信号（不进 JSONL），标量由 applyMessageScalarState→
+    // deriveRetryInfo 接管（→ RetryIndicator），normalizeChatStream 不产 item、
+    // 不落 fallback 摘要气泡。
+    const items = normalizeChatStream([makeApiRetry()]);
+    expect(items).toHaveLength(0);
+  });
+
+  test("system.api_retry without required fields still produces no item (no fallback)", () => {
+    // 缺必要字段：deriveRetryInfo 返回 null（标量不更新），但仍 continue 不落 fallback。
+    const items = normalizeChatStream([makeApiRetry({ attempt: undefined })]);
     expect(items).toHaveLength(0);
   });
 

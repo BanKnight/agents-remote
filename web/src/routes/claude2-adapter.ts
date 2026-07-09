@@ -102,6 +102,40 @@ export type RetryInfo = {
   startTime: number;
 };
 
+/**
+ * 从 system.api_retry 消息派生 RetryInfo（纯函数，便于单测）。
+ * api_retry 是纯实时流信号（不进 JSONL，回放看不到），attempt/max_retries/
+ * retry_delay_ms 三者缺一不可；error/error_status 可选。缺必要字段返回 null
+ * （applyMessageScalarState 不更新标量）。startTime 默认 Date.now()，测试可注入固定值。
+ */
+export function deriveRetryInfo(
+  msg: SessionStreamServerMessage,
+  startTime: number = Date.now(),
+): RetryInfo | null {
+  const r = msg as {
+    attempt?: number;
+    max_retries?: number;
+    retry_delay_ms?: number;
+    error?: string;
+    error_status?: number;
+  };
+  if (
+    typeof r.attempt !== "number" ||
+    typeof r.max_retries !== "number" ||
+    typeof r.retry_delay_ms !== "number"
+  ) {
+    return null;
+  }
+  return {
+    attempt: r.attempt,
+    maxRetries: r.max_retries,
+    retryDelayMs: r.retry_delay_ms,
+    error: typeof r.error === "string" ? r.error : undefined,
+    errorStatus: typeof r.error_status === "number" ? r.error_status : undefined,
+    startTime,
+  };
+}
+
 // Tracks client-initiated control_request actions (set_model /
 // set_permission_mode / interrupt) awaiting the CLI's control_response. Keyed
 // by request_id so the response can be matched to the originating action and
@@ -955,10 +989,12 @@ export type ApiErrorAttachment = {
 /** Check if a message is an API error annotation (not a normal assistant reply). */
 export function isExternalApiErrorMessage(msg: SessionStreamServerMessage): boolean {
   const m = msg as Record<string, unknown>;
-  return (
-    m.isApiErrorMessage === true &&
-    (m.message as { model?: string } | undefined)?.model === "<synthetic>"
-  );
+  if ((m.message as { model?: string } | undefined)?.model !== "<synthetic>") return false;
+  // JSONL 回放带 isApiErrorMessage:true；实时流 rate_limit/server_error synthetic 带
+  // top-level error 分类字符串（rate_limit/server_error/unknown/…），不一定带
+  // isApiErrorMessage 标记。两种都当 API 错误（receiveApiError 挂父或 pending 丢弃），
+  // 避免实时流 synthetic error 误判成 command-output 卡片。
+  return m.isApiErrorMessage === true || (typeof m.error === "string" && m.error.length > 0);
 }
 
 /** Extract human-readable error text from an API error message. */
@@ -2378,6 +2414,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
+      // ApiRetry: 纯实时流重试信号，标量由 applyMessageScalarState 接管
+      //（→ retryInfo → RetryIndicator），不产聊天气泡、不落 fallback。
+      if (subtype === "api_retry") continue;
+
       // CompactBoundary: open a compact window that absorbs the trailing
       // compaction messages (summary + attachments + noise) into one block.
       if (isCompactBoundarySubtype(subtype)) {
@@ -3367,6 +3407,16 @@ export function useClaude2Session(
     (msg: SessionStreamServerMessage) => {
       const sm = msg as Record<string, unknown>;
 
+      // result（turn 结束）→ 清空瞬时重试状态。api_retry 一旦有了结果就无意义；
+      // 倒计时 effect 是兜底，这里让 turn 结束时立即消失，不等倒计时。result 在
+      // Pass-1 无其他 scalar 处理（usage/cost 在 Pass-2），故直接 return。assistant
+      // 的清空合并进下方现有 assistant 分支（它还负责 extractTaskOps/plan mode，
+      // 不能在此提前 return 抢占，否则 task ops 永远不提取）。
+      if (msg.type === "result") {
+        setRetryInfo(null);
+        return;
+      }
+
       // system.init
       if (msg.type === "system" && sm.subtype === "init") {
         const init = msg as {
@@ -3398,6 +3448,16 @@ export function useClaude2Session(
           setResolvedModel(seed.model);
         }
         if (seed.permissionMode) setPermissionMode(seed.permissionMode);
+        return;
+      }
+
+      // system.api_retry: 纯实时流重试信号（不进 JSONL，回放看不到）。合并为单个
+      // retryInfo 标量驱动 RetryIndicator——网络波动常连续多条（attempt 1→max），
+      // 逐条 inline 会刷屏，故只更新标量、不在 normalizeChatStream 产 item。
+      // 字段映射抽 deriveRetryInfo 纯函数（对齐 deriveLiveThinkingTokens）。
+      if (msg.type === "system" && sm.subtype === "api_retry") {
+        const info = deriveRetryInfo(msg);
+        if (info) setRetryInfo(info);
         return;
       }
 
@@ -3565,9 +3625,11 @@ export function useClaude2Session(
         return;
       }
 
-      // assistant: extract task ops + detect plan mode entry.
+      // assistant: extract task ops + detect plan mode entry. 也是重试成功的
+      // 信号 → 清空瞬时重试状态（对齐 result 分支；api_retry 有了真实回复即无意义）。
       // Visibility/bubble decisions live in renderChatStream, not here.
       if (msg.type === "assistant") {
+        setRetryInfo(null);
         if (isExternalApiErrorMessage(msg)) return;
         if (isSyntheticAssistantMessage(msg)) return;
         const ops = extractTaskOps(msg);
