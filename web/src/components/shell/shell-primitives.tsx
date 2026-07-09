@@ -489,13 +489,14 @@ export function ListRow({
 }
 
 /**
- * ListRow 骨架行（mirror 真实 ListRow DOM：行根与 listRowClasses 同构 + 内部 grow span
- * justify-between，左 marker + title bar，右尾小占位）。marker 圆角对齐 IconMarker sm
- * （rounded-sm，旧值 rounded-md 偏圆与真实不搭）；行高与真实一致（py-2.5 + marker h-7 ≈
- * 49px）。右尾占位模拟 Git status / Files actions 的右侧小元素——加载后真实右尾替换占位、
- * 尺寸接近不跳（Git status 两端常显、Files 移动 ⋮ 常显，占位贴合；Files 桌面 actions 默认
- * 透明占位，加载后淡出，轻微可接受）。外层 listGroupClasses()（plain divide-y）与真实
- * ListGroup 一致，padding 由调用方提供。
+ * ListRow 骨架行（mirror 真实 ListRow DOM：行根 + grow span justify-between，左 marker +
+ * 文本块（title + subtitle 两行占位），右尾小占位）。占位条高度对齐真实文本 lineHeight
+ *（title h-6=24px、subtitle h-4=16px + mt-0.5=2px，非凭空 h-4），加 `block` 让 width 生效——
+ * 旧 `w-1/2` 作用在 inline span 上 width 被忽略（CSS：width 不适用于 inline non-replaced
+ * element），实测占位条 w=0 中间空白；block 后固定宽度可见。两行占位使行高 ≈ max(marker 28，
+ * title24+gap2+subtitle16=42) + py-2.5(20) ≈ 62px，与带 subtitle 的真实 ListRow（历史 /
+ * Files 行 63px）对齐，骨架→真实不跳。右尾占位模拟 Git status / Files actions 右侧小元素。
+ * 外层 listGroupClasses()（plain divide-y）与真实 ListGroup 一致，padding 由调用方提供。
  */
 export function ListRowSkeleton({ count = 4 }: { count?: number }) {
   return (
@@ -505,7 +506,13 @@ export function ListRowSkeleton({ count = 4 }: { count?: number }) {
           <span className="flex min-w-0 grow items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-3">
               <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
-              <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/2 rounded" />
+              <span className="min-w-0">
+                <span aria-hidden="true" className="skeleton-shimmer block h-6 w-32 rounded" />
+                <span
+                  aria-hidden="true"
+                  className="skeleton-shimmer mt-0.5 block h-4 w-24 rounded"
+                />
+              </span>
             </span>
             <span aria-hidden="true" className="skeleton-shimmer h-6 w-6 shrink-0 rounded-md" />
           </span>
