@@ -477,14 +477,14 @@ function CodeEditorFallback() {
   );
 }
 
-type PreviewBodyProps = {
+export type PreviewBodyProps = {
   preview: ProjectFilePreviewResponse;
   renderMode: "source" | "render";
   editValue: string;
   onEditChange: (value: string) => void;
 };
 
-function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
+export function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
   const { t } = useT();
   const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
 
@@ -648,6 +648,12 @@ export type FilesPanelProps = {
   rootBrowse?: boolean;
   onPathChange?: (path: string) => void;
   onMobilePreviewChange?: (open: boolean) => void;
+  /**
+   * 文件点击回调（仅 enablePreview=false 树模式触发）。透出当前 project + 文件相对路径，
+   * 供调用方开 file tab（左栏文件树 → 中栏 file tab）。enablePreview=true（inspection）走
+   * 预览分支不触发，行为零改。
+   */
+  onOpenFile?: (projectName: string, path: string) => void;
 };
 
 export function FilesPanel({
@@ -658,6 +664,7 @@ export function FilesPanel({
   rootBrowse = false,
   onPathChange,
   onMobilePreviewChange,
+  onOpenFile,
 }: FilesPanelProps) {
   const { t } = useT();
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -712,7 +719,11 @@ export function FilesPanel({
   };
 
   const selectFile = (path: string) => {
-    if (!enablePreview) return;
+    if (!enablePreview) {
+      // 树模式（左栏）：透出当前 project + 文件路径给调用方开 file tab，本组件不预览。
+      onOpenFile?.(effectiveProjectName ?? "", path);
+      return;
+    }
     // Guard against losing unsaved edits when jumping to another file.
     if (isDirty && selectedFilePath !== undefined && path !== selectedFilePath) {
       confirm({
