@@ -977,7 +977,7 @@ export function FilesPanel({
         <FileEntryList
           entries={files.data?.entries ?? []}
           error={files.error}
-          filesClickable={enablePreview}
+          filesClickable={enablePreview || onOpenFile !== undefined}
           readOnly={readOnly}
           isLoading={files.isLoading}
           renamingName={renamingName}

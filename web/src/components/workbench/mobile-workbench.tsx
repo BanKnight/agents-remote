@@ -17,6 +17,7 @@ import {
   type WorkbenchScope,
   type WorkbenchView,
   inferSessionTypeFromId,
+  parseFileTabId,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   type SessionPanelRef,
@@ -48,6 +49,7 @@ import {
 import { HistoryList } from "./history-list";
 import { SessionTable, type TableColumn } from "./workbench-table";
 import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import { FileTabPreview } from "../files/file-preview-panel";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
 
@@ -94,6 +96,21 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
     );
   }
 
+  // file focus（focusId 形如 file_src/index.ts，设计 §6 决策 3）：移动端不实现 V3 group，用
+  // MobileFileFocus 浮窗式预览打开该文件（复用 FileTabPreview 可编辑预览 + 顶部返回/✕ header）。
+  // global file focus 本 phase 不 deep-link，scope 必 project。
+  const filePath = parseFileTabId(focusId);
+  if (filePath !== null && scope.kind === "project") {
+    return (
+      <main
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        style={mainStyle}
+      >
+        <MobileFileFocus path={filePath} projectName={scope.key} />
+      </main>
+    );
+  }
+
   return (
     <main
       className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
@@ -101,6 +118,45 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
     >
       <MobileFocusBody focusId={focusId} scope={scope} />
     </main>
+  );
+}
+
+/**
+ * 移动端文件聚焦浮窗（设计 §6 决策 3）：/file/$path URL 在移动端用此组件打开。单行 header
+ *（◄ 返回 + 文件名 + ✕）+ FileTabPreview 可编辑预览。不实现 V3 group（移动端 [文件] 保持现状
+ * 浮窗式，设计决策 12）。返回 / ✕ = navigate 回项目列表态（/projects/$key，无 session focus）。
+ * 复用 MobileTabHeader 保持与 MobileFocusHeader 同款 header 结构。
+ */
+function MobileFileFocus({ path, projectName }: { path: string; projectName: string }) {
+  const { t } = useT();
+  const navigate = useNavigate();
+  const back = () => {
+    void navigate({ to: "/projects/$key", params: { key: projectName } });
+  };
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MobileTabHeader
+        activeTabId="file"
+        back={{ ariaLabelKey: "files.backToFiles", onClick: back }}
+        onTabSelect={() => {
+          /* file focus 单 tab，无切换 */
+        }}
+        tabs={[{ id: "file" as const, label: path.split("/").pop() ?? path }]}
+        trailing={
+          <button
+            aria-label={t("session.close")}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+            onClick={back}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="close" />
+          </button>
+        }
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <FileTabPreview path={path} projectName={projectName} />
+      </div>
+    </div>
   );
 }
 
