@@ -45,6 +45,16 @@ const projectFocusRoute = createRoute({
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectFocusRoute"),
 });
 
+// file tab focus（设计 §6 决策 2）：/projects/$key/file/$ splat 捕获多段文件相对路径
+//（如 src/index.ts → _splat="src/index.ts"），不复用 /session/$id 段（语义更纯）。component
+// 解析 _splat 为 focusFile。global scope 的 file focus 留后续（本 phase global 点文件开 tab 不 deep-link）。
+const projectFileFocusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$key/file/$",
+  validateSearch: validateWorkbenchSearch,
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectFileFocusRoute"),
+});
+
 const globalScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/global",
@@ -141,6 +151,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   projectScopeRoute,
   projectFocusRoute,
+  projectFileFocusRoute,
   globalScopeRoute,
   globalFocusRoute,
   settingsRoute,

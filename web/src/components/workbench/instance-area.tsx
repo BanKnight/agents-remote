@@ -62,6 +62,7 @@ import {
   ViewSwitcher,
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
+import { FileTabPreview } from "../files/file-preview-panel";
 import { HistoryList, relativeTime } from "./history-list";
 import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
@@ -578,10 +579,11 @@ type PanelRouterProps = {
  * body 撑满，调用方容器须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
  */
 export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
-  // file tab 暂用 PlaceholderPanel 占位（file tab 的预览渲染 = FilePreviewPanel，由后续 step 接入；
-  // focusId 取 tabIdOf 即可，仅用于隐藏面板的 key 关联）。session 分支行为零改。
+  // file tab 渲染 FileTabPreview（可编辑预览，queryScope="file-nav"，设计 §6 决策 16/18）。
+  // path/projectName 来自 tab ref 固定；focusId 取 tabIdOf 仅用于隐藏面板 key 关联的语义注释，
+  // FileTabPreview 自带 preview query 不依赖 focusId。session 分支行为零改。
   if (panelRef.kind === "file") {
-    return <PlaceholderPanel focusId={tabIdOf(panelRef)} />;
+    return <FileTabPreview path={panelRef.path} projectName={panelRef.projectName} />;
   }
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {

@@ -1,4 +1,4 @@
-import { useParams, useSearch } from "@tanstack/react-router";
+import { useParams, useSearch, useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { type PointerEvent, useCallback, useEffect, useState } from "react";
 import {
@@ -12,13 +12,13 @@ import {
   useRenameSession,
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
-import { useT } from "../i18n";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
+import { FilesLeftPanel } from "../components/files/files-left-panel";
 import { HomeRoute } from "./HomeRoute";
 import {
   type DropZone,
@@ -33,6 +33,7 @@ import {
   ensureTabOpenLeaf,
   findLeafBySessionId,
   inferSessionTypeFromId,
+  parseFileTabId,
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
@@ -67,6 +68,27 @@ export function ProjectFocusRoute() {
   return (
     <WorkbenchContent
       focusId={id}
+      rightTab={rightTab}
+      scope={{ kind: "project", key }}
+      tab={tab}
+      view={view}
+    />
+  );
+}
+
+/**
+ * file tab focus 路由 /projects/$key/file/$（splat，设计 §6 决策 2）。_splat 捕获多段文件相对
+ * 路径（如 src/index.ts）；decodeURIComponent 处理可能的编码字符。focusId 用 `file_${path}` 编码
+ *（与 tabIdOf 一致，WorkbenchContent focus effect 据此 ensureTabOpenLeaf + setActiveTab）。
+ */
+export function ProjectFileFocusRoute() {
+  const { key, _splat } = useParams({ from: "/projects/$key/file/$" });
+  const { rightTab, view, tab } = useSearch({ from: "/projects/$key/file/$" });
+  const path = _splat ? decodeURIComponent(_splat) : "";
+  const focusId = path ? `file_${path}` : undefined;
+  return (
+    <WorkbenchContent
+      focusId={focusId}
       rightTab={rightTab}
       scope={{ kind: "project", key }}
       tab={tab}
@@ -133,7 +155,7 @@ function WorkbenchContent({
 }) {
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
-  const { t } = useT();
+  const navigate = useNavigate();
   const [nav] = useAtom(workbenchNavAtom);
   const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
@@ -204,11 +226,18 @@ function WorkbenchContent({
   const { refs, isLoaded: refsLoaded } = useScopeInstanceOrder(scope);
 
   // focus → 活动 leaf tab（设计 §7.1/§13）：URL focusId 变化时确保 focusId 在某 leaf 的 tab 中。
+  // file focus（focusId 形如 file_src/index.ts）与 session focus 分流：file ref 直接从 tabIdOf
+  // 逆解析 path（scope.projectName 必为 project scope —— global file focus 本 phase 不 deep-link）。
   useEffect(() => {
     if (!focusId) return;
     update((prev) => {
       const found = findLeafBySessionId(prev, focusId);
       if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
+      const filePath = parseFileTabId(focusId);
+      if (filePath !== null) {
+        if (scope.kind !== "project") return prev;
+        return ensureTabOpenLeaf(prev, { kind: "file", projectName: scope.key, path: filePath });
+      }
       const projectName =
         scope.kind === "project"
           ? scope.key
@@ -289,18 +318,6 @@ function WorkbenchContent({
     [rename],
   );
 
-  // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活。
-  const onCloseTab = useCallback(
-    (groupId: string, tabId: string) => {
-      const next = removeTabFromLeaf(layout, groupId, tabId);
-      update(() => next);
-      if (focusId === tabId) {
-        const active = activeTabRefLeaf(next);
-        if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
-      }
-    },
-    [layout, update, focusId, navigateWorkbench, scope],
-  );
   const onToggleMaximize = useCallback(
     (groupId: string) => {
       update((prev) => toggleLeafMaximize(prev, groupId));
@@ -313,12 +330,56 @@ function WorkbenchContent({
     },
     [update],
   );
+  // file tab focus URL = /projects/$key/file/$ splat（设计 §6 决策 2）。path 进 URL path 段（/ 分层，
+  // 非 %2F 编码），与 tabIdOf 的 `file_${path}` 一致。global file focus 本 phase 不 deep-link。
+  // search 传 URL 原始值（rightTab/tab/view，与 navigateWorkbench 同模式，避免把 atom 回退值写进 URL）。
+  const navigateToFile = useCallback(
+    (projectName: string, path: string) => {
+      if (scope.kind !== "project") return;
+      void navigate({
+        to: "/projects/$key/file/$",
+        params: { key: scope.key, _splat: path },
+        search: { rightTab, tab: tabFromUrl, view: viewFromUrl },
+      });
+    },
+    [navigate, scope, rightTab, tabFromUrl, viewFromUrl],
+  );
+  // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。复用已测纯函数
+  // ensureTabOpenLeaf（已在→激活 / 不在→加到活动 leaf / 无活动→新建首 leaf 三态，file ref 成立）。
+  const onOpenFile = useCallback(
+    (projectName: string, path: string) => {
+      update((prev) => ensureTabOpenLeaf(prev, { kind: "file", projectName, path }));
+      void navigateToFile(projectName, path);
+    },
+    [update, navigateToFile],
+  );
+  // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
+  // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
+  const onCloseTab = useCallback(
+    (groupId: string, tabId: string) => {
+      const next = removeTabFromLeaf(layout, groupId, tabId);
+      update(() => next);
+      if (focusId === tabId) {
+        const active = activeTabRefLeaf(next);
+        if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
+        else if (active?.kind === "file") void navigateToFile(active.projectName, active.path);
+      }
+    },
+    [layout, update, focusId, navigateWorkbench, navigateToFile, scope],
+  );
   const onSelectTab = useCallback(
     (groupId: string, tabId: string) => {
       update((prev) => setActiveTabInLeaf(prev, groupId, tabId));
-      if (tabId !== focusId) void navigateWorkbench(scope, tabId);
+      // file tab 的 focus URL 走 /file/$ splat（navigateToFile）；session tab 走 navigateWorkbench。
+      if (tabId === focusId) return;
+      const filePath = parseFileTabId(tabId);
+      if (filePath !== null) {
+        if (scope.kind === "project") void navigateToFile(scope.key, filePath);
+        return;
+      }
+      void navigateWorkbench(scope, tabId);
     },
-    [update, focusId, navigateWorkbench, scope],
+    [update, focusId, navigateWorkbench, navigateToFile, scope],
   );
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
@@ -407,7 +468,7 @@ function WorkbenchContent({
   );
   const leftPanel =
     nav === "files" ? (
-      <div className="p-3 text-xs text-on-surface-muted">{t("nav.filesPlaceholder")}</div>
+      <FilesLeftPanel onOpenFile={onOpenFile} scope={scope} />
     ) : (
       <ProjectLeftPanel overview={leftOverview} scope={scope} />
     );

@@ -196,7 +196,6 @@ export const en = {
   "nav.back": "Back",
   "nav.projects": "Projects",
   "nav.files": "Files",
-  "nav.filesPlaceholder": "File browser (coming in Phase 2b)",
   "nav.primaryAria": "Primary navigation",
   "nav.primaryMobileAria": "Primary mobile navigation",
   "nav.projectWorkspaceAria": "Project workspace navigation",

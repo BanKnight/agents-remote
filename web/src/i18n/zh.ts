@@ -196,7 +196,6 @@ export const zh: Record<TranslationKey, string> = {
   "nav.back": "返回",
   "nav.projects": "项目",
   "nav.files": "文件",
-  "nav.filesPlaceholder": "文件浏览器（Phase 2b 接入）",
   "nav.primaryAria": "主导航",
   "nav.primaryMobileAria": "移动端主导航",
   "nav.projectWorkspaceAria": "项目工作区导航",
