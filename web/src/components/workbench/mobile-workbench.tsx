@@ -9,10 +9,11 @@ import {
 } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import {
+  actionButtonClasses,
   MobilePageHeader,
   ShellSectionLabel,
   shellSurfaceClasses,
@@ -21,7 +22,7 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
-import { deleteProject } from "../../api/client";
+import { deleteProject, listProjects } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useCreateProject, ProjectSetupPanel } from "../shell/project-setup";
 import { Dialog, DialogContent } from "../ui/dialog";
@@ -30,7 +31,7 @@ import {
   ensureTabOpenLeaf,
   filterWorkbenchViews,
   findTabRefLeaf,
-  groupByProject,
+  mergeProjectsWithCandidates,
   type WorkbenchMobileFocusTab,
   type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
@@ -44,6 +45,7 @@ import {
   workbenchMobileOverviewTabAtom,
   workbenchViewAtom,
 } from "../../routes/workbench-model";
+
 import {
   candidateToGridItem,
   candidateToTableRow,
@@ -716,13 +718,15 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 }
 
 /**
- * 移动 [项目] 总览（设计文档 §5/§7/决策 25）：跨项目活跃实例聚合 + 项目入口。一级页面，
- * header = MobilePageHeader（标题 + 新建项目 + 按钮 → useCreateProject + ProjectSetupPanel
- * Dialog，与 ProjectLeftPanel 同源）。视图 grouped/grid/table（global 三视图全开）：
- * - grouped = 按项目分段（groupByProject），**分组标题行左侧点击进项目**（navigate
+ * 移动 [项目] 总览（设计文档 §5/§7/决策 25/28）：跨项目活跃实例聚合 + 项目入口。一级页面，
+ * header = MobilePageHeader 标题；新建项目按钮落在 ViewSwitcher 行左侧（批 D 位置 + 批 E 样式），
+ * 用 `actionButtonClasses({ tone: "accent" })` pill 文案（同 CreateSessionBar token，文案
+ * workbench.createMenu）→ useCreateProject + ProjectSetupPanel Dialog。视图 grouped/grid/table
+ *（global 三视图全开）：
+ * - grouped = mergeProjectsWithCandidates + listProjects（与桌面 GroupedView 同源），**含无实例
+ *   空项目**，空状态 workbench.groupedProjectEmpty；**分组标题行左侧点击进项目**（navigate
  *   `/projects/$key`），**右侧 ⋯ ActionMenu 删除项目**（deleteProject + useConfirm confirm，
- *   destructive，决策 25 本 phase 加）。分组由 groupByProject 从活跃实例派生，无实例的空
- *   项目不显示分组 → 空项目删除入口待后续补「项目列表」视图（设计 §5 注）。
+ *   destructive）。
  * - grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。grid/table 点
  *   卡片/行进 `/projects/session/$focusId` 聚焦，不按项目分段故无删项目入口（仅 grouped 提供）。
  * 删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/
@@ -739,6 +743,9 @@ function MobileGlobalOverview() {
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
+  // projects 列表（含空项目，批 E / 决策 28）：与桌面 GroupedView 同 key ["projects"]，React Query dedupe。
+  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
+  const projectNames = projects.data?.projects.map((p) => p.name) ?? [];
   const { create, projectPath, setProjectPath } = useCreateProject();
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
@@ -758,7 +765,21 @@ function MobileGlobalOverview() {
   // resolvedView：atom 值在移动 global viewOptions 内时尊重，否则回退 grouped（当前分段形态）。
   // atom 默认 "grid"（与桌面 global 一致），首次进移动 global 显示 grid；用户切 grouped 后 atom 持久化。
   const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grouped";
-  const groups = useMemo(() => groupByProject(candidates), [candidates]);
+  // 批 E：与桌面 GroupedView 同用 mergeProjectsWithCandidates，含无实例空项目。
+  const groups = useMemo(
+    () => mergeProjectsWithCandidates(projectNames, candidates),
+    [projectNames, candidates],
+  );
+  // empty/skeleton gate：grouped 以 projects 列表为准（有项目无实例仍渲染分组）；grid/table 仍看 candidates。
+  const projectsLoaded = projects.data !== undefined && !projects.isLoading;
+  const overviewEmpty =
+    resolvedView === "grouped"
+      ? projectsLoaded && projectNames.length === 0
+      : isLoaded && candidates.length === 0;
+  const overviewLoading =
+    resolvedView === "grouped"
+      ? !projectsLoaded && projectNames.length === 0
+      : !isLoaded && candidates.length === 0;
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
   };
@@ -815,16 +836,15 @@ function MobileGlobalOverview() {
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("workbench.global")} />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* 批 D / 决策 27：新建从 MobilePageHeader actions 移到 ViewSwitcher 行左侧，
-            与桌面 InstanceLeftOverview header 左对齐；渐变实色款统一。 */}
+        {/* 批 D 位置 + 批 E 样式：新建在 ViewSwitcher 行左侧，CreateSessionBar 同款 accent pill。 */}
         <div className="flex items-center gap-1 px-3 py-2">
           <button
             aria-label={t("home.createProjectAria")}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
+            className={actionButtonClasses({ tone: "accent" })}
             onClick={() => setSetupOpen(true)}
             type="button"
           >
-            +
+            {t("workbench.createMenu")}
           </button>
           <div className="ml-auto">
             <ViewSwitcher
@@ -835,16 +855,14 @@ function MobileGlobalOverview() {
             />
           </div>
         </div>
-        {candidates.length === 0 ? (
-          !isLoaded ? (
-            <div className="px-3 py-2">
-              <CardGridSkeleton />
-            </div>
-          ) : (
-            <div className="flex flex-1 items-center justify-center p-6 text-center">
-              <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
-            </div>
-          )
+        {overviewLoading ? (
+          <div className="px-3 py-2">
+            <CardGridSkeleton plain={resolvedView === "grouped" || resolvedView === "grid"} />
+          </div>
+        ) : overviewEmpty ? (
+          <div className="flex flex-1 items-center justify-center p-6 text-center">
+            <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+          </div>
         ) : (
           <nav
             aria-label={t("workbench.globalOverviewTitle")}
@@ -859,10 +877,16 @@ function MobileGlobalOverview() {
                     onSelect={() => selectProject(group.projectName)}
                     onRequestDelete={() => requestDeleteProject(group.projectName)}
                   />
-                  <InstanceGrid
-                    items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                    plain
-                  />
+                  {group.candidates.length === 0 ? (
+                    <div className="px-1 py-2 text-xs text-on-surface-muted">
+                      {t("workbench.groupedProjectEmpty")}
+                    </div>
+                  ) : (
+                    <InstanceGrid
+                      items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                      plain
+                    />
+                  )}
                 </div>
               ))
             ) : resolvedView === "table" ? (

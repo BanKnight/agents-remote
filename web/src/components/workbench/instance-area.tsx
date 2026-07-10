@@ -516,11 +516,11 @@ function InstanceLeftOverviewBase({
         ) : (
           <button
             aria-label={t("home.createProjectAria")}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
+            className={actionButtonClasses({ tone: "accent" })}
             onClick={() => setSetupOpen(true)}
             type="button"
           >
-            +
+            {t("workbench.createMenu")}
           </button>
         )}
         {onViewChange ? (
