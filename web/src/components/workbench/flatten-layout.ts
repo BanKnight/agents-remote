@@ -58,15 +58,17 @@ export type FlatGutter = {
   totalFlex: number;
 };
 
-/** PanelRouter 落点：一个 session 的渲染槽位。 */
+/** PanelRouter 落点：一个面板（session 或 file）的渲染槽位。 */
 export type FlatPanel = {
-  sessionId: string;
-  projectName: string;
+  /** 派生 tab id（= React key / sizes key 概念）：session=sessionId，file=`file_${path}`。 */
+  tabId: string;
+  /** 完整面板引用；消费点直接用，无需从 sessionId+projectName 重构。 */
+  ref: WorkbenchPanelRef;
   /** 落点 rect = 所属 group 的 contentRect。 */
   rect: FlatRect;
-  /** 是否可见（sessionId === 所属 group activeTabId 且该 group 未被 maximized 隐藏）。 */
+  /** 是否可见（tabId === 所属 group activeTabId 且该 group 未被 maximized 隐藏）。 */
   visible: boolean;
-  /** 所属 group id（tab 跨 group 移动时此字段变，rect 跟着变，key=sessionId 不变 → React 复用）。 */
+  /** 所属 group id（tab 跨 group 移动时此字段变，rect 跟着变，key=tabId 不变 → React 复用）。 */
   groupId: string;
 };
 
@@ -167,9 +169,9 @@ export function flattenLayout(root: TreeNode | null, maximized: string | null): 
     for (const tab of leaf.tabs) {
       panels.push({
         groupId: leaf.id,
-        projectName: tab.projectName,
         rect: contentRect,
-        sessionId: tabIdOf(tab),
+        ref: tab,
+        tabId: tabIdOf(tab),
         // maximized 指向其他 leaf 时，本 leaf 全 hidden；指向本 leaf 时只 active tab 可见。
         visible:
           maximized === null

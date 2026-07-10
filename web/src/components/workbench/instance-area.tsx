@@ -1839,17 +1839,14 @@ export function WorkspaceTree({
               ? `absolute z-0 flex min-h-0 min-w-0 flex-col ${isDragging ? "pointer-events-none" : ""}`
               : "hidden"
           }
-          key={p.sessionId}
+          key={p.tabId}
           style={p.visible ? rectStyle(p.rect) : undefined}
         >
           {/* embeddedHeader 对齐移动端聚焦态：面板自带 SessionDetailHeader/ChatHeader 不渲染，
               title/projectName 由 group tab 栏 chip + 中栏 tab 行显示，Files/Git 走中栏顶部 tab，
               +Terminal 走左总览 CreateSessionBar，Retry 走内容区错误态 Notice，Close 由 tab ✕ +
               左总览卡片 close 承担（设计 §11）。 */}
-          <PanelRouter
-            embeddedHeader
-            panelRef={{ kind: "session", projectName: p.projectName, sessionId: p.sessionId }}
-          />
+          <PanelRouter embeddedHeader panelRef={p.ref} />
         </div>
       ))}
     </div>

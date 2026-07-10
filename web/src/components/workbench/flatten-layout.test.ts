@@ -57,7 +57,7 @@ test("flattenLayout: 单 leaf → 1 group + 1 panel（占满），无 gutter", (
   expect(r.groups[0]!.contentRect.y).toBeGreaterThan(0);
   expect(r.groups[0]!.contentRect.h).toBeLessThan(1);
   expect(r.panels).toHaveLength(1);
-  expect(r.panels[0]!.sessionId).toBe("s1");
+  expect(r.panels[0]!.tabId).toBe("s1");
   expect(r.panels[0]!.visible).toBe(true);
   expect(r.panels[0]!.groupId).toBe("g1");
 });
@@ -81,8 +81,8 @@ test("flattenLayout: 横向 2 split → 两组左右各半 + 1 col gutter", () =
   // gutter 在两组之间。
   closeTo(r.gutters[0]!.rect, { h: 1, w: 0.004, x: 0.498, y: 0 });
   expect(r.panels).toHaveLength(2);
-  expect(r.panels[0]!.sessionId).toBe("s1");
-  expect(r.panels[1]!.sessionId).toBe("s2");
+  expect(r.panels[0]!.tabId).toBe("s1");
+  expect(r.panels[1]!.tabId).toBe("s2");
   expect(r.panels[0]!.visible).toBe(true);
   expect(r.panels[1]!.visible).toBe(true);
 });
@@ -157,7 +157,7 @@ test("flattenLayout: tab 跨 group 不去重（每个 leaf.tab 一个 panel，se
   const root = split("sp1", "horizontal", [leafA, leafB]);
   const r = flattenLayout(root, null);
   expect(r.panels).toHaveLength(2);
-  expect(r.panels.map((p) => p.sessionId).sort()).toEqual(["s1", "s2"]);
+  expect(r.panels.map((p) => p.tabId).sort()).toEqual(["s1", "s2"]);
 });
 
 test("flattenLayout: maximized 指向某 leaf → 该 leaf 占满，其他 leaf hidden", () => {
@@ -173,8 +173,8 @@ test("flattenLayout: maximized 指向某 leaf → 该 leaf 占满，其他 leaf 
   expect(gB).toBeDefined();
   expect(gB.isMaximized).toBe(false);
   // gA 的 active tab 可见，gB 的 tab 不可见。
-  const pA = r.panels.find((p) => p.sessionId === "s1")!;
-  const pB = r.panels.find((p) => p.sessionId === "s2")!;
+  const pA = r.panels.find((p) => p.tabId === "s1")!;
+  const pB = r.panels.find((p) => p.tabId === "s2")!;
   expect(pA.visible).toBe(true);
   expect(pB.visible).toBe(false);
 });
