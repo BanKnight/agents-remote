@@ -683,8 +683,9 @@ export type PanelMeta = {
 
 export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
   const { t } = useT();
-  // file tab 无 session 详情查询（file marker/label 由后续 step 接入）：用空 sessionRef 保 hooks
-  // 顺序稳定、enabled=false 不发请求；session tab 时 sessionRef === panelRef，行为零改。
+  // file tab 无 session 详情查询：用空 sessionRef 保 hooks 顺序稳定、enabled=false 不发请求；
+  // session tab 时 sessionRef === panelRef，行为零改。file 的 marker/label 在 hooks 后早返
+  //（不依赖 detail，立即可用），无 statusDot（file 无 session 生命周期）。
   const sessionRef: SessionPanelRef =
     panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" };
   const sessionType =
@@ -692,6 +693,21 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
   const projReady = panelRef.kind === "session" && !!panelRef.projectName;
   const agent = useAgentDetail(sessionRef, projReady && sessionType === "agent");
   const terminal = useTerminalDetail(sessionRef, projReady && sessionType === "terminal");
+  if (panelRef.kind === "file") {
+    // file icon marker 对齐 sessionMarker xs 裸 icon 模型（h-4 w-4 + tone 文字色）；
+    // label 取 basename（如 src/index.ts → index.ts）。
+    return {
+      label: panelRef.path.split("/").pop() || panelRef.path,
+      marker: (
+        <span
+          aria-hidden="true"
+          className="inline-flex shrink-0 items-center text-on-surface-muted"
+        >
+          <ShellIcon className="h-4 w-4" name="file" />
+        </span>
+      ),
+    };
+  }
   if (sessionType === "agent") {
     const session = agent.data?.session;
     if (!session) return undefined;
