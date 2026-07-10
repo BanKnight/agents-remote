@@ -11,13 +11,20 @@ test("authenticated user can browse Project files and preview text and images", 
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
 
-  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: projectName }).click();
+  // Desktop workbench (Phase 1+): the global project list renders as buttons
+  // in the left panel, not links, and there is no "Projects" heading. Enter
+  // the project by clicking its node, then drive the Files inspection tab via
+  // the URL-visible ?tab=files state (the middle-column "Files" tab shares its
+  // accessible name with the activity-bar [Files] button, so a URL gate is
+  // unambiguous).
+  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
-  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
-  await page.getByRole("button", { name: /^Files/ }).click();
-
+  await page.goto(`/projects/${projectName}?tab=files`);
   const files = page.getByLabel("Project files");
+  await expect(files).toBeVisible();
+
   await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
   await expect(files.getByRole("button", { name: /README\.md/ }).first()).toBeVisible();
   // Dot-files and dot-directories are excluded from file listing

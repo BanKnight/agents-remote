@@ -76,9 +76,16 @@
 
 `bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build && bun run e2e`。
 
-### e2e spec 期望漂移（Phase 1 引入，Phase 4/5 修）
+### e2e spec 期望漂移（Phase 1 引入，本任务修复）
 
-Phase 1 把 `/` 桌面分流从 `HomeRoute`（项目列表）改成 `WorkbenchContent`（global 工作台）后，7 个 e2e spec 登录后仍断言 `heading "Projects"`（HomeRoute 语义），全失败。**经 stash 对比确认：在 Phase 1 (HEAD=a4886e8) 同样 7 失败，非 Phase 2a 回归**。spec 更新横跨 pwa/file-browser/git-diff/terminal/claude2 全套，且涉及桌面/移动 viewport 分流差异，归属 **Phase 4（移动端 spec 改造，配合删 HomeRoute 项目列表）+ Phase 5（e2e 全绿收尾）**，不在 Phase 2a surgical 范围。Phase 2a 收尾门禁 = format/lint/typecheck/test/build + Playwright 四栏几何（已全绿）。
+Phase 1 把 `/` 桌面分流从 `HomeRoute`（项目列表）改成 `WorkbenchContent`（global 工作台）后，7 个 e2e spec 登录后仍断言 `heading "Projects"`（HomeRoute 语义），全失败。**经 stash 对比确认：在 Phase 1 (HEAD=a4886e8) 同样 7 失败，非 Phase 2a 回归**。按用户基准线约束（"大计划最终交付时必须 e2e 全绿"），本任务（活动栏重设计交付的一部分）已一次性修复全部 7 spec：
+
+- 导航前置统一改桌面工作台语义：登录 gate 由 `heading "Projects"` → 左栏项目节点 `button`；进项目 gate → `expect(page).toHaveURL(/\/projects\/\$/)`。
+- Files/Git 检视 tab 与活动栏 `[Files]` 同名冲突，改用 URL 驱动 `?tab=files`/`?tab=git`（URL-visible，避开 role=button 同名歧义）。
+- Terminal 创建流：`+ Create`（`.first()` 选左栏 header 的 CreateSessionBar，避开空实例区域同名 button）→ `menuitem "Terminal"` → `button "Create"`（name prompt confirm）。
+- Claude2 spec（ask-question / windowing ×2）：伪会话 ID 加 `agent_` 前缀（`inferSessionTypeFromId` 要求 `agent_`/`terminal_` 前缀，PanelRouter 才路由到 AgentPanelRouter→ChatPanel；否则渲染 PlaceholderPanel 不发 detail 请求）+ mock 集合 `GET /agent-sessions`（避免 Phase 1+ stale-tab prune 删除不在 refs 中的 focus tab）；displayName 断言改 `getByRole("button", { name, exact: true })` 锁定中栏 tab chip（左总览 InstanceCard 的 accessible name 被状态前缀污染）。
+
+验证：`bun run e2e` 7/7 pass。
 
 ## 已定决策（plan 内，第 4 轮 resolved）
 

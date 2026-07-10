@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const password = process.env.E2E_PASSWORD ?? "secret";
 const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
-const fakeSessionId = "e2e-test-session-windowing";
+// The workbench's PanelRouter routes panels by inferring the session type
+// from the id prefix ("agent_" / "terminal_"). A claude2 session is an agent
+// session, so the fake id must carry the "agent_" prefix for the focus route
+// to mount the AgentPanelRouter -> ChatPanel (claude2) instead of a placeholder.
+const fakeSessionId = "agent_e2e-test-session-windowing";
 
 // Collect browser console errors during the test to catch React runtime errors
 // (e.g. "Rendered fewer hooks than expected") that error boundaries swallow.
@@ -78,6 +82,30 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
     },
   );
 
+  // Mock the agent-session list so the fake session appears in the workbench's
+  // active-instance refs (useScopeInstanceOrder). Without this, the Phase 1+
+  // workbench's stale-tab prune (refsLoaded gate) removes the focus tab for a
+  // session absent from the list, so the Claude2Chat panel never mounts and
+  // the composer/slash-menu never renders.
+  await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sessions: [
+          {
+            id: fakeSessionId,
+            projectName,
+            provider: "claude2",
+            displayName: "Claude 2 Agent (e2e-windowing)",
+            status: "idle",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+
   // Route WebSocket to the real server — the fake session doesn't exist so the
   // server will error, but the page must render the composer and slash menu
   // anyway. The slash menu is catalog-driven, not WS-driven.
@@ -91,7 +119,9 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
-  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  // Desktop workbench (Phase 1+) has no "Projects" heading; gate on the
+  // project node button being visible before navigating to the session route.
+  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
 
   await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2`);
 
@@ -149,6 +179,27 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
     },
   );
 
+  // Mock the agent-session list (same reason as the first test) so the stale-
+  // tab prune does not drop the focus tab before the composer mounts.
+  await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sessions: [
+          {
+            id: fakeSessionId,
+            projectName,
+            provider: "claude2",
+            displayName: "Claude 2 Agent (e2e-empty-catalog)",
+            status: "idle",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+
   await page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2-stream`),
     (ws) => {
@@ -159,7 +210,9 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
-  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  // Desktop workbench (Phase 1+) has no "Projects" heading; gate on the
+  // project node button being visible before navigating to the session route.
+  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
 
   await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2`);
 

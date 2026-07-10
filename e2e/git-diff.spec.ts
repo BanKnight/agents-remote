@@ -9,12 +9,16 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
 
-  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: projectName }).click();
+  // Desktop workbench (Phase 1+): project nodes are buttons in the left panel,
+  // not links, and there is no "Projects" heading. Enter the project, then
+  // drive the Git inspection tab via the URL-visible ?tab=git state (the
+  // middle-column "Git" tab and the activity-bar share accessible names, so a
+  // URL gate is unambiguous).
+  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
-  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
-  await page.getByRole("button", { name: /^Git/ }).click();
-
+  await page.goto(`/projects/${projectName}?tab=git`);
   const files = page.getByLabel("Git changed files");
   await expect(files.getByRole("button", { name: /README\.md/ })).toBeVisible();
   await expect(files.getByRole("button", { name: /src\/index\.ts/ })).toBeVisible();

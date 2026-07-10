@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const password = process.env.E2E_PASSWORD ?? "secret";
+const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
 
 test("PWA manifest and service worker meet installability criteria", async ({ page }) => {
   await page.goto("/");
@@ -32,7 +33,10 @@ test("PWA manifest and service worker meet installability criteria", async ({ pa
   // Service worker is registered
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
-  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  // Desktop workbench renders the global project list as buttons in the left
+  // panel (no "Projects" heading after the Phase 1 desktop shell rework);
+  // gate on the project node being visible instead.
+  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
 
   const swReg = await page.evaluate(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
