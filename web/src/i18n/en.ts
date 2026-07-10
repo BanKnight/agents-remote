@@ -20,7 +20,10 @@ export const en = {
   "auth.dismiss": "Dismiss",
   "auth.installApp": "Install app",
 
-  // ── Home ─────────────────────────────────────────────────────
+  // ── Home（保留键，前缀遗留）─────────────────────────────────
+  // HomeRoute 已删（Phase 4 Step 3）；下列 home.* 键被 ProjectLeftPanel（createProjectAria）
+  // 与 ProjectSetupPanel（setup* 系列）复用，语义已通用化为「创建项目表单」，home. 前缀
+  // 为历史遗留，待后续统一重命名为 project.setup* / project.createProjectAria。
   "home.createProjectAria": "Create or adopt Project",
   "home.setupTitle": "Create or adopt a Project",
   "home.setupDesc": "Use setup only when you need a new server folder under PROJECTS_ROOT.",
@@ -434,7 +437,7 @@ export const en = {
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
   "workbench.backToList": "Instances",
-  "workbench.global": "Instances",
+  "workbench.global": "Projects overview",
   "workbench.projectsAria": "Projects",
   "workbench.projectsSection": "Projects",
   "workbench.historySection": "History",

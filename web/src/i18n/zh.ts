@@ -22,7 +22,10 @@ export const zh: Record<TranslationKey, string> = {
   "auth.dismiss": "忽略",
   "auth.installApp": "安装应用",
 
-  // ── Home ─────────────────────────────────────────────────────
+  // ── Home（保留键，前缀遗留）─────────────────────────────────
+  // HomeRoute 已删（Phase 4 Step 3）；下列 home.* 键被 ProjectLeftPanel（createProjectAria）
+  // 与 ProjectSetupPanel（setup* 系列）复用，语义已通用化为「创建项目表单」，home. 前缀
+  // 为历史遗留，待后续统一重命名为 project.setup* / project.createProjectAria。
   "home.createProjectAria": "创建或采用项目",
   "home.setupTitle": "创建或采用项目",
   "home.setupDesc": "仅在需要在 PROJECTS_ROOT 下创建新的服务器文件夹时使用设置。",
@@ -434,7 +437,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
   "workbench.backToList": "实例列表",
-  "workbench.global": "实例",
+  "workbench.global": "项目总览",
   "workbench.projectsAria": "项目",
   "workbench.projectsSection": "项目",
   "workbench.historySection": "历史会话",
