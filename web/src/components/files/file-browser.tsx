@@ -344,7 +344,7 @@ export function FileEntryList({
 
 // ── FilePreviewPanel ──────────────────────────────────────────────
 
-type FilePreviewPanelProps = {
+export type FilePreviewPanelProps = {
   error: Error | null;
   isLoading: boolean;
   preview: ProjectFilePreviewResponse | undefined;
@@ -355,11 +355,12 @@ type FilePreviewPanelProps = {
   fileName?: string;
   editValue: string;
   onEditChange: (value: string) => void;
-  onClose: () => void;
+  /** 移动端关闭预览（inspection 浮窗用）；file tab 不提供（close 走 tab ✕）→ 不渲染 close 按钮。 */
+  onClose?: () => void;
   onRenderModeChange: (mode: "source" | "render") => void;
 };
 
-function FilePreviewPanel({
+export function FilePreviewPanel({
   error,
   isLoading,
   preview,
@@ -421,14 +422,16 @@ function FilePreviewPanel({
           role="group"
         >
           {saveToggle}
-          <button
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
-            type="button"
-            onClick={onClose}
-            aria-label={t("session.close")}
-          >
-            <ShellIcon name="close" className="h-4 w-4" />
-          </button>
+          {onClose ? (
+            <button
+              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
+              type="button"
+              onClick={onClose}
+              aria-label={t("session.close")}
+            >
+              <ShellIcon name="close" className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-y-auto">
@@ -460,6 +463,44 @@ function FilePreviewPanel({
         ) : null}
       </div>
     </section>
+  );
+}
+
+/**
+ * 文件预览的保存按钮（FilesPanel inspection + file tab 预览共用，DRY）。纯渲染：接收编辑态
+ *（isDirty/isPending/savedFlash）+ onSave，渲染统一样式的 save button。canEdit gate 由调用方
+ * 控制（`saveToggle = canEditText ? <FileSaveButton/> : null`，保持 saveToggle===null 语义供
+ * FilePreviewPanel 容器 sm:hidden 判定）。
+ */
+export function FileSaveButton({
+  isDirty,
+  isPending,
+  savedFlash,
+  onSave,
+}: {
+  isDirty: boolean;
+  isPending: boolean;
+  savedFlash: boolean;
+  onSave: () => void;
+}) {
+  const { t } = useT();
+  return (
+    <button
+      type="button"
+      disabled={!isDirty || isPending}
+      onClick={onSave}
+      className={`flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        isPending
+          ? "text-on-surface-muted"
+          : savedFlash
+            ? "text-success"
+            : isDirty
+              ? "cursor-pointer text-primary hover:bg-primary/10"
+              : "text-on-surface-muted"
+      }`}
+    >
+      {isPending ? t("files.saving") : savedFlash ? t("files.saved") : t("files.save")}
+    </button>
   );
 }
 
@@ -919,22 +960,12 @@ export function FilesPanel({
   }, []);
 
   const saveButton = canEditText ? (
-    <button
-      type="button"
-      disabled={!isDirty || save.isPending}
-      onClick={handleSave}
-      className={`flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        save.isPending
-          ? "text-on-surface-muted"
-          : savedFlash
-            ? "text-success"
-            : isDirty
-              ? "cursor-pointer text-primary hover:bg-primary/10"
-              : "text-on-surface-muted"
-      }`}
-    >
-      {save.isPending ? t("files.saving") : savedFlash ? t("files.saved") : t("files.save")}
-    </button>
+    <FileSaveButton
+      isDirty={isDirty}
+      isPending={save.isPending}
+      savedFlash={savedFlash}
+      onSave={handleSave}
+    />
   ) : null;
 
   const isPreviewOpen = selectedFilePath !== undefined && enablePreview;
