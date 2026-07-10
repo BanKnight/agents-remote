@@ -23,6 +23,7 @@
 - **2026-07-10 协商第 3 轮（3 待定点 resolved）**：① 进入项目后左栏顶部多导航 = **实例 / 历史 / 文件 / git**（= 现状 `WorkbenchMiddleTab` overview/history/files/git，复用现状）。② 移动端 [文件] = **文件树全屏 + 预览浮窗**，保持现状移动端 Files 做法不变。③ [设置] = **特例**，不套「活动栏切左栏」模型，点击沿用现有 `SettingsRoute` 设置页（桌面端左栏/中栏不切换）。**结构语义至此完整，无剩余结构待定点。**
 - **2026-07-10 协商第 4 轮（plan 4 决策点 resolved）**：① 活动栏 nav 存 `workbenchNavAtom`（localStorage，不进 URL）。② 活动栏 = WorkbenchShell 新增第 0 列（四栏）。③ [文件] 预览并入 WorkbenchLayoutV3（与实例 tab 共享 group+tab）。④ [设置] = 跳转 SettingsRoute（离开工作台）。**plan 全部决策点敲定，可进入实现。**
 - **2026-07-10 协商第 5 轮（Phase 2a 实现方案锁定）**：① **方案 X（拆 `InstanceArea`，严格四栏）**——布局上「左栏」= WorkbenchShell 原有 `leftPanel`（DOM 四栏第 1 列，Phase 1 已建，**非新增列**）；功能上承载 `InstanceArea` 内部已有的左总览。落地：拆 `InstanceArea` 为三部分——左总览提取为 `InstanceLeftOverview` 组件放入 `leftPanel`，右工作区 group+tab 瘦身 `InstanceArea` 留中栏 children，共享 state（layout/drag 三件套/focus+prune effects/candidates/create/close/rename/contextMenu）**提升到 `WorkbenchContent`**（不新建 hook——overview/workspace 互补消费非复用，WorkbenchContent 已是薄壳持共享 state 模式）。② **Phase 2 拆 2a/2b**：2a=[项目] 方案 X 核心；2b=[文件]（决策③ V3 多态 tab，session-centric 改造成本中高，放 2b）。③ **宽度归并**：leftPanel 用 `workbenchMiddleLeftWidthAtom`(16rem)，废弃 `workbenchLeftWidthAtom` + localStorage 一次性迁移。④ **leftPanel 恒显总览、忽略中栏 tab**（tab bar 中栏顶部位置留 Phase 3）。
+- **2026-07-10 协商第 6 轮（Phase 2b 实现方案锁定）**：① **V3 多态 tab**——`WorkbenchPanelRef` 扩为判别联合 `{kind:"session",projectName,sessionId} | {kind:"file",projectName,path}`；session tab 的 tabId === sessionId（值不变）→ localStorage 布局零迁移、session 路径零回归；file tab 前缀 `file_` 与 `agent_/terminal_` 天然互斥。② **file tab 可编辑+保存**（不只读）——复用 FilesPanel 的 CodeEditor + saveFileContent + dirty/save；新 `FilePreviewPanel`（queryScope 隔离 `file-nav`）独立承载，FilesPanel inspection 路径不动（避免抽顶层 state 大重构）。③ **file tab focus 独立路由**——新增 `/projects/$key/file/$`（splat 捕获多段 path），不复用 `/session/$id` 段。④ **移动端遇 `/file/$path` → 浮窗降级**（不实现移动端 V3 group，符合决策 12）。
 
 ## 3. 一级导航（两端共享语义）
 
@@ -64,7 +65,7 @@
 ```
 全局层（未进入项目）：
   [项目]  左栏 = 全局总览（卡片 + grouped/grid/table 多视图 + 新建项目 + 进入项目）
-  [文件]  左栏 = 文件地址栏（文件树）  ‖  中栏 = 点文件新开预览 tab
+  [文件]  左栏 = 文件地址栏（文件树）  ‖  中栏 = 点文件新开预览 tab（V3 多态 tab，见决策 18；可编辑+保存，✕ 仅移 tab 不 kill，刷新保留）
   [设置]  特例：不套「切左栏」模型，点击沿用现有 SettingsRoute 设置页（左栏/中栏不切换）
 
   （中栏始终 = group+tab 工作区，常驻不随导航变）
@@ -112,6 +113,10 @@
 15. **活动栏落位**：WorkbenchShell 新增第 0 列（四栏 `[活动栏|左栏|中栏|右栏]`）。
 16. **[文件] 预览**：并入 WorkbenchLayoutV3（与实例 tab 共享 group+tab）。
 17. **[设置] 集成**：跳转 `SettingsRoute`（离开工作台，沿用现状）。
+18. **[文件] tab 是 V3 多态 tab（`kind:"file"`）**：与 session tab 同处 group+tab（可 split/切 active/✕/拖拽）；session tab 的 tabId === sessionId 不变 → localStorage 零迁移、session 路径零回归。
+19. **file tab 生命周期**：✕ = 仅移 tab（不 kill session）；右键菜单隐藏 kill；不参与 stale-tab prune（刷新保留）；可编辑+保存。
+20. **file tab focus 路由**：新增 `/projects/$key/file/$`（splat 捕获多段项目相对路径），不复用 `/session/$id`。
+21. **移动端 `/file/$path` 降级**：用移动 Files 浮窗打开（不实现移动端 V3 group，符合决策 12）。
 
 ## 7. 待定点
 
