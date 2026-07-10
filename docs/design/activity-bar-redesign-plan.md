@@ -62,15 +62,20 @@
 
 ## Phase 4：移动端对应
 
-**目标**：移动端胶囊 = 项目/文件/设置；删 HomeRoute 项目列表。
+**目标**：移动端胶囊 = 项目/文件/设置；删 HomeRoute；`/global`→`/projects` 重命名。
+
+> 决策见设计文档 §6 决策 22-25 + §2 第 7 轮协商。本 phase 拆 6 step（Step 0-5，见
+> `/home/deploy/.claude/plans/cached-swimming-wolf.md`），每 step 独立提交 + 基线门禁 + push。
 
 任务：
-1. `MobilePrimaryNav` = 项目/文件/设置（Phase 0 已改 primitive，此 phase 接业务）。
-2. [项目] = MobileGlobalOverview（+ 新建/进入）；[文件] = 文件树全屏 + 预览浮窗（保持现状）；[设置] = 设置页。
-3. 删 `HomeRoute` 项目列表；`/` 移动 = [项目] 总览。
-4. 进入项目后：MobileFocusBody + 返回按钮 + 胶囊保留（现状一致）。
+1. **Step 1 路由重命名** `/global`→`/projects`（+`/global/session/$id`→`/projects/session/$id`）；scope kind `global` 类型保留，只改 URL path 段；跟进 router.tsx / workbench-model.ts / WorkbenchRoute.tsx / project-left-panel.tsx / redirect / e2e。
+2. **Step 2 MobilePrimaryNav + `/files` 路由**：删「全局」项加「文件」项；新增 `/files`（移动 rootBrowse FilesPanel 浮窗，桌面 redirect `/`）。
+3. **Step 3 IndexRoute + 删 HomeRoute**：`/` 移动分流 HomeRoute→GlobalScopeContent；删 HomeRoute.tsx + home.* 死键。
+4. **Step 4 重构 MobileGlobalOverview 为 [项目] 总览**：header 新建项目 + grouped 分组标题点击进项目 + 分组标题右侧 ⋯ 删除项目（deleteProject + useConfirm）+ ViewSwitcher；删 inspection tab 行 + 插件分支。
+5. **Step 5 i18n + CSS落盘 + 全门禁 + e2e**：workbench.global 值/home.* 死键；新增 `e2e/mobile-nav.spec.ts`；回归 8 spec（`/global`→`/projects` 断言跟进）。
+6. 进入项目后：MobileFocusBody + 返回按钮 + 胶囊保留（现状一致，不动）。
 
-验证：真机（test 项目）三导航 + 进入项目返回。
+验证：真机（test 项目）三导航 + 进入项目返回 + e2e 全绿。
 
 ## Phase 5：全门禁 + 回归
 

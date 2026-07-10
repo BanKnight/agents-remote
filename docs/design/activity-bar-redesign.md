@@ -24,6 +24,7 @@
 - **2026-07-10 协商第 4 轮（plan 4 决策点 resolved）**：① 活动栏 nav 存 `workbenchNavAtom`（localStorage，不进 URL）。② 活动栏 = WorkbenchShell 新增第 0 列（四栏）。③ [文件] 预览并入 WorkbenchLayoutV3（与实例 tab 共享 group+tab）。④ [设置] = 跳转 SettingsRoute（离开工作台）。**plan 全部决策点敲定，可进入实现。**
 - **2026-07-10 协商第 5 轮（Phase 2a 实现方案锁定）**：① **方案 X（拆 `InstanceArea`，严格四栏）**——布局上「左栏」= WorkbenchShell 原有 `leftPanel`（DOM 四栏第 1 列，Phase 1 已建，**非新增列**）；功能上承载 `InstanceArea` 内部已有的左总览。落地：拆 `InstanceArea` 为三部分——左总览提取为 `InstanceLeftOverview` 组件放入 `leftPanel`，右工作区 group+tab 瘦身 `InstanceArea` 留中栏 children，共享 state（layout/drag 三件套/focus+prune effects/candidates/create/close/rename/contextMenu）**提升到 `WorkbenchContent`**（不新建 hook——overview/workspace 互补消费非复用，WorkbenchContent 已是薄壳持共享 state 模式）。② **Phase 2 拆 2a/2b**：2a=[项目] 方案 X 核心；2b=[文件]（决策③ V3 多态 tab，session-centric 改造成本中高，放 2b）。③ **宽度归并**：leftPanel 用 `workbenchMiddleLeftWidthAtom`(16rem)，废弃 `workbenchLeftWidthAtom` + localStorage 一次性迁移。④ **leftPanel 恒显总览、忽略中栏 tab**（tab bar 中栏顶部位置留 Phase 3）。
 - **2026-07-10 协商第 6 轮（Phase 2b 实现方案锁定）**：① **V3 多态 tab**——`WorkbenchPanelRef` 扩为判别联合 `{kind:"session",projectName,sessionId} | {kind:"file",projectName,path}`；session tab 的 tabId === sessionId（值不变）→ localStorage 布局零迁移、session 路径零回归；file tab 前缀 `file_` 与 `agent_/terminal_` 天然互斥。② **file tab 可编辑+保存**（不只读）——复用 FilesPanel 的 CodeEditor + saveFileContent + dirty/save；新 `FilePreviewPanel`（queryScope 隔离 `file-nav`）独立承载，FilesPanel inspection 路径不动（避免抽顶层 state 大重构）。③ **file tab focus 独立路由**——新增 `/projects/$key/file/$`（splat 捕获多段 path），不复用 `/session/$id` 段。④ **移动端遇 `/file/$path` → 浮窗降级**（不实现移动端 V3 group，符合决策 12）。
+- **2026-07-10 协商第 7 轮（Phase 4 移动端方案锁定）**：① **底部胶囊 项目/文件/设置**——删原「全局」项（曾指 `/global` 旧全局实例语义），加「文件」项（→`/files` rootBrowse 浮窗）；[项目] 胶囊 active = `/` 或 `/projects*`。② **`/global` 重命名 `/projects`**——`/global` 现语义=项目总览（[项目] 导航），重命名非真删；scope kind `global` 类型保留，只改 URL path 段；两端 `/` 统一为 global scope = [项目] 总览。③ **删 HomeRoute**——项目列表/新建/进入/删除能力并入 [项目] 总览（grouped 分组进项目 + header 新建 + ⋯ 删除）。④ **[项目] 总览 = 实例聚合 + 项目入口**——重构 MobileGlobalOverview：header 新建 + grouped 分组标题点击进项目 + 分组标题右侧 ⋯ 删除项目（本 phase 加，复用 deleteProject + useConfirm）+ ViewSwitcher；删 inspection tab 行。⑤ **移动 [文件] = rootBrowse 根目录浏览**——新 `/files` 路由移动端渲染 rootBrowse FilesPanel 浮窗（不依赖先进项目，全局一级导航）；桌面 `/files` redirect `/`（桌面 [文件] 经活动栏）。⑥ **活动栏 [文件]（全局）与项目态左栏 [文件] 作用域互斥**——前者全局一级导航（rootBrowse 根目录），后者进入具体项目后出现（实例/历史/文件/git），不冲突。
 
 ## 3. 一级导航（两端共享语义）
 
@@ -88,11 +89,18 @@
 
 ```
 全局层：内容区 + 底部胶囊 [项目][文件][设置]
-  [项目] → 全局总览（卡片+多视图+新建/进入）
-  [文件] → 文件树全屏 + 预览浮窗（= 现状移动端 Files 做法，保持不变）
+  [项目] → 实例聚合总览（原 MobileGlobalOverview grouped/grid/table 多视图）
+           按项目分段（grouped）：点项目分组标题 → /projects/$key 进项目
+           header 新建项目（+ 按钮，useCreateProject + ProjectSetupPanel Dialog）
+           分组标题右侧 ⋯ 菜单 → 删除项目（deleteProject + useConfirm confirm）
+  [文件] → 文件树全屏 + 预览浮窗（rootBrowse 根目录浏览，= 现状移动端 Files 做法，决策 12）
   [设置] → 设置页（沿用现状）
 进入项目后：项目实例工作台（与现一致）+ 返回按钮，底部胶囊保留（已定）
 ```
+
+> **底部胶囊 3 项 = 项目/文件/设置**（删原「全局」项，加「文件」项）。「全局」项曾指向
+> `/global`（旧全局实例语义），现 `/global` 重命名为 `/projects`（项目总览语义），全局实例
+> 聚合即 [项目] 总览内容，胶囊不再单列「全局」项。详见 §6 决策 22-25。
 
 ## 6. 已定决策
 
@@ -117,6 +125,10 @@
 19. **file tab 生命周期**：✕ = 仅移 tab（不 kill session）；右键菜单隐藏 kill；不参与 stale-tab prune（刷新保留）；可编辑+保存。
 20. **file tab focus 路由**：新增 `/projects/$key/file/$`（splat 捕获多段项目相对路径），不复用 `/session/$id`。
 21. **移动端 `/file/$path` 降级**：用移动 Files 浮窗打开（不实现移动端 V3 group，符合决策 12）。
+22. **`/global` 路由重命名 `/projects`**：`/global` 现语义是「项目总览」（[项目] 导航），不再是「全局实例」；重命名（非真删）→ `/projects`（global scope index）+ `/global/session/$id`→`/projects/session/$id`（global scope 聚焦）。TanStack Router 字面量段 `session` 优先于参数 `$key`，与 `/projects/$key` 不冲突。`WorkbenchScope` kind `global` **类型语义保留**（只改 URL path 段，内部数据模型不动，避免殃及 V3 layout/scope 逻辑）。跟进点：router.tsx、workbench-model.ts（workbenchPath/useWorkbenchNavigate）、WorkbenchRoute.tsx（useSearch/useParams from）、project-left-panel.tsx（selectGlobal）、e2e specs。
+23. **删 HomeRoute，`/` 移动分流改 GlobalScopeContent**：HomeRoute 项目列表/新建/进入/删除能力并入 [项目] 总览（决策 25）；`IndexRoute` 移动端从 `<HomeRoute>` 改为 `<GlobalScopeContent>`（scope=global → MobileWorkbench → [项目] 总览）。两端 `/` 统一为 global scope = [项目] 总览。i18n `home.*` 死键随删（`home.createProjectAria`/`home.newAdopt` 被 ProjectLeftPanel 复用，保留）。
+24. **移动 [文件] = rootBrowse 根目录浏览 + 新 `/files` 路由**：移动端 [文件] 胶囊指向新 `/files` 路由，渲染 `<FilesPanel rootBrowse enablePreview />`（复用现状移动 Files 浮窗模式，fixed inset-0 z-50 slide-in-from-bottom 预览，决策 12）。桌面端 `/files` redirect 到 `/`（桌面 [文件] 经活动栏 nav=files，不需独立路由）。`rootBrowse` 按 currentPath 派生 {projectName, relativePath, isRootListing}，根目录只读，不依赖先进项目（活动栏 [文件] 是全局一级导航，与项目态左栏 [文件] 作用域互斥——后者进入项目后才出现）。
+25. **[项目] 总览 = 实例聚合 + 项目分组进项目 + header 新建 + ⋯ 删除**：重构 MobileGlobalOverview 为 [项目] 总览——header + 新建项目（useCreateProject + ProjectSetupPanel Dialog，与 ProjectLeftPanel 同源）+ grouped 视图按项目分段（groupByProject），**点项目分组标题进项目**（navigate `/projects/$key`），**分组标题右侧 ⋯ 菜单提供删除项目**（复用 deleteProject + useConfirm confirm dialog，本 phase 加）；grid/table 视图点实例进实例聚焦（不按项目分段，删项目入口仅 grouped 提供）；删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/[设置] 一级导航 + 项目内 MobileProjectOverview）；ViewSwitcher 保留。
 
 ## 7. 待定点
 
@@ -132,9 +144,9 @@
 
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
-| `router.tsx` | `/` `/projects/$key` `/projects/$key/session/$id` `/global` `/global/session/$id` `/settings`；视口分流在组件层（`useIsDesktopViewport`，非 redirect）；search `?rightTab ?view ?tab` | 路由不变；活动栏项是否进 URL（`?nav=`）plan 定 |
+| `router.tsx` | `/` `/projects/$key` `/projects/$key/session/$id` `/global` `/global/session/$id` `/settings`；视口分流在组件层（`useIsDesktopViewport`，非 redirect）；search `?rightTab ?view ?tab` | `/global`→`/projects` 重命名（决策 22）；新增 `/files`（决策 24，移动 rootBrowse）；活动栏项不进 URL |
 | `WorkbenchRoute.tsx` `WorkbenchContent` | `!isDesktop→<MobileWorkbench>`；桌面 `<WorkbenchShell leftPanel={<WorkbenchLeftRail>} rightPanel><InstanceArea/></WorkbenchShell>` | leftPanel 改为活动栏 + 随导航切换的左栏内容；注入 nav state |
-| `WorkbenchRoute.tsx` `IndexRoute` | `/`：桌面=global 工作台，移动=`<HomeRoute>` | 移动 HomeRoute 删除 → `/` 移动 = 活动栏 [项目] 总览 |
+| `WorkbenchRoute.tsx` `IndexRoute` | `/`：桌面=global 工作台，移动=`<HomeRoute>` | 移动 HomeRoute 删除 → `/` 移动 = [项目] 总览（GlobalScopeContent，决策 23） |
 
 ### 8.2 外壳
 
@@ -183,9 +195,10 @@
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
 | `mobile-workbench.tsx` `MobileWorkbench` | !focusId: global→MobileGlobalOverview / project→MobileProjectOverview + MobilePrimaryNav；focusId→MobileFocusBody(header tab output/files/git + 返回) | 底部胶囊→项目/文件/设置；进入项目后保留+返回 |
-| `MobilePrimaryNav`(shell/mobile-primary-nav) | 底部胶囊一级导航（现状项 plan 确认） | **改为 项目/文件/设置**（= 桌面活动栏） |
-| `HomeRoute.tsx` | 移动 `/` 项目列表/总览 | 项目列表**删除**；`/` 移动=[项目] 总览 |
-| `workbenchMobileOverviewTabAtom`/`FocusTabAtom` | 移动 tab 记忆 | 复用；新增移动 nav state |
+| `MobileGlobalOverview`(mobile-workbench) | 实例聚合（grouped/grid/table），无项目列表/新建/删除 | **重构为 [项目] 总览**：header + 新建项目（useCreateProject + ProjectSetupPanel Dialog）+ grouped 分组标题点击进项目（/projects/$key）+ 分组标题右侧 ⋯ 删除项目（deleteProject + useConfirm）+ ViewSwitcher；删 inspection tab 行 + 插件分支 |
+| `MobilePrimaryNav`(shell/mobile-primary-nav) | 底部胶囊一级导航（项目/全局/设置） | **改为 项目/文件/设置**（删「全局」项加「文件」项，= 桌面活动栏）；[文件]→`/files` rootBrowse 浮窗 |
+| `HomeRoute.tsx` | 移动 `/` 项目列表/新建/进入/删除 | **删除**（项目列表/新建/删除能力并入 [项目] 总览：grouped 分组进项目 + header 新建 + ⋯ 删除） |
+| `workbenchMobileOverviewTabAtom`/`FocusTabAtom` | 移动 tab 记忆 | 复用；移动 nav 无 atom，纯 URL pathname 驱动（[文件]=`/files`、[设置]=`/settings`） |
 
 ### 8.7 设置
 
