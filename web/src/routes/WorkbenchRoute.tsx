@@ -6,6 +6,7 @@ import { WorkbenchLeftRail } from "../components/workbench/left-rail";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
+import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { HomeRoute } from "./HomeRoute";
 import {
@@ -159,6 +160,7 @@ function WorkbenchContent({
     ) : null;
   return (
     <WorkbenchShell
+      activityBar={<ActivityBar />}
       leftPanel={<WorkbenchLeftRail scope={scope} />}
       rightPanel={rightPanel}
       rightPanelCollapsible={rightPanelCollapsible}

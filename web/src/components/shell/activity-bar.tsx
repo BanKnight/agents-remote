@@ -53,7 +53,7 @@ export function ActivityBar() {
   return (
     <nav
       aria-label={t("nav.primaryAria")}
-      className="flex w-12 flex-col items-center gap-1 border-r border-neutral-line/60 bg-surface py-2"
+      className="flex h-full w-12 flex-col items-center gap-1 border-r border-neutral-line/60 bg-surface py-2"
     >
       {items.map((item) => {
         const active = nav === item.id;

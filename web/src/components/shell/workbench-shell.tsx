@@ -13,9 +13,17 @@ import {
 } from "../../routes/workbench-model";
 import { shellSurfaceClasses } from "./shell-primitives";
 
+/** 活动栏列宽（rem）= ActivityBar `w-12`（48px）。固定不折叠、不 resize（一级导航常驻）。 */
+const ACTIVITY_COLUMN_REM = 3;
+
 type WorkbenchShellProps = {
   /** 中栏：实例区（Stage 1 的 InstanceArea 接入）。工作台主体，不可收起。 */
   children: ReactNode;
+  /**
+   * 活动栏：一级导航（项目/文件/设置），grid 第 0 列。常驻——不读 leftCollapsed，
+   * 折叠左栏时活动栏列宽不变（一级导航进入项目后也在）。Phase 1 接入 `<ActivityBar/>`。
+   */
+  activityBar?: ReactNode;
   /** 左栏：项目 + 实例树（Stage 2 接入）。 */
   leftPanel?: ReactNode;
   /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
@@ -39,6 +47,7 @@ type WorkbenchShellProps = {
  * 三栏内容由 props 注入（Stage 1/2/3 分别接入）。
  */
 export function WorkbenchShell({
+  activityBar,
   children,
   leftPanel,
   rightPanel,
@@ -79,14 +88,17 @@ export function WorkbenchShell({
   return (
     <main className="relative h-[var(--app-viewport-height)] overflow-hidden text-on-surface">
       <div
-        className={`grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-left-col)_minmax(0,1fr)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
+        className={`grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-activity-col)_var(--workbench-left-col)_minmax(0,1fr)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
         style={
           {
+            "--workbench-activity-col": `${ACTIVITY_COLUMN_REM}rem`,
             "--workbench-left-col": leftColumn,
             "--workbench-right-col": rightColumn,
           } as CSSProperties
         }
       >
+        {/* 活动栏（第 0 列）：极简容器，视觉由 ActivityBar 自带（bg-surface + border-r + h-full）。 */}
+        <aside className="hidden min-h-0 min-w-0 lg:block">{activityBar}</aside>
         <aside
           className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
         >
