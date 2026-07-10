@@ -26,6 +26,7 @@
 - **2026-07-10 协商第 6 轮（Phase 2b 实现方案锁定）**：① **V3 多态 tab**——`WorkbenchPanelRef` 扩为判别联合 `{kind:"session",projectName,sessionId} | {kind:"file",projectName,path}`；session tab 的 tabId === sessionId（值不变）→ localStorage 布局零迁移、session 路径零回归；file tab 前缀 `file_` 与 `agent_/terminal_` 天然互斥。② **file tab 可编辑+保存**（不只读）——复用 FilesPanel 的 CodeEditor + saveFileContent + dirty/save；新 `FilePreviewPanel`（queryScope 隔离 `file-nav`）独立承载，FilesPanel inspection 路径不动（避免抽顶层 state 大重构）。③ **file tab focus 独立路由**——新增 `/projects/$key/file/$`（splat 捕获多段 path），不复用 `/session/$id` 段。④ **移动端遇 `/file/$path` → 浮窗降级**（不实现移动端 V3 group，符合决策 12）。
 - **2026-07-10 协商第 7 轮（Phase 4 移动端方案锁定）**：① **底部胶囊 项目/文件/设置**——删原「全局」项（曾指 `/global` 旧全局实例语义），加「文件」项（→`/files` rootBrowse 浮窗）；[项目] 胶囊 active = `/` 或 `/projects*`。② **`/global` 重命名 `/projects`**——`/global` 现语义=项目总览（[项目] 导航），重命名非真删；scope kind `global` 类型保留，只改 URL path 段；两端 `/` 统一为 global scope = [项目] 总览。③ **删 HomeRoute**——项目列表/新建/进入/删除能力并入 [项目] 总览（grouped 分组进项目 + header 新建 + ⋯ 删除）。④ **[项目] 总览 = 实例聚合 + 项目入口**——重构 MobileGlobalOverview：header 新建 + grouped 分组标题点击进项目 + 分组标题右侧 ⋯ 删除项目（本 phase 加，复用 deleteProject + useConfirm）+ ViewSwitcher；删 inspection tab 行。⑤ **移动 [文件] = rootBrowse 根目录浏览**——新 `/files` 路由移动端渲染 rootBrowse FilesPanel 浮窗（不依赖先进项目，全局一级导航）；桌面 `/files` redirect `/`（桌面 [文件] 经活动栏）。⑥ **活动栏 [文件]（全局）与项目态左栏 [文件] 作用域互斥**——前者全局一级导航（rootBrowse 根目录），后者进入具体项目后出现（实例/历史/文件/git），不冲突。
 - **2026-07-11 协商第 10 轮（UI polish 批 E，桌面/移动统一）**：① **新建项目按钮对齐 CreateSessionBar**——两端（桌面 `InstanceLeftOverview` header + 移动 `MobileGlobalOverview` ViewSwitcher 行）从圆形 `h-8 w-8` 渐变 `+` 改为 `actionButtonClasses({ tone: "accent" })` pill 文案按钮（与新建会话同款 token：`rounded-xl border px-3 py-1.5 text-xs font-bold` + `from-primary to-secondary` 渐变），可见文案 `workbench.createMenu`（"+ 新建"/"+ Create"），仍是单按钮直开 `ProjectSetupPanel` Dialog（非 dropdown，无 chevron）。② **移动 grouped 与桌面同规则含空项目**——`MobileGlobalOverview` 从 `groupByProject(candidates)` 改为 `mergeProjectsWithCandidates(projectNames, candidates)` + `listProjects`（与桌面 `GroupedView` 同源、React Query dedupe）；空项目组显 `workbench.groupedProjectEmpty`；empty gate 不再仅靠 `candidates.length === 0` 整页空态（有项目无实例时 grouped 仍列空项目）。
+- **2026-07-11 协商第 11 轮（批 F，[项目] 总览共享 + 空项目默认折叠）**：① **global [项目] 桌面/移动单一实现**——抽取 `GlobalProjectsOverview`（`global-projects-overview.tsx`），两端 [项目] 导航只剩薄壳（桌面 = WorkbenchShell `leftPanelTitle` + 共享主体；移动 = `MobilePageHeader` + 共享主体）。结束「批 D/E 各自改各自」的双写模式。② **空项目默认折叠**——`workbenchGroupedCollapsedAtom`（有实例：list 含名=折叠）+ `workbenchGroupedExpandedEmptyAtom`（空项目：list 含名=用户展开；默认折叠）；`isGroupedProjectCollapsed` 唯一判定；两端 grouped 共用 `GroupedProjectsList`。③ **参数化差异仅** `dragAdapter?`（桌面拖放）/ `onFocusInstance` / `contentClassName?`（移动 pb-24）。④ **project scope 不动**——`InstanceLeftOverview` 收窄为 project-only（CreateSessionBar + 本项目实例）；`MobileProjectOverview` 不动。
 - **2026-07-11 协商第 9 轮（UI polish 批 D）**：① **GroupedView 项目行操作分级 A+C**——`[折叠 gutter h-7][项目名 flex-1 进项目][⋯ ActionMenu → 删除]`；折叠独立增大触摸区，删除从常驻 🗑 收进 ⋯ 菜单（destructive），对齐移动 `ProjectGroupHeader` 防误触。② **左栏统一大标题层**——`WorkbenchShell` 左 `PanelHeader` 加可选 `title`（`h-11` + `text-base font-semibold`，对齐 `MobilePageHeader`），`WorkbenchContent` 按 nav 注入 `t("nav.projects")` / `t("nav.files")`；右栏保持收起-only。③ **新建项目按钮位置统一**——移动新建从 `MobilePageHeader` actions 移到 ViewSwitcher 行左侧，与桌面 `InstanceLeftOverview` header 左对齐一致（样式在第 10 轮批 E 再对齐 CreateSessionBar）。
 
 
@@ -96,13 +97,12 @@
 
 ```
 全局层：内容区 + 底部胶囊 [项目][文件][设置]
-  [项目] → 实例聚合总览（原 MobileGlobalOverview grouped/grid/table 多视图）
-           按项目分段（grouped）：点项目分组标题 → /projects/$key 进项目
-           header 行左侧新建项目（CreateSessionBar 同款 accent pill `actionButtonClasses`，
-             文案 workbench.createMenu，直开 ProjectSetupPanel Dialog）
-           分组标题右侧 ⋯ 菜单 → 删除项目（deleteProject + useConfirm confirm）
-           grouped 与桌面 GroupedView 同规则：mergeProjectsWithCandidates + listProjects，
-             含无实例空项目（空状态 workbench.groupedProjectEmpty）
+  [项目] → 共享 `GlobalProjectsOverview`（批 F / 决策 29；桌面左栏同组件）
+           header：新建项目 accent pill（workbench.createMenu）+ ViewSwitcher
+           grouped：`GroupedProjectsList`——mergeProjectsWithCandidates 含空项目；
+             行 = [折叠 gutter][项目名进项目][⋯ 删除]；**空项目默认折叠**
+             （expandedEmpty 名单；有实例走 collapsed 名单，默认展开）
+           grid/table：跨项目实例聚合；点实例进聚焦
   [文件] → 文件树全屏 + 预览浮窗（rootBrowse 根目录浏览，= 现状移动端 Files 做法，决策 12）
   [设置] → 设置页（沿用现状）
 进入项目后：项目实例工作台（与现一致）+ 返回按钮，底部胶囊保留（已定）
@@ -142,6 +142,7 @@
 26. **Phase 3 tab bar 中栏→左栏迁移 + 活动栏[文件]固定全局**：① 进入 project scope 后，middle tab bar（实例/历史/文件/git）从 `InstanceArea` 中栏顶部移到 `ProjectLeftPanel` 左栏顶部，切**左栏主体**内容（实例=InstanceLeftOverview / 历史=HistoryList / 文件=FilesLeftPanel scope=project / git=GitDiffPanel），**非中栏**；`InstanceArea` 瘦身为纯 group+tab 常驻（去 tab bar + history/inspection content 分支，props `ctx`→`projectName`）。② middle tab bar **仅 project scope + nav=projects** 出现；global scope 无 middle tab（global 无 history/git，files 归活动栏 nav=files）。③ 活动栏始终切左栏（既定），`nav=files` 固定 `FilesLeftPanel scope={kind:"global"}`（rootBrowse 全局根目录，不论 WorkbenchScope）——修正 Phase 2b 遗留（`nav=files` 曾传 `scope={scope}` 致 project scope 渲染项目内文件树，与「活动栏[文件]=全局」冲突）。④ middle tab 内容全复用现成（HistoryList/FilesLeftPanel scope=project/GitDiffPanel/InstanceLeftOverview），middle tab bar 复用 TabButton + buildOverviewTabs。`tab`/`onTabChange` 从 InstanceArea 移到 ProjectLeftPanel（WorkbenchContent 接线跟进）。
 27. **左栏大标题层 + GroupedView 项目行防误触 + 新建位置统一（批 D）**：① `WorkbenchShell` 左 `PanelHeader` 可选 `title`（`h-11` + `text-base font-semibold` + `border-b border-on-surface/5`，对齐 `MobilePageHeader`）；`WorkbenchContent` 按 `workbenchNavAtom` 注入 `nav.projects` / `nav.files`；右栏 `PanelHeader` 仍仅收起。② GroupedView 项目行 = `[折叠 gutter h-7][项目名 flex-1 进项目][⋯ ActionMenu → 删除 destructive]`（删除不再常驻）。③ 新建项目按钮桌面/移动都落在 ViewSwitcher 行左侧（样式见决策 28）。
 28. **新建项目按钮对齐 CreateSessionBar + 移动 grouped 含空项目（批 E）**：① 桌面 `InstanceLeftOverview` + 移动 `MobileGlobalOverview` 新建项目 = `actionButtonClasses({ tone: "accent" })` pill 文案按钮（同 CreateSessionBar trigger token），文案 `workbench.createMenu`，`aria-label` 仍用 `home.createProjectAria`；单按钮直开 Dialog，无 dropdown/chevron。② 移动 grouped 与桌面 GroupedView 同用 `mergeProjectsWithCandidates` + `listProjects`；空项目显 `workbench.groupedProjectEmpty`；empty gate 按 view 分流（grouped 看 projects 列表，grid/table 看 candidates）。
+29. **[项目] 总览桌面/移动共享 + 空项目默认折叠（批 F）**：① global [项目] 共用 `GlobalProjectsOverview`（单一实现：新建 accent pill + ViewSwitcher + grouped/grid/table + create Dialog + 删除 confirm + close/rename）；桌面 `WorkbenchContent` global 直接挂共享组件（`dragAdapter`+`onFocusInstance`），移动 `MobileGlobalOverview` 缩为 `MobilePageHeader` + 共享组件（`contentClassName=pb-24`）。② grouped 折叠双名单：`workbenchGroupedCollapsedAtom`（有实例，默认展开）+ `workbenchGroupedExpandedEmptyAtom`（空项目，默认折叠；list 含名=用户展开）；`isGroupedProjectCollapsed(name,isEmpty,collapsed,expandedEmpty)` 唯一判定。③ `InstanceLeftOverview` 收窄为 **project-only**（不再承载 global 三视图/新建项目）；删 `GroupedView`/`ProjectGroupHeader` 平行实现。④ 参数化仅 `dragAdapter?` / `onFocusInstance` / `contentClassName?`。
 
 
 ## 7. 待定点
@@ -209,7 +210,9 @@
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
 | `mobile-workbench.tsx` `MobileWorkbench` | !focusId: global→MobileGlobalOverview / project→MobileProjectOverview + MobilePrimaryNav；focusId→MobileFocusBody(header tab output/files/git + 返回) | 底部胶囊→项目/文件/设置；进入项目后保留+返回 |
-| `MobileGlobalOverview`(mobile-workbench) | 实例聚合（grouped/grid/table），无项目列表/新建/删除 | **重构为 [项目] 总览**：header + 新建项目（useCreateProject + ProjectSetupPanel Dialog）+ grouped 分组标题点击进项目（/projects/$key）+ 分组标题右侧 ⋯ 删除项目（deleteProject + useConfirm）+ ViewSwitcher；删 inspection tab 行 + 插件分支；**批 E**：新建 = CreateSessionBar 同款 accent pill；grouped = mergeProjectsWithCandidates 含空项目 |
+| `MobileGlobalOverview`(mobile-workbench) | 实例聚合（grouped/grid/table），无项目列表/新建/删除 | **批 F 薄壳**：`MobilePageHeader` + 共享 `GlobalProjectsOverview`（`contentClassName=pb-24`）；业务逻辑（新建/删除/三视图/空项目默认折叠）全在共享组件 |
+| `GlobalProjectsOverview`（**新**，global-projects-overview.tsx） | — | global [项目] 桌面/移动**单一实现**（决策 29）：新建 accent pill + ViewSwitcher + grouped（`GroupedProjectsList` + 双 atom 空默认折叠）/grid/table + create Dialog + delete confirm + close/rename；props 仅 `onFocusInstance` / `dragAdapter?` / `contentClassName?` |
+| `InstanceLeftOverview` | global+project 左总览 | **批 F 收窄 project-only**（CreateSessionBar + 本项目 grid/table）；global 改由 WorkbenchContent 直挂 `GlobalProjectsOverview` |
 | `MobilePrimaryNav`(shell/mobile-primary-nav) | 底部胶囊一级导航（项目/全局/设置） | **改为 项目/文件/设置**（删「全局」项加「文件」项，= 桌面活动栏）；[文件]→`/files` rootBrowse 浮窗 |
 | `HomeRoute.tsx` | 移动 `/` 项目列表/新建/进入/删除 | **删除**（项目列表/新建/删除能力并入 [项目] 总览：grouped 分组进项目 + header 新建 + ⋯ 删除） |
 | `workbenchMobileOverviewTabAtom`/`FocusTabAtom` | 移动 tab 记忆 | 复用；移动 nav 无 atom，纯 URL pathname 驱动（[文件]=`/files`、[设置]=`/settings`） |

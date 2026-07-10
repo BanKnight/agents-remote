@@ -1,37 +1,17 @@
-import {
-  Fragment,
-  type CSSProperties,
-  type FormEvent,
-  type ReactNode,
-  useId,
-  useMemo,
-  useState,
-} from "react";
+import { Fragment, type CSSProperties, type ReactNode, useMemo } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import {
-  actionButtonClasses,
-  MobilePageHeader,
-  ShellSectionLabel,
-  shellSurfaceClasses,
-  ViewSwitcher,
-} from "../shell/shell-primitives";
+import { MobilePageHeader, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
-import { deleteProject, listProjects } from "../../api/client";
-import { useConfirm } from "../shell/confirm-dialog";
-import { useCreateProject, ProjectSetupPanel } from "../shell/project-setup";
-import { Dialog, DialogContent } from "../ui/dialog";
-import { ActionMenu } from "../ui/action-menu";
+import { GlobalProjectsOverview } from "./global-projects-overview";
 import {
   ensureTabOpenLeaf,
   filterWorkbenchViews,
   findTabRefLeaf,
-  mergeProjectsWithCandidates,
   type WorkbenchMobileFocusTab,
   type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
@@ -47,8 +27,6 @@ import {
 } from "../../routes/workbench-model";
 
 import {
-  candidateToGridItem,
-  candidateToTableRow,
   CardGridSkeleton,
   CreateSessionBar,
   type GridItemCallbacks,
@@ -60,7 +38,6 @@ import {
   useAgentDetail,
   useCloseSession,
   useCreateSession,
-  useGlobalInstanceCandidates,
   useProjectInstances,
   useRenameSession,
   useScopeInstanceOrder,
@@ -735,261 +712,18 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
  */
 function MobileGlobalOverview() {
   const { t } = useT();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const inputId = useId();
-  const [setupOpen, setSetupOpen] = useState(false);
   const navigateWorkbench = useWorkbenchNavigate();
-  const { close, holder: closeHolder } = useCloseSession();
-  const { rename, holder: renameHolder } = useRenameSession();
-  const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
-  // projects 列表（含空项目，批 E / 决策 28）：与桌面 GroupedView 同 key ["projects"]，React Query dedupe。
-  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
-  const projectNames = projects.data?.projects.map((p) => p.name) ?? [];
-  const { create, projectPath, setProjectPath } = useCreateProject();
-  const deleteMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
-  });
-  const { confirm, holder: confirmHolder } = useConfirm();
-  const [view, setView] = useAtom(workbenchViewAtom);
-  // viewOptions = filterWorkbenchViews(global) = [grouped, grid, table]（global 三视图全开）。
-  const viewOptions = useMemo(
-    () =>
-      filterWorkbenchViews({ kind: "global" }).map((v) => ({
-        id: v,
-        label: t(VIEW_LABEL_KEY[v]),
-      })),
-    [t],
-  );
-  // resolvedView：atom 值在移动 global viewOptions 内时尊重，否则回退 grouped（当前分段形态）。
-  // atom 默认 "grid"（与桌面 global 一致），首次进移动 global 显示 grid；用户切 grouped 后 atom 持久化。
-  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grouped";
-  // 批 E：与桌面 GroupedView 同用 mergeProjectsWithCandidates，含无实例空项目。
-  const groups = useMemo(
-    () => mergeProjectsWithCandidates(projectNames, candidates),
-    [projectNames, candidates],
-  );
-  // empty/skeleton gate：grouped 以 projects 列表为准（有项目无实例仍渲染分组）；grid/table 仍看 candidates。
-  const projectsLoaded = projects.data !== undefined && !projects.isLoading;
-  const overviewEmpty =
-    resolvedView === "grouped"
-      ? projectsLoaded && projectNames.length === 0
-      : isLoaded && candidates.length === 0;
-  const overviewLoading =
-    resolvedView === "grouped"
-      ? !projectsLoaded && projectNames.length === 0
-      : !isLoaded && candidates.length === 0;
+  // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
+  //（MobilePageHeader 标题 + pb-24 底部胶囊避让），实例聚焦/新建/删除/三视图/折叠全在共享组件内。
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
-  };
-  const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
-    const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
-    if (ref) void close(ref, type);
-  };
-  const renameInstance = (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    _projectName: string,
-  ) => {
-    const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
-    if (ref) void rename(ref, type, currentName);
-  };
-  const callbacks: GridItemCallbacks = {
-    onClose: closeInstance,
-    onRename: renameInstance,
-    onSelect: focusInstance,
-    t,
-  };
-  const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
-  // table 行（global 6 列含 project；复用 candidateToTableRow，与桌面 InstanceArea table 分支同源）。
-  const tableRows = useMemo(
-    () => candidates.map((c) => candidateToTableRow(c, tableCallbacks)),
-    // tableCallbacks 闭包依赖 closeInstance/focusInstance（candidates/navigateWorkbench/close），
-    // 由 [candidates, t] 覆盖（candidates 变 → closeInstance 闭包变）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [candidates, t],
-  );
-  const tableColumns: TableColumn[] = ["name", "project", "activity", "actions"];
-  const selectProject = (name: string) => {
-    void navigate({ to: "/projects/$key", params: { key: name } });
-  };
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedPath = projectPath.trim();
-    if (trimmedPath.length === 0 || create.isPending) return;
-    create.mutate(trimmedPath);
-  };
-  const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
-  const requestDeleteProject = async (projectName: string) => {
-    const ok = await confirm({
-      cancelLabel: t("cancel"),
-      confirmLabel: t("project.deleteProject"),
-      message: t("project.deleteProjectConfirm"),
-      title: t("project.deleteProject"),
-      tone: "danger",
-    });
-    if (ok) deleteMutation.mutate(projectName);
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("workbench.global")} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* 批 D 位置 + 批 E 样式：新建在 ViewSwitcher 行左侧，CreateSessionBar 同款 accent pill。 */}
-        <div className="flex items-center gap-1 px-3 py-2">
-          <button
-            aria-label={t("home.createProjectAria")}
-            className={actionButtonClasses({ tone: "accent" })}
-            onClick={() => setSetupOpen(true)}
-            type="button"
-          >
-            {t("workbench.createMenu")}
-          </button>
-          <div className="ml-auto">
-            <ViewSwitcher
-              ariaLabel={t("workbench.viewSwitcher")}
-              onChange={(next) => setView(next)}
-              view={resolvedView}
-              views={viewOptions}
-            />
-          </div>
-        </div>
-        {overviewLoading ? (
-          <div className="px-3 py-2">
-            <CardGridSkeleton plain={resolvedView === "grouped" || resolvedView === "grid"} />
-          </div>
-        ) : overviewEmpty ? (
-          <div className="flex flex-1 items-center justify-center p-6 text-center">
-            <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
-          </div>
-        ) : (
-          <nav
-            aria-label={t("workbench.globalOverviewTitle")}
-            className="flex-1 overflow-y-auto pb-24 lg:pb-0"
-          >
-            {resolvedView === "grouped" ? (
-              groups.map((group) => (
-                <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
-                  <ProjectGroupHeader
-                    isDeleting={deleteMutation.isPending}
-                    projectName={group.projectName}
-                    onSelect={() => selectProject(group.projectName)}
-                    onRequestDelete={() => requestDeleteProject(group.projectName)}
-                  />
-                  {group.candidates.length === 0 ? (
-                    <div className="px-1 py-2 text-xs text-on-surface-muted">
-                      {t("workbench.groupedProjectEmpty")}
-                    </div>
-                  ) : (
-                    <InstanceGrid
-                      items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                      plain
-                    />
-                  )}
-                </div>
-              ))
-            ) : resolvedView === "table" ? (
-              <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-            ) : (
-              <div className="px-3 py-2">
-                <InstanceGrid
-                  items={candidates.map((c) => candidateToGridItem(c, callbacks))}
-                  plain
-                />
-              </div>
-            )}
-          </nav>
-        )}
+      <div className="min-h-0 flex-1">
+        <GlobalProjectsOverview contentClassName="pb-24 lg:pb-0" onFocusInstance={focusInstance} />
       </div>
-      {closeHolder}
-      {renameHolder}
-      {confirmHolder}
-      <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
-        <DialogContent className="overflow-y-auto p-0">
-          <ProjectSetupPanel
-            createError={create.error instanceof Error ? create.error : null}
-            inputId={inputId}
-            isPending={create.isPending}
-            onProjectPathChange={setProjectPath}
-            onSubmit={handleSubmit}
-            projectPath={projectPath}
-          />
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-type ProjectGroupHeaderProps = {
-  isDeleting: boolean;
-  projectName: string;
-  onSelect: () => void;
-  onRequestDelete: () => void;
-};
-
-/**
- * grouped 分组标题行（设计 §5/决策 25）：左侧可点击区域（项目名 + 进项目 chevron）navigate
- * `/projects/$key`，右侧 ⋯ ActionMenu（删除项目，destructive，视口分流移动 action sheet /
- * 桌面 popover）。复用 ShellSectionLabel 视觉基线，左侧包 button 进项目，右侧 ⋯ 按钮。
- * isDeleting 期间禁用 ⋯（防重复提交）。
- */
-function ProjectGroupHeader({
-  isDeleting,
-  projectName,
-  onSelect,
-  onRequestDelete,
-}: ProjectGroupHeaderProps) {
-  const { t } = useT();
-  return (
-    <div className="flex items-center gap-1">
-      <button
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md py-1 text-left transition hover:bg-on-surface/5"
-        onClick={onSelect}
-        type="button"
-      >
-        <ShellSectionLabel>{projectName}</ShellSectionLabel>
-        <svg
-          aria-hidden="true"
-          className="size-3 shrink-0 text-on-surface-muted"
-          fill="none"
-          viewBox="0 0 16 16"
-        >
-          <path
-            d="M6 4l4 4-4 4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            stroke="currentColor"
-          />
-        </svg>
-      </button>
-      <ActionMenu
-        align="end"
-        cancelLabel={t("cancel")}
-        items={[
-          {
-            label: t("project.deleteProject"),
-            icon: <ShellIcon name="trash" />,
-            onSelect: onRequestDelete,
-            variant: "destructive",
-            disabled: isDeleting,
-          },
-        ]}
-        trigger={
-          <button
-            aria-label={t("project.deleteProject")}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-            type="button"
-          >
-            <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-              <circle cx="4" cy="8" r="1" fill="currentColor" />
-              <circle cx="8" cy="8" r="1" fill="currentColor" />
-              <circle cx="12" cy="8" r="1" fill="currentColor" />
-            </svg>
-          </button>
-        }
-      />
     </div>
   );
 }

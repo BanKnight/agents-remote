@@ -1,20 +1,17 @@
 import {
   type CSSProperties,
-  type FormEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
   memo,
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAtom } from "jotai";
 import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
 import {
   type DropZone,
@@ -30,10 +27,8 @@ import {
   deriveZone,
   filterWorkbenchViews,
   inferSessionTypeFromId,
-  mergeProjectsWithCandidates,
   rankGlobalInstances,
   tabIdOf,
-  workbenchGroupedCollapsedAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import {
@@ -41,7 +36,6 @@ import {
   closeTerminalSession,
   createAgentSession,
   createTerminalSession,
-  deleteProject,
   getAgentSession,
   getTerminalSession,
   listAgentSessions,
@@ -78,8 +72,6 @@ import {
 } from "../ui/dropdown-menu";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
-import { Dialog, DialogContent } from "../ui/dialog";
 
 /** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
 export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
@@ -321,32 +313,30 @@ export function InstanceArea({
 }
 
 /**
- * 左总览（Phase 2a 方案 X）：从 InstanceArea 提取的左总览纯渲染组件，承载于 WorkbenchShell
- * `leftPanel`（DOM 四栏第 1 列）。渲染 CreateSessionBar（project only）+ ViewSwitcher + grid/
- * grouped/table 分支 + EmptyInstanceArea + CardGridSkeleton。
+ * 左总览（批 F：project-only）。global [项目] 总览已抽取为 `GlobalProjectsOverview`（桌面/移动共用，
+ * 决策 29），本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ ViewSwitcher
+ *（grid/table）+ InstanceGrid/SessionTable + EmptyInstanceArea + CardGridSkeleton。承载于
+ * WorkbenchShell `leftPanel`（DOM 四栏第 1 列）。
  *
- * **无 state**：所有数据（candidates/projectInstances/create/回调/dragAdapter）由 WorkbenchContent
- * 经 props 注入；dragState 不进 props（拖动期间不重渲染），故用 `memo` 包裹。内部仅派生纯计算
+ * **无 state**：所有数据（projectInstances/create/回调/dragAdapter）由 WorkbenchContent 经 props
+ * 注入；dragState 不进 props（拖动期间不重渲染），故用 `memo` 包裹。内部仅派生纯计算
  *（viewOptions/resolvedView/gridItems/tableRows/gridDragRefs/overviewLoading）。
  *
  * 与 InstanceArea（瘦身后的右工作区）互补：本组件出拖放源（dragAdapter），InstanceArea 收拖放
  * 目标（DropZoneOverlay）。onCardDragStart 单一实例由 WorkbenchContent 创建，卡片源 + tab 源共享。
  */
 type InstanceLeftOverviewProps = {
-  scope: WorkbenchScope;
+  /** project 作用域（global 作用域由 GlobalProjectsOverview 承载，不进此组件）。 */
+  scope: { kind: "project"; key: string };
   /** inspection 插件上下文；本组件仅用 ctx.projectKey（CreateSessionBar/EmptyInstanceArea/projectName）。 */
   ctx: PluginContext;
   /** 总览视图（URL `?view` + atom 回退，WorkbenchContent 解析后传入）。 */
   view?: WorkbenchView;
   /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */
   onViewChange?: (next: WorkbenchView) => void;
-  /** 创建实例 API（useCreateSession；global scope 时 projectName=null → create 仍传但 createAgent/createTerminal 为 noop）。 */
+  /** 创建实例 API（useCreateSession，project scope projectName=scope.key）。 */
   create: CreateSessionApi;
-  /** global scope 跨项目聚合候选（useGlobalInstanceCandidates）；project scope 传空数组。 */
-  candidates: GlobalInstanceCandidate[];
-  /** global candidates 是否全部 settled（聚合多 query 的 settled 标量，驱动 overviewLoading）。 */
-  candidatesLoaded: boolean;
-  /** project scope 活跃实例（useProjectInstances）；global scope 传空 instances。 */
+  /** project scope 活跃实例（useProjectInstances）。 */
   projectInstances: { instances: ProjectInstanceEntry[]; isLoading: boolean };
   /** 单击实例 → 进聚焦态（navigateWorkbench）。 */
   onFocusInstance: (sessionId: string) => void;
@@ -369,8 +359,6 @@ function InstanceLeftOverviewBase({
   view,
   onViewChange,
   create,
-  candidates,
-  candidatesLoaded,
   projectInstances,
   onFocusInstance,
   onCloseInstance,
@@ -379,24 +367,7 @@ function InstanceLeftOverviewBase({
 }: InstanceLeftOverviewProps) {
   const { t } = useT();
 
-  // 新建项目入口（global scope 专属，header 新建按钮 + ProjectSetupPanel Dialog）。InstanceLeftOverview
-  // 整体设计为"无 state"（数据全 props 注入、memo 包裹避免拖动期重渲染）；新建项目 Dialog 是组件
-  // 本地 UI 入口（低频交互，不参与拖动高频流），故用内部 useState + useCreateProject，而非再开一条
-  // props 管道。create 重命名为 createProjectMutation 以避开 props.create（CreateSessionApi）。
-  const inputId = useId();
-  const [setupOpen, setSetupOpen] = useState(false);
-  const { create: createProjectMutation, projectPath, setProjectPath } = useCreateProject();
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedPath = projectPath.trim();
-    if (trimmedPath.length === 0 || createProjectMutation.isPending) return;
-    createProjectMutation.mutate(trimmedPath);
-  };
-  const setupVisible =
-    setupOpen || createProjectMutation.isPending || createProjectMutation.error instanceof Error;
-
-  // ViewSwitcher 视图选项（按 scope 过滤，设计 §6）。
+  // ViewSwitcher 视图选项（project scope = [grid, table]，grouped 仅 global）。
   const viewOptions = useMemo(
     () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
     [scope, t],
@@ -405,7 +376,7 @@ function InstanceLeftOverviewBase({
   const resolvedView: WorkbenchView =
     view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
-  // grid 数据源：global 用 candidates（跨项目聚合），project 用 useProjectInstances（本项目全览）。
+  // grid 数据源：project scope 用 useProjectInstances（本项目全览，WorkbenchContent 注入）。
   const gridCallbacks: GridItemCallbacks = {
     onClose: onCloseInstance,
     onRename: onRenameInstance,
@@ -414,38 +385,31 @@ function InstanceLeftOverviewBase({
   };
   const gridItems = useMemo<InstanceGridItem[]>(
     () =>
-      scope.kind === "global"
-        ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
-        : projectInstances.instances.map((entry) =>
-            instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
-          ),
-    // gridCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
-    // 引用由 hook 内 dataKey fingerprint 稳定（data 不变时不新建数组）。
+      projectInstances.instances.map((entry) =>
+        instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
+      ),
+    // gridCallbacks 闭包依赖 t；projectInstances.instances 引用由 hook 内 dataKey fingerprint 稳定
+    //（data 不变时不新建数组）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, candidates, projectInstances.instances, t],
+    [projectInstances.instances, t],
   );
 
   // 左总览 overview 内容按 view 分支（设计 §5）：grid → InstanceGrid（空 → EmptyInstanceArea）；
-  // grouped → GroupedView（仅 global scope，按项目分段）；table → SessionTable（空 → EmptyInstanceArea）。
+  // table → SessionTable（空 → EmptyInstanceArea）。（grouped 仅 global，已迁 GlobalProjectsOverview。）
   const showGrid = resolvedView === "grid";
-  const showGrouped = resolvedView === "grouped" && scope.kind === "global";
   const showTable = resolvedView === "table";
-  // grid view dragRefs：global 用 candidates，project 用 projectInstances（sessionId → ref）。
+  // grid view dragRefs：project 用 projectInstances（sessionId → ref）。
   const gridDragRefs = useMemo(() => {
     const m = new Map<string, WorkbenchPanelRef>();
-    if (scope.kind === "global") {
-      for (const c of candidates) m.set(c.ref.sessionId, c.ref);
-    } else {
-      for (const entry of projectInstances.instances) {
-        m.set(entry.session.id, {
-          kind: "session",
-          projectName: scope.key,
-          sessionId: entry.session.id,
-        });
-      }
+    for (const entry of projectInstances.instances) {
+      m.set(entry.session.id, {
+        kind: "session",
+        projectName: scope.key,
+        sessionId: entry.session.id,
+      });
     }
     return m;
-  }, [scope, candidates, projectInstances.instances]);
+  }, [scope, projectInstances.instances]);
   // table 列回调（与 gridCallbacks 同源）；t 用 TranslateFn（relativeTime 的 time.minutesAgo {count}）。
   const tableCallbacks: TableRowCallbacks = {
     onClose: onCloseInstance,
@@ -453,28 +417,18 @@ function InstanceLeftOverviewBase({
     t,
   };
   const tableRows = useMemo<SessionTableRow[]>(
-    () =>
-      scope.kind === "global"
-        ? candidates.map((candidate) => candidateToTableRow(candidate, tableCallbacks))
-        : projectInstances.instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
-    // tableCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
-    // 引用由 hook 内 dataKey fingerprint 稳定（与 gridItems 同款）。
+    () => projectInstances.instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
+    // tableCallbacks 闭包依赖 t；projectInstances.instances 引用同 gridItems（hook 内 dataKey fingerprint 稳定）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, candidates, projectInstances.instances, t],
+    [projectInstances.instances, t],
   );
-  // table 列：global 4 列（name 首列 + project）/ project 3 列（隐藏 project，设计 §9）。
-  const tableColumns: TableColumn[] =
-    scope.kind === "global"
-      ? ["name", "project", "activity", "actions"]
-      : ["name", "activity", "actions"];
+  // table 列：project 3 列（隐藏 project，设计 §9）。
+  const tableColumns: TableColumn[] = ["name", "activity", "actions"];
   // 总览加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
-  const overviewLoading =
-    scope.kind === "project"
-      ? projectInstances.isLoading && projectInstances.instances.length === 0
-      : !candidatesLoaded && candidates.length === 0;
+  const overviewLoading = projectInstances.isLoading && projectInstances.instances.length === 0;
   const leftOverviewContent = overviewLoading ? (
     <div className="px-3 py-2">
-      <CardGridSkeleton plain={showGrid || showGrouped} />
+      <CardGridSkeleton plain={showGrid} />
     </div>
   ) : showGrid ? (
     gridItems.length === 0 ? (
@@ -484,15 +438,6 @@ function InstanceLeftOverviewBase({
         <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
       </div>
     )
-  ) : showGrouped ? (
-    <GroupedView
-      candidates={candidates}
-      dragAdapter={dragAdapter}
-      onClose={onCloseInstance}
-      onFocus={onFocusInstance}
-      onRename={onRenameInstance}
-      t={t}
-    />
   ) : showTable ? (
     tableRows.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
@@ -503,26 +448,14 @@ function InstanceLeftOverviewBase({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 左总览顶部 header：project scope = CreateSessionBar（创建实例）；global scope = 新建项目按钮
-          （移自 ProjectLeftPanel ProjectsSectionHeader；设计：global 左栏 = 纯多视图列表，新建入口
-          放 header ViewSwitcher 左侧）。ViewSwitcher 用 ml-auto wrapper 推到 header 右侧。 */}
+      {/* 左总览顶部 header：project scope = CreateSessionBar（创建实例）。ViewSwitcher 用 ml-auto wrapper
+          推到 header 右侧。（global scope header 已随 GlobalProjectsOverview 抽离。） */}
       <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
-        {ctx.projectKey !== null ? (
-          <CreateSessionBar
-            isCreating={create.isCreating}
-            onCreateAgent={create.createAgent}
-            onCreateTerminal={create.createTerminal}
-          />
-        ) : (
-          <button
-            aria-label={t("home.createProjectAria")}
-            className={actionButtonClasses({ tone: "accent" })}
-            onClick={() => setSetupOpen(true)}
-            type="button"
-          >
-            {t("workbench.createMenu")}
-          </button>
-        )}
+        <CreateSessionBar
+          isCreating={create.isCreating}
+          onCreateAgent={create.createAgent}
+          onCreateTerminal={create.createTerminal}
+        />
         {onViewChange ? (
           <div className="ml-auto">
             <ViewSwitcher
@@ -535,31 +468,15 @@ function InstanceLeftOverviewBase({
         ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{leftOverviewContent}</div>
-      {ctx.projectKey === null ? (
-        <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
-          <DialogContent className="overflow-y-auto p-0">
-            <ProjectSetupPanel
-              createError={
-                createProjectMutation.error instanceof Error ? createProjectMutation.error : null
-              }
-              inputId={inputId}
-              isPending={createProjectMutation.isPending}
-              onProjectPathChange={setProjectPath}
-              onSubmit={handleSubmit}
-              projectPath={projectPath}
-            />
-          </DialogContent>
-        </Dialog>
-      ) : null}
     </div>
   );
 }
 
 /**
  * `memo` 包裹：dragState 不进 InstanceLeftOverview props（拖动期间 WorkbenchContent 的 dragState
- * 变化不触发本组件重渲染），仅 scope/ctx/view/create/candidates/projectInstances/回调/dragAdapter
- * 变化才重渲染。回调由 WorkbenchContent 用 useCallback 稳定，candidates/projectInstances 由 hook
- * fingerprint 稳定 → 拖动高频 setDragState 不波及左总览。
+ * 变化不触发本组件重渲染），仅 scope/ctx/view/create/projectInstances/回调/dragAdapter
+ * 变化才重渲染。回调由 WorkbenchContent 用 useCallback 稳定，projectInstances 由 hook
+ * fingerprint 稳定 → 拖动高频 setDragState 不波及左总览。（global scope 已迁 GlobalProjectsOverview。）
  */
 export const InstanceLeftOverview = memo(InstanceLeftOverviewBase);
 
@@ -1428,154 +1345,6 @@ export function candidateToTableRow(
     },
     type: candidate.type,
   };
-}
-
-type GroupedViewProps = {
-  candidates: GlobalInstanceCandidate[];
-  onClose: (sessionId: string, type: "agent" | "terminal") => void;
-  onFocus: (sessionId: string) => void;
-  onRename: (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => void;
-  t: TranslateFn;
-  dragAdapter?: DragSourceAdapter;
-};
-
-/**
- * grouped 视图（设计文档 §5：仅桌面 global 跨项目分组）。groupByProject 按项目分段，每组
- * 项目名标题（与移动 MobileGlobalOverview 同款 className）+ InstanceGrid。回调复用 InstanceArea
- * 的 focusInstance/closeInstance/renameInstance（与 grid 视图同源）。dragAdapter 桌面左总览
- * 传时启用拖放（每个 candidate.ref 进 dragRefs）。
- */
-function GroupedView({ candidates, onClose, onFocus, onRename, t, dragAdapter }: GroupedViewProps) {
-  // 全项目列表（含无实例项目，设计 §5 条 4）+ candidates 分组合并。projects query 与 ProjectLeftPanel/
-  // mobile-workbench 同 key（["projects"]），React Query dedupe。mergeProjectsWithCandidates 以 projects
-  // 列表为主序，无实例项目 candidates=[]。
-  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
-  const projectNames = projects.data?.projects.map((p) => p.name) ?? [];
-  const groups = useMemo(
-    () => mergeProjectsWithCandidates(projectNames, candidates),
-    [projectNames, candidates],
-  );
-  // 每组独立折叠 + localStorage 持久化（workbenchGroupedCollapsedAtom，设计 §5 条 3）。
-  const [collapsed, setCollapsed] = useAtom(workbenchGroupedCollapsedAtom);
-  const navigate = useNavigate();
-  const { confirm, holder: confirmHolder } = useConfirm();
-  const queryClient = useQueryClient();
-  const deleteMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
-  });
-
-  const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
-  const isCollapsed = (name: string) => collapsed.includes(name);
-  const toggleGroup = (name: string) =>
-    setCollapsed((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
-  const requestDelete = async (projectName: string) => {
-    const ok = await confirm({
-      cancelLabel: t("cancel"),
-      confirmLabel: t("project.deleteProject"),
-      message: t("project.deleteProjectConfirm"),
-      title: t("project.deleteProject"),
-      tone: "danger",
-    });
-    if (ok) deleteMutation.mutate(projectName);
-  };
-  const enterProject = (name: string) =>
-    void navigate({ to: "/projects/$key", params: { key: name } });
-
-  return (
-    <div className="h-full overflow-y-auto">
-      {groups.map((group) => {
-        const collapsedNow = isCollapsed(group.projectName);
-        const dragRefs = new Map<string, WorkbenchPanelRef>();
-        for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
-        return (
-          <section key={group.projectName}>
-            {/* 每组 header（批 D / 决策 27）：[折叠 gutter h-7][项目名 flex-1 进项目][⋯ ActionMenu → 删除 destructive]。
-                折叠独立增大触摸区；删除从常驻 🗑 收进 ⋯ 防误触，对齐移动 ProjectGroupHeader。 */}
-            <div className="flex items-center gap-1 px-2 py-1.5">
-              <button
-                aria-expanded={!collapsedNow}
-                aria-label={t("workbench.toggleGroup")}
-                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-                onClick={() => toggleGroup(group.projectName)}
-                type="button"
-              >
-                <svg
-                  aria-hidden="true"
-                  className={`size-3 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
-                  fill="none"
-                  viewBox="0 0 16 16"
-                >
-                  <path
-                    d="M6 4l4 4-4 4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    stroke="currentColor"
-                  />
-                </svg>
-              </button>
-              <button
-                className="flex min-w-0 flex-1 cursor-pointer items-center truncate rounded-md px-1 py-0.5 text-left text-xs font-semibold text-on-surface transition hover:bg-on-surface/5"
-                onClick={() => enterProject(group.projectName)}
-                title={group.projectName}
-                type="button"
-              >
-                {group.projectName}
-              </button>
-              <ActionMenu
-                align="end"
-                cancelLabel={t("cancel")}
-                items={[
-                  {
-                    label: t("project.deleteProject"),
-                    icon: <ShellIcon name="trash" />,
-                    onSelect: () => void requestDelete(group.projectName),
-                    variant: "destructive",
-                    disabled: deleteMutation.isPending,
-                  },
-                ]}
-                trigger={
-                  <button
-                    aria-label={t("session.actions")}
-                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-                    type="button"
-                  >
-                    <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-                      <circle cx="4" cy="8" r="1" fill="currentColor" />
-                      <circle cx="8" cy="8" r="1" fill="currentColor" />
-                      <circle cx="12" cy="8" r="1" fill="currentColor" />
-                    </svg>
-                  </button>
-                }
-              />
-            </div>
-            {!collapsedNow ? (
-              group.candidates.length === 0 ? (
-                <div className="px-4 py-2 text-xs text-on-surface-muted">
-                  {t("workbench.groupedProjectEmpty")}
-                </div>
-              ) : (
-                <InstanceGrid
-                  dragAdapter={dragAdapter}
-                  dragRefs={dragRefs}
-                  gap={false}
-                  items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                  plain
-                />
-              )
-            ) : null}
-          </section>
-        );
-      })}
-      {confirmHolder}
-    </div>
-  );
 }
 
 function PlaceholderPanel({ focusId }: { focusId: string }) {

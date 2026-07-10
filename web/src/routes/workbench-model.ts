@@ -128,12 +128,38 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
 
 /**
  * global grouped 视图每组项目折叠态（设计 §5：分组视图每组独立折叠 + localStorage 持久化）。
- * 存已折叠项目名数组；toggle 增删项目名。跨窗口不同步（atomWithLocalOnlyStorage，个人布局）。
+ * 存已折叠项目名数组；仅用于**有实例**项目（默认展开，list 含名 = 折叠）。
+ * 空项目默认折叠语义见 `workbenchGroupedExpandedEmptyAtom`。
+ * 跨窗口不同步（atomWithLocalOnlyStorage，个人布局）。
  */
 export const workbenchGroupedCollapsedAtom = atomWithLocalOnlyStorage<string[]>(
   "workbenchGroupedCollapsed",
   [],
 );
+
+/**
+ * global grouped 空项目「用户已展开」名单（批 E 跟进：无实例项目默认折叠）。
+ * 空项目默认折叠；list 含名 = 用户主动展开过。与 workbenchGroupedCollapsedAtom 分工：
+ * 有实例 → collapsed 名单；无实例 → expandedEmpty 名单（默认取反）。
+ */
+export const workbenchGroupedExpandedEmptyAtom = atomWithLocalOnlyStorage<string[]>(
+  "workbenchGroupedExpandedEmpty",
+  [],
+);
+
+/**
+ * grouped 单组是否折叠（纯函数）。有实例：collapsed 含名 → 折叠；无实例：expandedEmpty
+ * 不含名 → 折叠（默认折叠空项目）。两端 GroupedView / MobileGlobalOverview 共用。
+ */
+export function isGroupedProjectCollapsed(
+  projectName: string,
+  isEmpty: boolean,
+  collapsed: string[],
+  expandedEmpty: string[],
+): boolean {
+  if (isEmpty) return !expandedEmpty.includes(projectName);
+  return collapsed.includes(projectName);
+}
 
 /**
  * 左栏宽度（rem）。@deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`

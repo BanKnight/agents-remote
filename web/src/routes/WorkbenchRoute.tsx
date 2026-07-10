@@ -12,6 +12,7 @@ import {
   useRenameSession,
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
+import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
@@ -241,7 +242,7 @@ function WorkbenchContent({
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const [layout, update] = useWorkbenchLayout(scope);
-  const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates(scope);
+  const { candidates } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
   const projectInstances = useProjectInstances(ctx.projectKey);
   const scopeKey = scope.kind === "project" ? scope.key : "global";
@@ -473,22 +474,30 @@ function WorkbenchContent({
   // 实例总览；project scope 左栏顶部 middle tab 切主体）；nav=files → FilesLeftPanel（固定全局
   // rootBrowse 根目录，Phase 3 决策 26③：不论 WorkbenchScope 都显全局根目录，与 middle tab [文件]
   // 项目局部文件作用域互斥）。nav=settings 跳 SettingsRoute 不进工作台，此处无需分支。
-  const leftOverview = (
-    <InstanceLeftOverview
-      candidates={candidates}
-      candidatesLoaded={candidatesLoaded}
-      create={create}
-      ctx={ctx}
-      dragAdapter={dragAdapter}
-      onCloseInstance={closeInstance}
-      onFocusInstance={focusInstance}
-      onRenameInstance={renameInstance}
-      onViewChange={onViewChange}
-      projectInstances={projectInstances}
-      scope={scope}
-      view={view}
-    />
-  );
+  // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
+  // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
+  const leftOverview =
+    scope.kind === "global" ? (
+      <GlobalProjectsOverview
+        dragAdapter={dragAdapter}
+        onFocusInstance={focusInstance}
+        onViewChange={onViewChange}
+        view={view}
+      />
+    ) : (
+      <InstanceLeftOverview
+        create={create}
+        ctx={ctx}
+        dragAdapter={dragAdapter}
+        onCloseInstance={closeInstance}
+        onFocusInstance={focusInstance}
+        onRenameInstance={renameInstance}
+        onViewChange={onViewChange}
+        projectInstances={projectInstances}
+        scope={scope}
+        view={view}
+      />
+    );
   const leftPanel =
     nav === "files" ? (
       <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "global" }} />
