@@ -19,7 +19,6 @@ import {
   type TreeNode,
   type WorkbenchGroup,
   type WorkbenchLayoutV3,
-  type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
   type SessionPanelRef,
   type WorkbenchScope,
@@ -63,9 +62,8 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
-import { HistoryList, relativeTime } from "./history-list";
-import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
-import { TabButton } from "./right-panel-tabs";
+import { relativeTime } from "./history-list";
+import { type PluginContext } from "./right-panel-plugin";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import { ActionMenu } from "../ui/action-menu";
 import {
@@ -151,15 +149,9 @@ export type DragSourceAdapter = {
 };
 
 type InstanceAreaProps = {
-  /** inspection 插件上下文（projectKey/focusId/sessionType）；files/git tab 按 projectKey 过滤可见 + render。 */
-  ctx: PluginContext;
-  scope: WorkbenchScope;
-  /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/projects/session/$id`）。无 focusId = 无聚焦面板。 */
-  focusId?: string;
-  /** 中栏二级导航 tab（URL `?tab` + atom 回退）；仅非聚焦态渲染 tab bar（聚焦态右栏承载 inspection）。 */
-  tab?: WorkbenchMiddleTab;
-  /** 切换中栏 tab（写 URL + atom，WorkbenchContent 注入）。 */
-  onTabChange?: (next: WorkbenchMiddleTab) => void;
+  /** 项目名（WorkspaceTree projectName）。null = global scope。Phase 3 原 ctx/scope/focusId/tab/onTabChange
+   * 精简——tab bar（实例/历史/文件/git）移到 ProjectLeftPanel 左栏顶部切左栏主体，中栏瘦身纯 group+tab。 */
+  projectName: string | null;
   // ── Phase 2a：以下 props 由 WorkbenchContent 提升 state 后注入（瘦身后的右工作区 + tab bar）──
   /** V3 n 叉树布局（WorkbenchContent useWorkbenchLayout）；WorkspaceTree 渲染 root + maximized。 */
   layout: WorkbenchLayoutV3;
@@ -201,21 +193,17 @@ type InstanceAreaProps = {
 };
 
 /**
- * 中栏右工作区 + tab bar（Phase 2a 方案 X 瘦身后）。左总览已搬到 WorkbenchShell `leftPanel`
- *（InstanceLeftOverview），本组件仅保留：tab bar（overview/history/files/git）+ 右工作区
- *（WorkspaceTree group+tab 分屏）+ DropZoneOverlay（拖放目标）+ history/inspection tab 内容
- * + tab 右键菜单。
+ * 中栏右工作区（Phase 2a 方案 X 瘦身 + Phase 3 进一步精简）。左总览已搬到 WorkbenchShell `leftPanel`
+ *（InstanceLeftOverview）；Phase 3 tab bar（overview/history/files/git）+ history/inspection 内容
+ * 也移到 `ProjectLeftPanel` 左栏（project scope middle tab 切**左栏主体**）。本组件仅保留：右工作区
+ *（WorkspaceTree group+tab 常驻分屏）+ DropZoneOverlay（拖放目标）+ tab 右键菜单。
  *
  * **无共享 state**：layout/drag 三件套/focus+prune effects/candidates/create/close/rename 全由
  * WorkbenchContent 提升持有，本组件纯消费 props 渲染。仅 tab 右键菜单（contextMenu）state 内聚
  * 留此（仅服务右工作区 tab，消费 onCloseTab/closeInstance 成品）。
  */
 export function InstanceArea({
-  ctx,
-  scope,
-  focusId,
-  tab,
-  onTabChange,
+  projectName,
   layout,
   create,
   refsCount,
@@ -234,18 +222,6 @@ export function InstanceArea({
   closeInstance,
 }: InstanceAreaProps) {
   const { t } = useT();
-
-  // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + history（project-only）+ 第一方 inspection
-  // 插件按 ctx 过滤（files 全局可见；git 需 projectKey）。global scope = overview + files。
-  const visibleTabs = useMemo(
-    () => buildOverviewTabs(t, ctx, ctx.projectKey !== null),
-    // ctx 由 scope 决定（projectKey = scope.key 或 null），scope/t 变才重算。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, t],
-  );
-  // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=git），回退 overview。
-  const resolvedTab: WorkbenchMiddleTab =
-    tab !== undefined && visibleTabs.some((opt) => opt.id === tab) ? tab : "overview";
 
   // tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。
   // minimize 复用 onCloseTab（WorkbenchContent 注入，session 存活）；kill 走 closeInstance
@@ -275,16 +251,10 @@ export function InstanceArea({
   const contextMenuIsSession =
     contextMenu !== null && inferSessionTypeFromId(contextMenu.tabId) !== undefined;
 
-  // 中栏内容按 tab 分支（设计 §4）：overview = 右工作区全宽（左总览已搬 leftPanel）；
-  //   history = 全宽 HistoryList；inspection tab（files/git）= 全宽 plugin.render。
-  const isOverview = resolvedTab === "overview";
-  const isHistory = !isOverview && resolvedTab === "history";
-  const inspectionPlugin =
-    isOverview || isHistory
-      ? null
-      : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
   // 右工作区 = n 叉树递归渲染（设计 §7.5）。dragState 期间 WorkspaceTree 根容器 pointer-events:none
   // 让 elementFromPoint 命中 overlay 下层 GroupCell 的 data-drop-group（pointer capture 在源卡片）。
+  // Phase 3：中栏瘦身纯 group+tab 常驻（tab bar + history/inspection content 移到 ProjectLeftPanel
+  // 左栏顶部 middle tab，切左栏主体；中栏不再随 middle tab 变）。
   const rightWorkspace = (
     <WorkspaceTree
       activeZone={activeZone}
@@ -298,54 +268,35 @@ export function InstanceArea({
       onTabContextMenu={onTabContextMenu}
       onTabDragStart={onCardDragStart}
       onToggleMaximize={onToggleMaximize}
-      projectName={ctx.projectKey}
+      projectName={projectName}
       root={layout.root}
     />
-  );
-  // 右工作区 + drop overlay。外层 relative 容器承接空态 drop（data-drop-empty）；
-  // dragState 期间 DropZoneOverlay 显示 zone 高亮。WorkspaceGrid 空 panels 时
-  // 渲染 EmptyInstanceArea（也标注 data-drop-empty 让空白区 drop 命中）。
-  const tabContent = isOverview ? (
-    <div
-      className="relative min-h-0 flex-1"
-      data-drop-empty={layout.root === null ? "" : undefined}
-    >
-      {rightWorkspace}
-      {dragState ? (
-        <DropZoneOverlay
-          activeZone={activeZone}
-          dragPointer={{ x: dragState.currentX, y: dragState.currentY }}
-          dragSourceRef={draggingRef}
-          layout={layout}
-          onCancel={cancelDrag}
-          onDrop={onDrop}
-          onPointerMove={onSetDragPointer}
-          onZoneChange={setActiveZone}
-          t={t}
-        />
-      ) : null}
-    </div>
-  ) : isHistory && ctx.projectKey !== null ? (
-    <div className="h-full overflow-y-auto p-3">
-      <HistoryList focusId={focusId} projectName={ctx.projectKey} showLabel={false} />
-    </div>
-  ) : (
-    (inspectionPlugin?.render(ctx) ?? null)
   );
 
   return (
     <div className={`flex h-full min-h-0 flex-col${dragState ? " select-none" : ""}`}>
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-        {visibleTabs.map((opt) => (
-          <TabButton
-            active={opt.id === resolvedTab}
-            key={opt.id}
-            label={opt.label}
-            onClick={() => onTabChange?.(opt.id)}
+      {/* 右工作区 + drop overlay。外层 relative 容器承接空态 drop（data-drop-empty）；
+          dragState 期间 DropZoneOverlay 显示 zone 高亮。WorkspaceGrid 空 panels 时
+          渲染 EmptyInstanceArea（也标注 data-drop-empty 让空白区 drop 命中）。 */}
+      <div
+        className="relative min-h-0 flex-1"
+        data-drop-empty={layout.root === null ? "" : undefined}
+      >
+        {rightWorkspace}
+        {dragState ? (
+          <DropZoneOverlay
+            activeZone={activeZone}
+            dragPointer={{ x: dragState.currentX, y: dragState.currentY }}
+            dragSourceRef={draggingRef}
+            layout={layout}
+            onCancel={cancelDrag}
+            onDrop={onDrop}
+            onPointerMove={onSetDragPointer}
+            onZoneChange={setActiveZone}
+            t={t}
           />
-        ))}
+        ) : null}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">{tabContent}</div>
       {contextMenu ? (
         <TabContextMenu
           anchor={contextMenu}

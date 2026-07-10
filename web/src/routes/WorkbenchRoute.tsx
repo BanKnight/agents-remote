@@ -467,9 +467,10 @@ function WorkbenchContent({
     rightPanelCollapsible && !rightCollapsed ? (
       <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
     ) : null;
-  // Phase 2a 活动栏切左栏内容：nav=projects → ProjectLeftPanel（scope 切换 + 新建项目 +
-  // InstanceLeftOverview 实例总览）；nav=files → 文件树占位（Phase 2b 接入）。
-  // nav=settings 跳 SettingsRoute 不进工作台，此处无需分支。
+  // 活动栏切左栏内容：nav=projects → ProjectLeftPanel（scope 切换 + 新建项目 + InstanceLeftOverview
+  // 实例总览；project scope 左栏顶部 middle tab 切主体）；nav=files → FilesLeftPanel（固定全局
+  // rootBrowse 根目录，Phase 3 决策 26③：不论 WorkbenchScope 都显全局根目录，与 middle tab [文件]
+  // 项目局部文件作用域互斥）。nav=settings 跳 SettingsRoute 不进工作台，此处无需分支。
   const leftOverview = (
     <InstanceLeftOverview
       candidates={candidates}
@@ -488,9 +489,16 @@ function WorkbenchContent({
   );
   const leftPanel =
     nav === "files" ? (
-      <FilesLeftPanel onOpenFile={onOpenFile} scope={scope} />
+      <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "global" }} />
     ) : (
-      <ProjectLeftPanel overview={leftOverview} scope={scope} />
+      <ProjectLeftPanel
+        focusId={focusId}
+        onOpenFile={onOpenFile}
+        onTabChange={onTabChange}
+        overview={leftOverview}
+        scope={scope}
+        tab={tab}
+      />
     );
   return (
     <WorkbenchShell
@@ -506,8 +514,6 @@ function WorkbenchContent({
         create={create}
         draggingRef={draggingRef}
         dragState={dragState}
-        ctx={ctx}
-        focusId={focusId}
         layout={layout}
         onCardDragStart={onCardDragStart}
         onCloseTab={onCloseTab}
@@ -515,12 +521,10 @@ function WorkbenchContent({
         onResizeSplit={onResizeSplit}
         onSelectTab={onSelectTab}
         onSetDragPointer={onSetDragPointer}
-        onTabChange={onTabChange}
         onToggleMaximize={onToggleMaximize}
+        projectName={ctx.projectKey}
         refsCount={refs.length}
-        scope={scope}
         setActiveZone={setActiveZone}
-        tab={tab}
       />
       {closeHolder}
       {renameHolder}

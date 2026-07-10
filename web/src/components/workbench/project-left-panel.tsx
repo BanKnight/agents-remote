@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent, type ReactNode, useId } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode, useId } from "react";
 import type { Project } from "@agents-remote/shared";
 import { listProjects } from "../../api/client";
 import { useT } from "../../i18n";
@@ -8,29 +8,54 @@ import { IconMarker, NavItemSkeleton } from "../shell/shell-primitives";
 import { ShellNavigationButton } from "../shell/shell-navigation";
 import { ShellIcon } from "../shell/icons";
 import { INSTANCE_SKELETON_ROW_COUNT } from "./instance-area";
-import { type WorkbenchScope } from "../../routes/workbench-model";
+import { type WorkbenchMiddleTab, type WorkbenchScope } from "../../routes/workbench-model";
 import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
 import { Dialog, DialogContent } from "../ui/dialog";
+import { buildOverviewTabs, FIRST_PARTY_PLUGINS } from "./right-panel-plugin";
+import { TabButton } from "./right-panel-tabs";
+import { HistoryList } from "./history-list";
+import { FilesLeftPanel } from "../files/files-left-panel";
 
 type ProjectLeftPanelProps = {
   scope: WorkbenchScope;
-  /** [项目] 左栏主体：实例总览（InstanceLeftOverview，WorkbenchContent 构造后注入）。 */
+  /** [项目] 左栏主体：实例总览（InstanceLeftOverview，WorkbenchContent 构造后注入）。global scope
+   *  主体恒为 overview；project scope 主体随 middle tab 切（实例=overview / 历史=HistoryList /
+   *  文件=项目内文件树 / git=GitDiffPanel）。 */
   overview: ReactNode;
+  // ── Phase 3 middle tab（仅 project scope + nav=projects 用；global scope 不渲染）──
+  /** 中栏二级导航 tab（URL `?tab` + atom 回退）；project scope 左栏顶部 middle tab bar 切主体。 */
+  tab?: WorkbenchMiddleTab;
+  /** 切换 middle tab（写 URL + atom，WorkbenchContent 注入）。 */
+  onTabChange?: (next: WorkbenchMiddleTab) => void;
+  /** middle tab [文件] 点文件 → 中栏开 file tab（WorkbenchContent onOpenFile）。 */
+  onOpenFile: (projectName: string, path: string) => void;
+  /** middle tab [历史] HistoryList 聚焦态（URL focusId）。 */
+  focusId?: string;
 };
 
 /**
- * [项目] 活动栏左栏内容源（Phase 2a 方案 X，设计 §4.2 / §8.4）。承载 scope 切换 + 新建项目
- * + InstanceLeftOverview 实例总览。
+ * [项目] 活动栏左栏内容源（Phase 2a 方案 X + Phase 3 middle tab，设计 §4.2 / §8.4）。承载 scope
+ * 切换 + 新建项目 + InstanceLeftOverview 实例总览。
  *
  * - global scope：GlobalNavNode(active →/projects) + ProjectsSectionHeader(折叠+新建) + ProjectNode
- *   列表(→/projects/$key) + InstanceLeftOverview。
- * - project scope：GlobalNavNode(active=false →/projects，返回全局) + InstanceLeftOverview
- *   （不显项目列表，设计 §6 决策 1）。
+ *   列表(→/projects/$key) + InstanceLeftOverview（无 middle tab；global 无 history/git，files 归
+ *   活动栏 nav=files）。
+ * - project scope：GlobalNavNode(active=false →/projects，返回全局) + middle tab bar（实例/历史/文件/git，
+ *   Phase 3 从 InstanceArea 中栏移此切**左栏主体**）+ 主体随 tab 切（实例=InstanceLeftOverview /
+ *   历史=HistoryList / 文件=项目内文件树 FilesLeftPanel scope=project / git=GitDiffPanel）。不显项目列表
+ *   （设计 §6 决策 1）。
  *
- * 设置入口由 [设置] 活动栏取代（left-rail footer 删除）。ProjectSetupPanel 新建项目 Dialog
- * 复用 left-rail 既有实现。
+ * 设置入口由 [设置] 活动栏取代（left-rail footer 删除）。ProjectSetupPanel 新建项目 Dialog 复用 left-rail
+ * 既有实现。middle tab bar 复用 TabButton + buildOverviewTabs（includeHistory=true）。
  */
-export function ProjectLeftPanel({ scope, overview }: ProjectLeftPanelProps) {
+export function ProjectLeftPanel({
+  scope,
+  overview,
+  tab,
+  onTabChange,
+  onOpenFile,
+  focusId,
+}: ProjectLeftPanelProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const [setupOpen, setSetupOpen] = useState(false);
@@ -42,6 +67,16 @@ export function ProjectLeftPanel({ scope, overview }: ProjectLeftPanelProps) {
   const isGlobal = scope.kind === "global";
 
   const projectItems = projects.data?.projects ?? [];
+
+  // Phase 3 middle tab（仅 project scope）：tab 列表（实例/历史/文件/git，includeHistory=true）+
+  // resolvedTab。global scope middleTabs=[]（不渲染 tab bar）。ctx 由 scope 决定，scope/t 变才重算。
+  const middleTabs = useMemo(
+    () => (scope.kind === "project" ? buildOverviewTabs(t, { projectKey: scope.key }, true) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, t],
+  );
+  const resolvedTab: WorkbenchMiddleTab =
+    tab !== undefined && middleTabs.some((opt) => opt.id === tab) ? tab : "overview";
 
   const selectProject = (name: string) => {
     void navigate({ to: "/projects/$key", params: { key: name } });
@@ -55,6 +90,24 @@ export function ProjectLeftPanel({ scope, overview }: ProjectLeftPanelProps) {
     create.mutate(trimmedPath);
   };
   const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
+
+  // project scope middle tab 主体内容（设计 §4.2 进入项目层）。global scope 主体恒为 overview。
+  // [文件] = 项目内文件树（FilesLeftPanel scope=project，点文件→中栏开 file tab）；[git] = git plugin
+  // render（GitDiffPanel，与移动端 MobileProjectOverview 同源 FIRST_PARTY_PLUGINS）。
+  let middleBody: ReactNode = overview;
+  if (scope.kind === "project") {
+    if (resolvedTab === "history") {
+      middleBody = <HistoryList focusId={focusId} projectName={scope.key} showLabel={false} />;
+    } else if (resolvedTab === "files") {
+      middleBody = (
+        <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "project", key: scope.key }} />
+      );
+    } else if (resolvedTab === "git") {
+      const gitPlugin = FIRST_PARTY_PLUGINS.find((p) => p.id === "git") ?? null;
+      middleBody = gitPlugin ? gitPlugin.render({ projectKey: scope.key }) : null;
+    }
+    // resolvedTab === "overview" → middleBody 保持 overview（InstanceLeftOverview 实例总览）。
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -81,9 +134,21 @@ export function ProjectLeftPanel({ scope, overview }: ProjectLeftPanelProps) {
               </div>
             ) : null}
           </>
-        ) : null}
+        ) : (
+          // Phase 3 middle tab bar（实例/历史/文件/git，project scope，从中栏移此切左栏主体）。
+          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+            {middleTabs.map((opt) => (
+              <TabButton
+                active={opt.id === resolvedTab}
+                key={opt.id}
+                label={opt.label}
+                onClick={() => onTabChange?.(opt.id)}
+              />
+            ))}
+          </div>
+        )}
       </nav>
-      <div className="min-h-0 flex-1 overflow-hidden">{overview}</div>
+      <div className="min-h-0 flex-1 overflow-hidden">{isGlobal ? overview : middleBody}</div>
       <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
         <DialogContent className="overflow-y-auto p-0">
           <ProjectSetupPanel
