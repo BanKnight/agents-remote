@@ -22,7 +22,6 @@ import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { FilesLeftPanel } from "../components/files/files-left-panel";
 import { FilesPanel } from "../components/files/file-browser";
-import { HomeRoute } from "./HomeRoute";
 import {
   type DropZone,
   type WorkbenchMiddleTab,
@@ -150,14 +149,14 @@ export function FilesRoute() {
 }
 
 /**
- * 应用入口路由 `/`（设计文档 §11）：viewport 分流——桌面（≥lg）渲染 global scope
- * 工作台（IDE 化常驻，对齐 workbench-redesign.md §1），移动（<lg）渲染项目列表（HomeRoute）。
+ * 应用入口路由 `/`（设计文档 §11）：viewport 分流——桌面（≥lg）与移动（<lg）统一渲染
+ * global scope 工作台（[项目] 总览，scope kind=global）。两端 `/` 同语义：桌面 =
+ * ProjectLeftPanel + InstanceLeftOverview 三栏工作台；移动 = MobileWorkbench →
+ * MobileGlobalOverview [项目] 总览（实例聚合 + 项目分组进项目 + header 新建，设计 §5）。
  * useIsDesktopViewport 客户端首 render 即真实视口，移动端无闪屏。由 router.tsx indexRoute lazy 挂载。
  */
 export function IndexRoute() {
   const { rightTab, view, tab } = useSearch({ from: "/" });
-  const isDesktop = useIsDesktopViewport();
-  if (!isDesktop) return <HomeRoute />;
   return <GlobalScopeContent rightTab={rightTab} tab={tab} view={view} />;
 }
 

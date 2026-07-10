@@ -23,14 +23,7 @@ export const zh: Record<TranslationKey, string> = {
   "auth.installApp": "安装应用",
 
   // ── Home ─────────────────────────────────────────────────────
-  "home.title": "项目",
-  "home.eyebrowDesktop": "打开服务器项目以继续使用 Agent、文件、Git 或终端。",
-  "home.newAdopt": "新建 / 采用",
   "home.createProjectAria": "创建或采用项目",
-  "home.loading": "正在加载项目...",
-  "home.emptyTitle": "暂无项目",
-  "home.emptyDesc": "创建或采用一个项目以进入控制台。",
-  "home.emptyButton": "创建或采用项目",
   "home.setupTitle": "创建或采用项目",
   "home.setupDesc": "仅在需要在 PROJECTS_ROOT 下创建新的服务器文件夹时使用设置。",
   "home.folderLabel": "项目文件夹",
@@ -38,10 +31,6 @@ export const zh: Record<TranslationKey, string> = {
   "home.createAndEnter": "创建并进入",
   "home.creating": "正在创建...",
   "home.setupHint": "输入文件夹名称或一级路径。已有文件夹将被采用。",
-  "home.projectOpen": "打开",
-  "home.projectPending": "待定",
-  "home.agentPill": "Agent {{count}}",
-  "home.terminalPill": "Terminal {{count}}",
 
   // ── Project Console ──────────────────────────────────────────
   "project.loading": "正在加载项目...",

@@ -21,14 +21,7 @@ export const en = {
   "auth.installApp": "Install app",
 
   // ── Home ─────────────────────────────────────────────────────
-  "home.title": "Projects",
-  "home.eyebrowDesktop": "Open a server Project to continue with Agent, Files, Git, or Terminal.",
-  "home.newAdopt": "New / Adopt",
   "home.createProjectAria": "Create or adopt Project",
-  "home.loading": "Loading Projects...",
-  "home.emptyTitle": "No Projects yet",
-  "home.emptyDesc": "Create or adopt a Project to enter the console shell.",
-  "home.emptyButton": "Create or adopt Project",
   "home.setupTitle": "Create or adopt a Project",
   "home.setupDesc": "Use setup only when you need a new server folder under PROJECTS_ROOT.",
   "home.folderLabel": "Project folder",
@@ -36,10 +29,6 @@ export const en = {
   "home.createAndEnter": "Create and enter",
   "home.creating": "Creating...",
   "home.setupHint": "Enter a folder name or first-level path. Existing folders are adopted.",
-  "home.projectOpen": "Open",
-  "home.projectPending": "pending",
-  "home.agentPill": "Agent {{count}}",
-  "home.terminalPill": "Terminal {{count}}",
 
   // ── Project Console ──────────────────────────────────────────
   "project.loading": "Loading Project...",
