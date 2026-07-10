@@ -8,6 +8,7 @@ import {
 import { flattenLayout, type FlatRect } from "./flatten-layout";
 
 const ref = (projectName: string, sessionId: string): WorkbenchPanelRef => ({
+  kind: "session",
   projectName,
   sessionId,
 });

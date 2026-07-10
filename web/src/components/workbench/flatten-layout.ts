@@ -3,6 +3,7 @@ import {
   type LeafNode,
   type TreeNode,
   type WorkbenchPanelRef,
+  tabIdOf,
 } from "../../routes/workbench-model";
 
 /**
@@ -168,12 +169,12 @@ export function flattenLayout(root: TreeNode | null, maximized: string | null): 
         groupId: leaf.id,
         projectName: tab.projectName,
         rect: contentRect,
-        sessionId: tab.sessionId,
+        sessionId: tabIdOf(tab),
         // maximized 指向其他 leaf 时，本 leaf 全 hidden；指向本 leaf 时只 active tab 可见。
         visible:
           maximized === null
-            ? tab.sessionId === leaf.activeTabId
-            : isMax && tab.sessionId === leaf.activeTabId,
+            ? tabIdOf(tab) === leaf.activeTabId
+            : isMax && tabIdOf(tab) === leaf.activeTabId,
       });
     }
   }

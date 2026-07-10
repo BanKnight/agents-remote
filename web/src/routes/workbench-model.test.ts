@@ -33,13 +33,18 @@ import {
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
+  tabIdOf,
   toggleLeafMaximize,
   validateLayoutV3,
   validateWorkbenchSearch,
   workbenchPath,
 } from "./workbench-model";
 
-const ref = (projectName: string, sessionId: string) => ({ projectName, sessionId });
+const ref = (projectName: string, sessionId: string) => ({
+  kind: "session" as const,
+  projectName,
+  sessionId,
+});
 
 test("parseWorkbenchScope: global literal vs project key", () => {
   expect(parseWorkbenchScope("global")).toEqual({ kind: "global" });
@@ -280,7 +285,7 @@ const v3 = (overrides: Partial<WorkbenchLayoutV3> = {}): WorkbenchLayoutV3 => ({
 /** 结构摘要：leaf=(sid|sid)，split=h[...]或v[...]。newLeaf id 随机，故用 sessionId 摘要断言树形。 */
 const shape = (node: TreeNode | null): string => {
   if (!node) return "null";
-  if (node.kind === "leaf") return `(${node.tabs.map((t) => t.sessionId).join("|")})`;
+  if (node.kind === "leaf") return `(${node.tabs.map((t) => tabIdOf(t)).join("|")})`;
   return `${node.direction === "horizontal" ? "h" : "v"}[${node.children.map(shape).join(",")}]`;
 };
 
@@ -390,7 +395,7 @@ test("validateLayoutV3: sizes key 与 children 不匹配 → 违规", () => {
 test("addTabToLeaf: 加 tab + 设 active", () => {
   const r = addTabToLeaf(v3({ root: leaf("g1", ["a"]) }), "g1", ref("p", "b"));
   const root = r.root as LeafNode;
-  expect(root.tabs.map((t) => t.sessionId)).toEqual(["a", "b"]);
+  expect(root.tabs.map((t) => tabIdOf(t))).toEqual(["a", "b"]);
   expect(root.activeTabId).toBe("b");
   expect(r.activeGroupId).toBe("g1");
 });
@@ -411,13 +416,13 @@ test("setActiveTabInLeaf: leaf 不存在 → noop", () => {
 
 test("removeTabFromLeaf: 删非 active tab", () => {
   const r = removeTabFromLeaf(v3({ root: leaf("g1", ["a", "b"]) }), "g1", "b");
-  expect((r.root as LeafNode).tabs.map((t) => t.sessionId)).toEqual(["a"]);
+  expect((r.root as LeafNode).tabs.map((t) => tabIdOf(t))).toEqual(["a"]);
 });
 
 test("removeTabFromLeaf: 删 active → 切 [0]", () => {
   const r = removeTabFromLeaf(v3({ root: leaf("g1", ["a", "b", "c"]) }), "g1", "a");
   const root = r.root as LeafNode;
-  expect(root.tabs.map((t) => t.sessionId)).toEqual(["b", "c"]);
+  expect(root.tabs.map((t) => tabIdOf(t))).toEqual(["b", "c"]);
   expect(root.activeTabId).toBe("b");
 });
 
@@ -641,7 +646,7 @@ test("ensureTabOpenLeaf: ref 已在 → 激活", () => {
 test("ensureTabOpenLeaf: ref 不在 → 加到活动 leaf 开新 tab", () => {
   const l = v3({ root: leaf("g1", ["a"]), activeGroupId: "g1" });
   const r = ensureTabOpenLeaf(l, ref("p", "b"));
-  expect((r.root as LeafNode).tabs.map((t) => t.sessionId)).toEqual(["a", "b"]);
+  expect((r.root as LeafNode).tabs.map((t) => tabIdOf(t))).toEqual(["a", "b"]);
 });
 
 test("ensureTabOpenLeaf: 空树 → 新建首个 leaf", () => {

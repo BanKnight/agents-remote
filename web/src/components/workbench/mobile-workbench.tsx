@@ -19,7 +19,7 @@ import {
   inferSessionTypeFromId,
   useWorkbenchLayout,
   useWorkbenchNavigate,
-  type WorkbenchPanelRef,
+  type SessionPanelRef,
   workbenchMobileFocusTabAtom,
   workbenchMobileOverviewTabAtom,
   workbenchViewAtom,
@@ -137,7 +137,11 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const sessionType = inferSessionTypeFromId(focusId);
   // detail 查询（query key 与 PanelRouter 一致，React Query dedupe 零额外网络）。两个 hook 都调
   //（hooks 规则），按 sessionType 控制 enabled；projectName 未就绪时双 enabled=false 零网络开销。
-  const panelRef: WorkbenchPanelRef = { projectName: projectName ?? "", sessionId: focusId };
+  const panelRef: SessionPanelRef = {
+    kind: "session",
+    projectName: projectName ?? "",
+    sessionId: focusId,
+  };
   const projReady = !!projectName;
   const agentDetail = useAgentDetail(panelRef, projReady && sessionType === "agent");
   const terminalDetail = useTerminalDetail(panelRef, projReady && sessionType === "terminal");
@@ -252,7 +256,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
             <PanelRouter
               embeddedHeader
               key={focusId}
-              panelRef={{ projectName, sessionId: focusId }}
+              panelRef={{ kind: "session", projectName, sessionId: focusId }}
             />
           </div>
         ) : null}
@@ -533,10 +537,10 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     void navigateWorkbench(scope, sessionId);
   };
   const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
-    void close({ projectName: scope.key, sessionId }, type);
+    void close({ kind: "session", projectName: scope.key, sessionId }, type);
   };
   const renameInstance = (sessionId: string, type: "agent" | "terminal", currentName: string) => {
-    void rename({ projectName: scope.key, sessionId }, type, currentName);
+    void rename({ kind: "session", projectName: scope.key, sessionId }, type, currentName);
   };
   const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
   const tableRows = useMemo(

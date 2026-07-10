@@ -347,11 +347,52 @@ export function inferSessionTypeFromId(sessionId: string): SessionType | undefin
 // URL 只编码 focusId（聚焦面板，输入作用于它）；面板布局进 localStorage（§2），
 // 按作用域隔离（project 按项目名分键，global 单份）。
 
-/** 中栏 split 面板引用：一个活跃实例（项目 + session id）。 */
-export type WorkbenchPanelRef = {
+/** session 面板引用：一个活跃实例（项目 + session id）。V3 多态 tab 的 session 分支。 */
+export type SessionPanelRef = {
+  kind: "session";
   projectName: string;
   sessionId: string;
 };
+
+/** 文件预览面板引用（项目 + 项目相对路径）。V3 多态 tab 的 file 分支（设计 §6 决策 18）。 */
+export type FilePanelRef = {
+  kind: "file";
+  projectName: string;
+  path: string;
+};
+
+/**
+ * V3 面板引用（判别联合，设计 §6 决策 18）。session tab 与 file tab 同处 group+tab。
+ * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
+ * file tab 的 tabId = `file_${path}`（前缀与 agent_/terminal_ 天然互斥）。
+ */
+export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef;
+
+/** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
+export type LegacyPanelRef = {
+  projectName: string;
+  sessionId: string;
+};
+
+/**
+ * 派生 tab id（= activeTabId / React key / sizes key 概念）：session tab = sessionId，
+ * file tab = `file_${path}`。session tab 的 tabId === sessionId（值不变）是 V3 多态零回归的基石。
+ */
+export function tabIdOf(ref: WorkbenchPanelRef): string {
+  return ref.kind === "session" ? ref.sessionId : `file_${ref.path}`;
+}
+
+/** 从 file tab id（`file_${path}`）反解项目相对路径；非 file tab id 返 null（路由 file focus 用）。 */
+export function parseFileTabId(tabId: string): string | null {
+  return tabId.startsWith("file_") ? tabId.slice("file_".length) : null;
+}
+
+/** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。 */
+export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
+  return ref.kind === "file"
+    ? { kind: "file", projectName: ref.projectName, path: ref.path }
+    : { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
+}
 
 /**
  * 中栏 split 布局 state（State/Render 分离：raw 有序结构，渲染由纯函数派生）。
@@ -363,7 +404,7 @@ export type WorkbenchPanelRef = {
  *   单 group（三态状态机已废弃，group 只有「存在/不存在」二态，设计 §7.1）。
  */
 export type WorkbenchLayout = {
-  panels: WorkbenchPanelRef[];
+  panels: LegacyPanelRef[];
   newRows: string[];
   sizes: Record<string, number>;
   maximized: string | null;
@@ -493,7 +534,8 @@ export function deriveGroupRows(layout: WorkbenchLayoutV2): WorkbenchGroup[][] {
 export function migrateLegacyLayout(legacy: WorkbenchLayout): WorkbenchLayoutV2 {
   const groups: WorkbenchGroup[] = legacy.panels.map((panel) => ({
     id: panel.sessionId,
-    tabs: [panel],
+    // V1 panel（LegacyPanelRef，无 kind）→ 显式构造 session ref（V3 多态 tab）。
+    tabs: [{ kind: "session", projectName: panel.projectName, sessionId: panel.sessionId }],
     activeTabId: panel.sessionId,
   }));
   const newRowSet = new Set(legacy.newRows);
@@ -572,7 +614,7 @@ function createSplitId(): string {
 
 /** 创建含单 tab 的 leaf（dropIntoLeaf 开新 group / 首次进入用）。id 可选（测试断言用）。 */
 export function createLeaf(tab: WorkbenchPanelRef, id: string = createGroupId()): LeafNode {
-  return { kind: "leaf", id, tabs: [tab], activeTabId: tab.sessionId };
+  return { kind: "leaf", id, tabs: [tab], activeTabId: tabIdOf(tab) };
 }
 
 // ── 树遍历辅助（私有，纯函数）─────────────────────────────────────────────────
@@ -661,9 +703,9 @@ function replaceInTree(root: TreeNode, oldId: string, replacement: TreeNode): Tr
 function removeTabFromLeafTree(node: TreeNode, leafId: string, tabId: string): TreeNode | null {
   if (node.kind === "leaf") {
     if (node.id !== leafId) return node;
-    const newTabs = node.tabs.filter((t) => t.sessionId !== tabId);
+    const newTabs = node.tabs.filter((t) => tabIdOf(t) !== tabId);
     if (newTabs.length === 0) return null;
-    const newActive = node.activeTabId === tabId ? newTabs[0].sessionId : node.activeTabId;
+    const newActive = node.activeTabId === tabId ? tabIdOf(newTabs[0]) : node.activeTabId;
     return { ...node, tabs: newTabs, activeTabId: newActive };
   }
   if (!containsId(node, leafId)) return node;
@@ -702,7 +744,7 @@ function removeLeafFromTree(node: TreeNode, leafId: string): TreeNode | null {
 /** 激活 leaf 的指定 tab（树内替换，不变结构）。leafId/tabId 不匹配则原样。 */
 function setActiveTabInLeafTree(node: TreeNode, leafId: string, tabId: string): TreeNode {
   if (node.kind === "leaf") {
-    if (node.id !== leafId || !node.tabs.some((t) => t.sessionId === tabId)) return node;
+    if (node.id !== leafId || !node.tabs.some((t) => tabIdOf(t) === tabId)) return node;
     if (node.activeTabId === tabId) return node;
     return { ...node, activeTabId: tabId };
   }
@@ -722,10 +764,10 @@ function setActiveTabInLeafTree(node: TreeNode, leafId: string, tabId: string): 
 function addTabToLeafTree(node: TreeNode, leafId: string, tab: WorkbenchPanelRef): TreeNode {
   if (node.kind === "leaf") {
     if (node.id !== leafId) return node;
-    if (node.tabs.some((t) => t.sessionId === tab.sessionId)) {
-      return setActiveTabInLeafTree(node, leafId, tab.sessionId);
+    if (node.tabs.some((t) => tabIdOf(t) === tabIdOf(tab))) {
+      return setActiveTabInLeafTree(node, leafId, tabIdOf(tab));
     }
-    return { ...node, tabs: [...node.tabs, tab], activeTabId: tab.sessionId };
+    return { ...node, tabs: [...node.tabs, tab], activeTabId: tabIdOf(tab) };
   }
   if (!containsId(node, leafId)) return node;
   let changed = false;
@@ -879,12 +921,12 @@ export function dropIntoLeaf(
     if (root) {
       const existing = findLeafBySessionId(
         { root, activeGroupId: null, maximized: null },
-        ref.sessionId,
+        tabIdOf(ref),
       );
       if (existing) {
         return {
           ...layout,
-          root: setActiveTabInLeafTree(root, existing.leafId, ref.sessionId),
+          root: setActiveTabInLeafTree(root, existing.leafId, tabIdOf(ref)),
           activeGroupId: existing.leafId,
         };
       }
@@ -896,13 +938,13 @@ export function dropIntoLeaf(
   if (root && zone === "center") {
     const existing = findLeafBySessionId(
       { root, activeGroupId: null, maximized: null },
-      ref.sessionId,
+      tabIdOf(ref),
     );
     if (existing && existing.leafId === targetLeafId) {
-      return setActiveTabInLeaf(layout, targetLeafId, ref.sessionId);
+      return setActiveTabInLeaf(layout, targetLeafId, tabIdOf(ref));
     }
     let next = layout;
-    if (existing) next = removeTabFromLeaf(layout, existing.leafId, ref.sessionId);
+    if (existing) next = removeTabFromLeaf(layout, existing.leafId, tabIdOf(ref));
     if (!next.root || !findLeafNode(next.root, targetLeafId)) {
       // 迁移连带头删了 target → 加到前序首 leaf（或 target 已不在）
       const first = next.root ? firstLeaf(next.root) : null;
@@ -919,10 +961,10 @@ export function dropIntoLeaf(
   if (root) {
     const existing = findLeafBySessionId(
       { root, activeGroupId: null, maximized: null },
-      ref.sessionId,
+      tabIdOf(ref),
     );
     if (existing) {
-      const after = removeTabFromLeaf(layout, existing.leafId, ref.sessionId);
+      const after = removeTabFromLeaf(layout, existing.leafId, tabIdOf(ref));
       root = after.root;
     }
   }
@@ -973,25 +1015,22 @@ export function toggleLeafMaximize(layout: WorkbenchLayoutV3, leafId: string): W
   return { ...layout, maximized: leafId, activeGroupId: leafId };
 }
 
-/** 按 sessionId 反查 leaf 位置（设计 §7.13 focusId 反查）。 */
+/** 按 tabId 反查 leaf 位置（设计 §7.13 focusId 反查；session tab 的 tabId===sessionId，名字保留兼容调用点）。 */
 export function findLeafBySessionId(
   layout: WorkbenchLayoutV3,
-  sessionId: string,
+  tabId: string,
 ): { leafId: string; tabIndex: number } | null {
   if (!layout.root) return null;
   for (const leaf of collectLeaves(layout.root)) {
-    const tabIndex = leaf.tabs.findIndex((t) => t.sessionId === sessionId);
+    const tabIndex = leaf.tabs.findIndex((t) => tabIdOf(t) === tabId);
     if (tabIndex >= 0) return { leafId: leaf.id, tabIndex };
   }
   return null;
 }
 
-/** 查 sessionId 对应完整 tab 引用（含 projectName）。移动端 global scope 查 projectName 用。 */
-export function findTabRefLeaf(
-  layout: WorkbenchLayoutV3,
-  sessionId: string,
-): WorkbenchPanelRef | null {
-  const found = findLeafBySessionId(layout, sessionId);
+/** 查 tabId 对应完整 tab 引用（含 projectName）。移动端 global scope 查 projectName 用（名字保留兼容调用点）。 */
+export function findTabRefLeaf(layout: WorkbenchLayoutV3, tabId: string): WorkbenchPanelRef | null {
+  const found = findLeafBySessionId(layout, tabId);
   if (!found || !layout.root) return null;
   return findLeafNode(layout.root, found.leafId)?.tabs[found.tabIndex] ?? null;
 }
@@ -1001,7 +1040,7 @@ export function activeTabRefLeaf(layout: WorkbenchLayoutV3): WorkbenchPanelRef |
   if (!layout.root || layout.activeGroupId === null) return null;
   const leaf = findLeafNode(layout.root, layout.activeGroupId);
   if (!leaf) return null;
-  return leaf.tabs.find((t) => t.sessionId === leaf.activeTabId) ?? null;
+  return leaf.tabs.find((t) => tabIdOf(t) === leaf.activeTabId) ?? null;
 }
 
 /**
@@ -1016,8 +1055,8 @@ export function ensureTabOpenLeaf(
     const leaf = createLeaf(ref);
     return { ...layout, root: leaf, activeGroupId: leaf.id };
   }
-  const existing = findLeafBySessionId(layout, ref.sessionId);
-  if (existing) return setActiveTabInLeaf(layout, existing.leafId, ref.sessionId);
+  const existing = findLeafBySessionId(layout, tabIdOf(ref));
+  if (existing) return setActiveTabInLeaf(layout, existing.leafId, tabIdOf(ref));
   const targetLeafId = layout.activeGroupId ?? firstLeaf(layout.root)?.id;
   if (!targetLeafId) {
     const leaf = createLeaf(ref);
@@ -1128,7 +1167,7 @@ function validateNodeV3(node: TreeNode, errors: string[]): void {
 
 /** 全局实例区候选：聚合所有项目活跃实例 + 排序/展示所需字段。 */
 export type GlobalInstanceCandidate = {
-  ref: WorkbenchPanelRef;
+  ref: SessionPanelRef;
   /** AgentSessionStatus 涵盖 terminal 状态子集，统一 agent/terminal 状态语义。 */
   status: AgentSessionStatus;
   type: "agent" | "terminal";
@@ -1149,7 +1188,7 @@ export type GlobalInstanceCandidate = {
  * > running agent > terminal > 其他。最需要关注的实例排最前。稳定排序（同 rank 保持
  * 聚合顺序，即项目次序 → sessions 次序）。纯函数，便于测试。
  */
-export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): WorkbenchPanelRef[] {
+export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): SessionPanelRef[] {
   const rank = (candidate: GlobalInstanceCandidate): number => {
     if (candidate.type === "agent" && candidate.status !== "running") return 0;
     if (candidate.type === "agent") return 1;
@@ -1228,6 +1267,29 @@ function migrateLayoutState(legacy: {
   return { project, global: migrateV2ToV3(migrateLegacyLayout(legacy.global)) };
 }
 
+/** 规范化单作用域 V3 布局：遍历树给 leaf.tabs 的 ref 补 kind（localStorage 兼容）。 */
+function normalizeLayoutV3(layout: WorkbenchLayoutV3): WorkbenchLayoutV3 {
+  if (!layout.root) return layout;
+  return { ...layout, root: normalizeTree(layout.root) };
+}
+
+/** 递归遍历 TreeNode，规范化所有 leaf 的 tabs（split 节点不含 ref）。 */
+function normalizeTree(node: TreeNode): TreeNode {
+  if (node.kind === "leaf") return { ...node, tabs: node.tabs.map(normalizeRef) };
+  return { ...node, children: node.children.map(normalizeTree) };
+}
+
+/**
+ * 规范化布局 state（localStorage 兼容，V3 多态 tab）：引入 kind 判别联合前的持久化只含 session tab、
+ * ref 无 kind，反序列化后联合 narrowing 失败。读取时遍历所有 leaf，给无 kind 的 ref 补 `kind:"session"`
+ *（normalizeRef）。纯函数，单测覆盖。
+ */
+export function normalizeLayoutState(state: WorkbenchLayoutState): WorkbenchLayoutState {
+  const project: Record<string, WorkbenchLayoutV3> = {};
+  for (const [k, v] of Object.entries(state.project)) project[k] = normalizeLayoutV3(v);
+  return { project, global: normalizeLayoutV3(state.global) };
+}
+
 /**
  * 自定义 storage 实现迁移链：读 V3 key（"workbenchLayoutV3"），不存在则按 V2 → V1 回溯。
  * 三分支：① 有 V3 直返；② 有 V2 无 V3 → migrateLayoutStateV2ToV3 → 写 V3 删 V2；③ 有 V1 无 V2/V3
@@ -1244,7 +1306,7 @@ const workbenchLayoutStorage = {
     const raw = localStorage.getItem(key);
     if (raw) {
       try {
-        return JSON.parse(raw) as WorkbenchLayoutState;
+        return normalizeLayoutState(JSON.parse(raw) as WorkbenchLayoutState);
       } catch {
         return initialValue;
       }

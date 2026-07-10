@@ -21,6 +21,7 @@ import {
   type WorkbenchLayoutV3,
   type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
+  type SessionPanelRef,
   type WorkbenchScope,
   type WorkbenchView,
   DRAG_THRESHOLD_PX,
@@ -29,6 +30,7 @@ import {
   groupByProject,
   inferSessionTypeFromId,
   rankGlobalInstances,
+  tabIdOf,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import {
@@ -452,7 +454,11 @@ function InstanceLeftOverviewBase({
       for (const c of candidates) m.set(c.ref.sessionId, c.ref);
     } else {
       for (const entry of projectInstances.instances) {
-        m.set(entry.session.id, { projectName: scope.key, sessionId: entry.session.id });
+        m.set(entry.session.id, {
+          kind: "session",
+          projectName: scope.key,
+          sessionId: entry.session.id,
+        });
       }
     }
     return m;
@@ -569,6 +575,11 @@ type PanelRouterProps = {
  * body 撑满，调用方容器须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
  */
 export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
+  // file tab 暂用 PlaceholderPanel 占位（file tab 的预览渲染 = FilePreviewPanel，由后续 step 接入；
+  // focusId 取 tabIdOf 即可，仅用于隐藏面板的 key 关联）。session 分支行为零改。
+  if (panelRef.kind === "file") {
+    return <PlaceholderPanel focusId={tabIdOf(panelRef)} />;
+  }
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
     return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
@@ -579,7 +590,13 @@ export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
 
-function AgentPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
+function AgentPanelRouter({
+  panelRef,
+  embeddedHeader,
+}: {
+  panelRef: SessionPanelRef;
+  embeddedHeader?: boolean;
+}) {
   const detail = useAgentDetail(panelRef);
   if (detail.isLoading) return null;
   if (detail.data?.session.provider === "claude2") {
@@ -603,7 +620,13 @@ function AgentPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
 
-function TerminalPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
+function TerminalPanelRouter({
+  panelRef,
+  embeddedHeader,
+}: {
+  panelRef: SessionPanelRef;
+  embeddedHeader?: boolean;
+}) {
   const detail = useTerminalDetail(panelRef);
   if (detail.isLoading) return null;
   if (detail.data?.session) {
@@ -620,7 +643,7 @@ function TerminalPanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
 
 // ── 详情查询（拆为小 hook，保持 PanelRouter 干净）─────────────────────────────
 
-export function useAgentDetail(panelRef: WorkbenchPanelRef, enabled = true) {
+export function useAgentDetail(panelRef: SessionPanelRef, enabled = true) {
   return useQuery({
     queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
     queryFn: () => getAgentSession(panelRef.projectName, panelRef.sessionId),
@@ -630,7 +653,7 @@ export function useAgentDetail(panelRef: WorkbenchPanelRef, enabled = true) {
   });
 }
 
-export function useTerminalDetail(panelRef: WorkbenchPanelRef, enabled = true) {
+export function useTerminalDetail(panelRef: SessionPanelRef, enabled = true) {
   return useQuery({
     queryKey: ["projects", panelRef.projectName, "terminal-sessions", panelRef.sessionId],
     queryFn: () => getTerminalSession(panelRef.projectName, panelRef.sessionId),
@@ -660,10 +683,15 @@ export type PanelMeta = {
 
 export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
   const { t } = useT();
-  const sessionType = inferSessionTypeFromId(panelRef.sessionId);
-  const projReady = !!panelRef.projectName;
-  const agent = useAgentDetail(panelRef, projReady && sessionType === "agent");
-  const terminal = useTerminalDetail(panelRef, projReady && sessionType === "terminal");
+  // file tab 无 session 详情查询（file marker/label 由后续 step 接入）：用空 sessionRef 保 hooks
+  // 顺序稳定、enabled=false 不发请求；session tab 时 sessionRef === panelRef，行为零改。
+  const sessionRef: SessionPanelRef =
+    panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" };
+  const sessionType =
+    panelRef.kind === "session" ? inferSessionTypeFromId(panelRef.sessionId) : undefined;
+  const projReady = panelRef.kind === "session" && !!panelRef.projectName;
+  const agent = useAgentDetail(sessionRef, projReady && sessionType === "agent");
+  const terminal = useTerminalDetail(sessionRef, projReady && sessionType === "terminal");
   if (sessionType === "agent") {
     const session = agent.data?.session;
     if (!session) return undefined;
@@ -706,7 +734,7 @@ export function useCloseSession() {
   const { confirm, holder } = useConfirm();
   const queryClient = useQueryClient();
   const close = async (
-    ref: WorkbenchPanelRef,
+    ref: SessionPanelRef,
     type: "agent" | "terminal",
     onAfterClose?: () => void,
   ): Promise<boolean> => {
@@ -757,7 +785,7 @@ export function useRenameSession() {
 
   const rename = useCallback(
     async (
-      ref: WorkbenchPanelRef,
+      ref: SessionPanelRef,
       type: "agent" | "terminal",
       currentName: string,
     ): Promise<boolean> => {
@@ -1011,7 +1039,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
           createdAt: session.createdAt,
           displayName: session.displayName,
           provider: session.provider,
-          ref: { projectName: name, sessionId: session.id },
+          ref: { kind: "session", projectName: name, sessionId: session.id },
           status: session.status,
           subtitle: session.lastAssistantMessage,
           type: "agent",
@@ -1021,7 +1049,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
       for (const session of terminalQueries[index]?.data?.sessions ?? []) {
         candidates.push({
           displayName: session.displayName,
-          ref: { projectName: name, sessionId: session.id },
+          ref: { kind: "session", projectName: name, sessionId: session.id },
           status: session.status,
           subtitle: session.lastCommand,
           type: "terminal",
@@ -1046,7 +1074,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
  * 把全部持久化 tab 误判 stale 清光、持久化恢复失效（见 state-sync-principles 按需同步）。
  */
 export function useScopeInstanceOrder(scope: WorkbenchScope): {
-  refs: WorkbenchPanelRef[];
+  refs: SessionPanelRef[];
   isLoaded: boolean;
 } {
   const projectKey = scope.kind === "project" ? scope.key : null;
@@ -1066,12 +1094,12 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): {
   if (scope.kind !== "project") {
     return { refs: rankGlobalInstances(candidates), isLoaded: candidatesLoaded };
   }
-  const refs: WorkbenchPanelRef[] = [];
+  const refs: SessionPanelRef[] = [];
   for (const session of agents.data?.sessions ?? []) {
-    refs.push({ projectName: scope.key, sessionId: session.id });
+    refs.push({ kind: "session", projectName: scope.key, sessionId: session.id });
   }
   for (const session of terminals.data?.sessions ?? []) {
-    refs.push({ projectName: scope.key, sessionId: session.id });
+    refs.push({ kind: "session", projectName: scope.key, sessionId: session.id });
   }
   // isLoaded 用 isSuccess 而非 !isLoading：query 出错时不 prune，避免 API 抖动误清持久化 tab；
   // 留待下次成功加载再判定。gate 在 InstanceArea 的 stale-tab prune effect。
@@ -1204,7 +1232,7 @@ export function InstanceGrid({
       {items.map(({ key, ...card }) =>
         dragAdapter && dragRefs ? (
           <DragSourceCard
-            dragRef={dragRefs.get(key) ?? { projectName: "", sessionId: key }}
+            dragRef={dragRefs.get(key) ?? { kind: "session", projectName: "", sessionId: key }}
             key={key}
             onDragStart={dragAdapter.onDragStart}
             onSelect={() => dragAdapter.onSelect(key)}
@@ -1437,12 +1465,12 @@ function GroupHeader({
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
         {group.tabs.map((tab) => (
           <TabChip
-            isActive={tab.sessionId === group.activeTabId}
-            key={tab.sessionId}
-            onClose={() => onCloseTab(tab.sessionId)}
-            onContextMenu={(event) => onTabContextMenu(tab.sessionId, event)}
+            isActive={tabIdOf(tab) === group.activeTabId}
+            key={tabIdOf(tab)}
+            onClose={() => onCloseTab(tabIdOf(tab))}
+            onContextMenu={(event) => onTabContextMenu(tabIdOf(tab), event)}
             onDragStart={onTabDragStart}
-            onSelect={() => onSelectTab(tab.sessionId)}
+            onSelect={() => onSelectTab(tabIdOf(tab))}
             panelRef={tab}
           />
         ))}
@@ -1502,7 +1530,8 @@ function TabChip({
 }: TabChipProps) {
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
-  const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
+  const label =
+    meta?.label ?? (panelRef.kind === "session" ? panelRef.sessionId.slice(0, 12) : panelRef.path);
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
       {/* 对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：active 用 primary 品牌色
@@ -1819,7 +1848,7 @@ export function WorkspaceTree({
               左总览卡片 close 承担（设计 §11）。 */}
           <PanelRouter
             embeddedHeader
-            panelRef={{ projectName: p.projectName, sessionId: p.sessionId }}
+            panelRef={{ kind: "session", projectName: p.projectName, sessionId: p.sessionId }}
           />
         </div>
       ))}
@@ -1863,9 +1892,7 @@ function GroupShell({
   onTabDragStart,
   onToggleMaximize,
 }: GroupShellProps) {
-  const isDraggingThis = dragRef
-    ? group.tabs.some((t) => t.sessionId === dragRef.sessionId)
-    : false;
+  const isDraggingThis = dragRef ? group.tabs.some((t) => tabIdOf(t) === tabIdOf(dragRef)) : false;
   const isDropTarget = activeZone?.targetGroupId === group.id;
   return (
     <div
@@ -2085,7 +2112,8 @@ function DragGhost({
   t: (key: TranslationKey) => string;
 }) {
   const meta = usePanelMeta(panelRef);
-  const label = meta?.label ?? panelRef.sessionId.slice(0, 12);
+  const label =
+    meta?.label ?? (panelRef.kind === "session" ? panelRef.sessionId.slice(0, 12) : panelRef.path);
   return (
     <div
       aria-label={t("workbench.dragging")}

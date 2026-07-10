@@ -214,7 +214,7 @@ function WorkbenchContent({
           ? scope.key
           : (refs.find((r) => r.sessionId === focusId)?.projectName ?? null);
       if (!projectName) return prev;
-      return ensureTabOpenLeaf(prev, { projectName, sessionId: focusId });
+      return ensureTabOpenLeaf(prev, { kind: "session", projectName, sessionId: focusId });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, scopeKey, refs.length]);
@@ -228,6 +228,8 @@ function WorkbenchContent({
     const stale: { leafId: string; tabId: string }[] = [];
     for (const leaf of collectLeaves(layout.root)) {
       for (const t of leaf.tabs) {
+        // file tab 不参与 stale prune（刷新保留，设计 §6 决策 19）；session tab 用 sessionId 判定。
+        if (t.kind === "file") continue;
         if (!activeIds.has(t.sessionId)) stale.push({ leafId: leaf.id, tabId: t.sessionId });
       }
     }
@@ -239,7 +241,8 @@ function WorkbenchContent({
     if (next === layout) return;
     update(() => next);
     if (focusId && stale.some((s) => s.tabId === focusId)) {
-      void navigateWorkbench(scope, activeTabRefLeaf(next)?.sessionId);
+      const active = activeTabRefLeaf(next);
+      if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, focusId, layout, refs, refsLoaded]);
@@ -252,6 +255,8 @@ function WorkbenchContent({
       : (candidates.find((c) => c.ref.sessionId === sessionId)?.ref.projectName ?? "");
   const focusPanel = useCallback(
     (ref: WorkbenchPanelRef) => {
+      // file tab 的 focus 由 Step 7 file 路由处理；此处只处理 session tab。
+      if (ref.kind !== "session") return;
       if (ref.sessionId === focusId) return;
       void navigateWorkbench(scope, ref.sessionId);
     },
@@ -261,7 +266,7 @@ function WorkbenchContent({
     (sessionId: string) => {
       const projectName = resolveProjectName(sessionId);
       if (!projectName) return;
-      focusPanel({ projectName, sessionId });
+      focusPanel({ kind: "session", projectName, sessionId });
     },
     // resolveProjectName 闭包依赖 scope/candidates，已被 deps 覆盖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -271,7 +276,7 @@ function WorkbenchContent({
     (sessionId: string, type: "agent" | "terminal") => {
       const projectName = resolveProjectName(sessionId);
       if (!projectName) return;
-      void close({ projectName, sessionId }, type);
+      void close({ kind: "session", projectName, sessionId }, type);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scope, candidates, close],
@@ -279,7 +284,7 @@ function WorkbenchContent({
   const renameInstance = useCallback(
     (sessionId: string, type: "agent" | "terminal", currentName: string, projectName: string) => {
       if (!projectName) return;
-      void rename({ projectName, sessionId }, type, currentName);
+      void rename({ kind: "session", projectName, sessionId }, type, currentName);
     },
     [rename],
   );
@@ -290,7 +295,8 @@ function WorkbenchContent({
       const next = removeTabFromLeaf(layout, groupId, tabId);
       update(() => next);
       if (focusId === tabId) {
-        void navigateWorkbench(scope, activeTabRefLeaf(next)?.sessionId);
+        const active = activeTabRefLeaf(next);
+        if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
       }
     },
     [layout, update, focusId, navigateWorkbench, scope],
@@ -341,7 +347,7 @@ function WorkbenchContent({
     const next = dropIntoLeaf(prev, drag.ref, zone.targetGroupId, zone.zone);
     if (next === prev) return;
     update(() => next);
-    void navigateWorkbench(scope, drag.ref.sessionId);
+    if (drag.ref.kind === "session") void navigateWorkbench(scope, drag.ref.sessionId);
   }, [dragState, activeZone, layout, update, navigateWorkbench, scope]);
   const cancelDrag = useCallback(() => {
     setDragState(null);
