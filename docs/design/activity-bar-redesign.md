@@ -93,6 +93,9 @@
            按项目分段（grouped）：点项目分组标题 → /projects/$key 进项目
            header 新建项目（+ 按钮，useCreateProject + ProjectSetupPanel Dialog）
            分组标题右侧 ⋯ 菜单 → 删除项目（deleteProject + useConfirm confirm）
+           （注：grouped 分组由 groupByProject 从活跃实例派生，无实例的空项目不显示分组 →
+            空项目删除入口待后续补「项目列表」视图；新建项目后 useCreateProject 自动
+            navigate 进项目，空项目不滞留总览）
   [文件] → 文件树全屏 + 预览浮窗（rootBrowse 根目录浏览，= 现状移动端 Files 做法，决策 12）
   [设置] → 设置页（沿用现状）
 进入项目后：项目实例工作台（与现一致）+ 返回按钮，底部胶囊保留（已定）

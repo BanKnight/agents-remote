@@ -1,12 +1,31 @@
-import { Fragment, type CSSProperties, type ReactNode, useMemo } from "react";
+import {
+  Fragment,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import { ShellSectionLabel, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
+import {
+  MobilePageHeader,
+  ShellSectionLabel,
+  shellSurfaceClasses,
+  ViewSwitcher,
+} from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
+import { deleteProject } from "../../api/client";
+import { useConfirm } from "../shell/confirm-dialog";
+import { useCreateProject, ProjectSetupPanel } from "../shell/project-setup";
+import { Dialog, DialogContent } from "../ui/dialog";
+import { ActionMenu } from "../ui/action-menu";
 import {
   ensureTabOpenLeaf,
   filterWorkbenchViews,
@@ -697,39 +716,36 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 }
 
 /**
- * 移动全局列表态（设计文档 §7/§11）：跨项目活跃实例聚合，只读监控（不可创建，创建需先进项目
- * 指定作用域）。P4：加视图切换（grouped/grid/table，global 三视图全开——设计 §11）。
- * grouped = 按项目分段（groupByProject，与桌面 GroupedView 同源纯函数）；
- * grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。点卡片/行进
- * `/projects/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API → invalidate）。
- * 视图记忆复用 workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。
+ * 移动 [项目] 总览（设计文档 §5/§7/决策 25）：跨项目活跃实例聚合 + 项目入口。一级页面，
+ * header = MobilePageHeader（标题 + 新建项目 + 按钮 → useCreateProject + ProjectSetupPanel
+ * Dialog，与 ProjectLeftPanel 同源）。视图 grouped/grid/table（global 三视图全开）：
+ * - grouped = 按项目分段（groupByProject），**分组标题行左侧点击进项目**（navigate
+ *   `/projects/$key`），**右侧 ⋯ ActionMenu 删除项目**（deleteProject + useConfirm confirm，
+ *   destructive，决策 25 本 phase 加）。分组由 groupByProject 从活跃实例派生，无实例的空
+ *   项目不显示分组 → 空项目删除入口待后续补「项目列表」视图（设计 §5 注）。
+ * - grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。grid/table 点
+ *   卡片/行进 `/projects/session/$focusId` 聚焦，不按项目分段故无删项目入口（仅 grouped 提供）。
+ * 删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/
+ * [设置] 一级导航 + 项目内 MobileProjectOverview）。close 复用 useCloseSession；view 记忆复用
+ * workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。
  */
 function MobileGlobalOverview() {
   const { t } = useT();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const inputId = useId();
+  const [setupOpen, setSetupOpen] = useState(false);
   const navigateWorkbench = useWorkbenchNavigate();
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
-  const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
+  const { create, projectPath, setProjectPath } = useCreateProject();
+  const deleteMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+  });
+  const { confirm, holder: confirmHolder } = useConfirm();
   const [view, setView] = useAtom(workbenchViewAtom);
-  // global ctx：projectKey=null。files 全局可见（根目录 = PROJECTS_ROOT 只读浏览，render
-  // 走 rootBrowse 分支），git 需 projectKey 故 when 过滤掉；global 无 history（跨项目历史
-  // 不属列表态）。一级页面：header 仅 tab 行（无 ◄ 返回、无标题），靠底部 tab 切换。
-  const ctx: PluginContext = { projectKey: null, focusId: undefined, sessionType: undefined };
-  const tabs = useMemo(
-    () => buildOverviewTabs(t, ctx, false),
-    // ctx 恒 global（projectKey=null），仅 t 变重算。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t],
-  );
-  // 记忆 tab 若在当前 ctx 不可见（如 project 残留 history 切到 global）→ 回退 overview。
-  const activeTab: WorkbenchMobileOverviewTab = tabs.some((opt) => opt.id === tab)
-    ? tab
-    : "overview";
-  const activePlugin =
-    activeTab !== "overview" && activeTab !== "history"
-      ? (FIRST_PARTY_PLUGINS.find((p) => p.id === activeTab) ?? null)
-      : null;
   // viewOptions = filterWorkbenchViews(global) = [grouped, grid, table]（global 三视图全开）。
   const viewOptions = useMemo(
     () =>
@@ -775,67 +791,180 @@ function MobileGlobalOverview() {
     [candidates, t],
   );
   const tableColumns: TableColumn[] = ["name", "project", "activity", "actions"];
+  const selectProject = (name: string) => {
+    void navigate({ to: "/projects/$key", params: { key: name } });
+  };
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedPath = projectPath.trim();
+    if (trimmedPath.length === 0 || create.isPending) return;
+    create.mutate(trimmedPath);
+  };
+  const setupVisible = setupOpen || create.isPending || create.error instanceof Error;
+  const requestDeleteProject = async (projectName: string) => {
+    const ok = await confirm({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("project.deleteProject"),
+      message: t("project.deleteProjectConfirm"),
+      title: t("project.deleteProject"),
+      tone: "danger",
+    });
+    if (ok) deleteMutation.mutate(projectName);
+  };
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MobileTabHeader activeTabId={activeTab} onTabSelect={setTab} tabs={tabs} />
+      <MobilePageHeader
+        actions={
+          <button
+            aria-label={t("home.createProjectAria")}
+            className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
+            onClick={() => setSetupOpen(true)}
+            type="button"
+          >
+            +
+          </button>
+        }
+        title={t("workbench.global")}
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {activePlugin ? (
-          <Fragment>{activePlugin.render(ctx)}</Fragment>
-        ) : (
-          <>
-            <div className="flex items-center gap-1 px-3 py-2">
-              {/* global 不可创建（需先进项目指定作用域），仅 ViewSwitcher 右对齐（设计 §6）。 */}
-              <div className="ml-auto">
-                <ViewSwitcher
-                  ariaLabel={t("workbench.viewSwitcher")}
-                  onChange={(next) => setView(next)}
-                  view={resolvedView}
-                  views={viewOptions}
-                />
-              </div>
+        <div className="flex items-center gap-1 px-3 py-2">
+          {/* [项目] 总览：新建在 header（+ 按钮），此行仅 ViewSwitcher 右对齐（设计 §6）。 */}
+          <div className="ml-auto">
+            <ViewSwitcher
+              ariaLabel={t("workbench.viewSwitcher")}
+              onChange={(next) => setView(next)}
+              view={resolvedView}
+              views={viewOptions}
+            />
+          </div>
+        </div>
+        {candidates.length === 0 ? (
+          !isLoaded ? (
+            <div className="px-3 py-2">
+              <CardGridSkeleton />
             </div>
-            {candidates.length === 0 ? (
-              !isLoaded ? (
-                <div className="px-3 py-2">
-                  <CardGridSkeleton />
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-6 text-center">
+              <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+            </div>
+          )
+        ) : (
+          <nav
+            aria-label={t("workbench.globalOverviewTitle")}
+            className="flex-1 overflow-y-auto pb-24 lg:pb-0"
+          >
+            {resolvedView === "grouped" ? (
+              groups.map((group) => (
+                <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
+                  <ProjectGroupHeader
+                    isDeleting={deleteMutation.isPending}
+                    projectName={group.projectName}
+                    onSelect={() => selectProject(group.projectName)}
+                    onRequestDelete={() => requestDeleteProject(group.projectName)}
+                  />
+                  <InstanceGrid
+                    items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                  />
                 </div>
-              ) : (
-                <div className="flex flex-1 items-center justify-center p-6 text-center">
-                  <p className="text-sm text-on-surface-muted">
-                    {t("workbench.globalOverviewEmpty")}
-                  </p>
-                </div>
-              )
+              ))
+            ) : resolvedView === "table" ? (
+              <SessionTable columns={tableColumns} rows={tableRows} t={t} />
             ) : (
-              <nav
-                aria-label={t("workbench.globalOverviewTitle")}
-                className="flex-1 overflow-y-auto pb-24 lg:pb-0"
-              >
-                {resolvedView === "grouped" ? (
-                  groups.map((group) => (
-                    <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
-                      <ShellSectionLabel>{group.projectName}</ShellSectionLabel>
-                      <InstanceGrid
-                        items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                      />
-                    </div>
-                  ))
-                ) : resolvedView === "table" ? (
-                  <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-                ) : (
-                  <div className="px-3 py-2">
-                    <InstanceGrid
-                      items={candidates.map((c) => candidateToGridItem(c, callbacks))}
-                    />
-                  </div>
-                )}
-              </nav>
+              <div className="px-3 py-2">
+                <InstanceGrid items={candidates.map((c) => candidateToGridItem(c, callbacks))} />
+              </div>
             )}
-          </>
+          </nav>
         )}
       </div>
       {closeHolder}
       {renameHolder}
+      {confirmHolder}
+      <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
+        <DialogContent className="overflow-y-auto p-0">
+          <ProjectSetupPanel
+            createError={create.error instanceof Error ? create.error : null}
+            inputId={inputId}
+            isPending={create.isPending}
+            onProjectPathChange={setProjectPath}
+            onSubmit={handleSubmit}
+            projectPath={projectPath}
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+type ProjectGroupHeaderProps = {
+  isDeleting: boolean;
+  projectName: string;
+  onSelect: () => void;
+  onRequestDelete: () => void;
+};
+
+/**
+ * grouped 分组标题行（设计 §5/决策 25）：左侧可点击区域（项目名 + 进项目 chevron）navigate
+ * `/projects/$key`，右侧 ⋯ ActionMenu（删除项目，destructive，视口分流移动 action sheet /
+ * 桌面 popover）。复用 ShellSectionLabel 视觉基线，左侧包 button 进项目，右侧 ⋯ 按钮。
+ * isDeleting 期间禁用 ⋯（防重复提交）。
+ */
+function ProjectGroupHeader({
+  isDeleting,
+  projectName,
+  onSelect,
+  onRequestDelete,
+}: ProjectGroupHeaderProps) {
+  const { t } = useT();
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md py-1 text-left transition hover:bg-on-surface/5"
+        onClick={onSelect}
+        type="button"
+      >
+        <ShellSectionLabel>{projectName}</ShellSectionLabel>
+        <svg
+          aria-hidden="true"
+          className="size-3 shrink-0 text-on-surface-muted"
+          fill="none"
+          viewBox="0 0 16 16"
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+      <ActionMenu
+        align="end"
+        cancelLabel={t("cancel")}
+        items={[
+          {
+            label: t("project.deleteProject"),
+            icon: <ShellIcon name="trash" />,
+            onSelect: onRequestDelete,
+            variant: "destructive",
+            disabled: isDeleting,
+          },
+        ]}
+        trigger={
+          <button
+            aria-label={t("project.deleteProject")}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+            type="button"
+          >
+            <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
+              <circle cx="4" cy="8" r="1" fill="currentColor" />
+              <circle cx="8" cy="8" r="1" fill="currentColor" />
+              <circle cx="12" cy="8" r="1" fill="currentColor" />
+            </svg>
+          </button>
+        }
+      />
     </div>
   );
 }
