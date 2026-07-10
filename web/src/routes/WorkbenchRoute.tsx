@@ -17,8 +17,11 @@ import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
+import { ShellLayout } from "../components/shell/shell-layout";
+import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { FilesLeftPanel } from "../components/files/files-left-panel";
+import { FilesPanel } from "../components/files/file-browser";
 import { HomeRoute } from "./HomeRoute";
 import {
   type DropZone,
@@ -125,6 +128,24 @@ export function GlobalFocusRoute() {
       tab={tab}
       view={view}
     />
+  );
+}
+
+/**
+ * 移动 [文件] 一级入口路由 `/files`（设计 §6 决策 24）：视口分流——移动（<lg）渲染
+ * rootBrowse FilesPanel（根目录浏览 + 预览浮窗，复用现状移动 Files 做法，决策 12），
+ * 包 ShellLayout + MobilePrimaryNav 提供底部胶囊避让与 safe-area；
+ * 桌面（≥lg）渲染 global 工作台（桌面 [文件] 经活动栏 nav=files，不需独立 `/files` 路由，
+ * 桌面直接访问 `/files` 回到工作台由活动栏切入）。useIsDesktopViewport 客户端首 render
+ * 即真实视口，移动端无闪屏。由 router.tsx filesRoute lazy 挂载。
+ */
+export function FilesRoute() {
+  const isDesktop = useIsDesktopViewport();
+  if (isDesktop) return <GlobalScopeContent />;
+  return (
+    <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
+      <FilesPanel initialPath="" enablePreview queryScope="files-nav-mobile" rootBrowse />
+    </ShellLayout>
   );
 }
 

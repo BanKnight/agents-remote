@@ -78,6 +78,14 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import("./SettingsRoute"), "SettingsRoute"),
 });
 
+// 移动 [文件] 一级入口（设计 §6 决策 24）：移动端渲染 rootBrowse FilesPanel 浮窗；
+// 桌面端 component 内部分流回 global 工作台（桌面 [文件] 经活动栏 nav=files）。
+const filesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/files",
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "FilesRoute"),
+});
+
 // ── 旧 URL 兼容 redirect（退役期，无并行）────────────────────────────────────────
 // 旧换页模型 detail routes 与旧 /workbench/$scope(/$focusId) 一并 redirect 到新中栏语义
 // 路径。这些 route 无 component（redirect-only，beforeLoad 即 throw，永不渲染）；
@@ -158,6 +166,7 @@ const routeTree = rootRoute.addChildren([
   globalScopeRoute,
   globalFocusRoute,
   settingsRoute,
+  filesRoute,
   agentSessionDetailRedirect,
   claude2SessionDetailRedirect,
   terminalSessionDetailRedirect,
