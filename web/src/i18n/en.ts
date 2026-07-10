@@ -195,6 +195,7 @@ export const en = {
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "Back",
   "nav.projects": "Projects",
+  "nav.files": "Files",
   "nav.primaryAria": "Primary navigation",
   "nav.primaryMobileAria": "Primary mobile navigation",
   "nav.projectWorkspaceAria": "Project workspace navigation",

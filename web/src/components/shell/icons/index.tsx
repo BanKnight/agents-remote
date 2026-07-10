@@ -14,6 +14,7 @@ import plus from "./plus.svg?raw";
 import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
 import restore from "./restore.svg?raw";
+import settings from "./settings.svg?raw";
 import terminal from "./terminal.svg?raw";
 import trash from "./trash.svg?raw";
 import upload from "./upload.svg?raw";
@@ -35,6 +36,7 @@ const svgMap: Record<string, string> = {
   project,
   refresh,
   restore,
+  settings,
   terminal,
   trash,
   upload,

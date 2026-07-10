@@ -36,6 +36,13 @@ export type WorkbenchView = "grouped" | "grid" | "table";
 export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git";
 
 /**
+ * 一级导航（活动栏，设计文档 activity-bar-redesign.md §3）。VSCode 式一级导航，切换左栏内容；
+ * 中栏 group+tab 常驻不随导航变（§6 决策 8）。projects=全局总览；files=文件树；
+ * settings=跳转 SettingsRoute 特例（§6 决策 13/17，不切左栏）。localStorage 记忆，不进 URL（决策点①）。
+ */
+export type WorkbenchNav = "projects" | "files" | "settings";
+
+/**
  * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §6）。
  * = grouped · grid · table（grouped 最左作 global 默认入口，table 最右）。
  */
@@ -152,6 +159,12 @@ export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchRightTab>
  * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grid。
  */
 export const workbenchViewAtom = atomWithLocalOnlyStorage<WorkbenchView>("workbenchView", "grid");
+
+/**
+ * 一级导航（活动栏，设计文档 activity-bar-redesign.md §3）。projects/files/settings，
+ * 默认 projects。localStorage 记忆，不进 URL（决策点①）。active 态驱动 ActivityBar 高亮。
+ */
+export const workbenchNavAtom = atomWithLocalOnlyStorage<WorkbenchNav>("workbenchNav", "projects");
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `tab` 优先，此 atom 作「记忆上次 tab」
