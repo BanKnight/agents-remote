@@ -1,4 +1,4 @@
-import { atom, useAtom } from "jotai";
+import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -65,9 +65,16 @@ export function filterWorkbenchViews(scope: WorkbenchScope): WorkbenchView[] {
  * 右栏需容纳 FilesPanel browser（19.375rem）+ padding，故宽于左栏；Stage 4 resize
  * gutter 落地后用户可单点调整（MIN/MAX 钳制，避免压溃中栏或自身）。
  */
+/**
+ * @deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`（16rem），本组常量仅
+ * 供废弃的 `workbenchLeftWidthAtom` 引用、维持 localStorage 迁移源，Phase 5 删除。
+ */
 export const WORKBENCH_LEFT_PANEL_DEFAULT_REM = 13.125;
 export const WORKBENCH_RIGHT_PANEL_DEFAULT_REM = 22;
-/** 左栏宽度钳制范围（rem）：项目树最小可读宽度 / 不吃掉中栏的上限。 */
+/**
+ * 左栏宽度钳制范围（rem）。@deprecated Phase 2a 起改用 `WORKBENCH_MIDDLE_LEFT_*_REM`，
+ * Phase 5 删除。
+ */
 export const WORKBENCH_LEFT_PANEL_MIN_REM = 9;
 export const WORKBENCH_LEFT_PANEL_MAX_REM = 24;
 /** 右栏宽度钳制范围（rem）：FilesPanel browser 最小宽度 / 不吃掉中栏的上限。 */
@@ -119,7 +126,12 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
   true,
 );
 
-/** 左栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
+/**
+ * 左栏宽度（rem）。@deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`
+ *（16rem，容量更大适配 InstanceLeftOverview 单列卡片）。本 atom 仅保留作 localStorage
+ * 一次性迁移源（WorkbenchContent mount 时把 `workbenchLeftWidth` 迁到
+ * `workbenchMiddleLeftWidth`，保用户已调宽度），Phase 5 删除。不再被任何组件消费。
+ */
 export const workbenchLeftWidthAtom = atomWithLocalOnlyStorage(
   "workbenchLeftWidth",
   WORKBENCH_LEFT_PANEL_DEFAULT_REM,
@@ -203,12 +215,6 @@ export const workbenchMobileOverviewTabAtom = atomWithLocalOnlyStorage<Workbench
   "workbenchMobileOverviewTab",
   "overview",
 );
-
-/**
- * 桌面设置浮窗开关（设计文档 §7：桌面左栏浮窗，移动走 /settings）。非持久化 —— 刷新关闭，
- * 不进 URL（设置是临时操作，非语义状态）。false = 关闭。
- */
-export const workbenchSettingsFlyoutOpenAtom = atom<boolean>(false);
 
 /**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。

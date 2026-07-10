@@ -19,9 +19,10 @@
   - **待定**：中栏语义（主确认点）、git 归属、移动端[文件]单列布局。
   - **元指令**：长任务必须文档化（即本文档），防上下文压缩丢失。
 - **2026-07-10 协商第 1.5 轮（主确认点 resolved）**：全局总览当前就在 `InstanceArea` 中栏**左侧**（workbench-views 的左总览区，窄单列卡片），事实已证明可承载。故新「左栏」= 该左总览区提升为顶层栏（窄单列，随导航切换内容），新「中栏」= 原右工作区 group+tab（常驻不随导航变）。原 `left-rail` 删除/改造。**主确认点关闭**，不必再纠结"总览塞不进左栏"。
-- **2026-07-10 协商第 2 轮**：①『左栏』= `InstanceArea` 左总览区——本就是这一列（用户一贯称『左栏』），**非新增列、非"提升"**；切活动栏只换左栏，中栏(右工作区 group+tab)不变。此前文档"提升"措辞把简单事说复杂，已订正。② **git 归属**：不在全局 [文件] 导航；在**进入项目后**出现（project-scoped）。③ **进入项目后左栏顶部多导航**：左栏顶部出现 tab 组（如目前移动端做法），切换左栏内容；git 为其一，具体清单待盘点移动端现状。
+- **2026-07-10 协商第 2 轮**：①『左栏』= `InstanceArea` 左总览区——本就是这一列（用户一贯称『左栏』），**非新增列、非"提升"**；切活动栏只换左栏，中栏(右工作区 group+tab)不变。此前文档"提升"措辞把简单事说复杂，已订正。（注：「非提升」指 DOM 列——左栏=现有 `leftPanel` 那列非新增；实现层 state 提升见第 5 轮方案 X。）② **git 归属**：不在全局 [文件] 导航；在**进入项目后**出现（project-scoped）。③ **进入项目后左栏顶部多导航**：左栏顶部出现 tab 组（如目前移动端做法），切换左栏内容；git 为其一，具体清单待盘点移动端现状。
 - **2026-07-10 协商第 3 轮（3 待定点 resolved）**：① 进入项目后左栏顶部多导航 = **实例 / 历史 / 文件 / git**（= 现状 `WorkbenchMiddleTab` overview/history/files/git，复用现状）。② 移动端 [文件] = **文件树全屏 + 预览浮窗**，保持现状移动端 Files 做法不变。③ [设置] = **特例**，不套「活动栏切左栏」模型，点击沿用现有 `SettingsRoute` 设置页（桌面端左栏/中栏不切换）。**结构语义至此完整，无剩余结构待定点。**
 - **2026-07-10 协商第 4 轮（plan 4 决策点 resolved）**：① 活动栏 nav 存 `workbenchNavAtom`（localStorage，不进 URL）。② 活动栏 = WorkbenchShell 新增第 0 列（四栏）。③ [文件] 预览并入 WorkbenchLayoutV3（与实例 tab 共享 group+tab）。④ [设置] = 跳转 SettingsRoute（离开工作台）。**plan 全部决策点敲定，可进入实现。**
+- **2026-07-10 协商第 5 轮（Phase 2a 实现方案锁定）**：① **方案 X（拆 `InstanceArea`，严格四栏）**——布局上「左栏」= WorkbenchShell 原有 `leftPanel`（DOM 四栏第 1 列，Phase 1 已建，**非新增列**）；功能上承载 `InstanceArea` 内部已有的左总览。落地：拆 `InstanceArea` 为三部分——左总览提取为 `InstanceLeftOverview` 组件放入 `leftPanel`，右工作区 group+tab 瘦身 `InstanceArea` 留中栏 children，共享 state（layout/drag 三件套/focus+prune effects/candidates/create/close/rename/contextMenu）**提升到 `WorkbenchContent`**（不新建 hook——overview/workspace 互补消费非复用，WorkbenchContent 已是薄壳持共享 state 模式）。② **Phase 2 拆 2a/2b**：2a=[项目] 方案 X 核心；2b=[文件]（决策③ V3 多态 tab，session-centric 改造成本中高，放 2b）。③ **宽度归并**：leftPanel 用 `workbenchMiddleLeftWidthAtom`(16rem)，废弃 `workbenchLeftWidthAtom` + localStorage 一次性迁移。④ **leftPanel 恒显总览、忽略中栏 tab**（tab bar 中栏顶部位置留 Phase 3）。
 
 ## 3. 一级导航（两端共享语义）
 
@@ -145,11 +146,26 @@
 | `leftOverviewContent` | overview tab 左总览 grid/grouped/table 分支 | [项目] 左栏 = 此 + 新建/进入项目 |
 | `workbench-model.ts` | `WorkbenchMiddleTab`=overview/history/files/git + atom（view/middleTab/rightCollapsed/middleLeftWidth/mobile*） | **零改动复用**（= 用户定的左栏多导航清单）；新增 nav state |
 
+#### 8.3.1 Phase 2a 拆分（方案 X，已定）
+
+拆 `InstanceArea` 为三部分，DOM 严格四栏（§4.1）：
+
+| 新组件 | 位置 | 职责 | 持有 state |
+|---|---|---|---|
+| `WorkbenchContent`（WorkbenchRoute.tsx） | 组装层 | 提升 InstanceArea 共享 logic + 渲染 holders | layout/update、drag 三件套（dragState/activeZone/onDrop/cancelDrag/onCardDragStart）、focus+prune effects、candidates/create/close/rename/contextMenu |
+| `InstanceLeftOverview`（**新**，instance-left-overview.tsx） | leftPanel（DOM 第 1 列） | 左总览纯渲染：CreateSessionBar + ViewSwitcher + grid/grouped/table + Empty/Skeleton | 无 state；`React.memo` 包裹，dragState 不进其 props |
+| `InstanceArea`（**瘦身**，右工作区 + tab bar） | 中栏 children（DOM 第 2 列） | tab bar + WorkspaceTree + DropZoneOverlay + history/inspection | 无 state；消费 props 渲染 |
+
+- **拖放跨组件**：dragState/activeZone/onDrop/cancelDrag/onCardDragStart 在 `WorkbenchContent` 单一来源；`InstanceLeftOverview`（拖放源，dragAdapter）+ `InstanceArea`（拖放目标，DropZoneOverlay props）通过 props 读。三条不变量：① dragState 期间 WorkspaceTree `pointer-events:none`；② `data-drop-empty` 容器必在 `InstanceArea`（中栏）内；③ `onCardDragStart` 单一实例（卡片源 + tab 源共享）。
+- **tab bar** 留 `InstanceArea` 中栏顶部（Phase 2a 不动，Phase 3 才移左栏顶部）。
+- **移动端零影响**：`MobileWorkbench` 不引用 `InstanceArea`。
+
 ### 8.4 左栏内容源（删除/改造）
 
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
-| `left-rail.tsx` `WorkbenchLeftRail`/`ProjectTree` | GlobalNavNode + ProjectsSectionHeader(项目段折叠) + ProjectNode 列表(→/projects/$key) + 新建 Dialog(ProjectSetupPanel) + 设置入口(→SettingsFlyout) | 项目列表**删除**；新建项目(ProjectSetupPanel)迁 [项目] 左栏；设置入口由 [设置] 活动栏取代 |
+| `left-rail.tsx` `WorkbenchLeftRail`/`ProjectTree` | GlobalNavNode + ProjectsSectionHeader(项目段折叠) + ProjectNode 列表(→/projects/$key) + 新建 Dialog(ProjectSetupPanel) + 设置入口(→SettingsFlyout) | **删除**（Phase 2a）；片段（GlobalNavNode/ProjectsSectionHeader/ProjectNode/LeftRailSkeleton + useCreateProject/ProjectSetupPanel）迁 `ProjectLeftPanel` |
+| `project-left-panel.tsx` `ProjectLeftPanel`（**新**，Phase 2a） | — | [项目] leftPanel 内容源：global scope 顶部 GlobalNavNode + 项目列表(ProjectsSectionHeader/ProjectNode) + 新建 Dialog + `InstanceLeftOverview`；project scope 顶部仅返回全局入口 + `InstanceLeftOverview`。设置入口删除（[设置] 活动栏取代） |
 
 ### 8.5 右栏（不动）
 
@@ -171,7 +187,7 @@
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
 | `SettingsRoute.tsx` | `/settings` 独立路由 | [设置] 活动栏沿用（跳转 vs 内嵌 plan 定） |
-| `SettingsFlyout` + `workbenchSettingsFlyoutOpenAtom` | 桌面设置浮层（LeftRail 底部按钮触发） | [设置] 入口；flyout 保留 vs 改跳 plan 定 |
+| `SettingsFlyout` + `workbenchSettingsFlyoutOpenAtom` | 桌面设置浮层（LeftRail 底部按钮触发） | **删除**（Phase 2a）；[设置] 活动栏跳转 `SettingsRoute`（决策点④，已定） |
 
 ## 9. 落地阶段
 

@@ -61,8 +61,8 @@ type MobileWorkbenchProps = {
  *（修窄屏多面板挤压）→ B header tab inspection → C ‹› 悬浮切 → D 列表态二级总览
  * + 一级底部 tab → E 路由收口。
  *
- * 当前：无 focusId → 实例列表（WorkbenchLeftRail 全屏 + 创建入口，Stage D 升级为
- * MobileProjectOverview）；有 focusId → 单实例聚焦（Stage A：PanelRouter 不 split；
+ * 当前：无 focusId → 实例列表（MobileGlobalOverview/MobileProjectOverview + 创建入口，
+ * Stage D 升级为二级总览）；有 focusId → 单实例聚焦（Stage A：PanelRouter 不 split；
  * Stage B：header tab 切 output/文件/Git，inspection 复用 FIRST_PARTY_PLUGINS）
  * + 顶部返回。
  */

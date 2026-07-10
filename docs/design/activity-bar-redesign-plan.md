@@ -76,6 +76,10 @@
 
 `bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build && bun run e2e`。
 
+### e2e spec 期望漂移（Phase 1 引入，Phase 4/5 修）
+
+Phase 1 把 `/` 桌面分流从 `HomeRoute`（项目列表）改成 `WorkbenchContent`（global 工作台）后，7 个 e2e spec 登录后仍断言 `heading "Projects"`（HomeRoute 语义），全失败。**经 stash 对比确认：在 Phase 1 (HEAD=a4886e8) 同样 7 失败，非 Phase 2a 回归**。spec 更新横跨 pwa/file-browser/git-diff/terminal/claude2 全套，且涉及桌面/移动 viewport 分流差异，归属 **Phase 4（移动端 spec 改造，配合删 HomeRoute 项目列表）+ Phase 5（e2e 全绿收尾）**，不在 Phase 2a surgical 范围。Phase 2a 收尾门禁 = format/lint/typecheck/test/build + Playwright 四栏几何（已全绿）。
+
 ## 已定决策（plan 内，第 4 轮 resolved）
 
 - **① 活动栏 nav 存储** = `workbenchNavAtom`（localStorage 记忆，不进 URL；与 `workbenchViewAtom` 同款）。

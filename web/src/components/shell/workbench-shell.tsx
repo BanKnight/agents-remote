@@ -2,12 +2,12 @@ import { useAtom } from "jotai";
 import { type CSSProperties, type PointerEvent, type ReactNode, useRef } from "react";
 import { useT } from "../../i18n";
 import {
-  WORKBENCH_LEFT_PANEL_MAX_REM,
-  WORKBENCH_LEFT_PANEL_MIN_REM,
+  WORKBENCH_MIDDLE_LEFT_MAX_REM,
+  WORKBENCH_MIDDLE_LEFT_MIN_REM,
   WORKBENCH_RIGHT_PANEL_MAX_REM,
   WORKBENCH_RIGHT_PANEL_MIN_REM,
   workbenchLeftCollapsedAtom,
-  workbenchLeftWidthAtom,
+  workbenchMiddleLeftWidthAtom,
   workbenchRightCollapsedAtom,
   workbenchRightWidthAtom,
 } from "../../routes/workbench-model";
@@ -56,7 +56,7 @@ export function WorkbenchShell({
   const { t } = useT();
   const [leftCollapsed, setLeftCollapsed] = useAtom(workbenchLeftCollapsedAtom);
   const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
-  const [leftWidth, setLeftWidth] = useAtom(workbenchLeftWidthAtom);
+  const [leftWidth, setLeftWidth] = useAtom(workbenchMiddleLeftWidthAtom);
   const [rightWidth, setRightWidth] = useAtom(workbenchRightWidthAtom);
   // 右栏可唤出 = 显式 prop 或有内容（向后兼容）。与 rightPanel 解耦：收起时 rightPanel=null
   //（aside 不渲染、零 inspection query），但 collapsible=true 仍在中栏边缘渲染 RailButton 唤出。
@@ -73,8 +73,8 @@ export function WorkbenchShell({
   const onResizeLeft = (deltaRem: number) =>
     setLeftWidth((prev) =>
       Math.min(
-        Math.max(prev + deltaRem, WORKBENCH_LEFT_PANEL_MIN_REM),
-        WORKBENCH_LEFT_PANEL_MAX_REM,
+        Math.max(prev + deltaRem, WORKBENCH_MIDDLE_LEFT_MIN_REM),
+        WORKBENCH_MIDDLE_LEFT_MAX_REM,
       ),
     );
   const onResizeRight = (deltaRem: number) =>

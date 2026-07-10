@@ -3,13 +3,13 @@ import {
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
+  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
@@ -24,25 +24,11 @@ import {
   type WorkbenchScope,
   type WorkbenchView,
   DRAG_THRESHOLD_PX,
-  WORKBENCH_MIDDLE_LEFT_MAX_REM,
-  WORKBENCH_MIDDLE_LEFT_MIN_REM,
-  activeTabRefLeaf,
-  collectLeaves,
   deriveZone,
-  dropIntoLeaf,
-  ensureTabOpenLeaf,
   filterWorkbenchViews,
-  findLeafBySessionId,
   groupByProject,
   inferSessionTypeFromId,
   rankGlobalInstances,
-  removeTabFromLeaf,
-  resizeSplitChildren,
-  setActiveTabInLeaf,
-  toggleLeafMaximize,
-  useWorkbenchLayout,
-  useWorkbenchNavigate,
-  workbenchMiddleLeftWidthAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import {
@@ -66,7 +52,6 @@ import {
   actionButtonClasses,
   InstanceCard,
   type InstanceCardProps,
-  ResizeGutter,
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
@@ -168,54 +153,87 @@ type InstanceAreaProps = {
   scope: WorkbenchScope;
   /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/global/session/$id`）。无 focusId = 无聚焦面板。 */
   focusId?: string;
-  /** 总览视图（URL `?view` + atom 回退）；仅非聚焦态 overview tab 时 ViewSwitcher 显示。 */
-  view?: WorkbenchView;
-  /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */
-  onViewChange?: (next: WorkbenchView) => void;
   /** 中栏二级导航 tab（URL `?tab` + atom 回退）；仅非聚焦态渲染 tab bar（聚焦态右栏承载 inspection）。 */
   tab?: WorkbenchMiddleTab;
   /** 切换中栏 tab（写 URL + atom，WorkbenchContent 注入）。 */
   onTabChange?: (next: WorkbenchMiddleTab) => void;
+  // ── Phase 2a：以下 props 由 WorkbenchContent 提升 state 后注入（瘦身后的右工作区 + tab bar）──
+  /** V3 n 叉树布局（WorkbenchContent useWorkbenchLayout）；WorkspaceTree 渲染 root + maximized。 */
+  layout: WorkbenchLayoutV3;
+  /** 创建实例 API（WorkspaceTree 的 EmptyInstanceArea 空态 + create 透传）。 */
+  create: CreateSessionApi;
+  /** 活跃实例数（refs.length，EmptyInstanceArea 双语义 hasActiveInstances）。 */
+  refsCount: number;
+  /** 拖放高亮区（DropZoneOverlay + WorkspaceTree activeZone）。 */
+  activeZone: { targetGroupId: string | null; zone: DropZone } | null;
+  setActiveZone: (zone: { targetGroupId: string | null; zone: DropZone } | null) => void;
+  /** 拖动源 ref（ghost 显示）；dragState 非空时 WorkspaceTree pointer-events:none。 */
+  draggingRef: WorkbenchPanelRef | null;
+  dragState: {
+    ref: WorkbenchPanelRef;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null;
+  /** drop 编排（WorkbenchContent 创建，dropIntoLeaf + 自动聚焦）。 */
+  onDrop: () => void;
+  cancelDrag: () => void;
+  /** 拖动指针位置更新（DropZoneOverlay onPointerMove）。 */
+  onSetDragPointer: (x: number, y: number) => void;
+  /** 拖动源启动（卡片源 + tab 源共享单一实例，WorkbenchContent 创建）。 */
+  onCardDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
+  // ── 右工作区 leaf/tab 操作（WorkbenchContent 提升为成品 callback）──
+  onCloseTab: (groupId: string, tabId: string) => void;
+  onToggleMaximize: (groupId: string) => void;
+  onResizeSplit: (
+    splitId: string,
+    leftChildId: string,
+    rightChildId: string,
+    deltaFlex: number,
+  ) => void;
+  onSelectTab: (groupId: string, tabId: string) => void;
+  /** 关闭实例（contextMenu onKillTab 用，WorkbenchContent closeInstance）。 */
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
 };
 
 /**
- * 中栏实例区（设计文档 §4）。永远左右结构：左总览（固定单列卡片，view 切 grid/table/grouped
- * 样式）+ 右工作区（VSCode group+tab 模型：n 叉树布局，每 leaf = GroupHeader tab 栏 + N 个
- * PanelRouter，active tab 可见其他 hidden 保 session）。tab 导航常驻（聚焦/非聚焦都不消失）。
- * URL focusId = 活动 leaf 活动 tab（findLeafBySessionId 反查）。layout 进 localStorage（V3 schema，
- * V1/V2 自动迁移），project 按项目分键；global 聚合所有项目活跃实例（rankGlobalInstances 排序）。
+ * 中栏右工作区 + tab bar（Phase 2a 方案 X 瘦身后）。左总览已搬到 WorkbenchShell `leftPanel`
+ *（InstanceLeftOverview），本组件仅保留：tab bar（overview/history/files/git）+ 右工作区
+ *（WorkspaceTree group+tab 分屏）+ DropZoneOverlay（拖放目标）+ history/inspection tab 内容
+ * + tab 右键菜单。
+ *
+ * **无共享 state**：layout/drag 三件套/focus+prune effects/candidates/create/close/rename 全由
+ * WorkbenchContent 提升持有，本组件纯消费 props 渲染。仅 tab 右键菜单（contextMenu）state 内聚
+ * 留此（仅服务右工作区 tab，消费 onCloseTab/closeInstance 成品）。
  */
 export function InstanceArea({
   ctx,
   scope,
   focusId,
-  view,
-  onViewChange,
   tab,
   onTabChange,
+  layout,
+  create,
+  refsCount,
+  activeZone,
+  setActiveZone,
+  draggingRef,
+  dragState,
+  onDrop,
+  cancelDrag,
+  onSetDragPointer,
+  onCardDragStart,
+  onCloseTab,
+  onToggleMaximize,
+  onResizeSplit,
+  onSelectTab,
+  closeInstance,
 }: InstanceAreaProps) {
-  const navigateWorkbench = useWorkbenchNavigate();
   const { t } = useT();
-  const { close, holder } = useCloseSession();
-  const { rename, holder: renameHolder } = useRenameSession();
-  const [layout, update] = useWorkbenchLayout(scope);
-  const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates(scope);
-  const create = useCreateSession(ctx.projectKey);
-  // P3 grid 视图 project scope 数据源（global scope 返空，grid 改用 candidates 跨项目聚合）。
-  const projectInstances = useProjectInstances(ctx.projectKey);
 
-  // ViewSwitcher 视图选项（按 scope 过滤，设计 §6）。聚焦态也构造（tab bar 常驻，ViewSwitcher
-  // 在 overview tab 时显示，与聚焦态无关）。
-  const viewOptions = useMemo(
-    () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
-    [scope, t],
-  );
-
-  // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + history（project-only，历史是
-  // project-scoped 数据）+ 第一方 inspection 插件按 ctx 过滤（files 全局可见根目录浏览；
-  // git 需 projectKey）。复用 plugin.when 作 inspection 可见性单一来源；history 单独 gate
-  // projectKey（非 FIRST_PARTY_PLUGINS，是独立数据源 useHistorySessions）。global scope =
-  // overview + files。
+  // 中栏二级导航 tab（设计文档 §4）：overview 常驻 + history（project-only）+ 第一方 inspection
+  // 插件按 ctx 过滤（files 全局可见；git 需 projectKey）。global scope = overview + files。
   const visibleTabs = useMemo(
     () => buildOverviewTabs(t, ctx, ctx.projectKey !== null),
     // ctx 由 scope 决定（projectKey = scope.key 或 null），scope/t 变才重算。
@@ -225,171 +243,10 @@ export function InstanceArea({
   // URL/atom 的 tab 若在当前 scope 不可见（如 global 下残留 ?tab=git），回退 overview。
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && visibleTabs.some((opt) => opt.id === tab) ? tab : "overview";
-  // P3 总览视图守卫：URL/atom 的 view 若不在当前 scope 可见视图集（如 project scope 残留
-  // ?view=grouped）→ 回退 "grid"（设计 §15 project 默认 grid，且 grid 全 scope 可见；不取
-  // viewOptions[0]，因 WORKBENCH_VIEW_ORDER 使 project 首项 = table）。提前定义供初始态 effect 用。
-  const resolvedView: WorkbenchView =
-    view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
-
-  const scopeKey = scope.kind === "project" ? scope.key : "global";
-  const { refs, isLoaded: refsLoaded } = useScopeInstanceOrder(scope);
-
-  // 中栏左总览宽度（设计 §3：固定单列卡片 + gutter 调比例）。atomWithStorage 持久化，
-  // MIN/DEFAULT/MAX 钳制（MIN=14rem 放得下一张 220px 卡）。
-  const [middleLeftWidth, setMiddleLeftWidth] = useAtom(workbenchMiddleLeftWidthAtom);
-  const onResizeMiddleLeft = useCallback(
-    (deltaRem: number) =>
-      setMiddleLeftWidth((prev) =>
-        Math.min(
-          Math.max(prev + deltaRem, WORKBENCH_MIDDLE_LEFT_MIN_REM),
-          WORKBENCH_MIDDLE_LEFT_MAX_REM,
-        ),
-      ),
-    [setMiddleLeftWidth],
-  );
-
-  // focus → 活动 leaf tab（VSCode explorer 语义，设计 §7.1/§13）：URL focusId 变化时确保
-  // focusId 在某 leaf 的 tab 中。已开 → 激活该 tab（setActiveTabInLeaf 幂等，同 active 返回原
-  // 引用，setState 跳过，无循环）；未开 → ensureTabOpenLeaf（活动 leaf 开新 tab；无活动 leaf 则
-  // 新建 leaf）。project scope projectName = scope.key；global scope 从 refs 查 focusId 所属项目
-  //（refs 未加载时 return prev 不变，加载后 refs.length 变 → effect 重跑同步）。effect 体用
-  // update(prev => ...) 读最新 layout，避免闭包 layout 过时判断错。依赖只 focusId/scope/refs
-  //（不含 layout）：minimize 改 layout 但不改 focusId，effect 不重跑 → 不会在 minimized focusId
-  // 上重开（minimize 自身 navigate 到剩余活动 tab 同步 URL，见 onCloseTab）。
-  useEffect(() => {
-    if (!focusId) return;
-    update((prev) => {
-      const found = findLeafBySessionId(prev, focusId);
-      if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
-      const projectName =
-        scope.kind === "project"
-          ? scope.key
-          : (refs.find((r) => r.sessionId === focusId)?.projectName ?? null);
-      if (!projectName) return prev;
-      return ensureTabOpenLeaf(prev, { projectName, sessionId: focusId });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId, scopeKey, refs.length]);
-
-  // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活（不 kill，
-  // kill 走左总览卡片 close = closeInstance）。minimize 当前聚焦 tab → navigate 到剩余活动 tab
-  //（activeTabRefLeaf 派生活动 leaf 的活动 tab），避免 focus effect 在 minimized focusId 上重开
-  //（= 循环）。next 用当前 layout 闭包算（事件处理即时，layout 是本 render 的），update 传 next，
-  // navigate 用 next 派生活动 tab。
-  const onCloseTab = (groupId: string, tabId: string) => {
-    const next = removeTabFromLeaf(layout, groupId, tabId);
-    update(() => next);
-    if (focusId === tabId) {
-      void navigateWorkbench(scope, activeTabRefLeaf(next)?.sessionId);
-    }
-  };
-
-  // stale-tab prune（设计 §7.1）：kill session 后该 session 的 tab 不会自动从 layout 消失
-  //（V3 localStorage 持久化，刷新也不清）。监听活跃实例集（refs）变化，遍历树所有 leaf 的 tab，
-  // sessionId 不在活跃集 → removeTabFromLeaf 清理（可能触发子树提升 / 删空 leaf）。
-  // focusId 指向被清 tab 时回退到剩余活动 tab（activeTabRefLeaf 派生）或清空回非聚焦态。
-  useEffect(() => {
-    if (layout.root === null) return;
-    // refs 上下文不足（活跃实例 query 还 loading）时不 prune——否则刷新后 refs 还空会把全部
-    // 持久化 tab 误判 stale 清光、把空布局写回 localStorage，持久化恢复失效。
-    if (!refsLoaded) return;
-    const activeIds = new Set(refs.map((r) => r.sessionId));
-    // 收集所有 stale tab（遍历树所有 leaf）。
-    const stale: { leafId: string; tabId: string }[] = [];
-    for (const leaf of collectLeaves(layout.root)) {
-      for (const tab of leaf.tabs) {
-        if (!activeIds.has(tab.sessionId)) stale.push({ leafId: leaf.id, tabId: tab.sessionId });
-      }
-    }
-    if (stale.length === 0) return;
-    let next = layout;
-    for (const { leafId, tabId } of stale) {
-      next = removeTabFromLeaf(next, leafId, tabId);
-    }
-    if (next === layout) return;
-    update(() => next);
-    // 当前聚焦 tab 被清 → 回退到剩余活动 tab（或清空回非聚焦态）。
-    if (focusId && stale.some((s) => s.tabId === focusId)) {
-      void navigateWorkbench(scope, activeTabRefLeaf(next)?.sessionId);
-    }
-    // refs/layout 引用敏感；refs.length 守卫避免 refs 内容未变（如同序变动）时误触。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, focusId, layout, refs, refsLoaded]);
-
-  const focusPanel = (ref: WorkbenchPanelRef) => {
-    if (ref.sessionId === focusId) return;
-    void navigateWorkbench(scope, ref.sessionId);
-  };
-
-  // leaf 操作（设计 §7.3/§7.5）：maximize = leaf 级独占（toggleLeafMaximize 标量翻转，渲染时
-  // maximized 短路只画该 leaf = 纯派生全屏）；split 内相邻 children resize（resizeSplitChildren
-  // 守恒钳制左增右减，键=splitId+两 childId）。sizes + maximized 由 useWorkbenchLayout 持久化，
-  // 刷新恢复。
-  const onToggleMaximize = (groupId: string) => {
-    update((prev) => toggleLeafMaximize(prev, groupId));
-  };
-  const onResizeSplit = (
-    splitId: string,
-    leftChildId: string,
-    rightChildId: string,
-    deltaFlex: number,
-  ) => {
-    update((prev) => resizeSplitChildren(prev, splitId, leftChildId, rightChildId, deltaFlex));
-  };
-
-  // P3 总览视图（设计文档 §5/§8）：overview tab 左总览按 view 渲染（grid 卡片 / grouped 分段 /
-  // table 紧凑行）。resolvedView 已在上方定义（初始态 effect 复用）。
-
-  // grid 卡片回调：select 复用 focusPanel 进聚焦态；close 走 useCloseSession（卡片由 query 驱动，
-  // invalidate 后自然消失，不操作 layout —— 与 ProjectInstances card / MobileGlobalOverview 同款）。
-  // global scope 的 projectName 从 candidates 查（candidate.ref.projectName）—— 与 closeInstance
-  // 同源，避免旧实现在 global 误传空 projectName（focusInstance bug 修复）。
-  const resolveProjectName = (sessionId: string): string =>
-    scope.kind === "project"
-      ? scope.key
-      : (candidates.find((c) => c.ref.sessionId === sessionId)?.ref.projectName ?? "");
-  const focusInstance = (sessionId: string) => {
-    const projectName = resolveProjectName(sessionId);
-    if (!projectName) return;
-    focusPanel({ projectName, sessionId });
-  };
-  const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
-    const projectName = resolveProjectName(sessionId);
-    if (!projectName) return;
-    void close({ projectName, sessionId }, type);
-  };
-  const renameInstance = (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => {
-    if (!projectName) return;
-    void rename({ projectName, sessionId }, type, currentName);
-  };
-
-  // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────
-  // dragState = 拖动源 ref + 起始 pointer；进态后 elementFromPoint hit-test data-drop-group/
-  // data-drop-zone 得 activeZone，pointerup 时 onDrop 调 dropIntoGroup。pointermove < 4px 视为单击
-  //（Phase A 行为，手动调 onSelect 不依赖 click 合成）。touch pointerType 不进拖动态（移动端无拖放）。
-  const [dragState, setDragState] = useState<{
-    ref: WorkbenchPanelRef;
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-  } | null>(null);
-  const [activeZone, setActiveZone] = useState<{
-    targetGroupId: string | null;
-    zone: DropZone;
-  } | null>(null);
-  // ghost 跟随指针的 ref（拖动态显示 marker + 实例名）。
-  const draggingRef = dragState?.ref ?? null;
 
   // tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。
-  // minimize 复用 onCloseTab（removeTabFromGroup，session 存活）；kill 走 closeInstance
-  //（useCloseSession，自带 confirm → close API → 失效缓存）。菜单锚定右键 pointer 坐标，
-  // document pointerdown 外点 / Esc 关闭（仿 SessionDetailActionsMenu）。
+  // minimize 复用 onCloseTab（WorkbenchContent 注入，session 存活）；kill 走 closeInstance
+  //（WorkbenchContent closeInstance，confirm → close API → 失效缓存）。
   const [contextMenu, setContextMenu] = useState<{
     groupId: string;
     tabId: string;
@@ -412,168 +269,26 @@ export function InstanceArea({
     setContextMenu(null);
   }, [contextMenu, closeInstance]);
 
-  const onDrop = useCallback(() => {
-    const drag = dragState;
-    const zone = activeZone;
-    setDragState(null);
-    setActiveZone(null);
-    if (!drag || !zone) return;
-    const prev = layout;
-    const next = dropIntoLeaf(prev, drag.ref, zone.targetGroupId, zone.zone);
-    if (next === prev) return; // noop（自身 drop / target 不在）：跳过 navigate
-    update(() => next);
-    // drop 后自动聚焦新 leaf/tab（用户刚拖的实例，预期看其 output）。
-    void navigateWorkbench(scope, drag.ref.sessionId);
-  }, [dragState, activeZone, layout, update, navigateWorkbench, scope]);
-
-  const cancelDrag = useCallback(() => {
-    setDragState(null);
-    setActiveZone(null);
-  }, []);
-
-  // 拖动源卡片启动回调（DragSourceCard onDragStart 传 ref）。
-  const onCardDragStart = useCallback(
-    (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => {
-      setDragState({
-        ref,
-        startX: event.clientX,
-        startY: event.clientY,
-        currentX: event.clientX,
-        currentY: event.clientY,
-      });
-      setActiveZone(null);
-    },
-    [],
-  );
-  const gridCallbacks: GridItemCallbacks = {
-    onClose: closeInstance,
-    onRename: renameInstance,
-    onSelect: focusInstance,
-    t,
-  };
-
-  // grid 数据源：global 用 candidates（跨项目聚合），project 用 useProjectInstances（本项目全览）。
-  const gridItems = useMemo<InstanceGridItem[]>(
-    () =>
-      scope.kind === "global"
-        ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
-        : projectInstances.instances.map((entry) =>
-            instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
-          ),
-    // gridCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
-    // 引用由 hook 内 dataKey fingerprint 稳定（data 不变时不新建数组）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, candidates, projectInstances.instances, t],
-  );
-
-  // 左总览 overview 内容按 view 分支（设计 §5）：grid → InstanceGrid（空 → EmptyInstanceArea）；
-  // grouped → GroupedView（仅 global scope，按项目分段）；table → SessionTable（空 → EmptyInstanceArea）。
-  const showGrid = resolvedView === "grid";
-  const showGrouped = resolvedView === "grouped" && scope.kind === "global";
-  const showTable = resolvedView === "table";
-  // 桌面左总览拖放适配器（Phase B）：InstanceGrid/GroupedView 包 DragSourceCard；移动端不进此分支。
-  const dragAdapter: DragSourceAdapter = { onDragStart: onCardDragStart, onSelect: focusInstance };
-  // grid view dragRefs：global 用 candidates，project 用 projectInstances（sessionId → ref）。
-  const gridDragRefs = useMemo(() => {
-    const m = new Map<string, WorkbenchPanelRef>();
-    if (scope.kind === "global") {
-      for (const c of candidates) m.set(c.ref.sessionId, c.ref);
-    } else {
-      for (const entry of projectInstances.instances) {
-        m.set(entry.session.id, { projectName: scope.key, sessionId: entry.session.id });
-      }
-    }
-    return m;
-  }, [scope, candidates, projectInstances.instances]);
-  // table 列回调（与 gridCallbacks 同源：select 进聚焦态 / close 走 useCloseSession）；t 用
-  // TranslateFn（带 params，给 relativeTime 的 time.minutesAgo {count} 用，比 GridItemCallbacks 窄签名宽）。
-  const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
-  const tableRows = useMemo<SessionTableRow[]>(
-    () =>
-      scope.kind === "global"
-        ? candidates.map((candidate) => candidateToTableRow(candidate, tableCallbacks))
-        : projectInstances.instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
-    // tableCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
-    // 引用由 hook 内 dataKey fingerprint 稳定（与 gridItems 同款）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, candidates, projectInstances.instances, t],
-  );
-  // table 列：global 4 列（name 首列 + project）/ project 3 列（隐藏 project，设计 §9）。
-  // type 已并入 name 列（StatusMarker + 会话名），无独立 type 列；状态圆点并入 name 列 marker 右上角。
-  const tableColumns: TableColumn[] =
-    scope.kind === "global"
-      ? ["name", "project", "activity", "actions"]
-      : ["name", "activity", "actions"];
-  // 总览加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea
-  //（后者是"创建实例"空态，加载中显示会误导用户以为无实例）。project 用 useProjectInstances
-  // 的 isLoading，global 用 candidatesLoaded（聚合多 query 的 settled 标量）。
-  const overviewLoading =
-    scope.kind === "project"
-      ? projectInstances.isLoading && projectInstances.instances.length === 0
-      : !candidatesLoaded && candidates.length === 0;
-  const leftOverviewContent = overviewLoading ? (
-    <div className="px-3 py-2">
-      <CardGridSkeleton />
-    </div>
-  ) : showGrid ? (
-    gridItems.length === 0 ? (
-      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
-    ) : (
-      <div className="px-3 py-2">
-        <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} />
-      </div>
-    )
-  ) : showGrouped ? (
-    <GroupedView
-      candidates={candidates}
-      dragAdapter={dragAdapter}
-      onClose={closeInstance}
-      onFocus={focusInstance}
-      onRename={renameInstance}
-      t={t}
-    />
-  ) : showTable ? (
-    tableRows.length === 0 ? (
-      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
-    ) : (
-      <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-    )
-  ) : null;
-
-  // 中栏内容按 tab 分支（设计 §4）：工作态 tab（overview/history）= 左右结构（左总览固定宽 +
-  //   右工作区常驻活动组）；inspection tab（files/git）= 全宽 inspection，右工作区临时让位。
-  //   history 左总览 = HistoryList（project-scoped 历史 session，showLabel=false 因 tab bar 已标识）。
+  // 中栏内容按 tab 分支（设计 §4）：overview = 右工作区全宽（左总览已搬 leftPanel）；
+  //   history = 全宽 HistoryList；inspection tab（files/git）= 全宽 plugin.render。
   const isOverview = resolvedTab === "overview";
   const isHistory = !isOverview && resolvedTab === "history";
-  // 左右结构仅 overview：history 全宽呈现历史列表（点会话 → 切 overview + 聚焦，设计 §4），
-  // inspection tab 全宽 plugin.render。故 inspectionPlugin 只在非 overview/非 history 时查。
   const inspectionPlugin =
     isOverview || isHistory
       ? null
       : FIRST_PARTY_PLUGINS.find((plugin) => plugin.id === resolvedTab);
-  // 左总览仅 overview 存在；history / inspection tab 全宽，无左总览。CreateSessionBar +
-  // ViewSwitcher 随左总览 header 一起只在 overview 渲染（设计 §6）。
-  const leftColumnContent = isOverview ? leftOverviewContent : null;
-  // 右工作区 = n 叉树递归渲染（设计 §7.5）。多 leaf 同屏：split 容器 flex 按 sizes 权重
-  //（key=childId）等分，children 间 gutter 拖拽调占比（resizeSplitChildren 守恒钳制）。
-  // maximized 时 WorkspaceTree 短路只渲染该 leaf 全屏。
-  // dragState 期间 WorkspaceTree 根容器用 pointer-events:none 让 elementFromPoint 命中 overlay
-  // 下层 GroupCell 的 data-drop-group（pointer capture 在源卡片，overlay 不接 pointer 事件）。
+  // 右工作区 = n 叉树递归渲染（设计 §7.5）。dragState 期间 WorkspaceTree 根容器 pointer-events:none
+  // 让 elementFromPoint 命中 overlay 下层 GroupCell 的 data-drop-group（pointer capture 在源卡片）。
   const rightWorkspace = (
     <WorkspaceTree
       activeZone={activeZone}
       create={create}
       draggingRef={draggingRef}
-      hasActiveInstances={refs.length > 0}
+      hasActiveInstances={refsCount > 0}
       maximized={layout.maximized}
       onCloseLeafTab={onCloseTab}
       onResizeSplit={onResizeSplit}
-      onSelectTab={(groupId, tabId) => {
-        // 点 tab = 切活动 tab（setActiveTabInLeaf 即时切视觉）+ navigate（URL focusId 同步）。
-        // navigate 会再触发 focus effect，但 setActiveTabInLeaf 幂等，无副作用。
-        update((prev) => setActiveTabInLeaf(prev, groupId, tabId));
-        if (tabId !== focusId) void navigateWorkbench(scope, tabId);
-      }}
+      onSelectTab={onSelectTab}
       onTabContextMenu={onTabContextMenu}
       onTabDragStart={onCardDragStart}
       onToggleMaximize={onToggleMaximize}
@@ -581,61 +296,28 @@ export function InstanceArea({
       root={layout.root}
     />
   );
+  // 右工作区 + drop overlay。外层 relative 容器承接空态 drop（data-drop-empty）；
+  // dragState 期间 DropZoneOverlay 显示 zone 高亮。WorkspaceGrid 空 panels 时
+  // 渲染 EmptyInstanceArea（也标注 data-drop-empty 让空白区 drop 命中）。
   const tabContent = isOverview ? (
-    <div className="flex h-full min-h-0">
-      <div
-        className="relative flex h-full shrink-0 flex-col overflow-hidden"
-        style={{ width: `${middleLeftWidth}rem` }}
-      >
-        {/* 左总览顶部 header：CreateSessionBar（project only）+ ViewSwitcher（overview only）。
-            tab 行只剩纯 tab，控件随左总览只在 overview 渲染（设计 §6）。ViewSwitcher 用
-            ml-auto wrapper 推到 header 右侧（global 无 CreateSessionBar 时独占右侧）。 */}
-        <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
-          {ctx.projectKey !== null ? (
-            <CreateSessionBar
-              isCreating={create.isCreating}
-              onCreateAgent={create.createAgent}
-              onCreateTerminal={create.createTerminal}
-            />
-          ) : null}
-          {onViewChange ? (
-            <div className="ml-auto">
-              <ViewSwitcher
-                ariaLabel={t("workbench.viewSwitcher")}
-                onChange={onViewChange}
-                view={resolvedView}
-                views={viewOptions}
-              />
-            </div>
-          ) : null}
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{leftColumnContent}</div>
-        <ResizeGutter edge="right" onResize={onResizeMiddleLeft} />
-      </div>
-      {/* 右工作区 + drop overlay。外层 relative 容器承接空态 drop（data-drop-empty）；
-          dragState 期间 DropZoneOverlay 显示 zone 高亮。WorkspaceGrid 空 panels 时
-          渲染 EmptyInstanceArea（也标注 data-drop-empty 让空白区 drop 命中）。 */}
-      <div
-        className="relative min-w-0 flex-1"
-        data-drop-empty={layout.root === null ? "" : undefined}
-      >
-        {rightWorkspace}
-        {dragState ? (
-          <DropZoneOverlay
-            activeZone={activeZone}
-            dragPointer={{ x: dragState.currentX, y: dragState.currentY }}
-            dragSourceRef={draggingRef}
-            layout={layout}
-            onCancel={cancelDrag}
-            onDrop={onDrop}
-            onPointerMove={(x, y) =>
-              setDragState((prev) => (prev ? { ...prev, currentX: x, currentY: y } : prev))
-            }
-            onZoneChange={setActiveZone}
-            t={t}
-          />
-        ) : null}
-      </div>
+    <div
+      className="relative min-h-0 flex-1"
+      data-drop-empty={layout.root === null ? "" : undefined}
+    >
+      {rightWorkspace}
+      {dragState ? (
+        <DropZoneOverlay
+          activeZone={activeZone}
+          dragPointer={{ x: dragState.currentX, y: dragState.currentY }}
+          dragSourceRef={draggingRef}
+          layout={layout}
+          onCancel={cancelDrag}
+          onDrop={onDrop}
+          onPointerMove={onSetDragPointer}
+          onZoneChange={setActiveZone}
+          t={t}
+        />
+      ) : null}
     </div>
   ) : isHistory && ctx.projectKey !== null ? (
     <div className="h-full overflow-y-auto p-3">
@@ -658,8 +340,6 @@ export function InstanceArea({
         ))}
       </div>
       <div className="flex min-h-0 flex-1 flex-col">{tabContent}</div>
-      {holder}
-      {renameHolder}
       {contextMenu ? (
         <TabContextMenu
           anchor={contextMenu}
@@ -668,10 +348,205 @@ export function InstanceArea({
           onMinimize={onMinimizeTab}
         />
       ) : null}
-      {create.promptHolder}
     </div>
   );
 }
+
+/**
+ * 左总览（Phase 2a 方案 X）：从 InstanceArea 提取的左总览纯渲染组件，承载于 WorkbenchShell
+ * `leftPanel`（DOM 四栏第 1 列）。渲染 CreateSessionBar（project only）+ ViewSwitcher + grid/
+ * grouped/table 分支 + EmptyInstanceArea + CardGridSkeleton。
+ *
+ * **无 state**：所有数据（candidates/projectInstances/create/回调/dragAdapter）由 WorkbenchContent
+ * 经 props 注入；dragState 不进 props（拖动期间不重渲染），故用 `memo` 包裹。内部仅派生纯计算
+ *（viewOptions/resolvedView/gridItems/tableRows/gridDragRefs/overviewLoading）。
+ *
+ * 与 InstanceArea（瘦身后的右工作区）互补：本组件出拖放源（dragAdapter），InstanceArea 收拖放
+ * 目标（DropZoneOverlay）。onCardDragStart 单一实例由 WorkbenchContent 创建，卡片源 + tab 源共享。
+ */
+type InstanceLeftOverviewProps = {
+  scope: WorkbenchScope;
+  /** inspection 插件上下文；本组件仅用 ctx.projectKey（CreateSessionBar/EmptyInstanceArea/projectName）。 */
+  ctx: PluginContext;
+  /** 总览视图（URL `?view` + atom 回退，WorkbenchContent 解析后传入）。 */
+  view?: WorkbenchView;
+  /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */
+  onViewChange?: (next: WorkbenchView) => void;
+  /** 创建实例 API（useCreateSession；global scope 时 projectName=null → create 仍传但 createAgent/createTerminal 为 noop）。 */
+  create: CreateSessionApi;
+  /** global scope 跨项目聚合候选（useGlobalInstanceCandidates）；project scope 传空数组。 */
+  candidates: GlobalInstanceCandidate[];
+  /** global candidates 是否全部 settled（聚合多 query 的 settled 标量，驱动 overviewLoading）。 */
+  candidatesLoaded: boolean;
+  /** project scope 活跃实例（useProjectInstances）；global scope 传空 instances。 */
+  projectInstances: { instances: ProjectInstanceEntry[]; isLoading: boolean };
+  /** 单击实例 → 进聚焦态（navigateWorkbench）。 */
+  onFocusInstance: (sessionId: string) => void;
+  /** 关闭实例（useCloseSession，confirm → close API → 失效缓存）。 */
+  onCloseInstance: (sessionId: string, type: "agent" | "terminal") => void;
+  /** 改名实例（useRenameSession，prompt → rename API）。 */
+  onRenameInstance: (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => void;
+  /** 拖放源适配器（onDragStart=启动拖动态，onSelect=单击激活）。WorkbenchContent 创建单一实例。 */
+  dragAdapter: DragSourceAdapter;
+};
+
+function InstanceLeftOverviewBase({
+  scope,
+  ctx,
+  view,
+  onViewChange,
+  create,
+  candidates,
+  candidatesLoaded,
+  projectInstances,
+  onFocusInstance,
+  onCloseInstance,
+  onRenameInstance,
+  dragAdapter,
+}: InstanceLeftOverviewProps) {
+  const { t } = useT();
+
+  // ViewSwitcher 视图选项（按 scope 过滤，设计 §6）。
+  const viewOptions = useMemo(
+    () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
+    [scope, t],
+  );
+  // P3 总览视图守卫：URL/atom 的 view 若不在当前 scope 可见视图集 → 回退 "grid"。
+  const resolvedView: WorkbenchView =
+    view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
+
+  // grid 数据源：global 用 candidates（跨项目聚合），project 用 useProjectInstances（本项目全览）。
+  const gridCallbacks: GridItemCallbacks = {
+    onClose: onCloseInstance,
+    onRename: onRenameInstance,
+    onSelect: onFocusInstance,
+    t,
+  };
+  const gridItems = useMemo<InstanceGridItem[]>(
+    () =>
+      scope.kind === "global"
+        ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
+        : projectInstances.instances.map((entry) =>
+            instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
+          ),
+    // gridCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
+    // 引用由 hook 内 dataKey fingerprint 稳定（data 不变时不新建数组）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, candidates, projectInstances.instances, t],
+  );
+
+  // 左总览 overview 内容按 view 分支（设计 §5）：grid → InstanceGrid（空 → EmptyInstanceArea）；
+  // grouped → GroupedView（仅 global scope，按项目分段）；table → SessionTable（空 → EmptyInstanceArea）。
+  const showGrid = resolvedView === "grid";
+  const showGrouped = resolvedView === "grouped" && scope.kind === "global";
+  const showTable = resolvedView === "table";
+  // grid view dragRefs：global 用 candidates，project 用 projectInstances（sessionId → ref）。
+  const gridDragRefs = useMemo(() => {
+    const m = new Map<string, WorkbenchPanelRef>();
+    if (scope.kind === "global") {
+      for (const c of candidates) m.set(c.ref.sessionId, c.ref);
+    } else {
+      for (const entry of projectInstances.instances) {
+        m.set(entry.session.id, { projectName: scope.key, sessionId: entry.session.id });
+      }
+    }
+    return m;
+  }, [scope, candidates, projectInstances.instances]);
+  // table 列回调（与 gridCallbacks 同源）；t 用 TranslateFn（relativeTime 的 time.minutesAgo {count}）。
+  const tableCallbacks: TableRowCallbacks = {
+    onClose: onCloseInstance,
+    onSelect: onFocusInstance,
+    t,
+  };
+  const tableRows = useMemo<SessionTableRow[]>(
+    () =>
+      scope.kind === "global"
+        ? candidates.map((candidate) => candidateToTableRow(candidate, tableCallbacks))
+        : projectInstances.instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
+    // tableCallbacks 闭包依赖 scope/candidates/t，已被下方 deps 覆盖；projectInstances.instances
+    // 引用由 hook 内 dataKey fingerprint 稳定（与 gridItems 同款）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, candidates, projectInstances.instances, t],
+  );
+  // table 列：global 4 列（name 首列 + project）/ project 3 列（隐藏 project，设计 §9）。
+  const tableColumns: TableColumn[] =
+    scope.kind === "global"
+      ? ["name", "project", "activity", "actions"]
+      : ["name", "activity", "actions"];
+  // 总览加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
+  const overviewLoading =
+    scope.kind === "project"
+      ? projectInstances.isLoading && projectInstances.instances.length === 0
+      : !candidatesLoaded && candidates.length === 0;
+  const leftOverviewContent = overviewLoading ? (
+    <div className="px-3 py-2">
+      <CardGridSkeleton />
+    </div>
+  ) : showGrid ? (
+    gridItems.length === 0 ? (
+      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+    ) : (
+      <div className="px-3 py-2">
+        <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} />
+      </div>
+    )
+  ) : showGrouped ? (
+    <GroupedView
+      candidates={candidates}
+      dragAdapter={dragAdapter}
+      onClose={onCloseInstance}
+      onFocus={onFocusInstance}
+      onRename={onRenameInstance}
+      t={t}
+    />
+  ) : showTable ? (
+    tableRows.length === 0 ? (
+      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+    ) : (
+      <SessionTable columns={tableColumns} rows={tableRows} t={t} />
+    )
+  ) : null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* 左总览顶部 header：CreateSessionBar（project only）+ ViewSwitcher（overview only）。
+          ViewSwitcher 用 ml-auto wrapper 推到 header 右侧（global 无 CreateSessionBar 时独占右侧）。 */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
+        {ctx.projectKey !== null ? (
+          <CreateSessionBar
+            isCreating={create.isCreating}
+            onCreateAgent={create.createAgent}
+            onCreateTerminal={create.createTerminal}
+          />
+        ) : null}
+        {onViewChange ? (
+          <div className="ml-auto">
+            <ViewSwitcher
+              ariaLabel={t("workbench.viewSwitcher")}
+              onChange={onViewChange}
+              view={resolvedView}
+              views={viewOptions}
+            />
+          </div>
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{leftOverviewContent}</div>
+    </div>
+  );
+}
+
+/**
+ * `memo` 包裹：dragState 不进 InstanceLeftOverview props（拖动期间 WorkbenchContent 的 dragState
+ * 变化不触发本组件重渲染），仅 scope/ctx/view/create/candidates/projectInstances/回调/dragAdapter
+ * 变化才重渲染。回调由 WorkbenchContent 用 useCallback 稳定，candidates/projectInstances 由 hook
+ * fingerprint 稳定 → 拖动高频 setDragState 不波及左总览。
+ */
+export const InstanceLeftOverview = memo(InstanceLeftOverviewBase);
 
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;

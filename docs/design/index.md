@@ -9,8 +9,8 @@
 ## 文档
 
 - [DESIGN.md](./DESIGN.md) — agents-remote 的设计系统权威源（Google DESIGN.md 格式）：以 YAML tokens + 8 section prose 统一深色 Server Agent Console 的颜色/字体/圆角/间距/组件，作为人 + AI 编码 agent 持续对齐样式细节的唯一标尺。
-- [activity-bar-redesign.md](./activity-bar-redesign.md) — VSCode 式全局活动栏（一级导航 项目/文件/设置）重设计：桌面竖行工具条+左/中栏、移动底部胶囊，两端 IA 一一对应；演进自 workbench-views.md，协商中（WIP，含决策日志与待定点）。
-- [activity-bar-redesign-plan.md](./activity-bar-redesign-plan.md) — 全局活动栏重设计的实施计划草案：6 phase（0 导航 state+primitive / 1 桌面四栏 / 2 左栏随导航切换 / 3 进入项目后左栏多导航 / 4 移动端 / 5 门禁）+ 4 个待决策点；对照 activity-bar-redesign.md §8 现状锚点，待用户审阅。
+- [activity-bar-redesign.md](./activity-bar-redesign.md) — VSCode 式全局活动栏（一级导航 项目/文件/设置）重设计：桌面竖行工具条+左/中栏、移动底部胶囊，两端 IA 一一对应；演进自 workbench-views.md，决策全部敲定（§6 17 条 + §2 决策日志），分阶段实现中。
+- [activity-bar-redesign-plan.md](./activity-bar-redesign-plan.md) — 全局活动栏重设计的实施计划：6 phase（0 导航 state+primitive / 1 桌面四栏 / 2 左栏随导航切换 / 3 进入项目后左栏多导航 / 4 移动端 / 5 门禁）；对照 activity-bar-redesign.md §8 现状锚点，Phase 2a（方案 X 拆 InstanceArea）实现中。
 - [agent-provider-experience.md](./agent-provider-experience.md) — 定义 Claude/Codex provider 可见体验、AgentRuntime/provider profile 边界、Agent workspace provider create/current instance 边界和 history/resume 分阶段设计。
 - [agent-session-model.md](./agent-session-model.md) — 定义 AgentSession、TerminalSession、transportSession、conversationThread 与 turn/run 的长期设计边界。
 - [claude2-provider-protocol.md](./claude2-provider-protocol.md) — 定义 Claude2 provider 的完整协议设计，包括双层 ID 架构（tool_use.id 持久化主键 vs request_id 瞬态 RPC key）、缓冲策略、服务端驱动的卡片状态机、与 hapi 的对照，以及预留的 Codex 接入模式。
