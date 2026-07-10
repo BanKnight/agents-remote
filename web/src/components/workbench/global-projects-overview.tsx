@@ -234,7 +234,7 @@ type GroupedProjectsListProps = {
 
 /**
  * grouped 唯一实现（批 F / 决策 29）：mergeProjectsWithCandidates 含空项目；
- * 行 = [折叠 gutter h-7][项目名 flex-1 进项目][⋯ 删除 destructive]；
+ * 行 = 苹果双件套（决策 30）：[折叠附属控件][项目名单击进项目][⋯ 删除]；
  * 折叠双名单——有实例 collapsed（默认展开）/ 空项目 expandedEmpty（默认折叠）。
  */
 function GroupedProjectsList({
@@ -297,17 +297,17 @@ function GroupedProjectsList({
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
           <section key={group.projectName}>
-            <div className="flex items-center gap-1 px-2 py-1.5">
+            <div className="flex items-center gap-2 px-2 py-1.5">
               <button
                 aria-expanded={!collapsedNow}
                 aria-label={t("workbench.toggleGroup")}
-                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface -ml-1"
                 onClick={() => toggleGroup(group.projectName, isEmpty)}
                 type="button"
               >
                 <svg
                   aria-hidden="true"
-                  className={`size-3 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
+                  className={`size-3.5 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
                   fill="none"
                   viewBox="0 0 16 16"
                 >
@@ -343,7 +343,7 @@ function GroupedProjectsList({
                 trigger={
                   <button
                     aria-label={t("session.actions")}
-                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                    className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
                     type="button"
                   >
                     <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
