@@ -1,17 +1,20 @@
 import {
   type CSSProperties,
+  type FormEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
   memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAtom } from "jotai";
 import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
 import {
   type DropZone,
@@ -26,10 +29,11 @@ import {
   DRAG_THRESHOLD_PX,
   deriveZone,
   filterWorkbenchViews,
-  groupByProject,
   inferSessionTypeFromId,
+  mergeProjectsWithCandidates,
   rankGlobalInstances,
   tabIdOf,
+  workbenchGroupedCollapsedAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import {
@@ -37,6 +41,7 @@ import {
   closeTerminalSession,
   createAgentSession,
   createTerminalSession,
+  deleteProject,
   getAgentSession,
   getTerminalSession,
   listAgentSessions,
@@ -56,7 +61,6 @@ import {
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
-  ShellSectionLabel,
   statusToTone,
   ViewSwitcher,
 } from "../shell/shell-primitives";
@@ -74,6 +78,8 @@ import {
 } from "../ui/dropdown-menu";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
+import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
+import { Dialog, DialogContent } from "../ui/dialog";
 
 /** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
 export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
@@ -110,12 +116,17 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
  * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
  */
-export function CardGridSkeleton() {
+export function CardGridSkeleton({ plain = false }: { plain?: boolean } = {}) {
   return (
-    <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
+    <div
+      className={plain ? "grid divide-y divide-neutral-line/40" : "grid gap-2"}
+      style={INSTANCE_GRID_STYLE}
+    >
       {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
         <div
-          className={`relative flex items-start gap-3 rounded-lg p-3 ${shellSurfaceClasses.raised}`}
+          className={`relative flex items-start gap-3 p-3 ${
+            plain ? "" : `rounded-lg ${shellSurfaceClasses.raised}`
+          }`}
           key={index}
         >
           <span aria-hidden="true" className="skeleton-shimmer h-9 w-9 shrink-0 rounded-md" />
@@ -368,6 +379,23 @@ function InstanceLeftOverviewBase({
 }: InstanceLeftOverviewProps) {
   const { t } = useT();
 
+  // 新建项目入口（global scope 专属，header 新建按钮 + ProjectSetupPanel Dialog）。InstanceLeftOverview
+  // 整体设计为"无 state"（数据全 props 注入、memo 包裹避免拖动期重渲染）；新建项目 Dialog 是组件
+  // 本地 UI 入口（低频交互，不参与拖动高频流），故用内部 useState + useCreateProject，而非再开一条
+  // props 管道。create 重命名为 createProjectMutation 以避开 props.create（CreateSessionApi）。
+  const inputId = useId();
+  const [setupOpen, setSetupOpen] = useState(false);
+  const { create: createProjectMutation, projectPath, setProjectPath } = useCreateProject();
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedPath = projectPath.trim();
+    if (trimmedPath.length === 0 || createProjectMutation.isPending) return;
+    createProjectMutation.mutate(trimmedPath);
+  };
+  const setupVisible =
+    setupOpen || createProjectMutation.isPending || createProjectMutation.error instanceof Error;
+
   // ViewSwitcher 视图选项（按 scope 过滤，设计 §6）。
   const viewOptions = useMemo(
     () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
@@ -446,14 +474,14 @@ function InstanceLeftOverviewBase({
       : !candidatesLoaded && candidates.length === 0;
   const leftOverviewContent = overviewLoading ? (
     <div className="px-3 py-2">
-      <CardGridSkeleton />
+      <CardGridSkeleton plain={showGrid || showGrouped} />
     </div>
   ) : showGrid ? (
     gridItems.length === 0 ? (
       <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
     ) : (
       <div className="px-3 py-2">
-        <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} />
+        <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
       </div>
     )
   ) : showGrouped ? (
@@ -475,8 +503,9 @@ function InstanceLeftOverviewBase({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 左总览顶部 header：CreateSessionBar（project only）+ ViewSwitcher（overview only）。
-          ViewSwitcher 用 ml-auto wrapper 推到 header 右侧（global 无 CreateSessionBar 时独占右侧）。 */}
+      {/* 左总览顶部 header：project scope = CreateSessionBar（创建实例）；global scope = 新建项目按钮
+          （移自 ProjectLeftPanel ProjectsSectionHeader；设计：global 左栏 = 纯多视图列表，新建入口
+          放 header ViewSwitcher 左侧）。ViewSwitcher 用 ml-auto wrapper 推到 header 右侧。 */}
       <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
         {ctx.projectKey !== null ? (
           <CreateSessionBar
@@ -484,7 +513,23 @@ function InstanceLeftOverviewBase({
             onCreateAgent={create.createAgent}
             onCreateTerminal={create.createTerminal}
           />
-        ) : null}
+        ) : (
+          <button
+            aria-label={t("home.createProjectAria")}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+            onClick={() => setSetupOpen(true)}
+            type="button"
+          >
+            <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
+              <path
+                d="M8 3v10M3 8h10"
+                strokeLinecap="round"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              />
+            </svg>
+          </button>
+        )}
         {onViewChange ? (
           <div className="ml-auto">
             <ViewSwitcher
@@ -497,6 +542,22 @@ function InstanceLeftOverviewBase({
         ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{leftOverviewContent}</div>
+      {ctx.projectKey === null ? (
+        <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
+          <DialogContent className="overflow-y-auto p-0">
+            <ProjectSetupPanel
+              createError={
+                createProjectMutation.error instanceof Error ? createProjectMutation.error : null
+              }
+              inputId={inputId}
+              isPending={createProjectMutation.isPending}
+              onProjectPathChange={setProjectPath}
+              onSubmit={handleSubmit}
+              projectPath={projectPath}
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
@@ -1191,16 +1252,32 @@ export type GridItemCallbacks = {
  * 移动端 / left-rail 不传 → 退化纯 InstanceCard（零回归）。dragRefs 按 InstanceGridItem.key
  *（= sessionId）查 WorkbenchPanelRef。 */
 export function InstanceGrid({
+  gap = true,
   items,
+  plain = false,
   dragAdapter,
   dragRefs,
 }: {
+  /** 卡片间距：默认 gap-2（桌面/移动 grid）；grouped 视图每组实例列表传 false（无 gap，设计 §5 条 5）。 */
+  gap?: boolean;
   items: InstanceGridItem[];
+  /** 卡片 surface：true = plain 扁平连续（去 raised border/bg + rounded-lg，对齐 `list` plain 行 token；
+   *  设计 §7 card 段 InstanceCard surface 两态）。grid/grouped 密集网格视图传 true；默认 false = raised
+   *  独立圆角卡。容器分隔：plain 统一 divide-y 连续行分割线（不论 gap，密集清单靠分割线非空隙）；非 plain raised 卡靠 gap-2 或自身 border。 */
+  plain?: boolean;
   dragAdapter?: DragSourceAdapter;
   dragRefs?: Map<string, WorkbenchPanelRef>;
 }) {
+  const surface = plain ? "plain" : "raised";
+  // plain：统一 divide-y 连续行分割线（密集清单靠分割线分隔，非 gap 空隙，对齐 list 契约）；
+  // 非 plain：raised 独立卡靠 gap-2（grid）或自身 border（grouped）分隔。
+  const containerClass = plain
+    ? "grid divide-y divide-neutral-line/40"
+    : gap
+      ? "grid gap-2"
+      : "grid";
   return (
-    <div className="grid gap-2" style={INSTANCE_GRID_STYLE}>
+    <div className={containerClass} style={INSTANCE_GRID_STYLE}>
       {items.map(({ key, ...card }) =>
         dragAdapter && dragRefs ? (
           <DragSourceCard
@@ -1209,10 +1286,10 @@ export function InstanceGrid({
             onDragStart={dragAdapter.onDragStart}
             onSelect={() => dragAdapter.onSelect(key)}
           >
-            <InstanceCard {...card} />
+            <InstanceCard {...card} surface={surface} />
           </DragSourceCard>
         ) : (
-          <InstanceCard key={key} {...card} />
+          <InstanceCard key={key} {...card} surface={surface} />
         ),
       )}
     </div>
@@ -1381,24 +1458,119 @@ type GroupedViewProps = {
  * 传时启用拖放（每个 candidate.ref 进 dragRefs）。
  */
 function GroupedView({ candidates, onClose, onFocus, onRename, t, dragAdapter }: GroupedViewProps) {
-  const groups = groupByProject(candidates);
+  // 全项目列表（含无实例项目，设计 §5 条 4）+ candidates 分组合并。projects query 与 ProjectLeftPanel/
+  // mobile-workbench 同 key（["projects"]），React Query dedupe。mergeProjectsWithCandidates 以 projects
+  // 列表为主序，无实例项目 candidates=[]。
+  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
+  const projectNames = projects.data?.projects.map((p) => p.name) ?? [];
+  const groups = useMemo(
+    () => mergeProjectsWithCandidates(projectNames, candidates),
+    [projectNames, candidates],
+  );
+  // 每组独立折叠 + localStorage 持久化（workbenchGroupedCollapsedAtom，设计 §5 条 3）。
+  const [collapsed, setCollapsed] = useAtom(workbenchGroupedCollapsedAtom);
+  const navigate = useNavigate();
+  const { confirm, holder: confirmHolder } = useConfirm();
+  const queryClient = useQueryClient();
+  const deleteMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+  });
+
   const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
+  const isCollapsed = (name: string) => collapsed.includes(name);
+  const toggleGroup = (name: string) =>
+    setCollapsed((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
+  const requestDelete = async (projectName: string) => {
+    const ok = await confirm({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("project.deleteProject"),
+      message: t("project.deleteProjectConfirm"),
+      title: t("project.deleteProject"),
+      tone: "danger",
+    });
+    if (ok) deleteMutation.mutate(projectName);
+  };
+  const enterProject = (name: string) =>
+    void navigate({ to: "/projects/$key", params: { key: name } });
+
   return (
     <div className="h-full overflow-y-auto">
       {groups.map((group) => {
+        const collapsedNow = isCollapsed(group.projectName);
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
-          <div className="flex flex-col gap-2 px-3 py-2" key={group.projectName}>
-            <ShellSectionLabel>{group.projectName}</ShellSectionLabel>
-            <InstanceGrid
-              dragAdapter={dragAdapter}
-              dragRefs={dragRefs}
-              items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-            />
-          </div>
+          <section key={group.projectName}>
+            {/* 每组 header：[折叠按钮][项目名（非大写，点击进项目）]...[删除按钮]。设计 §5 条 3：
+                左折叠 + 右操作区（删除）。项目名非 ShellSectionLabel（避免 uppercase tracking）。 */}
+            <div className="flex items-center gap-1 px-2 py-1.5">
+              <button
+                aria-expanded={!collapsedNow}
+                aria-label={t("workbench.toggleGroup")}
+                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                onClick={() => toggleGroup(group.projectName)}
+                type="button"
+              >
+                <svg
+                  aria-hidden="true"
+                  className={`size-3 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
+                  fill="none"
+                  viewBox="0 0 16 16"
+                >
+                  <path
+                    d="M6 4l4 4-4 4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  />
+                </svg>
+              </button>
+              <button
+                className="flex min-w-0 flex-1 cursor-pointer items-center truncate rounded-md px-1 py-0.5 text-left text-xs font-semibold text-on-surface transition hover:bg-on-surface/5"
+                onClick={() => enterProject(group.projectName)}
+                title={group.projectName}
+                type="button"
+              >
+                {group.projectName}
+              </button>
+              <button
+                aria-label={t("project.deleteProject")}
+                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+                onClick={() => requestDelete(group.projectName)}
+                type="button"
+              >
+                <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
+                  <path
+                    d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 8.5h5L11 4M6.5 6.5v4M9.5 6.5v4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.2}
+                    stroke="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            {!collapsedNow ? (
+              group.candidates.length === 0 ? (
+                <div className="px-4 py-2 text-xs text-on-surface-muted">
+                  {t("workbench.groupedProjectEmpty")}
+                </div>
+              ) : (
+                <InstanceGrid
+                  dragAdapter={dragAdapter}
+                  dragRefs={dragRefs}
+                  gap={false}
+                  items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                  plain
+                />
+              )
+            ) : null}
+          </section>
         );
       })}
+      {confirmHolder}
     </div>
   );
 }

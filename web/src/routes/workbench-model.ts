@@ -127,6 +127,15 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
 );
 
 /**
+ * global grouped 视图每组项目折叠态（设计 §5：分组视图每组独立折叠 + localStorage 持久化）。
+ * 存已折叠项目名数组；toggle 增删项目名。跨窗口不同步（atomWithLocalOnlyStorage，个人布局）。
+ */
+export const workbenchGroupedCollapsedAtom = atomWithLocalOnlyStorage<string[]>(
+  "workbenchGroupedCollapsed",
+  [],
+);
+
+/**
  * 左栏宽度（rem）。@deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`
  *（16rem，容量更大适配 InstanceLeftOverview 单列卡片）。本 atom 仅保留作 localStorage
  * 一次性迁移源（WorkbenchContent mount 时把 `workbenchLeftWidth` 迁到
@@ -1230,6 +1239,29 @@ export function groupByProject(candidates: GlobalInstanceCandidate[]): ProjectGr
     }
   }
   return groups;
+}
+
+/**
+ * 全项目名（projects 列表顺序）+ candidates 分组合并（设计 §5：分组视图含无实例项目，空状态）。
+ * 与 groupByProject 区别：groupByProject 只含 candidates（有实例项目）；本函数以 projects 列表为主序，
+ * 无实例项目 candidates=[]。纯函数，桌面 GroupedView 用（global 跨项目分组 + 无实例项目空状态）。
+ * 组顺序 = projectNames 顺序（listProjects 返回顺序，稳定）。
+ */
+export function mergeProjectsWithCandidates(
+  projectNames: string[],
+  candidates: GlobalInstanceCandidate[],
+): ProjectGroup[] {
+  const byProject = new Map<string, GlobalInstanceCandidate[]>();
+  for (const candidate of candidates) {
+    const name = candidate.ref.projectName;
+    const arr = byProject.get(name);
+    if (arr) arr.push(candidate);
+    else byProject.set(name, [candidate]);
+  }
+  return projectNames.map((name) => ({
+    candidates: byProject.get(name) ?? [],
+    projectName: name,
+  }));
 }
 
 // ── 布局 atom（V3 n 叉树，按作用域隔离，localStorage 持久化 + V1→V2→V3 链式迁移）─────────

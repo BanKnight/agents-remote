@@ -581,6 +581,8 @@ export type InstanceCardProps = {
   onRename?: () => void;
   renameLabel?: string;
   status?: { label: string; tone: ShellTone };
+  /** surface 变体：`raised`（默认，独立圆角卡）/ `plain`（密集网格 `InstanceGrid`，扁平连续，对齐 `list` plain 行 token）。 */
+  surface?: "raised" | "plain";
   /** 第二行内容（agent=AI 回复 / terminal=最近命令），1 行截断；缺失则不渲染第二行。 */
   subtitle?: ReactNode;
   title: ReactNode;
@@ -590,8 +592,9 @@ export type InstanceCardProps = {
  * 实例卡片（设计文档 §7）。微信朋友圈式头像布局：左侧 marker 头像（lg=36px，`items-start` 上下
  * 置顶）独占一列 + 右侧内容区竖排 3 行：① title（会话名）；② subtitle（agent lastAssistantMessage
  * / terminal lastCommand，1 行截断，弱化色）；③ meta 行（项目名 · 最后活动时间，弱化色，从左往右
- * 紧凑排列）。subtitle 缺失退化 2 行；meta 文本缺失不渲染 meta 行。raised surface + rounded-lg，
- * 点击 onSelect 进详情。
+ * 紧凑排列）。subtitle 缺失退化 2 行；meta 文本缺失不渲染 meta 行。默认 `surface="raised"`
+ *（raised surface + rounded-lg）；`surface="plain"` 去 raised border/bg + rounded-lg，用于密集网格
+ *（InstanceGrid grid/grouped 视图，对齐 `list` plain 行 token，设计 §7 card 段）。点击 onSelect 进详情。
  *
  * **折叠操作区**：卡片右上角 absolute ⋯ 触发按钮（`absolute top-2 right-2`），走统一 `<ActionMenu>`
  * 原语（改名 / 关闭两项；token 见 DESIGN.md `action-menu` 条目）。移动端从底部 action sheet 展开，
@@ -611,9 +614,11 @@ export function InstanceCard({
   projectName,
   renameLabel,
   status,
+  surface = "raised",
   subtitle,
   title,
 }: InstanceCardProps) {
+  const isPlain = surface === "plain";
   const hasMetaText = projectName || activity;
   const hasActions = onRename || onClose;
   const items: ActionMenuItem[] = [];
@@ -631,7 +636,13 @@ export function InstanceCard({
 
   return (
     <div
-      className={`group relative flex min-w-0 cursor-pointer items-start gap-3 rounded-lg p-3 transition interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
+      className={`group relative flex min-w-0 cursor-pointer items-start gap-3 ${
+        isPlain ? "" : "rounded-lg"
+      } p-3 transition interactive-row ${
+        isPlain
+          ? "hover:bg-on-surface/5"
+          : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
+      }`}
       onClick={(e) => {
         // 忽略来自 ActionMenu portal（移动 sheet/scrim、桌面 popover、⋯ trigger 经 asChild）的 click：
         // 它们 portal 到 body，DOM 上 target 不在本卡片内，但 React 合成事件按 fiber 冒泡到此会误

@@ -696,11 +696,11 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
               )
             ) : isLoading && gridItems.length === 0 ? (
               <div className="px-3 py-2">
-                <CardGridSkeleton />
+                <CardGridSkeleton plain />
               </div>
             ) : gridItems.length > 0 ? (
               <div className="px-3 py-2">
-                <InstanceGrid items={gridItems} />
+                <InstanceGrid items={gridItems} plain />
               </div>
             ) : null}
             {/* closeHolder + promptHolder 统一渲染（grid/table 两视图共用；
@@ -864,6 +864,7 @@ function MobileGlobalOverview() {
                   />
                   <InstanceGrid
                     items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                    plain
                   />
                 </div>
               ))
@@ -871,7 +872,10 @@ function MobileGlobalOverview() {
               <SessionTable columns={tableColumns} rows={tableRows} t={t} />
             ) : (
               <div className="px-3 py-2">
-                <InstanceGrid items={candidates.map((c) => candidateToGridItem(c, callbacks))} />
+                <InstanceGrid
+                  items={candidates.map((c) => candidateToGridItem(c, callbacks))}
+                  plain
+                />
               </div>
             )}
           </nav>

@@ -436,6 +436,8 @@ export const en = {
   "workbench.createTerminal": "Terminal",
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
+  "workbench.groupedProjectEmpty": "No instances in this project",
+  "workbench.toggleGroup": "Toggle project group",
   "workbench.backToList": "Instances",
   "workbench.global": "Projects overview",
   "workbench.projectsAria": "Projects",
