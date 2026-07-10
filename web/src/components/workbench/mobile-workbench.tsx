@@ -701,7 +701,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
  * 指定作用域）。P4：加视图切换（grouped/grid/table，global 三视图全开——设计 §11）。
  * grouped = 按项目分段（groupByProject，与桌面 GroupedView 同源纯函数）；
  * grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。点卡片/行进
- * `/global/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API → invalidate）。
+ * `/projects/session/$focusId` 单实例聚焦。close 复用 useCloseSession（confirm → close API → invalidate）。
  * 视图记忆复用 workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。
  */
 function MobileGlobalOverview() {

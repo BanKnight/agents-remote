@@ -22,9 +22,9 @@ type ProjectLeftPanelProps = {
  * [项目] 活动栏左栏内容源（Phase 2a 方案 X，设计 §4.2 / §8.4）。承载 scope 切换 + 新建项目
  * + InstanceLeftOverview 实例总览。
  *
- * - global scope：GlobalNavNode(active →/global) + ProjectsSectionHeader(折叠+新建) + ProjectNode
+ * - global scope：GlobalNavNode(active →/projects) + ProjectsSectionHeader(折叠+新建) + ProjectNode
  *   列表(→/projects/$key) + InstanceLeftOverview。
- * - project scope：GlobalNavNode(active=false →/global，返回全局) + InstanceLeftOverview
+ * - project scope：GlobalNavNode(active=false →/projects，返回全局) + InstanceLeftOverview
  *   （不显项目列表，设计 §6 决策 1）。
  *
  * 设置入口由 [设置] 活动栏取代（left-rail footer 删除）。ProjectSetupPanel 新建项目 Dialog
@@ -46,7 +46,7 @@ export function ProjectLeftPanel({ scope, overview }: ProjectLeftPanelProps) {
   const selectProject = (name: string) => {
     void navigate({ to: "/projects/$key", params: { key: name } });
   };
-  const selectGlobal = () => void navigate({ to: "/global" });
+  const selectGlobal = () => void navigate({ to: "/projects" });
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

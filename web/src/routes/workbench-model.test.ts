@@ -52,7 +52,9 @@ test("parseWorkbenchScope: global literal vs project key", () => {
 });
 
 test("workbenchPath encodes scope + optional focusId", () => {
-  expect(workbenchPath({ kind: "global" })).toBe("/global");
+  // global scope URL = /projects（决策 22 重命名，项目总览语义）；project scope = /projects/$key。
+  expect(workbenchPath({ kind: "global" })).toBe("/projects");
+  expect(workbenchPath({ kind: "global" }, "agent_1")).toBe("/projects/session/agent_1");
   expect(workbenchPath({ kind: "project", key: "my proj" })).toBe("/projects/my%20proj");
   expect(workbenchPath({ kind: "project", key: "my proj" }, "agent_1")).toBe(
     "/projects/my%20proj/session/agent_1",

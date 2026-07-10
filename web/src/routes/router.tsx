@@ -55,16 +55,19 @@ const projectFileFocusRoute = createRoute({
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectFileFocusRoute"),
 });
 
+// global scope 路由（设计 activity-bar-redesign §6 决策 22）：`/global` 重命名为 `/projects`
+//（语义=项目总览，[项目] 导航）。scope kind `global` 类型保留，只改 URL path 段。与
+// `/projects/$key`（project scope）不冲突——TanStack Router 字面量段 `session` 优先于参数 `$key`。
 const globalScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/global",
+  path: "/projects",
   validateSearch: validateWorkbenchSearch,
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "GlobalScopeRoute"),
 });
 
 const globalFocusRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/global/session/$id",
+  path: "/projects/session/$id",
   validateSearch: validateWorkbenchSearch,
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "GlobalFocusRoute"),
 });
@@ -126,7 +129,7 @@ const workbenchScopeRedirect = createRoute({
   beforeLoad: ({ params }) => {
     const scope = parseWorkbenchScope(params.scope);
     if (scope.kind === "global") {
-      throw redirect({ to: "/global" });
+      throw redirect({ to: "/projects" });
     }
     throw redirect({ to: "/projects/$key", params: { key: scope.key } });
   },
@@ -138,7 +141,7 @@ const workbenchFocusRedirect = createRoute({
   beforeLoad: ({ params }) => {
     const scope = parseWorkbenchScope(params.scope);
     if (scope.kind === "global") {
-      throw redirect({ to: "/global/session/$id", params: { id: params.focusId } });
+      throw redirect({ to: "/projects/session/$id", params: { id: params.focusId } });
     }
     throw redirect({
       to: "/projects/$key/session/$id",

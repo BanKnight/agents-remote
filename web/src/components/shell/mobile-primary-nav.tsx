@@ -10,9 +10,10 @@ import { ShellMobileBottomNavigation, ShellMobileNavItemContent } from "./shell-
  * `ShellMobileBottomNavigation` 自带 `lg:hidden`，桌面端不可见，故无需视口 JS 检测——
  * 同一组件树两端渲染，桌面被 CSS 隐藏。绝对定位 `bottom-0`，父容器需 `relative`。
  *
- * active 跟随当前 URL pathname：项目维度 = `/` 或 `/projects/*`，全局 = `/global*`，
- * 设置 = `/settings`。聚焦态（`/projects/$key/session/$id`、`/global/session/$id`）
- * 不渲染本组件（§7：单实例聚焦时一级 tab 让位给输入区）——由调用方按 focusId 决定。
+ * active 跟随当前 URL pathname：项目维度 = `/` 或 `/projects/*`，全局 = `/projects`（无子段，
+ * 决策 22 重命名后 [项目] 总览与项目列表同前缀，靠无后续段区分），设置 = `/settings`。
+ * 聚焦态（`/projects/$key/session/$id`、`/projects/session/$id`）不渲染本组件
+ *（§7：单实例聚焦时一级 tab 让位给输入区）——由调用方按 focusId 决定。
  *
  * `ref` 透传给底层 `<nav>`，供 `ShellLayout`/`MobileWorkbench` 的 `useMeasuredBottomNav`
  * 测量实际高度并注入 `--shell-mobile-bottom-nav-space`（移动滚动容器底部避让胶囊）。
@@ -20,8 +21,11 @@ import { ShellMobileBottomNavigation, ShellMobileNavItemContent } from "./shell-
 export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
   const { t } = useT();
   const { pathname } = useLocation();
-  const projectsActive = pathname === "/" || pathname.startsWith("/projects/");
-  const globalActive = pathname.startsWith("/global");
+  // [项目] 胶囊高亮 `/` 与全部 `/projects`（含 global scope index `/projects` 与 project
+  // scope `/projects/$key`）——两者同属项目导航语义。[全局] 胶囊 Step 2 删除，本 step 仅
+  // 跟进 `/global`→`/projects` Link，active 暂保持「仅 global scope index」= pathname === "/projects"。
+  const projectsActive = pathname === "/" || pathname.startsWith("/projects");
+  const globalActive = pathname === "/projects";
   const settingsActive = pathname === "/settings";
 
   return (
@@ -34,7 +38,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           marker={<ShellIcon className="h-3.5 w-3.5" name="project" />}
         />
       </Link>
-      <Link className="min-w-0 cursor-pointer" to="/global">
+      <Link className="min-w-0 cursor-pointer" to="/projects">
         <ShellMobileNavItemContent
           active={globalActive}
           interactive

@@ -50,7 +50,7 @@ import {
 
 /**
  * 工作台路由（设计文档 §7）。路由树以中栏语义命名（去 `/workbench` 前缀）：project
- * 作用域 `/projects/$key`（+ `/session/$id` 聚焦），global 作用域 `/global`（+
+ * 作用域 `/projects/$key`（+ `/session/$id` 聚焦），global 作用域 `/projects`（+
  * `/session/$id` 聚焦）。四个薄壳各自从路由段构造**已解析**的 WorkbenchScope，复用同一
  * WorkbenchContent。同一 URL 桌面（三栏）/ 移动（线性退化）响应式渲染，无跨端 redirect。
  */
@@ -110,13 +110,13 @@ export function GlobalScopeContent({
 }
 
 export function GlobalScopeRoute() {
-  const { rightTab, view, tab } = useSearch({ from: "/global" });
+  const { rightTab, view, tab } = useSearch({ from: "/projects" });
   return <GlobalScopeContent rightTab={rightTab} tab={tab} view={view} />;
 }
 
 export function GlobalFocusRoute() {
-  const { id } = useParams({ from: "/global/session/$id" });
-  const { rightTab, view, tab } = useSearch({ from: "/global/session/$id" });
+  const { id } = useParams({ from: "/projects/session/$id" });
+  const { rightTab, view, tab } = useSearch({ from: "/projects/session/$id" });
   return (
     <WorkbenchContent
       focusId={id}

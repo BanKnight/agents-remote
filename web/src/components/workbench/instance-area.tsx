@@ -154,7 +154,7 @@ type InstanceAreaProps = {
   /** inspection 插件上下文（projectKey/focusId/sessionType）；files/git tab 按 projectKey 过滤可见 + render。 */
   ctx: PluginContext;
   scope: WorkbenchScope;
-  /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/global/session/$id`）。无 focusId = 无聚焦面板。 */
+  /** 聚焦面板 id（URL `/projects/$key/session/$id` 或 `/projects/session/$id`）。无 focusId = 无聚焦面板。 */
   focusId?: string;
   /** 中栏二级导航 tab（URL `?tab` + atom 回退）；仅非聚焦态渲染 tab bar（聚焦态右栏承载 inspection）。 */
   tab?: WorkbenchMiddleTab;

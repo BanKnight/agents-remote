@@ -6,7 +6,7 @@ import type { AgentProvider, AgentSessionStatus, SessionType } from "@agents-rem
 
 /**
  * 工作台作用域 —— URL 的语义核心（见 docs/design/workbench-redesign.md §1/§7）。
- * project 作用域 `/projects/$key`、global 作用域 `/global`（聚焦实例追加 `/session/$id`）。
+ * project 作用域 `/projects/$key`、global 作用域 `/projects`（项目总览语义，决策 22；聚焦实例追加 `/session/$id`）。
  *
  * - `project`：限定单个项目。左栏树聚焦该项目，实例区只承载该项目的实例。
  * - `global`：跨项目混排（Stage 4 全局实例区），实例来源合并所有项目。
@@ -218,7 +218,8 @@ export const workbenchMobileOverviewTabAtom = atomWithLocalOnlyStorage<Workbench
 
 /**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
- * 新路由树以中栏语义命名（`/global` / `/projects/$key`，见 workbench-redesign §7），
+ * 新路由树以中栏语义命名（global 作用域 `/projects` / project 作用域 `/projects/$key`，
+ * 见 workbench-redesign §7 + activity-bar-redesign 决策 22），
  * scope 由路由段直接决定，无需解析；此函数仅用于旧 `/workbench/$scope` redirect 兼容。
  */
 export function parseWorkbenchScope(scope: string): WorkbenchScope {
@@ -227,12 +228,15 @@ export function parseWorkbenchScope(scope: string): WorkbenchScope {
 
 /**
  * 生成 workbench URL（去 `/workbench` 前缀，以中栏语义命名 —— workbench-redesign §7）：
- * project 作用域 `/projects/$key`，global 作用域 `/global`；聚焦实例追加 `/session/$id`。
- * key/id 均 encodeURIComponent。同一 URL 桌面/移动响应式渲染（useIsDesktopViewport）。
+ * project 作用域 `/projects/$key`，global 作用域 `/projects`（项目总览语义，决策 22）；
+ * 聚焦实例追加 `/session/$id`。key/id 均 encodeURIComponent。同一 URL 桌面/移动响应式渲染
+ *（useIsDesktopViewport）。注意 global scope 的 URL path 段与 project scope 同为 `/projects`，
+ * 但 TanStack Router 字面量段 `session` 优先于参数 `$key`，`/projects`（无后续段）与
+ * `/projects/$key` 不冲突。
  */
 export function workbenchPath(scope: WorkbenchScope, focusId?: string) {
   if (scope.kind === "global") {
-    return focusId === undefined ? "/global" : `/global/session/${encodeURIComponent(focusId)}`;
+    return focusId === undefined ? "/projects" : `/projects/session/${encodeURIComponent(focusId)}`;
   }
   const keySeg = encodeURIComponent(scope.key);
   return focusId === undefined
@@ -242,9 +246,9 @@ export function workbenchPath(scope: WorkbenchScope, focusId?: string) {
 
 /**
  * 工作台导航 hook（scope → 类型化路由的单一入口）。scope 动态（project/global）决定
- * URL 前缀（`/projects/$key` vs `/global`），故 navigate 的 typed `to` + params 需按
- * scope 分支；集中于此避免每个调用点重复 4 分支（单一数据管道）。`search` 透传 rightTab
- *（新路由均用 validateWorkbenchSearch，search schema 一致）。
+ * URL 前缀（`/projects/$key` vs `/projects`，决策 22 重命名后两者 path 段相同但结构不同），
+ * 故 navigate 的 typed `to` + params 需按 scope 分支；集中于此避免每个调用点重复 4 分支
+ *（单一数据管道）。`search` 透传 rightTab（新路由均用 validateWorkbenchSearch，search schema 一致）。
  */
 export function useWorkbenchNavigate() {
   const navigate = useNavigate();
@@ -256,8 +260,8 @@ export function useWorkbenchNavigate() {
     if (scope.kind === "global") {
       return navigate(
         focusId === undefined
-          ? { to: "/global", search }
-          : { to: "/global/session/$id", params: { id: focusId }, search },
+          ? { to: "/projects", search }
+          : { to: "/projects/session/$id", params: { id: focusId }, search },
       );
     }
     return navigate(
@@ -330,7 +334,7 @@ export function useIsDesktopViewport() {
 /**
  * 从 sessionId 前缀推断 session 类型。
  *
- * workbench 用统一 focusId（`/projects/$key/session/$id` / `/global/session/$id`），
+ * workbench 用统一 focusId（`/projects/$key/session/$id` / `/projects/session/$id`），
  * 不像旧路由用路径段（`/agent-sessions/` vs `/terminal-sessions/`）显式区分 type，
  * 因此需从 id 反推。id 由 api/src/session-registry.ts `defaultCreateId` 生成：
  * `agent_${uuid}` / `terminal_${uuid}` —— 前缀是稳定类型标识，无歧义，比并行查
