@@ -813,22 +813,19 @@ function MobileGlobalOverview() {
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MobilePageHeader
-        actions={
+      <MobilePageHeader title={t("workbench.global")} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* 批 D / 决策 27：新建从 MobilePageHeader actions 移到 ViewSwitcher 行左侧，
+            与桌面 InstanceLeftOverview header 左对齐；渐变实色款统一。 */}
+        <div className="flex items-center gap-1 px-3 py-2">
           <button
             aria-label={t("home.createProjectAria")}
-            className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
             onClick={() => setSetupOpen(true)}
             type="button"
           >
             +
           </button>
-        }
-        title={t("workbench.global")}
-      />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-center gap-1 px-3 py-2">
-          {/* [项目] 总览：新建在 header（+ 按钮），此行仅 ViewSwitcher 右对齐（设计 §6）。 */}
           <div className="ml-auto">
             <ViewSwitcher
               ariaLabel={t("workbench.viewSwitcher")}

@@ -26,6 +26,11 @@ type WorkbenchShellProps = {
   activityBar?: ReactNode;
   /** 左栏：项目 + 实例树（Stage 2 接入）。 */
   leftPanel?: ReactNode;
+  /**
+   * 左栏顶部大标题（批 D / DESIGN PanelHeader）：活动栏 nav=projects →「项目」/ nav=files →「文件」。
+   * 对齐 MobilePageHeader 的 text-base font-semibold；右栏不传（仅收起）。
+   */
+  leftPanelTitle?: ReactNode;
   /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
   rightPanel?: ReactNode;
   /**
@@ -50,6 +55,7 @@ export function WorkbenchShell({
   activityBar,
   children,
   leftPanel,
+  leftPanelTitle,
   rightPanel,
   rightPanelCollapsible,
 }: WorkbenchShellProps) {
@@ -106,6 +112,7 @@ export function WorkbenchShell({
             chevron="left"
             collapseLabel={t("workbench.collapseLeft")}
             onCollapse={() => setLeftCollapsed(true)}
+            title={leftPanelTitle}
           />
           <div className="min-h-0 flex-1 overflow-hidden">{leftPanel}</div>
           {leftCollapsed ? null : <ColumnResizeGutter onResize={onResizeLeft} side="left" />}
@@ -151,17 +158,30 @@ type PanelHeaderProps = {
   chevron: "left" | "right";
   collapseLabel: string;
   onCollapse: () => void;
+  /** 左栏大标题（批 D）；有 title 时 h-11 + text-base，无 title 时仍 h-11 对齐（仅收起按钮）。 */
+  title?: ReactNode;
 };
 
-/** 栏顶部收起按钮。Stage 2/3 接入时可在左侧追加栏标题。 */
-function PanelHeader({ chevron, collapseLabel, onCollapse }: PanelHeaderProps) {
+/**
+ * 栏顶部 header（批 D / DESIGN PanelHeader）：左侧可选大标题（对齐 MobilePageHeader
+ * text-base font-semibold h-11），右侧收起按钮。左栏按活动栏 nav 注入「项目」「文件」；
+ * 右栏不传 title，仅收起。
+ */
+function PanelHeader({ chevron, collapseLabel, onCollapse, title }: PanelHeaderProps) {
   return (
-    <div className="flex h-9 shrink-0 items-center justify-end px-2">
+    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
+      {title ? (
+        <span className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
+          {title}
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1" />
+      )}
       <button
         type="button"
         aria-label={collapseLabel}
         onClick={onCollapse}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft"
       >
         {chevron === "left" ? <ChevronLeft /> : <ChevronRight />}
       </button>

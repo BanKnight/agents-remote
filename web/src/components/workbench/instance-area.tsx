@@ -516,18 +516,11 @@ function InstanceLeftOverviewBase({
         ) : (
           <button
             aria-label={t("home.createProjectAria")}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-on-primary shadow-lg shadow-primary/30"
             onClick={() => setSetupOpen(true)}
             type="button"
           >
-            <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-              <path
-                d="M8 3v10M3 8h10"
-                strokeLinecap="round"
-                strokeWidth={1.5}
-                stroke="currentColor"
-              />
-            </svg>
+            +
           </button>
         )}
         {onViewChange ? (
@@ -1502,13 +1495,13 @@ function GroupedView({ candidates, onClose, onFocus, onRename, t, dragAdapter }:
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
           <section key={group.projectName}>
-            {/* 每组 header：[折叠按钮][项目名（非大写，点击进项目）]...[删除按钮]。设计 §5 条 3：
-                左折叠 + 右操作区（删除）。项目名非 ShellSectionLabel（避免 uppercase tracking）。 */}
+            {/* 每组 header（批 D / 决策 27）：[折叠 gutter h-7][项目名 flex-1 进项目][⋯ ActionMenu → 删除 destructive]。
+                折叠独立增大触摸区；删除从常驻 🗑 收进 ⋯ 防误触，对齐移动 ProjectGroupHeader。 */}
             <div className="flex items-center gap-1 px-2 py-1.5">
               <button
                 aria-expanded={!collapsedNow}
                 aria-label={t("workbench.toggleGroup")}
-                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
                 onClick={() => toggleGroup(group.projectName)}
                 type="button"
               >
@@ -1535,22 +1528,32 @@ function GroupedView({ candidates, onClose, onFocus, onRename, t, dragAdapter }:
               >
                 {group.projectName}
               </button>
-              <button
-                aria-label={t("project.deleteProject")}
-                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-                onClick={() => requestDelete(group.projectName)}
-                type="button"
-              >
-                <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-                  <path
-                    d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 8.5h5L11 4M6.5 6.5v4M9.5 6.5v4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.2}
-                    stroke="currentColor"
-                  />
-                </svg>
-              </button>
+              <ActionMenu
+                align="end"
+                cancelLabel={t("cancel")}
+                items={[
+                  {
+                    label: t("project.deleteProject"),
+                    icon: <ShellIcon name="trash" />,
+                    onSelect: () => void requestDelete(group.projectName),
+                    variant: "destructive",
+                    disabled: deleteMutation.isPending,
+                  },
+                ]}
+                trigger={
+                  <button
+                    aria-label={t("session.actions")}
+                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                    type="button"
+                  >
+                    <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
+                      <circle cx="4" cy="8" r="1" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1" fill="currentColor" />
+                      <circle cx="12" cy="8" r="1" fill="currentColor" />
+                    </svg>
+                  </button>
+                }
+              />
             </div>
             {!collapsedNow ? (
               group.candidates.length === 0 ? (

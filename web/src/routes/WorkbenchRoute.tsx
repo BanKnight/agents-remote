@@ -22,6 +22,7 @@ import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { FilesLeftPanel } from "../components/files/files-left-panel";
 import { FilesPanel } from "../components/files/file-browser";
+import { useT } from "../i18n";
 import {
   type DropZone,
   type WorkbenchMiddleTab,
@@ -173,6 +174,7 @@ function WorkbenchContent({
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
 }) {
+  const { t } = useT();
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
@@ -504,6 +506,7 @@ function WorkbenchContent({
     <WorkbenchShell
       activityBar={<ActivityBar />}
       leftPanel={leftPanel}
+      leftPanelTitle={nav === "files" ? t("nav.files") : t("nav.projects")}
       rightPanel={rightPanel}
       rightPanelCollapsible={rightPanelCollapsible}
     >
