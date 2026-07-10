@@ -270,6 +270,9 @@ export function InstanceArea({
     if (type) closeInstance(contextMenu.tabId, type);
     setContextMenu(null);
   }, [contextMenu, closeInstance]);
+  // 仅 session tab 提供 kill（file tab 无 session 生命周期，右键菜单不渲染 kill 项）。
+  const contextMenuIsSession =
+    contextMenu !== null && inferSessionTypeFromId(contextMenu.tabId) !== undefined;
 
   // 中栏内容按 tab 分支（设计 §4）：overview = 右工作区全宽（左总览已搬 leftPanel）；
   //   history = 全宽 HistoryList；inspection tab（files/git）= 全宽 plugin.render。
@@ -346,7 +349,7 @@ export function InstanceArea({
         <TabContextMenu
           anchor={contextMenu}
           onClose={closeContextMenu}
-          onKill={onKillTab}
+          onKill={contextMenuIsSession ? onKillTab : undefined}
           onMinimize={onMinimizeTab}
         />
       ) : null}
@@ -1967,7 +1970,8 @@ function DropZoneHighlight({ zone }: { zone: DropZone }) {
 type TabContextMenuProps = {
   anchor: { groupId: string; tabId: string; x: number; y: number };
   onClose: () => void;
-  onKill: () => void;
+  /** kill 回调；仅 session tab 提供（file tab 无 session 生命周期，不渲染 kill 项）。 */
+  onKill?: () => void;
   onMinimize: () => void;
 };
 
@@ -1977,7 +1981,8 @@ type TabContextMenuProps = {
  * avoidCollisions 自带视口钳制 + 外点/Esc 自带关闭），统一消费 DropdownMenuContent/Item token
  *（不再散写圆角/阴影/padding）。桌面快捷，移动端不可达。
  * 「最小化」= removeTabFromGroup（session 存活，同 tab ✕）；「关闭实例」= useCloseSession
- *（自带 confirm → close API → 失效缓存，菜单内不再 confirm）。
+ *（自带 confirm → close API → 失效缓存，菜单内不再 confirm）。file tab 无 kill（无 session
+ * 生命周期），onKill 不提供 → 只渲染最小化。
  */
 function TabContextMenu({ anchor, onClose, onKill, onMinimize }: TabContextMenuProps) {
   const { t } = useT();
@@ -1995,9 +2000,11 @@ function TabContextMenu({ anchor, onClose, onKill, onMinimize }: TabContextMenuP
         <DropdownMenuItem onSelect={() => onMinimize()}>
           {t("workbench.tabMinimize")}
         </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onSelect={() => onKill()}>
-          {t("workbench.tabKill")}
-        </DropdownMenuItem>
+        {onKill ? (
+          <DropdownMenuItem variant="destructive" onSelect={() => onKill()}>
+            {t("workbench.tabKill")}
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
