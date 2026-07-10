@@ -25,6 +25,7 @@
 - **2026-07-10 协商第 5 轮（Phase 2a 实现方案锁定）**：① **方案 X（拆 `InstanceArea`，严格四栏）**——布局上「左栏」= WorkbenchShell 原有 `leftPanel`（DOM 四栏第 1 列，Phase 1 已建，**非新增列**）；功能上承载 `InstanceArea` 内部已有的左总览。落地：拆 `InstanceArea` 为三部分——左总览提取为 `InstanceLeftOverview` 组件放入 `leftPanel`，右工作区 group+tab 瘦身 `InstanceArea` 留中栏 children，共享 state（layout/drag 三件套/focus+prune effects/candidates/create/close/rename/contextMenu）**提升到 `WorkbenchContent`**（不新建 hook——overview/workspace 互补消费非复用，WorkbenchContent 已是薄壳持共享 state 模式）。② **Phase 2 拆 2a/2b**：2a=[项目] 方案 X 核心；2b=[文件]（决策③ V3 多态 tab，session-centric 改造成本中高，放 2b）。③ **宽度归并**：leftPanel 用 `workbenchMiddleLeftWidthAtom`(16rem)，废弃 `workbenchLeftWidthAtom` + localStorage 一次性迁移。④ **leftPanel 恒显总览、忽略中栏 tab**（tab bar 中栏顶部位置留 Phase 3）。
 - **2026-07-10 协商第 6 轮（Phase 2b 实现方案锁定）**：① **V3 多态 tab**——`WorkbenchPanelRef` 扩为判别联合 `{kind:"session",projectName,sessionId} | {kind:"file",projectName,path}`；session tab 的 tabId === sessionId（值不变）→ localStorage 布局零迁移、session 路径零回归；file tab 前缀 `file_` 与 `agent_/terminal_` 天然互斥。② **file tab 可编辑+保存**（不只读）——复用 FilesPanel 的 CodeEditor + saveFileContent + dirty/save；新 `FilePreviewPanel`（queryScope 隔离 `file-nav`）独立承载，FilesPanel inspection 路径不动（避免抽顶层 state 大重构）。③ **file tab focus 独立路由**——新增 `/projects/$key/file/$`（splat 捕获多段 path），不复用 `/session/$id` 段。④ **移动端遇 `/file/$path` → 浮窗降级**（不实现移动端 V3 group，符合决策 12）。
 - **2026-07-10 协商第 7 轮（Phase 4 移动端方案锁定）**：① **底部胶囊 项目/文件/设置**——删原「全局」项（曾指 `/global` 旧全局实例语义），加「文件」项（→`/files` rootBrowse 浮窗）；[项目] 胶囊 active = `/` 或 `/projects*`。② **`/global` 重命名 `/projects`**——`/global` 现语义=项目总览（[项目] 导航），重命名非真删；scope kind `global` 类型保留，只改 URL path 段；两端 `/` 统一为 global scope = [项目] 总览。③ **删 HomeRoute**——项目列表/新建/进入/删除能力并入 [项目] 总览（grouped 分组进项目 + header 新建 + ⋯ 删除）。④ **[项目] 总览 = 实例聚合 + 项目入口**——重构 MobileGlobalOverview：header 新建 + grouped 分组标题点击进项目 + 分组标题右侧 ⋯ 删除项目（本 phase 加，复用 deleteProject + useConfirm）+ ViewSwitcher；删 inspection tab 行。⑤ **移动 [文件] = rootBrowse 根目录浏览**——新 `/files` 路由移动端渲染 rootBrowse FilesPanel 浮窗（不依赖先进项目，全局一级导航）；桌面 `/files` redirect `/`（桌面 [文件] 经活动栏）。⑥ **活动栏 [文件]（全局）与项目态左栏 [文件] 作用域互斥**——前者全局一级导航（rootBrowse 根目录），后者进入具体项目后出现（实例/历史/文件/git），不冲突。
+- **2026-07-10 协商第 8 轮（Phase 3 方案锁定）**：① **tab bar 中栏→左栏迁移**——进入 project scope 后，middle tab bar（实例/历史/文件/git）从 `InstanceArea` **中栏顶部**移到 `ProjectLeftPanel` **左栏顶部**，切换的是**左栏主体**内容（实例=InstanceLeftOverview / 历史=HistoryList / 文件=项目内文件树 / git=GitDiffPanel），**非中栏**；中栏 `InstanceArea` 瘦身为纯 group+tab 常驻（去 tab bar + history/inspection content 分支）。② **middle tab bar 仅 project scope + nav=projects** 出现——global scope 无 middle tab（global 无 history/git，files 归活动栏 nav=files）；活动栏始终切左栏（从一开始就定，所有 scope），nav=files→FilesLeftPanel（全局 rootBrowse）、nav=projects→ProjectLeftPanel、nav=settings→跳 /settings。③ **活动栏 [文件] = 全局文件 vs middle tab [文件] = 项目局部文件**——两者作用域不同不冲突（曾误判冲突，用户澄清：活动栏按钮始终切左栏是既定）。④ **nav=files 固定全局 rootBrowse 修正（Phase 2b 遗留）**——Phase 2b `WorkbenchContent` `nav=files` 传 `<FilesLeftPanel scope={scope} />`，project scope 时渲染项目内文件树，与「活动栏[文件]=全局」冲突；Phase 3 修正 `nav=files` 固定 `scope={kind:"global"}`（rootBrowse 全局根目录），不论 WorkbenchScope。⑤ **middle tab 内容全复用现成**——HistoryList（history-list）/ FilesLeftPanel scope=project（files-left-panel）/ GitDiffPanel（git-diff-viewer）/ InstanceLeftOverview（现有 overview prop）；middle tab bar 复用 TabButton + buildOverviewTabs（project scope includeHistory=true）。
 
 ## 3. 一级导航（两端共享语义）
 
@@ -66,7 +67,8 @@
 ```
 全局层（未进入项目）：
   [项目]  左栏 = 全局总览（卡片 + grouped/grid/table 多视图 + 新建项目 + 进入项目）
-  [文件]  左栏 = 文件地址栏（文件树）  ‖  中栏 = 点文件新开预览 tab（V3 多态 tab，见决策 18；可编辑+保存，✕ 仅移 tab 不 kill，刷新保留）
+  [文件]  左栏 = 文件树（全局 rootBrowse，PROJECTS_ROOT 根目录；= 活动栏 [文件] 语义）
+          ‖  中栏 = 点文件新开预览 tab（V3 多态 tab，见决策 18；可编辑+保存，✕ 仅移 tab 不 kill，刷新保留）
   [设置]  特例：不套「切左栏」模型，点击沿用现有 SettingsRoute 设置页（左栏/中栏不切换）
 
   （中栏始终 = group+tab 工作区，常驻不随导航变）
@@ -74,8 +76,11 @@
 进入项目层（project scope，一级导航常驻）：
   左栏顶部多导航 tab（如目前移动端）= 实例 / 历史 / 文件 / git
     （= 现状 WorkbenchMiddleTab overview/history/files/git，复用现状）
+    → 切换的是**左栏主体**内容（实例=InstanceLeftOverview / 历史=HistoryList /
+       文件=项目内文件树 FilesLeftPanel scope=project / git=GitDiffPanel），**非中栏**
+    → middle tab [文件] = 项目局部文件树；活动栏 [文件] = 全局 rootBrowse，作用域不同不冲突
     → git 在此出现（project-scoped，已定）
-  中栏 = 项目实例 group+tab（与现状一致）
+  中栏 = 项目实例 group+tab（常驻，**不随 middle tab 变**；Phase 3 InstanceArea 瘦身为纯 group+tab）
   右栏 = inspection（本轮不动）
 ```
 
@@ -132,6 +137,7 @@
 23. **删 HomeRoute，`/` 移动分流改 GlobalScopeContent**：HomeRoute 项目列表/新建/进入/删除能力并入 [项目] 总览（决策 25）；`IndexRoute` 移动端从 `<HomeRoute>` 改为 `<GlobalScopeContent>`（scope=global → MobileWorkbench → [项目] 总览）。两端 `/` 统一为 global scope = [项目] 总览。i18n `home.*` 死键随删（`home.createProjectAria`/`home.newAdopt` 被 ProjectLeftPanel 复用，保留）。
 24. **移动 [文件] = rootBrowse 根目录浏览 + 新 `/files` 路由**：移动端 [文件] 胶囊指向新 `/files` 路由，渲染 `<FilesPanel rootBrowse enablePreview />`（复用现状移动 Files 浮窗模式，fixed inset-0 z-50 slide-in-from-bottom 预览，决策 12）。桌面端 `/files` redirect 到 `/`（桌面 [文件] 经活动栏 nav=files，不需独立路由）。`rootBrowse` 按 currentPath 派生 {projectName, relativePath, isRootListing}，根目录只读，不依赖先进项目（活动栏 [文件] 是全局一级导航，与项目态左栏 [文件] 作用域互斥——后者进入项目后才出现）。
 25. **[项目] 总览 = 实例聚合 + 项目分组进项目 + header 新建 + ⋯ 删除**：重构 MobileGlobalOverview 为 [项目] 总览——header + 新建项目（useCreateProject + ProjectSetupPanel Dialog，与 ProjectLeftPanel 同源）+ grouped 视图按项目分段（groupByProject），**点项目分组标题进项目**（navigate `/projects/$key`），**分组标题右侧 ⋯ 菜单提供删除项目**（复用 deleteProject + useConfirm confirm dialog，本 phase 加）；grid/table 视图点实例进实例聚焦（不按项目分段，删项目入口仅 grouped 提供）；删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/[设置] 一级导航 + 项目内 MobileProjectOverview）；ViewSwitcher 保留。
+26. **Phase 3 tab bar 中栏→左栏迁移 + 活动栏[文件]固定全局**：① 进入 project scope 后，middle tab bar（实例/历史/文件/git）从 `InstanceArea` 中栏顶部移到 `ProjectLeftPanel` 左栏顶部，切**左栏主体**内容（实例=InstanceLeftOverview / 历史=HistoryList / 文件=FilesLeftPanel scope=project / git=GitDiffPanel），**非中栏**；`InstanceArea` 瘦身为纯 group+tab 常驻（去 tab bar + history/inspection content 分支，props `ctx`→`projectName`）。② middle tab bar **仅 project scope + nav=projects** 出现；global scope 无 middle tab（global 无 history/git，files 归活动栏 nav=files）。③ 活动栏始终切左栏（既定），`nav=files` 固定 `FilesLeftPanel scope={kind:"global"}`（rootBrowse 全局根目录，不论 WorkbenchScope）——修正 Phase 2b 遗留（`nav=files` 曾传 `scope={scope}` 致 project scope 渲染项目内文件树，与「活动栏[文件]=全局」冲突）。④ middle tab 内容全复用现成（HistoryList/FilesLeftPanel scope=project/GitDiffPanel/InstanceLeftOverview），middle tab bar 复用 TabButton + buildOverviewTabs。`tab`/`onTabChange` 从 InstanceArea 移到 ProjectLeftPanel（WorkbenchContent 接线跟进）。
 
 ## 7. 待定点
 
@@ -162,7 +168,7 @@
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
 | `instance-area.tsx` `InstanceArea` | 永远左右：**左总览**（单列卡片 grid/table/grouped + ViewSwitcher + CreateSessionBar）+ **右工作区**（`WorkbenchLayoutV3` group+tab 分屏） | 左总览=新左栏；右工作区=新中栏（常驻）。主要改左总览内容源 + tab bar 位置 |
-| tab bar `buildOverviewTabs`(overview/history/files/git) | 中栏顶部，按 scope 过滤（global=overview+files；project=全量） | 进入项目后 → 左栏顶部多导航（实例/历史/文件/git） |
+| tab bar `buildOverviewTabs`(overview/history/files/git) | 中栏顶部（`InstanceArea`），按 scope 过滤（global=overview+files；project=全量） | **Phase 3**：从 `InstanceArea` 中栏移除 → project scope 移到 `ProjectLeftPanel` 左栏顶部切**左栏主体**；global scope 无 middle tab（files 归活动栏 nav=files） |
 | `leftOverviewContent` | overview tab 左总览 grid/grouped/table 分支 | [项目] 左栏 = 此 + 新建/进入项目 |
 | `workbench-model.ts` | `WorkbenchMiddleTab`=overview/history/files/git + atom（view/middleTab/rightCollapsed/middleLeftWidth/mobile*） | **零改动复用**（= 用户定的左栏多导航清单）；新增 nav state |
 
@@ -174,7 +180,7 @@
 |---|---|---|---|
 | `WorkbenchContent`（WorkbenchRoute.tsx） | 组装层 | 提升 InstanceArea 共享 logic + 渲染 holders | layout/update、drag 三件套（dragState/activeZone/onDrop/cancelDrag/onCardDragStart）、focus+prune effects、candidates/create/close/rename/contextMenu |
 | `InstanceLeftOverview`（**新**，instance-left-overview.tsx） | leftPanel（DOM 第 1 列） | 左总览纯渲染：CreateSessionBar + ViewSwitcher + grid/grouped/table + Empty/Skeleton | 无 state；`React.memo` 包裹，dragState 不进其 props |
-| `InstanceArea`（**瘦身**，右工作区 + tab bar） | 中栏 children（DOM 第 2 列） | tab bar + WorkspaceTree + DropZoneOverlay + history/inspection | 无 state；消费 props 渲染 |
+| `InstanceArea`（**Phase 3 进一步瘦身**：纯右工作区 group+tab） | 中栏 children（DOM 第 2 列） | WorkspaceTree + DropZoneOverlay + tab 右键菜单（Phase 3 去 tab bar + history/inspection，移到 ProjectLeftPanel） | 无 state；消费 props 渲染 |
 
 - **拖放跨组件**：dragState/activeZone/onDrop/cancelDrag/onCardDragStart 在 `WorkbenchContent` 单一来源；`InstanceLeftOverview`（拖放源，dragAdapter）+ `InstanceArea`（拖放目标，DropZoneOverlay props）通过 props 读。三条不变量：① dragState 期间 WorkspaceTree `pointer-events:none`；② `data-drop-empty` 容器必在 `InstanceArea`（中栏）内；③ `onCardDragStart` 单一实例（卡片源 + tab 源共享）。
 - **tab bar** 留 `InstanceArea` 中栏顶部（Phase 2a 不动，Phase 3 才移左栏顶部）。
