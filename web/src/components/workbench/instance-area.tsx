@@ -104,6 +104,8 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  * gap-1 对齐真实 flex-col gap-1）+ 右上 actions 占位（absolute right-2 top-2 h-7 w-7，对齐 InstanceCard
  * 折叠触发器）。骨架条用 line-height 而非 font-size——加载完内容栈总高与真实一致（行盒 20+16+16=52，
  * 实测 InstanceCard contentSum=52），消除卡片高度跳变。skeleton-shimmer 与 NavItemSkeleton/ProjectCardSkeleton 一致。
+ * plain 占位卡非首张顶部分割线 mirror InstanceCard `topSeparator`（移动 left-15=60px 内容区左 / 桌面 lg:left-0 全宽，
+ * 批 O / 决策 38），替代原 `divide-y`（border-top 横跨全宽不支持 inset）。
  *
  * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
  * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
@@ -119,10 +121,7 @@ export function CardGridSkeleton({
   count?: number;
 } = {}) {
   return (
-    <div
-      className={plain ? "grid divide-y divide-neutral-line/40" : "grid gap-2"}
-      style={INSTANCE_GRID_STYLE}
-    >
+    <div className={plain ? "grid" : "grid gap-2"} style={INSTANCE_GRID_STYLE}>
       {Array.from({ length: count }, (_, index) => (
         <div
           className={`relative flex items-start gap-3 p-3 ${
@@ -130,6 +129,12 @@ export function CardGridSkeleton({
           }`}
           key={index}
         >
+          {plain && index > 0 ? (
+            <div
+              aria-hidden="true"
+              className="absolute right-0 top-0 h-px bg-neutral-line/40 left-15 lg:left-0"
+            />
+          ) : null}
           <span aria-hidden="true" className="skeleton-shimmer h-9 w-9 shrink-0 rounded-md" />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span aria-hidden="true" className="skeleton-shimmer h-5 w-2/3 rounded" />
@@ -152,9 +157,9 @@ const GROUPED_SKELETON_GROUPS = 2;
 const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
 
 /**
- * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35 + 批 M / 决策 36）：mirror GroupedProjectsList——
- * 每组 section = `rounded-lg border border-neutral-line/40 overflow-hidden` 圆角边框成组（批 L：无 bg 透明融入
- * shell，border-neutral-line/40 半透明淡边——对齐同框 InstanceGrid divide-neutral-line/40，Apple hairline，批 M）+ 根 `space-y-3 px-3 py-3` 四周边距；项目名行 [project 图标
+ * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35 + 批 M / 决策 36 + 批 O / 决策 38）：mirror GroupedProjectsList——
+ * 每组 section = `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40`（移动无边框 Apple 列表范式，批 O；桌面 lg:
+ * 才加圆角边框成组，批 L 无 bg 透明融入 shell，border-neutral-line/40 半透明淡边 Apple hairline 批 M）+ 根 `space-y-3 px-3 py-3` 四周边距；项目名行 [project 图标
  * size-5][项目名 text-base 行盒 h-6=24px][› chevron size-5 同进项目 button][⋯ size-9 删除 最右]（折叠废弃，
  * 无实例区小标题行）+ 实例区 `-mt-2` 包 CardGridSkeleton plain 每组 3 卡（= carousel 一页）。名行 div `flex
  * min-h-11 items-center gap-2 px-2`（min-h-11 撑 44px = 真实名行 button 触控热区高度，批 L 去 py）。去 h-full
@@ -167,7 +172,7 @@ export function GroupedProjectsSkeleton() {
     <div className="space-y-3 px-3 py-3">
       {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
         <section
-          className="overflow-hidden rounded-lg border border-neutral-line/40"
+          className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
           key={groupIndex}
         >
           {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2
@@ -1224,22 +1229,19 @@ export function InstanceGrid({
   items: InstanceGridItem[];
   /** 卡片 surface：true = plain 扁平连续（去 raised border/bg + rounded-lg，对齐 `list` plain 行 token；
    *  设计 §7 card 段 InstanceCard surface 两态）。grid/grouped 密集网格视图传 true；默认 false = raised
-   *  独立圆角卡。容器分隔：plain 统一 divide-y 连续行分割线（不论 gap，密集清单靠分割线非空隙）；非 plain raised 卡靠 gap-2 或自身 border。 */
+   *  独立圆角卡。容器分隔：plain 非首卡由 InstanceCard `topSeparator` 绝对定位画 inset 分割线（移动 left-15=60px
+   *  内容区左 / 桌面 lg:left-0 全宽，批 O / 决策 38；原 divide-y border-top 横跨全宽不支持 inset）；非 plain raised 卡靠 gap-2 或自身 border。 */
   plain?: boolean;
   dragAdapter?: DragSourceAdapter;
   dragRefs?: Map<string, WorkbenchPanelRef>;
 }) {
   const surface = plain ? "plain" : "raised";
-  // plain：统一 divide-y 连续行分割线（密集清单靠分割线分隔，非 gap 空隙，对齐 list 契约）；
-  // 非 plain：raised 独立卡靠 gap-2（grid）或自身 border（grouped）分隔。
-  const containerClass = plain
-    ? "grid divide-y divide-neutral-line/40"
-    : gap
-      ? "grid gap-2"
-      : "grid";
+  // plain：非首卡由 InstanceCard topSeparator 绝对定位画 inset 分割线（移动内容区左 / 桌面全宽，批 O / 决策 38），
+  // 替代原 divide-y（border-top 横跨全宽不支持 inset）；非 plain：raised 独立卡靠 gap-2（grid）或自身 border（grouped）分隔。
+  const containerClass = plain ? "grid" : gap ? "grid gap-2" : "grid";
   return (
     <div className={containerClass} style={INSTANCE_GRID_STYLE}>
-      {items.map(({ key, ...card }) =>
+      {items.map(({ key, ...card }, i) =>
         dragAdapter && dragRefs ? (
           <DragSourceCard
             dragRef={dragRefs.get(key) ?? { kind: "session", projectName: "", sessionId: key }}
@@ -1247,10 +1249,10 @@ export function InstanceGrid({
             onDragStart={dragAdapter.onDragStart}
             onSelect={() => dragAdapter.onSelect(key)}
           >
-            <InstanceCard {...card} surface={surface} />
+            <InstanceCard {...card} surface={surface} topSeparator={i > 0} />
           </DragSourceCard>
         ) : (
-          <InstanceCard key={key} {...card} surface={surface} />
+          <InstanceCard key={key} {...card} surface={surface} topSeparator={i > 0} />
         ),
       )}
     </div>

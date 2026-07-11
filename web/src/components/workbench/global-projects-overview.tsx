@@ -238,8 +238,8 @@ type GroupedProjectsListProps = {
  * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33 + 批 L / 决策 35）：mergeProjectsWithCandidates
  * 含空项目；项目名行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
  * ≥44px）][⋯ 删除 最右尽头]；实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
- * 折叠废弃无小标题）。**section = `rounded-lg border border-neutral-line/40 overflow-hidden` 圆角边框成组**（批 L + 批 M：名行=header
- * + 实例区=body 同一边框内；无 bg 透明融入 shell，border-neutral-line/40 半透明淡边——对齐同框 divide-neutral-line/40，Apple hairline，批 M；实例区外层 `-mt-2`
+ * 折叠废弃无小标题）。**section = `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40`**（批 L + 批 M + 批 O / 决策 38：移动无边框 Apple 列表范式，批 O；
+ * 桌面 lg: 才加圆角边框成组——名行=header + 实例区=body 同一边框内；无 bg 透明融入 shell，border-neutral-line/40 半透明淡边——对齐同框 InstanceCard topSeparator inset 分割线，Apple hairline，批 M；实例区外层 `-mt-2`
  * 抵消首卡 InstanceCard p-3 top 收间距；根 `px-3 py-3` 四周边距 + section 间 space-y-3(12px) 缩间距，圆角
  * 卡片 Apple Store 风格不贴边）。空项目只名行（与有实例项目结构对称：都一行 header）。
  */
@@ -285,7 +285,7 @@ function GroupedProjectsList({
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
           <section
-            className="overflow-hidden rounded-lg border border-neutral-line/40"
+            className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
             key={group.projectName}
           >
             <div className="flex items-center gap-2 px-2">

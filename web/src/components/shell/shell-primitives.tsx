@@ -583,6 +583,8 @@ export type InstanceCardProps = {
   status?: { label: string; tone: ShellTone };
   /** surface 变体：`raised`（默认，独立圆角卡）/ `plain`（密集网格 `InstanceGrid`，扁平连续，对齐 `list` plain 行 token）。 */
   surface?: "raised" | "plain";
+  /** 顶部 inset 分割线（plain 密集清单专用，移动 left-15=60px 内容区左 / 桌面 lg:left-0 全宽；raised 不传）。批 O / 决策 38。 */
+  topSeparator?: boolean;
   /** 第二行内容（agent=AI 回复 / terminal=最近命令），1 行截断；缺失则不渲染第二行。 */
   subtitle?: ReactNode;
   title: ReactNode;
@@ -617,6 +619,7 @@ export function InstanceCard({
   surface = "raised",
   subtitle,
   title,
+  topSeparator = false,
 }: InstanceCardProps) {
   const isPlain = surface === "plain";
   const hasMetaText = projectName || activity;
@@ -638,10 +641,10 @@ export function InstanceCard({
     <div
       className={`group relative flex min-w-0 cursor-pointer items-start gap-3 ${
         isPlain ? "" : "rounded-lg"
-      } p-3 transition interactive-row ${
+      } p-3 transition ${
         isPlain
-          ? "hover:bg-on-surface/5"
-          : `${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
+          ? "lg:hover:bg-on-surface/5"
+          : `interactive-row ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`
       }`}
       onClick={(e) => {
         // 忽略来自 ActionMenu portal（移动 sheet/scrim、桌面 popover、⋯ trigger 经 asChild）的 click：
@@ -662,6 +665,12 @@ export function InstanceCard({
       role="button"
       tabIndex={0}
     >
+      {topSeparator ? (
+        <div
+          aria-hidden="true"
+          className="absolute right-0 top-0 h-px bg-neutral-line/40 left-15 lg:left-0"
+        />
+      ) : null}
       <StatusMarker marker={marker} status={status} />
       <div className="min-w-0 flex-1 flex flex-col gap-1">
         <span className="min-w-0 truncate pr-6 text-sm font-semibold text-on-surface group-hover:text-primary">
