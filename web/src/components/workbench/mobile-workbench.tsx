@@ -722,7 +722,7 @@ function MobileGlobalOverview() {
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("workbench.global")} />
       <div className="min-h-0 flex-1">
-        <GlobalProjectsOverview contentClassName="pb-24 lg:pb-0" onFocusInstance={focusInstance} />
+        <GlobalProjectsOverview onFocusInstance={focusInstance} />
       </div>
     </div>
   );

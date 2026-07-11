@@ -152,10 +152,11 @@ const GROUPED_SKELETON_GROUPS = 2;
 const GROUPED_SKELETON_CARDS_PER_GROUP = 2;
 
 /**
- * grouped 视图加载骨架（决策 31 三层结构）：mirror GroupedProjectsList——每组 section = 项目名行
- * [项目名 flex-1][⋯ size-9 删除] + 实例区小标题 [▼ size-3][N 实例] + CardGridSkeleton plain 卡片。
- * 项目名行高 py-1.5(12)+max(h-4=16,size-9=36)=48px = 真实项目名行；小标题 py-1(8)+max(size-3=12,
- * h-4=16)=24px = 真实小标题（DESIGN 骨架对齐铁律）。复用 CardGridSkeleton plain（每组
+ * grouped 视图加载骨架（决策 31 三层结构 + 决策 32 图标/字号对齐）：mirror GroupedProjectsList——
+ * 每组 section = 项目名行 [project 图标 size-4][项目名 text-sm h-5][⋯ size-9 删除] + 实例区小标题
+ * [▼ size-3][N 实例] + CardGridSkeleton plain 卡片。项目名行高 py-1.5(12)+max(size-4=16,h-5=20,
+ * size-9=36)=48px = 真实项目名行（字号 text-sm 不抬高，items-center max=36）；小标题 py-1(8)+
+ * max(size-3=12,h-4=16)=24px = 真实小标题（DESIGN 骨架对齐铁律）。复用 CardGridSkeleton plain（每组
  * GROUPED_SKELETON_CARDS_PER_GROUP 张），不重写占位卡结构。global-projects-overview grouped 加载专用。
  */
 export function GroupedProjectsSkeleton() {
@@ -165,7 +166,8 @@ export function GroupedProjectsSkeleton() {
         <section key={groupIndex}>
           {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2 py-1.5 */}
           <div className="flex items-center gap-2 px-2 py-1.5">
-            <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/3 rounded" />
+            <span aria-hidden="true" className="skeleton-shimmer size-4 shrink-0 rounded" />
+            <span aria-hidden="true" className="skeleton-shimmer h-5 w-1/3 rounded" />
             <span aria-hidden="true" className="skeleton-shimmer ml-auto size-9 rounded-md" />
           </div>
           {/* 实例区小标题骨架：mirror flex items-center gap-1.5 px-3 py-1 + [▼ size-3][N 实例] */}

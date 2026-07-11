@@ -40,8 +40,6 @@ type GlobalProjectsOverviewProps = {
   onFocusInstance: (sessionId: string) => void;
   /** 桌面拖放源；移动不传。 */
   dragAdapter?: DragSourceAdapter;
-  /** 滚动区额外 class（移动 `pb-24 lg:pb-0` 避让底部胶囊）。 */
-  contentClassName?: string;
   /**
    * 总览视图。桌面传 URL/atom 解析值 + onViewChange（写 URL+atom）；
    * 移动不传 → 组件内读/写 workbenchViewAtom。
@@ -53,7 +51,7 @@ type GlobalProjectsOverviewProps = {
 /**
  * global [项目] 总览共享主体（批 F / 决策 29）。桌面左栏 + 移动 [项目] 胶囊共用，
  * 结束「两端各自改各自」双写。自持 candidates/projects/create/delete/close/rename/view；
- * 参数化仅 onFocusInstance / dragAdapter? / contentClassName? / view+onViewChange?。
+ * 参数化仅 onFocusInstance / dragAdapter? / view+onViewChange?。
  *
  * 外壳（标题、底部 nav）由调用方提供：桌面 WorkbenchShell leftPanelTitle；
  * 移动 MobilePageHeader。
@@ -61,7 +59,6 @@ type GlobalProjectsOverviewProps = {
 export function GlobalProjectsOverview({
   onFocusInstance,
   dragAdapter,
-  contentClassName,
   view: viewProp,
   onViewChange,
 }: GlobalProjectsOverviewProps) {
@@ -203,7 +200,9 @@ export function GlobalProjectsOverview({
           />
         </div>
       </div>
-      <div className={`min-h-0 flex-1 overflow-y-auto ${contentClassName ?? ""}`}>{body}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
+        {body}
+      </div>
       {closeHolder}
       {renameHolder}
       <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
@@ -281,7 +280,7 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div className="h-full">
+    <div>
       {groups.map((group) => {
         const isEmpty = group.candidates.length === 0;
         const collapsedNow = isGroupedProjectCollapsed(group.projectName, collapsed);
@@ -291,12 +290,13 @@ function GroupedProjectsList({
           <section key={group.projectName}>
             <div className="flex items-center gap-2 px-2 py-1.5">
               <button
-                className="flex min-w-0 flex-1 cursor-pointer items-center truncate rounded-md px-1 py-0.5 text-left text-xs font-semibold text-on-surface transition hover:bg-on-surface/5"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-sm font-semibold text-on-surface transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
                 title={group.projectName}
                 type="button"
               >
-                {group.projectName}
+                <ShellIcon className="size-4 shrink-0 text-on-surface-muted" name="project" />
+                <span className="truncate">{group.projectName}</span>
               </button>
               <ActionMenu
                 align="end"
