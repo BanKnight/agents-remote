@@ -1263,8 +1263,9 @@ const INSTANCE_PAGED_CAROUSEL_PAGE_SIZE = 3;
 /**
  * 实例分页 carousel（批 J / 决策 33 + 批 M / 决策 36）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
  * 横向 swipe 翻页 + snap-start 左对齐单向右 peek 露邻组（每页 calc(100% - 1.5rem)，右侧 24px 单向 peek——
- * 双侧 peek 首末页露空白=乱，单向 peek 露邻页内容=暗示，批 M）；桌面端 lg:w-full 满宽无 peek + 页码行 ‹1·2·3›
- * （scrollIntoView inline:start 对齐 snap-start），移动端靠原生 swipe + 单向 peek 暗示、隐藏页码。
+ * 双侧 peek 首末页露空白=乱，单向 peek 露邻页内容=暗示，批 M）；末页后加 peek 宽 spacer 让末页 snap 贴左对齐
+ * （snap-start + pageW<containerW 时末页 snap 点超 maxScrollLeft 会偏移 peek 量，spacer 补足让末页对齐首页，批 N）；
+ * 桌面端 lg:w-full 满宽无 peek + 页码行 ‹1·2·3›（scrollIntoView inline:start 对齐 snap-start），移动端靠原生 swipe + 单向 peek 暗示、隐藏页码。
  *
  * ≤1 页退化：直接 InstanceGrid plain gap={false}（无 carousel 容器、无 peek、无页码行），零回归单列清单。
  * Apple Store 风格 grouped 实例区专用——复用 InstanceGrid 渲染页内卡片（不重写卡片/不加 variant）。
@@ -1350,6 +1351,11 @@ export function InstancePagedCarousel({
             />
           </div>
         ))}
+        {/* 末页 spacer（批 N / 决策 37）：peek 宽空 div 让末页 snap 点 ≤ maxScrollLeft，末页能 snap 贴左对齐——
+            避免 snap-start + pageW<containerW 时末页 snap 点(pageW)超 maxScrollLeft((N-1)*pageW-peek) 偏移 peek 量
+            （探针实测：4 实例 2 页，未加 spacer 末页 card 内容左 36 vs 首页 12，偏移 24px）。加后 maxScrollLeft=(N-1)*pageW=末页 snap 点，对齐。
+            桌面 lg:w-full 满宽 pageW=containerW 不需 spacer，lg:hidden。aria-hidden 不参与 a11y。 */}
+        <div aria-hidden="true" className="w-6 shrink-0 lg:hidden" />
       </div>
       {/* 桌面页码行（hidden lg:flex）：移动端靠 swipe 不显页码。‹ prev + 页码 button(aria-current 高亮) + › next。 */}
       <div
