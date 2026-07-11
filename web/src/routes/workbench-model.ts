@@ -127,24 +127,6 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
 );
 
 /**
- * global grouped 视图每组项目折叠态（设计 §5：分组视图每组独立折叠 + localStorage 持久化）。
- * 存已折叠项目名数组（默认展开，list 含名 = 折叠）。仅用于有实例项目——空项目无实例区
- * 小标题、无折叠控件（决策 31），不进本名单。跨窗口不同步（atomWithLocalOnlyStorage，个人布局）。
- */
-export const workbenchGroupedCollapsedAtom = atomWithLocalOnlyStorage<string[]>(
-  "workbenchGroupedCollapsed",
-  [],
-);
-
-/**
- * grouped 单组是否折叠（纯函数）：collapsed 名单含名 → 折叠。空项目永不折叠（无实例区小标题，
- * 决策 31）。两端 GroupedProjectsList 共用。
- */
-export function isGroupedProjectCollapsed(projectName: string, collapsed: string[]): boolean {
-  return collapsed.includes(projectName);
-}
-
-/**
  * 左栏宽度（rem）。@deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`
  *（16rem，容量更大适配 InstanceLeftOverview 单列卡片）。本 atom 仅保留作 localStorage
  * 一次性迁移源（WorkbenchContent mount 时把 `workbenchLeftWidth` 迁到

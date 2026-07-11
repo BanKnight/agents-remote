@@ -701,9 +701,9 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
  * workbench.createMenu）→ useCreateProject + ProjectSetupPanel Dialog。视图 grouped/grid/table
  *（global 三视图全开）：
  * - grouped = mergeProjectsWithCandidates + listProjects（与桌面 GroupedView 同源），**含无实例
- *   空项目**，空状态 workbench.groupedProjectEmpty；**分组标题行左侧点击进项目**（navigate
- *   `/projects/$key`），**右侧 ⋯ ActionMenu 删除项目**（deleteProject + useConfirm confirm，
- *   destructive）。
+ *   空项目**（批 J / 决策 33：空项目只名行，无空状态文案）；**项目名行 = 名+› 整体 button 进项目**（navigate
+ *   `/projects/$key`，热区 min-h-11 ≥44px），**最右 ⋯ ActionMenu 删除项目**（deleteProject + useConfirm confirm，
+ *   destructive）；实例区 InstancePagedCarousel 每页最多 3 卡横向 swipe 翻页（折叠废弃）。
  * - grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。grid/table 点
  *   卡片/行进 `/projects/session/$focusId` 聚焦，不按项目分段故无删项目入口（仅 grouped 提供）。
  * 删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/
@@ -714,7 +714,7 @@ function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
-  //（MobilePageHeader 标题 + pb-24 底部胶囊避让），实例聚焦/新建/删除/三视图/折叠全在共享组件内。
+  //（MobilePageHeader 标题 + pb-24 底部胶囊避让），实例聚焦/新建/删除/三视图全在共享组件内（批 J 折叠废弃）。
   const focusInstance = (sessionId: string) => {
     void navigateWorkbench({ kind: "global" }, sessionId);
   };

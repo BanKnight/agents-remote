@@ -5,11 +5,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import {
   filterWorkbenchViews,
-  isGroupedProjectCollapsed,
   mergeProjectsWithCandidates,
   type WorkbenchPanelRef,
   type WorkbenchView,
-  workbenchGroupedCollapsedAtom,
   workbenchViewAtom,
 } from "../../routes/workbench-model";
 import { deleteProject, listProjects } from "../../api/client";
@@ -27,6 +25,7 @@ import {
   type DragSourceAdapter,
   type GridItemCallbacks,
   InstanceGrid,
+  InstancePagedCarousel,
   type TableRowCallbacks,
   useCloseSession,
   useGlobalInstanceCandidates,
@@ -236,9 +235,11 @@ type GroupedProjectsListProps = {
 };
 
 /**
- * grouped 唯一实现（批 F / 决策 29 + 批 H / 决策 31）：mergeProjectsWithCandidates 含空项目；
- * 项目名行 = [项目名单击进项目][⋯ 删除]（单一主操作进入）；实例区小标题 = ▼/▶ N 实例（点折叠/展开，
- * 仅 N>0）；空项目无小标题无折叠。单 collapsed 名单（默认展开），空项目永不折叠。
+ * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33，取代 31 折叠下沉 / 32 字号）：mergeProjectsWithCandidates
+ * 含空项目；项目名行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
+ * ≥44px）][⋯ 删除 最右尽头]；实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
+ * 折叠废弃无小标题）。空项目只名行（与有实例项目结构对称：都一行 header）。section 间 space-y-6（24px =
+ * spacing-2xl 明显分隔）。
  */
 function GroupedProjectsList({
   candidates,
@@ -252,7 +253,6 @@ function GroupedProjectsList({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { confirm, holder: confirmHolder } = useConfirm();
-  const [collapsed, setCollapsed] = useAtom(workbenchGroupedCollapsedAtom);
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
@@ -263,9 +263,6 @@ function GroupedProjectsList({
   );
   const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
 
-  const toggleGroup = (name: string) => {
-    setCollapsed((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
-  };
   const requestDelete = async (projectName: string) => {
     const ok = await confirm({
       cancelLabel: t("cancel"),
@@ -280,23 +277,37 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div>
+    <div className="space-y-6">
       {groups.map((group) => {
-        const isEmpty = group.candidates.length === 0;
-        const collapsedNow = isGroupedProjectCollapsed(group.projectName, collapsed);
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
           <section key={group.projectName}>
             <div className="flex items-center gap-2 px-2 py-1.5">
               <button
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-sm font-semibold text-on-surface transition hover:bg-on-surface/5"
+                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1 text-left transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
                 title={group.projectName}
                 type="button"
               >
-                <ShellIcon className="size-4 shrink-0 text-on-surface-muted" name="project" />
-                <span className="truncate">{group.projectName}</span>
+                <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
+                <span className="truncate text-base font-semibold text-on-surface">
+                  {group.projectName}
+                </span>
+                <svg
+                  aria-hidden="true"
+                  className="size-5 shrink-0 text-on-surface-muted"
+                  fill="none"
+                  viewBox="0 0 16 16"
+                >
+                  <path
+                    d="M6 4l4 4-4 4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  />
+                </svg>
               </button>
               <ActionMenu
                 align="end"
@@ -325,47 +336,14 @@ function GroupedProjectsList({
                 }
               />
             </div>
-            {isEmpty ? (
-              <div className="px-4 py-2 text-xs text-on-surface-muted">
-                {t("workbench.groupedProjectEmpty")}
-              </div>
-            ) : (
-              <>
-                <button
-                  aria-expanded={!collapsedNow}
-                  aria-label={t("workbench.toggleGroup")}
-                  className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-xs text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
-                  onClick={() => toggleGroup(group.projectName)}
-                  type="button"
-                >
-                  <svg
-                    aria-hidden="true"
-                    className={`size-3 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
-                    fill="none"
-                    viewBox="0 0 16 16"
-                  >
-                    <path
-                      d="M6 4l4 4-4 4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      stroke="currentColor"
-                    />
-                  </svg>
-                  <span>
-                    {t("workbench.groupedInstanceCount", { count: group.candidates.length })}
-                  </span>
-                </button>
-                {!collapsedNow ? (
-                  <InstanceGrid
-                    dragAdapter={dragAdapter}
-                    dragRefs={dragRefs}
-                    gap={false}
-                    items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                    plain
-                  />
-                ) : null}
-              </>
+            {group.candidates.length === 0 ? null : (
+              <InstancePagedCarousel
+                dragAdapter={dragAdapter}
+                dragRefs={dragRefs}
+                items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                plain
+                t={t}
+              />
             )}
           </section>
         );

@@ -436,9 +436,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.createTerminal": "终端",
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
-  "workbench.groupedProjectEmpty": "该项目暂无实例",
-  "workbench.groupedInstanceCount": "{{count}} 实例",
-  "workbench.toggleGroup": "折叠或展开项目组",
   "workbench.backToList": "实例列表",
   "workbench.global": "项目总览",
   "workbench.projectsAria": "项目",
@@ -490,6 +487,11 @@ export const zh: Record<TranslationKey, string> = {
   "table.colActivity": "最后活动",
   "table.colActions": "操作",
   "table.focus": "聚焦",
+
+  // ── Carousel（分组实例分页，批 J / 决策 33）──────────────────
+  "carousel.pageLabel": "第 {{current}} 页，共 {{total}} 页",
+  "carousel.prev": "上一页",
+  "carousel.next": "下一页",
 
   // ── Settings ────────────────────────────────────────────────
   "settings.placeholder": "设置功能即将上线。",

@@ -101,10 +101,10 @@
 全局层：内容区 + 底部胶囊 [项目][文件][设置]
   [项目] → 共享 `GlobalProjectsOverview`（批 F / 决策 29；桌面左栏同组件）
            header：新建项目 accent pill（workbench.createMenu）+ ViewSwitcher
-           grouped：`GroupedProjectsList`——mergeProjectsWithCandidates 含空项目；
-             项目名行 = [project 图标 + 项目名单击进项目][⋯ 删除]（单一主操作进入，决策 31；
-               图标 ShellIcon name=project size-4 text-on-surface-muted 次级，字号 text-sm 14px 对齐 body-md token，决策 32）；实例区小标题 = ▼/▶ N 实例
-             （点折叠/展开卡片网格，仅 N>0）；**空项目无小标题无折叠**（collapsed 单名单，默认展开）
+           grouped：`GroupedProjectsList` 批 J（决策 33，取代 31/32）——mergeProjectsWithCandidates 含空项目；
+             项目名行 = [📁 project 图标 size-5 + 项目名 text-base(16px headline-sm) font-semibold + › chevron size-5 整体一个 button 进项目（热区 min-h-11 ≥44px）][⋯ 删除 最右尽头]；
+             实例区 = `InstancePagedCarousel`（每页最多 3 卡横向 swipe 翻页，snap-center 双侧 peek 露邻组；桌面配页码行 ‹1·2·3›）；**无折叠**（实例恒定展示）；
+             section 间 gap-6(24px) 明显分割；**空项目只名行**（与有实例项目结构对称：都一行 header）
            grid/table：跨项目实例聚合；点实例进聚焦
   [文件] → 文件树全屏 + 预览浮窗（rootBrowse 根目录浏览，= 现状移动端 Files 做法，决策 12）
   [设置] → 设置页（沿用现状）
@@ -152,6 +152,8 @@
 31. **折叠下沉实例区小标题——进入/折叠解耦（批 H）**：取代决策 30 苹果双件套行模型（折叠仍在项目名行）。① **折叠离开项目名行**，下沉到实例区小标题：项目名行只留 `[项目名(单击进项目)][⋯ 删除]`，单一主操作=进入；实例区（N>0）新增 `▼/▶ N 实例` 小标题 button，点=折叠/展开 InstanceGrid；折叠态隐藏卡片网格但保留 `▶ N 实例` 小标题（展开入口不丢）。② **进入独立于实例**——空项目无实例区小标题、无折叠（没东西可折），仍可点项目名行进入项目（语义正确）。③ **三操作三交互面**：项目名行(进入) / 实例区小标题(折叠) / ⋯(删除)，自然察觉。④ **批 F 双名单简化为单名单**：删 `workbenchGroupedExpandedEmptyAtom`，`isGroupedProjectCollapsed(name, collapsed)` 单名单判定（空项目永不折叠）。理由：进入与折叠本属不同交互面（进入是项目基本操作，折叠管实例列表），批 G 物理分离触区未消除「同行单击」冲突，下沉到不同交互面才彻底解耦。两端共用 `GroupedProjectsList`，改一处同生效。
 
 32. **grouped 项目名行优化——图标 + 字号对齐 token + 移动滚动避让内化（批 I）**：① 项目名行加 project 图标（`ShellIcon name="project"`，`size-4` + `text-on-surface-muted` 次级，与底部胶囊「项目」tab 同图标两端语义统一）。② 项目名字号 `text-xs`→`text-sm`（14px body-md，对齐 DESIGN typography「项目名 = body-md」token，批 B 起草时误按 nav 项小字处理）。③ 移动滚动避让内化：`GlobalProjectsOverview` 滚动容器默认 `max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0`（精确避让实测胶囊高度，单一来源，对齐 file-browser/git-diff-viewer 模式），删 `contentClassName` prop（原移动传 `pb-24 lg:pb-0` 硬编码不精确、非单一来源），`MobileGlobalOverview` 不再传 contentClassName。`GroupedProjectsList` 根去 `h-full`（height:100% 子项使 overflow 容器 padding-bottom 不扩展 scrollHeight——内容滚到底贴视口底被胶囊遮挡；去 h-full 后 pb 正确撑开可滚动区，滚到底 last section bottom = 胶囊 top 不遮挡，实测 lastBottom=780=capsuleTop）。④ 骨架同步：`GroupedProjectsSkeleton` 项目名条 `h-4`→`h-5`（text-sm 行盒 20px，对齐骨架铁律 L480）+ 前置 `size-4` 图标占位。两端共用 `GroupedProjectsList` / `GlobalProjectsOverview`，改一处同生效。
+
+33. **grouped 视图 Apple Store 风格 redesign——删折叠+名行易点+实例分页 carousel（批 J）**：取代决策 31（折叠下沉）/32（名行字号），从信息架构层一次性消三个杂乱根因（折叠行割裂 / 三层信息密度 / 空实结构不对称）。① **删折叠**：删 `workbenchGroupedCollapsedAtom` + `isGroupedProjectCollapsed` + 实例区小标题行（▼/▶ N 实例），实例恒定展示。② **项目名行**：`[📁 project 图标 size-5 + 项目名 text-base(16px) font-semibold + › chevron size-5][⋯ 删除 最右]`——名+› 整体一个 `<button>` 进项目（点哪都进），字号 16px 落地 headline-sm（DESIGN 无 body-lg token，项目名本就 font-semibold，语义为分组标题），触控热区 `min-h-11`(≥44px) 满足易点；⋯ ActionMenu 放名行最右尽头。③ **实例区横向分页 carousel**（`InstancePagedCarousel`）：每页最多 3 卡（纵向复用 `InstanceCard` 横向行式 plain，不加 variant），`overflow-x-auto snap-x snap-mandatory snap-center` 双侧 peek（每页 `w-[calc(100%-3rem)]`，`-3rem`=左右各 24px 露邻组作翻页提示）；移动端原生左右 swipe 翻页，桌面端配页码行 `hidden lg:flex`（`‹ 1·2·3 ›` scrollIntoView）；≤3 实例单页退化无 peek 无页码。④ **section 间 `gap-6`(24px)** 明显分割（spacing-2xl）。⑤ **骨架同步**：删小标题行、名行 `h-5`→`h-6`(16px 行盒)、卡片骨架 carousel peek 结构。两端共用 `GroupedProjectsList`/`GlobalProjectsOverview`，改一处同生效。
 
 ## 7. 待定点
 

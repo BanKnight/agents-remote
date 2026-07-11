@@ -436,9 +436,6 @@ export const en = {
   "workbench.createTerminal": "Terminal",
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
-  "workbench.groupedProjectEmpty": "No instances in this project",
-  "workbench.groupedInstanceCount": "{{count}} instances",
-  "workbench.toggleGroup": "Toggle project group",
   "workbench.backToList": "Instances",
   "workbench.global": "Projects overview",
   "workbench.projectsAria": "Projects",
@@ -491,6 +488,11 @@ export const en = {
   "table.colActivity": "Last activity",
   "table.colActions": "Actions",
   "table.focus": "Focus",
+
+  // ── Carousel（分组实例分页，批 J / 决策 33）──────────────────
+  "carousel.pageLabel": "Page {{current}} of {{total}}",
+  "carousel.prev": "Previous page",
+  "carousel.next": "Next page",
 
   // ── Settings ────────────────────────────────────────────────
   "settings.placeholder": "Settings are coming soon.",
