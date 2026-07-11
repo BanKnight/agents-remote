@@ -152,9 +152,9 @@ const GROUPED_SKELETON_GROUPS = 2;
 const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
 
 /**
- * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35）：mirror GroupedProjectsList——
- * 每组 section = `rounded-lg border border-neutral-line overflow-hidden` 圆角边框成组（批 L：无 bg 透明融入
- * shell，border-neutral-line #263245 勾勒轮廓）+ 根 `space-y-3 px-3 py-3` 四周边距；项目名行 [project 图标
+ * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35 + 批 M / 决策 36）：mirror GroupedProjectsList——
+ * 每组 section = `rounded-lg border border-neutral-line/40 overflow-hidden` 圆角边框成组（批 L：无 bg 透明融入
+ * shell，border-neutral-line/40 半透明淡边——对齐同框 InstanceGrid divide-neutral-line/40，Apple hairline，批 M）+ 根 `space-y-3 px-3 py-3` 四周边距；项目名行 [project 图标
  * size-5][项目名 text-base 行盒 h-6=24px][› chevron size-5 同进项目 button][⋯ size-9 删除 最右]（折叠废弃，
  * 无实例区小标题行）+ 实例区 `-mt-2` 包 CardGridSkeleton plain 每组 3 卡（= carousel 一页）。名行 div `flex
  * min-h-11 items-center gap-2 px-2`（min-h-11 撑 44px = 真实名行 button 触控热区高度，批 L 去 py）。去 h-full
@@ -166,7 +166,10 @@ export function GroupedProjectsSkeleton() {
   return (
     <div className="space-y-3 px-3 py-3">
       {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
-        <section className="overflow-hidden rounded-lg border border-neutral-line" key={groupIndex}>
+        <section
+          className="overflow-hidden rounded-lg border border-neutral-line/40"
+          key={groupIndex}
+        >
           {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2
               [图标 size-5][项目名 text-base 行盒 h-6 + › size-5 同 button][⋯ size-9 最右]；
               min-h-11 模拟真实名行 button 触控热区（44px），撑高骨架名行到真实行高。 */}
@@ -1258,9 +1261,10 @@ export function InstanceGrid({
 const INSTANCE_PAGED_CAROUSEL_PAGE_SIZE = 3;
 
 /**
- * 实例分页 carousel（批 J / 决策 33）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
- * 横向 swipe 翻页 + snap-center 居中双侧 peek 露邻组（每页 calc(100% - 3rem)，左右各 1.5rem = spacing-2xl
- * peek）；桌面端配页码行 ‹1·2·3›（scrollIntoView 居中），移动端靠原生 swipe、隐藏页码。
+ * 实例分页 carousel（批 J / 决策 33 + 批 M / 决策 36）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
+ * 横向 swipe 翻页 + snap-start 左对齐单向右 peek 露邻组（每页 calc(100% - 1.5rem)，右侧 24px 单向 peek——
+ * 双侧 peek 首末页露空白=乱，单向 peek 露邻页内容=暗示，批 M）；桌面端 lg:w-full 满宽无 peek + 页码行 ‹1·2·3›
+ * （scrollIntoView inline:start 对齐 snap-start），移动端靠原生 swipe + 单向 peek 暗示、隐藏页码。
  *
  * ≤1 页退化：直接 InstanceGrid plain gap={false}（无 carousel 容器、无 peek、无页码行），零回归单列清单。
  * Apple Store 风格 grouped 实例区专用——复用 InstanceGrid 渲染页内卡片（不重写卡片/不加 variant）。
@@ -1315,7 +1319,7 @@ export function InstancePagedCarousel({
     pageRefs.current[clamped]?.scrollIntoView({
       behavior: "smooth",
       block: "nearest",
-      inline: "center",
+      inline: "start",
     });
   };
   const pages = Array.from({ length: pageCount }, (_, i) =>
@@ -1331,7 +1335,7 @@ export function InstancePagedCarousel({
       >
         {pages.map((pageItems, i) => (
           <div
-            className="[width:calc(100%-3rem)] shrink-0 snap-center"
+            className="w-[calc(100%-1.5rem)] shrink-0 snap-start lg:w-full"
             key={i}
             ref={(el) => {
               pageRefs.current[i] = el;
