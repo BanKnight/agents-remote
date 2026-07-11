@@ -237,11 +237,14 @@ type GroupedProjectsListProps = {
 /**
  * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33 + 批 L / 决策 35）：mergeProjectsWithCandidates
  * 含空项目；项目名行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
- * ≥44px）][⋯ 删除 最右尽头]；实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
+ * ≥44px）][⋯ 删除 最右尽头]（名行 `pl-5 pr-7 lg:pl-2 lg:pr-2` + button `px-0 lg:px-1`，批 P / 决策 39 + 收尾 / 决策 40/41/43：移动端 carousel
+ * peek 20px 把卡片右移，名行 `pl=peek=20`（决策 43 Apple full-bleed header 对齐 cell 左边缘）+ `pr=peek+8=28` 对齐 card action（决策 40 同列 section-right−28）+ button 移动去 px 让图标=card 边缘 / 桌面保 px-1 维持 marker↔icon；
+ * **决策 35 marker↔icon 内容对齐在去边框（决策 38）+ 满宽（决策 42）后转 Apple full-bleed 边缘对齐**（移动 nameRow 内容=card 边缘 20 非 marker 32）；桌面 `lg:pl-2 lg:pr-2`=8px 零回归）。批 P 收尾 / 决策 40：⋯ 删除 button `flex size-9`→
+ * `flex h-7 w-7 max-sm:h-10 max-sm:w-10` + 自定义 3-dot SVG→`ShellIcon ellipsis h-4 w-4`，与 InstanceCard
+ * action 同尺寸同图标同源 → 图标中心均 button.cx 严格同列。实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
  * 折叠废弃无小标题）。**section = `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40`**（批 L + 批 M + 批 O / 决策 38：移动无边框 Apple 列表范式，批 O；
  * 桌面 lg: 才加圆角边框成组——名行=header + 实例区=body 同一边框内；无 bg 透明融入 shell，border-neutral-line/40 半透明淡边——对齐同框 InstanceCard topSeparator inset 分割线，Apple hairline，批 M；实例区外层 `-mt-2`
- * 抵消首卡 InstanceCard p-3 top 收间距；根 `px-3 py-3` 四周边距 + section 间 space-y-3(12px) 缩间距，圆角
- * 卡片 Apple Store 风格不贴边）。空项目只名行（与有实例项目结构对称：都一行 header）。
+ * 抵消首卡 InstanceCard p-3 top 收间距；根 `px-0 py-3 lg:px-3`（批 P 收尾 / 决策 42：移动去 px 让 section 贴屏幕、card 距两侧 = peek(20) 单一留白非 px-3+peek 双重叠加；桌面 lg:px-3 保持边框时代内边距；py-3 顶底不动）+ section 间 space-y-3(12px) 缩间距。空项目只名行（与有实例项目结构对称：都一行 header）。
  */
 function GroupedProjectsList({
   candidates,
@@ -279,7 +282,7 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div className="space-y-3 px-3 py-3">
+    <div className="space-y-3 px-0 py-3 lg:px-3">
       {groups.map((group) => {
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
@@ -288,9 +291,9 @@ function GroupedProjectsList({
             className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
             key={group.projectName}
           >
-            <div className="flex items-center gap-2 px-2">
+            <div className="flex items-center gap-2 pl-5 pr-7 lg:pl-2 lg:pr-2">
               <button
-                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1 text-left transition hover:bg-on-surface/5"
+                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 lg:px-1 text-left transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
                 title={group.projectName}
                 type="button"
@@ -329,14 +332,10 @@ function GroupedProjectsList({
                 trigger={
                   <button
                     aria-label={t("session.actions")}
-                    className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface max-sm:h-10 max-sm:w-10"
                     type="button"
                   >
-                    <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-                      <circle cx="4" cy="8" r="1" fill="currentColor" />
-                      <circle cx="8" cy="8" r="1" fill="currentColor" />
-                      <circle cx="12" cy="8" r="1" fill="currentColor" />
-                    </svg>
+                    <ShellIcon className="h-4 w-4" name="ellipsis" />
                   </button>
                 }
               />

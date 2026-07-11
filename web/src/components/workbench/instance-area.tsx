@@ -159,7 +159,7 @@ const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
 /**
  * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35 + 批 M / 决策 36 + 批 O / 决策 38）：mirror GroupedProjectsList——
  * 每组 section = `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40`（移动无边框 Apple 列表范式，批 O；桌面 lg:
- * 才加圆角边框成组，批 L 无 bg 透明融入 shell，border-neutral-line/40 半透明淡边 Apple hairline 批 M）+ 根 `space-y-3 px-3 py-3` 四周边距；项目名行 [project 图标
+ * 才加圆角边框成组，批 L 无 bg 透明融入 shell，border-neutral-line/40 半透明淡边 Apple hairline 批 M）+ 根 `space-y-3 px-0 py-3 lg:px-3`（批 P 收尾 / 决策 42：移动去 px 让 section 贴屏幕、card 距两侧 = peek(20) 单一留白非 px-3+peek 双重叠加；桌面 lg:px-3 保持边框时代内边距）；项目名行 [project 图标
  * size-5][项目名 text-base 行盒 h-6=24px][› chevron size-5 同进项目 button][⋯ size-9 删除 最右]（折叠废弃，
  * 无实例区小标题行）+ 实例区 `-mt-2` 包 CardGridSkeleton plain 每组 3 卡（= carousel 一页）。名行 div `flex
  * min-h-11 items-center gap-2 px-2`（min-h-11 撑 44px = 真实名行 button 触控热区高度，批 L 去 py）。去 h-full
@@ -169,7 +169,7 @@ const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
  */
 export function GroupedProjectsSkeleton() {
   return (
-    <div className="space-y-3 px-3 py-3">
+    <div className="space-y-3 px-0 py-3 lg:px-3">
       {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
         <section
           className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
@@ -1263,13 +1263,15 @@ export function InstanceGrid({
 const INSTANCE_PAGED_CAROUSEL_PAGE_SIZE = 3;
 
 /**
- * 实例分页 carousel（批 J / 决策 33 + 批 M / 决策 36）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
- * 横向 swipe 翻页 + snap-start 左对齐单向右 peek 露邻组（每页 calc(100% - 1.5rem)，右侧 24px 单向 peek——
- * 双侧 peek 首末页露空白=乱，单向 peek 露邻页内容=暗示，批 M）；末页后加 peek 宽 spacer 让末页 snap 贴左对齐
- * （snap-start + pageW<containerW 时末页 snap 点超 maxScrollLeft 会偏移 peek 量，spacer 补足让末页对齐首页，批 N）；
- * 桌面端 lg:w-full 满宽无 peek + 页码行 ‹1·2·3›（scrollIntoView inline:start 对齐 snap-start），移动端靠原生 swipe + 单向 peek 暗示、隐藏页码。
+ * 实例分页 carousel（批 J / 决策 33 + 批 M / 决策 36 + 批 N / 决策 37 + 批 P / 决策 39）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
+ * 横向 swipe 翻页 + snap-start 双侧 peek（每页 calc(100% - 2.5rem)=containerW-40=左右各 20px；首尾各 w-5 spacer + scroll-px-5 让 snap 对齐
+ * snapport-left=scrollLeft+20，中间页左右各露 20px 邻页 peek、首末页露 20px 邻页 + 20px gutter——批 P 反转批 M 单向 peek，用户明示要 page2 见 page1 peek；
+ * 批 P 收尾 / 决策 41 peek 12→20px——用户指去边框后 peek 露下一页 p-3 空白看不到内容，peek 20 露到 marker 左缘）；
+ * 末页 spacer 让末页 snap 点 ≤ maxScrollLeft 贴左对齐（snap-start + pageW<containerW 时末页 snap 点超 maxScrollLeft 偏移 peek 量，spacer 补足，批 N）；
+ * 桌面端 lg:w-full 满宽无 peek（spacer lg:hidden + lg:scroll-px-0）+ 页码行 ‹1·2·3›（scrollIntoView inline:start 对齐 snap-start），移动端靠原生 swipe + 双侧 peek 暗示、隐藏页码。
  *
- * ≤1 页退化：直接 InstanceGrid plain gap={false}（无 carousel 容器、无 peek、无页码行），零回归单列清单。
+ * ≤1 页退化：InstanceGrid plain gap={false} 包在 px-5 lg:px-0 内（无 carousel 容器、无 snap、无页码行）——
+ * 移动端 px-5 让单页卡与多页 carousel 卡同几何（同 20px gutter=peek、action 同列名行 ⋯），桌面 lg:px-0 满宽零回归（批 P 收尾 / 决策 41：peek 12→20 同步 px-3→px-5）。
  * Apple Store 风格 grouped 实例区专用——复用 InstanceGrid 渲染页内卡片（不重写卡片/不加 variant）。
  */
 export function InstancePagedCarousel({
@@ -1293,20 +1295,26 @@ export function InstancePagedCarousel({
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const rafRef = useRef<number | null>(null);
 
-  // ≤1 页退化：直接 InstanceGrid（无 carousel 容器、无 peek、无页码行），单列清单语义零回归。
+  // ≤1 页退化：直接 InstanceGrid（无 carousel 容器、无 snap、无页码行），单列清单语义。
+  // 移动端 px-5 让单页卡片与多页 carousel 卡片同几何（peek 20px gutter：card [section-left+20, section-right-20]，
+  // action right-2 落 section-right-28，与名行 ⋯ pr-7 同列——批 P / 决策 39 + 收尾 / 决策 41「操作区一列」覆盖 1-3 实例 section；
+  // 不加则单页卡 full-width、action 落 section-right-8，与名行 ⋯(section-right-28) 差 20px=peek 量，多数 section 错位）。
+  // 桌面 lg:px-0 满宽（与 carousel lg:w-full 同），零回归。
   if (pageCount <= 1) {
     return (
-      <InstanceGrid
-        dragAdapter={dragAdapter}
-        dragRefs={dragRefs}
-        gap={false}
-        items={items}
-        plain={plain}
-      />
+      <div className="px-5 lg:px-0">
+        <InstanceGrid
+          dragAdapter={dragAdapter}
+          dragRefs={dragRefs}
+          gap={false}
+          items={items}
+          plain={plain}
+        />
+      </div>
     );
   }
 
-  // onScroll 同步当前页：rAF 节流；slot = scrollWidth / pageCount（每页等宽，双侧 peek 对称），算最近页 index。
+  // onScroll 同步当前页：rAF 节流；slot = scrollWidth / pageCount（每页等宽 + 首尾 spacer 对称，scrollWidth=N·pageW+24），算最近页 index。
   const handleScroll = () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -1332,13 +1340,16 @@ export function InstancePagedCarousel({
   return (
     <div>
       <div
-        className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory overflow-x-auto scroll-px-5 lg:scroll-px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={handleScroll}
         ref={scrollRef}
       >
+        {/* 首页 spacer（批 P / 决策 39）：peek 宽空 div 让 page2 snap 时 page1 右缘露 12px 左 peek（双向 peek 起点对称）。
+            桌面 lg:w-full 满宽无 peek，lg:hidden。aria-hidden 不参与 a11y。 */}
+        <div aria-hidden="true" className="w-5 shrink-0 lg:hidden" />
         {pages.map((pageItems, i) => (
           <div
-            className="w-[calc(100%-1.5rem)] shrink-0 snap-start lg:w-full"
+            className="w-[calc(100%-2.5rem)] shrink-0 snap-start lg:w-full"
             key={i}
             ref={(el) => {
               pageRefs.current[i] = el;
@@ -1353,11 +1364,12 @@ export function InstancePagedCarousel({
             />
           </div>
         ))}
-        {/* 末页 spacer（批 N / 决策 37）：peek 宽空 div 让末页 snap 点 ≤ maxScrollLeft，末页能 snap 贴左对齐——
+        {/* 末页 spacer（批 N / 决策 37 + 批 P / 决策 39）：peek 宽空 div 让末页 snap 点 ≤ maxScrollLeft，末页能 snap 贴左对齐——
             避免 snap-start + pageW<containerW 时末页 snap 点(pageW)超 maxScrollLeft((N-1)*pageW-peek) 偏移 peek 量
             （探针实测：4 实例 2 页，未加 spacer 末页 card 内容左 36 vs 首页 12，偏移 24px）。加后 maxScrollLeft=(N-1)*pageW=末页 snap 点，对齐。
+            批 P 起与首页 spacer 对称（同 w-3=12px），构成双向 peek 首尾 gutter。
             桌面 lg:w-full 满宽 pageW=containerW 不需 spacer，lg:hidden。aria-hidden 不参与 a11y。 */}
-        <div aria-hidden="true" className="w-6 shrink-0 lg:hidden" />
+        <div aria-hidden="true" className="w-5 shrink-0 lg:hidden" />
       </div>
       {/* 桌面页码行（hidden lg:flex）：移动端靠 swipe 不显页码。‹ prev + 页码 button(aria-current 高亮) + › next。 */}
       <div
