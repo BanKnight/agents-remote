@@ -23,6 +23,7 @@ import {
   candidateToGridItem,
   candidateToTableRow,
   CardGridSkeleton,
+  GroupedProjectsSkeleton,
   type DragSourceAdapter,
   type GridItemCallbacks,
   InstanceGrid,
@@ -154,9 +155,13 @@ export function GlobalProjectsOverview({
   const setupVisible = setupOpen || createProject.isPending || createProject.error instanceof Error;
 
   const body = overviewLoading ? (
-    <div className="px-3 py-2">
-      <CardGridSkeleton plain={resolvedView === "grouped" || resolvedView === "grid"} />
-    </div>
+    resolvedView === "grouped" ? (
+      <GroupedProjectsSkeleton />
+    ) : (
+      <div className="px-3 py-2">
+        <CardGridSkeleton plain={resolvedView === "grid"} />
+      </div>
+    )
   ) : overviewEmpty ? (
     <div className="flex flex-1 items-center justify-center p-6 text-center">
       <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>

@@ -107,14 +107,23 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  *
  * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
  * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
+ *
+ * `count` 参数化（默认 INSTANCE_SKELETON_ROW_COUNT * 2 = 6）：grid/table/InstanceArea 用默认 6 张；
+ * GroupedProjectsSkeleton 每组传 2（每组实例少，2 张传达「分组+卡片」结构即可）。
  */
-export function CardGridSkeleton({ plain = false }: { plain?: boolean } = {}) {
+export function CardGridSkeleton({
+  plain = false,
+  count = INSTANCE_SKELETON_ROW_COUNT * 2,
+}: {
+  plain?: boolean;
+  count?: number;
+} = {}) {
   return (
     <div
       className={plain ? "grid divide-y divide-neutral-line/40" : "grid gap-2"}
       style={INSTANCE_GRID_STYLE}
     >
-      {Array.from({ length: INSTANCE_SKELETON_ROW_COUNT * 2 }, (_, index) => (
+      {Array.from({ length: count }, (_, index) => (
         <div
           className={`relative flex items-start gap-3 p-3 ${
             plain ? "" : `rounded-lg ${shellSurfaceClasses.raised}`
@@ -132,6 +141,40 @@ export function CardGridSkeleton({ plain = false }: { plain?: boolean } = {}) {
             className="skeleton-shimmer absolute right-2 top-2 h-7 w-7 rounded-md"
           />
         </div>
+      ))}
+    </div>
+  );
+}
+
+/** grouped 骨架占位分组数（mirror 真实 GroupedProjectsList 分组结构，加载时项目数未知用 2 组）。 */
+const GROUPED_SKELETON_GROUPS = 2;
+/** grouped 骨架每组占位卡数（真实分组每组实例通常少，2 张传达「分组+卡片」结构即可）。 */
+const GROUPED_SKELETON_CARDS_PER_GROUP = 2;
+
+/**
+ * grouped 视图加载骨架（决策 31 三层结构）：mirror GroupedProjectsList——每组 section = 项目名行
+ * [项目名 flex-1][⋯ size-9 删除] + 实例区小标题 [▼ size-3][N 实例] + CardGridSkeleton plain 卡片。
+ * 项目名行高 py-1.5(12)+max(h-4=16,size-9=36)=48px = 真实项目名行；小标题 py-1(8)+max(size-3=12,
+ * h-4=16)=24px = 真实小标题（DESIGN 骨架对齐铁律）。复用 CardGridSkeleton plain（每组
+ * GROUPED_SKELETON_CARDS_PER_GROUP 张），不重写占位卡结构。global-projects-overview grouped 加载专用。
+ */
+export function GroupedProjectsSkeleton() {
+  return (
+    <div className="h-full">
+      {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
+        <section key={groupIndex}>
+          {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2 py-1.5 */}
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <span aria-hidden="true" className="skeleton-shimmer h-4 w-1/3 rounded" />
+            <span aria-hidden="true" className="skeleton-shimmer ml-auto size-9 rounded-md" />
+          </div>
+          {/* 实例区小标题骨架：mirror flex items-center gap-1.5 px-3 py-1 + [▼ size-3][N 实例] */}
+          <div className="flex items-center gap-1.5 px-3 py-1">
+            <span aria-hidden="true" className="skeleton-shimmer size-3 rounded" />
+            <span aria-hidden="true" className="skeleton-shimmer h-4 w-16 rounded" />
+          </div>
+          <CardGridSkeleton count={GROUPED_SKELETON_CARDS_PER_GROUP} plain />
+        </section>
       ))}
     </div>
   );
