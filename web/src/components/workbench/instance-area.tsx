@@ -152,29 +152,33 @@ const GROUPED_SKELETON_GROUPS = 2;
 const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
 
 /**
- * grouped 视图加载骨架（批 J / 决策 33：删折叠 + 名行 16px + 实例 carousel）：mirror GroupedProjectsList——
- * 每组 section = 项目名行 [project 图标 size-5][项目名 text-base 行盒 h-6=24px][› chevron size-5 同进项目
- * button][⋯ size-9 删除 最右]（折叠废弃，无实例区小标题行）+ CardGridSkeleton plain 每组 3 卡（= carousel
- * 一页）。项目名行高 py-1.5(12)+min-h-11(44)=56px = 真实项目名行（名行 button min-h-11=44 触控热区 + 外层
- * py-1.5(12)；骨架 div 加 min-h-11 撑高到 44，对齐真实名行 button 热区高度）。去 h-full（与 GroupedProjectsList 同语义，避免 overflow 容器
- * padding-bottom 不扩展致骨架态被底部胶囊遮挡，见 frontend-notes §1 高度链坑）。复用 CardGridSkeleton plain，
- * 不重写占位卡结构。global-projects-overview grouped 加载专用。
+ * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35）：mirror GroupedProjectsList——
+ * 每组 section = `rounded-lg border border-neutral-line overflow-hidden` 圆角边框成组（批 L：无 bg 透明融入
+ * shell，border-neutral-line #263245 勾勒轮廓）+ 根 `space-y-3 px-3 py-3` 四周边距；项目名行 [project 图标
+ * size-5][项目名 text-base 行盒 h-6=24px][› chevron size-5 同进项目 button][⋯ size-9 删除 最右]（折叠废弃，
+ * 无实例区小标题行）+ 实例区 `-mt-2` 包 CardGridSkeleton plain 每组 3 卡（= carousel 一页）。名行 div `flex
+ * min-h-11 items-center gap-2 px-2`（min-h-11 撑 44px = 真实名行 button 触控热区高度，批 L 去 py）。去 h-full
+ * （与 GroupedProjectsList 同语义，避免 overflow 容器 padding-bottom 不扩展致骨架态被底部胶囊遮挡，见
+ * frontend-notes §1 高度链坑）。复用 CardGridSkeleton plain，不重写占位卡结构。global-projects-overview
+ * grouped 加载专用。
  */
 export function GroupedProjectsSkeleton() {
   return (
-    <div>
+    <div className="space-y-3 px-3 py-3">
       {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
-        <section key={groupIndex}>
-          {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2 py-1.5
+        <section className="overflow-hidden rounded-lg border border-neutral-line" key={groupIndex}>
+          {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2
               [图标 size-5][项目名 text-base 行盒 h-6 + › size-5 同 button][⋯ size-9 最右]；
               min-h-11 模拟真实名行 button 触控热区（44px），撑高骨架名行到真实行高。 */}
-          <div className="flex min-h-11 items-center gap-2 px-2 py-1.5">
+          <div className="flex min-h-11 items-center gap-2 px-2">
             <span aria-hidden="true" className="skeleton-shimmer size-5 shrink-0 rounded" />
             <span aria-hidden="true" className="skeleton-shimmer h-6 w-1/3 rounded" />
             <span aria-hidden="true" className="skeleton-shimmer size-5 shrink-0 rounded" />
             <span aria-hidden="true" className="skeleton-shimmer ml-auto size-9 rounded-md" />
           </div>
-          <CardGridSkeleton count={GROUPED_SKELETON_CARDS_PER_GROUP} plain />
+          <div className="-mt-2">
+            <CardGridSkeleton count={GROUPED_SKELETON_CARDS_PER_GROUP} plain />
+          </div>
         </section>
       ))}
     </div>

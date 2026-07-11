@@ -235,11 +235,13 @@ type GroupedProjectsListProps = {
 };
 
 /**
- * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33，取代 31 折叠下沉 / 32 字号）：mergeProjectsWithCandidates
+ * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33 + 批 L / 决策 35）：mergeProjectsWithCandidates
  * 含空项目；项目名行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
  * ≥44px）][⋯ 删除 最右尽头]；实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
- * 折叠废弃无小标题）。空项目只名行（与有实例项目结构对称：都一行 header）。section 间 space-y-6（24px =
- * spacing-2xl 明显分隔）。
+ * 折叠废弃无小标题）。**section = `rounded-lg border border-neutral-line overflow-hidden` 圆角边框成组**（批 L：名行=header
+ * + 实例区=body 同一边框内；无 bg 透明融入 shell，border-neutral-line #263245 勾勒轮廓；实例区外层 `-mt-2`
+ * 抵消首卡 InstanceCard p-3 top 收间距；根 `px-3 py-3` 四周边距 + section 间 space-y-3(12px) 缩间距，圆角
+ * 卡片 Apple Store 风格不贴边）。空项目只名行（与有实例项目结构对称：都一行 header）。
  */
 function GroupedProjectsList({
   candidates,
@@ -277,13 +279,16 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 px-3 py-3">
       {groups.map((group) => {
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
-          <section key={group.projectName}>
-            <div className="flex items-center gap-2 px-2 py-1.5">
+          <section
+            className="overflow-hidden rounded-lg border border-neutral-line"
+            key={group.projectName}
+          >
+            <div className="flex items-center gap-2 px-2">
               <button
                 className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1 text-left transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
@@ -296,7 +301,7 @@ function GroupedProjectsList({
                 </span>
                 <svg
                   aria-hidden="true"
-                  className="size-5 shrink-0 text-on-surface-muted"
+                  className="size-5 shrink-0 text-on-surface-muted/60"
                   fill="none"
                   viewBox="0 0 16 16"
                 >
@@ -337,13 +342,15 @@ function GroupedProjectsList({
               />
             </div>
             {group.candidates.length === 0 ? null : (
-              <InstancePagedCarousel
-                dragAdapter={dragAdapter}
-                dragRefs={dragRefs}
-                items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                plain
-                t={t}
-              />
+              <div className="-mt-2">
+                <InstancePagedCarousel
+                  dragAdapter={dragAdapter}
+                  dragRefs={dragRefs}
+                  items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                  plain
+                  t={t}
+                />
+              </div>
             )}
           </section>
         );
