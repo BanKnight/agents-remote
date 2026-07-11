@@ -437,6 +437,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
   "workbench.groupedProjectEmpty": "该项目暂无实例",
+  "workbench.groupedInstanceCount": "{{count}} 实例",
   "workbench.toggleGroup": "折叠或展开项目组",
   "workbench.backToList": "实例列表",
   "workbench.global": "项目总览",

@@ -10,7 +10,6 @@ import {
   type WorkbenchPanelRef,
   type WorkbenchView,
   workbenchGroupedCollapsedAtom,
-  workbenchGroupedExpandedEmptyAtom,
   workbenchViewAtom,
 } from "../../routes/workbench-model";
 import { deleteProject, listProjects } from "../../api/client";
@@ -233,9 +232,9 @@ type GroupedProjectsListProps = {
 };
 
 /**
- * grouped 唯一实现（批 F / 决策 29）：mergeProjectsWithCandidates 含空项目；
- * 行 = 苹果双件套（决策 30）：[折叠附属控件][项目名单击进项目][⋯ 删除]；
- * 折叠双名单——有实例 collapsed（默认展开）/ 空项目 expandedEmpty（默认折叠）。
+ * grouped 唯一实现（批 F / 决策 29 + 批 H / 决策 31）：mergeProjectsWithCandidates 含空项目；
+ * 项目名行 = [项目名单击进项目][⋯ 删除]（单一主操作进入）；实例区小标题 = ▼/▶ N 实例（点折叠/展开，
+ * 仅 N>0）；空项目无小标题无折叠。单 collapsed 名单（默认展开），空项目永不折叠。
  */
 function GroupedProjectsList({
   candidates,
@@ -250,7 +249,6 @@ function GroupedProjectsList({
   const queryClient = useQueryClient();
   const { confirm, holder: confirmHolder } = useConfirm();
   const [collapsed, setCollapsed] = useAtom(workbenchGroupedCollapsedAtom);
-  const [expandedEmpty, setExpandedEmpty] = useAtom(workbenchGroupedExpandedEmptyAtom);
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
@@ -261,14 +259,8 @@ function GroupedProjectsList({
   );
   const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
 
-  const toggleGroup = (name: string, isEmpty: boolean) => {
-    if (isEmpty) {
-      setExpandedEmpty((cur) =>
-        cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name],
-      );
-    } else {
-      setCollapsed((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
-    }
+  const toggleGroup = (name: string) => {
+    setCollapsed((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
   };
   const requestDelete = async (projectName: string) => {
     const ok = await confirm({
@@ -287,39 +279,12 @@ function GroupedProjectsList({
     <div className="h-full">
       {groups.map((group) => {
         const isEmpty = group.candidates.length === 0;
-        const collapsedNow = isGroupedProjectCollapsed(
-          group.projectName,
-          isEmpty,
-          collapsed,
-          expandedEmpty,
-        );
+        const collapsedNow = isGroupedProjectCollapsed(group.projectName, collapsed);
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
           <section key={group.projectName}>
             <div className="flex items-center gap-2 px-2 py-1.5">
-              <button
-                aria-expanded={!collapsedNow}
-                aria-label={t("workbench.toggleGroup")}
-                className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface -ml-1"
-                onClick={() => toggleGroup(group.projectName, isEmpty)}
-                type="button"
-              >
-                <svg
-                  aria-hidden="true"
-                  className={`size-3.5 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
-                  fill="none"
-                  viewBox="0 0 16 16"
-                >
-                  <path
-                    d="M6 4l4 4-4 4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    stroke="currentColor"
-                  />
-                </svg>
-              </button>
               <button
                 className="flex min-w-0 flex-1 cursor-pointer items-center truncate rounded-md px-1 py-0.5 text-left text-xs font-semibold text-on-surface transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
@@ -355,21 +320,48 @@ function GroupedProjectsList({
                 }
               />
             </div>
-            {!collapsedNow ? (
-              isEmpty ? (
-                <div className="px-4 py-2 text-xs text-on-surface-muted">
-                  {t("workbench.groupedProjectEmpty")}
-                </div>
-              ) : (
-                <InstanceGrid
-                  dragAdapter={dragAdapter}
-                  dragRefs={dragRefs}
-                  gap={false}
-                  items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
-                  plain
-                />
-              )
-            ) : null}
+            {isEmpty ? (
+              <div className="px-4 py-2 text-xs text-on-surface-muted">
+                {t("workbench.groupedProjectEmpty")}
+              </div>
+            ) : (
+              <>
+                <button
+                  aria-expanded={!collapsedNow}
+                  aria-label={t("workbench.toggleGroup")}
+                  className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-xs text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                  onClick={() => toggleGroup(group.projectName)}
+                  type="button"
+                >
+                  <svg
+                    aria-hidden="true"
+                    className={`size-3 shrink-0 transition-transform ${collapsedNow ? "" : "rotate-90"}`}
+                    fill="none"
+                    viewBox="0 0 16 16"
+                  >
+                    <path
+                      d="M6 4l4 4-4 4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                    />
+                  </svg>
+                  <span>
+                    {t("workbench.groupedInstanceCount", { count: group.candidates.length })}
+                  </span>
+                </button>
+                {!collapsedNow ? (
+                  <InstanceGrid
+                    dragAdapter={dragAdapter}
+                    dragRefs={dragRefs}
+                    gap={false}
+                    items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                    plain
+                  />
+                ) : null}
+              </>
+            )}
           </section>
         );
       })}

@@ -437,6 +437,7 @@ export const en = {
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
   "workbench.groupedProjectEmpty": "No instances in this project",
+  "workbench.groupedInstanceCount": "{{count}} instances",
   "workbench.toggleGroup": "Toggle project group",
   "workbench.backToList": "Instances",
   "workbench.global": "Projects overview",
