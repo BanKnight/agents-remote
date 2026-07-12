@@ -19,6 +19,7 @@ import {
   ActionButton,
   ListGroup,
   ListRow,
+  SegmentedControl,
   ShellInput,
   ShellSectionLabel,
   listGroupClasses,
@@ -74,8 +75,9 @@ const PROTOCOL_LABEL: Record<ProviderProtocol, TranslationKey> = {
 
 /**
  * 设置内容（桌面 `SettingsDialog` / 移动 `SettingsRoute` 共享，决策 44）。
- * 两段：API Providers（凭证 CRUD）+ Claude runtime（provider 选择 / tier→model ID 映射 /
- * 1M 开关 / effort 档位）。runtime 配置在 spawn CLI 时作为全局默认初始值注入。
+ * 两段：API Providers（凭证 CRUD）+ Runtime（决策 46 起 multi-runtime：[Claude|Codex]
+ * 切换；Claude = provider 选择 / tier→model ID 映射 / 1M 开关 / effort 档位，Codex = 占位）。
+ * runtime 配置在 spawn CLI 时作为全局默认初始值注入。
  * 不含外壳——由调用方包：移动端 `SettingsRoute` = main + MobilePageHeader + 本组件 +
  * MobilePrimaryNav；桌面端 `SettingsDialog` = Dialog + DialogContent + 本组件。
  */
@@ -125,12 +127,7 @@ export function SettingsContent() {
     <>
       <div className="flex flex-col gap-6">
         <ProvidersSection providers={providers} loading={loading} onDelete={handleDelete} />
-        <ClaudeRuntimeSection
-          key={loading ? "loading" : JSON.stringify(runtime)}
-          runtime={runtime}
-          providers={providers}
-          loading={loading}
-        />
+        <RuntimeSection loading={loading} providers={providers} runtime={runtime} />
       </div>
       {confirmHolder}
     </>
@@ -412,33 +409,15 @@ function ProviderDialog({
               />
             </Field>
             <Field label={t("settings.protocol")} hint={t("settings.protocolHint")}>
-              {/* 协议只有两档，用内联分段控件而非 OptionMenu：OptionMenu 移动端形态是
-                  Radix Dialog，嵌套在本 ProviderDialog（也是 Dialog）内会被 dismissable
-                  layer 打断、trigger 点击无反应。原生 button 无此问题，移动端触摸也更大。 */}
-              <div
-                aria-label={t("settings.protocol")}
-                className="inline-flex w-full items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-                role="group"
-              >
-                {PROVIDER_PROTOCOLS.map((p) => {
-                  const active = p === protocol;
-                  return (
-                    <button
-                      aria-pressed={active}
-                      className={`inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-semibold transition ${
-                        active
-                          ? "bg-primary/15 text-primary"
-                          : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft"
-                      }`}
-                      key={p}
-                      onClick={() => setProtocol(p)}
-                      type="button"
-                    >
-                      {t(PROTOCOL_LABEL[p])}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* 协议只有两档，用内联分段控件（SegmentedControl）而非 OptionMenu：OptionMenu 移动端
+                  形态是 Radix Dialog，嵌套在本 ProviderDialog（也是 Dialog）内会被 dismissable layer
+                  打断、trigger 点击无反应。原生 button 无此问题，移动端触摸也更大。 */}
+              <SegmentedControl
+                ariaLabel={t("settings.protocol")}
+                onChange={setProtocol}
+                options={PROVIDER_PROTOCOLS.map((p) => ({ label: t(PROTOCOL_LABEL[p]), value: p }))}
+                value={protocol}
+              />
             </Field>
             <Field label={t("settings.baseUrl")} hint={t("settings.baseUrlHint")}>
               <ShellInput
@@ -505,9 +484,56 @@ function ProviderDialog({
   );
 }
 
-// ── Claude runtime section ───────────────────────────────────────────
+// ── Runtime section（多 runtime 切换器，决策 46）──────────────────────
 
-function ClaudeRuntimeSection({
+function RuntimeSection({
+  runtime,
+  providers,
+  loading = false,
+}: {
+  runtime: ClaudeRuntimeConfig;
+  providers: ProviderConfigMasked[];
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  // runtime 类型 tab：本地 state 不持久化（Codex 尚未支持，纯结构预留）。
+  const [tab, setTab] = useState<"claude" | "codex">("claude");
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <ShellSectionLabel>{t("settings.runtime")}</ShellSectionLabel>
+        <p className="mt-1 text-xs leading-5 text-on-surface-muted">{t("settings.runtimeHint")}</p>
+      </div>
+
+      <SegmentedControl
+        ariaLabel={t("settings.runtime")}
+        onChange={setTab}
+        options={[
+          { label: t("settings.runtimeTabClaude"), value: "claude" },
+          { label: t("settings.runtimeTabCodex"), value: "codex" },
+        ]}
+        value={tab}
+      />
+
+      {tab === "claude" ? (
+        <ClaudeRuntimeContent
+          key={loading ? "loading" : JSON.stringify(runtime)}
+          loading={loading}
+          providers={providers}
+          runtime={runtime}
+        />
+      ) : (
+        <CodexRuntimeContent />
+      )}
+    </section>
+  );
+}
+
+// Claude runtime 配置主体（原 ClaudeRuntimeSection 的 Card）。父组件 RuntimeSection 用
+// key={JSON.stringify(runtime)} remount：runtime 内容变（save 成功 / providerId 被后端清）
+// 才重置 state；provider CRUD 不改 runtime 时 key 不变，用户编辑中的改动保留。
+function ClaudeRuntimeContent({
   runtime,
   providers,
   loading = false,
@@ -519,8 +545,6 @@ function ClaudeRuntimeSection({
   const { t } = useT();
   const queryClient = useQueryClient();
 
-  // 父组件用 key={JSON.stringify(runtime)} remount：runtime 内容变（save 成功 / providerId
-  // 被后端清）才重置 state；provider CRUD 不改 runtime 时 key 不变，用户编辑中的改动保留。
   const [providerId, setProviderId] = useState(runtime.providerId);
   const [modelMapping, setModelMapping] = useState<ClaudeModelMapping>(runtime.modelMapping);
   const [enable1m, setEnable1m] = useState(runtime.enable1mContext);
@@ -560,115 +584,124 @@ function ClaudeRuntimeSection({
     providers.find((p) => p.id === providerId)?.protocol ?? "anthropic";
 
   return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <ShellSectionLabel>{t("settings.runtime")}</ShellSectionLabel>
-        <p className="mt-1 text-xs leading-5 text-on-surface-muted">{t("settings.runtimeHint")}</p>
-      </div>
+    <Card>
+      <CardContent className="flex flex-col gap-4 p-3">
+        <Field label={t("settings.runtimeProvider")}>
+          <OptionMenu
+            align="start"
+            cancelLabel={t("cancel")}
+            trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
+            items={[
+              {
+                label: t("settings.runtimeProviderNone"),
+                isActive: providerId === "",
+                onSelect: () => setProviderId(""),
+              },
+              ...providers.map((p) => ({
+                label: p.label,
+                isActive: p.id === providerId,
+                onSelect: () => setProviderId(p.id),
+              })),
+            ]}
+          />
+        </Field>
 
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-3">
-          <Field label={t("settings.runtimeProvider")}>
-            <OptionMenu
-              align="start"
-              cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
-              items={[
-                {
-                  label: t("settings.runtimeProviderNone"),
-                  isActive: providerId === "",
-                  onSelect: () => setProviderId(""),
-                },
-                ...providers.map((p) => ({
-                  label: p.label,
-                  isActive: p.id === providerId,
-                  onSelect: () => setProviderId(p.id),
-                })),
-              ]}
-            />
-          </Field>
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold text-on-surface-soft">{t("settings.modelMapping")}</p>
+          <p className="text-xs leading-5 text-on-surface-muted">
+            {t("settings.modelMappingHint")}
+          </p>
+          {TIERS.map((tier) => (
+            <div key={tier} className="flex items-center gap-2">
+              <span className="w-16 shrink-0 text-xs text-on-surface-muted">
+                {t(TIER_LABEL[tier])}
+              </span>
+              {providerId && !loading ? (
+                <ModelTierSelect
+                  tier={tier}
+                  value={modelMapping[tier]}
+                  providerId={providerId}
+                  protocol={selectedProtocol}
+                  onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
+                />
+              ) : (
+                <ShellInput
+                  value={modelMapping[tier]}
+                  onChange={(e) => setModelMapping({ ...modelMapping, [tier]: e.target.value })}
+                  placeholder={tier}
+                  disabled={loading}
+                />
+              )}
+            </div>
+          ))}
+        </div>
 
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold text-on-surface-soft">
-              {t("settings.modelMapping")}
-            </p>
-            <p className="text-xs leading-5 text-on-surface-muted">
-              {t("settings.modelMappingHint")}
-            </p>
-            {TIERS.map((tier) => (
-              <div key={tier} className="flex items-center gap-2">
-                <span className="w-16 shrink-0 text-xs text-on-surface-muted">
-                  {t(TIER_LABEL[tier])}
-                </span>
-                {providerId && !loading ? (
-                  <ModelTierSelect
-                    tier={tier}
-                    value={modelMapping[tier]}
-                    providerId={providerId}
-                    protocol={selectedProtocol}
-                    onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
-                  />
-                ) : (
-                  <ShellInput
-                    value={modelMapping[tier]}
-                    onChange={(e) => setModelMapping({ ...modelMapping, [tier]: e.target.value })}
-                    placeholder={tier}
-                    disabled={loading}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enable1m}
-            disabled={loading}
-            onClick={() => !loading && setEnable1m(!enable1m)}
-            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enable1m}
+          disabled={loading}
+          onClick={() => !loading && setEnable1m(!enable1m)}
+          className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-on-surface">
+              {t("settings.enable1m")}
+            </span>
+            <span className="block text-xs leading-5 text-on-surface-muted">
+              {t("settings.enable1mHint")}
+            </span>
+          </span>
+          <span
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enable1m ? "bg-primary" : "bg-surface-inset"}`}
           >
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-on-surface">
-                {t("settings.enable1m")}
-              </span>
-              <span className="block text-xs leading-5 text-on-surface-muted">
-                {t("settings.enable1mHint")}
-              </span>
-            </span>
             <span
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enable1m ? "bg-primary" : "bg-surface-inset"}`}
-            >
-              <span
-                className={`inline-block size-5 transform rounded-full bg-on-primary shadow transition ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"} ${enable1m ? "" : "bg-on-surface"}`}
-              />
-            </span>
-          </button>
-
-          <Field label={t("settings.effort")} hint={t("settings.effortHint")}>
-            <OptionMenu
-              align="start"
-              cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} disabled={loading} />}
-              items={EFFORT_LEVELS.map((level) => ({
-                label: t(EFFORT_LABEL[level]),
-                isActive: level === effort,
-                onSelect: () => setEffort(level),
-              }))}
+              className={`inline-block size-5 transform rounded-full bg-on-primary shadow transition ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"} ${enable1m ? "" : "bg-on-surface"}`}
             />
-          </Field>
+          </span>
+        </button>
 
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <span className="text-xs text-on-surface-muted">
-              {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
-            </span>
-            <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
-              {saving ? t("settings.saving") : t("settings.save")}
-            </ActionButton>
-          </div>
-        </CardContent>
-      </Card>
-    </section>
+        <Field label={t("settings.effort")} hint={t("settings.effortHint")}>
+          <OptionMenu
+            align="start"
+            cancelLabel={t("cancel")}
+            trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} disabled={loading} />}
+            items={EFFORT_LEVELS.map((level) => ({
+              label: t(EFFORT_LABEL[level]),
+              isActive: level === effort,
+              onSelect: () => setEffort(level),
+            }))}
+          />
+        </Field>
+
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="text-xs text-on-surface-muted">
+            {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
+          </span>
+          <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
+            {saving ? t("settings.saving") : t("settings.save")}
+          </ActionButton>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Codex runtime 占位（决策 46）：agent 尚未支持，诚实空态——无伪造控件、不读后端。
+// 未来 Codex 接入时把本组件换成真实配置主体 + 接 backend，runtime 段结构无需改动。
+function CodexRuntimeContent() {
+  const { t } = useT();
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
+        <p className="text-sm font-semibold text-on-surface-soft">
+          {t("settings.codexRuntimeUnsupported")}
+        </p>
+        <p className="text-xs leading-5 text-on-surface-muted">
+          {t("settings.codexRuntimeUnsupportedHint")}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -517,8 +517,14 @@ export const en = {
   "settings.deleteProvider": "Delete provider",
   "settings.deleteConfirm":
     'Delete provider "{{label}}"? Sessions using it will fall back to server env.',
-  "settings.runtime": "Claude runtime",
-  "settings.runtimeHint": "Global defaults applied to every new Claude session at spawn time.",
+  "settings.runtime": "Runtime",
+  "settings.runtimeHint":
+    "Switch by agent type; the selected config is the global default for new sessions at spawn time.",
+  "settings.runtimeTabClaude": "Claude",
+  "settings.runtimeTabCodex": "Codex",
+  "settings.codexRuntimeUnsupported": "Codex runtime coming soon",
+  "settings.codexRuntimeUnsupportedHint":
+    "Once Codex agent lands, you'll configure its provider and models here.",
   "settings.runtimeProvider": "Provider",
   "settings.runtimeProviderNone": "None (use server env)",
   "settings.modelMapping": "Model mapping",

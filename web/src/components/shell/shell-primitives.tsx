@@ -398,6 +398,61 @@ export function ShellInput({ className = "", ...props }: ShellInputProps) {
   );
 }
 
+type SegmentedControlOption<T extends string> = {
+  value: T;
+  label: string;
+  disabled?: boolean;
+};
+
+type SegmentedControlProps<T extends string> = {
+  ariaLabel: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: SegmentedControlOption<T>[];
+};
+
+/**
+ * Apple 风格内联分段选择器（DESIGN.md `segmented-control`）：2~N 个互斥选项的表单控件，
+ * 平铺全可见（区别于折叠下拉的 `OptionMenu`）。容器复用 `capsule-actions` 同款 token
+ *（`rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5` + `role="group"`）；
+ * item 是原生 `<button>`（**非 Radix Trigger asChild**——避开嵌套 modal 内 trigger 失效，
+ * 见 frontend-notes §5），`min-h-11 flex-1` 触摸友好，active `bg-primary/15 text-primary` + `aria-pressed`。
+ */
+export function SegmentedControl<T extends string>({
+  ariaLabel,
+  value,
+  onChange,
+  options,
+}: SegmentedControlProps<T>) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="inline-flex w-full items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+      role="group"
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            aria-pressed={active}
+            className={`inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-semibold transition ${
+              active
+                ? "bg-primary/15 text-primary"
+                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft"
+            }`}
+            disabled={option.disabled}
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 type ListGroupProps = {
   ariaLabel?: string;
   children: ReactNode;
