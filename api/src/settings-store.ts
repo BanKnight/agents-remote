@@ -74,13 +74,20 @@ export class SettingsStore {
   }
 }
 
+// 纯函数：判断 model 串是否具体 ID（如 "claude-opus-4-8"）而非 tier alias（"opus"/"sonnet"/...）。
+// 契约：具体 ID 含 "-"，tier alias 不含。resolveModelId / resolveSpawnModel 据此决定是否拼 [1m]
+// 后缀。依赖 CLAUDE_MODEL_TIERS 全不含 "-"；若未来出现含 "-" 的 alias 或不含 "-" 的具体 ID 需重新审视。
+export function isConcreteModelId(model: string): boolean {
+  return model.includes("-");
+}
+
 // 纯函数：tier → 最终 model ID（spawn 时传给 CLI 的 --model 值）。
 // modelMapping[tier] 可以是 tier alias（"opus"，CLI 直接接受）或具体 ID
 //（"claude-opus-4-8"）。enable1mContext 只对具体 ID 拼 [1m] 后缀；alias 不拼
 //（CLI 不接受 alias[1m]，研究文档 L49/L53）。
 export function resolveModelId(config: ClaudeRuntimeConfig, tier: ClaudeModelTier): string {
   const modelId = config.modelMapping[tier] || config.modelMapping.default || "sonnet";
-  const isConcreteId = modelId.includes("-");
+  const isConcreteId = isConcreteModelId(modelId);
   return config.enable1mContext && isConcreteId ? `${modelId}[1m]` : modelId;
 }
 

@@ -9,7 +9,7 @@ import {
 } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import { Claude2SessionRelay } from "./session-relay";
-import { SettingsStore, resolveModelId } from "./settings-store";
+import { SettingsStore, isConcreteModelId, resolveModelId } from "./settings-store";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -154,7 +154,7 @@ export function resolveSpawnModel(
   if (isClaudeModelTier(model)) {
     return runtime ? resolveModelId(runtime, model) : model;
   }
-  if (runtime?.enable1mContext && !model.includes("[1m]") && model.includes("-")) {
+  if (runtime?.enable1mContext && !model.includes("[1m]") && isConcreteModelId(model)) {
     return `${model}[1m]`;
   }
   return model;
