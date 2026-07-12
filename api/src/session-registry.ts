@@ -3,6 +3,7 @@ import type {
   AgentSession,
   AgentSessionStatus,
   ApiErrorCode,
+  EffortLevel,
   SessionType,
   TerminalSession,
   TerminalSessionStatus,
@@ -30,6 +31,7 @@ export type SessionMetadata = {
   claudeSessionId?: string;
   model?: string;
   permissionMode?: string;
+  effort?: EffortLevel;
 };
 
 export type RuntimeStream = {
@@ -86,6 +88,7 @@ type CreateAgentSessionInput = {
   claudeSessionId?: string;
   model?: string;
   permissionMode?: string;
+  effort?: EffortLevel;
 };
 
 type CreateTerminalSessionInput = {
@@ -162,6 +165,19 @@ export class SessionRegistry {
     const updated: SessionMetadata = {
       ...metadata,
       permissionMode,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(updated);
+  }
+
+  // Persist the runtime effort level so an API restart (--resume) re-applies it via
+  // CLAUDE_CODE_EFFORT_LEVEL env in spawnClaudeDirect. Symmetric to setModel/setPermissionMode.
+  async setEffort(sessionId: string, effort: EffortLevel): Promise<void> {
+    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    if (!metadata) return;
+    const updated: SessionMetadata = {
+      ...metadata,
+      effort,
       updatedAt: this.now().toISOString(),
     };
     await this.writeMetadata(updated);
@@ -246,6 +262,7 @@ export class SessionRegistry {
       claudeSessionId: input.claudeSessionId,
       model: input.model,
       permissionMode: input.permissionMode,
+      effort: input.effort,
     });
 
     try {
@@ -414,6 +431,7 @@ export class SessionRegistry {
     claudeSessionId?: string;
     model?: string;
     permissionMode?: string;
+    effort?: EffortLevel;
   }) {
     const id = this.createId(input.type);
     const timestamp = this.now().toISOString();
@@ -432,6 +450,7 @@ export class SessionRegistry {
       claudeSessionId: input.claudeSessionId,
       model: input.model,
       permissionMode: input.permissionMode,
+      effort: input.effort,
     };
 
     await this.writeMetadata(metadata);

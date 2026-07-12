@@ -1769,6 +1769,12 @@ CLI 进程**全程不退出**：`compact_boundary` 等重放标记是 CLI 在同
 
 > 两者都是 host→CLI 的 `control_request`（见 [subtype 全表](#control_request-subtype-全表)），CLI 在进程内切换并回 `control_response`。早期"杀进程重启 CLI + `switch_model_result`"的设计已废弃。
 
+## 三维度运行态配置（model / permission / effort）
+
+`model` / `permission` / `effort` 三个运行态可调维度——默认值来源、spawn 初始值、stream-json 运行时切换、TUI vs 无头能力差异、竞品方案、本项目对接现状——已独立成文：[Claude CLI 运行态三维度对接](./claude-cli-runtime-config.md)。它们部分属于 TUI 能力（非 stream-json 协议本身，effort 尤甚），故单独对接。
+
+> 本节聚焦 stream-json 协议内的切换机制：下方 `### 模型切换` / `### 权限模式切换` 描述 `set_model` / `set_permission_mode` 两个进程内 control_request；effort 在 stream-json 下无对应 control（详见独立文档）。
+
 ## 命令队列与消费语义
 
 这是 CLI 进程**内部**的命令队列（`utils/messageQueueManager.ts` 的模块级 `commandQueue` 单例）消费机制。理解它对"turn 中追加消息"场景（连续发送、排队、批量合并）至关重要。

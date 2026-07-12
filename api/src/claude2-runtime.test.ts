@@ -4,8 +4,11 @@ import {
   buildSeedInitLine,
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
+  buildSpawnEnv,
+  resolveSpawnModel,
   Claude2Runtime,
 } from "./claude2-runtime";
+import type { ClaudeRuntimeConfig } from "@agents-remote/shared";
 
 test("buildSeedInitLine uses seed_init subtype so server-side init capture skips it", () => {
   const line = buildSeedInitLine("opus", "plan");
@@ -321,4 +324,93 @@ test("injectLiveLine is a no-op when the relay is missing or destroyed", () => {
     },
   });
   expect(() => runtime.injectLiveLine("dead", '{"type":"user"}')).not.toThrow();
+});
+
+// ── buildSpawnEnv: spawn env 注入（effort + provider 凭证） ──
+
+test("buildSpawnEnv inherits parent env without injecting when effort/provider absent", () => {
+  const env = buildSpawnEnv(undefined, undefined, { PATH: "/usr/bin" });
+  expect(env).toEqual({ PATH: "/usr/bin" });
+  expect(env.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
+  expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+  expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+});
+
+test("buildSpawnEnv injects CLAUDE_CODE_EFFORT_LEVEL from effort", () => {
+  const env = buildSpawnEnv("xhigh", undefined, { PATH: "/usr/bin" });
+  expect(env.CLAUDE_CODE_EFFORT_LEVEL).toBe("xhigh");
+  expect(env.PATH).toBe("/usr/bin");
+});
+
+test("buildSpawnEnv injects provider apiKey and baseUrl", () => {
+  const env = buildSpawnEnv(undefined, { apiKey: "sk-ant-xxx", baseUrl: "https://gw.example" }, {});
+  expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-xxx");
+  expect(env.ANTHROPIC_BASE_URL).toBe("https://gw.example");
+});
+
+test("buildSpawnEnv omits baseUrl when provider has only apiKey", () => {
+  const env = buildSpawnEnv(undefined, { apiKey: "sk-ant-xxx" }, {});
+  expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-xxx");
+  expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+});
+
+// ── resolveSpawnModel: metadata.model → spawn --model 值 ──
+
+const aliasRuntime: ClaudeRuntimeConfig = {
+  providerId: "",
+  modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
+  enable1mContext: false,
+  effort: "high",
+};
+
+const concreteRuntime: ClaudeRuntimeConfig = {
+  providerId: "",
+  modelMapping: {
+    default: "claude-sonnet-4-6",
+    opus: "claude-opus-4-8",
+    sonnet: "claude-sonnet-4-6",
+    haiku: "claude-haiku-4-5",
+  },
+  enable1mContext: false,
+  effort: "high",
+};
+
+test("resolveSpawnModel returns undefined for missing model", () => {
+  expect(resolveSpawnModel(undefined, aliasRuntime)).toBeUndefined();
+});
+
+test("resolveSpawnModel resolves tier alias via modelMapping", () => {
+  expect(resolveSpawnModel("sonnet", concreteRuntime)).toBe("claude-sonnet-4-6");
+});
+
+test("resolveSpawnModel appends [1m] to resolved concrete id when enable1mContext on", () => {
+  expect(resolveSpawnModel("sonnet", { ...concreteRuntime, enable1mContext: true })).toBe(
+    "claude-sonnet-4-6[1m]",
+  );
+});
+
+test("resolveSpawnModel passes tier alias through when runtime undefined", () => {
+  expect(resolveSpawnModel("sonnet", undefined)).toBe("sonnet");
+});
+
+test("resolveSpawnModel leaves bare alias without [1m] even when enable1mContext on", () => {
+  // aliasRuntime maps sonnet→"sonnet" (no dash). resolveModelId only suffixes
+  // concrete ids (has dash), so a bare alias stays bare — CLI rejects "alias[1m]".
+  expect(resolveSpawnModel("sonnet", { ...aliasRuntime, enable1mContext: true })).toBe("sonnet");
+});
+
+test("resolveSpawnModel appends [1m] to concrete id when enable1mContext on", () => {
+  expect(resolveSpawnModel("claude-opus-4-8", { ...aliasRuntime, enable1mContext: true })).toBe(
+    "claude-opus-4-8[1m]",
+  );
+});
+
+test("resolveSpawnModel does not append [1m] when enable1mContext off", () => {
+  expect(resolveSpawnModel("claude-opus-4-8", aliasRuntime)).toBe("claude-opus-4-8");
+});
+
+test("resolveSpawnModel does not double-append [1m]", () => {
+  expect(resolveSpawnModel("claude-opus-4-8[1m]", { ...aliasRuntime, enable1mContext: true })).toBe(
+    "claude-opus-4-8[1m]",
+  );
 });

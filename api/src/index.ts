@@ -30,6 +30,8 @@ import { SessionRegistry, type RuntimeResources } from "./session-registry";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadSettings, StartupError } from "./settings";
+import { SettingsStore } from "./settings-store";
+import { handleSettingsRoutes } from "./settings-routes";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
@@ -43,6 +45,7 @@ type FetchHandlerOptions = {
   projectService?: ProjectService;
   projectsRoot?: string;
   sessionRegistry?: SessionRegistry;
+  settingsStore?: SettingsStore;
 };
 
 type WebSocketData =
@@ -116,6 +119,13 @@ export const createFetchHandler =
       return response;
     };
 
+    if (options.settingsStore) {
+      const settingsResponse = await handleSettingsRoutes(request, url, options.settingsStore);
+      if (settingsResponse) {
+        return withRefresh(settingsResponse);
+      }
+    }
+
     if (options.projectsRoot && options.sessionRegistry) {
       if (options.claude2StreamController) {
         const claude2Upgrade = await handleClaude2StreamUpgrade(
@@ -172,6 +182,7 @@ export const createFetchHandler =
         url,
         options.projectsRoot,
         options.sessionRegistry,
+        options.settingsStore,
       );
 
       if (sessionResponse) {
@@ -650,9 +661,10 @@ export const startApi = async () => {
     tokenSecret,
     tokenTtlMs: settings.tokenTtlHours * 3600 * 1000,
   });
+  const settingsStore = new SettingsStore();
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
-  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir);
+  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore);
   const claudePermissionModes = await parseClaudePermissionModes();
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   const runtime: RuntimeResources = {
@@ -717,6 +729,7 @@ export const startApi = async () => {
       projectService,
       projectsRoot: settings.projectsRoot,
       sessionRegistry,
+      settingsStore,
     }),
     websocket: {
       open(ws) {

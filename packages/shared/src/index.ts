@@ -171,6 +171,98 @@ export type SaveFileResponse = {
 
 export type AgentProvider = "claude" | "codex" | "claude2";
 
+// ── Settings: provider credentials + claude runtime defaults ──────────
+//
+// Provider = 一套 API 凭证（apiKey + baseUrl）；claude runtime 选其中一个。
+// modelMapping = tier → 具体 model ID（spawn 时传给 CLI 的 --model 值）。
+// ClaudeRuntimeConfig = providerId + modelMapping + enable1mContext + effort，
+// 是所有新 claude2 session spawn 的全局默认初始值。
+
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export const EFFORT_LEVELS: readonly EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
+
+export type ClaudeModelTier = "default" | "opus" | "sonnet" | "haiku";
+export const CLAUDE_MODEL_TIERS: readonly ClaudeModelTier[] = [
+  "default",
+  "opus",
+  "sonnet",
+  "haiku",
+];
+
+export type ClaudeModelMapping = {
+  default: string;
+  opus: string;
+  sonnet: string;
+  haiku: string;
+};
+
+export type ProviderConfig = {
+  id: string;
+  label: string;
+  apiKey: string;
+  baseUrl?: string;
+};
+
+export type ProviderConfigMasked = Omit<ProviderConfig, "apiKey"> & {
+  apiKeyMasked: string;
+  hasApiKey: boolean;
+};
+
+export type ClaudeRuntimeConfig = {
+  providerId: string;
+  modelMapping: ClaudeModelMapping;
+  enable1mContext: boolean;
+  effort: EffortLevel;
+};
+
+export type SettingsState = {
+  providers: ProviderConfig[];
+  runtimes: {
+    claude: ClaudeRuntimeConfig;
+  };
+};
+
+export type GetSettingsResponse = {
+  settings: {
+    providers: ProviderConfigMasked[];
+    runtimes: {
+      claude: ClaudeRuntimeConfig;
+    };
+  };
+};
+
+export type CreateProviderRequest = {
+  label: string;
+  apiKey: string;
+  baseUrl?: string;
+};
+
+export type UpdateProviderRequest = {
+  label?: string;
+  apiKey?: string;
+  baseUrl?: string;
+};
+
+export type ProviderResponse = {
+  provider: ProviderConfigMasked;
+};
+
+export type DeleteProviderResponse = {
+  deleted: true;
+  id: string;
+};
+
+export type UpdateClaudeRuntimeRequest = {
+  providerId?: string;
+  modelMapping?: Partial<ClaudeModelMapping>;
+  enable1mContext?: boolean;
+  effort?: EffortLevel;
+};
+
+export type UpdateClaudeRuntimeResponse = {
+  runtime: ClaudeRuntimeConfig;
+};
+
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
 
 export type TerminalSessionStatus = "running" | "closed" | "error";
@@ -1097,7 +1189,10 @@ export type ApiErrorCode =
   | "SESSION_TYPE_INVALID"
   | "SESSION_STATE_CONFLICT"
   | "SESSION_METADATA_ERROR"
-  | "SESSION_STREAM_MISMATCH";
+  | "SESSION_STREAM_MISMATCH"
+  | "SETTINGS_INVALID"
+  | "PROVIDER_NOT_FOUND"
+  | "PROVIDER_LABEL_CONFLICT";
 
 export type ApiErrorResponse = {
   error: {

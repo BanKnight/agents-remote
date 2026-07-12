@@ -231,6 +231,7 @@ export class Claude2StreamController {
       metadata?.claudeSessionId,
       metadata?.model,
       metadata?.permissionMode,
+      metadata?.effort,
     );
 
     // History and live cache are replayed from the relay on connect.

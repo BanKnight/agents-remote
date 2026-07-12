@@ -36,6 +36,13 @@ import type {
   SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
   UploadFileResponse,
+  CreateProviderRequest,
+  DeleteProviderResponse,
+  GetSettingsResponse,
+  ProviderResponse,
+  UpdateClaudeRuntimeRequest,
+  UpdateClaudeRuntimeResponse,
+  UpdateProviderRequest,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -380,6 +387,55 @@ export function claude2StreamUrl(projectName: string, sessionId: string) {
 export function createEchoSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${protocol}//${window.location.host}/api/ws/echo`);
+}
+
+// ── Settings: provider credentials + claude runtime defaults ──────────
+
+export async function getSettings(): Promise<GetSettingsResponse> {
+  return fetchJson("/api/settings", "api.settingsFetchFailed");
+}
+
+export async function createProvider(input: CreateProviderRequest): Promise<ProviderResponse> {
+  return fetchJson("/api/settings/providers", "api.providerCreateFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies CreateProviderRequest),
+  });
+}
+
+export async function updateProvider(
+  id: string,
+  input: UpdateProviderRequest,
+): Promise<ProviderResponse> {
+  return fetchJson(
+    `/api/settings/providers/${encodeURIComponent(id)}`,
+    "api.providerUpdateFailed",
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input satisfies UpdateProviderRequest),
+    },
+  );
+}
+
+export async function deleteProvider(id: string): Promise<DeleteProviderResponse> {
+  return fetchJson(
+    `/api/settings/providers/${encodeURIComponent(id)}`,
+    "api.providerDeleteFailed",
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function updateClaudeRuntime(
+  input: UpdateClaudeRuntimeRequest,
+): Promise<UpdateClaudeRuntimeResponse> {
+  return fetchJson("/api/settings/runtimes/claude", "api.runtimeUpdateFailed", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies UpdateClaudeRuntimeRequest),
+  });
 }
 
 const projectFilesPath = (projectName: string, path: string) =>

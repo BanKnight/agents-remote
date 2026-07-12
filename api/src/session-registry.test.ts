@@ -219,6 +219,35 @@ test("SessionRegistry.setModel is a no-op when the session metadata file is miss
   ).resolves.toBeUndefined();
 });
 
+test("SessionRegistry.setEffort persists a runtime effort level to metadata", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_seteffort789",
+  });
+
+  const agent = await registry.createAgentSession({
+    project,
+    provider: "claude2",
+    model: "sonnet",
+    effort: "high",
+  });
+
+  await registry.setEffort(agent.id, "xhigh");
+
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_seteffort789.json"), "utf8"),
+  );
+  expect(metadata.effort).toBe("xhigh");
+  // setEffort only updates effort; model is untouched.
+  expect(metadata.model).toBe("sonnet");
+});
+
+test("SessionRegistry.setEffort is a no-op when the session metadata file is missing", async () => {
+  const registry = new SessionRegistry({ runDir, now: fixedNow });
+  await expect(registry.setEffort("agent_nonexistent_id", "xhigh")).resolves.toBeUndefined();
+});
+
 test("SessionRegistry.renameAgentSession persists new displayName to metadata", async () => {
   const registry = new SessionRegistry({
     runDir,

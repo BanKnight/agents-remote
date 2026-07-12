@@ -9,6 +9,7 @@ import type {
   CreateAgentSessionResponse,
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
+  EffortLevel,
   ListAgentSessionsResponse,
   ListAgentHistoryResponse,
   ListTerminalSessionsResponse,
@@ -24,6 +25,7 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
+import type { SettingsStore } from "./settings-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
@@ -32,6 +34,7 @@ export const handleSessionRoutes = async (
   url: URL,
   projectsRoot: string,
   registry: SessionRegistry,
+  settingsStore?: SettingsStore,
 ) => {
   const historyMatch = matchAgentHistoryRoute(url.pathname);
   if (historyMatch && request.method === "GET") {
@@ -59,7 +62,7 @@ export const handleSessionRoutes = async (
     const project = await resolveProjectPath(projectsRoot, match.projectName);
 
     if (match.resource === "agent-sessions") {
-      return handleAgentSessionRoute(request, registry, project, match.sessionId);
+      return handleAgentSessionRoute(request, registry, project, match.sessionId, settingsStore);
     }
 
     return handleTerminalSessionRoute(request, registry, project, match.sessionId);
@@ -77,6 +80,7 @@ const handleAgentSessionRoute = async (
   registry: SessionRegistry,
   project: { name: string; path: string },
   sessionId: string | undefined,
+  settingsStore?: SettingsStore,
 ) => {
   if (!sessionId && request.method === "GET") {
     const sessions = await registry.listAgentSessions(project.name);
@@ -100,9 +104,22 @@ const handleAgentSessionRoute = async (
     }
 
     const profile = getAgentProviderProfile(body.provider);
-    const model = body.model ?? profile?.availableModels?.[0];
-    if (model && profile?.availableModels && !profile.availableModels.includes(model)) {
-      return jsonError("SESSION_PROVIDER_UNAVAILABLE", `Unsupported model: ${model}`, 400);
+
+    // claude2: settings 是 model/effort 权威来源。model 默认 tier alias "sonnet"（不读
+    // modelMapping.default——避免 default tier 配成具体 ID 时绕过 1M 开关 + 改变 tier 语义），
+    // spawn 瞬间由 Claude2Runtime.resolveSpawnModel 把 tier 解析成具体 ID。effort 默认全局档。
+    // 非 claude2 或无 settingsStore（E2E/旧调用）：保留 profile.availableModels 默认 + 校验。
+    let model: string | undefined;
+    let effort: EffortLevel | undefined;
+    if (body.provider === "claude2" && settingsStore) {
+      const claudeSettings = await settingsStore.read();
+      model = body.model ?? "sonnet";
+      effort = claudeSettings.runtimes.claude.effort;
+    } else {
+      model = body.model ?? profile?.availableModels?.[0];
+      if (model && profile?.availableModels && !profile.availableModels.includes(model)) {
+        return jsonError("SESSION_PROVIDER_UNAVAILABLE", `Unsupported model: ${model}`, 400);
+      }
     }
 
     let permissionMode = body.permissionMode ?? "auto";
@@ -133,6 +150,7 @@ const handleAgentSessionRoute = async (
           claudeSessionId: body.claudeSessionId,
           model,
           permissionMode,
+          effort,
         }),
       };
       return Response.json(response);

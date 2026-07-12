@@ -1,7 +1,14 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import {
+  CLAUDE_MODEL_TIERS,
+  type ClaudeModelTier,
+  type ClaudeRuntimeConfig,
+  type EffortLevel,
+} from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import { Claude2SessionRelay } from "./session-relay";
+import { SettingsStore, resolveModelId } from "./settings-store";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -97,12 +104,49 @@ type Claude2Process = {
   claudeSessionId?: string;
   model?: string;
   permissionMode?: string;
+  effort?: EffortLevel;
 };
+
+// 纯函数：构造 spawn env——继承父进程 + 注入 effort + provider 凭证。
+// apiKey 只在此处从 provider 读出写进 env，不进任何日志/状态。导出供测试。
+export function buildSpawnEnv(
+  effort: EffortLevel | undefined,
+  provider: { apiKey: string; baseUrl?: string } | undefined,
+  parentEnv: Record<string, string | undefined> = process.env,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...parentEnv };
+  if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
+  if (provider?.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
+  if (provider?.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
+  return env;
+}
+
+// 纯函数：metadata.model → spawn --model 值。
+// tier alias（"sonnet"）→ resolveModelId(runtime, tier)（受 enable1mContext 影响）；
+// 具体 ID（session 内 set_model 持久化的）→ 直接用，enable1mContext 时拼 [1m]（若未含）。
+// runtime 缺失（settingsStore 不可用）→ tier alias 原样传（CLI 接受，现状不坏）。
+export function resolveSpawnModel(
+  model: string | undefined,
+  runtime: ClaudeRuntimeConfig | undefined,
+): string | undefined {
+  if (!model) return undefined;
+  if (isClaudeModelTier(model)) {
+    return runtime ? resolveModelId(runtime, model) : model;
+  }
+  if (runtime?.enable1mContext && !model.includes("[1m]") && model.includes("-")) {
+    return `${model}[1m]`;
+  }
+  return model;
+}
+
+const isClaudeModelTier = (value: string): value is ClaudeModelTier =>
+  (CLAUDE_MODEL_TIERS as readonly string[]).includes(value);
 
 export class Claude2Runtime implements RuntimeResources {
   private readonly processes = new Map<string, Claude2Process>();
   private readonly relays = new Map<string, Claude2SessionRelay>();
   private readonly runDir: string;
+  private readonly settingsStore?: SettingsStore;
   private nextGeneration = 1;
   private onSystemInit:
     | ((sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void)
@@ -112,8 +156,9 @@ export class Claude2Runtime implements RuntimeResources {
     null;
   private onSkillReload: ((sessionName: string) => void) | null = null;
 
-  constructor(runDir: string) {
+  constructor(runDir: string, settingsStore?: SettingsStore) {
     this.runDir = runDir;
+    this.settingsStore = settingsStore;
   }
 
   setOnSystemInit(
@@ -178,6 +223,7 @@ export class Claude2Runtime implements RuntimeResources {
       metadata.claudeSessionId,
       metadata.model,
       metadata.permissionMode,
+      metadata.effort,
     );
   }
 
@@ -188,6 +234,7 @@ export class Claude2Runtime implements RuntimeResources {
     claudeSessionId?: string,
     model?: string,
     permissionMode?: string,
+    effort?: EffortLevel,
   ): Promise<void> {
     const existing = this.processes.get(sessionName);
     if (existing) {
@@ -196,6 +243,7 @@ export class Claude2Runtime implements RuntimeResources {
           existing.claudeSessionId = claudeSessionId;
         if (!existing.model && model) existing.model = model;
         if (!existing.permissionMode && permissionMode) existing.permissionMode = permissionMode;
+        if (!existing.effort && effort) existing.effort = effort;
         const relay = this.relays.get(sessionName);
         if (relay && claudeSessionId) relay.setClaudeSessionId(projectPath, claudeSessionId);
         return;
@@ -216,6 +264,7 @@ export class Claude2Runtime implements RuntimeResources {
       claudeSessionId,
       model,
       permissionMode,
+      effort,
     );
   }
 
@@ -299,13 +348,21 @@ export class Claude2Runtime implements RuntimeResources {
     claudeSessionId?: string,
     model?: string,
     permissionMode?: string,
+    effort?: EffortLevel,
   ): Promise<void> {
+    const { resolvedModel, resolvedEffort, providerCreds } = await this.resolveSpawnInputs(
+      model,
+      effort,
+    );
+
     const proc = this.spawnClaudeDirect(
       sessionName,
       projectPath,
       claudeSessionId,
-      model,
+      resolvedModel,
       permissionMode,
+      resolvedEffort,
+      providerCreds,
     );
 
     const generation = this.nextGeneration++;
@@ -317,6 +374,7 @@ export class Claude2Runtime implements RuntimeResources {
       claudeSessionId,
       model,
       permissionMode,
+      effort: resolvedEffort,
     });
 
     // Create relay immediately (before stdout starts) so messages aren't lost
@@ -356,6 +414,8 @@ export class Claude2Runtime implements RuntimeResources {
     claudeSessionId?: string,
     model?: string,
     permissionMode?: string,
+    effort?: EffortLevel,
+    provider?: { apiKey: string; baseUrl?: string },
   ): BunSubprocess {
     const args = [
       "claude",
@@ -377,10 +437,38 @@ export class Claude2Runtime implements RuntimeResources {
       stdout: "pipe",
       stderr: "pipe",
       cwd: projectPath,
+      env: buildSpawnEnv(effort, provider),
     });
 
-    console.log(`[claude2] spawned pid=${proc.pid} session=${sessionName}`);
+    console.log(
+      `[claude2] spawned pid=${proc.pid} session=${sessionName} effort=${effort ?? "inherit"} provider=${provider?.apiKey ? "injected" : "inherit"}`,
+    );
     return proc;
+  }
+
+  // 读 settingsStore 算 spawn 初始值：model tier→具体 ID 解析、effort（metadata 优先 ?? 全局默认）、
+  // provider 凭证（apiKey 只在此处读出注入 env，不存 process state、不进日志）。settingsStore 缺失
+  // 或读失败 → 回退 metadata 原值 + 继承父进程 env（现状不坏）。
+  private async resolveSpawnInputs(
+    model: string | undefined,
+    effort: EffortLevel | undefined,
+  ): Promise<{
+    resolvedModel: string | undefined;
+    resolvedEffort: EffortLevel | undefined;
+    providerCreds: { apiKey: string; baseUrl?: string } | undefined;
+  }> {
+    const settings = this.settingsStore
+      ? await this.settingsStore.read().catch(() => undefined)
+      : undefined;
+    const rt = settings?.runtimes.claude;
+    const provider = rt?.providerId
+      ? settings?.providers.find((p) => p.id === rt.providerId)
+      : undefined;
+    return {
+      resolvedModel: resolveSpawnModel(model, rt),
+      resolvedEffort: effort ?? rt?.effort,
+      providerCreds: provider ? { apiKey: provider.apiKey, baseUrl: provider.baseUrl } : undefined,
+    };
   }
 
   private async readStdout(

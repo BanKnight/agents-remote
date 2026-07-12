@@ -271,6 +271,11 @@ export const en = {
   "api.terminalSessionDetailFailed": "Terminal session detail failed",
   "api.terminalSessionCloseFailed": "Terminal session close failed",
   "api.terminalSessionRenameFailed": "Failed to rename terminal session",
+  "api.settingsFetchFailed": "Failed to load settings",
+  "api.providerCreateFailed": "Failed to add provider",
+  "api.providerUpdateFailed": "Failed to update provider",
+  "api.providerDeleteFailed": "Failed to delete provider",
+  "api.runtimeUpdateFailed": "Failed to update Claude runtime",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "just now",
@@ -495,5 +500,46 @@ export const en = {
   "carousel.next": "Next page",
 
   // ── Settings ────────────────────────────────────────────────
-  "settings.placeholder": "Settings are coming soon.",
+  "settings.title": "Settings",
+  "settings.providers": "API Providers",
+  "settings.providersHint":
+    "Claude API credentials. The selected provider's key is injected when spawning the Claude CLI.",
+  "settings.addProvider": "Add provider",
+  "settings.editProvider": "Edit provider",
+  "settings.noProviders": "No providers configured. Server process env is used as fallback.",
+  "settings.label": "Label",
+  "settings.labelHint": "A name to identify this provider",
+  "settings.apiKey": "API key",
+  "settings.apiKeyHint": "Leave blank to keep the existing key unchanged",
+  "settings.baseUrl": "Base URL",
+  "settings.baseUrlHint": "Optional. Override the Anthropic API endpoint.",
+  "settings.deleteProvider": "Delete provider",
+  "settings.deleteConfirm":
+    'Delete provider "{{label}}"? Sessions using it will fall back to server env.',
+  "settings.runtime": "Claude runtime",
+  "settings.runtimeHint": "Global defaults applied to every new Claude session at spawn time.",
+  "settings.runtimeProvider": "Provider",
+  "settings.runtimeProviderNone": "None (use server env)",
+  "settings.modelMapping": "Model mapping",
+  "settings.modelMappingHint":
+    "Map each tier to a model ID (e.g. claude-opus-4-8). A bare tier name passes through unchanged.",
+  "settings.tier.default": "Default",
+  "settings.tier.opus": "Opus",
+  "settings.tier.sonnet": "Sonnet",
+  "settings.tier.haiku": "Haiku",
+  "settings.enable1m": "1M context",
+  "settings.enable1mHint":
+    "Append [1m] to concrete model IDs at spawn. Bare tier aliases are not suffixed.",
+  "settings.effort": "Effort",
+  "settings.effortHint":
+    "CLAUDE_CODE_EFFORT_LEVEL env injected at spawn. Does not affect already-running sessions.",
+  "settings.effort.low": "Low",
+  "settings.effort.medium": "Medium",
+  "settings.effort.high": "High",
+  "settings.effort.xhigh": "Extra high",
+  "settings.effort.max": "Max",
+  "settings.save": "Save",
+  "settings.saving": "Saving…",
+  "settings.saved": "Saved",
+  "settings.unsavedChanges": "Unsaved changes",
 } as const;

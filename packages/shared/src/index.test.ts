@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { COMPACT_BOUNDARY_SUBTYPES, isCompactBoundarySubtype } from "./index";
+import {
+  CLAUDE_MODEL_TIERS,
+  COMPACT_BOUNDARY_SUBTYPES,
+  EFFORT_LEVELS,
+  isCompactBoundarySubtype,
+} from "./index";
 import type {
   AgentSession,
   ApiErrorResponse,
@@ -24,6 +29,14 @@ import type {
   SessionStreamServerMessage,
   TerminalSession,
   TerminalSessionDetailResponse,
+  ClaudeRuntimeConfig,
+  CreateProviderRequest,
+  GetSettingsResponse,
+  ProviderConfig,
+  ProviderConfigMasked,
+  SettingsState,
+  UpdateClaudeRuntimeRequest,
+  UpdateProviderRequest,
 } from "./index";
 
 test("HealthResponse marks the api service", () => {
@@ -216,4 +229,48 @@ test("isCompactBoundarySubtype matches the two boundary subtypes only", () => {
   expect(isCompactBoundarySubtype(undefined)).toBe(false);
   expect(isCompactBoundarySubtype(null)).toBe(false);
   expect(COMPACT_BOUNDARY_SUBTYPES).toEqual(["compact_boundary", "microcompact_boundary"]);
+});
+
+test("Settings DTOs describe provider credentials and claude runtime defaults", () => {
+  const provider: ProviderConfig = {
+    id: "prov_1",
+    label: "Anthropic 官方",
+    apiKey: "sk-ant-abc123wX4k",
+  };
+  const masked: ProviderConfigMasked = {
+    id: provider.id,
+    label: provider.label,
+    apiKeyMasked: "sk-ant-...wX4k",
+    hasApiKey: true,
+  };
+  const runtime: ClaudeRuntimeConfig = {
+    providerId: provider.id,
+    modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
+    enable1mContext: false,
+    effort: "high",
+  };
+  const state: SettingsState = { providers: [provider], runtimes: { claude: runtime } };
+  const response: GetSettingsResponse = {
+    settings: { providers: [masked], runtimes: { claude: runtime } },
+  };
+  const createProvider: CreateProviderRequest = {
+    label: "中转 A",
+    apiKey: "sk-xxx",
+    baseUrl: "https://relay.example",
+  };
+  const updateProvider: UpdateProviderRequest = { label: "中转 A（改）" };
+  const updateRuntime: UpdateClaudeRuntimeRequest = { effort: "max", enable1mContext: true };
+
+  expect(masked.hasApiKey).toBe(true);
+  expect(masked.apiKeyMasked).toBe("sk-ant-...wX4k");
+  expect(state.runtimes.claude.modelMapping.opus).toBe("opus");
+  expect(response.settings.providers[0].apiKeyMasked).toContain("...");
+  expect(createProvider.baseUrl).toBe("https://relay.example");
+  expect(updateProvider.apiKey).toBeUndefined();
+  expect(updateRuntime.effort).toBe("max");
+});
+
+test("EFFORT_LEVELS and CLAUDE_MODEL_TIERS enumerate all variants", () => {
+  expect(EFFORT_LEVELS).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  expect(CLAUDE_MODEL_TIERS).toEqual(["default", "opus", "sonnet", "haiku"]);
 });

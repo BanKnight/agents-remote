@@ -9,7 +9,8 @@
 ## 文档
 
 - [agent-access-options.md](./agent-access-options.md) — 汇总 hapi、remodex、Codex、Claude 与社区反馈对 Agent 接入路线、第一轮真实可用链路和统一协议设计的调研结论。
-- [claude-cli-stream-protocol.md](./claude-cli-stream-protocol.md) — Claude CLI stdio stream-json 协议完整文档：消息类型、system.init 字段、model/permissionMode 权威来源、生命周期和集成方式。
+- [claude-cli-stream-protocol.md](./claude-cli-stream-protocol.md) — Claude CLI stdio stream-json 协议完整文档：消息类型、system.init 字段、control_request 机制、生命周期和集成方式；三维度运行态配置（model/permission/effort）见 claude-cli-runtime-config.md。
+- [claude-cli-runtime-config.md](./claude-cli-runtime-config.md) — Claude CLI 运行态三维度（model/permission/effort）对接：每维度的默认值决策链、spawn 初始值、stream-json 运行时切换，含 TUI vs 无头能力差异、官方二进制字面量与实测证据、竞品方案（hapi fork）与本项目对接现状。
 - [claude2-replay-performance.md](./claude2-replay-performance.md) — Claude2 长会话打开慢的性能分析与验收基线：数据流成本模型、实测数字（客户端已排除，主因在传输）、实施路径与验收标准。
 - [claude2-ios-keyboard-viewport.md](./claude2-ios-keyboard-viewport.md) — iOS Safari 键盘三症状（页面被推/失焦不恢复/输入框被挡）的根因：双 viewport 模型 + iOS 26 回归 bug，为什么 CSS/meta 救不了，visualViewport JS 方案方向。
 - [claude-code-integration-projects.md](./claude-code-integration-projects.md) — 调研 hapi、xylocopa、claude-squad、claude-code-sdk-ts、claude-code-webui 等 5 个 Claude CLI 集成项目的 model 和 permission mode 处理策略对比。
