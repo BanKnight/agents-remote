@@ -22,6 +22,7 @@
 - [message-replay.md](./message-replay.md) — 定义 Claude2 Agent Session 的进程模型（`Bun.spawn` 直拉 CLI，非 tmux）与消息回放管线（JSONL history + 内存 live 双缓冲 relay + 单一 WS 流），含 system.init/turn 边界、reconnect/API 重启时序、特殊时期 history 缩容（compact-block windowing + 标量重建）与已废弃的 Gen 2 机制。
 - [mobile-session-interaction.md](./mobile-session-interaction.md) — 定义 Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 直发、真实能力边界和恢复状态规则。
 - [session-runtime-boundaries.md](./session-runtime-boundaries.md) — 定义 Agent Session、Terminal Session、transport connection 和 runtime lifecycle 的长期设计边界。
+- [workbench-layout-fix.md](./workbench-layout-fix.md) — 工作台进入项目后布局修复的持久设计文档：4 个问题（左栏 header 项目名+返回 / 中栏 VSCode 式单一 layout 跨 scope 稳定 / 列表撑满 / git diff tab 对齐 file tab）的决策日志、阶段计划、关键代码锚点与每阶段更新的现状锚点，供超长任务上下文压缩后恢复。
 - [workbench-redesign.md](./workbench-redesign.md) — 已落地的三栏工作台权威设计：桌面端从单列三层重设计为常驻三栏工作台（左=项目+实例树、中=自由 split 画布、右=文件/Git/原型/插件 tab）+ 移动两层导航，含走向决策、ASCII、Codex 插件研究结论与剩余待定项；导航模型已被 workbench-views.md 进一步演进。
 - [workbench-views.md](./workbench-views.md) — 工作台多视图重设计（设计完整，实现分 phase 渐进）：演进自 workbench-redesign.md——中栏永远左右结构（左总览固定单列卡片 + 右工作区拖放分屏），取消独立 split 视图与面板三态状态机，grid/table/grouped 收归左总览卡片样式。含信息架构、右工作区 5 drop zone 自由分屏、激活语义、URL 模型与所有「用户决定」标注，是本轮 IA 重构的设计权威。
 - [workbench-views-plan.md](./workbench-views-plan.md) — 工作台多视图重设计的实施计划：3 phase（A 中栏左右骨架 / B 拖放分屏 / C group 操作+持久化）的执行顺序、每 phase 任务、依赖、验证与关键代码入口，下次会话可直接照此接手。
