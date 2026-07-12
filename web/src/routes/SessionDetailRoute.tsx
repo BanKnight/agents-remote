@@ -1096,6 +1096,8 @@ function XtermOutput({
     // SGR 鼠标滚轮序列（mode 1006）：button 64=WheelUp / 65=WheelDown，M 结尾=按下事件。col/row 固定 1;1。
     const SGR_WHEEL_UP = "\x1b[<64;1;1M";
     const SGR_WHEEL_DOWN = "\x1b[<65;1;1M";
+    // 单帧 applyScroll 发送序列数上限：防极端惯性一次刷上百帧突发流量（滚到顶/底 tmux 自然停）。
+    const MAX_WHEELS_PER_FRAME = 50;
 
     let touchStartY = 0;
     let touchStartX = 0;
@@ -1120,9 +1122,11 @@ function XtermOutput({
       const wheels = Math.trunc(touchScrollAccum / PIXELS_PER_WHEEL);
       if (wheels === 0) return;
       touchScrollAccum -= wheels * PIXELS_PER_WHEEL;
-      // wheels>0 = 手指下滑 = 看更新 = WheelDown；wheels<0 = 手指上滑 = 看更早 = WheelUp
+      // wheels>0 = 手指下滑 = 看更新 = WheelDown；wheels<0 = 手指上滑 = 看更早 = WheelUp。
+      // 单帧累出过多序列时截断（防极端惯性突发流量；滚到顶/底 tmux 自然停）。
       const seq = wheels > 0 ? SGR_WHEEL_DOWN : SGR_WHEEL_UP;
-      for (let i = 0; i < Math.abs(wheels); i++) onSendInput(seq);
+      const n = Math.min(Math.abs(wheels), MAX_WHEELS_PER_FRAME);
+      for (let i = 0; i < n; i++) onSendInput(seq);
     };
 
     const startInertia = (velocityPxMs: number) => {
