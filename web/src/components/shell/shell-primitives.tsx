@@ -405,12 +405,13 @@ type ListGroupProps = {
 };
 
 /**
- * ListGroup 容器 className（DESIGN.md `list` 契约）。iOS Files 范式：plain 连续行，两端
- * 一致 `divide-y divide-neutral-line/40`（Tailwind v4 实现 = 除末行外每行底部 1px separator，
- * 选择器 `> :not(:last-child)`，**非每行 gap**），无外框/圆角/卡片，贴外部 `p-3`——服务长/会
- * 滚动的内容列表（Files / Git 文件列表）。圆角卡片（grouped）留给未来固定/短选项列表，本契约
- * 不实现。**ListRow 必须是直接子**（`.map` + `key`，禁中间包 div/Fragment），否则 divide-y 的
- * `> :not(:last-child)` 选择器失效。抽纯函数便于单测（见 shell-primitives.test.ts）。
+ * ListGroup 容器 className（DESIGN.md `list` 契约）。两端一致 `divide-y divide-neutral-line/40`
+ *（Tailwind v4 实现 = 除末行外每行底部 1px separator，选择器 `> :not(:last-child)`，**非每行 gap**）。
+ * **两种外壳由调用方决定**（本函数只出 divide-y）：① **plain**（Files / Git / history）= 无外框，
+ * 贴外部 `p-3`；② **grouped**（Settings providers，Apple Settings 范式）= 外层 `Card className=
+ * "gap-0 py-0"` + `CardContent className="p-0"` 圆角卡，ListGroup 填入。**ListRow 必须是直接子**
+ *（`.map` + `key`，禁中间包 div/Fragment），否则 divide-y 的 `> :not(:last-child)` 选择器失效。
+ * 抽纯函数便于单测（见 shell-primitives.test.ts）。
  */
 export function listGroupClasses(className?: string): string {
   return cn("divide-y divide-neutral-line/40", className);

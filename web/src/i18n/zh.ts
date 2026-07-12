@@ -506,7 +506,7 @@ export const zh: Record<TranslationKey, string> = {
   "settings.addProvider": "新增 provider",
   "settings.editProvider": "编辑 provider",
   "settings.noProviders": "尚未配置 provider，将回退使用服务进程的环境变量。",
-  "settings.label": "标签",
+  "settings.label": "名称",
   "settings.labelHint": "用于辨识此 provider 的名称",
   "settings.apiKey": "API key",
   "settings.apiKeyHint": "留空表示不修改现有 key",

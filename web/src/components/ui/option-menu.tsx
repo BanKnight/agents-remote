@@ -147,7 +147,7 @@ export function OptionMenu({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align={align} side="top" sideOffset={4}>
         {items.map((item, index) => (

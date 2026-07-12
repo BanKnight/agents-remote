@@ -508,7 +508,7 @@ export const en = {
   "settings.addProvider": "Add provider",
   "settings.editProvider": "Edit provider",
   "settings.noProviders": "No providers configured. Server process env is used as fallback.",
-  "settings.label": "Label",
+  "settings.label": "Name",
   "settings.labelHint": "A name to identify this provider",
   "settings.apiKey": "API key",
   "settings.apiKeyHint": "Leave blank to keep the existing key unchanged",

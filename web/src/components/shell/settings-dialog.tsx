@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   EFFORT_LEVELS,
@@ -17,10 +17,14 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import {
   ActionButton,
+  ListGroup,
+  ListRow,
   ShellInput,
   ShellSectionLabel,
+  listGroupClasses,
   shellSurfaceClasses,
 } from "./shell-primitives";
+import { ShellIcon } from "./icons";
 import { useConfirm } from "./confirm-dialog";
 import { ActionMenu } from "../ui/action-menu";
 import { OptionMenu } from "../ui/option-menu";
@@ -36,6 +40,17 @@ import {
 } from "../../api/client";
 
 const TIERS: readonly ClaudeModelTier[] = ["default", "opus", "sonnet", "haiku"];
+
+/** 加载态占位 runtime：让 ClaudeRuntimeSection 结构即时渲染（providerId="" 走 ShellInput 分支）。 */
+const EMPTY_RUNTIME: ClaudeRuntimeConfig = {
+  providerId: "",
+  modelMapping: { default: "", opus: "", sonnet: "", haiku: "" },
+  enable1mContext: false,
+  effort: "high",
+};
+
+/** providers 列表加载骨架行数（对齐真实 ProviderRow 高度，2 行传达列表结构即可）。 */
+const PROVIDER_SKELETON_ROW_COUNT = 2;
 
 const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
   default: "settings.tier.default",
@@ -88,45 +103,74 @@ export function SettingsContent() {
   };
 
   const settings = settingsQuery.data?.settings;
+  const loading = settingsQuery.isLoading;
 
-  return (
-    <>
-      {settingsQuery.isLoading ? (
-        <p className="text-sm text-on-surface-muted">…</p>
-      ) : settings ? (
-        <div className="flex flex-col gap-6">
-          <ProvidersSection providers={settings.providers} onDelete={handleDelete} />
-          <ClaudeRuntimeSection
-            key={JSON.stringify(settings.runtimes.claude)}
-            runtime={settings.runtimes.claude}
-            providers={settings.providers}
-          />
-        </div>
-      ) : (
+  // 固定结构即时渲染（VSCode/macOS prefs 风格）：加载中也出两段框架，providers 列表
+  // 用骨架行、runtime 控件 disabled；加载完 key remount 填真实值。失败才替换为错误文案。
+  if (!loading && !settings) {
+    return (
+      <>
         <p className="text-sm text-error">
           {settingsQuery.error?.message ?? t("api.settingsFetchFailed")}
         </p>
-      )}
+        {confirmHolder}
+      </>
+    );
+  }
+
+  const providers = settings?.providers ?? [];
+  const runtime = settings?.runtimes.claude ?? EMPTY_RUNTIME;
+
+  return (
+    <>
+      <div className="flex flex-col gap-6">
+        <ProvidersSection providers={providers} loading={loading} onDelete={handleDelete} />
+        <ClaudeRuntimeSection
+          key={loading ? "loading" : JSON.stringify(runtime)}
+          runtime={runtime}
+          providers={providers}
+          loading={loading}
+        />
+      </div>
       {confirmHolder}
     </>
   );
 }
 
 /**
- * 桌面设置弹窗（决策 44）：`ActivityBar` 设置按钮 `useState` 触发，居中 modal，
- * `max-h-[85vh] overflow-y-auto` 承载可能较高的两段内容。嵌套 `ProviderDialog` /
- * confirm Dialog 走受控 open（非 trigger asChild），Radix 支持嵌套。
+ * 桌面设置弹窗（决策 44）：`ActivityBar` 设置按钮 `useState` 触发，居中 modal。
+ * `ui/dialog.tsx` 的 `DialogContent` 只提供 Portal + Overlay（模糊背景）+ Content 容器
+ * + Radix dismiss/focus-trap——**不内置卡片视觉与关闭按钮**，调用方在 Content 内自行
+ * 包一层卡片 div（对齐 `confirm-dialog` 桌面态 / DESIGN.md `dialog` 条目居中形态）。
+ * 卡片限高 `max-h-[85vh] overflow-hidden` 保持圆角，内容区 `overflow-y-auto` 承载两段。
+ * 嵌套 `ProviderDialog` / confirm Dialog 走受控 open（非 trigger asChild），Radix 支持嵌套。
  */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const { t } = useT();
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
-        <DialogTitle className="text-base font-semibold text-on-surface">
-          {t("settings.title")}
-        </DialogTitle>
-        <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
-        <SettingsContent />
+      <DialogContent>
+        <div
+          className={`flex max-h-[85vh] flex-col overflow-hidden rounded-2xl shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
+          <header className="flex items-center justify-between gap-3 px-5 pt-5">
+            <DialogTitle className="text-base font-semibold text-on-surface">
+              {t("settings.title")}
+            </DialogTitle>
+            <button
+              type="button"
+              aria-label={t("session.close")}
+              onClick={onClose}
+              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+            >
+              <ShellIcon className="h-4 w-4" name="close" />
+            </button>
+          </header>
+          <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
+          <div className="overflow-y-auto px-5 pb-5">
+            <SettingsContent />
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -136,9 +180,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
 function ProvidersSection({
   providers,
+  loading = false,
   onDelete,
 }: {
   providers: ProviderConfigMasked[];
+  loading?: boolean;
   onDelete: (provider: ProviderConfigMasked) => void;
 }) {
   const { t } = useT();
@@ -154,25 +200,44 @@ function ProvidersSection({
             {t("settings.providersHint")}
           </p>
         </div>
-        <ActionButton tone="accent" onClick={() => setCreating(true)}>
+        <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
           {t("settings.addProvider")}
         </ActionButton>
       </div>
 
-      <Card>
-        <CardContent className="flex flex-col p-2">
-          {providers.length === 0 ? (
-            <p className="px-2 py-3 text-sm text-on-surface-muted">{t("settings.noProviders")}</p>
-          ) : (
-            providers.map((p) => (
-              <ProviderRow
-                key={p.id}
-                provider={p}
-                onEdit={() => setEditing(p)}
-                onDelete={() => onDelete(p)}
-              />
-            ))
-          )}
+      {/* Apple Settings grouped：圆角 Card + 整行 ListRow 点击进编辑详情；列表独立 max-h-72 内滚。 */}
+      <Card className="gap-0 py-0">
+        <CardContent className="p-0">
+          <div className="max-h-72 overflow-y-auto">
+            {loading ? (
+              <div aria-hidden="true" className={listGroupClasses()}>
+                {Array.from({ length: PROVIDER_SKELETON_ROW_COUNT }, (_, i) => (
+                  <div className="flex h-auto w-full items-center px-3 py-2.5" key={i}>
+                    <span className="flex min-w-0 grow items-center justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="skeleton-shimmer block h-4 w-28 rounded" />
+                        <span className="skeleton-shimmer mt-1.5 block h-3 w-48 rounded" />
+                      </span>
+                      <span className="skeleton-shimmer size-8 shrink-0 rounded-md" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : providers.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-on-surface-muted">{t("settings.noProviders")}</p>
+            ) : (
+              <ListGroup ariaLabel={t("settings.providers")}>
+                {providers.map((p) => (
+                  <ProviderRow
+                    key={p.id}
+                    provider={p}
+                    onEdit={() => setEditing(p)}
+                    onDelete={() => onDelete(p)}
+                  />
+                ))}
+              </ListGroup>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -199,42 +264,49 @@ function ProviderRow({
   onDelete: () => void;
 }) {
   const { t } = useT();
+  const subtitle = [
+    provider.apiKeyMasked,
+    provider.baseUrl || null,
+    t(PROTOCOL_LABEL[provider.protocol ?? "anthropic"]),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="flex items-center gap-2 rounded-lg px-2 py-2.5 transition hover:bg-surface-inset/50">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-on-surface">{provider.label}</p>
-        <p className="truncate font-mono text-xs text-on-surface-muted">
-          {provider.apiKeyMasked}
-          {provider.baseUrl ? ` · ${provider.baseUrl}` : ""}
-          {` · ${t(PROTOCOL_LABEL[provider.protocol ?? "anthropic"])}`}
-        </p>
-      </div>
-      <ActionMenu
-        align="end"
-        cancelLabel={t("cancel")}
-        trigger={
-          <button
-            type="button"
-            aria-label={t("settings.editProvider")}
-            className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-surface-inset hover:text-on-surface"
-          >
-            <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
-              <circle cx="3" cy="8" r="1.5" />
-              <circle cx="8" cy="8" r="1.5" />
-              <circle cx="13" cy="8" r="1.5" />
-            </svg>
-          </button>
-        }
-        items={[
-          { label: t("settings.editProvider"), onSelect: onEdit },
-          {
-            label: t("settings.deleteProvider"),
-            variant: "destructive",
-            onSelect: onDelete,
-          },
-        ]}
-      />
-    </div>
+    <ListRow
+      title={provider.label}
+      subtitle={<span className="font-mono">{subtitle}</span>}
+      onClick={onEdit}
+      actions={
+        // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
+        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <ActionMenu
+            align="end"
+            cancelLabel={t("cancel")}
+            trigger={
+              <button
+                type="button"
+                aria-label={t("settings.deleteProvider")}
+                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+              >
+                <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.5" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <circle cx="13" cy="8" r="1.5" />
+                </svg>
+              </button>
+            }
+            items={[
+              {
+                label: t("settings.deleteProvider"),
+                variant: "destructive",
+                onSelect: onDelete,
+              },
+            ]}
+          />
+        </span>
+      }
+    />
   );
 }
 
@@ -368,22 +440,23 @@ function ProviderDialog({
                 })}
               </div>
             </Field>
-            <Field
-              label={t("settings.apiKey")}
-              hint={isEdit ? t("settings.apiKeyHint") : undefined}
-            >
-              <ShellInput
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={isEdit ? provider?.apiKeyMasked : "sk-ant-..."}
-              />
-            </Field>
             <Field label={t("settings.baseUrl")} hint={t("settings.baseUrlHint")}>
               <ShellInput
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder="https://api.anthropic.com"
+              />
+            </Field>
+            <Field
+              label={t("settings.apiKey")}
+              hint={isEdit ? t("settings.apiKeyHint") : undefined}
+            >
+              {/* 明文：个人私有部署无密码管理器必要；type=password 会触发浏览器「保存密码」提示。 */}
+              <ShellInput
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={isEdit ? provider?.apiKeyMasked : "sk-ant-..."}
+                autoComplete="off"
               />
             </Field>
           </div>
@@ -437,9 +510,11 @@ function ProviderDialog({
 function ClaudeRuntimeSection({
   runtime,
   providers,
+  loading = false,
 }: {
   runtime: ClaudeRuntimeConfig;
   providers: ProviderConfigMasked[];
+  loading?: boolean;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -454,12 +529,14 @@ function ClaudeRuntimeSection({
   const [justSaved, setJustSaved] = useState(false);
 
   const dirty =
-    providerId !== runtime.providerId ||
-    effort !== runtime.effort ||
-    enable1m !== runtime.enable1mContext ||
-    JSON.stringify(modelMapping) !== JSON.stringify(runtime.modelMapping);
+    !loading &&
+    (providerId !== runtime.providerId ||
+      effort !== runtime.effort ||
+      enable1m !== runtime.enable1mContext ||
+      JSON.stringify(modelMapping) !== JSON.stringify(runtime.modelMapping));
 
   const handleSave = async () => {
+    if (loading) return;
     setSaving(true);
     try {
       await updateClaudeRuntime({
@@ -495,7 +572,7 @@ function ClaudeRuntimeSection({
             <OptionMenu
               align="start"
               cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={selectedLabel} />}
+              trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
               items={[
                 {
                   label: t("settings.runtimeProviderNone"),
@@ -523,7 +600,7 @@ function ClaudeRuntimeSection({
                 <span className="w-16 shrink-0 text-xs text-on-surface-muted">
                   {t(TIER_LABEL[tier])}
                 </span>
-                {providerId ? (
+                {providerId && !loading ? (
                   <ModelTierSelect
                     tier={tier}
                     value={modelMapping[tier]}
@@ -536,6 +613,7 @@ function ClaudeRuntimeSection({
                     value={modelMapping[tier]}
                     onChange={(e) => setModelMapping({ ...modelMapping, [tier]: e.target.value })}
                     placeholder={tier}
+                    disabled={loading}
                   />
                 )}
               </div>
@@ -546,8 +624,9 @@ function ClaudeRuntimeSection({
             type="button"
             role="switch"
             aria-checked={enable1m}
-            onClick={() => setEnable1m(!enable1m)}
-            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40"
+            disabled={loading}
+            onClick={() => !loading && setEnable1m(!enable1m)}
+            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
           >
             <span className="min-w-0">
               <span className="block text-sm font-semibold text-on-surface">
@@ -570,7 +649,7 @@ function ClaudeRuntimeSection({
             <OptionMenu
               align="start"
               cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} />}
+              trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} disabled={loading} />}
               items={EFFORT_LEVELS.map((level) => ({
                 label: t(EFFORT_LABEL[level]),
                 isActive: level === effort,
@@ -583,7 +662,7 @@ function ClaudeRuntimeSection({
             <span className="text-xs text-on-surface-muted">
               {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
             </span>
-            <ActionButton tone="accent" onClick={handleSave} disabled={!dirty || saving}>
+            <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
               {saving ? t("settings.saving") : t("settings.save")}
             </ActionButton>
           </div>
@@ -607,11 +686,19 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function SelectorTrigger({ label }: { label: string }) {
+// 经 OptionMenu 的 Radix `asChild` 注入 toggle / aria-expanded / data-state / onClick，
+// 必须把 `...rest` 与 `ref` 透传到原生 <button>，否则 Trigger 不生效（点击无反应、无 aria-expanded）。
+const SelectorTrigger = forwardRef<
+  HTMLButtonElement,
+  { label: string; disabled?: boolean } & ButtonHTMLAttributes<HTMLButtonElement>
+>(function SelectorTrigger({ label, disabled = false, ...rest }, ref) {
   return (
     <button
+      ref={ref}
       type="button"
-      className="inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-neutral-line bg-surface-inset px-3 py-2.5 text-sm text-on-surface transition hover:border-on-surface-muted/40"
+      disabled={disabled}
+      className="inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-neutral-line bg-surface-inset px-3 py-2.5 text-sm text-on-surface transition hover:border-on-surface-muted/40 disabled:cursor-default disabled:opacity-60"
+      {...rest}
     >
       <span className="truncate text-left">{label}</span>
       <svg
@@ -630,7 +717,7 @@ function SelectorTrigger({ label }: { label: string }) {
       </svg>
     </button>
   );
-}
+});
 
 // tier → model 下拉：选项来自所选 provider 的可用模型列表（useQuery 缓存）。
 // 拉取失败 / 上游 ok:false → 降级手填 ShellInput，保证用户始终能配置。
