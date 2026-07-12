@@ -21,10 +21,11 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：阶段 0（文档 + memory + 设计基线）—— 进行中
-- **已完成阶段**：无
-- **已改文件**：无（本阶段只产出文档 + memory）
-- **下一步**：写 memory `no-screenshots-allowed` + 本文档 + 更新 `docs/design/index.md`，commit `docs(workbench): 布局修复持久文档 + 设计基线 + memory`，然后进阶段 1。
+- **当前阶段**：阶段 1 完成 → 下一步阶段 2a（refs 全局聚合）
+- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header 项目名+返回）
+- **已改文件**（阶段 1）：`web/src/i18n/en.ts` + `zh.ts`（新增 `workbench.backToProjects` key）、`web/src/components/shell/workbench-shell.tsx`（PanelHeader title 容器 `<span truncate>` → `<div flex items-center>`，支持 title 节点含交互按钮）、`web/src/routes/WorkbenchRoute.tsx`（leftPanelTitle project scope 传 `ProjectScopeHeaderTitle` 返回箭头+项目名 + `backToProjects` 回调）、`web/src/components/workbench/project-left-panel.tsx`（移除 `GlobalNavNode` 函数 + `<nav>` 包裹 + `useNavigate`/`IconMarker`/`ShellNavigationButton` imports，middle tab bar 直接挂）
+- **下一步**：阶段 2a —— `instance-area.tsx` 新增 `useGlobalInstanceRefs()`（复用 `useGlobalInstanceCandidates` fan-out map `SessionPanelRef[]`），`WorkbenchRoute.tsx:276-300` prune effect 改用 globalRefs（隔离 2b 单一化的 stale-prune 回归）。
+- **阶段 1 验证**：DOM 几何探针确认 project scope `/projects/agents-remote` 左栏 header 显项目名 `agents-remote` + 返回按钮 `aria-label="Back to projects"`（1 个）+ title 容器 `display:flex`；点击返回 → `/projects`，global scope header 显 `Projects`；middle tabs（Overview/History/Files/Git）保留。
 - **已知风险**（待对应阶段处理）：
   - 2a-2b stale-prune 回归：单一 layout 跨项目 tab 共存，prune 必须先切全局 refs（2a 隔离）。
   - 2b V3→V4 迁移丢各 project layout 副本（取 global 副本）。

@@ -1,8 +1,5 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useMemo, type ReactNode } from "react";
 import { useT } from "../../i18n";
-import { IconMarker } from "../shell/shell-primitives";
-import { ShellNavigationButton } from "../shell/shell-navigation";
 import { type WorkbenchMiddleTab, type WorkbenchScope } from "../../routes/workbench-model";
 import { buildOverviewTabs, FIRST_PARTY_PLUGINS } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
@@ -12,7 +9,7 @@ import { FilesLeftPanel } from "../files/files-left-panel";
 type ProjectLeftPanelProps = {
   scope: WorkbenchScope;
   /** [项目] 左栏主体：实例总览（InstanceLeftOverview，WorkbenchContent 构造后注入）。global scope
-   *  主体恒为 overview（纯多视图列表，无项目列表/GlobalNavNode，新建项目入口在 InstanceLeftOverview
+   *  主体恒为 overview（纯多视图列表，无项目列表，新建项目入口在 InstanceLeftOverview
    *  header）；project scope 主体随 middle tab 切（实例=overview / 历史=HistoryList / 文件=项目内文件树
    *  / git=GitDiffPanel）。 */
   overview: ReactNode;
@@ -30,11 +27,11 @@ type ProjectLeftPanelProps = {
 /**
  * [项目] 活动栏左栏内容源（Phase 2a 方案 X + Phase 3 middle tab + 左栏重设计，设计 §4.2 / §8.4）。
  *
- * - global scope：仅渲染 InstanceLeftOverview 主体（多视图列表）。GlobalNavNode + 项目列表 +
- *   ProjectsSectionHeader（折叠/新建）已移除——global 左栏 = 纯多视图列表，新建项目入口移到
+ * - global scope：仅渲染 InstanceLeftOverview 主体（多视图列表）。新建项目入口在
  *   InstanceLeftOverview header（ViewSwitcher 左侧），项目级导航走活动栏 [项目]（本身已选中）。
- * - project scope：GlobalNavNode（返回全局 /projects）+ middle tab bar（实例/历史/文件/git，Phase 3
- *   从 InstanceArea 中栏移此切**左栏主体**）+ 主体随 tab 切（实例=InstanceLeftOverview / 历史=
+ * - project scope：项目名 header + 返回 /projects 在 WorkbenchShell PanelHeader（WorkbenchRoute
+ *   leftPanelTitle 注入，阶段 1）；本组件只渲染 middle tab bar（实例/历史/文件/git，Phase 3 从
+ *   InstanceArea 中栏移此切**左栏主体**）+ 主体随 tab 切（实例=InstanceLeftOverview / 历史=
  *   HistoryList / 文件=项目内文件树 FilesLeftPanel scope=project / git=GitDiffPanel）。不显项目列表
  *   （设计 §6 决策 1）。
  *
@@ -49,7 +46,6 @@ export function ProjectLeftPanel({
   focusId,
 }: ProjectLeftPanelProps) {
   const { t } = useT();
-  const navigate = useNavigate();
 
   // Phase 3 middle tab（仅 project scope）：tab 列表（实例/历史/文件/git，includeHistory=true）+
   // resolvedTab。global scope middleTabs=[]（无 tab bar）。ctx 由 scope 决定，scope/t 变才重算。
@@ -60,8 +56,6 @@ export function ProjectLeftPanel({
   );
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && middleTabs.some((opt) => opt.id === tab) ? tab : "overview";
-
-  const selectGlobal = () => void navigate({ to: "/projects" });
 
   // project scope middle tab 主体内容（设计 §4.2 进入项目层）。global scope 主体恒为 overview。
   // [文件] = 项目内文件树（FilesLeftPanel scope=project，点文件→中栏开 file tab）；[git] = git plugin
@@ -84,47 +78,22 @@ export function ProjectLeftPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scope.kind === "project" ? (
-        <nav aria-label={t("workbench.projectsAria")} className="shrink-0 overflow-y-auto">
-          <GlobalNavNode active={false} onSelect={selectGlobal} />
-          {/* Phase 3 middle tab bar（实例/历史/文件/git，project scope，从中栏移此切左栏主体）。 */}
-          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-            {middleTabs.map((opt) => (
-              <TabButton
-                active={opt.id === resolvedTab}
-                key={opt.id}
-                label={opt.label}
-                onClick={() => onTabChange?.(opt.id)}
-              />
-            ))}
-          </div>
-        </nav>
+        // Phase 3 middle tab bar（实例/历史/文件/git，project scope，从中栏移此切左栏主体）。
+        // 项目名 header + 返回 /projects 在 WorkbenchShell PanelHeader（WorkbenchRoute leftPanelTitle 注入）。
+        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+          {middleTabs.map((opt) => (
+            <TabButton
+              active={opt.id === resolvedTab}
+              key={opt.id}
+              label={opt.label}
+              onClick={() => onTabChange?.(opt.id)}
+            />
+          ))}
+        </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-hidden">
         {scope.kind === "global" ? overview : middleBody}
       </div>
     </div>
-  );
-}
-
-function GlobalNavNode({ active, onSelect }: { active: boolean; onSelect: () => void }) {
-  const { t } = useT();
-  return (
-    <ShellNavigationButton
-      active={active}
-      label={t("workbench.global")}
-      marker={
-        <IconMarker size="sm" tone="default">
-          <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth={1.5} />
-            <path
-              d="M2 8h12M8 2c1.8 2 1.8 10 0 12M8 2c-1.8 2-1.8 10 0 12"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </IconMarker>
-      }
-      onClick={onSelect}
-    />
   );
 }

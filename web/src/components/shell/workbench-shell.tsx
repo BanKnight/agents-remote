@@ -171,11 +171,11 @@ function PanelHeader({ chevron, collapseLabel, onCollapse, title }: PanelHeaderP
   return (
     <div className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
       {title ? (
-        <span className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 text-base font-semibold text-on-surface">
           {title}
-        </span>
+        </div>
       ) : (
-        <span className="min-w-0 flex-1" />
+        <div className="min-w-0 flex-1" />
       )}
       <button
         type="button"

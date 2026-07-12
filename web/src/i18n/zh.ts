@@ -437,6 +437,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.collapseRight": "收起右栏",
   "workbench.expandLeft": "展开左栏",
   "workbench.expandRight": "展开右栏",
+  "workbench.backToProjects": "返回项目列表",
   "workbench.createMenu": "+ 新建",
   "workbench.createClaude2": "Claude",
   "workbench.createCodex": "Codex",

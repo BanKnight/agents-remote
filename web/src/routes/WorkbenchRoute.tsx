@@ -180,6 +180,8 @@ function WorkbenchContent({
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
   const [nav] = useAtom(workbenchNavAtom);
+  // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。
+  const backToProjects = () => void navigate({ to: "/projects" });
   const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
   // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件写入（effect
@@ -515,7 +517,15 @@ function WorkbenchContent({
     <WorkbenchShell
       activityBar={<ActivityBar />}
       leftPanel={leftPanel}
-      leftPanelTitle={nav === "files" ? t("nav.files") : t("nav.projects")}
+      leftPanelTitle={
+        scope.kind === "project" ? (
+          <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
+        ) : nav === "files" ? (
+          t("nav.files")
+        ) : (
+          t("nav.projects")
+        )
+      }
       rightPanel={rightPanel}
       rightPanelCollapsible={rightPanelCollapsible}
     >
@@ -542,5 +552,42 @@ function WorkbenchContent({
       {renameHolder}
       {create.promptHolder}
     </WorkbenchShell>
+  );
+}
+
+/**
+ * project scope 左栏 header title 节点（设计 workbench-layout-fix.md 阶段 1）：
+ * 返回箭头（回 /projects 全局项目列表）+ 当前项目名 truncate。置于 PanelHeader 的 flex
+ * title 容器（button shrink-0 + 项目名 min-w-0 truncate），对齐全局项目 header 的
+ * 「标题 + 主体」结构；与右侧折叠 chevron 区分（左=导航返回，右=收起左栏）。
+ */
+function ProjectScopeHeaderTitle({
+  onBack,
+  projectName,
+}: {
+  onBack: () => void;
+  projectName: string;
+}) {
+  const { t } = useT();
+  return (
+    <>
+      <button
+        aria-label={t("workbench.backToProjects")}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft"
+        onClick={onBack}
+        type="button"
+      >
+        <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+          <path
+            d="M15 18l-6-6 6-6"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+          />
+        </svg>
+      </button>
+      <span className="min-w-0 truncate">{projectName}</span>
+    </>
   );
 }

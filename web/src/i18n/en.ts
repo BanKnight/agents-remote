@@ -437,6 +437,7 @@ export const en = {
   "workbench.collapseRight": "Collapse right panel",
   "workbench.expandLeft": "Expand left panel",
   "workbench.expandRight": "Expand right panel",
+  "workbench.backToProjects": "Back to projects",
   "workbench.createMenu": "+ Create",
   "workbench.createClaude2": "Claude",
   "workbench.createCodex": "Codex",
