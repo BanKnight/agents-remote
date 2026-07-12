@@ -5,10 +5,11 @@ import {
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
+  resolveProviderCreds,
   resolveSpawnModel,
   Claude2Runtime,
 } from "./claude2-runtime";
-import type { ClaudeRuntimeConfig } from "@agents-remote/shared";
+import type { ClaudeRuntimeConfig, ProviderConfig } from "@agents-remote/shared";
 
 test("buildSeedInitLine uses seed_init subtype so server-side init capture skips it", () => {
   const line = buildSeedInitLine("opus", "plan");
@@ -352,6 +353,72 @@ test("buildSpawnEnv omits baseUrl when provider has only apiKey", () => {
   const env = buildSpawnEnv(undefined, { apiKey: "sk-ant-xxx" }, {});
   expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-xxx");
   expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+});
+
+// ── resolveProviderCreds: provider 解析 + protocol 守卫 ──
+
+const credsRuntime = (providerId: string): ClaudeRuntimeConfig => ({
+  providerId,
+  modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
+  enable1mContext: false,
+  effort: "high",
+});
+
+test("resolveProviderCreds returns anthropic provider creds with baseUrl", () => {
+  const providers: ProviderConfig[] = [
+    { id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic", baseUrl: "https://gw" },
+  ];
+  expect(resolveProviderCreds(credsRuntime("p1"), providers)).toEqual({
+    apiKey: "sk-a",
+    baseUrl: "https://gw",
+  });
+});
+
+test("resolveProviderCreds omits baseUrl when provider has none", () => {
+  const providers: ProviderConfig[] = [
+    { id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" },
+  ];
+  expect(resolveProviderCreds(credsRuntime("p1"), providers)).toEqual({
+    apiKey: "sk-a",
+    baseUrl: undefined,
+  });
+});
+
+test("resolveProviderCreds rejects openai-compatible provider and invokes onMismatch", () => {
+  const providers: ProviderConfig[] = [
+    { id: "p1", label: "GW", apiKey: "sk-a", protocol: "openai-compatible" },
+  ];
+  let mismatch: ProviderConfig | null = null;
+  const result = resolveProviderCreds(credsRuntime("p1"), providers, (p) => {
+    mismatch = p;
+  });
+  expect(result).toBeUndefined();
+  expect(mismatch?.label).toBe("GW");
+});
+
+test("resolveProviderCreds treats missing protocol as anthropic (legacy providers.json)", () => {
+  const providers = [{ id: "p1", label: "A", apiKey: "sk-a" }] as ProviderConfig[];
+  expect(resolveProviderCreds(credsRuntime("p1"), providers)?.apiKey).toBe("sk-a");
+});
+
+test("resolveProviderCreds returns undefined when providerId empty", () => {
+  expect(
+    resolveProviderCreds(credsRuntime(""), [
+      { id: "p1", label: "A", apiKey: "sk-a" },
+    ] as ProviderConfig[]),
+  ).toBeUndefined();
+});
+
+test("resolveProviderCreds returns undefined when provider not found", () => {
+  expect(
+    resolveProviderCreds(credsRuntime("nope"), [
+      { id: "p1", label: "A", apiKey: "sk-a" },
+    ] as ProviderConfig[]),
+  ).toBeUndefined();
+});
+
+test("resolveProviderCreds returns undefined when providers undefined", () => {
+  expect(resolveProviderCreds(credsRuntime("p1"), undefined)).toBeUndefined();
 });
 
 // ── resolveSpawnModel: metadata.model → spawn --model 值 ──

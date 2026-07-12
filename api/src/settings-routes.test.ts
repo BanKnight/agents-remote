@@ -180,6 +180,38 @@ test("PUT runtimes/claude rejects invalid effort and unknown providerId", async 
   expect(badProvider?.status).toBe(400);
 });
 
+test("PUT runtimes/claude accepts providerId bound to an anthropic provider", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
+  }));
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/claude", { providerId: "p1" }),
+    makeUrl("/api/settings/runtimes/claude"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  expect((await res!.json()).runtime.providerId).toBe("p1");
+});
+
+test("PUT runtimes/claude rejects providerId bound to a non-anthropic provider", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "GW", apiKey: "sk-a", protocol: "openai-compatible" }],
+  }));
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/claude", { providerId: "p1" }),
+    makeUrl("/api/settings/runtimes/claude"),
+    store,
+  );
+  expect(res?.status).toBe(400);
+  // 守卫在校验阶段拦截，runtime 配置未被改写。
+  const after = await store.read();
+  expect(after.runtimes.claude.providerId).toBe("");
+});
+
 test("createFetchHandler protects /api/settings without auth", async () => {
   const handler = createFetchHandler(
     new AuthService({ appPassword: "secret", tokenSecret: "test-secret" }),

@@ -5,6 +5,7 @@ import {
   type ClaudeModelTier,
   type ClaudeRuntimeConfig,
   type EffortLevel,
+  type ProviderConfig,
 } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import { Claude2SessionRelay } from "./session-relay";
@@ -119,6 +120,26 @@ export function buildSpawnEnv(
   if (provider?.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
   if (provider?.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
   return env;
+}
+
+// 纯函数：从 settings 解析 claude runtime 选中 provider 的凭证（含 protocol 守卫）。
+// Claude runtime 只消费 anthropic provider（决策 47）：选中 provider 协议不符 → undefined
+// （spawn 回退继承父进程 env，而非拿 OpenAI key 当 ANTHROPIC_API_KEY 用错端点）。
+// 前端 UI 过滤可被绕过（直发 PUT 或改协议留 stale 引用），此为运行态最后防线。
+// onMismatch 回调供调用方打 warn（纯函数自身无副作用）。导出供测试。
+export function resolveProviderCreds(
+  rt: ClaudeRuntimeConfig | undefined,
+  providers: ProviderConfig[] | undefined,
+  onMismatch?: (provider: ProviderConfig) => void,
+): { apiKey: string; baseUrl?: string } | undefined {
+  if (!rt?.providerId || !providers) return undefined;
+  const provider = providers.find((p) => p.id === rt.providerId);
+  if (!provider) return undefined;
+  if ((provider.protocol ?? "anthropic") !== "anthropic") {
+    onMismatch?.(provider);
+    return undefined;
+  }
+  return { apiKey: provider.apiKey, baseUrl: provider.baseUrl };
 }
 
 // 纯函数：metadata.model → spawn --model 值。
@@ -461,13 +482,14 @@ export class Claude2Runtime implements RuntimeResources {
       ? await this.settingsStore.read().catch(() => undefined)
       : undefined;
     const rt = settings?.runtimes.claude;
-    const provider = rt?.providerId
-      ? settings?.providers.find((p) => p.id === rt.providerId)
-      : undefined;
     return {
       resolvedModel: resolveSpawnModel(model, rt),
       resolvedEffort: effort ?? rt?.effort,
-      providerCreds: provider ? { apiKey: provider.apiKey, baseUrl: provider.baseUrl } : undefined,
+      providerCreds: resolveProviderCreds(rt, settings?.providers, (p) => {
+        console.warn(
+          `[claude2] selected provider "${p.label}" is ${p.protocol}, not injected into Claude runtime; falling back to inherited env`,
+        );
+      }),
     };
   }
 

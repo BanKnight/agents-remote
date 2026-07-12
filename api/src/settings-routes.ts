@@ -162,8 +162,19 @@ function applyClaudeRuntimePatch(
 
   if (body.providerId !== undefined) {
     const providerId = body.providerId.trim();
-    if (providerId && !providers.some((p) => p.id === providerId)) {
-      throw new SettingsValidationError("PROVIDER_NOT_FOUND", "Provider not found");
+    if (providerId) {
+      const provider = providers.find((p) => p.id === providerId);
+      if (!provider) {
+        throw new SettingsValidationError("PROVIDER_NOT_FOUND", "Provider not found");
+      }
+      // Claude runtime 只消费 anthropic provider（决策 47）：UI 过滤可被绕过时，
+      // 后端挡住绑定 openai-compatible provider，给用户即时 400 而非 spawn 时用错 key。
+      if ((provider.protocol ?? "anthropic") !== "anthropic") {
+        throw new SettingsValidationError(
+          "SETTINGS_INVALID",
+          "Claude runtime requires an Anthropic-protocol provider",
+        );
+      }
     }
     next.providerId = providerId;
   }
