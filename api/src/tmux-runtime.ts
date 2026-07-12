@@ -61,16 +61,13 @@ export class TmuxRuntime implements RuntimeResources {
     // session scope（-t runtimeKey）非全局，避免影响开发者本机其他 tmux 会话。
     await runTmux(["set-option", "-t", metadata.runtimeKey, "window-size", "latest"]);
 
-    // 移动端触屏滚动走 tmux copy-mode（server scrollback）。移动端后连、`tmux attach` 不重放 scrollback，
-    // 本地 buffer 天生空，故触屏经 attach stdin 发按键序列触发 copy-mode 滚 server 历史，用户无感。
-    // set-option 走 -t 仅本 session；bind-key 是 tmux 全局（无法 per-session），故选冷门 M-Up/M-Down、
-    // 不覆盖默认 Up/Down（开发者本机 copy-mode 选词不受影响）。prefix None 让 Ctrl-B 等透传 pane，
-    // vim/readline 的 Ctrl-B 不被截获。
+    // history-limit 提高 tmux pane 自身保留的 scrollback 深度上限。桌面滚轮/移动触摸都走 tmux copy-mode
+    // （tmux 全局 mouse on：桌面 wheel → xterm 鼠标模式转 SGR 序列 → WheelUpPane → copy-mode -e；
+    // 移动 touch 发同款 SGR 序列走同路径）滚这份 server scrollback，故上限要设够大。服务端 attach()
+    // 对桌面/移动一视同仁（同 output 流），不区分。
+    // prefix None 让 Ctrl-B 等透传 pane（vim/readline 的 Ctrl-B 不被 tmux 前缀截获）。
     await runTmux(["set-option", "-t", metadata.runtimeKey, "history-limit", "50000"]);
     await runTmux(["set-option", "-t", metadata.runtimeKey, "prefix", "None"]);
-    await runTmux(["bind-key", "-n", "M-Up", "copy-mode"]);
-    await runTmux(["bind-key", "-T", "copy-mode", "M-Up", "send-keys", "-X", "scroll-up"]);
-    await runTmux(["bind-key", "-T", "copy-mode", "M-Down", "send-keys", "-X", "scroll-down"]);
   }
 
   async close(runtimeKey: string) {
@@ -95,6 +92,10 @@ export class TmuxRuntime implements RuntimeResources {
 
   // 每个 WS 客户端 spawn 一个 `tmux attach -t <runtimeKey>` 子进程（Bun 原生 terminal PTY）。
   // tmux server 原生全态渲染（光标/alt-screen/resize 重绘全对），PTY stdout→data 回调→onData→WS→xterm.js。
+  // 注意：attach【不重放 pane scrollback】，只发当前屏（实测 500 行历史，新 attach PTY 只收 ~24 行当前屏）。
+  //   故 xterm 本地 buffer 只有 attach 后的内容，看 attach 前历史必须走 tmux copy-mode 滚 server
+  //   scrollback（桌面 wheel 经 mouse on→WheelUpPane→copy-mode -e；移动 touch 发同款 SGR 序列走同路径，
+  //   见 SessionDetailRoute touch handler 注释）。history-limit 决定这份 server scrollback 的深度上限。
   // PoC 验证：data 回调给 Buffer/Uint8Array 非 string，这里转 string 让 AttachHandle.onData 契约为 string；
   // 子进程退出靠 proc.exited + 顶层 onExit（双挂 + exited flag 去重），terminal.exit 不可靠不用。
   async attach(

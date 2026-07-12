@@ -1056,19 +1056,46 @@ function XtermOutput({
       onSendInput(data);
     });
 
-    // 移动端触屏滚动走 tmux copy-mode（server scrollback）。`tmux attach` 不重放 scrollback，移动端后连
-    // 本地 buffer 天生空，故触屏经 attach stdin 发 tmux copy-mode 按键序列滚 server 历史：首次滑动发
-    // M-Up 进 copy-mode，逐个发 M-Up/M-Down 逐行滚（连续 escape sequence 批量发会粘连，50ms 逐个发），
-    // 停止滑动 1.5s 后发 q 自动退 copy-mode 回 live。用户无感（不用手动按键）。桌面端滚轮维持 xterm
-    // 本地 buffer 现状，不在此处理。方向沿用直觉：swipe up（dy<0）→ 看更早（M-Up 上滚），
-    // swipe down（dy>0）→ 看更新（M-Down 下滚）。
+    // ===== 移动端触屏滚动机制（用户多次纠正后钉死，勿再推翻）=====
+    //
+    // 【真相】桌面滚轮【就是 tmux copy-mode】。tmux 全局 `mouse on`（环境配置，`tmux show-options -g
+    //   mouse` = on，非本应用设）+ root table `WheelUpPane` 绑定 `if-shell pane_in_mode|mouse_any_flag
+    //   {send-keys -M} {copy-mode -e}`：桌面 xterm 在鼠标模式下把 wheel 自动转 SGR 鼠标序列发回 →
+    //   tmux → `copy-mode -e` → 滚 server scrollback（含 attach 前历史），滚到底自动退出 copy-mode
+    //   回 live（tmux 原生 sticky-bottom）。
+    //
+    // 【服务端不区分桌面/移动】attach() 对每个 WS client 一视同仁 spawn `tmux attach`，同 output 流。
+    //   桌面【后 attach】也能看历史，靠的是 mouse+copy-mode 滚 server scrollback——不是 attach 重放
+    //   （实测 500 行历史，新 attach PTY 只收当前屏 ~24 行），也不是本地 buffer 累积。
+    //
+    // 【移动 touch 是 dead path】xterm 6.x Gesture class 在 document 层 preventDefault 阻止原生滚动 +
+    //   自定义 scrollbar 只处理 wheel 不处理 touch → touch 不自动转 SGR 序列，必须手动发。
+    //
+    // 【正解】移动 touch 手动发【和桌面滚轮同一种 SGR 鼠标滚轮序列】（SGR_WHEEL_UP/DOWN，col/row 固定
+    //   1;1，探针实测 earliest 479→384→滚回最新+退出 copy-mode），走同一条 WheelUpPane → copy-mode -e
+    //   路径：同 copy-mode、同 server scrollback、同原生 sticky-bottom，服务端零改动（WheelUpPane 是
+    //   tmux 自带）。
+    //
+    // 【方向】手指上滑（dy<0）= 看更早 = WheelUp；手指下滑（dy>0）= 看更新 = WheelDown。滚到底 tmux
+    //   自动退出 copy-mode 回 live——无超时、无 UI、无 netUp bug。
+    //
+    // 【已验证的错路，勿再走（每条都付出过代价）】
+    //   1. 误判"桌面走 xterm 本地 buffer、非 copy-mode"：因 grep 本文件无 wheel/鼠标 handler 就断定，
+    //      漏查 `tmux mouse on`——xterm 鼠标模式转序列【无需 JS handler】。教训：grep 无 handler ≠ 无
+    //      机制，先查 `tmux show-options -g mouse` 与 `tmux list-keys -T root WheelUpPane`。
+    //   2. 移动滚 xterm 本地 buffer（term.scrollLines）：attach 不重放 scrollback，本地 buffer 只有
+    //      attach 后当前屏 ~24 行，看不到 attach 前历史——曾是"移动毫无动静"的退步根因。
+    //   3. 键盘 M-Up 触发 copy-mode（commit cb8e628）：绕开 mouse 路径，还加 1.5s 超时强制退出 → 跳回最新。
+    //   4. capture-pane 快照：半态（丢光标/alt-screen），用户明确否决，永不再提。
+    //   5. 编造"服务端区分桌面/移动""桌面先连累积 buffer"等解释：服务端做不到这种区分；遇到矛盾（桌面
+    //      后 attach 却能看历史）要查真实机制，不要硬拗旧理论。
     const LINE_HEIGHT_PX = 16.2; // fontSize 12 × lineHeight 1.35
-    const COPY_MODE_ENTER = "\x1b[1;3A"; // M-Up：root table 进 copy-mode / copy-mode table scroll-up
-    const COPY_MODE_SCROLL_DOWN = "\x1b[1;3B"; // M-Down：copy-mode table scroll-down
-    const COPY_MODE_EXIT = "q";
-    const SCROLL_KEY_INTERVAL_MS = 50; // 连续 escape sequence 粘连解除实测下限
-    const COPY_MODE_AUTO_EXIT_MS = 1500; // 停止滑动后自动退 copy-mode
-    const SCROLL_QUEUE_CAP = 40; // 队列限幅防积压（快速滑动丢多保跟手）
+    // tmux copy-mode 一次 WheelUp/Down 滚 5 行；PIXELS_PER_WHEEL = 5 行高 → 手指每滑 ~81px 发 1 序列
+    // = 滚 5 行视觉，与原 scrollLines 版同为 ~16px 手指/行视觉，手感一致（只是现在滚的是 server scrollback）。
+    const PIXELS_PER_WHEEL = LINE_HEIGHT_PX * 5;
+    // SGR 鼠标滚轮序列（mode 1006）：button 64=WheelUp / 65=WheelDown，M 结尾=按下事件。col/row 固定 1;1。
+    const SGR_WHEEL_UP = "\x1b[<64;1;1M";
+    const SGR_WHEEL_DOWN = "\x1b[<65;1;1M";
 
     let touchStartY = 0;
     let touchStartX = 0;
@@ -1078,10 +1105,6 @@ function XtermOutput({
     let touchLastY = 0;
     let touchLastT = 0;
     let inertiaFrame: number | null = null;
-    let inCopyMode = false;
-    let scrollQueue = 0; // 正=待下滚行数，负=待上滚
-    let keyTimer: ReturnType<typeof setTimeout> | null = null;
-    let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
     const stopInertia = () => {
       if (inertiaFrame !== null) {
@@ -1090,54 +1113,16 @@ function XtermOutput({
       }
     };
 
-    const scheduleKeyFlush = () => {
-      if (keyTimer === null) {
-        keyTimer = setTimeout(flushScrollQueue, SCROLL_KEY_INTERVAL_MS);
-      }
-    };
-
-    const resetExitTimer = () => {
-      if (exitTimer !== null) clearTimeout(exitTimer);
-      exitTimer = setTimeout(exitCopyMode, COPY_MODE_AUTO_EXIT_MS);
-    };
-
-    const exitCopyMode = () => {
-      if (!inCopyMode) return;
-      onSendInput(COPY_MODE_EXIT);
-      inCopyMode = false;
-      scrollQueue = 0;
-      if (keyTimer !== null) {
-        clearTimeout(keyTimer);
-        keyTimer = null;
-      }
-      exitTimer = null;
-    };
-
-    const flushScrollQueue = () => {
-      keyTimer = null;
-      if (!inCopyMode || scrollQueue === 0) return;
-      // 限幅：队列过大截断、保留方向（快速滑动丢多，保跟手）
-      if (scrollQueue > SCROLL_QUEUE_CAP) scrollQueue = SCROLL_QUEUE_CAP;
-      else if (scrollQueue < -SCROLL_QUEUE_CAP) scrollQueue = -SCROLL_QUEUE_CAP;
-      // scrollQueue > 0（下滚，看更新）→ M-Down；< 0（上滚，看更早）→ M-Up
-      onSendInput(scrollQueue > 0 ? COPY_MODE_SCROLL_DOWN : COPY_MODE_ENTER);
-      scrollQueue += scrollQueue > 0 ? -1 : 1;
-      if (scrollQueue !== 0) scheduleKeyFlush();
-    };
-
-    // px → 行数 → 入队 + 进 copy-mode + 节流发 + 重置 exit 计时（替代原 term.scrollLines 滚本地 buffer）
+    // px → 序列数 → 发 SGR 鼠标滚轮序列，走和桌面滚轮同一条 WheelUpPane → copy-mode -e 路径
+    // （滚 server scrollback，tmux 原生 sticky-bottom）。每 ~81px 发 1 序列，一次序列滚 5 行。
     const applyScroll = (px: number) => {
       touchScrollAccum += px;
-      const lines = Math.trunc(touchScrollAccum / LINE_HEIGHT_PX);
-      if (lines === 0) return;
-      touchScrollAccum -= lines * LINE_HEIGHT_PX;
-      if (!inCopyMode) {
-        onSendInput(COPY_MODE_ENTER); // 首次进 copy-mode（M-Up，root table）
-        inCopyMode = true;
-      }
-      scrollQueue += lines; // lines>0 下滚，<0 上滚
-      scheduleKeyFlush();
-      resetExitTimer();
+      const wheels = Math.trunc(touchScrollAccum / PIXELS_PER_WHEEL);
+      if (wheels === 0) return;
+      touchScrollAccum -= wheels * PIXELS_PER_WHEEL;
+      // wheels>0 = 手指下滑 = 看更新 = WheelDown；wheels<0 = 手指上滑 = 看更早 = WheelUp
+      const seq = wheels > 0 ? SGR_WHEEL_DOWN : SGR_WHEEL_UP;
+      for (let i = 0; i < Math.abs(wheels); i++) onSendInput(seq);
     };
 
     const startInertia = (velocityPxMs: number) => {
@@ -1157,8 +1142,7 @@ function XtermOutput({
           inertiaFrame = null;
           return;
         }
-        const px = sign * speed * dt;
-        applyScroll(px);
+        applyScroll(sign * speed * dt);
         inertiaFrame = requestAnimationFrame(tick);
       };
       inertiaFrame = requestAnimationFrame(tick);
@@ -1342,16 +1326,9 @@ function XtermOutput({
 
     return () => {
       container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
       container.removeEventListener("touchend", onTouchEnd);
       stopInertia();
-      if (keyTimer !== null) {
-        clearTimeout(keyTimer);
-        keyTimer = null;
-      }
-      if (exitTimer !== null) {
-        clearTimeout(exitTimer);
-        exitTimer = null;
-      }
       ro.disconnect();
       if (resizeFrameRef.current !== null) {
         cancelAnimationFrame(resizeFrameRef.current);
