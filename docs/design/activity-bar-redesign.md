@@ -33,13 +33,15 @@
 - **2026-07-11 协商第 9 轮（UI polish 批 D）**：① **GroupedView 项目行操作分级 A+C**——`[折叠 gutter h-7][项目名 flex-1 进项目][⋯ ActionMenu → 删除]`；折叠独立增大触摸区，删除从常驻 🗑 收进 ⋯ 菜单（destructive），对齐移动 `ProjectGroupHeader` 防误触。② **左栏统一大标题层**——`WorkbenchShell` 左 `PanelHeader` 加可选 `title`（`h-11` + `text-base font-semibold`，对齐 `MobilePageHeader`），`WorkbenchContent` 按 nav 注入 `t("nav.projects")` / `t("nav.files")`；右栏保持收起-only。③ **新建项目按钮位置统一**——移动新建从 `MobilePageHeader` actions 移到 ViewSwitcher 行左侧，与桌面 `InstanceLeftOverview` header 左对齐一致（样式在第 10 轮批 E 再对齐 CreateSessionBar）。
 
 
+- **2026-07-12 协商第 15 轮（批 Q，设置入口四项修复）**：① **活动栏置底**——主组（项目/文件）顶部 + 设置按钮底部 `mt-auto` 推到底（VSCode 式主组 + 底部分离），取代单组 `flex-col gap-1` 堆叠。② **[设置] 桌面改居中 Dialog 弹窗**——ActivityBar 设置按钮 `useState` 触发 `<SettingsDialog>`（不 navigate、不离开工作台），**取代决策 13/17**（跳转 `/settings` 离开工作台）。③ **移动端 [设置] 保留 `/settings` 全屏路由**（移动端全屏设置是惯例，入口独立于桌面 ActivityBar）。④ **设置图标换 cog-6-tooth**——原 `settings.svg` 辐条式（中心圆 + 8 放射线）视觉像太阳/主题切换，换 Heroicons `cog-6-tooth` 带方形齿边齿轮（VSCode 风格）。⑤ **cursor 规范**——原生 `<button>` UA 默认 `cursor: default`（箭头），Shadcn `Button` CVA 基类加 `cursor-pointer`（全局）；设置弹窗内不走 Button 的原生 button（protocol 分段 / 1M switch / SelectorTrigger / ActionMenu trigger）+ ActivityBar 按钮（`activityBarButtonClasses`）逐个补 `cursor-pointer`。⑥ **SettingsContent 抽取**——`SettingsRoute` 业务内容（query/mutation/confirm / ProvidersSection + ClaudeRuntimeSection）抽 `<SettingsContent/>` 到 `shell/settings-dialog.tsx`（shell 层共享，对齐批 F `GlobalProjectsOverview`），桌面 `SettingsDialog` + 移动 `SettingsRoute` 两端复用，避免 ActivityBar（shell）→ SettingsRoute（routes）反向依赖。嵌套 Dialog（SettingsDialog 内含 ProviderDialog / confirm）走受控 open（非 trigger asChild），Radix 支持嵌套。
+
 ## 3. 一级导航（两端共享语义）
 
 | 导航 | 桌面端呈现 | 移动端呈现 | 语义 |
 |---|---|---|---|
 | 项目 | 竖行工具条（活动栏） | 底部胶囊 | = 全局总览（卡片+多视图+新建/进入项目） |
 | 文件 | 竖行工具条 | 底部胶囊 | 文件树（左栏）+ 预览（中栏 tab） |
-| 设置 | 竖行工具条 | 底部胶囊 | = 当前 SettingsRoute |
+| 设置 | 竖行工具条（置底） | 底部胶囊 | 桌面 = 居中弹窗 / 移动 = `/settings` 全屏 |
 
 ## 4. 桌面端
 
@@ -75,7 +77,8 @@
   [项目]  左栏 = 全局总览（卡片 + grouped/grid/table 多视图 + 新建项目 + 进入项目）
   [文件]  左栏 = 文件树（全局 rootBrowse，PROJECTS_ROOT 根目录；= 活动栏 [文件] 语义）
           ‖  中栏 = 点文件新开预览 tab（V3 多态 tab，见决策 18；可编辑+保存，✕ 仅移 tab 不 kill，刷新保留）
-  [设置]  特例：不套「切左栏」模型，点击沿用现有 SettingsRoute 设置页（左栏/中栏不切换）
+  [设置]  特例：不套「切左栏」模型，桌面点击开居中 SettingsDialog 弹窗（不离开工作台）；
+          移动端沿现状 `/settings` 全屏页（决策 44，取代决策 13/17 跳转路由）
 
   （中栏始终 = group+tab 工作区，常驻不随导航变）
 
@@ -131,11 +134,11 @@
 10. **进入项目后左栏顶部多导航**：左栏顶部 tab 组（如目前移动端），切换左栏内容；git 为其一。
 11. **进入项目后左栏多导航清单**：实例 / 历史 / 文件 / git（= 现状 `WorkbenchMiddleTab` overview/history/files/git，复用现状）。
 12. **移动端 [文件]**：文件树全屏 + 预览浮窗，保持现状移动端 Files 做法不变。
-13. **[设置] 特例**：不套「活动栏切左栏」模型，点击沿用现有 `SettingsRoute` 设置页，左栏/中栏不切换（桌面端）。
+13. **[设置] 特例**：不套「活动栏切左栏」模型，点击沿用现有 `SettingsRoute` 设置页，左栏/中栏不切换（桌面端）。**（被决策 44 取代：桌面改居中弹窗，不再跳转路由。）**
 14. **活动栏 nav 存储**：`workbenchNavAtom`（localStorage 记忆，不进 URL）。
 15. **活动栏落位**：WorkbenchShell 新增第 0 列（四栏 `[活动栏|左栏|中栏|右栏]`）。
 16. **[文件] 预览**：并入 WorkbenchLayoutV3（与实例 tab 共享 group+tab）。
-17. **[设置] 集成**：跳转 `SettingsRoute`（离开工作台，沿用现状）。
+17. **[设置] 集成**：跳转 `SettingsRoute`（离开工作台，沿用现状）。**（被决策 44 取代：桌面改居中 SettingsDialog 弹窗，不离开工作台。）**
 18. **[文件] tab 是 V3 多态 tab（`kind:"file"`）**：与 session tab 同处 group+tab（可 split/切 active/✕/拖拽）；session tab 的 tabId === sessionId 不变 → localStorage 零迁移、session 路径零回归。
 19. **file tab 生命周期**：✕ = 仅移 tab（不 kill session）；右键菜单隐藏 kill；不参与 stale-tab prune（刷新保留）；可编辑+保存。
 20. **file tab focus 路由**：新增 `/projects/$key/file/$`（splat 捕获多段项目相对路径），不复用 `/session/$id`。
@@ -176,6 +179,8 @@
 42. **grouped 移动端去根 px 满宽——card 距两侧 = peek（批 P 收尾）**：决策 41 末尾预告"未来若去 px-3 满宽是新决策"；批 P 收尾探针验证后用户指出"距离两侧 gap 超大，值已有答案"。**根因**：去边框（批 O 决策 38）后批 L（决策 35）配合边框加的根 `px-3`(12px) 仍在——card 距屏幕两侧 = px-3(12)+peek(20)=32px 双重叠加。边框时代 px-3 是"卡片距父容器"呼吸空间（合理），去边框后 section 无边框收束、px-3 变 carousel peek 之外多余水平留白。**用户意图**："距离两侧 = peek（已有答案）"——card 距屏幕两侧应 = peek(20)，非 px-3+peek(32)；Apple UICollectionView full-bleed carousel 范式：section inset=0 贴屏幕、card 靠 scroll paddingLeading=peek 露出。**修**：根 `px-3 py-3`→`px-0 py-3 lg:px-3`（移动去水平 px / 桌面 lg:px-3 保持边框时代内边距）+ 骨架 `GroupedProjectsSkeleton` 同步。**对齐不变量保持**（marker↔card 内容整体左移 12px）：section 贴屏(left=0)、card 边缘 left=peek(20)、card 内容 left=20+p-3(12)=32、marker left=pl-7(28)+button.px-1(4)=32 ✓、⋯ right=屏宽-pr-7(28) vs card action right=屏宽-peek(20)-right-2(8)=屏宽-28 ✓。**grid/table 不跟**：仍各自 `px-3 py-2`（card 距屏 12），切视图左缘跳（grouped card@20 vs grid card@12），但 carousel peek 是 grouped 固有偏移（决策 39/41 已接受 grouped↔grid 不一致），去 px-3 只把偏移 32→20，非新问题。**py 不动**（用户明示"距离两侧"= 水平）。**桌面零回归**：lg:px-3 保持。两端共用 `GroupedProjectsList`/`GroupedProjectsSkeleton`，响应式 `lg:` 分流改一处同生效。
 
 43. **nameRow 内容左缘对齐 card 左边缘——Apple full-bleed header 对齐 cell 边缘（批 P 收尾）**：决策 42 去根 px-3 让 card 贴屏（边缘=peek=20）后，探针诊断 nameRow 项目图标 left=32 vs card 左边缘 left=20——nameRow 内容比 card 缩进 12px（=card p-3），用户"没对齐已有的做法"。决策 42 前 card 在 px-3 内整体右移、缩进不明显；去 px-3 满宽后 card 贴屏、缩进 12 暴露。**根因**：决策 35 建立 marker↔icon 内容对齐（nameRow 图标=card marker=card.left+p-3），决策 39/41 用 pl=peek+8 维持——边框时代"同框内容对齐"契约。去边框（决策 38）+ 满宽（决策 42）后 nameRow 与 card 是 full-bleed 关系（section 无框、贴屏），应遵循 Apple full-bleed carousel：section header 内容左缘=cell 左边缘（layout margin=peek），非 cell 内容。**Apple 规范**（UICollectionView full-bleed 横滚，App Store Today/Music 范式）：header 文字 leading=scroll contentInset.leading=layout margin=首个 cell 左边缘，header 对齐 cell **边缘**、cell 内容因 padding 进一步右移。**修**（2 处，移动默认 + lg: 桌面覆盖零回归）：① 名行 `pl-7 pr-7`→`pl-5 pr-7`（mobile pl=peek=20 让 button.left=card.left / pr=peek+8=28 对齐 card action 保决策 40；桌面 lg:pl-2 保持）；② 进项目 button `px-1`→`px-0 lg:px-1`（移动去 px 让图标 left=20=card 左边缘 / 桌面保 px-1 维持 marker↔icon）。**对齐不变量**（移动 390）：button.left=0+pl-5(20)=20=card.left ✓、图标=20+px-0=20=card 边缘 ✓、⋯ right=390−pr-7(28)=362=card action right ✓（决策 40 保持）；marker↔icon 转边缘对齐（图标 20 / marker 32 差 12=card p-3，Apple full-bleed 正常）。**桌面零回归**：lg:pl-2(8)+button lg:px-1(4) 保持，图标=section.left+12=card marker（保决策 35 桌面）。**骨架不改**（批 P 决策 41 自洽延续）。两端共用 `GroupedProjectsList`，响应式 `lg:` 分流改一处同生效。
+
+44. **设置入口四项修复（批 Q）**：取代决策 13/17（[设置] 跳转路由离开工作台）。① **活动栏置底**：`ActivityBar` 主组（项目/文件）顶部 + 设置按钮 `mt-auto` 推到底部（VSCode 式主组 + 底部分离）。② **[设置] 桌面 = 居中 Dialog 弹窗**：`ActivityBar` 设置按钮 `useState(settingsOpen)` 触发 `<SettingsDialog>`（DialogContent `max-h-[85vh] overflow-y-auto max-w-lg` + DialogTitle「设置」），不 navigate、不离开工作台；移除 `useNavigate`。③ **移动端 [设置] 保留 `/settings` 全屏路由**：移动端入口 `MobilePrimaryNav`（`<Link to="/settings">`）独立于桌面 `ActivityBar`，零改动；移动端全屏设置是惯例。④ **设置图标换 cog-6-tooth**：`settings.svg` 辐条式（中心圆 + 8 放射线，视觉像太阳/主题切换）→ Heroicons `cog-6-tooth` 带方形齿边齿轮。⑤ **cursor 规范**：原生 `<button>` UA 默认 `cursor: default`（箭头），Shadcn `Button` CVA 基类加 `cursor-pointer`（全局）；设置弹窗内不走 Button 的原生 button（protocol 分段 / 1M switch / SelectorTrigger / ActionMenu trigger）+ `activityBarButtonClasses` 逐个补 `cursor-pointer`。⑥ **SettingsContent 抽取**：`SettingsRoute` 业务内容抽 `<SettingsContent/>` 到 `shell/settings-dialog.tsx`（shell 层共享，对齐批 F `GlobalProjectsOverview`），桌面 `SettingsDialog` + 移动 `SettingsRoute` 复用，避免 ActivityBar（shell）→ SettingsRoute（routes）反向依赖。嵌套 Dialog（SettingsDialog 内含 ProviderDialog / confirm）走受控 open（非 trigger asChild），Radix 支持嵌套。
 
 ## 7. 待定点
 
@@ -253,8 +258,8 @@
 
 | 符号 | 现状 | 新结构对应 |
 |---|---|---|
-| `SettingsRoute.tsx` | `/settings` 独立路由 | [设置] 活动栏沿用（跳转 vs 内嵌 plan 定） |
-| `SettingsFlyout` + `workbenchSettingsFlyoutOpenAtom` | 桌面设置浮层（LeftRail 底部按钮触发） | **删除**（Phase 2a）；[设置] 活动栏跳转 `SettingsRoute`（决策点④，已定） |
+| `SettingsRoute.tsx` | `/settings` 独立路由（两端全屏） | **移动端保留**全屏路由；桌面端不再 navigate（ActivityBar 开 `SettingsDialog` 弹窗，决策 44） |
+| `SettingsFlyout` + `workbenchSettingsFlyoutOpenAtom` | 桌面设置浮层（LeftRail 底部按钮触发） | **删除**（Phase 2a）；桌面改居中 `SettingsDialog`（`shell/settings-dialog.tsx`，ActivityBar useState 触发，决策 44；非原 Flyout 复活） |
 
 ## 9. 落地阶段
 
