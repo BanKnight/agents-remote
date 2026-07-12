@@ -479,7 +479,10 @@ export class Claude2Runtime implements RuntimeResources {
     providerCreds: { apiKey: string; baseUrl?: string } | undefined;
   }> {
     const settings = this.settingsStore
-      ? await this.settingsStore.read().catch(() => undefined)
+      ? await this.settingsStore.read().catch((err) => {
+          console.warn("[claude2] settings read failed, falling back to inherited env:", err);
+          return undefined;
+        })
       : undefined;
     const rt = settings?.runtimes.claude;
     return {
