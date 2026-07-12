@@ -518,7 +518,8 @@ export const zh: Record<TranslationKey, string> = {
   "settings.deleteProvider": "删除 provider",
   "settings.deleteConfirm": "删除 provider「{{label}}」？使用它的会话将回退到服务进程环境变量。",
   "settings.runtime": "运行时",
-  "settings.runtimeHint": "按 agent 类型切换；所选配置作为新会话 spawn 时的全局默认值。",
+  "settings.runtimeHint":
+    "按 agent 类型切换；所选配置作为之后新建会话的全局默认值，已打开的会话不受影响。",
   "settings.runtimeTabClaude": "Claude",
   "settings.runtimeTabCodex": "Codex",
   "settings.codexRuntimeUnsupported": "Codex 运行时即将支持",

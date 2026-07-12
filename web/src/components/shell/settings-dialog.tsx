@@ -576,6 +576,7 @@ function ClaudeRuntimeContent({
   const [effort, setEffort] = useState<EffortLevel>(runtime.effort);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dirty =
     !loading &&
@@ -586,6 +587,7 @@ function ClaudeRuntimeContent({
 
   const handleSave = async () => {
     if (loading) return;
+    setError(null);
     setSaving(true);
     try {
       await updateClaudeRuntime({
@@ -597,6 +599,8 @@ function ClaudeRuntimeContent({
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       setJustSaved(true);
       window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -704,6 +708,7 @@ function ClaudeRuntimeContent({
           />
         </Field>
 
+        {error && <p className="text-xs text-error">{error}</p>}
         <div className="flex items-center justify-between gap-3 pt-1">
           <span className="text-xs text-on-surface-muted">
             {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}

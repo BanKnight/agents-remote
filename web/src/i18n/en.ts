@@ -521,7 +521,7 @@ export const en = {
     'Delete provider "{{label}}"? Sessions using it will fall back to server env.',
   "settings.runtime": "Runtime",
   "settings.runtimeHint":
-    "Switch by agent type; the selected config is the global default for new sessions at spawn time.",
+    "Switch by agent type; the selected config applies as the global default when newly creating sessions. Already-open sessions are not affected.",
   "settings.runtimeTabClaude": "Claude",
   "settings.runtimeTabCodex": "Codex",
   "settings.codexRuntimeUnsupported": "Codex runtime coming soon",
