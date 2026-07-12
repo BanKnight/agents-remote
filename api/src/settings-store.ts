@@ -3,11 +3,13 @@ import { dirname, join } from "node:path";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import {
   EFFORT_LEVELS,
+  PROVIDER_PROTOCOLS,
   type ClaudeModelTier,
   type ClaudeRuntimeConfig,
   type EffortLevel,
   type ProviderConfig,
   type ProviderConfigMasked,
+  type ProviderProtocol,
   type SettingsState,
 } from "@agents-remote/shared";
 
@@ -94,6 +96,7 @@ export function toMaskedProvider(provider: ProviderConfig): ProviderConfigMasked
     id: provider.id,
     label: provider.label,
     ...(provider.baseUrl === undefined ? {} : { baseUrl: provider.baseUrl }),
+    ...(provider.protocol === undefined ? {} : { protocol: provider.protocol }),
     apiKeyMasked: maskApiKey(provider.apiKey),
     hasApiKey: Boolean(provider.apiKey),
   };
@@ -129,6 +132,8 @@ const normalizeProvider = (parsed: ProviderConfig): ProviderConfig => {
     id: parsed.id,
     label: parsed.label,
     apiKey: parsed.apiKey,
+    // 旧 providers.json 无 protocol → 兜底 "anthropic"（= 现状，只支持 Anthropic 网关）。
+    protocol: isProviderProtocol(parsed.protocol) ? parsed.protocol : "anthropic",
   };
   if (typeof parsed.baseUrl === "string") {
     provider.baseUrl = parsed.baseUrl;
@@ -161,6 +166,9 @@ const nonEmptyString = (value: unknown): string | undefined =>
 
 const isEffortLevel = (value: unknown): value is EffortLevel =>
   typeof value === "string" && (EFFORT_LEVELS as readonly string[]).includes(value);
+
+const isProviderProtocol = (value: unknown): value is ProviderProtocol =>
+  typeof value === "string" && (PROVIDER_PROTOCOLS as readonly string[]).includes(value);
 
 function cloneDefaultSettings(): SettingsState {
   return {

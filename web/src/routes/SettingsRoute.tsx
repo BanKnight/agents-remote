@@ -2,11 +2,14 @@ import { type ReactNode, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   EFFORT_LEVELS,
+  PROVIDER_PROTOCOLS,
   type ClaudeModelMapping,
   type ClaudeModelTier,
   type ClaudeRuntimeConfig,
   type EffortLevel,
+  type ListProviderModelsResponse,
   type ProviderConfigMasked,
+  type ProviderProtocol,
   type UpdateProviderRequest,
 } from "@agents-remote/shared";
 
@@ -29,6 +32,7 @@ import {
   createProvider,
   deleteProvider,
   getSettings,
+  listProviderModels,
   updateClaudeRuntime,
   updateProvider,
 } from "../api/client";
@@ -48,6 +52,11 @@ const EFFORT_LABEL: Record<EffortLevel, TranslationKey> = {
   high: "settings.effort.high",
   xhigh: "settings.effort.xhigh",
   max: "settings.effort.max",
+};
+
+const PROTOCOL_LABEL: Record<ProviderProtocol, TranslationKey> = {
+  anthropic: "settings.protocol.anthropic",
+  "openai-compatible": "settings.protocol.openaiCompatible",
 };
 
 /**
@@ -185,6 +194,7 @@ function ProviderRow({
         <p className="truncate font-mono text-xs text-on-surface-muted">
           {provider.apiKeyMasked}
           {provider.baseUrl ? ` · ${provider.baseUrl}` : ""}
+          {` · ${t(PROTOCOL_LABEL[provider.protocol ?? "anthropic"])}`}
         </p>
       </div>
       <ActionMenu
@@ -228,10 +238,33 @@ function ProviderDialog({
   const isEdit = provider !== null;
 
   const [label, setLabel] = useState(provider?.label ?? "");
+  const [protocol, setProtocol] = useState<ProviderProtocol>(provider?.protocol ?? "anthropic");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<ListProviderModelsResponse | null>(null);
+
+  // 测试连接：验证已保存的 provider 凭证 + 预览可用模型列表。成功后预热 runtime 段
+  // 的 provider-models 缓存（用已保存 protocol 作 key，与 ClaudeRuntimeSection 一致）。
+  const testMutation = useMutation({
+    mutationFn: (id: string) => listProviderModels(id),
+    onSuccess: (data) => {
+      setTestResult(data);
+      if (data.ok && provider) {
+        queryClient.setQueryData(
+          ["provider-models", provider.id, provider.protocol ?? "anthropic"],
+          data,
+        );
+      }
+    },
+    onError: (e) =>
+      setTestResult({
+        ok: false,
+        models: [],
+        error: e instanceof Error ? e.message : String(e),
+      }),
+  });
 
   const handleSubmit = async () => {
     setError(null);
@@ -247,10 +280,12 @@ function ProviderDialog({
     setSaving(true);
     try {
       if (isEdit && provider) {
-        // apiKey 留空 = 不传 = 不改（后端 L73-74）；baseUrl 始终传当前值（空 = 清除）。
+        // apiKey 留空 = 不传 = 不改（后端 L73-74）；baseUrl 始终传当前值（空 = 清除）；
+        // protocol 始终传（可改协议）。
         const input: UpdateProviderRequest = {
           label: trimmedLabel,
           baseUrl: baseUrl.trim(),
+          protocol,
         };
         if (apiKey.trim()) input.apiKey = apiKey.trim();
         await updateProvider(provider.id, input);
@@ -259,6 +294,7 @@ function ProviderDialog({
           label: trimmedLabel,
           apiKey: apiKey.trim(),
           baseUrl: baseUrl.trim() || undefined,
+          protocol,
         });
       }
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
@@ -291,6 +327,18 @@ function ProviderDialog({
                 placeholder={t("settings.labelHint")}
               />
             </Field>
+            <Field label={t("settings.protocol")} hint={t("settings.protocolHint")}>
+              <OptionMenu
+                align="start"
+                cancelLabel={t("cancel")}
+                trigger={<SelectorTrigger label={t(PROTOCOL_LABEL[protocol])} />}
+                items={PROVIDER_PROTOCOLS.map((p) => ({
+                  label: t(PROTOCOL_LABEL[p]),
+                  isActive: p === protocol,
+                  onSelect: () => setProtocol(p),
+                }))}
+              />
+            </Field>
             <Field
               label={t("settings.apiKey")}
               hint={isEdit ? t("settings.apiKeyHint") : undefined}
@@ -310,6 +358,34 @@ function ProviderDialog({
               />
             </Field>
           </div>
+
+          {isEdit && provider && (
+            <div className="flex flex-col gap-1.5">
+              <ActionButton
+                tone="muted"
+                onClick={() => testMutation.mutate(provider.id)}
+                disabled={testMutation.isPending || saving}
+              >
+                {testMutation.isPending
+                  ? t("settings.testConnectionRunning")
+                  : t("settings.testConnection")}
+              </ActionButton>
+              {testResult && (
+                <p className={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}>
+                  {testResult.ok
+                    ? testResult.models.length > 0
+                      ? t("settings.testConnectionOk", { count: testResult.models.length })
+                      : t("settings.testConnectionOkEmpty")
+                    : t("settings.testConnectionFailed", { error: testResult.error ?? "" })}
+                </p>
+              )}
+              {testResult?.ok && testResult.models.length > 0 && (
+                <p className="truncate font-mono text-[11px] text-on-surface-muted">
+                  {testResult.models.slice(0, 5).join(" · ")}
+                </p>
+              )}
+            </div>
+          )}
 
           {error && <p className="text-xs text-error">{error}</p>}
 
@@ -374,6 +450,8 @@ function ClaudeRuntimeSection({
   const selectedLabel = providerId
     ? (providers.find((p) => p.id === providerId)?.label ?? providerId)
     : t("settings.runtimeProviderNone");
+  const selectedProtocol: ProviderProtocol =
+    providers.find((p) => p.id === providerId)?.protocol ?? "anthropic";
 
   return (
     <section className="flex flex-col gap-3">
@@ -416,11 +494,21 @@ function ClaudeRuntimeSection({
                 <span className="w-16 shrink-0 text-xs text-on-surface-muted">
                   {t(TIER_LABEL[tier])}
                 </span>
-                <ShellInput
-                  value={modelMapping[tier]}
-                  onChange={(e) => setModelMapping({ ...modelMapping, [tier]: e.target.value })}
-                  placeholder={tier}
-                />
+                {providerId ? (
+                  <ModelTierSelect
+                    tier={tier}
+                    value={modelMapping[tier]}
+                    providerId={providerId}
+                    protocol={selectedProtocol}
+                    onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
+                  />
+                ) : (
+                  <ShellInput
+                    value={modelMapping[tier]}
+                    onChange={(e) => setModelMapping({ ...modelMapping, [tier]: e.target.value })}
+                    placeholder={tier}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -512,5 +600,62 @@ function SelectorTrigger({ label }: { label: string }) {
         />
       </svg>
     </button>
+  );
+}
+
+// tier → model 下拉：选项来自所选 provider 的可用模型列表（useQuery 缓存）。
+// 拉取失败 / 上游 ok:false → 降级手填 ShellInput，保证用户始终能配置。
+// 选项 = 拉取列表 ∪ 当前值；当前值不在列表时加 (custom) 标记保留旧值。
+function ModelTierSelect({
+  tier,
+  value,
+  providerId,
+  protocol,
+  onChange,
+}: {
+  tier: ClaudeModelTier;
+  value: string;
+  providerId: string;
+  protocol: ProviderProtocol;
+  onChange: (next: string) => void;
+}) {
+  const { t } = useT();
+  const query = useQuery({
+    queryKey: ["provider-models", providerId, protocol],
+    queryFn: () => listProviderModels(providerId),
+    enabled: !!providerId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  if (query.isError || (query.data && !query.data.ok)) {
+    return (
+      <ShellInput
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={tier}
+        aria-label={t(TIER_LABEL[tier])}
+      />
+    );
+  }
+
+  const fetched = query.data?.ok ? query.data.models : [];
+  const fetchedSet = new Set(fetched);
+  const options = fetchedSet.has(value) ? fetched : [value, ...fetched];
+  const loading = query.isLoading && !query.data;
+  const triggerLabel =
+    value || (loading ? t("settings.modelSelectLoading") : t("settings.modelSelectPlaceholder"));
+
+  return (
+    <OptionMenu
+      align="start"
+      cancelLabel={t("cancel")}
+      trigger={<SelectorTrigger label={triggerLabel} />}
+      items={options.map((m) => ({
+        label: m === value && !fetchedSet.has(m) ? `${m} ${t("settings.modelSelectCustom")}` : m,
+        isActive: m === value,
+        onSelect: () => onChange(m),
+      }))}
+    />
   );
 }

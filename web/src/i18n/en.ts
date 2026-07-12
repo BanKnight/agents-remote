@@ -276,6 +276,7 @@ export const en = {
   "api.providerUpdateFailed": "Failed to update provider",
   "api.providerDeleteFailed": "Failed to delete provider",
   "api.runtimeUpdateFailed": "Failed to update Claude runtime",
+  "api.providerModelsFailed": "Failed to fetch provider models",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "just now",
@@ -542,4 +543,20 @@ export const en = {
   "settings.saving": "Saving…",
   "settings.saved": "Saved",
   "settings.unsavedChanges": "Unsaved changes",
+
+  // ── Settings: protocol & model discovery ──────────────────────
+  "settings.protocol": "Protocol",
+  "settings.protocolHint":
+    "Determines how the available-models request is built (/v1/models headers). Does not affect spawning.",
+  "settings.protocol.anthropic": "Anthropic",
+  "settings.protocol.openaiCompatible": "OpenAI-compatible",
+  "settings.testConnection": "Test connection",
+  "settings.testConnectionRunning": "Testing…",
+  "settings.testConnectionOk": "Connected. {{count}} models available.",
+  "settings.testConnectionOkEmpty": "Connected but no models returned.",
+  "settings.testConnectionFailed": "Connection failed: {{error}}",
+  "settings.modelSelectPlaceholder": "Select a model",
+  "settings.modelSelectLoading": "Loading models…",
+  "settings.modelSelectCustom": "(custom)",
+  "settings.modelSelectFetchError": "Could not load models. Type manually.",
 } as const;

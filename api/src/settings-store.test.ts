@@ -41,7 +41,9 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
   const store = new SettingsStore({ path });
 
   const state: SettingsState = {
-    providers: [{ id: "prov_1", label: "官方", apiKey: "sk-ant-abc123wX4k" }],
+    providers: [
+      { id: "prov_1", label: "官方", apiKey: "sk-ant-abc123wX4k", protocol: "anthropic" },
+    ],
     runtimes: {
       claude: {
         providerId: "prov_1",
@@ -138,4 +140,63 @@ test("toMaskedProvider strips raw apiKey and exposes masked fingerprint", () => 
   expect(masked.apiKeyMasked).toBe("sk-ant-...wX4k");
   expect(masked.hasApiKey).toBe(true);
   expect(masked.id).toBe("p1");
+});
+
+test("SettingsStore.read defaults missing protocol to anthropic (backward compat)", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  // 旧 providers.json：provider 无 protocol 字段。
+  await writeFile(path, JSON.stringify({ providers: [{ id: "p1", label: "A", apiKey: "sk-a" }] }), {
+    mode: 0o600,
+  });
+
+  const state = await new SettingsStore({ path }).read();
+
+  expect(state.providers[0].protocol).toBe("anthropic");
+});
+
+test("SettingsStore.read falls back to anthropic for invalid protocol values", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  await writeFile(
+    path,
+    JSON.stringify({
+      providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "bedrock" }],
+    }),
+    { mode: 0o600 },
+  );
+
+  const state = await new SettingsStore({ path }).read();
+
+  expect(state.providers[0].protocol).toBe("anthropic");
+});
+
+test("SettingsStore.read preserves explicit openai-compatible protocol", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  await writeFile(
+    path,
+    JSON.stringify({
+      providers: [{ id: "p1", label: "GW", apiKey: "sk-gw", protocol: "openai-compatible" }],
+    }),
+    { mode: 0o600 },
+  );
+
+  const state = await new SettingsStore({ path }).read();
+
+  expect(state.providers[0].protocol).toBe("openai-compatible");
+});
+
+test("toMaskedProvider forwards protocol alongside masked apiKey", () => {
+  const masked = toMaskedProvider({
+    id: "p1",
+    label: "A",
+    apiKey: "sk-ant-abc123wX4k",
+    protocol: "openai-compatible",
+  });
+
+  expect(masked.protocol).toBe("openai-compatible");
+  // 不带 protocol 的 provider：masked 也不带 protocol 字段。
+  const bare = toMaskedProvider({ id: "p2", label: "B", apiKey: "sk-x" });
+  expect(bare).not.toHaveProperty("protocol");
 });

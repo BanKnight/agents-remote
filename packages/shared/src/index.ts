@@ -189,6 +189,12 @@ export const CLAUDE_MODEL_TIERS: readonly ClaudeModelTier[] = [
   "haiku",
 ];
 
+// Provider 协议：决定「发现模型」(/v1/models) 的请求构造（端点 + header）。
+// anthropic → x-api-key + anthropic-version；openai-compatible → Authorization: Bearer。
+// 不影响 spawn（CLI 只认 ANTHROPIC_* env）。全程可选，normalizeProvider 兜底 "anthropic"。
+export type ProviderProtocol = "anthropic" | "openai-compatible";
+export const PROVIDER_PROTOCOLS: readonly ProviderProtocol[] = ["anthropic", "openai-compatible"];
+
 export type ClaudeModelMapping = {
   default: string;
   opus: string;
@@ -201,6 +207,7 @@ export type ProviderConfig = {
   label: string;
   apiKey: string;
   baseUrl?: string;
+  protocol?: ProviderProtocol;
 };
 
 export type ProviderConfigMasked = Omit<ProviderConfig, "apiKey"> & {
@@ -235,12 +242,14 @@ export type CreateProviderRequest = {
   label: string;
   apiKey: string;
   baseUrl?: string;
+  protocol?: ProviderProtocol;
 };
 
 export type UpdateProviderRequest = {
   label?: string;
   apiKey?: string;
   baseUrl?: string;
+  protocol?: ProviderProtocol;
 };
 
 export type ProviderResponse = {
@@ -261,6 +270,16 @@ export type UpdateClaudeRuntimeRequest = {
 
 export type UpdateClaudeRuntimeResponse = {
   runtime: ClaudeRuntimeConfig;
+};
+
+// POST /api/settings/providers/:id/models 响应：用 provider 凭证请求 /v1/models。
+// ok=false 时 models 为空、error 给可读原因（凭证无效/端点不存在/网络错误）。
+// 上游失败不映射成 API 错误码——这是「业务成功调用发现接口，上游凭证有问题」，
+// 前端展示测试结果而非报错 toast。仅 provider 不存在走 PROVIDER_NOT_FOUND 404。
+export type ListProviderModelsResponse = {
+  ok: boolean;
+  models: string[];
+  error?: string;
 };
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";

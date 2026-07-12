@@ -276,6 +276,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.providerUpdateFailed": "更新 provider 失败",
   "api.providerDeleteFailed": "删除 provider 失败",
   "api.runtimeUpdateFailed": "更新 Claude runtime 失败",
+  "api.providerModelsFailed": "获取 provider 模型列表失败",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "刚刚",
@@ -537,4 +538,20 @@ export const zh: Record<TranslationKey, string> = {
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",
+
+  // ── Settings: 协议与模型发现 ──────────────────────────────────
+  "settings.protocol": "协议",
+  "settings.protocolHint":
+    "决定「查看可用模型」时的请求方式（/v1/models 的 header）。不影响 spawn。",
+  "settings.protocol.anthropic": "Anthropic",
+  "settings.protocol.openaiCompatible": "OpenAI 兼容",
+  "settings.testConnection": "测试连接",
+  "settings.testConnectionRunning": "测试中…",
+  "settings.testConnectionOk": "连接成功，可用 {{count}} 个模型。",
+  "settings.testConnectionOkEmpty": "连接成功，但未返回模型。",
+  "settings.testConnectionFailed": "连接失败：{{error}}",
+  "settings.modelSelectPlaceholder": "选择模型",
+  "settings.modelSelectLoading": "加载模型中…",
+  "settings.modelSelectCustom": "（自定义）",
+  "settings.modelSelectFetchError": "无法加载模型，可手动输入。",
 };

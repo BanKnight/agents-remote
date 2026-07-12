@@ -208,3 +208,107 @@ test("createFetchHandler serves /api/settings after auth", async () => {
   const body = await res!.json();
   expect(body.settings.runtimes.claude.effort).toBe("high");
 });
+
+// ── protocol 透传 ──
+
+test("POST provider stores and returns protocol; missing protocol defaults to anthropic", async () => {
+  const store = await makeStore();
+  const created = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers", {
+      label: "GW",
+      apiKey: "sk-gw",
+      protocol: "openai-compatible",
+    }),
+    makeUrl("/api/settings/providers"),
+    store,
+  );
+  expect((await created!.json()).provider.protocol).toBe("openai-compatible");
+
+  const createdDefault = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers", { label: "A", apiKey: "sk-a" }),
+    makeUrl("/api/settings/providers"),
+    store,
+  );
+  expect((await createdDefault!.json()).provider.protocol).toBe("anthropic");
+});
+
+test("PUT provider updates protocol", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
+  }));
+  await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/providers/p1", { protocol: "openai-compatible" }),
+    makeUrl("/api/settings/providers/p1"),
+    store,
+  );
+  const after = await store.read();
+  expect(after.providers[0].protocol).toBe("openai-compatible");
+});
+
+// ── POST /providers/:id/models (发现模型) ──
+
+const originalFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+const installFetch = (impl: () => Promise<Response> | Response) => {
+  globalThis.fetch = (async () => impl()) as typeof fetch;
+};
+
+test("POST /providers/:id/models returns {ok:true, models} using provider credentials", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
+  }));
+  installFetch(
+    () =>
+      new Response(JSON.stringify({ data: [{ id: "claude-opus-4-8" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  );
+
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/p1/models"),
+    makeUrl("/api/settings/providers/p1/models"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body).toEqual({ ok: true, models: ["claude-opus-4-8"] });
+});
+
+test("POST /providers/:id/models surfaces upstream failure as {ok:false} (no API error)", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
+  }));
+  installFetch(() => new Response("unauth", { status: 401 }));
+
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/p1/models"),
+    makeUrl("/api/settings/providers/p1/models"),
+    store,
+  );
+  // 上游 401 不映射成 API 错误码——HTTP 200 + {ok:false, error}，前端展示测试结果。
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body.ok).toBe(false);
+  expect(body.models).toEqual([]);
+  expect(body.error).toBeTruthy();
+});
+
+test("POST /providers/:id/models 404 when provider missing", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/missing/models"),
+    makeUrl("/api/settings/providers/missing/models"),
+    store,
+  );
+  expect(res?.status).toBe(404);
+});

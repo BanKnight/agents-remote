@@ -39,6 +39,7 @@ import type {
   CreateProviderRequest,
   DeleteProviderResponse,
   GetSettingsResponse,
+  ListProviderModelsResponse,
   ProviderResponse,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
@@ -436,6 +437,16 @@ export async function updateClaudeRuntime(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input satisfies UpdateClaudeRuntimeRequest),
   });
+}
+
+// 发现模型：后端用 provider 凭证请求 /v1/models。上游凭证问题返回 HTTP 200 + {ok:false}
+// （fetchJson 不抛，前端展示测试结果）；仅 provider 不存在等 API 层错误才抛。
+export async function listProviderModels(id: string): Promise<ListProviderModelsResponse> {
+  return fetchJson(
+    `/api/settings/providers/${encodeURIComponent(id)}/models`,
+    "api.providerModelsFailed",
+    { method: "POST" },
+  );
 }
 
 const projectFilesPath = (projectName: string, path: string) =>

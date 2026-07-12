@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import {
   CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
+  PROVIDER_PROTOCOLS,
   type ClaudeRuntimeConfig,
   type CreateProviderRequest,
   type DeleteProviderResponse,
   type GetSettingsResponse,
+  type ListProviderModelsResponse,
   type ProviderConfig,
+  type ProviderProtocol,
   type ProviderResponse,
   type SettingsState,
   type UpdateClaudeRuntimeRequest,
@@ -14,6 +17,7 @@ import {
   type UpdateProviderRequest,
 } from "@agents-remote/shared";
 import { jsonError } from "./http-auth";
+import { listProviderModels } from "./settings-models";
 import { SettingsStore, toMaskedProvider } from "./settings-store";
 
 // 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫（L102-110）。
@@ -46,6 +50,7 @@ export const handleSettingsRoutes = async (
       id: randomUUID(),
       label,
       apiKey,
+      protocol: resolveProtocol(body.protocol),
       ...(baseUrl ? { baseUrl } : {}),
     };
     const updated = await store.update((s) => ({ ...s, providers: [...s.providers, provider] }));
@@ -53,6 +58,24 @@ export const handleSettingsRoutes = async (
     if (!created) throw new Error("Created provider missing from store");
     const response: ProviderResponse = { provider: toMaskedProvider(created) };
     return Response.json(response, { status: 201 });
+  }
+
+  // POST /api/settings/providers/:id/models —— 用 provider 凭证发现可用模型列表。
+  // 独立正则（带 /models$），与下方 PUT/DELETE 的单段正则不冲突。上游失败不抛——
+  // 走 {ok:false, error} 让前端展示测试结果；仅 provider 不存在返回 404。
+  const modelsMatch = url.pathname.match(/^\/api\/settings\/providers\/([^/]+)\/models$/);
+  if (modelsMatch && request.method === "POST") {
+    const id = decodeURIComponent(modelsMatch[1]);
+    const state = await store.read();
+    const provider = state.providers.find((p) => p.id === id);
+    if (!provider) return jsonError("PROVIDER_NOT_FOUND", "Provider not found", 404);
+    const result = await listProviderModels(provider);
+    const response: ListProviderModelsResponse = {
+      ok: result.ok,
+      models: result.ok ? result.models : [],
+      ...(result.ok ? {} : { error: result.error }),
+    };
+    return Response.json(response);
   }
 
   const providerIdMatch = url.pathname.match(/^\/api\/settings\/providers\/([^/]+)$/);
@@ -72,6 +95,7 @@ export const handleSettingsRoutes = async (
         if (typeof body.label === "string" && body.label.trim()) next.label = body.label.trim();
         // apiKey: undefined/空串 = 不改；非空 = 覆盖（前端编辑时留空保留原 key）。
         if (typeof body.apiKey === "string" && body.apiKey.length > 0) next.apiKey = body.apiKey;
+        if (body.protocol !== undefined) next.protocol = resolveProtocol(body.protocol);
         if (body.baseUrl !== undefined) {
           const trimmed = body.baseUrl.trim();
           if (trimmed) next.baseUrl = trimmed;
@@ -194,3 +218,9 @@ const readJson = async <T>(request: Request): Promise<T> => {
     return {} as T;
   }
 };
+
+// protocol 校验：合法值透传，缺省/非法值兜底 "anthropic"（与 store normalizeProvider 一致）。
+const resolveProtocol = (value: unknown): ProviderProtocol =>
+  typeof value === "string" && (PROVIDER_PROTOCOLS as readonly string[]).includes(value)
+    ? (value as ProviderProtocol)
+    : "anthropic";
