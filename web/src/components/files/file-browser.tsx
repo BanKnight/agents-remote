@@ -1019,7 +1019,11 @@ export function FilesPanel({
       >
         <div className="flex min-h-7 min-w-0 items-center justify-between gap-3">
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
-          {readOnly ? null : (
+          {/* 写操作 actions（New Folder/Upload）只在 inspection 模式（enablePreview=true）渲染；
+              FilesLeftPanel 纯导航树（enablePreview=false）不挂写操作——窄左栏（256px）actions 文字
+              + breadcrumb 会溢出覆盖 breadcrumb button（click intercept），且写操作语义属中栏 file
+              tab（Save）+ 右栏 files inspection（Phase 3 后 project scope 右栏始终有 files inspection）。 */}
+          {readOnly || !enablePreview ? null : (
             <div className="flex shrink-0 items-center gap-2">
               {upload.error instanceof Error || mkdir.error instanceof Error ? (
                 <p className="text-xs text-error hidden sm:block">

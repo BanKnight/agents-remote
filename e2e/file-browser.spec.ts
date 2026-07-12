@@ -11,18 +11,21 @@ test("authenticated user can browse Project files and preview text and images", 
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Unlock console" }).click();
 
-  // Desktop workbench (Phase 1+): the global project list renders as buttons
-  // in the left panel, not links, and there is no "Projects" heading. Enter
-  // the project by clicking its node, then drive the Files inspection tab via
-  // the URL-visible ?tab=files state (the middle-column "Files" tab shares its
-  // accessible name with the activity-bar [Files] button, so a URL gate is
-  // unambiguous).
+  // Desktop workbench: enter the project, then drive the Files **middle tab**
+  // via the URL-visible ?tab=files state. Phase 3: middle tab [文件] renders
+  // the project-local file tree in the **left panel** (FilesLeftPanel). The
+  // right panel RightPanelTabs also renders a FilesPanel inspection (same
+  // "Project files" ListGroup + "Go to root" breadcrumb), so all file-tree
+  // selectors are scoped to the left panel aside (DOM 第 2 个 complementary:
+  // 活动栏=0/左栏=1/右栏=2) to disambiguate. File preview selectors stay
+  // global: the right panel's preview is an empty state without aria-label,
+  // so "File preview" only resolves to the middle-column FileTabPreview.
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   await page.goto(`/projects/${projectName}?tab=files`);
-  const files = page.getByLabel("Project files");
+  const files = page.getByRole("complementary").nth(1).getByLabel("Project files");
   await expect(files).toBeVisible();
 
   await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
@@ -44,7 +47,7 @@ test("authenticated user can browse Project files and preview text and images", 
     .click();
   await expect(page.getByLabel("File preview")).toContainText("fileBrowserE2e");
 
-  await page.getByRole("button", { name: "Root" }).click();
+  await page.getByRole("complementary").nth(1).getByRole("button", { name: "Root" }).click();
   await files
     .getByRole("button", { name: /README\.md/ })
     .first()
