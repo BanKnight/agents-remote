@@ -328,16 +328,33 @@ function ProviderDialog({
               />
             </Field>
             <Field label={t("settings.protocol")} hint={t("settings.protocolHint")}>
-              <OptionMenu
-                align="start"
-                cancelLabel={t("cancel")}
-                trigger={<SelectorTrigger label={t(PROTOCOL_LABEL[protocol])} />}
-                items={PROVIDER_PROTOCOLS.map((p) => ({
-                  label: t(PROTOCOL_LABEL[p]),
-                  isActive: p === protocol,
-                  onSelect: () => setProtocol(p),
-                }))}
-              />
+              {/* 协议只有两档，用内联分段控件而非 OptionMenu：OptionMenu 移动端形态是
+                  Radix Dialog，嵌套在本 ProviderDialog（也是 Dialog）内会被 dismissable
+                  layer 打断、trigger 点击无反应。原生 button 无此问题，移动端触摸也更大。 */}
+              <div
+                aria-label={t("settings.protocol")}
+                className="inline-flex w-full items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+                role="group"
+              >
+                {PROVIDER_PROTOCOLS.map((p) => {
+                  const active = p === protocol;
+                  return (
+                    <button
+                      aria-pressed={active}
+                      className={`inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-3 text-sm font-semibold transition ${
+                        active
+                          ? "bg-primary/15 text-primary"
+                          : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft"
+                      }`}
+                      key={p}
+                      onClick={() => setProtocol(p)}
+                      type="button"
+                    >
+                      {t(PROTOCOL_LABEL[p])}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
             <Field
               label={t("settings.apiKey")}

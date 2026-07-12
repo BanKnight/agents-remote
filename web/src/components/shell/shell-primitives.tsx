@@ -309,7 +309,10 @@ export function actionButtonClasses({
   className = "",
   tone = "default",
 }: ActionButtonClassOptions = {}) {
-  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition ${buttonToneClasses[tone]} ${className}`;
+  // 桌面紧凑（px-3 py-1.5 text-xs）；移动端撑到触摸最小目标 min-h-11（44px，对齐
+  // MobilePageHeader 基线）+ px-4 + text-sm——ActionButton 全部用在 dialog/表单上下文
+  //（确认/取消/保存/测试连接），移动端放大全是可用性改善，无视觉回归。
+  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition max-sm:min-h-11 max-sm:px-4 max-sm:text-sm ${buttonToneClasses[tone]} ${className}`;
 }
 
 type ResizeGutterProps = {
