@@ -1374,6 +1374,7 @@ function SystemChatBubble() {
       metadata: {
         skillContent: custom?.skillContent,
         controlRequestId,
+        permissionDenied: custom?.permissionDenied,
       },
     } as Record<string, unknown>;
     const ToolUI = CustomUI;

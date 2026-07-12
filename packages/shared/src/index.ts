@@ -979,6 +979,18 @@ export type Claude2TaskProgress = {
   workflow_progress?: Array<Record<string, unknown>>;
 };
 
+// Auto-mode classifier or permission system rejected a tool call. Realtime-only
+// signal (NOT written to JSONL history). Mounted onto the matching tool-call
+// part as permissionDenied { reasonType, reason } and rendered as a violet banner.
+export type Claude2PermissionDenied = {
+  type: "system";
+  subtype: "permission_denied";
+  tool_name?: string;
+  tool_use_id?: string;
+  decision_reason_type?: string;
+  decision_reason?: string;
+};
+
 export type Claude2Result = {
   type: "result";
   subtype: "success" | "error_max_turns" | "error" | "interrupted";
@@ -1148,6 +1160,7 @@ export type SessionStreamServerMessage =
   | Claude2TaskUpdated
   | Claude2TaskNotification
   | Claude2TaskProgress
+  | Claude2PermissionDenied
   | Claude2Result
   | Claude2ControlRequest
   | Claude2ControlResponse

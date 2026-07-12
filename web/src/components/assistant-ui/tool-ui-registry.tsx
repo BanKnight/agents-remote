@@ -43,6 +43,10 @@ function makeToolRenderer(config: {
     const hasArgs = argsText.length > 0 && argsText !== "{}";
     const skillContent =
       typeof metadata?.skillContent === "string" ? (metadata.skillContent as string) : "";
+    const permissionDenied =
+      typeof metadata?.permissionDenied === "object" && metadata.permissionDenied != null
+        ? (metadata.permissionDenied as { reasonType?: string; reason?: string })
+        : null;
 
     const toolStatus: ToolHeadStatus | null = isRunning
       ? "running"
@@ -84,7 +88,12 @@ function makeToolRenderer(config: {
       </div>
     ) : null;
     const hasPrimary = primaryNode !== null;
-    const hasContent = hasPrimary || Boolean(skillContent) || hasResult || isInterrupted;
+    const hasContent =
+      hasPrimary ||
+      Boolean(skillContent) ||
+      hasResult ||
+      isInterrupted ||
+      Boolean(permissionDenied);
     const sectionDivider = `mt-2 border-t pt-2 ${accentDivider}`;
 
     return (
@@ -122,6 +131,14 @@ function makeToolRenderer(config: {
                   <pre className="mt-1 text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-permission-soft/80">
                     {skillContent}
                   </pre>
+                </div>
+              ) : null}
+              {permissionDenied ? (
+                <div className={hasPrimary || skillContent ? sectionDivider : ""}>
+                  <span className="text-[0.6rem] leading-relaxed text-permission">
+                    {t("claude2.permissionDeniedHint")}
+                    {permissionDenied.reason ? `：${permissionDenied.reason}` : ""}
+                  </span>
                 </div>
               ) : null}
               {isInterrupted ? (

@@ -1589,6 +1589,9 @@ export type NormalizedPart =
         lastToolName?: string;
         usage: { total_tokens: number; tool_uses: number; duration_ms: number };
       };
+      // system{permission_denied}: classifier/permission auto-deny of this tool
+      // call. Violet banner; coexists with isError result (red), not interchangeable.
+      permissionDenied?: { reasonType?: string; reason?: string };
     };
 
 // Per-turn statistics lifted from the `result` message. All fields optional —
@@ -2491,6 +2494,39 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
+      // permission_denied: classifier/permission system auto-denied a tool call.
+      // Realtime-only signal (not in JSONL). Mount { reasonType, reason } onto
+      // the matching tool-call part (same pattern as task_progress above) so the
+      // tool card renders a violet denial banner coexisting with an is_error
+      // result, instead of the meaningless debug fallback bubble.
+      if (subtype === "permission_denied") {
+        const pd = msg as unknown as {
+          tool_use_id?: string;
+          decision_reason_type?: string;
+          decision_reason?: string;
+        };
+        const toolUseId = pd.tool_use_id;
+        if (!toolUseId) continue;
+        const permissionDenied = {
+          reasonType: pd.decision_reason_type,
+          reason: pd.decision_reason,
+        };
+        for (const item of items) {
+          if (item.kind !== "assistant") continue;
+          const partIdx = item.parts.findIndex(
+            (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
+          );
+          if (partIdx >= 0) {
+            item.parts = item.parts.map((p, j) =>
+              j === partIdx && p.type === "tool-call" ? { ...p, permissionDenied } : p,
+            );
+            pushPartRaw(toolUseId, msg);
+            break;
+          }
+        }
+        continue;
+      }
+
       // TaskState: no item (scalar state handled by the handler).
       if (
         subtype === "task_started" ||
@@ -3055,6 +3091,7 @@ export function renderChatStream(
                 toolMessageId,
                 toolIndent: hasTextParts,
                 ...(part.progress ? { progress: part.progress } : {}),
+                ...(part.permissionDenied ? { permissionDenied: part.permissionDenied } : {}),
               };
               messages.push({
                 role: "system",

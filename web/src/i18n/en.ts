@@ -335,6 +335,7 @@ export const en = {
   "claude2.completed": "Completed in {{turns}} turns",
   "claude2.interrupted": "Interrupted",
   "claude2.toolInterruptedHint": "Interrupted: tool did not return a result",
+  "claude2.permissionDeniedHint": "Permission denied",
   "claude2.emptyChat": "Ask Claude a question to get started.",
   "claude2.switchingModel": "Switching to {{model}}...",
   "claude2.modelSwitchFailed": "Model switch failed",

@@ -335,6 +335,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.completed": "已完成（{{turns}} 轮）",
   "claude2.interrupted": "已中断",
   "claude2.toolInterruptedHint": "已中断：工具未返回结果",
+  "claude2.permissionDeniedHint": "权限被拒绝",
   "claude2.emptyChat": "向 Claude 提问以开始对话。",
   "claude2.switchingModel": "正在切换到 {{model}}...",
   "claude2.modelSwitchFailed": "模型切换失败",

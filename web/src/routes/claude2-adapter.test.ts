@@ -1309,6 +1309,144 @@ describe("ask-user-question pipeline", () => {
   });
 });
 
+describe("permission_denied pipeline", () => {
+  const permissionDenied = (
+    tool_use_id: string,
+    decision_reason_type: string,
+    decision_reason: string,
+  ): SessionStreamServerMessage =>
+    ({
+      type: "system",
+      subtype: "permission_denied",
+      tool_name: "Bash",
+      tool_use_id,
+      decision_reason_type,
+      decision_reason,
+    }) as unknown as SessionStreamServerMessage;
+
+  const findBashCard = (rendered: ThreadMessageLike[]) =>
+    rendered.find((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return c?.systemMessageType === "tool-card" && c?.toolName === "Bash";
+    });
+
+  const findToolCallPart = (items: ChatStreamItem[], toolCallId: string) =>
+    items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === toolCallId) as
+      | ({
+          type: "tool-call";
+        } & {
+          permissionDenied?: { reasonType?: string; reason?: string };
+          rawSnapshots?: SessionStreamServerMessage[];
+        })
+      | undefined;
+
+  test("mounts { reasonType, reason } onto the matching tool-call part and custom, no fallback bubble", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "run it" }]),
+      assistant("a1", [
+        { type: "tool_use", id: "tu-1", name: "Bash", input: { command: "rm -rf x" } },
+      ]),
+      permissionDenied("tu-1", "classifier", "Blocked by safety classifier"),
+      result("success"),
+    ];
+
+    const items = normalizeChatStream(raw);
+    const part = findToolCallPart(items, "tu-1");
+    expect(part).toBeDefined();
+    expect(part?.permissionDenied).toEqual({
+      reasonType: "classifier",
+      reason: "Blocked by safety classifier",
+    });
+
+    const rendered = renderChatStream(items);
+    const custom = findBashCard(rendered)?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom).toBeDefined();
+    expect(custom?.permissionDenied).toEqual({
+      reasonType: "classifier",
+      reason: "Blocked by safety classifier",
+    });
+    // Must NOT leak as a meaningless "system · permission_denied · #uuid" fallback bubble.
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+  });
+
+  test("coexists with a later tool_result(is_error): violet deny banner + red error result on the same card", () => {
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "run it" }]),
+      assistant("a1", [
+        { type: "tool_use", id: "tu-1", name: "Bash", input: { command: "rm -rf x" } },
+      ]),
+      permissionDenied("tu-1", "classifier", "Blocked by safety classifier"),
+      user([
+        {
+          type: "tool_result",
+          tool_use_id: "tu-1",
+          content: "Command not allowed",
+          is_error: true,
+        },
+      ]),
+      result("success"),
+    ];
+
+    const items = normalizeChatStream(raw);
+    const rendered = renderChatStream(items);
+    const custom = findBashCard(rendered)?.metadata?.custom as Record<string, unknown> | undefined;
+    expect(custom).toBeDefined();
+    // Both signals live on the same card — neither overwrites the other.
+    expect(custom?.permissionDenied).toEqual({
+      reasonType: "classifier",
+      reason: "Blocked by safety classifier",
+    });
+    expect(custom?.isError).toBe(true);
+    expect(custom?.result).toBe("Command not allowed");
+  });
+
+  test("missing tool_use_id is silently skipped (no item, no throw)", () => {
+    const raw: SessionStreamServerMessage[] = [
+      assistant("a1", [{ type: "tool_use", id: "tu-1", name: "Bash", input: { command: "ls" } }]),
+      {
+        type: "system",
+        subtype: "permission_denied",
+        decision_reason_type: "classifier",
+        decision_reason: "Blocked",
+      } as unknown as SessionStreamServerMessage,
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const part = findToolCallPart(items, "tu-1");
+    expect(part?.permissionDenied).toBeUndefined();
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+  });
+
+  test("tool_use_id with no matching part is silently skipped", () => {
+    const raw: SessionStreamServerMessage[] = [
+      assistant("a1", [{ type: "tool_use", id: "tu-1", name: "Bash", input: { command: "ls" } }]),
+      permissionDenied("tu-ghost", "classifier", "Blocked"),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const part = findToolCallPart(items, "tu-1");
+    expect(part?.permissionDenied).toBeUndefined();
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+  });
+
+  test("raw permission_denied wire message is preserved on the part's rawSnapshots", () => {
+    const pd = permissionDenied("tu-1", "classifier", "Blocked by safety classifier");
+    const raw: SessionStreamServerMessage[] = [
+      user([{ type: "text", text: "run it" }]),
+      assistant("a1", [
+        { type: "tool_use", id: "tu-1", name: "Bash", input: { command: "rm -rf x" } },
+      ]),
+      pd,
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const part = findToolCallPart(items, "tu-1");
+    expect(part?.rawSnapshots).toContain(pd);
+  });
+});
+
 describe("system.status pipeline", () => {
   const hasRawStatusFallback = (rendered: ReturnType<typeof renderChatStream>): boolean =>
     rendered.some((m) => {
