@@ -8,6 +8,7 @@ import {
   useCloseSession,
   useCreateSession,
   useGlobalInstanceCandidates,
+  useGlobalInstanceRefs,
   useProjectInstances,
   useRenameSession,
   useScopeInstanceOrder,
@@ -249,6 +250,8 @@ function WorkbenchContent({
   const projectInstances = useProjectInstances(ctx.projectKey);
   const scopeKey = scope.kind === "project" ? scope.key : "global";
   const { refs, isLoaded: refsLoaded } = useScopeInstanceOrder(scope);
+  // 全局 refs（桌面 fan-out 所有项目）：prune effect 桌面分支用（2a，为单一 layout 跨项目 tab 铺路）。
+  const { refs: globalRefs, isLoaded: globalRefsLoaded } = useGlobalInstanceRefs();
 
   // focus → 活动 leaf tab（设计 §7.1/§13）：URL focusId 变化时确保 focusId 在某 leaf 的 tab 中。
   // file focus（focusId 形如 file_src/index.ts）与 session focus 分流：file ref 直接从 tabIdOf
@@ -277,8 +280,11 @@ function WorkbenchContent({
   // refsLoaded gate 防刷新后 refs 还空把全部持久化 tab 误判 stale 清光。
   useEffect(() => {
     if (layout.root === null) return;
-    if (!refsLoaded) return;
-    const activeIds = new Set(refs.map((r) => r.sessionId));
+    // 桌面用全局 refs（单一 layout 跨项目 tab 共存，2a 铺路 / 2b 单一化）；移动端用 scope refs。
+    const pruneRefs = isDesktop ? globalRefs : refs;
+    const pruneLoaded = isDesktop ? globalRefsLoaded : refsLoaded;
+    if (!pruneLoaded) return;
+    const activeIds = new Set(pruneRefs.map((r) => r.sessionId));
     const stale: { leafId: string; tabId: string }[] = [];
     for (const leaf of collectLeaves(layout.root)) {
       for (const t of leaf.tabs) {
@@ -299,7 +305,7 @@ function WorkbenchContent({
       if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, focusId, layout, refs, refsLoaded]);
+  }, [scopeKey, focusId, layout, isDesktop, refs, refsLoaded, globalRefs, globalRefsLoaded]);
 
   // grid/table 回调用 projectName 解析：global scope 从 candidates 查（与 InstanceLeftOverview
   // 同源），project scope = scope.key。

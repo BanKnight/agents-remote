@@ -21,11 +21,11 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：阶段 1 完成 → 下一步阶段 2a（refs 全局聚合）
-- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header 项目名+返回）
-- **已改文件**（阶段 1）：`web/src/i18n/en.ts` + `zh.ts`（新增 `workbench.backToProjects` key）、`web/src/components/shell/workbench-shell.tsx`（PanelHeader title 容器 `<span truncate>` → `<div flex items-center>`，支持 title 节点含交互按钮）、`web/src/routes/WorkbenchRoute.tsx`（leftPanelTitle project scope 传 `ProjectScopeHeaderTitle` 返回箭头+项目名 + `backToProjects` 回调）、`web/src/components/workbench/project-left-panel.tsx`（移除 `GlobalNavNode` 函数 + `<nav>` 包裹 + `useNavigate`/`IconMarker`/`ShellNavigationButton` imports，middle tab bar 直接挂）
-- **下一步**：阶段 2a —— `instance-area.tsx` 新增 `useGlobalInstanceRefs()`（复用 `useGlobalInstanceCandidates` fan-out map `SessionPanelRef[]`），`WorkbenchRoute.tsx:276-300` prune effect 改用 globalRefs（隔离 2b 单一化的 stale-prune 回归）。
-- **阶段 1 验证**：DOM 几何探针确认 project scope `/projects/agents-remote` 左栏 header 显项目名 `agents-remote` + 返回按钮 `aria-label="Back to projects"`（1 个）+ title 容器 `display:flex`；点击返回 → `/projects`，global scope header 显 `Projects`；middle tabs（Overview/History/Files/Git）保留。
+- **当前阶段**：阶段 2a 完成 → 下一步阶段 2b（单一 layout 数据模型 + V3→V4 迁移）
+- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）
+- **已改文件**（阶段 2a）：`web/src/components/workbench/instance-area.tsx`（新增 `useGlobalInstanceRefs()`，复用 `useGlobalInstanceCandidates` fan-out map `SessionPanelRef[]`；桌面端 fan-out 所有项目、移动端 `isDesktop=false` → non-global scope 不 fan-out 返空）、`web/src/routes/WorkbenchRoute.tsx`（prune effect 桌面分支改用 `globalRefs`、移动端仍用 scope refs：`isDesktop ? globalRefs : refs` 切换）
+- **下一步**：阶段 2b —— `workbench-model.ts` `workbenchLayoutAtom` 改存扁平 `WorkbenchLayoutV3`（去 `{project, global}` 分库），新 key `workbenchLayoutV4` + 迁移 `migrateV3StateToSingleLayout` 取 `v3.global`；`useWorkbenchLayout()` 去 scope 参数（`WorkbenchRoute.tsx:244` + `mobile-workbench.tsx:182`）。
+- **阶段 2a 验证**：DOM 几何探针确认 project scope 桌面触发全局 fan-out（`/api/projects` + 全部 6 项目 sessions 查询），aside 渲染正常，login 后 0 console error / 0 401，切 global↔project 无 crash；prune 在 per-scope layout 下因 `globalRefs ⊇ scopeRefs` 数学等价不回归（深度 kill-session 验证留 2b 单一 layout）。
 - **已知风险**（待对应阶段处理）：
   - 2a-2b stale-prune 回归：单一 layout 跨项目 tab 共存，prune 必须先切全局 refs（2a 隔离）。
   - 2b V3→V4 迁移丢各 project layout 副本（取 global 副本）。

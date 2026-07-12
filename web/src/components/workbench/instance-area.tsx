@@ -29,6 +29,7 @@ import {
   inferSessionTypeFromId,
   rankGlobalInstances,
   tabIdOf,
+  useIsDesktopViewport,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import {
@@ -1060,6 +1061,20 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
     // names/agentQueries/terminalQueries/isGlobal/projects 由 dataKey fingerprint 覆盖（data 变 → timestamp 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);
+}
+
+/**
+ * 全局实例 refs（所有项目的 SessionPanelRef[]，桌面端 fan-out；设计 workbench-layout-fix.md 阶段 2a）。
+ * 复用 useGlobalInstanceCandidates 的 listProjects + 每项目 agent/terminal fan-out，map 出
+ * SessionPanelRef[]。桌面端供 prune effect / refsCount（为 2b 单一 layout 跨项目 tab 共存铺路）；
+ * 移动端 isDesktop=false → 传 non-global scope 让 useGlobalInstanceCandidates 不 fan-out
+ *（projects query disabled），返回空 refs（移动端 prune 走 useScopeInstanceOrder 的 scopeRefs）。
+ */
+export function useGlobalInstanceRefs(): { refs: SessionPanelRef[]; isLoaded: boolean } {
+  const isDesktop = useIsDesktopViewport();
+  const scope = isDesktop ? ({ kind: "global" } as const) : ({ kind: "project", key: "" } as const);
+  const { candidates, isLoaded } = useGlobalInstanceCandidates(scope);
+  return { refs: candidates.map((c) => c.ref), isLoaded };
 }
 
 /**
