@@ -73,6 +73,19 @@ const PROTOCOL_LABEL: Record<ProviderProtocol, TranslationKey> = {
   "openai-compatible": "settings.protocol.openaiCompatible",
 };
 
+// provider 行协议 chip 的 token 化底/字色（决策 47）：anthropic 品牌色、openai-compatible 中性。
+const PROTOCOL_CHIP_CLASS: Record<ProviderProtocol, string> = {
+  anthropic: "bg-primary/15 text-primary",
+  "openai-compatible": "bg-on-surface/10 text-on-surface-soft",
+};
+
+// runtime ↔ 协议契约（决策 47）：Claude runtime 只消费 anthropic provider，Codex 只消费
+// openai-compatible。ClaudeRuntimeContent 据此过滤 OptionMenu；Codex 侧后端接入时直接复用。
+const RUNTIME_PROVIDER_PROTOCOL = {
+  claude: "anthropic",
+  codex: "openai-compatible",
+} as const satisfies Record<"claude" | "codex", ProviderProtocol>;
+
 /**
  * 设置内容（桌面 `SettingsDialog` / 移动 `SettingsRoute` 共享，决策 44）。
  * 两段：API Providers（凭证 CRUD）+ Runtime（决策 46 起 multi-runtime：[Claude|Codex]
@@ -261,18 +274,25 @@ function ProviderRow({
   onDelete: () => void;
 }) {
   const { t } = useT();
-  const subtitle = [
-    provider.apiKeyMasked,
-    provider.baseUrl || null,
-    t(PROTOCOL_LABEL[provider.protocol ?? "anthropic"]),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const protocol = provider.protocol ?? "anthropic";
+  const subtitle = (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">
+      <span
+        className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${PROTOCOL_CHIP_CLASS[protocol]}`}
+      >
+        {t(PROTOCOL_LABEL[protocol])}
+      </span>
+      {provider.baseUrl ? <span className="text-on-surface">{provider.baseUrl}</span> : null}
+      {provider.apiKeyMasked ? (
+        <span className="text-on-surface-muted">{provider.apiKeyMasked}</span>
+      ) : null}
+    </span>
+  );
 
   return (
     <ListRow
       title={provider.label}
-      subtitle={<span className="font-mono">{subtitle}</span>}
+      subtitle={subtitle}
       onClick={onEdit}
       actions={
         // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
@@ -358,14 +378,19 @@ function ProviderDialog({
       setError(t("settings.apiKey"));
       return;
     }
+    const trimmedBaseUrl = baseUrl.trim();
+    if (!trimmedBaseUrl) {
+      setError(t("settings.baseUrlRequired"));
+      return;
+    }
     setSaving(true);
     try {
       if (isEdit && provider) {
-        // apiKey 留空 = 不传 = 不改（后端 L73-74）；baseUrl 始终传当前值（空 = 清除）；
+        // apiKey 留空 = 不传 = 不改（后端 L73-74）；baseUrl 必填（空值已被上面校验拦下）；
         // protocol 始终传（可改协议）。
         const input: UpdateProviderRequest = {
           label: trimmedLabel,
-          baseUrl: baseUrl.trim(),
+          baseUrl: trimmedBaseUrl,
           protocol,
         };
         if (apiKey.trim()) input.apiKey = apiKey.trim();
@@ -374,7 +399,7 @@ function ProviderDialog({
         await createProvider({
           label: trimmedLabel,
           apiKey: apiKey.trim(),
-          baseUrl: baseUrl.trim() || undefined,
+          baseUrl: trimmedBaseUrl,
           protocol,
         });
       }
@@ -423,7 +448,7 @@ function ProviderDialog({
               <ShellInput
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.anthropic.com"
+                placeholder="https://api.example.com"
               />
             </Field>
             <Field
@@ -582,6 +607,11 @@ function ClaudeRuntimeContent({
     : t("settings.runtimeProviderNone");
   const selectedProtocol: ProviderProtocol =
     providers.find((p) => p.id === providerId)?.protocol ?? "anthropic";
+  // Claude runtime 只消费 anthropic 协议 provider（决策 47）；selectedLabel/selectedProtocol
+  // 仍用全量 providers 查，保证选中后被改成不兼容协议的 stale 选择仍可见、可改选。
+  const runtimeProviders = providers.filter(
+    (p) => (p.protocol ?? "anthropic") === RUNTIME_PROVIDER_PROTOCOL.claude,
+  );
 
   return (
     <Card>
@@ -597,7 +627,7 @@ function ClaudeRuntimeContent({
                 isActive: providerId === "",
                 onSelect: () => setProviderId(""),
               },
-              ...providers.map((p) => ({
+              ...runtimeProviders.map((p) => ({
                 label: p.label,
                 isActive: p.id === providerId,
                 onSelect: () => setProviderId(p.id),

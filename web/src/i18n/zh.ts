@@ -502,7 +502,8 @@ export const zh: Record<TranslationKey, string> = {
   // ── Settings ────────────────────────────────────────────────
   "settings.title": "设置",
   "settings.providers": "API Provider",
-  "settings.providersHint": "Claude API 凭证。所选 provider 的 key 会在拉起 Claude CLI 时注入。",
+  "settings.providersHint":
+    "管理 API provider 凭证与端点。Claude runtime 使用 Anthropic 协议的 provider；Codex runtime（即将支持）将使用 OpenAI 兼容协议的 provider。",
   "settings.addProvider": "新增 provider",
   "settings.editProvider": "编辑 provider",
   "settings.noProviders": "尚未配置 provider，将回退使用服务进程的环境变量。",
@@ -511,7 +512,9 @@ export const zh: Record<TranslationKey, string> = {
   "settings.apiKey": "API key",
   "settings.apiKeyHint": "留空表示不修改现有 key",
   "settings.baseUrl": "Base URL",
-  "settings.baseUrlHint": "可选。覆盖 Anthropic API 端点。",
+  "settings.baseUrlHint":
+    "provider 的 API 端点 URL（如 https://api.anthropic.com 或 OpenAI 兼容端点）。",
+  "settings.baseUrlRequired": "Base URL 不能为空。",
   "settings.deleteProvider": "删除 provider",
   "settings.deleteConfirm": "删除 provider「{{label}}」？使用它的会话将回退到服务进程环境变量。",
   "settings.runtime": "运行时",

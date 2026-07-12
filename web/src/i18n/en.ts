@@ -504,7 +504,7 @@ export const en = {
   "settings.title": "Settings",
   "settings.providers": "API Providers",
   "settings.providersHint":
-    "Claude API credentials. The selected provider's key is injected when spawning the Claude CLI.",
+    "Manage API provider credentials and endpoints. The Claude runtime uses Anthropic-protocol providers; the Codex runtime (coming soon) will use OpenAI-compatible ones.",
   "settings.addProvider": "Add provider",
   "settings.editProvider": "Edit provider",
   "settings.noProviders": "No providers configured. Server process env is used as fallback.",
@@ -513,7 +513,9 @@ export const en = {
   "settings.apiKey": "API key",
   "settings.apiKeyHint": "Leave blank to keep the existing key unchanged",
   "settings.baseUrl": "Base URL",
-  "settings.baseUrlHint": "Optional. Override the Anthropic API endpoint.",
+  "settings.baseUrlHint":
+    "The provider's API endpoint URL (e.g. https://api.anthropic.com or an OpenAI-compatible endpoint).",
+  "settings.baseUrlRequired": "Base URL is required.",
   "settings.deleteProvider": "Delete provider",
   "settings.deleteConfirm":
     'Delete provider "{{label}}"? Sessions using it will fall back to server env.',
