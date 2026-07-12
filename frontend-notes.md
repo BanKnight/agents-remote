@@ -159,3 +159,45 @@ state（树/嵌套，唯一真相）
 - Radix `react-dialog@1.1.17`（`DialogContentModal` L199 `disableOutsidePointerEvents`、L204 `onPointerDownOutside`、L281 `deferPointerDownOutside`）+ `react-dismissable-layer` touch `once` dismiss（L191-200）。
 - 修复 commit `fix(web): InstanceCard ⋯ sheet 误导航——阻断 portal fiber 冒泡`（`shell-primitives.tsx` InstanceCard `contains` 判断 + `ui/dialog.tsx` 共享 primitive + ActionMenu 移动端迁 Dialog）。
 - memory `react-portal-fiber-click-bubbling`（真根因 + 修复闭环）。
+
+## 5. Radix `asChild` 包裹组件必须透传 props/ref（Trigger 不生效真根因）
+
+### 现象（本项目批 R 设置弹窗实测）
+
+`SettingsDialog`（Radix `Dialog modal=true`）内嵌的 runtime provider / effort / model tier 三个 `OptionMenu`（桌面端 = `DropdownMenuTrigger asChild`）**点击毫无反应**，不开 popover。诊断一度走偏：先怀疑嵌套 modal pointer-lock 冲突（加了 `DropdownMenu modal={false}`，build chunk 确有 `modal:!1` 但仍无反应），再怀疑 z-index / focus，都不中。
+
+### 机制（真根因 = asChild Slot 把 props 注入「直接子元素」，子元素若是组件不展开则被吞）
+
+Radix `asChild` 用 `Slot`：它 clone **直接子元素**并把 Trigger 的 toggle / `aria-expanded` / `data-state` / `onClick` / `id` / `ref` merge 进去。关键在「直接子元素」是**一个 React element**：
+
+- 直接子是**原生 DOM**（`<button>`/`<a>`）：Slot clone 后 props 直接落到 DOM，Trigger 生效。`Claude2SessionDetailRoute.tsx` 里 model/mode 选择器 trigger 直接传 `<button>`，所以一直正常。
+- 直接子是**自定义组件**（`<SelectorTrigger/>`）：Slot 把 props merge 进**组件的 props**，组件收得到，但若组件**不展开 `{...props}` 且不转发 `ref`**，这些 props 就被吞掉——原生 `<button>` 拿不到 `onClick`/`aria-expanded`，Trigger 永远不挂。现象：button 上 `aria-expanded: null`、`data-state: null`，点击只触发外层 Dialog 不开 popover，无 `dropdown-menu-content` portal。
+
+本项目 `SelectorTrigger` 正是后者：`function SelectorTrigger({ label, disabled }) { return <button .../> }`——既不收 `...rest` 也不接 `ref`，Slot 注入全丢。
+
+### 标准做法（自定义 trigger 组件必须 `forwardRef` + 展开 rest）
+
+```tsx
+const SelectorTrigger = forwardRef<
+  HTMLButtonElement,
+  { label: string; disabled?: boolean } & ButtonHTMLAttributes<HTMLButtonElement>
+>(function SelectorTrigger({ label, disabled = false, ...rest }, ref) {
+  return (
+    <button ref={ref} type="button" disabled={disabled} className="..." {...rest}>
+      {/* ... */}
+    </button>
+  );
+});
+```
+
+要点：① `forwardRef` 把 Radix 注入的 `ref` 转给原生 DOM；② `{...rest}` 展开，让 `onClick`/`aria-*`/`data-state`/`id` 落到 `<button>`；③ 自身显式的 `type`/`disabled`/`className` 与 `rest` 不冲突（Radix Trigger 不传这三者）。**判定**：若 `asChild` 的直接子是组件而非原生 DOM，该组件必须「透传 props + 转发 ref」，否则 Slot 失效。这是 `asChild` API 的固有契约，不是 Radix bug。
+
+### 诊断方法
+
+Playwright 探针点 trigger 后查 `aria-expanded` / `data-state`：两者都 `null` → Trigger 未挂 → 看 trigger 是不是被自定义组件包了一层没透传。对比：直接传 `<button>` 的同款菜单 `aria-expanded="true"` 正常。build chunk 里搜 `modal:!1` 只能证明编译产物对，证明不了运行时 Trigger 挂载——后者必须探针查 DOM 属性。
+
+### 来源
+
+- 修复 commit `feat(web): 设置弹窗细节修复——OptionMenu 嵌套+加载态+排版+apiKey+列表限高+Apple grouped (批 R)`（`settings-dialog.tsx` `SelectorTrigger` 改 `forwardRef` + `{...rest}`）。
+- 同文件 `OptionMenu`（`ui/option-menu.tsx`）`trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>` 的类型契约本就要求调用方传「能接这些 props 的元素」，自定义组件须自身满足该契约。
+- Radix Slot `asChild` 机制：clone 直接子 + mergeProps（事件 handler 拼接，普通属性 child 优先）；`@radix-ui/react-slot`。
