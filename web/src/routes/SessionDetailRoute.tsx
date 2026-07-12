@@ -1056,39 +1056,12 @@ function XtermOutput({
       onSendInput(data);
     });
 
-    // ===== 移动端触屏滚动机制（用户多次纠正后钉死，勿再推翻）=====
-    //
-    // 【真相】桌面滚轮【就是 tmux copy-mode】。tmux 全局 `mouse on`（环境配置，`tmux show-options -g
-    //   mouse` = on，非本应用设）+ root table `WheelUpPane` 绑定 `if-shell pane_in_mode|mouse_any_flag
-    //   {send-keys -M} {copy-mode -e}`：桌面 xterm 在鼠标模式下把 wheel 自动转 SGR 鼠标序列发回 →
-    //   tmux → `copy-mode -e` → 滚 server scrollback（含 attach 前历史），滚到底自动退出 copy-mode
-    //   回 live（tmux 原生 sticky-bottom）。
-    //
-    // 【服务端不区分桌面/移动】attach() 对每个 WS client 一视同仁 spawn `tmux attach`，同 output 流。
-    //   桌面【后 attach】也能看历史，靠的是 mouse+copy-mode 滚 server scrollback——不是 attach 重放
-    //   （实测 500 行历史，新 attach PTY 只收当前屏 ~24 行），也不是本地 buffer 累积。
-    //
-    // 【移动 touch 是 dead path】xterm 6.x Gesture class 在 document 层 preventDefault 阻止原生滚动 +
-    //   自定义 scrollbar 只处理 wheel 不处理 touch → touch 不自动转 SGR 序列，必须手动发。
-    //
-    // 【正解】移动 touch 手动发【和桌面滚轮同一种 SGR 鼠标滚轮序列】（SGR_WHEEL_UP/DOWN，col/row 固定
-    //   1;1，探针实测 earliest 479→384→滚回最新+退出 copy-mode），走同一条 WheelUpPane → copy-mode -e
-    //   路径：同 copy-mode、同 server scrollback、同原生 sticky-bottom，服务端零改动（WheelUpPane 是
-    //   tmux 自带）。
-    //
-    // 【方向】手指上滑（dy<0）= 看更早 = WheelUp；手指下滑（dy>0）= 看更新 = WheelDown。滚到底 tmux
-    //   自动退出 copy-mode 回 live——无超时、无 UI、无 netUp bug。
-    //
-    // 【已验证的错路，勿再走（每条都付出过代价）】
-    //   1. 误判"桌面走 xterm 本地 buffer、非 copy-mode"：因 grep 本文件无 wheel/鼠标 handler 就断定，
-    //      漏查 `tmux mouse on`——xterm 鼠标模式转序列【无需 JS handler】。教训：grep 无 handler ≠ 无
-    //      机制，先查 `tmux show-options -g mouse` 与 `tmux list-keys -T root WheelUpPane`。
-    //   2. 移动滚 xterm 本地 buffer（term.scrollLines）：attach 不重放 scrollback，本地 buffer 只有
-    //      attach 后当前屏 ~24 行，看不到 attach 前历史——曾是"移动毫无动静"的退步根因。
-    //   3. 键盘 M-Up 触发 copy-mode（commit cb8e628）：绕开 mouse 路径，还加 1.5s 超时强制退出 → 跳回最新。
-    //   4. capture-pane 快照：半态（丢光标/alt-screen），用户明确否决，永不再提。
-    //   5. 编造"服务端区分桌面/移动""桌面先连累积 buffer"等解释：服务端做不到这种区分；遇到矛盾（桌面
-    //      后 attach 却能看历史）要查真实机制，不要硬拗旧理论。
+    // ===== 移动端触摸滚动：手动发 SGR 鼠标滚轮序列，走 tmux copy-mode（与桌面滚轮同路径）=====
+    // 桌面滚轮 = tmux copy-mode（mouse on + WheelUpPane → copy-mode -e 滚 server scrollback，含 attach
+    //   前历史）；移动 touch 是 dead path（xterm Gesture preventDefault），故手动发同款 SGR 序列走同路径。
+    //   滚到底 tmux 自动退出 copy-mode 回 live——无超时、无 UI、无 netUp bug。
+    // 完整机制 + 5 条已验证错路（滚本地 buffer / M-Up / capture-pane / 编造服务端区分）详见
+    //   frontend-notes.md §6「移动端触摸滚动 = tmux copy-mode」。改这里前务必先读 §6，勿凭印象重写。
     const LINE_HEIGHT_PX = 16.2; // fontSize 12 × lineHeight 1.35
     // tmux copy-mode 一次 WheelUp/Down 滚 5 行；PIXELS_PER_WHEEL = 5 行高 → 手指每滑 ~81px 发 1 序列
     // = 滚 5 行视觉，与原 scrollLines 版同为 ~16px 手指/行视觉，手感一致（只是现在滚的是 server scrollback）。

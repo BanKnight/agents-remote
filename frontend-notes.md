@@ -201,3 +201,39 @@ Playwright 探针点 trigger 后查 `aria-expanded` / `data-state`：两者都 `
 - 修复 commit `feat(web): 设置弹窗细节修复——OptionMenu 嵌套+加载态+排版+apiKey+列表限高+Apple grouped (批 R)`（`settings-dialog.tsx` `SelectorTrigger` 改 `forwardRef` + `{...rest}`）。
 - 同文件 `OptionMenu`（`ui/option-menu.tsx`）`trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>` 的类型契约本就要求调用方传「能接这些 props 的元素」，自定义组件须自身满足该契约。
 - Radix Slot `asChild` 机制：clone 直接子 + mergeProps（事件 handler 拼接，普通属性 child 优先）；`@radix-ui/react-slot`。
+
+## 6. 移动端触摸滚动 = tmux copy-mode（手动发 SGR 鼠标滚轮序列）
+
+### 现象（本项目真机 + 探针实测）
+
+移动端 terminal（xterm.js attach tmux）触摸滚动要能看到 **attach 前的 scrollback 历史**。曾退步为滚 xterm 本地 buffer，但 `tmux attach` 不重放 scrollback，本地 buffer 只有 attach 后当前屏 ~24 行，看不到更早历史。最终正解：触摸手动发**和桌面滚轮同一种 SGR 鼠标滚轮序列**，走 tmux `WheelUpPane → copy-mode -e` 路径滚 server scrollback。
+
+### 机制（真相：桌面滚轮就是 tmux copy-mode，移动只是 dead path 要手动补）
+
+- **桌面滚轮 = tmux copy-mode**：tmux 全局 `mouse on`（环境配置，`tmux show-options -g mouse` = on，非本应用设）+ root table `WheelUpPane` 绑定 `if-shell pane_in_mode|mouse_any_flag {send-keys -M} {copy-mode -e}`。桌面 xterm 鼠标模式下把 wheel 自动转 SGR 鼠标序列发回 → tmux → `copy-mode -e` → 滚 server scrollback（含 attach 前历史），滚到底自动退出回 live（tmux 原生 sticky-bottom）。**xterm 鼠标模式转序列无需 JS handler**——grep 不到 wheel handler ≠ 无机制。
+- **服务端不区分桌面/移动**：`TmuxRuntime.attach()` 对每个 WS client 一视同仁 spawn `tmux attach`，同 output 流。桌面后 attach 也能看历史，靠 mouse+copy-mode 滚 server scrollback——**不是** attach 重放（实测 500 行历史，新 attach PTY 只收当前屏 ~24 行），**不是**本地 buffer 累积。
+- **移动 touch 是 dead path**：xterm 6.x `Gesture` class 在 document 层 `preventDefault` 阻止原生滚动 + 自定义 scrollbar 只处理 wheel 不处理 touch → touch 不自动转 SGR 序列，**必须手动发**。
+- **SGR 鼠标序列（mode 1006）按帧解析不粘连**：`\x1b[<64;1;1M`（WheelUp）/ `\x1b[<65;1;1M`（WheelDown），button 64/65，`M` 结尾=按下事件，col/row 固定 1;1。每帧以 `M` 结束是完整一帧，连发由 tmux 按 CSI 边界分帧——区别于 Alt 修饰序列（`\x1b[1;3A`）需 50ms 逐发防粘连。
+
+### 标准做法（移动 touch 手动发同款 SGR 序列，与桌面同路径）
+
+- **applyScroll**：手指位移 px 累加 → `Math.trunc(accum / PIXELS_PER_WHEEL)` 算序列数 → 同步 for 循环 `onSendInput(SGR_WHEEL_UP/DOWN)`。`PIXELS_PER_WHEEL = LINE_HEIGHT_PX * 5`（tmux copy-mode 一次 WheelUp/Down 滚 5 行 → 手指每滑 ~81px 发 1 序列 = 滚 5 行视觉，~16px 手指/行视觉，手感与滚本地 buffer 一致）。
+- **方向**：手指上滑（dy<0）= 看更早 = WheelUp；手指下滑（dy>0）= 看更新 = WheelDown。滚到底 tmux 自动退出 copy-mode 回 live——**无超时、无 UI、无 netUp bug**。
+- **连发上限**：单帧累出过多序列时截断（`Math.min(Math.abs(wheels), MAX_WHEELS_PER_FRAME)`，`MAX_WHEELS_PER_FRAME = 50`），防极端惯性一次刷上百帧突发流量；滚到顶/底 tmux 自然停。
+- **服务端零改动**：`WheelUpPane → copy-mode -e` 是 tmux 自带，移动只是补发桌面同款序列。`tmux-runtime` 只设 `history-limit`（server scrollback 深度上限，决定能滚多远）+ `prefix None`，**不**需要 per-session bind-key。
+
+### 已验证的错路（勿再走，每条都付出过代价）
+
+1. **误判"桌面走 xterm 本地 buffer、非 copy-mode"**：因 grep 本文件无 wheel/鼠标 handler 就断定，漏查 `tmux mouse on`。教训：grep 无 handler ≠ 无机制，先查 `tmux show-options -g mouse` 与 `tmux list-keys -T root WheelUpPane`。
+2. **移动滚 xterm 本地 buffer（`term.scrollLines`）**：attach 不重放 scrollback，本地 buffer 只有 attach 后当前屏 ~24 行，看不到 attach 前历史——曾是"移动毫无动静"的退步根因。
+3. **键盘 M-Up 触发 copy-mode**（commit `cb8e628`）：绕开 mouse 路径，还加 1.5s 超时强制退出 → 跳回最新。
+4. **capture-pane 快照**：半态（丢光标/alt-screen），用户明确否决，永不再提。
+5. **编造"服务端区分桌面/移动""桌面先连累积 buffer"等解释**：服务端做不到这种区分；遇到矛盾（桌面后 attach 却能看历史）要查真实机制，不要硬拗旧理论。
+
+### 来源
+
+- 实现 commit `089a6f7`（SGR copy-mode 方案）+ `4e5ecc3`（连发上限）。
+- 探针实测：`tmux show-options -g mouse` = on、`tmux list-keys -T root WheelUpPane` 显式绑定、发 SGR 序列后 earliest 479→384→滚回最新+退出 copy-mode。
+- xterm.js 6.x `Gesture` class document 层 `preventDefault` + scrollbar 只处理 wheel。
+- tmux SGR 鼠标模式 1006：`\x1b[<btn;col;row>M`。
+- memory `web-terminal-tmux-attach-research`（web terminal 共享终端走 tmux attach 非 capture-pane 半态快照）。
