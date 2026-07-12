@@ -70,7 +70,7 @@ DESIGN.md（`docs/design/DESIGN.md`）是设计系统唯一权威源；`web/src/
 3. **分批按色族收敛**：同色族（操作色 / 角色色 / 灰度 / 状态色）一批，每批独立门禁 + CSS 落盘 + Playwright DOM computed 验证 + commit。机械色阶（amber/cyan/violet/emerald/rose）可 sed + oxfmt；灰度按上下文需逐处核对。
 4. **灰度按上下文映射**：slate **不能**机械按档位 sed（同一档在 bg/text/border 不同语义），必须按 `bg → surface 档、text → on-surface 档、border → neutral-line` 分桶替换 + 人工核对。
 5. **验证视觉零变化**（语义对齐非重新设计）：Playwright DOM `getComputedStyle` 取 backgroundColor/color/borderColor，对比 token hex；浏览器对复杂值返回 oklab（需 oklab→rgb 换算），对 sRGB 简单值返回 rgb——`text-assistant-soft` → `rgb(253,230,138)` 这种精确命中即通过。
-6. **每次改 web 后主动验证 CSS 落盘**：`build --watch` 会漏落盘 CSS（preview 用 HTML 冒充 text/css），`touch web/src/index.css` 触发 rebuild + grep `web/dist/assets/*.css` 确认 utility 落盘。
+6. **每次改 web 后主动验证 CSS 落盘**：`build --watch` 会漏落盘 CSS（preview 用 HTML 冒充 text/css），`touch web/src/main.tsx` 触发 rebuild + grep `web/dist/assets/*.css` 确认 utility 落盘。**不要 `touch web/src/index.css`**——`main.tsx` 只 import `./styles/index.css`，根 `index.css` 不存在；touch 它会新建 0 字节无引用空孤儿（git 显示 `?? web/src/index.css`），既不触发有效 rebuild 又留下 dead file，跨会话反复踩（详见 memory `build-watch-css-not-flushed`）。
 
 ### 来源
 
