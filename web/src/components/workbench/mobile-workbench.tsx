@@ -94,17 +94,18 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
     );
   }
 
-  // file focus（focusId 形如 file_src/index.ts，设计 §6 决策 3）：移动端不实现 V3 group，用
-  // MobileFileFocus 浮窗式预览打开该文件（复用 FileTabPreview 可编辑预览 + 顶部返回/✕ header）。
-  // global file focus 本 phase 不 deep-link，scope 必 project。
+  // file focus（focusId 形如 file_demo/src/index.ts，path=全路径含项目名前缀，设计 §6 决策 3 /
+  // workbench-stable-refactor Phase 3）：移动端不实现 V3 group，用 MobileFileFocus 浮窗式预览打开
+  // 该文件（复用 FileTabPreview 可编辑预览 + 顶部返回/✕ header）。全局/项目文件都走此分支（全路径
+  // 自带项目名，MobileFileFocus 内部解析）。
   const filePath = parseFileTabId(focusId);
-  if (filePath !== null && scope.kind === "project") {
+  if (filePath !== null) {
     return (
       <main
         className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
-        <MobileFileFocus path={filePath} projectName={scope.key} />
+        <MobileFileFocus path={filePath} />
       </main>
     );
   }
@@ -120,14 +121,18 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
 }
 
 /**
- * 移动端文件聚焦浮窗（设计 §6 决策 3）：/file/$path URL 在移动端用此组件打开。单行 header
- *（◄ 返回 + 文件名 + ✕）+ FileTabPreview 可编辑预览。不实现 V3 group（移动端 [文件] 保持现状
- * 浮窗式，设计决策 12）。返回 / ✕ = navigate 回项目列表态（/projects/$key，无 session focus）。
- * 复用 MobileTabHeader 保持与 MobileFocusHeader 同款 header 结构。
+ * 移动端文件聚焦浮窗（设计 §6 决策 3 / workbench-stable-refactor Phase 3）：`/file/$path` URL 在
+ * 移动端用此组件打开。`path` = 全路径（含项目名前缀），单行 header（◄ 返回 + 文件名 + ✕）+
+ * FileTabPreview 可编辑预览（FileTabPreview 内部 resolveRootBrowseTarget 解析项目名走 project API）。
+ * 不实现 V3 group（移动端 [文件] 保持浮窗式，设计决策 12）。返回 / ✕ = navigate 回全局文件树
+ *（`/files`，全局文件入口）；项目内文件 → 回 `/projects/$key`（用全路径首段派生项目名）。复用
+ * MobileTabHeader 保持与 MobileFocusHeader 同款 header 结构。
  */
-function MobileFileFocus({ path, projectName }: { path: string; projectName: string }) {
+function MobileFileFocus({ path }: { path: string }) {
   const { t } = useT();
   const navigate = useNavigate();
+  // 全路径首段 = projectName（与 resolveRootBrowseTarget 同语义）。返回回项目列表态。
+  const projectName = path.slice(0, path.indexOf("/")) || path;
   const back = () => {
     void navigate({ to: "/projects/$key", params: { key: projectName } });
   };
@@ -152,7 +157,7 @@ function MobileFileFocus({ path, projectName }: { path: string; projectName: str
         }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <FileTabPreview path={path} projectName={projectName} />
+        <FileTabPreview path={path} />
       </div>
     </div>
   );
@@ -183,10 +188,13 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
   const { refs: order } = useScopeInstanceOrder(scope);
   const currentIndex = order.findIndex((o) => o.sessionId === focusId);
+  // global scope 从布局查 focusId 所属项目（focusId 是 session id，查到的 ref 收窄到 session
+  // 取 projectName；FilePanelRef 无 projectName 字段故需 kind 收窄，设计 workbench-stable-refactor Phase 3）。
+  const focusRef = scope.kind === "global" ? findTabRefLeaf(layout, focusId) : null;
   const projectName =
     scope.kind === "project"
       ? scope.key
-      : (findTabRefLeaf(layout, focusId)?.projectName ??
+      : ((focusRef?.kind === "session" ? focusRef.projectName : undefined) ??
         order.find((r) => r.sessionId === focusId)?.projectName);
   const sessionType = inferSessionTypeFromId(focusId);
   // detail 查询（query key 与 PanelRouter 一致，React Query dedupe 零额外网络）。两个 hook 都调

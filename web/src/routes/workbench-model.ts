@@ -344,6 +344,13 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
 export type WorkbenchRouteContext = {
   scope: WorkbenchScope;
   focusId: string | undefined;
+  /**
+   * 左栏模式（设计 workbench-stable-refactor Phase 3）：global scope 下 `leftMode="files"` →
+   * 左栏 FilesLeftPanel（全局文件树），`"auto"` → ProjectLeftPanel(global overview)。project
+   * scope 无视 leftMode 恒走 ProjectLeftPanel。`/files/file/$`（全局文件 tab focus）派生 "files"
+   *（在文件 tab 上下文保留文件树便于继续浏览）；其余 workbench 路由默认 "auto"。
+   */
+  leftMode?: "auto" | "files";
   rightTab?: WorkbenchRightTab;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
@@ -353,9 +360,11 @@ export type WorkbenchRouteContext = {
 /**
  * 从 leaf route match 派生 workbench 路由上下文（纯函数，可独立测试）。leaf 的 fullPath 唯一
  * 标识路由类型，params/search 经 switch 派生 scope + focusId。focusId 编码与 tabIdOf 一致：
- * session=`${id}` / file=`file_${path}` / git=`git_${scope}/${path}`（focus effect 据此开/激活 tab）。
+ * session=`${id}` / file=`file_${path}`（path=全路径含项目名前缀）/ git=`git_${scope}/${path}`
+ *（focus effect 据此开/激活 tab）。
  *
- * 注意：本函数只覆盖 7 个 workbench 路由（不含 `/files`——它留在 rootRoute 平级，Phase 2-4 收口）。
+ * 注意：本函数覆盖 workbench 路由（含 `/files/file/$` 全局文件 tab focus，Phase 3）；不含 `/files`
+ *（独立整页，留 rootRoute 平级，Phase 4 收口）。
  */
 export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRouteContext {
   const p = leaf.params as Record<string, string | undefined>;
@@ -376,10 +385,24 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     case "/projects/$key/session/$id":
       return { scope: { kind: "project", key: p.key ?? "" }, focusId: p.id, ...s };
     case "/projects/$key/file/$": {
-      const path = p._splat ? decodeURIComponent(p._splat) : "";
+      // 项目文件 focus：_splat = 项目相对路径，拼项目名前缀成全路径 focusId（与 tabIdOf 的
+      // `file_${fullPath}` 一致）。全路径 = `${key}/${_splat}`，全局/项目点同一文件 → 同一 tabId 去重。
+      const rel = p._splat ? decodeURIComponent(p._splat) : "";
+      const fullPath = p.key ? `${p.key}/${rel}` : rel;
       return {
         scope: { kind: "project", key: p.key ?? "" },
-        focusId: path ? `file_${path}` : undefined,
+        focusId: rel ? `file_${fullPath}` : undefined,
+        ...s,
+      };
+    }
+    case "/files/file/$": {
+      // 全局文件 tab focus（Phase 3）：_splat = 全路径（含项目名前缀如 "demo/src/index.ts"）。
+      // scope=global + leftMode="files"（在文件 tab 上下文保留全局文件树便于继续浏览）。
+      const fullPath = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "global" },
+        focusId: fullPath ? `file_${fullPath}` : undefined,
+        leftMode: "files",
         ...s,
       };
     }
@@ -465,10 +488,14 @@ export type SessionPanelRef = {
   sessionId: string;
 };
 
-/** 文件预览面板引用（项目 + 项目相对路径）。V3 多态 tab 的 file 分支（设计 §6 决策 18）。 */
+/**
+ * 文件预览面板引用（设计 workbench-stable-refactor Phase 3）。path = **全路径**（含项目名前缀，
+ * 如 `"demo/src/index.ts"`）——全局/项目点同一文件复用同一 tab（tabIdOf = `file_${path}` 去重）。
+ * 不带 projectName 字段：FileTabPreview 内部用 `resolveRootBrowseTarget(path)` 解析项目名 +
+ * 项目相对路径走现有 project preview API（无需新 endpoint）。
+ */
 export type FilePanelRef = {
   kind: "file";
-  projectName: string;
   path: string;
 };
 
@@ -495,8 +522,9 @@ export type LegacyPanelRef = {
 
 /**
  * 派生 tab id（= activeTabId / React key / sizes key 概念）：session tab = sessionId，
- * file tab = `file_${path}`，git tab = `git_${scope}/${path}`。session tab 的 tabId === sessionId
- *（值不变）是 V3 多态零回归的基石；file_/git_ 前缀与 sessionId 天然互斥。
+ * file tab = `file_${path}`（path=全路径含项目名前缀），git tab = `git_${scope}/${path}`。session tab
+ * 的 tabId === sessionId（值不变）是 V3 多态零回归的基石；file_/git_ 前缀与 sessionId 天然互斥。
+ * file 全路径让全局/项目点同一文件复用同一 tab（去重）。
  */
 export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "session") return ref.sessionId;
@@ -504,9 +532,22 @@ export function tabIdOf(ref: WorkbenchPanelRef): string {
   return `git_${ref.scope}/${ref.path}`;
 }
 
-/** 从 file tab id（`file_${path}`）反解项目相对路径；非 file tab id 返 null（路由 file focus 用）。 */
+/** 从 file tab id（`file_${path}`）反解全路径（含项目名前缀）；非 file tab id 返 null（路由 file focus 用）。 */
 export function parseFileTabId(tabId: string): string | null {
   return tabId.startsWith("file_") ? tabId.slice("file_".length) : null;
+}
+
+/**
+ * 拆分 file 全路径（`"projectName/relativePath"`）为 projectName + 项目相对路径（设计
+ * workbench-stable-refactor Phase 3）。file ref 的 path 是全路径（去 projectName 字段后，FileTabPreview
+ * 内部用 resolveRootBrowseTarget 解析）；但 navigateToFile/onSelectTab 仍需 (projectName, rel) 两参
+ * 来按 scope 分流项目/全局 focus URL，故从全路径拆回。全路径首段 = projectName（与
+ * resolveRootBrowseTarget 同语义）；无 `/` 时 relativePath 为空（理论上文件总有项目前缀，空属异常降级）。
+ */
+export function splitFilePath(fullPath: string): { projectName: string; path: string } {
+  const slashIdx = fullPath.indexOf("/");
+  if (slashIdx === -1) return { projectName: fullPath, path: "" };
+  return { projectName: fullPath.slice(0, slashIdx), path: fullPath.slice(slashIdx + 1) };
 }
 
 /** 从 git tab id（`git_${scope}/${path}`）反解 scope 与项目相对路径；非 git tab id 或格式非法返 null
@@ -526,7 +567,7 @@ export function parseGitTabId(tabId: string): { scope: GitDiffScope; path: strin
 
 /** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。 */
 export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
-  if (ref.kind === "file") return { kind: "file", projectName: ref.projectName, path: ref.path };
+  if (ref.kind === "file") return { kind: "file", path: ref.path };
   if (ref.kind === "git")
     return { kind: "git", projectName: ref.projectName, scope: ref.scope, path: ref.path };
   return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };

@@ -45,6 +45,7 @@ import {
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
+  splitFilePath,
   toggleLeafMaximize,
   useIsDesktopViewport,
   useWorkbenchLayout,
@@ -74,6 +75,7 @@ export function WorkbenchLayoutShell() {
   return (
     <WorkbenchContent
       focusId={ctx.focusId}
+      leftMode={ctx.leftMode}
       rightTab={ctx.rightTab}
       scope={ctx.scope}
       tab={ctx.tab}
@@ -226,8 +228,10 @@ function WorkbenchContent({
   const { refs: globalRefs, isLoaded: globalRefsLoaded } = useGlobalInstanceRefs();
 
   // focus → 活动 leaf tab（设计 §7.1/§13）：URL focusId 变化时确保 focusId 在某 leaf 的 tab 中。
-  // file focus（focusId 形如 file_src/index.ts）与 session focus 分流：file ref 直接从 tabIdOf
-  // 逆解析 path（scope.projectName 必为 project scope —— global file focus 本 phase 不 deep-link）。
+  // file focus（focusId 形如 file_demo/src/index.ts，path=全路径含项目名前缀）与 session focus 分流：
+  // file ref 直接从 parseFileTabId 逆解全路径，开 {kind:"file", path:全路径} tab（**无 scope gate**
+  //——全局文件 tab 也开，设计 workbench-stable-refactor Phase 3；FileTabPreview 内部 resolveRootBrowseTarget
+  // 解析项目名走现有 project preview API）。git 仍 gate project scope（git 是项目内概念，不统一）。
   useEffect(() => {
     if (!focusId) return;
     update((prev) => {
@@ -235,8 +239,7 @@ function WorkbenchContent({
       if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
       const filePath = parseFileTabId(focusId);
       if (filePath !== null) {
-        if (scope.kind !== "project") return prev;
-        return ensureTabOpenLeaf(prev, { kind: "file", projectName: scope.key, path: filePath });
+        return ensureTabOpenLeaf(prev, { kind: "file", path: filePath });
       }
       const gitParsed = parseGitTabId(focusId);
       if (gitParsed !== null) {
@@ -357,25 +360,38 @@ function WorkbenchContent({
     },
     [update],
   );
-  // file tab focus URL = /projects/$key/file/$ splat（设计 §6 决策 2）。path 进 URL path 段（/ 分层，
-  // 非 %2F 编码），与 tabIdOf 的 `file_${path}` 一致。global file focus 本 phase 不 deep-link。
+  // file tab focus URL（设计 §6 决策 2 / workbench-stable-refactor Phase 3）：
+  // - 项目文件（projectName === scope.key，scope=project）→ /projects/$key/file/$，splat=项目相对路径
+  //   （保持在项目 URL，key=项目名，focus effect 拼全路径 tabId）。
+  // - 全局/跨项目文件（scope=global 或 projectName≠scope.key）→ /files/file/$，splat=全路径
+  //   （含项目名前缀，focus effect 直接 file_${fullPath}）。全局/项目点同一文件 → 同一 tabId 去重。
   // search 传 URL 原始值（rightTab/tab/view，与 navigateWorkbench 同模式，避免把 atom 回退值写进 URL）。
   const navigateToFile = useCallback(
     (projectName: string, path: string) => {
-      if (scope.kind !== "project") return;
+      const fullPath = `${projectName}/${path}`;
+      if (scope.kind === "project" && projectName === scope.key) {
+        void navigate({
+          to: "/projects/$key/file/$",
+          params: { key: projectName, _splat: path },
+          search: { rightTab, tab: tabFromUrl, view: viewFromUrl },
+        });
+        return;
+      }
       void navigate({
-        to: "/projects/$key/file/$",
-        params: { key: projectName, _splat: path },
+        to: "/files/file/$",
+        params: { _splat: fullPath },
         search: { rightTab, tab: tabFromUrl, view: viewFromUrl },
       });
     },
     [navigate, scope, rightTab, tabFromUrl, viewFromUrl],
   );
-  // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。复用已测纯函数
+  // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
+  //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
   // ensureTabOpenLeaf（已在→激活 / 不在→加到活动 leaf / 无活动→新建首 leaf 三态，file ref 成立）。
   const onOpenFile = useCallback(
     (projectName: string, path: string) => {
-      update((prev) => ensureTabOpenLeaf(prev, { kind: "file", projectName, path }));
+      const fullPath = `${projectName}/${path}`;
+      update((prev) => ensureTabOpenLeaf(prev, { kind: "file", path: fullPath }));
       void navigateToFile(projectName, path);
     },
     [update, navigateToFile],
@@ -409,8 +425,11 @@ function WorkbenchContent({
       if (focusId === tabId) {
         const active = activeTabRefLeaf(next);
         if (active?.kind === "session") navigateSession(active);
-        else if (active?.kind === "file") void navigateToFile(active.projectName, active.path);
-        else if (active?.kind === "git")
+        else if (active?.kind === "file") {
+          // file ref path=全路径，拆出 projectName + 项目相对路径调 navigateToFile。
+          const { projectName, path } = splitFilePath(active.path);
+          void navigateToFile(projectName, path);
+        } else if (active?.kind === "git")
           void navigateToGitFile(active.projectName, active.scope, active.path);
       }
     },
@@ -419,18 +438,20 @@ function WorkbenchContent({
   const onSelectTab = useCallback(
     (groupId: string, tabId: string) => {
       update((prev) => setActiveTabInLeaf(prev, groupId, tabId));
-      // 单一 layout（阶段 2b）：tab 可能跨项目。从 layout 查 ref，用 ref.projectName 构造 focus
-      // URL（session→navigateSession / file→navigateToFile / git→navigateToGitFile），避免 scope.key
-      // 与 tab 项目不一致时 URL 错乱（/projects/A/session/B-id）。tabId === focusId 不重复导航。
+      // 单一 layout（阶段 2b）：tab 可能跨项目。从 layout 查 ref 构造 focus URL（session→
+      // navigateSession / file→navigateToFile / git→navigateToGitFile），避免 scope.key 与 tab 项目
+      // 不一致时 URL 错乱（/projects/A/session/B-id）。file ref path=全路径，navigateToFile 内部按
+      // scope + projectName 分流项目/全局 URL。tabId === focusId 不重复导航。
       // ref 查不到（layout 尚未更新）保守不导航，等 layout 同步后由 focus effect 兜底。
       if (tabId === focusId) return;
       const ref = findTabRefLeaf(layout, tabId);
       if (ref?.kind === "file") {
-        if (scope.kind === "project") void navigateToFile(ref.projectName, ref.path);
+        const { projectName, path } = splitFilePath(ref.path);
+        void navigateToFile(projectName, path);
         return;
       }
       if (ref?.kind === "git") {
-        if (scope.kind === "project") void navigateToGitFile(ref.projectName, ref.scope, ref.path);
+        void navigateToGitFile(ref.projectName, ref.scope, ref.path);
         return;
       }
       if (ref) navigateSession(ref);

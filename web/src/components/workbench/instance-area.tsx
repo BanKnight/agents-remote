@@ -562,10 +562,10 @@ type PanelRouterProps = {
  */
 export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   // file tab 渲染 FileTabPreview（可编辑预览，queryScope="file-nav"，设计 §6 决策 16/18）。
-  // path/projectName 来自 tab ref 固定；focusId 取 tabIdOf 仅用于隐藏面板 key 关联的语义注释，
-  // FileTabPreview 自带 preview query 不依赖 focusId。session 分支行为零改。
+  // path=全路径（含项目名前缀），FileTabPreview 内部 resolveRootBrowseTarget 解析 projectName
+  // 走 project preview API（设计 workbench-stable-refactor Phase 3，去 projectName 字段）。
   if (panelRef.kind === "file") {
-    return <FileTabPreview path={panelRef.path} projectName={panelRef.projectName} />;
+    return <FileTabPreview path={panelRef.path} />;
   }
   // git tab 渲染 GitFileDiffPanel（自带 file diff query，设计 workbench-layout-fix 阶段 3）。
   // projectName/scope/path 来自 tab ref 固定；不传 onClose（中栏 tab 关闭走 tab ✕，非移动浮层）。

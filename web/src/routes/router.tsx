@@ -59,13 +59,22 @@ const projectFocusRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
-// file tab focus（设计 §6 决策 2）：/projects/$key/file/$ splat 捕获多段文件相对路径
-//（如 src/index.ts → _splat="src/index.ts"），不复用 /session/$id 段（语义更纯）。layout
-// 解析 _splat 为 focusId=`file_${path}`（useWorkbenchRouteContext）。global scope 的 file focus
-// 留后续（本 phase global 点文件开 tab 不 deep-link）。
+// file tab focus（设计 §6 决策 2 / workbench-stable-refactor Phase 3）：/projects/$key/file/$
+// splat 捕获项目相对路径（如 src/index.ts → _splat="src/index.ts"），layout 解析 _splat 拼项目名
+// 前缀成全路径 focusId=`file_${key}/${_splat}`（与 tabIdOf 全路径一致）。project scope 文件 deep-link。
 const projectFileFocusRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/$key/file/$",
+  validateSearch: validateWorkbenchSearch,
+});
+
+// 全局文件 tab focus（设计 workbench-stable-refactor Phase 3）：/files/file/$ splat 捕获全路径
+//（含项目名前缀如 "demo/src/index.ts"）。layout 解析 _splat 为 focusId=`file_${fullPath}`，scope=global
+// + leftMode="files"（在文件 tab 上下文保留全局文件树）。全局/项目点同一文件 → 同一 tabId 去重。
+// 进 workbench layout（非 /files 整页）——文件 tab 跨 scope 共享同一布局，session tab 保活。
+const globalFileFocusRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/files/file/$",
   validateSearch: validateWorkbenchSearch,
 });
 
@@ -189,6 +198,7 @@ const routeTree = rootRoute.addChildren([
     projectGitFocusRoute,
     globalScopeRoute,
     globalFocusRoute,
+    globalFileFocusRoute,
   ]),
   settingsRoute,
   filesRoute,

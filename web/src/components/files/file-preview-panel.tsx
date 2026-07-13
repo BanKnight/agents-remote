@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { previewProjectFile, saveFileContent } from "../../api/client";
-import { FilePreviewPanel, FileSaveButton } from "./file-browser";
+import { FilePreviewPanel, FileSaveButton, resolveRootBrowseTarget } from "./file-browser";
 
 /** file tab 预览的 query scope（与 inspection "files" 隔离，避免缓存互污，设计 §6 决策 16）。 */
 const FILE_NAV_QUERY_SCOPE = "file-nav";
@@ -9,17 +9,23 @@ const FILE_NAV_QUERY_SCOPE = "file-nav";
 const SAVED_FLASH_MS = 1500;
 
 /**
- * file tab 预览面板（设计 §6 决策 16/18）：中栏 file tab 的可编辑预览。自带 preview query +
- * editContent + save + renderMode state（以 projectName + path 为键，path 来自 tab ref 固定，
- * 不需树导航），复用 FilePreviewPanel（header + body 框架，与 inspection 同源）+ PreviewBody
- *（渲染体）+ FileSaveButton（保存按钮，DRY）。不传 onClose（file tab close 走 tab ✕，非移动端
- * 浮窗关闭）。queryScope="file-nav" 与 inspection "files" 隔离（同文件两路独立 cache，互不 invalidate）。
+ * file tab 预览面板（设计 §6 决策 16/18 / workbench-stable-refactor Phase 3）：中栏 file tab 的
+ * 可编辑预览。`path` = **全路径**（含项目名前缀如 `"demo/src/index.ts"`），内部 `resolveRootBrowseTarget`
+ * 解析 projectName + 项目相对路径，走现有 project preview/save API（无需新 endpoint）。全局/项目点
+ * 同一文件复用同一 tab → 同一 FileTabPreview（queryKey 按全路径天然一致）。
+ *
+ * 自带 preview query + editContent + save + renderMode state，复用 FilePreviewPanel（header + body
+ * 框架，与 inspection 同源）+ FileSaveButton（保存按钮，DRY）。不传 onClose（file tab close 走 tab
+ * ✕，非移动端浮窗关闭）。queryScope="file-nav" 与 inspection "files" 隔离（同文件两路独立 cache）。
  */
-export function FileTabPreview({ projectName, path }: { projectName: string; path: string }) {
+export function FileTabPreview({ path }: { path: string }) {
   const queryClient = useQueryClient();
+  const target = resolveRootBrowseTarget(path);
+  const projectName = target.kind === "project" ? target.projectName : path;
+  const relativePath = target.kind === "project" ? target.relativePath : "";
   const preview = useQuery({
-    queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", path],
-    queryFn: () => previewProjectFile(projectName, path),
+    queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", relativePath],
+    queryFn: () => previewProjectFile(projectName, relativePath),
   });
   const previewData = preview.data;
   const previewTextContent = previewData?.type === "text" ? previewData.content : undefined;
@@ -42,11 +48,12 @@ export function FileTabPreview({ projectName, path }: { projectName: string; pat
     previewData?.type === "text" && (!showRenderToggle || renderMode === "source");
 
   const save = useMutation({
-    mutationFn: ({ content }: { content: string }) => saveFileContent(projectName, path, content),
+    mutationFn: ({ content }: { content: string }) =>
+      saveFileContent(projectName, relativePath, content),
     onSuccess: () => {
       // Refresh preview（new content/size）；file tab 无文件树列表，不 invalidate files query。
       queryClient.invalidateQueries({
-        queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", path],
+        queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", relativePath],
       });
       setEditContent(undefined);
       setSavedFlash(true);

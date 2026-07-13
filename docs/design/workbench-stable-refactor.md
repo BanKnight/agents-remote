@@ -47,8 +47,8 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：Phase 3 待开始（FilePanelRef 统一全路径 + 全局文件进中栏 tab）
-- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建）、Phase 2（nav 语义 scope 优先 + 活动栏[文件]跳 /files）
+- **当前阶段**：Phase 4 待开始（GlobalFilesOverview 抽取 + 移动 /files 收口）
+- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建）、Phase 2（nav 语义 scope 优先 + 活动栏[文件]跳 /files）、Phase 3（FilePanelRef 统一全路径 + 全局文件进中栏 tab）
 - **Phase 1 设计偏差（vs 原计划）**：未引入持久化 atom，改用 `useMatches()` + 纯函数 `deriveWorkbenchRouteContext` 派生路由上下文（单一数据管道，source of truth = URL，无子 render 写/父读时序问题——**消解原计划最高风险点**）。`/files` 与 `/settings` **留在 rootRoute 平级**（非 layout 子）——移动 `/files` 是独立整页，Phase 2-4 才收口进 layout；Phase 1 只塌缩 7 个 workbench 路由（global/project × scope/focus/file/git）。
 - **Phase 1 实现**：`router.tsx` 新增 `workbenchLayoutRoute`（id:"workbench"，pathless layout，component=WorkbenchLayoutShell）+ 7 子路由（**不设 component**，只 URL 匹配 + validateSearch）；`WorkbenchRoute.tsx` 新 `WorkbenchLayoutShell`（`useWorkbenchRouteContext()` 派生 ctx → `<WorkbenchContent scope={ctx.scope} focusId={ctx.focusId} .../>`），删 7 个 `*Route` 薄壳；`workbench-model.ts` 新 `WorkbenchRouteContext`/`deriveWorkbenchRouteContext`/`useWorkbenchRouteContext`（`useMatches({structuralSharing:true, select})` 引用稳定）。
 - **Phase 1 验证**：Playwright 探针（SPA 导航 global→project→global→project）中栏 `<main>` 根节点全程 `sameNode:true present:true`（InstanceArea 不卸载，0 pageerror）；e2e 20/20 绿；单测 514（+7 deriveWorkbenchRouteContext）全过；门禁 format/lint/typecheck 全过。
@@ -58,9 +58,17 @@
   - `/files` 桌面（`FilesRoute`）经 `GlobalScopeContent leftMode="files"` 强制左栏 FilesLeftPanel（不依赖 nav atom，不污染 localStorage）。`/files` 仍在 rootRoute 平级（Phase 4 才收口进 layout）——故桌面 `/files` ↔ workbench 路由切换会卸载 layout/重建 WorkbenchContent（中栏 session tab 重连）；用户诉求 #1 是 global↔project（Phase 1 已保证），`/files` 是独立视图切换，非用户报告问题。
   - `workbenchNavAtom`/`WorkbenchNav` 定义保留（export 无 lint 报错，Phase 4 若需可复用），但全仓无消费者。
 - **Phase 2 验证**：e2e 21/21 绿（新增"entering project keeps ProjectLeftPanel"测试 + 改写 #13 为"navigates to /files"）；单测 514 全过；门禁 format/lint/typecheck 全过。
-- **已改文件**（Phase 2）：`web/src/components/shell/activity-bar.tsx`（URL-driven active + navigate）、`web/src/routes/WorkbenchRoute.tsx`（leftMode prop + scope 优先 leftPanel + FilesRoute 传 leftMode="files" + 去 nav atom）、`e2e/middle-tab-left.spec.ts`（改写 #13 + 新增进项目测试）、`docs/design/workbench-stable-refactor.md`（本文档）
-- **下一步**：Phase 3 FilePanelRef 统一全路径 + 全局文件进中栏 tab
-- **关键风险**：Phase 3（FilePanelRef 去 projectName 影响所有 file 分支消费点）中；Phase 4/5 低
+- **Phase 3 实现**（FilePanelRef 统一全路径 + 全局文件进中栏 tab）：
+  - `workbench-model.ts`：`FilePanelRef` 改 `{ kind: "file"; path: string }`（**去 projectName**，path=全路径含项目名前缀如 `"demo/src/index.ts"`）；`tabIdOf` file=`file_${path}`（path 现为全路径，全局/项目点同一文件 → 同一 tabId 去重）；`normalizeRef` file 分支去 projectName；新增 `splitFilePath(fullPath)`（全路径拆 projectName+rel，navigateToFile/onSelectTab/onCloseTab 用）；`WorkbenchRouteContext` 增 `leftMode?: "auto"|"files"`；`deriveWorkbenchRouteContext` `/projects/$key/file/$` focusId 改 `file_${key}/${_splat}`（全路径），新增 `/files/file/$` case（scope=global + leftMode="files" + focusId=`file_${fullPath}`）。`GitPanelRef` 保持现状（项目内概念，不统一）。
+  - `router.tsx`：新增 `globalFileFocusRoute` `/files/file/$` 作为 **workbenchLayoutRoute 子**（非 rootRoute 平级——全局文件 tab 需进布局共享 layout/session tab 保活）。
+  - `WorkbenchRoute.tsx`：`WorkbenchLayoutShell` 透传 `ctx.leftMode`；focus effect file 分支**删 scope gate**（`ensureTabOpenLeaf({kind:"file", path:filePath})`，filePath=全路径，全局文件也开 tab）；`navigateToFile(projectName,path)` 按 scope+projectName 分流：项目文件（projectName===scope.key）→ `/projects/$key/file/$`（splat=rel，保持项目 URL），否则 → `/files/file/$`（splat=全路径）；`onOpenFile` file ref 用全路径 `ensureTabOpenLeaf({kind:"file", path:fullPath})`；`onCloseTab`/`onSelectTab` file 分支用 `splitFilePath(active.path)` 拆回 (projectName,path) 调 navigateToFile（删 onSelectTab file/git 的 scope gate——navigateToFile 内部按 scope 分流）。
+  - `file-preview-panel.tsx`：`FileTabPreview` 签名改 `({path}: {path: string})`（全路径），内部 `resolveRootBrowseTarget(path)` 解析 projectName+relativePath 走现有 preview/save API（**无需新 endpoint**）。queryKey 按 projectName+relativePath（与 inspection 同语义）。
+  - `instance-area.tsx`：`PanelRouter` file 分支 `<FileTabPreview path={panelRef.path}/>`（去 projectName）。
+  - `mobile-workbench.tsx`：file focus 删 `scope.kind === "project"` gate（全局文件 → MobileFileFocus）；`MobileFileFocus` 改 `({path})`（全路径首段派生 projectName 用于返回导航）；`MobileFocusBody` 的 `findTabRefLeaf(...)?.projectName` 收窄 `kind==="session"`（FilePanelRef 无 projectName 字段）。
+- **Phase 3 验证**：e2e 22/22 绿（新增"活动栏 [文件] 全局树点文件 → /files/file/$ 全路径 URL"测试）；单测 516 全过（+splitFilePath、+global file focus derive）；门禁全过。file-nav #5（项目文件 tab）/file-browser/mobile-nav 全绿，零回归。
+- **已改文件**（Phase 3）：`web/src/routes/workbench-model.ts`、`web/src/routes/workbench-model.test.ts`、`web/src/routes/router.tsx`、`web/src/routes/WorkbenchRoute.tsx`、`web/src/components/files/file-preview-panel.tsx`、`web/src/components/workbench/instance-area.tsx`、`web/src/components/workbench/mobile-workbench.tsx`、`e2e/file-nav.spec.ts`（新增全局文件 tab 测试）、`docs/design/workbench-stable-refactor.md`（本文档）
+- **下一步**：Phase 4 GlobalFilesOverview 抽取 + 移动 /files 收口
+- **关键风险**：Phase 4/5 低（纯组件抽取，视觉零改）；Phase 3 已验证无回归
 
 ## 阶段计划
 

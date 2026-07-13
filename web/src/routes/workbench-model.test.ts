@@ -34,6 +34,7 @@ import {
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
+  splitFilePath,
   tabIdOf,
   toggleLeafMaximize,
   validateLayoutV3,
@@ -117,22 +118,42 @@ test("deriveWorkbenchRouteContext: project focus /projects/$key/session/$id", ()
   ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "agent_x" });
 });
 
-test("deriveWorkbenchRouteContext: file focus 编码 file_${path}（decodeURIComponent）", () => {
+test("deriveWorkbenchRouteContext: project file focus 编码 file_${全路径}（key/splat 拼项目名前缀）", () => {
   expect(
     deriveWorkbenchRouteContext(
       routeLeaf("/projects/$key/file/$", { key: "p1", _splat: "src/index.ts" }),
     ),
-  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "file_src/index.ts" });
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "file_p1/src/index.ts" });
   // encoded %20 还原为空格
   expect(
     deriveWorkbenchRouteContext(
       routeLeaf("/projects/$key/file/$", { key: "p1", _splat: "a%20b.ts" }),
     ),
-  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "file_a b.ts" });
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "file_p1/a b.ts" });
   // 空 splat → 无 focus
   expect(
     deriveWorkbenchRouteContext(routeLeaf("/projects/$key/file/$", { key: "p1", _splat: "" })),
   ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: undefined });
+});
+
+test("deriveWorkbenchRouteContext: global file focus /files/file/$ → scope global + leftMode files + 全路径 focusId", () => {
+  // _splat = 全路径（含项目名前缀），focusId = file_${fullPath}，与 /projects/$key/file/$ 同一文件去重。
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/files/file/$", { _splat: "p1/src/index.ts" })),
+  ).toEqual({ scope: { kind: "global" }, focusId: "file_p1/src/index.ts", leftMode: "files" });
+  // 空 splat → 无 focus（仍 leftMode files）
+  expect(deriveWorkbenchRouteContext(routeLeaf("/files/file/$", { _splat: "" }))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    leftMode: "files",
+  });
+});
+
+test("splitFilePath: 全路径拆 projectName + 项目相对路径", () => {
+  expect(splitFilePath("p1/src/index.ts")).toEqual({ projectName: "p1", path: "src/index.ts" });
+  expect(splitFilePath("demo/README.md")).toEqual({ projectName: "demo", path: "README.md" });
+  // 无 /（异常降级）：projectName=全串，path 空
+  expect(splitFilePath("demo")).toEqual({ projectName: "demo", path: "" });
 });
 
 test("deriveWorkbenchRouteContext: git focus 编码 git_${scope}/${path}，gitScope 默认 worktree", () => {
