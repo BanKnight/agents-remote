@@ -179,7 +179,7 @@ type MobileFocusBodyProps = {
 function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
-  const [layout, updateLayout] = useWorkbenchLayout(scope);
+  const [layout, updateLayout] = useWorkbenchLayout();
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
   const { refs: order } = useScopeInstanceOrder(scope);
   const currentIndex = order.findIndex((o) => o.sessionId === focusId);

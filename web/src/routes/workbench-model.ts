@@ -1255,15 +1255,18 @@ export function mergeProjectsWithCandidates(
   }));
 }
 
-// ── 布局 atom（V3 n 叉树，按作用域隔离，localStorage 持久化 + V1→V2→V3 链式迁移）─────────
+// ── 布局 atom（V4 单一 layout，VSCode 式跨 scope 稳定；localStorage 持久化 + V1→V2→V3-state→V4 链式迁移）─────────
 
-/** 旧 atom key：V1（commit 3 前 panels/newRows）+ V2（group+tab 规则行），均为迁移源。 */
+/** 旧 atom key：V1（panels/newRows）+ V2（group+tab 规则行）+ V3-state（按 scope 分库 {project,global}），
+ *  均为迁移源。V4 单一 layout 跨 scope 稳定，迁移时取 V3-state.global 作单一 layout。 */
 const LEGACY_WORKBENCH_LAYOUT_KEY = "workbenchLayout";
 const LEGACY_WORKBENCH_LAYOUT_V2_KEY = "workbenchLayoutV2";
+const LEGACY_WORKBENCH_LAYOUT_V3_KEY = "workbenchLayoutV3";
 
 /**
- * 全部作用域的布局 state（V3）。`project` 按项目名分键（切项目恢复各自布局），
- * `global` 单份（跨项目混排）。单 atom 便于 useWorkbenchLayout 按 scope 选 + 原子更新。
+ * 全部作用域的布局 state（V3-state，迁移源/中间态）。`project` 按项目名分键（切项目恢复各自布局），
+ * `global` 单份（跨项目混排）。**V4 单一 layout 后 atom 不再存此结构**——仅作为 V2/V1 迁移中间产物，
+ * 取 `global` 作单一 layout（migrateV3StateToSingleLayout）。
  */
 export type WorkbenchLayoutState = {
   project: Record<string, WorkbenchLayoutV3>;
@@ -1294,6 +1297,11 @@ function migrateLayoutState(legacy: {
   return { project, global: migrateV2ToV3(migrateLegacyLayout(legacy.global)) };
 }
 
+/** V3-state（按 scope 分库）→ V4 单一 layout：取 global 作单一 layout（VSCode 式跨 scope 稳定）。 */
+function migrateV3StateToSingleLayout(state: WorkbenchLayoutState): WorkbenchLayoutV3 {
+  return state.global;
+}
+
 /** 规范化单作用域 V3 布局：遍历树给 leaf.tabs 的 ref 补 kind（localStorage 兼容）。 */
 function normalizeLayoutV3(layout: WorkbenchLayoutV3): WorkbenchLayoutV3 {
   if (!layout.root) return layout;
@@ -1307,33 +1315,38 @@ function normalizeTree(node: TreeNode): TreeNode {
 }
 
 /**
- * 规范化布局 state（localStorage 兼容，V3 多态 tab）：引入 kind 判别联合前的持久化只含 session tab、
- * ref 无 kind，反序列化后联合 narrowing 失败。读取时遍历所有 leaf，给无 kind 的 ref 补 `kind:"session"`
- *（normalizeRef）。纯函数，单测覆盖。
- */
-export function normalizeLayoutState(state: WorkbenchLayoutState): WorkbenchLayoutState {
-  const project: Record<string, WorkbenchLayoutV3> = {};
-  for (const [k, v] of Object.entries(state.project)) project[k] = normalizeLayoutV3(v);
-  return { project, global: normalizeLayoutV3(state.global) };
-}
-
-/**
- * 自定义 storage 实现迁移链：读 V3 key（"workbenchLayoutV3"），不存在则按 V2 → V1 回溯。
- * 三分支：① 有 V3 直返；② 有 V2 无 V3 → migrateLayoutStateV2ToV3 → 写 V3 删 V2；③ 有 V1 无 V2/V3
- * → migrateLayoutState（V1→V2→V3）→ 写 V3 删 V1。结构匹配 jotai 的 SyncStorage<Value>
- *（getItem 返 Value、用 initialValue 兜底），让 atomWithStorage 选中 sync 重载 → atom 类型窄化为
- * WritableAtom<WorkbenchLayoutState>（非 Promise），下游 state.project 取值不报错；不用
- * createJSONStorage（其返回 `Storage<T> | AsyncStorage<T>` 联合，atom 值含 Promise）。SSR（无
- * localStorage）getItem 返 initialValue（atom 用初始值 hydration）。迁移后 V3 存在，后续读取走
- * 首分支不再迁移。layout 持久化跨刷新恢复（设计 §7.6）。
+ * 自定义 storage 实现迁移链：读 V4 key（"workbenchLayoutV4"，单一 layout），不存在则按
+ * V3-state → V2 → V1 回溯，各取 global 作单一 layout。四分支：① 有 V4 直返；② 有 V3-state 无 V4
+ * → migrateV3StateToSingleLayout（取 global）→ 写 V4 删 V3-state；③ 有 V2 无 V3-state/V4
+ * → migrateLayoutStateV2ToV3 → 取 global → 写 V4 删 V2；④ 有 V1 无 V2/V3-state/V4
+ * → migrateLayoutState（V1→V2→V3-state）→ 取 global → 写 V4 删 V1。结构匹配 jotai 的
+ * SyncStorage<Value>（getItem 返 Value、用 initialValue 兜底），让 atomWithStorage 选中 sync 重载
+ * → atom 类型窄化为 WritableAtom<WorkbenchLayoutV3>（非 Promise），下游 layout.root 取值不报错；
+ * 不用 createJSONStorage（其返回 `Storage<T> | AsyncStorage<T>` 联合，atom 值含 Promise）。SSR（无
+ * localStorage）getItem 返 initialValue（atom 用初始值 hydration）。迁移后 V4 存在，后续读取走
+ * 首分支不再迁移。layout 持久化跨刷新恢复（设计 §7.6）；V4 单一 layout 跨 scope 稳定（VSCode 式，
+ * 见 docs/design/workbench-layout-fix.md）。
  */
 const workbenchLayoutStorage = {
-  getItem: (key: string, initialValue: WorkbenchLayoutState): WorkbenchLayoutState => {
+  getItem: (key: string, initialValue: WorkbenchLayoutV3): WorkbenchLayoutV3 => {
     if (typeof localStorage === "undefined") return initialValue;
     const raw = localStorage.getItem(key);
     if (raw) {
       try {
-        return normalizeLayoutState(JSON.parse(raw) as WorkbenchLayoutState);
+        return normalizeLayoutV3(JSON.parse(raw) as WorkbenchLayoutV3);
+      } catch {
+        return initialValue;
+      }
+    }
+    const v3StateRaw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_V3_KEY);
+    if (v3StateRaw) {
+      try {
+        const single = normalizeLayoutV3(
+          migrateV3StateToSingleLayout(JSON.parse(v3StateRaw) as WorkbenchLayoutState),
+        );
+        localStorage.setItem(key, JSON.stringify(single));
+        localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_V3_KEY);
+        return single;
       } catch {
         return initialValue;
       }
@@ -1341,10 +1354,12 @@ const workbenchLayoutStorage = {
     const v2Raw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_V2_KEY);
     if (v2Raw) {
       try {
-        const v3 = migrateLayoutStateV2ToV3(JSON.parse(v2Raw));
-        localStorage.setItem(key, JSON.stringify(v3));
+        const single = normalizeLayoutV3(
+          migrateV3StateToSingleLayout(migrateLayoutStateV2ToV3(JSON.parse(v2Raw))),
+        );
+        localStorage.setItem(key, JSON.stringify(single));
         localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_V2_KEY);
-        return v3;
+        return single;
       } catch {
         return initialValue;
       }
@@ -1352,15 +1367,17 @@ const workbenchLayoutStorage = {
     const v1Raw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_KEY);
     if (!v1Raw) return initialValue;
     try {
-      const v3 = migrateLayoutState(JSON.parse(v1Raw));
-      localStorage.setItem(key, JSON.stringify(v3));
+      const single = normalizeLayoutV3(
+        migrateV3StateToSingleLayout(migrateLayoutState(JSON.parse(v1Raw))),
+      );
+      localStorage.setItem(key, JSON.stringify(single));
       localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_KEY);
-      return v3;
+      return single;
     } catch {
       return initialValue;
     }
   },
-  setItem: (key: string, value: WorkbenchLayoutState): void => {
+  setItem: (key: string, value: WorkbenchLayoutV3): void => {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(key, JSON.stringify(value));
   },
@@ -1370,29 +1387,18 @@ const workbenchLayoutStorage = {
   },
 };
 
-export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutState>(
-  "workbenchLayoutV3",
-  { project: {}, global: EMPTY_WORKBENCH_LAYOUT_V3 },
+export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutV3>(
+  "workbenchLayoutV4",
+  EMPTY_WORKBENCH_LAYOUT_V3,
   workbenchLayoutStorage,
 );
 
 /**
- * 按作用域读写 workbench 布局（V3）。读：project 取 `state.project[key]`（缺省 EMPTY_V3），
- * global 取 `state.global`。写：`update(fn)` 只改当前作用域的布局，其余 immutable 保留。
+ * 读写 workbench 布局（V4 单一 layout，VSCode 式跨 scope 稳定）。中栏 group+tab 跨项目切换稳定不动，
+ * 接受「项目 A 的实例 tab 在项目 B 中栏也可见」（VSCode 语义）。写：`update(fn)` 直接改单一 layout。
  */
-export function useWorkbenchLayout(scope: WorkbenchScope) {
-  const [state, setState] = useAtom(workbenchLayoutAtom);
-  const layout =
-    scope.kind === "project"
-      ? (state.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT_V3)
-      : state.global;
-  const update = (fn: (layout: WorkbenchLayoutV3) => WorkbenchLayoutV3) =>
-    setState((prev) => {
-      if (scope.kind === "project") {
-        const current = prev.project[scope.key] ?? EMPTY_WORKBENCH_LAYOUT_V3;
-        return { ...prev, project: { ...prev.project, [scope.key]: fn(current) } };
-      }
-      return { ...prev, global: fn(prev.global) };
-    });
+export function useWorkbenchLayout() {
+  const [layout, setState] = useAtom(workbenchLayoutAtom);
+  const update = (fn: (layout: WorkbenchLayoutV3) => WorkbenchLayoutV3) => setState(fn);
   return [layout, update] as const;
 }

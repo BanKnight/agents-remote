@@ -21,15 +21,14 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：阶段 2a 完成 → 下一步阶段 2b（单一 layout 数据模型 + V3→V4 迁移）
-- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）
-- **已改文件**（阶段 2a）：`web/src/components/workbench/instance-area.tsx`（新增 `useGlobalInstanceRefs()`，复用 `useGlobalInstanceCandidates` fan-out map `SessionPanelRef[]`；桌面端 fan-out 所有项目、移动端 `isDesktop=false` → non-global scope 不 fan-out 返空）、`web/src/routes/WorkbenchRoute.tsx`（prune effect 桌面分支改用 `globalRefs`、移动端仍用 scope refs：`isDesktop ? globalRefs : refs` 切换）
-- **下一步**：阶段 2b —— `workbench-model.ts` `workbenchLayoutAtom` 改存扁平 `WorkbenchLayoutV3`（去 `{project, global}` 分库），新 key `workbenchLayoutV4` + 迁移 `migrateV3StateToSingleLayout` 取 `v3.global`；`useWorkbenchLayout()` 去 scope 参数（`WorkbenchRoute.tsx:244` + `mobile-workbench.tsx:182`）。
-- **阶段 2a 验证**：DOM 几何探针确认 project scope 桌面触发全局 fan-out（`/api/projects` + 全部 6 项目 sessions 查询），aside 渲染正常，login 后 0 console error / 0 401，切 global↔project 无 crash；prune 在 per-scope layout 下因 `globalRefs ⊇ scopeRefs` 数学等价不回归（深度 kill-session 验证留 2b 单一 layout）。
+- **当前阶段**：阶段 2b 完成 → 下一步阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName，必须随 2b 配套）
+- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）
+- **已改文件**（阶段 2b）：`web/src/routes/workbench-model.ts`（`workbenchLayoutAtom` 改存扁平 `WorkbenchLayoutV3`，key `workbenchLayoutV4`；新增 `migrateV3StateToSingleLayout(state)=state.global` + `LEGACY_WORKBENCH_LAYOUT_V3_KEY`；storage 四分支迁移 V3-state/V2/V1 各取 global；删 `normalizeLayoutState`（state 版，改用 `normalizeLayoutV3`）；`useWorkbenchLayout()` 去 scope 参数，直接 `[layout, setState]=useAtom(atom)`、`update=setState(fn)`）、`web/src/routes/WorkbenchRoute.tsx`（`useWorkbenchLayout()` 去 scope 实参）、`web/src/components/workbench/mobile-workbench.tsx`（同）
+- **下一步**：阶段 2c —— `navigateWorkbench` / `onSelectTab`（`WorkbenchRoute.tsx:393`）/ `focusPanel`（`:308`）改用 `ref.projectName` 构造聚焦 URL（不再用 `scope.key`）；否则 global 开项目 B tab、进项目 A 点 B tab → URL `/projects/A/session/B-id` 错乱。focus effect（`:254`）回退 navigate 同理审。
+- **阶段 2b 验证**：DOM 几何探针（localStorage 数据层 + DOM）确认：① project focus 开 tab → V4 存在 + 扁平（keys=root/activeGroupId/maximized，无 project/global wrapper）+ 含 session；② **切 global scope → V4 仍含 session（跨 scope 稳定，核心目标达成）**；③ 切回 project → 仍含 session；④ 中栏 `.xterm` 渲染（terminal panel）；⑤ 迁移：注入 V3-state → reload → V4 存在 + 含 session + 扁平 + V3-state 删除；⑥ 0 console error。门禁 format/lint/typecheck/test（507）全过。
 - **已知风险**（待对应阶段处理）：
-  - 2a-2b stale-prune 回归：单一 layout 跨项目 tab 共存，prune 必须先切全局 refs（2a 隔离）。
-  - 2b V3→V4 迁移丢各 project layout 副本（取 global 副本）。
-  - 2c 跨项目 tab 聚焦 URL 必须 `ref.projectName`（否则点 B 项目 tab 在 A scope 下 URL 错乱）。
+  - 2c 跨项目 tab 聚焦 URL 必须 `ref.projectName`（否则点 B 项目 tab 在 A scope 下 URL 错乱）—— **必须紧随 2b**。
+  - 2d 移动端守卫：`useGlobalInstanceRefs()` 移动端不空跑 fan-out + `refsCount` 改 `globalRefs.length`。
 
 ## 阶段计划
 

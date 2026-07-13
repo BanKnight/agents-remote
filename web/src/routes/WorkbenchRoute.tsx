@@ -244,7 +244,7 @@ function WorkbenchContent({
   // 共享 state 单一来源在此。holders（close/rename/create prompt）由本组件 return 渲染。
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
-  const [layout, update] = useWorkbenchLayout(scope);
+  const [layout, update] = useWorkbenchLayout();
   const { candidates } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
   const projectInstances = useProjectInstances(ctx.projectKey);
