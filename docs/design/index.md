@@ -26,4 +26,5 @@
 - [workbench-redesign.md](./workbench-redesign.md) — 已落地的三栏工作台权威设计：桌面端从单列三层重设计为常驻三栏工作台（左=项目+实例树、中=自由 split 画布、右=文件/Git/原型/插件 tab）+ 移动两层导航，含走向决策、ASCII、Codex 插件研究结论与剩余待定项；导航模型已被 workbench-views.md 进一步演进。
 - [workbench-views.md](./workbench-views.md) — 工作台多视图重设计（设计完整，实现分 phase 渐进）：演进自 workbench-redesign.md——中栏永远左右结构（左总览固定单列卡片 + 右工作区拖放分屏），取消独立 split 视图与面板三态状态机，grid/table/grouped 收归左总览卡片样式。含信息架构、右工作区 5 drop zone 自由分屏、激活语义、URL 模型与所有「用户决定」标注，是本轮 IA 重构的设计权威。
 - [workbench-views-plan.md](./workbench-views-plan.md) — 工作台多视图重设计的实施计划：3 phase（A 中栏左右骨架 / B 拖放分屏 / C group 操作+持久化）的执行顺序、每 phase 任务、依赖、验证与关键代码入口，下次会话可直接照此接手。
+- [workbench-stable-refactor.md](./workbench-stable-refactor.md) — 工作台中栏跨 scope 稳定 + 文件功能统一重构的持久设计文档：3 个问题（中栏进/出项目重建导致终端重连 / 活动栏[文件]锁死全局 / 桌面移动全局文件两套实现）的决策日志、阶段计划、关键代码锚点与每阶段更新的现状锚点，供超长任务上下文压缩后恢复。
 - [工作流和技能的大纲设计.md](./工作流和技能的大纲设计.md) — 定义工作流阶段链路、技能职责、`.workflow/versions` 运行态结构、change context 看板上下文与长期沉淀边界。
