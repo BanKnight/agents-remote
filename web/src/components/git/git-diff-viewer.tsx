@@ -1,9 +1,4 @@
-import type {
-  GitDiffFileStatus,
-  GitDiffFileSummary,
-  GitDiffScope,
-  GitFileDiffResponse,
-} from "@agents-remote/shared";
+import type { GitDiffFileStatus, GitDiffFileSummary, GitDiffScope } from "@agents-remote/shared";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
@@ -18,6 +13,12 @@ import {
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
+
+// ── Query-key 隔离段（cache 隔离，避免互相 invalidate）──────────────────────────
+/** 中栏 git tab 的 file diff query-key 隔离段（PanelRouter GitFileDiffPanel 默认）。 */
+const WORKBENCH_GIT_TAB_QUERY_SCOPE = "git-tab";
+/** 左栏 git middle tab 的 list diff query-key 隔离段（GitChangesList 专用）。 */
+const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -114,24 +115,36 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
   );
 }
 
-type GitFileDiffPanelProps = {
-  error: Error | null;
-  fileDiff: GitFileDiffResponse | undefined;
-  isLoading: boolean;
-  fileName?: string;
-  onClose: () => void;
+export type GitFileDiffPanelProps = {
+  projectName: string;
+  scope: GitDiffScope;
+  path: string;
+  /** Query-key 隔离段（默认中栏 git tab 段，右栏 inspection 传其 queryScope）。 */
+  queryScope?: string;
+  /** 可选关闭回调（移动浮层关闭按钮，仅 sm:hidden 渲染；中栏 tab 不传，由 tab ✕ 关闭）。 */
+  onClose?: () => void;
 };
 
-function GitFileDiffPanel({
-  error,
-  fileDiff,
-  isLoading,
-  fileName,
+/**
+ * 单文件 git diff 面板（自带 query，设计 workbench-layout-fix 阶段 3）。两处复用：① 中栏 git tab
+ *（PanelRouter，onClose 不传，关闭走 tab ✕）；② GitDiffPanel 右栏 inspection（传 onClose=clearDiff，
+ * 移动浮层关闭）。path 为空 → 未选态（selectPrompt）；非空 → getProjectGitFileDiff query 渲染 diff。
+ */
+export function GitFileDiffPanel({
+  projectName,
+  scope,
+  path,
+  queryScope = WORKBENCH_GIT_TAB_QUERY_SCOPE,
   onClose,
 }: GitFileDiffPanelProps) {
   const { t } = useT();
+  const fileDiff = useQuery({
+    enabled: path !== "",
+    queryKey: ["projects", projectName, queryScope, "file-diff", scope, path],
+    queryFn: () => getProjectGitFileDiff(projectName, scope, path),
+  });
 
-  if (!fileDiff && !isLoading && !error)
+  if (!path)
     return (
       <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
         <div className="w-full lg:w-auto">
@@ -140,8 +153,8 @@ function GitFileDiffPanel({
       </div>
     );
 
-  const displayName = fileDiff?.path ?? fileName ?? "";
-  const displayStatus = fileDiff?.status;
+  const displayName = fileDiff.data?.path ?? path;
+  const displayStatus = fileDiff.data?.status;
 
   return (
     <section
@@ -160,22 +173,26 @@ function GitFileDiffPanel({
           </h4>
         </div>
         <div className="justify-self-center" aria-hidden="true" />
-        <div
-          className="inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 sm:hidden"
-          role="group"
-        >
-          <button
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-            type="button"
-            onClick={onClose}
-            aria-label={t("session.close")}
+        {onClose ? (
+          <div
+            className="inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 sm:hidden"
+            role="group"
           >
-            <ShellIcon name="close" className="h-4 w-4" />
-          </button>
-        </div>
+            <button
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+              type="button"
+              onClick={onClose}
+              aria-label={t("session.close")}
+            >
+              <ShellIcon name="close" className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="justify-self-end" aria-hidden="true" />
+        )}
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
-        {isLoading ? (
+        {fileDiff.isLoading ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 pt-10 lg:justify-center lg:pt-0">
             <span className="relative flex h-3 w-3" aria-hidden="true">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
@@ -185,21 +202,86 @@ function GitFileDiffPanel({
               {t("git.loadingDiff")}
             </span>
           </div>
-        ) : error ? (
+        ) : fileDiff.error ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
             <div className="w-full lg:w-auto">
               <ResourceStatePanel
                 tone="danger"
                 title={t("git.fileError")}
-                message={error.message}
+                message={fileDiff.error.message}
               />
             </div>
           </div>
-        ) : fileDiff ? (
-          <DiffContent diff={fileDiff.diff} />
+        ) : fileDiff.data ? (
+          <DiffContent diff={fileDiff.data.diff} />
         ) : null}
       </div>
     </section>
+  );
+}
+
+export type GitChangesListProps = {
+  projectName: string;
+  /** 当前选中文件（高亮当前 git tab，从 focusId parseGitTabId 派生）；undefined 无高亮。 */
+  selectedFile?: SelectedGitFile;
+  /** 点变更文件回调（透出 path+scope，WorkbenchContent onOpenGitFile 开中栏 git diff tab）。 */
+  onSelectGitFile: (file: SelectedGitFile) => void;
+};
+
+/**
+ * 左栏 git 变更列表（middle tab [git]，设计 workbench-layout-fix 阶段 3）。自带 listProjectGitDiff
+ * query（独立 queryScope 段），渲染 GitFileList 撑满左栏（无 scope chips / diff 预览——点文件透出
+ * onSelectGitFile 开中栏 git diff tab）。与 GitDiffPanel（右栏 inspection 自包含 list+diff）是两套
+ * 独立消费：左栏 middle tab 只列表、中栏只 diff。
+ */
+export function GitChangesList({
+  projectName,
+  selectedFile,
+  onSelectGitFile,
+}: GitChangesListProps) {
+  const { t } = useT();
+  const diff = useQuery({
+    queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
+    queryFn: () => listProjectGitDiff(projectName),
+  });
+
+  if (diff.isLoading) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <ListRowSkeleton count={4} />
+      </div>
+    );
+  }
+  if (diff.error) {
+    return (
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel
+            tone="danger"
+            title={t("git.errorTitle")}
+            message={diff.error.message}
+          />
+        </div>
+      </div>
+    );
+  }
+  if (diff.data?.repository === false) {
+    return (
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
+        <div className="w-full lg:w-auto">
+          <ResourceStatePanel title={t("git.notRepo")} message={t("git.notRepoDesc")} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <GitFileList
+        files={diff.data?.files ?? []}
+        onSelectFile={onSelectGitFile}
+        selectedFile={selectedFile}
+      />
+    </div>
   );
 }
 
@@ -335,23 +417,6 @@ export function GitDiffPanel({
     queryKey: ["projects", projectName, queryScope, "diff"],
     queryFn: () => listProjectGitDiff(projectName),
   });
-  const fileDiff = useQuery({
-    enabled: selectedFile !== undefined,
-    queryKey: [
-      "projects",
-      projectName,
-      queryScope,
-      "diff",
-      selectedFile?.scope,
-      selectedFile?.path,
-    ],
-    queryFn: () =>
-      getProjectGitFileDiff(
-        projectName,
-        selectedFile?.scope ?? "worktree",
-        selectedFile?.path ?? "",
-      ),
-  });
 
   useEffect(() => {
     onDeepDetailChange?.(selectedFile !== undefined);
@@ -447,11 +512,11 @@ export function GitDiffPanel({
 
   const diffPanel = (
     <GitFileDiffPanel
-      error={fileDiff.error}
-      isLoading={fileDiff.isLoading}
-      fileDiff={fileDiff.data}
-      fileName={selectedFile?.path.split("/").pop() ?? selectedFile?.path}
       onClose={clearDiff}
+      path={selectedFile?.path ?? ""}
+      projectName={projectName}
+      queryScope={queryScope}
+      scope={selectedFile?.scope ?? "worktree"}
     />
   );
 

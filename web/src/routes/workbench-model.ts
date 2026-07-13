@@ -2,7 +2,12 @@ import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { AgentProvider, AgentSessionStatus, SessionType } from "@agents-remote/shared";
+import type {
+  AgentProvider,
+  AgentSessionStatus,
+  GitDiffScope,
+  SessionType,
+} from "@agents-remote/shared";
 
 /**
  * 工作台作用域 —— URL 的语义核心（见 docs/design/workbench-redesign.md §1/§7）。
@@ -286,11 +291,13 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   rightTab?: WorkbenchRightTab;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
+  gitScope?: GitDiffScope;
 } {
   const result: {
     rightTab?: WorkbenchRightTab;
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
+    gitScope?: GitDiffScope;
   } = {};
   if (search.rightTab === "files" || search.rightTab === "git") {
     result.rightTab = search.rightTab;
@@ -305,6 +312,9 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     search.tab === "git"
   ) {
     result.tab = search.tab;
+  }
+  if (search.gitScope === "staged" || search.gitScope === "worktree") {
+    result.gitScope = search.gitScope;
   }
   return result;
 }
@@ -365,12 +375,20 @@ export type FilePanelRef = {
   path: string;
 };
 
+/** git diff 面板引用（项目 + scope + 项目相对路径）。V3 多态 tab 的 git 分支（设计 workbench-layout-fix 阶段 3）。 */
+export type GitPanelRef = {
+  kind: "git";
+  projectName: string;
+  scope: GitDiffScope;
+  path: string;
+};
+
 /**
- * V3 面板引用（判别联合，设计 §6 决策 18）。session tab 与 file tab 同处 group+tab。
+ * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git tab 同处 group+tab。
  * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
- * file tab 的 tabId = `file_${path}`（前缀与 agent_/terminal_ 天然互斥）。
+ * file tab 的 tabId = `file_${path}`、git tab 的 tabId = `git_${scope}/${path}`（前缀互斥）。
  */
-export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef;
+export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef | GitPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
 export type LegacyPanelRef = {
@@ -380,10 +398,13 @@ export type LegacyPanelRef = {
 
 /**
  * 派生 tab id（= activeTabId / React key / sizes key 概念）：session tab = sessionId，
- * file tab = `file_${path}`。session tab 的 tabId === sessionId（值不变）是 V3 多态零回归的基石。
+ * file tab = `file_${path}`，git tab = `git_${scope}/${path}`。session tab 的 tabId === sessionId
+ *（值不变）是 V3 多态零回归的基石；file_/git_ 前缀与 sessionId 天然互斥。
  */
 export function tabIdOf(ref: WorkbenchPanelRef): string {
-  return ref.kind === "session" ? ref.sessionId : `file_${ref.path}`;
+  if (ref.kind === "session") return ref.sessionId;
+  if (ref.kind === "file") return `file_${ref.path}`;
+  return `git_${ref.scope}/${ref.path}`;
 }
 
 /** 从 file tab id（`file_${path}`）反解项目相对路径；非 file tab id 返 null（路由 file focus 用）。 */
@@ -391,11 +412,27 @@ export function parseFileTabId(tabId: string): string | null {
   return tabId.startsWith("file_") ? tabId.slice("file_".length) : null;
 }
 
+/** 从 git tab id（`git_${scope}/${path}`）反解 scope 与项目相对路径；非 git tab id 或格式非法返 null
+ *（路由 git focus 用）。scope 段须为 staged/worktree、path 段非空；`/` 分隔 scope 与 path（按首个 `/` 切分，
+ * 与 path 内部 `/` 一致）。 */
+export function parseGitTabId(tabId: string): { scope: GitDiffScope; path: string } | null {
+  if (!tabId.startsWith("git_")) return null;
+  const rest = tabId.slice("git_".length);
+  const slashIdx = rest.indexOf("/");
+  if (slashIdx <= 0) return null;
+  const scope = rest.slice(0, slashIdx);
+  if (scope !== "staged" && scope !== "worktree") return null;
+  const path = rest.slice(slashIdx + 1);
+  if (!path) return null;
+  return { scope, path };
+}
+
 /** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。 */
 export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
-  return ref.kind === "file"
-    ? { kind: "file", projectName: ref.projectName, path: ref.path }
-    : { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
+  if (ref.kind === "file") return { kind: "file", projectName: ref.projectName, path: ref.path };
+  if (ref.kind === "git")
+    return { kind: "git", projectName: ref.projectName, scope: ref.scope, path: ref.path };
+  return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
 }
 
 /**

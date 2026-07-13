@@ -21,13 +21,13 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：阶段 2d 完成 → 下一步阶段 3（git diff tab）
-- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）、阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName）、阶段 2d（移动端守卫 + refsCount 语义）
-- **已改文件**（阶段 2d）：`web/src/routes/WorkbenchRoute.tsx`（`refsCount={refs.length}` → `globalRefs.length` —— 中栏单一 layout 后空态基于全局实例）；`web/src/components/workbench/instance-area.tsx`（`refsCount` prop 注释更新为 globalRefs.length 语义）。**未加 `layout.root !== null` 守卫**（会让空工作区 refsCount=0 误显创建态）；移动端守卫复用 2a 的 project scope trick（`useGlobalInstanceCandidates` 非 global scope 不 fan-out，返空 refs）。
-- **下一步**：阶段 3 —— git diff tab 对齐 file tab（`GitPanelRef` + `/projects/$key/git/$` route + PanelRouter git 分支 + `GitFileList` `onSelectGitFile`）。
-- **阶段 2d 验证**：DOM 探针（桌面 viewport → 登录 → 进 test 项目）—— InstanceArea 渲染 EmptyInstanceArea（`data-drop-empty`），`emptyText = emptyInstanceNoTab`（"Click an instance on the left..."，`hasActiveInstances=true` 空态提示，`globalRefs.length>0`），0 console error；移动端走 MobileWorkbench 不经 InstanceArea（`WorkbenchRoute.tsx:487` `if(!isDesktop) return <MobileWorkbench/>`，故 `refsCount` 仅桌面消费）。门禁 format/lint/typecheck/test（507）全过。
-- **已知风险**（待对应阶段处理）：
-  - 阶段 3 git scope 编码：splat 不便编码 staged/worktree，走 search param；tabId 含 scope 避免同 path 不同 scope 冲突。
+- **当前阶段**：阶段 3 完成 → 下一步阶段 4（左栏文件列表撑满宽度）
+- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）、阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName）、阶段 2d（移动端守卫 + refsCount 语义）、阶段 3（git diff tab 对齐 file tab）
+- **已改文件**（阶段 3）：`web/src/routes/workbench-model.ts`（`GitPanelRef = {kind:"git";projectName;scope:GitDiffScope;path}` + union 加 git + `tabIdOf` git 分支 `git_${scope}/${path}` + `parseGitTabId` + `validateWorkbenchSearch` 加 `gitScope?:GitDiffScope` 白名单 + `normalizeRef` git 分支）；`web/src/routes/router.tsx`（`projectGitFocusRoute` `/projects/$key/git/$` splat=path + `?gitScope` search）；`web/src/routes/WorkbenchRoute.tsx`（`ProjectGitFocusRoute` 组件 + focus effect git 分支 + prune git/file 跳过 + `navigateToGitFile` + `onOpenGitFile` + `onCloseTab`/`onSelectTab` git 分支 + `ProjectLeftPanel` 传 `onOpenGitFile`）；`web/src/components/git/git-diff-viewer.tsx`（`GitFileDiffPanel` 改 export 自带 query 可独立渲染 + `GitChangesList` export 左栏列表 queryScope=`workbench-git-left` + `GitDiffPanel` 右栏 inspection 委托 `GitFileDiffPanel`）；`web/src/components/workbench/instance-area.tsx`（`PanelRouter` git 分支 + `usePanelMeta` git 同 file basename+图标）；`web/src/components/workbench/project-left-panel.tsx`（middle tab git 改渲染 `GitChangesList` + `selectedGitFile` 从 `focusId` `parseGitTabId` 派生 + `onOpenGitFile` 透传）。
+- **下一步**：阶段 4 —— 左栏文件列表撑满宽度（检查 `FilesPanel` 左栏纯树模式容器 padding/max-width；git 列表已在阶段 3 用 `GitChangesList` 撑满）。
+- **阶段 3 验证**：DOM 探针（桌面 viewport → 登录 → 进 agents-remote 项目，只读 diff 不建 session）PASS —— ① middle tab `[git]` 左栏 `GitChangesList` 渲染 7 变更文件（`[data-list-row-title]` 读纯 path）；② deep-link `/projects/agents-remote/git/web/src/routes/workbench-model.ts?gitScope=worktree` 中栏 `GitFileDiffPanel` 渲染真实 diff（`diff --git a/...b/...`，hasDiffContent=true）；③ 点左栏第一个文件 → 中栏开 git diff tab + URL 变 `/git/<path>?tab=git&gitScope=worktree`（middle tab `git` 不变），`GitFileDiffPanel` count=1；0 console error。门禁 format/lint/typecheck/test（507）全过。
+- **关键设计点**（阶段 3）：① scope 编码走 `?gitScope=staged|worktree` search param（splat 不便编码），tabId 含 scope（`git_${scope}/${path}`）避免同 path 不同 scope 冲突；② `GitFileDiffPanel` 两处复用——中栏 tab（`PanelRouter`，不传 `onClose`，关闭走 tab ✕）+ 右栏 inspection（`GitDiffPanel` 传 `onClose=clearDiff`），靠 3 个 queryScope 段隔离缓存（`git-tab`/`workbench-git-left`/右栏不变）；③ `file`/`git` tab 都跳过 stale-prune（无生命周期）；④ 排坑：`fileDiff` service（`api/src/project-git-diff.ts:105`）按 `scope+path` 精确匹配 list，probe 早期用已 commit 的过期文件路径触发 `PROJECT_GIT_FILE_NOT_CHANGED`→400 兜底，**非代码 bug**。
+- **已知风险**（待对应阶段处理）：无新增。
 
 ## 阶段计划
 

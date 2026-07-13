@@ -61,6 +61,7 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
+import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type PluginContext } from "./right-panel-plugin";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
@@ -566,6 +567,17 @@ export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   if (panelRef.kind === "file") {
     return <FileTabPreview path={panelRef.path} projectName={panelRef.projectName} />;
   }
+  // git tab 渲染 GitFileDiffPanel（自带 file diff query，设计 workbench-layout-fix 阶段 3）。
+  // projectName/scope/path 来自 tab ref 固定；不传 onClose（中栏 tab 关闭走 tab ✕，非移动浮层）。
+  if (panelRef.kind === "git") {
+    return (
+      <GitFileDiffPanel
+        path={panelRef.path}
+        projectName={panelRef.projectName}
+        scope={panelRef.scope}
+      />
+    );
+  }
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
     return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
@@ -669,9 +681,9 @@ export type PanelMeta = {
 
 export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
   const { t } = useT();
-  // file tab 无 session 详情查询：用空 sessionRef 保 hooks 顺序稳定、enabled=false 不发请求；
-  // session tab 时 sessionRef === panelRef，行为零改。file 的 marker/label 在 hooks 后早返
-  //（不依赖 detail，立即可用），无 statusDot（file 无 session 生命周期）。
+  // file/git tab 无 session 详情查询：用空 sessionRef 保 hooks 顺序稳定、enabled=false 不发请求；
+  // session tab 时 sessionRef === panelRef，行为零改。file/git 的 marker/label 在 hooks 后早返
+  //（不依赖 detail，立即可用），无 statusDot（file/git 无 session 生命周期）。
   const sessionRef: SessionPanelRef =
     panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" };
   const sessionType =
@@ -679,8 +691,8 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
   const projReady = panelRef.kind === "session" && !!panelRef.projectName;
   const agent = useAgentDetail(sessionRef, projReady && sessionType === "agent");
   const terminal = useTerminalDetail(sessionRef, projReady && sessionType === "terminal");
-  if (panelRef.kind === "file") {
-    // file icon marker 对齐 sessionMarker xs 裸 icon 模型（h-4 w-4 + tone 文字色）；
+  if (panelRef.kind === "file" || panelRef.kind === "git") {
+    // file/git icon marker 对齐 sessionMarker xs 裸 icon 模型（h-4 w-4 + tone 文字色）；
     // label 取 basename（如 src/index.ts → index.ts）。
     return {
       label: panelRef.path.split("/").pop() || panelRef.path,

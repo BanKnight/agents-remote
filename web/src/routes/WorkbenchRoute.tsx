@@ -1,3 +1,4 @@
+import type { GitDiffScope } from "@agents-remote/shared";
 import { useParams, useSearch, useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { type PointerEvent, useCallback, useEffect, useState } from "react";
@@ -40,6 +41,7 @@ import {
   findTabRefLeaf,
   inferSessionTypeFromId,
   parseFileTabId,
+  parseGitTabId,
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
@@ -92,6 +94,29 @@ export function ProjectFileFocusRoute() {
   const { rightTab, view, tab } = useSearch({ from: "/projects/$key/file/$" });
   const path = _splat ? decodeURIComponent(_splat) : "";
   const focusId = path ? `file_${path}` : undefined;
+  return (
+    <WorkbenchContent
+      focusId={focusId}
+      rightTab={rightTab}
+      scope={{ kind: "project", key }}
+      tab={tab}
+      view={view}
+    />
+  );
+}
+
+/**
+ * git diff tab focus 路由 /projects/$key/git/$（splat + gitScope search，设计 workbench-layout-fix
+ * 阶段 3）。_splat 捕获文件相对路径；gitScope search param（staged/worktree，默认 worktree）。
+ * focusId = `git_${scope}/${path}`（与 tabIdOf 一致，WorkbenchContent focus effect 据此
+ * ensureTabOpenLeaf + setActiveTab）。
+ */
+export function ProjectGitFocusRoute() {
+  const { key, _splat } = useParams({ from: "/projects/$key/git/$" });
+  const { rightTab, view, tab, gitScope } = useSearch({ from: "/projects/$key/git/$" });
+  const path = _splat ? decodeURIComponent(_splat) : "";
+  const scope = gitScope ?? "worktree";
+  const focusId = path ? `git_${scope}/${path}` : undefined;
   return (
     <WorkbenchContent
       focusId={focusId}
@@ -267,6 +292,16 @@ function WorkbenchContent({
         if (scope.kind !== "project") return prev;
         return ensureTabOpenLeaf(prev, { kind: "file", projectName: scope.key, path: filePath });
       }
+      const gitParsed = parseGitTabId(focusId);
+      if (gitParsed !== null) {
+        if (scope.kind !== "project") return prev;
+        return ensureTabOpenLeaf(prev, {
+          kind: "git",
+          path: gitParsed.path,
+          projectName: scope.key,
+          scope: gitParsed.scope,
+        });
+      }
       const projectName =
         scope.kind === "project"
           ? scope.key
@@ -289,8 +324,9 @@ function WorkbenchContent({
     const stale: { leafId: string; tabId: string }[] = [];
     for (const leaf of collectLeaves(layout.root)) {
       for (const t of leaf.tabs) {
-        // file tab 不参与 stale prune（刷新保留，设计 §6 决策 19）；session tab 用 sessionId 判定。
-        if (t.kind === "file") continue;
+        // file/git tab 不参与 stale prune（无生命周期，刷新保留，设计 §6 决策 19 / 阶段 3）；
+        // session tab 用 sessionId 判定。
+        if (t.kind === "file" || t.kind === "git") continue;
         if (!activeIds.has(t.sessionId)) stale.push({ leafId: leaf.id, tabId: t.sessionId });
       }
     }
@@ -398,6 +434,26 @@ function WorkbenchContent({
     },
     [update, navigateToFile],
   );
+  // git diff tab focus URL = /projects/$key/git/$ splat + ?gitScope search（设计 workbench-layout-fix
+  // 阶段 3）。scope 走 search param（splat 不便编码 staged/worktree），与 tabIdOf 的 `git_${scope}/${path}` 一致。
+  const navigateToGitFile = useCallback(
+    (projectName: string, scope: GitDiffScope, path: string) => {
+      void navigate({
+        to: "/projects/$key/git/$",
+        params: { key: projectName, _splat: path },
+        search: { rightTab, tab: tabFromUrl, view: viewFromUrl, gitScope: scope },
+      });
+    },
+    [navigate, rightTab, tabFromUrl, viewFromUrl],
+  );
+  // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
+  const onOpenGitFile = useCallback(
+    (projectName: string, scope: GitDiffScope, path: string) => {
+      update((prev) => ensureTabOpenLeaf(prev, { kind: "git", projectName, scope, path }));
+      void navigateToGitFile(projectName, scope, path);
+    },
+    [update, navigateToGitFile],
+  );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
   const onCloseTab = useCallback(
@@ -408,26 +464,32 @@ function WorkbenchContent({
         const active = activeTabRefLeaf(next);
         if (active?.kind === "session") navigateSession(active);
         else if (active?.kind === "file") void navigateToFile(active.projectName, active.path);
+        else if (active?.kind === "git")
+          void navigateToGitFile(active.projectName, active.scope, active.path);
       }
     },
-    [layout, update, focusId, navigateWorkbench, navigateToFile, scope],
+    [layout, update, focusId, navigateWorkbench, navigateToFile, navigateToGitFile, scope],
   );
   const onSelectTab = useCallback(
     (groupId: string, tabId: string) => {
       update((prev) => setActiveTabInLeaf(prev, groupId, tabId));
       // 单一 layout（阶段 2b）：tab 可能跨项目。从 layout 查 ref，用 ref.projectName 构造 focus
-      // URL（session→navigateSession / file→navigateToFile），避免 scope.key 与 tab 项目不一致时
-      // URL 错乱（/projects/A/session/B-id）。tabId === focusId 不重复导航。ref 查不到（layout
-      // 尚未更新）保守不导航，等 layout 同步后由 focus effect 兜底。
+      // URL（session→navigateSession / file→navigateToFile / git→navigateToGitFile），避免 scope.key
+      // 与 tab 项目不一致时 URL 错乱（/projects/A/session/B-id）。tabId === focusId 不重复导航。
+      // ref 查不到（layout 尚未更新）保守不导航，等 layout 同步后由 focus effect 兜底。
       if (tabId === focusId) return;
       const ref = findTabRefLeaf(layout, tabId);
       if (ref?.kind === "file") {
         if (scope.kind === "project") void navigateToFile(ref.projectName, ref.path);
         return;
       }
+      if (ref?.kind === "git") {
+        if (scope.kind === "project") void navigateToGitFile(ref.projectName, ref.scope, ref.path);
+        return;
+      }
       if (ref) navigateSession(ref);
     },
-    [update, focusId, layout, scope, navigateToFile, navigateSession],
+    [update, focusId, layout, scope, navigateToFile, navigateToGitFile, navigateSession],
   );
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
@@ -530,6 +592,7 @@ function WorkbenchContent({
       <ProjectLeftPanel
         focusId={focusId}
         onOpenFile={onOpenFile}
+        onOpenGitFile={onOpenGitFile}
         onTabChange={onTabChange}
         overview={leftOverview}
         scope={scope}

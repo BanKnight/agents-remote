@@ -1,10 +1,16 @@
 import { useMemo, type ReactNode } from "react";
+import type { GitDiffScope } from "@agents-remote/shared";
 import { useT } from "../../i18n";
-import { type WorkbenchMiddleTab, type WorkbenchScope } from "../../routes/workbench-model";
-import { buildOverviewTabs, FIRST_PARTY_PLUGINS } from "./right-panel-plugin";
+import {
+  type WorkbenchMiddleTab,
+  type WorkbenchScope,
+  parseGitTabId,
+} from "../../routes/workbench-model";
+import { buildOverviewTabs } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { HistoryList } from "./history-list";
 import { FilesLeftPanel } from "../files/files-left-panel";
+import { GitChangesList } from "../git/git-diff-viewer";
 
 type ProjectLeftPanelProps = {
   scope: WorkbenchScope;
@@ -20,6 +26,8 @@ type ProjectLeftPanelProps = {
   onTabChange?: (next: WorkbenchMiddleTab) => void;
   /** middle tab [文件] 点文件 → 中栏开 file tab（WorkbenchContent onOpenFile）。 */
   onOpenFile: (projectName: string, path: string) => void;
+  /** middle tab [git] 点变更文件 → 中栏开 git diff tab（WorkbenchContent onOpenGitFile）。 */
+  onOpenGitFile: (projectName: string, scope: GitDiffScope, path: string) => void;
   /** middle tab [历史] HistoryList 聚焦态（URL focusId）。 */
   focusId?: string;
 };
@@ -43,6 +51,7 @@ export function ProjectLeftPanel({
   tab,
   onTabChange,
   onOpenFile,
+  onOpenGitFile,
   focusId,
 }: ProjectLeftPanelProps) {
   const { t } = useT();
@@ -54,6 +63,13 @@ export function ProjectLeftPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scope, t],
   );
+  // middle tab [git] 当前选中文件（高亮当前 git tab，从 URL focusId parseGitTabId 派生）。
+  const selectedGitFile = useMemo(() => {
+    if (!focusId) return undefined;
+    const parsed = parseGitTabId(focusId);
+    return parsed ? { path: parsed.path, scope: parsed.scope } : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && middleTabs.some((opt) => opt.id === tab) ? tab : "overview";
 
@@ -69,8 +85,13 @@ export function ProjectLeftPanel({
         <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "project", key: scope.key }} />
       );
     } else if (resolvedTab === "git") {
-      const gitPlugin = FIRST_PARTY_PLUGINS.find((p) => p.id === "git") ?? null;
-      middleBody = gitPlugin ? gitPlugin.render({ projectKey: scope.key }) : null;
+      middleBody = (
+        <GitChangesList
+          onSelectGitFile={(file) => onOpenGitFile(scope.key, file.scope, file.path)}
+          projectName={scope.key}
+          selectedFile={selectedGitFile}
+        />
+      );
     }
     // resolvedTab === "overview" → middleBody 保持 overview（InstanceLeftOverview 实例总览）。
   }

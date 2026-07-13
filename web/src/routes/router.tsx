@@ -55,6 +55,16 @@ const projectFileFocusRoute = createRoute({
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectFileFocusRoute"),
 });
 
+// git diff tab focus（设计 workbench-layout-fix 阶段 3）：/projects/$key/git/$ splat 捕获多段文件相对
+// 路径；scope（staged/worktree）走 search param ?gitScope（splat 不便编码 scope）。component 解析
+// _splat + gitScope 为 focusId=`git_${scope}/${path}`（与 tabIdOf 一致）。
+const projectGitFocusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$key/git/$",
+  validateSearch: validateWorkbenchSearch,
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectGitFocusRoute"),
+});
+
 // global scope 路由（设计 activity-bar-redesign §6 决策 22）：`/global` 重命名为 `/projects`
 //（语义=项目总览，[项目] 导航）。scope kind `global` 类型保留，只改 URL path 段。与
 // `/projects/$key`（project scope）不冲突——TanStack Router 字面量段 `session` 优先于参数 `$key`。
@@ -163,6 +173,7 @@ const routeTree = rootRoute.addChildren([
   projectScopeRoute,
   projectFocusRoute,
   projectFileFocusRoute,
+  projectGitFocusRoute,
   globalScopeRoute,
   globalFocusRoute,
   settingsRoute,
