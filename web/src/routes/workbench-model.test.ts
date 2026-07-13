@@ -17,6 +17,7 @@ import {
   addTabToLeaf,
   createLeaf,
   deriveGroupRows,
+  deriveWorkbenchRouteContext,
   deriveZone,
   dropIntoLeaf,
   ensureTabOpenLeaf,
@@ -72,6 +73,99 @@ test("validateWorkbenchSearch whitelists rightTab, omits key otherwise", () => {
   expect(validateWorkbenchSearch({ rightTab: "git" })).toEqual({ rightTab: "git" });
   expect(validateWorkbenchSearch({ rightTab: "nope" })).toEqual({});
   expect(validateWorkbenchSearch({})).toEqual({});
+});
+
+// deriveWorkbenchRouteContext 只读 leaf match 的 fullPath/params/search，故测试用最小化 stub。
+const routeLeaf = (
+  fullPath: string,
+  params: Record<string, string | undefined>,
+  search: object = {},
+) => ({ fullPath, params, search }) as unknown as Parameters<typeof deriveWorkbenchRouteContext>[0];
+
+test("deriveWorkbenchRouteContext: global 路由（/ 和 /projects）→ scope global 无 focus", () => {
+  expect(deriveWorkbenchRouteContext(routeLeaf("/", {}))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+  });
+  expect(deriveWorkbenchRouteContext(routeLeaf("/projects", {}))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+  });
+});
+
+test("deriveWorkbenchRouteContext: global focus /projects/session/$id → focusId=id", () => {
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "agent_abc" })),
+  ).toEqual({
+    scope: { kind: "global" },
+    focusId: "agent_abc",
+  });
+});
+
+test("deriveWorkbenchRouteContext: project scope /projects/$key → scope project", () => {
+  expect(deriveWorkbenchRouteContext(routeLeaf("/projects/$key", { key: "myproj" }))).toEqual({
+    scope: { kind: "project", key: "myproj" },
+    focusId: undefined,
+  });
+});
+
+test("deriveWorkbenchRouteContext: project focus /projects/$key/session/$id", () => {
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/projects/$key/session/$id", { key: "p1", id: "agent_x" }),
+    ),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "agent_x" });
+});
+
+test("deriveWorkbenchRouteContext: file focus 编码 file_${path}（decodeURIComponent）", () => {
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/projects/$key/file/$", { key: "p1", _splat: "src/index.ts" }),
+    ),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "file_src/index.ts" });
+  // encoded %20 还原为空格
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/projects/$key/file/$", { key: "p1", _splat: "a%20b.ts" }),
+    ),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "file_a b.ts" });
+  // 空 splat → 无 focus
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/$key/file/$", { key: "p1", _splat: "" })),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: undefined });
+});
+
+test("deriveWorkbenchRouteContext: git focus 编码 git_${scope}/${path}，gitScope 默认 worktree", () => {
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/$key/git/$", { key: "p1", _splat: "a.ts" })),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "git_worktree/a.ts" });
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/projects/$key/git/$", { key: "p1", _splat: "a.ts" }, { gitScope: "staged" }),
+    ),
+  ).toEqual({
+    scope: { kind: "project", key: "p1" },
+    focusId: "git_staged/a.ts",
+    gitScope: "staged",
+  });
+});
+
+test("deriveWorkbenchRouteContext: search 透传 rightTab/view/tab/gitScope", () => {
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf(
+        "/projects/$key",
+        { key: "p1" },
+        { rightTab: "files", view: "grid", tab: "history" },
+      ),
+    ),
+  ).toEqual({
+    scope: { kind: "project", key: "p1" },
+    focusId: undefined,
+    rightTab: "files",
+    view: "grid",
+    tab: "history",
+  });
 });
 
 const candidate = (

@@ -1,7 +1,7 @@
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useMatches, useNavigate, type AnyRouteMatch } from "@tanstack/react-router";
 import type {
   AgentProvider,
   AgentSessionStatus,
@@ -323,6 +323,97 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     result.gitScope = search.gitScope;
   }
   return result;
+}
+
+/**
+ * workbench 路由上下文（Phase 1 路由重构，设计 workbench-stable-refactor.md）。7 个 workbench
+ * 路由塌缩为共享 pathless layout route 下的子路由——layout 组件（WorkbenchLayoutShell）常驻
+ * 不卸载，进出项目只 swap 子路由匹配；scope/focusId 由 layout **从 URL 派生**（单一数据管道，
+ * source of truth = URL），不再经各 *Shell 组件透传 props。本 hook 是该派生管道。
+ *
+ * 实现用 `useMatches()` 读全量活跃 match 链（router.stores.matches，与渲染无关、随 URL 同步），
+ * 取末位（leaf 子路由 match）。leaf 的 `fullPath` 唯一标识哪种路由（global/project × scope/focus/file/git），
+ * `params`（key/id/_splat）+ `search`（validateWorkbenchSearch 产物，含 rightTab/view/tab/gitScope）
+ * 经纯函数 `deriveWorkbenchRouteContext` 派生 `{ scope, focusId, ... }`。
+ *
+ * 引用稳定性：`useMatches({ select })` + 默认 structuralSharing（深等重用前一引用）——URL 不变时
+ * 返回同一 ctx 对象，避免 InstanceArea 因 ctx 引用变化无谓重渲染（重渲染 ≠ 重建，但稳定引用更省）。
+ * URL 变（进出项目）时 ctx 新引用触发 WorkbenchContent 重渲染读新 scope，InstanceArea reconcile
+ * 复用实例（同 key 同类型），WebSocket/relay 长连不重连——这是 Phase 1 的核心目标。
+ */
+export type WorkbenchRouteContext = {
+  scope: WorkbenchScope;
+  focusId: string | undefined;
+  rightTab?: WorkbenchRightTab;
+  view?: WorkbenchView;
+  tab?: WorkbenchMiddleTab;
+  gitScope?: GitDiffScope;
+};
+
+/**
+ * 从 leaf route match 派生 workbench 路由上下文（纯函数，可独立测试）。leaf 的 fullPath 唯一
+ * 标识路由类型，params/search 经 switch 派生 scope + focusId。focusId 编码与 tabIdOf 一致：
+ * session=`${id}` / file=`file_${path}` / git=`git_${scope}/${path}`（focus effect 据此开/激活 tab）。
+ *
+ * 注意：本函数只覆盖 7 个 workbench 路由（不含 `/files`——它留在 rootRoute 平级，Phase 2-4 收口）。
+ */
+export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRouteContext {
+  const p = leaf.params as Record<string, string | undefined>;
+  const s = leaf.search as {
+    rightTab?: WorkbenchRightTab;
+    view?: WorkbenchView;
+    tab?: WorkbenchMiddleTab;
+    gitScope?: GitDiffScope;
+  };
+  switch (leaf.fullPath) {
+    case "/":
+    case "/projects":
+      return { scope: { kind: "global" }, focusId: undefined, ...s };
+    case "/projects/session/$id":
+      return { scope: { kind: "global" }, focusId: p.id, ...s };
+    case "/projects/$key":
+      return { scope: { kind: "project", key: p.key ?? "" }, focusId: undefined, ...s };
+    case "/projects/$key/session/$id":
+      return { scope: { kind: "project", key: p.key ?? "" }, focusId: p.id, ...s };
+    case "/projects/$key/file/$": {
+      const path = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "project", key: p.key ?? "" },
+        focusId: path ? `file_${path}` : undefined,
+        ...s,
+      };
+    }
+    case "/projects/$key/git/$": {
+      const path = p._splat ? decodeURIComponent(p._splat) : "";
+      const gitScope = s.gitScope ?? "worktree";
+      return {
+        scope: { kind: "project", key: p.key ?? "" },
+        focusId: path ? `git_${gitScope}/${path}` : undefined,
+        ...s,
+      };
+    }
+    default:
+      // 非 workbench 路由（理论上 layout 不应被非 workbench 子路由命中）；回退 global 空态。
+      return { scope: { kind: "global" }, focusId: undefined, ...s };
+  }
+}
+
+/**
+ * 读当前 workbench 路由上下文（layout 组件用）。取活跃 match 链末位（leaf 子路由）派生。
+ * `structuralSharing: true` + `select` → 深等重用前一引用，URL 不变时返回同一 ctx 对象，
+ * 避免 layout 重渲染时 InstanceArea 因 ctx 引用变化无谓重渲染。
+ */
+export function useWorkbenchRouteContext(): WorkbenchRouteContext {
+  return useMatches({
+    structuralSharing: true,
+    select: (matches) => {
+      // match 链 = [rootRoute, workbenchLayout, leaf]；末位 = leaf 子路由。
+      const leaf = matches[matches.length - 1];
+      if (!leaf)
+        return { scope: { kind: "global" }, focusId: undefined } satisfies WorkbenchRouteContext;
+      return deriveWorkbenchRouteContext(leaf);
+    },
+  });
 }
 
 /**

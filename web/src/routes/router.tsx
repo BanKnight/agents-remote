@@ -17,69 +17,80 @@ const rootRoute = createRootRoute({
   ),
 });
 
-// `/` 入口路由（设计文档 §11）：桌面渲染 global 工作台 / 移动渲染项目列表，由 IndexRoute
-// + useIsDesktopViewport 在组件层分流（非 redirect——beforeLoad 不知视口，跨端同 URL）。
-const indexRoute = createRoute({
+// ── workbench 共享 pathless layout（设计 workbench-stable-refactor.md Phase 1）──────────────
+// 7 个 workbench 路由（global/project × scope/focus/file/git）塌缩为本 pathless layout 的子路由。
+// layout 组件 `WorkbenchLayoutShell` 常驻不卸载——进出项目只 swap 子路由匹配，layout 不 unmount
+// → InstanceArea/WorkspaceTree/PanelRouter 实例保活 → WebSocket/relay/xterm 长连不重连。
+// layout 从 `useWorkbenchRouteContext()`（useMatches 末位 leaf 派生）读 scope/focusId，单一数据管道、
+// source of truth = URL（不引入持久化 atom，无子 render 写/父读时序问题）。
+//
+// pathless layout route 用 `id`（非 `path`）：自身无 URL 段，子路由被 flatten 进其父做匹配，
+// 匹配规则与现状 7 兄弟叶子完全一致（TanStack 字面量段 `session` 优先于 `$key`，已验证）。
+// 子路由**不设 component**——layout 已渲染全部中栏内容，子路由只负责 URL 匹配 + validateSearch
+//（params 解析 + search 白名单校验在 match 阶段完成，不依赖 component 渲染）。
+const workbenchLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
-  validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "IndexRoute"),
+  id: "workbench",
+  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchLayoutShell"),
 });
 
-// ── workbench 主动路由（中栏语义命名，去 /workbench 前缀，设计文档 §7）──────────────
-// 同一 URL 桌面三栏 / 移动线性退化响应式渲染（WorkbenchRoute.useIsDesktopViewport），
+// `/` 入口路由（设计文档 §11）：桌面渲染 global 工作台 / 移动渲染项目列表，由 WorkbenchLayoutShell
+// + useIsDesktopViewport 在组件层分流（非 redirect——beforeLoad 不知视口，跨端同 URL）。
+const indexRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/",
+  validateSearch: validateWorkbenchSearch,
+});
+
+// ── workbench 子路由（中栏语义命名，去 /workbench 前缀，设计文档 §7）──────────────
+// 同一 URL 桌面三栏 / 移动线性退化响应式渲染（WorkbenchLayoutShell.useIsDesktopViewport），
 // 无跨端 redirect。?rightTab=files|git search param 两端共用（桌面读作右栏
 // tab、移动读作 header tab）。旧 /projects/$name（ProjectConsole）已与此 project scope
 // 路由合并 —— /projects/$key 即 workbench project 作用域，不再单独 redirect。
 const projectScopeRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/$key",
   validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectScopeRoute"),
 });
 
 const projectFocusRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/$key/session/$id",
   validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectFocusRoute"),
 });
 
 // file tab focus（设计 §6 决策 2）：/projects/$key/file/$ splat 捕获多段文件相对路径
-//（如 src/index.ts → _splat="src/index.ts"），不复用 /session/$id 段（语义更纯）。component
-// 解析 _splat 为 focusFile。global scope 的 file focus 留后续（本 phase global 点文件开 tab 不 deep-link）。
+//（如 src/index.ts → _splat="src/index.ts"），不复用 /session/$id 段（语义更纯）。layout
+// 解析 _splat 为 focusId=`file_${path}`（useWorkbenchRouteContext）。global scope 的 file focus
+// 留后续（本 phase global 点文件开 tab 不 deep-link）。
 const projectFileFocusRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/$key/file/$",
   validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectFileFocusRoute"),
 });
 
 // git diff tab focus（设计 workbench-layout-fix 阶段 3）：/projects/$key/git/$ splat 捕获多段文件相对
-// 路径；scope（staged/worktree）走 search param ?gitScope（splat 不便编码 scope）。component 解析
-// _splat + gitScope 为 focusId=`git_${scope}/${path}`（与 tabIdOf 一致）。
+// 路径；scope（staged/worktree）走 search param ?gitScope（splat 不便编码 scope）。layout 解析
+// _splat + gitScope 为 focusId=`git_${scope}/${path}`（useWorkbenchRouteContext，与 tabIdOf 一致）。
 const projectGitFocusRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/$key/git/$",
   validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "ProjectGitFocusRoute"),
 });
 
 // global scope 路由（设计 activity-bar-redesign §6 决策 22）：`/global` 重命名为 `/projects`
 //（语义=项目总览，[项目] 导航）。scope kind `global` 类型保留，只改 URL path 段。与
 // `/projects/$key`（project scope）不冲突——TanStack Router 字面量段 `session` 优先于参数 `$key`。
 const globalScopeRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/projects",
   validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "GlobalScopeRoute"),
 });
 
 const globalFocusRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/session/$id",
   validateSearch: validateWorkbenchSearch,
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "GlobalFocusRoute"),
 });
 
 const settingsRoute = createRoute({
@@ -90,6 +101,7 @@ const settingsRoute = createRoute({
 
 // 移动 [文件] 一级入口（设计 §6 决策 24）：移动端渲染 rootBrowse FilesPanel 浮窗；
 // 桌面端 component 内部分流回 global 工作台（桌面 [文件] 经活动栏 nav=files）。
+// 留在 rootRoute 平级（非 workbench layout 子）——移动 /files 是独立整页，Phase 2-4 收口进 layout。
 const filesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/files",
@@ -169,13 +181,15 @@ const workbenchFocusRedirect = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  projectScopeRoute,
-  projectFocusRoute,
-  projectFileFocusRoute,
-  projectGitFocusRoute,
-  globalScopeRoute,
-  globalFocusRoute,
+  workbenchLayoutRoute.addChildren([
+    indexRoute,
+    projectScopeRoute,
+    projectFocusRoute,
+    projectFileFocusRoute,
+    projectGitFocusRoute,
+    globalScopeRoute,
+    globalFocusRoute,
+  ]),
   settingsRoute,
   filesRoute,
   agentSessionDetailRedirect,

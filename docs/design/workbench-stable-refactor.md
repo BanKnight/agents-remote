@@ -47,11 +47,14 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：Phase 0 进行中
-- **已完成阶段**：（无）
-- **已改文件**：（Phase 0 待写本文档 + index）
-- **下一步**：建本文档 + 更新 index → commit Phase 0 → 进 Phase 1 路由重构
-- **关键风险**：Phase 1（pathless layout + 子绝对 path 匹配优先级 + atom 时序）最高；Phase 3（FilePanelRef 去 projectName 影响所有 file 分支消费点）中
+- **当前阶段**：Phase 2 待开始（nav gate + 活动栏[文件]跳 /files）
+- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建）
+- **Phase 1 设计偏差（vs 原计划）**：未引入持久化 atom，改用 `useMatches()` + 纯函数 `deriveWorkbenchRouteContext` 派生路由上下文（单一数据管道，source of truth = URL，无子 render 写/父读时序问题——**消解原计划最高风险点**）。`/files` 与 `/settings` **留在 rootRoute 平级**（非 layout 子）——移动 `/files` 是独立整页，Phase 2-4 才收口进 layout；Phase 1 只塌缩 7 个 workbench 路由（global/project × scope/focus/file/git）。
+- **Phase 1 实现**：`router.tsx` 新增 `workbenchLayoutRoute`（id:"workbench"，pathless layout，component=WorkbenchLayoutShell）+ 7 子路由（**不设 component**，只 URL 匹配 + validateSearch）；`WorkbenchRoute.tsx` 新 `WorkbenchLayoutShell`（`useWorkbenchRouteContext()` 派生 ctx → `<WorkbenchContent scope={ctx.scope} focusId={ctx.focusId} .../>`），删 7 个 `*Route` 薄壳；`workbench-model.ts` 新 `WorkbenchRouteContext`/`deriveWorkbenchRouteContext`/`useWorkbenchRouteContext`（`useMatches({structuralSharing:true, select})` 引用稳定）。
+- **Phase 1 验证**：Playwright 探针（SPA 导航 global→project→global→project）中栏 `<main>` 根节点全程 `sameNode:true present:true`（InstanceArea 不卸载，0 pageerror）；e2e 20/20 绿；单测 514（+7 deriveWorkbenchRouteContext）全过；门禁 format/lint/typecheck 全过。
+- **已改文件**（Phase 1）：`web/src/routes/router.tsx`、`web/src/routes/WorkbenchRoute.tsx`、`web/src/routes/workbench-model.ts`、`web/src/routes/workbench-model.test.ts`、`docs/design/workbench-stable-refactor.md`（本文档）
+- **下一步**：Phase 2 nav gate + 活动栏[文件]跳 /files
+- **关键风险**：Phase 3（FilePanelRef 去 projectName 影响所有 file 分支消费点）中；Phase 2（effect setNav 与 [文件] navigate 竞态）中；Phase 4/5 低
 
 ## 阶段计划
 
@@ -63,28 +66,13 @@
 
 ### Phase 1：路由重构（最危险，放最前——问题 1 根因，后续全依赖"InstanceArea 不卸载"）
 
-**router.tsx**：把 7 个 workbench 兄弟叶子塌缩为 1 个 pathless layout route + 7 子路由：
-```
-rootRoute (AuthGate+Outlet) [router.tsx:12]
-└── workbenchLayoutRoute  id:"workbench"（pathless layout, component=WorkbenchLayoutShell, validateSearch: validateWorkbenchSearch）
-    ├── "/"                       → IndexShell        (scope=global)
-    ├── "/projects"               → GlobalShell       (scope=global)
-    ├── "/projects/session/$id"    → GlobalFocusShell  (scope=global, focusId)
-    ├── "/projects/$key"           → ProjectShell      (scope=project)
-    ├── "/projects/$key/session/$id" → ProjectFocusShell
-    ├── "/projects/$key/file/$"      → ProjectFileShell
-    ├── "/projects/$key/git/$"       → ProjectGitShell
-    ├── "/files"                      → FilesShell (移动 rootBrowse / 桌面 global+nav=files，Phase 4 收口)
-    └── "/files/file/$"              → GlobalFileFocusShell (新, Phase 3)
-```
-- 用 id-based pathless layout route（`createRoute({getParentRoute:()=>rootRoute, id:"workbench", component: WorkbenchLayoutShell})`），子路由全绝对 path，避免前缀冲突（TanStack 字面量段优先于 `$key` 参数，现状已验证）。
-- 数据通道用**非持久化 atom** `workbenchRouteContextAtom`（workbench-model.ts 新增，单一数据管道，source of truth=URL）：子 shell render 时 `setRouteContextAtom({scope, focusId, ...})`，父 `WorkbenchLayoutShell` `useAtom` 读。回退方案 = TanStack 原生 `useRouteContext`。
+**实际实现**（已落地，commit 见现状锚点）：
+- **未用 atom**（消解原计划最高风险点）。改用 `useMatches()`（读全量活跃 match 链，与渲染无关、随 URL 同步）+ 纯函数 `deriveWorkbenchRouteContext(leaf)` 从末位 leaf match 派生 `{ scope, focusId, rightTab, view, tab, gitScope }`。`useMatches({ structuralSharing: true, select })` 保证引用稳定（URL 不变 → 同一 ctx 对象）。单一数据管道，source of truth = URL，无子 render 写/父读时序问题。
+- **router.tsx**：`workbenchLayoutRoute`（id:"workbench"，pathless layout，component=WorkbenchLayoutShell，无 validateSearch——子路由各自 validateSearch）+ 7 子路由（**不设 component**——layout 已渲染全部中栏内容，子路由只负责 URL 匹配 + validateSearch；TanStack 文档：component 未定义自动渲染 Outlet，但 layout 不渲染 `<Outlet/>` 故子匹配不渲染，其 params/search 仍经 useMatches 读得）。`/files` `/settings` 留 rootRoute 平级（Phase 1 只塌缩 7 workbench 路由）。
+- **WorkbenchRoute.tsx**：新 `WorkbenchLayoutShell`（10 行：`useWorkbenchRouteContext()` → `<WorkbenchContent scope={ctx.scope} focusId={ctx.focusId} rightTab={ctx.rightTab} tab={ctx.tab} view={ctx.view}/>`）。删 7 个 `*Route` 薄壳（`ProjectScopeRoute`/`ProjectFocusRoute`/`ProjectFileFocusRoute`/`ProjectGitFocusRoute`/`GlobalScopeRoute`/`GlobalFocusRoute`/`IndexRoute`）。`WorkbenchContent` 签名不变（接收 props，纯渲染）；`FilesRoute`/`GlobalScopeContent` 保留（`/files` 桌面分流用）。
+- **workbench-model.ts**：新 `WorkbenchRouteContext`（scope + focusId + 可选 rightTab/view/tab/gitScope）、`deriveWorkbenchRouteContext`（纯函数，switch leaf.fullPath 派生）、`useWorkbenchRouteContext`（useMatches + structuralSharing）。
 
-**WorkbenchRoute.tsx**：
-- 新 `WorkbenchLayoutShell`：把现 `WorkbenchContent`(`:192-641`) 全部逻辑搬入，scope/focusId 从 atom 读。
-- 各 `*Shell`（7 个）：10 行，`useParams`+`useSearch` → 写 atom → `<Outlet/>`。删原 `IndexRoute/GlobalScopeRoute/GlobalFocusRoute/ProjectScopeRoute/ProjectFocusRoute/ProjectFileFocusRoute/ProjectGitFocusRoute` 直接渲染 WorkbenchContent 的逻辑。
-
-- verify: React DevTools 看 InstanceArea mount count 进出项目 =0；DevTools Network WS 连接不 close/不新建；e2e 新增"进出项目终端 tab 不重连"（spy `WebSocket` 实例计数 + 断言 connect 一次）；`bun run test`。
+- verify: Playwright 探针 SPA 导航 global→project→global→project，中栏 `<main>` 根节点全程 `sameNode:true`（InstanceArea 不卸载，0 pageerror）；e2e 20/20 绿；单测 +7 deriveWorkbenchRouteContext 全过；门禁全过。
 - commit: `refactor(web): workbench 路由重构——共享 pathless layout，中栏跨 scope 不重建`
 
 ### Phase 2：nav gate + 活动栏 [文件] 改跳 /files

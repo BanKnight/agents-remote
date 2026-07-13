@@ -1,5 +1,5 @@
 import type { GitDiffScope } from "@agents-remote/shared";
-import { useParams, useSearch, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { type PointerEvent, useCallback, useEffect, useState } from "react";
 import {
@@ -49,6 +49,7 @@ import {
   useIsDesktopViewport,
   useWorkbenchLayout,
   useWorkbenchNavigate,
+  useWorkbenchRouteContext,
   workbenchMiddleLeftWidthAtom,
   workbenchMiddleTabAtom,
   workbenchNavAtom,
@@ -57,73 +58,27 @@ import {
 } from "./workbench-model";
 
 /**
- * 工作台路由（设计文档 §7）。路由树以中栏语义命名（去 `/workbench` 前缀）：project
- * 作用域 `/projects/$key`（+ `/session/$id` 聚焦），global 作用域 `/projects`（+
- * `/session/$id` 聚焦）。四个薄壳各自从路由段构造**已解析**的 WorkbenchScope，复用同一
- * WorkbenchContent。同一 URL 桌面（三栏）/ 移动（线性退化）响应式渲染，无跨端 redirect。
+ * workbench 共享 pathless layout 组件（设计 workbench-stable-refactor.md Phase 1）。7 个 workbench
+ * 子路由塌缩为本 layout 的子，**本组件常驻不卸载**——进出项目只 swap 子路由匹配，layout 不
+ * unmount → InstanceArea/WorkspaceTree/PanelRouter 实例保活 → WebSocket/relay/xterm 长连不重连
+ *（用户诉求"中栏还是同一个，而不是看起来一样"）。
+ *
+ * scope/focusId/rightTab/view/tab 从 `useWorkbenchRouteContext()` 派生——单一数据管道，source of
+ * truth = URL（useMatches 末位 leaf match，不引入持久化 atom，无子 render 写/父读时序问题）。
+ * 子路由不设 component，只负责 URL 匹配 + validateSearch；本 layout 渲染全部中栏内容（不渲染
+ * `<Outlet/>`——子路由无需渲染任何东西，其 params/search 经 useMatches 读得）。
+ *
+ * 由 router.tsx `workbenchLayoutRoute` lazy 挂载（export name = "WorkbenchLayoutShell"）。
  */
-export function ProjectScopeRoute() {
-  const { key } = useParams({ from: "/projects/$key" });
-  const { rightTab, view, tab } = useSearch({ from: "/projects/$key" });
-  return (
-    <WorkbenchContent rightTab={rightTab} scope={{ kind: "project", key }} tab={tab} view={view} />
-  );
-}
-
-export function ProjectFocusRoute() {
-  const { key, id } = useParams({ from: "/projects/$key/session/$id" });
-  const { rightTab, view, tab } = useSearch({ from: "/projects/$key/session/$id" });
+export function WorkbenchLayoutShell() {
+  const ctx = useWorkbenchRouteContext();
   return (
     <WorkbenchContent
-      focusId={id}
-      rightTab={rightTab}
-      scope={{ kind: "project", key }}
-      tab={tab}
-      view={view}
-    />
-  );
-}
-
-/**
- * file tab focus 路由 /projects/$key/file/$（splat，设计 §6 决策 2）。_splat 捕获多段文件相对
- * 路径（如 src/index.ts）；decodeURIComponent 处理可能的编码字符。focusId 用 `file_${path}` 编码
- *（与 tabIdOf 一致，WorkbenchContent focus effect 据此 ensureTabOpenLeaf + setActiveTab）。
- */
-export function ProjectFileFocusRoute() {
-  const { key, _splat } = useParams({ from: "/projects/$key/file/$" });
-  const { rightTab, view, tab } = useSearch({ from: "/projects/$key/file/$" });
-  const path = _splat ? decodeURIComponent(_splat) : "";
-  const focusId = path ? `file_${path}` : undefined;
-  return (
-    <WorkbenchContent
-      focusId={focusId}
-      rightTab={rightTab}
-      scope={{ kind: "project", key }}
-      tab={tab}
-      view={view}
-    />
-  );
-}
-
-/**
- * git diff tab focus 路由 /projects/$key/git/$（splat + gitScope search，设计 workbench-layout-fix
- * 阶段 3）。_splat 捕获文件相对路径；gitScope search param（staged/worktree，默认 worktree）。
- * focusId = `git_${scope}/${path}`（与 tabIdOf 一致，WorkbenchContent focus effect 据此
- * ensureTabOpenLeaf + setActiveTab）。
- */
-export function ProjectGitFocusRoute() {
-  const { key, _splat } = useParams({ from: "/projects/$key/git/$" });
-  const { rightTab, view, tab, gitScope } = useSearch({ from: "/projects/$key/git/$" });
-  const path = _splat ? decodeURIComponent(_splat) : "";
-  const scope = gitScope ?? "worktree";
-  const focusId = path ? `git_${scope}/${path}` : undefined;
-  return (
-    <WorkbenchContent
-      focusId={focusId}
-      rightTab={rightTab}
-      scope={{ kind: "project", key }}
-      tab={tab}
-      view={view}
+      focusId={ctx.focusId}
+      rightTab={ctx.rightTab}
+      scope={ctx.scope}
+      tab={ctx.tab}
+      view={ctx.view}
     />
   );
 }
@@ -140,25 +95,6 @@ export function GlobalScopeContent({
   return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} tab={tab} view={view} />;
 }
 
-export function GlobalScopeRoute() {
-  const { rightTab, view, tab } = useSearch({ from: "/projects" });
-  return <GlobalScopeContent rightTab={rightTab} tab={tab} view={view} />;
-}
-
-export function GlobalFocusRoute() {
-  const { id } = useParams({ from: "/projects/session/$id" });
-  const { rightTab, view, tab } = useSearch({ from: "/projects/session/$id" });
-  return (
-    <WorkbenchContent
-      focusId={id}
-      rightTab={rightTab}
-      scope={{ kind: "global" }}
-      tab={tab}
-      view={view}
-    />
-  );
-}
-
 /**
  * 移动 [文件] 一级入口路由 `/files`（设计 §6 决策 24）：视口分流——移动（<lg）渲染
  * rootBrowse FilesPanel（根目录浏览 + 预览浮窗，复用现状移动 Files 做法，决策 12），
@@ -166,6 +102,11 @@ export function GlobalFocusRoute() {
  * 桌面（≥lg）渲染 global 工作台（桌面 [文件] 经活动栏 nav=files，不需独立 `/files` 路由，
  * 桌面直接访问 `/files` 回到工作台由活动栏切入）。useIsDesktopViewport 客户端首 render
  * 即真实视口，移动端无闪屏。由 router.tsx filesRoute lazy 挂载。
+ *
+ * 留在 rootRoute 平级（非 workbench layout 子）——移动 /files 是独立整页，与桌面三栏工作台
+ * 异构；Phase 2-4 收口进 layout。桌面分支渲染独立 `WorkbenchContent`（global scope，不经
+ * layout——此路径不在 layout 下，中栏重建仅限 `/files` ↔ workbench 路由切换，非用户报告的
+ * 进出项目问题）。
  */
 export function FilesRoute() {
   const isDesktop = useIsDesktopViewport();
@@ -175,18 +116,6 @@ export function FilesRoute() {
       <FilesPanel initialPath="" enablePreview queryScope="files-nav-mobile" rootBrowse />
     </ShellLayout>
   );
-}
-
-/**
- * 应用入口路由 `/`（设计文档 §11）：viewport 分流——桌面（≥lg）与移动（<lg）统一渲染
- * global scope 工作台（[项目] 总览，scope kind=global）。两端 `/` 同语义：桌面 =
- * ProjectLeftPanel + InstanceLeftOverview 三栏工作台；移动 = MobileWorkbench →
- * MobileGlobalOverview [项目] 总览（实例聚合 + 项目分组进项目 + header 新建，设计 §5）。
- * useIsDesktopViewport 客户端首 render 即真实视口，移动端无闪屏。由 router.tsx indexRoute lazy 挂载。
- */
-export function IndexRoute() {
-  const { rightTab, view, tab } = useSearch({ from: "/" });
-  return <GlobalScopeContent rightTab={rightTab} tab={tab} view={view} />;
 }
 
 function WorkbenchContent({
