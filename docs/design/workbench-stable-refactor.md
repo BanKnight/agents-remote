@@ -47,14 +47,20 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：Phase 2 待开始（nav gate + 活动栏[文件]跳 /files）
-- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建）
+- **当前阶段**：Phase 3 待开始（FilePanelRef 统一全路径 + 全局文件进中栏 tab）
+- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建）、Phase 2（nav 语义 scope 优先 + 活动栏[文件]跳 /files）
 - **Phase 1 设计偏差（vs 原计划）**：未引入持久化 atom，改用 `useMatches()` + 纯函数 `deriveWorkbenchRouteContext` 派生路由上下文（单一数据管道，source of truth = URL，无子 render 写/父读时序问题——**消解原计划最高风险点**）。`/files` 与 `/settings` **留在 rootRoute 平级**（非 layout 子）——移动 `/files` 是独立整页，Phase 2-4 才收口进 layout；Phase 1 只塌缩 7 个 workbench 路由（global/project × scope/focus/file/git）。
 - **Phase 1 实现**：`router.tsx` 新增 `workbenchLayoutRoute`（id:"workbench"，pathless layout，component=WorkbenchLayoutShell）+ 7 子路由（**不设 component**，只 URL 匹配 + validateSearch）；`WorkbenchRoute.tsx` 新 `WorkbenchLayoutShell`（`useWorkbenchRouteContext()` 派生 ctx → `<WorkbenchContent scope={ctx.scope} focusId={ctx.focusId} .../>`），删 7 个 `*Route` 薄壳；`workbench-model.ts` 新 `WorkbenchRouteContext`/`deriveWorkbenchRouteContext`/`useWorkbenchRouteContext`（`useMatches({structuralSharing:true, select})` 引用稳定）。
 - **Phase 1 验证**：Playwright 探针（SPA 导航 global→project→global→project）中栏 `<main>` 根节点全程 `sameNode:true present:true`（InstanceArea 不卸载，0 pageerror）；e2e 20/20 绿；单测 514（+7 deriveWorkbenchRouteContext）全过；门禁 format/lint/typecheck 全过。
-- **已改文件**（Phase 1）：`web/src/routes/router.tsx`、`web/src/routes/WorkbenchRoute.tsx`、`web/src/routes/workbench-model.ts`、`web/src/routes/workbench-model.test.ts`、`docs/design/workbench-stable-refactor.md`（本文档）
-- **下一步**：Phase 2 nav gate + 活动栏[文件]跳 /files
-- **关键风险**：Phase 3（FilePanelRef 去 projectName 影响所有 file 分支消费点）中；Phase 2（effect setNav 与 [文件] navigate 竞态）中；Phase 4/5 低
+- **Phase 2 设计偏差（vs 原计划）**：未引入 nav gate effect（进项目自动回 projects），也未保留 `workbenchNavAtom` 作为左栏切换驱动。改用 **`leftMode` prop + URL-driven activity bar active**：
+  - `WorkbenchContent` 新增 `leftMode?: "auto" | "files"`（默认 "auto"）。左栏逻辑改 **scope 优先**：`scope.kind==="project" || leftMode!=="files"` → ProjectLeftPanel；`global + leftMode==="files"` → FilesLeftPanel。project scope 恒走 ProjectLeftPanel（无视 leftMode），消解"进项目左栏不变"根因——不再需要 nav-reset effect。
+  - 活动栏 **不再用 `workbenchNavAtom`**，改用 `useLocation().pathname` 派生 active（与移动 `MobilePrimaryNav` 同模型）：[项目] = `/` 或 `/projects` 前缀；[文件] = `/files`。两个按钮都 `navigate`：[文件] → `/files`，[项目] → `/projects`（独立路由入口，进 URL 不再是 localStorage atom）。
+  - `/files` 桌面（`FilesRoute`）经 `GlobalScopeContent leftMode="files"` 强制左栏 FilesLeftPanel（不依赖 nav atom，不污染 localStorage）。`/files` 仍在 rootRoute 平级（Phase 4 才收口进 layout）——故桌面 `/files` ↔ workbench 路由切换会卸载 layout/重建 WorkbenchContent（中栏 session tab 重连）；用户诉求 #1 是 global↔project（Phase 1 已保证），`/files` 是独立视图切换，非用户报告问题。
+  - `workbenchNavAtom`/`WorkbenchNav` 定义保留（export 无 lint 报错，Phase 4 若需可复用），但全仓无消费者。
+- **Phase 2 验证**：e2e 21/21 绿（新增"entering project keeps ProjectLeftPanel"测试 + 改写 #13 为"navigates to /files"）；单测 514 全过；门禁 format/lint/typecheck 全过。
+- **已改文件**（Phase 2）：`web/src/components/shell/activity-bar.tsx`（URL-driven active + navigate）、`web/src/routes/WorkbenchRoute.tsx`（leftMode prop + scope 优先 leftPanel + FilesRoute 传 leftMode="files" + 去 nav atom）、`e2e/middle-tab-left.spec.ts`（改写 #13 + 新增进项目测试）、`docs/design/workbench-stable-refactor.md`（本文档）
+- **下一步**：Phase 3 FilePanelRef 统一全路径 + 全局文件进中栏 tab
+- **关键风险**：Phase 3（FilePanelRef 去 projectName 影响所有 file 分支消费点）中；Phase 4/5 低
 
 ## 阶段计划
 

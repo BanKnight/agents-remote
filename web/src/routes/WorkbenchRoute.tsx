@@ -52,7 +52,6 @@ import {
   useWorkbenchRouteContext,
   workbenchMiddleLeftWidthAtom,
   workbenchMiddleTabAtom,
-  workbenchNavAtom,
   workbenchRightCollapsedAtom,
   workbenchViewAtom,
 } from "./workbench-model";
@@ -87,12 +86,22 @@ export function GlobalScopeContent({
   rightTab,
   tab,
   view,
+  leftMode,
 }: {
   rightTab?: WorkbenchRightTab;
   tab?: WorkbenchMiddleTab;
   view?: WorkbenchView;
+  leftMode?: "auto" | "files";
 }) {
-  return <WorkbenchContent rightTab={rightTab} scope={{ kind: "global" }} tab={tab} view={view} />;
+  return (
+    <WorkbenchContent
+      leftMode={leftMode}
+      rightTab={rightTab}
+      scope={{ kind: "global" }}
+      tab={tab}
+      view={view}
+    />
+  );
 }
 
 /**
@@ -110,7 +119,10 @@ export function GlobalScopeContent({
  */
 export function FilesRoute() {
   const isDesktop = useIsDesktopViewport();
-  if (isDesktop) return <GlobalScopeContent />;
+  // 桌面 `/files` = 全局文件视图（leftMode="files" 强制左栏 FilesLeftPanel，不依赖 nav atom）。
+  // 活动栏 [文件] navigate("/files") 直达；进项目（/projects/$key）由 layout 路由渲染，
+  // scope=project → 左栏恒 ProjectLeftPanel（无视 leftMode）。移动 /files 见下方独立分支。
+  if (isDesktop) return <GlobalScopeContent leftMode="files" />;
   return (
     <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
       <FilesPanel initialPath="" enablePreview queryScope="files-nav-mobile" rootBrowse />
@@ -124,18 +136,23 @@ function WorkbenchContent({
   scope,
   view: viewFromUrl,
   tab: tabFromUrl,
+  leftMode = "auto",
 }: {
   focusId?: string;
   rightTab?: WorkbenchRightTab;
   scope: WorkbenchScope;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
+  // 左栏模式（设计 workbench-stable-refactor Phase 2）：project scope 恒走 ProjectLeftPanel
+  //（无视 leftMode）；global scope 下 leftMode="files" → FilesLeftPanel（全局 rootBrowse），
+  // leftMode="auto" → ProjectLeftPanel(global overview=GlobalProjectsOverview)。
+  // `/files` 桌面经 GlobalScopeContent 传 leftMode="files"；其余 workbench 路由默认 "auto"。
+  leftMode?: "auto" | "files";
 }) {
   const { t } = useT();
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
-  const [nav] = useAtom(workbenchNavAtom);
   // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。
   const backToProjects = () => void navigate({ to: "/projects" });
   const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
@@ -486,10 +503,10 @@ function WorkbenchContent({
     rightPanelCollapsible && !rightCollapsed ? (
       <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
     ) : null;
-  // 活动栏切左栏内容：nav=projects → ProjectLeftPanel（scope 切换 + 新建项目 + InstanceLeftOverview
-  // 实例总览；project scope 左栏顶部 middle tab 切主体）；nav=files → FilesLeftPanel（固定全局
-  // rootBrowse 根目录，Phase 3 决策 26③：不论 WorkbenchScope 都显全局根目录，与 middle tab [文件]
-  // 项目局部文件作用域互斥）。nav=settings 跳 SettingsRoute 不进工作台，此处无需分支。
+  // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
+  //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下
+  // leftMode="files"（来自 `/files` 桌面）→ FilesLeftPanel（全局 rootBrowse 根目录），
+  // leftMode="auto"（其余 workbench 路由）→ ProjectLeftPanel(global overview=GlobalProjectsOverview)。
   // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
   // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
   const leftOverview =
@@ -515,9 +532,7 @@ function WorkbenchContent({
       />
     );
   const leftPanel =
-    nav === "files" ? (
-      <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "global" }} />
-    ) : (
+    scope.kind === "project" || leftMode !== "files" ? (
       <ProjectLeftPanel
         focusId={focusId}
         onOpenFile={onOpenFile}
@@ -527,6 +542,8 @@ function WorkbenchContent({
         scope={scope}
         tab={tab}
       />
+    ) : (
+      <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "global" }} />
     );
   return (
     <WorkbenchShell
@@ -535,7 +552,7 @@ function WorkbenchContent({
       leftPanelTitle={
         scope.kind === "project" ? (
           <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
-        ) : nav === "files" ? (
+        ) : leftMode === "files" ? (
           t("nav.files")
         ) : (
           t("nav.projects")

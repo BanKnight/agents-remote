@@ -110,21 +110,48 @@ test("global scope: no middle tab bar in left panel", async ({ page }) => {
   await expect(nav.getByRole("button", { name: "Git", exact: true })).toHaveCount(0);
 });
 
-test("activity bar [Files] shows global rootBrowse, not project-local files", async ({ page }) => {
+test("activity bar [Files] navigates to /files global rootBrowse, not project-local files", async ({
+  page,
+}) => {
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   // 活动栏 [文件]（ActivityBar nav "Primary navigation" 内，aria-label = nav.files = "Files"）。
-  // 决策 26③：nav=files 固定 FilesLeftPanel scope=global（rootBrowse 全局根目录），不论 WorkbenchScope。
+  // 设计 workbench-stable-refactor Phase 2：[文件] navigate("/files") 独立路由入口（不再 setNav
+  // atom 不换路由）。点击后离开项目 scope，跳 /files 全局文件视图。
   await activityBar(page).getByRole("button", { name: "Files", exact: true }).click();
 
-  // URL 不变（活动栏 nav 是 atom，不进 URL；仍 /projects/demo）。
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+  // URL 切到 /files（独立路由，进 URL 不再是 atom）。
+  await expect(page).toHaveURL(/\/files$/);
 
-  // 左栏 = rootBrowse 全局根目录（PROJECTS_ROOT 根）。根目录列一级项目目录（demo），**不含**
-  // 项目内文件（src/README.md）—— 与 middle tab [文件]（项目内文件）作用域互斥。
+  // 左栏 = FilesLeftPanel rootBrowse 全局根目录（PROJECTS_ROOT 根）。根目录列一级项目目录
+  //（demo），**不含** 项目内文件（src/README.md）—— 与 middle tab [文件]（项目内文件）作用域互斥。
   const rootFiles = leftPanelFiles(page);
   await expect(rootFiles.getByRole("button", { name: projectName, exact: true })).toBeVisible();
   await expect(rootFiles.getByRole("button", { name: /README\.md/ })).toHaveCount(0);
   await expect(rootFiles.getByRole("button", { name: /^src$/ })).toHaveCount(0);
+});
+
+test("entering project keeps ProjectLeftPanel (scope priority over activity bar [Files])", async ({
+  page,
+}) => {
+  // 先点 [文件] 进 /files 全局文件视图（左栏 FilesLeftPanel rootBrowse）。
+  await activityBar(page).getByRole("button", { name: "Files", exact: true }).click();
+  await expect(page).toHaveURL(/\/files$/);
+  await expect(leftPanelFiles(page)).toBeVisible();
+
+  // 回全局项目总览再进项目：[项目] → /projects → 点项目卡片 → /projects/$key。设计 Phase 2：
+  // project scope 左栏恒走 ProjectLeftPanel（scope 优先），用户诉求"进项目左栏不再不变"——
+  // 不再停留在全局文件树。
+  await activityBar(page).getByRole("button", { name: "Projects", exact: true }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+
+  // 左栏切回 ProjectLeftPanel（项目实例总览 + middle tab bar），middle tab Overview 出现。
+  await expect(
+    projectsNav(page).getByRole("button", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  // 全局文件树（rootBrowse，列项目名按钮）从左栏消失。
+  await expect(leftPanelFiles(page)).toHaveCount(0);
 });
