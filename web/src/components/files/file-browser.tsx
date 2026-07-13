@@ -971,7 +971,7 @@ export function FilesPanel({
   const isPreviewOpen = selectedFilePath !== undefined && enablePreview;
   const browserPanel = (
     <aside
-      className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60 ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
+      className={`min-h-0 min-w-0 flex-1 ${enablePreview ? "sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60" : "sm:flex-1"} ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <FileEntryList
