@@ -21,13 +21,12 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：阶段 2b 完成 → 下一步阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName，必须随 2b 配套）
-- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）
-- **已改文件**（阶段 2b）：`web/src/routes/workbench-model.ts`（`workbenchLayoutAtom` 改存扁平 `WorkbenchLayoutV3`，key `workbenchLayoutV4`；新增 `migrateV3StateToSingleLayout(state)=state.global` + `LEGACY_WORKBENCH_LAYOUT_V3_KEY`；storage 四分支迁移 V3-state/V2/V1 各取 global；删 `normalizeLayoutState`（state 版，改用 `normalizeLayoutV3`）；`useWorkbenchLayout()` 去 scope 参数，直接 `[layout, setState]=useAtom(atom)`、`update=setState(fn)`）、`web/src/routes/WorkbenchRoute.tsx`（`useWorkbenchLayout()` 去 scope 实参）、`web/src/components/workbench/mobile-workbench.tsx`（同）
-- **下一步**：阶段 2c —— `navigateWorkbench` / `onSelectTab`（`WorkbenchRoute.tsx:393`）/ `focusPanel`（`:308`）改用 `ref.projectName` 构造聚焦 URL（不再用 `scope.key`）；否则 global 开项目 B tab、进项目 A 点 B tab → URL `/projects/A/session/B-id` 错乱。focus effect（`:254`）回退 navigate 同理审。
-- **阶段 2b 验证**：DOM 几何探针（localStorage 数据层 + DOM）确认：① project focus 开 tab → V4 存在 + 扁平（keys=root/activeGroupId/maximized，无 project/global wrapper）+ 含 session；② **切 global scope → V4 仍含 session（跨 scope 稳定，核心目标达成）**；③ 切回 project → 仍含 session；④ 中栏 `.xterm` 渲染（terminal panel）；⑤ 迁移：注入 V3-state → reload → V4 存在 + 含 session + 扁平 + V3-state 删除；⑥ 0 console error。门禁 format/lint/typecheck/test（507）全过。
+- **当前阶段**：阶段 2c 完成 → 下一步阶段 2d（移动端守卫 + refsCount 语义）
+- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）、阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName）
+- **已改文件**（阶段 2c）：`web/src/routes/WorkbenchRoute.tsx`（导入 `findTabRefLeaf`；新增 `navigateSession(ref)` helper —— project scope 用 `{kind:project,key:ref.projectName}`、global 保持 scope；`focusPanel`/`onSelectTab`(查 ref，session→navigateSession/file→navigateToFile(ref.projectName))/`onCloseTab` 回退/`prune` 回退/`onDrop` drag 五处 session navigate 改调 `navigateSession`；`navigateToFile` params.key 改用 projectName 参数（跨项目 file tab）；`onSelectTab` 去 `parseFileTabId` 改 `findTabRefLeaf`+`ref.kind` 分发）
+- **下一步**：阶段 2d —— `useGlobalInstanceRefs()` 加 `enabled = isDesktop && layout.root !== null`（移动端不空跑 fan-out）；`InstanceArea` `refsCount`（`WorkbenchRoute.tsx:538`）改 `globalRefs.length`（hasActiveInstances 语义 = 中栏 tab 是否可恢复）。
+- **阶段 2c 验证**：DOM 几何探针（projA=agents-remote / projB=claude-template 跨项目）—— ① projB focus 开 sidB tab（V4 projectName=projB）；② **projA scope 下 sidB tab 仍在（单一 layout 跨项目共存）**；③ **点中栏 sidB tab → URL `/projects/projB/session/sidB`（用 ref.projectName=projB），非 `/projects/projA/session/sidB`（scope.key）**；④ 0 console error。门禁 format/lint/typecheck/test（507）全过。
 - **已知风险**（待对应阶段处理）：
-  - 2c 跨项目 tab 聚焦 URL 必须 `ref.projectName`（否则点 B 项目 tab 在 A scope 下 URL 错乱）—— **必须紧随 2b**。
   - 2d 移动端守卫：`useGlobalInstanceRefs()` 移动端不空跑 fan-out + `refsCount` 改 `globalRefs.length`。
 
 ## 阶段计划

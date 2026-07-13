@@ -37,6 +37,7 @@ import {
   dropIntoLeaf,
   ensureTabOpenLeaf,
   findLeafBySessionId,
+  findTabRefLeaf,
   inferSessionTypeFromId,
   parseFileTabId,
   removeTabFromLeaf,
@@ -302,7 +303,7 @@ function WorkbenchContent({
     update(() => next);
     if (focusId && stale.some((s) => s.tabId === focusId)) {
       const active = activeTabRefLeaf(next);
-      if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
+      if (active?.kind === "session") navigateSession(active);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, focusId, layout, isDesktop, refs, refsLoaded, globalRefs, globalRefsLoaded]);
@@ -313,14 +314,27 @@ function WorkbenchContent({
     scope.kind === "project"
       ? scope.key
       : (candidates.find((c) => c.ref.sessionId === sessionId)?.ref.projectName ?? "");
+  // 单一 layout（VSCode 式，阶段 2b）：session tab 跨项目共存于中栏。聚焦 session 的 URL 必须
+  // 用 session 自身 projectName 构造（project scope），而非当前 scope.key —— 否则点项目 B 的 tab
+  // 在项目 A scope 下生成错乱 URL（/projects/A/session/B-id），focus effect 在错误 scope 找不到它。
+  // global scope 保持 global focus URL（/projects/session/$id，focus effect 从 global refs 解析 projectName）。
+  const navigateSession = useCallback(
+    (ref: WorkbenchPanelRef) => {
+      if (ref.kind !== "session") return;
+      const navScope: WorkbenchScope =
+        scope.kind === "project" ? { kind: "project", key: ref.projectName } : scope;
+      void navigateWorkbench(navScope, ref.sessionId);
+    },
+    [navigateWorkbench, scope],
+  );
   const focusPanel = useCallback(
     (ref: WorkbenchPanelRef) => {
       // file tab 的 focus 由 Step 7 file 路由处理；此处只处理 session tab。
       if (ref.kind !== "session") return;
       if (ref.sessionId === focusId) return;
-      void navigateWorkbench(scope, ref.sessionId);
+      navigateSession(ref);
     },
-    [focusId, navigateWorkbench, scope],
+    [focusId, navigateSession],
   );
   const focusInstance = useCallback(
     (sessionId: string) => {
@@ -369,7 +383,7 @@ function WorkbenchContent({
       if (scope.kind !== "project") return;
       void navigate({
         to: "/projects/$key/file/$",
-        params: { key: scope.key, _splat: path },
+        params: { key: projectName, _splat: path },
         search: { rightTab, tab: tabFromUrl, view: viewFromUrl },
       });
     },
@@ -392,7 +406,7 @@ function WorkbenchContent({
       update(() => next);
       if (focusId === tabId) {
         const active = activeTabRefLeaf(next);
-        if (active?.kind === "session") void navigateWorkbench(scope, active.sessionId);
+        if (active?.kind === "session") navigateSession(active);
         else if (active?.kind === "file") void navigateToFile(active.projectName, active.path);
       }
     },
@@ -401,16 +415,19 @@ function WorkbenchContent({
   const onSelectTab = useCallback(
     (groupId: string, tabId: string) => {
       update((prev) => setActiveTabInLeaf(prev, groupId, tabId));
-      // file tab 的 focus URL 走 /file/$ splat（navigateToFile）；session tab 走 navigateWorkbench。
+      // 单一 layout（阶段 2b）：tab 可能跨项目。从 layout 查 ref，用 ref.projectName 构造 focus
+      // URL（session→navigateSession / file→navigateToFile），避免 scope.key 与 tab 项目不一致时
+      // URL 错乱（/projects/A/session/B-id）。tabId === focusId 不重复导航。ref 查不到（layout
+      // 尚未更新）保守不导航，等 layout 同步后由 focus effect 兜底。
       if (tabId === focusId) return;
-      const filePath = parseFileTabId(tabId);
-      if (filePath !== null) {
-        if (scope.kind === "project") void navigateToFile(scope.key, filePath);
+      const ref = findTabRefLeaf(layout, tabId);
+      if (ref?.kind === "file") {
+        if (scope.kind === "project") void navigateToFile(ref.projectName, ref.path);
         return;
       }
-      void navigateWorkbench(scope, tabId);
+      if (ref) navigateSession(ref);
     },
-    [update, focusId, navigateWorkbench, navigateToFile, scope],
+    [update, focusId, layout, scope, navigateToFile, navigateSession],
   );
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
@@ -439,8 +456,8 @@ function WorkbenchContent({
     const next = dropIntoLeaf(prev, drag.ref, zone.targetGroupId, zone.zone);
     if (next === prev) return;
     update(() => next);
-    if (drag.ref.kind === "session") void navigateWorkbench(scope, drag.ref.sessionId);
-  }, [dragState, activeZone, layout, update, navigateWorkbench, scope]);
+    if (drag.ref.kind === "session") navigateSession(drag.ref);
+  }, [dragState, activeZone, layout, update, navigateSession]);
   const cancelDrag = useCallback(() => {
     setDragState(null);
     setActiveZone(null);
