@@ -47,8 +47,8 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：Phase 5 待开始（文件树+预览预设去冗余）
-- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建，commit `a532c51`）、Phase 2（nav 语义 scope 优先 + 活动栏[文件]跳 /files，commit `fbf3b8d`）、Phase 3（FilePanelRef 统一全路径 + 全局文件进中栏 tab，commit `183763e`）、Phase 4（GlobalFilesOverview 抽取 + 移动 /files 收口）
+- **当前阶段**：收尾（push 到 origin/main）
+- **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建，commit `a532c51`）、Phase 2（nav 语义 scope 优先 + 活动栏[文件]跳 /files，commit `fbf3b8d`）、Phase 3（FilePanelRef 统一全路径 + 全局文件进中栏 tab，commit `183763e`）、Phase 4（GlobalFilesOverview 抽取 + 移动 /files 收口，commit `127de5f`）、Phase 5（删 FilesLeftPanel global 死代码 + 签名简化）
 - **Phase 1 设计偏差（vs 原计划）**：未引入持久化 atom，改用 `useMatches()` + 纯函数 `deriveWorkbenchRouteContext` 派生路由上下文（单一数据管道，source of truth = URL，无子 render 写/父读时序问题——**消解原计划最高风险点**）。`/files` 与 `/settings` **留在 rootRoute 平级**（非 layout 子）——移动 `/files` 是独立整页，Phase 2-4 才收口进 layout；Phase 1 只塌缩 7 个 workbench 路由（global/project × scope/focus/file/git）。
 - **Phase 1 实现**：`router.tsx` 新增 `workbenchLayoutRoute`（id:"workbench"，pathless layout，component=WorkbenchLayoutShell）+ 7 子路由（**不设 component**，只 URL 匹配 + validateSearch）；`WorkbenchRoute.tsx` 新 `WorkbenchLayoutShell`（`useWorkbenchRouteContext()` 派生 ctx → `<WorkbenchContent scope={ctx.scope} focusId={ctx.focusId} .../>`），删 7 个 `*Route` 薄壳；`workbench-model.ts` 新 `WorkbenchRouteContext`/`deriveWorkbenchRouteContext`/`useWorkbenchRouteContext`（`useMatches({structuralSharing:true, select})` 引用稳定）。
 - **Phase 1 验证**：Playwright 探针（SPA 导航 global→project→global→project）中栏 `<main>` 根节点全程 `sameNode:true present:true`（InstanceArea 不卸载，0 pageerror）；e2e 20/20 绿；单测 514（+7 deriveWorkbenchRouteContext）全过；门禁 format/lint/typecheck 全过。
@@ -71,8 +71,15 @@
   - `WorkbenchRoute.tsx`：① 桌面 `leftPanel` global+`leftMode==="files"` 分支从 `FilesLeftPanel scope={{kind:"global"}}` 改 `<GlobalFilesOverview onOpenFile={onOpenFile}/>`（`onOpenFile` 签名已是 `(projectName,path)`，内部拼全路径 `ensureTabOpenLeaf({kind:"file",path:fullPath})` + `navigateToFile`）；② `FilesRoute` 移动分支从内联 `FilesPanel rootBrowse enablePreview queryScope="files-nav-mobile"` 改 `<GlobalFilesOverview onOpenFile={navigate /files/file/$}>`（点文件跳 `MobileFileFocus` 浮窗=FileTabPreview，与桌面中栏 file tab 同组件）；③ 移除 `FilesLeftPanel`/`FilesPanel` import（全局文件不再走它们）；④ `FilesLeftPanel` 仍由 `project-left-panel.tsx` 用（项目 middle tab [文件] scope=project，角色拆分：project→FilesLeftPanel / global→GlobalFilesOverview）。
 - **Phase 4 验证**：门禁全过（typecheck / format / lint 0 warning / 单测 516）；e2e 22/22 绿（#14 活动栏[文件]→/files、#15 进项目保持 ProjectLeftPanel、#18 移动[files]打开 rootBrowse 文件树、#5/#6 file-nav 项目+全局文件 tab 全绿），零回归。移动 `/files` 点文件行为变更（内联预览→浮窗 `MobileFileFocus`=FileTabPreview）统一了桌面/移动文件预览组件。
 - **已改文件**（Phase 4）：`web/src/components/files/global-files-overview.tsx`（新）、`web/src/routes/WorkbenchRoute.tsx`、`docs/design/workbench-stable-refactor.md`（本文档）
-- **下一步**：Phase 5 文件树+预览预设去冗余（`file-browser.tsx` 导出 `GlobalFilesTree`/`ProjectFilesTree`/`FilesInspection` 3 具名预设，5 处复用改用预设名）
-- **关键风险**：Phase 5 低（纯组件抽取，视觉零改）；Phase 4 已验证无回归
+- **Phase 5 设计偏差（vs 原计划）**：原计划「抽 3 具名预设（`GlobalFilesTree`/`ProjectFilesTree`/`FilesInspection`）」**在 Phase 4 后失效**——`GlobalFilesTree` 被 `GlobalFilesOverview` 取代（再抽一层 = 套娃）；`ProjectFilesTree`/`FilesInspection` 各只 1 个消费者（`FilesLeftPanel` project 分支 / `right-panel-plugin` files 插件），抽出来也是套娃，违反「优先修改，克制新增」。用户拍板改 **修订版 Phase 5 = 删死代码**：Phase 4 后 `FilesLeftPanel` 的 global 分支已成死代码（唯一消费者 `project-left-panel.tsx:85` 硬编码传 `scope:{kind:"project"}`，global 全局左栏改走 `GlobalFilesOverview`）。
+- **Phase 5 实现**（删 FilesLeftPanel global 死代码 + 签名简化）：
+  - `files-left-panel.tsx`：删 global 分支 + `WorkbenchScope` import，签名从 `scope: WorkbenchScope` 简化为 `projectName: string`（只剩 project 一个 case，与 `GlobalFilesOverview` 形成「项目文件树 / 全局文件树」对称）。
+  - `project-left-panel.tsx`：调用点 `scope={{kind:"project",key:scope.key}}` → `projectName={scope.key}` + 注释同步。
+  - `workbench-model.ts`：修正 `leftMode` 注释（Phase 4 遗留过时描述「FilesLeftPanel（全局文件树）」→「GlobalFilesOverview（全局文件树，Phase 4 抽出）」）。
+- **Phase 5 验证**：门禁全过（typecheck / format / lint 0 warning / 单测 516）；e2e 22/22 绿（#9 middle tab [Files] 切左栏项目文件树新签名工作正常、#14/#15/#18 活动栏+进项目+移动文件全绿），零回归。
+- **已改文件**（Phase 5）：`web/src/components/files/files-left-panel.tsx`、`web/src/components/workbench/project-left-panel.tsx`、`web/src/routes/workbench-model.ts`、`docs/design/workbench-stable-refactor.md`（本文档）
+- **下一步**：收尾 push（Phase 0-5 全部完成，e2e 22/22 绿基线保持）
+- **关键风险**：全部 phase 已完成并验证零回归；剩余仅 push
 
 ## 阶段计划
 

@@ -74,16 +74,14 @@ export function ProjectLeftPanel({
     tab !== undefined && middleTabs.some((opt) => opt.id === tab) ? tab : "overview";
 
   // project scope middle tab 主体内容（设计 §4.2 进入项目层）。global scope 主体恒为 overview。
-  // [文件] = 项目内文件树（FilesLeftPanel scope=project，点文件→中栏开 file tab）；[git] = git plugin
+  // [文件] = 项目内文件树（FilesLeftPanel projectName，点文件→中栏开 file tab）；[git] = git plugin
   // render（GitDiffPanel，与移动端 MobileProjectOverview 同源 FIRST_PARTY_PLUGINS）。
   let middleBody: ReactNode = overview;
   if (scope.kind === "project") {
     if (resolvedTab === "history") {
       middleBody = <HistoryList focusId={focusId} projectName={scope.key} showLabel={false} />;
     } else if (resolvedTab === "files") {
-      middleBody = (
-        <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "project", key: scope.key }} />
-      );
+      middleBody = <FilesLeftPanel onOpenFile={onOpenFile} projectName={scope.key} />;
     } else if (resolvedTab === "git") {
       middleBody = (
         <GitChangesList

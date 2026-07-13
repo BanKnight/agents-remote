@@ -345,10 +345,10 @@ export type WorkbenchRouteContext = {
   scope: WorkbenchScope;
   focusId: string | undefined;
   /**
-   * 左栏模式（设计 workbench-stable-refactor Phase 3）：global scope 下 `leftMode="files"` →
-   * 左栏 FilesLeftPanel（全局文件树），`"auto"` → ProjectLeftPanel(global overview)。project
-   * scope 无视 leftMode 恒走 ProjectLeftPanel。`/files/file/$`（全局文件 tab focus）派生 "files"
-   *（在文件 tab 上下文保留文件树便于继续浏览）；其余 workbench 路由默认 "auto"。
+   * 左栏模式（设计 workbench-stable-refactor Phase 2）：global scope 下 `leftMode="files"` →
+   * 左栏 GlobalFilesOverview（全局文件树，Phase 4 抽出），`"auto"` → ProjectLeftPanel(global
+   * overview)。project scope 无视 leftMode 恒走 ProjectLeftPanel。`/files/file/$`（全局文件 tab
+   * focus）派生 "files"（在文件 tab 上下文保留文件树便于继续浏览）；其余 workbench 路由默认 "auto"。
    */
   leftMode?: "auto" | "files";
   rightTab?: WorkbenchRightTab;
