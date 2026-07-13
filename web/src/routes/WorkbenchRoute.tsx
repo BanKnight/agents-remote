@@ -23,8 +23,7 @@ import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ShellLayout } from "../components/shell/shell-layout";
 import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
-import { FilesLeftPanel } from "../components/files/files-left-panel";
-import { FilesPanel } from "../components/files/file-browser";
+import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { useT } from "../i18n";
 import {
   type DropZone,
@@ -107,27 +106,31 @@ export function GlobalScopeContent({
 }
 
 /**
- * 移动 [文件] 一级入口路由 `/files`（设计 §6 决策 24）：视口分流——移动（<lg）渲染
- * rootBrowse FilesPanel（根目录浏览 + 预览浮窗，复用现状移动 Files 做法，决策 12），
- * 包 ShellLayout + MobilePrimaryNav 提供底部胶囊避让与 safe-area；
- * 桌面（≥lg）渲染 global 工作台（桌面 [文件] 经活动栏 nav=files，不需独立 `/files` 路由，
- * 桌面直接访问 `/files` 回到工作台由活动栏切入）。useIsDesktopViewport 客户端首 render
- * 即真实视口，移动端无闪屏。由 router.tsx filesRoute lazy 挂载。
+ * 移动 [文件] 一级入口路由 `/files`（设计 §6 决策 24 / workbench-stable-refactor Phase 4）：视口
+ * 分流——移动（<lg）渲染 `GlobalFilesOverview`（与桌面左栏同一主体），点文件 navigate `/files/file/$`
+ * → MobileFileFocus 浮窗（复用 FileTabPreview，与桌面中栏 file tab 同组件）；包 ShellLayout +
+ * MobilePrimaryNav 提供底部胶囊避让与 safe-area。桌面（≥lg）渲染 global 工作台 leftMode="files"。
+ * useIsDesktopViewport 客户端首 render 即真实视口，移动端无闪屏。由 router.tsx filesRoute lazy 挂载。
  *
- * 留在 rootRoute 平级（非 workbench layout 子）——移动 /files 是独立整页，与桌面三栏工作台
- * 异构；Phase 2-4 收口进 layout。桌面分支渲染独立 `WorkbenchContent`（global scope，不经
- * layout——此路径不在 layout 下，中栏重建仅限 `/files` ↔ workbench 路由切换，非用户报告的
- * 进出项目问题）。
+ * 留在 rootRoute 平级（非 workbench layout 子）——移动 /files 是独立整页，与桌面三栏工作台异构。
+ * 桌面分支渲染独立 `WorkbenchContent`（global scope，不经 layout——此路径不在 layout 下，中栏重建
+ * 仅限 `/files` ↔ workbench 路由切换，非用户报告的进出项目问题）。
  */
 export function FilesRoute() {
   const isDesktop = useIsDesktopViewport();
-  // 桌面 `/files` = 全局文件视图（leftMode="files" 强制左栏 FilesLeftPanel，不依赖 nav atom）。
+  // 桌面 `/files` = 全局文件视图（leftMode="files" 强制左栏 GlobalFilesOverview，不依赖 nav atom）。
   // 活动栏 [文件] navigate("/files") 直达；进项目（/projects/$key）由 layout 路由渲染，
   // scope=project → 左栏恒 ProjectLeftPanel（无视 leftMode）。移动 /files 见下方独立分支。
+  const navigate = useNavigate();
   if (isDesktop) return <GlobalScopeContent leftMode="files" />;
+  // 移动 /files：GlobalFilesOverview（与桌面同主体），点文件跳 /files/file/$ 全局文件 tab focus
+  //（MobileFileFocus 浮窗，复用 FileTabPreview）。全路径 splat = `${projectName}/${rel}`。
+  const onOpenFile = (projectName: string, path: string) => {
+    void navigate({ to: "/files/file/$", params: { _splat: `${projectName}/${path}` } });
+  };
   return (
     <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
-      <FilesPanel initialPath="" enablePreview queryScope="files-nav-mobile" rootBrowse />
+      <GlobalFilesOverview onOpenFile={onOpenFile} />
     </ShellLayout>
   );
 }
@@ -146,7 +149,7 @@ function WorkbenchContent({
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   // 左栏模式（设计 workbench-stable-refactor Phase 2）：project scope 恒走 ProjectLeftPanel
-  //（无视 leftMode）；global scope 下 leftMode="files" → FilesLeftPanel（全局 rootBrowse），
+  //（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview（全局 rootBrowse），
   // leftMode="auto" → ProjectLeftPanel(global overview=GlobalProjectsOverview)。
   // `/files` 桌面经 GlobalScopeContent 传 leftMode="files"；其余 workbench 路由默认 "auto"。
   leftMode?: "auto" | "files";
@@ -526,7 +529,7 @@ function WorkbenchContent({
     ) : null;
   // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
   //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下
-  // leftMode="files"（来自 `/files` 桌面）→ FilesLeftPanel（全局 rootBrowse 根目录），
+  // leftMode="files"（来自 `/files` 桌面）→ GlobalFilesOverview（全局 rootBrowse 根目录，
   // leftMode="auto"（其余 workbench 路由）→ ProjectLeftPanel(global overview=GlobalProjectsOverview)。
   // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
   // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
@@ -564,7 +567,7 @@ function WorkbenchContent({
         tab={tab}
       />
     ) : (
-      <FilesLeftPanel onOpenFile={onOpenFile} scope={{ kind: "global" }} />
+      <GlobalFilesOverview onOpenFile={onOpenFile} />
     );
   return (
     <WorkbenchShell
