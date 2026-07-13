@@ -155,3 +155,35 @@ test("entering project keeps ProjectLeftPanel (scope priority over activity bar 
   // 全局文件树（rootBrowse，列项目名按钮）从左栏消失。
   await expect(leftPanelFiles(page)).toHaveCount(0);
 });
+
+test("project ↔ /files: WorkbenchShell <main> stays mounted (review 收口, no WS reconnect)", async ({
+  page,
+}) => {
+  // review 发现 1 收口验证：/files 从 rootRoute 平级独立路由收进 workbenchLayoutRoute 后，与
+  // project scope 共享 WorkbenchLayoutShell 父链 → WorkbenchShell 常驻 → 中栏 InstanceArea（含
+  // 终端 session tab 的 WebSocket/xterm）跨 project ↔ /files 不卸载、不重连。收口前 /files 独立
+  // 路由 → project→/files 卸载整个 workbenchLayoutRoute → <main> 重建 → 终端 WS 断重连。
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+
+  // 在 WorkbenchShell 根 <main> 上打 marker。DOM 节点若被 React 卸载重建，marker 丢失。
+  // 桌面视口下 WorkbenchShell 渲染唯一 <main>（mobile 分支不在此视口渲染）。
+  await page.evaluate(() => {
+    const main = document.querySelector("main");
+    if (main) main.setAttribute("data-e2e-shell-persist", "1");
+  });
+
+  // project → /files（活动栏 [文件]）→ /projects（活动栏 [项目]）→ /projects/$key（点项目卡片）。
+  await activityBar(page).getByRole("button", { name: "Files", exact: true }).click();
+  await expect(page).toHaveURL(/\/files$/);
+  await activityBar(page).getByRole("button", { name: "Projects", exact: true }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.getByRole("button", { name: projectName, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+
+  // 同一 <main> DOM 节点存活（marker 仍在）→ WorkbenchShell 从未卸载 → InstanceArea 保活。
+  const survived = await page.evaluate(
+    () => document.querySelector("main")?.getAttribute("data-e2e-shell-persist") === "1",
+  );
+  expect(survived).toBe(true);
+});

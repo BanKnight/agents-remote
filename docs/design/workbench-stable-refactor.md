@@ -47,7 +47,11 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：收尾（push 到 origin/main）
+- **当前阶段**：review 收口（big picture review 发现 3 个遗留，发现 2+3 已修 `fbb5cdb`，发现 1 `/files` 收口进 layout 进行中）
+- **review 发现**（5-phase 完成后的 big picture review，对齐用户「修改面很大，用 big picture 眼光 review」诉求）：
+  1. **桌面 `/files` 路由未收口进 workbench pathless layout**（架构级，发现 1）：`/files` 仍是 `rootRoute` 平级独立路由（`FilesRoute` component），与 `workbenchLayoutRoute` 子路由是不同 React 组件树父链。用户在 project scope 开终端 session（WS 长连）→ 点活动栏[文件] → `/files` → `workbenchLayoutRoute` unmount → InstanceArea 卸载 → WS 断；切回重连。Phase 1 注释写「`/files` 留 rootRoute 平级，Phase 2-4 收口」，但 Phase 4 只收口移动 `/files` **主体**（`GlobalFilesOverview`），桌面 `/files` **路由本身**没进 layout——收口不彻底。**收口方案**：`/files` 移为 `workbenchLayoutRoute` 子（删 component，只 URL 匹配 + validateSearch）+ `deriveWorkbenchRouteContext` 加 `/files` case（scope=global + leftMode="files" + 无 focus）+ 移动 `MobileWorkbench` 无 focus 分支按 `global + leftMode==="files"` 渲染新 `MobileFilesOverview`（避免回退 MobileGlobalOverview 项目列表）。
+  2. **MobileFileFocus 路径解析边缘 bug**（发现 2，已修 `fbb5cdb`）：`splitFilePath` 对无 `/` 全路径降级为 `{projectName:全串, path:""}`，但 `MobileFileFocus` 返回导航用 `splitFilePath(path).projectName` 在异常路径下退化正确（已核对）。
+  3. **`workbenchNavAtom` 死代码**（发现 3，已修 `fbb5cdb`）：Phase 2 改 `leftMode` + URL-driven active 后，`workbenchNavAtom`/`WorkbenchNav` 全仓无消费者，删除。
 - **已完成阶段**：Phase 0（文档 + 设计基线，commit `d6c94ce`）、Phase 1（路由重构——共享 pathless layout，中栏跨 scope 不重建，commit `a532c51`）、Phase 2（nav 语义 scope 优先 + 活动栏[文件]跳 /files，commit `fbf3b8d`）、Phase 3（FilePanelRef 统一全路径 + 全局文件进中栏 tab，commit `183763e`）、Phase 4（GlobalFilesOverview 抽取 + 移动 /files 收口，commit `127de5f`）、Phase 5（删 FilesLeftPanel global 死代码 + 签名简化）
 - **Phase 1 设计偏差（vs 原计划）**：未引入持久化 atom，改用 `useMatches()` + 纯函数 `deriveWorkbenchRouteContext` 派生路由上下文（单一数据管道，source of truth = URL，无子 render 写/父读时序问题——**消解原计划最高风险点**）。`/files` 与 `/settings` **留在 rootRoute 平级**（非 layout 子）——移动 `/files` 是独立整页，Phase 2-4 才收口进 layout；Phase 1 只塌缩 7 个 workbench 路由（global/project × scope/focus/file/git）。
 - **Phase 1 实现**：`router.tsx` 新增 `workbenchLayoutRoute`（id:"workbench"，pathless layout，component=WorkbenchLayoutShell）+ 7 子路由（**不设 component**，只 URL 匹配 + validateSearch）；`WorkbenchRoute.tsx` 新 `WorkbenchLayoutShell`（`useWorkbenchRouteContext()` 派生 ctx → `<WorkbenchContent scope={ctx.scope} focusId={ctx.focusId} .../>`），删 7 个 `*Route` 薄壳；`workbench-model.ts` 新 `WorkbenchRouteContext`/`deriveWorkbenchRouteContext`/`useWorkbenchRouteContext`（`useMatches({structuralSharing:true, select})` 引用稳定）。

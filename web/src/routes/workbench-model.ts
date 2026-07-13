@@ -334,8 +334,9 @@ export type WorkbenchRouteContext = {
   /**
    * 左栏模式（设计 workbench-stable-refactor Phase 2）：global scope 下 `leftMode="files"` →
    * 左栏 GlobalFilesOverview（全局文件树，Phase 4 抽出），`"auto"` → ProjectLeftPanel(global
-   * overview)。project scope 无视 leftMode 恒走 ProjectLeftPanel。`/files/file/$`（全局文件 tab
-   * focus）派生 "files"（在文件 tab 上下文保留文件树便于继续浏览）；其余 workbench 路由默认 "auto"。
+   * overview)。project scope 无视 leftMode 恒走 ProjectLeftPanel。`/files`（全局文件总览）+
+   * `/files/file/$`（全局文件 tab focus）派生 "files"（文件上下文保留文件树便于继续浏览）；
+   * 其余 workbench 路由默认 "auto"。
    */
   leftMode?: "auto" | "files";
   rightTab?: WorkbenchRightTab;
@@ -350,8 +351,8 @@ export type WorkbenchRouteContext = {
  * session=`${id}` / file=`file_${path}`（path=全路径含项目名前缀）/ git=`git_${scope}/${path}`
  *（focus effect 据此开/激活 tab）。
  *
- * 注意：本函数覆盖 workbench 路由（含 `/files/file/$` 全局文件 tab focus，Phase 3）；不含 `/files`
- *（独立整页，留 rootRoute 平级，Phase 4 收口）。
+ * 注意：本函数覆盖全部 workbench 路由（含 `/files` 全局文件总览 + `/files/file/$` 全局文件 tab
+ * focus，review 收口后 /files 进 layout）。
  */
 export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRouteContext {
   const p = leaf.params as Record<string, string | undefined>;
@@ -365,6 +366,10 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     case "/":
     case "/projects":
       return { scope: { kind: "global" }, focusId: undefined, ...s };
+    case "/files":
+      // 全局文件总览（review 收口）：scope=global + leftMode="files"（左栏 GlobalFilesOverview）。
+      // 无 focusId（文件树整页，点文件 → /files/file/$ 开 file tab focus）。
+      return { scope: { kind: "global" }, focusId: undefined, leftMode: "files", ...s };
     case "/projects/session/$id":
       return { scope: { kind: "global" }, focusId: p.id, ...s };
     case "/projects/$key":

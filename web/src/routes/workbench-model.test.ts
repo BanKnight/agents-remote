@@ -149,6 +149,16 @@ test("deriveWorkbenchRouteContext: global file focus /files/file/$ → scope glo
   });
 });
 
+test("deriveWorkbenchRouteContext: /files 全局文件总览 → scope global + leftMode files + 无 focus（review 收口）", () => {
+  // /files（无 focus）= 全局文件树整页（review 收口后进 layout）；scope=global + leftMode="files"
+  // 区分于 /projects（项目总览，leftMode 默认 auto）。移动端 MobileWorkbench 据此分流 MobileFilesOverview。
+  expect(deriveWorkbenchRouteContext(routeLeaf("/files", {}))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    leftMode: "files",
+  });
+});
+
 test("splitFilePath: 全路径拆 projectName + 项目相对路径", () => {
   expect(splitFilePath("p1/src/index.ts")).toEqual({ projectName: "p1", path: "src/index.ts" });
   expect(splitFilePath("demo/README.md")).toEqual({ projectName: "demo", path: "README.md" });

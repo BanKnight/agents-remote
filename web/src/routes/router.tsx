@@ -108,13 +108,16 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import("./SettingsRoute"), "SettingsRoute"),
 });
 
-// 移动 [文件] 一级入口（设计 §6 决策 24）：移动端渲染 rootBrowse FilesPanel 浮窗；
-// 桌面端 component 内部分流回 global 工作台（桌面 [文件] 经活动栏 nav=files）。
-// 留在 rootRoute 平级（非 workbench layout 子）——移动 /files 是独立整页，Phase 2-4 收口进 layout。
+// 全局文件总览入口（设计 §6 决策 24 / workbench-stable-refactor review 收口）：`/files` 作为
+// workbench layout 子路由（非 rootRoute 平级）——桌面渲染 global 工作台 leftMode="files"（左栏
+// GlobalFilesOverview），移动经 MobileWorkbench 渲染 MobileFilesOverview（GlobalFilesOverview 主体）。
+// 进 layout 让 /files ↔ project scope / /files/file/$ 同父链（WorkbenchLayoutShell），中栏 InstanceArea
+// 跨这些路由不卸载、session tab WebSocket 不重连（review 发现 1 收口）。子路由不设 component——
+// layout 已渲染全部内容，与其它 layout 子路由一致（只 URL 匹配 + validateSearch）。
 const filesRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => workbenchLayoutRoute,
   path: "/files",
-  component: lazyRouteComponent(() => import("./WorkbenchRoute"), "FilesRoute"),
+  validateSearch: validateWorkbenchSearch,
 });
 
 // ── 旧 URL 兼容 redirect（退役期，无并行）────────────────────────────────────────
@@ -199,9 +202,9 @@ const routeTree = rootRoute.addChildren([
     globalScopeRoute,
     globalFocusRoute,
     globalFileFocusRoute,
+    filesRoute,
   ]),
   settingsRoute,
-  filesRoute,
   agentSessionDetailRedirect,
   claude2SessionDetailRedirect,
   terminalSessionDetailRedirect,

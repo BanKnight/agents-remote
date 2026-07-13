@@ -7,6 +7,7 @@ import { MobilePageHeader, shellSurfaceClasses, ViewSwitcher } from "../shell/sh
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
+import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
 import {
   ensureTabOpenLeaf,
@@ -55,6 +56,13 @@ import { useMeasuredBottomNav } from "../shell/shell-layout";
 type MobileWorkbenchProps = {
   scope: WorkbenchScope;
   focusId?: string;
+  /**
+   * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端仅 `scope=global + leftMode="files"`
+   *（`/files` 全局文件总览）有意义——渲染 MobileFilesOverview（GlobalFilesOverview 主体）；其余
+   *（project scope / global leftMode="auto"）无视 leftMode 走原 MobileGlobalOverview/MobileProjectOverview。
+   * 桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
+   */
+  leftMode?: "auto" | "files";
 };
 
 /**
@@ -67,7 +75,7 @@ type MobileWorkbenchProps = {
  * Stage B：header tab 切 output/文件/Git，inspection 复用 FIRST_PARTY_PLUGINS）
  * + 顶部返回。
  */
-export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
+export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchProps) {
   // workbench 不走 ShellLayout，这里自行测量一级底部 nav 高度并注入
   // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
   // Git diff 等）底部正确避让胶囊（参考 ShellLayout 同款 useMeasuredBottomNav）。
@@ -85,7 +93,9 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
         className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
-        {scope.kind === "global" ? (
+        {scope.kind === "global" && leftMode === "files" ? (
+          <MobileFilesOverview />
+        ) : scope.kind === "global" ? (
           <MobileGlobalOverview />
         ) : (
           <MobileProjectOverview scope={scope} />
@@ -732,6 +742,33 @@ function MobileGlobalOverview() {
       <MobilePageHeader title={t("workbench.global")} />
       <div className="min-h-0 flex-1">
         <GlobalProjectsOverview onFocusInstance={focusInstance} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 移动 [文件] 全局总览（设计 workbench-stable-refactor review 收口）：`/files`（scope=global +
+ * leftMode="files"，无 focus）在移动端渲染此组件——外壳 MobilePageHeader 标题（与 MobileGlobalOverview
+ * 同款范式）+ 主体 GlobalFilesOverview（rootBrowse 全局文件树，与桌面左栏同源）。收口 `/files`
+ * 进 workbench layout 后，移动无 focus 分支会落到 MobileGlobalOverview（项目列表），故在此按
+ * `global + leftMode==="files"` 单独分流，避免行为丢失。点文件 navigate `/files/file/$`（与原
+ * FilesRoute 移动 onOpenFile 一致，迁移过来）。
+ */
+function MobileFilesOverview() {
+  const { t } = useT();
+  const navigate = useNavigate();
+  const onOpenFile = (projectName: string, path: string) => {
+    void navigate({
+      to: "/files/file/$",
+      params: { _splat: `${projectName}/${path}` },
+    });
+  };
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <MobilePageHeader title={t("nav.files")} />
+      <div className="min-h-0 flex-1">
+        <GlobalFilesOverview onOpenFile={onOpenFile} />
       </div>
     </div>
   );

@@ -20,8 +20,6 @@ import { type PluginContext } from "../components/workbench/right-panel-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
-import { ShellLayout } from "../components/shell/shell-layout";
-import { MobilePrimaryNav } from "../components/shell/mobile-primary-nav";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { useT } from "../i18n";
@@ -80,58 +78,6 @@ export function WorkbenchLayoutShell() {
       tab={ctx.tab}
       view={ctx.view}
     />
-  );
-}
-
-export function GlobalScopeContent({
-  rightTab,
-  tab,
-  view,
-  leftMode,
-}: {
-  rightTab?: WorkbenchRightTab;
-  tab?: WorkbenchMiddleTab;
-  view?: WorkbenchView;
-  leftMode?: "auto" | "files";
-}) {
-  return (
-    <WorkbenchContent
-      leftMode={leftMode}
-      rightTab={rightTab}
-      scope={{ kind: "global" }}
-      tab={tab}
-      view={view}
-    />
-  );
-}
-
-/**
- * 移动 [文件] 一级入口路由 `/files`（设计 §6 决策 24 / workbench-stable-refactor Phase 4）：视口
- * 分流——移动（<lg）渲染 `GlobalFilesOverview`（与桌面左栏同一主体），点文件 navigate `/files/file/$`
- * → MobileFileFocus 浮窗（复用 FileTabPreview，与桌面中栏 file tab 同组件）；包 ShellLayout +
- * MobilePrimaryNav 提供底部胶囊避让与 safe-area。桌面（≥lg）渲染 global 工作台 leftMode="files"。
- * useIsDesktopViewport 客户端首 render 即真实视口，移动端无闪屏。由 router.tsx filesRoute lazy 挂载。
- *
- * 留在 rootRoute 平级（非 workbench layout 子）——移动 /files 是独立整页，与桌面三栏工作台异构。
- * 桌面分支渲染独立 `WorkbenchContent`（global scope，不经 layout——此路径不在 layout 下，中栏重建
- * 仅限 `/files` ↔ workbench 路由切换，非用户报告的进出项目问题）。
- */
-export function FilesRoute() {
-  const isDesktop = useIsDesktopViewport();
-  // 桌面 `/files` = 全局文件视图（leftMode="files" 强制左栏 GlobalFilesOverview，不依赖 nav atom）。
-  // 活动栏 [文件] navigate("/files") 直达；进项目（/projects/$key）由 layout 路由渲染，
-  // scope=project → 左栏恒 ProjectLeftPanel（无视 leftMode）。移动 /files 见下方独立分支。
-  const navigate = useNavigate();
-  if (isDesktop) return <GlobalScopeContent leftMode="files" />;
-  // 移动 /files：GlobalFilesOverview（与桌面同主体），点文件跳 /files/file/$ 全局文件 tab focus
-  //（MobileFileFocus 浮窗，复用 FileTabPreview）。全路径 splat = `${projectName}/${rel}`。
-  const onOpenFile = (projectName: string, path: string) => {
-    void navigate({ to: "/files/file/$", params: { _splat: `${projectName}/${path}` } });
-  };
-  return (
-    <ShellLayout bottomNavigation={<MobilePrimaryNav />} variant="home">
-      <GlobalFilesOverview onOpenFile={onOpenFile} />
-    </ShellLayout>
   );
 }
 
@@ -517,7 +463,7 @@ function WorkbenchContent({
   };
 
   if (!isDesktop) {
-    return <MobileWorkbench focusId={focusId} scope={scope} />;
+    return <MobileWorkbench focusId={focusId} leftMode={leftMode} scope={scope} />;
   }
   // project 可唤出右栏（inspection 只依赖 projectKey，非聚焦态唤出看 files/git）；
   // global scope 不唤出右栏（全局 inspection 走中栏 files tab，见 workbench-views §4.1）。
