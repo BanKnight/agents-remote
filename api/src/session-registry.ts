@@ -608,6 +608,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   createdAt: metadata.createdAt,
   model: metadata.model,
   permissionMode: metadata.permissionMode,
+  effort: metadata.effort,
   claudeSessionId: metadata.claudeSessionId,
   updatedAt: metadata.updatedAt,
 });

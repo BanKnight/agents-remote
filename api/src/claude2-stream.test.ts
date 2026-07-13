@@ -157,11 +157,16 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
   // This test pins the forwarding behavior and asserts no fabricated
   // switch_model_result is emitted back to the socket.
 
-  type FakeSocket = { data: unknown; sends: string[]; send: (m: string) => void };
+  type FakeSocket = {
+    data: unknown;
+    sends: string[];
+    closeCalls: number;
+    send: (m: string) => void;
+    close: () => void;
+  };
 
   const makeSocket = (): FakeSocket => {
-    const sends: string[] = [];
-    return {
+    const socket: FakeSocket = {
       data: {
         kind: "claude2-stream",
         sessionType: "agent",
@@ -170,11 +175,16 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
         runtimeKey: "ar-claude2-claude-demo-sess-1",
         status: "running",
       },
-      sends,
+      sends: [],
+      closeCalls: 0,
       send: (m: string) => {
-        sends.push(m);
+        socket.sends.push(m);
+      },
+      close: () => {
+        socket.closeCalls += 1;
       },
     };
+    return socket;
   };
 
   const makeController = (opts?: {
@@ -182,6 +192,8 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
   }) => {
     const writes: string[] = [];
     const injections: Array<{ key: string; line: string }> = [];
+    const closedKeys: string[] = [];
+    const effortUpdates: Array<{ sessionId: string; effort: string }> = [];
     const claude2Runtime = {
       write: async (_key: string, data: string) => {
         writes.push(data);
@@ -194,13 +206,30 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
       // simulate modelMapping/1m resolution.
       resolveControlModel:
         opts?.resolveControlModel ?? ((m: string | undefined) => Promise.resolve(m)),
+      close: async (key: string) => {
+        closedKeys.push(key);
+      },
+      ensureRunning: async () => {},
+      stream: async () => ({ close: () => {} }),
+    };
+    const sessionRegistry = {
+      getAgentMetadata: async () => ({
+        projectPath: "/proj/demo",
+        claudeSessionId: "claude-1",
+        model: "sonnet",
+        permissionMode: "default",
+        effort: "high",
+      }),
+      setEffort: async (sessionId: string, effort: string) => {
+        effortUpdates.push({ sessionId, effort });
+      },
     };
     const controller = new Claude2StreamController(
       claude2Runtime as unknown as Claude2Runtime,
       {} as RuntimeResources,
-      {} as SessionRegistry,
+      sessionRegistry as unknown as SessionRegistry,
     );
-    return { controller, writes, injections };
+    return { controller, writes, injections, closedKeys, effortUpdates };
   };
 
   test("set_model control_request is forwarded to CLI stdin (in-process switch, no restart)", async () => {
@@ -309,5 +338,48 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     }
     expect(writes).toEqual(cases.map((c) => `${JSON.stringify(c)}\n`));
     expect(injections).toEqual([]);
+  });
+
+  test("set_runtime_effort persists effort, kills the CLI, and closes the requesting socket", async () => {
+    const { controller, closedKeys, effortUpdates } = makeController();
+    const socket = makeSocket();
+    await controller.message(socket, JSON.stringify({ type: "set_runtime_effort", effort: "max" }));
+    expect(effortUpdates).toEqual([{ sessionId: "sess-1", effort: "max" }]);
+    expect(closedKeys).toEqual(["ar-claude2-claude-demo-sess-1"]);
+    // requesting socket closed → client auto-reconnects → ensureRunning respawns
+    expect(socket.closeCalls).toBe(1);
+    // nothing forwarded to stdin (not a control_request) + no error frame
+    expect(socket.sends).toEqual([]);
+  });
+
+  test("set_runtime_effort closes ALL sockets streaming the session (multi-client)", async () => {
+    const { controller } = makeController();
+    const a = makeSocket();
+    const b = makeSocket();
+    // open() registers each socket under the session's runtimeKey
+    await controller.open(a);
+    await controller.open(b);
+    await controller.message(a, JSON.stringify({ type: "set_runtime_effort", effort: "low" }));
+    // both clients must reconnect into the respawned stream
+    expect(a.closeCalls).toBe(1);
+    expect(b.closeCalls).toBe(1);
+  });
+
+  test("set_runtime_effort with invalid effort sends an error and does not restart", async () => {
+    const { controller, closedKeys, effortUpdates } = makeController();
+    const socket = makeSocket();
+    // raw JSON bypasses TS — the handler must validate at runtime (JSON.parse
+    // ignores types, so a malformed client can send any effort string)
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "set_runtime_effort", effort: "bogus" }),
+    );
+    expect(effortUpdates).toEqual([]);
+    expect(closedKeys).toEqual([]);
+    expect(socket.closeCalls).toBe(0);
+    expect(socket.sends).toHaveLength(1);
+    const err = JSON.parse(socket.sends[0]!) as { type: string; code: string };
+    expect(err.type).toBe("error");
+    expect(err.code).toBe("SESSION_RUNTIME_ERROR");
   });
 });

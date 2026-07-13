@@ -4,6 +4,7 @@ import type {
   Claude2Attachment,
   Claude2ControlResponse,
   Claude2QueueOperation,
+  EffortLevel,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
@@ -305,6 +306,13 @@ export type Claude2Bridge = {
   sendMessage: (text: string) => void;
   switchModel: (model: string) => void;
   switchPermissionMode: (mode: string) => void;
+  // Per-session effort switch. Unlike model/permission (in-process
+  // control_request), effort requires a CLI relaunch on a direct-pull host:
+  // the server persists metadata.effort, relaunches the CLI with --resume + new
+  // CLAUDE_CODE_EFFORT_LEVEL, and closes the WS so this client reconnects into
+  // the respawned stream. No request_id/rollback — the reconnect either applies
+  // the new effort or the server sends an error frame.
+  switchEffort: (effort: EffortLevel) => void;
   onCompact:
     | ((
         event:
@@ -4009,6 +4017,16 @@ export function useClaude2Session(
           type: "control_request",
           request_id: requestId,
           request: { subtype: "set_permission_mode", mode },
+        });
+      },
+      switchEffort(effort) {
+        // Server persists metadata.effort, relaunches the CLI (--resume + new
+        // CLAUDE_CODE_EFFORT_LEVEL), and closes this WS → scheduleReconnect →
+        // the respawned stream. No control_response correlation (not a CLI
+        // control_request), so no pendingControlRequests tracking.
+        sendToSocket({
+          type: "set_runtime_effort",
+          effort,
         });
       },
       onCompact: null,

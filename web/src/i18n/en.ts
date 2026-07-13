@@ -339,6 +339,11 @@ export const en = {
   "claude2.emptyChat": "Ask Claude a question to get started.",
   "claude2.switchingModel": "Switching to {{model}}...",
   "claude2.modelSwitchFailed": "Model switch failed",
+  "claude2.effort.label": "Effort",
+  "claude2.effort.restartTitle": "Change effort?",
+  "claude2.effort.restartConfirmRunning":
+    "Changing effort restarts the Claude process to apply it. The current turn will be interrupted. Continue?",
+  "claude2.effort.restart": "Restart",
   "claude2.compact.abortedBadge": "Compaction aborted",
   "claude2.compact.abortManual": "Stopped manually",
   "claude2.compact.abortSystem": "System error",

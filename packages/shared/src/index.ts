@@ -299,6 +299,7 @@ export type AgentSession = {
   createdAt: string;
   model?: string;
   permissionMode?: string;
+  effort?: EffortLevel;
   claudeSessionId?: string;
   lastAssistantMessage?: string;
   updatedAt?: string;
@@ -1120,7 +1121,17 @@ export type Claude2StreamClientMessage =
       };
     }
   | Claude2ControlResponse
-  | Claude2StreamControlRequest;
+  | Claude2StreamControlRequest
+  | {
+      // Per-session runtime effort switch. Unlike set_model/set_permission_mode
+      // (in-process control_request), effort has no CLI runtime switch on a
+      // direct-pull host — the server persists it (setEffort), relaunches the
+      // CLI with --resume + new CLAUDE_CODE_EFFORT_LEVEL, and closes the WS so
+      // the client reconnects into the respawned stream. See
+      // docs/research/claude-cli-runtime-config.md (effort Q3).
+      type: "set_runtime_effort";
+      effort: EffortLevel;
+    };
 
 export type SessionStreamServerMessage =
   | {

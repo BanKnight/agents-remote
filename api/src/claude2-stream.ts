@@ -2,7 +2,7 @@ import type { Claude2StreamClientMessage, SessionStreamServerMessage } from "@ag
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, type RuntimeResources, type RuntimeStream } from "./session-registry";
-import type { AgentSessionStatus, SessionType } from "@agents-remote/shared";
+import { EFFORT_LEVELS, type AgentSessionStatus, type SessionType } from "@agents-remote/shared";
 import type { Claude2Runtime } from "./claude2-runtime";
 
 type UpgradeServer = {
@@ -21,6 +21,7 @@ export type Claude2WebSocketData = {
 type StreamSocket = {
   data?: unknown;
   send(message: string | Uint8Array | ArrayBuffer): void;
+  close(code?: number, reason?: string): void;
 };
 
 /** Emit one wire frame: a text JSON string (control frame / real-time row) or a
@@ -200,12 +201,32 @@ export const handleClaude2StreamUpgrade = async (
 
 export class Claude2StreamController {
   private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
+  // Reverse index runtimeKey → live sockets, so an effort switch (which must
+  // reconnect ALL clients of a session to respawn the CLI) can close every
+  // socket even if multiple clients stream the same session.
+  private readonly socketsByRuntimeKey = new Map<string, Set<StreamSocket>>();
 
   constructor(
     private readonly claude2Runtime: Claude2Runtime,
     private readonly runtime: RuntimeResources,
     private readonly sessionRegistry: SessionRegistry,
   ) {}
+
+  private registerSocket(runtimeKey: string, socket: StreamSocket): void {
+    let set = this.socketsByRuntimeKey.get(runtimeKey);
+    if (!set) {
+      set = new Set();
+      this.socketsByRuntimeKey.set(runtimeKey, set);
+    }
+    set.add(socket);
+  }
+
+  private unregisterSocket(runtimeKey: string, socket: StreamSocket): void {
+    const set = this.socketsByRuntimeKey.get(runtimeKey);
+    if (!set) return;
+    set.delete(socket);
+    if (set.size === 0) this.socketsByRuntimeKey.delete(runtimeKey);
+  }
 
   async open(socket: StreamSocket) {
     const data = sessionData(socket);
@@ -216,6 +237,7 @@ export class Claude2StreamController {
     }
 
     console.log(`[claude2-stream] open: sessionId=${data.sessionId} tmux=${data.runtimeKey}`);
+    this.registerSocket(data.runtimeKey, socket);
 
     // Resolve metadata for projectPath and claudeSessionId
     const metadata = await this.sessionRegistry.getAgentMetadata(data.projectName, data.sessionId);
@@ -272,6 +294,40 @@ export class Claude2StreamController {
     }
 
     try {
+      // Per-session effort switch: the CLI has no runtime effort switch on a
+      // direct-pull host, so persist metadata.effort + relaunch the CLI
+      // (--resume + new CLAUDE_CODE_EFFORT_LEVEL) + close every WS for the
+      // session. Clients auto-reconnect → open() → ensureRunning(metadata.effort)
+      // → spawnAndStart with the new effort env. Order is load-bearing: persist
+      // + kill the CLI BEFORE closing sockets, otherwise the reconnect's
+      // ensureRunning sees a live process and early-returns without respawning.
+      // A running turn is interrupted (JSONL has no result → isResume renders
+      // it interrupted) — the accepted cost of switching effort mid-flight.
+      if (parsed.type === "set_runtime_effort") {
+        if (!(EFFORT_LEVELS as readonly string[]).includes(parsed.effort)) {
+          send(socket, {
+            type: "error",
+            code: "SESSION_RUNTIME_ERROR",
+            message: `Invalid effort level: ${parsed.effort}`,
+          });
+          return;
+        }
+        console.log(`[claude2-stream] set_runtime_effort ${parsed.effort}: ${data.runtimeKey}`);
+        await this.sessionRegistry.setEffort(data.sessionId, parsed.effort);
+        await this.claude2Runtime.close(data.runtimeKey);
+        // Close the requesting socket and any other sockets streaming this
+        // session so every client reconnects into the respawned stream.
+        // open() registers each socket, so the index normally already contains
+        // the requester; close `socket` directly so the restart triggers even
+        // if it was never registered, then close the rest (deduped).
+        const others = [...(this.socketsByRuntimeKey.get(data.runtimeKey) ?? [])];
+        socket.close();
+        for (const s of others) {
+          if (s !== socket) s.close();
+        }
+        return;
+      }
+
       if (
         parsed.type === "user" ||
         parsed.type === "control_response" ||
@@ -327,6 +383,8 @@ export class Claude2StreamController {
   }
 
   close(socket: StreamSocket) {
+    const data = sessionData(socket);
+    if (data) this.unregisterSocket(data.runtimeKey, socket);
     const stream = this.streams.get(socket);
     if (stream) {
       this.streams.delete(socket);

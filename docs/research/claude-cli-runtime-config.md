@@ -18,7 +18,7 @@
 |---|---|---|---|
 | **model** | model picker | `control_request{subtype:"set_model"}` ✅ | **已实现**（spawn `--model` + 运行时 `set_model`） |
 | **permission** | mode 切换 | `control_request{subtype:"set_permission_mode"}` ✅ | **已实现**（spawn `--permission-mode` + 运行时 `set_permission_mode`） |
-| **effort** | `/effort` slider | ❌ 无 `control_request`；`/effort` 在 headless 下不可用 | **未实现**——运行时切换需重拉 CLI 或 fork |
+| **effort** | `/effort` slider | ❌ 无 `control_request`；`/effort` 在 headless 下不可用 | **已实现**（spawn env + 运行时重拉+resume；非进程内切换） |
 
 > 结论：model/permission 是"stream-json 原生支持"，对接干净；effort 是"TUI 能力未透出到 stream-json"，对接需要额外手段（重拉或 fork）。
 
@@ -111,7 +111,7 @@
 2. **`--effort <level>` argv flag**（官方二进制字面量证实：`--effort <level>` + `Unknown --effort value '<X>'` + `.effort?["--effort",H.effort]:[]`）。
    - 或 `~/.claude/settings.json` 的 `effortLevel` 键（官方二进制 `effortLevel` 字面量 24 处）。
 
-**本项目现状**：`spawnClaudeDirect` 目前**既不传 `--effort` 也不设 `CLAUDE_CODE_EFFORT_LEVEL`**，effort 完全继承 CLI 内置动态默认。要接入 Q2，最小改动是 `Bun.spawn({ env: { ...process.env, CLAUDE_CODE_EFFORT_LEVEL: level } })`（与项目"env 是 spawn 最可靠通道"的既有模式一致）。
+**本项目已实现**：`spawnClaudeDirect` 的 `Bun.spawn` 经 `buildSpawnEnv`（`claude2-runtime.ts:113-123`）注入 `CLAUDE_CODE_EFFORT_LEVEL`（`if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort`）；effort 来自 `metadata.effort ?? 全局默认`（`ensureRunning` 读 `settingsStore` 解析），并经 `SessionRegistry.setEffort` 持久化到 metadata，`--resume` 重启时重新应用（对齐 model/permissionMode 的持久化模式）。
 
 ### Q3 运行时切换
 
@@ -123,6 +123,22 @@
 - **`/effort` 斜杠在 stream-json 下被解析，但因 headless 不可用**（实测：`--print` 与交互式 stream-json 两种都验证）：发 `/effort high` 的响应是 `model:"<synthetic>"`、`usage` 全 0、`num_turns:0`、`duration_api_ms:0` 的合成消息——**零 API 调用，证明 slash 被拦截解析**（若当文本发给模型必有真实 token 消耗）。但响应内容是 `/effort isn't available in this environment.`。二进制里 `% isn't available in this environment.` 是 `/effort`、local-jsx（`cmd_local_jsx_headless`）、Voice mode 等共用的通用模板——共同点是**需要交互式环境**；stream-json（stdin/stdout 是 pipe、非 TTY）被 CLI 判定为 headless，故这类命令一律不可用。**注意：slash command 与 `!bash` 前缀是两套独立机制，不要混为一谈**——`!` 是 bash 执行前缀、`/` 是内置命令系统，两者解析路径不同。
 
 因此对**直拉官方二进制**的宿主（含本项目），运行时切 effort 的唯一可靠路径是 **重拉 CLI**：用新 `CLAUDE_CODE_EFFORT_LEVEL`（或 `--effort`）+ `--resume <sessionId>` 重启进程。代价：进行中的 turn 被打断（在 JSONL 里以 interrupted 呈现，属既有设计取舍）；历史由 `--resume` 完整恢复。
+
+**本项目已实现（重拉 + resume，复用客户端自动重连）**：
+
+```
+客户端 switchEffort → WS 发 {type:"set_runtime_effort", effort}
+  → claude2-stream.ts message()：
+      ① sessionRegistry.setEffort(sessionId, effort)  // 持久化 metadata.effort
+      ② claude2Runtime.close(runtimeKey)              // 杀 CLI + 销毁 relay（确保重连时 ensureRunning 走 respawn 而非 early-return）
+      ③ close 该 session 全部 WS socket                // session→sockets 索引，多客户端同 session 一并重连
+  → 客户端 socket.onclose (cancelled=false) → scheduleReconnect(500ms)
+  → setConnectionVersion+1 → WS 重建 → open() → ensureRunning(metadata.effort)
+  → spawnAndStart (--resume <claudeSessionId> + 新 CLAUDE_CODE_EFFORT_LEVEL env)
+  → 新 relay 重读 JSONL + session_init{resume:true}（进行中 turn 天然标 interrupted）
+```
+
+关键点：① 复用既有客户端自动重连，**零新增重连代码**；② `runtime.close` 必须在 close socket 之前完成（杀进程 + 销毁 relay），否则重连的 `ensureRunning` 看到 relay 仍 in-flight 会 early-return 不 respawn；③ effort **无 stdout 信号**（`CLAUDE_CODE_EFFORT_LEVEL` 是 env-only），客户端切完靠 detail query invalidate 刷新显示（非流信号）；④ hapi 的 fork-RPC 即时方案（`set-session-config`）直拉派**无法复制**——这是直拉派的等价物，代价是中断当前 turn + 短暂重连。
 
 ### Effort 运行时切换的竞品方案
 
@@ -153,14 +169,14 @@
 |---|---|---|---|---|
 | **model** | 继承 CLI 决策链 | ✅ `--model` + metadata 持久化 | ✅ `set_model` control_request | — |
 | **permission** | 继承 CLI 决策链 | ✅ `--permission-mode` + metadata 持久化 | ✅ `set_permission_mode` + ExitPlanMode `permission_updates` | — |
-| **effort** | 继承 CLI 动态默认 | ❌ 未注入 | ❌ 无可用通道 | Q2 加 `CLAUDE_CODE_EFFORT_LEVEL` env；Q3 复用 `--resume` 重拉路径 |
+| **effort** | 继承 CLI 动态默认 | ✅ `CLAUDE_CODE_EFFORT_LEVEL` env + metadata 持久化 | ✅ 重拉 + resume（`setEffort` + `runtime.close` + close socket → 客户端自动重连 → `ensureRunning` respawn） | — |
 
-**对本项目的结论**：直拉官方二进制（`Bun.spawn`，非 fork）意味着运行时切 effort 今天只能走"重拉 CLI"。Q2（spawn env）与 Q3（重拉切换）实现成本都低：
+**对本项目的结论**：直拉官方二进制（`Bun.spawn`，非 fork）意味着运行时切 effort 只能走"重拉 CLI"。Q2（spawn env）与 Q3（重拉切换）**均已实现**：
 
-- **Q2 最小改动**：`spawnClaudeDirect` 的 `Bun.spawn` 加 `env.CLAUDE_CODE_EFFORT_LEVEL`；`SessionMetadata` 加 `effort?` 字段；`--resume` 重启时重新应用（对齐 model/permissionMode 的持久化模式）。
-- **Q3 最小改动**：复用现有"切换 → 重拉 CLI + `--resume`"路径（代价：进行中 turn 打断）；或在 UI 上把 effort 切换设计为"下次新 turn 生效"（配合 Q2 的 spawn env，避免频繁重拉）。
+- **Q2 已落地**：`buildSpawnEnv` 注入 `CLAUDE_CODE_EFFORT_LEVEL`；`SessionMetadata` 有 `effort?` 字段；`setEffort` 持久化；`--resume` 重启时经 `ensureRunning` 重新应用。
+- **Q3 已落地**：复用客户端自动重连——`set_runtime_effort` → `setEffort` + `runtime.close` + close 全部 socket → 重连 → `ensureRunning` respawn（`--resume` + 新 env）。代价：进行中 turn 打断（以 interrupted 呈现），历史由 `--resume` 保全。UI 对 running 态切换给明确重启提示。
 
-**`metadata.effort` 通道在用真实 CLI 验证前不得实现**——它未被官方二进制字面量证实，且参考实现 hapi 也不走此路。
+**`metadata.effort` 通道（per-user-message 注入）仍不得实现**——它未被官方二进制字面量证实，且参考实现 hapi 也不走此路；本项目走 env + relaunch，不碰这条未证实通道。
 
 ---
 

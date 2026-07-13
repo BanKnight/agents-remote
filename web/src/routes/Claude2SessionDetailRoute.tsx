@@ -73,7 +73,8 @@ import {
   type TurnStats,
   type TurnStatusTone,
 } from "./claude2-adapter";
-import type { Claude2FileHistorySnapshot } from "@agents-remote/shared";
+import type { Claude2FileHistorySnapshot, EffortLevel } from "@agents-remote/shared";
+import { EFFORT_LEVELS } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -377,6 +378,29 @@ export function Claude2Chat({
     detail.data?.session.permissionMode,
   );
 
+  // Effort has no in-process CLI switch on a direct-pull host: the server
+  // relaunches the CLI (--resume + new CLAUDE_CODE_EFFORT_LEVEL) and reconnects
+  // the stream. Warn when a turn is running (it gets interrupted), then switch
+  // and invalidate the detail query — effort has no stream signal, so the
+  // selector only sees the new value after the refetch.
+  const onSelectEffort = async (effort: EffortLevel) => {
+    if (session?.status === "running") {
+      const ok = await confirm({
+        title: t("claude2.effort.restartTitle"),
+        message: t("claude2.effort.restartConfirmRunning"),
+        confirmLabel: t("claude2.effort.restart"),
+        cancelLabel: t("cancel"),
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    bridge.switchEffort(effort);
+    void queryClient.invalidateQueries({
+      exact: true,
+      queryKey: ["projects", projectName, "agent-sessions", sessionId],
+    });
+  };
+
   const [compactStatus, setCompactStatus] = useState<CompactStatus>("idle");
   const [compactStage, setCompactStage] = useState<"running" | "summarizing" | null>(null);
   const [lastCompactAbortReason, setLastCompactAbortReason] = useState<"manual" | "system" | null>(
@@ -545,6 +569,8 @@ export function Claude2Chat({
                               compactStatus={compactStatus}
                               pendingInteraction={pendingInteraction}
                               onCancel={storeAdapter.onCancel}
+                              currentEffort={session?.effort}
+                              onSelectEffort={onSelectEffort}
                             />
                           </ComposerPrimitive.Root>
                         </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -3333,6 +3359,62 @@ function PermissionModeSelector({
   );
 }
 
+// Per-session runtime effort switch. Unlike model/permission (in-process), the
+// CLI has no runtime effort switch on a direct-pull host, so changing effort
+// relaunches the CLI (--resume + new CLAUDE_CODE_EFFORT_LEVEL) and reconnects
+// the stream. The parent owns the side-effect orchestration (switch + detail
+// invalidation + running-turn confirm); this component is purely presentational.
+const EFFORT_LABEL_KEYS = {
+  low: "settings.effort.low",
+  medium: "settings.effort.medium",
+  high: "settings.effort.high",
+  xhigh: "settings.effort.xhigh",
+  max: "settings.effort.max",
+} as const satisfies Record<EffortLevel, string>;
+
+function EffortSelector({
+  currentEffort,
+  onSelectEffort,
+}: {
+  currentEffort?: EffortLevel;
+  onSelectEffort: (effort: EffortLevel) => void;
+}) {
+  const { t } = useT();
+  // Default "high" matches DEFAULT_CLAUDE_RUNTIME.effort (Opus 4.8 built-in);
+  // shown while the session detail is still loading.
+  const current: EffortLevel = currentEffort ?? "high";
+  return (
+    <OptionMenu
+      accent="assistant"
+      align="start"
+      cancelLabel={t("cancel")}
+      trigger={
+        <button
+          type="button"
+          title={t("claude2.effort.label")}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant/80 hover:text-assistant-soft hover:bg-surface-raised/50 transition cursor-pointer"
+        >
+          {t("claude2.effort.label")}: {t(EFFORT_LABEL_KEYS[current])}
+          <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      }
+      items={EFFORT_LEVELS.map((effort) => ({
+        label: t(EFFORT_LABEL_KEYS[effort]),
+        isActive: effort === current,
+        onSelect: () => onSelectEffort(effort),
+      }))}
+    />
+  );
+}
+
 // assistant-ui's default directive formatter writes `:command[/x]{name=x}` into the
 // composer, which is meant for an LLM runtime to parse back into a tool call. Our
 // composer text is piped straight to the Claude CLI stdin, which only understands a
@@ -3422,6 +3504,8 @@ function ComposerWithInterrupt({
   compactStatus,
   pendingInteraction,
   onCancel,
+  currentEffort,
+  onSelectEffort,
 }: {
   currentModel?: string;
   currentResolved?: string;
@@ -3436,6 +3520,8 @@ function ComposerWithInterrupt({
   compactStatus: CompactStatus;
   pendingInteraction: boolean;
   onCancel?: () => void;
+  currentEffort?: EffortLevel;
+  onSelectEffort: (effort: EffortLevel) => void;
 }) {
   const { t } = useT();
   // thread.isRunning drives the stop overlay for assistant turns; compactStatus
@@ -3547,6 +3633,7 @@ function ComposerWithInterrupt({
           currentMode={permissionMode}
           availableModes={availablePermissionModes}
         />
+        <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
         {showStop ? (
           <button
             type="button"

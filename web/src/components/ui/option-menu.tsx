@@ -11,7 +11,7 @@ import {
 } from "./dropdown-menu";
 import { Dialog, DialogContent, DialogTrigger } from "./dialog";
 
-export type OptionMenuAccent = "user" | "permission";
+export type OptionMenuAccent = "user" | "permission" | "assistant";
 
 /**
  * 一条选择器项。`items` 在桌面 popover 与移动 action sheet 两条形态间共享同一份声明，
@@ -31,7 +31,7 @@ type OptionMenuProps = {
    * 不覆盖调用方原有 className / disabled（如 PermissionModeSelector 的 pending 态）。
    */
   trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
-  /** 选中态角色色（claude2 角色色刻意保留）：user / permission，默认 user。 */
+  /** 选中态角色色（claude2 角色色刻意保留）：user / permission / assistant，默认 user。 */
   accent?: OptionMenuAccent;
   /** 桌面 popover 对齐，默认 start（model/mode 都左对齐向上展开）。 */
   align?: "start" | "center" | "end";
@@ -44,7 +44,9 @@ type OptionMenuProps = {
  * 抽为纯函数便于单测（对称 action-menu.tsx 的 `mobileSheetItemClasses`）。
  */
 export function optionActiveClasses(accent: OptionMenuAccent = "user"): string {
-  return accent === "permission" ? "text-permission bg-permission/10" : "text-user bg-user/10";
+  if (accent === "permission") return "text-permission bg-permission/10";
+  if (accent === "assistant") return "text-assistant bg-assistant/10";
+  return "text-user bg-user/10";
 }
 
 /**

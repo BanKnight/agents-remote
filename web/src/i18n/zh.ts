@@ -339,6 +339,11 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.emptyChat": "向 Claude 提问以开始对话。",
   "claude2.switchingModel": "正在切换到 {{model}}...",
   "claude2.modelSwitchFailed": "模型切换失败",
+  "claude2.effort.label": "努力度",
+  "claude2.effort.restartTitle": "更改努力度？",
+  "claude2.effort.restartConfirmRunning":
+    "更改努力度需要重启 Claude 进程才能生效，当前对话回合将被中断。是否继续？",
+  "claude2.effort.restart": "重启",
   "claude2.compact.abortedBadge": "压缩中止",
   "claude2.compact.abortManual": "手动停止",
   "claude2.compact.abortSystem": "系统错误",

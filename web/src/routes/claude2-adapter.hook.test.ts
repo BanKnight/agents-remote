@@ -336,6 +336,7 @@ describe("useClaude2Session websocket lifecycle", () => {
       result.current.bridge.sendMessage("world");
       result.current.bridge.switchModel("opus");
       result.current.bridge.switchPermissionMode("default");
+      result.current.bridge.switchEffort("max");
     });
 
     expect(result.current.currentModel).toBe("opus");
@@ -366,6 +367,13 @@ describe("useClaude2Session websocket lifecycle", () => {
           s.includes('"type":"control_request"') &&
           s.includes('"subtype":"set_permission_mode"') &&
           s.includes('"mode":"default"'),
+      ),
+    ).toBe(true);
+    // effort switch: not a CLI control_request (no request_id), just a
+    // set_runtime_effort frame the server turns into a CLI relaunch + reconnect
+    expect(
+      socket.sent.some(
+        (s) => s.includes('"type":"set_runtime_effort"') && s.includes('"effort":"max"'),
       ),
     ).toBe(true);
 
