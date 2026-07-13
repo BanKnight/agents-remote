@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   createRootRoute,
   createRoute,
@@ -5,9 +6,24 @@ import {
   lazyRouteComponent,
   Outlet,
   redirect,
+  useNavigate,
 } from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
 import { parseWorkbenchScope, validateWorkbenchSearch } from "./workbench-model";
+
+// 无效 URL（无任何路由匹配）→ 静默重定向到 `/`（工作台，有完整导航）。
+// 旧方案是 TanStack 默认裸「Not Found」页：整页 0 个可点元素、无 shell，登录后被锁死；
+// 移动 PWA（standalone 无地址栏）重开还会恢复坏 URL 反复回到该死页。自动重定向让坏 URL
+// 自愈——落到 `/` 即有路可走。body 自带深色 radial 背景（见 index.html），`return null`
+// 不闪白。未登录时 AuthGate 先显示登录表单，本组件在 children 内、登录后才挂载触发。
+// `/` 恒命中 indexRoute，NotFound 卸载，无环路。
+const NotFoundRedirect = () => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void navigate({ to: "/" });
+  }, [navigate]);
+  return null;
+};
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -15,6 +31,7 @@ const rootRoute = createRootRoute({
       <Outlet />
     </AuthGate>
   ),
+  notFoundComponent: NotFoundRedirect,
 });
 
 // ── workbench 共享 pathless layout（设计 workbench-stable-refactor.md Phase 1）──────────────
