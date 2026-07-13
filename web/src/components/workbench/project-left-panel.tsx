@@ -101,7 +101,13 @@ export function ProjectLeftPanel({
       {scope.kind === "project" ? (
         // Phase 3 middle tab bar（实例/历史/文件/git，project scope，从中栏移此切左栏主体）。
         // 项目名 header + 返回 /projects 在 WorkbenchShell PanelHeader（WorkbenchRoute leftPanelTitle 注入）。
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
+        // nav landmark（aria-label=workbench.projectsAria="Projects"）：view 切换是项目内导航语义，
+        // 给 middle tab bar 一个独立 navigation 地标，与活动栏 nav "Primary navigation" 区分（后者
+        // aria-label=nav.primaryAria）；e2e projectsNav 据此定位 middle tab 按钮。
+        <nav
+          aria-label={t("workbench.projectsAria")}
+          className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5"
+        >
           {middleTabs.map((opt) => (
             <TabButton
               active={opt.id === resolvedTab}
@@ -110,7 +116,7 @@ export function ProjectLeftPanel({
               onClick={() => onTabChange?.(opt.id)}
             />
           ))}
-        </div>
+        </nav>
       ) : null}
       <div className="min-h-0 flex-1 overflow-hidden">
         {scope.kind === "global" ? overview : middleBody}

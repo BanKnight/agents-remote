@@ -17,9 +17,11 @@ test("authenticated user can browse Project files and preview text and images", 
   // right panel RightPanelTabs also renders a FilesPanel inspection (same
   // "Project files" ListGroup + "Go to root" breadcrumb), so all file-tree
   // selectors are scoped to the left panel aside (DOM 第 2 个 complementary:
-  // 活动栏=0/左栏=1/右栏=2) to disambiguate. File preview selectors stay
-  // global: the right panel's preview is an empty state without aria-label,
-  // so "File preview" only resolves to the middle-column FileTabPreview.
+  // 活动栏=0/左栏=1/右栏=2) to disambiguate. File preview 用 getByRole("region")
+  //（visibility-aware）：中栏 keep-alive 多 file tab 时，inactive tab 的 FileTabPreview
+  // 仍挂载（display:none 保 WebSocket/relay 长连 §7.4），DOM 内多个 <section aria-label=
+  // "File preview">；getByLabel 不过滤 hidden 会命中多个（strict mode），而 getByRole
+  //("region") 默认排除 hidden → 只命中活动 tab 的可见预览。
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
@@ -45,14 +47,16 @@ test("authenticated user can browse Project files and preview text and images", 
     .getByRole("button", { name: /index\.ts/ })
     .first()
     .click();
-  await expect(page.getByLabel("File preview")).toContainText("fileBrowserE2e");
+  await expect(page.getByRole("region", { name: "File preview" })).toContainText("fileBrowserE2e");
 
   await page.getByRole("complementary").nth(1).getByRole("button", { name: "Root" }).click();
   await files
     .getByRole("button", { name: /README\.md/ })
     .first()
     .click();
-  await expect(page.getByLabel("File preview")).toContainText("file-browser-e2e-text-ok");
+  await expect(page.getByRole("region", { name: "File preview" })).toContainText(
+    "file-browser-e2e-text-ok",
+  );
 
   await files
     .getByRole("button", { name: /logo\.svg/ })

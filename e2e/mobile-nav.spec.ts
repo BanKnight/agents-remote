@@ -31,14 +31,16 @@ test("mobile primary nav has three items: projects / files / settings", async ({
 });
 
 test("mobile / renders [projects] overview header with create button", async ({ page }) => {
-  // [项目] 总览 header = MobilePageHeader（标题「项目总览」+ 右侧 + 新建按钮）。
+  // [项目] 总览 header = MobilePageHeader（仅标题「项目总览」，无 actions）。+ 新建项目按钮落在
+  // GlobalProjectsOverview 主体 ViewSwitcher 行左侧（批 D 位置，非 header 内），故 Create 选择器
+  // 限定到 page 而非 header。
   const header = page.locator("header").first();
   await expect(header).toBeVisible();
   // 标题（workbench.global = 项目总览 / Projects overview）。
   await expect(header.getByText(/项目总览|Projects overview/)).toBeVisible();
-  // + 新建按钮（aria-label = home.createProjectAria）。
+  // + 新建项目按钮（aria-label = home.createProjectAria，在主体 ViewSwitcher 行）。
   await expect(
-    header.getByRole("button", { name: /创建或采用项目|Create or adopt Project/ }),
+    page.getByRole("button", { name: /创建或采用项目|Create or adopt Project/ }),
   ).toBeVisible();
 });
 

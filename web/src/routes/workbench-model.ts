@@ -173,9 +173,15 @@ export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchRightTab>
 
 /**
  * 中栏总览视图（设计文档 workbench-views.md）。URL `view` 优先（语义核心、刷新可分享），
- * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grid。
+ * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grouped——global scope 是
+ * 项目总览，首屏需显所有项目（含无实例项目，仅 grouped 视图含空项目）；grid/table 仅显实例，
+ * 无实例项目不可见无法进入。project scope 因 filterWorkbenchViews 隐藏 grouped，atom=grouped
+ * 时 resolvedView 回退 grid（见 InstanceLeftOverview），故本默认值不影响 project scope。
  */
-export const workbenchViewAtom = atomWithLocalOnlyStorage<WorkbenchView>("workbenchView", "grid");
+export const workbenchViewAtom = atomWithLocalOnlyStorage<WorkbenchView>(
+  "workbenchView",
+  "grouped",
+);
 
 /**
  * 一级导航（活动栏，设计文档 activity-bar-redesign.md §3）。projects/files/settings，

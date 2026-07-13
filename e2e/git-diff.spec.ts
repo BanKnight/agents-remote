@@ -25,7 +25,10 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   await expect(files.getByRole("button", { name: /notes\.txt/ })).toBeVisible();
 
   await files.getByRole("button", { name: /README\.md/ }).click();
-  const diff = page.getByLabel("Git file diff");
+  // 中栏 keep-alive 多 git tab 时 inactive tab 的 GitFileDiffPanel 仍挂载（display:none，
+  // §7.4），DOM 内多个 <section aria-label="Git file diff">；getByRole("region") 默认排除
+  // hidden → 只命中活动 tab 的可见 diff（getByLabel 会命中多个触发 strict mode）。
+  const diff = page.getByRole("region", { name: "Git file diff" });
   await expect(diff).toContainText("README.md");
   await expect(diff).toContainText("+git-diff-e2e-worktree-ok");
 
