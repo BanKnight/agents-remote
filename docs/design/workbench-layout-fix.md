@@ -21,13 +21,13 @@
 
 > 🔒 **上下文压缩后先读本节**。最新进度 = 当前阶段。
 
-- **当前阶段**：阶段 2c 完成 → 下一步阶段 2d（移动端守卫 + refsCount 语义）
-- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）、阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName）
-- **已改文件**（阶段 2c）：`web/src/routes/WorkbenchRoute.tsx`（导入 `findTabRefLeaf`；新增 `navigateSession(ref)` helper —— project scope 用 `{kind:project,key:ref.projectName}`、global 保持 scope；`focusPanel`/`onSelectTab`(查 ref，session→navigateSession/file→navigateToFile(ref.projectName))/`onCloseTab` 回退/`prune` 回退/`onDrop` drag 五处 session navigate 改调 `navigateSession`；`navigateToFile` params.key 改用 projectName 参数（跨项目 file tab）；`onSelectTab` 去 `parseFileTabId` 改 `findTabRefLeaf`+`ref.kind` 分发）
-- **下一步**：阶段 2d —— `useGlobalInstanceRefs()` 加 `enabled = isDesktop && layout.root !== null`（移动端不空跑 fan-out）；`InstanceArea` `refsCount`（`WorkbenchRoute.tsx:538`）改 `globalRefs.length`（hasActiveInstances 语义 = 中栏 tab 是否可恢复）。
-- **阶段 2c 验证**：DOM 几何探针（projA=agents-remote / projB=claude-template 跨项目）—— ① projB focus 开 sidB tab（V4 projectName=projB）；② **projA scope 下 sidB tab 仍在（单一 layout 跨项目共存）**；③ **点中栏 sidB tab → URL `/projects/projB/session/sidB`（用 ref.projectName=projB），非 `/projects/projA/session/sidB`（scope.key）**；④ 0 console error。门禁 format/lint/typecheck/test（507）全过。
+- **当前阶段**：阶段 2d 完成 → 下一步阶段 3（git diff tab）
+- **已完成阶段**：阶段 0（文档 + memory）、阶段 1（左栏 header）、阶段 2a（refs 全局聚合）、阶段 2b（单一 layout 数据模型 + V3→V4 迁移）、阶段 2c（跨项目 tab 聚焦 URL 用 ref.projectName）、阶段 2d（移动端守卫 + refsCount 语义）
+- **已改文件**（阶段 2d）：`web/src/routes/WorkbenchRoute.tsx`（`refsCount={refs.length}` → `globalRefs.length` —— 中栏单一 layout 后空态基于全局实例）；`web/src/components/workbench/instance-area.tsx`（`refsCount` prop 注释更新为 globalRefs.length 语义）。**未加 `layout.root !== null` 守卫**（会让空工作区 refsCount=0 误显创建态）；移动端守卫复用 2a 的 project scope trick（`useGlobalInstanceCandidates` 非 global scope 不 fan-out，返空 refs）。
+- **下一步**：阶段 3 —— git diff tab 对齐 file tab（`GitPanelRef` + `/projects/$key/git/$` route + PanelRouter git 分支 + `GitFileList` `onSelectGitFile`）。
+- **阶段 2d 验证**：DOM 探针（桌面 viewport → 登录 → 进 test 项目）—— InstanceArea 渲染 EmptyInstanceArea（`data-drop-empty`），`emptyText = emptyInstanceNoTab`（"Click an instance on the left..."，`hasActiveInstances=true` 空态提示，`globalRefs.length>0`），0 console error；移动端走 MobileWorkbench 不经 InstanceArea（`WorkbenchRoute.tsx:487` `if(!isDesktop) return <MobileWorkbench/>`，故 `refsCount` 仅桌面消费）。门禁 format/lint/typecheck/test（507）全过。
 - **已知风险**（待对应阶段处理）：
-  - 2d 移动端守卫：`useGlobalInstanceRefs()` 移动端不空跑 fan-out + `refsCount` 改 `globalRefs.length`。
+  - 阶段 3 git scope 编码：splat 不便编码 staged/worktree，走 search param；tabId 含 scope 避免同 path 不同 scope 冲突。
 
 ## 阶段计划
 

@@ -568,7 +568,7 @@ function WorkbenchContent({
         onSetDragPointer={onSetDragPointer}
         onToggleMaximize={onToggleMaximize}
         projectName={ctx.projectKey}
-        refsCount={refs.length}
+        refsCount={globalRefs.length}
         setActiveZone={setActiveZone}
       />
       {closeHolder}

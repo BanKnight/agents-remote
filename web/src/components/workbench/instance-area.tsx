@@ -217,7 +217,9 @@ type InstanceAreaProps = {
   layout: WorkbenchLayoutV3;
   /** 创建实例 API（WorkspaceTree 的 EmptyInstanceArea 空态 + create 透传）。 */
   create: CreateSessionApi;
-  /** 活跃实例数（refs.length，EmptyInstanceArea 双语义 hasActiveInstances）。 */
+  /** 全局活跃实例数（globalRefs.length，EmptyInstanceArea 双语义 hasActiveInstances）。
+   * 中栏单一 layout（VSCode 式）后 tab 跨项目共存，中栏空时是否显空态提示（true）/ 创建态
+   * （false）基于全局实例，而非当前 scope（InstanceArea 仅桌面渲染，globalRefs 桌面 fan-out）。 */
   refsCount: number;
   /** 拖放高亮区（DropZoneOverlay + WorkspaceTree activeZone）。 */
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
