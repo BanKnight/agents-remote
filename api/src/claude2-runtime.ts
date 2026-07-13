@@ -206,6 +206,23 @@ export class Claude2Runtime implements RuntimeResources {
     return { model: state.model, permissionMode: state.permissionMode };
   }
 
+  // Resolve a model id for a runtime control_request{set_model} using the SAME
+  // resolveSpawnModel logic as spawn: apply modelMapping + [1m] suffix so a
+  // mid-session model switch matches spawn-time resolution. Without this the
+  // controller forwards the raw tier alias the client sent, losing [1m] and any
+  // concrete-id version pinning configured via modelMapping. Settings read
+  // failure falls back to the original model (resolveSpawnModel with no runtime
+  // config is a passthrough) — same posture as resolveSpawnInputs.
+  async resolveControlModel(model: string | undefined): Promise<string | undefined> {
+    const settings = this.settingsStore
+      ? await this.settingsStore.read().catch((err) => {
+          console.warn("[claude2] settings read failed in resolveControlModel:", err);
+          return undefined;
+        })
+      : undefined;
+    return resolveSpawnModel(model, settings?.runtimes.claude);
+  }
+
   setClaudeSessionId(sessionName: string, claudeSessionId: string, model?: string): void {
     const state = this.processes.get(sessionName);
     if (state) {

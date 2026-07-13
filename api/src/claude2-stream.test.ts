@@ -177,7 +177,9 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     };
   };
 
-  const makeController = () => {
+  const makeController = (opts?: {
+    resolveControlModel?: (model: string | undefined) => Promise<string | undefined>;
+  }) => {
     const writes: string[] = [];
     const injections: Array<{ key: string; line: string }> = [];
     const claude2Runtime = {
@@ -187,6 +189,11 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
       injectLiveLine: (key: string, line: string) => {
         injections.push({ key, line });
       },
+      // Default passthrough = default config (alias mapping, 1m off): the
+      // controller forwards the model unchanged. Tests inject a resolver to
+      // simulate modelMapping/1m resolution.
+      resolveControlModel:
+        opts?.resolveControlModel ?? ((m: string | undefined) => Promise.resolve(m)),
     };
     const controller = new Claude2StreamController(
       claude2Runtime as unknown as Claude2Runtime,
@@ -208,6 +215,32 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
     // No error frame, no fabricated switch_model_result — the CLI replies on stdout
     // and the relay forwards it; the controller must not synthesize one.
+    expect(socket.sends).toEqual([]);
+  });
+
+  test("set_model applies spawn-time model resolution (modelMapping + [1m]) before forwarding", async () => {
+    // resolveControlModel is the runtime's spawn-equivalent resolver; stub it to
+    // simulate modelMapping.opus=claude-opus-4-8 + enable1mContext so the raw
+    // "opus" alias the client sent is rewritten to the concrete id + [1m].
+    const { controller, writes } = makeController({
+      resolveControlModel: async () => "claude-opus-4-8[1m]",
+    });
+    const socket = makeSocket();
+    const msg = {
+      type: "control_request",
+      request_id: "req-model",
+      request: { subtype: "set_model", model: "opus" },
+    };
+    await controller.message(socket, JSON.stringify(msg));
+    expect(writes).toHaveLength(1);
+    const forwarded = JSON.parse(writes[0]!) as {
+      type: string;
+      request_id: string;
+      request: { subtype: string; model: string };
+    };
+    expect(forwarded.type).toBe("control_request");
+    expect(forwarded.request_id).toBe("req-model");
+    expect(forwarded.request.model).toBe("claude-opus-4-8[1m]");
     expect(socket.sends).toEqual([]);
   });
 

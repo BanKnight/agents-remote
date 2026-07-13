@@ -277,13 +277,28 @@ export class Claude2StreamController {
         parsed.type === "control_response" ||
         parsed.type === "control_request"
       ) {
-        // All client→CLI messages are forwarded verbatim to stdin: user text,
-        // permission control_response (allow/deny), and control_request actions
+        // Client→CLI messages are forwarded to stdin: user text, permission
+        // control_response (allow/deny), and control_request actions
         // (set_model / set_permission_mode / interrupt). The CLI switches
         // model/mode in-process and replies control_response on stdout, which
         // the relay forwards automatically. The CLI process stays alive.
+        //
+        // set_model is the one exception to verbatim forwarding: resolve the
+        // model via resolveControlModel (same resolveSpawnModel as spawn —
+        // modelMapping + [1m]) so a mid-session switch matches spawn-time
+        // resolution. Without this the raw tier alias the client sent would
+        // lose [1m] / version pinning. request_id is untouched → CLI
+        // control_response correlation holds. Default config (alias mapping,
+        // 1m off) resolves to the same value → no-op.
+        let forwarded: Claude2StreamClientMessage = parsed;
+        if (parsed.type === "control_request" && parsed.request.subtype === "set_model") {
+          const resolved = await this.claude2Runtime.resolveControlModel(parsed.request.model);
+          if (resolved && resolved !== parsed.request.model) {
+            forwarded = { ...parsed, request: { ...parsed.request, model: resolved } };
+          }
+        }
         console.log(`[claude2-stream] message ${parsed.type}: ${data.runtimeKey}`);
-        await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(parsed) + "\n");
+        await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
 
         // The CLI never echoes user input on stream-json stdout (live capture:
         // 0 user-type stdout lines, for both plain text and slash commands).

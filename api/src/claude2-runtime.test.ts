@@ -10,6 +10,7 @@ import {
   Claude2Runtime,
 } from "./claude2-runtime";
 import type { ClaudeRuntimeConfig, ProviderConfig } from "@agents-remote/shared";
+import type { SettingsStore } from "./settings-store";
 
 test("buildSeedInitLine uses seed_init subtype so server-side init capture skips it", () => {
   const line = buildSeedInitLine("opus", "plan");
@@ -480,4 +481,37 @@ test("resolveSpawnModel does not double-append [1m]", () => {
   expect(resolveSpawnModel("claude-opus-4-8[1m]", { ...aliasRuntime, enable1mContext: true })).toBe(
     "claude-opus-4-8[1m]",
   );
+});
+
+// ── resolveControlModel: runtime set_model 用与 spawn 同源的解析 ──
+
+const makeSettingsStore = (claude: ClaudeRuntimeConfig): SettingsStore =>
+  ({ read: async () => ({ providers: [], runtimes: { claude } }) }) as unknown as SettingsStore;
+
+test("resolveControlModel resolves tier alias via settings modelMapping (matches spawn)", async () => {
+  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(concreteRuntime));
+  expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6");
+});
+
+test("resolveControlModel appends [1m] when enable1mContext on (matches spawn)", async () => {
+  const runtime = new Claude2Runtime(
+    tmpdir(),
+    makeSettingsStore({ ...concreteRuntime, enable1mContext: true }),
+  );
+  expect(await runtime.resolveControlModel("claude-opus-4-8")).toBe("claude-opus-4-8[1m]");
+});
+
+test("resolveControlModel passes model through when settingsStore absent", async () => {
+  // No settingsStore → resolveSpawnModel(model, undefined) is a passthrough
+  // (default posture, e.g. legacy runtimes constructed without settings).
+  const runtime = new Claude2Runtime(tmpdir());
+  expect(await runtime.resolveControlModel("opus")).toBe("opus");
+});
+
+test("resolveControlModel falls back to original model when settings read fails", async () => {
+  const failing = {
+    read: async () => Promise.reject(new Error("settings unreadable")),
+  } as unknown as SettingsStore;
+  const runtime = new Claude2Runtime(tmpdir(), failing);
+  expect(await runtime.resolveControlModel("opus")).toBe("opus");
 });
