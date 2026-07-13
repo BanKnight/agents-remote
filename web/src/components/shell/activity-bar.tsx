@@ -35,7 +35,7 @@ type ActivityBarItem = {
  * 竖工具条：顶部主组 [项目]/[文件] 各自 `navigate` 到独立路由——[文件] 跳 `/files`（全局文件
  * rootBrowse，独立 scope 入口，设计 workbench-stable-refactor Phase 2）；[项目] 跳 `/projects`
  *（全局项目总览）。两端入口语义与移动 `MobilePrimaryNav` 一一对应（`Link to="/files"`/`to="/"`）。
- * active 跟随 URL pathname（不再走 `workbenchNavAtom`）：[项目] = `/` 或 `/projects` 前缀（含
+ * active 跟随 URL pathname：[项目] = `/` 或 `/projects` 前缀（含
  * project scope `/projects/$key`）；[文件] = `/files`。底部 [设置] 用 `mt-auto` 置底且开
  * `SettingsDialog` 居中弹窗（决策 44，取代旧跳 `/settings` 路由），active 由 `settingsOpen`。
  */

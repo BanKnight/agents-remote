@@ -18,6 +18,7 @@ import {
   type WorkbenchView,
   inferSessionTypeFromId,
   parseFileTabId,
+  splitFilePath,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   type SessionPanelRef,
@@ -131,8 +132,8 @@ export function MobileWorkbench({ focusId, scope }: MobileWorkbenchProps) {
 function MobileFileFocus({ path }: { path: string }) {
   const { t } = useT();
   const navigate = useNavigate();
-  // 全路径首段 = projectName（与 resolveRootBrowseTarget 同语义）。返回回项目列表态。
-  const projectName = path.slice(0, path.indexOf("/")) || path;
+  // 全路径首段 = projectName（splitFilePath 与 resolveRootBrowseTarget 同语义，正确处理无 `/` 异常降级）。返回回项目列表态。
+  const projectName = splitFilePath(path).projectName;
   const back = () => {
     void navigate({ to: "/projects/$key", params: { key: projectName } });
   };
