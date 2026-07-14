@@ -1139,14 +1139,27 @@ export function dropIntoLeaf(
       root = after.root;
     }
   }
-  if (!root || !containsId(root, targetLeafId)) {
+  if (!root) {
     const leaf = createLeaf(ref);
     return { ...layout, root: leaf, activeGroupId: leaf.id, maximized: null };
+  }
+  // removeTabFromLeaf 可能让 targetLeafId 不在树——两种情形：
+  // ① target 就是源 leaf 且删后清空 → 子树提升，target leaf 消失；
+  // ② target 与源 leaf 在同 split，删源后子树提升波及 target。
+  // 兜底把 target 收敛到提升后树的首 leaf（保持其余 tab 不丢），再按 zone split。
+  let resolvedTargetId = targetLeafId;
+  if (!containsId(root, resolvedTargetId)) {
+    const first = firstLeaf(root);
+    if (!first) {
+      const leaf = createLeaf(ref);
+      return { ...layout, root: leaf, activeGroupId: leaf.id, maximized: null };
+    }
+    resolvedTargetId = first.id;
   }
   const direction: SplitDirection = zone === "left" || zone === "right" ? "horizontal" : "vertical";
   const newLeafFirst = zone === "left" || zone === "up";
   const newLeaf = createLeaf(ref);
-  const newRoot = splitLeafInTree(root, targetLeafId, newLeaf, direction, newLeafFirst);
+  const newRoot = splitLeafInTree(root, resolvedTargetId, newLeaf, direction, newLeafFirst);
   return { ...layout, root: newRoot, activeGroupId: newLeaf.id, maximized: null };
 }
 

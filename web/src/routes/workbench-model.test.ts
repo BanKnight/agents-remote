@@ -707,6 +707,24 @@ test("dropIntoLeaf: drop 到 maximized leaf → 清 maximized", () => {
   expect(r.maximized).toBeNull();
 });
 
+// 源 leaf 单 tab，drop 到自身 edge：removeTab 让源 leaf 清空、子树提升、targetLeafId 消失。
+// 旧 bug：走兜底 createLeaf 丢掉提升后树里其余 tab，只剩拖动源。修复后 target 收敛到提升后首 leaf
+// 再按 zone split，其余 tab 保留。
+test("dropIntoLeaf: 源 leaf 单 tab 拖到自身 down（target 消失）→ 提升后首 leaf 之上分屏，不丢其余 tab", () => {
+  // 上 leaf=file(单)，下 leaf=2 终端；拖 file 到源 leaf 自身的 down。
+  const l = v3({ root: split("s", "vertical", [leaf("top", ["f"]), leaf("bot", ["a", "b"])]) });
+  const r = dropIntoLeaf(l, ref("p", "f"), "top", "down");
+  expect(shape(r.root)).toBe("v[(a|b),(f)]");
+  valid(r);
+});
+
+test("dropIntoLeaf: 源 leaf 单 tab 拖到自身 right（target 消失）→ 不丢其余 tab", () => {
+  const l = v3({ root: split("s", "horizontal", [leaf("L", ["f"]), leaf("R", ["a", "b"])]) });
+  const r = dropIntoLeaf(l, ref("p", "f"), "L", "right");
+  expect(shape(r.root)).toBe("h[(a|b),(f)]");
+  valid(r);
+});
+
 // ── resizeSplitChildren ───────────────────────────────────────────────────────
 
 test("resizeSplitChildren: 守恒（左增 = 右减）", () => {
