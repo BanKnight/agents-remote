@@ -105,9 +105,9 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 table 视图（`SessionTable`）行交互与列宽三条契约（与 grid 卡片「整行进聚焦 + ⋯ 改名/关闭」语义对齐，仅呈现形式从卡片改为紧凑行）：
 
 - **行整体可点 → 开/激活 tab**：整行点击 = onFocus（打开或激活该实例 tab），与 grid 卡片单击同语义。`<tr onClick={onFocus}>` + `cursor-pointer`；操作列按钮 `stopPropagation` 防冒泡。focus 不再单列按钮承担（旧行不整体可点、▶ 按钮触发 focus 的设计废弃——行点击是更直观的主路径，▶ 按钮冗余）。
-- **操作列 = 改名 + 关闭**：并排两 icon 按钮（✎ rename + ✕ close），与 InstanceCard ⋯ action-menu（改名/关闭）同语义、table 形式化为内联按钮。close 按钮在 `onClose` 缺省时不渲染（不可关闭的实例）。
+- **操作列 = ⋯ 菜单（收起改名 + 关闭）**：与 InstanceCard / GroupedProjectsList 同一 `ActionMenu` 原语（桌面 popover / 移动 action sheet 自适应），单个 ⋯ 触发器收起 rename + close，列宽从 `w-20`(两按钮并排) 收窄到 `w-14`(56px)。trigger `stopPropagation`（click + keydown 两路）防冒泡到行 onFocus；`onClose`/`onRename` 全缺省时按钮不渲染（不可关闭/改名的实例）。
 - **project 列 = 进项目超链接（global 表）**：project 单元格渲染为 primary 色 `<button>`（`onEnterProject` 回调 navigate `/projects/$key`），`stopPropagation` 不触发行 onFocus；`block truncate` 截断长项目名 + `title` 全名。`onEnterProject` 缺省（project scope 表无此列）回退纯文本。project 是进项目入口、不参与窄屏收缩。
-- **窄容器优先收缩 activity 列**：列宽 `name=w-full`（吃剩余，内层 `truncate`）、`project=w-24`（链接）、`activity=w-28`、`actions=w-20` 固定。表格外层 `@container`，activity 列 th+td 挂 `@max-[22rem]:hidden`——容器（左栏拖窄 / 移动）<22rem 时「最后活动」整列消失，把空间还给 name 主列 + project 链接列（收缩优先级 activity > project，因 project 是入口不收缩）。
+- **窄容器收缩顺序：activity 先截断→隐藏，name 最后吸收**：列宽 `name=w-full`（最后吸收列，内层 `truncate`）、`project=w-24`（链接，入口不收缩）、`activity=w-28 @max-[26rem]:w-16 @max-[22rem]:hidden`（三段式）、`actions=w-14` 固定。表格外层 `@container`，activity 列按容器宽度三段响应——宽容器(≥26rem) `w-28`(112px) 显示完整相对时间；`@max-[26rem]:w-16`(<416px) 收窄到 64px，th+td 加 `max-w-0` + 内层 `block truncate` 截断「最后活动」文字；`@max-[22rem]:hidden`(<352px) th+td 整列消失。name 是 `w-full` 唯一吸收列，activity 收窄/隐藏释放的空间全流向 name——name 在 activity 完全消失前保持稳定、最后才截断（收缩优先级 activity > name：最后活动先截断变窄再整列隐藏，而非会话名先截断；与用户预期一致）。
 
 ## 6. 视图切换器
 

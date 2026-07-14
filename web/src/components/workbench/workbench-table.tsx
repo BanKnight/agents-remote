@@ -2,6 +2,8 @@ import type { AgentProvider } from "@agents-remote/shared";
 import type { ReactNode } from "react";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { type ShellTone, sessionMarker, StatusMarker } from "../shell/shell-primitives";
+import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+import { ShellIcon } from "../shell/icons";
 import { relativeTime } from "./history-list";
 
 /**
@@ -10,7 +12,7 @@ import { relativeTime } from "./history-list";
  * - `name`：类型 marker + 会话名（displayName，主列，§12 一等显示；marker 并入此列，
  *   不再单列 type，§10 StatusMarker 包 sessionMarker）。
  * - `activity`：最后活动（relativeTime，数据源 session.updatedAt ?? createdAt）。
- * - `actions`：✎ 改名 + ✕ 关闭（整行点击承担 focus，见 §5.3 行契约）。
+ * - `actions`：⋯ 菜单（收起改名 + 关闭，与 InstanceCard 同原语；整行点击承担 focus，见 §5.3 行契约）。
  */
 export type TableColumn = "project" | "name" | "activity" | "actions";
 
@@ -61,11 +63,7 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
         <thead className="sticky top-0 z-10 bg-surface-raised">
           <tr className="border-b border-neutral-line">
             {columns.map((col) => (
-              <th
-                className={`px-3 py-2 text-left text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted ${colWidthClass(col)}`}
-                key={col}
-                scope="col"
-              >
+              <th className={thClass(col)} key={col} scope="col">
                 {t(COL_HEADER_KEY[col])}
               </th>
             ))}
@@ -92,27 +90,42 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
 }
 
 /**
- * 列宽 class（table-fixed 下严格生效）。name 列 `w-full` 拿走剩余宽度；其余列固定窄宽
- *（actions 按钮组、activity 相对时间、project 项目名均短文本）。**窄容器（左栏拖窄 /
- * 移动）优先收缩 activity 列**：`@max-[22rem]:hidden` 让「最后活动」在容器 <22rem 时整列
- * 消失（th+td 同款），把空间还给 name 主列 + project 链接列（§5.3 收缩优先级：activity >
- * project，project 是进项目入口不收缩）。name 列内层 `block truncate` 按列宽截断 displayName
- * 止水平溢出（§9 止溢）。th 与 td 同款 class 保持列宽一致。
+ * 列宽 class（table-fixed 下严格生效）。**收缩优先级：activity > name**（§5.3）。
+ * - `name`：`w-full` 拿走剩余宽度，是最后的吸收列——只有当 activity 已完全隐藏后 name 才开始截断。
+ * - `activity`：容器查询三段式——宽容器 `w-28`(112px) 显示完整相对时间；`@max-[26rem]:w-16`
+ *   (容器 <416px) 收窄到 64px，内层 `block truncate` 截断「最后活动」文字；`@max-[22rem]:hidden`
+ *   (容器 <352px) 整列隐藏（th+td 同款），把空间还给 name + project。
+ * - `actions`：`w-14`(56px) 容纳单个 ⋯ 按钮组（h-7 w-7 + px-3）。
+ * - `project`：`w-24`(96px) 短文本，进项目入口不收缩。
  */
 function colWidthClass(col: TableColumn): string {
   if (col === "name") return "w-full";
-  if (col === "actions") return "w-20 whitespace-nowrap";
-  if (col === "activity") return "w-28 whitespace-nowrap @max-[22rem]:hidden";
+  if (col === "actions") return "w-14 whitespace-nowrap";
+  if (col === "activity") return "w-28 @max-[26rem]:w-16 @max-[22rem]:hidden";
   return "w-24 whitespace-nowrap"; // project
 }
 
 /**
- * 单元格 td className。name 列加 `max-w-0`（双保险：让 td 可收缩，内层 `block truncate`
- * 尊重 max-width 截断）。其余列短文本 + whitespace-nowrap，不截断。
+ * 表头 th className。activity 表头在窄容器（`@max-[26rem]:w-16`=64px）文字需截断，加 `truncate`
+ * 让超列宽文字 ellipsis（overflow:hidden + text-overflow）。**不加 `max-w-0`**：table-fixed 下
+ * 列宽由 th 的 `w-28/w-16` 定义，`max-width:0` 会把整列塌成 padding-only（实测 24px）。
+ * `max-w-0` 只放 td（跟随 th 列宽、仅让内层 `block truncate` 生效，不改列宽，见 name 列先例）。
+ */
+function thClass(col: TableColumn): string {
+  const base =
+    "px-3 py-2 text-left text-[0.6rem] font-bold uppercase tracking-[0.12em] text-on-surface-muted";
+  if (col === "activity") return `${base} truncate ${colWidthClass(col)}`;
+  return `${base} ${colWidthClass(col)}`;
+}
+
+/**
+ * 单元格 td className。name + activity 列加 `max-w-0`（让 td 可收缩，内层 `block truncate`
+ * 尊重 max-width 截断）；其余列短文本 + whitespace-nowrap 不截断。
  */
 function tdClass(col: TableColumn): string {
   const base = "px-3 py-2 align-middle";
-  return col === "name" ? `${base} max-w-0 ${colWidthClass(col)}` : `${base} ${colWidthClass(col)}`;
+  if (col === "name" || col === "activity") return `${base} max-w-0 ${colWidthClass(col)}`;
+  return `${base} ${colWidthClass(col)}`;
 }
 
 function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): ReactNode {
@@ -148,7 +161,7 @@ function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): Rea
       );
     case "activity": {
       const text = relativeTime(row.activityIso ?? "", t);
-      return text ? <span className="whitespace-nowrap text-on-surface-muted">{text}</span> : null;
+      return text ? <span className="block truncate text-on-surface-muted">{text}</span> : null;
     }
     case "actions":
       return <RowActions onClose={row.onClose} onRename={row.onRename} t={t} />;
@@ -156,9 +169,10 @@ function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): Rea
 }
 
 /**
- * 行操作按钮：✎ rename + ✕ close（与 InstanceCard ⋯ action-menu 改名/关闭同语义，
- * table 形式化为内联 icon 按钮）。focus 由整行点击承担（§5.3），不再单列按钮。
- * 两按钮各 stopPropagation（click + keydown 两路）防冒泡到行 onClick。
+ * 行操作：⋯ ActionMenu（与 InstanceCard / GroupedProjectsList 同一原语，收起 rename+close）。
+ * focus 由整行点击承担（§5.3），操作列只留一个 ⋯ 入口。trigger stopPropagation（click +
+ * keydown 两路）防冒泡到行 onClick 触发 focus；ActionMenu 经 Radix asChild 注入 toggle 时
+ * `composeEventHandlers` 先跑调用方 stopPropagation 再 toggle，两者不冲突。
  */
 function RowActions({
   onClose,
@@ -169,51 +183,37 @@ function RowActions({
   onRename?: () => void;
   t: TranslateFn;
 }) {
+  const items: ActionMenuItem[] = [];
+  if (onRename) {
+    items.push({ label: t("session.rename"), icon: <ShellIcon name="edit" />, onSelect: onRename });
+  }
+  if (onClose) {
+    items.push({
+      label: t("session.close"),
+      icon: <ShellIcon name="close" />,
+      onSelect: onClose,
+      variant: "destructive",
+    });
+  }
+  if (items.length === 0) return null;
   return (
-    <span className="inline-flex items-center gap-1">
-      {onRename ? (
+    <ActionMenu
+      align="end"
+      cancelLabel={t("cancel")}
+      items={items}
+      trigger={
         <button
-          aria-label={t("session.rename")}
-          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRename();
+          aria-label={t("session.actions")}
+          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
           }}
-          onKeyDown={(e) => e.stopPropagation()}
           type="button"
         >
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.3}
-            />
-          </svg>
+          <ShellIcon className="h-4 w-4" name="ellipsis" />
         </button>
-      ) : null}
-      {onClose ? (
-        <button
-          aria-label={t("session.close")}
-          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          onKeyDown={(e) => e.stopPropagation()}
-          type="button"
-        >
-          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth={1.5}
-            />
-          </svg>
-        </button>
-      ) : null}
-    </span>
+      }
+    />
   );
 }
