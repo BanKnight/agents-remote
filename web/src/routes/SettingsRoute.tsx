@@ -31,11 +31,14 @@ export function SettingsRoute() {
         }
       />
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl p-4 pb-24 lg:pb-8">
+        {/* root 态留底部 nav 高度的 padding（pb-24）；detail 态 nav 隐藏，改 pb-8 收紧底部。 */}
+        <div className={`mx-auto w-full max-w-2xl p-4 ${isRoot ? "pb-24 lg:pb-8" : "pb-8"}`}>
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
       </div>
-      <MobilePrimaryNav />
+      {/* root 态显示底部一级导航；detail 态隐藏——对齐 Apple 设置 detail 全屏沉浸
+          （detail 有 header 返回，底部 tab 不该占）。 */}
+      {isRoot && <MobilePrimaryNav />}
     </main>
   );
 }
