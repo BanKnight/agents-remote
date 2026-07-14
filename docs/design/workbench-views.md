@@ -252,6 +252,8 @@ type WorkbenchLayoutV3 = {
 
 移动端保持现有「列表态 → 全屏聚焦态」线性模型（`mobile-workbench.tsx`），不渲染多 group / tab 栏（窄屏不分屏）。group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），但只关心单实例聚焦（`activeTabRef` 派生活动 tab）。
 
+**移动端 focus 态 header tab（Output/Files/Git）记忆语义**（`workbenchMobileFocusTabAtom`，`atomWithLocalOnlyStorage` 持久）：focus 内 ‹› 切实例时 tab 保持（维度正交，方便横向对比同维度）；但从总览（`MobileGlobalOverview` / `MobileProjectOverview`）点实例卡片**新进** focus 时，`focusInstance` 重置 tab 到 Output——避免上次切到的 Files/Git 记忆被继承、直接落到项目文件，造成「点实例卡片却进了项目文件」的误会（用户预期：点实例卡片 → 到达该实例的输出）。
+
 ### 7.8 渲染层：树投影为扁平数组（UI = f(state)）
 
 §7.5 的 n 叉树是 **state**（布局真相，唯一权威），**不是渲染结构**。表现层不递归渲染这棵树，而是用纯函数 `flattenLayout(root)` 把它投影成三个并列扁平数组，再各自 `.map` 渲染。目的：让所有「会跨容器移动的对象」（group / tab）在 React 树里拥有**位置不随布局变化而变化的稳定身份**，由 React 按相同 key 复用，DOM 不重建 —— terminal 不重连、xterm 不 dispose、relay 不重放。

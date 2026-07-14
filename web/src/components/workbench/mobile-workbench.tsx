@@ -239,6 +239,8 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   // ‹› 浮动切实例（设计文档 §7）：范围 = 当前 scope 活跃实例（useScopeInstanceOrder），
   // 循环切换；tab 不重置（维度正交，workbenchMobileFocusTabAtom 跨切换保持）。global 作用域
   // 聚焦态 projectName 从 findTabRefLeaf 查，切到不在布局的实例需先 ensureTabOpenLeaf 再导航。
+  // atom 何时重置：仅从总观点实例卡片新进 focus 时（focusInstance setFocusTab("output")，§7.7），
+  // ‹› 切换不重置——区分「新进入」(→ Output) 与「focus 内切换」(→ 保持 tab)。
   const switchInstance = (delta: number) => {
     if (order.length < 2 || currentIndex < 0) return;
     const next = order[(currentIndex + delta + order.length) % order.length];
@@ -606,7 +608,11 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const { instances, isLoading } = useProjectInstances(scope.key);
   const create = useCreateSession(scope.key);
   const navigateWorkbench = useWorkbenchNavigate();
+  const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   const focusInstance = (sessionId: string) => {
+    // 从总观点实例卡片进 focus → 重置 Output（同 MobileGlobalOverview，避免继承 Files/Git 记忆
+    // 落到项目文件）。focus 内 ‹› 切实例保持 tab 不变。
+    setFocusTab("output");
     void navigateWorkbench(scope, sessionId);
   };
   const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
@@ -739,9 +745,13 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
+  const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
   //（MobilePageHeader 标题 + pb-24 底部胶囊避让），实例聚焦/新建/删除/三视图全在共享组件内（批 J 折叠废弃）。
   const focusInstance = (sessionId: string) => {
+    // 从总观点实例卡片进 focus → 重置 Output（不继承上次切到的 Files/Git 记忆，避免落到
+    // 项目文件造成「进错地方」误会）。focus 内 ‹› 切实例走 switchInstance 不经此，tab 保持正交。
+    setFocusTab("output");
     void navigateWorkbench({ kind: "global" }, sessionId);
   };
   return (
