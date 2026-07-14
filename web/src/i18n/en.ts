@@ -500,7 +500,6 @@ export const en = {
   "table.colStatus": "Status",
   "table.colActivity": "Last activity",
   "table.colActions": "Actions",
-  "table.focus": "Focus",
 
   // ── Carousel（分组实例分页，批 J / 决策 33）──────────────────
   "carousel.pageLabel": "Page {{current}} of {{total}}",

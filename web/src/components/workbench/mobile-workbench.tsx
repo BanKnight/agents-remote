@@ -615,9 +615,14 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const renameInstance = (sessionId: string, type: "agent" | "terminal", currentName: string) => {
     void rename({ kind: "session", projectName: scope.key, sessionId }, type, currentName);
   };
-  const tableCallbacks: TableRowCallbacks = { onClose: closeInstance, onSelect: focusInstance, t };
+  const tableCallbacks: TableRowCallbacks = {
+    onClose: closeInstance,
+    onRename: (sessionId, type, currentName) => renameInstance(sessionId, type, currentName),
+    onSelect: focusInstance,
+    t,
+  };
   const tableRows = useMemo(
-    () => instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
+    () => instances.map((entry) => instanceToTableRow(entry, scope.key, tableCallbacks)),
     // tableCallbacks 闭包依赖 scope/t；instances 引用由 hook 内 dataKey fingerprint 稳定。
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [instances, t],

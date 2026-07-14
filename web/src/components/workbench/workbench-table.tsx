@@ -5,18 +5,19 @@ import { type ShellTone, sessionMarker, StatusMarker } from "../shell/shell-prim
 import { relativeTime } from "./history-list";
 
 /**
- * table 视图列标识（设计文档 §9）。
+ * table 视图列标识（设计文档 §5.3）。
  * - `project`：项目名（仅 global scope，project scope 隐藏）。
  * - `name`：类型 marker + 会话名（displayName，主列，§12 一等显示；marker 并入此列，
  *   不再单列 type，§10 StatusMarker 包 sessionMarker）。
  * - `activity`：最后活动（relativeTime，数据源 session.updatedAt ?? createdAt）。
- * - `actions`：▶ 进聚焦态 + ✕ 关闭。
+ * - `actions`：✎ 改名 + ✕ 关闭（整行点击承担 focus，见 §5.3 行契约）。
  */
 export type TableColumn = "project" | "name" | "activity" | "actions";
 
 /**
  * table 行数据（presentational：action 回调已由调用方绑定，组件不接触 session 业务字段，
- * 仅消费已映射的 {label,tone} / displayName / activityIso）。`onClose` 缺省 = 不可关闭。
+ * 仅消费已映射的 {label,tone} / displayName / activityIso）。`onClose`/`onRename` 缺省 =
+ * 不可关闭/改名（按钮不渲染）。整行点击触发 `onFocus`（开/激活 tab，§5.3）。
  */
 export type SessionTableRow = {
   key: string;
@@ -27,6 +28,7 @@ export type SessionTableRow = {
   status: { label: string; tone: ShellTone };
   activityIso?: string;
   onClose?: () => void;
+  onRename?: () => void;
   onFocus: () => void;
 };
 
@@ -45,10 +47,10 @@ const COL_HEADER_KEY: Record<TableColumn, TranslationKey> = {
 };
 
 /**
- * table 视图（设计文档 §9）。语义 `<table>/<thead>/<tbody>`，列头 sticky；行**不整体
- * clickable**——▶ 按钮触发 focus（§9「行点 ▶ → 进聚焦态」），避免 `<tr onClick>` 键盘
- * 不可达 + nested interactive（tr role=button 内含 button）的 a11y 问题。▶/✕ 各 stopPropagation。
- * 桌面/移动共用（columns 由调用方按视口裁剪，§11 移动隐藏 project + activity）。
+ * table 视图（设计文档 §5.3）。语义 `<table>/<thead>/<tbody>`，列头 sticky；**整行可点**
+ * → onFocus（开/激活 tab，与 grid 卡片单击同语义）。`<tr onClick>` + cursor-pointer；操作
+ * 列按钮 stopPropagation 防冒泡到行。桌面/移动共用（columns 由调用方按视口裁剪，
+ * §9 移动隐藏 project + activity）。
  */
 export function SessionTable({ rows, columns, t }: SessionTableProps) {
   return (
@@ -70,8 +72,9 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
         <tbody>
           {rows.map((row) => (
             <tr
-              className="border-b border-neutral-line/40 transition hover:bg-surface-raised/30"
+              className="cursor-pointer border-b border-neutral-line/40 transition hover:bg-surface-raised/30"
               key={row.key}
+              onClick={() => row.onFocus()}
             >
               {columns.map((col) => (
                 <td className={tdClass(col)} key={col}>
@@ -88,14 +91,15 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
 
 /**
  * 列宽 class（table-fixed 下严格生效）。name 列 `w-full` 拿走剩余宽度；其余列固定窄宽
- *（actions 按钮组、activity 相对时间、project 项目名均短文本）。name 列内层 `block truncate`
+ *（actions 按钮组、activity 相对时间、project 项目名均短文本）。project 用 `w-24` 比
+ * activity 更窄——窄屏优先压缩项目列，让 name 主列保宽（§5.3）。name 列内层 `block truncate`
  * 按列宽截断 displayName 止水平溢出（§9 止溢）。th 与 td 同款 class 保持列宽一致。
  */
 function colWidthClass(col: TableColumn): string {
   if (col === "name") return "w-full";
-  if (col === "actions") return "w-24 whitespace-nowrap";
+  if (col === "actions") return "w-20 whitespace-nowrap";
   if (col === "activity") return "w-28 whitespace-nowrap";
-  return "w-32 whitespace-nowrap"; // project
+  return "w-24 whitespace-nowrap"; // project
 }
 
 /**
@@ -123,44 +127,52 @@ function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): Rea
       return text ? <span className="whitespace-nowrap text-on-surface-muted">{text}</span> : null;
     }
     case "actions":
-      return <RowActions onClose={row.onClose} onFocus={row.onFocus} t={t} />;
+      return <RowActions onClose={row.onClose} onRename={row.onRename} t={t} />;
   }
 }
 
 /**
- * 行操作按钮：▶ focus（success hover，正向"进入"语义）+ ✕ close（error hover，复用
- * InstanceCard close button className，shell-primitives.tsx:409，视觉一致）。并排，各
- * stopPropagation（click + keydown 两路），与 InstanceCard close 同款防冒泡。
+ * 行操作按钮：✎ rename + ✕ close（与 InstanceCard ⋯ action-menu 改名/关闭同语义，
+ * table 形式化为内联 icon 按钮）。focus 由整行点击承担（§5.3），不再单列按钮。
+ * 两按钮各 stopPropagation（click + keydown 两路）防冒泡到行 onClick。
  */
 function RowActions({
   onClose,
-  onFocus,
+  onRename,
   t,
 }: {
   onClose?: () => void;
-  onFocus: () => void;
+  onRename?: () => void;
   t: TranslateFn;
 }) {
   return (
     <span className="inline-flex items-center gap-1">
-      <button
-        aria-label={t("table.focus")}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-success/10 hover:text-success"
-        onClick={(e) => {
-          e.stopPropagation();
-          onFocus();
-        }}
-        onKeyDown={(e) => e.stopPropagation()}
-        type="button"
-      >
-        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16">
-          <path d="M5 3l8 5-8 5V3z" fill="currentColor" />
-        </svg>
-      </button>
+      {onRename ? (
+        <button
+          aria-label={t("session.rename")}
+          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRename();
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          type="button"
+        >
+          <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.3}
+            />
+          </svg>
+        </button>
+      ) : null}
       {onClose ? (
         <button
           aria-label={t("session.close")}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
+          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error"
           onClick={(e) => {
             e.stopPropagation();
             onClose();

@@ -499,7 +499,6 @@ export const zh: Record<TranslationKey, string> = {
   "table.colStatus": "状态",
   "table.colActivity": "最后活动",
   "table.colActions": "操作",
-  "table.focus": "聚焦",
 
   // ── Carousel（分组实例分页，批 J / 决策 33）──────────────────
   "carousel.pageLabel": "第 {{current}} 页，共 {{total}} 页",

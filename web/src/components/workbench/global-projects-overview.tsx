@@ -111,6 +111,7 @@ export function GlobalProjectsOverview({
   };
   const tableCallbacks: TableRowCallbacks = {
     onClose: closeInstance,
+    onRename: renameInstance,
     onSelect: onFocusInstance,
     t,
   };

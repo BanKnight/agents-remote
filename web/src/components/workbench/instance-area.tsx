@@ -474,11 +474,15 @@ function InstanceLeftOverviewBase({
   // table 列回调（与 gridCallbacks 同源）；t 用 TranslateFn（relativeTime 的 time.minutesAgo {count}）。
   const tableCallbacks: TableRowCallbacks = {
     onClose: onCloseInstance,
+    onRename: onRenameInstance,
     onSelect: onFocusInstance,
     t,
   };
   const tableRows = useMemo<SessionTableRow[]>(
-    () => projectInstances.instances.map((entry) => instanceToTableRow(entry, tableCallbacks)),
+    () =>
+      projectInstances.instances.map((entry) =>
+        instanceToTableRow(entry, scope.key, tableCallbacks),
+      ),
     // tableCallbacks 闭包依赖 t；projectInstances.instances 引用同 gridItems（hook 内 dataKey fingerprint 稳定）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [projectInstances.instances, t],
@@ -1547,6 +1551,12 @@ export function candidateToGridItem(
  */
 export type TableRowCallbacks = {
   onClose?: (sessionId: string, type: "agent" | "terminal") => void;
+  onRename?: (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => void;
   onSelect: (sessionId: string) => void;
   t: TranslateFn;
 };
@@ -1554,18 +1564,23 @@ export type TableRowCallbacks = {
 /** 项目实例 → SessionTableRow（activityIso = updatedAt ?? createdAt；terminal 无 createdAt）。 */
 export function instanceToTableRow(
   entry: ProjectInstanceEntry,
+  projectName: string,
   cb: TableRowCallbacks,
 ): SessionTableRow {
   const session = entry.session;
   const activityIso =
     session.updatedAt ?? (entry.type === "agent" ? (session as AgentSession).createdAt : undefined);
   const onClose = cb.onClose;
+  const onRename = cb.onRename;
   return {
     activityIso,
     displayName: session.displayName,
     key: session.id,
     onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
     onFocus: () => cb.onSelect(session.id),
+    onRename: onRename
+      ? () => onRename(session.id, entry.type, session.displayName, projectName)
+      : undefined,
     provider: entry.type === "agent" ? (session as AgentSession).provider : undefined,
     status: {
       label: cb.t(sessionStatusLabel(session.status)),
@@ -1581,12 +1596,22 @@ export function candidateToTableRow(
   cb: TableRowCallbacks,
 ): SessionTableRow {
   const onClose = cb.onClose;
+  const onRename = cb.onRename;
   return {
     activityIso: candidate.updatedAt ?? candidate.createdAt,
     displayName: candidate.displayName,
     key: candidate.ref.sessionId,
     onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
     onFocus: () => cb.onSelect(candidate.ref.sessionId),
+    onRename: onRename
+      ? () =>
+          onRename(
+            candidate.ref.sessionId,
+            candidate.type,
+            candidate.displayName,
+            candidate.ref.projectName,
+          )
+      : undefined,
     projectName: candidate.ref.projectName,
     provider: candidate.provider,
     status: {
