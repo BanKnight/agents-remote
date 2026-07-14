@@ -71,6 +71,7 @@ DESIGN.md（`docs/design/DESIGN.md`）是设计系统唯一权威源；`web/src/
 4. **灰度按上下文映射**：slate **不能**机械按档位 sed（同一档在 bg/text/border 不同语义），必须按 `bg → surface 档、text → on-surface 档、border → neutral-line` 分桶替换 + 人工核对。
 5. **验证视觉零变化**（语义对齐非重新设计）：Playwright DOM `getComputedStyle` 取 backgroundColor/color/borderColor，对比 token hex；浏览器对复杂值返回 oklab（需 oklab→rgb 换算），对 sRGB 简单值返回 rgb——`text-assistant-soft` → `rgb(253,230,138)` 这种精确命中即通过。
 6. **每次改 web 后主动验证 CSS 落盘**：`build --watch` 会漏落盘 CSS（preview 用 HTML 冒充 text/css），`touch web/src/main.tsx` 触发 rebuild + grep `web/dist/assets/*.css` 确认 utility 落盘。**不要 `touch web/src/index.css`**——`main.tsx` 只 import `./styles/index.css`，根 `index.css` 不存在；touch 它会新建 0 字节无引用空孤儿（git 显示 `?? web/src/index.css`），既不触发有效 rebuild 又留下 dead file，跨会话反复踩（详见 memory `build-watch-css-not-flushed`）。
+7. **CSS 落盘是 web DOM 探针的强制前置断言（机制层，非可选横切）**：DOM 结构断言（文本 / `role` / `aria-label` / `data-*`）对 CSS **完全盲**——CSS 没落盘、排版全乱时探针照样 19/19 绿（2026-07-14 设置两层结构验证出现「探针全绿但 CSS 这道闸没跑」的假通过）。且 **mtime 新 / `ls web/dist/assets/*.css` 文件存在 ≠ CSS 内容对**——build --watch 增量可能只写 JS、或 preview 把缺失 `.css` SPA fallback 成 HTML（`Content-Type: text/html`）。所以 web DOM 探针必须先跑 `scripts/ar-verify-css.mjs` 三道闸（HTML 注入了 stylesheet link + 每条 CSS 响应 `content-type: text/css` + 关键 utility 选择器落在正文），不过则探针整体 fail、不往下跑 DOM 断言。探针模板：`import { verifyCssFlushed } from "./ar-verify-css.mjs"` → `const r = await verifyCssFlushed({ origin, expectClasses: [本次改动相关 utility] }); if (!r.pass) { console.error(r.details.join("\n")); process.exit(1); }`。独立跑：`node scripts/ar-verify-css.mjs [utility ...]`。
 
 ### 来源
 
