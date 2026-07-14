@@ -1,6 +1,6 @@
 import type { GitDiffScope } from "@agents-remote/shared";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { type PointerEvent, useCallback, useEffect, useState } from "react";
 import {
   type DragSourceAdapter,
@@ -108,9 +108,10 @@ function WorkbenchContent({
   const backToProjects = () => void navigate({ to: "/projects" });
   const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
-  // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件写入（effect
-  // + 下方 gate），Shell 读到新值重渲染。无需受控 props 传递。
-  const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
+  // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件只读，
+  // 写入由 WorkbenchShell（RailButton 唤出 / onCollapse 收起）负责。纯手动控制，持久化到
+  // localStorage，focusId 变化不覆盖。
+  const rightCollapsed = useAtomValue(workbenchRightCollapsedAtom);
   const view = viewFromUrl ?? rememberedView;
   const tab = tabFromUrl ?? rememberedMiddleTab;
   const ctx: PluginContext = {
@@ -137,12 +138,10 @@ function WorkbenchContent({
     setRememberedMiddleTab(next);
     void navigateWorkbench(scope, focusId, { rightTab, tab: next, view: viewFromUrl });
   };
-  // 右栏可见性跟随 focusId：聚焦态自动展开（看聚焦实例 inspection），非聚焦态默认收起。
-  // 仅桌面端写入：移动端 MobileWorkbench 不读 rightCollapsed atom。
-  useEffect(() => {
-    if (!isDesktop) return;
-    setRightCollapsed(!focusId);
-  }, [focusId, isDesktop, setRightCollapsed]);
+  // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
+  // 中栏边缘 RailButton 唤出，RightPanelTabs onCollapse 收起。旧实现 setRightCollapsed(!focusId)
+  // 会在聚焦任何 tab（含 file/git）时强制展开，冲掉用户手动折叠态——违背「保持折叠」。
+  // 仅桌面端有右栏；移动端 MobileWorkbench 不读 rightCollapsed atom。
 
   // Phase 2a 左栏宽度归并一次性迁移：workbenchLeftWidth → workbenchMiddleLeftWidth。
   // 仅在目标 key 缺失（用户未调过新 key）且源 key 存在时迁移，保用户已调左栏宽度不丢。
