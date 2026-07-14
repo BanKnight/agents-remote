@@ -18,6 +18,7 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import {
   ActionButton,
+  IconMarker,
   ListGroup,
   ListRow,
   SegmentedControl,
@@ -205,20 +206,30 @@ export function SettingsContent({
  */
 function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSection) => void }) {
   const { t } = useT();
-  const sections: { section: SettingsSection; title: string }[] = [
-    { section: "providers", title: t("settings.providers") },
-    { section: "claude", title: t("settings.section.claude") },
-    { section: "general", title: t("settings.section.general") },
+  const sections: {
+    section: SettingsSection;
+    title: string;
+    icon: "settings" | "anthropic" | "info";
+    tone: "accent" | "warning" | "muted";
+  }[] = [
+    { section: "providers", title: t("settings.providers"), icon: "settings", tone: "accent" },
+    { section: "claude", title: t("settings.section.claude"), icon: "anthropic", tone: "warning" },
+    { section: "general", title: t("settings.section.general"), icon: "info", tone: "muted" },
   ];
   return (
     <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
       <CardContent className="p-0">
         <ListGroup ariaLabel={t("settings.title")}>
-          {sections.map(({ section, title }) => (
+          {sections.map(({ section, title, icon, tone }) => (
             <ListRow
               key={section}
               title={title}
               onClick={() => onNavigate(section)}
+              marker={
+                <IconMarker size="sm" tone={tone}>
+                  <ShellIcon className="h-4 w-4" name={icon} />
+                </IconMarker>
+              }
               meta={<SettingsChevron />}
             />
           ))}
