@@ -13,7 +13,10 @@
 //   import { verifyCssFlushed } from "./ar-verify-css.mjs";
 //   const r = await verifyCssFlushed({
 //     origin: "http://localhost:43012",
-//     expectClasses: ["gap-0", "divide-neutral-line"], // 本次改动相关 utility，可选
+//     expectClasses: ["gap-0", "divide-neutral-line"], // 本次改动相关 utility，可选。
+//   ⚠️ 传**原样 className**（与源码 className 字符串一致）：任意值语法含方括号/斜杠也照传，
+//      如 `h-[75vh]`、`bg-primary/15`——脚本内部按 Tailwind 规则转义后再 grep。漏写方括号
+//      （如把 `h-[75vh]` 传成 `h-75vh`）会误报「缺 utility」。
 //   });
 //   if (!r.pass) { console.error(r.details.join("\n")); process.exit(1); }
 //
