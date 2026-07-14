@@ -707,22 +707,24 @@ test("dropIntoLeaf: drop 到 maximized leaf → 清 maximized", () => {
   expect(r.maximized).toBeNull();
 });
 
-// 源 leaf 单 tab，drop 到自身 edge：removeTab 让源 leaf 清空、子树提升、targetLeafId 消失。
-// 旧 bug：走兜底 createLeaf 丢掉提升后树里其余 tab，只剩拖动源。修复后 target 收敛到提升后首 leaf
-// 再按 zone split，其余 tab 保留。
-test("dropIntoLeaf: 源 leaf 单 tab 拖到自身 down（target 消失）→ 提升后首 leaf 之上分屏，不丢其余 tab", () => {
-  // 上 leaf=file(单)，下 leaf=2 终端；拖 file 到源 leaf 自身的 down。
+// 拖 tab 到自身所在 leaf 的边缘 = no-op（布局不变，设计 §7.2 drop to self）。
+// 旧实现会把自身 leaf split 成两半，用户视为"局部布局被无意义改动"。
+test("dropIntoLeaf: 源在 target leaf，拖到自身 down → 布局不变", () => {
   const l = v3({ root: split("s", "vertical", [leaf("top", ["f"]), leaf("bot", ["a", "b"])]) });
   const r = dropIntoLeaf(l, ref("p", "f"), "top", "down");
-  expect(shape(r.root)).toBe("v[(a|b),(f)]");
-  valid(r);
+  expect(r).toBe(l);
 });
 
-test("dropIntoLeaf: 源 leaf 单 tab 拖到自身 right（target 消失）→ 不丢其余 tab", () => {
+test("dropIntoLeaf: 源在 target leaf，拖到自身 right → 布局不变", () => {
   const l = v3({ root: split("s", "horizontal", [leaf("L", ["f"]), leaf("R", ["a", "b"])]) });
   const r = dropIntoLeaf(l, ref("p", "f"), "L", "right");
-  expect(shape(r.root)).toBe("h[(a|b),(f)]");
-  valid(r);
+  expect(r).toBe(l);
+});
+
+test("dropIntoLeaf: 单 leaf 多 tab，拖到自身 left → 布局不变（不再 split 同 group）", () => {
+  const l = v3({ root: leaf("g", ["a", "b", "f"]) });
+  const r = dropIntoLeaf(l, ref("p", "f"), "g", "left");
+  expect(r).toBe(l);
 });
 
 // ── resizeSplitChildren ───────────────────────────────────────────────────────

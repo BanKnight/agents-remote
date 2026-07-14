@@ -257,9 +257,16 @@ function WorkbenchContent({
       if (ref.kind !== "session") return;
       const navScope: WorkbenchScope =
         scope.kind === "project" ? { kind: "project", key: ref.projectName } : scope;
-      void navigateWorkbench(navScope, ref.sessionId);
+      // 与 onRightTabChange/onViewChange/onTabChange 同模式：传完整 {view,tab,rightTab}
+      //（URL 原始值）。navigateWorkbench 整体替换 search 对象，不传则会清空 tab/view/rightTab
+      // ——点中栏 tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
+      void navigateWorkbench(navScope, ref.sessionId, {
+        rightTab,
+        tab: tabFromUrl,
+        view: viewFromUrl,
+      });
     },
-    [navigateWorkbench, scope],
+    [navigateWorkbench, scope, rightTab, tabFromUrl, viewFromUrl],
   );
   const focusPanel = useCallback(
     (ref: WorkbenchPanelRef) => {

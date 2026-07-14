@@ -1134,6 +1134,11 @@ export function dropIntoLeaf(
       { root, activeGroupId: null, maximized: null },
       tabIdOf(ref),
     );
+    // 拖 tab 到自身所在 leaf 的边缘 = 无意义（已在该 group，分屏成同 group 两半是噪声）。
+    // 直接返回原 layout，布局不变（设计 §7.2：drop to self = no-op）。
+    if (existing && existing.leafId === targetLeafId) {
+      return layout;
+    }
     if (existing) {
       const after = removeTabFromLeaf(layout, existing.leafId, tabIdOf(ref));
       root = after.root;

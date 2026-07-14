@@ -3,6 +3,7 @@ import {
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
+  type RefObject,
   memo,
   useCallback,
   useEffect,
@@ -2189,9 +2190,16 @@ function DropZoneOverlay({
   onZoneChange,
   t,
 }: DropZoneOverlayProps) {
+  const ghostRef = useRef<HTMLDivElement | null>(null);
   const onWindowPointerMove = useCallback(
     (event: PointerEvent_Window) => {
       onPointerMove(event.clientX, event.clientY);
+      // ghost 跟随指针走 ref 直写 transform，跳过 React state/render（否则每帧 setState 触发
+      // 整棵 WorkbenchContent 重渲染，ghost 落后于鼠标产生脱离感）。
+      const g = ghostRef.current;
+      if (g) {
+        g.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0) translate(-50%, -50%)`;
+      }
       const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
       if (!el) {
         onZoneChange(null);
@@ -2246,6 +2254,19 @@ function DropZoneOverlay({
     };
   }, [onWindowPointerMove, onWindowPointerUp]);
 
+  // Esc 中断拖放（VSCode/常见拖放交互：拖动中按 Esc 取消，松手不 drop）。
+  // cancelDrag 清 dragState 后本 overlay 卸载、pointerup 监听随之移除，松手不再触发 onDrop。
+  useEffect(() => {
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", onKeydown);
+    return () => window.removeEventListener("keydown", onKeydown);
+  }, [onCancel]);
+
   return (
     <div
       aria-label={t("workbench.dropZoneLabel")}
@@ -2261,20 +2282,31 @@ function DropZoneOverlay({
           <span className="pointer-events-none">{t("workbench.dropToEmpty")}</span>
         </div>
       ) : null}
-      {dragSourceRef ? <DragGhost panelRef={dragSourceRef} pointer={dragPointer} t={t} /> : null}
+      {dragSourceRef ? (
+        <DragGhost
+          panelRef={dragSourceRef}
+          ghostRef={ghostRef}
+          initialPointer={dragPointer}
+          t={t}
+        />
+      ) : null}
     </div>
   );
 }
 
 /** 拖动 ghost：跟随指针的小卡片（marker + 实例名），aria 标注拖动中。usePanelMeta 派生
- * 元数据（与 GroupHeader/InstanceCard 同源 query key，React Query dedupe 零额外网络）。 */
+ * 元数据（与 GroupHeader/InstanceCard 同源 query key，React Query dedupe 零额外网络）。
+ * 位置由 DropZoneOverlay 经 ghostRef 直写 transform，不走 React state（每帧 setState 会让
+ * ghost 落后于鼠标产生脱离感）。初始 transform 由 onCardDragStart 设一次。 */
 function DragGhost({
   panelRef,
-  pointer,
+  ghostRef,
+  initialPointer,
   t,
 }: {
   panelRef: WorkbenchPanelRef;
-  pointer: { x: number; y: number };
+  ghostRef: RefObject<HTMLDivElement | null>;
+  initialPointer: { x: number; y: number };
   t: (key: TranslationKey) => string;
 }) {
   const meta = usePanelMeta(panelRef);
@@ -2282,9 +2314,15 @@ function DragGhost({
     meta?.label ?? (panelRef.kind === "session" ? panelRef.sessionId.slice(0, 12) : panelRef.path);
   return (
     <div
+      ref={ghostRef}
       aria-label={t("workbench.dragging")}
-      className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-lg border border-primary/40 bg-surface-raised/90 px-3 py-2 text-xs font-medium text-on-surface shadow-lg backdrop-blur"
-      style={{ left: pointer.x, top: pointer.y }}
+      className="pointer-events-none fixed flex items-center gap-1.5 rounded-lg border border-primary/40 bg-surface-raised/90 px-3 py-2 text-xs font-medium text-on-surface shadow-lg backdrop-blur"
+      style={{
+        left: 0,
+        top: 0,
+        transform: `translate3d(${initialPointer.x}px, ${initialPointer.y}px, 0) translate(-50%, -50%)`,
+        willChange: "transform",
+      }}
     >
       {meta?.marker ?? null}
       <span>{label}</span>
