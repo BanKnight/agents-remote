@@ -211,7 +211,7 @@ function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSectio
     { section: "general", title: t("settings.section.general") },
   ];
   return (
-    <Card className="gap-0 py-0">
+    <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
       <CardContent className="p-0">
         <ListGroup ariaLabel={t("settings.title")}>
           {sections.map(({ section, title }) => (
@@ -252,7 +252,7 @@ function SettingsChevron() {
 function GeneralSection() {
   const { t } = useT();
   return (
-    <Card>
+    <Card className="border border-neutral-line bg-surface ring-0">
       <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
         <p className="text-sm font-semibold text-on-surface-soft">
           {t("settings.section.general")}
@@ -365,7 +365,7 @@ function ProvidersSection({
       )}
 
       {/* Apple Settings grouped：圆角 Card + 整行 ListRow 点击进编辑详情；列表独立 max-h-72 内滚。 */}
-      <Card className="gap-0 py-0">
+      <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
         <CardContent className="p-0">
           <div className="max-h-72 overflow-y-auto">
             {loading ? (
@@ -732,7 +732,7 @@ function ClaudeRuntimeContent({
   );
 
   return (
-    <Card>
+    <Card className="border border-neutral-line bg-surface ring-0">
       <CardContent className="flex flex-col gap-4 p-3">
         <Field label={t("settings.runtimeProvider")}>
           <OptionMenu
