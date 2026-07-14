@@ -483,7 +483,7 @@ test("resolveSpawnModel does not double-append [1m]", () => {
   );
 });
 
-// ── resolveControlModel: runtime set_model 用与 spawn 同源的解析 ──
+// ── resolveControlModel: runtime set_model（客户端控制）——具体 ID 透传，只解析 tier alias ──
 
 const makeSettingsStore = (claude: ClaudeRuntimeConfig): SettingsStore =>
   ({ read: async () => ({ providers: [], runtimes: { claude } }) }) as unknown as SettingsStore;
@@ -493,12 +493,26 @@ test("resolveControlModel resolves tier alias via settings modelMapping (matches
   expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6");
 });
 
-test("resolveControlModel appends [1m] when enable1mContext on (matches spawn)", async () => {
+test("resolveControlModel appends [1m] to resolved tier alias when enable1mContext on", async () => {
+  // tier alias 仍经 modelMapping 解析；concreteRuntime 把 sonnet→claude-sonnet-4-6，
+  // 开 1m → 解析后拼 [1m]（alias-mapping 部署的运行时切换路径，与 spawn 同源）。
   const runtime = new Claude2Runtime(
     tmpdir(),
     makeSettingsStore({ ...concreteRuntime, enable1mContext: true }),
   );
-  expect(await runtime.resolveControlModel("claude-opus-4-8")).toBe("claude-opus-4-8[1m]");
+  expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6[1m]");
+});
+
+test("resolveControlModel passes concrete id through verbatim (no forced [1m])", async () => {
+  // 客户端控制的 per-session [1m] 切换：菜单发具体 ID，服务端原样透传，不受全局
+  // enable1mContext 影响——这是与 spawn 的关键差异（spawn 跟随全局默认，control 由客户端定）。
+  const runtime = new Claude2Runtime(
+    tmpdir(),
+    makeSettingsStore({ ...concreteRuntime, enable1mContext: true }),
+  );
+  expect(await runtime.resolveControlModel("claude-opus-4-8")).toBe("claude-opus-4-8");
+  expect(await runtime.resolveControlModel("claude-opus-4-8[1m]")).toBe("claude-opus-4-8[1m]");
+  expect(await runtime.resolveControlModel("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
 });
 
 test("resolveControlModel passes model through when settingsStore absent", async () => {

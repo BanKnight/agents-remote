@@ -6,6 +6,7 @@ import type { ClaudeRuntimeConfig, SettingsState } from "@agents-remote/shared";
 import {
   DEFAULT_CLAUDE_RUNTIME,
   SettingsStore,
+  buildAvailableModels,
   maskApiKey,
   resolveModelId,
   toMaskedProvider,
@@ -125,6 +126,78 @@ test("resolveModelId: tier alias passes through; concrete ID gets [1m] only when
   expect(resolveModelId({ ...concreteConfig, enable1mContext: false }, "opus")).toBe(
     "claude-opus-4-8",
   );
+});
+
+test("buildAvailableModels: alias mapping lists aliases only (CLI rejects alias[1m])", () => {
+  // 默认配置（tier alias 自映射）：即使开 1m 也只列 alias，因为 CLI 不接受 alias[1m]。
+  expect(buildAvailableModels(DEFAULT_CLAUDE_RUNTIME)).toEqual(["opus", "sonnet", "haiku"]);
+  expect(buildAvailableModels({ ...DEFAULT_CLAUDE_RUNTIME, enable1mContext: true })).toEqual([
+    "opus",
+    "sonnet",
+    "haiku",
+  ]);
+});
+
+test("buildAvailableModels: concrete IDs + 1m on → [1m] variant first, base after", () => {
+  const config: ClaudeRuntimeConfig = {
+    providerId: "",
+    modelMapping: {
+      default: "claude-sonnet-4-6",
+      opus: "claude-opus-4-8",
+      sonnet: "claude-sonnet-4-6",
+      haiku: "claude-haiku-4-5",
+    },
+    enable1mContext: true,
+    effort: "high",
+  };
+  expect(buildAvailableModels(config)).toEqual([
+    "claude-opus-4-8[1m]",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6[1m]",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5[1m]",
+    "claude-haiku-4-5",
+  ]);
+});
+
+test("buildAvailableModels: concrete IDs + 1m off → only base IDs", () => {
+  const config: ClaudeRuntimeConfig = {
+    providerId: "",
+    modelMapping: {
+      default: "claude-sonnet-4-6",
+      opus: "claude-opus-4-8",
+      sonnet: "claude-sonnet-4-6",
+      haiku: "claude-haiku-4-5",
+    },
+    enable1mContext: false,
+    effort: "high",
+  };
+  expect(buildAvailableModels(config)).toEqual([
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+  ]);
+});
+
+test("buildAvailableModels: dedupes tiers mapped to the same ID", () => {
+  const config: ClaudeRuntimeConfig = {
+    providerId: "",
+    modelMapping: {
+      default: "claude-x-1",
+      opus: "claude-x-1",
+      sonnet: "claude-x-1",
+      haiku: "claude-x-2",
+    },
+    enable1mContext: true,
+    effort: "high",
+  };
+  // opus 与 sonnet 都映射 claude-x-1 → 去重，sonnet 不重复入列。
+  expect(buildAvailableModels(config)).toEqual([
+    "claude-x-1[1m]",
+    "claude-x-1",
+    "claude-x-2[1m]",
+    "claude-x-2",
+  ]);
 });
 
 test("maskApiKey keeps prefix and tail with ellipsis in between", () => {

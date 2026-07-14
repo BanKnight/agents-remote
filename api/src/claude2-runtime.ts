@@ -206,21 +206,24 @@ export class Claude2Runtime implements RuntimeResources {
     return { model: state.model, permissionMode: state.permissionMode };
   }
 
-  // Resolve a model id for a runtime control_request{set_model} using the SAME
-  // resolveSpawnModel logic as spawn: apply modelMapping + [1m] suffix so a
-  // mid-session model switch matches spawn-time resolution. Without this the
-  // controller forwards the raw tier alias the client sent, losing [1m] and any
-  // concrete-id version pinning configured via modelMapping. Settings read
-  // failure falls back to the original model (resolveSpawnModel with no runtime
-  // config is a passthrough) — same posture as resolveSpawnInputs.
+  // Resolve a model id for a runtime control_request{set_model}. Unlike spawn
+  // (resolveSpawnModel follows the global enable1mContext default), the runtime
+  // switch is client-controlled: the menu offers concrete IDs with/without [1m],
+  // so concrete IDs pass through verbatim — letting the client toggle [1m] per
+  // session instead of being forced by the global enable1mContext. Only tier
+  // aliases (legacy clients / alias-mapping deployments) get resolved via
+  // modelMapping. Settings read failure falls back to the raw alias passthrough.
   async resolveControlModel(model: string | undefined): Promise<string | undefined> {
+    if (!model) return undefined;
+    if (!isClaudeModelTier(model)) return model;
     const settings = this.settingsStore
       ? await this.settingsStore.read().catch((err) => {
           console.warn("[claude2] settings read failed in resolveControlModel:", err);
           return undefined;
         })
       : undefined;
-    return resolveSpawnModel(model, settings?.runtimes.claude);
+    const rt = settings?.runtimes.claude;
+    return rt ? resolveModelId(rt, model) : model;
   }
 
   setClaudeSessionId(sessionName: string, claudeSessionId: string, model?: string): void {

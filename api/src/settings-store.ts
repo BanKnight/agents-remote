@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import {
+  CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
   PROVIDER_PROTOCOLS,
   type ClaudeModelTier,
@@ -89,6 +90,24 @@ export function resolveModelId(config: ClaudeRuntimeConfig, tier: ClaudeModelTie
   const modelId = config.modelMapping[tier] || config.modelMapping.default || "sonnet";
   const isConcreteId = isConcreteModelId(modelId);
   return config.enable1mContext && isConcreteId ? `${modelId}[1m]` : modelId;
+}
+
+// 纯函数：从 runtime config 派生会话内可选的 model 列表（ModelSelector 菜单数据源）。
+// 遍历每个 tier（跳过 default）的 modelMapping 值：具体 ID 且开启 1m 时，[1m] 变体在前、
+// base 紧随（当前启用 1m 时 [1m] 是常用项）；tier alias（默认配置）或未开 1m 时只列原值
+//（CLI 不接受 alias[1m]，见 resolveModelId 注释）。多 tier 映射同值时去重。
+// 顺序遵循 CLAUDE_MODEL_TIERS（opus/sonnet/haiku）。
+export function buildAvailableModels(config: ClaudeRuntimeConfig): string[] {
+  const models: string[] = [];
+  for (const tier of CLAUDE_MODEL_TIERS) {
+    if (tier === "default") continue;
+    const id = config.modelMapping[tier] || config.modelMapping.default;
+    if (!id) continue;
+    const with1m = isConcreteModelId(id) && config.enable1mContext ? `${id}[1m]` : null;
+    if (with1m && !models.includes(with1m)) models.push(with1m);
+    if (!models.includes(id)) models.push(id);
+  }
+  return models;
 }
 
 // 纯函数：apiKey 掩码（前 7 + 末 4，中间 ...）。保留可识别指纹供前端判断已配置/未改。

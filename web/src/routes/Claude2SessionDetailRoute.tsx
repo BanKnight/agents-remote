@@ -146,7 +146,10 @@ const LiveThinkingTokensContext = createContext<number | null>(null);
 
 function modelDisplayLabel(modelId: string, resolvedName?: string): string {
   if (resolvedName) return resolvedName;
-  // Fall back to capitalized alias — Claude CLI uses tier names (Sonnet/Opus/Haiku)
+  // 具体 ID（含 "-"，如 "claude-opus-4-8" / "claude-opus-4-8[1m]"）原样展示，
+  // 让会话内菜单如实呈现 modelMapping 派生的具体 ID + [1m] 变体；tier alias
+  //（"opus"/"sonnet"/"haiku"，默认配置）仍 capitalize 作友好名。
+  if (modelId.includes("-")) return modelId;
   return modelId.charAt(0).toUpperCase() + modelId.slice(1);
 }
 
@@ -3219,16 +3222,12 @@ function ModelSelector({
   if (availableModels.length === 0) return null;
 
   const current = currentModel ?? availableModels[0];
-  // Only show the resolved model name when it actually matches the current
-  // tier. After a model switch, currentModel updates immediately but
-  // currentResolved stays stale until the new CLI process emits system.init.
-  // Without this check, the collapsed button shows the OLD model name while
-  // the expanded dropdown checkmark tracks currentModel — two data sources,
-  // two different answers.
-  const resolvedMatchesTier = Boolean(
-    currentResolved && currentModel && currentResolved.includes(currentModel),
-  );
-  const label = resolvedMatchesTier ? currentResolved : modelDisplayLabel(current);
+  // trigger label 与 checkmark 共用 current（= currentModel）单一数据源。方案 2 后
+  // currentModel 恒为具体 ID（system.init 给具体 ID；菜单切换发具体 ID），切换后立即
+  // 更新。不再用 currentResolved 推 label——它滞后于 currentModel（system.init /
+  // control_response 回填），混用会让收起态 label 与展开态 checkmark 给出两个答案。
+  // currentResolved 仍由上方 useEffect 监听，仅在检测到回填时清除切换 spinner。
+  const label = modelDisplayLabel(current);
 
   if (switchingTo) {
     return (
