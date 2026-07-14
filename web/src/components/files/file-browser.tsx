@@ -1017,7 +1017,11 @@ export function FilesPanel({
       <div
         className={`shrink-0 border-b border-on-surface/5 px-2 py-1.5 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
-        <div className="flex min-h-7 min-w-0 items-center justify-between gap-3">
+        <div
+          className="flex min-h-[2.125rem] min-w-0 items-center justify-between gap-3"
+          // 内容高 34px = ViewSwitcher 行（h-7 按钮 + p-0.5 border 外壳），使 files header 行
+          // 总高 47px 与总览 ViewSwitcher 行一致（批 Q 点 4 收尾：原本 min-h-7=28 → 41px 独树一帜）。
+        >
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
           {/* 写操作 actions（New Folder/Upload）只在 inspection 模式（enablePreview=true）渲染；
               FilesLeftPanel 纯导航树（enablePreview=false）不挂写操作——窄左栏（256px）actions 文字

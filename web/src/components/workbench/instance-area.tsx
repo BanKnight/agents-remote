@@ -1559,6 +1559,8 @@ export type TableRowCallbacks = {
     projectName: string,
   ) => void;
   onSelect: (sessionId: string) => void;
+  /** global 表 project 列点进项目（navigate /projects/$key）；project scope 表无此列不传。 */
+  onEnterProject?: (projectName: string) => void;
   t: TranslateFn;
 };
 
@@ -1598,11 +1600,13 @@ export function candidateToTableRow(
 ): SessionTableRow {
   const onClose = cb.onClose;
   const onRename = cb.onRename;
+  const onEnterProject = cb.onEnterProject;
   return {
     activityIso: candidate.updatedAt ?? candidate.createdAt,
     displayName: candidate.displayName,
     key: candidate.ref.sessionId,
     onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
+    onEnterProject: onEnterProject ? () => onEnterProject(candidate.ref.projectName) : undefined,
     onFocus: () => cb.onSelect(candidate.ref.sessionId),
     onRename: onRename
       ? () =>

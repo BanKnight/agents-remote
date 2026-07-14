@@ -62,6 +62,7 @@ export function GlobalProjectsOverview({
   onViewChange,
 }: GlobalProjectsOverviewProps) {
   const { t } = useT();
+  const navigate = useNavigate();
   const inputId = useId();
   const [setupOpen, setSetupOpen] = useState(false);
   const { close, holder: closeHolder } = useCloseSession();
@@ -103,6 +104,8 @@ export function GlobalProjectsOverview({
     const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
     if (ref) void rename(ref, type, currentName);
   };
+  const enterProject = (projectName: string) =>
+    void navigate({ to: "/projects/$key", params: { key: projectName } });
   const gridCallbacks: GridItemCallbacks = {
     onClose: closeInstance,
     onRename: renameInstance,
@@ -111,6 +114,7 @@ export function GlobalProjectsOverview({
   };
   const tableCallbacks: TableRowCallbacks = {
     onClose: closeInstance,
+    onEnterProject: enterProject,
     onRename: renameInstance,
     onSelect: onFocusInstance,
     t,

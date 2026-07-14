@@ -30,6 +30,8 @@ export type SessionTableRow = {
   onClose?: () => void;
   onRename?: () => void;
   onFocus: () => void;
+  /** global 表 project 列点进项目（navigate /projects/$key）；缺省=纯文本（project scope 无此列）。 */
+  onEnterProject?: () => void;
 };
 
 type SessionTableProps = {
@@ -54,7 +56,7 @@ const COL_HEADER_KEY: Record<TableColumn, TranslationKey> = {
  */
 export function SessionTable({ rows, columns, t }: SessionTableProps) {
   return (
-    <div className="h-full overflow-auto">
+    <div className="@container h-full overflow-auto">
       <table className="w-full table-fixed border-collapse text-sm">
         <thead className="sticky top-0 z-10 bg-surface-raised">
           <tr className="border-b border-neutral-line">
@@ -91,14 +93,16 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
 
 /**
  * 列宽 class（table-fixed 下严格生效）。name 列 `w-full` 拿走剩余宽度；其余列固定窄宽
- *（actions 按钮组、activity 相对时间、project 项目名均短文本）。project 用 `w-24` 比
- * activity 更窄——窄屏优先压缩项目列，让 name 主列保宽（§5.3）。name 列内层 `block truncate`
- * 按列宽截断 displayName 止水平溢出（§9 止溢）。th 与 td 同款 class 保持列宽一致。
+ *（actions 按钮组、activity 相对时间、project 项目名均短文本）。**窄容器（左栏拖窄 /
+ * 移动）优先收缩 activity 列**：`@max-[22rem]:hidden` 让「最后活动」在容器 <22rem 时整列
+ * 消失（th+td 同款），把空间还给 name 主列 + project 链接列（§5.3 收缩优先级：activity >
+ * project，project 是进项目入口不收缩）。name 列内层 `block truncate` 按列宽截断 displayName
+ * 止水平溢出（§9 止溢）。th 与 td 同款 class 保持列宽一致。
  */
 function colWidthClass(col: TableColumn): string {
   if (col === "name") return "w-full";
   if (col === "actions") return "w-20 whitespace-nowrap";
-  if (col === "activity") return "w-28 whitespace-nowrap";
+  if (col === "activity") return "w-28 whitespace-nowrap @max-[22rem]:hidden";
   return "w-24 whitespace-nowrap"; // project
 }
 
@@ -114,7 +118,27 @@ function tdClass(col: TableColumn): string {
 function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): ReactNode {
   switch (col) {
     case "project":
-      return <span className="whitespace-nowrap text-on-surface-soft">{row.projectName}</span>;
+      // project 列 = 进项目超链接（global 表，navigate /projects/$key）；project scope 无此列。
+      // 有 onEnterProject 渲染为 primary 链接 button（stopPropagation 不触发行 onFocus）；
+      // 缺省回退纯文本。block truncate 按列宽截断长项目名。
+      return row.onEnterProject ? (
+        <button
+          className="block w-full cursor-pointer truncate text-left font-semibold text-primary transition hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            row.onEnterProject?.();
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          title={row.projectName}
+          type="button"
+        >
+          {row.projectName}
+        </button>
+      ) : (
+        <span className="block w-full truncate text-on-surface-soft" title={row.projectName}>
+          {row.projectName}
+        </span>
+      );
     case "name":
       return (
         <span className="flex items-center gap-2">

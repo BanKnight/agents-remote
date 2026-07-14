@@ -612,7 +612,7 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
       {back ? (
         <button
           aria-label={back.label}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
           onClick={back.onClick}
           type="button"
         >
