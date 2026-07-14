@@ -41,6 +41,7 @@ import type {
   GetSettingsResponse,
   ListProviderModelsResponse,
   ProviderResponse,
+  TestProviderRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
   UpdateProviderRequest,
@@ -447,6 +448,19 @@ export async function listProviderModels(id: string): Promise<ListProviderModels
     "api.providerModelsFailed",
     { method: "POST" },
   );
+}
+
+// 测试连接（不落盘）：用表单内联凭证请求上游 /v1/models。新建态无 id；编辑态传 id，
+// apiKey 留空时后端回退已保存原 key（原 key 永不出 api 进程，前端只持 masked）。
+// 上游凭证问题同样返回 HTTP 200 + {ok:false}（fetchJson 不抛，前端展示测试结果）。
+export async function testProviderModels(
+  input: TestProviderRequest,
+): Promise<ListProviderModelsResponse> {
+  return fetchJson("/api/settings/providers/test-models", "api.providerModelsFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies TestProviderRequest),
+  });
 }
 
 const projectFilesPath = (projectName: string, path: string) =>

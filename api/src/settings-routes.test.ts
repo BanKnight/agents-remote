@@ -344,3 +344,133 @@ test("POST /providers/:id/models 404 when provider missing", async () => {
   );
   expect(res?.status).toBe(404);
 });
+
+// ── POST /providers/test-models (内联凭证测试连接，不落盘) ──
+
+test("POST /providers/test-models 新建态：用内联凭证请求上游，不写 store", async () => {
+  const store = await makeStore();
+  installFetch(
+    () =>
+      new Response(JSON.stringify({ data: [{ id: "claude-opus-4-8" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  );
+
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/test-models", {
+      apiKey: "sk-new",
+      baseUrl: "https://api.anthropic.com",
+      protocol: "anthropic",
+    }),
+    makeUrl("/api/settings/providers/test-models"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body).toEqual({ ok: true, models: ["claude-opus-4-8"] });
+  // 验证未落盘：store 仍无 provider。
+  const after = await store.read();
+  expect(after.providers).toEqual([]);
+});
+
+test("POST /providers/test-models 编辑态：apiKey 留空回退已保存原 key", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-saved", protocol: "anthropic" }],
+  }));
+  let receivedHeader = "";
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    receivedHeader = headers.get("x-api-key") ?? "";
+    return new Response(JSON.stringify({ data: [{ id: "m1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  // apiKey 不传（编辑态留空 = "不改"）+ 传 id → 后端用已保存 sk-saved。
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/test-models", {
+      id: "p1",
+      protocol: "anthropic",
+    }),
+    makeUrl("/api/settings/providers/test-models"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  expect(await res!.json()).toEqual({ ok: true, models: ["m1"] });
+  expect(receivedHeader).toBe("sk-saved");
+});
+
+test("POST /providers/test-models 内联 apiKey 覆盖已保存 key", async () => {
+  const store = await makeStore();
+  await store.update((s) => ({
+    ...s,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-saved", protocol: "anthropic" }],
+  }));
+  let receivedHeader = "";
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    receivedHeader = headers.get("x-api-key") ?? "";
+    return new Response(JSON.stringify({ data: [{ id: "m1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  // 传内联 apiKey=sk-new + id=p1 → 用 sk-new，不用 sk-saved。
+  await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/test-models", {
+      id: "p1",
+      apiKey: "sk-new",
+      protocol: "anthropic",
+    }),
+    makeUrl("/api/settings/providers/test-models"),
+    store,
+  );
+  expect(receivedHeader).toBe("sk-new");
+});
+
+test("POST /providers/test-models 无 key 可用 → {ok:false}（不调用 fetch）", async () => {
+  const store = await makeStore();
+  let fetchCalled = false;
+  installFetch(() => {
+    fetchCalled = true;
+    return new Response("{}", { status: 200 });
+  });
+
+  // 新建态无 apiKey + 无 id → 无 key，listProviderModels 直接返回 ok:false 不发请求。
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/test-models", {
+      protocol: "anthropic",
+    }),
+    makeUrl("/api/settings/providers/test-models"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body.ok).toBe(false);
+  expect(body.models).toEqual([]);
+  expect(body.error).toBeTruthy();
+  expect(fetchCalled).toBe(false);
+});
+
+test("POST /providers/test-models 上游失败 → {ok:false}（不抛）", async () => {
+  const store = await makeStore();
+  installFetch(() => new Response("unauth", { status: 401 }));
+
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/providers/test-models", {
+      apiKey: "sk-x",
+      protocol: "anthropic",
+    }),
+    makeUrl("/api/settings/providers/test-models"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body.ok).toBe(false);
+  expect(body.error).toBeTruthy();
+});

@@ -276,10 +276,27 @@ export type UpdateClaudeRuntimeResponse = {
 // ok=false 时 models 为空、error 给可读原因（凭证无效/端点不存在/网络错误）。
 // 上游失败不映射成 API 错误码——这是「业务成功调用发现接口，上游凭证有问题」，
 // 前端展示测试结果而非报错 toast。仅 provider 不存在走 PROVIDER_NOT_FOUND 404。
+// POST /api/settings/providers/test-models 复用此响应（见 TestProviderRequest）。
 export type ListProviderModelsResponse = {
   ok: boolean;
   models: string[];
   error?: string;
+};
+
+// POST /api/settings/providers/test-models 请求：用表单内联凭证测试连接（不落盘）。
+// 用于 ProviderDialog 新建态（无 id）+ 编辑态（有 id，apiKey 留空回退已保存原 key）。
+// 后端解析：apiKey / baseUrl / protocol 取内联值，缺失则回退 id 命中的已保存 provider
+// 对应字段（原 apiKey 永不出 api 进程，前端只持 masked → 编辑态留空 = "不改"语义）。
+// 复用 ListProviderModelsResponse 响应（与 :id/models 同一套发现模型结果）。
+export type TestProviderRequest = {
+  /** 编辑态传已保存 provider id，用于回退内联缺失字段（apiKey/baseUrl/protocol）。新建态省略。 */
+  id?: string;
+  /** 仅展示用，测试连接不依赖。 */
+  label?: string;
+  /** 内联 apiKey；留空且 id 命中已保存 provider 时回退其原 key。两者皆空 → 后端返回 ok:false。 */
+  apiKey?: string;
+  baseUrl?: string;
+  protocol?: ProviderProtocol;
 };
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";

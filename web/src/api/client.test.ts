@@ -18,6 +18,7 @@ import {
   renameAgentSession,
   renameTerminalSession,
   sessionStreamUrl,
+  testProviderModels,
 } from "./client";
 
 const originalFetch = globalThis.fetch;
@@ -279,4 +280,48 @@ test("web api client builds same-origin session stream URLs", () => {
   );
 
   Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
+});
+
+// ── testProviderModels (内联凭证测试连接) ──
+
+test("web api client testProviderModels POSTs test-models with inline body", async () => {
+  let url = "";
+  let method = "";
+  let body = "";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    url = input.toString();
+    method = init?.method ?? "";
+    body = init?.body?.toString() ?? "";
+    return Response.json({ ok: true, models: ["claude-opus-4-8"] });
+  }) as typeof fetch;
+
+  const response = await testProviderModels({
+    apiKey: "sk-new",
+    baseUrl: "https://api.anthropic.com",
+    protocol: "anthropic",
+  });
+
+  expect(url).toBe("/api/settings/providers/test-models");
+  expect(method).toBe("POST");
+  expect(JSON.parse(body)).toEqual({
+    apiKey: "sk-new",
+    baseUrl: "https://api.anthropic.com",
+    protocol: "anthropic",
+  });
+  expect(response).toEqual({ ok: true, models: ["claude-opus-4-8"] });
+});
+
+test("web api client testProviderModels passes id for edit-mode fallback", async () => {
+  let body = "";
+  globalThis.fetch = (async (_input, init?: RequestInit) => {
+    body = init?.body?.toString() ?? "";
+    return Response.json({ ok: false, models: [], error: "bad key" });
+  }) as typeof fetch;
+
+  // 编辑态：传 id，apiKey 留空（后端回退已保存原 key）。
+  const response = await testProviderModels({ id: "p1", protocol: "anthropic" });
+
+  expect(JSON.parse(body)).toEqual({ id: "p1", protocol: "anthropic" });
+  expect(response.ok).toBe(false);
+  expect(response.error).toBe("bad key");
 });

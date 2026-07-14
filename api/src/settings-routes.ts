@@ -12,6 +12,7 @@ import {
   type ProviderProtocol,
   type ProviderResponse,
   type SettingsState,
+  type TestProviderRequest,
   type UpdateClaudeRuntimeRequest,
   type UpdateClaudeRuntimeResponse,
   type UpdateProviderRequest,
@@ -58,6 +59,34 @@ export const handleSettingsRoutes = async (
     if (!created) throw new Error("Created provider missing from store");
     const response: ProviderResponse = { provider: toMaskedProvider(created) };
     return Response.json(response, { status: 201 });
+  }
+
+  // POST /api/settings/providers/test-models —— 用表单内联凭证测试连接（不落盘）。
+  // 精确匹配（无 id 段），放在 :id/models 正则之前。新建态无 id；编辑态传 id 用于
+  // 回退内联缺失字段（apiKey 留空 = "不改" → 用已保存原 key，原 key 永不出 api 进程）。
+  // 上游失败同样走 {ok:false, error}（与 :id/models 一致），前端展示测试结果。
+  if (url.pathname === "/api/settings/providers/test-models" && request.method === "POST") {
+    const body = await readJson<TestProviderRequest>(request);
+    const protocol = resolveProtocol(body.protocol);
+    const baseUrl = body.baseUrl?.trim();
+    const saved = body.id
+      ? (await store.read()).providers.find((p) => p.id === body.id)
+      : undefined;
+    const apiKey = body.apiKey?.trim() || saved?.apiKey || "";
+    const provider: ProviderConfig = {
+      id: body.id ?? "test",
+      label: body.label?.trim() || saved?.label || "test",
+      apiKey,
+      protocol,
+      ...(baseUrl ? { baseUrl } : saved?.baseUrl ? { baseUrl: saved.baseUrl } : {}),
+    };
+    const result = await listProviderModels(provider);
+    const response: ListProviderModelsResponse = {
+      ok: result.ok,
+      models: result.ok ? result.models : [],
+      ...(result.ok ? {} : { error: result.error }),
+    };
+    return Response.json(response);
   }
 
   // POST /api/settings/providers/:id/models —— 用 provider 凭证发现可用模型列表。

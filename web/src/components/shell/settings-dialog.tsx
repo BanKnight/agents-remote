@@ -10,6 +10,7 @@ import {
   type ListProviderModelsResponse,
   type ProviderConfigMasked,
   type ProviderProtocol,
+  type TestProviderRequest,
   type UpdateProviderRequest,
 } from "@agents-remote/shared";
 
@@ -36,6 +37,7 @@ import {
   deleteProvider,
   getSettings,
   listProviderModels,
+  testProviderModels,
   updateClaudeRuntime,
   updateProvider,
 } from "../../api/client";
@@ -493,10 +495,11 @@ function ProviderDialog({
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<ListProviderModelsResponse | null>(null);
 
-  // 测试连接：验证已保存的 provider 凭证 + 预览可用模型列表。成功后预热 runtime 段
-  // 的 provider-models 缓存（用已保存 protocol 作 key，与 ClaudeRuntimeSection 一致）。
+  // 测试连接：用表单内联凭证验证 + 预览可用模型列表。新建态无 id；编辑态 apiKey 留空
+  // 时后端回退已保存原 key（原 key 永不出 api 进程，前端只持 masked）。成功后预热
+  // runtime 段 provider-models 缓存（仅编辑态有 provider.id 可作 key）。
   const testMutation = useMutation({
-    mutationFn: (id: string) => listProviderModels(id),
+    mutationFn: (input: TestProviderRequest) => testProviderModels(input),
     onSuccess: (data) => {
       setTestResult(data);
       if (data.ok && provider) {
@@ -612,33 +615,40 @@ function ProviderDialog({
             </Field>
           </div>
 
-          {isEdit && provider && (
-            <div className="flex flex-col gap-1.5">
-              <ActionButton
-                tone="muted"
-                onClick={() => testMutation.mutate(provider.id)}
-                disabled={testMutation.isPending || saving}
-              >
-                {testMutation.isPending
-                  ? t("settings.testConnectionRunning")
-                  : t("settings.testConnection")}
-              </ActionButton>
-              {testResult && (
-                <p className={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}>
-                  {testResult.ok
-                    ? testResult.models.length > 0
-                      ? t("settings.testConnectionOk", { count: testResult.models.length })
-                      : t("settings.testConnectionOkEmpty")
-                    : t("settings.testConnectionFailed", { error: testResult.error ?? "" })}
-                </p>
-              )}
-              {testResult?.ok && testResult.models.length > 0 && (
-                <p className="truncate font-mono text-[11px] text-on-surface-muted">
-                  {testResult.models.slice(0, 5).join(" · ")}
-                </p>
-              )}
-            </div>
-          )}
+          {/* 测试连接：新建态 + 编辑态都显示。传内联表单值；编辑态 apiKey 留空 → 后端
+              用已保存原 key（"不改"语义）。 */}
+          <div className="flex flex-col gap-1.5">
+            <ActionButton
+              tone="muted"
+              onClick={() =>
+                testMutation.mutate({
+                  ...(provider ? { id: provider.id } : {}),
+                  ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+                  ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
+                  protocol,
+                })
+              }
+              disabled={testMutation.isPending || saving}
+            >
+              {testMutation.isPending
+                ? t("settings.testConnectionRunning")
+                : t("settings.testConnection")}
+            </ActionButton>
+            {testResult && (
+              <p className={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}>
+                {testResult.ok
+                  ? testResult.models.length > 0
+                    ? t("settings.testConnectionOk", { count: testResult.models.length })
+                    : t("settings.testConnectionOkEmpty")
+                  : t("settings.testConnectionFailed", { error: testResult.error ?? "" })}
+              </p>
+            )}
+            {testResult?.ok && testResult.models.length > 0 && (
+              <p className="truncate font-mono text-[11px] text-on-surface-muted">
+                {testResult.models.slice(0, 5).join(" · ")}
+              </p>
+            )}
+          </div>
 
           {error && <p className="text-xs text-error">{error}</p>}
 
