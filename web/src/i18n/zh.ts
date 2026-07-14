@@ -508,6 +508,10 @@ export const zh: Record<TranslationKey, string> = {
 
   // ── Settings ────────────────────────────────────────────────
   "settings.title": "设置",
+  "settings.back": "返回",
+  "settings.section.general": "通用",
+  "settings.section.claude": "Claude 运行时",
+  "settings.generalHint": "通用设置项将在后续版本补充。",
   "settings.providers": "API Provider",
   "settings.providersHint":
     "管理 API provider 凭证与端点。Claude runtime 使用 Anthropic 协议的 provider；Codex runtime（即将支持）将使用 OpenAI 兼容协议的 provider。",

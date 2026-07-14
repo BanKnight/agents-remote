@@ -86,15 +86,38 @@ const RUNTIME_PROVIDER_PROTOCOL = {
   codex: "openai-compatible",
 } as const satisfies Record<"claude" | "codex", ProviderProtocol>;
 
+/** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
+export type SettingsSection = "root" | "providers" | "claude" | "general";
+
+/** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
+export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT>["t"]): string => {
+  switch (section) {
+    case "providers":
+      return t("settings.providers");
+    case "claude":
+      return t("settings.section.claude");
+    case "general":
+      return t("settings.section.general");
+    default:
+      return t("settings.title");
+  }
+};
+
 /**
- * 设置内容（桌面 `SettingsDialog` / 移动 `SettingsRoute` 共享，决策 44）。
- * 两段：API Providers（凭证 CRUD）+ Runtime（决策 46 起 multi-runtime：[Claude|Codex]
- * 切换；Claude = provider 选择 / tier→model ID 映射 / 1M 开关 / effort 档位，Codex = 占位）。
- * runtime 配置在 spawn CLI 时作为全局默认初始值注入。
+ * 设置内容（桌面 `SettingsDialog` / 移动 `SettingsRoute` 共享，决策 44 + 48）。
+ * 两层结构（Apple 设置范式）：root = 3 个入口胶囊（Providers / Claude 运行时 / 通用），
+ * 点入 detail = 该项具体配置（不再有胶囊）。`activeSection` 由外壳持有、本组件接 props
+ * 单向流——桌面弹窗 header / 移动 MobilePageHeader 据同一 state 渲染返回。
  * 不含外壳——由调用方包：移动端 `SettingsRoute` = main + MobilePageHeader + 本组件 +
  * MobilePrimaryNav；桌面端 `SettingsDialog` = Dialog + DialogContent + 本组件。
  */
-export function SettingsContent() {
+export function SettingsContent({
+  activeSection = "root",
+  onNavigate,
+}: {
+  activeSection?: SettingsSection;
+  onNavigate: (section: SettingsSection) => void;
+}) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const { confirm, holder: confirmHolder } = useConfirm();
@@ -120,8 +143,8 @@ export function SettingsContent() {
   const settings = settingsQuery.data?.settings;
   const loading = settingsQuery.isLoading;
 
-  // 固定结构即时渲染（VSCode/macOS prefs 风格）：加载中也出两段框架，providers 列表
-  // 用骨架行、runtime 控件 disabled；加载完 key remount 填真实值。失败才替换为错误文案。
+  // 固定结构即时渲染（VSCode/macOS prefs 风格）：加载中也出框架，加载完填真实值。
+  // 失败才替换为错误文案。
   if (!loading && !settings) {
     return (
       <>
@@ -136,14 +159,105 @@ export function SettingsContent() {
   const providers = settings?.providers ?? [];
   const runtime = settings?.runtimes.claude ?? EMPTY_RUNTIME;
 
+  let body: ReactNode;
+  switch (activeSection) {
+    case "providers":
+      body = (
+        <ProvidersSection
+          providers={providers}
+          loading={loading}
+          onDelete={handleDelete}
+          hideLabel
+        />
+      );
+      break;
+    case "claude":
+      body = (
+        <ClaudeRuntimeContent
+          key={loading ? "loading" : JSON.stringify(runtime)}
+          loading={loading}
+          providers={providers}
+          runtime={runtime}
+        />
+      );
+      break;
+    case "general":
+      body = <GeneralSection />;
+      break;
+    default:
+      body = <SettingsRootView onNavigate={onNavigate} />;
+  }
+
   return (
     <>
-      <div className="flex flex-col gap-6">
-        <ProvidersSection providers={providers} loading={loading} onDelete={handleDelete} />
-        <RuntimeSection loading={loading} providers={providers} runtime={runtime} />
-      </div>
+      {body}
       {confirmHolder}
     </>
+  );
+}
+
+/**
+ * 第一层总入口（决策 48）：grouped Card + 3 个 ListRow 胶囊，整行点击进 detail。
+ * 复用 DESIGN.md `list` grouped 契约（与 ProvidersSection provider 列表同款）。
+ * title-only + 右 chevron（Apple 设置一级项范式）。
+ */
+function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSection) => void }) {
+  const { t } = useT();
+  const sections: { section: SettingsSection; title: string }[] = [
+    { section: "providers", title: t("settings.providers") },
+    { section: "claude", title: t("settings.section.claude") },
+    { section: "general", title: t("settings.section.general") },
+  ];
+  return (
+    <Card className="gap-0 py-0">
+      <CardContent className="p-0">
+        <ListGroup ariaLabel={t("settings.title")}>
+          {sections.map(({ section, title }) => (
+            <ListRow
+              key={section}
+              title={title}
+              onClick={() => onNavigate(section)}
+              meta={<SettingsChevron />}
+            />
+          ))}
+        </ListGroup>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 设置 root 胶囊右侧的进入指示 chevron（Apple 设置范式，区别于 ProviderRow actions 的 ⋯ 动作）。 */
+function SettingsChevron() {
+  return (
+    <svg
+      className="h-4 w-4 text-on-surface-muted"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M6 4l4 4-4 4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** 通用段（决策 48）：诚实占位——无伪造配置，后续版本补充只读系统信息。 */
+function GeneralSection() {
+  const { t } = useT();
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
+        <p className="text-sm font-semibold text-on-surface-soft">
+          {t("settings.section.general")}
+        </p>
+        <p className="text-xs leading-5 text-on-surface-muted">{t("settings.generalHint")}</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -157,28 +271,50 @@ export function SettingsContent() {
  */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const { t } = useT();
+  // 两层结构（决策 48）：state 在外壳，header 与 SettingsContent 共享。Dialog 关闭即 unmount
+  // → 下次打开自然回 root（不停在 detail）。
+  const [activeSection, setActiveSection] = useState<SettingsSection>("root");
+  const isRoot = activeSection === "root";
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <div
           className={`flex max-h-[85vh] flex-col overflow-hidden rounded-2xl shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
-          <header className="flex items-center justify-between gap-3 px-5 pt-5">
-            <DialogTitle className="text-base font-semibold text-on-surface">
-              {t("settings.title")}
+          <header className="flex items-center gap-2 px-5 pt-5">
+            {isRoot ? null : (
+              <button
+                type="button"
+                aria-label={t("settings.back")}
+                onClick={() => setActiveSection("root")}
+                className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M10 3L5 8l5 5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+            <DialogTitle className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
+              {isRoot ? t("settings.title") : sectionTitle(activeSection, t)}
             </DialogTitle>
             <button
               type="button"
               aria-label={t("session.close")}
               onClick={onClose}
-              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
             >
               <ShellIcon className="h-4 w-4" name="close" />
             </button>
           </header>
           <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
           <div className="overflow-y-auto px-5 pb-5">
-            <SettingsContent />
+            <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
           </div>
         </div>
       </DialogContent>
@@ -192,10 +328,13 @@ function ProvidersSection({
   providers,
   loading = false,
   onDelete,
+  hideLabel = false,
 }: {
   providers: ProviderConfigMasked[];
   loading?: boolean;
   onDelete: (provider: ProviderConfigMasked) => void;
+  /** detail 态（决策 48）：隐藏 section 标题/hint（header 已显示项名），保留新增按钮。 */
+  hideLabel?: boolean;
 }) {
   const { t } = useT();
   const [editing, setEditing] = useState<ProviderConfigMasked | null>(null);
@@ -203,17 +342,25 @@ function ProvidersSection({
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <ShellSectionLabel>{t("settings.providers")}</ShellSectionLabel>
-          <p className="mt-1 text-xs leading-5 text-on-surface-muted">
-            {t("settings.providersHint")}
-          </p>
+      {hideLabel ? (
+        <div className="flex justify-end">
+          <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
+            {t("settings.addProvider")}
+          </ActionButton>
         </div>
-        <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
-          {t("settings.addProvider")}
-        </ActionButton>
-      </div>
+      ) : (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <ShellSectionLabel>{t("settings.providers")}</ShellSectionLabel>
+            <p className="mt-1 text-xs leading-5 text-on-surface-muted">
+              {t("settings.providersHint")}
+            </p>
+          </div>
+          <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
+            {t("settings.addProvider")}
+          </ActionButton>
+        </div>
+      )}
 
       {/* Apple Settings grouped：圆角 Card + 整行 ListRow 点击进编辑详情；列表独立 max-h-72 内滚。 */}
       <Card className="gap-0 py-0">
@@ -509,53 +656,10 @@ function ProviderDialog({
   );
 }
 
-// ── Runtime section（多 runtime 切换器，决策 46）──────────────────────
-
-function RuntimeSection({
-  runtime,
-  providers,
-  loading = false,
-}: {
-  runtime: ClaudeRuntimeConfig;
-  providers: ProviderConfigMasked[];
-  loading?: boolean;
-}) {
-  const { t } = useT();
-  // runtime 类型 tab：本地 state 不持久化（Codex 尚未支持，纯结构预留）。
-  const [tab, setTab] = useState<"claude" | "codex">("claude");
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <ShellSectionLabel>{t("settings.runtime")}</ShellSectionLabel>
-        <p className="mt-1 text-xs leading-5 text-on-surface-muted">{t("settings.runtimeHint")}</p>
-      </div>
-
-      <SegmentedControl
-        ariaLabel={t("settings.runtime")}
-        onChange={setTab}
-        options={[
-          { label: t("settings.runtimeTabClaude"), value: "claude" },
-          { label: t("settings.runtimeTabCodex"), value: "codex" },
-        ]}
-        value={tab}
-      />
-
-      {tab === "claude" ? (
-        <ClaudeRuntimeContent
-          key={loading ? "loading" : JSON.stringify(runtime)}
-          loading={loading}
-          providers={providers}
-          runtime={runtime}
-        />
-      ) : (
-        <CodexRuntimeContent />
-      )}
-    </section>
-  );
-}
-
-// Claude runtime 配置主体（原 ClaudeRuntimeSection 的 Card）。父组件 RuntimeSection 用
+// Claude runtime 配置主体（决策 48 起：两层结构下 claude detail 直接渲染本组件，
+// 不再经 RuntimeSection tab 包裹）。调用方 SettingsContent 用 key={JSON.stringify(runtime)}
+// remount：runtime 内容变（save 成功 / providerId 被后端清）才重置 state；provider CRUD
+// 不改 runtime 时 key 不变，用户编辑中的改动保留。
 // key={JSON.stringify(runtime)} remount：runtime 内容变（save 成功 / providerId 被后端清）
 // 才重置 state；provider CRUD 不改 runtime 时 key 不变，用户编辑中的改动保留。
 function ClaudeRuntimeContent({
@@ -717,24 +821,6 @@ function ClaudeRuntimeContent({
             {saving ? t("settings.saving") : t("settings.save")}
           </ActionButton>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Codex runtime 占位（决策 46）：agent 尚未支持，诚实空态——无伪造控件、不读后端。
-// 未来 Codex 接入时把本组件换成真实配置主体 + 接 backend，runtime 段结构无需改动。
-function CodexRuntimeContent() {
-  const { t } = useT();
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
-        <p className="text-sm font-semibold text-on-surface-soft">
-          {t("settings.codexRuntimeUnsupported")}
-        </p>
-        <p className="text-xs leading-5 text-on-surface-muted">
-          {t("settings.codexRuntimeUnsupportedHint")}
-        </p>
       </CardContent>
     </Card>
   );
