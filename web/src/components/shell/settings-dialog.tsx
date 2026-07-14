@@ -279,9 +279,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <div
-          className={`flex max-h-[85vh] flex-col overflow-hidden rounded-2xl shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+          className={`flex h-[75vh] flex-col overflow-hidden rounded-2xl shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
-          <header className="flex items-center gap-2 px-5 pt-5">
+          <header className="flex shrink-0 items-center gap-2 px-5 pt-5">
             {isRoot ? null : (
               <button
                 type="button"
@@ -313,7 +313,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </button>
           </header>
           <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
-          <div className="overflow-y-auto px-5 pb-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
             <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
           </div>
         </div>
