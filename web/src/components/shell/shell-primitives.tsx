@@ -298,21 +298,29 @@ export function StatusMarker({ marker, status }: StatusMarkerProps) {
 
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: ShellTone;
+  /** 行内紧凑场景（总览 / 列表 header 行内按钮）：不放大移动端触摸目标，见 actionButtonClasses compact。 */
+  compact?: boolean;
 };
 
 type ActionButtonClassOptions = {
   className?: string;
+  /** 行内紧凑场景（总览顶部 header 的新建按钮）：不放大移动端触摸目标，恒定 px-3 py-1.5
+   * text-xs，与 header 行高（py-1.5）一致不撑爆。默认 false（dialog/表单按钮移动端撑到
+   * min-h-11 触摸友好）。 */
+  compact?: boolean;
   tone?: ShellTone;
 };
 
 export function actionButtonClasses({
   className = "",
+  compact = false,
   tone = "default",
 }: ActionButtonClassOptions = {}) {
-  // 桌面紧凑（px-3 py-1.5 text-xs）；移动端撑到触摸最小目标 min-h-11（44px，对齐
-  // MobilePageHeader 基线）+ px-4 + text-sm——ActionButton 全部用在 dialog/表单上下文
-  //（确认/取消/保存/测试连接），移动端放大全是可用性改善，无视觉回归。
-  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition max-sm:min-h-11 max-sm:px-4 max-sm:text-sm ${buttonToneClasses[tone]} ${className}`;
+  // 桌面紧凑（px-3 py-1.5 text-xs）；默认移动端撑到触摸最小目标 min-h-11（44px）+ px-4 +
+  // text-sm——dialog/表单按钮（确认/取消/保存）移动端放大是可用性改善。compact=true 用于
+  // 总览 header 行内按钮（新建项目/新建实例），不放大以与 header 行高一致。
+  const mobile = compact ? "" : "max-sm:min-h-11 max-sm:px-4 max-sm:text-sm";
+  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition ${mobile} ${buttonToneClasses[tone]} ${className}`;
 }
 
 type ResizeGutterProps = {
@@ -367,6 +375,7 @@ export function ResizeGutter({ edge, onResize }: ResizeGutterProps) {
 export function ActionButton({
   children,
   className = "",
+  compact = false,
   tone = "default",
   type = "button",
   ...props
@@ -375,6 +384,7 @@ export function ActionButton({
     <Button
       {...props}
       className={actionButtonClasses({
+        compact,
         tone,
         className: `disabled:cursor-not-allowed disabled:opacity-50 ${className}`,
       })}

@@ -975,6 +975,7 @@ export function CreateSessionBar({
         <button
           className={actionButtonClasses({
             className: `group disabled:cursor-not-allowed disabled:opacity-50 ${triggerClassName ?? ""}`,
+            compact: true,
             tone: "accent",
           })}
           disabled={isCreating}

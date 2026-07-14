@@ -375,6 +375,19 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 `MobilePageHeader` 现是 `px-2`，正文内容区 `px-3` → header 比正文窄。统一为 `px-3`（所有移动 header 一致对齐正文）。**高度也统一 `h-11`**：`MobilePageHeader`（大标题式）与 `MobileTabHeader`（tab 横滚式）两套 primitive 并存但视觉高度对齐 `h-11`，覆盖三个一级页面（项目列表 / 全局 / 设置）+ 项目总览 + 聚焦态所有移动 header。
 
+## 12.1 总览 / 列表 header 行 chrome 一致性（批 Q）
+
+**不变量**：所有「总览 / 列表」顶部 header 行（global 项目总览、project 实例总览、移动 project 总览、files 列表 header）共享同一套 chrome，不再各自散写：
+
+- 容器：`flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5`——在滚动区外（`shrink-0` 不被压缩）、统一 `border-on-surface/5` 细分割线 + `px-2 py-1.5` 行高（~40px）。
+- 行内按钮（新建项目 / 新建实例 / New Folder / Upload）一律走 `actionButtonClasses({ compact: true, tone })`（或 `<ActionButton compact>`）：`compact` 不挂移动端触摸放大（不挂 `max-sm:min-h-11`），恒定 `px-3 py-1.5 text-xs`，与 `py-1.5` header 行高一致、不撑爆。dialog / 表单按钮仍用默认（非 compact）移动端撑到 `min-h-11` 触摸友好。
+
+**为什么需要 `compact`**：`actionButtonClasses` 默认移动端 `max-sm:min-h-11 max-sm:px-4 max-sm:text-sm`（44px 触摸目标）服务于 dialog / 表单确认按钮；同一 primitive 被 overview header 行内按钮复用后，44px 撑爆 `py-1.5`（~40px）header 行，移动端「新建」按钮明显高出常规。`compact` 是 primitive 层单一开关，让 header 行内按钮回归 `py-1.5` 行高，dialog 按钮零回归。
+
+**移动 project 总览对齐桌面 / global（批 Q 点 3）**：`MobileProjectOverview` 的 ViewSwitcher 行原本在滚动区内、无 `border-b`（桌面 `InstanceLeftOverview` / global `GlobalProjectsOverview` 同行有），与「桌面 / 移动同构」预期不符。改为提到滚动区外作 `shrink-0` header + `border-b border-on-surface/5 px-2 py-1.5`，与桌面 / global 同款。
+
+**files 列表 header 对齐（批 Q 点 4）**：`FilesPanel` 顶部 breadcrumb 行原本 `border-b border-neutral-line/40 px-3.5 py-3`（偏高 + 异色边），改为同一 chrome `shrink-0 border-b border-on-surface/5 px-2 py-1.5`；行内 New Folder / Upload `<ActionButton>` 加 `compact`。
+
 ## 13. 激活与聚焦语义
 
 - **活动 group** = `activeGroupId`（显式存布局）= 右工作区当前激活的 group；其 **活动 tab** = 该 group 的 `activeTabId`；URL `focusId` = 活动 tab 的 sessionId（唯一反查 group+tab）。

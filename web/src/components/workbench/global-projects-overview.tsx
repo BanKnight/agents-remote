@@ -185,7 +185,7 @@ export function GlobalProjectsOverview({
       <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
         <button
           aria-label={t("home.createProjectAria")}
-          className={actionButtonClasses({ tone: "accent" })}
+          className={actionButtonClasses({ compact: true, tone: "accent" })}
           onClick={() => setSetupOpen(true)}
           type="button"
         >

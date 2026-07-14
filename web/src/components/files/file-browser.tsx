@@ -1015,7 +1015,7 @@ export function FilesPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
       <div
-        className={`border-b border-neutral-line/40 px-3.5 py-3 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
+        className={`shrink-0 border-b border-on-surface/5 px-2 py-1.5 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
         <div className="flex min-h-7 min-w-0 items-center justify-between gap-3">
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
@@ -1062,6 +1062,7 @@ export function FilesPanel({
                     onChange={(e) => setFolderNameInput(e.target.value)}
                   />
                   <ActionButton
+                    compact
                     disabled={mkdir.isPending || folderNameInput.trim().length === 0}
                     tone="accent"
                     onClick={handleMkdir}
@@ -1073,6 +1074,7 @@ export function FilesPanel({
                 </div>
               ) : (
                 <ActionButton
+                  compact
                   title={t("files.newFolderTooltip")}
                   tone="muted"
                   onClick={() => setShowFolderInput(true)}
@@ -1082,6 +1084,7 @@ export function FilesPanel({
                 </ActionButton>
               )}
               <ActionButton
+                compact
                 title={t("files.uploadTooltip")}
                 disabled={upload.isPending}
                 tone="accent"

@@ -665,10 +665,10 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
             <HistoryList focusId={undefined} projectName={scope.key} showLabel={false} />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-            {/* 创建入口（左）+ ViewSwitcher（右 ml-auto）两端对齐（设计 §6）：
-                CreateSessionBar 从原 ProjectInstances 提到此行，table/grid 两视图都可见创建入口。 */}
-            <div className="flex items-center gap-1 px-3 py-2">
+          <Fragment>
+            {/* 创建入口（左）+ ViewSwitcher（右 ml-auto）两端对齐（设计 §6）：shrink-0 header
+                在滚动区外，border-b 与全局总览 / 桌面左总览 header 一致（批 Q 排版对齐）。 */}
+            <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
               <CreateSessionBar
                 isCreating={create.isCreating}
                 onCreateAgent={create.createAgent}
@@ -683,35 +683,37 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                 />
               </div>
             </div>
-            {resolvedView === "table" ? (
-              tableRows.length === 0 ? (
-                isLoading ? (
-                  <div className="px-3">
-                    <CardGridSkeleton />
-                  </div>
+            <div className="min-h-0 flex-1 overflow-y-auto pb-24 lg:pb-0">
+              {resolvedView === "table" ? (
+                tableRows.length === 0 ? (
+                  isLoading ? (
+                    <div className="px-3">
+                      <CardGridSkeleton />
+                    </div>
+                  ) : (
+                    <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                      {t("workbench.emptyInstanceHint")}
+                    </p>
+                  )
                 ) : (
-                  <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                    {t("workbench.emptyInstanceHint")}
-                  </p>
+                  <SessionTable columns={tableColumns} rows={tableRows} t={t} />
                 )
-              ) : (
-                <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-              )
-            ) : isLoading && gridItems.length === 0 ? (
-              <div className="px-3 py-2">
-                <CardGridSkeleton plain />
-              </div>
-            ) : gridItems.length > 0 ? (
-              <div className="px-3 py-2">
-                <InstanceGrid items={gridItems} plain />
-              </div>
-            ) : null}
-            {/* closeHolder + promptHolder 统一渲染（grid/table 两视图共用；
-                原 ProjectInstances 自含 holder 已随组件删除，无双 holder）。 */}
-            {closeHolder}
-            {renameHolder}
-            {create.promptHolder}
-          </div>
+              ) : isLoading && gridItems.length === 0 ? (
+                <div className="px-3 py-2">
+                  <CardGridSkeleton plain />
+                </div>
+              ) : gridItems.length > 0 ? (
+                <div className="px-3 py-2">
+                  <InstanceGrid items={gridItems} plain />
+                </div>
+              ) : null}
+              {/* closeHolder + promptHolder 统一渲染（grid/table 两视图共用；
+                  原 ProjectInstances 自含 holder 已随组件删除，无双 holder）。 */}
+              {closeHolder}
+              {renameHolder}
+              {create.promptHolder}
+            </div>
+          </Fragment>
         )}
       </div>
     </div>
