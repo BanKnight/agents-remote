@@ -30,8 +30,10 @@ export function SettingsRoute() {
             : { label: t("settings.title"), onClick: () => setActiveSection("root") }
         }
       />
-      <div className="flex-1 overflow-y-auto">
-        {/* root 态留底部 nav 高度的 padding（pb-24）；detail 态 nav 隐藏，改 pb-8 收紧底部。 */}
+      <div className="flex-1 overflow-y-auto bg-surface-raised/15">
+        {/* root 态留底部 nav 高度的 padding（pb-24）；detail 态 nav 隐藏，改 pb-8 收紧底部。
+            内容区底用 surface-raised/15，与桌面弹窗 SettingsDialog 内容区底一致——
+            让列表 Card(bg-surface) 在移动端落在与桌面端同款更亮的底上，两端列表颜色对比一致。 */}
         <div className={`mx-auto w-full max-w-2xl p-4 ${isRoot ? "pb-24 lg:pb-8" : "pb-8"}`}>
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
