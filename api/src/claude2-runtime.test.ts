@@ -5,11 +5,11 @@ import {
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
-  resolveProviderCreds,
+  resolveActivePresetCreds,
   resolveSpawnModel,
   Claude2Runtime,
 } from "./claude2-runtime";
-import type { ClaudeRuntimeConfig, ProviderConfig } from "@agents-remote/shared";
+import type { ClaudeModelMapping, ClaudePreset } from "@agents-remote/shared";
 import type { SettingsStore } from "./settings-store";
 
 test("buildSeedInitLine uses seed_init subtype so server-side init capture skips it", () => {
@@ -356,103 +356,82 @@ test("buildSpawnEnv omits baseUrl when provider has only apiKey", () => {
   expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
 });
 
-// ── resolveProviderCreds: provider 解析 + protocol 守卫 ──
+// ── resolveActivePresetCreds: 激活预设凭证解析 ──
 
-const credsRuntime = (providerId: string): ClaudeRuntimeConfig => ({
-  providerId,
-  modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
-  enable1mContext: false,
-  effort: "high",
-});
+const ALIAS_MAPPING: ClaudeModelMapping = {
+  default: "sonnet",
+  opus: "opus",
+  sonnet: "sonnet",
+  haiku: "haiku",
+};
 
-test("resolveProviderCreds returns anthropic provider creds with baseUrl", () => {
-  const providers: ProviderConfig[] = [
-    { id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic", baseUrl: "https://gw" },
+const CONCRETE_MAPPING: ClaudeModelMapping = {
+  default: "claude-sonnet-4-6",
+  opus: "claude-opus-4-8",
+  sonnet: "claude-sonnet-4-6",
+  haiku: "claude-haiku-4-5",
+};
+
+const credsRuntime = (activePresetId: string): { activePresetId: string } => ({ activePresetId });
+
+test("resolveActivePresetCreds returns active preset creds with baseUrl", () => {
+  const presets: ClaudePreset[] = [
+    { id: "p1", label: "A", apiKey: "sk-a", baseUrl: "https://gw", modelMapping: ALIAS_MAPPING },
   ];
-  expect(resolveProviderCreds(credsRuntime("p1"), providers)).toEqual({
+  expect(resolveActivePresetCreds(credsRuntime("p1"), presets)).toEqual({
     apiKey: "sk-a",
     baseUrl: "https://gw",
   });
 });
 
-test("resolveProviderCreds omits baseUrl when provider has none", () => {
-  const providers: ProviderConfig[] = [
-    { id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" },
+test("resolveActivePresetCreds omits baseUrl when preset has none", () => {
+  const presets: ClaudePreset[] = [
+    { id: "p1", label: "A", apiKey: "sk-a", modelMapping: ALIAS_MAPPING },
   ];
-  expect(resolveProviderCreds(credsRuntime("p1"), providers)).toEqual({
+  expect(resolveActivePresetCreds(credsRuntime("p1"), presets)).toEqual({
     apiKey: "sk-a",
     baseUrl: undefined,
   });
 });
 
-test("resolveProviderCreds rejects openai-compatible provider and invokes onMismatch", () => {
-  const providers: ProviderConfig[] = [
-    { id: "p1", label: "GW", apiKey: "sk-a", protocol: "openai-compatible" },
-  ];
-  let mismatch: ProviderConfig | null = null;
-  const result = resolveProviderCreds(credsRuntime("p1"), providers, (p) => {
-    mismatch = p;
-  });
-  expect(result).toBeUndefined();
-  expect(mismatch?.label).toBe("GW");
-});
-
-test("resolveProviderCreds treats missing protocol as anthropic (legacy providers.json)", () => {
-  const providers = [{ id: "p1", label: "A", apiKey: "sk-a" }] as ProviderConfig[];
-  expect(resolveProviderCreds(credsRuntime("p1"), providers)?.apiKey).toBe("sk-a");
-});
-
-test("resolveProviderCreds returns undefined when providerId empty", () => {
+test("resolveActivePresetCreds returns undefined when activePresetId empty", () => {
   expect(
-    resolveProviderCreds(credsRuntime(""), [
-      { id: "p1", label: "A", apiKey: "sk-a" },
-    ] as ProviderConfig[]),
+    resolveActivePresetCreds(credsRuntime(""), [
+      { id: "p1", label: "A", apiKey: "sk-a", modelMapping: ALIAS_MAPPING },
+    ]),
   ).toBeUndefined();
 });
 
-test("resolveProviderCreds returns undefined when provider not found", () => {
+test("resolveActivePresetCreds returns undefined when preset not found", () => {
   expect(
-    resolveProviderCreds(credsRuntime("nope"), [
-      { id: "p1", label: "A", apiKey: "sk-a" },
-    ] as ProviderConfig[]),
+    resolveActivePresetCreds(credsRuntime("nope"), [
+      { id: "p1", label: "A", apiKey: "sk-a", modelMapping: ALIAS_MAPPING },
+    ]),
   ).toBeUndefined();
 });
 
-test("resolveProviderCreds returns undefined when providers undefined", () => {
-  expect(resolveProviderCreds(credsRuntime("p1"), undefined)).toBeUndefined();
+test("resolveActivePresetCreds returns undefined when presets undefined", () => {
+  expect(resolveActivePresetCreds(credsRuntime("p1"), undefined)).toBeUndefined();
 });
 
 // ── resolveSpawnModel: metadata.model → spawn --model 值 ──
 
-const aliasRuntime: ClaudeRuntimeConfig = {
-  providerId: "",
-  modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
-  enable1mContext: false,
-  effort: "high",
-};
+// view = {modelMapping, enable1mContext}：resolveSpawnModel 入参从 v1 的整个 runtime 收窄
+// 为激活预设派生的视图（modelMapping v2 起下沉到预设）。enable1mContext 控制 [1m] 拼接。
+const aliasView = { modelMapping: ALIAS_MAPPING, enable1mContext: false };
 
-const concreteRuntime: ClaudeRuntimeConfig = {
-  providerId: "",
-  modelMapping: {
-    default: "claude-sonnet-4-6",
-    opus: "claude-opus-4-8",
-    sonnet: "claude-sonnet-4-6",
-    haiku: "claude-haiku-4-5",
-  },
-  enable1mContext: false,
-  effort: "high",
-};
+const concreteView = { modelMapping: CONCRETE_MAPPING, enable1mContext: false };
 
 test("resolveSpawnModel returns undefined for missing model", () => {
-  expect(resolveSpawnModel(undefined, aliasRuntime)).toBeUndefined();
+  expect(resolveSpawnModel(undefined, aliasView)).toBeUndefined();
 });
 
 test("resolveSpawnModel resolves tier alias via modelMapping", () => {
-  expect(resolveSpawnModel("sonnet", concreteRuntime)).toBe("claude-sonnet-4-6");
+  expect(resolveSpawnModel("sonnet", concreteView)).toBe("claude-sonnet-4-6");
 });
 
 test("resolveSpawnModel appends [1m] to resolved concrete id when enable1mContext on", () => {
-  expect(resolveSpawnModel("sonnet", { ...concreteRuntime, enable1mContext: true })).toBe(
+  expect(resolveSpawnModel("sonnet", { ...concreteView, enable1mContext: true })).toBe(
     "claude-sonnet-4-6[1m]",
   );
 });
@@ -462,54 +441,64 @@ test("resolveSpawnModel passes tier alias through when runtime undefined", () =>
 });
 
 test("resolveSpawnModel leaves bare alias without [1m] even when enable1mContext on", () => {
-  // aliasRuntime maps sonnet→"sonnet" (no dash). resolveModelId only suffixes
+  // aliasView maps sonnet→"sonnet" (no dash). resolveModelId only suffixes
   // concrete ids (has dash), so a bare alias stays bare — CLI rejects "alias[1m]".
-  expect(resolveSpawnModel("sonnet", { ...aliasRuntime, enable1mContext: true })).toBe("sonnet");
+  expect(resolveSpawnModel("sonnet", { ...aliasView, enable1mContext: true })).toBe("sonnet");
 });
 
 test("resolveSpawnModel appends [1m] to concrete id when enable1mContext on", () => {
-  expect(resolveSpawnModel("claude-opus-4-8", { ...aliasRuntime, enable1mContext: true })).toBe(
+  expect(resolveSpawnModel("claude-opus-4-8", { ...aliasView, enable1mContext: true })).toBe(
     "claude-opus-4-8[1m]",
   );
 });
 
 test("resolveSpawnModel does not append [1m] when enable1mContext off", () => {
-  expect(resolveSpawnModel("claude-opus-4-8", aliasRuntime)).toBe("claude-opus-4-8");
+  expect(resolveSpawnModel("claude-opus-4-8", aliasView)).toBe("claude-opus-4-8");
 });
 
 test("resolveSpawnModel does not double-append [1m]", () => {
-  expect(resolveSpawnModel("claude-opus-4-8[1m]", { ...aliasRuntime, enable1mContext: true })).toBe(
+  expect(resolveSpawnModel("claude-opus-4-8[1m]", { ...aliasView, enable1mContext: true })).toBe(
     "claude-opus-4-8[1m]",
   );
 });
 
 // ── resolveControlModel: runtime set_model（客户端控制）——具体 ID 透传，只解析 tier alias ──
 
-const makeSettingsStore = (claude: ClaudeRuntimeConfig): SettingsStore =>
-  ({ read: async () => ({ providers: [], runtimes: { claude } }) }) as unknown as SettingsStore;
+// 构造 v2 settingsStore：一个激活预设（modelMapping 决定 tier→ID 解析）+ runtime 1m 旋钮。
+// resolveControlModel 经 activePresetView(rt, presets) 派生 view，tier alias 走 resolveModelId。
+const makeSettingsStore = (
+  modelMapping: ClaudeModelMapping,
+  enable1mContext = false,
+): SettingsStore =>
+  ({
+    read: async () => ({
+      runtimes: {
+        claude: {
+          presets: [{ id: "active", label: "Active", apiKey: "sk-x", modelMapping }],
+          activePresetId: "active",
+          enable1mContext,
+          effort: "high",
+        },
+      },
+    }),
+  }) as unknown as SettingsStore;
 
-test("resolveControlModel resolves tier alias via settings modelMapping (matches spawn)", async () => {
-  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(concreteRuntime));
+test("resolveControlModel resolves tier alias via active preset modelMapping (matches spawn)", async () => {
+  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING));
   expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6");
 });
 
 test("resolveControlModel appends [1m] to resolved tier alias when enable1mContext on", async () => {
-  // tier alias 仍经 modelMapping 解析；concreteRuntime 把 sonnet→claude-sonnet-4-6，
+  // tier alias 仍经激活预设 modelMapping 解析；CONCRETE_MAPPING 把 sonnet→claude-sonnet-4-6，
   // 开 1m → 解析后拼 [1m]（alias-mapping 部署的运行时切换路径，与 spawn 同源）。
-  const runtime = new Claude2Runtime(
-    tmpdir(),
-    makeSettingsStore({ ...concreteRuntime, enable1mContext: true }),
-  );
+  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
   expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6[1m]");
 });
 
 test("resolveControlModel passes concrete id through verbatim (no forced [1m])", async () => {
   // 客户端控制的 per-session [1m] 切换：菜单发具体 ID，服务端原样透传，不受全局
   // enable1mContext 影响——这是与 spawn 的关键差异（spawn 跟随全局默认，control 由客户端定）。
-  const runtime = new Claude2Runtime(
-    tmpdir(),
-    makeSettingsStore({ ...concreteRuntime, enable1mContext: true }),
-  );
+  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
   expect(await runtime.resolveControlModel("claude-opus-4-8")).toBe("claude-opus-4-8");
   expect(await runtime.resolveControlModel("claude-opus-4-8[1m]")).toBe("claude-opus-4-8[1m]");
   expect(await runtime.resolveControlModel("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");

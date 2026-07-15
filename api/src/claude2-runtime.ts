@@ -3,13 +3,18 @@ import { dirname, join } from "node:path";
 import {
   CLAUDE_MODEL_TIERS,
   type ClaudeModelTier,
-  type ClaudeRuntimeConfig,
+  type ClaudePreset,
   type EffortLevel,
-  type ProviderConfig,
 } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import { Claude2SessionRelay } from "./session-relay";
-import { SettingsStore, isConcreteModelId, resolveModelId } from "./settings-store";
+import {
+  SettingsStore,
+  activePresetView,
+  isConcreteModelId,
+  resolveModelId,
+  type ModelMappingView,
+} from "./settings-store";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -122,39 +127,32 @@ export function buildSpawnEnv(
   return env;
 }
 
-// 纯函数：从 settings 解析 claude runtime 选中 provider 的凭证（含 protocol 守卫）。
-// Claude runtime 只消费 anthropic provider（决策 47）：选中 provider 协议不符 → undefined
-// （spawn 回退继承父进程 env，而非拿 OpenAI key 当 ANTHROPIC_API_KEY 用错端点）。
-// 前端 UI 过滤可被绕过（直发 PUT 或改协议留 stale 引用），此为运行态最后防线。
-// onMismatch 回调供调用方打 warn（纯函数自身无副作用）。导出供测试。
-export function resolveProviderCreds(
-  rt: ClaudeRuntimeConfig | undefined,
-  providers: ProviderConfig[] | undefined,
-  onMismatch?: (provider: ProviderConfig) => void,
+// 纯函数：从 settings 解析 claude runtime 激活预设的凭证。activePresetId 命中 → 返回
+// {apiKey, baseUrl}；未激活/未命中/无 presets → undefined（spawn 回退继承父进程 env）。
+// v2 起预设恒 anthropic（claude 端点），无需 protocol 守卫。导出供测试。
+export function resolveActivePresetCreds(
+  rt: { activePresetId: string } | undefined,
+  presets: ClaudePreset[] | undefined,
 ): { apiKey: string; baseUrl?: string } | undefined {
-  if (!rt?.providerId || !providers) return undefined;
-  const provider = providers.find((p) => p.id === rt.providerId);
-  if (!provider) return undefined;
-  if ((provider.protocol ?? "anthropic") !== "anthropic") {
-    onMismatch?.(provider);
-    return undefined;
-  }
-  return { apiKey: provider.apiKey, baseUrl: provider.baseUrl };
+  if (!rt?.activePresetId || !presets) return undefined;
+  const preset = presets.find((p) => p.id === rt.activePresetId);
+  if (!preset) return undefined;
+  return { apiKey: preset.apiKey, baseUrl: preset.baseUrl };
 }
 
 // 纯函数：metadata.model → spawn --model 值。
-// tier alias（"sonnet"）→ resolveModelId(runtime, tier)（受 enable1mContext 影响）；
+// tier alias（"sonnet"）→ resolveModelId(view, tier)（view = 激活预设 modelMapping + runtime 1m）；
 // 具体 ID（session 内 set_model 持久化的）→ 直接用，enable1mContext 时拼 [1m]（若未含）。
-// runtime 缺失（settingsStore 不可用）→ tier alias 原样传（CLI 接受，现状不坏）。
+// view 缺失（无激活预设 / settingsStore 不可用）→ tier alias 原样传（CLI 接受，现状不坏）。
 export function resolveSpawnModel(
   model: string | undefined,
-  runtime: ClaudeRuntimeConfig | undefined,
+  view: ModelMappingView | undefined,
 ): string | undefined {
   if (!model) return undefined;
   if (isClaudeModelTier(model)) {
-    return runtime ? resolveModelId(runtime, model) : model;
+    return view ? resolveModelId(view, model) : model;
   }
-  if (runtime?.enable1mContext && !model.includes("[1m]") && isConcreteModelId(model)) {
+  if (view?.enable1mContext && !model.includes("[1m]") && isConcreteModelId(model)) {
     return `${model}[1m]`;
   }
   return model;
@@ -211,8 +209,9 @@ export class Claude2Runtime implements RuntimeResources {
   // switch is client-controlled: the menu offers concrete IDs with/without [1m],
   // so concrete IDs pass through verbatim — letting the client toggle [1m] per
   // session instead of being forced by the global enable1mContext. Only tier
-  // aliases (legacy clients / alias-mapping deployments) get resolved via
-  // modelMapping. Settings read failure falls back to the raw alias passthrough.
+  // aliases (legacy clients / alias-mapping deployments) get resolved via the
+  // active preset's modelMapping. Settings read failure falls back to the raw
+  // alias passthrough.
   async resolveControlModel(model: string | undefined): Promise<string | undefined> {
     if (!model) return undefined;
     if (!isClaudeModelTier(model)) return model;
@@ -222,8 +221,9 @@ export class Claude2Runtime implements RuntimeResources {
           return undefined;
         })
       : undefined;
-    const rt = settings?.runtimes.claude;
-    return rt ? resolveModelId(rt, model) : model;
+    const claude = settings?.runtimes.claude;
+    const view = claude ? activePresetView(claude, claude.presets) : undefined;
+    return view ? resolveModelId(view, model) : model;
   }
 
   setClaudeSessionId(sessionName: string, claudeSessionId: string, model?: string): void {
@@ -487,9 +487,9 @@ export class Claude2Runtime implements RuntimeResources {
     return proc;
   }
 
-  // 读 settingsStore 算 spawn 初始值：model tier→具体 ID 解析、effort（metadata 优先 ?? 全局默认）、
-  // provider 凭证（apiKey 只在此处读出注入 env，不存 process state、不进日志）。settingsStore 缺失
-  // 或读失败 → 回退 metadata 原值 + 继承父进程 env（现状不坏）。
+  // 读 settingsStore 算 spawn 初始值：model tier→具体 ID 解析（激活预设 modelMapping）、
+  // effort（metadata 优先 ?? 全局默认）、激活预设凭证（apiKey 只在此处读出注入 env，不存 process
+  // state、不进日志）。settingsStore 缺失或读失败 → 回退 metadata 原值 + 继承父进程 env（现状不坏）。
   private async resolveSpawnInputs(
     model: string | undefined,
     effort: EffortLevel | undefined,
@@ -504,15 +504,12 @@ export class Claude2Runtime implements RuntimeResources {
           return undefined;
         })
       : undefined;
-    const rt = settings?.runtimes.claude;
+    const claude = settings?.runtimes.claude;
+    const view = claude ? activePresetView(claude, claude.presets) : undefined;
     return {
-      resolvedModel: resolveSpawnModel(model, rt),
-      resolvedEffort: effort ?? rt?.effort,
-      providerCreds: resolveProviderCreds(rt, settings?.providers, (p) => {
-        console.warn(
-          `[claude2] selected provider "${p.label}" is ${p.protocol}, not injected into Claude runtime; falling back to inherited env`,
-        );
-      }),
+      resolvedModel: resolveSpawnModel(model, view),
+      resolvedEffort: effort ?? claude?.effort,
+      providerCreds: resolveActivePresetCreds(claude, claude?.presets),
     };
   }
 

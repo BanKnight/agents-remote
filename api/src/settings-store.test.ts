@@ -2,15 +2,29 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ClaudeRuntimeConfig, SettingsState } from "@agents-remote/shared";
+import type { ClaudeModelMapping, SettingsState } from "@agents-remote/shared";
 import {
-  DEFAULT_CLAUDE_RUNTIME,
   SettingsStore,
+  activePresetView,
   buildAvailableModels,
   maskApiKey,
+  migrateV1ToV2,
   resolveModelId,
-  toMaskedProvider,
+  toMaskedPreset,
 } from "./settings-store";
+
+const ALIAS_MAPPING: ClaudeModelMapping = {
+  default: "sonnet",
+  opus: "opus",
+  sonnet: "sonnet",
+  haiku: "haiku",
+};
+const CONCRETE_MAPPING: ClaudeModelMapping = {
+  default: "claude-sonnet-4-6",
+  opus: "claude-opus-4-8",
+  sonnet: "claude-sonnet-4-6",
+  haiku: "claude-haiku-4-5",
+};
 
 const tempDirs: string[] = [];
 
@@ -30,30 +44,30 @@ test("SettingsStore.read returns defaults when file is missing (no throw)", asyn
 
   const state = await store.read();
 
-  expect(state.providers).toEqual([]);
-  expect(state.runtimes.claude).toEqual(DEFAULT_CLAUDE_RUNTIME);
+  expect(state.runtimes.claude.presets).toEqual([]);
+  expect(state.runtimes.claude.activePresetId).toBe("");
   expect(state.runtimes.claude.effort).toBe("high");
   expect(state.runtimes.claude.enable1mContext).toBe(false);
 });
 
-test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion", async () => {
+test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 2", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "providers.json");
   const store = new SettingsStore({ path });
 
   const state: SettingsState = {
-    providers: [
-      { id: "prov_1", label: "官方", apiKey: "sk-ant-abc123wX4k", protocol: "anthropic" },
-    ],
     runtimes: {
       claude: {
-        providerId: "prov_1",
-        modelMapping: {
-          default: "claude-sonnet-4-6",
-          opus: "claude-opus-4-8",
-          sonnet: "claude-sonnet-4-6",
-          haiku: "claude-haiku-4-5",
-        },
+        presets: [
+          {
+            id: "preset_1",
+            label: "官方",
+            apiKey: "sk-ant-abc123wX4k",
+            baseUrl: "https://api.anthropic.com",
+            modelMapping: CONCRETE_MAPPING,
+          },
+        ],
+        activePresetId: "preset_1",
         enable1mContext: true,
         effort: "max",
       },
@@ -68,7 +82,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
   expect(fileStat.mode & 0o077).toBe(0);
 
   const raw = JSON.parse(await readFile(path, "utf8"));
-  expect(raw.schemaVersion).toBe(1);
+  expect(raw.schemaVersion).toBe(2);
 });
 
 test("SettingsStore.update applies mutator as read-modify-write", async () => {
@@ -77,61 +91,220 @@ test("SettingsStore.update applies mutator as read-modify-write", async () => {
 
   const afterCreate = await store.update((s) => ({
     ...s,
-    providers: [...s.providers, { id: "p1", label: "A", apiKey: "sk-a" }],
+    runtimes: {
+      ...s.runtimes,
+      claude: {
+        ...s.runtimes.claude,
+        presets: [
+          ...s.runtimes.claude.presets,
+          { id: "p1", label: "A", apiKey: "sk-a", modelMapping: ALIAS_MAPPING },
+        ],
+      },
+    },
   }));
-  expect(afterCreate.providers).toHaveLength(1);
+  expect(afterCreate.runtimes.claude.presets).toHaveLength(1);
 
   const afterSecond = await store.update((s) => ({
     ...s,
-    providers: [...s.providers, { id: "p2", label: "B", apiKey: "sk-b" }],
+    runtimes: {
+      ...s.runtimes,
+      claude: {
+        ...s.runtimes.claude,
+        presets: [
+          ...s.runtimes.claude.presets,
+          { id: "p2", label: "B", apiKey: "sk-b", modelMapping: ALIAS_MAPPING },
+        ],
+      },
+    },
   }));
-  expect(afterSecond.providers.map((p) => p.id)).toEqual(["p1", "p2"]);
+  expect(afterSecond.runtimes.claude.presets.map((p) => p.id)).toEqual(["p1", "p2"]);
 });
 
-test("SettingsStore.read tolerates legacy/partial files (normalizes missing fields)", async () => {
+test("SettingsStore.read tolerates v2 partial files (normalizes missing fields)", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "providers.json");
-  await writeFile(path, JSON.stringify({ providers: [] }), { mode: 0o600 });
+  await writeFile(path, JSON.stringify({ runtimes: { claude: { presets: [] } } }), { mode: 0o600 });
 
   const state = await new SettingsStore({ path }).read();
 
-  expect(state.providers).toEqual([]);
+  expect(state.runtimes.claude.presets).toEqual([]);
   expect(state.runtimes.claude.effort).toBe("high");
-  expect(state.runtimes.claude.modelMapping.opus).toBe("opus");
+  expect(state.runtimes.claude.activePresetId).toBe("");
 });
 
-test("resolveModelId: tier alias passes through; concrete ID gets [1m] only when enabled", () => {
-  const aliasConfig: ClaudeRuntimeConfig = {
-    providerId: "",
-    modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
-    enable1mContext: true,
-    effort: "high",
-  };
-  expect(resolveModelId(aliasConfig, "opus")).toBe("opus");
-  expect(resolveModelId(aliasConfig, "default")).toBe("sonnet");
+// ── v1 → v2 迁移（最高风险防线：v1 被 v2 覆盖后不可逆，凭证不能丢）──────────
 
-  const concreteConfig: ClaudeRuntimeConfig = {
-    providerId: "",
-    modelMapping: {
-      default: "claude-sonnet-4-6",
-      opus: "claude-opus-4-8",
-      sonnet: "claude-sonnet-4-6",
-      haiku: "claude-haiku-4-5",
+test("migrateV1ToV2: 每个 provider → preset 继承凭证；activePresetId = 旧 providerId", () => {
+  const v1 = {
+    schemaVersion: 1,
+    providers: [
+      {
+        id: "prov_a",
+        label: "Anthropic",
+        apiKey: "sk-ant",
+        baseUrl: "https://api.anthropic.com",
+        protocol: "anthropic",
+      },
+      { id: "prov_b", label: "Relay", apiKey: "sk-relay", protocol: "openai-compatible" },
+    ],
+    runtimes: {
+      claude: {
+        providerId: "prov_a",
+        modelMapping: CONCRETE_MAPPING,
+        enable1mContext: true,
+        effort: "max",
+      },
     },
-    enable1mContext: true,
-    effort: "high",
   };
-  expect(resolveModelId(concreteConfig, "opus")).toBe("claude-opus-4-8[1m]");
-  expect(resolveModelId(concreteConfig, "sonnet")).toBe("claude-sonnet-4-6[1m]");
-  expect(resolveModelId({ ...concreteConfig, enable1mContext: false }, "opus")).toBe(
+
+  const v2 = migrateV1ToV2(v1);
+
+  expect(v2.runtimes.claude.presets).toHaveLength(2);
+  // prov_a（anthropic）→ preset 继承全部字段 + 全局 modelMapping。
+  expect(v2.runtimes.claude.presets[0]).toEqual({
+    id: "prov_a",
+    label: "Anthropic",
+    apiKey: "sk-ant",
+    baseUrl: "https://api.anthropic.com",
+    modelMapping: CONCRETE_MAPPING,
+  });
+  // prov_b（openai-compatible）也合成 preset 保凭证不丢，但丢弃 protocol 字段（claude 预设恒 anthropic）。
+  expect(v2.runtimes.claude.presets[1]).toEqual({
+    id: "prov_b",
+    label: "Relay",
+    apiKey: "sk-relay",
+    modelMapping: CONCRETE_MAPPING,
+  });
+  expect(v2.runtimes.claude.presets[1]).not.toHaveProperty("protocol");
+  // activePresetId 继承旧 providerId（指向 anthropic prov_a；不会指向 openai-compatible prov_b）。
+  expect(v2.runtimes.claude.activePresetId).toBe("prov_a");
+  expect(v2.runtimes.claude.enable1mContext).toBe(true);
+  expect(v2.runtimes.claude.effort).toBe("max");
+});
+
+test("migrateV1ToV2: stale providerId（指向不存在 provider）→ activePresetId 回退空", () => {
+  const v2 = migrateV1ToV2({
+    schemaVersion: 1,
+    providers: [{ id: "prov_a", label: "A", apiKey: "sk-a" }],
+    runtimes: { claude: { providerId: "gone", modelMapping: ALIAS_MAPPING } },
+  });
+
+  expect(v2.runtimes.claude.presets.map((p) => p.id)).toEqual(["prov_a"]);
+  expect(v2.runtimes.claude.activePresetId).toBe("");
+});
+
+test("migrateV1ToV2: 空 providers → presets 空，activePresetId 空，effort 兜底 high", () => {
+  const v2 = migrateV1ToV2({ schemaVersion: 1, providers: [], runtimes: { claude: {} } });
+
+  expect(v2.runtimes.claude.presets).toEqual([]);
+  expect(v2.runtimes.claude.activePresetId).toBe("");
+  expect(v2.runtimes.claude.effort).toBe("high");
+  expect(v2.runtimes.claude.enable1mContext).toBe(false);
+});
+
+test("migrateV1ToV2: 缺 modelMapping → 各 preset 用默认 alias mapping 兜底", () => {
+  const v2 = migrateV1ToV2({
+    schemaVersion: 1,
+    providers: [{ id: "p1", label: "A", apiKey: "sk-a" }],
+    runtimes: { claude: { providerId: "p1" } },
+  });
+
+  expect(v2.runtimes.claude.presets[0].modelMapping).toEqual(ALIAS_MAPPING);
+});
+
+test("migrateV1ToV2: 非法/部分 provider 条目被过滤（id/label/apiKey 任缺即丢）", () => {
+  const v2 = migrateV1ToV2({
+    schemaVersion: 1,
+    providers: [
+      { id: "p1", label: "A", apiKey: "sk-a" },
+      { id: "p2", label: "B" }, // 缺 apiKey
+      "junk",
+      null,
+    ],
+    runtimes: { claude: { providerId: "p1", modelMapping: ALIAS_MAPPING } },
+  });
+
+  expect(v2.runtimes.claude.presets.map((p) => p.id)).toEqual(["p1"]);
+});
+
+test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", () => {
+  expect(migrateV1ToV2(null)).toEqual({
+    runtimes: {
+      claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
+    },
+  });
+  expect(migrateV1ToV2("junk")).toEqual({
+    runtimes: {
+      claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
+    },
+  });
+});
+
+test("SettingsStore.read 迁移 v1 文件（schemaVersion=1）→ 合成 v2 不落盘", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  const v1 = {
+    schemaVersion: 1,
+    providers: [{ id: "prov_a", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
+    runtimes: { claude: { providerId: "prov_a", modelMapping: ALIAS_MAPPING, effort: "high" } },
+  };
+  await writeFile(path, JSON.stringify(v1), { mode: 0o600 });
+
+  const state = await new SettingsStore({ path }).read();
+
+  expect(state.runtimes.claude.presets[0].id).toBe("prov_a");
+  expect(state.runtimes.claude.presets[0].apiKey).toBe("sk-a");
+  expect(state.runtimes.claude.activePresetId).toBe("prov_a");
+
+  // 迁移是纯内存合成，不主动落盘：磁盘仍是 v1。
+  const raw = JSON.parse(await readFile(path, "utf8"));
+  expect(raw.schemaVersion).toBe(1);
+  expect(Array.isArray(raw.providers)).toBe(true);
+});
+
+test("SettingsStore 迁移后 write 持久化为 v2（v1 磁盘被覆盖，providers 顶层消失）", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  await writeFile(
+    path,
+    JSON.stringify({
+      schemaVersion: 1,
+      providers: [{ id: "p1", label: "A", apiKey: "sk-a" }],
+      runtimes: { claude: { providerId: "p1" } },
+    }),
+    { mode: 0o600 },
+  );
+  const store = new SettingsStore({ path });
+
+  // update 触发 read（迁移）+ write（v2 落盘）。
+  await store.update((s) => s);
+
+  const raw = JSON.parse(await readFile(path, "utf8"));
+  expect(raw.schemaVersion).toBe(2);
+  expect(raw.runtimes.claude.presets[0].id).toBe("p1");
+  expect(raw.runtimes.claude.presets[0].apiKey).toBe("sk-a");
+  expect(raw.providers).toBeUndefined();
+});
+
+// ── 纯函数：resolveModelId / buildAvailableModels（入参 = ModelMappingView）──────────
+
+test("resolveModelId: tier alias passes through; concrete ID gets [1m] only when enabled", () => {
+  const aliasView = { modelMapping: ALIAS_MAPPING, enable1mContext: true };
+  expect(resolveModelId(aliasView, "opus")).toBe("opus");
+  expect(resolveModelId(aliasView, "default")).toBe("sonnet");
+
+  const concreteView = { modelMapping: CONCRETE_MAPPING, enable1mContext: true };
+  expect(resolveModelId(concreteView, "opus")).toBe("claude-opus-4-8[1m]");
+  expect(resolveModelId(concreteView, "sonnet")).toBe("claude-sonnet-4-6[1m]");
+  expect(resolveModelId({ ...concreteView, enable1mContext: false }, "opus")).toBe(
     "claude-opus-4-8",
   );
 });
 
 test("buildAvailableModels: alias mapping lists aliases only (CLI rejects alias[1m])", () => {
-  // 默认配置（tier alias 自映射）：即使开 1m 也只列 alias，因为 CLI 不接受 alias[1m]。
-  expect(buildAvailableModels(DEFAULT_CLAUDE_RUNTIME)).toEqual(["opus", "sonnet", "haiku"]);
-  expect(buildAvailableModels({ ...DEFAULT_CLAUDE_RUNTIME, enable1mContext: true })).toEqual([
+  const aliasView = { modelMapping: ALIAS_MAPPING, enable1mContext: false };
+  expect(buildAvailableModels(aliasView)).toEqual(["opus", "sonnet", "haiku"]);
+  expect(buildAvailableModels({ ...aliasView, enable1mContext: true })).toEqual([
     "opus",
     "sonnet",
     "haiku",
@@ -139,18 +312,8 @@ test("buildAvailableModels: alias mapping lists aliases only (CLI rejects alias[
 });
 
 test("buildAvailableModels: concrete IDs + 1m on → [1m] variant first, base after", () => {
-  const config: ClaudeRuntimeConfig = {
-    providerId: "",
-    modelMapping: {
-      default: "claude-sonnet-4-6",
-      opus: "claude-opus-4-8",
-      sonnet: "claude-sonnet-4-6",
-      haiku: "claude-haiku-4-5",
-    },
-    enable1mContext: true,
-    effort: "high",
-  };
-  expect(buildAvailableModels(config)).toEqual([
+  const view = { modelMapping: CONCRETE_MAPPING, enable1mContext: true };
+  expect(buildAvailableModels(view)).toEqual([
     "claude-opus-4-8[1m]",
     "claude-opus-4-8",
     "claude-sonnet-4-6[1m]",
@@ -161,18 +324,8 @@ test("buildAvailableModels: concrete IDs + 1m on → [1m] variant first, base af
 });
 
 test("buildAvailableModels: concrete IDs + 1m off → only base IDs", () => {
-  const config: ClaudeRuntimeConfig = {
-    providerId: "",
-    modelMapping: {
-      default: "claude-sonnet-4-6",
-      opus: "claude-opus-4-8",
-      sonnet: "claude-sonnet-4-6",
-      haiku: "claude-haiku-4-5",
-    },
-    enable1mContext: false,
-    effort: "high",
-  };
-  expect(buildAvailableModels(config)).toEqual([
+  const view = { modelMapping: CONCRETE_MAPPING, enable1mContext: false };
+  expect(buildAvailableModels(view)).toEqual([
     "claude-opus-4-8",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
@@ -180,8 +333,7 @@ test("buildAvailableModels: concrete IDs + 1m off → only base IDs", () => {
 });
 
 test("buildAvailableModels: dedupes tiers mapped to the same ID", () => {
-  const config: ClaudeRuntimeConfig = {
-    providerId: "",
+  const view = {
     modelMapping: {
       default: "claude-x-1",
       opus: "claude-x-1",
@@ -189,10 +341,9 @@ test("buildAvailableModels: dedupes tiers mapped to the same ID", () => {
       haiku: "claude-x-2",
     },
     enable1mContext: true,
-    effort: "high",
   };
   // opus 与 sonnet 都映射 claude-x-1 → 去重，sonnet 不重复入列。
-  expect(buildAvailableModels(config)).toEqual([
+  expect(buildAvailableModels(view)).toEqual([
     "claude-x-1[1m]",
     "claude-x-1",
     "claude-x-2[1m]",
@@ -200,76 +351,51 @@ test("buildAvailableModels: dedupes tiers mapped to the same ID", () => {
   ]);
 });
 
+test("activePresetView: 激活预设命中 → view；未激活/未命中/空 → undefined", () => {
+  const presets = [{ id: "p1", label: "A", apiKey: "k", modelMapping: CONCRETE_MAPPING }];
+  expect(activePresetView({ activePresetId: "p1", enable1mContext: true }, presets)).toEqual({
+    modelMapping: CONCRETE_MAPPING,
+    enable1mContext: true,
+  });
+  expect(activePresetView({ activePresetId: "", enable1mContext: true }, presets)).toBeUndefined();
+  expect(
+    activePresetView({ activePresetId: "gone", enable1mContext: true }, presets),
+  ).toBeUndefined();
+  expect(activePresetView(undefined, presets)).toBeUndefined();
+  expect(
+    activePresetView({ activePresetId: "p1", enable1mContext: true }, undefined),
+  ).toBeUndefined();
+});
+
+// ── mask / masked preset ──────────────────────────────────────────────
+
 test("maskApiKey keeps prefix and tail with ellipsis in between", () => {
   expect(maskApiKey("sk-ant-abc123wX4k")).toBe("sk-ant-...wX4k");
   expect(maskApiKey("short")).toBe("sh...rt");
   expect(maskApiKey("")).toBe("");
 });
 
-test("toMaskedProvider strips raw apiKey and exposes masked fingerprint", () => {
-  const masked = toMaskedProvider({ id: "p1", label: "A", apiKey: "sk-ant-abc123wX4k" });
+test("toMaskedPreset strips raw apiKey, exposes masked fingerprint + modelMapping + baseUrl", () => {
+  const masked = toMaskedPreset({
+    id: "p1",
+    label: "A",
+    apiKey: "sk-ant-abc123wX4k",
+    modelMapping: ALIAS_MAPPING,
+  });
 
   expect(masked).not.toHaveProperty("apiKey");
   expect(masked.apiKeyMasked).toBe("sk-ant-...wX4k");
   expect(masked.hasApiKey).toBe(true);
+  expect(masked.modelMapping).toEqual(ALIAS_MAPPING);
   expect(masked.id).toBe("p1");
-});
+  expect(masked).not.toHaveProperty("baseUrl");
 
-test("SettingsStore.read defaults missing protocol to anthropic (backward compat)", async () => {
-  const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
-  // 旧 providers.json：provider 无 protocol 字段。
-  await writeFile(path, JSON.stringify({ providers: [{ id: "p1", label: "A", apiKey: "sk-a" }] }), {
-    mode: 0o600,
+  const withUrl = toMaskedPreset({
+    id: "p2",
+    label: "B",
+    apiKey: "sk-x",
+    baseUrl: "https://relay.example",
+    modelMapping: ALIAS_MAPPING,
   });
-
-  const state = await new SettingsStore({ path }).read();
-
-  expect(state.providers[0].protocol).toBe("anthropic");
-});
-
-test("SettingsStore.read falls back to anthropic for invalid protocol values", async () => {
-  const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
-  await writeFile(
-    path,
-    JSON.stringify({
-      providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "bedrock" }],
-    }),
-    { mode: 0o600 },
-  );
-
-  const state = await new SettingsStore({ path }).read();
-
-  expect(state.providers[0].protocol).toBe("anthropic");
-});
-
-test("SettingsStore.read preserves explicit openai-compatible protocol", async () => {
-  const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
-  await writeFile(
-    path,
-    JSON.stringify({
-      providers: [{ id: "p1", label: "GW", apiKey: "sk-gw", protocol: "openai-compatible" }],
-    }),
-    { mode: 0o600 },
-  );
-
-  const state = await new SettingsStore({ path }).read();
-
-  expect(state.providers[0].protocol).toBe("openai-compatible");
-});
-
-test("toMaskedProvider forwards protocol alongside masked apiKey", () => {
-  const masked = toMaskedProvider({
-    id: "p1",
-    label: "A",
-    apiKey: "sk-ant-abc123wX4k",
-    protocol: "openai-compatible",
-  });
-
-  expect(masked.protocol).toBe("openai-compatible");
-  // 不带 protocol 的 provider：masked 也不带 protocol 字段。
-  const bare = toMaskedProvider({ id: "p2", label: "B", apiKey: "sk-x" });
-  expect(bare).not.toHaveProperty("protocol");
+  expect(withUrl.baseUrl).toBe("https://relay.example");
 });

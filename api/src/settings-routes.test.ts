@@ -2,10 +2,19 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { ClaudeModelMapping } from "@agents-remote/shared";
 import { AuthService } from "./auth";
 import { createFetchHandler } from "./index";
 import { handleSettingsRoutes } from "./settings-routes";
 import { SettingsStore } from "./settings-store";
+
+const ALIAS_MAPPING: ClaudeModelMapping = {
+  default: "sonnet",
+  opus: "opus",
+  sonnet: "sonnet",
+  haiku: "haiku",
+};
+const PRESET_BASE_URL = "https://api.anthropic.com";
 
 const tempDirs: string[] = [];
 
@@ -33,6 +42,33 @@ const makeRequest = (method: string, pathname: string, body?: unknown) =>
     body: body ? JSON.stringify(body) : undefined,
   });
 
+const seedPreset = (
+  store: SettingsStore,
+  id: string,
+  overrides: Partial<{ label: string; apiKey: string; baseUrl: string }> = {},
+) =>
+  store.update((s) => ({
+    ...s,
+    runtimes: {
+      ...s.runtimes,
+      claude: {
+        ...s.runtimes.claude,
+        presets: [
+          ...s.runtimes.claude.presets,
+          {
+            id,
+            label: overrides.label ?? "A",
+            apiKey: overrides.apiKey ?? "sk-a",
+            baseUrl: overrides.baseUrl ?? PRESET_BASE_URL,
+            modelMapping: ALIAS_MAPPING,
+          },
+        ],
+      },
+    },
+  }));
+
+// ── GET /api/settings ──
+
 test("GET /api/settings returns defaults when empty", async () => {
   const store = await makeStore();
   const res = await handleSettingsRoutes(
@@ -43,27 +79,33 @@ test("GET /api/settings returns defaults when empty", async () => {
 
   expect(res?.status).toBe(200);
   const body = await res!.json();
-  expect(body.settings.providers).toEqual([]);
+  expect(body.settings.runtimes.claude.presets).toEqual([]);
+  expect(body.settings.runtimes.claude.activePresetId).toBe("");
   expect(body.settings.runtimes.claude.effort).toBe("high");
 });
 
-test("POST provider then GET returns masked apiKey (raw key never leaves store)", async () => {
+// ── POST /presets (create) ──
+
+test("POST preset then GET returns masked apiKey (raw key never leaves store)", async () => {
   const store = await makeStore();
   const create = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers", {
+    makeRequest("POST", "/api/settings/runtimes/claude/presets", {
       label: "官方",
       apiKey: "sk-ant-abc123wX4k",
+      baseUrl: PRESET_BASE_URL,
+      modelMapping: ALIAS_MAPPING,
     }),
-    makeUrl("/api/settings/providers"),
+    makeUrl("/api/settings/runtimes/claude/presets"),
     store,
   );
 
   expect(create?.status).toBe(201);
   const created = await create!.json();
-  expect(created.provider.apiKeyMasked).toBe("sk-ant-...wX4k");
-  expect(created.provider.hasApiKey).toBe(true);
-  expect(created.provider).not.toHaveProperty("apiKey");
-  expect(created.provider.id).toBeTruthy();
+  expect(created.preset.apiKeyMasked).toBe("sk-ant-...wX4k");
+  expect(created.preset.hasApiKey).toBe(true);
+  expect(created.preset).not.toHaveProperty("apiKey");
+  expect(created.preset.id).toBeTruthy();
+  expect(created.preset.modelMapping).toEqual(ALIAS_MAPPING);
 
   const get = await handleSettingsRoutes(
     makeRequest("GET", "/api/settings"),
@@ -71,81 +113,134 @@ test("POST provider then GET returns masked apiKey (raw key never leaves store)"
     store,
   );
   const got = await get!.json();
-  expect(got.settings.providers[0].apiKeyMasked).toBe("sk-ant-...wX4k");
+  expect(got.settings.runtimes.claude.presets[0].apiKeyMasked).toBe("sk-ant-...wX4k");
   expect(JSON.stringify(got)).not.toContain("sk-ant-abc123wX4k");
 });
 
-test("POST provider rejects empty label / apiKey", async () => {
+test("POST preset rejects empty label / apiKey / baseUrl / modelMapping", async () => {
   const store = await makeStore();
   const noLabel = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers", { label: "", apiKey: "sk-x" }),
-    makeUrl("/api/settings/providers"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets", {
+      label: "",
+      apiKey: "sk-x",
+      baseUrl: PRESET_BASE_URL,
+      modelMapping: ALIAS_MAPPING,
+    }),
+    makeUrl("/api/settings/runtimes/claude/presets"),
     store,
   );
   expect(noLabel?.status).toBe(400);
 
   const noKey = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers", { label: "A", apiKey: "" }),
-    makeUrl("/api/settings/providers"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets", {
+      label: "A",
+      apiKey: "",
+      baseUrl: PRESET_BASE_URL,
+      modelMapping: ALIAS_MAPPING,
+    }),
+    makeUrl("/api/settings/runtimes/claude/presets"),
     store,
   );
   expect(noKey?.status).toBe(400);
+
+  const noUrl = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/runtimes/claude/presets", {
+      label: "A",
+      apiKey: "sk-x",
+      baseUrl: "",
+      modelMapping: ALIAS_MAPPING,
+    }),
+    makeUrl("/api/settings/runtimes/claude/presets"),
+    store,
+  );
+  expect(noUrl?.status).toBe(400);
+
+  const badMapping = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/runtimes/claude/presets", {
+      label: "A",
+      apiKey: "sk-x",
+      baseUrl: PRESET_BASE_URL,
+      modelMapping: { default: "sonnet", opus: "", sonnet: "sonnet", haiku: "haiku" },
+    }),
+    makeUrl("/api/settings/runtimes/claude/presets"),
+    store,
+  );
+  expect(badMapping?.status).toBe(400);
 });
 
-test("PUT provider: empty apiKey keeps current; non-empty overwrites", async () => {
+// ── PUT /presets/:id (update) ──
+
+test("PUT preset: empty apiKey keeps current; non-empty overwrites; modelMapping partial", async () => {
   const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-original-long-key-12345" }],
-  }));
+  await seedPreset(store, "p1", { apiKey: "sk-original-long-key-12345" });
 
   await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/providers/p1", { label: "A2" }),
-    makeUrl("/api/settings/providers/p1"),
+    makeRequest("PUT", "/api/settings/runtimes/claude/presets/p1", { label: "A2" }),
+    makeUrl("/api/settings/runtimes/claude/presets/p1"),
     store,
   );
   const afterKeep = await store.read();
-  expect(afterKeep.providers[0].apiKey).toBe("sk-original-long-key-12345");
-  expect(afterKeep.providers[0].label).toBe("A2");
+  expect(afterKeep.runtimes.claude.presets[0].apiKey).toBe("sk-original-long-key-12345");
+  expect(afterKeep.runtimes.claude.presets[0].label).toBe("A2");
 
   await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/providers/p1", { apiKey: "sk-new-long-key-67890" }),
-    makeUrl("/api/settings/providers/p1"),
+    makeRequest("PUT", "/api/settings/runtimes/claude/presets/p1", {
+      apiKey: "sk-new-long-key-67890",
+      modelMapping: { opus: "claude-opus-4-8" },
+    }),
+    makeUrl("/api/settings/runtimes/claude/presets/p1"),
     store,
   );
   const afterOverwrite = await store.read();
-  expect(afterOverwrite.providers[0].apiKey).toBe("sk-new-long-key-67890");
+  expect(afterOverwrite.runtimes.claude.presets[0].apiKey).toBe("sk-new-long-key-67890");
+  expect(afterOverwrite.runtimes.claude.presets[0].modelMapping.opus).toBe("claude-opus-4-8");
+  // modelMapping partial：未传 tier 保持原值。
+  expect(afterOverwrite.runtimes.claude.presets[0].modelMapping.sonnet).toBe("sonnet");
 });
 
-test("PUT provider 404 when id not found", async () => {
+test("PUT preset 404 when id not found", async () => {
   const store = await makeStore();
   const res = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/providers/missing", { label: "X" }),
-    makeUrl("/api/settings/providers/missing"),
+    makeRequest("PUT", "/api/settings/runtimes/claude/presets/missing", { label: "X" }),
+    makeUrl("/api/settings/runtimes/claude/presets/missing"),
     store,
   );
   expect(res?.status).toBe(404);
 });
 
-test("DELETE provider clears runtime reference when in use", async () => {
+// ── DELETE /presets/:id ──
+
+test("DELETE preset clears activePresetId when active", async () => {
   const store = await makeStore();
+  await seedPreset(store, "p1");
   await store.update((s) => ({
     ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-a" }],
-    runtimes: { ...s.runtimes, claude: { ...s.runtimes.claude, providerId: "p1" } },
+    runtimes: { ...s.runtimes, claude: { ...s.runtimes.claude, activePresetId: "p1" } },
   }));
 
   const del = await handleSettingsRoutes(
-    makeRequest("DELETE", "/api/settings/providers/p1"),
-    makeUrl("/api/settings/providers/p1"),
+    makeRequest("DELETE", "/api/settings/runtimes/claude/presets/p1"),
+    makeUrl("/api/settings/runtimes/claude/presets/p1"),
     store,
   );
   expect(del?.status).toBe(200);
 
   const after = await store.read();
-  expect(after.providers).toHaveLength(0);
-  expect(after.runtimes.claude.providerId).toBe("");
+  expect(after.runtimes.claude.presets).toHaveLength(0);
+  expect(after.runtimes.claude.activePresetId).toBe("");
 });
+
+test("DELETE preset 404 when id not found", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("DELETE", "/api/settings/runtimes/claude/presets/missing"),
+    makeUrl("/api/settings/runtimes/claude/presets/missing"),
+    store,
+  );
+  expect(res?.status).toBe(404);
+});
+
+// ── PUT /runtimes/claude ──
 
 test("PUT runtimes/claude updates effort and persists", async () => {
   const store = await makeStore();
@@ -163,7 +258,7 @@ test("PUT runtimes/claude updates effort and persists", async () => {
   expect(after.runtimes.claude.effort).toBe("max");
 });
 
-test("PUT runtimes/claude rejects invalid effort and unknown providerId", async () => {
+test("PUT runtimes/claude rejects invalid effort and unknown activePresetId", async () => {
   const store = await makeStore();
   const badEffort = await handleSettingsRoutes(
     makeRequest("PUT", "/api/settings/runtimes/claude", { effort: "ultra" }),
@@ -172,45 +267,27 @@ test("PUT runtimes/claude rejects invalid effort and unknown providerId", async 
   );
   expect(badEffort?.status).toBe(400);
 
-  const badProvider = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/claude", { providerId: "nope" }),
+  const badPreset = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/claude", { activePresetId: "nope" }),
     makeUrl("/api/settings/runtimes/claude"),
     store,
   );
-  expect(badProvider?.status).toBe(400);
+  expect(badPreset?.status).toBe(400);
 });
 
-test("PUT runtimes/claude accepts providerId bound to an anthropic provider", async () => {
+test("PUT runtimes/claude accepts activePresetId bound to an existing preset", async () => {
   const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
-  }));
+  await seedPreset(store, "p1");
   const res = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/claude", { providerId: "p1" }),
+    makeRequest("PUT", "/api/settings/runtimes/claude", { activePresetId: "p1" }),
     makeUrl("/api/settings/runtimes/claude"),
     store,
   );
   expect(res?.status).toBe(200);
-  expect((await res!.json()).runtime.providerId).toBe("p1");
+  expect((await res!.json()).runtime.activePresetId).toBe("p1");
 });
 
-test("PUT runtimes/claude rejects providerId bound to a non-anthropic provider", async () => {
-  const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "GW", apiKey: "sk-a", protocol: "openai-compatible" }],
-  }));
-  const res = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/claude", { providerId: "p1" }),
-    makeUrl("/api/settings/runtimes/claude"),
-    store,
-  );
-  expect(res?.status).toBe(400);
-  // 守卫在校验阶段拦截，runtime 配置未被改写。
-  const after = await store.read();
-  expect(after.runtimes.claude.providerId).toBe("");
-});
+// ── auth gate ──
 
 test("createFetchHandler protects /api/settings without auth", async () => {
   const handler = createFetchHandler(
@@ -241,45 +318,7 @@ test("createFetchHandler serves /api/settings after auth", async () => {
   expect(body.settings.runtimes.claude.effort).toBe("high");
 });
 
-// ── protocol 透传 ──
-
-test("POST provider stores and returns protocol; missing protocol defaults to anthropic", async () => {
-  const store = await makeStore();
-  const created = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers", {
-      label: "GW",
-      apiKey: "sk-gw",
-      protocol: "openai-compatible",
-    }),
-    makeUrl("/api/settings/providers"),
-    store,
-  );
-  expect((await created!.json()).provider.protocol).toBe("openai-compatible");
-
-  const createdDefault = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers", { label: "A", apiKey: "sk-a" }),
-    makeUrl("/api/settings/providers"),
-    store,
-  );
-  expect((await createdDefault!.json()).provider.protocol).toBe("anthropic");
-});
-
-test("PUT provider updates protocol", async () => {
-  const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
-  }));
-  await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/providers/p1", { protocol: "openai-compatible" }),
-    makeUrl("/api/settings/providers/p1"),
-    store,
-  );
-  const after = await store.read();
-  expect(after.providers[0].protocol).toBe("openai-compatible");
-});
-
-// ── POST /providers/:id/models (发现模型) ──
+// ── POST /presets/:id/models (发现模型) ──
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -290,12 +329,9 @@ const installFetch = (impl: () => Promise<Response> | Response) => {
   globalThis.fetch = (async () => impl()) as typeof fetch;
 };
 
-test("POST /providers/:id/models returns {ok:true, models} using provider credentials", async () => {
+test("POST /presets/:id/models returns {ok:true, models} using preset credentials", async () => {
   const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
-  }));
+  await seedPreset(store, "p1", { apiKey: "sk-a" });
   installFetch(
     () =>
       new Response(JSON.stringify({ data: [{ id: "claude-opus-4-8" }] }), {
@@ -305,8 +341,8 @@ test("POST /providers/:id/models returns {ok:true, models} using provider creden
   );
 
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/p1/models"),
-    makeUrl("/api/settings/providers/p1/models"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/p1/models"),
+    makeUrl("/api/settings/runtimes/claude/presets/p1/models"),
     store,
   );
   expect(res?.status).toBe(200);
@@ -314,17 +350,14 @@ test("POST /providers/:id/models returns {ok:true, models} using provider creden
   expect(body).toEqual({ ok: true, models: ["claude-opus-4-8"] });
 });
 
-test("POST /providers/:id/models surfaces upstream failure as {ok:false} (no API error)", async () => {
+test("POST /presets/:id/models surfaces upstream failure as {ok:false} (no API error)", async () => {
   const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
-  }));
+  await seedPreset(store, "p1", { apiKey: "sk-a" });
   installFetch(() => new Response("unauth", { status: 401 }));
 
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/p1/models"),
-    makeUrl("/api/settings/providers/p1/models"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/p1/models"),
+    makeUrl("/api/settings/runtimes/claude/presets/p1/models"),
     store,
   );
   // 上游 401 不映射成 API 错误码——HTTP 200 + {ok:false, error}，前端展示测试结果。
@@ -335,19 +368,19 @@ test("POST /providers/:id/models surfaces upstream failure as {ok:false} (no API
   expect(body.error).toBeTruthy();
 });
 
-test("POST /providers/:id/models 404 when provider missing", async () => {
+test("POST /presets/:id/models 404 when preset missing", async () => {
   const store = await makeStore();
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/missing/models"),
-    makeUrl("/api/settings/providers/missing/models"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/missing/models"),
+    makeUrl("/api/settings/runtimes/claude/presets/missing/models"),
     store,
   );
   expect(res?.status).toBe(404);
 });
 
-// ── POST /providers/test-models (内联凭证测试连接，不落盘) ──
+// ── POST /presets/test-models (内联凭证测试连接，不落盘) ──
 
-test("POST /providers/test-models 新建态：用内联凭证请求上游，不写 store", async () => {
+test("POST /presets/test-models 新建态：用内联凭证请求上游，不写 store", async () => {
   const store = await makeStore();
   installFetch(
     () =>
@@ -358,28 +391,24 @@ test("POST /providers/test-models 新建态：用内联凭证请求上游，不�
   );
 
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/test-models", {
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/test-models", {
       apiKey: "sk-new",
-      baseUrl: "https://api.anthropic.com",
-      protocol: "anthropic",
+      baseUrl: PRESET_BASE_URL,
     }),
-    makeUrl("/api/settings/providers/test-models"),
+    makeUrl("/api/settings/runtimes/claude/presets/test-models"),
     store,
   );
   expect(res?.status).toBe(200);
   const body = await res!.json();
   expect(body).toEqual({ ok: true, models: ["claude-opus-4-8"] });
-  // 验证未落盘：store 仍无 provider。
+  // 验证未落盘：store 仍无 preset。
   const after = await store.read();
-  expect(after.providers).toEqual([]);
+  expect(after.runtimes.claude.presets).toEqual([]);
 });
 
-test("POST /providers/test-models 编辑态：apiKey 留空回退已保存原 key", async () => {
+test("POST /presets/test-models 编辑态：apiKey 留空回退已保存原 key", async () => {
   const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-saved", protocol: "anthropic" }],
-  }));
+  await seedPreset(store, "p1", { apiKey: "sk-saved" });
   let receivedHeader = "";
   globalThis.fetch = (async (_url: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
@@ -392,11 +421,8 @@ test("POST /providers/test-models 编辑态：apiKey 留空回退已保存原 ke
 
   // apiKey 不传（编辑态留空 = "不改"）+ 传 id → 后端用已保存 sk-saved。
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/test-models", {
-      id: "p1",
-      protocol: "anthropic",
-    }),
-    makeUrl("/api/settings/providers/test-models"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/test-models", { id: "p1" }),
+    makeUrl("/api/settings/runtimes/claude/presets/test-models"),
     store,
   );
   expect(res?.status).toBe(200);
@@ -404,12 +430,9 @@ test("POST /providers/test-models 编辑态：apiKey 留空回退已保存原 ke
   expect(receivedHeader).toBe("sk-saved");
 });
 
-test("POST /providers/test-models 内联 apiKey 覆盖已保存 key", async () => {
+test("POST /presets/test-models 内联 apiKey 覆盖已保存 key", async () => {
   const store = await makeStore();
-  await store.update((s) => ({
-    ...s,
-    providers: [{ id: "p1", label: "A", apiKey: "sk-saved", protocol: "anthropic" }],
-  }));
+  await seedPreset(store, "p1", { apiKey: "sk-saved" });
   let receivedHeader = "";
   globalThis.fetch = (async (_url: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
@@ -422,18 +445,17 @@ test("POST /providers/test-models 内联 apiKey 覆盖已保存 key", async () =
 
   // 传内联 apiKey=sk-new + id=p1 → 用 sk-new，不用 sk-saved。
   await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/test-models", {
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/test-models", {
       id: "p1",
       apiKey: "sk-new",
-      protocol: "anthropic",
     }),
-    makeUrl("/api/settings/providers/test-models"),
+    makeUrl("/api/settings/runtimes/claude/presets/test-models"),
     store,
   );
   expect(receivedHeader).toBe("sk-new");
 });
 
-test("POST /providers/test-models 无 key 可用 → {ok:false}（不调用 fetch）", async () => {
+test("POST /presets/test-models 无 key 可用 → {ok:false}（不调用 fetch）", async () => {
   const store = await makeStore();
   let fetchCalled = false;
   installFetch(() => {
@@ -443,10 +465,8 @@ test("POST /providers/test-models 无 key 可用 → {ok:false}（不调用 fetc
 
   // 新建态无 apiKey + 无 id → 无 key，listProviderModels 直接返回 ok:false 不发请求。
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/test-models", {
-      protocol: "anthropic",
-    }),
-    makeUrl("/api/settings/providers/test-models"),
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/test-models", {}),
+    makeUrl("/api/settings/runtimes/claude/presets/test-models"),
     store,
   );
   expect(res?.status).toBe(200);
@@ -457,16 +477,16 @@ test("POST /providers/test-models 无 key 可用 → {ok:false}（不调用 fetc
   expect(fetchCalled).toBe(false);
 });
 
-test("POST /providers/test-models 上游失败 → {ok:false}（不抛）", async () => {
+test("POST /presets/test-models 上游失败 → {ok:false}（不抛）", async () => {
   const store = await makeStore();
   installFetch(() => new Response("unauth", { status: 401 }));
 
   const res = await handleSettingsRoutes(
-    makeRequest("POST", "/api/settings/providers/test-models", {
+    makeRequest("POST", "/api/settings/runtimes/claude/presets/test-models", {
       apiKey: "sk-x",
-      protocol: "anthropic",
+      baseUrl: PRESET_BASE_URL,
     }),
-    makeUrl("/api/settings/providers/test-models"),
+    makeUrl("/api/settings/runtimes/claude/presets/test-models"),
     store,
   );
   expect(res?.status).toBe(200);

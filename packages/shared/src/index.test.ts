@@ -29,14 +29,13 @@ import type {
   SessionStreamServerMessage,
   TerminalSession,
   TerminalSessionDetailResponse,
-  ClaudeRuntimeConfig,
-  CreateProviderRequest,
+  ClaudePreset,
+  ClaudePresetMasked,
+  CreateClaudePresetRequest,
   GetSettingsResponse,
-  ProviderConfig,
-  ProviderConfigMasked,
   SettingsState,
+  UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
-  UpdateProviderRequest,
 } from "./index";
 
 test("HealthResponse marks the api service", () => {
@@ -231,43 +230,65 @@ test("isCompactBoundarySubtype matches the two boundary subtypes only", () => {
   expect(COMPACT_BOUNDARY_SUBTYPES).toEqual(["compact_boundary", "microcompact_boundary"]);
 });
 
-test("Settings DTOs describe provider credentials and claude runtime defaults", () => {
-  const provider: ProviderConfig = {
-    id: "prov_1",
+test("Settings DTOs describe claude presets and runtime defaults", () => {
+  const preset: ClaudePreset = {
+    id: "preset_1",
     label: "Anthropic 官方",
     apiKey: "sk-ant-abc123wX4k",
+    baseUrl: "https://api.anthropic.com",
+    modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
   };
-  const masked: ProviderConfigMasked = {
-    id: provider.id,
-    label: provider.label,
+  const masked: ClaudePresetMasked = {
+    id: preset.id,
+    label: preset.label,
+    baseUrl: preset.baseUrl,
+    modelMapping: preset.modelMapping,
     apiKeyMasked: "sk-ant-...wX4k",
     hasApiKey: true,
   };
-  const runtime: ClaudeRuntimeConfig = {
-    providerId: provider.id,
-    modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
-    enable1mContext: false,
-    effort: "high",
+  const state: SettingsState = {
+    runtimes: {
+      claude: {
+        presets: [preset],
+        activePresetId: preset.id,
+        enable1mContext: false,
+        effort: "high",
+      },
+    },
   };
-  const state: SettingsState = { providers: [provider], runtimes: { claude: runtime } };
   const response: GetSettingsResponse = {
-    settings: { providers: [masked], runtimes: { claude: runtime } },
+    settings: {
+      runtimes: {
+        claude: {
+          presets: [masked],
+          activePresetId: preset.id,
+          enable1mContext: false,
+          effort: "high",
+        },
+      },
+    },
   };
-  const createProvider: CreateProviderRequest = {
+  const createPreset: CreateClaudePresetRequest = {
     label: "中转 A",
     apiKey: "sk-xxx",
     baseUrl: "https://relay.example",
+    modelMapping: { default: "sonnet", opus: "opus", sonnet: "sonnet", haiku: "haiku" },
   };
-  const updateProvider: UpdateProviderRequest = { label: "中转 A（改）" };
-  const updateRuntime: UpdateClaudeRuntimeRequest = { effort: "max", enable1mContext: true };
+  const updatePreset: UpdateClaudePresetRequest = { label: "中转 A（改）" };
+  const updateRuntime: UpdateClaudeRuntimeRequest = {
+    activePresetId: preset.id,
+    effort: "max",
+    enable1mContext: true,
+  };
 
   expect(masked.hasApiKey).toBe(true);
   expect(masked.apiKeyMasked).toBe("sk-ant-...wX4k");
-  expect(state.runtimes.claude.modelMapping.opus).toBe("opus");
-  expect(response.settings.providers[0].apiKeyMasked).toContain("...");
-  expect(createProvider.baseUrl).toBe("https://relay.example");
-  expect(updateProvider.apiKey).toBeUndefined();
-  expect(updateRuntime.effort).toBe("max");
+  expect(state.runtimes.claude.presets[0].modelMapping.opus).toBe("opus");
+  expect(state.runtimes.claude.activePresetId).toBe(preset.id);
+  expect(response.settings.runtimes.claude.presets[0].apiKeyMasked).toContain("...");
+  expect(createPreset.baseUrl).toBe("https://relay.example");
+  expect(updatePreset.apiKey).toBeUndefined();
+  expect(updateRuntime.activePresetId).toBe(preset.id);
 });
 
 test("EFFORT_LEVELS and CLAUDE_MODEL_TIERS enumerate all variants", () => {

@@ -277,6 +277,10 @@ export const zh: Record<TranslationKey, string> = {
   "api.providerDeleteFailed": "删除 provider 失败",
   "api.runtimeUpdateFailed": "更新 Claude runtime 失败",
   "api.providerModelsFailed": "获取 provider 模型列表失败",
+  "api.presetCreateFailed": "新增预设失败",
+  "api.presetUpdateFailed": "更新预设失败",
+  "api.presetDeleteFailed": "删除预设失败",
+  "api.presetModelsFailed": "获取预设模型列表失败",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "刚刚",
@@ -572,4 +576,19 @@ export const zh: Record<TranslationKey, string> = {
   "settings.modelSelectLoading": "加载模型中…",
   "settings.modelSelectCustom": "（自定义）",
   "settings.modelSelectFetchError": "无法加载模型，可手动输入。",
+
+  // ── Settings: presets（决策 4：预设合并进 Claude 运行时段） ─────
+  "settings.presets": "预设",
+  "settings.presetsHint": "每个预设包含 base URL、API key 和模型映射。激活后用于新建会话。",
+  "settings.addPreset": "新增预设",
+  "settings.noPresets": "暂无预设。新增一个以配置凭证和模型映射。",
+  "settings.deletePreset": "删除预设",
+  "settings.deletePresetConfirm":
+    "删除预设「{{label}}」？若它正在激活，新建会话将回退到服务进程环境变量。",
+  "settings.editPreset": "编辑预设",
+  "settings.newPreset": "新建预设",
+  "settings.activePreset": "激活预设",
+  "settings.activePresetHint":
+    "激活预设的 base URL、API key 和模型映射用于新建会话。已打开的会话不受影响。",
+  "settings.activePresetNone": "无（使用服务进程环境变量）",
 };

@@ -18,7 +18,7 @@ import {
   renameAgentSession,
   renameTerminalSession,
   sessionStreamUrl,
-  testProviderModels,
+  testPresetModels,
 } from "./client";
 
 const originalFetch = globalThis.fetch;
@@ -282,9 +282,9 @@ test("web api client builds same-origin session stream URLs", () => {
   Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
 });
 
-// ── testProviderModels (内联凭证测试连接) ──
+// ── testPresetModels (内联凭证测试连接) ──
 
-test("web api client testProviderModels POSTs test-models with inline body", async () => {
+test("web api client testPresetModels POSTs test-models with inline body", async () => {
   let url = "";
   let method = "";
   let body = "";
@@ -295,23 +295,21 @@ test("web api client testProviderModels POSTs test-models with inline body", asy
     return Response.json({ ok: true, models: ["claude-opus-4-8"] });
   }) as typeof fetch;
 
-  const response = await testProviderModels({
+  const response = await testPresetModels({
     apiKey: "sk-new",
     baseUrl: "https://api.anthropic.com",
-    protocol: "anthropic",
   });
 
-  expect(url).toBe("/api/settings/providers/test-models");
+  expect(url).toBe("/api/settings/runtimes/claude/presets/test-models");
   expect(method).toBe("POST");
   expect(JSON.parse(body)).toEqual({
     apiKey: "sk-new",
     baseUrl: "https://api.anthropic.com",
-    protocol: "anthropic",
   });
   expect(response).toEqual({ ok: true, models: ["claude-opus-4-8"] });
 });
 
-test("web api client testProviderModels passes id for edit-mode fallback", async () => {
+test("web api client testPresetModels passes id for edit-mode fallback", async () => {
   let body = "";
   globalThis.fetch = (async (_input, init?: RequestInit) => {
     body = init?.body?.toString() ?? "";
@@ -319,9 +317,9 @@ test("web api client testProviderModels passes id for edit-mode fallback", async
   }) as typeof fetch;
 
   // 编辑态：传 id，apiKey 留空（后端回退已保存原 key）。
-  const response = await testProviderModels({ id: "p1", protocol: "anthropic" });
+  const response = await testPresetModels({ id: "p1" });
 
-  expect(JSON.parse(body)).toEqual({ id: "p1", protocol: "anthropic" });
+  expect(JSON.parse(body)).toEqual({ id: "p1" });
   expect(response.ok).toBe(false);
   expect(response.error).toBe("bad key");
 });

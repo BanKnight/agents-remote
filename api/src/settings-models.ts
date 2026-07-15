@@ -1,4 +1,4 @@
-import type { ProviderConfig, ProviderProtocol } from "@agents-remote/shared";
+import type { ProviderProtocol } from "@agents-remote/shared";
 
 // Anthropic /v1/models 要求的协议版本 header（OpenAI 兼容不需要）。
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -39,29 +39,36 @@ export function parseModelIds(json: unknown): string[] {
   });
 }
 
-// 纯函数：按 provider.protocol 构造 /v1/models 请求 header。
+// 纯函数：按 creds.protocol 构造 /v1/models 请求 header。
 // anthropic → x-api-key + anthropic-version；openai-compatible → Authorization: Bearer。
-// protocol 缺省（未 normalize 的对象）按 anthropic 处理。
-export function buildModelsHeaders(provider: ProviderConfig): Record<string, string> {
-  if (provider.protocol === "openai-compatible") {
-    return { authorization: `Bearer ${provider.apiKey}` };
+// protocol 缺省（preset 不带 protocol）按 anthropic 处理。
+export function buildModelsHeaders(creds: {
+  apiKey: string;
+  protocol?: ProviderProtocol;
+}): Record<string, string> {
+  if (creds.protocol === "openai-compatible") {
+    return { authorization: `Bearer ${creds.apiKey}` };
   }
-  return { "x-api-key": provider.apiKey, "anthropic-version": ANTHROPIC_VERSION };
+  return { "x-api-key": creds.apiKey, "anthropic-version": ANTHROPIC_VERSION };
 }
 
-// 主入口：用 provider 凭证请求 /v1/models，返回可用模型列表（去重 + 排序）。
+// 主入口：用 preset/creds 凭证请求 /v1/models，返回可用模型列表（去重 + 排序）。
 // 永不抛：上游 401/404/网络错误/解析失败 都返回 {ok:false, error}，让前端展示测试
-// 结果而非报错 toast。apiKey 空则不发请求。
-export async function listProviderModels(provider: ProviderConfig): Promise<ListModelsResult> {
-  if (!provider.apiKey) {
+// 结果而非报错 toast。apiKey 空则不发请求。preset 恒 anthropic（protocol 缺省）。
+export async function listProviderModels(creds: {
+  apiKey: string;
+  baseUrl?: string;
+  protocol?: ProviderProtocol;
+}): Promise<ListModelsResult> {
+  if (!creds.apiKey) {
     return { ok: false, error: "API key not configured" };
   }
-  const protocol: ProviderProtocol = provider.protocol ?? "anthropic";
-  const url = buildModelsUrl(provider.baseUrl, protocol);
+  const protocol: ProviderProtocol = creds.protocol ?? "anthropic";
+  const url = buildModelsUrl(creds.baseUrl, protocol);
   try {
     const res = await fetch(url, {
       method: "GET",
-      headers: buildModelsHeaders(provider),
+      headers: buildModelsHeaders(creds),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {

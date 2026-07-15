@@ -25,7 +25,7 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
-import { buildAvailableModels, type SettingsStore } from "./settings-store";
+import { activePresetView, buildAvailableModels, type SettingsStore } from "./settings-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
@@ -214,9 +214,12 @@ const handleAgentSessionRoute = async (
     //（buildAvailableModels），让会话内模型菜单如实反映 modelMapping + enable1mContext，
     // 并支持 per-session 切 [1m]。非 claude2 或无 settingsStore：保留 profile 默认。
     const claudeRuntime = settingsStore ? (await settingsStore.read()).runtimes.claude : undefined;
+    const presetView = claudeRuntime
+      ? activePresetView(claudeRuntime, claudeRuntime.presets)
+      : undefined;
     const availableModels =
-      session.provider === "claude2" && claudeRuntime
-        ? buildAvailableModels(claudeRuntime)
+      session.provider === "claude2" && presetView
+        ? buildAvailableModels(presetView)
         : profile?.availableModels;
 
     const response: AgentSessionDetailResponse = {

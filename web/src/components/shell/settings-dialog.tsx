@@ -2,16 +2,13 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode, useState } from 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   EFFORT_LEVELS,
-  PROVIDER_PROTOCOLS,
   type ClaudeModelMapping,
   type ClaudeModelTier,
-  type ClaudeRuntimeConfig,
+  type ClaudePresetMasked,
+  type CreateClaudePresetRequest,
   type EffortLevel,
   type ListProviderModelsResponse,
-  type ProviderConfigMasked,
-  type ProviderProtocol,
-  type TestProviderRequest,
-  type UpdateProviderRequest,
+  type UpdateClaudePresetRequest,
 } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
@@ -21,7 +18,6 @@ import {
   IconMarker,
   ListGroup,
   ListRow,
-  SegmentedControl,
   ShellInput,
   ShellSectionLabel,
   listGroupClasses,
@@ -34,27 +30,44 @@ import { OptionMenu } from "../ui/option-menu";
 import { Card, CardContent } from "../ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 import {
-  createProvider,
-  deleteProvider,
+  createClaudePreset,
+  deleteClaudePreset,
   getSettings,
-  listProviderModels,
-  testProviderModels,
+  listPresetModels,
+  testPresetModels,
+  updateClaudePreset,
   updateClaudeRuntime,
-  updateProvider,
 } from "../../api/client";
 
 const TIERS: readonly ClaudeModelTier[] = ["default", "opus", "sonnet", "haiku"];
 
-/** 加载态占位 runtime：让 ClaudeRuntimeSection 结构即时渲染（providerId="" 走 ShellInput 分支）。 */
-const EMPTY_RUNTIME: ClaudeRuntimeConfig = {
-  providerId: "",
-  modelMapping: { default: "", opus: "", sonnet: "", haiku: "" },
+// 新建预设的模型映射默认值：全 tier 别名透传（与 v1 默认 runtime.modelMapping 一致），
+// 用户可在 PresetDialog 内逐 tier 改成具体 ID。定义在此避免 magic literal。
+const DEFAULT_PRESET_MAPPING: ClaudeModelMapping = {
+  default: "sonnet",
+  opus: "opus",
+  sonnet: "sonnet",
+  haiku: "haiku",
+};
+
+// settings.runtimes.claude 的完整视图（含 presets）——比 shared 的 ClaudeRuntimeConfig 多
+// presets[]（presets 与 runtime 三旋钮同属 runtimes.claude 对象）。加载态占位让结构即时渲染。
+type ClaudeRuntimeSettings = {
+  presets: ClaudePresetMasked[];
+  activePresetId: string;
+  enable1mContext: boolean;
+  effort: EffortLevel;
+};
+
+const EMPTY_CLAUDE: ClaudeRuntimeSettings = {
+  presets: [],
+  activePresetId: "",
   enable1mContext: false,
   effort: "high",
 };
 
-/** providers 列表加载骨架行数（对齐真实 ProviderRow 高度，2 行传达列表结构即可）。 */
-const PROVIDER_SKELETON_ROW_COUNT = 2;
+/** presets 列表加载骨架行数（对齐真实 PresetRow 高度，2 行传达列表结构即可）。 */
+const PRESET_SKELETON_ROW_COUNT = 2;
 
 const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
   default: "settings.tier.default",
@@ -71,32 +84,12 @@ const EFFORT_LABEL: Record<EffortLevel, TranslationKey> = {
   max: "settings.effort.max",
 };
 
-const PROTOCOL_LABEL: Record<ProviderProtocol, TranslationKey> = {
-  anthropic: "settings.protocol.anthropic",
-  "openai-compatible": "settings.protocol.openaiCompatible",
-};
-
-// provider 行协议 chip 的 token 化底/字色（决策 47）：anthropic 品牌色、openai-compatible 中性。
-const PROTOCOL_CHIP_CLASS: Record<ProviderProtocol, string> = {
-  anthropic: "bg-primary/15 text-primary",
-  "openai-compatible": "bg-on-surface/10 text-on-surface-soft",
-};
-
-// runtime ↔ 协议契约（决策 47）：Claude runtime 只消费 anthropic provider，Codex 只消费
-// openai-compatible。ClaudeRuntimeContent 据此过滤 OptionMenu；Codex 侧后端接入时直接复用。
-const RUNTIME_PROVIDER_PROTOCOL = {
-  claude: "anthropic",
-  codex: "openai-compatible",
-} as const satisfies Record<"claude" | "codex", ProviderProtocol>;
-
 /** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
-export type SettingsSection = "root" | "providers" | "claude" | "general";
+export type SettingsSection = "root" | "claude" | "general";
 
 /** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
 export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT>["t"]): string => {
   switch (section) {
-    case "providers":
-      return t("settings.providers");
     case "claude":
       return t("settings.section.claude");
     case "general":
@@ -108,7 +101,7 @@ export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT
 
 /**
  * 设置内容（桌面 `SettingsDialog` / 移动 `SettingsRoute` 共享，决策 44 + 48）。
- * 两层结构（Apple 设置范式）：root = 3 个入口胶囊（Providers / Claude 运行时 / 通用），
+ * 两层结构（Apple 设置范式）：root = 2 个入口胶囊（Claude 运行时 / 通用），
  * 点入 detail = 该项具体配置（不再有胶囊）。`activeSection` 由外壳持有、本组件接 props
  * 单向流——桌面弹窗 header / 移动 MobilePageHeader 据同一 state 渲染返回。
  * 不含外壳——由调用方包：移动端 `SettingsRoute` = main + MobilePageHeader + 本组件 +
@@ -122,26 +115,8 @@ export function SettingsContent({
   onNavigate: (section: SettingsSection) => void;
 }) {
   const { t } = useT();
-  const queryClient = useQueryClient();
-  const { confirm, holder: confirmHolder } = useConfirm();
 
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: getSettings });
-
-  const deleteMutation = useMutation({
-    mutationFn: deleteProvider,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
-  });
-
-  const handleDelete = async (provider: ProviderConfigMasked) => {
-    const ok = await confirm({
-      title: t("settings.deleteProvider"),
-      message: t("settings.deleteConfirm", { label: provider.label }),
-      confirmLabel: t("settings.deleteProvider"),
-      cancelLabel: t("cancel"),
-      tone: "danger",
-    });
-    if (ok) await deleteMutation.mutateAsync(provider.id);
-  };
 
   const settings = settingsQuery.data?.settings;
   const loading = settingsQuery.isLoading;
@@ -150,37 +125,25 @@ export function SettingsContent({
   // 失败才替换为错误文案。
   if (!loading && !settings) {
     return (
-      <>
-        <p className="text-sm text-error">
-          {settingsQuery.error?.message ?? t("api.settingsFetchFailed")}
-        </p>
-        {confirmHolder}
-      </>
+      <p className="text-sm text-error">
+        {settingsQuery.error?.message ?? t("api.settingsFetchFailed")}
+      </p>
     );
   }
 
-  const providers = settings?.providers ?? [];
-  const runtime = settings?.runtimes.claude ?? EMPTY_RUNTIME;
+  const claude = settings?.runtimes.claude ?? EMPTY_CLAUDE;
 
   let body: ReactNode;
   switch (activeSection) {
-    case "providers":
-      body = (
-        <ProvidersSection
-          providers={providers}
-          loading={loading}
-          onDelete={handleDelete}
-          hideLabel
-        />
-      );
-      break;
     case "claude":
       body = (
         <ClaudeRuntimeContent
-          key={loading ? "loading" : JSON.stringify(runtime)}
+          // key 只随 runtime 级三旋钮变（不含 presets）：preset CRUD 改 presets 不触发
+          // remount，用户在激活选择/effort 的未保存编辑得以保留；runtime Save 成功或激活预设
+          // 被级联清空时才 remount 重置 state。
+          key={`${claude.activePresetId}|${claude.enable1mContext}|${claude.effort}`}
+          claude={claude}
           loading={loading}
-          providers={providers}
-          runtime={runtime}
         />
       );
       break;
@@ -191,28 +154,22 @@ export function SettingsContent({
       body = <SettingsRootView onNavigate={onNavigate} />;
   }
 
-  return (
-    <>
-      {body}
-      {confirmHolder}
-    </>
-  );
+  return body;
 }
 
 /**
- * 第一层总入口（决策 48）：grouped Card + 3 个 ListRow 胶囊，整行点击进 detail。
- * 复用 DESIGN.md `list` grouped 契约（与 ProvidersSection provider 列表同款）。
- * title-only + 右 chevron（Apple 设置一级项范式）。
+ * 第一层总入口（决策 48）：grouped Card + 2 个 ListRow 胶囊，整行点击进 detail。
+ * 复用 DESIGN.md `list` grouped 契约（与预设列表同款）。title-only + 右 chevron
+ * （Apple 设置一级项范式）。
  */
 function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSection) => void }) {
   const { t } = useT();
   const sections: {
     section: SettingsSection;
     title: string;
-    icon: "settings" | "anthropic" | "info";
-    tone: "accent" | "warning" | "muted";
+    icon: "anthropic" | "info";
+    tone: "warning" | "muted";
   }[] = [
-    { section: "providers", title: t("settings.providers"), icon: "settings", tone: "accent" },
     { section: "claude", title: t("settings.section.claude"), icon: "anthropic", tone: "warning" },
     { section: "general", title: t("settings.section.general"), icon: "info", tone: "muted" },
   ];
@@ -239,7 +196,7 @@ function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSectio
   );
 }
 
-/** 设置 root 胶囊右侧的进入指示 chevron（Apple 设置范式，区别于 ProviderRow actions 的 ⋯ 动作）。 */
+/** 设置 root 胶囊右侧的进入指示 chevron（Apple 设置范式，区别于 PresetRow actions 的 ⋯ 动作）。 */
 function SettingsChevron() {
   return (
     <svg
@@ -280,7 +237,7 @@ function GeneralSection() {
  * + Radix dismiss/focus-trap——**不内置卡片视觉与关闭按钮**，调用方在 Content 内自行
  * 包一层卡片 div（对齐 `confirm-dialog` 桌面态 / DESIGN.md `dialog` 条目居中形态）。
  * 卡片限高 `max-h-[85vh] overflow-hidden` 保持圆角，内容区 `overflow-y-auto` 承载两段。
- * 嵌套 `ProviderDialog` / confirm Dialog 走受控 open（非 trigger asChild），Radix 支持嵌套。
+ * 嵌套 `PresetDialog` / confirm Dialog 走受控 open（非 trigger asChild），Radix 支持嵌套。
  */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const { t } = useT();
@@ -335,53 +292,194 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ── Providers section ────────────────────────────────────────────────
+// ── Claude runtime detail：激活预设 + effort/1m + 预设列表 ────────────────
 
-function ProvidersSection({
-  providers,
+/**
+ * Claude 运行时段（决策 4：UI 合并进运行时）。顶部 = 激活预设选择 + effort/1M（runtime 级，
+ * Save 持久化 activePresetId/enable1mContext/effort）；下方 = 预设列表 CRUD（PresetListSection，
+ * 每个预设自带 baseUrl/key/modelMapping，CRUD 即时持久化）。key 只随 runtime 三旋钮变
+ * （见 SettingsContent），preset CRUD 不触发 remount。
+ */
+function ClaudeRuntimeContent({
+  claude,
   loading = false,
-  onDelete,
-  hideLabel = false,
 }: {
-  providers: ProviderConfigMasked[];
+  claude: ClaudeRuntimeSettings;
   loading?: boolean;
-  onDelete: (provider: ProviderConfigMasked) => void;
-  /** detail 态（决策 48）：隐藏 section 标题/hint（header 已显示项名），保留新增按钮。 */
-  hideLabel?: boolean;
 }) {
   const { t } = useT();
-  const [editing, setEditing] = useState<ProviderConfigMasked | null>(null);
+  const queryClient = useQueryClient();
+
+  const [activePresetId, setActivePresetId] = useState(claude.activePresetId);
+  const [enable1m, setEnable1m] = useState(claude.enable1mContext);
+  const [effort, setEffort] = useState<EffortLevel>(claude.effort);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    !loading &&
+    (activePresetId !== claude.activePresetId ||
+      effort !== claude.effort ||
+      enable1m !== claude.enable1mContext);
+
+  const handleSave = async () => {
+    if (loading) return;
+    setError(null);
+    setSaving(true);
+    try {
+      await updateClaudeRuntime({
+        activePresetId,
+        enable1mContext: enable1m,
+        effort,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedLabel = activePresetId
+    ? (claude.presets.find((p) => p.id === activePresetId)?.label ?? activePresetId)
+    : t("settings.activePresetNone");
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Card className="border border-neutral-line bg-surface ring-0">
+        <CardContent className="flex flex-col gap-4 p-3">
+          <Field label={t("settings.activePreset")} hint={t("settings.activePresetHint")}>
+            <OptionMenu
+              align="start"
+              cancelLabel={t("cancel")}
+              trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
+              items={[
+                {
+                  label: t("settings.activePresetNone"),
+                  isActive: activePresetId === "",
+                  onSelect: () => setActivePresetId(""),
+                },
+                ...claude.presets.map((p) => ({
+                  label: p.label,
+                  isActive: p.id === activePresetId,
+                  onSelect: () => setActivePresetId(p.id),
+                })),
+              ]}
+            />
+          </Field>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enable1m}
+            disabled={loading}
+            onClick={() => !loading && setEnable1m(!enable1m)}
+            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-on-surface">
+                {t("settings.enable1m")}
+              </span>
+              <span className="block text-xs leading-5 text-on-surface-muted">
+                {t("settings.enable1mHint")}
+              </span>
+            </span>
+            <span
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enable1m ? "bg-primary" : "bg-surface-inset"}`}
+            >
+              <span
+                className={`inline-block size-5 transform rounded-full bg-on-primary shadow transition ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"} ${enable1m ? "" : "bg-on-surface"}`}
+              />
+            </span>
+          </button>
+
+          <Field label={t("settings.effort")} hint={t("settings.effortHint")}>
+            <OptionMenu
+              align="start"
+              cancelLabel={t("cancel")}
+              trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} disabled={loading} />}
+              items={EFFORT_LEVELS.map((level) => ({
+                label: t(EFFORT_LABEL[level]),
+                isActive: level === effort,
+                onSelect: () => setEffort(level),
+              }))}
+            />
+          </Field>
+
+          {error && <p className="text-xs text-error">{error}</p>}
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <span className="text-xs text-on-surface-muted">
+              {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
+            </span>
+            <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
+              {saving ? t("settings.saving") : t("settings.save")}
+            </ActionButton>
+          </div>
+        </CardContent>
+      </Card>
+
+      <PresetListSection presets={claude.presets} loading={loading} />
+    </div>
+  );
+}
+
+/**
+ * 预设列表段（决策 4：预设 CRUD 合并进 Claude 运行时段）。Apple Settings grouped Card +
+ * 整行 ListRow 点击进编辑；新增/编辑走 PresetDialog；删除走 confirm + deleteClaudePreset，
+ * 即时持久化 + invalidate settings。删除激活预设的级联清空由后端保证。
+ */
+function PresetListSection({
+  presets,
+  loading = false,
+}: {
+  presets: ClaudePresetMasked[];
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const { confirm, holder: confirmHolder } = useConfirm();
+  const [editing, setEditing] = useState<ClaudePresetMasked | null>(null);
   const [creating, setCreating] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteClaudePreset,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  const handleDelete = async (preset: ClaudePresetMasked) => {
+    const ok = await confirm({
+      title: t("settings.deletePreset"),
+      message: t("settings.deletePresetConfirm", { label: preset.label }),
+      confirmLabel: t("settings.deletePreset"),
+      cancelLabel: t("cancel"),
+      tone: "danger",
+    });
+    if (ok) await deleteMutation.mutateAsync(preset.id);
+  };
 
   return (
     <section className="flex flex-col gap-3">
-      {hideLabel ? (
-        <div className="flex justify-end">
-          <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
-            {t("settings.addProvider")}
-          </ActionButton>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <ShellSectionLabel>{t("settings.presets")}</ShellSectionLabel>
+          <p className="mt-1 text-xs leading-5 text-on-surface-muted">
+            {t("settings.presetsHint")}
+          </p>
         </div>
-      ) : (
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <ShellSectionLabel>{t("settings.providers")}</ShellSectionLabel>
-            <p className="mt-1 text-xs leading-5 text-on-surface-muted">
-              {t("settings.providersHint")}
-            </p>
-          </div>
-          <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
-            {t("settings.addProvider")}
-          </ActionButton>
-        </div>
-      )}
+        <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
+          {t("settings.addPreset")}
+        </ActionButton>
+      </div>
 
-      {/* Apple Settings grouped：圆角 Card + 整行 ListRow 点击进编辑详情；列表独立 max-h-72 内滚。 */}
       <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
         <CardContent className="p-0">
           <div className="max-h-72 overflow-y-auto">
             {loading ? (
               <div aria-hidden="true" className={listGroupClasses()}>
-                {Array.from({ length: PROVIDER_SKELETON_ROW_COUNT }, (_, i) => (
+                {Array.from({ length: PRESET_SKELETON_ROW_COUNT }, (_, i) => (
                   <div className="flex h-auto w-full items-center px-3 py-2.5" key={i}>
                     <span className="flex min-w-0 grow items-center justify-between gap-2">
                       <span className="min-w-0">
@@ -393,16 +491,16 @@ function ProvidersSection({
                   </div>
                 ))}
               </div>
-            ) : providers.length === 0 ? (
-              <p className="px-3 py-3 text-sm text-on-surface-muted">{t("settings.noProviders")}</p>
+            ) : presets.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-on-surface-muted">{t("settings.noPresets")}</p>
             ) : (
-              <ListGroup ariaLabel={t("settings.providers")}>
-                {providers.map((p) => (
-                  <ProviderRow
+              <ListGroup ariaLabel={t("settings.presets")}>
+                {presets.map((p) => (
+                  <PresetRow
                     key={p.id}
-                    provider={p}
+                    preset={p}
                     onEdit={() => setEditing(p)}
-                    onDelete={() => onDelete(p)}
+                    onDelete={() => handleDelete(p)}
                   />
                 ))}
               </ListGroup>
@@ -412,46 +510,41 @@ function ProvidersSection({
       </Card>
 
       {(creating || editing) && (
-        <ProviderDialog
-          provider={editing}
+        <PresetDialog
+          preset={editing}
           onClose={() => {
             setCreating(false);
             setEditing(null);
           }}
         />
       )}
+      {confirmHolder}
     </section>
   );
 }
 
-function ProviderRow({
-  provider,
+function PresetRow({
+  preset,
   onEdit,
   onDelete,
 }: {
-  provider: ProviderConfigMasked;
+  preset: ClaudePresetMasked;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const { t } = useT();
-  const protocol = provider.protocol ?? "anthropic";
   const subtitle = (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">
-      <span
-        className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${PROTOCOL_CHIP_CLASS[protocol]}`}
-      >
-        {t(PROTOCOL_LABEL[protocol])}
-      </span>
-      {provider.baseUrl ? <span className="text-on-surface">{provider.baseUrl}</span> : null}
-      {provider.apiKeyMasked ? (
-        <span className="text-on-surface-muted">{provider.apiKeyMasked}</span>
+      {preset.baseUrl ? <span className="text-on-surface">{preset.baseUrl}</span> : null}
+      {preset.apiKeyMasked ? (
+        <span className="text-on-surface-muted">{preset.apiKeyMasked}</span>
       ) : null}
     </span>
   );
 
   return (
     <ListRow
-      title={provider.label}
+      title={preset.label}
       subtitle={subtitle}
       onClick={onEdit}
       actions={
@@ -463,7 +556,7 @@ function ProviderRow({
             trigger={
               <button
                 type="button"
-                aria-label={t("settings.deleteProvider")}
+                aria-label={t("settings.deletePreset")}
                 className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
               >
                 <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
@@ -475,7 +568,7 @@ function ProviderRow({
             }
             items={[
               {
-                label: t("settings.deleteProvider"),
+                label: t("settings.deletePreset"),
                 variant: "destructive",
                 onSelect: onDelete,
               },
@@ -487,45 +580,50 @@ function ProviderRow({
   );
 }
 
-function ProviderDialog({
-  provider,
+/**
+ * 预设编辑/新建弹窗。预设 = baseUrl + apiKey + 4-tier 模型映射（与端点绑定一体）。
+ * 模型发现凭证源（ModelTierSelect + 测试连接）：编辑态未改凭证（无内联 apiKey）→ listPresetModels
+ * 用已保存 preset 凭证；新建态或改了 apiKey/baseUrl → testPresetModels 内联凭证。两者共享
+ * 同一 useQuery（queryKey 含凭证签名），凭证变自动重拉；测试连接按钮 = refetch。
+ */
+function PresetDialog({
+  preset,
   onClose,
 }: {
-  provider: ProviderConfigMasked | null;
+  preset: ClaudePresetMasked | null;
   onClose: () => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
-  const isEdit = provider !== null;
+  const isEdit = preset !== null;
+  const presetId = preset?.id ?? null;
 
-  const [label, setLabel] = useState(provider?.label ?? "");
-  const [protocol, setProtocol] = useState<ProviderProtocol>(provider?.protocol ?? "anthropic");
+  const [label, setLabel] = useState(preset?.label ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
+  const [baseUrl, setBaseUrl] = useState(preset?.baseUrl ?? "");
+  const [modelMapping, setModelMapping] = useState<ClaudeModelMapping>(
+    preset?.modelMapping ?? DEFAULT_PRESET_MAPPING,
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [testResult, setTestResult] = useState<ListProviderModelsResponse | null>(null);
 
-  // 测试连接：用表单内联凭证验证 + 预览可用模型列表。新建态无 id；编辑态 apiKey 留空
-  // 时后端回退已保存原 key（原 key 永不出 api 进程，前端只持 masked）。成功后预热
-  // runtime 段 provider-models 缓存（仅编辑态有 provider.id 可作 key）。
-  const testMutation = useMutation({
-    mutationFn: (input: TestProviderRequest) => testProviderModels(input),
-    onSuccess: (data) => {
-      setTestResult(data);
-      if (data.ok && provider) {
-        queryClient.setQueryData(
-          ["provider-models", provider.id, provider.protocol ?? "anthropic"],
-          data,
-        );
-      }
+  // 模型发现：queryKey 含 presetId + baseUrl + apiKey 签名，凭证变即重拉。编辑态未输内联 key
+  // → listPresetModels 回退已保存原 key（原 key 永不出 api 进程，前端只持 masked）。
+  const trimmedBaseUrl = baseUrl.trim();
+  const hasInlineKey = !!apiKey.trim();
+  const modelsQuery = useQuery({
+    queryKey: ["preset-models", presetId ?? "new", trimmedBaseUrl, hasInlineKey ? "k" : "n"],
+    queryFn: async (): Promise<ListProviderModelsResponse> => {
+      if (presetId && !hasInlineKey) return listPresetModels(presetId);
+      return testPresetModels({
+        ...(presetId ? { id: presetId } : {}),
+        ...(hasInlineKey ? { apiKey: apiKey.trim() } : {}),
+        ...(trimmedBaseUrl ? { baseUrl: trimmedBaseUrl } : {}),
+      });
     },
-    onError: (e) =>
-      setTestResult({
-        ok: false,
-        models: [],
-        error: e instanceof Error ? e.message : String(e),
-      }),
+    enabled: !!trimmedBaseUrl,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 
   const handleSubmit = async () => {
@@ -539,30 +637,29 @@ function ProviderDialog({
       setError(t("settings.apiKey"));
       return;
     }
-    const trimmedBaseUrl = baseUrl.trim();
     if (!trimmedBaseUrl) {
       setError(t("settings.baseUrlRequired"));
       return;
     }
     setSaving(true);
     try {
-      if (isEdit && provider) {
-        // apiKey 留空 = 不传 = 不改（后端 L73-74）；baseUrl 必填（空值已被上面校验拦下）；
-        // protocol 始终传（可改协议）。
-        const input: UpdateProviderRequest = {
+      if (isEdit && preset) {
+        // apiKey 留空 = 不传 = 不改（后端回退原 key）；baseUrl 必填；modelMapping 整体传。
+        const input: UpdateClaudePresetRequest = {
           label: trimmedLabel,
           baseUrl: trimmedBaseUrl,
-          protocol,
+          modelMapping,
         };
         if (apiKey.trim()) input.apiKey = apiKey.trim();
-        await updateProvider(provider.id, input);
+        await updateClaudePreset(preset.id, input);
       } else {
-        await createProvider({
+        const input: CreateClaudePresetRequest = {
           label: trimmedLabel,
           apiKey: apiKey.trim(),
           baseUrl: trimmedBaseUrl,
-          protocol,
-        });
+          modelMapping,
+        };
+        await createClaudePreset(input);
       }
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       onClose();
@@ -573,36 +670,28 @@ function ProviderDialog({
     }
   };
 
+  const models = modelsQuery.data?.ok ? modelsQuery.data.models : [];
+  const modelsLoading = modelsQuery.isFetching && !modelsQuery.data;
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <div
-          className={`flex flex-col gap-4 rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+          className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
           <DialogTitle className="text-base font-semibold text-on-surface">
-            {isEdit ? t("settings.editProvider") : t("settings.addProvider")}
+            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            {isEdit ? t("settings.editProvider") : t("settings.addProvider")}
+            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
           </DialogDescription>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
             <Field label={t("settings.label")}>
               <ShellInput
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder={t("settings.labelHint")}
-              />
-            </Field>
-            <Field label={t("settings.protocol")} hint={t("settings.protocolHint")}>
-              {/* 协议只有两档，用内联分段控件（SegmentedControl）而非 OptionMenu：OptionMenu 移动端
-                  形态是 Radix Dialog，嵌套在本 ProviderDialog（也是 Dialog）内会被 dismissable layer
-                  打断、trigger 点击无反应。原生 button 无此问题，移动端触摸也更大。 */}
-              <SegmentedControl
-                ariaLabel={t("settings.protocol")}
-                onChange={setProtocol}
-                options={PROVIDER_PROTOCOLS.map((p) => ({ label: t(PROTOCOL_LABEL[p]), value: p }))}
-                value={protocol}
               />
             </Field>
             <Field label={t("settings.baseUrl")} hint={t("settings.baseUrlHint")}>
@@ -620,45 +709,61 @@ function ProviderDialog({
               <ShellInput
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={isEdit ? provider?.apiKeyMasked : "sk-ant-..."}
+                placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
                 autoComplete="off"
               />
             </Field>
-          </div>
 
-          {/* 测试连接：新建态 + 编辑态都显示。传内联表单值；编辑态 apiKey 留空 → 后端
-              用已保存原 key（"不改"语义）。 */}
-          <div className="flex flex-col gap-1.5">
-            <ActionButton
-              tone="muted"
-              onClick={() =>
-                testMutation.mutate({
-                  ...(provider ? { id: provider.id } : {}),
-                  ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-                  ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
-                  protocol,
-                })
-              }
-              disabled={testMutation.isPending || saving}
-            >
-              {testMutation.isPending
-                ? t("settings.testConnectionRunning")
-                : t("settings.testConnection")}
-            </ActionButton>
-            {testResult && (
-              <p className={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}>
-                {testResult.ok
-                  ? testResult.models.length > 0
-                    ? t("settings.testConnectionOk", { count: testResult.models.length })
-                    : t("settings.testConnectionOkEmpty")
-                  : t("settings.testConnectionFailed", { error: testResult.error ?? "" })}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-on-surface-soft">
+                {t("settings.modelMapping")}
               </p>
-            )}
-            {testResult?.ok && testResult.models.length > 0 && (
-              <p className="truncate font-mono text-[11px] text-on-surface-muted">
-                {testResult.models.slice(0, 5).join(" · ")}
+              <p className="text-xs leading-5 text-on-surface-muted">
+                {t("settings.modelMappingHint")}
               </p>
-            )}
+              {TIERS.map((tier) => (
+                <div key={tier} className="flex items-center gap-2">
+                  <span className="w-16 shrink-0 text-xs text-on-surface-muted">
+                    {t(TIER_LABEL[tier])}
+                  </span>
+                  <ModelTierSelect
+                    tier={tier}
+                    value={modelMapping[tier]}
+                    models={models}
+                    loading={modelsLoading}
+                    onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* 测试连接：refetch modelsQuery，与 modelMapping 下拉共享同一凭证源。凭证不全
+                （baseUrl 空）时按钮禁用。上游失败 → {ok:false}，前端展示测试结果而非报错 toast。 */}
+            <div className="flex flex-col gap-1.5">
+              <ActionButton
+                tone="muted"
+                onClick={() => modelsQuery.refetch()}
+                disabled={modelsQuery.isFetching || saving || !trimmedBaseUrl}
+              >
+                {modelsQuery.isFetching
+                  ? t("settings.testConnectionRunning")
+                  : t("settings.testConnection")}
+              </ActionButton>
+              {modelsQuery.data && (
+                <p className={`text-xs ${modelsQuery.data.ok ? "text-success" : "text-error"}`}>
+                  {modelsQuery.data.ok
+                    ? modelsQuery.data.models.length > 0
+                      ? t("settings.testConnectionOk", { count: modelsQuery.data.models.length })
+                      : t("settings.testConnectionOkEmpty")
+                    : t("settings.testConnectionFailed", { error: modelsQuery.data.error ?? "" })}
+                </p>
+              )}
+              {modelsQuery.data?.ok && modelsQuery.data.models.length > 0 && (
+                <p className="truncate font-mono text-[11px] text-on-surface-muted">
+                  {modelsQuery.data.models.slice(0, 5).join(" · ")}
+                </p>
+              )}
+            </div>
           </div>
 
           {error && <p className="text-xs text-error">{error}</p>}
@@ -674,176 +779,6 @@ function ProviderDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// Claude runtime 配置主体（决策 48 起：两层结构下 claude detail 直接渲染本组件，
-// 不再经 RuntimeSection tab 包裹）。调用方 SettingsContent 用 key={JSON.stringify(runtime)}
-// remount：runtime 内容变（save 成功 / providerId 被后端清）才重置 state；provider CRUD
-// 不改 runtime 时 key 不变，用户编辑中的改动保留。
-// key={JSON.stringify(runtime)} remount：runtime 内容变（save 成功 / providerId 被后端清）
-// 才重置 state；provider CRUD 不改 runtime 时 key 不变，用户编辑中的改动保留。
-function ClaudeRuntimeContent({
-  runtime,
-  providers,
-  loading = false,
-}: {
-  runtime: ClaudeRuntimeConfig;
-  providers: ProviderConfigMasked[];
-  loading?: boolean;
-}) {
-  const { t } = useT();
-  const queryClient = useQueryClient();
-
-  const [providerId, setProviderId] = useState(runtime.providerId);
-  const [modelMapping, setModelMapping] = useState<ClaudeModelMapping>(runtime.modelMapping);
-  const [enable1m, setEnable1m] = useState(runtime.enable1mContext);
-  const [effort, setEffort] = useState<EffortLevel>(runtime.effort);
-  const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const dirty =
-    !loading &&
-    (providerId !== runtime.providerId ||
-      effort !== runtime.effort ||
-      enable1m !== runtime.enable1mContext ||
-      JSON.stringify(modelMapping) !== JSON.stringify(runtime.modelMapping));
-
-  const handleSave = async () => {
-    if (loading) return;
-    setError(null);
-    setSaving(true);
-    try {
-      await updateClaudeRuntime({
-        providerId,
-        modelMapping,
-        enable1mContext: enable1m,
-        effort,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setJustSaved(true);
-      window.setTimeout(() => setJustSaved(false), 2000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const selectedLabel = providerId
-    ? (providers.find((p) => p.id === providerId)?.label ?? providerId)
-    : t("settings.runtimeProviderNone");
-  const selectedProtocol: ProviderProtocol =
-    providers.find((p) => p.id === providerId)?.protocol ?? "anthropic";
-  // Claude runtime 只消费 anthropic 协议 provider（决策 47）；selectedLabel/selectedProtocol
-  // 仍用全量 providers 查，保证选中后被改成不兼容协议的 stale 选择仍可见、可改选。
-  const runtimeProviders = providers.filter(
-    (p) => (p.protocol ?? "anthropic") === RUNTIME_PROVIDER_PROTOCOL.claude,
-  );
-
-  return (
-    <Card className="border border-neutral-line bg-surface ring-0">
-      <CardContent className="flex flex-col gap-4 p-3">
-        <Field label={t("settings.runtimeProvider")}>
-          <OptionMenu
-            align="start"
-            cancelLabel={t("cancel")}
-            trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
-            items={[
-              {
-                label: t("settings.runtimeProviderNone"),
-                isActive: providerId === "",
-                onSelect: () => setProviderId(""),
-              },
-              ...runtimeProviders.map((p) => ({
-                label: p.label,
-                isActive: p.id === providerId,
-                onSelect: () => setProviderId(p.id),
-              })),
-            ]}
-          />
-        </Field>
-
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold text-on-surface-soft">{t("settings.modelMapping")}</p>
-          <p className="text-xs leading-5 text-on-surface-muted">
-            {t("settings.modelMappingHint")}
-          </p>
-          {TIERS.map((tier) => (
-            <div key={tier} className="flex items-center gap-2">
-              <span className="w-16 shrink-0 text-xs text-on-surface-muted">
-                {t(TIER_LABEL[tier])}
-              </span>
-              {providerId && !loading ? (
-                <ModelTierSelect
-                  tier={tier}
-                  value={modelMapping[tier]}
-                  providerId={providerId}
-                  protocol={selectedProtocol}
-                  onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
-                />
-              ) : (
-                <ShellInput
-                  value={modelMapping[tier]}
-                  onChange={(e) => setModelMapping({ ...modelMapping, [tier]: e.target.value })}
-                  placeholder={tier}
-                  disabled={loading}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enable1m}
-          disabled={loading}
-          onClick={() => !loading && setEnable1m(!enable1m)}
-          className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
-        >
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-on-surface">
-              {t("settings.enable1m")}
-            </span>
-            <span className="block text-xs leading-5 text-on-surface-muted">
-              {t("settings.enable1mHint")}
-            </span>
-          </span>
-          <span
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enable1m ? "bg-primary" : "bg-surface-inset"}`}
-          >
-            <span
-              className={`inline-block size-5 transform rounded-full bg-on-primary shadow transition ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"} ${enable1m ? "" : "bg-on-surface"}`}
-            />
-          </span>
-        </button>
-
-        <Field label={t("settings.effort")} hint={t("settings.effortHint")}>
-          <OptionMenu
-            align="start"
-            cancelLabel={t("cancel")}
-            trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} disabled={loading} />}
-            items={EFFORT_LEVELS.map((level) => ({
-              label: t(EFFORT_LABEL[level]),
-              isActive: level === effort,
-              onSelect: () => setEffort(level),
-            }))}
-          />
-        </Field>
-
-        {error && <p className="text-xs text-error">{error}</p>}
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <span className="text-xs text-on-surface-muted">
-            {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
-          </span>
-          <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
-            {saving ? t("settings.saving") : t("settings.save")}
-          </ActionButton>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -894,32 +829,25 @@ const SelectorTrigger = forwardRef<
   );
 });
 
-// tier → model 下拉：选项来自所选 provider 的可用模型列表（useQuery 缓存）。
-// 拉取失败 / 上游 ok:false → 降级手填 ShellInput，保证用户始终能配置。
+// tier → model 下拉：选项来自 PresetDialog 层基于凭证拉取的可用模型列表。
+// 模型列表空（凭证不全 / 上游 ok:false / 拉取失败）→ 降级手填 ShellInput，保证用户始终能配置。
 // 选项 = 拉取列表 ∪ 当前值；当前值不在列表时加 (custom) 标记保留旧值。
 function ModelTierSelect({
   tier,
   value,
-  providerId,
-  protocol,
+  models,
+  loading,
   onChange,
 }: {
   tier: ClaudeModelTier;
   value: string;
-  providerId: string;
-  protocol: ProviderProtocol;
+  models: string[];
+  loading: boolean;
   onChange: (next: string) => void;
 }) {
   const { t } = useT();
-  const query = useQuery({
-    queryKey: ["provider-models", providerId, protocol],
-    queryFn: () => listProviderModels(providerId),
-    enabled: !!providerId,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-
-  if (query.isError || (query.data && !query.data.ok)) {
+  const unavailable = !loading && models.length === 0;
+  if (unavailable) {
     return (
       <ShellInput
         value={value}
@@ -930,10 +858,8 @@ function ModelTierSelect({
     );
   }
 
-  const fetched = query.data?.ok ? query.data.models : [];
-  const fetchedSet = new Set(fetched);
-  const options = fetchedSet.has(value) ? fetched : [value, ...fetched];
-  const loading = query.isLoading && !query.data;
+  const fetchedSet = new Set(models);
+  const options = fetchedSet.has(value) ? models : [value, ...models];
   const triggerLabel =
     value || (loading ? t("settings.modelSelectLoading") : t("settings.modelSelectPlaceholder"));
 

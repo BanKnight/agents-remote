@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import type { ProviderConfig } from "@agents-remote/shared";
+import type { ProviderProtocol } from "@agents-remote/shared";
 import {
   buildModelsHeaders,
   buildModelsUrl,
@@ -23,9 +23,7 @@ const setFetch = (impl: (url: string) => Promise<Response> | Response, log: stri
   return log;
 };
 
-const anthropic: ProviderConfig = {
-  id: "p1",
-  label: "A",
+const anthropic: { apiKey: string; protocol?: ProviderProtocol } = {
   apiKey: "sk-ant",
   protocol: "anthropic",
 };
@@ -106,7 +104,7 @@ test("buildModelsHeaders: openai-compatible → Authorization Bearer, no anthrop
 });
 
 test("buildModelsHeaders: missing protocol falls back to anthropic headers", () => {
-  const headers = buildModelsHeaders({ id: "p", label: "A", apiKey: "sk-ant" });
+  const headers = buildModelsHeaders({ apiKey: "sk-ant" });
   expect(headers["x-api-key"]).toBe("sk-ant");
   expect(headers["anthropic-version"]).toBe("2023-06-01");
 });

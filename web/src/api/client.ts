@@ -36,15 +36,15 @@ import type {
   SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
   UploadFileResponse,
-  CreateProviderRequest,
-  DeleteProviderResponse,
+  ClaudePresetResponse,
+  CreateClaudePresetRequest,
+  DeleteClaudePresetResponse,
   GetSettingsResponse,
   ListProviderModelsResponse,
-  ProviderResponse,
-  TestProviderRequest,
+  TestClaudePresetRequest,
+  UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
-  UpdateProviderRequest,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -391,39 +391,41 @@ export function createEchoSocket() {
   return new WebSocket(`${protocol}//${window.location.host}/api/ws/echo`);
 }
 
-// ── Settings: provider credentials + claude runtime defaults ──────────
+// ── Settings: claude 预设（凭证 + 模型映射）+ runtime 旋钮 ──────────
 
 export async function getSettings(): Promise<GetSettingsResponse> {
   return fetchJson("/api/settings", "api.settingsFetchFailed");
 }
 
-export async function createProvider(input: CreateProviderRequest): Promise<ProviderResponse> {
-  return fetchJson("/api/settings/providers", "api.providerCreateFailed", {
+export async function createClaudePreset(
+  input: CreateClaudePresetRequest,
+): Promise<ClaudePresetResponse> {
+  return fetchJson("/api/settings/runtimes/claude/presets", "api.presetCreateFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input satisfies CreateProviderRequest),
+    body: JSON.stringify(input satisfies CreateClaudePresetRequest),
   });
 }
 
-export async function updateProvider(
+export async function updateClaudePreset(
   id: string,
-  input: UpdateProviderRequest,
-): Promise<ProviderResponse> {
+  input: UpdateClaudePresetRequest,
+): Promise<ClaudePresetResponse> {
   return fetchJson(
-    `/api/settings/providers/${encodeURIComponent(id)}`,
-    "api.providerUpdateFailed",
+    `/api/settings/runtimes/claude/presets/${encodeURIComponent(id)}`,
+    "api.presetUpdateFailed",
     {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(input satisfies UpdateProviderRequest),
+      body: JSON.stringify(input satisfies UpdateClaudePresetRequest),
     },
   );
 }
 
-export async function deleteProvider(id: string): Promise<DeleteProviderResponse> {
+export async function deleteClaudePreset(id: string): Promise<DeleteClaudePresetResponse> {
   return fetchJson(
-    `/api/settings/providers/${encodeURIComponent(id)}`,
-    "api.providerDeleteFailed",
+    `/api/settings/runtimes/claude/presets/${encodeURIComponent(id)}`,
+    "api.presetDeleteFailed",
     {
       method: "DELETE",
     },
@@ -440,12 +442,12 @@ export async function updateClaudeRuntime(
   });
 }
 
-// 发现模型：后端用 provider 凭证请求 /v1/models。上游凭证问题返回 HTTP 200 + {ok:false}
-// （fetchJson 不抛，前端展示测试结果）；仅 provider 不存在等 API 层错误才抛。
-export async function listProviderModels(id: string): Promise<ListProviderModelsResponse> {
+// 发现模型：后端用该预设凭证请求 /v1/models。上游凭证问题返回 HTTP 200 + {ok:false}
+// （fetchJson 不抛，前端展示测试结果）；仅 preset 不存在等 API 层错误才抛（404）。
+export async function listPresetModels(id: string): Promise<ListProviderModelsResponse> {
   return fetchJson(
-    `/api/settings/providers/${encodeURIComponent(id)}/models`,
-    "api.providerModelsFailed",
+    `/api/settings/runtimes/claude/presets/${encodeURIComponent(id)}/models`,
+    "api.presetModelsFailed",
     { method: "POST" },
   );
 }
@@ -453,13 +455,13 @@ export async function listProviderModels(id: string): Promise<ListProviderModels
 // 测试连接（不落盘）：用表单内联凭证请求上游 /v1/models。新建态无 id；编辑态传 id，
 // apiKey 留空时后端回退已保存原 key（原 key 永不出 api 进程，前端只持 masked）。
 // 上游凭证问题同样返回 HTTP 200 + {ok:false}（fetchJson 不抛，前端展示测试结果）。
-export async function testProviderModels(
-  input: TestProviderRequest,
+export async function testPresetModels(
+  input: TestClaudePresetRequest,
 ): Promise<ListProviderModelsResponse> {
-  return fetchJson("/api/settings/providers/test-models", "api.providerModelsFailed", {
+  return fetchJson("/api/settings/runtimes/claude/presets/test-models", "api.presetModelsFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input satisfies TestProviderRequest),
+    body: JSON.stringify(input satisfies TestClaudePresetRequest),
   });
 }
 

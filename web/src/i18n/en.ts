@@ -277,6 +277,10 @@ export const en = {
   "api.providerDeleteFailed": "Failed to delete provider",
   "api.runtimeUpdateFailed": "Failed to update Claude runtime",
   "api.providerModelsFailed": "Failed to fetch provider models",
+  "api.presetCreateFailed": "Failed to add preset",
+  "api.presetUpdateFailed": "Failed to update preset",
+  "api.presetDeleteFailed": "Failed to delete preset",
+  "api.presetModelsFailed": "Failed to fetch preset models",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "just now",
@@ -577,4 +581,20 @@ export const en = {
   "settings.modelSelectLoading": "Loading models…",
   "settings.modelSelectCustom": "(custom)",
   "settings.modelSelectFetchError": "Could not load models. Type manually.",
+
+  // ── Settings: presets（决策 4：预设合并进 Claude 运行时段） ─────
+  "settings.presets": "Presets",
+  "settings.presetsHint":
+    "Each preset bundles a base URL, API key, and model mapping. Activate one to use it for new sessions.",
+  "settings.addPreset": "Add preset",
+  "settings.noPresets": "No presets yet. Add one to configure credentials and model mapping.",
+  "settings.deletePreset": "Delete preset",
+  "settings.deletePresetConfirm":
+    'Delete preset "{{label}}"? If it is active, new sessions fall back to server env.',
+  "settings.editPreset": "Edit preset",
+  "settings.newPreset": "New preset",
+  "settings.activePreset": "Active preset",
+  "settings.activePresetHint":
+    "The active preset's base URL, API key, and model mapping apply when newly creating sessions. Already-open sessions are not affected.",
+  "settings.activePresetNone": "None (use server env)",
 } as const;

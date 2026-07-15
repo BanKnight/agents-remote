@@ -171,12 +171,13 @@ export type SaveFileResponse = {
 
 export type AgentProvider = "claude" | "codex" | "claude2";
 
-// ── Settings: provider credentials + claude runtime defaults ──────────
+// ── Settings: claude presets + runtime defaults ──────────────────────
 //
-// Provider = 一套 API 凭证（apiKey + baseUrl）；claude runtime 选其中一个。
-// modelMapping = tier → 具体 model ID（spawn 时传给 CLI 的 --model 值）。
-// ClaudeRuntimeConfig = providerId + modelMapping + enable1mContext + effort，
-// 是所有新 claude2 session spawn 的全局默认初始值。
+// ClaudePreset = 一套端点凭证（apiKey + baseUrl）+ 该端点的模型映射（modelMapping），
+// 凭证与映射绑定一体；claude runtime 通过 activePresetId 单选激活其中一个（空=不启用，
+// 回退父进程 env）。ClaudeRuntimeConfig = activePresetId + enable1mContext + effort，
+// 是所有新 claude2 session spawn 的全局默认初始值（effort/1m 与端点无关，留运行时级）。
+// 预设结构 per-runtime-type：claude 是第一个实例，未来 codex 预设同理念不同格式。
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 export const EFFORT_LEVELS: readonly EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
@@ -191,7 +192,8 @@ export const CLAUDE_MODEL_TIERS: readonly ClaudeModelTier[] = [
 
 // Provider 协议：决定「发现模型」(/v1/models) 的请求构造（端点 + header）。
 // anthropic → x-api-key + anthropic-version；openai-compatible → Authorization: Bearer。
-// 不影响 spawn（CLI 只认 ANTHROPIC_* env）。全程可选，normalizeProvider 兜底 "anthropic"。
+// 不影响 spawn（CLI 只认 ANTHROPIC_* env）。仅供 settings-models 构造请求用；
+// ClaudePreset 不存 protocol（claude 预设恒 anthropic），listProviderModels 兜底 "anthropic"。
 export type ProviderProtocol = "anthropic" | "openai-compatible";
 export const PROVIDER_PROTOCOLS: readonly ProviderProtocol[] = ["anthropic", "openai-compatible"];
 
@@ -202,68 +204,78 @@ export type ClaudeModelMapping = {
   haiku: string;
 };
 
-export type ProviderConfig = {
+export type ClaudePreset = {
   id: string;
   label: string;
   apiKey: string;
   baseUrl?: string;
-  protocol?: ProviderProtocol;
+  // 该端点的 tier → 具体 model ID 映射（spawn 时传给 CLI 的 --model 值）。与端点绑定，
+  // 随预设切换整体切换；从 v1 的全局 runtime.modelMapping 下沉到预设，与凭证一体。
+  modelMapping: ClaudeModelMapping;
 };
 
-export type ProviderConfigMasked = Omit<ProviderConfig, "apiKey"> & {
+export type ClaudePresetMasked = Omit<ClaudePreset, "apiKey"> & {
   apiKeyMasked: string;
   hasApiKey: boolean;
 };
 
 export type ClaudeRuntimeConfig = {
-  providerId: string;
-  modelMapping: ClaudeModelMapping;
+  // 单选激活的预设 id；空 = 不启用，spawn 回退父进程 env（ANTHROPIC_*）。
+  activePresetId: string;
   enable1mContext: boolean;
   effort: EffortLevel;
 };
 
 export type SettingsState = {
-  providers: ProviderConfig[];
   runtimes: {
-    claude: ClaudeRuntimeConfig;
+    // per-runtime-type：claude 是第一个实例；未来 codex 预设同理念不同格式（本次不实现）。
+    claude: {
+      presets: ClaudePreset[];
+      activePresetId: string;
+      enable1mContext: boolean;
+      effort: EffortLevel;
+    };
   };
 };
 
 export type GetSettingsResponse = {
   settings: {
-    providers: ProviderConfigMasked[];
     runtimes: {
-      claude: ClaudeRuntimeConfig;
+      claude: {
+        presets: ClaudePresetMasked[];
+        activePresetId: string;
+        enable1mContext: boolean;
+        effort: EffortLevel;
+      };
     };
   };
 };
 
-export type CreateProviderRequest = {
+export type CreateClaudePresetRequest = {
   label: string;
   apiKey: string;
   baseUrl?: string;
-  protocol?: ProviderProtocol;
+  modelMapping: ClaudeModelMapping;
 };
 
-export type UpdateProviderRequest = {
+export type UpdateClaudePresetRequest = {
   label?: string;
   apiKey?: string;
   baseUrl?: string;
-  protocol?: ProviderProtocol;
+  modelMapping?: Partial<ClaudeModelMapping>;
 };
 
-export type ProviderResponse = {
-  provider: ProviderConfigMasked;
+export type ClaudePresetResponse = {
+  preset: ClaudePresetMasked;
 };
 
-export type DeleteProviderResponse = {
+export type DeleteClaudePresetResponse = {
   deleted: true;
   id: string;
 };
 
 export type UpdateClaudeRuntimeRequest = {
-  providerId?: string;
-  modelMapping?: Partial<ClaudeModelMapping>;
+  activePresetId?: string;
   enable1mContext?: boolean;
   effort?: EffortLevel;
 };
@@ -272,31 +284,30 @@ export type UpdateClaudeRuntimeResponse = {
   runtime: ClaudeRuntimeConfig;
 };
 
-// POST /api/settings/providers/:id/models 响应：用 provider 凭证请求 /v1/models。
+// POST /api/settings/runtimes/claude/presets/:id/models 响应：用该预设凭证请求 /v1/models。
 // ok=false 时 models 为空、error 给可读原因（凭证无效/端点不存在/网络错误）。
 // 上游失败不映射成 API 错误码——这是「业务成功调用发现接口，上游凭证有问题」，
-// 前端展示测试结果而非报错 toast。仅 provider 不存在走 PROVIDER_NOT_FOUND 404。
-// POST /api/settings/providers/test-models 复用此响应（见 TestProviderRequest）。
+// 前端展示测试结果而非报错 toast。仅 preset 不存在走 PRESET_NOT_FOUND 404。
+// POST /api/settings/runtimes/claude/presets/test-models 复用此响应（见 TestClaudePresetRequest）。
 export type ListProviderModelsResponse = {
   ok: boolean;
   models: string[];
   error?: string;
 };
 
-// POST /api/settings/providers/test-models 请求：用表单内联凭证测试连接（不落盘）。
-// 用于 ProviderDialog 新建态（无 id）+ 编辑态（有 id，apiKey 留空回退已保存原 key）。
-// 后端解析：apiKey / baseUrl / protocol 取内联值，缺失则回退 id 命中的已保存 provider
-// 对应字段（原 apiKey 永不出 api 进程，前端只持 masked → 编辑态留空 = "不改"语义）。
-// 复用 ListProviderModelsResponse 响应（与 :id/models 同一套发现模型结果）。
-export type TestProviderRequest = {
-  /** 编辑态传已保存 provider id，用于回退内联缺失字段（apiKey/baseUrl/protocol）。新建态省略。 */
+// POST /api/settings/runtimes/claude/presets/test-models 请求：用表单内联凭证测试连接（不落盘）。
+// 用于 PresetDialog 新建态（无 id）+ 编辑态（有 id，apiKey 留空回退已保存原 key）。
+// 后端解析：apiKey / baseUrl 取内联值，缺失则回退 id 命中的已保存 preset 对应字段
+// （原 apiKey 永不出 api 进程，前端只持 masked → 编辑态留空 = "不改"语义）。
+// preset 恒 anthropic，无需 protocol 字段。复用 ListProviderModelsResponse 响应。
+export type TestClaudePresetRequest = {
+  /** 编辑态传已保存 preset id，用于回退内联缺失字段（apiKey/baseUrl）。新建态省略。 */
   id?: string;
   /** 仅展示用，测试连接不依赖。 */
   label?: string;
-  /** 内联 apiKey；留空且 id 命中已保存 provider 时回退其原 key。两者皆空 → 后端返回 ok:false。 */
+  /** 内联 apiKey；留空且 id 命中已保存 preset 时回退其原 key。两者皆空 → 后端返回 ok:false。 */
   apiKey?: string;
   baseUrl?: string;
-  protocol?: ProviderProtocol;
 };
 
 export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
@@ -1251,7 +1262,7 @@ export type ApiErrorCode =
   | "SESSION_METADATA_ERROR"
   | "SESSION_STREAM_MISMATCH"
   | "SETTINGS_INVALID"
-  | "PROVIDER_NOT_FOUND"
+  | "PRESET_NOT_FOUND"
   | "PROVIDER_LABEL_CONFLICT";
 
 export type ApiErrorResponse = {

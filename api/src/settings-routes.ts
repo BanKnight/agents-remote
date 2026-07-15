@@ -2,161 +2,189 @@ import { randomUUID } from "node:crypto";
 import {
   CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
-  PROVIDER_PROTOCOLS,
+  type ClaudeModelMapping,
+  type ClaudePreset,
   type ClaudeRuntimeConfig,
-  type CreateProviderRequest,
-  type DeleteProviderResponse,
+  type ClaudePresetResponse,
+  type CreateClaudePresetRequest,
+  type DeleteClaudePresetResponse,
   type GetSettingsResponse,
   type ListProviderModelsResponse,
-  type ProviderConfig,
-  type ProviderProtocol,
-  type ProviderResponse,
   type SettingsState,
-  type TestProviderRequest,
+  type TestClaudePresetRequest,
+  type UpdateClaudePresetRequest,
   type UpdateClaudeRuntimeRequest,
   type UpdateClaudeRuntimeResponse,
-  type UpdateProviderRequest,
 } from "@agents-remote/shared";
 import { jsonError } from "./http-auth";
 import { listProviderModels } from "./settings-models";
-import { SettingsStore, toMaskedProvider } from "./settings-store";
+import { SettingsStore, toMaskedPreset } from "./settings-store";
 
-// 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫（L102-110）。
-// GET 响应里 providers 的 apiKey 全走 toMaskedProvider；原始 key 永不出 api 进程、
-// 永不进日志。写操作（POST/PUT/DELETE）只接已认证请求。
+// 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫。
+// GET 响应里 presets 的 apiKey 全走 toMaskedPreset；原始 key 永不出 api 进程、永不进日志。
+// 写操作（POST/PUT/DELETE）只接已认证请求。
 export const handleSettingsRoutes = async (
   request: Request,
   url: URL,
   store: SettingsStore,
 ): Promise<Response | undefined> => {
   if (url.pathname === "/api/settings" && request.method === "GET") {
-    const state = await store.read();
+    const claude = (await store.read()).runtimes.claude;
     const response: GetSettingsResponse = {
       settings: {
-        providers: state.providers.map(toMaskedProvider),
-        runtimes: state.runtimes,
+        runtimes: {
+          claude: {
+            presets: claude.presets.map(toMaskedPreset),
+            activePresetId: claude.activePresetId,
+            enable1mContext: claude.enable1mContext,
+            effort: claude.effort,
+          },
+        },
       },
     };
     return Response.json(response);
   }
 
-  if (url.pathname === "/api/settings/providers" && request.method === "POST") {
-    const body = await readJson<CreateProviderRequest>(request);
+  // POST /api/settings/runtimes/claude/presets/test-models —— 用表单内联凭证测试连接（不落盘）。
+  // 精确匹配（无 id 段），放在 :id/models 正则之前。新建态无 id；编辑态传 id 用于
+  // 回退内联缺失字段（apiKey 留空 = "不改" → 用已保存原 key，原 key 永不出 api 进程）。
+  // preset 恒 anthropic，固定 anthropic 请求头。上游失败走 {ok:false, error}。
+  if (
+    url.pathname === "/api/settings/runtimes/claude/presets/test-models" &&
+    request.method === "POST"
+  ) {
+    const body = await readJson<TestClaudePresetRequest>(request);
+    const baseUrl = body.baseUrl?.trim();
+    const saved = body.id
+      ? (await store.read()).runtimes.claude.presets.find((p) => p.id === body.id)
+      : undefined;
+    const apiKey = body.apiKey?.trim() || saved?.apiKey || "";
+    const creds = {
+      apiKey,
+      ...(baseUrl ? { baseUrl } : saved?.baseUrl ? { baseUrl: saved.baseUrl } : {}),
+    };
+    const result = await listProviderModels(creds);
+    const response: ListProviderModelsResponse = {
+      ok: result.ok,
+      models: result.ok ? result.models : [],
+      ...(result.ok ? {} : { error: result.error }),
+    };
+    return Response.json(response);
+  }
+
+  // POST /api/settings/runtimes/claude/presets/:id/models —— 用该 preset 凭证发现可用模型。
+  // 独立正则（带 /models$），与 PUT/DELETE 的单段正则不冲突。上游失败不抛——
+  // 走 {ok:false, error} 让前端展示测试结果；仅 preset 不存在返回 404。
+  const modelsMatch = url.pathname.match(
+    /^\/api\/settings\/runtimes\/claude\/presets\/([^/]+)\/models$/,
+  );
+  if (modelsMatch && request.method === "POST") {
+    const id = decodeURIComponent(modelsMatch[1]);
+    const preset = (await store.read()).runtimes.claude.presets.find((p) => p.id === id);
+    if (!preset) return jsonError("PRESET_NOT_FOUND", "Preset not found", 404);
+    const result = await listProviderModels(preset);
+    const response: ListProviderModelsResponse = {
+      ok: result.ok,
+      models: result.ok ? result.models : [],
+      ...(result.ok ? {} : { error: result.error }),
+    };
+    return Response.json(response);
+  }
+
+  if (url.pathname === "/api/settings/runtimes/claude/presets" && request.method === "POST") {
+    const body = await readJson<CreateClaudePresetRequest>(request);
     const label = body.label?.trim();
     const apiKey = body.apiKey?.trim();
-    if (!label) return jsonError("SETTINGS_INVALID", "Provider label is required", 400);
-    if (!apiKey) return jsonError("SETTINGS_INVALID", "Provider API key is required", 400);
     const baseUrl = body.baseUrl?.trim();
-    const provider: ProviderConfig = {
+    if (!label) return jsonError("SETTINGS_INVALID", "Preset label is required", 400);
+    if (!apiKey) return jsonError("SETTINGS_INVALID", "Preset API key is required", 400);
+    if (!baseUrl) return jsonError("SETTINGS_INVALID", "Preset baseUrl is required", 400);
+    const modelMappingResult = coerceModelMapping(body.modelMapping);
+    if (typeof modelMappingResult === "string") {
+      return jsonError("SETTINGS_INVALID", modelMappingResult, 400);
+    }
+    const preset: ClaudePreset = {
       id: randomUUID(),
       label,
       apiKey,
-      protocol: resolveProtocol(body.protocol),
-      ...(baseUrl ? { baseUrl } : {}),
+      baseUrl,
+      modelMapping: modelMappingResult,
     };
-    const updated = await store.update((s) => ({ ...s, providers: [...s.providers, provider] }));
-    const created = updated.providers.find((p) => p.id === provider.id);
-    if (!created) throw new Error("Created provider missing from store");
-    const response: ProviderResponse = { provider: toMaskedProvider(created) };
+    const updated = await store.update((s) => ({
+      ...s,
+      runtimes: {
+        ...s.runtimes,
+        claude: { ...s.runtimes.claude, presets: [...s.runtimes.claude.presets, preset] },
+      },
+    }));
+    const created = updated.runtimes.claude.presets.find((p) => p.id === preset.id);
+    if (!created) throw new Error("Created preset missing from store");
+    const response: ClaudePresetResponse = { preset: toMaskedPreset(created) };
     return Response.json(response, { status: 201 });
   }
 
-  // POST /api/settings/providers/test-models —— 用表单内联凭证测试连接（不落盘）。
-  // 精确匹配（无 id 段），放在 :id/models 正则之前。新建态无 id；编辑态传 id 用于
-  // 回退内联缺失字段（apiKey 留空 = "不改" → 用已保存原 key，原 key 永不出 api 进程）。
-  // 上游失败同样走 {ok:false, error}（与 :id/models 一致），前端展示测试结果。
-  if (url.pathname === "/api/settings/providers/test-models" && request.method === "POST") {
-    const body = await readJson<TestProviderRequest>(request);
-    const protocol = resolveProtocol(body.protocol);
-    const baseUrl = body.baseUrl?.trim();
-    const saved = body.id
-      ? (await store.read()).providers.find((p) => p.id === body.id)
-      : undefined;
-    const apiKey = body.apiKey?.trim() || saved?.apiKey || "";
-    const provider: ProviderConfig = {
-      id: body.id ?? "test",
-      label: body.label?.trim() || saved?.label || "test",
-      apiKey,
-      protocol,
-      ...(baseUrl ? { baseUrl } : saved?.baseUrl ? { baseUrl: saved.baseUrl } : {}),
-    };
-    const result = await listProviderModels(provider);
-    const response: ListProviderModelsResponse = {
-      ok: result.ok,
-      models: result.ok ? result.models : [],
-      ...(result.ok ? {} : { error: result.error }),
-    };
-    return Response.json(response);
-  }
+  const presetIdMatch = url.pathname.match(/^\/api\/settings\/runtimes\/claude\/presets\/([^/]+)$/);
 
-  // POST /api/settings/providers/:id/models —— 用 provider 凭证发现可用模型列表。
-  // 独立正则（带 /models$），与下方 PUT/DELETE 的单段正则不冲突。上游失败不抛——
-  // 走 {ok:false, error} 让前端展示测试结果；仅 provider 不存在返回 404。
-  const modelsMatch = url.pathname.match(/^\/api\/settings\/providers\/([^/]+)\/models$/);
-  if (modelsMatch && request.method === "POST") {
-    const id = decodeURIComponent(modelsMatch[1]);
-    const state = await store.read();
-    const provider = state.providers.find((p) => p.id === id);
-    if (!provider) return jsonError("PROVIDER_NOT_FOUND", "Provider not found", 404);
-    const result = await listProviderModels(provider);
-    const response: ListProviderModelsResponse = {
-      ok: result.ok,
-      models: result.ok ? result.models : [],
-      ...(result.ok ? {} : { error: result.error }),
-    };
-    return Response.json(response);
-  }
-
-  const providerIdMatch = url.pathname.match(/^\/api\/settings\/providers\/([^/]+)$/);
-
-  if (providerIdMatch && request.method === "PUT") {
-    const id = decodeURIComponent(providerIdMatch[1]);
-    const body = await readJson<UpdateProviderRequest>(request);
+  if (presetIdMatch && request.method === "PUT") {
+    const id = decodeURIComponent(presetIdMatch[1]);
+    const body = await readJson<UpdateClaudePresetRequest>(request);
     let missing = false;
     const updated = await store.update((s) => {
-      if (!s.providers.some((p) => p.id === id)) {
+      if (!s.runtimes.claude.presets.some((p) => p.id === id)) {
         missing = true;
         return s;
       }
-      const providers = s.providers.map((p) => {
+      const presets = s.runtimes.claude.presets.map((p) => {
         if (p.id !== id) return p;
-        const next: ProviderConfig = { ...p };
+        const next: ClaudePreset = { ...p, modelMapping: { ...p.modelMapping } };
         if (typeof body.label === "string" && body.label.trim()) next.label = body.label.trim();
         // apiKey: undefined/空串 = 不改；非空 = 覆盖（前端编辑时留空保留原 key）。
         if (typeof body.apiKey === "string" && body.apiKey.length > 0) next.apiKey = body.apiKey;
-        if (body.protocol !== undefined) next.protocol = resolveProtocol(body.protocol);
         if (body.baseUrl !== undefined) {
           const trimmed = body.baseUrl.trim();
           if (trimmed) next.baseUrl = trimmed;
           else delete next.baseUrl;
         }
+        if (body.modelMapping) {
+          for (const tier of CLAUDE_MODEL_TIERS) {
+            const value = body.modelMapping[tier];
+            // 各 tier 可选更新：非空 string 才覆盖；空串/缺省 = 不改。
+            if (typeof value === "string" && value.trim()) {
+              next.modelMapping[tier] = value.trim();
+            }
+          }
+        }
         return next;
       });
-      return { ...s, providers };
+      return {
+        ...s,
+        runtimes: { ...s.runtimes, claude: { ...s.runtimes.claude, presets } },
+      };
     });
-    if (missing) return jsonError("PROVIDER_NOT_FOUND", "Provider not found", 404);
-    const provider = updated.providers.find((p) => p.id === id);
-    if (!provider) throw new Error("Updated provider missing from store");
-    const response: ProviderResponse = { provider: toMaskedProvider(provider) };
+    if (missing) return jsonError("PRESET_NOT_FOUND", "Preset not found", 404);
+    const preset = updated.runtimes.claude.presets.find((p) => p.id === id);
+    if (!preset) throw new Error("Updated preset missing from store");
+    const response: ClaudePresetResponse = { preset: toMaskedPreset(preset) };
     return Response.json(response);
   }
 
-  if (providerIdMatch && request.method === "DELETE") {
-    const id = decodeURIComponent(providerIdMatch[1]);
+  if (presetIdMatch && request.method === "DELETE") {
+    const id = decodeURIComponent(presetIdMatch[1]);
     let existed = false;
     await store.update((s) => {
-      existed = s.providers.some((p) => p.id === id);
+      const claude = s.runtimes.claude;
+      existed = claude.presets.some((p) => p.id === id);
       if (!existed) return s;
-      const providers = s.providers.filter((p) => p.id !== id);
-      // 删除被 claude runtime 引用的 provider 时清空 providerId（fallback 继承父进程 env）。
-      const claude =
-        s.runtimes.claude.providerId === id
-          ? { ...s.runtimes.claude, providerId: "" }
-          : s.runtimes.claude;
-      return { ...s, providers, runtimes: { ...s.runtimes, claude } };
+      const presets = claude.presets.filter((p) => p.id !== id);
+      // 删除被激活的 preset 时清空 activePresetId（spawn 回退父进程 env）。
+      const nextClaude =
+        claude.activePresetId === id
+          ? { ...claude, presets, activePresetId: "" }
+          : { ...claude, presets };
+      return { ...s, runtimes: { ...s.runtimes, claude: nextClaude } };
     });
-    if (!existed) return jsonError("PROVIDER_NOT_FOUND", "Provider not found", 404);
-    const response: DeleteProviderResponse = { deleted: true, id };
+    if (!existed) return jsonError("PRESET_NOT_FOUND", "Preset not found", 404);
+    const response: DeleteClaudePresetResponse = { deleted: true, id };
     return Response.json(response);
   }
 
@@ -165,7 +193,7 @@ export const handleSettingsRoutes = async (
     let updated: SettingsState;
     try {
       updated = await store.update((s) =>
-        applyClaudeRuntimePatch(s.runtimes.claude, body, s.providers),
+        applyClaudeRuntimePatch(s.runtimes.claude, body, s.runtimes.claude.presets),
       );
     } catch (error) {
       if (error instanceof SettingsValidationError) {
@@ -180,70 +208,48 @@ export const handleSettingsRoutes = async (
   return undefined;
 };
 
-// 纯函数：把 partial patch 浅合并进当前 claude runtime config，校验失败抛
+// 纯函数：把 partial patch 合并进当前 claude runtime config，校验失败抛
 // SettingsValidationError（由 route handler 转 400）。返回完整新 SettingsState。
+// runtime 级只持 activePresetId/effort/enable1mContext（modelMapping 已下沉 preset）。
 function applyClaudeRuntimePatch(
   current: ClaudeRuntimeConfig,
   body: UpdateClaudeRuntimeRequest,
-  providers: ProviderConfig[],
+  presets: ClaudePreset[],
 ): SettingsState {
-  const next: ClaudeRuntimeConfig = { ...current, modelMapping: { ...current.modelMapping } };
+  let activePresetId = current.activePresetId;
+  let effort = current.effort;
+  let enable1mContext = current.enable1mContext;
 
-  if (body.providerId !== undefined) {
-    const providerId = body.providerId.trim();
-    if (providerId) {
-      const provider = providers.find((p) => p.id === providerId);
-      if (!provider) {
-        throw new SettingsValidationError("PROVIDER_NOT_FOUND", "Provider not found");
-      }
-      // Claude runtime 只消费 anthropic provider（决策 47）：UI 过滤可被绕过时，
-      // 后端挡住绑定 openai-compatible provider，给用户即时 400 而非 spawn 时用错 key。
-      if ((provider.protocol ?? "anthropic") !== "anthropic") {
-        throw new SettingsValidationError(
-          "SETTINGS_INVALID",
-          "Claude runtime requires an Anthropic-protocol provider",
-        );
+  if (body.activePresetId !== undefined) {
+    const trimmed = body.activePresetId.trim();
+    if (trimmed) {
+      // 激活的预设必须存在（preset 恒 anthropic，无需 protocol 守卫）。
+      if (!presets.some((p) => p.id === trimmed)) {
+        throw new SettingsValidationError("PRESET_NOT_FOUND", "Preset not found");
       }
     }
-    next.providerId = providerId;
+    activePresetId = trimmed;
   }
 
   if (body.effort !== undefined) {
     if (!(EFFORT_LEVELS as readonly string[]).includes(body.effort)) {
       throw new SettingsValidationError("SETTINGS_INVALID", `Invalid effort: ${body.effort}`);
     }
-    next.effort = body.effort;
+    effort = body.effort;
   }
 
   if (body.enable1mContext !== undefined) {
-    next.enable1mContext = body.enable1mContext;
-  }
-
-  if (body.modelMapping) {
-    for (const tier of CLAUDE_MODEL_TIERS) {
-      const value = body.modelMapping[tier];
-      if (value !== undefined) {
-        const trimmed = value.trim();
-        if (!trimmed) {
-          throw new SettingsValidationError(
-            "SETTINGS_INVALID",
-            `modelMapping.${tier} must not be empty`,
-          );
-        }
-        next.modelMapping[tier] = trimmed;
-      }
-    }
+    enable1mContext = body.enable1mContext;
   }
 
   return {
-    providers,
-    runtimes: { claude: next },
+    runtimes: { claude: { presets, activePresetId, enable1mContext, effort } },
   };
 }
 
 class SettingsValidationError extends Error {
   constructor(
-    readonly code: "PROVIDER_NOT_FOUND" | "SETTINGS_INVALID",
+    readonly code: "PRESET_NOT_FOUND" | "SETTINGS_INVALID",
     message: string,
   ) {
     super(message);
@@ -259,8 +265,18 @@ const readJson = async <T>(request: Request): Promise<T> => {
   }
 };
 
-// protocol 校验：合法值透传，缺省/非法值兜底 "anthropic"（与 store normalizeProvider 一致）。
-const resolveProtocol = (value: unknown): ProviderProtocol =>
-  typeof value === "string" && (PROVIDER_PROTOCOLS as readonly string[]).includes(value)
-    ? (value as ProviderProtocol)
-    : "anthropic";
+// 创建 preset 时校验 + 规整 modelMapping：各 tier 必须是非空 string。返回规整后的
+// ClaudeModelMapping，或错误文案（由 route handler 转 400 SETTINGS_INVALID）。
+const coerceModelMapping = (mapping: unknown): ClaudeModelMapping | string => {
+  if (!mapping || typeof mapping !== "object") return "modelMapping is required";
+  const m = mapping as Record<string, unknown>;
+  const out = {} as Partial<ClaudeModelMapping>;
+  for (const tier of CLAUDE_MODEL_TIERS) {
+    const value = m[tier];
+    if (typeof value !== "string") return `modelMapping.${tier} must be a non-empty string`;
+    const trimmed = value.trim();
+    if (!trimmed) return `modelMapping.${tier} must not be empty`;
+    out[tier] = trimmed;
+  }
+  return out as ClaudeModelMapping;
+};
