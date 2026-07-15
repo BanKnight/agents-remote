@@ -1183,6 +1183,11 @@ export type Claude2StreamClientMessage =
       // docs/research/claude-cli-runtime-config.md (effort Q3).
       type: "set_runtime_effort";
       effort: EffortLevel;
+    }
+  | {
+      // 应用层心跳(客户端发起,保活)。服务端 claude2-stream message handler 早返回,
+      // 不进业务处理。详见 web/src/lib/ws-heartbeat.ts。
+      type: "ping";
     };
 
 export type SessionStreamServerMessage =

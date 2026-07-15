@@ -294,6 +294,13 @@ export class Claude2StreamController {
     }
 
     try {
+      // 应用层心跳:客户端定时发 {type:"ping"} 保活(见 web/src/lib/ws-heartbeat.ts)。
+      // 早返回,不转发 stdin、不污染 messages/tasks state——出站 ping 流量已双向
+      // 重置 cloudflare/NAT/Bun idle 超时,无需回 ack。
+      if (parsed.type === "ping") {
+        return;
+      }
+
       // Per-session effort switch: the CLI has no runtime effort switch on a
       // direct-pull host, so persist metadata.effort + relaunch the CLI
       // (--resume + new CLAUDE_CODE_EFFORT_LEVEL) + close every WS for the

@@ -24,6 +24,7 @@ import {
 } from "../api/client";
 import { useT } from "../i18n";
 import type { TranslationKey } from "../i18n/types";
+import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
 import {
   canSendToSession,
   inputDrawerCollapsedAtom,
@@ -198,6 +199,7 @@ export function SessionDetail({
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let initialTimer: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
     const socketIsCurrent = () => connGeneration.current === generation;
 
@@ -219,6 +221,13 @@ export function SessionDetail({
         if (!socketIsCurrent()) return;
         reconnectAttemptsRef.current = 0;
         setConnectionStatus("connected");
+        // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
+        // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
+        heartbeatTimer = setInterval(() => {
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "ping" }));
+          }
+        }, HEARTBEAT_INTERVAL_MS);
       };
 
       socket.onmessage = (event) => {
@@ -283,6 +292,10 @@ export function SessionDetail({
 
       socket.onclose = (_e: CloseEvent) => {
         if (!socketIsCurrent()) return;
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
         setConnectionStatus((status) => {
           if (status === "ended" || status === "error") return status;
           return "connecting";
@@ -306,6 +319,10 @@ export function SessionDetail({
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
       if (socket) {
         socket.close();
         socket = null;
@@ -313,6 +330,22 @@ export function SessionDetail({
       }
     };
   }, [projectName, reconnectKey, sessionId, sessionType]);
+
+  // 回前台立即重连:移动端切后台一段时间后 WS 被中间层超时断开,回前台时若仍走
+  // 指数退避要等 1-10s。监听 visibilitychange,回前台且连接已断时立即 bump
+  // reconnectKey(触发主 effect 重跑:重置 attempt + setTimeout(connect,0)),跳过退避。
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        socketRef.current?.readyState !== WebSocket.OPEN
+      ) {
+        setReconnectKey((value) => value + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   const sendMessage = (message: SessionStreamClientMessage) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {

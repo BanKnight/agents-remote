@@ -10,6 +10,7 @@ import type {
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
+import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
 import {
   count,
   markOnce,
@@ -4049,6 +4050,22 @@ export function useClaude2Session(
     }
   }, [projectName, sessionId]);
 
+  // 回前台立即重连:移动端切后台一段时间后 WS 被中间层超时断开,回前台时不应
+  // 再等固定 500ms 重连。监听 visibilitychange,回前台且连接已断时立即 bump
+  // connectionVersion(触发 WS effect 重跑),跳过退避。
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        socketRef.current?.readyState !== WebSocket.OPEN
+      ) {
+        setConnectionVersion((version) => version + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
   useEffect(() => {
     const sessionKey = `${projectName}/${sessionId}`;
     const isSessionChange =
@@ -4056,6 +4073,7 @@ export function useClaude2Session(
     activeSessionKeyRef.current = sessionKey;
 
     let cancelled = false;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     const url = claude2StreamUrl(projectName, sessionId);
 
     // Reset on session change or initial mount; reconnect otherwise.
@@ -4073,6 +4091,13 @@ export function useClaude2Session(
 
     socket.onopen = () => {
       console.log("[claude2-adapter] ws open");
+      // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
+      // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
+      heartbeatTimer = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "ping" }));
+        }
+      }, HEARTBEAT_INTERVAL_MS);
     };
 
     const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
@@ -4293,6 +4318,10 @@ export function useClaude2Session(
 
     return () => {
       cancelled = true;
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
