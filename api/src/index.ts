@@ -191,20 +191,16 @@ export const createFetchHandler =
       }
     }
 
-    // GET /api/overview：聚合全 project 名 + 全活跃实例候选，替代前端 global 总览的 1+2N 瀑布
-    //（listProjects → 每项目 listAgent/listTerminal）。projectNames 不带计数（grouped 视图空状态用），
-    // candidates 经内存索引 + 批量探活过滤 + terminal capture（TTL 缓存）。
-    if (
-      options.projectService &&
-      options.sessionRegistry &&
-      url.pathname === "/api/overview" &&
-      request.method === "GET"
-    ) {
-      const [projectNames, candidates] = await Promise.all([
-        options.projectService.listProjectNames(),
-        options.sessionRegistry.listAllCandidates(),
-      ]);
-      return withRefresh(Response.json({ projectNames, candidates } satisfies OverviewResponse));
+    if (options.projectService && options.sessionRegistry) {
+      const overviewResponse = await handleOverview(
+        request,
+        url,
+        options.projectService,
+        options.sessionRegistry,
+      );
+      if (overviewResponse) {
+        return withRefresh(overviewResponse);
+      }
     }
 
     if (options.projectService) {
@@ -223,6 +219,25 @@ export const createFetchHandler =
 
     return withRefresh(Response.json({ error: "Not found" }, { status: 404 }));
   };
+
+const handleOverview = async (
+  request: Request,
+  url: URL,
+  projectService: ProjectService,
+  sessionRegistry: SessionRegistry,
+): Promise<Response | undefined> => {
+  // GET /api/overview：聚合全 project 名 + 全活跃实例候选，替代前端 global 总览的 1+2N 瀑布
+  //（listProjects → 每项目 listAgent/listTerminal）。projectNames 不带计数（grouped 视图空状态用），
+  // candidates 经内存索引 + 批量探活过滤 + terminal capture（TTL 缓存）。
+  if (url.pathname !== "/api/overview" || request.method !== "GET") {
+    return undefined;
+  }
+  const [projectNames, candidates] = await Promise.all([
+    projectService.listProjectNames(),
+    sessionRegistry.listAllCandidates(),
+  ]);
+  return Response.json({ projectNames, candidates } satisfies OverviewResponse);
+};
 
 const handleProjects = async (
   request: Request,

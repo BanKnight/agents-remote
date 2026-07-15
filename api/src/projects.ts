@@ -58,17 +58,10 @@ export class ProjectService {
   ) {}
 
   async listProjects(): Promise<Project[]> {
-    const rootPath = await this.resolveRoot();
-
     try {
-      const entries = await readdir(rootPath, { withFileTypes: true });
-      const projects = await Promise.all(
-        entries
-          .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-          .map(async (entry) => this.projectFromName(entry.name)),
-      );
-
-      return projects.sort((left, right) => left.name.localeCompare(right.name));
+      // readProjectEntryNames 已排序，map 保序；projectFromName 内部 countSessions 不影响顺序。
+      const names = await this.readProjectEntryNames();
+      return await Promise.all(names.map((name) => this.projectFromName(name)));
     } catch (error) {
       if (error instanceof ProjectServiceError) {
         throw error;
@@ -83,14 +76,8 @@ export class ProjectService {
    *（grouped 视图需含无实例 project）；home 列表页仍用 listProjects（带实例计数）。
    */
   async listProjectNames(): Promise<string[]> {
-    const rootPath = await this.resolveRoot();
-
     try {
-      const entries = await readdir(rootPath, { withFileTypes: true });
-      return entries
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-        .map((entry) => entry.name)
-        .sort((left, right) => left.localeCompare(right));
+      return await this.readProjectEntryNames();
     } catch (error) {
       if (error instanceof ProjectServiceError) {
         throw error;
@@ -98,6 +85,20 @@ export class ProjectService {
 
       throw new ProjectServiceError("PROJECT_FS_ERROR", "Unable to list projects");
     }
+  }
+
+  /**
+   * readdir projectsRoot 一级目录名（过滤隐藏 + 排序）。listProjects 与 listProjectNames 共用，
+   * 避免 readdir+filter+sort 两份 copy-paste 漂移（过滤/排序规则改一处漏一处会让 home 列表与
+   * overview 看到不同的 project 集合）。
+   */
+  private async readProjectEntryNames(): Promise<string[]> {
+    const rootPath = await this.resolveRoot();
+    const entries = await readdir(rootPath, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
   }
 
   async getProject(projectName: string): Promise<Project> {

@@ -1011,8 +1011,8 @@ export function CreateSessionBar({
  * 带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
  *
  * 返回 `{ candidates, projectNames, isLoaded }`：`projectNames` 给 grouped 视图含空 project；
- * `isLoaded` 表示 overview query 已 settled（成功或失败），自动铺开 effect 用它守卫，避免在
- * candidates 未回时铺开并锁 seededRef 导致丢实例。
+ * `isLoaded` 是 success-only（overview.data 就绪）；首次加载中 / 请求失败均 false。自动铺开 effect
+ * 用它守卫，避免在 candidates 未回时铺开并锁 seededRef；失败时显示骨架而非空态，避免清光 tab。
  */
 export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
   candidates: GlobalInstanceCandidate[];

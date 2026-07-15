@@ -264,9 +264,10 @@ function GroupedProjectsList({
   const { confirm, holder: confirmHolder } = useConfirm();
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["overview"] });
+    // 与 useCloseSession/useRenameSession 一致：await invalidate，确保 mutation 完成时缓存已刷新。
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await queryClient.invalidateQueries({ queryKey: ["overview"] });
     },
   });
   const groups = useMemo(
