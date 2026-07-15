@@ -242,6 +242,18 @@ export class Claude2Runtime implements RuntimeResources {
     return proc.proc.exitCode === null;
   }
 
+  /**
+   * 进程内存活集合：遍历 this.processes（exitCode===null），与 exists 同源，零 spawn。
+   * sessionName 即 metadata.runtimeKey（spawnAndStart 入参）。供 SessionRegistry 批量探活。
+   */
+  async listAliveRuntimeKeys(): Promise<Set<string>> {
+    const alive = new Set<string>();
+    for (const [sessionName, state] of this.processes) {
+      if (state.proc.exitCode === null) alive.add(sessionName);
+    }
+    return alive;
+  }
+
   async close(sessionName: string): Promise<void> {
     const proc = this.processes.get(sessionName);
     if (proc) {

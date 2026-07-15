@@ -688,6 +688,15 @@ export const startApi = async () => {
     capture: (sessionName) => tmuxRuntime.capture(sessionName),
     attach: (sessionName, onData, onError, opts) =>
       tmuxRuntime.attach(sessionName, onData, onError, opts),
+    // 批量探活：合并 tmux list-sessions（terminal + 非 claude2 agent）与 claude2 进程内存活集合。
+    // 1 次 list-sessions + 1 次进程内遍历，替代 M 次 has-session。供 SessionRegistry.getAliveKeys。
+    listAliveRuntimeKeys: async () => {
+      const [tmuxKeys, claude2Keys] = await Promise.all([
+        tmuxRuntime.listAliveRuntimeKeys(),
+        claude2Runtime.listAliveRuntimeKeys(),
+      ]);
+      return new Set([...tmuxKeys, ...claude2Keys]);
+    },
   };
   const streamController = new SessionStreamController(runtime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });

@@ -62,6 +62,12 @@ export type RuntimeResources = {
     onError: (error: Error) => void,
     opts: AttachOptions,
   ): Promise<AttachHandle>;
+  /**
+   * 批量返回当前存活的 runtimeKey 集合（terminal/非claude2 agent = `tmux list-sessions`；
+   * claude2 = 进程内 exitCode===null）。供 SessionRegistry 做存活探活缓存，替代逐个
+   * has-session spawn（1 次 list-sessions 替代 M 次 has-session）。可选，缺失则回退逐个 exists。
+   */
+  listAliveRuntimeKeys?(): Promise<Set<string>>;
 };
 
 export class SessionRegistryError extends Error {
@@ -97,16 +103,78 @@ type CreateTerminalSessionInput = {
 };
 
 export class SessionRegistry {
+  /** 存活探活缓存 TTL：list-sessions 结果短时复用，避免每次 list/count 都 spawn。 */
+  private static readonly ALIVE_TTL_MS = 5_000;
+
   private readonly sessionsDir: string;
   private readonly now: () => Date;
   private readonly createId: (type: SessionType) => string;
   private readonly runtime: RuntimeResources;
+  /** 内存索引：sessionId → metadata，source of truth。启动 load 一次，写操作事件维护。 */
+  private readonly index = new Map<string, SessionMetadata>();
+  private indexLoadPromise: Promise<void> | null = null;
+  /** 存活 runtimeKey 集合缓存（list-sessions + claude2 进程内），TTL 见 ALIVE_TTL_MS。 */
+  private aliveCache: { keys: Set<string>; expiresAt: number } | null = null;
 
   constructor(options: SessionRegistryOptions) {
     this.sessionsDir = join(options.runDir, "sessions");
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? defaultCreateId;
     this.runtime = options.runtime ?? assumeRuntimeExists;
+    // 启动即异步加载磁盘 metadata 到内存索引（不阻塞构造）；公共方法经 ensureLoaded 等它。
+    void this.ensureLoaded();
+  }
+
+  /** 等待内存索引加载完成（懒触发，仅一次；失败置空允许下次重试）。 */
+  private ensureLoaded(): Promise<void> {
+    if (!this.indexLoadPromise) {
+      this.indexLoadPromise = this.loadIndex().catch((error) => {
+        this.indexLoadPromise = null;
+        throw error;
+      });
+    }
+    return this.indexLoadPromise;
+  }
+
+  /** 从磁盘一次性加载全部 metadata 到内存索引（复用 readMetadataFile/parseMetadata）。 */
+  private async loadIndex() {
+    await this.ensureSessionsDir();
+    const files = await readdir(this.sessionsDir).catch((error: unknown) => {
+      if (isNotFoundError(error)) return [];
+      throw error;
+    });
+    for (const fileName of files) {
+      if (!fileName.endsWith(".json")) continue;
+      const metadata = await this.readMetadataFile(fileName);
+      if (metadata) this.index.set(metadata.id, metadata);
+    }
+  }
+
+  /**
+   * 存活 runtimeKey 集合（TTL 缓存）。优先用 runtime.listAliveRuntimeKeys（1 次 list-sessions
+   * 替代 M 次 has-session）；缺失则回退逐个 exists（保留旧语义）。结果在 ALIVE_TTL_MS 内复用。
+   */
+  private async getAliveKeys(): Promise<Set<string>> {
+    const nowMs = this.now().getTime();
+    if (this.aliveCache && this.aliveCache.expiresAt > nowMs) {
+      return this.aliveCache.keys;
+    }
+    const keys = this.runtime.listAliveRuntimeKeys
+      ? await this.runtime.listAliveRuntimeKeys()
+      : await this.collectAliveByExists();
+    this.aliveCache = { keys, expiresAt: nowMs + SessionRegistry.ALIVE_TTL_MS };
+    return keys;
+  }
+
+  /** Fallback：runtime 未提供 listAliveRuntimeKeys 时，对 index 内全部 entry 逐个 exists。 */
+  private async collectAliveByExists(): Promise<Set<string>> {
+    const alive = new Set<string>();
+    await Promise.all(
+      Array.from(this.index.values()).map(async (entry) => {
+        if (await this.runtime.exists(entry.runtimeKey)) alive.add(entry.runtimeKey);
+      }),
+    );
+    return alive;
   }
 
   getRuntime() {
@@ -126,7 +194,8 @@ export class SessionRegistry {
     claudeSessionId: string,
     model?: string,
   ): Promise<void> {
-    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
     if (!metadata) return;
     const updated: SessionMetadata = {
       ...metadata,
@@ -143,7 +212,8 @@ export class SessionRegistry {
   // when a <local-command-stdout>Set model to (id)</local-command-stdout> echo is
   // folded. Only updates model; claudeSessionId is untouched.
   async setModel(sessionId: string, model: string): Promise<void> {
-    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
     if (!metadata) return;
     const updated: SessionMetadata = {
       ...metadata,
@@ -160,7 +230,8 @@ export class SessionRegistry {
   // echo is folded. Only updates permissionMode; claudeSessionId is untouched.
   // Symmetric to setModel above.
   async setPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
-    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
     if (!metadata) return;
     const updated: SessionMetadata = {
       ...metadata,
@@ -173,7 +244,8 @@ export class SessionRegistry {
   // Persist the runtime effort level so an API restart (--resume) re-applies it via
   // CLAUDE_CODE_EFFORT_LEVEL env in spawnClaudeDirect. Symmetric to setModel/setPermissionMode.
   async setEffort(sessionId: string, effort: EffortLevel): Promise<void> {
-    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
     if (!metadata) return;
     const updated: SessionMetadata = {
       ...metadata,
@@ -184,14 +256,15 @@ export class SessionRegistry {
   }
 
   async countSessions(projectName: string) {
-    const [agentSessions, terminalSessions] = await Promise.all([
-      this.listAgentSessions(projectName),
-      this.listTerminalSessions(projectName),
+    // 直接用 listMetadata 计数（读内存索引 + 批量探活过滤），不走 listTerminalSessions
+    // ——后者会对每个 terminal spawn capture-pane 提 lastCommand，但 count 只需数量，是纯浪费。
+    const [agentMetadata, terminalMetadata] = await Promise.all([
+      this.listMetadata("agent", projectName),
+      this.listMetadata("terminal", projectName),
     ]);
-
     return {
-      agentSessionCount: agentSessions.length,
-      terminalSessionCount: terminalSessions.length,
+      agentSessionCount: agentMetadata.length,
+      terminalSessionCount: terminalMetadata.length,
     };
   }
 
@@ -380,22 +453,13 @@ export class SessionRegistry {
   }
 
   private async listMetadata(type: SessionType, projectName: string) {
-    await this.ensureSessionsDir();
-    const files = await readdir(this.sessionsDir).catch((error: unknown) => {
-      if (isNotFoundError(error)) {
-        return [];
+    await this.ensureLoaded();
+    const scoped: SessionMetadata[] = [];
+    for (const entry of this.index.values()) {
+      if (entry.type === type && entry.projectName === projectName) {
+        scoped.push(entry);
       }
-
-      throw error;
-    });
-    const metadata = await Promise.all(
-      files
-        .filter((fileName) => fileName.endsWith(".json"))
-        .map(async (fileName) => this.readMetadataFile(fileName)),
-    );
-    const scoped = metadata.filter(
-      (entry) => entry?.type === type && entry.projectName === projectName,
-    ) as SessionMetadata[];
+    }
     const live = await Promise.all(scoped.map(async (entry) => this.keepIfRuntimeExists(entry)));
 
     return live
@@ -414,7 +478,8 @@ export class SessionRegistry {
   }
 
   private async getMetadata(projectName: string, type: SessionType, sessionId: string) {
-    const metadata = await this.readMetadataFile(`${sessionId}.json`);
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
 
     if (!metadata || metadata.projectName !== projectName || metadata.type !== type) {
       return undefined;
@@ -466,7 +531,9 @@ export class SessionRegistry {
   }
 
   private async keepIfRuntimeExists(metadata: SessionMetadata) {
-    if (await this.runtime.exists(metadata.runtimeKey)) {
+    // 查存活集合（TTL 缓存的 list-sessions/进程内结果，O(1)），替代逐个 runtime.exists spawn。
+    const alive = await this.getAliveKeys();
+    if (alive.has(metadata.runtimeKey)) {
       return metadata;
     }
 
@@ -483,6 +550,7 @@ export class SessionRegistry {
     await writeFile(this.metadataPath(metadata.id), `${JSON.stringify(metadata, null, 2)}\n`, {
       mode: 0o600,
     });
+    this.index.set(metadata.id, metadata);
   }
 
   private async readMetadataFile(fileName: string) {
@@ -500,6 +568,7 @@ export class SessionRegistry {
 
   private async removeMetadata(sessionId: string) {
     await rm(this.metadataPath(sessionId), { force: true });
+    this.index.delete(sessionId);
   }
 
   private async ensureSessionsDir() {

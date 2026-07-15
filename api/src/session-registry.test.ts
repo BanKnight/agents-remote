@@ -287,3 +287,89 @@ test("SessionRegistry.renameTerminalSession persists and scopes by project", asy
   const missing = await registry.renameTerminalSession(project.name, "nonexistent", "无");
   expect(missing).toBeUndefined();
 });
+
+test("SessionRegistry.countSessions does not spawn capture-pane (only needs counts)", async () => {
+  let captureCalls = 0;
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: (type) => (type === "agent" ? "agent_count123456" : "terminal_count123456"),
+    runtime: {
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async capture() {
+        captureCalls++;
+        return "";
+      },
+    },
+  });
+
+  await registry.createAgentSession({ project, provider: "claude" });
+  await registry.createTerminalSession({ project });
+
+  // count 只需数量，不应走 listTerminalSessions 的 capture-pane 路径。
+  const counts = await registry.countSessions(project.name);
+
+  expect(counts).toEqual({ agentSessionCount: 1, terminalSessionCount: 1 });
+  expect(captureCalls).toBe(0);
+});
+
+test("SessionRegistry reuses listAliveRuntimeKeys result within TTL cache window", async () => {
+  let aliveCalls = 0;
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "terminal_ttl123456",
+    runtime: {
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        aliveCalls++;
+        return new Set<string>();
+      },
+    },
+  });
+
+  await registry.createTerminalSession({ project });
+  // 第一次 list：触发 getAliveKeys（miss → listAliveRuntimeKeys，aliveCalls=1，写 TTL 缓存）。
+  await registry.listTerminalSessions(project.name);
+  // 重新 create（第一次 list 因存活集合空已清掉该 entry）。
+  await registry.createTerminalSession({ project });
+  // 第二次 list：getAliveKeys TTL 命中（fixedNow 不推进时间），不调 listAliveRuntimeKeys。
+  await registry.listTerminalSessions(project.name);
+
+  expect(aliveCalls).toBe(1);
+});
+
+test("SessionRegistry keeps claude2 metadata with claudeSessionId even when runtime is dead", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_claude2res456",
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  await registry.createAgentSession({
+    project,
+    provider: "claude2",
+    claudeSessionId: "claude-session-xyz",
+  });
+  const sessions = await registry.listAgentSessions(project.name);
+
+  // claude2 + claudeSessionId → 即使 runtime 已死也保留（API 重启可 --resume）。
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0].provider).toBe("claude2");
+  expect(sessions[0].claudeSessionId).toBe("claude-session-xyz");
+});

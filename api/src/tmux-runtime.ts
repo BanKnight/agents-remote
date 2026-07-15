@@ -34,6 +34,21 @@ export class TmuxRuntime implements RuntimeResources {
     return result.exitCode === 0;
   }
 
+  /**
+   * 一次 `tmux list-sessions` 拿全部存活 tmux session 名（= runtimeKey），供 SessionRegistry
+   * 批量探活（1 次 spawn 替代 M 次 has-session）。tmux server 未运行时 exitCode 非 0，返回空集。
+   */
+  async listAliveRuntimeKeys(): Promise<Set<string>> {
+    const result = await runTmux(["list-sessions", "-F", "#{session_name}"]);
+    if (result.exitCode !== 0) return new Set();
+    return new Set(
+      result.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    );
+  }
+
   async startTerminal(metadata: SessionMetadata) {
     await this.startCommand(metadata, shellCommand());
   }
@@ -80,8 +95,9 @@ export class TmuxRuntime implements RuntimeResources {
 
   // 只读 capture-pane，用于 list/detail 的 extractLastCommand。attach 模式下不再做主力渲染，
   // 故不带 cols/rows、不追加 CUP——TUI 全态渲染由 attach 进程的 tmux 原生重绘负责。
+  // -S -100：唯一消费者 extractLastCommand 只取最后一行非空，100 行足够；-5000 是 50 倍无效输出。
   async capture(runtimeKey: string): Promise<string> {
-    const result = await runTmux(["capture-pane", "-p", "-e", "-S", "-5000", "-t", runtimeKey]);
+    const result = await runTmux(["capture-pane", "-p", "-e", "-S", "-100", "-t", runtimeKey]);
 
     if (result.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", result.stderr);
