@@ -106,6 +106,30 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
     });
   });
 
+  // Mock /api/overview（Phase 2 聚合端点）：桌面 workbench 的 stale-tab prune 用
+  // globalRefs（= overview candidates）判活而非 scope list；e2e 临时环境真实 overview
+  // 返空会把 focus effect 刚加的 fake tab 判 stale 删掉，ChatPanel 永不挂载。
+  await page.route(new RegExp("/api/overview$"), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectNames: [projectName],
+        candidates: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: fakeSessionId,
+            displayName: "Claude 2 Agent (e2e-windowing)",
+            status: "idle",
+            provider: "claude2",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+
   // Route WebSocket to the real server — the fake session doesn't exist so the
   // server will error, but the page must render the composer and slash menu
   // anyway. The slash menu is catalog-driven, not WS-driven.
@@ -193,6 +217,28 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
             provider: "claude2",
             displayName: "Claude 2 Agent (e2e-empty-catalog)",
             status: "idle",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+
+  // Mock /api/overview（同首测）：桌面 prune 用 globalRefs 判活，需含 fake candidate。
+  await page.route(new RegExp("/api/overview$"), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectNames: [projectName],
+        candidates: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: fakeSessionId,
+            displayName: "Claude 2 Agent (e2e-empty-catalog)",
+            status: "idle",
+            provider: "claude2",
             createdAt: new Date().toISOString(),
           },
         ],

@@ -56,6 +56,30 @@ test("Claude2: session detail renders with mocked REST data", async ({ page }) =
     });
   });
 
+  // Mock /api/overview（Phase 2 聚合端点）：桌面 workbench 的 stale-tab prune 用
+  // globalRefs（= overview candidates）判活而非 scope list；e2e 临时环境真实 overview
+  // 返空会把 focus effect 刚加的 fake tab 判 stale 删掉，chatInput 永不挂载。
+  await page.route(new RegExp("/api/overview$"), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectNames: [projectName],
+        candidates: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: fakeSessionId,
+            displayName: "Claude 2 Agent (e2e-test)",
+            status: "idle",
+            provider: "claude2",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+
   // Route the WebSocket to the real server — the fake session doesn't exist
   // so the server will return an error, but the page must handle it without
   // crashing.  (Playwright's routeWebSocket does not support injecting mock
