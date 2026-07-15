@@ -78,6 +78,28 @@ export class ProjectService {
     }
   }
 
+  /**
+   * 只返 project 名（readdir 一级目录），不调 countSessions。供 GET /api/overview 聚合端点
+   *（grouped 视图需含无实例 project）；home 列表页仍用 listProjects（带实例计数）。
+   */
+  async listProjectNames(): Promise<string[]> {
+    const rootPath = await this.resolveRoot();
+
+    try {
+      const entries = await readdir(rootPath, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+        .map((entry) => entry.name)
+        .sort((left, right) => left.localeCompare(right));
+    } catch (error) {
+      if (error instanceof ProjectServiceError) {
+        throw error;
+      }
+
+      throw new ProjectServiceError("PROJECT_FS_ERROR", "Unable to list projects");
+    }
+  }
+
   async getProject(projectName: string): Promise<Project> {
     return this.projectFromName(projectName);
   }

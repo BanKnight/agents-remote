@@ -27,6 +27,10 @@ export const runTmux = (args: string[]) =>
 // ── TmuxRuntime ──
 
 export class TmuxRuntime implements RuntimeResources {
+  /** capture-pane 输出 TTL：list/overview 短时重复读同一 pane 不重 spawn（detail 主渲染走 attach 实时流）。 */
+  private static readonly CAPTURE_TTL_MS = 5_000;
+  private readonly captureCache = new Map<string, { content: string; expiresAt: number }>();
+
   constructor(private readonly runDir = "/run/agents-remote") {}
 
   async exists(runtimeKey: string) {
@@ -97,13 +101,25 @@ export class TmuxRuntime implements RuntimeResources {
   // 故不带 cols/rows、不追加 CUP——TUI 全态渲染由 attach 进程的 tmux 原生重绘负责。
   // -S -100：唯一消费者 extractLastCommand 只取最后一行非空，100 行足够；-5000 是 50 倍无效输出。
   async capture(runtimeKey: string): Promise<string> {
+    // TTL 缓存：list/overview/getTerminalSession 短时重复 capture 同一 pane 命中缓存不重 spawn。
+    // detail 主渲染走 tmux attach 实时流，capture 仅服务 lastCommand，5s TTL 无可见滞后。
+    // 缓存按 runtimeKey 覆写（自然按 terminal 数有界），失败不缓存——下次重试。
+    const cached = this.captureCache.get(runtimeKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.content;
+    }
     const result = await runTmux(["capture-pane", "-p", "-e", "-S", "-100", "-t", runtimeKey]);
 
     if (result.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", result.stderr);
     }
 
-    return trimTrailingBlankLines(result.stdout).replace(/\r?\n/g, "\r\n");
+    const content = trimTrailingBlankLines(result.stdout).replace(/\r?\n/g, "\r\n");
+    this.captureCache.set(runtimeKey, {
+      content,
+      expiresAt: Date.now() + TmuxRuntime.CAPTURE_TTL_MS,
+    });
+    return content;
   }
 
   // 每个 WS 客户端 spawn 一个 `tmux attach -t <runtimeKey>` 子进程（Bun 原生 terminal PTY）。

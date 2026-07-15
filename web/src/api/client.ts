@@ -23,6 +23,7 @@ import type {
   ListTerminalSessionsResponse,
   LoginRequest,
   LoginResponse,
+  OverviewResponse,
   ProjectDetailResponse,
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
@@ -87,6 +88,14 @@ export async function login(password: string): Promise<LoginResponse> {
 
 export async function listProjects(): Promise<ProjectListResponse> {
   return fetchJson("/api/projects", "api.projectListFailed");
+}
+
+/**
+ * 全局总览聚合（GET /api/overview）：单请求拿全 project 名 + 全活跃实例候选，替代 global 总览
+ * 的 1+2N 瀑布（listProjects → 每项目 listAgent/listTerminal）。失败语义同 listProjects。
+ */
+export async function fetchOverview(): Promise<OverviewResponse> {
+  return fetchJson("/api/overview", "api.projectListFailed");
 }
 
 export async function createProject(path: string): Promise<CreateProjectResponse> {

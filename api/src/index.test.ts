@@ -150,6 +150,35 @@ test("createFetchHandler lists projects for authenticated requests", async () =>
   ]);
 });
 
+test("createFetchHandler aggregates overview across projects in a single request", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler, sessionRegistry } = createTestHandler();
+  const project = { name: "demo", path: join(root, "demo") };
+  await sessionRegistry.createAgentSession({ project, provider: "claude" });
+  await sessionRegistry.createTerminalSession({ project });
+
+  const response = await handler(
+    new Request("http://localhost/api/overview", { headers: authHeader(auth) }),
+    { upgrade: () => false },
+  );
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  // projectNames 来自 readdir（含无 session 的项目也会列；这里 demo 有 2 session）。
+  expect(body.projectNames).toEqual(["demo"]);
+  expect(body.candidates).toHaveLength(2);
+  expect(body.candidates.map((c: { type: string }) => c.type).sort()).toEqual([
+    "agent",
+    "terminal",
+  ]);
+  // 候选带 project/session 标识，供前端拼 ref。
+  for (const candidate of body.candidates) {
+    expect(candidate.projectName).toBe("demo");
+    expect(candidate.sessionId).toBeDefined();
+    expect(candidate.displayName).toBeDefined();
+  }
+});
+
 test("createFetchHandler creates projects and returns details", async () => {
   const { auth, handler } = createTestHandler();
   const createResponse = await handler(

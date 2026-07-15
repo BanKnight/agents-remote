@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
 import {
   type DropZone,
@@ -38,10 +38,10 @@ import {
   closeTerminalSession,
   createAgentSession,
   createTerminalSession,
+  fetchOverview,
   getAgentSession,
   getTerminalSession,
   listAgentSessions,
-  listProjects,
   listTerminalSessions,
   renameAgentSession,
   renameTerminalSession,
@@ -785,6 +785,7 @@ export function useCloseSession() {
         exact: true,
         queryKey: ["projects", ref.projectName, `${type}-sessions`],
       }),
+      queryClient.invalidateQueries({ queryKey: ["overview"] }),
     ]);
     onAfterClose?.();
     return true;
@@ -836,6 +837,7 @@ export function useRenameSession() {
           exact: true,
           queryKey: ["projects", ref.projectName, `${type}-sessions`, ref.sessionId],
         }),
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
       ]);
       return true;
     },
@@ -871,6 +873,7 @@ export function useCreateSession(projectName: string | null): CreateSessionApi &
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["projects", safeName, "agent-sessions"] }),
       queryClient.invalidateQueries({ queryKey: ["projects", safeName, "terminal-sessions"] }),
+      queryClient.invalidateQueries({ queryKey: ["overview"] }),
     ]);
   };
 
@@ -1003,92 +1006,59 @@ export function CreateSessionBar({
 }
 
 /**
- * 全局实例区候选聚合（commit ④）。仅在 global 作用域发请求：listProjects → 每项目
- * listAgentSessions/listTerminalSessions（useQueries 动态查询，复用左栏 query key 缓存），
- * 扁平化成带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
+ * 全局实例区候选聚合。仅在 global 作用域发**单个** `/api/overview` 请求（后端聚合全 project 名 +
+ * 全活跃实例候选），替代旧 1+2N 瀑布（listProjects → 每项目 listAgent/listTerminal）。扁平化成
+ * 带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。
  *
- * P2：返回 `{ candidates, isLoaded }`。`isLoaded` 表示所有底层 queries（projects + 每项目
- * agent/terminal）都已 settled——自动铺开 effect 用它守卫，避免在 candidates 只加载到部分
- *（如 agent queries 已回、terminal queries 还没回）时铺开并锁 seededRef 导致丢实例。
+ * 返回 `{ candidates, projectNames, isLoaded }`：`projectNames` 给 grouped 视图含空 project；
+ * `isLoaded` 表示 overview query 已 settled（成功或失败），自动铺开 effect 用它守卫，避免在
+ * candidates 未回时铺开并锁 seededRef 导致丢实例。
  */
 export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
   candidates: GlobalInstanceCandidate[];
+  projectNames: string[];
   isLoaded: boolean;
 } {
   const isGlobal = scope.kind === "global";
-  const projects = useQuery({
-    queryKey: ["projects"],
-    queryFn: listProjects,
+  const overview = useQuery({
+    queryKey: ["overview"],
+    queryFn: fetchOverview,
     enabled: isGlobal,
+    staleTime: 5_000,
   });
-  const names = isGlobal ? (projects.data?.projects.map((p) => p.name) ?? []) : [];
-  const agentQueries = useQueries({
-    queries: names.map((name) => ({
-      queryKey: ["projects", name, "agent-sessions"],
-      queryFn: () => listAgentSessions(name),
-      staleTime: 5_000,
-    })),
-  });
-  const terminalQueries = useQueries({
-    queries: names.map((name) => ({
-      queryKey: ["projects", name, "terminal-sessions"],
-      queryFn: () => listTerminalSessions(name),
-      staleTime: 5_000,
-    })),
-  });
-  // dataUpdatedAt fingerprint：query data 内容变化时 timestamp 才变，作 useMemo 单一 dep，
-  // 让返回引用在 data 不变时稳定（下游 useMemo([candidates]) 才有效；useQueries 每 render
-  // 返回新数组引用，直接进 deps 会每 render 重算）。
-  const dataKey = `${isGlobal}|${projects.dataUpdatedAt}|${agentQueries
-    .map((q) => q.dataUpdatedAt)
-    .join(",")}|${terminalQueries.map((q) => q.dataUpdatedAt).join(",")}`;
+  // dataUpdatedAt fingerprint：overview data 内容变化时 timestamp 才变，作 useMemo 单一 dep，
+  // 让返回引用在 data 不变时稳定（useQuery 每 render 返回新对象引用，直接进 deps 会每 render 重算）。
+  const dataKey = `${isGlobal}|${overview.dataUpdatedAt}`;
   return useMemo(() => {
-    if (!isGlobal) return { candidates: [], isLoaded: true };
-    // isLoaded：projects 加载完 + 每项目 agent/terminal queries 都 settled（!isPending && data !== undefined）。
-    // useQueries 在 names 空时返 []，every([])=true；projects 加载完那帧 names 变非空，新 query 立即
-    // pending → isLoaded=false；都 settled 后 true。fingerprint dep 覆盖 queries 引用变化。
-    const isLoaded =
-      !projects.isLoading &&
-      projects.data !== undefined &&
-      agentQueries.every((q) => !q.isPending && q.data !== undefined) &&
-      terminalQueries.every((q) => !q.isPending && q.data !== undefined);
-    const candidates: GlobalInstanceCandidate[] = [];
-    names.forEach((name, index) => {
-      for (const session of agentQueries[index]?.data?.sessions ?? []) {
-        candidates.push({
-          createdAt: session.createdAt,
-          displayName: session.displayName,
-          provider: session.provider,
-          ref: { kind: "session", projectName: name, sessionId: session.id },
-          status: session.status,
-          subtitle: session.lastAssistantMessage,
-          type: "agent",
-          updatedAt: session.updatedAt,
-        });
-      }
-      for (const session of terminalQueries[index]?.data?.sessions ?? []) {
-        candidates.push({
-          displayName: session.displayName,
-          ref: { kind: "session", projectName: name, sessionId: session.id },
-          status: session.status,
-          subtitle: session.lastCommand,
-          type: "terminal",
-          updatedAt: session.updatedAt,
-        });
-      }
-    });
-    return { candidates, isLoaded };
-    // names/agentQueries/terminalQueries/isGlobal/projects 由 dataKey fingerprint 覆盖（data 变 → timestamp 变）。
+    if (!isGlobal) return { candidates: [], projectNames: [], isLoaded: true };
+    if (overview.data === undefined) {
+      // data 未回（首次加载中 / 请求失败）→ isLoaded **false**，守卫 WorkbenchRoute prune effect
+      // 不在 refs 空时误清持久化 tab（与原 1+2N 路径 success-only 语义一致：refs 空绝不 prune；
+      // 失败时显示骨架而非空态，避免「overview 失败 → 清光全部 session tab」灾难）。
+      return { candidates: [], projectNames: [], isLoaded: false };
+    }
+    const candidates: GlobalInstanceCandidate[] = overview.data.candidates.map((c) => ({
+      createdAt: c.createdAt,
+      displayName: c.displayName,
+      provider: c.provider,
+      ref: { kind: "session", projectName: c.projectName, sessionId: c.sessionId },
+      status: c.status,
+      subtitle: c.subtitle,
+      type: c.type,
+      updatedAt: c.updatedAt,
+    }));
+    return { candidates, projectNames: overview.data.projectNames, isLoaded: true };
+    // isGlobal/overview 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);
 }
 
 /**
  * 全局实例 refs（所有项目的 SessionPanelRef[]，桌面端 fan-out；设计 workbench-layout-fix.md 阶段 2a）。
- * 复用 useGlobalInstanceCandidates 的 listProjects + 每项目 agent/terminal fan-out，map 出
- * SessionPanelRef[]。桌面端供 prune effect / refsCount（为 2b 单一 layout 跨项目 tab 共存铺路）；
- * 移动端 isDesktop=false → 传 non-global scope 让 useGlobalInstanceCandidates 不 fan-out
- *（projects query disabled），返回空 refs（移动端 prune 走 useScopeInstanceOrder 的 scopeRefs）。
+ * 复用 useGlobalInstanceCandidates 的单 `/api/overview` 聚合，map 出 SessionPanelRef[]。桌面端供
+ * prune effect / refsCount（为 2b 单一 layout 跨项目 tab 共存铺路）；移动端 isDesktop=false → 传
+ * non-global scope 让 useGlobalInstanceCandidates 不发请求（overview query disabled），返回空 refs
+ *（移动端 prune 走 useScopeInstanceOrder 的 scopeRefs）。
  */
 export function useGlobalInstanceRefs(): { refs: SessionPanelRef[]; isLoaded: boolean } {
   const isDesktop = useIsDesktopViewport();

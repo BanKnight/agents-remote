@@ -10,7 +10,8 @@ import { ShellPanel } from "./shell-layout";
 /**
  * createProject mutation + 提交后导航（设计文档 §3）。HomeRoute 桌面 ShellHeaderSurface
  * 入口与左栏「+ 新建项目」入口共用此 hook：单一创建逻辑，避免两处复制 mutation/invalidate/
- * navigate。成功后 invalidate `["projects"]` 让左栏 / Home 列表刷新，并 navigate 到新项目。
+ * navigate。成功后 invalidate `["projects"]`（左栏/Home 列表）+ `["overview"]`（global 总览
+ * grouped 视图含新空项目），并 navigate 到新项目。
  */
 export function useCreateProject() {
   const navigate = useNavigate();
@@ -19,7 +20,10 @@ export function useCreateProject() {
   const create = useMutation({
     mutationFn: createProject,
     onSuccess: async (response) => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
+      ]);
       await navigate({
         to: "/projects/$key",
         params: { key: response.project.name },

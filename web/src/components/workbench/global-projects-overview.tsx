@@ -1,6 +1,6 @@
 import { type FormEvent, useId, useMemo, useState } from "react";
 import { useAtom } from "jotai";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import {
@@ -10,7 +10,7 @@ import {
   type WorkbenchView,
   workbenchViewAtom,
 } from "../../routes/workbench-model";
-import { deleteProject, listProjects } from "../../api/client";
+import { deleteProject } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { actionButtonClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
@@ -67,9 +67,7 @@ export function GlobalProjectsOverview({
   const [setupOpen, setSetupOpen] = useState(false);
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
-  const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
-  const projects = useQuery({ queryKey: ["projects"], queryFn: listProjects });
-  const projectNames = projects.data?.projects.map((p) => p.name) ?? [];
+  const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   const { create: createProject, projectPath, setProjectPath } = useCreateProject();
   const [atomView, setAtomView] = useAtom(workbenchViewAtom);
 
@@ -136,15 +134,16 @@ export function GlobalProjectsOverview({
   }, [candidates]);
   const tableColumns: TableColumn[] = ["name", "project", "activity", "actions"];
 
-  // empty/loading gate（决策 28/29）：grouped 以 projects 列表为准；grid/table 看 candidates。
-  const projectsLoaded = projects.data !== undefined && !projects.isLoading;
+  // empty/loading gate（决策 28/29）：grouped 以 projectNames 为准；grid/table 看 candidates。
+  // projectNames 与 candidates 同源 `/api/overview`，统一用 isLoaded（success-only：data 就绪）；
+  // 请求失败时 isLoaded=false → 显示骨架（与原 projects query 行为一致，不退化为空态）。
   const overviewEmpty =
     resolvedView === "grouped"
-      ? projectsLoaded && projectNames.length === 0
+      ? isLoaded && projectNames.length === 0
       : isLoaded && candidates.length === 0;
   const overviewLoading =
     resolvedView === "grouped"
-      ? !projectsLoaded && projectNames.length === 0
+      ? !isLoaded && projectNames.length === 0
       : !isLoaded && candidates.length === 0;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -265,7 +264,10 @@ function GroupedProjectsList({
   const { confirm, holder: confirmHolder } = useConfirm();
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["overview"] });
+    },
   });
   const groups = useMemo(
     () => mergeProjectsWithCandidates(projectNames, candidates),

@@ -373,3 +373,44 @@ test("SessionRegistry keeps claude2 metadata with claudeSessionId even when runt
   expect(sessions[0].provider).toBe("claude2");
   expect(sessions[0].claudeSessionId).toBe("claude-session-xyz");
 });
+
+test("SessionRegistry listAllCandidates aggregates across projects with terminal subtitle", async () => {
+  const captureCalls: string[] = [];
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: (type) => (type === "agent" ? "agent_overview456" : "terminal_overview456"),
+    runtime: {
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async capture(runtimeKey) {
+        captureCalls.push(runtimeKey);
+        return "user@host:~$ ls -la\r\n";
+      },
+    },
+  });
+
+  const demo = { name: "demo", path: "/projects/demo" };
+  const other = { name: "other", path: "/projects/other" };
+  await registry.createAgentSession({ project: demo, provider: "claude" });
+  await registry.createTerminalSession({ project: other });
+
+  const candidates = await registry.listAllCandidates();
+
+  expect(candidates).toHaveLength(2);
+  // 跨 project 聚合：agent 来自 demo、terminal 来自 other。
+  const agent = candidates.find((c) => c.type === "agent");
+  expect(agent?.projectName).toBe("demo");
+  expect(agent?.sessionId).toBe("agent_overview456");
+  expect(agent?.provider).toBe("claude");
+  // agent 无 subtitle（lastAssistantMessage 未落 metadata）。
+  expect(agent?.subtitle).toBeUndefined();
+  // terminal subtitle 来自 capture 最后一行非空（lastCommand）。
+  const terminal = candidates.find((c) => c.type === "terminal");
+  expect(terminal?.projectName).toBe("other");
+  expect(terminal?.subtitle).toBe("user@host:~$ ls -la");
+  // 仅 terminal 触发 capture（agent 不 capture）。
+  expect(captureCalls).toHaveLength(1);
+});

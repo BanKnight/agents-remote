@@ -5,6 +5,7 @@ import {
   createAgentSession,
   createProject,
   createTerminalSession,
+  fetchOverview,
   getAuthStatus,
   getProject,
   getProjectGitFileDiff,
@@ -69,6 +70,18 @@ test("web api client uses same-origin /api paths", async () => {
   await listProjects();
 
   expect(calls[0][0]).toBe("/api/projects");
+});
+
+test("web api client fetches global overview via single request", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ projectNames: [], candidates: [] });
+  }) as typeof fetch;
+
+  await fetchOverview();
+
+  expect(calls[0][0]).toBe("/api/overview");
 });
 
 test("web api client creates projects with JSON body", async () => {

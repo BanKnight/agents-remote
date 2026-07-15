@@ -129,6 +129,30 @@ export type DeleteProjectResponse = {
   projectName: string;
 };
 
+/**
+ * 全局总览候选：聚合所有 project 的活跃实例（agent/terminal），供 global overview 单请求铺开。
+ * 替代前端 1+2N 瀑布（listProjects → 每项目 listAgent/listTerminal）。type/provider/status 统一
+ * session 语义；subtitle = terminal lastCommand（agent 现状无 lastAssistantMessage 落 metadata）。
+ */
+export type OverviewCandidate = {
+  type: "agent" | "terminal";
+  projectName: string;
+  sessionId: string;
+  displayName: string;
+  status: AgentSessionStatus | TerminalSessionStatus;
+  provider?: AgentProvider;
+  updatedAt?: string;
+  createdAt?: string;
+  /** 卡片第二行（terminal=lastCommand）；缺失则卡片不显第二行。 */
+  subtitle?: string;
+};
+
+/** GET /api/overview 响应：全 project 名（含无实例 project，grouped 视图空状态用）+ 全候选。 */
+export type OverviewResponse = {
+  projectNames: string[];
+  candidates: OverviewCandidate[];
+};
+
 export type UploadFileResponse = {
   entry: ProjectFileEntry;
 };

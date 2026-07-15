@@ -4,6 +4,7 @@ import type {
   AgentSessionStatus,
   ApiErrorCode,
   EffortLevel,
+  OverviewCandidate,
   SessionType,
   TerminalSession,
   TerminalSessionStatus,
@@ -302,6 +303,39 @@ export class SessionRegistry {
         return terminalSessionFromMetadata(m, lastCommand);
       }),
     );
+  }
+
+  /**
+   * 全 project 全类型候选聚合（GET /api/overview）：遍历内存索引全部 metadata（不分 project，一次
+   * 遍历）→ 批量探活过滤（keepIfRuntimeExists：死 terminal 清理 + claude2+claudeSessionId 保留）
+   * → terminal 走 capture（TmuxRuntime 内 TTL 缓存）填 subtitle。替代前端 1+2N 瀑布的单后端聚合。
+   */
+  async listAllCandidates(): Promise<OverviewCandidate[]> {
+    await this.ensureLoaded();
+    // 排序复刻原 1+2N 前端聚合顺序：listProjects(项目名 localeCompare) → 同项目 agent 在 terminal 前
+    // → 同类内 createdAt 升序（与 listMetadata 一致）。保证 grid/table 视图卡片顺序迁移后不变。
+    const entries = Array.from(this.index.values()).sort((left, right) => {
+      const byProject = left.projectName.localeCompare(right.projectName);
+      if (byProject !== 0) return byProject;
+      if (left.type !== right.type) return left.type === "agent" ? -1 : 1;
+      return left.createdAt.localeCompare(right.createdAt);
+    });
+    const live = await Promise.all(entries.map((entry) => this.keepIfRuntimeExists(entry)));
+    const enriched = await Promise.all(
+      live.map(async (metadata) => {
+        if (!metadata) return null;
+        let subtitle: string | undefined;
+        if (metadata.type === "terminal" && metadata.runtimeKey && this.runtime.capture) {
+          try {
+            subtitle = extractLastCommand(await this.runtime.capture(metadata.runtimeKey));
+          } catch {
+            // 容错：capture 失败 → subtitle 留空，卡片退化 2 行
+          }
+        }
+        return metadataToCandidate(metadata, subtitle);
+      }),
+    );
+    return enriched.filter((candidate): candidate is OverviewCandidate => candidate !== null);
   }
 
   async getAgentSession(projectName: string, sessionId: string): Promise<AgentSession | undefined> {
@@ -667,6 +701,18 @@ const assumeRuntimeExists: RuntimeResources = {
     };
   },
 };
+
+const metadataToCandidate = (metadata: SessionMetadata, subtitle?: string): OverviewCandidate => ({
+  type: metadata.type,
+  projectName: metadata.projectName,
+  sessionId: metadata.id,
+  displayName: metadata.displayName,
+  status: metadata.status,
+  provider: metadata.provider,
+  updatedAt: metadata.updatedAt,
+  createdAt: metadata.createdAt,
+  subtitle,
+});
 
 const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   id: metadata.id,
