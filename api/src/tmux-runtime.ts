@@ -27,10 +27,6 @@ export const runTmux = (args: string[]) =>
 // ── TmuxRuntime ──
 
 export class TmuxRuntime implements RuntimeResources {
-  /** capture-pane 输出 TTL：list/overview 短时重复读同一 pane 不重 spawn（detail 主渲染走 attach 实时流）。 */
-  private static readonly CAPTURE_TTL_MS = 5_000;
-  private readonly captureCache = new Map<string, { content: string; expiresAt: number }>();
-
   constructor(private readonly runDir = "/run/agents-remote") {}
 
   async exists(runtimeKey: string) {
@@ -40,11 +36,15 @@ export class TmuxRuntime implements RuntimeResources {
 
   /**
    * 一次 `tmux list-sessions` 拿全部存活 tmux session 名（= runtimeKey），供 SessionRegistry
-   * 批量探活（1 次 spawn 替代 M 次 has-session）。tmux server 未运行时 exitCode 非 0，返回空集。
+   * 批量探活（1 次 spawn 替代 M 次 has-session）。exitCode 非 0 时 throw——区分「真的没有 session」
+   * 与「探测暂时不可达（tmux server 重启中）」无法靠 exitCode / no-server 可靠判断，统一抛出让
+   * SessionRegistry.keepIfRuntimeExists 保守保留（不误删 live session）。
    */
   async listAliveRuntimeKeys(): Promise<Set<string>> {
     const result = await runTmux(["list-sessions", "-F", "#{session_name}"]);
-    if (result.exitCode !== 0) return new Set();
+    if (result.exitCode !== 0) {
+      throw new TmuxRuntimeError("Unable to list tmux sessions", result.stderr);
+    }
     return new Set(
       result.stdout
         .split("\n")
@@ -100,26 +100,15 @@ export class TmuxRuntime implements RuntimeResources {
   // 只读 capture-pane，用于 list/detail 的 extractLastCommand。attach 模式下不再做主力渲染，
   // 故不带 cols/rows、不追加 CUP——TUI 全态渲染由 attach 进程的 tmux 原生重绘负责。
   // -S -100：唯一消费者 extractLastCommand 只取最后一行非空，100 行足够；-5000 是 50 倍无效输出。
+  // TTL 缓存由 SessionRegistry.captureWithCache 承担（统一可注入 now + 可测）；此处保持无状态命令封装。
   async capture(runtimeKey: string): Promise<string> {
-    // TTL 缓存：list/overview/getTerminalSession 短时重复 capture 同一 pane 命中缓存不重 spawn。
-    // detail 主渲染走 tmux attach 实时流，capture 仅服务 lastCommand，5s TTL 无可见滞后。
-    // 缓存按 runtimeKey 覆写（自然按 terminal 数有界），失败不缓存——下次重试。
-    const cached = this.captureCache.get(runtimeKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.content;
-    }
     const result = await runTmux(["capture-pane", "-p", "-e", "-S", "-100", "-t", runtimeKey]);
 
     if (result.exitCode !== 0) {
       throw new TmuxRuntimeError("Unable to capture terminal session", result.stderr);
     }
 
-    const content = trimTrailingBlankLines(result.stdout).replace(/\r?\n/g, "\r\n");
-    this.captureCache.set(runtimeKey, {
-      content,
-      expiresAt: Date.now() + TmuxRuntime.CAPTURE_TTL_MS,
-    });
-    return content;
+    return trimTrailingBlankLines(result.stdout).replace(/\r?\n/g, "\r\n");
   }
 
   // 每个 WS 客户端 spawn 一个 `tmux attach -t <runtimeKey>` 子进程（Bun 原生 terminal PTY）。

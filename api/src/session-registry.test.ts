@@ -336,8 +336,8 @@ test("SessionRegistry reuses listAliveRuntimeKeys result within TTL cache window
 
   await registry.createTerminalSession({ project });
   // 第一次 list：触发 getAliveKeys（miss → listAliveRuntimeKeys，aliveCalls=1，写 TTL 缓存）。
+  // 存活集合空 → keepIfRuntimeExists 走新鲜 exists 二次确认（mock=true）保留 entry（不删）。
   await registry.listTerminalSessions(project.name);
-  // 重新 create（第一次 list 因存活集合空已清掉该 entry）。
   await registry.createTerminalSession({ project });
   // 第二次 list：getAliveKeys TTL 命中（fixedNow 不推进时间），不调 listAliveRuntimeKeys。
   await registry.listTerminalSessions(project.name);
@@ -413,4 +413,60 @@ test("SessionRegistry listAllCandidates aggregates across projects with terminal
   expect(terminal?.subtitle).toBe("user@host:~$ ls -la");
   // 仅 terminal 触发 capture（agent 不 capture）。
   expect(captureCalls).toHaveLength(1);
+});
+
+test("SessionRegistry keeps live session missing from stale alive snapshot via fresh exists re-check", async () => {
+  // #1 回归：aliveCache 快照陈旧（不含刚 spawn 的 session），不得据此 removeMetadata。
+  // keepIfRuntimeExists 对快照判死的 entry 做新鲜 exists 二次确认：exists=true → 保留。
+  let existsCalls = 0;
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "terminal_live123456",
+    runtime: {
+      async exists() {
+        existsCalls++;
+        return true;
+      },
+      async close() {},
+      // 陈旧空快照：不含刚创建的 terminal runtimeKey（模拟 TTL 窗口内 list-sessions 尚未收录）。
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  await registry.createTerminalSession({ project });
+  const sessions = await registry.listTerminalSessions(project.name);
+
+  // 快照判死，但新鲜 exists=true → 保留，不误删刚创建的 live terminal（旧实现误删回归点）。
+  expect(sessions).toHaveLength(1);
+  expect(existsCalls).toBeGreaterThanOrEqual(1);
+  await expect(
+    readFile(join(runDir, "sessions", "terminal_live123456.json"), "utf8"),
+  ).resolves.toBeDefined();
+});
+
+test("SessionRegistry preserves sessions when alive probe fails (tmux server unavailable)", async () => {
+  // #1 空集变体：listAliveRuntimeKeys throw（tmux server 重启中），不得判死批量删 live session。
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "terminal_probe456",
+    runtime: {
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        throw new Error("tmux: no server");
+      },
+    },
+  });
+
+  await registry.createTerminalSession({ project });
+  const sessions = await registry.listTerminalSessions(project.name);
+
+  // 探测不可信 → keepIfRuntimeExists 保守保留（既不 hide 也不删），宁可多显示也不误删。
+  expect(sessions).toHaveLength(1);
 });

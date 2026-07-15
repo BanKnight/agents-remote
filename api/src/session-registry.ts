@@ -106,6 +106,8 @@ type CreateTerminalSessionInput = {
 export class SessionRegistry {
   /** 存活探活缓存 TTL：list-sessions 结果短时复用，避免每次 list/count 都 spawn。 */
   private static readonly ALIVE_TTL_MS = 5_000;
+  /** capture-pane 输出缓存 TTL：list/overview 短时重复读同一 pane 不重 spawn。 */
+  private static readonly CAPTURE_TTL_MS = 5_000;
 
   private readonly sessionsDir: string;
   private readonly now: () => Date;
@@ -116,6 +118,10 @@ export class SessionRegistry {
   private indexLoadPromise: Promise<void> | null = null;
   /** 存活 runtimeKey 集合缓存（list-sessions + claude2 进程内），TTL 见 ALIVE_TTL_MS。 */
   private aliveCache: { keys: Set<string>; expiresAt: number } | null = null;
+  /** getAliveKeys 在途 promise：冷缓存时并发 caller 共享同一次 spawn（去重）。 */
+  private aliveInFlight: Promise<Set<string>> | null = null;
+  /** capture-pane 输出缓存（runtimeKey → {content, expiresAt}），TTL 见 CAPTURE_TTL_MS。 */
+  private readonly captureCache = new Map<string, { content: string; expiresAt: number }>();
 
   constructor(options: SessionRegistryOptions) {
     this.sessionsDir = join(options.runDir, "sessions");
@@ -144,27 +150,48 @@ export class SessionRegistry {
       if (isNotFoundError(error)) return [];
       throw error;
     });
-    for (const fileName of files) {
-      if (!fileName.endsWith(".json")) continue;
-      const metadata = await this.readMetadataFile(fileName);
+    // 并行读盘（旧实现逐个串行 await，冷启动随 session 数线性增长）。
+    const metadatas = await Promise.all(
+      files
+        .filter((fileName) => fileName.endsWith(".json"))
+        .map((fileName) => this.readMetadataFile(fileName)),
+    );
+    for (const metadata of metadatas) {
       if (metadata) this.index.set(metadata.id, metadata);
     }
   }
 
   /**
    * 存活 runtimeKey 集合（TTL 缓存）。优先用 runtime.listAliveRuntimeKeys（1 次 list-sessions
-   * 替代 M 次 has-session）；缺失则回退逐个 exists（保留旧语义）。结果在 ALIVE_TTL_MS 内复用。
+   * 替代 M 次 has-session）；缺失回退逐个 exists（collectAliveByExists）。结果在 ALIVE_TTL_MS 内复用。
+   *
+   * throw = 探测不可信（runtime.listAliveRuntimeKeys 失败，如 tmux server 重启中）。keepIfRuntimeExists
+   * 见 throw 保守保留（不 hide 不删）——无法靠 exitCode 可靠区分「真的没有 session」与「探测暂时不可达」
+   *（no server 也可能只是重启中），统一让读路径拒绝基于不可信结果做删除决策。
+   *
+   * in-flight 去重：冷缓存时并发 caller（listAllCandidates / listMetadata 对 N 个 entry 各调一次
+   * keepIfRuntimeExists → getAliveKeys）共享同一次 spawn，否则 N 个 caller 各 spawn 一次 list-sessions。
    */
   private async getAliveKeys(): Promise<Set<string>> {
     const nowMs = this.now().getTime();
     if (this.aliveCache && this.aliveCache.expiresAt > nowMs) {
       return this.aliveCache.keys;
     }
-    const keys = this.runtime.listAliveRuntimeKeys
-      ? await this.runtime.listAliveRuntimeKeys()
-      : await this.collectAliveByExists();
-    this.aliveCache = { keys, expiresAt: nowMs + SessionRegistry.ALIVE_TTL_MS };
-    return keys;
+    if (this.aliveInFlight) {
+      return this.aliveInFlight;
+    }
+    this.aliveInFlight = (async () => {
+      try {
+        const keys = this.runtime.listAliveRuntimeKeys
+          ? await this.runtime.listAliveRuntimeKeys()
+          : await this.collectAliveByExists();
+        this.aliveCache = { keys, expiresAt: nowMs + SessionRegistry.ALIVE_TTL_MS };
+        return keys;
+      } finally {
+        this.aliveInFlight = null;
+      }
+    })();
+    return this.aliveInFlight;
   }
 
   /** Fallback：runtime 未提供 listAliveRuntimeKeys 时，对 index 内全部 entry 逐个 exists。 */
@@ -287,21 +314,10 @@ export class SessionRegistry {
 
   async listTerminalSessions(projectName: string): Promise<TerminalSession[]> {
     const metadata = await this.listMetadata("terminal", projectName);
-    // 并发对每个 terminal capture pane，提取最后一行非空作 lastCommand。capture 抛错容错
-    //（session 已死 / tmux 不可用）→ lastCommand 留空，不阻塞列表。list 是 one-shot query
-    //（staleTime 5s 无 refetchInterval），N 次 capture-pane spawn（~1-5ms）用户进 workbench 才触发。
+    // 并发对每个 terminal capture（TTL 缓存）提 lastCommand；captureSubtitle 内部容错（capture 失败
+    // → undefined）。list 是 one-shot query（staleTime 5s 无 refetchInterval），用户进 workbench 才触发。
     return Promise.all(
-      metadata.map(async (m) => {
-        let lastCommand: string | undefined;
-        if (m.runtimeKey && this.runtime.capture) {
-          try {
-            lastCommand = extractLastCommand(await this.runtime.capture(m.runtimeKey));
-          } catch {
-            // 容错：capture 失败 → lastCommand undefined，卡片退化 2 行
-          }
-        }
-        return terminalSessionFromMetadata(m, lastCommand);
-      }),
+      metadata.map(async (m) => terminalSessionFromMetadata(m, await this.captureSubtitle(m))),
     );
   }
 
@@ -322,18 +338,9 @@ export class SessionRegistry {
     });
     const live = await Promise.all(entries.map((entry) => this.keepIfRuntimeExists(entry)));
     const enriched = await Promise.all(
-      live.map(async (metadata) => {
-        if (!metadata) return null;
-        let subtitle: string | undefined;
-        if (metadata.type === "terminal" && metadata.runtimeKey && this.runtime.capture) {
-          try {
-            subtitle = extractLastCommand(await this.runtime.capture(metadata.runtimeKey));
-          } catch {
-            // 容错：capture 失败 → subtitle 留空，卡片退化 2 行
-          }
-        }
-        return metadataToCandidate(metadata, subtitle);
-      }),
+      live.map(async (metadata) =>
+        metadata ? metadataToCandidate(metadata, await this.captureSubtitle(metadata)) : null,
+      ),
     );
     return enriched.filter((candidate): candidate is OverviewCandidate => candidate !== null);
   }
@@ -349,15 +356,7 @@ export class SessionRegistry {
   ): Promise<TerminalSession | undefined> {
     const metadata = await this.getLiveMetadata(projectName, "terminal", sessionId);
     if (!metadata) return undefined;
-    let lastCommand: string | undefined;
-    if (metadata.runtimeKey && this.runtime.capture) {
-      try {
-        lastCommand = extractLastCommand(await this.runtime.capture(metadata.runtimeKey));
-      } catch {
-        // 容错同 list
-      }
-    }
-    return terminalSessionFromMetadata(metadata, lastCommand);
+    return terminalSessionFromMetadata(metadata, await this.captureSubtitle(metadata));
   }
 
   async createAgentSession(input: CreateAgentSessionInput): Promise<AgentSession> {
@@ -565,8 +564,14 @@ export class SessionRegistry {
   }
 
   private async keepIfRuntimeExists(metadata: SessionMetadata) {
-    // 查存活集合（TTL 缓存的 list-sessions/进程内结果，O(1)），替代逐个 runtime.exists spawn。
-    const alive = await this.getAliveKeys();
+    // 存活集合是 TTL 快照（可能陈旧 / 探测失败），不得直接作破坏性 removeMetadata 的依据。
+    let alive: Set<string>;
+    try {
+      alive = await this.getAliveKeys();
+    } catch {
+      // 探测不可信（tmux server 重启中等）：无法区分死活，保守保留（既不 hide 也不删）。
+      return metadata;
+    }
     if (alive.has(metadata.runtimeKey)) {
       return metadata;
     }
@@ -575,8 +580,55 @@ export class SessionRegistry {
       return metadata;
     }
 
+    // 快照判死，但快照可能陈旧（TTL 窗口内刚 spawn 的 session 尚未进 list-sessions 结果）。
+    // 新鲜 exists 二次确认才删：避免误删刚创建的 live session（旧实现每次 has-session 是新鲜的，
+    // 不会误杀；TTL 快照引入了陈旧窗口，此二次确认补回该保证）。绝大多数 entry 走上面快路径
+    //（快照判活），仅快照判死的少数才付这一次 exists spawn。
+    if (this.runtime.exists && (await this.runtime.exists(metadata.runtimeKey))) {
+      return metadata;
+    }
+
     await this.removeMetadata(metadata.id);
     return undefined;
+  }
+
+  /**
+   * capture-pane 输出（TTL 缓存）。缓存放 SessionRegistry 层（统一 this.now 可注入、可测），
+   * TmuxRuntime.capture 回归无状态命令封装。list/overview/getTerminalSession 短时重复读同一 pane
+   * 命中缓存不重 spawn。detail 主渲染走 tmux attach 实时流，capture 仅服务 lastCommand，5s TTL 无
+   * 可见滞后。失败不缓存——下次重试。
+   */
+  private async captureWithCache(runtimeKey: string): Promise<string> {
+    const nowMs = this.now().getTime();
+    const cached = this.captureCache.get(runtimeKey);
+    if (cached && cached.expiresAt > nowMs) {
+      return cached.content;
+    }
+    if (!this.runtime.capture) {
+      throw new SessionRegistryError("SESSION_RUNTIME_ERROR", "runtime capture unavailable");
+    }
+    const content = await this.runtime.capture(runtimeKey);
+    this.captureCache.set(runtimeKey, {
+      content,
+      expiresAt: nowMs + SessionRegistry.CAPTURE_TTL_MS,
+    });
+    return content;
+  }
+
+  /**
+   * candidate subtitle：terminal = capture-pane 最后一行非空（lastCommand）；agent = undefined
+   *（lastAssistantMessage 未落 metadata）。capture 失败容错返 undefined（卡片退化 2 行）。
+   * listTerminalSessions / listAllCandidates / getTerminalSession 共用，集中 capture + 容错逻辑。
+   */
+  private async captureSubtitle(metadata: SessionMetadata): Promise<string | undefined> {
+    if (metadata.type !== "terminal" || !metadata.runtimeKey || !this.runtime.capture) {
+      return undefined;
+    }
+    try {
+      return extractLastCommand(await this.captureWithCache(metadata.runtimeKey));
+    } catch {
+      return undefined;
+    }
   }
 
   private async writeMetadata(metadata: SessionMetadata) {
@@ -601,6 +653,9 @@ export class SessionRegistry {
   }
 
   private async removeMetadata(sessionId: string) {
+    // 同步清 capture 缓存 entry，避免死/关闭 session 的 capture 文本残留（captureCache 无主动淘汰）。
+    const metadata = this.index.get(sessionId);
+    if (metadata) this.captureCache.delete(metadata.runtimeKey);
     await rm(this.metadataPath(sessionId), { force: true });
     this.index.delete(sessionId);
   }
