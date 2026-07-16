@@ -1760,21 +1760,75 @@ type DragSourceCardProps = {
  *
  * touch pointerType 直接 return（移动端无拖放，MobileWorkbench 不渲染 InstanceArea）。
  * touch-action: pan-y 保留触摸纵向滚动（overview 列表可滚动），仅鼠标拖放场景生效。
- * 不加 setPointerCapture 到自身：拖动态期间 elementFromPoint 需要能命中下层 group 的
- * data-drop-group，capture 在源卡片会让 elementFromPoint 返回源卡片自身。改为不 capture，
- * 仅用 dragState state + 全局 pointermove 监听（DropZoneOverlay 内处理 hit-test）。
+ *
+ * pointermove/up 挂 window（pointerdown 挂、pointerup/pointercancel 卸），不绑元素级合成事件：
+ * 元素级 onPointerMove/onPointerUp 依赖 pointer 落在该 div 内，pointer 一旦移出 chip/卡片就停止
+ * 触发——会导致 ① ghost 不跟随（移出后到不了拖动阈值，须移回 chip 才冒出）② pointerup 在 div
+ * 外不清 startRef，回移时延迟触发 onDragStart（鼠标早松开了）。window 监听保证 pointer 出 chip 也
+ * 收事件、任意位置 pointerup 清状态。不加 setPointerCapture：与 DropZoneOverlay 配合需
+ * elementFromPoint 命中下层 data-drop-group，window 方案零 capture、不干扰 hit-test（capture 只
+ * 影响事件派发目标，本就不影响 elementFromPoint，但 window 方案更直接、与 DropZoneOverlay 一致）。
  */
 function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSourceCardProps) {
   const startRef = useRef<{ x: number; y: number; inClose: boolean } | null>(null);
   const draggingRef = useRef(false);
+  // 当次拖动序列的 window listener 卸载闭包：pointerdown 挂、pointerup/pointercancel 卸；
+  // useEffect cleanup 兜底拖动中 unmount（window 级 listener 不随 React unmount 自动清）。
+  const detachRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      detachRef.current?.();
+    };
+  }, []);
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch") return; // 移动端无拖放
     if (event.button !== 0) return;
     // 起始 target 在 close 按钮内 → 单击走 close 路径，不进拖动态也不调 onSelect。
     const inClose = !!(event.target as HTMLElement).closest("button");
-    startRef.current = { x: event.clientX, y: event.clientY, inClose };
+    const start = { x: event.clientX, y: event.clientY, inClose };
+    startRef.current = start;
     draggingRef.current = false;
+
+    // 上一次序列未清（单指针快速连点 / pointercancel 漏触发）先卸，防 listener 残留。
+    detachRef.current?.();
+    detachRef.current = null;
+
+    // 局部 onMove/onUp：addEventListener/removeEventListener 用同一闭包引用。pointermove/up 挂
+    // window（PointerEvent_Window = 原生 DOM PointerEvent），pointer 出 chip 也收得到。
+    const onMove = (e: PointerEvent_Window) => {
+      if (!startRef.current || draggingRef.current) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+        draggingRef.current = true;
+        onDragStart(dragRef, e as unknown as PointerEvent<HTMLDivElement>);
+      }
+    };
+    const onUp = () => {
+      detach();
+      detachRef.current = null;
+      const wasDragging = draggingRef.current;
+      startRef.current = null;
+      draggingRef.current = false;
+      // 拖动态结束：DropZoneOverlay 的 onDrop 负责落盘，这里不调 onSelect。
+      if (wasDragging) return;
+      // 单击：未超阈值 → 调 onSelect（Phase A 激活）。close 按钮内起始的单击跳过（让原生
+      // click 走 close 按钮自身 onClick）。
+      if (!start.inClose) {
+        onSelect();
+      }
+    };
+    const detach = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    detachRef.current = detach;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   };
 
   const onMouseDown = (event: MouseEvent<HTMLDivElement>) => {
@@ -1786,42 +1840,11 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
     if (!inClose) event.preventDefault();
   };
 
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const start = startRef.current;
-    if (!start || draggingRef.current) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    if (dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
-      draggingRef.current = true;
-      onDragStart(dragRef, event);
-    }
-  };
-
-  const endPointer = (event: PointerEvent<HTMLDivElement>) => {
-    const start = startRef.current;
-    const wasDragging = draggingRef.current;
-    startRef.current = null;
-    draggingRef.current = false;
-    if (wasDragging) {
-      // 拖动态结束：DropZoneOverlay 的 onDrop 负责落盘，这里不调 onSelect。
-      event.stopPropagation();
-      return;
-    }
-    // 单击：未超阈值 → 调 onSelect（Phase A 激活）。close 按钮内起始的单击跳过（让原生
-    // click 走 close 按钮自身 onClick）。
-    if (start && !start.inClose) {
-      onSelect();
-    }
-  };
-
   return (
     <div
       className="min-w-0"
       onMouseDown={onMouseDown}
-      onPointerCancel={endPointer}
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endPointer}
       style={{ touchAction: "pan-y" }}
     >
       {children}
