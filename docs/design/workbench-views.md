@@ -148,6 +148,7 @@ table 视图（`SessionTable`）行交互与列宽三条契约（与 grid 卡片
 - **最小化后左总览不加标记**：已开/未开视觉一致（类 vscode explorer：不区分 editor 是否已打开），区分靠「点已开 = 激活不新 tab」的行为。
 - **tab 右键菜单**（最小化 + 关闭实例）：右键 tab 栏 tab 弹出轻量菜单——「最小化」= 同 tab ✕（`removeTabFromGroup`，session 存活）；「关闭实例」= `useCloseSession`（自带 confirm → close API → 失效缓存）。kill 走此低频入口 + 左总览卡片 close，避免高频 tab ✕ 误触破坏性 kill。菜单视觉走 DESIGN.md `action-menu` 桌面 popover 变体（移动端不可达，刻意保留为桌面快捷）。
 - **tab 可跨 group 拖动**：tab 栏的 tab 可拖到另一 group（复用 §7.3 drop zone 的 center 语义 = `dropIntoGroup` 跨组迁移，原 group 空则合并消失）。tab ✕ 仍是最小化（移出工作区回左总览，session 存活）。单击 tab = 切换 active（拖动与单击靠 4px 阈值区分，复用 `DragSourceCard`）。
+- **拖 tab → 自身所在 group 边缘**：单 tab 单 group = no-op（分屏成单 tab 两半无意义）；多 tab 单 group = 把被拖 tab 拆出来与原 group 分屏（原 group 保留其余 tab，等价「同 group 内拆出某 tab 独立成新 group」）。仅 edge zone（上/下/左/右）适用；center zone 到自身 group = 激活该 tab（见上「切 tab」）。
 
 ### 7.3 drop zone 新语义
 

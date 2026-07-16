@@ -1090,9 +1090,11 @@ export function removeLeaf(layout: WorkbenchLayoutV3, leafId: string): Workbench
  * - `center`：addTabToLeaf(target)（ref 已在 target → 激活；在他 leaf → 迁移）。
  * - `left/right/up/down`：单 leaf 局部分屏。同方向追加到现有 split；不同方向 wrap(target, newLeaf)。
  *   drop 后 activeGroupId=newLeaf.id；maximized 清空（分屏退出独占）。
+ *   多 tab 单 group 拖其中某 tab 到自身边缘 = 拆出该 tab 分屏（原 group 保留其余 tab）；
+ *   单 tab 单 group 拖自身边缘 = no-op（分屏成 [ref] | 空无意义）。
  *
  * 预处理：ref 已在某 leaf 且非「target=center 自身」→ 先 removeTabFromLeaf（重排/迁移）。
- * 边界：预处理后 targetLeafId 不在树（拖自己唯一 tab 到自己边缘）→ 兜底 root=createLeaf(ref)。
+ * 边界：预处理后 targetLeafId 不在树（target 与源同 leaf 且删后清空等）→ 兜底 root=createLeaf(ref)。
  */
 export function dropIntoLeaf(
   layout: WorkbenchLayoutV3,
@@ -1148,10 +1150,14 @@ export function dropIntoLeaf(
       { root, activeGroupId: null, maximized: null },
       tabIdOf(ref),
     );
-    // 拖 tab 到自身所在 leaf 的边缘 = 无意义（已在该 group，分屏成同 group 两半是噪声）。
-    // 直接返回原 layout，布局不变（设计 §7.2：drop to self = no-op）。
+    // 拖 tab 到自身所在 leaf 的边缘：
+    // - 单 tab 单 group：分屏成 [ref] | 空无意义 → no-op（设计 §7.2 drop to self）。
+    // - 多 tab 单 group：把被拖 tab 拆出来分屏（合法，落进下面 removeTabFromLeaf + split）。
     if (existing && existing.leafId === targetLeafId) {
-      return layout;
+      const targetLeaf = findLeafNode(root, targetLeafId);
+      if (!targetLeaf || targetLeaf.tabs.length <= 1) {
+        return layout;
+      }
     }
     if (existing) {
       const after = removeTabFromLeaf(layout, existing.leafId, tabIdOf(ref));

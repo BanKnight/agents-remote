@@ -727,24 +727,43 @@ test("dropIntoLeaf: drop 到 maximized leaf → 清 maximized", () => {
   expect(r.maximized).toBeNull();
 });
 
-// 拖 tab 到自身所在 leaf 的边缘 = no-op（布局不变，设计 §7.2 drop to self）。
-// 旧实现会把自身 leaf split 成两半，用户视为"局部布局被无意义改动"。
-test("dropIntoLeaf: 源在 target leaf，拖到自身 down → 布局不变", () => {
+// 拖 tab 到自身所在 leaf 的边缘：单 tab 单 group = no-op（分屏成 [ref] | 空无意义）。
+// 多 tab 单 group 拖其中某个 tab = 拆出分屏（见最末用例）。旧实现是 leaf 级 no-op，连多 tab 也拦掉。
+test("dropIntoLeaf: split 单 tab leaf，拖自身 down → 布局不变", () => {
   const l = v3({ root: split("s", "vertical", [leaf("top", ["f"]), leaf("bot", ["a", "b"])]) });
   const r = dropIntoLeaf(l, ref("p", "f"), "top", "down");
   expect(r).toBe(l);
 });
 
-test("dropIntoLeaf: 源在 target leaf，拖到自身 right → 布局不变", () => {
+test("dropIntoLeaf: split 单 tab leaf，拖自身 right → 布局不变", () => {
   const l = v3({ root: split("s", "horizontal", [leaf("L", ["f"]), leaf("R", ["a", "b"])]) });
   const r = dropIntoLeaf(l, ref("p", "f"), "L", "right");
   expect(r).toBe(l);
 });
 
-test("dropIntoLeaf: 单 leaf 多 tab，拖到自身 left → 布局不变（不再 split 同 group）", () => {
+test("dropIntoLeaf: 单 leaf 单 tab，拖自身 right → 布局不变（单 tab 单 group 才 no-op）", () => {
+  const l = v3({ root: leaf("g", ["f"]) });
+  const r = dropIntoLeaf(l, ref("p", "f"), "g", "right");
+  expect(r).toBe(l);
+});
+
+// 单 leaf 多 tab，拖其中 1 tab 到自身 left = 拆出该 tab 分屏（原 group 保留其余 tab）。
+// 旧实现（leaf 级 no-op）整体 no-op，用户拖后面的 tab 想形成多 group 毫无反应。
+test("dropIntoLeaf: 单 leaf 多 tab，拖其中 1 tab 到自身 left → 拆出分屏", () => {
   const l = v3({ root: leaf("g", ["a", "b", "f"]) });
   const r = dropIntoLeaf(l, ref("p", "f"), "g", "left");
-  expect(r).toBe(l);
+  expect(r).not.toBe(l);
+  const root = r.root as SplitNode;
+  expect(root.kind).toBe("split");
+  expect(root.direction).toBe("horizontal"); // left → 横向分屏
+  expect(root.children).toHaveLength(2);
+  const [first, second] = root.children as LeafNode[];
+  // left → 新 leaf 在前（newLeafFirst=true）
+  expect(first.tabs.map(tabIdOf)).toEqual(["f"]); // 新 leaf = 被拖的 f
+  expect(second.id).toBe("g"); // 原 group 保留
+  expect(second.tabs.map(tabIdOf)).toEqual(["a", "b"]); // f 已移除
+  expect(r.activeGroupId).toBe(first.id); // 激活新 leaf
+  expect(r.maximized).toBeNull(); // 分屏退出独占
 });
 
 // ── resizeSplitChildren ───────────────────────────────────────────────────────
