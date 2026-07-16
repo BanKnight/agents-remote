@@ -791,7 +791,9 @@ export function FilesPanel({
     setSelectedFilePath(undefined);
     onMobilePreviewChange?.(false);
   };
-  const [renderMode, setRenderMode] = useState<"source" | "render">("source");
+  // md/html 默认渲染预览（打开即看预览，github 风格）；非 md/html 被 showRenderToggle gate
+  // 强制 source（:1003 renderMode={showRenderToggle ? renderMode : "source"}），不受此初值影响。
+  const [renderMode, setRenderMode] = useState<"source" | "render">("render");
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);

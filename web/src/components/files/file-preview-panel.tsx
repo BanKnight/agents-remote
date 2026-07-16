@@ -32,7 +32,9 @@ export function FileTabPreview({ path }: { path: string }) {
   // Local text edits to the file under preview. undefined = untouched (mirror preview content).
   const [editContent, setEditContent] = useState<string | undefined>();
   const [savedFlash, setSavedFlash] = useState(false);
-  const [renderMode, setRenderMode] = useState<"source" | "render">("source");
+  // md/html 默认渲染预览（打开即看预览，github 风格）；非 md/html 被 showRenderToggle gate
+  // 强制 source（:82 renderMode={showRenderToggle ? renderMode : "source"}），不受此初值影响。
+  const [renderMode, setRenderMode] = useState<"source" | "render">("render");
   const isDirty =
     editContent !== undefined &&
     previewTextContent !== undefined &&

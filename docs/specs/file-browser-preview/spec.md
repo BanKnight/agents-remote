@@ -100,6 +100,13 @@
 - **AND** 保存后刷新预览与目录列表（大小/修改时间）
 - **AND** 渲染模式（markdown/html）保持只读，不提供编辑入口
 
+#### Scenario: Markdown/HTML preview defaults to render mode
+
+- **WHEN** 用户打开 markdown 或 html 文件预览（file tab 或 inspection）
+- **THEN** 系统默认以渲染模式（render）展示内容
+- **AND** 用户可切换到 source 模式查看源码或就地编辑
+- **AND** 非渲染形式文本（如 .ts/.json/.txt）不受影响，始终 source 模式
+
 #### Scenario: User switches away from a file with unsaved edits
 
 - **WHEN** 用户在当前文件有未保存改动时切换到其他文件或关闭预览
