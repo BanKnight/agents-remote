@@ -85,9 +85,10 @@ const projectFileFocusRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
-// 全局文件 tab focus（设计 workbench-stable-refactor Phase 3）：/files/file/$ splat 捕获全路径
-//（含项目名前缀如 "demo/src/index.ts"）。layout 解析 _splat 为 focusId=`file_${fullPath}`，scope=global
-// + leftMode="files"（在文件 tab 上下文保留全局文件树）。全局/项目点同一文件 → 同一 tabId 去重。
+// 全局文件 tab focus（设计 workbench-stable-refactor Phase 3，leftMode 粘性化修订）：/files/file/$
+// splat 捕获全路径（含项目名前缀如 "demo/src/index.ts"）。layout 解析 _splat 为 focusId=`file_${fullPath}`，
+// scope=global；leftMode 不再强制 "files"，改为继承 ?leftMode search 透传值——中栏点 file tab 不改左栏
+// 模式（VSCode 式：从 /files 进来保文件树，从 /projects 进来保项目列表）。全局/项目点同一文件 → 同一 tabId 去重。
 // 进 workbench layout（非 /files 整页）——文件 tab 跨 scope 共享同一布局，session tab 保活。
 const globalFileFocusRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,

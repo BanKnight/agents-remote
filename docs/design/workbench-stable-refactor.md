@@ -170,6 +170,24 @@ export function GlobalFilesOverview({ onOpenFile, dragAdapter? }: {
 5 处调用点改用预设名。verify: 视觉零改（预设仅 props 组合命名）；`bun run test`；手动 5 处 DOM 几何对比。
 - commit: `refactor(web): 文件树+预览预设去冗余——5 处复用统一封装`
 
+## 修订：leftMode 粘性化（中栏 tab 不影响左栏）
+
+**问题**（Phase 3 遗留，用户反馈）：global scope 全局总览（`/projects`）下点中栏 file tab → 左栏从项目列表切到文件树；点 terminal tab → 切回。交替点左栏反复切换。违反「中栏不应该影响左栏」（VSCode 原则，用户多次强调）。
+
+**根因**：Phase 3 给 `/files/file/$` 的 `deriveWorkbenchRouteContext` 强制 `leftMode="files"`（原注释「文件 tab 上下文保留文件树便于继续浏览」）。global scope 下中栏点 file tab → `/files/file/$`（leftMode=files → GlobalFilesOverview 文件树）；点 terminal tab → `/projects/session/$id`（leftMode=auto → GlobalProjectsOverview 项目列表）。**leftMode 从路由段派生 → 中栏 focus 联动左栏。**
+
+**修复**：leftMode 从路由段派生 → **URL search param 粘性透传**（对称 rightTab/view/tab/gitScope）。
+- `validateWorkbenchSearch` 加 `leftMode?: "auto"|"files"` 白名单。
+- `deriveWorkbenchRouteContext`：`/`、`/projects` 强制 auto（活动栏 [项目] 入口，leftMode 放 `...s` 后覆盖透传残留）；`/files` 强制 files（活动栏 [文件] 入口）；`/files/file/$` **删强制**改继承 `...s`（透传值）；`/projects/session/$id` 继承（已 `...s`）。
+- 各 navigate（`navigateToFile`/`navigateSession`/`navigateToGitFile`/`onRightTabChange`/`onViewChange`/`onTabChange`）search 粘性透传 leftMode（仅 `==="files"` 写入，保持 URL 干净；TanStack Router navigate 整体替换 search，不透传会丢）。
+- `ActivityBar` active 从 pathname 严格匹配 → leftMode 驱动（含中栏 file tab focus `/files/file/$?leftMode=files` 时 [文件] active 与左栏文件树一致；旧 pathname 严格匹配漏 `/files/file/$`）。
+
+**语义**：左栏模式只由活动栏控制（用户主动切 [文件]/[项目]），中栏 tab focus 透传当前 leftMode 不改——VSCode 式。`/files` 点文件保文件树（透传 files），`/projects` 点中栏 file tab 保项目列表（透传 auto）。
+
+**移动端无需改**：`mobile-workbench.tsx` 仅无 focus 时查 leftMode；有 focus 走 `MobileFileFocus`/`MobileSessionDetail` 不查 leftMode。`/files` 仍强制 files → MobileFilesOverview 不变。
+
+- commit: `fix(web): leftMode 粘性化——中栏 tab 不影响左栏（路由段派生 → search param 透传）`
+
 ## 关键代码锚点
 
 | 锚点 | 位置 | 作用 |

@@ -253,7 +253,12 @@ export function useWorkbenchNavigate() {
   return (
     scope: WorkbenchScope,
     focusId?: string,
-    search?: { rightTab?: WorkbenchRightTab; view?: WorkbenchView; tab?: WorkbenchMiddleTab },
+    search?: {
+      rightTab?: WorkbenchRightTab;
+      view?: WorkbenchView;
+      tab?: WorkbenchMiddleTab;
+      leftMode?: "auto" | "files";
+    },
   ) => {
     if (scope.kind === "global") {
       return navigate(
@@ -285,12 +290,14 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
+  leftMode?: "auto" | "files";
 } {
   const result: {
     rightTab?: WorkbenchRightTab;
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
+    leftMode?: "auto" | "files";
   } = {};
   if (search.rightTab === "files" || search.rightTab === "git") {
     result.rightTab = search.rightTab;
@@ -308,6 +315,9 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   }
   if (search.gitScope === "staged" || search.gitScope === "worktree") {
     result.gitScope = search.gitScope;
+  }
+  if (search.leftMode === "auto" || search.leftMode === "files") {
+    result.leftMode = search.leftMode;
   }
   return result;
 }
@@ -332,11 +342,12 @@ export type WorkbenchRouteContext = {
   scope: WorkbenchScope;
   focusId: string | undefined;
   /**
-   * 左栏模式（设计 workbench-stable-refactor Phase 2）：global scope 下 `leftMode="files"` →
-   * 左栏 GlobalFilesOverview（全局文件树，Phase 4 抽出），`"auto"` → ProjectLeftPanel(global
-   * overview)。project scope 无视 leftMode 恒走 ProjectLeftPanel。`/files`（全局文件总览）+
-   * `/files/file/$`（全局文件 tab focus）派生 "files"（文件上下文保留文件树便于继续浏览）；
-   * 其余 workbench 路由默认 "auto"。
+   * 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化修订）：global scope 下
+   * `leftMode="files"` → 左栏 GlobalFilesOverview（全局文件树，Phase 4 抽出），`"auto"` →
+   * ProjectLeftPanel(global overview)。project scope 无视 leftMode 恒走 ProjectLeftPanel。
+   * leftMode 是 URL search 维度（非路由段派生），由 navigate 粘性透传：活动栏入口 `/files` 强制
+   * "files"、`/projects` 强制 "auto"；中栏 tab focus（`/files/file/$`、`/projects/session/$id`）
+   * 继承透传值——中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
    */
   leftMode?: "auto" | "files";
   rightTab?: WorkbenchRightTab;
@@ -365,11 +376,13 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
   switch (leaf.fullPath) {
     case "/":
     case "/projects":
-      return { scope: { kind: "global" }, focusId: undefined, ...s };
+      // 活动栏 [项目] 入口：leftMode 强制 "auto"（放 ...s 后覆盖任何透传的 files 残留），
+      // 确保点活动栏 [项目] 后左栏恒为项目列表，不被中栏 tab 透传的 leftMode=files 污染。
+      return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "auto" };
     case "/files":
-      // 全局文件总览（review 收口）：scope=global + leftMode="files"（左栏 GlobalFilesOverview）。
-      // 无 focusId（文件树整页，点文件 → /files/file/$ 开 file tab focus）。
-      return { scope: { kind: "global" }, focusId: undefined, leftMode: "files", ...s };
+      // 全局文件总览（review 收口）：scope=global + leftMode 强制 "files"（放 ...s 后，左栏
+      // GlobalFilesOverview）。无 focusId（文件树整页，点文件 → /files/file/$ 开 file tab focus）。
+      return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "files" };
     case "/projects/session/$id":
       return { scope: { kind: "global" }, focusId: p.id, ...s };
     case "/projects/$key":
@@ -388,13 +401,14 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       };
     }
     case "/files/file/$": {
-      // 全局文件 tab focus（Phase 3）：_splat = 全路径（含项目名前缀如 "demo/src/index.ts"）。
-      // scope=global + leftMode="files"（在文件 tab 上下文保留全局文件树便于继续浏览）。
+      // 全局文件 tab focus（Phase 3，leftMode 粘性化修订）：_splat = 全路径（含项目名前缀如
+      // "demo/src/index.ts"）。scope=global；leftMode **不强制**，继承 ...s 透传值——中栏点 file
+      // tab 透传当前 leftMode（从 /files 进来=files 保文件树；从 /projects 进来=auto 保项目列表），
+      // 中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
       const fullPath = p._splat ? decodeURIComponent(p._splat) : "";
       return {
         scope: { kind: "global" },
         focusId: fullPath ? `file_${fullPath}` : undefined,
-        leftMode: "files",
         ...s,
       };
     }

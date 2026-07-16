@@ -83,14 +83,22 @@ const routeLeaf = (
   search: object = {},
 ) => ({ fullPath, params, search }) as unknown as Parameters<typeof deriveWorkbenchRouteContext>[0];
 
-test("deriveWorkbenchRouteContext: global 路由（/ 和 /projects）→ scope global 无 focus", () => {
+test("deriveWorkbenchRouteContext: global 路由（/ 和 /projects）→ scope global 无 focus + leftMode auto（活动栏 [项目] 入口强制）", () => {
   expect(deriveWorkbenchRouteContext(routeLeaf("/", {}))).toEqual({
     scope: { kind: "global" },
     focusId: undefined,
+    leftMode: "auto",
   });
   expect(deriveWorkbenchRouteContext(routeLeaf("/projects", {}))).toEqual({
     scope: { kind: "global" },
     focusId: undefined,
+    leftMode: "auto",
+  });
+  // 透传 leftMode=files 仍被强制 auto 覆盖（leftMode 放 ...s 后，覆盖 search 残留）
+  expect(deriveWorkbenchRouteContext(routeLeaf("/projects", {}, { leftMode: "files" }))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    leftMode: "auto",
   });
 });
 
@@ -136,17 +144,29 @@ test("deriveWorkbenchRouteContext: project file focus 编码 file_${全路径}�
   ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: undefined });
 });
 
-test("deriveWorkbenchRouteContext: global file focus /files/file/$ → scope global + leftMode files + 全路径 focusId", () => {
+test("deriveWorkbenchRouteContext: global file focus /files/file/$ → scope global + leftMode 继承 search（粘性透传）", () => {
   // _splat = 全路径（含项目名前缀），focusId = file_${fullPath}，与 /projects/$key/file/$ 同一文件去重。
+  // leftMode 不再强制 files，改继承 search：无 search → 无 leftMode（默认 auto，左栏项目列表）。
   expect(
     deriveWorkbenchRouteContext(routeLeaf("/files/file/$", { _splat: "p1/src/index.ts" })),
-  ).toEqual({ scope: { kind: "global" }, focusId: "file_p1/src/index.ts", leftMode: "files" });
-  // 空 splat → 无 focus（仍 leftMode files）
+  ).toEqual({ scope: { kind: "global" }, focusId: "file_p1/src/index.ts" });
+  // 空 splat → 无 focus
   expect(deriveWorkbenchRouteContext(routeLeaf("/files/file/$", { _splat: "" }))).toEqual({
     scope: { kind: "global" },
     focusId: undefined,
-    leftMode: "files",
   });
+  // 透传 leftMode=files（从 /files 进来）→ leftMode files（左栏保文件树）
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/files/file/$", { _splat: "p1/src/index.ts" }, { leftMode: "files" }),
+    ),
+  ).toEqual({ scope: { kind: "global" }, focusId: "file_p1/src/index.ts", leftMode: "files" });
+  // 透传 leftMode=auto（从 /projects 进来）→ 显式 auto（左栏保项目列表）
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/files/file/$", { _splat: "p1/src/index.ts" }, { leftMode: "auto" }),
+    ),
+  ).toEqual({ scope: { kind: "global" }, focusId: "file_p1/src/index.ts", leftMode: "auto" });
 });
 
 test("deriveWorkbenchRouteContext: /files 全局文件总览 → scope global + leftMode files + 无 focus（review 收口）", () => {

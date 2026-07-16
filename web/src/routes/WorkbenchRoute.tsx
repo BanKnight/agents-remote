@@ -94,10 +94,11 @@ function WorkbenchContent({
   scope: WorkbenchScope;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
-  // 左栏模式（设计 workbench-stable-refactor Phase 2）：project scope 恒走 ProjectLeftPanel
-  //（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview（全局 rootBrowse），
-  // leftMode="auto" → ProjectLeftPanel(global overview=GlobalProjectsOverview)。
-  // `/files` 桌面经 GlobalScopeContent 传 leftMode="files"；其余 workbench 路由默认 "auto"。
+  // 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化）：project scope 恒走
+  // ProjectLeftPanel（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview
+  //（全局 rootBrowse），leftMode="auto" → ProjectLeftPanel(global overview=GlobalProjectsOverview)。
+  // leftMode 是 URL search 维度（见 workbench-model.ts deriveWorkbenchRouteContext），由各
+  // navigate 粘性透传——活动栏入口强制，中栏 tab focus 透传不改（VSCode 式）。
   leftMode?: "auto" | "files";
 }) {
   const { t } = useT();
@@ -128,15 +129,26 @@ function WorkbenchContent({
       rightTab: rightTabNext,
       tab: tabFromUrl,
       view: viewFromUrl,
+      ...(leftMode === "files" ? { leftMode } : {}),
     });
   };
   const onViewChange = (next: WorkbenchView) => {
     setRememberedView(next);
-    void navigateWorkbench(scope, focusId, { rightTab, tab: tabFromUrl, view: next });
+    void navigateWorkbench(scope, focusId, {
+      rightTab,
+      tab: tabFromUrl,
+      view: next,
+      ...(leftMode === "files" ? { leftMode } : {}),
+    });
   };
   const onTabChange = (next: WorkbenchMiddleTab) => {
     setRememberedMiddleTab(next);
-    void navigateWorkbench(scope, focusId, { rightTab, tab: next, view: viewFromUrl });
+    void navigateWorkbench(scope, focusId, {
+      rightTab,
+      tab: next,
+      view: viewFromUrl,
+      ...(leftMode === "files" ? { leftMode } : {}),
+    });
   };
   // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
   // 中栏边缘 RailButton 唤出，RightPanelTabs onCollapse 收起。旧实现 setRightCollapsed(!focusId)
@@ -256,16 +268,18 @@ function WorkbenchContent({
       if (ref.kind !== "session") return;
       const navScope: WorkbenchScope =
         scope.kind === "project" ? { kind: "project", key: ref.projectName } : scope;
-      // 与 onRightTabChange/onViewChange/onTabChange 同模式：传完整 {view,tab,rightTab}
-      //（URL 原始值）。navigateWorkbench 整体替换 search 对象，不传则会清空 tab/view/rightTab
+      // 与 onRightTabChange/onViewChange/onTabChange 同模式：传完整 {view,tab,rightTab,leftMode}
+      //（URL 原始值）。navigateWorkbench 整体替换 search 对象，不传则会清空 tab/view/rightTab/leftMode
       // ——点中栏 tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
+      // leftMode 粘性透传（仅 files 写）：中栏 tab 切换不改左栏模式（VSCode 式）。
       void navigateWorkbench(navScope, ref.sessionId, {
         rightTab,
         tab: tabFromUrl,
         view: viewFromUrl,
+        ...(leftMode === "files" ? { leftMode } : {}),
       });
     },
-    [navigateWorkbench, scope, rightTab, tabFromUrl, viewFromUrl],
+    [navigateWorkbench, scope, rightTab, tabFromUrl, viewFromUrl, leftMode],
   );
   const focusPanel = useCallback(
     (ref: WorkbenchPanelRef) => {
@@ -328,17 +342,27 @@ function WorkbenchContent({
         void navigate({
           to: "/projects/$key/file/$",
           params: { key: projectName, _splat: path },
-          search: { rightTab, tab: tabFromUrl, view: viewFromUrl },
+          search: {
+            rightTab,
+            tab: tabFromUrl,
+            view: viewFromUrl,
+            ...(leftMode === "files" ? { leftMode } : {}),
+          },
         });
         return;
       }
       void navigate({
         to: "/files/file/$",
         params: { _splat: fullPath },
-        search: { rightTab, tab: tabFromUrl, view: viewFromUrl },
+        search: {
+          rightTab,
+          tab: tabFromUrl,
+          view: viewFromUrl,
+          ...(leftMode === "files" ? { leftMode } : {}),
+        },
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, viewFromUrl],
+    [navigate, scope, rightTab, tabFromUrl, viewFromUrl, leftMode],
   );
   // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
   //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
@@ -358,10 +382,16 @@ function WorkbenchContent({
       void navigate({
         to: "/projects/$key/git/$",
         params: { key: projectName, _splat: path },
-        search: { rightTab, tab: tabFromUrl, view: viewFromUrl, gitScope: scope },
+        search: {
+          rightTab,
+          tab: tabFromUrl,
+          view: viewFromUrl,
+          gitScope: scope,
+          ...(leftMode === "files" ? { leftMode } : {}),
+        },
       });
     },
-    [navigate, rightTab, tabFromUrl, viewFromUrl],
+    [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
   );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
   const onOpenGitFile = useCallback(
@@ -481,8 +511,8 @@ function WorkbenchContent({
     ) : null;
   // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
   //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下
-  // leftMode="files"（来自 `/files` 桌面）→ GlobalFilesOverview（全局 rootBrowse 根目录，
-  // leftMode="auto"（其余 workbench 路由）→ ProjectLeftPanel(global overview=GlobalProjectsOverview)。
+  // leftMode="files"（活动栏 [文件] 入口或其粘性透传态）→ GlobalFilesOverview（全局 rootBrowse 根目录，
+  // leftMode="auto"（活动栏 [项目] 入口或其粘性透传态）→ ProjectLeftPanel(global overview=GlobalProjectsOverview)。
   // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
   // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
   const leftOverview =

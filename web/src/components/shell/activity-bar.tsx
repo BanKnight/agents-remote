@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
+import { useWorkbenchRouteContext } from "../../routes/workbench-model";
 import { ShellIcon } from "./icons";
 import { SettingsDialog } from "./settings-dialog";
 
@@ -35,17 +36,21 @@ type ActivityBarItem = {
  * 竖工具条：顶部主组 [项目]/[文件] 各自 `navigate` 到独立路由——[文件] 跳 `/files`（全局文件
  * rootBrowse，独立 scope 入口，设计 workbench-stable-refactor Phase 2）；[项目] 跳 `/projects`
  *（全局项目总览）。两端入口语义与移动 `MobilePrimaryNav` 一一对应（`Link to="/files"`/`to="/"`）。
- * active 跟随 URL pathname：[项目] = `/` 或 `/projects` 前缀（含
- * project scope `/projects/$key`）；[文件] = `/files`。底部 [设置] 用 `mt-auto` 置底且开
+ * active 跟随左栏模式 leftMode（URL search 派生，非 pathname）：[项目] = project scope 或
+ * global + leftMode!=="files"；[文件] = global + leftMode==="files"（含中栏 file tab focus）。底部 [设置] 用 `mt-auto` 置底且开
  * `SettingsDialog` 居中弹窗（决策 44，取代旧跳 `/settings` 路由），active 由 `settingsOpen`。
  */
 export function ActivityBar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { t } = useT();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const projectsActive = pathname === "/" || pathname.startsWith("/projects");
-  const filesActive = pathname === "/files";
+  // active 跟随左栏实际模式（leftMode，URL search 派生，非 pathname）：[项目] = project scope 或
+  // global + leftMode!=="files"；[文件] = global + leftMode==="files"。含中栏 file tab focus
+  //（/files/file/$?leftMode=files）时 [文件] active 与左栏文件树一致——旧 pathname 严格匹配漏 /files/file/$。
+  const { scope, leftMode } = useWorkbenchRouteContext();
+  const projectsActive =
+    scope.kind === "project" || (scope.kind === "global" && leftMode !== "files");
+  const filesActive = scope.kind === "global" && leftMode === "files";
 
   const mainItems: ActivityBarItem[] = [
     {
