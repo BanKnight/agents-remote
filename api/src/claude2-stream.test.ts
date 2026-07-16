@@ -223,6 +223,7 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
       setEffort: async (sessionId: string, effort: string) => {
         effortUpdates.push({ sessionId, effort });
       },
+      recordActivity: async () => {},
     };
     const controller = new Claude2StreamController(
       claude2Runtime as unknown as Claude2Runtime,

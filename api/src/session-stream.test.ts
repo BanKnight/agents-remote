@@ -5,6 +5,10 @@ import { join } from "node:path";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 
+// SessionStreamController 测试只需 registry.recordActivity 被调用即短路（其行为由
+// session-registry.test.ts 覆盖）；用最小 stub 避免每测造 runDir。
+const stubRegistry = { recordActivity: async () => {} } as unknown as SessionRegistry;
+
 const createProject = async () => {
   const root = await mkdtemp(join(tmpdir(), "agents-remote-stream-projects-"));
   const runDir = await mkdtemp(join(tmpdir(), "agents-remote-stream-run-"));
@@ -109,7 +113,7 @@ test("SessionStreamController attaches and handles input resize ping", async () 
     },
   };
   const messages: unknown[] = [];
-  const controller = new SessionStreamController(runtime);
+  const controller = new SessionStreamController(runtime, stubRegistry);
   const socket = {
     data: {
       kind: "session-stream" as const,
@@ -153,7 +157,7 @@ test("SessionStreamController reports error when attach fails", async () => {
     },
   };
   const messages: unknown[] = [];
-  const controller = new SessionStreamController(runtime);
+  const controller = new SessionStreamController(runtime, stubRegistry);
   const socket = {
     data: {
       kind: "session-stream" as const,
@@ -200,7 +204,7 @@ test("SessionStreamController reports ended when attach process exits", async ()
   };
   const messages: unknown[] = [];
   let closed = false;
-  const controller = new SessionStreamController(runtime);
+  const controller = new SessionStreamController(runtime, stubRegistry);
   const socket = {
     data: {
       kind: "session-stream" as const,

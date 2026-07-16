@@ -102,7 +102,10 @@ export const handleSessionStreamUpgrade = async (
 export class SessionStreamController {
   private readonly handles = new WeakMap<StreamSocket, AttachHandle>();
 
-  constructor(private readonly runtime: RuntimeResources) {}
+  constructor(
+    private readonly runtime: RuntimeResources,
+    private readonly sessionRegistry: SessionRegistry,
+  ) {}
 
   async open(socket: StreamSocket) {
     const data = sessionData(socket);
@@ -126,7 +129,11 @@ export class SessionStreamController {
     try {
       const handle = await this.runtime.attach(
         data.runtimeKey,
-        (output) => send(socket, { type: "output", data: output }),
+        (output) => {
+          // terminal 产出 = session 活动 → bump updatedAt（分钟截断，同分钟短路）。
+          void this.sessionRegistry.recordActivity(data.sessionId);
+          send(socket, { type: "output", data: output });
+        },
         (error) => {
           console.error(`[stream] attach error ${data.sessionId}`, error);
           send(socket, {
@@ -185,6 +192,8 @@ export class SessionStreamController {
     try {
       if (parsed.type === "input") {
         handle.write(parsed.data);
+        // 用户输入 = session 活动 → bump updatedAt。
+        void this.sessionRegistry.recordActivity(data.sessionId);
       }
 
       if (parsed.type === "resize") {

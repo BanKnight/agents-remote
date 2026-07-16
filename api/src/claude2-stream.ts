@@ -362,6 +362,8 @@ export class Claude2StreamController {
         }
         console.log(`[claude2-stream] message ${parsed.type}: ${data.runtimeKey}`);
         await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
+        // 用户消息 / 权限响应 / 控制请求都算 session 活动 → bump updatedAt（分钟截断，同分钟短路）。
+        void this.sessionRegistry.recordActivity(data.sessionId);
 
         // The CLI never echoes user input on stream-json stdout (live capture:
         // 0 user-type stdout lines, for both plain text and slash commands).
@@ -442,6 +444,8 @@ export class Claude2StreamController {
             );
           }
         }
+        // agent 产出（每条 stdout 行）= session 活动 → bump updatedAt。高频但同分钟短路 O(1) 廉价。
+        void this.sessionRegistry.recordActivity(data.sessionId);
         emit(line);
         if (parsed.type === "result") {
           emit(JSON.stringify({ type: "ended" }));

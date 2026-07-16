@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionRegistry, SessionRegistryError, createRuntimeKey } from "./session-registry";
@@ -469,4 +469,43 @@ test("SessionRegistry preserves sessions when alive probe fails (tmux server una
 
   // 探测不可信 → keepIfRuntimeExists 保守保留（既不 hide 也不删），宁可多显示也不误删。
   expect(sessions).toHaveLength(1);
+});
+
+test("recordActivity bumps updatedAt to the minute and short-circuits within the same minute", async () => {
+  // 分钟级平滑：updatedAt 截断到整分钟；同分钟截断值不变 → 短路（不写内存、不写盘）；跨分钟才更新。
+  let currentTime = new Date("2026-05-25T00:01:30.000Z");
+  const registry = new SessionRegistry({
+    runDir,
+    now: () => currentTime,
+    createId: () => "agent_activity123",
+  });
+
+  await registry.createAgentSession({ project, provider: "claude" });
+  // create 时 updatedAt = now 完整 ISO（含秒，createMetadata 写 updatedAt: timestamp）。
+  expect((await registry.getAgentSession(project.name, "agent_activity123"))?.updatedAt).toBe(
+    "2026-05-25T00:01:30.000Z",
+  );
+
+  // 首次 recordActivity：截断到整分钟，更新内存 index + 落盘。
+  await registry.recordActivity("agent_activity123");
+  expect((await registry.getAgentSession(project.name, "agent_activity123"))?.updatedAt).toBe(
+    "2026-05-25T00:01:00.000Z",
+  );
+  const statAfterFirst = await stat(join(runDir, "sessions", "agent_activity123.json"));
+
+  // 同分钟（00:01:59）再次 recordActivity：截断值仍 00:01:00 → 短路，mtime 不变（未写盘）。
+  currentTime = new Date("2026-05-25T00:01:59.000Z");
+  await registry.recordActivity("agent_activity123");
+  expect((await registry.getAgentSession(project.name, "agent_activity123"))?.updatedAt).toBe(
+    "2026-05-25T00:01:00.000Z",
+  );
+  const statAfterSame = await stat(join(runDir, "sessions", "agent_activity123.json"));
+  expect(statAfterSame.mtimeMs).toBe(statAfterFirst.mtimeMs);
+
+  // 跨分钟（00:02:15）recordActivity：截断到 00:02:00，更新 + 落盘。
+  currentTime = new Date("2026-05-25T00:02:15.000Z");
+  await registry.recordActivity("agent_activity123");
+  expect((await registry.getAgentSession(project.name, "agent_activity123"))?.updatedAt).toBe(
+    "2026-05-25T00:02:00.000Z",
+  );
 });

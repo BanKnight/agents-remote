@@ -27,6 +27,7 @@ export type SessionMetadata = {
   status: AgentSessionStatus | TerminalSessionStatus;
   runtimeKey: string;
   createdAt: string;
+  /** 最后活动时间：create/rename/setModel 等元数据操作写入，活动时由 recordActivity 按整分钟截断刷新。 */
   updatedAt: string;
   lastConnectedAt?: string;
   claudeSessionId?: string;
@@ -108,6 +109,8 @@ export class SessionRegistry {
   private static readonly ALIVE_TTL_MS = 5_000;
   /** capture-pane 输出缓存 TTL：list/overview 短时重复读同一 pane 不重 spawn。 */
   private static readonly CAPTURE_TTL_MS = 5_000;
+  /** recordActivity 分钟级平滑粒度：updatedAt 按整分钟截断，同分钟短路不写盘（用户要求不频繁写盘）。 */
+  private static readonly ACTIVITY_MINUTE_MS = 60_000;
 
   private readonly sessionsDir: string;
   private readonly now: () => Date;
@@ -483,6 +486,26 @@ export class SessionRegistry {
     };
     await this.writeMetadata(connected);
     return connected;
+  }
+
+  /**
+   * 记录 session 真实活动（agent 收发消息 / terminal input-output）。updatedAt 按整分钟截断
+   * （分钟级平滑）：同分钟内截断值不变 → 短路，既不写内存也不写盘；跨分钟才更新内存 index +
+   * 落盘一次。list/overview 从内存 index 读 → 内存更新即立即反映「刚刚活动」；落盘仅持久化
+   * （最多 1 次/分钟）。截断到分钟开始，值最多比实际活动早 59 秒，relativeTime 分钟级显示无感。
+   */
+  async recordActivity(sessionId: string): Promise<void> {
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
+    if (!metadata) return;
+    const truncatedMs =
+      Math.floor(this.now().getTime() / SessionRegistry.ACTIVITY_MINUTE_MS) *
+      SessionRegistry.ACTIVITY_MINUTE_MS;
+    const truncatedIso = new Date(truncatedMs).toISOString();
+    if (metadata.updatedAt === truncatedIso) return;
+    const updated: SessionMetadata = { ...metadata, updatedAt: truncatedIso };
+    this.index.set(sessionId, updated);
+    await this.writeMetadata(updated);
   }
 
   private async listMetadata(type: SessionType, projectName: string) {

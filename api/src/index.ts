@@ -730,8 +730,8 @@ export const startApi = async () => {
       return new Set([...tmuxKeys, ...claude2Keys]);
     },
   };
-  const streamController = new SessionStreamController(runtime);
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
+  const streamController = new SessionStreamController(runtime, sessionRegistry);
   const claude2StreamController = new Claude2StreamController(
     claude2Runtime,
     runtime,
