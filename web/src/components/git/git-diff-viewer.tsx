@@ -247,7 +247,7 @@ export function GitChangesList({
 
   if (diff.isLoading) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         <ListRowSkeleton count={4} />
       </div>
     );
@@ -275,7 +275,7 @@ export function GitChangesList({
     );
   }
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
       <GitFileList
         files={diff.data?.files ?? []}
         onSelectFile={onSelectGitFile}
@@ -443,7 +443,7 @@ export function GitDiffPanel({
         </div>
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
           <aside className="min-h-0 flex-1 flex flex-col sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60">
-            <div className="min-h-0 overflow-y-auto p-3">
+            <div className="min-h-0 overflow-y-auto px-3 pb-3">
               <ListRowSkeleton count={4} />
             </div>
           </aside>
@@ -531,7 +531,7 @@ export function GitDiffPanel({
         <aside
           className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
-          <div className="min-h-0 overflow-y-auto p-3 sm:flex-1 sm:flex sm:flex-col max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+          <div className="min-h-0 overflow-y-auto px-3 pb-3 sm:flex-1 sm:flex sm:flex-col max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
             {fileList}
           </div>
         </aside>
