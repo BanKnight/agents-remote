@@ -343,7 +343,6 @@ export const en = {
   "claude2.emptyChat": "Ask Claude a question to get started.",
   "claude2.switchingModel": "Switching to {{model}}...",
   "claude2.modelSwitchFailed": "Model switch failed",
-  "claude2.effort.label": "Effort",
   "claude2.effort.restartTitle": "Change effort?",
   "claude2.effort.restartConfirmRunning":
     "Changing effort restarts the Claude process to apply it. The current turn will be interrupted. Continue?",
@@ -556,11 +555,6 @@ export const en = {
   "settings.effort": "Effort",
   "settings.effortHint":
     "CLAUDE_CODE_EFFORT_LEVEL env injected at spawn. Does not affect already-running sessions.",
-  "settings.effort.low": "Low",
-  "settings.effort.medium": "Medium",
-  "settings.effort.high": "High",
-  "settings.effort.xhigh": "Extra high",
-  "settings.effort.max": "Max",
   "settings.save": "Save",
   "settings.saving": "Saving…",
   "settings.saved": "Saved",

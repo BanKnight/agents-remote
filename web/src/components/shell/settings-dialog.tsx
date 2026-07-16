@@ -76,14 +76,6 @@ const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
   haiku: "settings.tier.haiku",
 };
 
-const EFFORT_LABEL: Record<EffortLevel, TranslationKey> = {
-  low: "settings.effort.low",
-  medium: "settings.effort.medium",
-  high: "settings.effort.high",
-  xhigh: "settings.effort.xhigh",
-  max: "settings.effort.max",
-};
-
 /** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
 export type SettingsSection = "root" | "claude" | "general";
 
@@ -400,9 +392,9 @@ function ClaudeRuntimeContent({
             <OptionMenu
               align="start"
               cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={t(EFFORT_LABEL[effort])} disabled={loading} />}
+              trigger={<SelectorTrigger label={effort} disabled={loading} />}
               items={EFFORT_LEVELS.map((level) => ({
-                label: t(EFFORT_LABEL[level]),
+                label: level,
                 isActive: level === effort,
                 onSelect: () => setEffort(level),
               }))}

@@ -3246,10 +3246,15 @@ function ModelSelector({
       trigger={
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
         >
-          {label}
-          <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <span className="min-w-0 truncate">{label}</span>
+          <svg
+            className="h-3 w-3 shrink-0 opacity-60"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               d="M4 6l4 4 4-4"
               stroke="currentColor"
@@ -3325,15 +3330,20 @@ function PermissionModeSelector({
       trigger={
         <button
           type="button"
-          className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
+          className={`inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
             pending
               ? "text-on-surface-muted cursor-default"
               : "text-permission/80 hover:text-permission-soft hover:bg-surface-raised/50 cursor-pointer"
           }`}
           disabled={pending}
         >
-          {label}
-          <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <span className="min-w-0 truncate">{label}</span>
+          <svg
+            className="h-3 w-3 shrink-0 opacity-60"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               d="M4 6l4 4 4-4"
               stroke="currentColor"
@@ -3363,14 +3373,11 @@ function PermissionModeSelector({
 // relaunches the CLI (--resume + new CLAUDE_CODE_EFFORT_LEVEL) and reconnects
 // the stream. The parent owns the side-effect orchestration (switch + detail
 // invalidation + running-turn confirm); this component is purely presentational.
-const EFFORT_LABEL_KEYS = {
-  low: "settings.effort.low",
-  medium: "settings.effort.medium",
-  high: "settings.effort.high",
-  xhigh: "settings.effort.xhigh",
-  max: "settings.effort.max",
-} as const satisfies Record<EffortLevel, string>;
-
+// The trigger mirrors ModelSelector/PermissionModeSelector — value-only, no
+// prefix label — so the composer bar reads as three peer chips. The effort
+// concept itself ("思考强度") is surfaced in settings, not here.
+// Level values (low/medium/high/xhigh/max) are shown verbatim — they are CLI
+// identifiers passed through as CLAUDE_CODE_EFFORT_LEVEL, not localized.
 function EffortSelector({
   currentEffort,
   onSelectEffort,
@@ -3390,11 +3397,15 @@ function EffortSelector({
       trigger={
         <button
           type="button"
-          title={t("claude2.effort.label")}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant/80 hover:text-assistant-soft hover:bg-surface-raised/50 transition cursor-pointer"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant/80 hover:text-assistant-soft hover:bg-surface-raised/50 transition cursor-pointer"
         >
-          {t("claude2.effort.label")}: {t(EFFORT_LABEL_KEYS[current])}
-          <svg className="h-3 w-3 opacity-60" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <span className="min-w-0 truncate">{current}</span>
+          <svg
+            className="h-3 w-3 shrink-0 opacity-60"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               d="M4 6l4 4 4-4"
               stroke="currentColor"
@@ -3406,7 +3417,7 @@ function EffortSelector({
         </button>
       }
       items={EFFORT_LEVELS.map((effort) => ({
-        label: t(EFFORT_LABEL_KEYS[effort]),
+        label: effort,
         isActive: effort === current,
         onSelect: () => onSelectEffort(effort),
       }))}
@@ -3637,10 +3648,11 @@ function ComposerWithInterrupt({
           <button
             type="button"
             onClick={onCancel}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-assistant-deep/90 px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-assistant cursor-pointer"
+            aria-label={t("session.stop")}
+            title={t("session.stop")}
+            className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-assistant-deep/90 text-white shadow-lg transition hover:bg-assistant cursor-pointer"
           >
-            <span className="h-2 w-2 rounded-[2px] bg-white/90" />
-            {t("session.stop")}
+            <span className="h-2.5 w-2.5 rounded-[2px] bg-white/90" />
           </button>
         ) : null}
       </div>
