@@ -249,7 +249,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 type="button"
                 aria-label={t("settings.back")}
                 onClick={() => setActiveSection("root")}
-                className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
               >
                 <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path
@@ -269,7 +269,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               type="button"
               aria-label={t("session.close")}
               onClick={onClose}
-              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
             >
               <ShellIcon className="h-4 w-4" name="close" />
             </button>
@@ -549,7 +549,7 @@ function PresetRow({
               <button
                 type="button"
                 aria-label={t("settings.deletePreset")}
-                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
               >
                 <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
                   <circle cx="3" cy="8" r="1.5" />
@@ -799,7 +799,7 @@ const SelectorTrigger = forwardRef<
       ref={ref}
       type="button"
       disabled={disabled}
-      className="inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-neutral-line bg-surface-inset px-3 py-2.5 text-sm text-on-surface transition hover:border-on-surface-muted/40 disabled:cursor-default disabled:opacity-60"
+      className="inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-neutral-line bg-surface-inset px-3 py-2.5 text-sm text-on-surface transition hover:border-on-surface-muted/40 hover:bg-on-surface/10 disabled:cursor-default disabled:opacity-60"
       {...rest}
     >
       <span className="truncate text-left">{label}</span>

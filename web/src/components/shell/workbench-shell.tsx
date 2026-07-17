@@ -181,7 +181,7 @@ function PanelHeader({ chevron, collapseLabel, onCollapse, title }: PanelHeaderP
         type="button"
         aria-label={collapseLabel}
         onClick={onCollapse}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
       >
         {chevron === "left" ? <ChevronLeft /> : <ChevronRight />}
       </button>
@@ -202,7 +202,7 @@ function RailButton({ label, onClick, side }: RailButtonProps) {
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`absolute top-1/2 z-20 flex h-16 w-5 -translate-y-1/2 items-center justify-center bg-surface-raised/60 text-on-surface-muted backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface ${
+      className={`absolute top-1/2 z-20 flex h-16 w-5 -translate-y-1/2 items-center justify-center bg-surface-raised/60 text-on-surface-muted backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface active:bg-on-surface/10 ${
         side === "left"
           ? "left-0 rounded-r-lg border-y border-r border-neutral-line/80"
           : "right-0 rounded-l-lg border-y border-l border-neutral-line/80"

@@ -159,7 +159,7 @@ function MobileFileFocus({ path }: { path: string }) {
         trailing={
           <button
             aria-label={t("session.close")}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
             onClick={back}
             type="button"
           >
@@ -397,7 +397,7 @@ function MobileFocusHeader({
         >
           <button
             aria-label={t("session.instanceInfo.title")}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
             onClick={onInfo}
             type="button"
           >
@@ -427,7 +427,7 @@ type MobileFocusTabButtonProps = {
 function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonProps) {
   return (
     <button
-      className={`shrink-0 cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"}`}
+      className={`shrink-0 cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"}`}
       onClick={onClick}
       type="button"
     >
@@ -467,7 +467,7 @@ function MobileTabHeader<TabId extends string>({
       {back ? (
         <button
           aria-label={t(back.ariaLabelKey)}
-          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
           onClick={back.onClick}
           type="button"
         >

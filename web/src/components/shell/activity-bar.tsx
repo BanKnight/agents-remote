@@ -19,7 +19,7 @@ export function activityBarButtonClasses(active: boolean): string {
     "flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border-l-2 transition",
     active
       ? "border-primary text-primary"
-      : "border-transparent text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
+      : "border-transparent text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10",
   ].join(" ");
 }
 

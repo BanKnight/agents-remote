@@ -1383,7 +1383,7 @@ export function InstancePagedCarousel({
       >
         <button
           aria-label={t("carousel.prev")}
-          className="flex size-6 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/5 disabled:opacity-40"
+          className="flex size-6 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/5 active:bg-on-surface/10 disabled:opacity-40"
           disabled={page === 0}
           onClick={() => goTo(page - 1)}
           type="button"
@@ -1401,7 +1401,7 @@ export function InstancePagedCarousel({
         {pages.map((_, i) => (
           <button
             aria-current={i === page ? "true" : undefined}
-            className="flex size-6 items-center justify-center rounded text-xs text-on-surface-muted transition hover:bg-on-surface/5 aria-[current=true]:bg-primary/10 aria-[current=true]:text-primary"
+            className="flex size-6 items-center justify-center rounded text-xs text-on-surface-muted transition hover:bg-on-surface/5 active:bg-on-surface/10 aria-[current=true]:bg-primary/10 aria-[current=true]:text-primary"
             key={i}
             onClick={() => goTo(i)}
             type="button"
@@ -1411,7 +1411,7 @@ export function InstancePagedCarousel({
         ))}
         <button
           aria-label={t("carousel.next")}
-          className="flex size-6 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/5 disabled:opacity-40"
+          className="flex size-6 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/5 active:bg-on-surface/10 disabled:opacity-40"
           disabled={page === pageCount - 1}
           onClick={() => goTo(page + 1)}
           type="button"
@@ -1643,7 +1643,7 @@ function GroupHeader({
       </div>
       <button
         aria-label={t(maximizeLabelKey)}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
         onClick={onToggleMaximize}
         title={t(maximizeLabelKey)}
         type="button"
@@ -1707,7 +1707,7 @@ function TabChip({
         className={`group/tab flex shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition ${
           isActive
             ? "bg-primary/10 text-primary"
-            : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
+            : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
         }`}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -1724,7 +1724,7 @@ function TabChip({
         </button>
         <button
           aria-label={t("workbench.tabMinimize")}
-          className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 hover:text-on-surface ${
+          className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
             isActive ? "opacity-100" : "max-sm:opacity-100 opacity-0 group-hover/tab:opacity-100"
           }`}
           onClick={onClose}
