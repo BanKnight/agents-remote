@@ -193,6 +193,7 @@ export const zh: Record<TranslationKey, string> = {
   "nav.projectWorkspaceAria": "项目工作区导航",
   "nav.projectMobileAria": "项目移动端工作区导航",
   "nav.settings": "设置",
+  "nav.skills": "技能",
 
   // ── Console Sections ─────────────────────────────────────────
   "section.agents": "Agent",
@@ -281,6 +282,12 @@ export const zh: Record<TranslationKey, string> = {
   "api.presetUpdateFailed": "更新预设失败",
   "api.presetDeleteFailed": "删除预设失败",
   "api.presetModelsFailed": "获取预设模型列表失败",
+  "api.skillMarketFetchFailed": "搜索技能市场失败",
+  "api.skillInstallFailed": "安装技能失败",
+  "api.skillUninstallFailed": "卸载技能失败",
+  "api.skillPreviewFailed": "加载技能预览失败",
+  "api.skillListFailed": "加载已安装技能失败",
+  "api.skillSourceInvalid": "无效的技能来源",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "刚刚",
@@ -585,4 +592,36 @@ export const zh: Record<TranslationKey, string> = {
   "settings.activePresetHint":
     "激活预设的 base URL、API key 和模型映射用于新建会话。已打开的会话不受影响。",
   "settings.activePresetNone": "无（使用服务进程环境变量）",
+
+  // Skills（市场发现 / 管理 / 来源）
+  "skills.title": "技能",
+  "skills.tabDiscover": "发现",
+  "skills.tabManage": "管理",
+  "skills.tabSources": "来源",
+  "skills.searchPlaceholder": "在 skills.sh 搜索技能",
+  "skills.searchHint": "至少输入 2 个字符",
+  "skills.installs": "{{n}} 次安装",
+  "skills.install": "安装",
+  "skills.uninstall": "卸载",
+  "skills.installing": "安装中…",
+  "skills.uninstalling": "卸载中…",
+  "skills.preview": "预览",
+  "skills.empty": "未找到技能",
+  "skills.emptyInstalled": "暂无已安装技能",
+  "skills.installConfirmTitle": "安装技能",
+  "skills.installConfirmBody": "技能将以完整 agent 权限运行。请仅安装你信任来源的技能。",
+  "skills.installConfirmCta": "安装",
+  "skills.source": "来源",
+  "skills.fromSource": "从来源安装",
+  "skills.skillId": "技能 id",
+  "skills.repo": "owner/repo",
+  "skills.branch": "分支（可选）",
+  "skills.labelField": "标签（可选）",
+  "skills.addSource": "添加来源",
+  "skills.adding": "添加中…",
+  "skills.removeSource": "移除来源",
+  "skills.sourcesEmpty": "暂无自定义来源",
+  "skills.runtime": "运行时",
+  "skills.runtimeClaude": "Claude Code",
+  "skills.runtimeCodexSoon": "Codex（即将支持）",
 };

@@ -22,6 +22,7 @@ import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
+import { SkillsPanel } from "./SkillsRoute";
 import { useT } from "../i18n";
 import {
   type DropZone,
@@ -96,10 +97,11 @@ function WorkbenchContent({
   tab?: WorkbenchMiddleTab;
   // 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化）：project scope 恒走
   // ProjectLeftPanel（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview
-  //（全局 rootBrowse），leftMode="auto" → ProjectLeftPanel(global overview=GlobalProjectsOverview)。
-  // leftMode 是 URL search 维度（见 workbench-model.ts deriveWorkbenchRouteContext），由各
-  // navigate 粘性透传——活动栏入口强制，中栏 tab focus 透传不改（VSCode 式）。
-  leftMode?: "auto" | "files";
+  //（全局 rootBrowse），leftMode="skills" → SkillsPanel（技能市场），leftMode="auto" →
+  // ProjectLeftPanel(global overview=GlobalProjectsOverview)。leftMode 是 URL search 维度
+  //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
+  // 强制，中栏 tab focus 透传不改（VSCode 式）。
+  leftMode?: "auto" | "files" | "skills";
 }) {
   const { t } = useT();
   const isDesktop = useIsDesktopViewport();
@@ -129,7 +131,7 @@ function WorkbenchContent({
       rightTab: rightTabNext,
       tab: tabFromUrl,
       view: viewFromUrl,
-      ...(leftMode === "files" ? { leftMode } : {}),
+      ...(leftMode !== "auto" ? { leftMode } : {}),
     });
   };
   const onViewChange = (next: WorkbenchView) => {
@@ -138,7 +140,7 @@ function WorkbenchContent({
       rightTab,
       tab: tabFromUrl,
       view: next,
-      ...(leftMode === "files" ? { leftMode } : {}),
+      ...(leftMode !== "auto" ? { leftMode } : {}),
     });
   };
   const onTabChange = (next: WorkbenchMiddleTab) => {
@@ -147,7 +149,7 @@ function WorkbenchContent({
       rightTab,
       tab: next,
       view: viewFromUrl,
-      ...(leftMode === "files" ? { leftMode } : {}),
+      ...(leftMode !== "auto" ? { leftMode } : {}),
     });
   };
   // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
@@ -271,12 +273,12 @@ function WorkbenchContent({
       // 与 onRightTabChange/onViewChange/onTabChange 同模式：传完整 {view,tab,rightTab,leftMode}
       //（URL 原始值）。navigateWorkbench 整体替换 search 对象，不传则会清空 tab/view/rightTab/leftMode
       // ——点中栏 tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
-      // leftMode 粘性透传（仅 files 写）：中栏 tab 切换不改左栏模式（VSCode 式）。
+      // leftMode 粘性透传（files/skills 写，非 auto）：中栏 tab 切换不改左栏模式（VSCode 式）。
       void navigateWorkbench(navScope, ref.sessionId, {
         rightTab,
         tab: tabFromUrl,
         view: viewFromUrl,
-        ...(leftMode === "files" ? { leftMode } : {}),
+        ...(leftMode !== "auto" ? { leftMode } : {}),
       });
     },
     [navigateWorkbench, scope, rightTab, tabFromUrl, viewFromUrl, leftMode],
@@ -346,7 +348,7 @@ function WorkbenchContent({
             rightTab,
             tab: tabFromUrl,
             view: viewFromUrl,
-            ...(leftMode === "files" ? { leftMode } : {}),
+            ...(leftMode !== "auto" ? { leftMode } : {}),
           },
         });
         return;
@@ -358,7 +360,7 @@ function WorkbenchContent({
           rightTab,
           tab: tabFromUrl,
           view: viewFromUrl,
-          ...(leftMode === "files" ? { leftMode } : {}),
+          ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
@@ -387,7 +389,7 @@ function WorkbenchContent({
           tab: tabFromUrl,
           view: viewFromUrl,
           gitScope: scope,
-          ...(leftMode === "files" ? { leftMode } : {}),
+          ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
@@ -538,7 +540,7 @@ function WorkbenchContent({
       />
     );
   const leftPanel =
-    scope.kind === "project" || leftMode !== "files" ? (
+    scope.kind === "project" || leftMode === "auto" ? (
       <ProjectLeftPanel
         focusId={focusId}
         onOpenFile={onOpenFile}
@@ -548,6 +550,8 @@ function WorkbenchContent({
         scope={scope}
         tab={tab}
       />
+    ) : leftMode === "skills" ? (
+      <SkillsPanel />
     ) : (
       <GlobalFilesOverview onOpenFile={onOpenFile} />
     );
@@ -558,6 +562,8 @@ function WorkbenchContent({
       leftPanelTitle={
         scope.kind === "project" ? (
           <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
+        ) : leftMode === "skills" ? (
+          t("nav.skills")
         ) : leftMode === "files" ? (
           t("nav.files")
         ) : (

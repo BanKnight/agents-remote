@@ -46,6 +46,18 @@ import type {
   UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
+  AddSkillSourceRequest,
+  AddSkillSourceResponse,
+  InstallSkillRequest,
+  InstallSkillResponse,
+  InstalledSkillsResponse,
+  RemoveSkillSourceResponse,
+  SkillAgent,
+  SkillMarketSearchResponse,
+  SkillPreviewResponse,
+  SkillSourcesResponse,
+  UninstallSkillRequest,
+  UninstallSkillResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -525,6 +537,63 @@ const refreshAuth = () => {
   }
   return refreshPromise;
 };
+
+// ── Skills（市场发现 / 已装 / 安装 / 卸载 / 预览 / 源 CRUD） ──
+
+export async function searchSkills(query: string): Promise<SkillMarketSearchResponse> {
+  return fetchJson(
+    `/api/skills/search?q=${encodeURIComponent(query)}`,
+    "api.skillMarketFetchFailed",
+  );
+}
+
+export async function listInstalledSkills(agent: SkillAgent): Promise<InstalledSkillsResponse> {
+  return fetchJson(
+    `/api/skills/installed?agent=${encodeURIComponent(agent)}`,
+    "api.skillListFailed",
+  );
+}
+
+export async function previewSkill(name: string, agent: SkillAgent): Promise<SkillPreviewResponse> {
+  return fetchJson(
+    `/api/skills/preview?name=${encodeURIComponent(name)}&agent=${encodeURIComponent(agent)}`,
+    "api.skillPreviewFailed",
+  );
+}
+
+export async function installSkill(req: InstallSkillRequest): Promise<InstallSkillResponse> {
+  return fetchJson("/api/skills/install", "api.skillInstallFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function uninstallSkill(req: UninstallSkillRequest): Promise<UninstallSkillResponse> {
+  return fetchJson("/api/skills/uninstall", "api.skillUninstallFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function listSkillSources(): Promise<SkillSourcesResponse> {
+  return fetchJson("/api/skills/sources", "api.skillListFailed");
+}
+
+export async function addSkillSource(req: AddSkillSourceRequest): Promise<AddSkillSourceResponse> {
+  return fetchJson("/api/skills/sources", "api.skillSourceInvalid", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function removeSkillSource(id: string): Promise<RemoveSkillSourceResponse> {
+  return fetchJson(`/api/skills/sources?id=${encodeURIComponent(id)}`, "api.skillListFailed", {
+    method: "DELETE",
+  });
+}
 
 const fetchJson = async <T>(
   url: string,

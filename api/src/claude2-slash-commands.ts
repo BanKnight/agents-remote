@@ -4,7 +4,7 @@ import type { SlashCommandInfo } from "@agents-remote/shared";
 
 const FRONTMATTER_RE = /^---\s*\n([\s\S]*?)---/;
 
-function parseFrontmatter(text: string): Record<string, string> {
+export function parseFrontmatter(text: string): Record<string, string> {
   const match = text.match(FRONTMATTER_RE);
   if (!match) return {};
   const result: Record<string, string> = {};

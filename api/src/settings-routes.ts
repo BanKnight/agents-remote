@@ -29,7 +29,8 @@ export const handleSettingsRoutes = async (
   store: SettingsStore,
 ): Promise<Response | undefined> => {
   if (url.pathname === "/api/settings" && request.method === "GET") {
-    const claude = (await store.read()).runtimes.claude;
+    const state = await store.read();
+    const claude = state.runtimes.claude;
     const response: GetSettingsResponse = {
       settings: {
         runtimes: {
@@ -40,6 +41,7 @@ export const handleSettingsRoutes = async (
             effort: claude.effort,
           },
         },
+        skills: { sources: state.skills?.sources ?? [] },
       },
     };
     return Response.json(response);

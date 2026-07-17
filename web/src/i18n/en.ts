@@ -193,6 +193,7 @@ export const en = {
   "nav.projectWorkspaceAria": "Project workspace navigation",
   "nav.projectMobileAria": "Project mobile workspace navigation",
   "nav.settings": "Settings",
+  "nav.skills": "Skills",
 
   // ── Console Sections ─────────────────────────────────────────
   "section.agents": "Agent",
@@ -281,6 +282,12 @@ export const en = {
   "api.presetUpdateFailed": "Failed to update preset",
   "api.presetDeleteFailed": "Failed to delete preset",
   "api.presetModelsFailed": "Failed to fetch preset models",
+  "api.skillMarketFetchFailed": "Failed to search skills marketplace",
+  "api.skillInstallFailed": "Failed to install skill",
+  "api.skillUninstallFailed": "Failed to uninstall skill",
+  "api.skillPreviewFailed": "Failed to load skill preview",
+  "api.skillListFailed": "Failed to load installed skills",
+  "api.skillSourceInvalid": "Invalid skill source",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "just now",
@@ -591,4 +598,37 @@ export const en = {
   "settings.activePresetHint":
     "The active preset's base URL, API key, and model mapping apply when newly creating sessions. Already-open sessions are not affected.",
   "settings.activePresetNone": "None (use server env)",
+
+  // Skills（市场发现 / 管理 / 来源）
+  "skills.title": "Skills",
+  "skills.tabDiscover": "Discover",
+  "skills.tabManage": "Manage",
+  "skills.tabSources": "Sources",
+  "skills.searchPlaceholder": "Search skills on skills.sh",
+  "skills.searchHint": "Type at least 2 characters",
+  "skills.installs": "{{n}} installs",
+  "skills.install": "Install",
+  "skills.uninstall": "Uninstall",
+  "skills.installing": "Installing…",
+  "skills.uninstalling": "Uninstalling…",
+  "skills.preview": "Preview",
+  "skills.empty": "No skills found",
+  "skills.emptyInstalled": "No installed skills",
+  "skills.installConfirmTitle": "Install skill",
+  "skills.installConfirmBody":
+    "Skills run with full agent permissions. Only install skills from sources you trust.",
+  "skills.installConfirmCta": "Install",
+  "skills.source": "Source",
+  "skills.fromSource": "Install from a source",
+  "skills.skillId": "Skill id",
+  "skills.repo": "owner/repo",
+  "skills.branch": "Branch (optional)",
+  "skills.labelField": "Label (optional)",
+  "skills.addSource": "Add source",
+  "skills.adding": "Adding…",
+  "skills.removeSource": "Remove source",
+  "skills.sourcesEmpty": "No custom sources",
+  "skills.runtime": "Runtime",
+  "skills.runtimeClaude": "Claude Code",
+  "skills.runtimeCodexSoon": "Codex (coming soon)",
 } as const;

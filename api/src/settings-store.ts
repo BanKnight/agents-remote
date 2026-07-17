@@ -11,6 +11,7 @@ import {
   type ClaudeRuntimeConfig,
   type EffortLevel,
   type SettingsState,
+  type SkillSource,
 } from "@agents-remote/shared";
 
 // providers.json 与 config.toml 同目录（~/.agents-remote/），但用 JSON 而非 TOML：
@@ -252,6 +253,7 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
         effort: isEffortLevel(oldRuntime.effort) ? oldRuntime.effort : "high",
       },
     },
+    skills: { sources: [] },
   };
 }
 
@@ -281,6 +283,7 @@ function normalizeSettings(parsed: unknown): SettingsState {
         effort: isEffortLevel(claude?.effort) ? claude.effort : DEFAULT_CLAUDE_RUNTIME.effort,
       },
     },
+    skills: { sources: normalizeSkillSources(root.skills?.sources) },
   };
 }
 
@@ -314,7 +317,24 @@ function cloneDefaultSettings(): SettingsState {
         effort: DEFAULT_CLAUDE_RUNTIME.effort,
       },
     },
+    skills: { sources: [] },
   };
+}
+
+// skill 源列表宽松规整：非法项丢弃（id/repo 必须为 string），branch/label 可选非空才保留。
+function normalizeSkillSources(input: unknown): SkillSource[] {
+  if (!Array.isArray(input)) return [];
+  const out: SkillSource[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const s = item as Record<string, unknown>;
+    if (typeof s.id !== "string" || typeof s.repo !== "string") continue;
+    const source: SkillSource = { id: s.id, repo: s.repo };
+    if (typeof s.branch === "string" && s.branch) source.branch = s.branch;
+    if (typeof s.label === "string" && s.label) source.label = s.label;
+    out.push(source);
+  }
+  return out;
 }
 
 const isNotFoundError = (error: unknown) =>

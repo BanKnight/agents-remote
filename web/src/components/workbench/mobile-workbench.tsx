@@ -9,6 +9,7 @@ import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
+import { MobileSkillsOverview } from "../../routes/SkillsRoute";
 import {
   ensureTabOpenLeaf,
   filterWorkbenchViews,
@@ -57,12 +58,12 @@ type MobileWorkbenchProps = {
   scope: WorkbenchScope;
   focusId?: string;
   /**
-   * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端仅 `scope=global + leftMode="files"`
-   *（`/files` 全局文件总览）有意义——渲染 MobileFilesOverview（GlobalFilesOverview 主体）；其余
-   *（project scope / global leftMode="auto"）无视 leftMode 走原 MobileGlobalOverview/MobileProjectOverview。
-   * 桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
+   * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端 `scope=global` 下 leftMode 有意义
+   *——leftMode="files"（/files 全局文件总览）→ MobileFilesOverview；leftMode="skills"（/skills 技能市场）
+   * → MobileSkillsOverview；leftMode="auto" → MobileGlobalOverview。project scope 无视 leftMode 走
+   * MobileProjectOverview。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
    */
-  leftMode?: "auto" | "files";
+  leftMode?: "auto" | "files" | "skills";
 };
 
 /**
@@ -93,7 +94,9 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
         className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
-        {scope.kind === "global" && leftMode === "files" ? (
+        {scope.kind === "global" && leftMode === "skills" ? (
+          <MobileSkillsOverview />
+        ) : scope.kind === "global" && leftMode === "files" ? (
           <MobileFilesOverview />
         ) : scope.kind === "global" ? (
           <MobileGlobalOverview />

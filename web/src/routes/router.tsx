@@ -126,6 +126,17 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import("./SettingsRoute"), "SettingsRoute"),
 });
 
+// /skills — 全局 skill 市场/包管理一级页（对标 cc-switch）。workbench layout 子（同 /files）：
+// 桌面左栏渲染 SkillsPanel（leftMode="skills"），移动渲染 MobileSkillsOverview（无返回 header）。
+// 子路由不设 component——layout 已渲染全部内容，与 /files 等其它 layout 子一致（仅 URL 匹配 +
+// validateSearch）。装/卸后 server 遍历活跃 session 发 /reload-skills → catalog 自动刷新
+//（见 api/src/skill-market.ts reloadAliveSessions）。
+const skillsRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/skills",
+  validateSearch: validateWorkbenchSearch,
+});
+
 // 全局文件总览入口（设计 §6 决策 24 / workbench-stable-refactor review 收口）：`/files` 作为
 // workbench layout 子路由（非 rootRoute 平级）——桌面渲染 global 工作台 leftMode="files"（左栏
 // GlobalFilesOverview），移动经 MobileWorkbench 渲染 MobileFilesOverview（GlobalFilesOverview 主体）。
@@ -221,6 +232,7 @@ const routeTree = rootRoute.addChildren([
     globalFocusRoute,
     globalFileFocusRoute,
     filesRoute,
+    skillsRoute,
   ]),
   settingsRoute,
   agentSessionDetailRedirect,

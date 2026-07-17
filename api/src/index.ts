@@ -33,6 +33,7 @@ import { TmuxRuntime } from "./tmux-runtime";
 import { loadSettings, StartupError } from "./settings";
 import { SettingsStore } from "./settings-store";
 import { handleSettingsRoutes } from "./settings-routes";
+import { handleSkillRoutes } from "./skill-market";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
@@ -40,6 +41,7 @@ type UpgradeServer = {
 };
 
 type FetchHandlerOptions = {
+  claude2Runtime?: Claude2Runtime;
   claude2StreamController?: Claude2StreamController;
   projectFilesService?: ProjectFilesService;
   projectGitDiffService?: ProjectGitDiffService;
@@ -124,6 +126,13 @@ export const createFetchHandler =
       const settingsResponse = await handleSettingsRoutes(request, url, options.settingsStore);
       if (settingsResponse) {
         return withRefresh(settingsResponse);
+      }
+      const skillResponse = await handleSkillRoutes(request, url, {
+        settingsStore: options.settingsStore,
+        claude2Runtime: options.claude2Runtime,
+      });
+      if (skillResponse) {
+        return withRefresh(skillResponse);
       }
     }
 
@@ -764,6 +773,7 @@ export const startApi = async () => {
   const server = Bun.serve<WebSocketData>({
     port: settings.apiPort,
     fetch: createFetchHandler(auth, {
+      claude2Runtime,
       claude2StreamController,
       projectFilesService,
       projectGitDiffService,

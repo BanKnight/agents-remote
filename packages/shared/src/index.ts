@@ -250,6 +250,62 @@ export type ClaudeRuntimeConfig = {
   effort: EffortLevel;
 };
 
+// ── Skills marketplace ──────────────────────────────────────
+// Skill 包管理：wrap `npx skills` CLI（vercel-labs/skills）做执行，skills.sh /api/search 做发现。
+// 先 Claude，架构支持多 runtime（Codex 后续）——所有 wrap 命令透传 --agent，目录映射交给 CLI。
+export type SkillAgent = "claude-code" | "codex";
+export const SKILL_AGENTS: readonly SkillAgent[] = ["claude-code", "codex"];
+
+// 用户自定义 skill 源（GitHub owner/name）。对应 skills CLI 的 source 语法 owner/repo[@skill]。
+export type SkillSource = {
+  id: string;
+  repo: string; // "owner/name"
+  branch?: string;
+  label?: string;
+};
+
+// skills.sh /api/search 结果项（实测：只有 name/installs/source，无 description、无详情端点）。
+export type SkillMarketEntry = {
+  id: string; // "owner/repo/skillId"
+  skillId: string;
+  name: string;
+  installs: number;
+  source: string; // "owner/repo"
+};
+export type SkillMarketSearchResponse = {
+  query: string;
+  skills: SkillMarketEntry[];
+  count: number;
+};
+
+// `npx skills list --json` 结果项（已实测 schema：name/path/scope/agents）。
+export type InstalledSkill = {
+  name: string;
+  path: string;
+  scope: "project" | "global";
+  agents: string[];
+};
+export type InstalledSkillsResponse = { skills: InstalledSkill[] };
+
+// 已装 skill 的 SKILL.md 预览（读本地 path/SKILL.md，零网络）。
+export type SkillPreviewResponse = {
+  name: string;
+  description?: string;
+  content: string;
+  source: string;
+};
+
+export type InstallSkillRequest = { source: string; skillId: string; agent: SkillAgent };
+export type InstallSkillResponse = { ok: true; skill: InstalledSkill };
+export type UninstallSkillRequest = { name: string; agent: SkillAgent };
+export type UninstallSkillResponse = { ok: true };
+export type AddSkillSourceRequest = { repo: string; branch?: string; label?: string };
+
+// 源管理响应（/api/skills/sources CRUD）。源在 settings 与 skill 路由两处共用。
+export type SkillSourcesResponse = { sources: SkillSource[] };
+export type AddSkillSourceResponse = { source: SkillSource };
+export type RemoveSkillSourceResponse = { deleted: true; id: string };
+
 export type SettingsState = {
   runtimes: {
     // per-runtime-type：claude 是第一个实例；未来 codex 预设同理念不同格式（本次不实现）。
@@ -259,6 +315,10 @@ export type SettingsState = {
       enable1mContext: boolean;
       effort: EffortLevel;
     };
+  };
+  // 自定义 skill 源列表（optional；settings-store normalizeSettings 补默认 { sources: [] }）。
+  skills?: {
+    sources: SkillSource[];
   };
 };
 
@@ -271,6 +331,10 @@ export type GetSettingsResponse = {
         enable1mContext: boolean;
         effort: EffortLevel;
       };
+    };
+    // 源是公开 GitHub repo，不 mask。
+    skills: {
+      sources: SkillSource[];
     };
   };
 };
@@ -1292,7 +1356,13 @@ export type ApiErrorCode =
   | "SESSION_STREAM_MISMATCH"
   | "SETTINGS_INVALID"
   | "PRESET_NOT_FOUND"
-  | "PROVIDER_LABEL_CONFLICT";
+  | "PROVIDER_LABEL_CONFLICT"
+  | "SKILL_MARKET_FETCH_FAILED"
+  | "SKILL_INSTALL_FAILED"
+  | "SKILL_UNINSTALL_FAILED"
+  | "SKILL_PREVIEW_FAILED"
+  | "SKILL_LIST_FAILED"
+  | "SKILL_SOURCE_INVALID";
 
 export type ApiErrorResponse = {
   error: {

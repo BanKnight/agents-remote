@@ -24,8 +24,8 @@ export function activityBarButtonClasses(active: boolean): string {
 }
 
 type ActivityBarItem = {
-  id: "projects" | "files";
-  icon: "project" | "file";
+  id: "projects" | "files" | "skills";
+  icon: "project" | "file" | "skills-nav";
   label: TranslationKey;
   onSelect: () => void;
   active: boolean;
@@ -45,12 +45,14 @@ export function ActivityBar() {
   const { t } = useT();
   const navigate = useNavigate();
   // active 跟随左栏实际模式（leftMode，URL search 派生，非 pathname）：[项目] = project scope 或
-  // global + leftMode!=="files"；[文件] = global + leftMode==="files"。含中栏 file tab focus
-  //（/files/file/$?leftMode=files）时 [文件] active 与左栏文件树一致——旧 pathname 严格匹配漏 /files/file/$。
+  // global + leftMode==="auto"；[文件] = global + leftMode==="files"；[技能] = global + leftMode==="skills"。
+  // 三者互斥覆盖 global 全部 leftMode + project scope，含中栏 file/git tab focus（leftMode 粘性透传）
+  // 时 active 与左栏一致——旧 pathname 严格匹配漏 /files/file/$。
   const { scope, leftMode } = useWorkbenchRouteContext();
   const projectsActive =
-    scope.kind === "project" || (scope.kind === "global" && leftMode !== "files");
+    scope.kind === "project" || (scope.kind === "global" && leftMode === "auto");
   const filesActive = scope.kind === "global" && leftMode === "files";
+  const skillsActive = scope.kind === "global" && leftMode === "skills";
 
   const mainItems: ActivityBarItem[] = [
     {
@@ -66,6 +68,13 @@ export function ActivityBar() {
       label: "nav.files",
       onSelect: () => void navigate({ to: "/files" }),
       active: filesActive,
+    },
+    {
+      id: "skills",
+      icon: "skills-nav",
+      label: "nav.skills",
+      onSelect: () => void navigate({ to: "/skills" }),
+      active: skillsActive,
     },
   ];
 

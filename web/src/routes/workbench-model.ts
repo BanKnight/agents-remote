@@ -257,7 +257,7 @@ export function useWorkbenchNavigate() {
       rightTab?: WorkbenchRightTab;
       view?: WorkbenchView;
       tab?: WorkbenchMiddleTab;
-      leftMode?: "auto" | "files";
+      leftMode?: "auto" | "files" | "skills";
     },
   ) => {
     if (scope.kind === "global") {
@@ -290,14 +290,14 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
-  leftMode?: "auto" | "files";
+  leftMode?: "auto" | "files" | "skills";
 } {
   const result: {
     rightTab?: WorkbenchRightTab;
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
-    leftMode?: "auto" | "files";
+    leftMode?: "auto" | "files" | "skills";
   } = {};
   if (search.rightTab === "files" || search.rightTab === "git") {
     result.rightTab = search.rightTab;
@@ -316,7 +316,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   if (search.gitScope === "staged" || search.gitScope === "worktree") {
     result.gitScope = search.gitScope;
   }
-  if (search.leftMode === "auto" || search.leftMode === "files") {
+  if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "skills") {
     result.leftMode = search.leftMode;
   }
   return result;
@@ -349,7 +349,7 @@ export type WorkbenchRouteContext = {
    * "files"、`/projects` 强制 "auto"；中栏 tab focus（`/files/file/$`、`/projects/session/$id`）
    * 继承透传值——中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
    */
-  leftMode?: "auto" | "files";
+  leftMode?: "auto" | "files" | "skills";
   rightTab?: WorkbenchRightTab;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
@@ -383,6 +383,10 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       // 全局文件总览（review 收口）：scope=global + leftMode 强制 "files"（放 ...s 后，左栏
       // GlobalFilesOverview）。无 focusId（文件树整页，点文件 → /files/file/$ 开 file tab focus）。
       return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "files" };
+    case "/skills":
+      // 全局技能市场（对标 /files，一级页面）：scope=global + leftMode 强制 "skills"（左栏
+      // SkillsPanel / 移动 MobileSkillsOverview）。无 focusId（技能管理整页，装/卸在左栏内完成）。
+      return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "skills" };
     case "/projects/session/$id":
       return { scope: { kind: "global" }, focusId: p.id, ...s };
     case "/projects/$key":
