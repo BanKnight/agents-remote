@@ -264,7 +264,7 @@ export function FileEntryList({
             <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
               <input
                 ref={renameInputRef}
-                className="h-7 w-full min-w-0 rounded-lg border border-primary/60 bg-surface-inset/70 px-2 text-[0.82rem] font-semibold text-on-surface font-mono focus:outline-none"
+                className="h-7 w-full min-w-0 rounded-lg border border-primary/60 bg-surface-inset/70 px-2 text-[0.82rem] font-semibold text-on-surface font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 type="text"
                 value={renamingName}
                 autoFocus
@@ -425,7 +425,7 @@ export function FilePreviewPanel({
           {saveToggle}
           {onClose ? (
             <button
-              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
+              className="flex h-7 w-7 max-sm:h-11 max-sm:w-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
               type="button"
               onClick={onClose}
               aria-label={t("session.close")}

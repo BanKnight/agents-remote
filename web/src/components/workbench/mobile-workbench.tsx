@@ -397,7 +397,7 @@ function MobileFocusHeader({
         >
           <button
             aria-label={t("session.instanceInfo.title")}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            className="flex h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
             onClick={onInfo}
             type="button"
           >
@@ -405,7 +405,7 @@ function MobileFocusHeader({
           </button>
           <button
             aria-label={t("session.close")}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+            className="flex h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
             onClick={onClose}
             type="button"
           >

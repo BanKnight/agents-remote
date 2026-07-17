@@ -866,7 +866,7 @@ export function ViewSwitcher<T extends string>({
           <button
             aria-label={v.label}
             aria-pressed={active}
-            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition ${
+            className={`inline-flex h-7 w-7 max-sm:h-11 max-sm:w-11 cursor-pointer items-center justify-center rounded-md transition ${
               active
                 ? "bg-primary/15 text-primary"
                 : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
