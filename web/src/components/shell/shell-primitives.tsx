@@ -127,12 +127,12 @@ export function NavItemContent({
       ? active
         ? "text-primary"
         : interactive
-          ? "text-on-surface-muted hover:text-on-surface"
+          ? "text-on-surface-muted hover:text-on-surface active:bg-on-surface/10"
           : "text-on-surface-muted"
       : active
         ? "bg-primary/10 text-primary"
         : interactive
-          ? "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
+          ? "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
           : "text-on-surface-muted";
   const shapeClass = orientation === "vertical" ? "" : "rounded-md";
   const interactionClass = interactive ? "cursor-pointer" : "";
@@ -320,7 +320,7 @@ export function actionButtonClasses({
   // text-sm——dialog/表单按钮（确认/取消/保存）移动端放大是可用性改善。compact=true 用于
   // 总览 header 行内按钮（新建项目/新建实例），不放大以与 header 行高一致。
   const mobile = compact ? "" : "max-sm:min-h-11 max-sm:px-4 max-sm:text-sm";
-  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition ${mobile} ${buttonToneClasses[tone]} ${className}`;
+  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]} ${className}`;
 }
 
 type ResizeGutterProps = {
@@ -448,7 +448,7 @@ export function SegmentedControl<T extends string>({
             className={`inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-semibold transition ${
               active
                 ? "bg-primary/15 text-primary"
-                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft"
+                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
             }`}
             disabled={option.disabled}
             key={option.value}
@@ -612,7 +612,7 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
       {back ? (
         <button
           aria-label={back.label}
-          className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface"
+          className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-sm text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
           onClick={back.onClick}
           type="button"
         >
@@ -765,7 +765,7 @@ export function InstanceCard({
             trigger={
               <button
                 aria-label={actionsLabel}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface max-sm:h-10 max-sm:w-10"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10 max-sm:h-10 max-sm:w-10"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
@@ -869,7 +869,7 @@ export function ViewSwitcher<T extends string>({
             className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition ${
               active
                 ? "bg-primary/15 text-primary"
-                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft"
+                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
             }`}
             key={v.id}
             onClick={() => onChange(v.id)}
