@@ -180,7 +180,7 @@ export function GitFileDiffPanel({
             role="group"
           >
             <button
-              className="flex h-7 w-7 max-sm:h-11 max-sm:w-11 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
               type="button"
               onClick={onClose}
               aria-label={t("session.close")}

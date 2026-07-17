@@ -204,7 +204,7 @@ function RowActions({
       trigger={
         <button
           aria-label={t("session.actions")}
-          className="inline-flex h-7 w-7 max-sm:h-11 max-sm:w-11 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+          className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") e.stopPropagation();
