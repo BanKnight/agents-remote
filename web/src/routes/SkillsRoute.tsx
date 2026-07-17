@@ -7,6 +7,7 @@ import {
   ActionButton,
   ListGroup,
   ListRow,
+  ListRowSkeleton,
   MobilePageHeader,
   SegmentedControl,
   ShellInput,
@@ -237,7 +238,7 @@ function ManageTab({ agent }: { agent: SkillAgent }) {
   const preview = useSkillPreview(previewName, agent);
 
   if (installed.isLoading) {
-    return <p className="px-1 text-xs text-on-surface-muted">…</p>;
+    return <ListRowSkeleton count={5} />;
   }
   const skills = installed.data?.skills ?? [];
   if (skills.length === 0) {
