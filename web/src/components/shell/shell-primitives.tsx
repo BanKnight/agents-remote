@@ -563,22 +563,39 @@ export function ListRow({
 
 /**
  * ListRow 骨架行（mirror 真实 ListRow DOM：行根 + grow span justify-between，左 marker +
- * 文本块（title + subtitle 两行占位），右尾小占位）。占位条高度对齐真实文本 lineHeight
+ * 文本块（title + subtitle 两行占位），右尾占位）。占位条高度对齐真实文本 lineHeight
  *（title h-6=24px、subtitle h-4=16px + mt-0.5=2px，非凭空 h-4），加 `block` 让 width 生效——
  * 旧 `w-1/2` 作用在 inline span 上 width 被忽略（CSS：width 不适用于 inline non-replaced
  * element），实测占位条 w=0 中间空白；block 后固定宽度可见。两行占位使行高 ≈ max(marker 28，
  * title24+gap2+subtitle16=42) + py-2.5(20) ≈ 62px，与带 subtitle 的真实 ListRow（历史 /
- * Files 行 63px）对齐，骨架→真实不跳。右尾占位模拟 Git status / Files actions 右侧小元素。
+ * Files 行 63px）对齐，骨架→真实不跳。
+ *
+ * `marker`/`action` 按 ListRow 真实结构裁剪——骨架要与真实行**同形**，否则加载→真实跳变明显：
+ * 文件树行带文件图标 marker + 右 status 小元素 → 默认（marker=true, action="square"）；
+ * 技能 ManageTab 行无 marker、右侧是 ActionButton 文字按钮（rounded-xl）→ marker={false}
+ * action="button"（h-7 w-16 rounded-xl 对齐 ActionButton compact 形状）。
  * 外层 listGroupClasses()（plain divide-y）与真实 ListGroup 一致，padding 由调用方提供。
  */
-export function ListRowSkeleton({ count = 4 }: { count?: number }) {
+export function ListRowSkeleton({
+  count = 4,
+  marker = true,
+  action = "square",
+}: {
+  count?: number;
+  /** 左 marker 占位：ListRow 带 icon（文件树）默认 true；无 marker 行（技能 Manage）传 false。 */
+  marker?: boolean;
+  /** 右尾占位形状：square=小方块（status/icon，默认），button=文字按钮块（ActionButton），none=无。 */
+  action?: "button" | "none" | "square";
+}) {
   return (
     <div aria-hidden="true" className={listGroupClasses()}>
       {Array.from({ length: count }, (_, index) => (
         <div className="flex h-auto w-full items-center px-3 py-2.5" key={index}>
           <span className="flex min-w-0 grow items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-3">
-              <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
+              {marker ? (
+                <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
+              ) : null}
               <span className="min-w-0">
                 <span aria-hidden="true" className="skeleton-shimmer block h-6 w-32 rounded" />
                 <span
@@ -587,7 +604,11 @@ export function ListRowSkeleton({ count = 4 }: { count?: number }) {
                 />
               </span>
             </span>
-            <span aria-hidden="true" className="skeleton-shimmer h-6 w-6 shrink-0 rounded-md" />
+            {action === "button" ? (
+              <span aria-hidden="true" className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
+            ) : action === "square" ? (
+              <span aria-hidden="true" className="skeleton-shimmer h-6 w-6 shrink-0 rounded-md" />
+            ) : null}
           </span>
         </div>
       ))}

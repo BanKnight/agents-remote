@@ -238,7 +238,9 @@ function ManageTab({ agent }: { agent: SkillAgent }) {
   const preview = useSkillPreview(previewName, agent);
 
   if (installed.isLoading) {
-    return <ListRowSkeleton count={5} />;
+    // 骨架对齐 ManageTab 真实行结构：无 marker（ListRow 未传 marker）+ 右 ActionButton 文字按钮
+    //（rounded-xl）——而非文件树的左 icon + 右小方块，否则加载→真实跳变。
+    return <ListRowSkeleton action="button" count={4} marker={false} />;
   }
   const skills = installed.data?.skills ?? [];
   if (skills.length === 0) {
