@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
+import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
   listProjectFiles,
   listRootFiles,
@@ -710,6 +711,15 @@ export function FilesPanel({
   const { t } = useT();
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
+  const {
+    exiting: previewExiting,
+    close: closePreviewOverlay,
+    onAnimationEnd: onPreviewOverlayAnimationEnd,
+    cancel: cancelPreviewExit,
+  } = useMobileExitClose(() => {
+    setSelectedFilePath(undefined);
+    onMobilePreviewChange?.(false);
+  });
   // Local text edits to the file under preview. undefined = untouched (mirror preview content).
   const [editContent, setEditContent] = useState<string | undefined>();
   // Brief "Saved" feedback after a successful save; cleared on file switch.
@@ -760,6 +770,7 @@ export function FilesPanel({
   };
 
   const selectFile = (path: string) => {
+    cancelPreviewExit();
     if (!enablePreview) {
       // 树模式（左栏）：透出当前 project + 文件路径给调用方开 file tab，本组件不预览。
       onOpenFile?.(effectiveProjectName ?? "", path);
@@ -787,10 +798,8 @@ export function FilesPanel({
     onMobilePreviewChange?.(true);
   };
 
-  const clearPreview = () => {
-    setSelectedFilePath(undefined);
-    onMobilePreviewChange?.(false);
-  };
+  // clearPreview 经 useMobileExitClose 编排：移动端先播 slide-out 再真正清（§7 对称），桌面端即时。
+  const clearPreview = closePreviewOverlay;
   // md/html 默认渲染预览（打开即看预览，github 风格）；非 md/html 被 showRenderToggle gate
   // 强制 source（:1003 renderMode={showRenderToggle ? renderMode : "source"}），不受此初值影响。
   const [renderMode, setRenderMode] = useState<"source" | "render">("render");
@@ -1131,13 +1140,16 @@ export function FilesPanel({
         {enablePreview ? (
           <div
             key={selectedFilePath !== undefined ? "preview-open" : "preview-closed"}
+            onAnimationEnd={onPreviewOverlayAnimationEnd}
             className={
-              selectedFilePath === undefined
+              selectedFilePath === undefined && !previewExiting
                 ? "hidden sm:flex sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col"
                 : [
                     "fixed inset-0 z-50 flex flex-col bg-surface",
                     "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
-                    "animate-in slide-in-from-bottom-full duration-300 ease-out",
+                    previewExiting
+                      ? "animate-out slide-out-to-bottom-full duration-300 ease-in"
+                      : "animate-in slide-in-from-bottom-full duration-300 ease-out",
                     "sm:static sm:inset-auto sm:z-auto sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col sm:bg-transparent sm:pt-0 sm:pb-0 sm:animate-none",
                   ].join(" ")
             }

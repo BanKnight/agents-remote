@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
+import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
   IconMarker,
   ListGroup,
@@ -413,6 +414,12 @@ export function GitDiffPanel({
 }: GitDiffPanelProps) {
   const { t } = useT();
   const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
+  const {
+    exiting: diffExiting,
+    close: closeDiffOverlay,
+    onAnimationEnd: onDiffOverlayAnimationEnd,
+    cancel: cancelDiffExit,
+  } = useMobileExitClose(() => setSelectedFile(undefined));
   const diff = useQuery({
     queryKey: ["projects", projectName, queryScope, "diff"],
     queryFn: () => listProjectGitDiff(projectName),
@@ -423,7 +430,8 @@ export function GitDiffPanel({
     return () => onDeepDetailChange?.(false);
   }, [onDeepDetailChange, selectedFile]);
 
-  const clearDiff = () => setSelectedFile(undefined);
+  // clearDiff 经 useMobileExitClose 编排：移动端先播 slide-out 再真正清（§7 对称），桌面端即时。
+  const clearDiff = closeDiffOverlay;
   const gitSummary =
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
 
@@ -507,7 +515,14 @@ export function GitDiffPanel({
   );
 
   const fileList = (
-    <GitFileList files={changedFiles} selectedFile={selectedFile} onSelectFile={setSelectedFile} />
+    <GitFileList
+      files={changedFiles}
+      onSelectFile={(file) => {
+        cancelDiffExit();
+        setSelectedFile(file);
+      }}
+      selectedFile={selectedFile}
+    />
   );
 
   const diffPanel = (
@@ -537,13 +552,16 @@ export function GitDiffPanel({
         </aside>
         <div
           key={selectedFile !== undefined ? "diff-open" : "diff-closed"}
+          onAnimationEnd={onDiffOverlayAnimationEnd}
           className={
-            selectedFile === undefined
+            selectedFile === undefined && !diffExiting
               ? "hidden sm:flex sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col"
               : [
                   "fixed inset-0 z-50 flex flex-col bg-surface",
                   "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
-                  "animate-in slide-in-from-bottom-full duration-300 ease-out",
+                  diffExiting
+                    ? "animate-out slide-out-to-bottom-full duration-300 ease-in"
+                    : "animate-in slide-in-from-bottom-full duration-300 ease-out",
                   "sm:static sm:inset-auto sm:z-auto sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col sm:bg-transparent sm:pt-0 sm:pb-0 sm:animate-none",
                 ].join(" ")
           }
