@@ -72,7 +72,7 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
         <tbody>
           {rows.map((row) => (
             <tr
-              className="cursor-pointer border-b border-neutral-line/40 transition hover:bg-surface-raised/30"
+              className="cursor-pointer border-b border-neutral-line/40 transition hover:bg-surface-raised/30 active:bg-on-surface/10"
               key={row.key}
               onClick={() => row.onFocus()}
             >
