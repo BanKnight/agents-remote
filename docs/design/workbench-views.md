@@ -48,7 +48,7 @@
 - **左总览**：固定单列宽（~220–240px，贴合 InstanceGrid `minmax(220px,1fr)` 单列），卡片纵向堆叠。顶部 header 挂 CreateSessionBar（project only，+ 新建 agent/terminal）+ ViewSwitcher（overview only，segmented control 切 grid/table/grouped，ml-auto 右推）；两者随左总览只在 overview tab 渲染（history/inspection tab 全宽，无左总览）。tab 行只剩纯 tab，不再混排视图切换/新建按钮。
 - **右工作区**：flex-1 吃满中栏剩余。group 网格分屏（详见 §7）。活动 group = `focusId`。
 - **左右比例**：左总览与右工作区之间有 gutter，可拖拽调节（与左栏导航 / 右栏 inspection 的 resize 同一设计语言）。左总览默认贴合一栏卡片宽。
-- **右栏**：聚焦态自动展开（跟随右工作区活动 group 的 inspection）；非聚焦态默认收起，中栏右边缘 RailButton 唤出（唤出看 project-scoped inspection，因 files/git 只依赖 projectKey 不依赖 focusId）。project scope 可唤出；global scope 不唤出右栏——全局 files 走中栏 tab（根目录 = `PROJECTS_ROOT` 浏览，见 §4）。
+- **右栏**：容器常驻（聚焦态自动展开 + RailButton 唤出 + `?rightTab` 状态机完整保留）；inspection 内容当前**留空**待扩展——files/git 已移至左栏 middle tab `[文件]`/`[git]` + 中栏点文件开的 diff tab（左栏列表点文件 → 中栏 diff）。非聚焦态默认收起，中栏右边缘 RailButton 唤出（唤出看右栏空态）。project scope 可唤出；global scope 不唤出右栏——全局 files 走中栏 tab（根目录 = `PROJECTS_ROOT` 浏览，见 §4）。
 - **左栏**：置顶固定（全局总览）+ section 分组（「项目」+ 未来扩展）。「项目」section label = `ShellNavigationButton` 同款行（text-sm + 左 marker + py-1.5，与全局节点对齐），行右侧挂「+ 新建项目」按钮（点开 ProjectSetupPanel overlay），行可点击收起/展开项目列表；展开时项目项缩进表达母子从属（全局=母，项目=子），见 `left-rail.tsx`。
 
 移动线性：项目页（二级）单行 header = ◄ 返回 + tab 横滚区 + 项目名右侧；全局总览（`/global`，一级）header 仅 tab 行（无 ◄ 返回、无标题，靠底部 tab 切换）→ 总览卡片列表（→ 点卡片全屏聚焦态 → 底部一级 nav）。中栏不分左右。聚焦态与项目列表态同款单行 header 结构（tab 在 header 内横滚，不再独立一行）。
@@ -64,7 +64,7 @@
 | 文件 | 全宽 FilesPanel（项目级只读 inspection） | FIRST_PARTY_PLUGINS | 全 scope（global = 根目录浏览，见下） |
 | Git | 全宽 GitDiffPanel（项目级） | FIRST_PARTY_PLUGINS | 仅 project |
 
-> tab 分三类：**总览** = 左右结构（左总览 + 右工作区常驻活动组）；**历史** = 全宽历史列表（点会话切 overview + 聚焦，history 只读不承载活动组）；**inspection tab**（文件/Git）= 全宽 inspection，右工作区临时让位（切回总览恢复）。右栏 inspection（聚焦态跟随活动 group）与中栏 inspection tab 并存不冲突——右栏是快捷跟随，中栏 tab 是深度浏览。
+> tab 分三类：**总览** = 左右结构（左总览 + 右工作区常驻活动组）；**历史** = 全宽历史列表（点会话切 overview + 聚焦，history 只读不承载活动组）；**inspection tab**（文件/Git）= 全宽 inspection，右工作区临时让位（切回总览恢复）。右栏 inspection 当前留空（容器保留待扩展），files/git 经中栏 inspection tab 深度浏览（左栏 middle tab `[文件]`/`[git]` 同源列表）。
 >
 > 用户决定（上一版）：实例和历史放一起过于拥挤，历史独立成 tab。移动端也加历史 tab。
 
@@ -356,7 +356,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 | 点卡片行为 | 激活（右工作区切活动 group） | 全屏切聚焦态 |
 | 总览视图样式 | grid/table/grouped（左总览单列） | grid/table/grouped（全宽列表） |
 | 二级导航 5 tab | 中栏顶部常驻 | header 下一行横向滚动 |
-| 右栏 inspection | 常驻跟随活动 group | 聚焦态 tab 切（output/文件/Git） |
+| 右栏 inspection | 容器留空（待扩展） | 聚焦态 tab 切（output/文件/Git） |
 
 移动端聚焦态（点卡片全屏切）：**单行合并 header**（◄ 返回 + tab 横滚区 output/文件/Git + ℹ✕ 胶囊操作区），面板自带 header 在聚焦态隐藏（`embeddedHeader` prop），消除旧「返回 header / tab 行 / 面板自带 header」三块冗余。实例名与 meta 进 ℹ 底部 sheet（agent 显 model/permission/createdAt/status，terminal 仅 type/status —— UI=f(state) 不伪造）。✕ 触发 `useCloseSession`（confirm → close API → 回列表）；Retry 在内容区错误态 Notice（`connectionStatus==="error"` 时显示，与桌面 header Retry 共用 `onReconnect`）。+Terminal 在聚焦态去除（列表态 `CreateSessionBar` 已覆盖创建需求）。body 仍是 PanelRouter（output）或 inspection plugin render。
 
@@ -379,7 +379,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 - `focusId`（path 段 `/global/session/$id` / `/projects/$key/session/$id`）= 右工作区**活动 group 的活动 tab** 实例 sessionId（唯一反查 group+tab）；group/tab 布局进 localStorage、不进 URL（§7.6）
 - `?view=grid|table|grouped` = 左总览卡片样式
 - `?tab=overview|history|files|git` = 中栏二级 tab
-- `?rightTab=files|git` = 右栏 inspection tab
+- `?rightTab=files|git` = 右栏 inspection tab（状态机保留；右栏当前留空待扩展，恢复 inspection 时复用）
 
 四者正交。TanStack Router navigate 整体替换 search 对象（非 merge），故 navigate 需传完整四维（见 `WorkbenchRoute.onViewChange/onTabChange/onRightTabChange` 现有做法）。
 
@@ -413,10 +413,10 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
   - **左总览单击卡片** → `findTabBySessionId` 命中（已开）= 激活该 tab（`setActiveTab` + `activeGroupId` 指向其 group），不新 tab；未命中（未开）= 在活动 group `addTabToGroup` 开新 tab（不新建 group）。
   - **右工作区点 group tab 栏某 tab** → 切该 tab 为 active + 激活该 group；**点 group 其他空白处** → 仅激活该 group（不改 active tab）。
 - **激活驱动**：
-  - 右栏 inspection 跟随活动 tab（files/git）
+  - 右栏容器跟随活动 tab（inspection 内容当前留空待扩展）
   - 左总览对应卡片高亮（◆ 标记 + ring）
-- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区默认空态（不自动铺首个活跃实例，避免最小化最后 tab 后又被自动重开的循环，详见 §14）；右栏 inspection 空态。点左总览卡片或 group 才进入聚焦态。
-- **focusId 反查失败兜底**：`findTabBySessionId` 返 null（该 session 已最小化，不在任何 group）：URL `focusId` 保留不动（不死循环），右栏 inspection 跟随 `activeTabRef`（活动 group 的活动 tab，非 URL focusId）——最小化是用户主动移出，inspection 跟活动 tab 更合理。
+- **非聚焦态**（无 `focusId`，如刚进 scope）：右工作区默认空态（不自动铺首个活跃实例，避免最小化最后 tab 后又被自动重开的循环，详见 §14）；右栏留空（inspection 暂停，待扩展）。点左总览卡片或 group 才进入聚焦态。
+- **focusId 反查失败兜底**：`findTabBySessionId` 返 null（该 session 已最小化，不在任何 group）：URL `focusId` 保留不动（不死循环），右栏 inspection 当前留空（暂停），反查失败不影响其空态呈现。
 
 ## 14. 空态
 
@@ -425,7 +425,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 | 左总览 | scope 无活跃实例（refs.length === 0） | EmptyInstanceArea 创建态（+ Claude / + Codex / + Terminal） |
 | 右工作区 | scope 无活跃实例（refs.length === 0） | EmptyInstanceArea 创建态（同左总览，引导创建首个实例） |
 | 右工作区 | 有活跃实例但右侧无 tab（refs.length > 0，全最小化 / 刚进 scope 无 focusId / 所有 group 被 close） | EmptyInstanceArea 空态提示（「点击左侧实例查看，或拖卡片到这里分屏」，不显示创建入口——实例已存在，只是未打开） |
-| 右栏 inspection | 无活动 group | 空态提示文案 |
+| 右栏 inspection | inspection 暂停（容器留空待扩展） | 恒显空态提示文案 |
 
 **EmptyInstanceArea 双语义**（按 `refs.length` 区分）：`refs.length === 0`（真无活跃实例）→ 创建态（CreateSessionBar + 空提示）；`refs.length > 0` 但右侧无 tab → 空态提示（无 CreateSessionBar，引导点左侧实例）。初次进 scope 不再自动铺首个实例——右侧默认空态，用户主动点卡片/拖卡片才打开（避免最小化最后 tab 后又被自动重开的循环）。
 

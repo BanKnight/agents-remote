@@ -14,10 +14,10 @@ test("authenticated user can browse Project files and preview text and images", 
   // Desktop workbench: enter the project, then drive the Files **middle tab**
   // via the URL-visible ?tab=files state. Phase 3: middle tab [文件] renders
   // the project-local file tree in the **left panel** (FilesLeftPanel). The
-  // right panel RightPanelTabs also renders a FilesPanel inspection (same
-  // "Project files" ListGroup + "Go to root" breadcrumb), so all file-tree
-  // selectors are scoped to the left panel aside (DOM 第 2 个 complementary:
-  // 活动栏=0/左栏=1/右栏=2) to disambiguate. File preview 用 getByRole("region")
+  // desktop right panel inspection is currently empty (files/git moved to
+  // left middle tab + center tab), so "Project files" renders only in the
+  // left panel; all file-tree selectors are scoped to the left panel aside
+  // (DOM 第 2 个 complementary: 活动栏=0/左栏=1/右栏=2) for precise targeting. File preview 用 getByRole("region")
   //（visibility-aware）：中栏 keep-alive 多 file tab 时，inactive tab 的 FileTabPreview
   // 仍挂载（display:none 保 WebSocket/relay 长连 §7.4），DOM 内多个 <section aria-label=
   // "File preview">；getByLabel 不过滤 hidden 会命中多个（strict mode），而 getByRole

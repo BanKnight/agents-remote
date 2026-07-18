@@ -10,9 +10,9 @@ import { expect, test, type Page } from "@playwright/test";
  * = 全局 rootBrowse（PROJECTS_ROOT 根目录），与 middle tab [文件]（项目内文件）作用域互斥。
  * e2e 默认 en-US → 英文 label（Overview/History/Files/Git/Projects/Primary navigation）。
  *
- * selector 注意：project scope 右栏 RightPanelTabs 始终渲染 files inspection（另一份 FilesPanel），
- * 故 `getByLabel("Project files")` 全局会命中左栏 + 右栏两份。所有左栏文件树断言用 leftPanelFiles
- *（限定左栏 aside = DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）避免歧义。
+ * selector 注意：桌面右栏 inspection 当前留空（files/git 移至左栏 middle tab + 中栏 tab），
+ * `getByLabel("Project files")` 全局唯一命中左栏。所有左栏文件树断言用 leftPanelFiles
+ *（限定左栏 aside = DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）精准定位，并防右栏未来恢复时歧义。
  */
 
 const password = process.env.E2E_PASSWORD ?? "secret";
@@ -32,8 +32,8 @@ const projectsNav = (page: Page) => page.getByRole("navigation", { name: "Projec
 const activityBar = (page: Page) =>
   page.getByRole("navigation", { name: "Primary navigation", exact: true });
 
-// 左栏 aside（DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）。限定左栏文件树，避免与右栏
-// RightPanelTabs files inspection（project scope 另一份 FilesPanel ListGroup "Project files"）歧义。
+// 左栏 aside（DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）。桌面右栏 inspection 当前留空，
+// Project files 全局唯一在左栏；nth(1) 精准定位左栏 aside，并防右栏未来恢复 inspection 时歧义。
 const leftPanelFiles = (page: Page) =>
   page.getByRole("complementary").nth(1).getByLabel("Project files");
 
@@ -66,8 +66,8 @@ test("middle tab [Git] switches left body to GitDiffPanel", async ({ page }) => 
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await projectsNav(page).getByRole("button", { name: "Git", exact: true }).click();
 
-  // 左栏主体 = GitDiffPanel（ListGroup aria-label="Git changed files"）。右栏 RightPanelTabs 默认
-  // files inspection（非 git），故 Git changed files 全局唯一，无需左栏限定。
+  // 左栏主体 = GitChangesList（GitFileList ListGroup aria-label="Git changed files"）。桌面右栏
+  // inspection 当前留空，故 Git changed files 全局唯一（仅左栏），无需左栏限定。
   await expect(page.getByLabel("Git changed files")).toBeVisible();
 });
 

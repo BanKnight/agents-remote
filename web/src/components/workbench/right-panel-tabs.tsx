@@ -1,7 +1,7 @@
 import { useAtom } from "jotai";
 import { useT } from "../../i18n";
 import { type WorkbenchRightTab, workbenchRightTabAtom } from "../../routes/workbench-model";
-import { FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import { type PluginContext, type RightPanelPlugin } from "./right-panel-plugin";
 
 type RightPanelTabsProps = {
   activeTab?: WorkbenchRightTab;
@@ -18,7 +18,12 @@ type RightPanelTabsProps = {
 export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsProps) {
   const { t } = useT();
   const [rememberedTab, setRememberedTab] = useAtom(workbenchRightTabAtom);
-  const visiblePlugins = FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx));
+  // 桌面右栏 inspection 暂停：files/git 已移至左栏 middle tab（[文件]/[git]）+ 中栏点文件
+  // 开的 diff tab，右栏内部留空待未来扩展。visiblePlugins 留空数组骨架——find/render
+  // 分支静态保留（lint 仍认其在用、无 unused），恢复 inspection 只需把这行改回
+  // `FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx))` 并恢复 import。
+  // 移动端 MobileFocusBody + 左栏 buildOverviewTabs 仍直接消费 FIRST_PARTY_PLUGINS。
+  const visiblePlugins: RightPanelPlugin[] = [];
   const preferred = activeTab ?? rememberedTab;
   const current = visiblePlugins.find((plugin) => plugin.id === preferred) ?? visiblePlugins[0];
 

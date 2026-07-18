@@ -481,7 +481,7 @@ export const en = {
   "workbench.viewTable": "Table",
   "workbench.viewGrouped": "Grouped",
   "workbench.viewSplit": "Split",
-  "workbench.rightPanelEmpty": "Select an instance to inspect files or changes.",
+  "workbench.rightPanelEmpty": "No content",
   "workbench.panelClose": "Close panel",
   "workbench.panelMaximize": "Maximize panel",
   "workbench.panelRestore": "Restore panel",
