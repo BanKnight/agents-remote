@@ -1,4 +1,5 @@
 import type {
+  AgentHistoryRange,
   AgentProvider,
   AgentSessionDetailResponse,
   AgentSessionMessagesResponse,
@@ -236,9 +237,12 @@ export async function listAgentSessions(projectName: string): Promise<ListAgentS
   return fetchJson(agentSessionsPath(projectName), "api.agentSessionListFailed");
 }
 
-export async function listAgentHistory(projectName: string): Promise<ListAgentHistoryResponse> {
+export async function listAgentHistory(
+  projectName: string,
+  range: AgentHistoryRange = "week",
+): Promise<ListAgentHistoryResponse> {
   return fetchJson(
-    `/api/projects/${encodeURIComponent(projectName)}/agent-history`,
+    `/api/projects/${encodeURIComponent(projectName)}/agent-history?range=${range}`,
     "api.agentHistoryListFailed",
   );
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { AgentHistoryEntry } from "@agents-remote/shared";
+import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
 import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
@@ -9,6 +9,7 @@ import {
   ListGroup,
   ListRow,
   ListRowSkeleton,
+  SegmentedControl,
   sessionMarker,
   ShellSectionLabel,
 } from "../shell/shell-primitives";
@@ -41,12 +42,12 @@ function HistoryListSkeleton() {
  * 的 navigate 固定到 `/projects/$key/...`，故本 hook 仅适用于 project scope（history 是
  * project-scoped 数据，global 不可见）。
  */
-export function useHistorySessions(projectName: string) {
+export function useHistorySessions(projectName: string, range: AgentHistoryRange = "week") {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const history = useQuery({
-    queryKey: ["projects", projectName, "agent-history"],
-    queryFn: () => listAgentHistory(projectName),
+    queryKey: ["projects", projectName, "agent-history", range],
+    queryFn: () => listAgentHistory(projectName, range),
     staleTime: 5_000,
   });
   const resumeSession = useMutation({
@@ -91,6 +92,9 @@ type HistoryListProps = {
    * 中栏 history tab 顶部 tab bar 已标识「历史」，省略标题避免冗余。
    */
   showLabel?: boolean;
+  /** 时间范围过滤器（受控；由父级持有避免 tab 切换丢失）。默认 "week"。 */
+  range?: AgentHistoryRange;
+  onRangeChange?: (next: AgentHistoryRange) => void;
 };
 
 /**
@@ -98,11 +102,16 @@ type HistoryListProps = {
  *（useHistorySessions）+ 单一渲染（ListGroup/ListRow plain 连续行 + sessionMarker sm，
  * 与总览 table 行同款 marker）。entries 为空时返回 null（中栏 tab 自然空态，不伪造占位）。
  */
-export function HistoryList({ focusId, projectName, showLabel = true }: HistoryListProps) {
+export function HistoryList({
+  focusId,
+  projectName,
+  showLabel = true,
+  range = "week",
+}: HistoryListProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const { holder: promptHolder, prompt } = usePromptDialog();
-  const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName);
+  const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, range);
 
   const focus = (sessionId: string) => {
     void navigate({
@@ -187,13 +196,7 @@ function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessi
   const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
   const description = isResuming
     ? t("project.historyResuming")
-    : [
-        time,
-        entry.messageCount > 0 ? t("project.historyTurns", { count: entry.messageCount }) : null,
-        entry.fileSize > 0 ? formatBytes(entry.fileSize) : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+    : [time, entry.fileSize > 0 ? formatBytes(entry.fileSize) : null].filter(Boolean).join(" · ");
   return (
     <ListRow
       marker={sessionMarker("agent", "claude", "sm")}
@@ -221,4 +224,31 @@ export function relativeTime(iso: string, t: TranslateFn): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return t("time.daysAgo", { count: days });
   return date.toLocaleDateString();
+}
+
+/**
+ * 历史时间范围分段选择器（周/半月/全部，默认周）。桌面 history tab 顶部 sticky header +
+ * 移动 history tab 容器顶部共用——range state 由父级持有（受控），避免 tab 切换丢失；
+ * range 进 queryKey → 切档自动重拉（week 默认仅近 7 天，all 首拉全量后走缓存）。
+ */
+export function HistoryRangeControl({
+  value,
+  onChange,
+}: {
+  value: AgentHistoryRange;
+  onChange: (next: AgentHistoryRange) => void;
+}) {
+  const { t } = useT();
+  return (
+    <SegmentedControl
+      ariaLabel={t("project.historyRangeAria")}
+      onChange={onChange}
+      options={[
+        { value: "week", label: t("project.historyRangeWeek") },
+        { value: "biweekly", label: t("project.historyRangeBiweekly") },
+        { value: "all", label: t("project.historyRangeAll") },
+      ]}
+      value={value}
+    />
+  );
 }

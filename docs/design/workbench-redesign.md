@@ -311,3 +311,51 @@ URL 编码语义核心，localStorage 编码个人布局：
 布局重设计（桌面 + 移动）的剩余决策点，定型后从此处移除并补进对应章节：
 
 - [ ] 插件槽 V1 是否引入 marketplace（倾向不做）
+
+## 10. 历史 tab：时间范围过滤 + 列表性能（Phase 3 middle tab）
+
+> 本节补充 Phase 3 middle tab 模型（实例/历史/文件/git）下「历史」tab 的具体行为——§3 左栏树里的「历史 session 段」已演化为独立 middle tab，本节是它的列表呈现 + 性能设计。
+
+### 10.1 时间范围过滤器
+
+历史 tab 顶部 range 控件（复用 `SegmentedControl`，DESIGN `segmented-control`）三档：
+
+| 档位 | 窗口 | 说明 |
+|---|---|---|
+| 周（默认） | 近 7 天（mtime） | 大项目默认只列近期，避免全量扫描慢 |
+| 半月 | 近 15 天 | 中期回看 |
+| 全部 | 不限 | 全量历史（首拉较慢，之后走缓存） |
+
+- **range state 由父级持有**（桌面 `ProjectLeftPanel` / 移动 `MobileProjectOverview`），受控，避免 tab 切换丢失；range 进 TanStack Query `queryKey` → 切档自动重拉。
+- **桌面**：range 控件在 middle tab nav 下方 sticky header（`border-b border-on-surface/5 bg-surface`，与 nav 一致轻分隔），滚动区外常驻。
+- **移动**：range 控件在 history tab 容器顶部（整页滚动内，移动可接受）。
+- 过滤判据是**文件 mtime**（非 session startedAt）——mtime 反映最近活动，更贴合「最近用过」直觉。
+
+### 10.2 列表性能策略
+
+大项目（agents-remote 实测 378 JSONL / 1.2GB）历史列表曾是线性 N 瓶颈（旧实现 12.4s）。优化管线（`api/src/agent-history.ts`）：
+
+```
+readdir 全量 → 全量 stat（mtimeMs+size）→ range 用 mtime 过滤候选
+  → 有界并发 mapLimit(CONCURRENCY=32) extractEntryCached → 组装 + 排序 → 对账删缓存孤儿
+```
+
+四项优化：
+
+1. **range mtime 过滤**：stat 全量后按 range 窗口滤候选，week 默认只 extract 近期（378→84）。
+2. **early-exit**：`extractEntry` 读到首条 user 行即 break（首行多为 `queue-operation`，首条 user 在前 ~5-20 行）。实测 97% 文件无 ai-title、`messageCount` 中位数=1，故 title/messageCount 几乎无用——**删除 `messageCount`**，UI 实际显示 firstMessage（与参考实现 hapi 的 `getResumeSessionName`=firstUserMessage 一致）。
+3. **mtime+size 缓存**：`Map<slug, Map<id, {mtimeMs,size,partial}>>`，键与 range 解耦（range=all 首拉填满后，任意 range 切换命中缓存瞬间返回）；`activeSessionId` 不进缓存（每次用当前 activeMap 组装，不粘过期状态）；末尾对账删已不存在的文件孤儿。
+4. **有界并发**：`mapLimit` worker pool 替代无界 `Promise.all`，减 FS 打开竞争。
+
+### 10.3 实测（agents-remote 项目，378 JSONL）
+
+| 场景 | 耗时 | entries |
+|---|---|---|
+| 旧基线（无 range/缓存/early-exit） | 12.4s | 378 |
+| week 首拉（默认） | 2.0s | 84 |
+| all 首拉（全量） | 6.7s | 378 |
+| all 二次（缓存） | 0.069s | 378 |
+| biweekly（缓存+过滤） | 0.083s | 231 |
+| week 二次（缓存） | 0.087s | 84 |
+
+week 默认首拉 2.0s（84 近期文件 extract 的 openFile/readLines 固定开销 + stat 全量 378），比基线快 6×；二次起缓存 0.09s，切换瞬间。all 首拉全量无解（6.7s），但二次 0.07s。week 首拉高于早期预估 <1s，主因是 Bun `FileHandle.readLines` async 迭代器 + 84 文件 open/close 固定开销；若后续需进一步优化，可改 read 固定前 N KB + split 行替代 readLines 迭代器。

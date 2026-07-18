@@ -1,4 +1,4 @@
-import { Fragment, type CSSProperties, type ReactNode, useMemo } from "react";
+import { Fragment, type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
@@ -48,7 +48,8 @@ import {
   useTerminalDetail,
   VIEW_LABEL_KEY,
 } from "./instance-area";
-import { HistoryList } from "./history-list";
+import type { AgentHistoryRange } from "@agents-remote/shared";
+import { HistoryList, HistoryRangeControl } from "./history-list";
 import { SessionTable, type TableColumn } from "./workbench-table";
 import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
 import { FileTabPreview } from "../files/file-preview-panel";
@@ -639,6 +640,8 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
+  // history tab 时间范围（受控，避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
+  const [range, setRange] = useState<AgentHistoryRange>("week");
   const [view, setView] = useAtom(workbenchViewAtom);
   const ctx: PluginContext = { projectKey: scope.key, focusId: undefined, sessionType: undefined };
   // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
@@ -736,7 +739,17 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
         ) : activeTab === "history" ? (
           <div className="h-full overflow-y-auto p-3 pb-24 lg:pb-3">
-            <HistoryList focusId={undefined} projectName={scope.key} showLabel={false} />
+            {/* range 控件置顶（移动整页滚动内可接受），周/半月/全部默认周。 */}
+            <div className="mb-2">
+              <HistoryRangeControl onChange={setRange} value={range} />
+            </div>
+            <HistoryList
+              focusId={undefined}
+              onRangeChange={setRange}
+              projectName={scope.key}
+              range={range}
+              showLabel={false}
+            />
           </div>
         ) : (
           <Fragment>

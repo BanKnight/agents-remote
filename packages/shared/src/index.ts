@@ -469,6 +469,12 @@ export type AgentSessionMessagesResponse = {
 
 // -- Agent History --
 
+/**
+ * 历史时间范围过滤器。默认 `week`（7 天）——大项目（数百 session）默认只列近期，避免全量
+ * 扫描慢；`biweekly`=15 天；`all`=全量。服务端按 JSONL 文件 mtime 过滤。
+ */
+export type AgentHistoryRange = "week" | "biweekly" | "all";
+
 export type AgentHistoryEntry = {
   /** Claude CLI session UUID (JSONL filename without extension) */
   claudeSessionId: string;
@@ -480,8 +486,6 @@ export type AgentHistoryEntry = {
   startedAt: string | null;
   /** ISO timestamp from file mtime */
   lastActivityAt: string | null;
-  /** Approximate number of user turns */
-  messageCount: number;
   /** JSONL session file size in bytes */
   fileSize: number;
   /** Whether an active agent instance is linked to this Claude session */
@@ -492,6 +496,8 @@ export type AgentHistoryEntry = {
 
 export type ListAgentHistoryResponse = {
   entries: AgentHistoryEntry[];
+  /** 回显当前 range（防御 query param 被中间层裁剪） */
+  range: AgentHistoryRange;
 };
 
 export type ListTerminalSessionsResponse = {

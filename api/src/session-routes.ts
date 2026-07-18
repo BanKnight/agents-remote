@@ -2,6 +2,7 @@ import { open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
+  AgentHistoryRange,
   AgentSessionMessagesResponse,
   CloseAgentSessionResponse,
   CloseTerminalSessionResponse,
@@ -39,10 +40,11 @@ export const handleSessionRoutes = async (
   const historyMatch = matchAgentHistoryRoute(url.pathname);
   if (historyMatch && request.method === "GET") {
     try {
+      const range = parseHistoryRange(url.searchParams.get("range"));
       const project = await resolveProjectPath(projectsRoot, historyMatch.projectName);
       const activeMap = await registry.getActiveClaudeSessionMap(project.name);
-      const entries = await listAgentHistory(project.path, activeMap);
-      const response: ListAgentHistoryResponse = { entries };
+      const entries = await listAgentHistory(project.path, activeMap, range);
+      const response: ListAgentHistoryResponse = { entries, range };
       return Response.json(response);
     } catch (error) {
       if (error instanceof ProjectPathError) {
@@ -328,6 +330,14 @@ const handleTerminalSessionRoute = async (
 
   return undefined;
 };
+
+const HISTORY_RANGES: readonly AgentHistoryRange[] = ["week", "biweekly", "all"];
+
+/** 解析 ?range= 查询参数：白名单校验，缺省/非法 → "week"（默认近期，避免大项目全量扫描慢）。 */
+const parseHistoryRange = (value: string | null): AgentHistoryRange =>
+  value && (HISTORY_RANGES as readonly string[]).includes(value)
+    ? (value as AgentHistoryRange)
+    : "week";
 
 const matchAgentHistoryRoute = (pathname: string) => {
   const segments = pathname.split("/").filter(Boolean);

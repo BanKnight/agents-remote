@@ -64,7 +64,10 @@ export const zh: Record<TranslationKey, string> = {
   "project.historyEmpty": "暂无会话历史",
   "project.historyEmptyDesc": "首次对话后，Claude CLI 会话历史将在此处显示。",
   "project.historyResuming": "正在恢复...",
-  "project.historyTurns": "{{count}} 轮",
+  "project.historyRangeAria": "历史时间范围",
+  "project.historyRangeWeek": "周",
+  "project.historyRangeBiweekly": "半月",
+  "project.historyRangeAll": "全部",
   "project.historyActive": "活跃",
 
   // ── Session Detail ───────────────────────────────────────────

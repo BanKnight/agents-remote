@@ -64,7 +64,10 @@ export const en = {
   "project.historyEmptyDesc":
     "Claude CLI session history will appear here after your first conversation.",
   "project.historyResuming": "Resuming...",
-  "project.historyTurns": "{{count}} turns",
+  "project.historyRangeAria": "History time range",
+  "project.historyRangeWeek": "Week",
+  "project.historyRangeBiweekly": "2 Weeks",
+  "project.historyRangeAll": "All",
   "project.historyActive": "Active",
 
   // ── Session Detail ───────────────────────────────────────────

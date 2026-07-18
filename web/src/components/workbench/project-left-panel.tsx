@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from "react";
-import type { GitDiffScope } from "@agents-remote/shared";
+import { useMemo, useState, type ReactNode } from "react";
+import type { AgentHistoryRange, GitDiffScope } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import {
   type WorkbenchMiddleTab,
@@ -8,7 +8,7 @@ import {
 } from "../../routes/workbench-model";
 import { buildOverviewTabs } from "./right-panel-plugin";
 import { TabButton } from "./right-panel-tabs";
-import { HistoryList } from "./history-list";
+import { HistoryList, HistoryRangeControl } from "./history-list";
 import { FilesLeftPanel } from "../files/files-left-panel";
 import { GitChangesList } from "../git/git-diff-viewer";
 
@@ -55,6 +55,8 @@ export function ProjectLeftPanel({
   focusId,
 }: ProjectLeftPanelProps) {
   const { t } = useT();
+  // history tab 时间范围（受控，父级持有避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
+  const [range, setRange] = useState<AgentHistoryRange>("week");
 
   // Phase 3 middle tab（仅 project scope）：tab 列表（实例/历史/文件/git，includeHistory=true）+
   // resolvedTab。global scope middleTabs=[]（无 tab bar）。ctx 由 scope 决定，scope/t 变才重算。
@@ -79,7 +81,15 @@ export function ProjectLeftPanel({
   let middleBody: ReactNode = overview;
   if (scope.kind === "project") {
     if (resolvedTab === "history") {
-      middleBody = <HistoryList focusId={focusId} projectName={scope.key} showLabel={false} />;
+      middleBody = (
+        <HistoryList
+          focusId={focusId}
+          onRangeChange={setRange}
+          projectName={scope.key}
+          range={range}
+          showLabel={false}
+        />
+      );
     } else if (resolvedTab === "files") {
       middleBody = <FilesLeftPanel onOpenFile={onOpenFile} projectName={scope.key} />;
     } else if (resolvedTab === "git") {
@@ -115,6 +125,13 @@ export function ProjectLeftPanel({
             />
           ))}
         </nav>
+      ) : null}
+      {scope.kind === "project" && resolvedTab === "history" ? (
+        // history tab range 控件（sticky header，在滚动区外；周/半月/全部，默认周——大项目
+        // 默认只列近 7 天，避免全量扫描慢）。border 与 nav 一致用 on-surface/5 轻分隔。
+        <div className="shrink-0 border-b border-on-surface/5 bg-surface px-3 py-2">
+          <HistoryRangeControl onChange={setRange} value={range} />
+        </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-hidden">
         {scope.kind === "global" ? overview : middleBody}
