@@ -567,8 +567,6 @@ export function Claude2Chat({
                               availablePermissionModes={availablePermissionModes}
                               projectName={projectName}
                               sessionId={sessionId}
-                              aiTitle={aiTitle}
-                              agentName={agentName}
                               compactStatus={compactStatus}
                               pendingInteraction={pendingInteraction}
                               onCancel={storeAdapter.onCancel}
@@ -577,6 +575,18 @@ export function Claude2Chat({
                             />
                           </ComposerPrimitive.Root>
                         </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                        {aiTitle ? (
+                          <div className="mt-1 flex justify-end px-1">
+                            <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant-soft/80 whitespace-nowrap">
+                              {agentName ? (
+                                <span className="mr-1.5 font-semibold text-assistant/60">
+                                  {agentName}
+                                </span>
+                              ) : null}
+                              {aiTitle}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </ThreadPrimitive.Root>
@@ -3509,8 +3519,6 @@ function ComposerWithInterrupt({
   availablePermissionModes,
   projectName,
   sessionId,
-  aiTitle,
-  agentName,
   compactStatus,
   pendingInteraction,
   onCancel,
@@ -3525,8 +3533,6 @@ function ComposerWithInterrupt({
   availablePermissionModes: string[];
   projectName: string;
   sessionId: string;
-  aiTitle?: string | null;
-  agentName?: string | null;
   compactStatus: CompactStatus;
   pendingInteraction: boolean;
   onCancel?: () => void;
@@ -3597,23 +3603,11 @@ function ComposerWithInterrupt({
 
   return (
     <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
-      {aiTitle ? (
-        <span className="pointer-events-none absolute right-3 top-2 z-10 max-w-[45%] select-none truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant-soft/80 whitespace-nowrap">
-          {agentName ? (
-            <span className="mr-1.5 text-[0.55rem] font-semibold text-assistant/60">
-              {agentName}
-            </span>
-          ) : null}
-          {aiTitle}
-        </span>
-      ) : null}
       <ComposerPrimitive.Input
         placeholder={blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")}
         disabled={blocked}
         enterKeyHint="send"
-        className={`block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none ${
-          aiTitle ? "pr-24" : ""
-        }`}
+        className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
         rows={1}
         onKeyDown={(e) => {
           // Record key for slash command's Enter-submit (see Action.onExecute).
