@@ -231,9 +231,10 @@ export type GitChangesListProps = {
 
 /**
  * 左栏 git 变更列表（middle tab [git]，设计 workbench-layout-fix 阶段 3）。自带 listProjectGitDiff
- * query（独立 queryScope 段），渲染 GitFileList 撑满左栏（无 scope chips / diff 预览——点文件透出
- * onSelectGitFile 开中栏 git diff tab）。与 GitDiffPanel（右栏 inspection 自包含 list+diff）是两套
- * 独立消费：左栏 middle tab 只列表、中栏只 diff。
+ * query（独立 queryScope 段），顶部渲染 GitScopeChips 统计（与 GitDiffPanel 同源单源复用）+
+ * GitFileList 文件列表。点文件透出 onSelectGitFile 开中栏 git diff tab（onOpenGitFile）。与
+ * GitDiffPanel（右栏/移动端自包含 list+diff）共用 GitFileList + GitScopeChips，但本组件不带 diff——
+ * 左栏只列表，diff 在中栏 kind:"git" tab 展示。
  */
 export function GitChangesList({
   projectName,
@@ -245,11 +246,24 @@ export function GitChangesList({
     queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
     queryFn: () => listProjectGitDiff(projectName),
   });
+  const gitSummary =
+    diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
 
   if (diff.isLoading) {
+    // mirror loaded 布局（顶部 chips 行 + 文件列表），避免加载完从无 chips 跳到有 chips 的视觉断层。
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        <ListRowSkeleton count={4} />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div aria-hidden="true" className="shrink-0 border-b border-neutral-line/40 px-3.5 py-3">
+          <div className="flex flex-wrap gap-1.5">
+            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
+            <span className="skeleton-shimmer h-6 w-20 rounded-full" />
+            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
+            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+          <ListRowSkeleton count={4} />
+        </div>
       </div>
     );
   }
@@ -276,12 +290,17 @@ export function GitChangesList({
     );
   }
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-      <GitFileList
-        files={diff.data?.files ?? []}
-        onSelectFile={onSelectGitFile}
-        selectedFile={selectedFile}
-      />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 border-b border-neutral-line/40 px-3.5 py-3">
+        <GitScopeChips summary={gitSummary} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <GitFileList
+          files={diff.data?.files ?? []}
+          onSelectFile={onSelectGitFile}
+          selectedFile={selectedFile}
+        />
+      </div>
     </div>
   );
 }
@@ -398,6 +417,38 @@ function GitScopeChip({
   );
 }
 
+/** scope chips 统计行（All/Modified/Added/Deleted 计数）。GitDiffPanel（右栏/移动端）与
+ * GitChangesList（左栏列表）共用此组件，统计渲染单源——桌面左栏与移动端一致。 */
+function GitScopeChips({ summary }: { summary?: GitSummary }) {
+  const { t } = useT();
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <GitScopeChip
+        label={t("git.allLabel")}
+        count={(summary?.staged ?? 0) + (summary?.worktree ?? 0)}
+      />
+      <GitScopeChip
+        label={t("git.modifiedLabel")}
+        shortLabel={t("git.modifiedShort")}
+        count={summary?.modified ?? 0}
+        tone="warning"
+      />
+      <GitScopeChip
+        label={t("git.addedLabel")}
+        shortLabel={t("git.addedShort")}
+        count={summary?.added ?? 0}
+        tone="success"
+      />
+      <GitScopeChip
+        label={t("git.deletedLabel")}
+        shortLabel={t("git.deletedShort")}
+        count={summary?.deleted ?? 0}
+        tone="danger"
+      />
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────
 
 export type GitDiffPanelProps = {
@@ -487,32 +538,7 @@ export function GitDiffPanel({
   const changedFiles = diff.data?.files ?? [];
   const isFileSelected = selectedFile !== undefined;
 
-  const scopeChips = (
-    <div className="flex flex-wrap gap-1.5">
-      <GitScopeChip
-        label={t("git.allLabel")}
-        count={(gitSummary?.staged ?? 0) + (gitSummary?.worktree ?? 0)}
-      />
-      <GitScopeChip
-        label={t("git.modifiedLabel")}
-        shortLabel={t("git.modifiedShort")}
-        count={gitSummary?.modified ?? 0}
-        tone="warning"
-      />
-      <GitScopeChip
-        label={t("git.addedLabel")}
-        shortLabel={t("git.addedShort")}
-        count={gitSummary?.added ?? 0}
-        tone="success"
-      />
-      <GitScopeChip
-        label={t("git.deletedLabel")}
-        shortLabel={t("git.deletedShort")}
-        count={gitSummary?.deleted ?? 0}
-        tone="danger"
-      />
-    </div>
-  );
+  const scopeChips = <GitScopeChips summary={gitSummary} />;
 
   const fileList = (
     <GitFileList
