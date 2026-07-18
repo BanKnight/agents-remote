@@ -9,7 +9,7 @@ import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
-import { MobileSkillsOverview } from "../../routes/SkillsRoute";
+import { MobileSkillsOverview, SkillTabPreview } from "../../routes/SkillsRoute";
 import {
   ensureTabOpenLeaf,
   filterWorkbenchViews,
@@ -20,6 +20,7 @@ import {
   type WorkbenchView,
   inferSessionTypeFromId,
   parseFileTabId,
+  parseSkillTabId,
   splitFilePath,
   useWorkbenchLayout,
   useWorkbenchNavigate,
@@ -124,6 +125,21 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
     );
   }
 
+  // skill focus（focusId 形如 skill_tdd，name=skill 名）：移动端 skill 详情对标 file focus，
+  // 用 MobileSkillFocus 浮窗式只读预览（SkillTabPreview SKILL.md markdown + 顶部返回/✕ header，
+  // 复用 MobileTabHeader 同款结构）。详情只读（区别于 FileTabPreview 可编辑）。
+  const skillName = parseSkillTabId(focusId);
+  if (skillName !== null) {
+    return (
+      <main
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        style={mainStyle}
+      >
+        <MobileSkillFocus name={skillName} />
+      </main>
+    );
+  }
+
   return (
     <main
       className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
@@ -172,6 +188,45 @@ function MobileFileFocus({ path }: { path: string }) {
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FileTabPreview path={path} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 移动端 skill 聚焦浮窗（对标 MobileFileFocus，设计 §6 决策 3 同款范式）：`/skills/skill/$name`
+ * URL 在移动端用此组件打开。单行 header（◄ 返回 /skills + skill name + ✕）+ SkillTabPreview
+ * 只读 SKILL.md 预览（详情只读，区别于 FileTabPreview 可编辑）。返回 / ✕ = navigate 回 `/skills`
+ * 技能管理列表（对标 MobileFileFocus 回文件树）。复用 MobileTabHeader 保持同款 header 结构。
+ */
+function MobileSkillFocus({ name }: { name: string }) {
+  const { t } = useT();
+  const navigate = useNavigate();
+  const back = () => {
+    void navigate({ to: "/skills" });
+  };
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MobileTabHeader
+        activeTabId="skill"
+        back={{ ariaLabelKey: "skills.backToSkills", onClick: back }}
+        onTabSelect={() => {
+          /* skill focus 单 tab，无切换 */
+        }}
+        tabs={[{ id: "skill" as const, label: name }]}
+        trailing={
+          <button
+            aria-label={t("session.close")}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            onClick={back}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="close" />
+          </button>
+        }
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <SkillTabPreview name={name} />
       </div>
     </div>
   );

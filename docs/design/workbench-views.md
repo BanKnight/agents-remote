@@ -131,6 +131,20 @@ table 视图（`SessionTable`）行交互与列宽三条契约（与 grid 卡片
 - **初始态**：进入 scope 时，右工作区默认空态（§14），不自动铺首个实例——用户主动点左总览卡片或拖卡片才打开（避免「最小化最后 tab → 又被自动重开」的循环）。URL 带 `focusId` 进入时，由 focus effect 兜底在活动 group 开对应 tab。scope 无活跃实例 → 右工作区空态（§14）。
 - **活动 group**：同一时刻有且仅有一个活动 group（`activeGroupId`，显式存布局）。点 group 任意处激活：点 tab 栏某 tab = 切该 tab 为 active 并激活该 group；点 group 其他空白处 = 仅激活该 group，不改 active tab。URL `focusId` = 活动 group 的活动 tab sessionId，用于反查与右栏 inspection 跟随。
 
+### 7.1.1 中栏 tab 的 4 种 kind（WorkbenchPanelRef）
+
+中栏 tab 不止 session 一种——`WorkbenchPanelRef` 是 4 种 kind 的联合，统一走 group+tab 两级模型 + focus URL + PanelRouter 分发，差异只在标识/URL/内容/生命周期：
+
+| kind | 标识字段 | tabId | focus URL | 内容（PanelRouter 分发） | 生命周期 |
+|------|----------|-------|-----------|--------------------------|----------|
+| session | agent/terminal 实例 | `sessionId` | `/projects/$key/session/$id` 等 | output + 输入（按 sessionType 分发 AgentTerminalPanel/TerminalPanel/ChatPanel） | 有（kill 后 stale-prune，§7.4） |
+| file | 文件全路径 | `file_${全路径}` | `/files/file/$`（全局）/`/projects/$key/file/$`（项目） | `FileTabPreview` 可编辑预览（source/render toggle + save） | 无（刷新保留，prune 跳过） |
+| git | git diff 文件 | `git_${scope}/${path}` | `/projects/$key/git/$` + `?gitScope` | `GitFileDiffPanel` 只读 unified diff | 无 |
+| skill | skill 名 | `skill_${name}` | `/skills/skill/$` | `SkillTabPreview` 只读 SKILL.md 预览 | 无 |
+
+- **session tab 是主语义**（实例 output）；file/git/skill tab 是辅助浏览——无 session 生命周期，kill 不 prune、刷新保留（prune effect 对 `t.kind === file/git/skill` 跳过，§7.4）。
+- **skill tab**（第 4 种，2026-07-18 新增）：技能市场 Manage tab 点已装 skill 行 → 中栏开 skill tab，完整对标 file tab 模式（focus effect 开/激活 tab + `/skills/skill/$` focus URL + PanelRouter 分发 + 移动 MobileSkillFocus）。`SkillPanelRef = {kind:"skill"; name}`，agent 维度不进 tabId（当前单 agent claude-code，`DEFAULT_SKILL_AGENT`，YAGNI）；`SkillTabPreview` 只读渲染本地 SKILL.md（`useSkillPreview` + `MarkdownString`，无编辑无保存，区别于 FileTabPreview 可编辑）。移动端 `MobileSkillFocus` 对标 `MobileFileFocus`（浮窗式 focus 全屏主体，非 Radix Dialog）。leftMode 继承 `?leftMode`（从 /skills 进来=skills 保技能管理左栏，中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。
+
 ### 7.2 tab 操作语义表（核心）
 
 | 操作 | 触发 | 语义 | session 存活 |
@@ -203,7 +217,7 @@ table 视图（`SessionTable`）行交互与列宽三条契约（与 grid 卡片
 - **maximize（group 级）**：点 group header 的 ▢ → 该 leaf 独占右工作区（其他 leaf `hidden` 不 unmount，保 session），group 内 tab 栏仍在可切 tab；再点 ▢ 还原（树结构未动，布局完整还原）。
 - **最小化 tab**：点 tab ✕ → `removeTabFromLeaf`（session 存活）；若是该 group 最后一个 tab → group 消失（`removeLeaf`，含子树提升/同方向合并），`activeGroupId` 回退前序首个 leaf。
 - **关闭实例（kill）**：左总览卡片 close / tab 右键菜单 → `useCloseSession`（confirm → close API → 失效缓存）。实例从左总览消失（session 已结束）。
-- **stale-tab prune**（kill 后清理孤儿 tab）：kill session 后该 session 的 tab 不会自动从 layout 消失（V3 localStorage 持久化，刷新也不清）。InstanceArea 监听活跃实例集（refs/candidates）变化，遍历树所有 leaf 的 tab，sessionId 不在活跃集 → `removeTabFromLeaf` 清理（可能触发 `removeLeaf` 子树提升/合并）；`focusId` 指向被清 tab 时回退到剩余活动 tab（`activeTabRefLeaf` 兜底）或清空回非聚焦态。**prune gate 在 `isLoaded`**：活跃实例集来自异步 query（`useScopeInstanceOrder` 暴露 `isLoaded`），prune effect 在 query 未 settle（`isLoaded=false`）前直接跳过——否则刷新后 refs 还空（上下文不足）会把全部持久化 tab 误判 stale 清光、把空布局写回 localStorage，持久化恢复失效。
+- **stale-tab prune**（kill 后清理孤儿 tab）：kill session 后该 session 的 tab 不会自动从 layout 消失（V3 localStorage 持久化，刷新也不清）。InstanceArea 监听活跃实例集（refs/candidates）变化，遍历树所有 leaf 的 tab（**跳过 file/git/skill tab**——它们无 sessionId、无 session 生命周期，见 §7.1.1），sessionId 不在活跃集 → `removeTabFromLeaf` 清理（可能触发 `removeLeaf` 子树提升/合并）；`focusId` 指向被清 tab 时回退到剩余活动 tab（`activeTabRefLeaf` 兜底）或清空回非聚焦态。**prune gate 在 `isLoaded`**：活跃实例集来自异步 query（`useScopeInstanceOrder` 暴露 `isLoaded`），prune effect 在 query 未 settle（`isLoaded=false`）前直接跳过——否则刷新后 refs 还空（上下文不足）会把全部持久化 tab 误判 stale 清光、把空布局写回 localStorage，持久化恢复失效。
 
 > 三种「移出」语义区分：**最小化**（tab ✕）= 移出工作区但 session 存活，可重新点开；**最大化**（group ▢）= 临时独占，其他 group 隐藏可还原；**关闭**（卡片 close / 右键）= kill session，不可恢复。
 

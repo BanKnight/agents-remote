@@ -40,6 +40,7 @@ import {
   inferSessionTypeFromId,
   parseFileTabId,
   parseGitTabId,
+  parseSkillTabId,
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
@@ -203,6 +204,10 @@ function WorkbenchContent({
       if (filePath !== null) {
         return ensureTabOpenLeaf(prev, { kind: "file", path: filePath });
       }
+      const skillName = parseSkillTabId(focusId);
+      if (skillName !== null) {
+        return ensureTabOpenLeaf(prev, { kind: "skill", name: skillName });
+      }
       const gitParsed = parseGitTabId(focusId);
       if (gitParsed !== null) {
         if (scope.kind !== "project") return prev;
@@ -237,7 +242,7 @@ function WorkbenchContent({
       for (const t of leaf.tabs) {
         // file/git tab 不参与 stale prune（无生命周期，刷新保留，设计 §6 决策 19 / 阶段 3）；
         // session tab 用 sessionId 判定。
-        if (t.kind === "file" || t.kind === "git") continue;
+        if (t.kind === "file" || t.kind === "git" || t.kind === "skill") continue;
         if (!activeIds.has(t.sessionId)) stale.push({ leafId: leaf.id, tabId: t.sessionId });
       }
     }
@@ -403,6 +408,33 @@ function WorkbenchContent({
     },
     [update, navigateToGitFile],
   );
+  // skill tab focus URL（对标 /files/file/$，skill 为第 4 种 WorkbenchPanelRef kind）：/skills/skill/$
+  // splat 捕获 skill name。leftMode 继承 ?leftMode 透传（从 /skills 进来=skills 保技能管理左栏，
+  // 中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。
+  const navigateToSkill = useCallback(
+    (name: string) => {
+      void navigate({
+        to: "/skills/skill/$",
+        params: { _splat: name },
+        search: {
+          rightTab,
+          tab: tabFromUrl,
+          view: viewFromUrl,
+          ...(leftMode !== "auto" ? { leftMode } : {}),
+        },
+      });
+    },
+    [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
+  );
+  // Manage tab 点已装 skill 行 → 中栏开/激活 skill tab + focus（对标 onOpenFile）。skill ref
+  //（kind:"skill", name）全局去重（tabId=skill_${name}），无 project scope gate（同 file）。
+  const onOpenSkill = useCallback(
+    (name: string) => {
+      update((prev) => ensureTabOpenLeaf(prev, { kind: "skill", name }));
+      void navigateToSkill(name);
+    },
+    [update, navigateToSkill],
+  );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
   const onCloseTab = useCallback(
@@ -418,9 +450,19 @@ function WorkbenchContent({
           void navigateToFile(projectName, path);
         } else if (active?.kind === "git")
           void navigateToGitFile(active.projectName, active.scope, active.path);
+        else if (active?.kind === "skill") void navigateToSkill(active.name);
       }
     },
-    [layout, update, focusId, navigateWorkbench, navigateToFile, navigateToGitFile, scope],
+    [
+      layout,
+      update,
+      focusId,
+      navigateWorkbench,
+      navigateToFile,
+      navigateToGitFile,
+      navigateToSkill,
+      scope,
+    ],
   );
   const onSelectTab = useCallback(
     (groupId: string, tabId: string) => {
@@ -441,9 +483,22 @@ function WorkbenchContent({
         void navigateToGitFile(ref.projectName, ref.scope, ref.path);
         return;
       }
+      if (ref?.kind === "skill") {
+        void navigateToSkill(ref.name);
+        return;
+      }
       if (ref) navigateSession(ref);
     },
-    [update, focusId, layout, scope, navigateToFile, navigateToGitFile, navigateSession],
+    [
+      update,
+      focusId,
+      layout,
+      scope,
+      navigateToFile,
+      navigateToGitFile,
+      navigateToSkill,
+      navigateSession,
+    ],
   );
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
@@ -551,7 +606,7 @@ function WorkbenchContent({
         tab={tab}
       />
     ) : leftMode === "skills" ? (
-      <SkillsPanel />
+      <SkillsPanel onOpenSkill={onOpenSkill} />
     ) : (
       <GlobalFilesOverview onOpenFile={onOpenFile} />
     );

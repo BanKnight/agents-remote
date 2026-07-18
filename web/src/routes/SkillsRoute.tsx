@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { SkillAgent, SkillMarketEntry } from "@agents-remote/shared";
 
 import { useT } from "../i18n";
@@ -24,6 +25,12 @@ import {
   useUninstallSkill,
 } from "../hooks/skills";
 
+/**
+ * 默认 skill agent（ManageTab / SkillTabPreview 共用）。当前固定 claude-code——SkillsPanel 单
+ * agent，tabId 不编码 agent（`skill_${name}` 足够去重）；未来支持 codex 同名 skill 再扩展。
+ */
+export const DEFAULT_SKILL_AGENT: SkillAgent = "claude-code";
+
 type SkillTab = "discover" | "manage" | "sources";
 
 /**
@@ -37,13 +44,17 @@ type SkillTab = "discover" | "manage" | "sources";
  * discover 时 useSkillSearch(query) 命中 TanStack 缓存，搜索结果保留；manage 的 useInstalledSkills
  * 切回 refetch（staleTime 0）= "必要项刷新"。装/卸后 server 遍历活跃 session 发 /reload-skills，
  * slash catalog 经 WS 广播自动刷新。
+ *
+ * `onOpenSkill` 依赖注入（仿 GlobalFilesOverview.onOpenFile）：桌面 WorkbenchContent 注入
+ * 「开中栏 skill tab + focus」，移动 MobileSkillsOverview 注入「navigate /skills/skill/$」
+ *（移动无中栏，开 focus 主体）。Manage tab 点已装 skill 行触发，详情在中栏/focus 打开（非 inline）。
  */
-export function SkillsPanel() {
+export function SkillsPanel({ onOpenSkill }: { onOpenSkill: (name: string) => void }) {
   const { t } = useT();
   const [tab, setTab] = useState<SkillTab>("discover");
   // 提升至 parent：tab 切换 SkillsPanel 不 unmount，query 保留 → 搜索结果 memory。
   const [query, setQuery] = useState("");
-  const agent: SkillAgent = "claude-code";
+  const agent: SkillAgent = DEFAULT_SKILL_AGENT;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -64,7 +75,7 @@ export function SkillsPanel() {
           {tab === "discover" ? (
             <DiscoverTab agent={agent} query={query} setQuery={setQuery} />
           ) : null}
-          {tab === "manage" ? <ManageTab agent={agent} /> : null}
+          {tab === "manage" ? <ManageTab agent={agent} onOpenSkill={onOpenSkill} /> : null}
           {tab === "sources" ? <SourcesTab /> : null}
         </div>
       </div>
@@ -78,11 +89,17 @@ export function SkillsPanel() {
  */
 export function MobileSkillsOverview() {
   const { t } = useT();
+  const navigate = useNavigate();
+  // 移动无中栏 tab 树：点已装 skill 行 → navigate /skills/skill/$name 开 focus 主体
+  //（MobileSkillFocus，对标 MobileFileFocus）。桌面 WorkbenchContent 注入的开中栏 tab 实现不适用。
+  const onOpenSkill = (name: string) => {
+    void navigate({ to: "/skills/skill/$", params: { _splat: name } });
+  };
   return (
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("skills.title")} />
       <div className="min-h-0 flex-1">
-        <SkillsPanel />
+        <SkillsPanel onOpenSkill={onOpenSkill} />
       </div>
     </div>
   );
@@ -230,12 +247,16 @@ function InstallConfirmDialog({
   );
 }
 
-function ManageTab({ agent }: { agent: SkillAgent }) {
+function ManageTab({
+  agent,
+  onOpenSkill,
+}: {
+  agent: SkillAgent;
+  onOpenSkill: (name: string) => void;
+}) {
   const { t } = useT();
   const installed = useInstalledSkills(agent);
   const uninstall = useUninstallSkill();
-  const [previewName, setPreviewName] = useState<string | null>(null);
-  const preview = useSkillPreview(previewName, agent);
 
   if (installed.isLoading) {
     // 骨架对齐 ManageTab 真实行结构：无 marker（ListRow 未传 marker）+ 右 ActionButton 文字按钮
@@ -263,19 +284,58 @@ function ManageTab({ agent }: { agent: SkillAgent }) {
               </ActionButton>
             }
             key={s.name}
-            onClick={() => setPreviewName(previewName === s.name ? null : s.name)}
-            selected={previewName === s.name}
+            onClick={() => onOpenSkill(s.name)}
             subtitle={s.path}
             title={s.name}
           />
         ))}
       </ListGroup>
-      {previewName && preview.data ? (
-        <div className="rounded-xl border border-neutral-line/40 bg-surface p-4">
-          <MarkdownString text={preview.data.content} />
-        </div>
-      ) : null}
     </div>
+  );
+}
+
+/**
+ * skill 详情预览面板（中栏 skill tab + 移动 MobileSkillFocus body 共用，对标 FileTabPreview）。
+ * 只读渲染本地 SKILL.md（useSkillPreview → MarkdownString）——无编辑无保存（区别于 FileTabPreview
+ * 可编辑）。自带 skill name 标题栏 + loading/error/内容态；桌面由 PanelRouter 渲染、移动由
+ * MobileSkillFocus 包 header 后渲染 body。顶层组件（rerender-no-inline-components），不嵌套定义。
+ */
+export function SkillTabPreview({ name }: { name: string }) {
+  const { t } = useT();
+  const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT);
+
+  return (
+    <section
+      aria-label={name}
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-raised/25"
+    >
+      <div className="grid h-11 shrink-0 items-center border-b border-neutral-line/40 px-3.5">
+        <h4 className="min-w-0 truncate font-mono text-sm font-semibold text-on-surface">{name}</h4>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {preview.isLoading ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
+            <span className="relative flex h-3 w-3" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+            </span>
+            <span className="text-xs font-semibold text-on-surface-muted">
+              {t("skills.previewLoading")}
+            </span>
+          </div>
+        ) : preview.error ? (
+          <div className="flex flex-1 items-center justify-center p-4">
+            <p className="rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+              {preview.error.message}
+            </p>
+          </div>
+        ) : preview.data ? (
+          <div className="p-4">
+            <MarkdownString text={preview.data.content} />
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

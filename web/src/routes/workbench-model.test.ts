@@ -28,6 +28,7 @@ import {
   inferSessionTypeFromId,
   migrateLegacyLayout,
   migrateV2ToV3,
+  parseSkillTabId,
   parseWorkbenchScope,
   rankGlobalInstances,
   removeLeaf,
@@ -67,6 +68,25 @@ test("inferSessionTypeFromId reads agent_/terminal_ prefix", () => {
   expect(inferSessionTypeFromId("agent_abc")).toBe("agent");
   expect(inferSessionTypeFromId("terminal_abc")).toBe("terminal");
   expect(inferSessionTypeFromId("unknown_abc")).toBeUndefined();
+});
+
+test("tabIdOf: session/file/git/skill 各 kind 编码（skill = skill_${name}，第 4 种 tab kind）", () => {
+  expect(tabIdOf(ref("p", "a"))).toBe("a");
+  expect(tabIdOf({ kind: "file", path: "p1/src/index.ts" })).toBe("file_p1/src/index.ts");
+  expect(tabIdOf({ kind: "git", projectName: "p1", scope: "worktree", path: "a.ts" })).toBe(
+    "git_worktree/a.ts",
+  );
+  // skill tab：tabId = skill_${name}（agent 维度不编码，当前单 agent claude-code，YAGNI）
+  expect(tabIdOf({ kind: "skill", name: "tdd" })).toBe("skill_tdd");
+});
+
+test("parseSkillTabId: skill_${name} → name；非 skill tabId → null", () => {
+  expect(parseSkillTabId("skill_tdd")).toBe("tdd");
+  expect(parseSkillTabId("skill_my-skill")).toBe("my-skill");
+  // 非 skill tabId（session/file/git）→ null
+  expect(parseSkillTabId("agent_abc")).toBeNull();
+  expect(parseSkillTabId("file_p1/src/index.ts")).toBeNull();
+  expect(parseSkillTabId("git_worktree/a.ts")).toBeNull();
 });
 
 test("validateWorkbenchSearch whitelists rightTab, omits key otherwise", () => {
@@ -177,6 +197,26 @@ test("deriveWorkbenchRouteContext: /files 全局文件总览 → scope global + 
     focusId: undefined,
     leftMode: "files",
   });
+});
+
+test("deriveWorkbenchRouteContext: skill focus /skills/skill/$ → focusId=skill_${name} + leftMode 继承 search（对标 /files/file/$）", () => {
+  // _splat = skill name，focusId = skill_${name}（与 tabIdOf 一致）。scope=global。
+  // leftMode 继承 search（从 /skills 进来=skills 保技能管理左栏，中栏 tab 切换不改左栏，VSCode 式）。
+  expect(deriveWorkbenchRouteContext(routeLeaf("/skills/skill/$", { _splat: "tdd" }))).toEqual({
+    scope: { kind: "global" },
+    focusId: "skill_tdd",
+  });
+  // 空 splat → 无 focus
+  expect(deriveWorkbenchRouteContext(routeLeaf("/skills/skill/$", { _splat: "" }))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+  });
+  // 透传 leftMode=skills（从 /skills 进来）→ leftMode skills（左栏保技能管理）
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/skills/skill/$", { _splat: "tdd" }, { leftMode: "skills" }),
+    ),
+  ).toEqual({ scope: { kind: "global" }, focusId: "skill_tdd", leftMode: "skills" });
 });
 
 test("splitFilePath: 全路径拆 projectName + 项目相对路径", () => {

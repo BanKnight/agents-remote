@@ -608,6 +608,8 @@ export const zh: Record<TranslationKey, string> = {
   "skills.preview": "预览",
   "skills.empty": "未找到技能",
   "skills.emptyInstalled": "暂无已安装技能",
+  "skills.previewLoading": "正在加载技能…",
+  "skills.backToSkills": "返回技能列表",
   "skills.installConfirmTitle": "安装技能",
   "skills.installConfirmBody": "技能将以完整 agent 权限运行。请仅安装你信任来源的技能。",
   "skills.installConfirmCta": "安装",

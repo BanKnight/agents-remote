@@ -137,6 +137,17 @@ const skillsRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
+// 全局 skill 详情 tab focus（对标 /files/file/$，同构）：/skills/skill/$ splat 捕获 skill name。
+// layout 解析 _splat 为 focusId=`skill_${name}`（useWorkbenchRouteContext，与 tabIdOf 一致）；
+// leftMode 继承 ?leftMode 透传值（从 /skills 进来=skills 保技能管理左栏，中栏 tab 切换不改左栏）。
+// 子路由不设 component——layout 渲染（桌面中栏 skill tab / 移动 MobileSkillFocus 主体），与其它
+// focus 子路由一致。
+const skillsSkillFocusRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/skills/skill/$",
+  validateSearch: validateWorkbenchSearch,
+});
+
 // 全局文件总览入口（设计 §6 决策 24 / workbench-stable-refactor review 收口）：`/files` 作为
 // workbench layout 子路由（非 rootRoute 平级）——桌面渲染 global 工作台 leftMode="files"（左栏
 // GlobalFilesOverview），移动经 MobileWorkbench 渲染 MobileFilesOverview（GlobalFilesOverview 主体）。
@@ -233,6 +244,7 @@ const routeTree = rootRoute.addChildren([
     globalFileFocusRoute,
     filesRoute,
     skillsRoute,
+    skillsSkillFocusRoute,
   ]),
   settingsRoute,
   agentSessionDetailRedirect,

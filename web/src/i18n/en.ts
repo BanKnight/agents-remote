@@ -614,6 +614,8 @@ export const en = {
   "skills.preview": "Preview",
   "skills.empty": "No skills found",
   "skills.emptyInstalled": "No installed skills",
+  "skills.previewLoading": "Loading skill…",
+  "skills.backToSkills": "Back to skills",
   "skills.installConfirmTitle": "Install skill",
   "skills.installConfirmBody":
     "Skills run with full agent permissions. Only install skills from sources you trust.",

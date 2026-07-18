@@ -387,6 +387,17 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       // 全局技能市场（对标 /files，一级页面）：scope=global + leftMode 强制 "skills"（左栏
       // SkillsPanel / 移动 MobileSkillsOverview）。无 focusId（技能管理整页，装/卸在左栏内完成）。
       return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "skills" };
+    case "/skills/skill/$": {
+      // 全局 skill 详情 tab focus（对标 /files/file/$，同构）：_splat = skill name。scope=global；
+      // leftMode **不强制**，继承 ...s 透传值——从 /skills 进来透传 skills 保技能管理左栏
+      //（中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。focusId=`skill_${name}`（与 tabIdOf 一致）。
+      const skillName = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "global" },
+        focusId: skillName ? `skill_${skillName}` : undefined,
+        ...s,
+      };
+    }
     case "/projects/session/$id":
       return { scope: { kind: "global" }, focusId: p.id, ...s };
     case "/projects/$key":
@@ -518,11 +529,23 @@ export type GitPanelRef = {
 };
 
 /**
- * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git tab 同处 group+tab。
- * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
- * file tab 的 tabId = `file_${path}`、git tab 的 tabId = `git_${scope}/${path}`（前缀互斥）。
+ * skill 详情面板引用（对标 FilePanelRef）。name = skill 名（如 `"tdd"`）——Manage tab 点已装
+ * skill 行开/激活中栏 skill tab，只读预览本地 SKILL.md。不带 agent 字段：当前 SkillsPanel 固定
+ * 单 agent，渲染层用 `DEFAULT_SKILL_AGENT`（"claude-code"），tabId=`skill_${name}` 足够去重；
+ * 未来支持 codex 同名 skill 再扩展（YAGNI）。
  */
-export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef | GitPanelRef;
+export type SkillPanelRef = {
+  kind: "skill";
+  name: string;
+};
+
+/**
+ * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git/skill tab 同处 group+tab。
+ * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
+ * file tab 的 tabId = `file_${path}`、git tab 的 tabId = `git_${scope}/${path}`、skill tab 的
+ * tabId = `skill_${name}`（前缀互斥）。
+ */
+export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef | GitPanelRef | SkillPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
 export type LegacyPanelRef = {
@@ -539,12 +562,18 @@ export type LegacyPanelRef = {
 export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "session") return ref.sessionId;
   if (ref.kind === "file") return `file_${ref.path}`;
+  if (ref.kind === "skill") return `skill_${ref.name}`;
   return `git_${ref.scope}/${ref.path}`;
 }
 
 /** 从 file tab id（`file_${path}`）反解全路径（含项目名前缀）；非 file tab id 返 null（路由 file focus 用）。 */
 export function parseFileTabId(tabId: string): string | null {
   return tabId.startsWith("file_") ? tabId.slice("file_".length) : null;
+}
+
+/** 从 skill tab id（`skill_${name}`）反解 skill name；非 skill tab id 返 null（路由 skill focus 用）。 */
+export function parseSkillTabId(tabId: string): string | null {
+  return tabId.startsWith("skill_") ? tabId.slice("skill_".length) : null;
 }
 
 /**
@@ -580,6 +609,7 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
   if (ref.kind === "file") return { kind: "file", path: ref.path };
   if (ref.kind === "git")
     return { kind: "git", projectName: ref.projectName, scope: ref.scope, path: ref.path };
+  if (ref.kind === "skill") return { kind: "skill", name: ref.name };
   return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
 }
 

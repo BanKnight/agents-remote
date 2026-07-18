@@ -62,6 +62,7 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
+import { SkillTabPreview } from "../../routes/SkillsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type PluginContext } from "./right-panel-plugin";
@@ -572,6 +573,11 @@ export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   if (panelRef.kind === "file") {
     return <FileTabPreview path={panelRef.path} />;
   }
+  // skill tab 渲染 SkillTabPreview（只读 SKILL.md 预览，对标 FileTabPreview）。name 来自 tab ref；
+  // SkillTabPreview 内部用 DEFAULT_SKILL_AGENT 调 useSkillPreview。中栏 tab 关闭走 tab ✕。
+  if (panelRef.kind === "skill") {
+    return <SkillTabPreview name={panelRef.name} />;
+  }
   // git tab 渲染 GitFileDiffPanel（自带 file diff query，设计 workbench-layout-fix 阶段 3）。
   // projectName/scope/path 来自 tab ref 固定；不传 onClose（中栏 tab 关闭走 tab ✕，非移动浮层）。
   if (panelRef.kind === "git") {
@@ -701,6 +707,21 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     // label 取 basename（如 src/index.ts → index.ts）。
     return {
       label: panelRef.path.split("/").pop() || panelRef.path,
+      marker: (
+        <span
+          aria-hidden="true"
+          className="inline-flex shrink-0 items-center text-on-surface-muted"
+        >
+          <ShellIcon className="h-4 w-4" name="file" />
+        </span>
+      ),
+    };
+  }
+  if (panelRef.kind === "skill") {
+    // skill tab marker 对齐 file/git（h-4 w-4 裸 icon）；label = skill name（SKILL.md 详情只读预览，
+    // 无 session 生命周期，无 statusDot）。
+    return {
+      label: panelRef.name,
       marker: (
         <span
           aria-hidden="true"
@@ -1697,7 +1718,12 @@ function TabChip({
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
   const label =
-    meta?.label ?? (panelRef.kind === "session" ? panelRef.sessionId.slice(0, 12) : panelRef.path);
+    meta?.label ??
+    (panelRef.kind === "session"
+      ? panelRef.sessionId.slice(0, 12)
+      : panelRef.kind === "skill"
+        ? panelRef.name
+        : panelRef.path);
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
       {/* 对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：active 用 primary 品牌色
@@ -2334,7 +2360,12 @@ function DragGhost({
 }) {
   const meta = usePanelMeta(panelRef);
   const label =
-    meta?.label ?? (panelRef.kind === "session" ? panelRef.sessionId.slice(0, 12) : panelRef.path);
+    meta?.label ??
+    (panelRef.kind === "session"
+      ? panelRef.sessionId.slice(0, 12)
+      : panelRef.kind === "skill"
+        ? panelRef.name
+        : panelRef.path);
   return (
     <div
       ref={ghostRef}
