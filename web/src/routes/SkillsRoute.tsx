@@ -297,8 +297,10 @@ function ManageTab({
 /**
  * skill 详情预览面板（中栏 skill tab + 移动 MobileSkillFocus body 共用，对标 FileTabPreview）。
  * 只读渲染本地 SKILL.md（useSkillPreview → MarkdownString）——无编辑无保存（区别于 FileTabPreview
- * 可编辑）。自带 skill name 标题栏 + loading/error/内容态；桌面由 PanelRouter 渲染、移动由
- * MobileSkillFocus 包 header 后渲染 body。顶层组件（rerender-no-inline-components），不嵌套定义。
+ * 可编辑）。**不带 h4 标题栏**：SKILL.md 正文自带 `# H1` 标题，再加 h4 会重复（区别于 FilePreviewPanel
+ * 保留 h4——文件正文不带 `# 标题` 不重复）；section 直接从 loading/error/内容态开始。桌面由
+ * PanelRouter 渲染、移动由 MobileSkillFocus 包 header 后渲染 body。顶层组件
+ *（rerender-no-inline-components），不嵌套定义。
  */
 export function SkillTabPreview({ name }: { name: string }) {
   const { t } = useT();
@@ -309,9 +311,6 @@ export function SkillTabPreview({ name }: { name: string }) {
       aria-label={name}
       className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-raised/25"
     >
-      <div className="grid h-11 shrink-0 items-center border-b border-neutral-line/40 px-3.5">
-        <h4 className="min-w-0 truncate font-mono text-sm font-semibold text-on-surface">{name}</h4>
-      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {preview.isLoading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">

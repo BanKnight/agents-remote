@@ -176,14 +176,19 @@ function MobileFileFocus({ path }: { path: string }) {
         }}
         tabs={[{ id: "file" as const, label: path.split("/").pop() ?? path }]}
         trailing={
-          <button
-            aria-label={t("session.close")}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-            onClick={back}
-            type="button"
+          <div
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+            role="group"
           >
-            <ShellIcon className="h-4 w-4" name="close" />
-          </button>
+            <button
+              aria-label={t("session.close")}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+              onClick={back}
+              type="button"
+            >
+              <ShellIcon className="h-4 w-4" name="close" />
+            </button>
+          </div>
         }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -215,14 +220,19 @@ function MobileSkillFocus({ name }: { name: string }) {
         }}
         tabs={[{ id: "skill" as const, label: name }]}
         trailing={
-          <button
-            aria-label={t("session.close")}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-            onClick={back}
-            type="button"
+          <div
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+            role="group"
           >
-            <ShellIcon className="h-4 w-4" name="close" />
-          </button>
+            <button
+              aria-label={t("session.close")}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+              onClick={back}
+              type="button"
+            >
+              <ShellIcon className="h-4 w-4" name="close" />
+            </button>
+          </div>
         }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
