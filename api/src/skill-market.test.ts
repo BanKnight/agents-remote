@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as validate from "./skill-validate";
@@ -49,15 +49,6 @@ function setFetch(response: { ok: boolean; status: number; json: () => Promise<u
   globalThis.fetch = mock(() => Promise.resolve(response)) as unknown as typeof globalThis.fetch;
 }
 
-const claudeList: CmdResult = {
-  exitCode: 0,
-  stdout: JSON.stringify([
-    { name: "tdd", path: "/tmp/ar-skills/tdd", scope: "global", agents: ["Claude Code"] },
-    { name: "codex-only", path: "/tmp/ar-skills/codex-only", scope: "global", agents: ["Codex"] },
-  ]),
-  stderr: "",
-};
-
 describe("searchSkillMarket", () => {
   it("returns empty for query < 2 chars without calling fetch", async () => {
     const res = await searchSkillMarket("a");
@@ -102,39 +93,108 @@ describe("searchSkillMarket", () => {
 });
 
 describe("listInstalledSkills", () => {
-  it("filters by agent", async () => {
-    runSkillsCommand.mockResolvedValue(claudeList);
-    const res = await listInstalledSkills("claude-code");
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "ar-skills-home-"));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  // 在 home 下造一个 skill 目录（agentHome=".claude"/".codex"），写 SKILL.md frontmatter。
+  async function writeSkill(agentHome: string, name: string): Promise<string> {
+    const dir = join(home, agentHome, "skills", name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "SKILL.md"),
+      `---\nname: ${name}\ndescription: ${name} skill\n---\n# ${name}\nbody`,
+    );
+    return dir;
+  }
+
+  it("reads skills from the agent global skills dir via FS", async () => {
+    await writeSkill(".claude", "tdd");
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
+    });
+    expect(res.skills.map((s) => s.name)).toEqual(["tdd"]);
+    expect(res.skills[0].agents).toEqual(["Claude Code"]);
+  });
+
+  it("only lists skills installed for the queried agent", async () => {
+    await writeSkill(".claude", "tdd");
+    await writeSkill(".codex", "codex-only");
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
+    });
     expect(res.skills.map((s) => s.name)).toEqual(["tdd"]);
   });
 
-  it("throws SKILL_LIST_FAILED on exitCode != 0", async () => {
-    runSkillsCommand.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "boom" });
-    await expect(listInstalledSkills("claude-code")).rejects.toMatchObject({
-      code: "SKILL_LIST_FAILED",
+  it("resolves symlink entries to canonical realpath", async () => {
+    // canonical 真身放 .agents-store，.claude/skills 下用 symlink 指过去（模拟 skills CLI
+    // 全局安装：~/.claude/skills/<name> → ~/.agents/skills/<name>）。
+    const real = await writeSkill(".agents-store", "shared");
+    const linkParent = join(home, ".claude", "skills");
+    await mkdir(linkParent, { recursive: true });
+    await symlink(real, join(linkParent, "shared"));
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
     });
+    expect(res.skills.map((s) => s.name)).toEqual(["shared"]);
+    expect(res.skills[0].path).toBe(real);
+  });
+
+  it("skips entries without SKILL.md and broken symlinks", async () => {
+    const skillsDir = join(home, ".claude", "skills");
+    await mkdir(join(skillsDir, "no-md"), { recursive: true }); // 无 SKILL.md
+    await writeSkill(".claude", "real");
+    await symlink(join(home, "does-not-exist"), join(skillsDir, "broken")); // broken symlink
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
+    });
+    expect(res.skills.map((s) => s.name)).toEqual(["real"]);
+  });
+
+  it("returns empty when agent skills dir is absent", async () => {
+    const res = await listInstalledSkills("codex", { settingsStore: store, skillsHome: home });
+    expect(res.skills).toEqual([]);
   });
 });
 
 describe("installSkill", () => {
-  it("installs, reloads alive sessions, reads back truth", async () => {
-    runSkillsCommand.mockImplementation(async (args) => {
-      if (args[0] === "add") return { exitCode: 0, stdout: "", stderr: "" };
-      return claudeList;
-    });
-    const write = mock(() => Promise.resolve());
-    const claude2Runtime = {
-      listAliveRuntimeKeys: () => Promise.resolve(new Set(["s1"])),
-      write,
-    } as unknown as Claude2Runtime;
-    const res = await installSkill(
-      { source: "mattpocock/skills", skillId: "tdd", agent: "claude-code" },
-      { settingsStore: store, claude2Runtime },
-    );
-    expect(res.ok).toBe(true);
-    expect(res.skill.name).toBe("tdd");
-    expect(write).toHaveBeenCalledTimes(1);
-    expect(write.mock.calls[0][1]).toBe("/reload-skills\n");
+  it("installs, reloads alive sessions, reads back truth via FS", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ar-install-home-"));
+    try {
+      // 预置 tdd（模拟 `npx skills add` 已写入 agent skills 目录）；readback 走 FS 直读，
+      // 不再调 runSkillsCommand。
+      const skillDir = join(home, ".claude", "skills", "tdd");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "---\nname: tdd\n---\ntdd");
+      runSkillsCommand.mockImplementation(async (args) => {
+        // add 走 npx（mock 成功）；readback 现为 FS 直读，若误调 npx 即抛错暴露回归。
+        if (args[0] === "add") return { exitCode: 0, stdout: "", stderr: "" };
+        throw new Error("unexpected runSkillsCommand call (readback should be FS)");
+      });
+      const write = mock(() => Promise.resolve());
+      const claude2Runtime = {
+        listAliveRuntimeKeys: () => Promise.resolve(new Set(["s1"])),
+        write,
+      } as unknown as Claude2Runtime;
+      const res = await installSkill(
+        { source: "mattpocock/skills", skillId: "tdd", agent: "claude-code" },
+        { settingsStore: store, claude2Runtime, skillsHome: home },
+      );
+      expect(res.ok).toBe(true);
+      expect(res.skill.name).toBe("tdd");
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(write.mock.calls[0][1]).toBe("/reload-skills\n");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("throws SKILL_INSTALL_FAILED on add failure", async () => {
@@ -182,37 +242,34 @@ describe("uninstallSkill", () => {
 });
 
 describe("previewInstalledSkill", () => {
-  let skillDir: string;
+  let home: string;
   beforeEach(async () => {
-    skillDir = await mkdtemp(join(tmpdir(), "ar-skill-"));
+    home = await mkdtemp(join(tmpdir(), "ar-skill-home-"));
+    const dir = join(home, ".claude", "skills", "tdd");
+    await mkdir(dir, { recursive: true });
     await writeFile(
-      join(skillDir, "SKILL.md"),
+      join(dir, "SKILL.md"),
       "---\nname: tdd\ndescription: Test-driven development\n---\n# TDD\nbody",
     );
   });
   afterEach(async () => {
-    await rm(skillDir, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
   });
 
   it("reads local SKILL.md frontmatter + body", async () => {
-    runSkillsCommand.mockResolvedValue({
-      exitCode: 0,
-      stdout: JSON.stringify([
-        { name: "tdd", path: skillDir, scope: "global", agents: ["claude-code"] },
-      ]),
-      stderr: "",
+    const res = await previewInstalledSkill("tdd", "claude-code", {
+      settingsStore: store,
+      skillsHome: home,
     });
-    const res = await previewInstalledSkill("tdd", "claude-code");
     expect(res.name).toBe("tdd");
     expect(res.description).toBe("Test-driven development");
     expect(res.content).toContain("# TDD");
   });
 
   it("throws SKILL_PREVIEW_FAILED when not installed", async () => {
-    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "[]", stderr: "" });
-    await expect(previewInstalledSkill("nope", "claude-code")).rejects.toMatchObject({
-      code: "SKILL_PREVIEW_FAILED",
-    });
+    await expect(
+      previewInstalledSkill("nope", "claude-code", { settingsStore: store, skillsHome: home }),
+    ).rejects.toMatchObject({ code: "SKILL_PREVIEW_FAILED" });
   });
 });
 

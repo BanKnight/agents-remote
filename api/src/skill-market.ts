@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   SKILL_AGENTS,
@@ -41,6 +42,12 @@ import {
 export type SkillMarketDeps = {
   settingsStore: SettingsStore;
   claude2Runtime?: Claude2Runtime;
+  /**
+   * skill 安装目录的 home 基准（测试注入；生产留空 → os.homedir()）。agent 全局 skills
+   * 目录 = `${skillsHome ?? homedir()}/.<agentHome>/skills`（claude-code→.claude、
+   * codex→.codex，与 skills CLI 的 globalSkillsDir 一致）。
+   */
+  skillsHome?: string;
 };
 
 // skills.sh search 的最少必填字符（实测：<2 返回 400）。
@@ -115,50 +122,94 @@ export async function searchSkillMarket(query: string): Promise<SkillMarketSearc
   return { query: q, skills, count: skills.length };
 }
 
-// ── 已装层：`npx skills list --json --global`（真相源；stdout JSON 可机读） ──
+// ── 已装层：FS 直读 agent 全局 skills 目录 ──
+//
+// `npx skills list --json --global` 实测 11-17s，全是 npx+node 启动开销（注册表校验 +
+// spawn），零网络——CLI 自己也只是扫本地目录。改为直扫 agent 全局 skills 目录：readdir +
+// 读 SKILL.md frontmatter，实测 ~0.1s（100x+ 提速）。单 agent 查询天然只需扫该 agent
+// 目录（每个条目 = 该 agent installed 的 skill：symlink 指向 canonical 真身，或 agent-only
+// 真实目录），无需重建 CLI 的完整 agents 数组。装/卸仍走 npx（git clone 需要），事后
+// readback 同样 FS 直读，自然变快。
 
-type RawInstalledSkill = {
-  name?: unknown;
-  path?: unknown;
-  scope?: unknown;
-  agents?: unknown;
+// skills CLI 各 agent 的全局 skills 目录名（home 下的隐藏目录）：claude-code→`.claude`、
+// codex→`.codex`（CLI 的 claudeHome=CLAUDE_CONFIG_DIR||~/.claude、codexHome=CODEX_HOME||
+// ~/.codex；全局 skills 在其下 `skills/` 子目录）。
+const AGENT_SKILLS_HOME_DIR: Record<SkillAgent, string> = {
+  "claude-code": ".claude",
+  codex: ".codex",
+};
+// InstalledSkill.agents 用 display name（与 skills CLI list 输出一致）。
+const AGENT_DISPLAY_NAME: Record<SkillAgent, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
 };
 
-function toInstalledSkill(raw: RawInstalledSkill): InstalledSkill | null {
-  if (typeof raw.name !== "string" || typeof raw.path !== "string") return null;
-  const agents = Array.isArray(raw.agents)
-    ? raw.agents.filter((a): a is string => typeof a === "string")
-    : [];
-  const scope = raw.scope === "project" ? "project" : "global";
-  return { name: raw.name, path: raw.path, scope, agents };
+function resolveSkillsHome(deps?: SkillMarketDeps): string {
+  return deps?.skillsHome ?? homedir();
 }
 
-// skills CLI 的 `agents` 字段返回 display name（"Claude Code"），而 SkillAgent 是 id
-//（"claude-code"）。normalize 抹平大小写/空格/连字符/下划线差异做匹配——否则
-// `agents.includes("claude-code")` 对真实 ["Claude Code"] 恒 false，已装列表永远空。
-function normalizeAgentName(a: string): string {
-  return a.toLowerCase().replace(/[\s_-]/g, "");
+function agentGlobalSkillsDir(agent: SkillAgent, home: string): string {
+  return join(home, AGENT_SKILLS_HOME_DIR[agent], "skills");
 }
 
-export async function listInstalledSkills(agent: SkillAgent): Promise<InstalledSkillsResponse> {
-  const result = await runSkillsCommand(["list", "--json", "--global"], {
-    failureCode: "SKILL_LIST_FAILED",
-  });
-  if (result.exitCode !== 0) {
-    throw new SkillError("SKILL_LIST_FAILED", `skills list failed: ${trimErr(result)}`);
-  }
-  let parsed: unknown;
+/**
+ * 直扫 agent 全局 skills 目录，返回该 agent installed 的全部 skill（只读 SKILL.md
+ * frontmatter 拿 name）。跳过：隐藏条目（`.system` 等）、非目录/broken symlink、无
+ * SKILL.md 的目录——与 skills CLI 的过滤口径一致。目录缺失（agent 未装任何 skill）→
+ * 空数组，不报错。
+ *
+ * `path` 用 realpath：symlink 条目解析到 canonical 真身（与 CLI 输出一致），agent-only
+ * 真实目录解析到自身。
+ */
+async function scanInstalledSkillsFromFs(
+  agent: SkillAgent,
+  home: string,
+): Promise<InstalledSkill[]> {
+  const dir = agentGlobalSkillsDir(agent, home);
+  let entries: string[];
   try {
-    parsed = JSON.parse(result.stdout);
-  } catch (error) {
-    throw new SkillError("SKILL_LIST_FAILED", `Invalid JSON from skills list: ${errMsg(error)}`);
+    entries = await readdir(dir);
+  } catch {
+    return []; // 目录缺失（codex 全新 / agent 未装）= 空列表，非错误。
   }
-  const want = normalizeAgentName(agent);
-  const rawSkills = Array.isArray(parsed) ? (parsed as RawInstalledSkill[]) : [];
-  const skills = rawSkills
-    .map(toInstalledSkill)
-    .filter((s): s is InstalledSkill => s !== null)
-    .filter((s) => s.agents.some((a) => normalizeAgentName(a) === want));
+  const skills: InstalledSkill[] = [];
+  for (const entry of entries) {
+    if (entry.startsWith(".")) continue; // 跳过 .system 等隐藏条目
+    const entryPath = join(dir, entry);
+    try {
+      const st = await stat(entryPath); // stat 跟随 symlink：broken symlink → ENOENT → 跳过
+      if (!st.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    let content: string;
+    try {
+      content = await readFile(join(entryPath, SKILL_MD), "utf8");
+    } catch {
+      continue; // 无 SKILL.md → CLI 同样不视为 skill，跳过
+    }
+    const fm = parseFrontmatter(content);
+    let realPath: string;
+    try {
+      realPath = await realpath(entryPath);
+    } catch {
+      realPath = entryPath;
+    }
+    skills.push({
+      name: fm.name || entry,
+      path: realPath,
+      scope: "global",
+      agents: [AGENT_DISPLAY_NAME[agent]],
+    });
+  }
+  return skills;
+}
+
+export async function listInstalledSkills(
+  agent: SkillAgent,
+  deps?: SkillMarketDeps,
+): Promise<InstalledSkillsResponse> {
+  const skills = await scanInstalledSkillsFromFs(agent, resolveSkillsHome(deps));
   return { skills };
 }
 
@@ -204,7 +255,7 @@ export async function installSkill(
   // UI = f(state)：真相以 list --json 为准（不信 stdout）。list 回读失败时，
   // install 本身已成功，用 skillId 占位让前端 refetch 补全。
   try {
-    const { skills } = await listInstalledSkills(agent);
+    const { skills } = await listInstalledSkills(agent, deps);
     const found = skills.find((s) => s.name === skillId);
     return {
       ok: true,
@@ -234,30 +285,35 @@ export async function uninstallSkill(
   return { ok: true };
 }
 
-// ── 预览层：已装 skill 本地 SKILL.md（零网络、零 rate-limit） ──
+// ── 预览层：已装 skill 本地 SKILL.md（FS 直读，零网络、零 rate-limit、零 npx spawn） ──
 
 export async function previewInstalledSkill(
   name: string,
   agent: SkillAgent,
+  deps?: SkillMarketDeps,
 ): Promise<SkillPreviewResponse> {
+  // sanitize 拒绝 `..`/`/`/null byte，锁死在 agent skills 目录内（路径穿越不可达）。
   const safeName = sanitizeSkillName(name);
-  const { skills } = await listInstalledSkills(agent);
-  const found = skills.find((s) => s.name === safeName);
-  if (!found || !found.path) {
-    throw new SkillError("SKILL_PREVIEW_FAILED", `Skill not found: ${safeName}`);
-  }
+  const dir = join(agentGlobalSkillsDir(agent, resolveSkillsHome(deps)), safeName);
   let content: string;
   try {
-    content = await readFile(join(found.path, SKILL_MD), "utf8");
+    content = await readFile(join(dir, SKILL_MD), "utf8"); // 跟随 symlink 读 canonical SKILL.md
   } catch (error) {
-    throw new SkillError("SKILL_PREVIEW_FAILED", `Failed to read SKILL.md: ${errMsg(error)}`);
+    // 直读指定 name：文件缺失 = 该 skill 未为该 agent 安装（ENOENT），或读取失败。
+    throw new SkillError("SKILL_PREVIEW_FAILED", `Skill not found: ${safeName}: ${errMsg(error)}`);
   }
   const fm = parseFrontmatter(content);
+  let source: string;
+  try {
+    source = await realpath(dir);
+  } catch {
+    source = dir;
+  }
   return {
     name: fm.name || safeName,
     description: fm.description || undefined,
     content,
-    source: found.path,
+    source,
   };
 }
 
@@ -352,13 +408,13 @@ export async function handleSkillRoutes(
 
   if (url.pathname === "/api/skills/installed" && isGet) {
     const agent = parseAgent(url.searchParams.get("agent"));
-    return runSkillHandler(() => listInstalledSkills(agent));
+    return runSkillHandler(() => listInstalledSkills(agent, deps));
   }
 
   if (url.pathname === "/api/skills/preview" && isGet) {
     const name = url.searchParams.get("name") ?? "";
     const agent = parseAgent(url.searchParams.get("agent"));
-    return runSkillHandler(() => previewInstalledSkill(name, agent));
+    return runSkillHandler(() => previewInstalledSkill(name, agent, deps));
   }
 
   if (url.pathname === "/api/skills/install" && isPost) {

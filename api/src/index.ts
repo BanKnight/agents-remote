@@ -770,9 +770,10 @@ export const startApi = async () => {
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);
-  // skill 接口（list/preview）spawn `npx skills`：list 耗时 11-17s，npx 启动期间 handler 未向 client
-  // socket 写任何字节 → 默认 idleTimeout=10s 在静默期关闭连接（Empty reply from server），前端拿不到
-  // 数据（"暂无已安装技能"）。调到 Bun.serve 上限 255s 覆盖 list/preview 实际耗时（255 是 Bun 硬上限）。
+  // skill install/uninstall spawn `npx skills add/remove`：走 git clone 可数十秒，spawn 期间
+  // handler 未向 client socket 写任何字节 → 默认 idleTimeout=10s 在静默期关闭连接（Empty
+  // reply from server）。调到 Bun.serve 上限 255s 覆盖典型 clone 耗时（255 是 Bun 硬上限；
+  // install/uninstall 自身超时另设 300s/60s）。list/preview 已改 FS 直读（~0.1s），不再受此影响。
   const SKILL_REQUEST_IDLE_TIMEOUT_SECONDS = 255;
   const server = Bun.serve<WebSocketData>({
     port: settings.apiPort,
