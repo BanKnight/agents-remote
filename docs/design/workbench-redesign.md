@@ -343,9 +343,25 @@ readdir 全量 → 全量 stat（mtimeMs+size）→ range 用 mtime 过滤候选
 四项优化：
 
 1. **range mtime 过滤**：stat 全量后按 range 窗口滤候选，week 默认只 extract 近期（378→84）。
-2. **early-exit**：`extractEntry` 读到首条 user 行即 break（首行多为 `queue-operation`，首条 user 在前 ~5-20 行）。实测 97% 文件无 ai-title、`messageCount` 中位数=1，故 title/messageCount 几乎无用——**删除 `messageCount`**，UI 实际显示 firstMessage（与参考实现 hapi 的 `getResumeSessionName`=firstUserMessage 一致）。
-3. **mtime+size 缓存**：`Map<slug, Map<id, {mtimeMs,size,partial}>>`，键与 range 解耦（range=all 首拉填满后，任意 range 切换命中缓存瞬间返回）；`activeSessionId` 不进缓存（每次用当前 activeMap 组装，不粘过期状态）；末尾对账删已不存在的文件孤儿。
+2. **early-exit**：`extractEntry` 读到首条**有意义** user 行即 break（首行多为 `queue-operation`，首条 user 在前 ~5-20 行）。实测 97% 文件无 ai-title、`messageCount` 中位数=1，故 messageCount 几乎无用——**删除 `messageCount`**，UI 实际显示 title ?? firstMessage（与参考实现 hapi 的 `getResumeSessionName`=firstUserMessage 一致）。
+3. **mtime+size 缓存 + 对账释放**：`Map<slug, Map<id, {mtimeMs,size,partial}>>`，键与 range 解耦（range=all 首拉填满后，任意 range 切换命中缓存瞬间返回）；`activeSessionId` 不进缓存（每次用当前 activeMap 组装，不粘过期状态）；`reconcileSlugCache` 在 extract 前对账——判据是「磁盘无此 id」（range 过滤的旧文件仍在磁盘、可复用，不当孤儿删），目录不存在/变空时回收整个 slug Map，杜绝「曾活跃项目删空后早退漏对账」的缓存泄漏。
 4. **有界并发**：`mapLimit` worker pool 替代无界 `Promise.all`，减 FS 打开竞争。
+
+### 10.2.1 标题提取规则（对齐 claude cli / orca）
+
+`extractEntry` 提取三个字段，title 字段只承载「显式命名」，firstMessage 是显示兜底，UI `displayTitle = title ?? firstMessage ?? claudeSessionId.slice(0,8)`：
+
+| 优先级 | 来源 | JSONL 行 | 字段 |
+|---|---|---|---|
+| 1 | 用户 `/rename` | `type:"custom-title"` 的 `customTitle`（last-write-wins） | title |
+| 2 | Haiku 生成 | `type:"ai-title"` 的 `aiTitle`（last-write-wins） | title |
+| 3 | 首条「有意义」user prompt | 见下 | firstMessage |
+
+`title = customTitle ?? aiTitle ?? null`，对齐 claude cli `getLogDisplayTitle` 与 orca `session-scanner-claude-title`（custom > ai > firstPrompt）。**不主动生成 ai-title**（不调 Haiku、不写 JSONL）。
+
+firstMessage = 首条「有意义」user prompt（非首条 user 行），复刻 claude cli `getFirstMeaningfulUserMessageTextContent`：遍历 user 消息序列，对每条的 text block 依次判定——跳 `isMeta`、`<command-name>`（内置无参跳过 / custom 有参格式化为 `<command-name> <args>`）、`<bash-input>`（格式化为 `! input`）、`SKIP_FIRST_PROMPT_PATTERN`（小写 XML 开头 / interrupted）、strip display tags 后为空（command-only）；命中首条有意义才 break，未命中继续读下一条 user。`stripDisplayTags` 用 `XML_TAG_BLOCK_PATTERN` 删小写 XML 块（放过用户正文里的大写 JSX/HTML）。`startedAt` 仍取首条 user 行 timestamp（无论是否有意义，会话开始时间不漂移）。
+
+**已知边界**：本项目会话模式（handoff-driven）首条 user 常是系统注入的 handoff 模板文本（裸 user、非 isMeta、不匹配 SKIP），claude cli 自身也会显示它——规则对齐不解决「首条 prompt 雷同」，需后续评估主动生成 ai-title（本次不做，先观察）。
 
 ### 10.3 实测（agents-remote 项目，378 JSONL）
 
