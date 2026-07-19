@@ -188,6 +188,17 @@ export const en = {
   "git.fileMarker": "FL",
   "git.detached": "Detached HEAD",
   "git.noUpstream": "No upstream",
+  "git.viewChanges": "Changes",
+  "git.viewBranches": "Branches",
+  "git.viewCommits": "Commits",
+  "git.branchesLocalShort": "L",
+  "git.branchesRemoteShort": "R",
+  "git.branchCurrent": "Current",
+  "git.noBranches": "No branches",
+  "git.noCommits": "No commits",
+  "git.aheadLabel": "Ahead",
+  "git.behindLabel": "Behind",
+  "git.upToDate": "Up to date",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "Back",

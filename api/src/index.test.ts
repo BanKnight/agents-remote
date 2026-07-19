@@ -452,6 +452,64 @@ test("createFetchHandler serves Project-scoped Git diff routes", async () => {
   expect((await invalidScope.json()).error.code).toBe("PROJECT_GIT_SCOPE_INVALID");
 });
 
+test("createFetchHandler serves Git branch/log/ahead-behind routes", async () => {
+  const projectPath = join(root, "demo");
+  const upstreamPath = join(root, "upstream.git");
+  await mkdir(projectPath);
+  await git(projectPath, ["init"]);
+  await git(projectPath, ["branch", "-m", "main"]);
+  await git(projectPath, ["config", "user.email", "test@example.com"]);
+  await git(projectPath, ["config", "user.name", "Test User"]);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "first"]);
+  await git(projectPath, ["init", "--bare", upstreamPath]);
+  await git(projectPath, ["remote", "add", "origin", upstreamPath]);
+  await git(projectPath, ["push", "-u", "origin", "main"]);
+  // 本地领先 1（push 后再 1 commit）。
+  await writeFile(join(projectPath, "b.txt"), "b\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "second"]);
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const branches = await handler(
+    new Request("http://localhost/api/projects/demo/git/branches", { headers }),
+    { upgrade: () => false },
+  );
+  expect(branches.status).toBe(200);
+  const branchesBody = await branches.json();
+  expect(branchesBody.current).toBe("main");
+  expect(branchesBody.branches.some((b: { name: string }) => b.name === "main")).toBe(true);
+
+  const log = await handler(
+    new Request("http://localhost/api/projects/demo/git/log?branch=main", { headers }),
+    { upgrade: () => false },
+  );
+  expect(log.status).toBe(200);
+  const logBody = await log.json();
+  expect(logBody.branch).toBe("main");
+  expect(logBody.commits.length).toBeGreaterThanOrEqual(2);
+
+  const aheadBehind = await handler(
+    new Request("http://localhost/api/projects/demo/git/ahead-behind", { headers }),
+    { upgrade: () => false },
+  );
+  expect(aheadBehind.status).toBe(200);
+  const aheadBehindBody = await aheadBehind.json();
+  expect(aheadBehindBody.upstream).toBe("origin/main");
+  expect(aheadBehindBody.ahead).toBe(1);
+  expect(aheadBehindBody.aheadCommits).toHaveLength(1);
+
+  // 非法 branch ref → PROJECT_GIT_SCOPE_INVALID (400)。
+  const invalid = await handler(
+    new Request("http://localhost/api/projects/demo/git/log?branch=bad;ref", { headers }),
+    { upgrade: () => false },
+  );
+  expect(invalid.status).toBe(400);
+  expect((await invalid.json()).error.code).toBe("PROJECT_GIT_SCOPE_INVALID");
+});
+
 test("createFetchHandler returns non-Git repository state", async () => {
   await mkdir(join(root, "demo"));
   const { auth, handler } = createTestHandler();

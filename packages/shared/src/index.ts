@@ -121,6 +121,47 @@ export type GitFileDiffResponse = {
   diff: string;
 };
 
+/** R3 分支列表项。name = refname:short（main / origin/main）。 */
+export type GitBranch = {
+  name: string;
+  type: "local" | "remote";
+  isCurrent?: boolean;
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
+  lastCommitShort?: string;
+};
+
+/** R3 分支列表响应。current = 当前分支名（detached = "HEAD"）。 */
+export type GitBranchListResponse = {
+  current: string;
+  branches: GitBranch[];
+};
+
+/** R4/R6 共享 commit 项（git log %h/%an/%ar/%s）。 */
+export type GitCommitLogItem = {
+  hash: string;
+  message: string;
+  author: string;
+  relativeTime: string;
+};
+
+/** R6 commit 历史（branch = "" 表示 HEAD/默认）。 */
+export type GitCommitLogResponse = {
+  branch: string;
+  commits: GitCommitLogItem[];
+};
+
+/** R4 当前分支相对 upstream 的领先/落后 commit 差异。 */
+export type GitAheadBehindResponse = {
+  branch: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  aheadCommits: GitCommitLogItem[];
+  behindCommits: GitCommitLogItem[];
+};
+
 export type ProjectListResponse = {
   projects: Project[];
 };

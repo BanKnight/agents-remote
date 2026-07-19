@@ -1,6 +1,11 @@
 import type {
   ApiErrorCode,
+  GitAheadBehindResponse,
+  GitBranch,
+  GitBranchListResponse,
   GitBranchStatus,
+  GitCommitLogItem,
+  GitCommitLogResponse,
   GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffListResponse,
@@ -38,6 +43,21 @@ export class ProjectGitDiffError extends Error {
     this.name = "ProjectGitDiffError";
   }
 }
+
+/**
+ * 分支名/ref 白名单。argv 已防 shell 注入；白名单防 git 语义异常（`@{u}` refspec、`..`
+ * range、含空格 ref、`;` `&` `$()` 等元字符）。合法 git ref 只含 `[A-Za-z0-9._/-]`
+ *（git-check-ref-format），含 `/`（feature/x）。null/"" → undefined（默认 HEAD）；非法 → 抛错。
+ */
+const BRANCH_REF_RE = /^[A-Za-z0-9._/-]+$/;
+const sanitizeBranchRef = (input: string | null | undefined): string | undefined => {
+  if (input === null || input === undefined || input === "") return undefined;
+  // `..` 是 git range 歧义（A..B），即使字符合法也必须拒。
+  if (input.includes("\0") || input.includes("..") || !BRANCH_REF_RE.test(input)) {
+    throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Invalid branch ref");
+  }
+  return input;
+};
 
 export class ProjectGitDiffService {
   constructor(private readonly projectsRoot: string) {}
@@ -140,6 +160,110 @@ export class ProjectGitDiffService {
     };
   }
 
+  /**
+   * R3 分支列表（local + remote）。for-each-ref 一次拿 refname/upstream/track/objectname，
+   * 按 committerdate 倒序。current 来自 rev-parse HEAD（detached = "HEAD"）。track 字段
+   *（`[ahead 2, behind 1]` / `[gone]`）解析为 per-branch ahead/behind。
+   */
+  async listBranches(projectName: string): Promise<GitBranchListResponse> {
+    const project = await this.resolveProject(projectName);
+    if (!(await this.isRepository(project.path))) {
+      throw new ProjectGitDiffError(
+        "PROJECT_GIT_NOT_REPOSITORY",
+        "Project is not a Git repository",
+      );
+    }
+
+    const [eachRef, head] = await Promise.all([
+      this.git(project.path, [
+        "for-each-ref",
+        "--sort=-committerdate",
+        "--format=%(refname)|%(refname:short)|%(upstream:short)|%(upstream:track)|%(objectname:short)",
+        "refs/heads",
+        "refs/remotes",
+      ]),
+      this.gitRaw(project.path, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    ]);
+
+    const current = head.exitCode === 0 ? head.stdout.trim() : "HEAD";
+    return { current, branches: parseBranches(eachRef, current) };
+  }
+
+  /**
+   * R6 commit 历史。`-z` + `%x00` null 分隔（与 parseNameStatus 同模式，避免 `%s` 含 `|` 歧义），
+   * 每 commit 4 段（hash/author/time/subject）。branch 经 sanitizeBranchRef 白名单，默认 HEAD。
+   */
+  async listCommits(
+    projectName: string,
+    branch?: string,
+    limit = 50,
+  ): Promise<GitCommitLogResponse> {
+    const project = await this.resolveProject(projectName);
+    if (!(await this.isRepository(project.path))) {
+      throw new ProjectGitDiffError(
+        "PROJECT_GIT_NOT_REPOSITORY",
+        "Project is not a Git repository",
+      );
+    }
+
+    const ref = sanitizeBranchRef(branch) ?? "HEAD";
+    const output = await this.git(project.path, [
+      "log",
+      "-z",
+      "--format=%h%x00%an%x00%ar%x00%s",
+      `-${limit}`,
+      ref,
+    ]);
+
+    return { branch: ref, commits: parseCommits(output) };
+  }
+
+  /**
+   * R4 当前分支相对 upstream 的 ahead/behind commit 差异。无 upstream（@{upstream} 报错）
+   * → 返 0/0 + 空 commits（前端降级文案）；有 upstream 则 rev-list count + 两段 log
+   *（`upstream..ref` 领先待 push / `ref..upstream` 落后待 pull）。ref 经 sanitizeBranchRef。
+   */
+  async listAheadBehind(projectName: string, branch?: string): Promise<GitAheadBehindResponse> {
+    const project = await this.resolveProject(projectName);
+    if (!(await this.isRepository(project.path))) {
+      throw new ProjectGitDiffError(
+        "PROJECT_GIT_NOT_REPOSITORY",
+        "Project is not a Git repository",
+      );
+    }
+
+    const ref = sanitizeBranchRef(branch) ?? "HEAD";
+    const upstreamRaw = await this.gitRaw(project.path, [
+      "rev-parse",
+      "--abbrev-ref",
+      "@{upstream}",
+    ]);
+    if (upstreamRaw.exitCode !== 0) {
+      return { branch: ref, ahead: 0, behind: 0, aheadCommits: [], behindCommits: [] };
+    }
+    const upstream = upstreamRaw.stdout.trim();
+
+    const logFormat = ["log", "-z", "--format=%h%x00%an%x00%ar%x00%s"];
+    const [counts, aheadLog, behindLog] = await Promise.all([
+      this.gitRaw(project.path, ["rev-list", "--left-right", "--count", `${upstream}...${ref}`]),
+      this.git(project.path, [...logFormat, `${upstream}..${ref}`]),
+      this.git(project.path, [...logFormat, `${ref}..${upstream}`]),
+    ]);
+
+    const tokens = counts.exitCode === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [];
+    const behind = tokens[0] ?? 0;
+    const ahead = tokens[1] ?? 0;
+
+    return {
+      branch: ref,
+      upstream,
+      ahead,
+      behind,
+      aheadCommits: parseCommits(aheadLog),
+      behindCommits: parseCommits(behindLog),
+    };
+  }
+
   private async resolveProject(projectName: string) {
     try {
       return (await resolveProjectRelativePath(this.projectsRoot, projectName, "")).project;
@@ -218,6 +342,59 @@ export class ProjectGitDiffService {
     return { name, upstream, ahead, behind };
   }
 }
+
+/**
+ * for-each-ref 输出 → GitBranch[]。每行 `refname|short|upstream|track|objectname`（| 分隔，
+ * ref 不含 |）。type 由 refname 前缀判（refs/heads → local / refs/remotes → remote）。
+ * track（`[ahead 2, behind 1]` / `[gone]`）解析为 ahead/behind。local 分支 == current 标 isCurrent。
+ */
+const parseBranches = (output: string, current: string): GitBranch[] =>
+  output
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [refname, name, upstreamRaw, track, lastCommitShort] = line.split("|");
+      const type: GitBranch["type"] = refname.startsWith("refs/remotes/") ? "remote" : "local";
+      const upstream = upstreamRaw && upstreamRaw.length > 0 ? upstreamRaw : undefined;
+      const isCurrent = type === "local" && name === current && current !== "HEAD";
+      return {
+        name,
+        type,
+        upstream,
+        lastCommitShort,
+        ...parseTrack(track),
+        ...(isCurrent ? { isCurrent: true } : {}),
+      };
+    });
+
+/** `%(upstream:track)` → ahead/behind。`[gone]` 或空 → 无。 */
+const parseTrack = (track: string): { ahead?: number; behind?: number } => {
+  if (!track || track === "[gone]") return {};
+  const aheadMatch = track.match(/ahead (\d+)/);
+  const behindMatch = track.match(/behind (\d+)/);
+  return {
+    ...(aheadMatch ? { ahead: Number(aheadMatch[1]) } : {}),
+    ...(behindMatch ? { behind: Number(behindMatch[1]) } : {}),
+  };
+};
+
+/**
+ * git log -z 输出 → GitCommitLogItem[]。format `%h%x00%an%x00%ar%x00%s` 每 commit 4 段，
+ * -z 在 commit 间也插 \0，split("\0") 后每 4 段一组（末尾空串 filter 掉）。
+ */
+const parseCommits = (output: string): GitCommitLogItem[] => {
+  const tokens = output.split("\0").filter((token) => token.length > 0);
+  const commits: GitCommitLogItem[] = [];
+  for (let index = 0; index + 3 < tokens.length; index += 4) {
+    commits.push({
+      hash: tokens[index],
+      author: tokens[index + 1],
+      relativeTime: tokens[index + 2],
+      message: tokens[index + 3],
+    });
+  }
+  return commits;
+};
 
 const parseNameStatus = (output: string, scope: GitDiffScope): GitDiffFileSummary[] => {
   const tokens = output.split("\0").filter((token) => token.length > 0);

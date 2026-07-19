@@ -15,6 +15,9 @@ import type {
   CreateTerminalSessionResponse,
   DeleteFileResponse,
   DeleteProjectResponse,
+  GitAheadBehindResponse,
+  GitBranchListResponse,
+  GitCommitLogResponse,
   GitDiffListResponse,
   GitDiffScope,
   GitFileDiffResponse,
@@ -231,6 +234,24 @@ export async function getProjectGitFileDiff(
     projectGitFileDiffPath(projectName, scope, path),
     "api.projectGitFileDiffFailed",
   );
+}
+
+export async function listProjectGitBranches(projectName: string): Promise<GitBranchListResponse> {
+  return fetchJson(projectGitBranchesPath(projectName), "api.projectGitDiffFailed");
+}
+
+export async function getProjectGitLog(
+  projectName: string,
+  branch?: string,
+): Promise<GitCommitLogResponse> {
+  return fetchJson(projectGitLogPath(projectName, branch), "api.projectGitDiffFailed");
+}
+
+export async function getProjectGitAheadBehind(
+  projectName: string,
+  branch?: string,
+): Promise<GitAheadBehindResponse> {
+  return fetchJson(projectGitAheadBehindPath(projectName, branch), "api.projectGitDiffFailed");
 }
 
 export async function listAgentSessions(projectName: string): Promise<ListAgentSessionsResponse> {
@@ -516,6 +537,19 @@ const projectGitDiffPath = (projectName: string) =>
 
 const projectGitFileDiffPath = (projectName: string, scope: GitDiffScope, path: string) =>
   `${projectGitDiffPath(projectName)}/file?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(path)}`;
+
+const projectGitBranchesPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/git/branches`;
+
+const projectGitLogPath = (projectName: string, branch?: string) => {
+  const base = `/api/projects/${encodeURIComponent(projectName)}/git/log`;
+  return branch ? `${base}?branch=${encodeURIComponent(branch)}` : base;
+};
+
+const projectGitAheadBehindPath = (projectName: string, branch?: string) => {
+  const base = `/api/projects/${encodeURIComponent(projectName)}/git/ahead-behind`;
+  return branch ? `${base}?branch=${encodeURIComponent(branch)}` : base;
+};
 
 const withPathQuery = (basePath: string, path: string) => {
   if (path.length === 0) {

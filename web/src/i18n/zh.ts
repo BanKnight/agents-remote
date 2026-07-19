@@ -188,6 +188,17 @@ export const zh: Record<TranslationKey, string> = {
   "git.fileMarker": "FL",
   "git.detached": "HEAD 分离",
   "git.noUpstream": "无远端跟踪",
+  "git.viewChanges": "变更",
+  "git.viewBranches": "分支",
+  "git.viewCommits": "提交",
+  "git.branchesLocalShort": "本",
+  "git.branchesRemoteShort": "远",
+  "git.branchCurrent": "当前",
+  "git.noBranches": "暂无分支",
+  "git.noCommits": "暂无提交",
+  "git.aheadLabel": "领先",
+  "git.behindLabel": "落后",
+  "git.upToDate": "与远端同步",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "返回",

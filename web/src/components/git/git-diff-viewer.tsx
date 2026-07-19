@@ -1,12 +1,19 @@
 import type {
   GitBranchStatus,
+  GitCommitLogItem,
   GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffScope,
 } from "@agents-remote/shared";
 import { type ComponentProps, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
+import {
+  getProjectGitAheadBehind,
+  getProjectGitFileDiff,
+  getProjectGitLog,
+  listProjectGitBranches,
+  listProjectGitDiff,
+} from "../../api/client";
 import { useT } from "../../i18n";
 import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
@@ -281,6 +288,9 @@ export function GitChangesList({
     queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
     queryFn: () => listProjectGitDiff(projectName),
   });
+  const [view, setView] = useState<GitView>("changes");
+  const [commitBranch, setCommitBranch] = useState<string | undefined>();
+  const [aheadBehindOpen, setAheadBehindOpen] = useState(false);
   const gitSummary =
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
   const branch = diff.data?.repository === true ? diff.data.branch : undefined;
@@ -328,17 +338,37 @@ export function GitChangesList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 border-b border-neutral-line/40 px-3.5 py-3">
-        {branch ? <GitBranchStatusRow branch={branch} /> : null}
+        {branch ? (
+          <GitBranchStatusRow
+            branch={branch}
+            projectName={projectName}
+            open={aheadBehindOpen}
+            onToggle={() => setAheadBehindOpen((v) => !v)}
+          />
+        ) : null}
         <GitScopeChips summary={gitSummary} />
+        <GitViewSwitcher view={view} onChange={setView} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        <GitFileList
-          files={diff.data?.files ?? []}
-          onSelectFile={onSelectGitFile}
-          onCardDragStart={onCardDragStart}
-          projectName={projectName}
-          selectedFile={selectedFile}
-        />
+        {view === "changes" ? (
+          <GitFileList
+            files={diff.data?.files ?? []}
+            onSelectFile={onSelectGitFile}
+            onCardDragStart={onCardDragStart}
+            projectName={projectName}
+            selectedFile={selectedFile}
+          />
+        ) : view === "branches" ? (
+          <GitBranchList
+            projectName={projectName}
+            onSelectBranch={(name) => {
+              setCommitBranch(name);
+              setView("commits");
+            }}
+          />
+        ) : (
+          <GitCommitList projectName={projectName} branch={commitBranch ?? branch?.name} />
+        )}
       </div>
     </div>
   );
@@ -491,13 +521,234 @@ function GitScopeChips({ summary }: { summary?: GitSummary }) {
 /** R2 当前分支 + upstream ahead/behind 态势行。detached HEAD（name==="HEAD"）显 git.detached；
  * 无 upstream 显 git.noUpstream；有 upstream 时显 ↑ahead（success）/ ↓behind（muted），0 省略箭头。
  * 与 GitScopeChips 同属 header 统计区，渲染在 chips 上方（仓库级态势 vs 文件级统计分层）。 */
-function GitBranchStatusRow({ branch }: { branch: GitBranchStatus }) {
+type GitView = "changes" | "branches" | "commits";
+
+const GIT_VIEW_OPTIONS = [
+  { id: "changes", labelKey: "git.viewChanges" },
+  { id: "branches", labelKey: "git.viewBranches" },
+  { id: "commits", labelKey: "git.viewCommits" },
+] as const;
+
+/** Git middle tab 内分段切换 [变更|分支|提交]（R3/R6 落点）。 */
+const GitViewSwitcher = ({
+  view,
+  onChange,
+}: {
+  view: GitView;
+  onChange: (view: GitView) => void;
+}) => {
+  const { t } = useT();
+  return (
+    <div
+      role="tablist"
+      aria-label="Git view"
+      className="flex shrink-0 gap-0.5 rounded-lg bg-surface-inset/60 p-0.5"
+    >
+      {GIT_VIEW_OPTIONS.map((opt) => {
+        const active = view === opt.id;
+        return (
+          <button
+            key={opt.id}
+            role="tab"
+            aria-selected={active}
+            type="button"
+            onClick={() => onChange(opt.id)}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${
+              active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:text-on-surface"
+            }`}
+          >
+            {t(opt.labelKey)}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+/** R4/R6 共享：单条 commit 行（hash marker + message + author·time）。 */
+const GitCommitRow = ({ commit }: { commit: GitCommitLogItem }) => (
+  <ListRow
+    marker={
+      <IconMarker size="sm" tone="muted">
+        <span className="font-mono text-[0.62rem]">{commit.hash.slice(0, 7)}</span>
+      </IconMarker>
+    }
+    title={<span className="text-sm">{commit.message}</span>}
+    subtitle={
+      <span className="text-xs text-on-surface-muted">
+        {commit.author} · {commit.relativeTime}
+      </span>
+    }
+  />
+);
+
+/** R6 commit 历史（按 branch 过滤，默认 HEAD）。 */
+const GitCommitList = ({ projectName, branch }: { projectName: string; branch?: string }) => {
+  const { t } = useT();
+  const log = useQuery({
+    queryKey: ["projects", projectName, "git", "log", branch],
+    queryFn: () => getProjectGitLog(projectName, branch),
+  });
+  if (log.isLoading) return <ListRowSkeleton count={5} />;
+  if (log.error)
+    return (
+      <ResourceStatePanel tone="danger" title={t("git.errorTitle")} message={log.error.message} />
+    );
+  const commits = log.data?.commits ?? [];
+  if (commits.length === 0)
+    return <ResourceStatePanel title={t("git.noCommits")} message={t("git.notRepoDesc")} />;
+  return (
+    <ListGroup ariaLabel="Git commits">
+      {commits.map((commit) => (
+        <GitCommitRow key={commit.hash} commit={commit} />
+      ))}
+    </ListGroup>
+  );
+};
+
+/** R3 分支列表（local + remote）。点分支名 → onSelectBranch 联动切 [提交] 视图按该分支过滤。 */
+const GitBranchList = ({
+  projectName,
+  onSelectBranch,
+}: {
+  projectName: string;
+  onSelectBranch?: (name: string) => void;
+}) => {
+  const { t } = useT();
+  const branches = useQuery({
+    queryKey: ["projects", projectName, "git", "branches"],
+    queryFn: () => listProjectGitBranches(projectName),
+  });
+  if (branches.isLoading) return <ListRowSkeleton count={4} />;
+  if (branches.error)
+    return (
+      <ResourceStatePanel
+        tone="danger"
+        title={t("git.errorTitle")}
+        message={branches.error.message}
+      />
+    );
+  const list = branches.data?.branches ?? [];
+  if (list.length === 0)
+    return <ResourceStatePanel title={t("git.noBranches")} message={t("git.notRepoDesc")} />;
+  return (
+    <ListGroup ariaLabel="Git branches">
+      {list.map((branch) => (
+        <ListRow
+          key={`${branch.type}:${branch.name}`}
+          marker={
+            <IconMarker size="sm" tone={branch.isCurrent ? "accent" : "muted"}>
+              <span className="text-[0.62rem] font-bold">
+                {branch.type === "local"
+                  ? t("git.branchesLocalShort")
+                  : t("git.branchesRemoteShort")}
+              </span>
+            </IconMarker>
+          }
+          title={
+            <span className="flex items-center gap-1.5 font-mono text-sm">
+              {branch.name}
+              {branch.isCurrent ? (
+                <span className="text-[0.62rem] text-primary">({t("git.branchCurrent")})</span>
+              ) : null}
+            </span>
+          }
+          subtitle={
+            branch.upstream ? (
+              <span className="text-xs text-on-surface-muted">{branch.upstream}</span>
+            ) : undefined
+          }
+          meta={
+            branch.ahead !== undefined || branch.behind !== undefined ? (
+              <span className="font-mono text-[0.62rem] tabular-nums">
+                {branch.behind && branch.behind > 0 ? (
+                  <span className="text-on-surface-muted">↓{branch.behind} </span>
+                ) : null}
+                {branch.ahead && branch.ahead > 0 ? (
+                  <span className="text-success">↑{branch.ahead}</span>
+                ) : null}
+              </span>
+            ) : null
+          }
+          selected={branch.isCurrent}
+          onClick={onSelectBranch ? () => onSelectBranch(branch.name) : undefined}
+        />
+      ))}
+    </ListGroup>
+  );
+};
+
+/** R4 展开内容：当前分支相对 upstream 的 ahead/behind commit 列表（lazy query，展开才发）。 */
+const GitAheadBehindPanel = ({ projectName, branch }: { projectName: string; branch?: string }) => {
+  const { t } = useT();
+  const ab = useQuery({
+    queryKey: ["projects", projectName, "git", "ahead-behind", branch],
+    queryFn: () => getProjectGitAheadBehind(projectName, branch),
+  });
+  if (ab.isLoading)
+    return (
+      <div className="mt-1.5">
+        <ListRowSkeleton count={1} />
+      </div>
+    );
+  if (ab.error || !ab.data) return null;
+  if (ab.data.upstream === undefined)
+    return <div className="mt-1.5 text-xs text-on-surface-muted">{t("git.noUpstream")}</div>;
+  return (
+    <div className="mt-1.5 flex flex-col gap-2">
+      {ab.data.aheadCommits.length > 0 ? (
+        <div>
+          <div className="px-1 pb-1 text-[0.62rem] font-semibold uppercase tracking-wide text-success">
+            {t("git.aheadLabel")} · {ab.data.ahead}
+          </div>
+          <ListGroup ariaLabel="Git ahead commits">
+            {ab.data.aheadCommits.map((commit) => (
+              <GitCommitRow key={commit.hash} commit={commit} />
+            ))}
+          </ListGroup>
+        </div>
+      ) : null}
+      {ab.data.behindCommits.length > 0 ? (
+        <div>
+          <div className="px-1 pb-1 text-[0.62rem] font-semibold uppercase tracking-wide text-on-surface-muted">
+            {t("git.behindLabel")} · {ab.data.behind}
+          </div>
+          <ListGroup ariaLabel="Git behind commits">
+            {ab.data.behindCommits.map((commit) => (
+              <GitCommitRow key={commit.hash} commit={commit} />
+            ))}
+          </ListGroup>
+        </div>
+      ) : null}
+      {ab.data.aheadCommits.length === 0 && ab.data.behindCommits.length === 0 ? (
+        <div className="px-1 pb-1 text-[0.62rem] text-on-surface-muted">{t("git.upToDate")}</div>
+      ) : null}
+    </div>
+  );
+};
+
+/**
+ * R2 当前分支态势行。可展开（传 projectName + onToggle）→ R4 渲染 GitAheadBehindPanel
+ * 列 ahead/behind commits。无 upstream / detached 不可展开（纯展示）。
+ */
+function GitBranchStatusRow({
+  branch,
+  projectName,
+  open = false,
+  onToggle,
+}: {
+  branch: GitBranchStatus;
+  projectName?: string;
+  open?: boolean;
+  onToggle?: () => void;
+}) {
   const { t } = useT();
   if (branch.name === "HEAD") {
     return <div className="mb-2 text-xs text-on-surface-muted">{t("git.detached")}</div>;
   }
-  return (
-    <div className="mb-2 flex items-center gap-2 text-xs">
+  const expandable = onToggle !== undefined && branch.upstream !== undefined;
+  const header = (
+    <>
       <span className="font-mono font-semibold text-on-surface">{branch.name}</span>
       {branch.upstream === undefined ? (
         <span className="text-on-surface-muted">{t("git.noUpstream")}</span>
@@ -511,6 +762,25 @@ function GitBranchStatusRow({ branch }: { branch: GitBranchStatus }) {
           ) : null}
         </>
       )}
+    </>
+  );
+  return (
+    <div className="mb-2">
+      {expandable ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex items-center gap-2 text-xs hover:opacity-80"
+        >
+          {header}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 text-xs">{header}</div>
+      )}
+      {expandable && open && projectName ? (
+        <GitAheadBehindPanel projectName={projectName} branch={branch.name} />
+      ) : null}
     </div>
   );
 }
@@ -531,6 +801,9 @@ export function GitDiffPanel({
 }: GitDiffPanelProps) {
   const { t } = useT();
   const [selectedFile, setSelectedFile] = useState<SelectedGitFile | undefined>();
+  const [view, setView] = useState<GitView>("changes");
+  const [commitBranch, setCommitBranch] = useState<string | undefined>();
+  const [aheadBehindOpen, setAheadBehindOpen] = useState(false);
   const {
     exiting: diffExiting,
     close: closeDiffOverlay,
@@ -634,15 +907,35 @@ export function GitDiffPanel({
       <div
         className={`border-b border-neutral-line/40 px-3.5 py-3 ${isFileSelected ? "hidden sm:block" : "block"}`}
       >
-        {branch ? <GitBranchStatusRow branch={branch} /> : null}
+        {branch ? (
+          <GitBranchStatusRow
+            branch={branch}
+            projectName={projectName}
+            open={aheadBehindOpen}
+            onToggle={() => setAheadBehindOpen((v) => !v)}
+          />
+        ) : null}
         {scopeChips}
+        <GitViewSwitcher view={view} onChange={setView} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         <aside
           className={`min-h-0 flex-1 sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60 ${isFileSelected ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
         >
           <div className="min-h-0 overflow-y-auto px-3 pb-3 sm:flex-1 sm:flex sm:flex-col max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
-            {fileList}
+            {view === "changes" ? (
+              fileList
+            ) : view === "branches" ? (
+              <GitBranchList
+                projectName={projectName}
+                onSelectBranch={(name) => {
+                  setCommitBranch(name);
+                  setView("commits");
+                }}
+              />
+            ) : (
+              <GitCommitList projectName={projectName} branch={commitBranch ?? branch?.name} />
+            )}
           </div>
         </aside>
         <div

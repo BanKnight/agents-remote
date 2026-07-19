@@ -256,6 +256,120 @@ test("listDiff reports detached HEAD as name", async () => {
   expect(result.branch).toEqual({ name: "HEAD" });
 });
 
+test("listBranches reports local + remote branches with current + track", async () => {
+  const projectPath = join(root, "demo");
+  const upstreamPath = join(root, "upstream.git");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await git(projectPath, ["checkout", "-b", "feature/x"]);
+  await writeFile(join(projectPath, "b.txt"), "b\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "feature"]);
+  await git(projectPath, ["checkout", "main"]);
+  await git(projectPath, ["init", "--bare", upstreamPath]);
+  await git(projectPath, ["remote", "add", "origin", upstreamPath]);
+  await git(projectPath, ["push", "-u", "origin", "main"]);
+  // main 领先 upstream 1（push 后本地再 1 commit）。
+  await writeFile(join(projectPath, "c.txt"), "c\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "ahead"]);
+
+  const service = new ProjectGitDiffService(root);
+  const result = await service.listBranches("demo");
+  expect(result.current).toBe("main");
+  const main = result.branches.find((b) => b.name === "main" && b.type === "local");
+  expect(main?.isCurrent).toBe(true);
+  expect(main?.upstream).toBe("origin/main");
+  expect(main?.ahead).toBe(1);
+  expect(result.branches.some((b) => b.name === "feature/x" && b.type === "local")).toBe(true);
+  expect(result.branches.some((b) => b.name === "origin/main" && b.type === "remote")).toBe(true);
+});
+
+test("listCommits returns history with hash/message/author/time + branch filter", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "first"]);
+  await writeFile(join(projectPath, "b.txt"), "b\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "second"]);
+
+  const service = new ProjectGitDiffService(root);
+  const result = await service.listCommits("demo");
+  expect(result.branch).toBe("HEAD");
+  expect(result.commits).toHaveLength(2);
+  // log 默认倒序（最新在前）。
+  expect(result.commits[0].message).toBe("second");
+  expect(result.commits[1].message).toBe("first");
+  expect(result.commits[0].author).toBe("Test User");
+  expect(result.commits[0].hash).toMatch(/^[0-9a-f]+$/);
+  // branch 过滤（合法 ref）。
+  const filtered = await service.listCommits("demo", "main");
+  expect(filtered.branch).toBe("main");
+  expect(filtered.commits).toHaveLength(2);
+});
+
+test("listCommits rejects invalid branch ref", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  const service = new ProjectGitDiffService(root);
+  await expect(service.listCommits("demo", "a;b")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+  await expect(service.listCommits("demo", "a$b")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+  await expect(service.listCommits("demo", "..")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+});
+
+test("listAheadBehind expands ahead/behind into commit lists", async () => {
+  const projectPath = join(root, "demo");
+  const upstreamPath = join(root, "upstream.git");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await git(projectPath, ["init", "--bare", upstreamPath]);
+  await git(projectPath, ["remote", "add", "origin", upstreamPath]);
+  await git(projectPath, ["push", "-u", "origin", "main"]);
+  // 本地领先 1（待 push）。
+  await writeFile(join(projectPath, "b.txt"), "b\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "ahead commit"]);
+
+  const service = new ProjectGitDiffService(root);
+  const result = await service.listAheadBehind("demo");
+  expect(result.upstream).toBe("origin/main");
+  expect(result.ahead).toBe(1);
+  expect(result.behind).toBe(0);
+  expect(result.aheadCommits).toHaveLength(1);
+  expect(result.aheadCommits[0].message).toBe("ahead commit");
+  expect(result.behindCommits).toHaveLength(0);
+});
+
+test("listAheadBehind returns zeros when no upstream", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  const service = new ProjectGitDiffService(root);
+  const result = await service.listAheadBehind("demo");
+  expect(result.upstream).toBeUndefined();
+  expect(result.ahead).toBe(0);
+  expect(result.behind).toBe(0);
+  expect(result.aheadCommits).toHaveLength(0);
+  expect(result.behindCommits).toHaveLength(0);
+});
+
 const initRepository = async (projectPath: string) => {
   await git(projectPath, ["init"]);
   await git(projectPath, ["config", "user.email", "test@example.com"]);
