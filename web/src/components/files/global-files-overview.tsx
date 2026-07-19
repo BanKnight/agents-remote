@@ -1,4 +1,5 @@
 import { FilesPanel } from "./file-browser";
+import { type CardDragStartHandler } from "../workbench/drag-source";
 
 /**
  * 全局文件总览共享主体（设计 workbench-stable-refactor Phase 4）。桌面活动栏 [文件] → /files 左栏 +
@@ -13,8 +14,19 @@ import { FilesPanel } from "./file-browser";
  */
 export function GlobalFilesOverview({
   onOpenFile,
+  onCardDragStart,
 }: {
   onOpenFile: (projectName: string, path: string) => void;
+  /** 拖动源启动（文件行拖到中栏开 tab，透传 FilesPanel → FileEntryList）。undefined 退纯点击（移动）。 */
+  onCardDragStart?: CardDragStartHandler;
 }) {
-  return <FilesPanel initialPath="" enablePreview={false} onOpenFile={onOpenFile} rootBrowse />;
+  return (
+    <FilesPanel
+      initialPath=""
+      enablePreview={false}
+      onOpenFile={onOpenFile}
+      onCardDragStart={onCardDragStart}
+      rootBrowse
+    />
+  );
 }

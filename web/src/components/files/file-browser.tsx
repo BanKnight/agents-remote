@@ -1,5 +1,14 @@
 import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remote/shared";
-import { type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react";
 import { MarkdownString } from "../markdown/MarkdownString";
@@ -32,6 +41,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 
 // CodeMirror 体积较大，只在用户打开文本文件 source 预览时按需加载，避免进首屏 chunk。
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
@@ -166,6 +176,11 @@ type FileEntryListProps = {
   onRenameSubmit: (path: string, name: string) => void;
   onRenamingNameChange: (name: string) => void;
   onStartRename: (path: string, name: string) => void;
+  /** 拖动源启动（文件行拖到中栏开 file tab，WorkbenchContent onCardDragStart）。undefined 退纯点击。 */
+  onCardDragStart?: CardDragStartHandler;
+  /** 文件所属项目名（构造 fileRef.path 全路径 = `${fileProjectName}/${entry.path}`）。
+   *  undefined（rootBrowse 根目录层）→ 文件行不可拖（无对应 file tab）。与 selectFile 的 effectiveProjectName gate 一致。 */
+  fileProjectName?: string;
 };
 
 export function FileEntryList({
@@ -184,6 +199,8 @@ export function FileEntryList({
   onRenameSubmit,
   onRenamingNameChange,
   onStartRename,
+  onCardDragStart,
+  fileProjectName,
 }: FileEntryListProps) {
   const { t } = useT();
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -280,41 +297,51 @@ export function FileEntryList({
             <span className="font-mono text-[0.82rem]">{entry.name}</span>
           );
 
-          return (
-            <ListRow
-              key={`${entry.type}:${entry.path}`}
-              className="group"
-              marker={
-                <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
-                  <ShellIcon name={isDirectory ? "files-nav" : "file"} className="h-4 w-4" />
-                </IconMarker>
-              }
-              selected={selected}
-              subtitle={entry.hidden ? t("files.hidden") : undefined}
-              title={titleContent}
-              onClick={
-                isRenaming
-                  ? undefined
-                  : clickable
-                    ? () => (isDirectory ? onOpenDirectory(entry.path) : onPreviewFile(entry.path))
-                    : undefined
-              }
-              onContextMenu={
-                isRenaming || readOnly
-                  ? undefined
-                  : (e) => {
-                      e.preventDefault();
-                      setCtxMenu({
-                        name: entry.name,
-                        path: entry.path,
-                        x: e.clientX,
-                        y: e.clientY,
-                      });
-                    }
-              }
-              actions={isRenaming || readOnly ? undefined : renderActions(entry)}
-            />
-          );
+          // 文件行（非目录 + 已知项目名 + 拖动注入）→ DraggableListRow 拖到中栏开 file tab；
+          // 目录/根目录层 → 纯 ListRow（无对应 file tab，不可拖）。设计 §7.2 拖动源泛化。
+          const rowCommon: ComponentProps<typeof ListRow> = {
+            className: "group",
+            marker: (
+              <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
+                <ShellIcon name={isDirectory ? "files-nav" : "file"} className="h-4 w-4" />
+              </IconMarker>
+            ),
+            selected,
+            subtitle: entry.hidden ? t("files.hidden") : undefined,
+            title: titleContent,
+            onClick: isRenaming
+              ? undefined
+              : clickable
+                ? () => (isDirectory ? onOpenDirectory(entry.path) : onPreviewFile(entry.path))
+                : undefined,
+            onContextMenu:
+              isRenaming || readOnly
+                ? undefined
+                : (e) => {
+                    e.preventDefault();
+                    setCtxMenu({
+                      name: entry.name,
+                      path: entry.path,
+                      x: e.clientX,
+                      y: e.clientY,
+                    });
+                  },
+            actions: isRenaming || readOnly ? undefined : renderActions(entry),
+          };
+          // TS 在此分支内 narrow onCardDragStart/fileProjectName 到非空（无需 ! 断言）。
+          // dragRef.path 全路径 = `${projectName}/${entry.path}`，与 onOpenFile / selectFile 构造一致。
+          if (onCardDragStart && fileProjectName && !isDirectory) {
+            return (
+              <DraggableListRow
+                key={`${entry.type}:${entry.path}`}
+                {...rowCommon}
+                dragRef={{ kind: "file", path: `${fileProjectName}/${entry.path}` }}
+                onCardDragStart={onCardDragStart}
+                onSelect={() => onPreviewFile(entry.path)}
+              />
+            );
+          }
+          return <ListRow key={`${entry.type}:${entry.path}`} {...rowCommon} />;
         })}
       </ListGroup>
       {ctxMenu ? (
@@ -696,6 +723,8 @@ export type FilesPanelProps = {
    * 预览分支不触发，行为零改。
    */
   onOpenFile?: (projectName: string, path: string) => void;
+  /** 拖动源启动（文件行拖到中栏开 file tab，透传 FileEntryList）。undefined 退纯点击（inspection/移动）。 */
+  onCardDragStart?: CardDragStartHandler;
 };
 
 export function FilesPanel({
@@ -707,6 +736,7 @@ export function FilesPanel({
   onPathChange,
   onMobilePreviewChange,
   onOpenFile,
+  onCardDragStart,
 }: FilesPanelProps) {
   const { t } = useT();
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -1001,6 +1031,8 @@ export function FilesPanel({
           onRenameSubmit={handleRenameSubmit}
           onRenamingNameChange={setRenamingName}
           onStartRename={startRename}
+          onCardDragStart={onCardDragStart}
+          fileProjectName={effectiveProjectName}
         />
       </div>
     </aside>

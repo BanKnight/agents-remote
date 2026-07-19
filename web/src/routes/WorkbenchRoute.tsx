@@ -531,8 +531,24 @@ function WorkbenchContent({
     const next = dropIntoLeaf(prev, drag.ref, zone.targetGroupId, zone.zone);
     if (next === prev) return;
     update(() => next);
-    if (drag.ref.kind === "session") navigateSession(drag.ref);
-  }, [dragState, activeZone, layout, update, navigateSession]);
+    // drop 后 focus 到 dropped tab（与 onSelectTab/onCloseTab 同源 navigate 分发，设计 §7.2 拖动源泛化）。
+    const ref = drag.ref;
+    if (ref.kind === "session") navigateSession(ref);
+    else if (ref.kind === "file") {
+      const { projectName, path } = splitFilePath(ref.path);
+      void navigateToFile(projectName, path);
+    } else if (ref.kind === "git") void navigateToGitFile(ref.projectName, ref.scope, ref.path);
+    else if (ref.kind === "skill") void navigateToSkill(ref.name);
+  }, [
+    dragState,
+    activeZone,
+    layout,
+    update,
+    navigateSession,
+    navigateToFile,
+    navigateToGitFile,
+    navigateToSkill,
+  ]);
   const cancelDrag = useCallback(() => {
     setDragState(null);
     setActiveZone(null);
@@ -602,6 +618,7 @@ function WorkbenchContent({
     scope.kind === "project" || leftMode === "auto" ? (
       <ProjectLeftPanel
         focusId={focusId}
+        onCardDragStart={onCardDragStart}
         onOpenFile={onOpenFile}
         onOpenGitFile={onOpenGitFile}
         onTabChange={onTabChange}
@@ -610,9 +627,9 @@ function WorkbenchContent({
         tab={tab}
       />
     ) : leftMode === "skills" ? (
-      <SkillsPanel onOpenSkill={onOpenSkill} />
+      <SkillsPanel onCardDragStart={onCardDragStart} onOpenSkill={onOpenSkill} />
     ) : (
-      <GlobalFilesOverview onOpenFile={onOpenFile} />
+      <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
     );
   return (
     <WorkbenchShell

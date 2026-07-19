@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { SkillAgent, SkillMarketEntry } from "@agents-remote/shared";
 
@@ -14,6 +14,7 @@ import {
   ShellInput,
 } from "../components/shell/shell-primitives";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
+import { DraggableListRow, type CardDragStartHandler } from "../components/workbench/drag-source";
 import {
   useAddSkillSource,
   useInstallSkill,
@@ -49,7 +50,14 @@ type SkillTab = "discover" | "manage" | "sources";
  * 「开中栏 skill tab + focus」，移动 MobileSkillsOverview 注入「navigate /skills/skill/$」
  *（移动无中栏，开 focus 主体）。Manage tab 点已装 skill 行触发，详情在中栏/focus 打开（非 inline）。
  */
-export function SkillsPanel({ onOpenSkill }: { onOpenSkill: (name: string) => void }) {
+export function SkillsPanel({
+  onOpenSkill,
+  onCardDragStart,
+}: {
+  onOpenSkill: (name: string) => void;
+  /** 拖动源启动（skill 行拖到中栏开 skill tab，WorkbenchContent onCardDragStart）。undefined 退纯点击（移动端不传）。 */
+  onCardDragStart?: CardDragStartHandler;
+}) {
   const { t } = useT();
   const [tab, setTab] = useState<SkillTab>("discover");
   // 提升至 parent：tab 切换 SkillsPanel 不 unmount，query 保留 → 搜索结果 memory。
@@ -75,7 +83,9 @@ export function SkillsPanel({ onOpenSkill }: { onOpenSkill: (name: string) => vo
           {tab === "discover" ? (
             <DiscoverTab agent={agent} query={query} setQuery={setQuery} />
           ) : null}
-          {tab === "manage" ? <ManageTab agent={agent} onOpenSkill={onOpenSkill} /> : null}
+          {tab === "manage" ? (
+            <ManageTab agent={agent} onCardDragStart={onCardDragStart} onOpenSkill={onOpenSkill} />
+          ) : null}
           {tab === "sources" ? <SourcesTab /> : null}
         </div>
       </div>
@@ -250,9 +260,12 @@ function InstallConfirmDialog({
 function ManageTab({
   agent,
   onOpenSkill,
+  onCardDragStart,
 }: {
   agent: SkillAgent;
   onOpenSkill: (name: string) => void;
+  /** 拖动源启动（skill 行拖到中栏开 skill tab，透传自 SkillsPanel）。undefined 退纯点击。 */
+  onCardDragStart?: CardDragStartHandler;
 }) {
   const { t } = useT();
   const installed = useInstalledSkills(agent);
@@ -271,9 +284,12 @@ function ManageTab({
   return (
     <div className="space-y-3">
       <ListGroup ariaLabel={t("skills.tabManage")}>
-        {skills.map((s) => (
-          <ListRow
-            actions={
+        {skills.map((s) => {
+          // rowCommon 复用：onClick 是键盘 Enter/Space → click 路径；actions 的 uninstall 按钮点击
+          // 走原生 click（inClose 判定：closest("button") → 不触发拖动 onSelect）。onCardDragStart
+          // 存在 → DraggableListRow 拖到中栏开 skill tab（设计 §7.2）。
+          const rowCommon: ComponentProps<typeof ListRow> = {
+            actions: (
               <ActionButton
                 compact
                 disabled={uninstall.isPending}
@@ -282,13 +298,24 @@ function ManageTab({
               >
                 {uninstall.isPending ? t("skills.uninstalling") : t("skills.uninstall")}
               </ActionButton>
-            }
-            key={s.name}
-            onClick={() => onOpenSkill(s.name)}
-            subtitle={s.path}
-            title={s.name}
-          />
-        ))}
+            ),
+            subtitle: s.path,
+            title: s.name,
+            onClick: () => onOpenSkill(s.name),
+          };
+          if (onCardDragStart) {
+            return (
+              <DraggableListRow
+                key={s.name}
+                {...rowCommon}
+                dragRef={{ kind: "skill", name: s.name }}
+                onCardDragStart={onCardDragStart}
+                onSelect={() => onOpenSkill(s.name)}
+              />
+            );
+          }
+          return <ListRow key={s.name} {...rowCommon} />;
+        })}
       </ListGroup>
     </div>
   );

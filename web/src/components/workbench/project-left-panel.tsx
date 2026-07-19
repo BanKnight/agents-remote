@@ -11,6 +11,7 @@ import { TabButton } from "./right-panel-tabs";
 import { HistoryList, HistoryRangeControl } from "./history-list";
 import { FilesLeftPanel } from "../files/files-left-panel";
 import { GitChangesList } from "../git/git-diff-viewer";
+import { type CardDragStartHandler } from "./drag-source";
 
 type ProjectLeftPanelProps = {
   scope: WorkbenchScope;
@@ -28,6 +29,8 @@ type ProjectLeftPanelProps = {
   onOpenFile: (projectName: string, path: string) => void;
   /** middle tab [git] 点变更文件 → 中栏开 git diff tab（WorkbenchContent onOpenGitFile）。 */
   onOpenGitFile: (projectName: string, scope: GitDiffScope, path: string) => void;
+  /** 拖动源启动（文件树/git 行拖到中栏开 tab，WorkbenchContent onCardDragStart）。undefined 退纯点击。 */
+  onCardDragStart?: CardDragStartHandler;
   /** middle tab [历史] HistoryList 聚焦态（URL focusId）。 */
   focusId?: string;
 };
@@ -52,6 +55,7 @@ export function ProjectLeftPanel({
   onTabChange,
   onOpenFile,
   onOpenGitFile,
+  onCardDragStart,
   focusId,
 }: ProjectLeftPanelProps) {
   const { t } = useT();
@@ -91,10 +95,17 @@ export function ProjectLeftPanel({
         />
       );
     } else if (resolvedTab === "files") {
-      middleBody = <FilesLeftPanel onOpenFile={onOpenFile} projectName={scope.key} />;
+      middleBody = (
+        <FilesLeftPanel
+          onCardDragStart={onCardDragStart}
+          onOpenFile={onOpenFile}
+          projectName={scope.key}
+        />
+      );
     } else if (resolvedTab === "git") {
       middleBody = (
         <GitChangesList
+          onCardDragStart={onCardDragStart}
           onSelectGitFile={(file) => onOpenGitFile(scope.key, file.scope, file.path)}
           projectName={scope.key}
           selectedFile={selectedGitFile}

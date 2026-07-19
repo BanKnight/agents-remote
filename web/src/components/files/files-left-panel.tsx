@@ -1,4 +1,5 @@
 import { FilesPanel } from "./file-browser";
+import { type CardDragStartHandler } from "../workbench/drag-source";
 
 /**
  * 项目内文件树（设计 §4.2 决策 16，middle tab [文件]）：复用 FilesPanel enablePreview=false
@@ -10,9 +11,12 @@ import { FilesPanel } from "./file-browser";
 export function FilesLeftPanel({
   projectName,
   onOpenFile,
+  onCardDragStart,
 }: {
   projectName: string;
   onOpenFile: (projectName: string, path: string) => void;
+  /** 拖动源启动（文件行拖到中栏开 tab，透传 FilesPanel → FileEntryList）。undefined 退纯点击。 */
+  onCardDragStart?: CardDragStartHandler;
 }) {
   return (
     <FilesPanel
@@ -20,6 +24,7 @@ export function FilesLeftPanel({
       projectName={projectName}
       enablePreview={false}
       onOpenFile={onOpenFile}
+      onCardDragStart={onCardDragStart}
     />
   );
 }

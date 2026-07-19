@@ -1,5 +1,5 @@
 import type { GitDiffFileStatus, GitDiffFileSummary, GitDiffScope } from "@agents-remote/shared";
-import { useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
@@ -14,6 +14,7 @@ import {
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
+import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 
 // ── Query-key 隔离段（cache 隔离，避免互相 invalidate）──────────────────────────
 /** 中栏 git tab 的 file diff query-key 隔离段（PanelRouter GitFileDiffPanel 默认）。 */
@@ -70,11 +71,20 @@ type SelectedGitFile = { path: string; scope: GitDiffScope };
 
 type GitFileListProps = {
   files: GitDiffFileSummary[];
+  projectName: string;
   selectedFile: SelectedGitFile | undefined;
   onSelectFile: (file: SelectedGitFile) => void;
+  /** 拖动源启动（git 行拖到中栏开 git diff tab，WorkbenchContent onCardDragStart）。undefined 退纯点击（右栏/移动 inspection）。 */
+  onCardDragStart?: CardDragStartHandler;
 };
 
-function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
+function GitFileList({
+  files,
+  projectName,
+  onSelectFile,
+  selectedFile,
+  onCardDragStart,
+}: GitFileListProps) {
   const { t } = useT();
 
   if (files.length === 0)
@@ -90,27 +100,36 @@ function GitFileList({ files, onSelectFile, selectedFile }: GitFileListProps) {
     <ListGroup ariaLabel="Git changed files">
       {files.map((file) => {
         const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
-        return (
-          <ListRow
-            key={`${file.scope}:${file.path}`}
-            marker={
-              <IconMarker size="sm" tone="muted">
-                <ShellIcon name="file" className="h-4 w-4" />
-              </IconMarker>
-            }
-            meta={
-              <IconMarker size="sm" tone={gitStatusTone(file.status)}>
-                {statusShortLabel(file.status)}
-              </IconMarker>
-            }
-            selected={selected}
-            subtitle={
-              file.previousPath ? t("git.fromPath", { path: file.previousPath }) : undefined
-            }
-            title={<span className="font-mono text-[0.82rem]">{file.path}</span>}
-            onClick={() => onSelectFile({ path: file.path, scope: file.scope })}
-          />
-        );
+        // rowCommon 复用：onClick 是键盘 Enter/Space → click 路径（pointer 单击被拖动序列抑制，
+        // onSelect 接管）。onCardDragStart 存在 → DraggableListRow 拖到中栏开 git diff tab（设计 §7.2）。
+        const rowCommon: ComponentProps<typeof ListRow> = {
+          marker: (
+            <IconMarker size="sm" tone="muted">
+              <ShellIcon name="file" className="h-4 w-4" />
+            </IconMarker>
+          ),
+          meta: (
+            <IconMarker size="sm" tone={gitStatusTone(file.status)}>
+              {statusShortLabel(file.status)}
+            </IconMarker>
+          ),
+          selected,
+          subtitle: file.previousPath ? t("git.fromPath", { path: file.previousPath }) : undefined,
+          title: <span className="font-mono text-[0.82rem]">{file.path}</span>,
+          onClick: () => onSelectFile({ path: file.path, scope: file.scope }),
+        };
+        if (onCardDragStart) {
+          return (
+            <DraggableListRow
+              key={`${file.scope}:${file.path}`}
+              {...rowCommon}
+              dragRef={{ kind: "git", projectName, scope: file.scope, path: file.path }}
+              onCardDragStart={onCardDragStart}
+              onSelect={() => onSelectFile({ path: file.path, scope: file.scope })}
+            />
+          );
+        }
+        return <ListRow key={`${file.scope}:${file.path}`} {...rowCommon} />;
       })}
     </ListGroup>
   );
@@ -227,6 +246,8 @@ export type GitChangesListProps = {
   selectedFile?: SelectedGitFile;
   /** 点变更文件回调（透出 path+scope，WorkbenchContent onOpenGitFile 开中栏 git diff tab）。 */
   onSelectGitFile: (file: SelectedGitFile) => void;
+  /** 拖动源启动（git 行拖到中栏开 git diff tab，透传 GitFileList）。undefined 退纯点击（移动端）。 */
+  onCardDragStart?: CardDragStartHandler;
 };
 
 /**
@@ -240,6 +261,7 @@ export function GitChangesList({
   projectName,
   selectedFile,
   onSelectGitFile,
+  onCardDragStart,
 }: GitChangesListProps) {
   const { t } = useT();
   const diff = useQuery({
@@ -298,6 +320,8 @@ export function GitChangesList({
         <GitFileList
           files={diff.data?.files ?? []}
           onSelectFile={onSelectGitFile}
+          onCardDragStart={onCardDragStart}
+          projectName={projectName}
           selectedFile={selectedFile}
         />
       </div>
@@ -547,6 +571,7 @@ export function GitDiffPanel({
         cancelDiffExit();
         setSelectedFile(file);
       }}
+      projectName={projectName}
       selectedFile={selectedFile}
     />
   );
