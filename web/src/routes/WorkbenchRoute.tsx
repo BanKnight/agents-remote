@@ -243,6 +243,10 @@ function WorkbenchContent({
         // file/git tab 不参与 stale prune（无生命周期，刷新保留，设计 §6 决策 19 / 阶段 3）；
         // session tab 用 sessionId 判定。
         if (t.kind === "file" || t.kind === "git" || t.kind === "skill") continue;
+        // 当前聚焦 session tab 不 prune：create/resume navigate 先行时 globalRefs（overview）
+        // 尚未追上新 session，focus effect 刚开的 tab 会被误判 stale 删掉。focusId 是「用户正在看」
+        // 的语义边界——它在 refs 之外只是暂态（overview 后台刷新会追上），不该据此清 tab。
+        if (t.sessionId === focusId) continue;
         if (!activeIds.has(t.sessionId)) stale.push({ leafId: leaf.id, tabId: t.sessionId });
       }
     }

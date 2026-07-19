@@ -902,21 +902,25 @@ export function useCreateSession(projectName: string | null): CreateSessionApi &
     mutationFn: ({ displayName, provider }: { displayName: string; provider: AgentProvider }) =>
       createAgentSession(safeName, provider, { displayName: displayName || undefined }),
     onSuccess: async (data) => {
-      await invalidateSessions();
+      // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
+      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview（返回 project 时见新 session）。
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: safeName, id: data.session.id },
       });
+      void invalidateSessions();
     },
   });
   const createTerminal = useMutation({
     mutationFn: (displayName: string) => createTerminalSession(safeName, displayName || undefined),
     onSuccess: async (data) => {
-      await invalidateSessions();
+      // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
+      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview（返回 project 时见新 session）。
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: safeName, id: data.session.id },
       });
+      void invalidateSessions();
     },
   });
 

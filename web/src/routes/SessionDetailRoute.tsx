@@ -176,14 +176,21 @@ export function SessionDetail({
   const createTerminal = useMutation({
     mutationFn: () => createTerminalSession(projectName, `Terminal for ${title}`),
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries({
-        exact: true,
-        queryKey: ["projects", projectName, "terminal-sessions"],
-      });
+      // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
+      // invalidate 后台 fire-and-forget 刷新左栏 terminal 列表。
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: projectName, id: result.session.id },
       });
+      void Promise.all([
+        queryClient.invalidateQueries({
+          exact: true,
+          queryKey: ["projects", projectName, "terminal-sessions"],
+        }),
+        // overview 同步刷新：桌面 prune effect 用 globalRefs（= overview）判定 tab stale，
+        // 不刷则新 terminal 不在 globalRefs、tab 被误删（与 invalidateSessions helper 同源）。
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
+      ]);
     },
   });
 

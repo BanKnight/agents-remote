@@ -63,10 +63,8 @@ export function useHistorySessions(projectName: string, range: AgentHistoryRange
         displayName: displayName || undefined,
       }),
     onSuccess: async (data) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-history"] }),
-      ]);
+      // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
+      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview + history tab 列表。
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: projectName, id: data.session.id },
@@ -74,6 +72,13 @@ export function useHistorySessions(projectName: string, range: AgentHistoryRange
         // 函数式 search 保留 view/rightTab 等其他维度（设计 §13 正交）。
         search: (prev) => ({ ...prev, tab: "overview" }),
       });
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-history"] }),
+        // overview 同步刷新：桌面 prune effect 用 globalRefs（= overview）判定 tab stale，
+        // 不刷则新 session 不在 globalRefs、tab 被误删（与 invalidateSessions helper 同源）。
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
+      ]);
     },
   });
   return {
