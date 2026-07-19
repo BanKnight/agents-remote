@@ -1815,6 +1815,12 @@ function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSource
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch") return; // 移动端无拖放
     if (event.button !== 0) return;
+    // 忽略来自 ActionMenu portal（桌面 popover menuitem / 移动 sheet scrim）的 pointerdown：
+    // React 合成 pointerdown 按 fiber 冒泡到此（ActionMenu 嵌在本卡片内），但 DOM target 在 body
+    // portal 不在本卡片内。若不拦，下面挂的 window pointerup 会在 menuitem 松手时调 onSelect
+    //（穿透）——menuitem 自身 onSelect 已处理动作，不该再触发卡片激活。与 InstanceCard onClick
+    // 的 contains 判断同源（frontend-notes §4），只接受确实落在卡片 DOM 内的 pointerdown。
+    if (!event.currentTarget.contains(event.target as Node)) return;
     // 起始 target 在 close 按钮内 → 单击走 close 路径，不进拖动态也不调 onSelect。
     const inClose = !!(event.target as HTMLElement).closest("button");
     const start = { x: event.clientX, y: event.clientY, inClose };

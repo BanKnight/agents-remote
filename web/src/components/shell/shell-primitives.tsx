@@ -786,7 +786,7 @@ export function InstanceCard({
             trigger={
               <button
                 aria-label={actionsLabel}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10 max-sm:h-10 max-sm:w-10"
+                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10 max-sm:h-10 max-sm:w-10"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。

@@ -150,6 +150,8 @@ state（树/嵌套，唯一真相）
 
 **判定**：overlay 是 modal 语义（背景不可交互）才走 Dialog + 锁；非 modal（按坐标定位的锚定 popover、hover popover 背景仍可点）用裸 `createPortal`，不锁、不进 Dialog。
 
+**⚠️ 补充（pointer sequence 路径，桌面端回归实测）**：contains 判断要覆盖**所有 fiber 冒泡的事件路径**，不只 `onClick`。`DragSourceCard`（仅桌面左总览启用，包装 InstanceCard 启用拖放）用 `onPointerDown` → 挂 window `pointerup` listener → pointerup 调 `onSelect`（不依赖 click 合成，避开 click 抑制 + `.click()` 误触 close 按钮）。点 ⋯ menuitem 时，menuitem 的 **pointerdown** 按 fiber 冒泡到 DragSourceCard（ActionMenu 嵌其内），原判断 `inClose = !!target.closest("button")` 失效——Radix `DropdownMenuItem` 渲染 `<div role="menuitem">`（非 `<button>`）→ `inClose=false` → 挂的 window pointerup 在松手时调 `onSelect`（navigate），与 menuitem 自身 `onSelect`（rename/close）**同时触发 = 穿透**。InstanceCard `onClick` 的 contains 判断对这个路径**无效**（navigate 走 pointer sequence，不经 onClick）——探针实测 InstanceCard onClick 被 menuitem click 调到、contains=false 正确 return，但 navigate 仍发生，证明根因在 DragSourceCard pointer sequence。修复同源：`onPointerDown` 首行加 `if (!event.currentTarget.contains(event.target as Node)) return;`——portal menuitem 的 pointerdown（DOM target 在 body）直接 return，不挂 pointerup listener；卡片内 pointerdown（target 在 div 内，contains=true）继续走 inClose/拖动判断，单击激活、⋯ trigger 开菜单均不受影响（探针验证：menuitem 穿透消失 + 单击卡片仍 navigate）。**判定**：凡是用 pointer sequence（pointerdown→pointerup）激活的卡片/行，其 `onPointerDown` 都要加 contains 判断，与 `onClick` 同源——fiber 冒泡不只走 click。
+
 ### 诊断方法
 
 源码导航入口（如 `useWorkbenchNavigate`）临时加 `console.log("[nav-wb]", ..., new Error().stack)`，Playwright `page.on("console")` 抓栈，直接看到 `onSelect ← React dispatch ← portal click` 链。`pushState` 的 stack 因 TanStack microtask commit 截断（commit 用 `Promise.resolve().then(()=>v())` 推迟到微任务），但 navigate→commit 同步，trace 不受影响。
