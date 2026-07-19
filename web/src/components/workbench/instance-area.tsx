@@ -12,8 +12,13 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  AgentProvider,
+  AgentSession,
+  OverviewResponse,
+  TerminalSession,
+} from "@agents-remote/shared";
 import {
   type DropZone,
   type GlobalInstanceCandidate,
@@ -762,6 +767,37 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
 }
 
 /**
+ * 乐观移除被关闭的 session：从 list（agent/terminal-sessions）+ overview 当场 filter 掉，
+ * 让卡片/候选立即消失，不等 refetch。server closeMetadata 同步 index.delete 保证下次 list
+ * 不含该 session，refetch 校准与乐观一致，无回滚风险。removeQueries detail 由调用方单独处理。
+ *
+ * 只覆盖两个真正有 useQuery 缓存的 key：["projects", name, "${type}-sessions"]（.sessions）
+ * 与 ["overview"]（.candidates，标识 = projectName+type+sessionId）。["projects"] /
+ * ["projects", name] 在 web 侧无缓存（组件走 overview 单聚合），no-op。
+ */
+export function optimisticallyRemoveSession(
+  queryClient: QueryClient,
+  projectName: string,
+  type: "agent" | "terminal",
+  sessionId: string,
+) {
+  const listKey = ["projects", projectName, `${type}-sessions`];
+  queryClient.setQueryData<{ sessions: { id: string }[] }>(listKey, (data) =>
+    data ? { sessions: data.sessions.filter((s) => s.id !== sessionId) } : data,
+  );
+  queryClient.setQueryData<OverviewResponse>(["overview"], (data) =>
+    data
+      ? {
+          projectNames: data.projectNames,
+          candidates: data.candidates.filter(
+            (c) => !(c.projectName === projectName && c.type === type && c.sessionId === sessionId),
+          ),
+        }
+      : data,
+  );
+}
+
+/**
  * 会话 close 统一流程（confirm → 按 type 调 close API → 精确失效缓存）。三处 close
  *（左总览卡片 ProjectInstances / 移动全局 MobileGlobalOverview / 历史列表）复用此 hook，
  * cache 策略统一：removeQueries detail + exact invalidate（["projects"] / [name] /
@@ -799,7 +835,11 @@ export function useCloseSession() {
       exact: true,
       queryKey: ["projects", ref.projectName, `${type}-sessions`, ref.sessionId],
     });
-    await Promise.all([
+    // 乐观移除：卡片立即从 list + overview 消失，不等 refetch。
+    optimisticallyRemoveSession(queryClient, ref.projectName, type, ref.sessionId);
+    onAfterClose?.();
+    // invalidate 后台 fire-and-forget：server index.delete 已保证 list 一致，无回滚。
+    void Promise.all([
       queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
       queryClient.invalidateQueries({ exact: true, queryKey: ["projects", ref.projectName] }),
       queryClient.invalidateQueries({
@@ -808,7 +848,6 @@ export function useCloseSession() {
       }),
       queryClient.invalidateQueries({ queryKey: ["overview"] }),
     ]);
-    onAfterClose?.();
     return true;
   };
   return { close, holder };

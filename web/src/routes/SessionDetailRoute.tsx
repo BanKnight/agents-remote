@@ -41,6 +41,7 @@ import { GitDiffPanel } from "../components/git/git-diff-viewer";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { ActionMenu, type ActionMenuItem } from "../components/ui/action-menu";
+import { optimisticallyRemoveSession } from "../components/workbench/instance-area";
 
 type SessionDetailProps = {
   projectName: string;
@@ -146,7 +147,22 @@ export function SessionDetail({
         exact: true,
         queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
       });
-      await Promise.all([
+      // 乐观移除：navigate 前从 list + overview 当场 filter，避免返回项目页时 stale 列表短暂显示被关卡片（闪烁）。
+      optimisticallyRemoveSession(queryClient, projectName, sessionType, sessionId);
+      // navigate 优先：用户立即看到返回。detail route 用 per-session detail query，不依赖列表。
+      if (sessionType === "terminal" && sourceAgentSession) {
+        await navigate({
+          to: "/projects/$key/session/$id",
+          params: { key: projectName, id: sourceAgentSession },
+        });
+      } else {
+        await navigate({
+          to: "/projects/$key",
+          params: { key: projectName },
+        });
+      }
+      // invalidate 后台 fire-and-forget：刷新左栏列表 + overview（server index.delete 已保证一致，无回滚）。
+      void Promise.all([
         queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
         queryClient.invalidateQueries({ exact: true, queryKey: ["projects", projectName] }),
         queryClient.invalidateQueries({
@@ -157,19 +173,8 @@ export function SessionDetail({
           exact: true,
           queryKey: ["projects", projectName, "terminal-sessions"],
         }),
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
       ]);
-      if (sessionType === "terminal" && sourceAgentSession) {
-        await navigate({
-          to: "/projects/$key/session/$id",
-          params: { key: projectName, id: sourceAgentSession },
-        });
-        return;
-      }
-
-      await navigate({
-        to: "/projects/$key",
-        params: { key: projectName },
-      });
     },
   });
   const { confirm, holder } = useConfirm();
