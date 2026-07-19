@@ -6,7 +6,10 @@
 // 引擎隔离在 CodeBlock 内，未来切 Shiki 只需替换 CodeBlock，此文件不变。
 // 直接走 ESM 路径（bundle-barrel-imports 约束）。
 
+import { createElement, type CSSProperties, type ReactNode } from "react";
 import { PrismLight } from "react-syntax-highlighter";
+import { refractor } from "refractor/core";
+import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
 import css from "react-syntax-highlighter/dist/esm/languages/prism/css";
 import diff from "react-syntax-highlighter/dist/esm/languages/prism/diff";
@@ -119,4 +122,52 @@ export function extToLang(name: string): string | undefined {
   const dot = name.lastIndexOf(".");
   if (dot < 0) return undefined;
   return EXT_TO_LANG[name.slice(dot + 1).toLowerCase()];
+}
+
+// ── diff/单行源码高亮（R7）─────────────────────────────────────────
+// 复用 CodeBlock 同款 refractor（rsh PrismLight 共享 refractor/core 单例，上方 REGISTRATIONS
+// 已注册全部语言）+ oneDark 主题。逐行 tokenize：diff 每行独立高亮，叠加在 diff 行级红绿背景上。
+// oneDark key 形如 "keyword, regex"（纯 token 名）或 "code[class*=language-]"（全局选择器），
+// 只取纯 token 名建 class→inline-style 表，运行时按 refractor 输出的 token class 查表着色。
+
+type HastNode = {
+  type: string;
+  value?: string;
+  properties?: { className?: unknown };
+  children?: HastNode[];
+};
+
+const TOKEN_STYLE_BY_CLASS: ReadonlyMap<string, CSSProperties> = (() => {
+  const map = new Map<string, CSSProperties>();
+  for (const [selector, style] of Object.entries(oneDark)) {
+    if (selector.includes("[") || selector.includes("::") || selector.includes(">")) continue;
+    for (const name of selector.split(",")) {
+      const trimmed = name.trim();
+      if (trimmed && !trimmed.includes(":")) map.set(trimmed, style as CSSProperties);
+    }
+  }
+  return map;
+})();
+
+function renderHastNode(node: HastNode, key: number): ReactNode {
+  if (node.type === "text") return node.value ?? "";
+  const className = (node.properties?.className ?? []) as unknown[];
+  // refractor 输出 className = ['token', '<name>']；取 token 后的语义 class 查 oneDark。
+  const tokenClass = className.find((c) => c !== "token") as string | undefined;
+  const style = tokenClass ? TOKEN_STYLE_BY_CLASS.get(tokenClass) : undefined;
+  const children = (node.children ?? []).map((child, i) => renderHastNode(child, i));
+  return createElement("span", { key, style }, ...children);
+}
+
+/**
+ * 单行源码语法高亮（diff content cell 用）。lang 未命中或 tokenize 失败时原样返回文本。
+ * 跨行结构（块注释/多行模板串）逐行不延续状态，diff 片段以单行为主，已知取舍。
+ */
+export function highlightCodeLine(code: string, lang: string): ReactNode {
+  try {
+    const root = refractor.highlight(code, lang) as unknown as { children: HastNode[] };
+    return root.children.map((child, i) => renderHastNode(child, i));
+  } catch {
+    return code;
+  }
 }

@@ -105,6 +105,7 @@ export class ProjectGitDiffService {
     projectName: string,
     scope: string | null,
     path: string | null,
+    context: string | null = null,
   ): Promise<GitFileDiffResponse> {
     if (scope !== "worktree" && scope !== "staged") {
       throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Git diff scope is invalid");
@@ -138,16 +139,25 @@ export class ProjectGitDiffService {
       throw new ProjectGitDiffError("PROJECT_GIT_FILE_NOT_CHANGED", "Git file is not changed");
     }
 
+    // R8：context="full" 时用 -U999999 展开完整文件（默认 git 3 行 context）。三种 scope 统一注入。
+    const contextArgs = context === "full" ? ["-U999999"] : [];
     const diff =
       scope === "staged"
-        ? await this.git(project.path, ["diff", "--cached", "--no-color", "--", file.path])
+        ? await this.git(project.path, [
+            "diff",
+            "--cached",
+            ...contextArgs,
+            "--no-color",
+            "--",
+            file.path,
+          ])
         : file.status === "added"
           ? await this.git(
               project.path,
-              ["diff", "--no-index", "--no-color", "--", "/dev/null", file.path],
+              ["diff", "--no-index", ...contextArgs, "--no-color", "--", "/dev/null", file.path],
               [0, 1],
             )
-          : await this.git(project.path, ["diff", "--no-color", "--", file.path]);
+          : await this.git(project.path, ["diff", ...contextArgs, "--no-color", "--", file.path]);
 
     return {
       repository: true,

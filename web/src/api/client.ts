@@ -229,9 +229,10 @@ export async function getProjectGitFileDiff(
   projectName: string,
   scope: GitDiffScope,
   path: string,
+  context?: "full",
 ): Promise<GitFileDiffResponse> {
   return fetchJson(
-    projectGitFileDiffPath(projectName, scope, path),
+    projectGitFileDiffPath(projectName, scope, path, context),
     "api.projectGitFileDiffFailed",
   );
 }
@@ -535,8 +536,15 @@ const projectFilePreviewPath = (projectName: string, path: string) =>
 const projectGitDiffPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/git/diff`;
 
-const projectGitFileDiffPath = (projectName: string, scope: GitDiffScope, path: string) =>
-  `${projectGitDiffPath(projectName)}/file?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(path)}`;
+const projectGitFileDiffPath = (
+  projectName: string,
+  scope: GitDiffScope,
+  path: string,
+  context?: "full",
+) => {
+  const base = `${projectGitDiffPath(projectName)}/file?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(path)}`;
+  return context === "full" ? `${base}&context=full` : base;
+};
 
 const projectGitBranchesPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/git/branches`;

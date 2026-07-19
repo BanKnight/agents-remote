@@ -199,6 +199,11 @@ export const zh: Record<TranslationKey, string> = {
   "git.aheadLabel": "领先",
   "git.behindLabel": "落后",
   "git.upToDate": "与远端同步",
+  "git.hunkPrev": "上一处",
+  "git.hunkNext": "下一处",
+  "git.hunkCounter": "第 {{current}}/{{total}} 处",
+  "git.expandFull": "展开完整文件",
+  "git.collapseChanges": "仅显示改动",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "返回",

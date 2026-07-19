@@ -285,6 +285,7 @@ const handleProjects = async (
               projectName,
               url.searchParams.get("scope"),
               url.searchParams.get("path"),
+              url.searchParams.get("context"),
             )
           : kind === "branches"
             ? await projectGitDiffService.listBranches(projectName)

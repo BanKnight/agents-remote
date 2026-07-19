@@ -5,8 +5,9 @@ import type {
   GitDiffFileSummary,
   GitDiffScope,
 } from "@agents-remote/shared";
-import { type ComponentProps, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { type ComponentProps, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   getProjectGitAheadBehind,
   getProjectGitFileDiff,
@@ -26,6 +27,7 @@ import {
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
+import { extToLang, highlightCodeLine } from "../markdown/prism-languages";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 
 // ── Query-key 隔离段（cache 隔离，避免互相 invalidate）──────────────────────────
@@ -178,10 +180,22 @@ export function GitFileDiffPanel({
   onClose,
 }: GitFileDiffPanelProps) {
   const { t } = useT();
+  // R8：展开完整文件（默认仅显示改动附近 3 行）。切换文件/scope 时重置为折叠态。
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => setExpanded(false), [path, scope]);
   const fileDiff = useQuery({
     enabled: path !== "",
-    queryKey: ["projects", projectName, queryScope, "file-diff", scope, path],
-    queryFn: () => getProjectGitFileDiff(projectName, scope, path),
+    queryKey: [
+      "projects",
+      projectName,
+      queryScope,
+      "file-diff",
+      scope,
+      path,
+      expanded ? "full" : "changes",
+    ],
+    queryFn: () => getProjectGitFileDiff(projectName, scope, path, expanded ? "full" : undefined),
+    placeholderData: keepPreviousData,
   });
 
   if (!path)
@@ -212,7 +226,22 @@ export function GitFileDiffPanel({
             {displayName.split("/").pop() ?? displayName}
           </h4>
         </div>
-        <div className="justify-self-center" aria-hidden="true" />
+        <div className="justify-self-center">
+          {fileDiff.data ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-neutral-line/50 bg-surface-inset/50 px-2 py-1 text-[0.62rem] font-medium text-on-surface-soft transition hover:bg-surface-inset hover:text-on-surface"
+              onClick={() => setExpanded((v) => !v)}
+              aria-pressed={expanded}
+              title={t(expanded ? "git.collapseChanges" : "git.expandFull")}
+            >
+              <ShellIcon name={expanded ? "restore" : "maximize"} className="h-3 w-3" />
+              <span className="hidden sm:inline">
+                {t(expanded ? "git.collapseChanges" : "git.expandFull")}
+              </span>
+            </button>
+          ) : null}
+        </div>
         {onClose ? (
           <div
             className="inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 sm:hidden"
@@ -253,7 +282,7 @@ export function GitFileDiffPanel({
             </div>
           </div>
         ) : fileDiff.data ? (
-          <DiffContent diff={fileDiff.data.diff} />
+          <DiffContent diff={fileDiff.data.diff} filePath={fileDiff.data.path} />
         ) : null}
       </div>
     </section>
@@ -430,26 +459,143 @@ const diffLineClasses: Record<DiffLineType, string> = {
   context: "text-on-surface-soft",
 };
 
-function DiffContent({ diff }: { diff: string }) {
-  const lines = parseDiff(diff);
+function DiffContent({ diff, filePath }: { diff: string; filePath: string }) {
+  const { t } = useT();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hunkRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const lines = useMemo(() => parseDiff(diff), [diff]);
+  const lang = useMemo(() => extToLang(filePath), [filePath]);
+
+  // R7：按文件扩展名对代码行做源码高亮（前缀 +/-/空格 单独渲染，保留 diff 语义）。
+  // 仅 add/del/context 行高亮；header/hunk 行纯文本。整表 useMemo 缓存，避免大文件逐次重算。
+  const renderedContents = useMemo<(ReactNode | string)[] | null>(() => {
+    if (!lang) return null;
+    return lines.map((line) => {
+      if (line.type !== "add" && line.type !== "del" && line.type !== "context")
+        return line.content;
+      const prefix = line.content[0] ?? "";
+      const rest = line.content.slice(1);
+      return (
+        <>
+          <span aria-hidden="true">{prefix}</span>
+          {highlightCodeLine(rest, lang)}
+        </>
+      );
+    });
+  }, [lines, lang]);
+
+  // 行号 → 该行是第几个 hunk（0-based），非 hunk 行 = -1。
+  const { hunkIndexOfLine, hunkCount } = useMemo(() => {
+    const arr = Array.from({ length: lines.length }, () => -1);
+    let count = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].type === "hunk") {
+        arr[i] = count;
+        count++;
+      }
+    }
+    return { hunkIndexOfLine: arr, hunkCount: count };
+  }, [lines]);
+
+  const [activeHunk, setActiveHunk] = useState(0);
+
+  // hunk ≥2 时被动追踪视口顶部的 hunk，更新 activeHunk（IntersectionObserver 比 scroll 计算稳）。
+  useEffect(() => {
+    if (hunkCount < 2) return;
+    const root = scrollRef.current;
+    if (!root) return;
+    const ratios = new Map<number, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const idx = Number((entry.target as HTMLElement).dataset.hunkIndex);
+          ratios.set(idx, entry.intersectionRatio);
+        }
+        let best = -1;
+        let bestRatio = -1;
+        for (const [idx, ratio] of ratios) {
+          if (ratio > bestRatio) {
+            best = idx;
+            bestRatio = ratio;
+          }
+        }
+        if (best >= 0) setActiveHunk(best);
+      },
+      { root, rootMargin: "0px 0px -85% 0px", threshold: [0, 0.1, 0.5, 1] },
+    );
+    for (const el of hunkRowRefs.current.values()) observer.observe(el);
+    return () => observer.disconnect();
+  }, [hunkCount, hunkIndexOfLine]);
+
+  const goToHunk = (target: number) => {
+    const clamped = Math.max(0, Math.min(hunkCount - 1, target));
+    hunkRowRefs.current.get(clamped)?.scrollIntoView({ block: "start" });
+    setActiveHunk(clamped);
+  };
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto font-mono text-xs leading-5 sm:text-sm">
+    <div
+      ref={scrollRef}
+      className="min-h-0 flex-1 overflow-auto font-mono text-xs leading-5 sm:text-sm"
+    >
+      {hunkCount >= 2 ? (
+        <div
+          role="group"
+          aria-label={t("git.hunkCounter", { current: activeHunk + 1, total: hunkCount })}
+          className="sticky top-0 z-10 flex items-center justify-end gap-0.5 border-b border-neutral-line/40 bg-surface-raised/85 px-2 py-1 backdrop-blur"
+        >
+          <span className="mr-1.5 text-[0.62rem] font-medium tabular-nums text-on-surface-muted">
+            {t("git.hunkCounter", { current: activeHunk + 1, total: hunkCount })}
+          </span>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-surface-inset/60 hover:text-on-surface disabled:pointer-events-none disabled:opacity-40"
+            onClick={() => goToHunk(activeHunk - 1)}
+            disabled={activeHunk <= 0}
+            aria-label={t("git.hunkPrev")}
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-surface-inset/60 hover:text-on-surface disabled:pointer-events-none disabled:opacity-40"
+            onClick={() => goToHunk(activeHunk + 1)}
+            disabled={activeHunk >= hunkCount - 1}
+            aria-label={t("git.hunkNext")}
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
       <table className="w-full border-collapse">
         <tbody>
-          {lines.map((line, i) => (
-            <tr key={i} className={diffLineClasses[line.type]}>
-              <td className="select-none pr-2 pl-3 text-right w-1 align-top whitespace-nowrap text-on-surface-muted sm:pl-4 sm:w-12">
-                {line.oldLine !== undefined ? line.oldLine : ""}
-              </td>
-              <td className="select-none pr-2 text-right w-1 align-top whitespace-nowrap text-on-surface-muted sm:w-12">
-                {line.newLine !== undefined ? line.newLine : ""}
-              </td>
-              <td className="pr-3 align-top whitespace-pre-wrap break-words sm:pr-4">
-                {line.content}
-              </td>
-            </tr>
-          ))}
+          {lines.map((line, i) => {
+            const hunkIdx = hunkIndexOfLine[i];
+            return (
+              <tr
+                key={i}
+                className={diffLineClasses[line.type]}
+                ref={
+                  hunkIdx >= 0
+                    ? (el) => {
+                        if (el) hunkRowRefs.current.set(hunkIdx, el);
+                      }
+                    : undefined
+                }
+                data-hunk-index={hunkIdx >= 0 ? hunkIdx : undefined}
+              >
+                <td className="select-none pr-2 pl-3 text-right w-1 align-top whitespace-nowrap text-on-surface-muted sm:pl-4 sm:w-12">
+                  {line.oldLine !== undefined ? line.oldLine : ""}
+                </td>
+                <td className="select-none pr-2 text-right w-1 align-top whitespace-nowrap text-on-surface-muted sm:w-12">
+                  {line.newLine !== undefined ? line.newLine : ""}
+                </td>
+                <td className="pr-3 align-top whitespace-pre-wrap break-words sm:pr-4">
+                  {renderedContents ? renderedContents[i] : line.content}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

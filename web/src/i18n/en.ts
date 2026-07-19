@@ -199,6 +199,11 @@ export const en = {
   "git.aheadLabel": "Ahead",
   "git.behindLabel": "Behind",
   "git.upToDate": "Up to date",
+  "git.hunkPrev": "Previous hunk",
+  "git.hunkNext": "Next hunk",
+  "git.hunkCounter": "Hunk {{current}}/{{total}}",
+  "git.expandFull": "Expand full file",
+  "git.collapseChanges": "Changes only",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "Back",

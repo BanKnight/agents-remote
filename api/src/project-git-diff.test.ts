@@ -110,6 +110,32 @@ test("fileDiff returns staged, worktree, and untracked unified diffs", async () 
   expect(untracked.diff).toContain("+untracked");
 });
 
+test("fileDiff expands full-file context when context=full", async () => {
+  const projectPath = join(root, "demo");
+  await initRepository(projectPath);
+  // 10 行文件，提交后只改中间第 6 行。
+  const lines = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`);
+  await writeFile(join(projectPath, "tracked.txt"), `${lines.join("\n")}\n`);
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await writeFile(
+    join(projectPath, "tracked.txt"),
+    `${lines.map((l, i) => (i === 5 ? "line 6 changed" : l)).join("\n")}\n`,
+  );
+
+  const service = new ProjectGitDiffService(root);
+  const changes = await service.fileDiff("demo", "worktree", "tracked.txt");
+  const full = await service.fileDiff("demo", "worktree", "tracked.txt", "full");
+
+  // 默认 3 行 context：hunk 从 line 3 起，不含文件首尾行。
+  expect(changes.diff).not.toContain("line 1");
+  expect(changes.diff).not.toContain("line 10");
+  // full（-U999999）：含改动外的文件首尾行上下文。
+  expect(full.diff).toContain("line 1");
+  expect(full.diff).toContain("line 10");
+  expect(full.diff.split("\n").length).toBeGreaterThan(changes.diff.split("\n").length);
+});
+
 test("ProjectGitDiffService rejects invalid scope, unchanged files, and path escape", async () => {
   const projectPath = join(root, "demo");
   await initRepository(projectPath);
