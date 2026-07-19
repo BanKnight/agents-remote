@@ -1,4 +1,9 @@
-import type { GitDiffFileStatus, GitDiffFileSummary, GitDiffScope } from "@agents-remote/shared";
+import type {
+  GitBranchStatus,
+  GitDiffFileStatus,
+  GitDiffFileSummary,
+  GitDiffScope,
+} from "@agents-remote/shared";
 import { type ComponentProps, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectGitDiff, getProjectGitFileDiff } from "../../api/client";
@@ -109,9 +114,17 @@ function GitFileList({
             </IconMarker>
           ),
           meta: (
-            <IconMarker size="sm" tone={gitStatusTone(file.status)}>
-              {statusShortLabel(file.status)}
-            </IconMarker>
+            <>
+              <IconMarker size="sm" tone={gitStatusTone(file.status)}>
+                {statusShortLabel(file.status)}
+              </IconMarker>
+              {file.addedLines !== null && file.removedLines !== null ? (
+                <span className="font-mono text-[0.62rem] font-bold tabular-nums">
+                  <span className="text-success">+{file.addedLines}</span>{" "}
+                  <span className="text-error">-{file.removedLines}</span>
+                </span>
+              ) : null}
+            </>
           ),
           selected,
           subtitle: file.previousPath ? t("git.fromPath", { path: file.previousPath }) : undefined,
@@ -270,6 +283,7 @@ export function GitChangesList({
   });
   const gitSummary =
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
+  const branch = diff.data?.repository === true ? diff.data.branch : undefined;
 
   if (diff.isLoading) {
     // mirror loaded 布局（顶部 chips 行 + 文件列表），避免加载完从无 chips 跳到有 chips 的视觉断层。
@@ -314,6 +328,7 @@ export function GitChangesList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 border-b border-neutral-line/40 px-3.5 py-3">
+        {branch ? <GitBranchStatusRow branch={branch} /> : null}
         <GitScopeChips summary={gitSummary} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
@@ -473,6 +488,33 @@ function GitScopeChips({ summary }: { summary?: GitSummary }) {
   );
 }
 
+/** R2 当前分支 + upstream ahead/behind 态势行。detached HEAD（name==="HEAD"）显 git.detached；
+ * 无 upstream 显 git.noUpstream；有 upstream 时显 ↑ahead（success）/ ↓behind（muted），0 省略箭头。
+ * 与 GitScopeChips 同属 header 统计区，渲染在 chips 上方（仓库级态势 vs 文件级统计分层）。 */
+function GitBranchStatusRow({ branch }: { branch: GitBranchStatus }) {
+  const { t } = useT();
+  if (branch.name === "HEAD") {
+    return <div className="mb-2 text-xs text-on-surface-muted">{t("git.detached")}</div>;
+  }
+  return (
+    <div className="mb-2 flex items-center gap-2 text-xs">
+      <span className="font-mono font-semibold text-on-surface">{branch.name}</span>
+      {branch.upstream === undefined ? (
+        <span className="text-on-surface-muted">{t("git.noUpstream")}</span>
+      ) : (
+        <>
+          {branch.behind && branch.behind > 0 ? (
+            <span className="font-mono tabular-nums text-on-surface-muted">↓{branch.behind}</span>
+          ) : null}
+          {branch.ahead && branch.ahead > 0 ? (
+            <span className="font-mono tabular-nums text-success">↑{branch.ahead}</span>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────
 
 export type GitDiffPanelProps = {
@@ -509,6 +551,7 @@ export function GitDiffPanel({
   const clearDiff = closeDiffOverlay;
   const gitSummary =
     diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
+  const branch = diff.data?.repository === true ? diff.data.branch : undefined;
 
   if (diff.isLoading) {
     // 结构已知（scope chips 行 + ListRow 文件列表），按 loaded 布局 mirror 骨架，
@@ -591,6 +634,7 @@ export function GitDiffPanel({
       <div
         className={`border-b border-neutral-line/40 px-3.5 py-3 ${isFileSelected ? "hidden sm:block" : "block"}`}
       >
+        {branch ? <GitBranchStatusRow branch={branch} /> : null}
         {scopeChips}
       </div>
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">

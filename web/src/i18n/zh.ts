@@ -186,6 +186,8 @@ export const zh: Record<TranslationKey, string> = {
   "git.statusModified": "M",
   "git.fromPath": "来自 {{path}}",
   "git.fileMarker": "FL",
+  "git.detached": "HEAD 分离",
+  "git.noUpstream": "无远端跟踪",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "返回",

@@ -186,6 +186,8 @@ export const en = {
   "git.statusModified": "M",
   "git.fromPath": "from {{path}}",
   "git.fileMarker": "FL",
+  "git.detached": "Detached HEAD",
+  "git.noUpstream": "No upstream",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "Back",

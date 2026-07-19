@@ -428,7 +428,9 @@ test("createFetchHandler serves Project-scoped Git diff routes", async () => {
   );
 
   expect(list.status).toBe(200);
-  expect(listBody.files).toEqual([
+  // toMatchObject：行数（addedLines/removedLines）+ branch 字段是 numstat/rev-parse 算出的，
+  // 不在集成断言里精确绑定；行数语义单测在 project-git-diff.test.ts 覆盖。
+  expect(listBody.files).toMatchObject([
     { path: "staged.txt", status: "added", scope: "staged" },
     { path: "tracked.txt", status: "modified", scope: "worktree" },
   ]);

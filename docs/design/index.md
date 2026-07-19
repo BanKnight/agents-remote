@@ -18,6 +18,7 @@
 - [file-browser-preview.md](./file-browser-preview.md) — 定义 Project console Files 的只读浏览、desktop list+preview、移动端 direct-secondary/list 与 deep preview detail 分层、前端状态边界和只读交互规则。
 - [frontend-stack.md](./frontend-stack.md) — 定义 `web` 前端栈、路由/服务端状态/本地 UI 状态职责边界和 `/api` 调用接入规则。
 - [frontend-ui-architecture.md](./frontend-ui-architecture.md) — 定义 UI/UX prototype alignment 的来源优先级、三层页面模型、Home/Project/Session/resource workspace 边界、移动端返回规则和 runtime surface roles（导航模型部分已被 [`workbench-redesign.md`](./workbench-redesign.md) 取代，shell primitive/状态规则/密度基线仍有效）。
+- [git-capabilities.md](./git-capabilities.md) — git 能力完善长任务承载：从只读 diff inspection 扩展为完整只读 git 观察（R1-R9：numstat 行数、当前分支与远端 ahead/behind、分支列表、本地/远端 commit 差异、commit 历史、分支间 diff、语法高亮、全量 diff、hunk 导航），含批次计划、安全边界与决策日志，供超长任务上下文压缩后恢复。
 - [git-diff-viewer.md](./git-diff-viewer.md) — 定义 Project console Git diff viewer 的只读 changed-file list、desktop unified diff panel、移动端 direct-secondary/list 与 deep diff detail 分层、状态处理和只读交互规则。
 - [message-replay.md](./message-replay.md) — 定义 Claude2 Agent Session 的进程模型（`Bun.spawn` 直拉 CLI，非 tmux）与消息回放管线（JSONL history + 内存 live 双缓冲 relay + 单一 WS 流），含 system.init/turn 边界、reconnect/API 重启时序、特殊时期 history 缩容（compact-block windowing + 标量重建）与已废弃的 Gen 2 机制。
 - [mobile-session-interaction.md](./mobile-session-interaction.md) — 定义 Agent/Terminal Session detail 的移动端工作台布局、非遮挡输入区、quick key 直发、真实能力边界和恢复状态规则。

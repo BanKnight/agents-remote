@@ -84,6 +84,17 @@ export type GitDiffFileSummary = {
   previousPath?: string;
   status: GitDiffFileStatus;
   scope: GitDiffScope;
+  /** R1 numstat：新增/删除行数。null = binary 文件或 untracked（无 numstat）。 */
+  addedLines: number | null;
+  removedLines: number | null;
+};
+
+/** R2 当前分支 + 相对 upstream 的 ahead/behind 态势。 */
+export type GitBranchStatus = {
+  name: string;
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
 };
 
 export type GitDiffListResponse =
@@ -91,6 +102,8 @@ export type GitDiffListResponse =
       repository: true;
       projectName: string;
       files: GitDiffFileSummary[];
+      /** R2 当前分支态势（detached/无 upstream 时仍返回 { name } 降级）。 */
+      branch?: GitBranchStatus;
     }
   | {
       repository: false;
