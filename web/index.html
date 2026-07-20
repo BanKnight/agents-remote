@@ -32,7 +32,7 @@
     <script>
       (function () {
         // Force-clear stale PWA caches — bump version to trigger full client reset.
-        var CV = "v1";
+        var CV = "v2";
         if (navigator.serviceWorker && !localStorage.getItem("ar-cv-" + CV)) {
           navigator.serviceWorker
             .getRegistrations()
