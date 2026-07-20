@@ -26,7 +26,7 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
-import { activePresetView, buildAvailableModels, type SettingsStore } from "./settings-store";
+import { activePresetView, buildAvailableAliases, type SettingsStore } from "./settings-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
@@ -212,21 +212,26 @@ const handleAgentSessionRoute = async (
     const profile = getAgentProviderProfile(session.provider);
     const permissionModes =
       session.provider === "claude2" ? await parseClaudePermissionModes() : undefined;
-    // claude2: 菜单数据源从静态 alias 换成 settings 派生的具体 ID + [1m] 变体
-    //（buildAvailableModels），让会话内模型菜单如实反映 modelMapping + enable1mContext，
-    // 并支持 per-session 切 [1m]。非 claude2 或无 settingsStore：保留 profile 默认。
+    // claude2: 菜单发 model alias（opus/sonnet/haiku + opusplan），switchModel 透传 alias，
+    // 具体 ID 由 CLI 经 spawn 时注入的 ANTHROPIC_DEFAULT_*_MODEL env 解析（对齐 CLI 原生
+    // alias 机制）。availableModelResolved 仅作菜单「alias + 对应具体 ID」配对展示；
+    // opusplan 不进映射（普通/Plan 模式分别由 SONNET/OPUS env 决定，CLI 自选，不展示）。
+    // 非 claude2 或无 settingsStore：保留 profile.availableModels 默认（具体 ID / alias 原样）。
     const claudeRuntime = settingsStore ? (await settingsStore.read()).runtimes.claude : undefined;
     const presetView = claudeRuntime
       ? activePresetView(claudeRuntime, claudeRuntime.presets)
       : undefined;
-    const availableModels =
-      session.provider === "claude2" && presetView
-        ? buildAvailableModels(presetView)
-        : profile?.availableModels;
+    const aliasView =
+      session.provider === "claude2" && presetView ? buildAvailableAliases(presetView) : undefined;
+    const availableModels = aliasView
+      ? [...aliasView.aliases, "opusplan"]
+      : profile?.availableModels;
+    const availableModelResolved = aliasView?.resolved;
 
     const response: AgentSessionDetailResponse = {
       session,
       availableModels,
+      availableModelResolved,
       availablePermissionModes: permissionModes,
     };
     return Response.json(response);

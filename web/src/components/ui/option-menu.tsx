@@ -20,6 +20,8 @@ export type OptionMenuAccent = "user" | "permission" | "assistant";
  */
 export type OptionMenuItem = {
   label: string;
+  /** 标题下的副标题（muted 小字），如 model alias 对应的具体 ID。可选。 */
+  description?: string;
   isActive?: boolean;
   onSelect: () => void;
 };
@@ -128,7 +130,14 @@ export function OptionMenu({
                 }}
               >
                 {item.isActive ? CheckIcon : <span className="size-4 shrink-0" />}
-                <span>{item.label}</span>
+                <span className="flex min-w-0 flex-col">
+                  <span>{item.label}</span>
+                  {item.description ? (
+                    <span className="text-xs font-normal text-on-surface-muted">
+                      {item.description}
+                    </span>
+                  ) : null}
+                </span>
               </button>
             ))}
             <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
@@ -164,7 +173,14 @@ export function OptionMenu({
             onSelect={() => item.onSelect()}
           >
             {item.isActive ? CheckIcon : <span className="size-4 shrink-0" />}
-            {item.label}
+            <span className="flex min-w-0 flex-col">
+              <span>{item.label}</span>
+              {item.description ? (
+                <span className="text-xs font-normal text-on-surface-muted">
+                  {item.description}
+                </span>
+              ) : null}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

@@ -140,6 +140,30 @@ export function buildAvailableModels(config: ModelMappingView): string[] {
   return models;
 }
 
+// 纯函数：从 modelMapping 派生 model alias 列表 + alias→resolved 具体 ID 映射。
+// 对齐 CLI 原生 alias 机制：菜单展示 alias（opus/sonnet/haiku），切换发 alias，具体 ID
+// 由 CLI 经 ANTHROPIC_DEFAULT_*_MODEL env 解析。resolved 仅作菜单「alias + 对应 ID」配对展示。
+// haiku 不带 [1m]：CLI MODEL_ALIASES 无 haiku[1m]（opus/sonnet 有 [1m] 变体，haiku 没有），
+// 故 enable1mContext 时只给 opus/sonnet 拼 [1m]。不产 alias[1m] 独立菜单项——[1m] 折叠进
+// env 注入（buildSpawnEnv 复用本函数的 resolved），由 enable1mContext 全局决定。
+// 顺序遵循 CLAUDE_MODEL_TIERS（opus/sonnet/haiku）；opusplan 不在此派生（session-routes 装配点追加）。
+export function buildAvailableAliases(config: ModelMappingView): {
+  aliases: string[];
+  resolved: Record<string, string>;
+} {
+  const aliases: string[] = [];
+  const resolved: Record<string, string> = {};
+  for (const tier of CLAUDE_MODEL_TIERS) {
+    if (tier === "default") continue;
+    const id = config.modelMapping[tier] || config.modelMapping.default;
+    if (!id) continue;
+    aliases.push(tier);
+    const with1m = tier !== "haiku" && isConcreteModelId(id) && config.enable1mContext;
+    resolved[tier] = with1m ? `${id}[1m]` : id;
+  }
+  return { aliases, resolved };
+}
+
 // 纯函数：runtime + presets → resolveModelId/buildAvailableModels 视图。
 // 激活预设命中 → {preset.modelMapping, rt.enable1mContext}；无激活预设/未命中 → undefined。
 // spawn/ModelSelector 消费端三处复用，避免散落组装逻辑。

@@ -1,18 +1,12 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import {
-  CLAUDE_MODEL_TIERS,
-  type ClaudeModelTier,
-  type ClaudePreset,
-  type EffortLevel,
-} from "@agents-remote/shared";
+import { type ClaudePreset, type EffortLevel } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import { Claude2SessionRelay } from "./session-relay";
 import {
   SettingsStore,
   activePresetView,
-  isConcreteModelId,
-  resolveModelId,
+  buildAvailableAliases,
   type ModelMappingView,
 } from "./settings-store";
 
@@ -36,16 +30,24 @@ export function buildSeedInitLine(model?: string, permissionMode?: string): stri
   });
 }
 
-// Extract the model id from a CLI in-process model-switch echo. After a
-// control_request{set_model} switch the CLI emits a user message:
-//   <local-command-stdout>Set model to <name> (<model_id>)</local-command-stdout>
-// but never re-sends system.init (the switch is in-process). This echo is the
-// ONLY stdout signal of the new model id (control_response carries no model;
-// system.init is spawn-time only), so folding it keeps state.model current —
-// symmetric to capturePermissionModeFromLine. Extracted as a pure function so
-// the parse is unit-testable without a Claude2Runtime instance (cf.
-// buildSeedInitLine). rewind emits no model signal, so the folded scalar stays
-// current, matching CLI behavior.
+// Extract the model the CLI stores after an in-process model switch. After a
+// control_request{set_model} switch the CLI emits a breadcrumb user message:
+//   <local-command-stdout>Set model to <display></local-command-stdout>
+// where <display> = modelDisplayString(requestedModel) — either a bare concrete
+// id (`claude-sonnet-4-6`) when the requested model is already concrete, or
+// `<alias> (<resolved>)` (`opusplan (claude-sonnet-4-6)`, `haiku (claude-haiku-4-5-…)`)
+// when the CLI resolved an alias. See CLI print.ts set_model handler +
+// utils/messages.ts createModelSwitchBreadcrumbs.
+//
+// We capture the RAW requested model (the token before ` (` when present, else
+// the whole tail) — mirroring the CLI, which stores activeUserSpecifiedModel =
+// requestedModel verbatim and resolves aliases at query time. Capturing the
+// resolved id instead would persist e.g. `claude-sonnet-4-6` for an `opusplan`
+// switch, so an API restart (--resume --model <state.model>) would lose the
+// plan-mode-aware Opus/Sonnet semantics. control_response carries no model and
+// system.init is spawn-time only, so this echo is the ONLY stdout signal of the
+// switch — symmetric to capturePermissionModeFromLine. Extracted as a pure
+// function so the parse is unit-testable (cf. buildSeedInitLine).
 export function extractModelFromStdoutLine(
   parsed: Record<string, unknown> | null,
 ): string | undefined {
@@ -57,9 +59,13 @@ export function extractModelFromStdoutLine(
     const text = typeof block === "string" ? block : (block as { text?: string } | null)?.text;
     if (typeof text !== "string") continue;
     const match = text.match(
-      /<local-command-stdout>\s*Set model to [^(]*\(([^)]+)\)\s*<\/local-command-stdout>/,
+      /<local-command-stdout>\s*Set model to (.+?)\s*(?:\([^)]*\))?\s*<\/local-command-stdout>/,
     );
-    if (match?.[1]) return match[1];
+    if (match?.[1]) {
+      // group 1 = raw requested model (alias or concrete); the optional
+      // `(resolved)` group is display-only and intentionally discarded.
+      return match[1].trim();
+    }
   }
   return undefined;
 }
@@ -113,17 +119,28 @@ type Claude2Process = {
   effort?: EffortLevel;
 };
 
-// 纯函数：构造 spawn env——继承父进程 + 注入 effort + provider 凭证。
-// apiKey 只在此处从 provider 读出写进 env，不进任何日志/状态。导出供测试。
+// 纯函数：构造 spawn env——继承父进程 + 注入 effort + provider 凭证 + model alias 解析 env。
+// 对齐 CLI 原生 alias 机制：把激活预设 modelMapping 的 opus/sonnet/haiku 具体 ID 注入
+// ANTHROPIC_DEFAULT_*_MODEL，让 CLI 自行解析 alias（含 opusplan：普通模式=SONNET env、
+// Plan Mode=OPUS env，见官方 model-config §环境变量）。enable1mContext 时 opus/sonnet
+// 带 [1m]（haiku 不带——CLI MODEL_ALIASES 无 haiku[1m]）。无 view（无激活预设）→ 不注入，
+// CLI 回落自身默认。apiKey 只在此处从 provider 读出写进 env，不进任何日志/状态。导出供测试。
 export function buildSpawnEnv(
   effort: EffortLevel | undefined,
   provider: { apiKey: string; baseUrl?: string } | undefined,
   parentEnv: Record<string, string | undefined> = process.env,
+  view?: ModelMappingView,
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...parentEnv };
   if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
   if (provider?.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
   if (provider?.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
+  if (view) {
+    const { resolved } = buildAvailableAliases(view);
+    if (resolved.opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = resolved.opus;
+    if (resolved.sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolved.sonnet;
+    if (resolved.haiku) env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolved.haiku;
+  }
   return env;
 }
 
@@ -139,27 +156,6 @@ export function resolveActivePresetCreds(
   if (!preset) return undefined;
   return { apiKey: preset.apiKey, baseUrl: preset.baseUrl };
 }
-
-// 纯函数：metadata.model → spawn --model 值。
-// tier alias（"sonnet"）→ resolveModelId(view, tier)（view = 激活预设 modelMapping + runtime 1m）；
-// 具体 ID（session 内 set_model 持久化的）→ 直接用，enable1mContext 时拼 [1m]（若未含）。
-// view 缺失（无激活预设 / settingsStore 不可用）→ tier alias 原样传（CLI 接受，现状不坏）。
-export function resolveSpawnModel(
-  model: string | undefined,
-  view: ModelMappingView | undefined,
-): string | undefined {
-  if (!model) return undefined;
-  if (isClaudeModelTier(model)) {
-    return view ? resolveModelId(view, model) : model;
-  }
-  if (view?.enable1mContext && !model.includes("[1m]") && isConcreteModelId(model)) {
-    return `${model}[1m]`;
-  }
-  return model;
-}
-
-const isClaudeModelTier = (value: string): value is ClaudeModelTier =>
-  (CLAUDE_MODEL_TIERS as readonly string[]).includes(value);
 
 export class Claude2Runtime implements RuntimeResources {
   private readonly processes = new Map<string, Claude2Process>();
@@ -204,26 +200,13 @@ export class Claude2Runtime implements RuntimeResources {
     return { model: state.model, permissionMode: state.permissionMode };
   }
 
-  // Resolve a model id for a runtime control_request{set_model}. Unlike spawn
-  // (resolveSpawnModel follows the global enable1mContext default), the runtime
-  // switch is client-controlled: the menu offers concrete IDs with/without [1m],
-  // so concrete IDs pass through verbatim — letting the client toggle [1m] per
-  // session instead of being forced by the global enable1mContext. Only tier
-  // aliases (legacy clients / alias-mapping deployments) get resolved via the
-  // active preset's modelMapping. Settings read failure falls back to the raw
-  // alias passthrough.
+  // Resolve a model id for a runtime control_request{set_model}. Passthrough:
+  // the client sends an alias (opus/sonnet/haiku/opusplan) and the CLI resolves
+  // it via ANTHROPIC_DEFAULT_*_MODEL env (injected at spawn by buildSpawnEnv).
+  // concrete IDs (legacy clients) also pass through verbatim. No settings read
+  // needed — alias→concrete resolution is the CLI's job, not ours.
   async resolveControlModel(model: string | undefined): Promise<string | undefined> {
-    if (!model) return undefined;
-    if (!isClaudeModelTier(model)) return model;
-    const settings = this.settingsStore
-      ? await this.settingsStore.read().catch((err) => {
-          console.warn("[claude2] settings read failed in resolveControlModel:", err);
-          return undefined;
-        })
-      : undefined;
-    const claude = settings?.runtimes.claude;
-    const view = claude ? activePresetView(claude, claude.presets) : undefined;
-    return view ? resolveModelId(view, model) : model;
+    return model;
   }
 
   setClaudeSessionId(sessionName: string, claudeSessionId: string, model?: string): void {
@@ -403,7 +386,7 @@ export class Claude2Runtime implements RuntimeResources {
     permissionMode?: string,
     effort?: EffortLevel,
   ): Promise<void> {
-    const { resolvedModel, resolvedEffort, providerCreds } = await this.resolveSpawnInputs(
+    const { resolvedModel, resolvedEffort, providerCreds, view } = await this.resolveSpawnInputs(
       model,
       effort,
     );
@@ -416,6 +399,7 @@ export class Claude2Runtime implements RuntimeResources {
       permissionMode,
       resolvedEffort,
       providerCreds,
+      view,
     );
 
     const generation = this.nextGeneration++;
@@ -469,6 +453,7 @@ export class Claude2Runtime implements RuntimeResources {
     permissionMode?: string,
     effort?: EffortLevel,
     provider?: { apiKey: string; baseUrl?: string },
+    view?: ModelMappingView,
   ): BunSubprocess {
     const args = [
       "claude",
@@ -490,7 +475,7 @@ export class Claude2Runtime implements RuntimeResources {
       stdout: "pipe",
       stderr: "pipe",
       cwd: projectPath,
-      env: buildSpawnEnv(effort, provider),
+      env: buildSpawnEnv(effort, provider, process.env, view),
     });
 
     console.log(
@@ -499,9 +484,10 @@ export class Claude2Runtime implements RuntimeResources {
     return proc;
   }
 
-  // 读 settingsStore 算 spawn 初始值：model tier→具体 ID 解析（激活预设 modelMapping）、
-  // effort（metadata 优先 ?? 全局默认）、激活预设凭证（apiKey 只在此处读出注入 env，不存 process
-  // state、不进日志）。settingsStore 缺失或读失败 → 回退 metadata 原值 + 继承父进程 env（现状不坏）。
+  // 读 settingsStore 算 spawn 输入：model（alias 透传，CLI 经 env 解析）、effort
+  //（metadata 优先 ?? 全局默认）、激活预设凭证（apiKey 只在此处读出注入 env，不存 process
+  // state、不进日志）、view（交给 buildSpawnEnv 注入 ANTHROPIC_DEFAULT_*_MODEL）。
+  // settingsStore 缺失或读失败 → 回退 metadata 原值 + 继承父进程 env（现状不坏）。
   private async resolveSpawnInputs(
     model: string | undefined,
     effort: EffortLevel | undefined,
@@ -509,6 +495,7 @@ export class Claude2Runtime implements RuntimeResources {
     resolvedModel: string | undefined;
     resolvedEffort: EffortLevel | undefined;
     providerCreds: { apiKey: string; baseUrl?: string } | undefined;
+    view: ModelMappingView | undefined;
   }> {
     const settings = this.settingsStore
       ? await this.settingsStore.read().catch((err) => {
@@ -519,9 +506,10 @@ export class Claude2Runtime implements RuntimeResources {
     const claude = settings?.runtimes.claude;
     const view = claude ? activePresetView(claude, claude.presets) : undefined;
     return {
-      resolvedModel: resolveSpawnModel(model, view),
+      resolvedModel: model,
       resolvedEffort: effort ?? claude?.effort,
       providerCreds: resolveActivePresetCreds(claude, claude?.presets),
+      view,
     };
   }
 

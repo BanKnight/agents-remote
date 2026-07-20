@@ -541,7 +541,12 @@ export type CreateAgentSessionResponse = {
 
 export type AgentSessionDetailResponse = {
   session: AgentSession;
+  // claude2：model alias 列表（opus/sonnet/haiku + opusplan），switchModel 发 alias，
+  // 具体 ID 由 CLI 经 ANTHROPIC_DEFAULT_*_MODEL env 解析（对齐 CLI 原生 alias 机制）。
   availableModels?: string[];
+  // alias → resolved 具体 ID（含 [1m]，由 modelMapping + enable1mContext 派生），
+  // 仅供菜单展示「alias + 对应具体 ID」配对；opusplan 不进映射（CLI 自选，不展示）。
+  availableModelResolved?: Record<string, string>;
   availablePermissionModes?: string[];
 };
 

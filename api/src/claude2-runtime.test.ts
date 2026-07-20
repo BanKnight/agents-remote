@@ -6,7 +6,6 @@ import {
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
   resolveActivePresetCreds,
-  resolveSpawnModel,
   Claude2Runtime,
 } from "./claude2-runtime";
 import type { ClaudeModelMapping, ClaudePreset } from "@agents-remote/shared";
@@ -62,7 +61,7 @@ test("seed init line is not matched by the real-init capture condition", () => {
   expect(isRealInit).toBe(false);
 });
 
-test("extractModelFromStdoutLine parses model id from a switch echo (string content)", () => {
+test("extractModelFromStdoutLine captures the raw alias (CLI stores requestedModel, not resolved)", () => {
   const parsed = {
     type: "user",
     message: {
@@ -71,7 +70,32 @@ test("extractModelFromStdoutLine parses model id from a switch echo (string cont
         "<local-command-stdout>Set model to haiku (claude-haiku-4-5-20251001)</local-command-stdout>",
     },
   } as Record<string, unknown>;
-  expect(extractModelFromStdoutLine(parsed)).toBe("claude-haiku-4-5-20251001");
+  // CLI's activeUserSpecifiedModel = "haiku"; the paren content is display-only.
+  expect(extractModelFromStdoutLine(parsed)).toBe("haiku");
+});
+
+test("extractModelFromStdoutLine captures opusplan alias verbatim (preserves plan-mode semantics)", () => {
+  const parsed = {
+    type: "user",
+    message: {
+      role: "user",
+      content:
+        "<local-command-stdout>Set model to opusplan (claude-sonnet-4-6)</local-command-stdout>",
+    },
+  } as Record<string, unknown>;
+  // Resolving to claude-sonnet-4-6 here would lose Opus-in-plan on --resume.
+  expect(extractModelFromStdoutLine(parsed)).toBe("opusplan");
+});
+
+test("extractModelFromStdoutLine captures a bare concrete id (no parens → no alias resolution)", () => {
+  const parsed = {
+    type: "user",
+    message: {
+      role: "user",
+      content: "<local-command-stdout>Set model to claude-sonnet-4-6[1m]</local-command-stdout>",
+    },
+  } as Record<string, unknown>;
+  expect(extractModelFromStdoutLine(parsed)).toBe("claude-sonnet-4-6[1m]");
 });
 
 test("extractModelFromStdoutLine parses model id from array text-block content", () => {
@@ -87,7 +111,7 @@ test("extractModelFromStdoutLine parses model id from array text-block content",
       ],
     },
   } as Record<string, unknown>;
-  expect(extractModelFromStdoutLine(parsed)).toBe("claude-sonnet-4-6");
+  expect(extractModelFromStdoutLine(parsed)).toBe("sonnet");
 });
 
 test("extractModelFromStdoutLine ignores non-switch local-command stdout (e.g. /cost)", () => {
@@ -130,8 +154,8 @@ test("captureModelFromLine folds state.model and fires onModelChange with the in
     },
   });
 
-  expect(runtime.getSessionState("rt-key")?.model).toBe("claude-haiku-4-5-20251001");
-  expect(calls).toEqual([{ sessionId: "internal-session-id", model: "claude-haiku-4-5-20251001" }]);
+  expect(runtime.getSessionState("rt-key")?.model).toBe("haiku");
+  expect(calls).toEqual([{ sessionId: "internal-session-id", model: "haiku" }]);
 });
 
 test("captureModelFromLine does not fire onModelChange for non-switch local-command stdout", () => {
@@ -414,58 +438,49 @@ test("resolveActivePresetCreds returns undefined when presets undefined", () => 
   expect(resolveActivePresetCreds(credsRuntime("p1"), undefined)).toBeUndefined();
 });
 
-// ── resolveSpawnModel: metadata.model → spawn --model 值 ──
+// ── buildSpawnEnv: view 注入 ANTHROPIC_DEFAULT_*_MODEL（对齐 CLI alias 解析） ──
 
-// view = {modelMapping, enable1mContext}：resolveSpawnModel 入参从 v1 的整个 runtime 收窄
-// 为激活预设派生的视图（modelMapping v2 起下沉到预设）。enable1mContext 控制 [1m] 拼接。
+// view = {modelMapping, enable1mContext}：env 注入复用 buildAvailableAliases 的 resolved
+//（opus/sonnet 在 enable1mContext 时带 [1m]，haiku 不带——CLI MODEL_ALIASES 无 haiku[1m]）。
 const aliasView = { modelMapping: ALIAS_MAPPING, enable1mContext: false };
 
 const concreteView = { modelMapping: CONCRETE_MAPPING, enable1mContext: false };
 
-test("resolveSpawnModel returns undefined for missing model", () => {
-  expect(resolveSpawnModel(undefined, aliasView)).toBeUndefined();
+test("buildSpawnEnv injects ANTHROPIC_DEFAULT_*_MODEL from concrete view (opus/sonnet [1m], haiku bare)", () => {
+  const env = buildSpawnEnv(undefined, undefined, {}, { ...concreteView, enable1mContext: true });
+  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8[1m]");
+  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6[1m]");
+  // haiku 不拼 [1m]：CLI MODEL_ALIASES 无 haiku[1m]。
+  expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
 });
 
-test("resolveSpawnModel resolves tier alias via modelMapping", () => {
-  expect(resolveSpawnModel("sonnet", concreteView)).toBe("claude-sonnet-4-6");
+test("buildSpawnEnv omits [1m] from env when enable1mContext off", () => {
+  const env = buildSpawnEnv(undefined, undefined, {}, concreteView);
+  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
+  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
+  expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
 });
 
-test("resolveSpawnModel appends [1m] to resolved concrete id when enable1mContext on", () => {
-  expect(resolveSpawnModel("sonnet", { ...concreteView, enable1mContext: true })).toBe(
-    "claude-sonnet-4-6[1m]",
-  );
+test("buildSpawnEnv injects alias-mapping view verbatim (alias 解析交给 CLI)", () => {
+  // modelMapping 全是 alias（opus→"opus"）时，env 注入 alias 字符串本身——CLI 读 env=alias
+  // 等价于不注入（回落账户默认），无害。opusplan 普通模式此时 = CLI 默认 Sonnet。
+  const env = buildSpawnEnv(undefined, undefined, {}, aliasView);
+  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("opus");
+  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("sonnet");
+  expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("haiku");
 });
 
-test("resolveSpawnModel passes tier alias through when runtime undefined", () => {
-  expect(resolveSpawnModel("sonnet", undefined)).toBe("sonnet");
+test("buildSpawnEnv does not inject model env when view absent", () => {
+  const env = buildSpawnEnv(undefined, undefined, {});
+  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
+  expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBeUndefined();
 });
 
-test("resolveSpawnModel leaves bare alias without [1m] even when enable1mContext on", () => {
-  // aliasView maps sonnet→"sonnet" (no dash). resolveModelId only suffixes
-  // concrete ids (has dash), so a bare alias stays bare — CLI rejects "alias[1m]".
-  expect(resolveSpawnModel("sonnet", { ...aliasView, enable1mContext: true })).toBe("sonnet");
-});
+// ── resolveControlModel: runtime set_model 透传 alias（CLI 经 env 解析） ──
 
-test("resolveSpawnModel appends [1m] to concrete id when enable1mContext on", () => {
-  expect(resolveSpawnModel("claude-opus-4-8", { ...aliasView, enable1mContext: true })).toBe(
-    "claude-opus-4-8[1m]",
-  );
-});
-
-test("resolveSpawnModel does not append [1m] when enable1mContext off", () => {
-  expect(resolveSpawnModel("claude-opus-4-8", aliasView)).toBe("claude-opus-4-8");
-});
-
-test("resolveSpawnModel does not double-append [1m]", () => {
-  expect(resolveSpawnModel("claude-opus-4-8[1m]", { ...aliasView, enable1mContext: true })).toBe(
-    "claude-opus-4-8[1m]",
-  );
-});
-
-// ── resolveControlModel: runtime set_model（客户端控制）——具体 ID 透传，只解析 tier alias ──
-
-// 构造 v2 settingsStore：一个激活预设（modelMapping 决定 tier→ID 解析）+ runtime 1m 旋钮。
-// resolveControlModel 经 activePresetView(rt, presets) 派生 view，tier alias 走 resolveModelId。
+// 构造 v2 settingsStore：resolveControlModel 不再读 settings（透传），但仍保留构造以便
+// 未来若恢复解析时有基线；settingsStore 缺失/读失败均等价透传。
 const makeSettingsStore = (
   modelMapping: ClaudeModelMapping,
   enable1mContext = false,
@@ -483,38 +498,22 @@ const makeSettingsStore = (
     }),
   }) as unknown as SettingsStore;
 
-test("resolveControlModel resolves tier alias via active preset modelMapping (matches spawn)", async () => {
-  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING));
-  expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6");
-});
-
-test("resolveControlModel appends [1m] to resolved tier alias when enable1mContext on", async () => {
-  // tier alias 仍经激活预设 modelMapping 解析；CONCRETE_MAPPING 把 sonnet→claude-sonnet-4-6，
-  // 开 1m → 解析后拼 [1m]（alias-mapping 部署的运行时切换路径，与 spawn 同源）。
+test("resolveControlModel passes alias through verbatim (CLI resolves via env)", async () => {
+  // 菜单发 alias（opus/sonnet/haiku/opusplan），服务端原样透传，CLI 经 spawn 注入的
+  // ANTHROPIC_DEFAULT_*_MODEL env 解析成具体 ID。不再服务端解析。
   const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
-  expect(await runtime.resolveControlModel("sonnet")).toBe("claude-sonnet-4-6[1m]");
+  expect(await runtime.resolveControlModel("sonnet")).toBe("sonnet");
+  expect(await runtime.resolveControlModel("opusplan")).toBe("opusplan");
 });
 
-test("resolveControlModel passes concrete id through verbatim (no forced [1m])", async () => {
-  // 客户端控制的 per-session [1m] 切换：菜单发具体 ID，服务端原样透传，不受全局
-  // enable1mContext 影响——这是与 spawn 的关键差异（spawn 跟随全局默认，control 由客户端定）。
+test("resolveControlModel passes concrete id through (legacy clients)", async () => {
   const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
   expect(await runtime.resolveControlModel("claude-opus-4-8")).toBe("claude-opus-4-8");
-  expect(await runtime.resolveControlModel("claude-opus-4-8[1m]")).toBe("claude-opus-4-8[1m]");
-  expect(await runtime.resolveControlModel("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
+  expect(await runtime.resolveControlModel("claude-sonnet-4-6[1m]")).toBe("claude-sonnet-4-6[1m]");
 });
 
 test("resolveControlModel passes model through when settingsStore absent", async () => {
-  // No settingsStore → resolveSpawnModel(model, undefined) is a passthrough
-  // (default posture, e.g. legacy runtimes constructed without settings).
   const runtime = new Claude2Runtime(tmpdir());
   expect(await runtime.resolveControlModel("opus")).toBe("opus");
-});
-
-test("resolveControlModel falls back to original model when settings read fails", async () => {
-  const failing = {
-    read: async () => Promise.reject(new Error("settings unreadable")),
-  } as unknown as SettingsStore;
-  const runtime = new Claude2Runtime(tmpdir(), failing);
-  expect(await runtime.resolveControlModel("opus")).toBe("opus");
+  expect(await runtime.resolveControlModel(undefined)).toBeUndefined();
 });

@@ -6,6 +6,7 @@ import type { ClaudeModelMapping, SettingsState } from "@agents-remote/shared";
 import {
   SettingsStore,
   activePresetView,
+  buildAvailableAliases,
   buildAvailableModels,
   maskApiKey,
   migrateV1ToV2,
@@ -289,7 +290,7 @@ test("SettingsStore 迁移后 write 持久化为 v2（v1 磁盘被覆盖，provi
   expect(raw.providers).toBeUndefined();
 });
 
-// ── 纯函数：resolveModelId / buildAvailableModels（入参 = ModelMappingView）──────────
+// ── 纯函数：resolveModelId / buildAvailableModels / buildAvailableAliases（入参 = ModelMappingView）──
 
 test("resolveModelId: tier alias passes through; concrete ID gets [1m] only when enabled", () => {
   const aliasView = { modelMapping: ALIAS_MAPPING, enable1mContext: true };
@@ -352,6 +353,39 @@ test("buildAvailableModels: dedupes tiers mapped to the same ID", () => {
     "claude-x-2[1m]",
     "claude-x-2",
   ]);
+});
+
+test("buildAvailableAliases: concrete IDs + 1m on → opus/sonnet 带 [1m]，haiku 裸", () => {
+  const view = { modelMapping: CONCRETE_MAPPING, enable1mContext: true };
+  // aliases 遵循 CLAUDE_MODEL_TIERS 顺序（跳过 default）；haiku 不带 [1m]（CLI MODEL_ALIASES 无 haiku[1m]）。
+  expect(buildAvailableAliases(view)).toEqual({
+    aliases: ["opus", "sonnet", "haiku"],
+    resolved: {
+      opus: "claude-opus-4-8[1m]",
+      sonnet: "claude-sonnet-4-6[1m]",
+      haiku: "claude-haiku-4-5",
+    },
+  });
+});
+
+test("buildAvailableAliases: concrete IDs + 1m off → 全裸（无 [1m]）", () => {
+  const view = { modelMapping: CONCRETE_MAPPING, enable1mContext: false };
+  expect(buildAvailableAliases(view)).toEqual({
+    aliases: ["opus", "sonnet", "haiku"],
+    resolved: {
+      opus: "claude-opus-4-8",
+      sonnet: "claude-sonnet-4-6",
+      haiku: "claude-haiku-4-5",
+    },
+  });
+});
+
+test("buildAvailableAliases: alias 映射 → resolved 值 = alias 本身（isConcreteModelId=false 不拼 [1m]）", () => {
+  const view = { modelMapping: ALIAS_MAPPING, enable1mContext: true };
+  expect(buildAvailableAliases(view)).toEqual({
+    aliases: ["opus", "sonnet", "haiku"],
+    resolved: { opus: "opus", sonnet: "sonnet", haiku: "haiku" },
+  });
 });
 
 test("activePresetView: 激活预设命中 → view；未激活/未命中/空 → undefined", () => {

@@ -144,11 +144,12 @@ const PermissionModesContext = createContext<readonly string[]>([]);
 // ours to set, so it flows through context.
 const LiveThinkingTokensContext = createContext<number | null>(null);
 
-function modelDisplayLabel(modelId: string, resolvedName?: string): string {
-  if (resolvedName) return resolvedName;
-  // 具体 ID（含 "-"，如 "claude-opus-4-8" / "claude-opus-4-8[1m]"）原样展示，
-  // 让会话内菜单如实呈现 modelMapping 派生的具体 ID + [1m] 变体；tier alias
-  //（"opus"/"sonnet"/"haiku"，默认配置）仍 capitalize 作友好名。
+function modelDisplayLabel(modelId: string): string {
+  // opusplan 是 CLI 原生复合 alias（普通模式→Sonnet、Plan Mode→Opus），对齐 CLI
+  // renderModelSetting 显示 "Opus Plan"（非 capitalize 的 "Opusplan"）。具体 ID 由
+  // description 副标题展示，label 只给友好名。
+  if (modelId === "opusplan") return "Opus Plan";
+  // tier alias（opus/sonnet/haiku）→ capitalize 友好名；具体 ID（含 "-"，兼容老数据）原样。
   if (modelId.includes("-")) return modelId;
   return modelId.charAt(0).toUpperCase() + modelId.slice(1);
 }
@@ -335,6 +336,7 @@ export function Claude2Chat({
 
   const session = detail.data?.session;
   const availableModels = detail.data?.availableModels ?? [];
+  const availableModelResolved = detail.data?.availableModelResolved;
   const availablePermissionModes = detail.data?.availablePermissionModes ?? [];
   const title = session?.displayName ?? `${t("section.agents")} Session`;
 
@@ -562,6 +564,7 @@ export function Claude2Chat({
                               currentModel={currentModel}
                               currentResolved={resolvedModel ?? session?.model}
                               availableModels={availableModels}
+                              availableModelResolved={availableModelResolved}
                               modelSwitchVersion={modelSwitchVersion}
                               permissionMode={permissionMode}
                               availablePermissionModes={availablePermissionModes}
@@ -3189,11 +3192,13 @@ function ModelSelector({
   currentModel,
   currentResolved,
   availableModels,
+  availableModelResolved,
   modelSwitchVersion,
 }: {
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
+  availableModelResolved?: Record<string, string>;
   modelSwitchVersion: number;
 }) {
   const { t } = useT();
@@ -3232,12 +3237,19 @@ function ModelSelector({
   if (availableModels.length === 0) return null;
 
   const current = currentModel ?? availableModels[0];
-  // trigger label 与 checkmark 共用 current（= currentModel）单一数据源。方案 2 后
-  // currentModel 恒为具体 ID（system.init 给具体 ID；菜单切换发具体 ID），切换后立即
-  // 更新。不再用 currentResolved 推 label——它滞后于 currentModel（system.init /
-  // control_response 回填），混用会让收起态 label 与展开态 checkmark 给出两个答案。
-  // currentResolved 仍由上方 useEffect 监听，仅在检测到回填时清除切换 spinner。
-  const label = modelDisplayLabel(current);
+  // currentModel 来源混杂：switchModel 乐观更新给 alias，system.init/seed_init 回填给
+  // 具体 ID（CLI 内部把 alias 解析成具体 ID 后上报）。菜单项是 alias，需统一成 alias
+  // 才能命中 checkmark + 给友好 label。opusplan 不在 availableModelResolved（无 resolved），
+  // 原样保留。具体 ID 反查 resolved 映射的 value 得 alias；找不到（老数据/未知）原样保留。
+  const currentAlias = (() => {
+    if (!current) return current;
+    if (availableModelResolved?.[current]) return current;
+    const entry = Object.entries(availableModelResolved ?? {}).find(([, v]) => v === current);
+    return entry?.[0] ?? current;
+  })();
+  // trigger label 与 checkmark 共用 currentAlias 单一数据源。currentResolved 仍由上方
+  // useEffect 监听，仅在检测到回填时清除切换 spinner（不再用于推 label）。
+  const label = modelDisplayLabel(currentAlias);
 
   if (switchingTo) {
     return (
@@ -3277,7 +3289,10 @@ function ModelSelector({
       }
       items={availableModels.map((modelId) => ({
         label: modelDisplayLabel(modelId),
-        isActive: modelId === current,
+        // opusplan 无 resolved（普通/Plan 模式分别由 CLI 经 env 自选），不展示具体 ID；
+        // tier alias 配对展示对应具体 ID（含 [1m]）。具体 ID（兼容老数据）无 description。
+        description: availableModelResolved?.[modelId],
+        isActive: modelId === currentAlias,
         onSelect: () => {
           if (bridge) {
             setSwitchingTo(modelId);
@@ -3514,6 +3529,7 @@ function ComposerWithInterrupt({
   currentModel,
   currentResolved,
   availableModels,
+  availableModelResolved,
   modelSwitchVersion,
   permissionMode,
   availablePermissionModes,
@@ -3528,6 +3544,7 @@ function ComposerWithInterrupt({
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
+  availableModelResolved?: Record<string, string>;
   modelSwitchVersion: number;
   permissionMode?: string;
   availablePermissionModes: string[];
@@ -3631,6 +3648,7 @@ function ComposerWithInterrupt({
           currentModel={currentModel}
           currentResolved={currentResolved}
           availableModels={availableModels}
+          availableModelResolved={availableModelResolved}
           modelSwitchVersion={modelSwitchVersion}
         />
         <PermissionModeSelector
