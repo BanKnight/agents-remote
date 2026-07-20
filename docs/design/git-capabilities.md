@@ -129,6 +129,7 @@
 - **hapi 参考**：hapi 同样只读，有 numstat + branch 显示（验证 R1/R2 的价值），无分支列表 / 远端 commit 差异（R3/R4 是我们超出 hapi 的扩展）。
 - **scope 扩展策略（R5）**：`GitDiffScope` 当前是 `"worktree"|"staged"` union，R5 倾向新增独立请求类型而非扩 union，避免污染现有 scope 语义；第三批 plan 时定稿。
 - **DTO 扩展策略（R1/R2）**：R1 加字段到现有 `GitDiffFileSummary`（向后兼容，旧消费方忽略新字段）；R2 加可选 `branch` 到 `GitDiffListResponse`（无 upstream 时 undefined）。两处都是非破坏性扩展，可灰度。
+- **commit hash 渲染位置（R4/R6 修正）**：`GitCommitRow` 的 hash 不放 marker 位——`IconMarker size="sm"` 是 28×28 固定方框，装不下 7 字符 mono（~42px），溢出压到 title；hash 移到右侧 `meta`（shrink-0 不溢出），marker 位不传。commit 列表内全体一致（commits view / ahead-behind 展开都是纯 GitCommitRow，不与 GitFileList 混排），无 marker 不产生左对齐错位。
 
 ## 现状锚点（实现时定位）
 

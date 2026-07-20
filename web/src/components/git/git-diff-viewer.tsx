@@ -752,18 +752,19 @@ const GitViewSwitcher = ({
   );
 };
 
-/** R4/R6 共享：单条 commit 行（hash marker + message + author·time）。 */
+/** R4/R6 共享：单条 commit 行（message + author·time + hash 右侧 meta）。hash 不放 marker
+ *  位——7 字符 mono 塞进 28×28 IconMarker 会溢出方框压到 title；移到右侧 meta（shrink-0）。 */
 const GitCommitRow = ({ commit }: { commit: GitCommitLogItem }) => (
   <ListRow
-    marker={
-      <IconMarker size="sm" tone="muted">
-        <span className="font-mono text-[0.62rem]">{commit.hash.slice(0, 7)}</span>
-      </IconMarker>
-    }
     title={<span className="text-sm">{commit.message}</span>}
     subtitle={
       <span className="text-xs text-on-surface-muted">
         {commit.author} · {commit.relativeTime}
+      </span>
+    }
+    meta={
+      <span className="font-mono text-[0.62rem] text-on-surface-muted">
+        {commit.hash.slice(0, 7)}
       </span>
     }
   />
