@@ -204,6 +204,11 @@ export const zh: Record<TranslationKey, string> = {
   "git.hunkCounter": "第 {{current}}/{{total}} 处",
   "git.expandFull": "展开完整文件",
   "git.collapseChanges": "仅显示改动",
+  "git.compareHint": "选择 base 与 compare 分支查看差异",
+  "git.compareBase": "Base",
+  "git.compareSet": "Compare",
+  "git.compareResultTitle": "{{base}}..{{compare}} 差异",
+  "git.compareNoDiff": "两个 ref 之间没有差异",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "返回",

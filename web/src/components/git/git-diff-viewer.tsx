@@ -1,6 +1,7 @@
 import type {
   GitBranchStatus,
   GitCommitLogItem,
+  GitCompareFileSummary,
   GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffScope,
@@ -10,6 +11,8 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   getProjectGitAheadBehind,
+  getProjectGitCompareDiff,
+  getProjectGitCompareFileDiff,
   getProjectGitFileDiff,
   getProjectGitLog,
   listProjectGitBranches,
@@ -145,7 +148,13 @@ function GitFileList({
             <DraggableListRow
               key={`${file.scope}:${file.path}`}
               {...rowCommon}
-              dragRef={{ kind: "git", projectName, scope: file.scope, path: file.path }}
+              dragRef={{
+                kind: "git",
+                mode: "scope",
+                projectName,
+                scope: file.scope,
+                path: file.path,
+              }}
               onCardDragStart={onCardDragStart}
               onSelect={() => onSelectFile({ path: file.path, scope: file.scope })}
             />
@@ -157,32 +166,39 @@ function GitFileList({
   );
 }
 
+/** GitFileDiffPanel 渲染所需的统一 diff 视图（scope/compare 两模式 query 结果的公共字段子集）。 */
+type GitFileDiffView = {
+  path: string;
+  previousPath?: string;
+  status: GitDiffFileStatus;
+  diff: string;
+};
+
 export type GitFileDiffPanelProps = {
   projectName: string;
-  scope: GitDiffScope;
   path: string;
   /** Query-key 隔离段（默认中栏 git tab 段，右栏 inspection 传其 queryScope）。 */
   queryScope?: string;
   /** 可选关闭回调（移动浮层关闭按钮，仅 sm:hidden 渲染；中栏 tab 不传，由 tab ✕ 关闭）。 */
   onClose?: () => void;
-};
+} &
+  // scope 模式 = 变更文件（worktree/staged）；compare 模式 = 分支间 diff（base..compare）。
+  // 两模式共享 DiffContent 渲染（R7 高亮/R8 展开/R9 hunk 导航），仅 query 数据源不同。
+  ({ mode: "scope"; scope: GitDiffScope } | { mode: "compare"; base: string; compare: string });
 
 /**
  * 单文件 git diff 面板（自带 query，设计 workbench-layout-fix 阶段 3）。两处复用：① 中栏 git tab
  *（PanelRouter，onClose 不传，关闭走 tab ✕）；② GitDiffPanel 右栏 inspection（传 onClose=clearDiff，
  * 移动浮层关闭）。path 为空 → 未选态（selectPrompt）；非空 → getProjectGitFileDiff query 渲染 diff。
  */
-export function GitFileDiffPanel({
-  projectName,
-  scope,
-  path,
-  queryScope = WORKBENCH_GIT_TAB_QUERY_SCOPE,
-  onClose,
-}: GitFileDiffPanelProps) {
+export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
   const { t } = useT();
-  // R8：展开完整文件（默认仅显示改动附近 3 行）。切换文件/scope 时重置为折叠态。
+  const { projectName, path, queryScope = WORKBENCH_GIT_TAB_QUERY_SCOPE, onClose } = props;
+  // R8：展开完整文件（默认仅显示改动附近 3 行）。切换文件/scope/compare 时重置为折叠态。
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => setExpanded(false), [path, scope]);
+  const compareRef = props.mode === "compare" ? `${props.base}~${props.compare}` : null;
+  const scopeRef = props.mode === "scope" ? props.scope : null;
+  useEffect(() => setExpanded(false), [path, props.mode, compareRef, scopeRef]);
   const fileDiff = useQuery({
     enabled: path !== "",
     queryKey: [
@@ -190,11 +206,22 @@ export function GitFileDiffPanel({
       projectName,
       queryScope,
       "file-diff",
-      scope,
+      props.mode,
+      compareRef ?? scopeRef,
       path,
       expanded ? "full" : "changes",
     ],
-    queryFn: () => getProjectGitFileDiff(projectName, scope, path, expanded ? "full" : undefined),
+    queryFn: (): Promise<GitFileDiffView> => {
+      if (props.mode === "compare")
+        return getProjectGitCompareFileDiff(
+          projectName,
+          props.base,
+          props.compare,
+          path,
+          expanded ? "full" : undefined,
+        );
+      return getProjectGitFileDiff(projectName, props.scope, path, expanded ? "full" : undefined);
+    },
     placeholderData: keepPreviousData,
   });
 
@@ -225,6 +252,11 @@ export function GitFileDiffPanel({
           <h4 className="min-w-0 truncate font-mono text-sm font-semibold text-on-surface">
             {displayName.split("/").pop() ?? displayName}
           </h4>
+          {props.mode === "compare" ? (
+            <span className="hidden max-w-[40%] shrink-0 truncate font-mono text-[0.62rem] text-on-surface-muted sm:inline">
+              {props.base}..{props.compare}
+            </span>
+          ) : null}
         </div>
         <div className="justify-self-center">
           {fileDiff.data ? (
@@ -297,6 +329,11 @@ export type GitChangesListProps = {
   onSelectGitFile: (file: SelectedGitFile) => void;
   /** 拖动源启动（git 行拖到中栏开 git diff tab，透传 GitFileList）。undefined 退纯点击（移动端）。 */
   onCardDragStart?: CardDragStartHandler;
+  /** R5 双选 compare 文件回调（分支视图 [Base]/[Compare] 双选后点文件开中栏 compare tab）。
+   * undefined 退纯分支列表（不启用双选）。 */
+  onOpenGitCompareFile?: (projectName: string, base: string, compare: string, path: string) => void;
+  /** R5 当前选中 compare 文件路径（高亮，从 focusId parseGitTabId compare 模式派生）。 */
+  selectedCompareFile?: string;
 };
 
 /**
@@ -311,6 +348,8 @@ export function GitChangesList({
   selectedFile,
   onSelectGitFile,
   onCardDragStart,
+  onOpenGitCompareFile,
+  selectedCompareFile,
 }: GitChangesListProps) {
   const { t } = useT();
   const diff = useQuery({
@@ -389,11 +428,13 @@ export function GitChangesList({
           />
         ) : view === "branches" ? (
           <GitBranchList
+            onOpenGitCompareFile={onOpenGitCompareFile}
             projectName={projectName}
             onSelectBranch={(name) => {
               setCommitBranch(name);
               setView("commits");
             }}
+            selectedCompareFile={selectedCompareFile}
           />
         ) : (
           <GitCommitList projectName={projectName} branch={commitBranch ?? branch?.name} />
@@ -752,15 +793,95 @@ const GitCommitList = ({ projectName, branch }: { projectName: string; branch?: 
   );
 };
 
-/** R3 分支列表（local + remote）。点分支名 → onSelectBranch 联动切 [提交] 视图按该分支过滤。 */
+/** R5 分支间 diff 文件列表（双选 base/compare 后渲染）。复用 GitFileList 行视觉（marker +
+ * status numstat meta + path title + previousPath subtitle）。点文件 → onOpenGitCompareFile
+ * 开中栏 compare tab。无差异 → ResourceStatePanel（git.compareNoDiff）。 */
+const GitCompareFileList = ({
+  projectName,
+  base,
+  compare,
+  selectedPath,
+  onSelectFile,
+}: {
+  projectName: string;
+  base: string;
+  compare: string;
+  selectedPath?: string;
+  onSelectFile: (path: string) => void;
+}) => {
+  const { t } = useT();
+  const q = useQuery({
+    queryKey: ["projects", projectName, "git", "compare", `${base}~${compare}`],
+    queryFn: () => getProjectGitCompareDiff(projectName, base, compare),
+  });
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      <div className="px-1 text-[0.62rem] font-semibold uppercase tracking-wide text-on-surface-muted">
+        {t("git.compareResultTitle", { base, compare })}
+      </div>
+      {q.isLoading ? (
+        <ListRowSkeleton count={4} />
+      ) : q.error ? (
+        <ResourceStatePanel tone="danger" title={t("git.errorTitle")} message={q.error.message} />
+      ) : q.data?.repository ? (
+        q.data.files.length === 0 ? (
+          <ResourceStatePanel title={t("git.compareNoDiff")} message={t("git.compareHint")} />
+        ) : (
+          <ListGroup ariaLabel="Git compare files">
+            {q.data.files.map((file: GitCompareFileSummary) => (
+              <ListRow
+                key={file.path}
+                marker={
+                  <IconMarker size="sm" tone="muted">
+                    <ShellIcon name="file" className="h-4 w-4" />
+                  </IconMarker>
+                }
+                meta={
+                  <>
+                    <IconMarker size="sm" tone={gitStatusTone(file.status)}>
+                      {statusShortLabel(file.status)}
+                    </IconMarker>
+                    {file.addedLines !== null && file.removedLines !== null ? (
+                      <span className="font-mono text-[0.62rem] font-bold tabular-nums">
+                        <span className="text-success">+{file.addedLines}</span>{" "}
+                        <span className="text-error">-{file.removedLines}</span>
+                      </span>
+                    ) : null}
+                  </>
+                }
+                selected={selectedPath === file.path}
+                subtitle={
+                  file.previousPath ? t("git.fromPath", { path: file.previousPath }) : undefined
+                }
+                title={<span className="font-mono text-[0.82rem]">{file.path}</span>}
+                onClick={() => onSelectFile(file.path)}
+              />
+            ))}
+          </ListGroup>
+        )
+      ) : null}
+    </div>
+  );
+};
+
+/** R3 分支列表（local + remote）。点分支名 → onSelectBranch 联动切 [提交] 视图按该分支过滤。
+ * R5 双选：传入 onOpenGitCompareFile 时每行 actions 加 [Base]/[Compare] 两按钮（base 默认当前
+ * 分支，可改；双选完成后下方渲染 GitCompareFileList，点文件开中栏 compare tab）。未传 → 纯分支
+ * 列表（右栏 inspection / 移动 GitDiffPanel，不启用双选）。 */
 const GitBranchList = ({
   projectName,
   onSelectBranch,
+  onOpenGitCompareFile,
+  selectedCompareFile,
 }: {
   projectName: string;
   onSelectBranch?: (name: string) => void;
+  onOpenGitCompareFile?: (projectName: string, base: string, compare: string, path: string) => void;
+  selectedCompareFile?: string;
 }) => {
   const { t } = useT();
+  const [baseOverride, setBaseOverride] = useState<string | undefined>(undefined);
+  const [compare, setCompare] = useState<string | undefined>(undefined);
   const branches = useQuery({
     queryKey: ["projects", projectName, "git", "branches"],
     queryFn: () => listProjectGitBranches(projectName),
@@ -777,50 +898,118 @@ const GitBranchList = ({
   const list = branches.data?.branches ?? [];
   if (list.length === 0)
     return <ResourceStatePanel title={t("git.noBranches")} message={t("git.notRepoDesc")} />;
+  // base 默认当前分支（detached HEAD current==="HEAD" → 无默认，待手动选）。
+  const currentName =
+    branches.data?.current && branches.data.current !== "HEAD" ? branches.data.current : undefined;
+  const effectiveBase = baseOverride ?? currentName;
+  const compareReady = !!(
+    effectiveBase &&
+    compare &&
+    effectiveBase !== compare &&
+    onOpenGitCompareFile
+  );
   return (
-    <ListGroup ariaLabel="Git branches">
-      {list.map((branch) => (
-        <ListRow
-          key={`${branch.type}:${branch.name}`}
-          marker={
-            <IconMarker size="sm" tone={branch.isCurrent ? "accent" : "muted"}>
-              <span className="text-[0.62rem] font-bold">
-                {branch.type === "local"
-                  ? t("git.branchesLocalShort")
-                  : t("git.branchesRemoteShort")}
-              </span>
-            </IconMarker>
+    <div className="flex flex-col gap-1">
+      {onOpenGitCompareFile ? (
+        <div className="px-1 text-[0.62rem] text-on-surface-muted">{t("git.compareHint")}</div>
+      ) : null}
+      <ListGroup ariaLabel="Git branches">
+        {list.map((branch) => {
+          const isBase = effectiveBase === branch.name;
+          const isCompare = compare === branch.name;
+          return (
+            <ListRow
+              key={`${branch.type}:${branch.name}`}
+              marker={
+                <IconMarker size="sm" tone={branch.isCurrent ? "accent" : "muted"}>
+                  <span className="text-[0.62rem] font-bold">
+                    {branch.type === "local"
+                      ? t("git.branchesLocalShort")
+                      : t("git.branchesRemoteShort")}
+                  </span>
+                </IconMarker>
+              }
+              title={
+                <span className="flex items-center gap-1.5 font-mono text-sm">
+                  {branch.name}
+                  {branch.isCurrent ? (
+                    <span className="text-[0.62rem] text-primary">({t("git.branchCurrent")})</span>
+                  ) : null}
+                </span>
+              }
+              subtitle={
+                branch.upstream ? (
+                  <span className="text-xs text-on-surface-muted">{branch.upstream}</span>
+                ) : undefined
+              }
+              meta={
+                branch.ahead !== undefined || branch.behind !== undefined ? (
+                  <span className="font-mono text-[0.62rem] tabular-nums">
+                    {branch.behind && branch.behind > 0 ? (
+                      <span className="text-on-surface-muted">↓{branch.behind} </span>
+                    ) : null}
+                    {branch.ahead && branch.ahead > 0 ? (
+                      <span className="text-success">↑{branch.ahead}</span>
+                    ) : null}
+                  </span>
+                ) : null
+              }
+              selected={branch.isCurrent}
+              onClick={onSelectBranch ? () => onSelectBranch(branch.name) : undefined}
+              actions={
+                onOpenGitCompareFile ? (
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      aria-pressed={isBase}
+                      title={t("git.compareBase")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBaseOverride((prev) => (prev === branch.name ? undefined : branch.name));
+                      }}
+                      className={`rounded px-1.5 py-0.5 text-[0.62rem] font-semibold transition ${
+                        isBase
+                          ? "bg-primary/15 text-primary"
+                          : "text-on-surface-muted hover:bg-on-surface/10 hover:text-on-surface"
+                      }`}
+                    >
+                      {t("git.compareBase")}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={isCompare}
+                      title={t("git.compareSet")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCompare((prev) => (prev === branch.name ? undefined : branch.name));
+                      }}
+                      className={`rounded px-1.5 py-0.5 text-[0.62rem] font-semibold transition ${
+                        isCompare
+                          ? "bg-primary/15 text-primary"
+                          : "text-on-surface-muted hover:bg-on-surface/10 hover:text-on-surface"
+                      }`}
+                    >
+                      {t("git.compareSet")}
+                    </button>
+                  </div>
+                ) : undefined
+              }
+            />
+          );
+        })}
+      </ListGroup>
+      {compareReady ? (
+        <GitCompareFileList
+          base={effectiveBase as string}
+          compare={compare as string}
+          projectName={projectName}
+          onSelectFile={(path) =>
+            onOpenGitCompareFile(projectName, effectiveBase as string, compare as string, path)
           }
-          title={
-            <span className="flex items-center gap-1.5 font-mono text-sm">
-              {branch.name}
-              {branch.isCurrent ? (
-                <span className="text-[0.62rem] text-primary">({t("git.branchCurrent")})</span>
-              ) : null}
-            </span>
-          }
-          subtitle={
-            branch.upstream ? (
-              <span className="text-xs text-on-surface-muted">{branch.upstream}</span>
-            ) : undefined
-          }
-          meta={
-            branch.ahead !== undefined || branch.behind !== undefined ? (
-              <span className="font-mono text-[0.62rem] tabular-nums">
-                {branch.behind && branch.behind > 0 ? (
-                  <span className="text-on-surface-muted">↓{branch.behind} </span>
-                ) : null}
-                {branch.ahead && branch.ahead > 0 ? (
-                  <span className="text-success">↑{branch.ahead}</span>
-                ) : null}
-              </span>
-            ) : null
-          }
-          selected={branch.isCurrent}
-          onClick={onSelectBranch ? () => onSelectBranch(branch.name) : undefined}
+          selectedPath={selectedCompareFile}
         />
-      ))}
-    </ListGroup>
+      ) : null}
+    </div>
   );
 };
 
@@ -1040,6 +1229,7 @@ export function GitDiffPanel({
 
   const diffPanel = (
     <GitFileDiffPanel
+      mode="scope"
       onClose={clearDiff}
       path={selectedFile?.path ?? ""}
       projectName={projectName}

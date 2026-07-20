@@ -91,9 +91,9 @@
 | 批次 | 范围 | 主题 | 依赖 | 状态 |
 |------|------|------|------|------|
 | 第一批 | R1 + R2 | 变更规模与态势 | 无（最低成本高感知，hapi 已验证） | ✅ 完成（numstat 行数 + branch 态势，门禁/e2e/DOM 探针全绿） |
-| 第二批 | R3 + R4 + R6 | 分支与远端 + 历史 | R4 依赖 R6 commit 行组件 | 待开始 |
-| 第三批 | R5 | 分支间 diff | 依赖 R3 分支列表（选分支） | 待开始 |
-| diff 体验 | R7 + R8 + R9 | diff 可读性 | 独立，任意时机 | 待开始 |
+| 第二批 | R3 + R4 + R6 | 分支与远端 + 历史 | R4 依赖 R6 commit 行组件 | ✅ 完成（分支列表 + ahead/behind commit 展开 + 提交历史，commit `8590dcc`） |
+| 第三批 | R5 | 分支间 diff | 依赖 R3 分支列表（选分支） | ✅ 完成（双选 base/compare + 中栏 compare tab，复用 R7-R9 渲染） |
+| diff 体验 | R7 + R8 + R9 | diff 可读性 | 独立，任意时机 | ✅ 完成（Prism 语法高亮 + 展开全文 + hunk 导航，commit `6e6538d`） |
 
 ### 第一批完成锚点（R1 + R2）
 
@@ -103,6 +103,17 @@
 - **UI**（`web/src/components/git/git-diff-viewer.tsx`）：`GitFileList` meta 从单 status IconMarker 改为 status + 条件 `+N -M` span（null 不渲染，`text-success`/`text-error` + `font-mono text-[0.62rem] tabular-nums`）；新 `GitBranchStatusRow`（分支名 `font-semibold text-on-surface` + ↑ahead `text-success`/↓behind `text-on-surface-muted`，0 省略；无 upstream `git.noUpstream`；detached `git.detached`）；`GitChangesList` + `GitDiffPanel` 两处 header 各插 branch 行。
 - **验证**：api 单测 11/11（numstat modified/binary/untracked/rename 两种格式 + branch 无 upstream/ahead-behind/detached）；fetch handler 集成测试 `toEqual`→`toMatchObject`（行数/branch 不在集成层精确绑定）；e2e 25/25；DOM 探针（agents-remote 真实改动，不截图）：行数 +N `rgb(52,211,153)`=success、-M `rgb(251,113,133)`=error 精确命中 token，branch main 渲染，ahead=0 正常降级。
 - **不动**：`fileDiff`（单文件 diff response）不加行数（diff 面板已显完整 diff）；`GitDiffScope` union 不动（R5 才扩）；只读契约不变。
+
+### 第三批完成锚点（R5 分支间 diff）
+
+- **用户决策**（AskUserQuestion 确认）：① base 默认当前分支、每行可独立设 base/compare（双选）；② 点 compare 文件开中栏 diff tab（compare 模式），非分支视图内联渲染；③ 两点 `base..compare` 语义（直接比两棵树，非 merge-base review 风格）。
+- **DTO**（`packages/shared/src/index.ts`）：新增 `GitCompareFileSummary`（无 scope——两 ref 间差异不属 worktree/staged）+ `GitCompareDiffResponse`（repository true/false 变体）+ `GitCompareFileDiffResponse`（always repository:true）。`GitDiffScope` union **不动**（compare 是独立维度，不污染 scope 语义）。
+- **API**（`api/src/project-git-diff.ts`）：`compareDiff`（base/compare 经 `sanitizeBranchRef`，`git diff base..compare --name-status -z -M` + `--numstat -M` 并行，复用 `parseNameStatus`/`parseNumstat`/`applyNumstat`，strip scope）+ `compareFileDiff`（先 compareDiff 校验 path 在变更列表，`git diff base..compare [-U999999] -- path`，context="full" 复用 fileDiff contextArgs 模式）。
+- **tab 模型**（`web/src/routes/workbench-model.ts`）：`GitPanelRef` 改 discriminated union（`{mode:"scope";scope} | {mode:"compare";base;compare}`）；`tabIdOf` compare = `gitcmp_${base}~${compare}/${path}`（`~` 分隔——合法 sanitized ref 不含 `~`，安全）；`parseGitTabId` 返 union；focus URL 走 `gitCompare` search param（编码 `${base}~${compare}`，与 `gitScope` 互斥）。
+- **UI**（`git-diff-viewer.tsx`）：`GitFileDiffPanel` props 改 union，query 按 mode 分流（scope→`getProjectGitFileDiff` / compare→`getProjectGitCompareFileDiff`，共用 `GitFileDiffView` 字段子集统一返回类型），header compare 模式加 `${base}..${compare}` 小标识；`GitBranchList` 加可选 `onOpenGitCompareFile`（传入启用双选：每行 actions slot 两按钮 [Base]/[Compare]，base 默认当前分支可改，双选完成后下方渲染 `GitCompareFileList`）；未传 → 纯分支列表（右栏 inspection / 移动 `GitDiffPanel` 不启用双选）。**DiffContent 渲染完全不动**（R7 高亮 / R8 展开 / R9 hunk 导航全继承）。
+- **链路**：`GitCompareFileList` 点文件 → `onOpenGitCompareFile` → `GitChangesList` / `ProjectLeftPanel` 透传 → `WorkbenchRoute.onOpenGitCompareFile`（`ensureTabOpenLeaf` compare ref + `navigateToGitCompareFile` 写 `gitCompare` search）→ focusId `gitcmp_...` → focus effect re-open → `PanelRouter` 按 mode 分流 `<GitFileDiffPanel mode="compare"/>`。
+- **验证**：api 单测覆盖 compareDiff/compareFileDiff + context=full + 非法 ref（`..`/`;`/`$`/空格）+ path 越界拒绝；route 集成 `/git/compare` + `/git/compare/file`；typecheck / lint(0/0) / format / test 全绿；CSS 落盘三道闸。
+- **不动**：scope 模式 git tab 行为完全不变（R1-R9 全保留）；`parseDiff` / `DiffContent` / R7-R9 渲染链不动；只读契约不变（`git diff base..compare` 全读）；compare 文件列表 MVP 纯点击（dragRef compare 模式留后续）；移动端 `GitDiffPanel` 分支视图不启用双选（双选 + 开中栏 tab 在移动端语义复杂，MVP 不做）。
 
 ## 安全边界（所有批次共享）
 

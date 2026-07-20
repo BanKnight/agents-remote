@@ -279,21 +279,29 @@ const handleProjects = async (
     if (projectGitDiffMatch && request.method === "GET" && projectGitDiffService) {
       const { projectName, kind } = projectGitDiffMatch;
       const branch = url.searchParams.get("branch") ?? undefined;
+      const base = url.searchParams.get("base");
+      const compare = url.searchParams.get("compare");
+      const path = url.searchParams.get("path");
+      const context = url.searchParams.get("context");
       const response =
         kind === "file"
           ? await projectGitDiffService.fileDiff(
               projectName,
               url.searchParams.get("scope"),
-              url.searchParams.get("path"),
-              url.searchParams.get("context"),
+              path,
+              context,
             )
-          : kind === "branches"
-            ? await projectGitDiffService.listBranches(projectName)
-            : kind === "log"
-              ? await projectGitDiffService.listCommits(projectName, branch)
-              : kind === "aheadBehind"
-                ? await projectGitDiffService.listAheadBehind(projectName, branch)
-                : await projectGitDiffService.listDiff(projectName);
+          : kind === "compareFile"
+            ? await projectGitDiffService.compareFileDiff(projectName, base, compare, path, context)
+            : kind === "compare"
+              ? await projectGitDiffService.compareDiff(projectName, base, compare)
+              : kind === "branches"
+                ? await projectGitDiffService.listBranches(projectName)
+                : kind === "log"
+                  ? await projectGitDiffService.listCommits(projectName, branch)
+                  : kind === "aheadBehind"
+                    ? await projectGitDiffService.listAheadBehind(projectName, branch)
+                    : await projectGitDiffService.listDiff(projectName);
       return Response.json(response);
     }
 
@@ -501,7 +509,7 @@ const decodeProjectName = (encodedName: string) => {
 
 type ProjectGitDiffPathMatch = {
   projectName: string;
-  kind: "file" | "diff" | "branches" | "log" | "aheadBehind";
+  kind: "file" | "diff" | "branches" | "log" | "aheadBehind" | "compare" | "compareFile";
 };
 
 const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | undefined => {
@@ -514,6 +522,8 @@ const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | un
   const rest = pathname.slice(prefix.length);
   // 长 suffix 在前（/git/diff/file 先于 /git/diff），避免短 suffix 误匹配前缀。
   const suffixes: { suffix: string; kind: ProjectGitDiffPathMatch["kind"] }[] = [
+    { suffix: "/git/compare/file", kind: "compareFile" },
+    { suffix: "/git/compare", kind: "compare" },
     { suffix: "/git/diff/file", kind: "file" },
     { suffix: "/git/diff", kind: "diff" },
     { suffix: "/git/branches", kind: "branches" },

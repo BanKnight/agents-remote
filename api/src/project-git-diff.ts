@@ -6,6 +6,9 @@ import type {
   GitBranchStatus,
   GitCommitLogItem,
   GitCommitLogResponse,
+  GitCompareDiffResponse,
+  GitCompareFileDiffResponse,
+  GitCompareFileSummary,
   GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffListResponse,
@@ -271,6 +274,123 @@ export class ProjectGitDiffService {
       behind,
       aheadCommits: parseCommits(aheadLog),
       behindCommits: parseCommits(behindLog),
+    };
+  }
+
+  /**
+   * R5 分支间 diff 文件列表（`git diff base..compare`）。base/compare 经 sanitizeBranchRef；
+   * name-status + numstat 并行，复用 parseNameStatus/parseNumstat；compare 无 scope 概念，strip。
+   */
+  async compareDiff(
+    projectName: string,
+    base: string | null,
+    compare: string | null,
+  ): Promise<GitCompareDiffResponse> {
+    const sanitizedBase = sanitizeBranchRef(base);
+    const sanitizedCompare = sanitizeBranchRef(compare);
+    if (!sanitizedBase || !sanitizedCompare) {
+      throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Invalid branch ref");
+    }
+
+    const project = await this.resolveProject(projectName);
+    if (!(await this.isRepository(project.path))) {
+      return {
+        repository: false,
+        projectName: project.name,
+        reason: "not_git_repository",
+      };
+    }
+
+    const range = `${sanitizedBase}..${sanitizedCompare}`;
+    const [names, numstat] = await Promise.all([
+      this.git(project.path, ["diff", range, "--name-status", "-z", "-M"]),
+      this.git(project.path, ["diff", range, "--numstat", "-M"]),
+    ]);
+
+    // parseNameStatus 产 GitDiffFileSummary（含 scope 占位）；compare 无 scope，strip。
+    const scoped = parseNameStatus(names, "worktree");
+    applyNumstat(scoped, "worktree", parseNumstat(numstat));
+    const files: GitCompareFileSummary[] = scoped.map(
+      ({ path, previousPath, status, addedLines, removedLines }) => ({
+        path,
+        ...(previousPath ? { previousPath } : {}),
+        status,
+        addedLines,
+        removedLines,
+      }),
+    );
+
+    return {
+      repository: true,
+      projectName: project.name,
+      base: sanitizedBase,
+      compare: sanitizedCompare,
+      files,
+    };
+  }
+
+  /**
+   * R5 分支间单文件 diff（`git diff base..compare -- path`）。先 compareDiff 校验 path 在变更列表
+   *（否则 PROJECT_GIT_FILE_NOT_CHANGED）；context="full" 加 -U999999（同 fileDiff L143 contextArgs）。
+   */
+  async compareFileDiff(
+    projectName: string,
+    base: string | null,
+    compare: string | null,
+    path: string | null,
+    context: string | null = null,
+  ): Promise<GitCompareFileDiffResponse> {
+    const sanitizedBase = sanitizeBranchRef(base);
+    const sanitizedCompare = sanitizeBranchRef(compare);
+    if (!sanitizedBase || !sanitizedCompare) {
+      throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Invalid branch ref");
+    }
+
+    if (!path || path.includes("\0") || path.startsWith("/") || path.split("/").includes("..")) {
+      throw new ProjectGitDiffError("PROJECT_GIT_FILE_NOT_CHANGED", "Git file is not changed");
+    }
+
+    const project = await this.resolveProject(projectName);
+    if (!(await this.isRepository(project.path))) {
+      throw new ProjectGitDiffError(
+        "PROJECT_GIT_NOT_REPOSITORY",
+        "Project is not a Git repository",
+      );
+    }
+
+    const list = await this.compareDiff(projectName, base, compare);
+    if (!list.repository) {
+      throw new ProjectGitDiffError(
+        "PROJECT_GIT_NOT_REPOSITORY",
+        "Project is not a Git repository",
+      );
+    }
+
+    const file = list.files.find((entry) => entry.path === path);
+    if (!file) {
+      throw new ProjectGitDiffError("PROJECT_GIT_FILE_NOT_CHANGED", "Git file is not changed");
+    }
+
+    const range = `${sanitizedBase}..${sanitizedCompare}`;
+    const contextArgs = context === "full" ? ["-U999999"] : [];
+    const diff = await this.git(project.path, [
+      "diff",
+      ...contextArgs,
+      "--no-color",
+      range,
+      "--",
+      file.path,
+    ]);
+
+    return {
+      repository: true,
+      projectName: project.name,
+      base: sanitizedBase,
+      compare: sanitizedCompare,
+      path: file.path,
+      ...(file.previousPath ? { previousPath: file.previousPath } : {}),
+      status: file.status,
+      diff,
     };
   }
 

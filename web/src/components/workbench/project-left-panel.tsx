@@ -29,6 +29,8 @@ type ProjectLeftPanelProps = {
   onOpenFile: (projectName: string, path: string) => void;
   /** middle tab [git] 点变更文件 → 中栏开 git diff tab（WorkbenchContent onOpenGitFile）。 */
   onOpenGitFile: (projectName: string, scope: GitDiffScope, path: string) => void;
+  /** R5 分支视图双选 compare 文件 → 中栏开 git diff tab（compare 模式，WorkbenchContent onOpenGitCompareFile）。 */
+  onOpenGitCompareFile?: (projectName: string, base: string, compare: string, path: string) => void;
   /** 拖动源启动（文件树/git 行拖到中栏开 tab，WorkbenchContent onCardDragStart）。undefined 退纯点击。 */
   onCardDragStart?: CardDragStartHandler;
   /** middle tab [历史] HistoryList 聚焦态（URL focusId）。 */
@@ -55,6 +57,7 @@ export function ProjectLeftPanel({
   onTabChange,
   onOpenFile,
   onOpenGitFile,
+  onOpenGitCompareFile,
   onCardDragStart,
   focusId,
 }: ProjectLeftPanelProps) {
@@ -73,7 +76,14 @@ export function ProjectLeftPanel({
   const selectedGitFile = useMemo(() => {
     if (!focusId) return undefined;
     const parsed = parseGitTabId(focusId);
-    return parsed ? { path: parsed.path, scope: parsed.scope } : undefined;
+    return parsed?.mode === "scope" ? { path: parsed.path, scope: parsed.scope } : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
+  // R5 compare 模式当前选中文件路径（高亮 GitCompareFileList 行，从 focusId compare 模式派生）。
+  const selectedCompareFile = useMemo(() => {
+    if (!focusId) return undefined;
+    const parsed = parseGitTabId(focusId);
+    return parsed?.mode === "compare" ? parsed.path : undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId]);
   const resolvedTab: WorkbenchMiddleTab =
@@ -106,8 +116,10 @@ export function ProjectLeftPanel({
       middleBody = (
         <GitChangesList
           onCardDragStart={onCardDragStart}
+          onOpenGitCompareFile={onOpenGitCompareFile}
           onSelectGitFile={(file) => onOpenGitFile(scope.key, file.scope, file.path)}
           projectName={scope.key}
+          selectedCompareFile={selectedCompareFile}
           selectedFile={selectedGitFile}
         />
       );

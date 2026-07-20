@@ -204,6 +204,11 @@ export const en = {
   "git.hunkCounter": "Hunk {{current}}/{{total}}",
   "git.expandFull": "Expand full file",
   "git.collapseChanges": "Changes only",
+  "git.compareHint": "Select base and compare branches to view differences",
+  "git.compareBase": "Base",
+  "git.compareSet": "Compare",
+  "git.compareResultTitle": "Differences {{base}}..{{compare}}",
+  "git.compareNoDiff": "No differences between the two refs",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "Back",

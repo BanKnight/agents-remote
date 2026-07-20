@@ -510,6 +510,65 @@ test("createFetchHandler serves Git branch/log/ahead-behind routes", async () =>
   expect((await invalid.json()).error.code).toBe("PROJECT_GIT_SCOPE_INVALID");
 });
 
+test("createFetchHandler serves Git compare routes", async () => {
+  const projectPath = join(root, "demo");
+  await mkdir(projectPath);
+  await git(projectPath, ["init"]);
+  await git(projectPath, ["branch", "-m", "main"]);
+  await git(projectPath, ["config", "user.email", "test@example.com"]);
+  await git(projectPath, ["config", "user.name", "Test User"]);
+  await writeFile(join(projectPath, "a.txt"), "a\nb\nc\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await git(projectPath, ["checkout", "-b", "feature"]);
+  await writeFile(join(projectPath, "a.txt"), "a\nb\nc\nd\n");
+  await writeFile(join(projectPath, "b.txt"), "new\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "feature"]);
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const list = await handler(
+    new Request("http://localhost/api/projects/demo/git/compare?base=main&compare=feature", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  expect(list.status).toBe(200);
+  const listBody = await list.json();
+  expect(listBody).toMatchObject({ base: "main", compare: "feature" });
+  expect(listBody.files).toMatchObject([
+    { path: "a.txt", status: "modified" },
+    { path: "b.txt", status: "added" },
+  ]);
+
+  const fileDiff = await handler(
+    new Request(
+      "http://localhost/api/projects/demo/git/compare/file?base=main&compare=feature&path=a.txt",
+      { headers },
+    ),
+    { upgrade: () => false },
+  );
+  expect(fileDiff.status).toBe(200);
+  expect(await fileDiff.json()).toMatchObject({
+    base: "main",
+    compare: "feature",
+    path: "a.txt",
+    status: "modified",
+    diff: expect.stringContaining("+d"),
+  });
+
+  // 非法 base ref → PROJECT_GIT_SCOPE_INVALID (400)。
+  const invalid = await handler(
+    new Request("http://localhost/api/projects/demo/git/compare?base=bad;ref&compare=main", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  expect(invalid.status).toBe(400);
+  expect((await invalid.json()).error.code).toBe("PROJECT_GIT_SCOPE_INVALID");
+});
+
 test("createFetchHandler returns non-Git repository state", async () => {
   await mkdir(join(root, "demo"));
   const { auth, handler } = createTestHandler();

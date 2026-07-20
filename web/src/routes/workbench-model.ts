@@ -290,6 +290,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
+  gitCompare?: string;
   leftMode?: "auto" | "files" | "skills";
 } {
   const result: {
@@ -297,6 +298,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
+    gitCompare?: string;
     leftMode?: "auto" | "files" | "skills";
   } = {};
   if (search.rightTab === "files" || search.rightTab === "git") {
@@ -315,6 +317,10 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   }
   if (search.gitScope === "staged" || search.gitScope === "worktree") {
     result.gitScope = search.gitScope;
+  }
+  // R5 compare 模式：gitCompare 编码 `${base}~${compare}`（合法 ref 不含 `~`），与 gitScope 互斥。
+  if (typeof search.gitCompare === "string" && search.gitCompare.length > 0) {
+    result.gitCompare = search.gitCompare;
   }
   if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "skills") {
     result.leftMode = search.leftMode;
@@ -354,6 +360,7 @@ export type WorkbenchRouteContext = {
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
+  gitCompare?: string;
 };
 
 /**
@@ -372,6 +379,7 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
+    gitCompare?: string;
   };
   switch (leaf.fullPath) {
     case "/":
@@ -429,6 +437,14 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     }
     case "/projects/$key/git/$": {
       const path = p._splat ? decodeURIComponent(p._splat) : "";
+      // compare 模式（gitCompare=`${base}~${compare}`）→ `gitcmp_` focusId；否则 scope 模式 `git_`。
+      if (s.gitCompare) {
+        return {
+          scope: { kind: "project", key: p.key ?? "" },
+          focusId: path ? `gitcmp_${s.gitCompare}/${path}` : undefined,
+          ...s,
+        };
+      }
       const gitScope = s.gitScope ?? "worktree";
       return {
         scope: { kind: "project", key: p.key ?? "" },
@@ -520,13 +536,14 @@ export type FilePanelRef = {
   path: string;
 };
 
-/** git diff 面板引用（项目 + scope + 项目相对路径）。V3 多态 tab 的 git 分支（设计 workbench-layout-fix 阶段 3）。 */
+/** git diff 面板引用。scope 模式 = worktree/staged 单文件 diff（变更列表点选）；compare 模式 = `base..compare`
+ * 分支间单文件 diff（R5，分支视图双选点选）。两 mode 共享 GitFileDiffPanel 渲染（DiffContent 不变，仅 query
+ * 数据源不同）；tabId 前缀互斥（`git_` / `gitcmp_`）。 */
 export type GitPanelRef = {
   kind: "git";
   projectName: string;
-  scope: GitDiffScope;
   path: string;
-};
+} & ({ mode: "scope"; scope: GitDiffScope } | { mode: "compare"; base: string; compare: string });
 
 /**
  * skill 详情面板引用（对标 FilePanelRef）。name = skill 名（如 `"tdd"`）——Manage tab 点已装
@@ -542,8 +559,8 @@ export type SkillPanelRef = {
 /**
  * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git/skill tab 同处 group+tab。
  * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
- * file tab 的 tabId = `file_${path}`、git tab 的 tabId = `git_${scope}/${path}`、skill tab 的
- * tabId = `skill_${name}`（前缀互斥）。
+ * file tab 的 tabId = `file_${path}`、git scope tab = `git_${scope}/${path}`、git compare tab =
+ * `gitcmp_${base}~${compare}/${path}`（R5）、skill tab = `skill_${name}`（前缀互斥）。
  */
 export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef | GitPanelRef | SkillPanelRef;
 
@@ -555,15 +572,18 @@ export type LegacyPanelRef = {
 
 /**
  * 派生 tab id（= activeTabId / React key / sizes key 概念）：session tab = sessionId，
- * file tab = `file_${path}`（path=全路径含项目名前缀），git tab = `git_${scope}/${path}`。session tab
- * 的 tabId === sessionId（值不变）是 V3 多态零回归的基石；file_/git_ 前缀与 sessionId 天然互斥。
+ * file tab = `file_${path}`（path=全路径含项目名前缀），git scope tab = `git_${scope}/${path}`，
+ * git compare tab = `gitcmp_${base}~${compare}/${path}`（`~` 分隔 base/compare——合法 ref 不含 `~`）。
+ * session tab 的 tabId === sessionId（值不变）是 V3 多态零回归的基石；file_/git_/gitcmp_/skill_ 前缀互斥。
  * file 全路径让全局/项目点同一文件复用同一 tab（去重）。
  */
 export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "session") return ref.sessionId;
   if (ref.kind === "file") return `file_${ref.path}`;
   if (ref.kind === "skill") return `skill_${ref.name}`;
-  return `git_${ref.scope}/${ref.path}`;
+  return ref.mode === "compare"
+    ? `gitcmp_${ref.base}~${ref.compare}/${ref.path}`
+    : `git_${ref.scope}/${ref.path}`;
 }
 
 /** 从 file tab id（`file_${path}`）反解全路径（含项目名前缀）；非 file tab id 返 null（路由 file focus 用）。 */
@@ -589,10 +609,28 @@ export function splitFilePath(fullPath: string): { projectName: string; path: st
   return { projectName: fullPath.slice(0, slashIdx), path: fullPath.slice(slashIdx + 1) };
 }
 
-/** 从 git tab id（`git_${scope}/${path}`）反解 scope 与项目相对路径；非 git tab id 或格式非法返 null
- *（路由 git focus 用）。scope 段须为 staged/worktree、path 段非空；`/` 分隔 scope 与 path（按首个 `/` 切分，
- * 与 path 内部 `/` 一致）。 */
-export function parseGitTabId(tabId: string): { scope: GitDiffScope; path: string } | null {
+/** 从 git tab id 反解（路由 git focus 用）。scope 模式 id = `git_${scope}/${path}`（scope 段 staged/worktree）；
+ * compare 模式 id = `gitcmp_${base}~${compare}/${path}`（`~` 分隔 base/compare，`/` 分隔 head 与 path，按首个切分）。
+ * 非 git tab id 或格式非法返 null。 */
+export function parseGitTabId(
+  tabId: string,
+):
+  | { mode: "scope"; scope: GitDiffScope; path: string }
+  | { mode: "compare"; base: string; compare: string; path: string }
+  | null {
+  if (tabId.startsWith("gitcmp_")) {
+    const rest = tabId.slice("gitcmp_".length);
+    const slashIdx = rest.indexOf("/");
+    if (slashIdx <= 0) return null;
+    const head = rest.slice(0, slashIdx);
+    const path = rest.slice(slashIdx + 1);
+    const tildeIdx = head.indexOf("~");
+    if (tildeIdx <= 0) return null;
+    const base = head.slice(0, tildeIdx);
+    const compare = head.slice(tildeIdx + 1);
+    if (!base || !compare || !path) return null;
+    return { mode: "compare", base, compare, path };
+  }
   if (!tabId.startsWith("git_")) return null;
   const rest = tabId.slice("git_".length);
   const slashIdx = rest.indexOf("/");
@@ -601,14 +639,31 @@ export function parseGitTabId(tabId: string): { scope: GitDiffScope; path: strin
   if (scope !== "staged" && scope !== "worktree") return null;
   const path = rest.slice(slashIdx + 1);
   if (!path) return null;
-  return { scope, path };
+  return { mode: "scope", scope, path };
 }
 
-/** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。 */
+/** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。
+ *  git ref 保留 mode（旧 V3 数据有 scope 无 mode → 视为 scope 模式补全 mode:"scope"）。 */
 export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
   if (ref.kind === "file") return { kind: "file", path: ref.path };
-  if (ref.kind === "git")
-    return { kind: "git", projectName: ref.projectName, scope: ref.scope, path: ref.path };
+  if (ref.kind === "git") {
+    return ref.mode === "compare"
+      ? {
+          kind: "git",
+          mode: "compare",
+          projectName: ref.projectName,
+          path: ref.path,
+          base: ref.base,
+          compare: ref.compare,
+        }
+      : {
+          kind: "git",
+          mode: "scope",
+          projectName: ref.projectName,
+          path: ref.path,
+          scope: ref.scope,
+        };
+  }
   if (ref.kind === "skill") return { kind: "skill", name: ref.name };
   return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
 }

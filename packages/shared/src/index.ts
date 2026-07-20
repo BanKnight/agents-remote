@@ -162,6 +162,43 @@ export type GitAheadBehindResponse = {
   behindCommits: GitCommitLogItem[];
 };
 
+/** R5 分支间 diff 文件项（`base..compare`，无 scope 概念——两 ref 间差异不属 worktree/staged）。 */
+export type GitCompareFileSummary = {
+  path: string;
+  previousPath?: string;
+  status: GitDiffFileStatus;
+  /** numstat 行数；null = binary（无 numstat）。 */
+  addedLines: number | null;
+  removedLines: number | null;
+};
+
+/** R5 分支间 diff 文件列表（`git diff base..compare`）。 */
+export type GitCompareDiffResponse =
+  | {
+      repository: true;
+      projectName: string;
+      base: string;
+      compare: string;
+      files: GitCompareFileSummary[];
+    }
+  | {
+      repository: false;
+      projectName: string;
+      reason: "not_git_repository";
+    };
+
+/** R5 分支间单文件 diff（`git diff base..compare -- path`）。 */
+export type GitCompareFileDiffResponse = {
+  repository: true;
+  projectName: string;
+  base: string;
+  compare: string;
+  path: string;
+  previousPath?: string;
+  status: GitDiffFileStatus;
+  diff: string;
+};
+
 export type ProjectListResponse = {
   projects: Project[];
 };

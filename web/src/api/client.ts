@@ -20,6 +20,8 @@ import type {
   GitCommitLogResponse,
   GitDiffListResponse,
   GitDiffScope,
+  GitCompareDiffResponse,
+  GitCompareFileDiffResponse,
   GitFileDiffResponse,
   HealthResponse,
   ListAgentSessionsResponse,
@@ -253,6 +255,30 @@ export async function getProjectGitAheadBehind(
   branch?: string,
 ): Promise<GitAheadBehindResponse> {
   return fetchJson(projectGitAheadBehindPath(projectName, branch), "api.projectGitDiffFailed");
+}
+
+export async function getProjectGitCompareDiff(
+  projectName: string,
+  base: string,
+  compare: string,
+): Promise<GitCompareDiffResponse> {
+  return fetchJson(
+    projectGitCompareDiffPath(projectName, base, compare),
+    "api.projectGitDiffFailed",
+  );
+}
+
+export async function getProjectGitCompareFileDiff(
+  projectName: string,
+  base: string,
+  compare: string,
+  path: string,
+  context?: "full",
+): Promise<GitCompareFileDiffResponse> {
+  return fetchJson(
+    projectGitCompareFileDiffPath(projectName, base, compare, path, context),
+    "api.projectGitDiffFailed",
+  );
 }
 
 export async function listAgentSessions(projectName: string): Promise<ListAgentSessionsResponse> {
@@ -557,6 +583,24 @@ const projectGitLogPath = (projectName: string, branch?: string) => {
 const projectGitAheadBehindPath = (projectName: string, branch?: string) => {
   const base = `/api/projects/${encodeURIComponent(projectName)}/git/ahead-behind`;
   return branch ? `${base}?branch=${encodeURIComponent(branch)}` : base;
+};
+
+const projectGitComparePath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/git/compare`;
+
+const projectGitCompareDiffPath = (projectName: string, base: string, compare: string) =>
+  `${projectGitComparePath(projectName)}?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`;
+
+const projectGitCompareFileDiffPath = (
+  projectName: string,
+  base: string,
+  compare: string,
+  path: string,
+  context?: "full",
+) => {
+  const head = projectGitComparePath(projectName);
+  const url = `${head}/file?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}&path=${encodeURIComponent(path)}`;
+  return context === "full" ? `${url}&context=full` : url;
 };
 
 const withPathQuery = (basePath: string, path: string) => {

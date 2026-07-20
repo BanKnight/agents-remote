@@ -396,6 +396,106 @@ test("listAheadBehind returns zeros when no upstream", async () => {
   expect(result.behindCommits).toHaveLength(0);
 });
 
+test("compareDiff lists files between two branches with numstat", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\nb\nc\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  // feature 分支：改 a.txt（+1 行）+ 加 b.txt。
+  await git(projectPath, ["checkout", "-b", "feature"]);
+  await writeFile(join(projectPath, "a.txt"), "a\nb\nc\nd\n");
+  await writeFile(join(projectPath, "b.txt"), "new\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "feature"]);
+
+  const service = new ProjectGitDiffService(root);
+  const result = await service.compareDiff("demo", "main", "feature");
+  expect(result).toMatchObject({ repository: true, base: "main", compare: "feature" });
+  if (result.repository !== true) throw new Error("expected repository");
+  // main..feature：a.txt modified（+1/0），b.txt added。
+  expect(result.files.find((f) => f.path === "a.txt")).toMatchObject({
+    status: "modified",
+    addedLines: 1,
+    removedLines: 0,
+  });
+  expect(result.files.find((f) => f.path === "b.txt")).toMatchObject({ status: "added" });
+});
+
+test("compareFileDiff returns diff between branches and expands with context=full", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  const lines = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`);
+  await writeFile(join(projectPath, "a.txt"), `${lines.join("\n")}\n`);
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await git(projectPath, ["checkout", "-b", "feature"]);
+  await writeFile(
+    join(projectPath, "a.txt"),
+    `${lines.map((l, i) => (i === 5 ? "line 6 changed" : l)).join("\n")}\n`,
+  );
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "feature"]);
+
+  const service = new ProjectGitDiffService(root);
+  const changes = await service.compareFileDiff("demo", "main", "feature", "a.txt");
+  const full = await service.compareFileDiff("demo", "main", "feature", "a.txt", "full");
+
+  expect(changes).toMatchObject({
+    repository: true,
+    base: "main",
+    compare: "feature",
+    path: "a.txt",
+    status: "modified",
+  });
+  expect(changes.diff).toContain("-line 6");
+  expect(changes.diff).toContain("+line 6 changed");
+  // 默认 3 行 context 不含首尾行；full（-U999999）含。
+  expect(changes.diff).not.toContain("line 1");
+  expect(full.diff).toContain("line 1");
+  expect(full.diff).toContain("line 10");
+  expect(full.diff.split("\n").length).toBeGreaterThan(changes.diff.split("\n").length);
+});
+
+test("compareDiff and compareFileDiff reject invalid branch refs", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  const service = new ProjectGitDiffService(root);
+
+  await expect(service.compareDiff("demo", "a;b", "main")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+  await expect(service.compareDiff("demo", "main", "a..b")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+  await expect(service.compareFileDiff("demo", "main", "a$b", "a.txt")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+});
+
+test("compareFileDiff rejects path escape and unchanged files", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await git(projectPath, ["checkout", "-b", "feature"]);
+  await writeFile(join(projectPath, "a.txt"), "a\nb\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "feature"]);
+  const service = new ProjectGitDiffService(root);
+
+  await expect(
+    service.compareFileDiff("demo", "main", "feature", "../outside.txt"),
+  ).rejects.toMatchObject({ code: "PROJECT_GIT_FILE_NOT_CHANGED" });
+  await expect(
+    service.compareFileDiff("demo", "main", "feature", "unchanged.txt"),
+  ).rejects.toMatchObject({ code: "PROJECT_GIT_FILE_NOT_CHANGED" });
+});
+
 const initRepository = async (projectPath: string) => {
   await git(projectPath, ["init"]);
   await git(projectPath, ["config", "user.email", "test@example.com"]);

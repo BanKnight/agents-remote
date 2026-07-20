@@ -211,8 +211,19 @@ function WorkbenchContent({
       const gitParsed = parseGitTabId(focusId);
       if (gitParsed !== null) {
         if (scope.kind !== "project") return prev;
+        if (gitParsed.mode === "compare") {
+          return ensureTabOpenLeaf(prev, {
+            kind: "git",
+            mode: "compare",
+            path: gitParsed.path,
+            projectName: scope.key,
+            base: gitParsed.base,
+            compare: gitParsed.compare,
+          });
+        }
         return ensureTabOpenLeaf(prev, {
           kind: "git",
+          mode: "scope",
           path: gitParsed.path,
           projectName: scope.key,
           scope: gitParsed.scope,
@@ -404,13 +415,44 @@ function WorkbenchContent({
     },
     [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
   );
+  // compare 模式 git tab focus URL：与 navigateToGitFile 同路由（/projects/$key/git/$），
+  // search 用 gitCompare（编码 `${base}~${compare}`）替代 gitScope，两者互斥。
+  // focusId=`gitcmp_${gitCompare}/${path}` 由 deriveWorkbenchRouteContext git case 解析。
+  const navigateToGitCompareFile = useCallback(
+    (projectName: string, base: string, compare: string, path: string) => {
+      void navigate({
+        to: "/projects/$key/git/$",
+        params: { key: projectName, _splat: path },
+        search: {
+          rightTab,
+          tab: tabFromUrl,
+          view: viewFromUrl,
+          gitCompare: `${base}~${compare}`,
+          ...(leftMode !== "auto" ? { leftMode } : {}),
+        },
+      });
+    },
+    [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
+  );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
   const onOpenGitFile = useCallback(
     (projectName: string, scope: GitDiffScope, path: string) => {
-      update((prev) => ensureTabOpenLeaf(prev, { kind: "git", projectName, scope, path }));
+      update((prev) =>
+        ensureTabOpenLeaf(prev, { kind: "git", mode: "scope", projectName, scope, path }),
+      );
       void navigateToGitFile(projectName, scope, path);
     },
     [update, navigateToGitFile],
+  );
+  // 分支视图双选 compare 文件 → 中栏开/激活 git diff tab（compare 模式）+ focus。
+  const onOpenGitCompareFile = useCallback(
+    (projectName: string, base: string, compare: string, path: string) => {
+      update((prev) =>
+        ensureTabOpenLeaf(prev, { kind: "git", mode: "compare", projectName, base, compare, path }),
+      );
+      void navigateToGitCompareFile(projectName, base, compare, path);
+    },
+    [update, navigateToGitCompareFile],
   );
   // skill tab focus URL（对标 /files/file/$，skill 为第 4 种 WorkbenchPanelRef kind）：/skills/skill/$
   // splat 捕获 skill name。leftMode 继承 ?leftMode 透传（从 /skills 进来=skills 保技能管理左栏，
@@ -452,9 +494,16 @@ function WorkbenchContent({
           // file ref path=全路径，拆出 projectName + 项目相对路径调 navigateToFile。
           const { projectName, path } = splitFilePath(active.path);
           void navigateToFile(projectName, path);
-        } else if (active?.kind === "git")
-          void navigateToGitFile(active.projectName, active.scope, active.path);
-        else if (active?.kind === "skill") void navigateToSkill(active.name);
+        } else if (active?.kind === "git") {
+          if (active.mode === "compare")
+            void navigateToGitCompareFile(
+              active.projectName,
+              active.base,
+              active.compare,
+              active.path,
+            );
+          else void navigateToGitFile(active.projectName, active.scope, active.path);
+        } else if (active?.kind === "skill") void navigateToSkill(active.name);
       }
     },
     [
@@ -464,6 +513,7 @@ function WorkbenchContent({
       navigateWorkbench,
       navigateToFile,
       navigateToGitFile,
+      navigateToGitCompareFile,
       navigateToSkill,
       scope,
     ],
@@ -484,7 +534,9 @@ function WorkbenchContent({
         return;
       }
       if (ref?.kind === "git") {
-        void navigateToGitFile(ref.projectName, ref.scope, ref.path);
+        if (ref.mode === "compare")
+          void navigateToGitCompareFile(ref.projectName, ref.base, ref.compare, ref.path);
+        else void navigateToGitFile(ref.projectName, ref.scope, ref.path);
         return;
       }
       if (ref?.kind === "skill") {
@@ -500,6 +552,7 @@ function WorkbenchContent({
       scope,
       navigateToFile,
       navigateToGitFile,
+      navigateToGitCompareFile,
       navigateToSkill,
       navigateSession,
     ],
@@ -537,8 +590,11 @@ function WorkbenchContent({
     else if (ref.kind === "file") {
       const { projectName, path } = splitFilePath(ref.path);
       void navigateToFile(projectName, path);
-    } else if (ref.kind === "git") void navigateToGitFile(ref.projectName, ref.scope, ref.path);
-    else if (ref.kind === "skill") void navigateToSkill(ref.name);
+    } else if (ref.kind === "git") {
+      if (ref.mode === "compare")
+        void navigateToGitCompareFile(ref.projectName, ref.base, ref.compare, ref.path);
+      else void navigateToGitFile(ref.projectName, ref.scope, ref.path);
+    } else if (ref.kind === "skill") void navigateToSkill(ref.name);
   }, [
     dragState,
     activeZone,
@@ -547,6 +603,7 @@ function WorkbenchContent({
     navigateSession,
     navigateToFile,
     navigateToGitFile,
+    navigateToGitCompareFile,
     navigateToSkill,
   ]);
   const cancelDrag = useCallback(() => {
@@ -620,6 +677,7 @@ function WorkbenchContent({
         focusId={focusId}
         onCardDragStart={onCardDragStart}
         onOpenFile={onOpenFile}
+        onOpenGitCompareFile={onOpenGitCompareFile}
         onOpenGitFile={onOpenGitFile}
         onTabChange={onTabChange}
         overview={leftOverview}

@@ -586,8 +586,17 @@ export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   // git tab 渲染 GitFileDiffPanel（自带 file diff query，设计 workbench-layout-fix 阶段 3）。
   // projectName/scope/path 来自 tab ref 固定；不传 onClose（中栏 tab 关闭走 tab ✕，非移动浮层）。
   if (panelRef.kind === "git") {
-    return (
+    return panelRef.mode === "compare" ? (
       <GitFileDiffPanel
+        base={panelRef.base}
+        compare={panelRef.compare}
+        mode="compare"
+        path={panelRef.path}
+        projectName={panelRef.projectName}
+      />
+    ) : (
+      <GitFileDiffPanel
+        mode="scope"
         path={panelRef.path}
         projectName={panelRef.projectName}
         scope={panelRef.scope}
