@@ -51,17 +51,31 @@ export function optionActiveClasses(accent: OptionMenuAccent = "user"): string {
   return "text-user bg-user/10";
 }
 
+/** 移动 sheet 选择器项的垂直对齐。`center`（默认）= 单行项垂直居中；`start` = 含 description
+ * 的多行项顶部对齐，让 label 顶部跨项对齐（对齐桌面 `DropdownMenuItem` 的 `py-2.5` 顶部基准，
+ * 消除 `min-h-[48px]` + `items-center` 在多行/单行项间造成的 label 垂直错位）。 */
+export type OptionItemAlign = "center" | "start";
+
 /**
  * 移动 sheet 选择器项样式（按 active + accent）。与桌面 `DropdownMenuItem` 共享同一视觉契约
  *（`size-4` icon、`text-sm font-semibold`），但移动端用 `min-h-[48px]` 全宽 + `active:`
  * 触摸反馈。active 项叠角色色淡背景 + `opacity-100`（disabled 默认变暗，选择器需保留高亮）。
+ *
+ * `itemAlign='start'` 时 label 顶部 = `py-2.5`（= 桌面端基准），含 description 的多行项与
+ * 同菜单的单行项 label 行对齐；`py-2.5` 对单行 `center` 项无视觉影响（`min-h-[48px]` 主导）。
  */
 export function mobileOptionItemClasses(
   isActive: boolean,
   accent: OptionMenuAccent = "user",
+  itemAlign: OptionItemAlign = "center",
 ): string {
   return cn(
-    "flex w-full items-center gap-2.5 rounded-lg px-3 min-h-[48px] text-sm font-semibold transition",
+    // text-left 覆盖 `<button>` 的 UA 默认 text-align:center——否则 col 内 label/desc span
+    // 拉伸到 col 宽（= desc 宽）后，短 label 文本在宽 span 内居中，视觉上偏到 desc 中间。
+    // 桌面端 DropdownMenuItem 是 `<div>`（UA 默认 left），无需此覆盖。取消按钮 span 显式
+    // text-center，不受影响。
+    "flex w-full gap-2.5 rounded-lg px-3 py-2.5 min-h-[48px] text-left text-sm font-semibold transition",
+    itemAlign === "start" ? "items-start" : "items-center",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     isActive
       ? cn(optionActiveClasses(accent), "opacity-100")
@@ -109,6 +123,8 @@ export function OptionMenu({
 }: OptionMenuProps) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
+  // 含 description（如 model alias + 具体 ID 配对）→ 移动端整列 items-start，让 label 行跨项对齐。
+  const hasDescription = items.some((item) => item.description);
 
   if (isMobile) {
     return (
@@ -122,7 +138,11 @@ export function OptionMenu({
                 type="button"
                 role="menuitem"
                 disabled={item.isActive}
-                className={mobileOptionItemClasses(item.isActive === true, accent)}
+                className={mobileOptionItemClasses(
+                  item.isActive === true,
+                  accent,
+                  hasDescription ? "start" : "center",
+                )}
                 onClick={() => {
                   if (item.isActive) return;
                   item.onSelect();

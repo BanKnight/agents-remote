@@ -438,19 +438,20 @@ test("resolveActivePresetCreds returns undefined when presets undefined", () => 
   expect(resolveActivePresetCreds(credsRuntime("p1"), undefined)).toBeUndefined();
 });
 
-// ── buildSpawnEnv: view 注入 ANTHROPIC_DEFAULT_*_MODEL（对齐 CLI alias 解析） ──
+// ── buildSpawnEnv: view 注入 ANTHROPIC_DEFAULT_*_MODEL（对齐 CLI alias [1m] 后缀机制） ──
 
-// view = {modelMapping, enable1mContext}：env 注入复用 buildAvailableAliases 的 resolved
-//（opus/sonnet 在 enable1mContext 时带 [1m]，haiku 不带——CLI MODEL_ALIASES 无 haiku[1m]）。
+// view = {modelMapping, enable1mContext}：env 注入复用 buildAvailableAliases 的 resolved。
+// resolved[tier] 恒为裸 ID（env 注入值），[1m] 由 CLI 经 alias [1m] 后缀在 env 裸 ID 上拼接。
+// enable1mContext 只控制菜单是否出 [1m] 变体，不影响 env 注入值。
 const aliasView = { modelMapping: ALIAS_MAPPING, enable1mContext: false };
 
 const concreteView = { modelMapping: CONCRETE_MAPPING, enable1mContext: false };
 
-test("buildSpawnEnv injects ANTHROPIC_DEFAULT_*_MODEL from concrete view (opus/sonnet [1m], haiku bare)", () => {
+test("buildSpawnEnv injects ANTHROPIC_DEFAULT_*_MODEL bare（env 恒裸，[1m] 由 CLI alias 后缀拼接）", () => {
   const env = buildSpawnEnv(undefined, undefined, {}, { ...concreteView, enable1mContext: true });
-  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8[1m]");
-  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6[1m]");
-  // haiku 不拼 [1m]：CLI MODEL_ALIASES 无 haiku[1m]。
+  // enable1mContext=true 不影响 env 注入值——env 恒注裸 ID，[1m] 由 CLI 经 alias[1m] 后缀决定。
+  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
+  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
 });
 

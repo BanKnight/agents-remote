@@ -59,4 +59,18 @@ describe("mobileOptionItemClasses", () => {
     expect(mobileOptionItemClasses(false)).toBe(mobileOptionItemClasses(false, "user"));
     expect(mobileOptionItemClasses(true)).toBe(mobileOptionItemClasses(true, "user"));
   });
+
+  test("itemAlign='start' → items-start（含 description 时 label 顶部跨项对齐）", () => {
+    const cls = mobileOptionItemClasses(false, "user", "start");
+    expect(cls).toContain("items-start");
+    expect(cls).not.toContain("items-center");
+    // py-2.5 让 start 模式 label 顶 = 10px（对齐桌面端 py-2.5 基准），不贴边。
+    expect(cls).toContain("py-2.5");
+  });
+
+  test("itemAlign 缺省 = center（单行项垂直居中，不变）", () => {
+    const cls = mobileOptionItemClasses(false, "user");
+    expect(cls).toContain("items-center");
+    expect(cls).not.toContain("items-start");
+  });
 });

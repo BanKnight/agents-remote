@@ -387,6 +387,7 @@ export const en = {
   "claude2.tasks": "Tasks",
   "claude2.taskFallback": "Task #{{id}}",
   "claude2.mode.changed": "Switched to {{mode}}",
+  "claude2.model.changed": "Model · {{model}}",
   "claude2.command.title": "Command",
   "claude2.command.args": "ARGS",
   "claude2.command.input": "INPUT",

@@ -141,12 +141,11 @@ export function buildAvailableModels(config: ModelMappingView): string[] {
 }
 
 // 纯函数：从 modelMapping 派生 model alias 列表 + alias→resolved 具体 ID 映射。
-// 对齐 CLI 原生 alias 机制：菜单展示 alias（opus/sonnet/haiku），切换发 alias，具体 ID
-// 由 CLI 经 ANTHROPIC_DEFAULT_*_MODEL env 解析。resolved 仅作菜单「alias + 对应 ID」配对展示。
-// haiku 不带 [1m]：CLI MODEL_ALIASES 无 haiku[1m]（opus/sonnet 有 [1m] 变体，haiku 没有），
-// 故 enable1mContext 时只给 opus/sonnet 拼 [1m]。不产 alias[1m] 独立菜单项——[1m] 折叠进
-// env 注入（buildSpawnEnv 复用本函数的 resolved），由 enable1mContext 全局决定。
-// 顺序遵循 CLAUDE_MODEL_TIERS（opus/sonnet/haiku）；opusplan 不在此派生（session-routes 装配点追加）。
+// 对齐 CLI 原生 alias [1m] 后缀机制：env 注裸 ID（ANTHROPIC_DEFAULT_*_MODEL 不带 [1m]），
+// 菜单独立 alias + alias[1m] 项，切换发 alias[1m] 时 CLI 在 env 裸 ID 上拼 [1m]。
+// resolved[tier] = 裸 ID（env 注入用）；resolved[tier[1m]] = ID[1m]（菜单描述展示用）。
+// 顺序：每个 tier 的 [1m] 变体在前、基础 alias 紧随（常用项优先）；遵循 CLAUDE_MODEL_TIERS。
+// opusplan 不在此派生（session-routes 装配点单独追加 opusplan + opusplan[1m]）。
 export function buildAvailableAliases(config: ModelMappingView): {
   aliases: string[];
   resolved: Record<string, string>;
@@ -157,9 +156,13 @@ export function buildAvailableAliases(config: ModelMappingView): {
     if (tier === "default") continue;
     const id = config.modelMapping[tier] || config.modelMapping.default;
     if (!id) continue;
+    if (config.enable1mContext) {
+      const alias1m = `${tier}[1m]`;
+      aliases.push(alias1m);
+      resolved[alias1m] = isConcreteModelId(id) ? `${id}[1m]` : id;
+    }
     aliases.push(tier);
-    const with1m = tier !== "haiku" && isConcreteModelId(id) && config.enable1mContext;
-    resolved[tier] = with1m ? `${id}[1m]` : id;
+    resolved[tier] = id;
   }
   return { aliases, resolved };
 }

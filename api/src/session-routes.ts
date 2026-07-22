@@ -212,11 +212,11 @@ const handleAgentSessionRoute = async (
     const profile = getAgentProviderProfile(session.provider);
     const permissionModes =
       session.provider === "claude2" ? await parseClaudePermissionModes() : undefined;
-    // claude2: 菜单发 model alias（opus/sonnet/haiku + opusplan），switchModel 透传 alias，
-    // 具体 ID 由 CLI 经 spawn 时注入的 ANTHROPIC_DEFAULT_*_MODEL env 解析（对齐 CLI 原生
-    // alias 机制）。availableModelResolved 仅作菜单「alias + 对应具体 ID」配对展示；
-    // opusplan 不进映射（普通/Plan 模式分别由 SONNET/OPUS env 决定，CLI 自选，不展示）。
-    // 非 claude2 或无 settingsStore：保留 profile.availableModels 默认（具体 ID / alias 原样）。
+    // claude2: 菜单发 model alias（opus/sonnet/haiku + opusplan + 对应 [1m] 变体），
+    // switchModel 透传 alias。env 注裸 ID（ANTHROPIC_DEFAULT_*_MODEL 不带 [1m]），
+    // CLI 经 alias [1m] 后缀在 env 裸 ID 上拼 [1m]。availableModelResolved 仅作菜单
+    //「alias + 对应 ID」配对展示；opusplan/opusplan[1m] 不进映射（CLI 自选 opus/sonnet）。
+    // 非 claude2 或无 settingsStore：保留 profile.availableModels 默认。
     const claudeRuntime = settingsStore ? (await settingsStore.read()).runtimes.claude : undefined;
     const presetView = claudeRuntime
       ? activePresetView(claudeRuntime, claudeRuntime.presets)
@@ -224,7 +224,7 @@ const handleAgentSessionRoute = async (
     const aliasView =
       session.provider === "claude2" && presetView ? buildAvailableAliases(presetView) : undefined;
     const availableModels = aliasView
-      ? [...aliasView.aliases, "opusplan"]
+      ? [...aliasView.aliases, "opusplan", ...(presetView?.enable1mContext ? ["opusplan[1m]"] : [])]
       : profile?.availableModels;
     const availableModelResolved = aliasView?.resolved;
 

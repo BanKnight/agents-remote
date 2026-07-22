@@ -646,11 +646,12 @@ describe("command-output (local-command / bash echo) pipeline", () => {
       ),
     ]);
     expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
-    const cmd = items.find((i) => i.kind === "command-output") as
-      | Extract<ChatStreamItem, { kind: "command-output" }>
+    // Pass D infers commandName "model" from stdout → Pass E converts to model-change
+    const cmd = items.find((i) => i.kind === "model-change") as
+      | Extract<ChatStreamItem, { kind: "model-change" }>
       | undefined;
     expect(cmd).toBeDefined();
-    expect(cmd?.stdout).toBe("Set model to sonnet (claude-sonnet-4-6)");
+    expect(cmd?.echoLabel).toBe("sonnet");
     expect(cmd?.sourceType).toBe("local-command");
   });
 
@@ -703,11 +704,12 @@ describe("command-output (local-command / bash echo) pipeline", () => {
       localCommand("/model sonnet"),
       localCommand("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
     ]);
-    const cmd = items.find((i) => i.kind === "command-output") as
-      | Extract<ChatStreamItem, { kind: "command-output" }>
+    // Pass D infers commandName "model" → Pass E converts to model-change
+    const cmd = items.find((i) => i.kind === "model-change") as
+      | Extract<ChatStreamItem, { kind: "model-change" }>
       | undefined;
-    expect(cmd?.commandName).toBe("model");
-    expect(cmd?.args).toBe("sonnet");
+    expect(cmd).toBeDefined();
+    expect(cmd?.echoLabel).toBe("sonnet");
   });
 
   test("form D: non-slash plain-text system/local_command is not cardified", () => {
@@ -720,11 +722,12 @@ describe("command-output (local-command / bash echo) pipeline", () => {
       localCommand("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
     ]);
     expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
-    const cmd = items.find((i) => i.kind === "command-output") as
-      | Extract<ChatStreamItem, { kind: "command-output" }>
+    // Pass D infers commandName "model" → Pass E converts to model-change
+    const cmd = items.find((i) => i.kind === "model-change") as
+      | Extract<ChatStreamItem, { kind: "model-change" }>
       | undefined;
     expect(cmd).toBeDefined();
-    expect(cmd?.stdout).toBe("Set model to sonnet");
+    expect(cmd?.echoLabel).toBe("sonnet");
     expect(cmd?.sourceType).toBe("local-command");
   });
 
@@ -734,10 +737,31 @@ describe("command-output (local-command / bash echo) pipeline", () => {
         "<local-command-stdout>Set model to sonnet (claude-sonnet-4-6)</local-command-stdout>",
       ),
     ]);
+    // Pass D infers commandName "model" → Pass E converts to model-change.
+    // extractModelEchoLabel uses MODEL_SET_RE which captures the first \S+ token
+    // after "Set model to": "sonnet".
+    const cmd = items.find((i) => i.kind === "model-change") as
+      | Extract<ChatStreamItem, { kind: "model-change" }>
+      | undefined;
+    expect(cmd?.echoLabel).toBe("sonnet");
+  });
+
+  test("unrecognizable /model echo body stays a command-output card (not an empty notice)", () => {
+    // Pass D infers commandName "model", but the body isn't a clean echo (e.g. an
+    // invalid `/model bogus` error, diagnostic output, or a CLI version whose echo
+    // phrasing drifted). Pass E must NOT convert it to a model-change — that would
+    // render an empty "模型 · " notice and swallow the error the user needs to see.
+    const items = normalizeChatStream([
+      localCommand("<command-name>/model</command-name><command-message>model</command-message>"),
+      localCommand("<local-command-stdout>Unknown model: bogusalias</local-command-stdout>"),
+    ]);
+    expect(items.filter((i) => i.kind === "model-change")).toHaveLength(0);
     const cmd = items.find((i) => i.kind === "command-output") as
       | Extract<ChatStreamItem, { kind: "command-output" }>
       | undefined;
+    expect(cmd).toBeDefined();
     expect(cmd?.commandName).toBe("model");
+    expect(cmd?.stdout).toBe("Unknown model: bogusalias");
   });
 
   test("form C: 'Reloaded skills:' stdout infers reload-skills", () => {
@@ -836,7 +860,7 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(items.filter((i) => i.kind === "user-prompt")).toHaveLength(0);
   });
 
-  test("renderChatStream maps command-output to role:system + systemMessageType command-output", () => {
+  test("renderChatStream maps model command-output to model-change system message", () => {
     const items = normalizeChatStream([
       makeUser("<local-command-stdout>Set model to sonnet</local-command-stdout>"),
     ]);
@@ -844,13 +868,12 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     const cmd = rendered.find(
       (m) =>
         (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
-        "command-output",
+        "model-change",
     );
     expect(cmd).toBeDefined();
     expect(cmd?.role).toBe("system");
     const custom = cmd?.metadata?.custom as Record<string, unknown>;
-    expect(custom.stdout).toBe("Set model to sonnet");
-    expect(custom.sourceType).toBe("local-command");
+    expect(custom.echoLabel).toBe("sonnet");
   });
 
   // ── synthetic assistant (model "<synthetic>") → command-output ──
@@ -880,15 +903,33 @@ describe("command-output (local-command / bash echo) pipeline", () => {
     expect(cmd._rawSnapshots).toContain(synth);
   });
 
-  test("synthetic recovers commandName from a preceding slash prompt with args", () => {
+  test("synthetic /model with unrecognizable body stays a command-output card", () => {
     const items = normalizeChatStream([
       makeUser("/model sonnet"),
       assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "ok" }]),
     ]);
+    // commandName "model" recovered from the slash prompt, but the synthetic
+    // body "ok" is not a clean echo → Pass E leaves it a command-output card
+    // (converting it would render an empty "模型 · " notice and lose the body).
+    const change = items.find((i) => i.kind === "model-change");
+    expect(change).toBeUndefined();
     const cmd = items.find((i) => i.kind === "command-output") as
       | Extract<ChatStreamItem, { kind: "command-output" }>
       | undefined;
     expect(cmd?.commandName).toBe("model");
+    expect(cmd?.stdout).toBe("ok");
+  });
+
+  test("synthetic /model with a clean set echo converts to model-change", () => {
+    const items = normalizeChatStream([
+      makeUser("/model sonnet"),
+      assistantWithModel("synth", "<synthetic>", [{ type: "text", text: "Set model to sonnet" }]),
+    ]);
+    const cmd = items.find((i) => i.kind === "model-change") as
+      | Extract<ChatStreamItem, { kind: "model-change" }>
+      | undefined;
+    expect(cmd).toBeDefined();
+    expect(cmd?.echoLabel).toBe("sonnet");
   });
 
   test("synthetic with no preceding slash prompt yields a generic command-output", () => {

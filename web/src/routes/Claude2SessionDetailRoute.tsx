@@ -62,6 +62,7 @@ import {
   useClaude2Session,
   deriveStatus,
   mapTurnStatusTone,
+  MODEL_1M_SUFFIX,
   resolveAutoPermissionMode,
   sortTasks,
   type AgentContainerStatus,
@@ -145,13 +146,41 @@ const PermissionModesContext = createContext<readonly string[]>([]);
 const LiveThinkingTokensContext = createContext<number | null>(null);
 
 function modelDisplayLabel(modelId: string): string {
-  // opusplan 是 CLI 原生复合 alias（普通模式→Sonnet、Plan Mode→Opus），对齐 CLI
-  // renderModelSetting 显示 "Opus Plan"（非 capitalize 的 "Opusplan"）。具体 ID 由
-  // description 副标题展示，label 只给友好名。
-  if (modelId === "opusplan") return "Opus Plan";
-  // tier alias（opus/sonnet/haiku）→ capitalize 友好名；具体 ID（含 "-"，兼容老数据）原样。
-  if (modelId.includes("-")) return modelId;
-  return modelId.charAt(0).toUpperCase() + modelId.slice(1);
+  // CLI 原生 alias [1m] 后缀机制：剥离 [1m] 得到基础 alias，给友好名后再标回 [1m]。
+  const has1m = modelId.endsWith(MODEL_1M_SUFFIX);
+  const base = has1m ? modelId.slice(0, -MODEL_1M_SUFFIX.length) : modelId;
+  const suffix = has1m ? ` ${MODEL_1M_SUFFIX}` : "";
+
+  if (base === "opusplan") return `Opus Plan${suffix}`;
+  // 具体 ID（含 "-"，兼容老数据 / system.init 回传具体值）原样。
+  if (base.includes("-")) return modelId;
+  // tier alias（opus/sonnet/haiku）→ capitalize
+  return base.charAt(0).toUpperCase() + base.slice(1) + suffix;
+}
+
+// 解析「当前选择的 model alias + plan 状态」→ trigger 显示用的映射 model ID。
+// 对齐 CLI getRuntimeMainLoopModel：opusplan 在 plan 模式取 opus 映射、否则取 sonnet 映射；
+// 普通 tier 取自身映射。返回的是用户在 settings 里填的映射 ID（如 claude-opus-4-8[1m]），
+// 而非 CLI 响应里的实际 model（可能被 baseUrl 网关改写成 glm-5.2 等）——显示层用「配置的映射」，
+// 不跟随运行态。这样 plan 进/出时 trigger 随 permissionMode 即时在 opus/sonnet 映射间切换，
+// 不等 assistant 消息（对齐 TUI 状态栏 onChangeAppState 即时重渲染）。
+function resolveDisplayModelId(
+  alias: string | undefined,
+  permissionMode: string | undefined,
+  resolved: Record<string, string> | undefined,
+  opusplanActive: boolean | undefined,
+): string | undefined {
+  if (!alias) return undefined;
+  const has1m = alias.endsWith(MODEL_1M_SUFFIX);
+  const base = has1m ? alias.slice(0, -MODEL_1M_SUFFIX.length) : alias;
+  // Only gate on opusplanActive when the alias base is opusplan — if the
+  // override isn't truly engaged the alias is a plain string and should be
+  // resolved as-is (no mode-tier switching).
+  const tierKey =
+    opusplanActive && base === "opusplan"
+      ? `${permissionMode === "plan" ? "opus" : "sonnet"}${has1m ? MODEL_1M_SUFFIX : ""}`
+      : alias;
+  return resolved?.[tierKey];
 }
 
 function TaskPanel({
@@ -376,6 +405,7 @@ export function Claude2Chat({
     tasks,
     retryInfo,
     pendingInteraction,
+    opusplanActive,
   } = useClaude2Session(
     projectName,
     sessionId,
@@ -561,6 +591,7 @@ export function Claude2Chat({
                         <ComposerPrimitive.Unstable_TriggerPopoverRoot>
                           <ComposerPrimitive.Root>
                             <ComposerWithInterrupt
+                              opusplanActive={opusplanActive}
                               currentModel={currentModel}
                               currentResolved={resolvedModel ?? session?.model}
                               availableModels={availableModels}
@@ -2751,6 +2782,47 @@ function ModeChangeNotice({ headIndex }: { headIndex: number }) {
   );
 }
 
+type ModelChangeCustom = {
+  systemMessageType: "model-change";
+  echoLabel?: string;
+};
+
+function ModelChangeGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className ?? "h-3 w-3 shrink-0 text-assistant-soft"}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ModelChangeNotice({ headIndex }: { headIndex: number }) {
+  const { t } = useT();
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as ModelChangeCustom,
+  );
+  return (
+    <div className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5">
+      <div className="flex-1 border-t border-assistant-deep/30" />
+      <ModelChangeGlyph />
+      <span className="shrink-0 text-[0.6rem] font-medium text-assistant/70">
+        {t("claude2.model.changed", { model: custom.echoLabel ?? "" })}
+      </span>
+      <div className="flex-1 border-t border-assistant-deep/30" />
+    </div>
+  );
+}
+
 type CommandOutputCustom = {
   systemMessageType: "command-output";
   commandName?: string;
@@ -2918,6 +2990,7 @@ function MessageRouter({
   if (custom?.systemMessageType === "mode-change") return <ModeChangeNotice headIndex={index} />;
   if (custom?.systemMessageType === "command-output")
     return <CommandOutputCard headIndex={index} />;
+  if (custom?.systemMessageType === "model-change") return <ModelChangeNotice headIndex={index} />;
   if (custom?.systemMessageType === "compact-progress") return <CompactProgress />;
   if (custom?.systemMessageType === "compact-abort")
     return (
@@ -3189,17 +3262,21 @@ function ChatSkeleton() {
 }
 
 function ModelSelector({
+  opusplanActive,
   currentModel,
   currentResolved,
   availableModels,
   availableModelResolved,
   modelSwitchVersion,
+  permissionMode,
 }: {
+  opusplanActive: boolean | undefined;
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
   availableModelResolved?: Record<string, string>;
   modelSwitchVersion: number;
+  permissionMode?: string;
 }) {
   const { t } = useT();
   const bridge = useContext(Claude2BridgeContext);
@@ -3247,9 +3324,17 @@ function ModelSelector({
     const entry = Object.entries(availableModelResolved ?? {}).find(([, v]) => v === current);
     return entry?.[0] ?? current;
   })();
-  // trigger label 与 checkmark 共用 currentAlias 单一数据源。currentResolved 仍由上方
-  // useEffect 监听，仅在检测到回填时清除切换 spinner（不再用于推 label）。
-  const label = modelDisplayLabel(currentAlias);
+  // checkmark 停在用户选择的 alias（opusplan/sonnet/...），不随运行态移动。
+  // trigger 标签显示「解析后的映射 model ID」（对齐 CLI 状态栏渲染 runtimeModel）：
+  // opusplan + plan → opus 映射、opusplan + 非 plan → sonnet 映射、普通 tier → 自身映射。
+  // 解析不到（无 resolved 映射 / 老数据）才 fallback 到 alias 友好名。
+  const displayModelId = resolveDisplayModelId(
+    currentAlias,
+    permissionMode,
+    availableModelResolved,
+    opusplanActive,
+  );
+  const label = displayModelId ?? modelDisplayLabel(currentAlias);
 
   if (switchingTo) {
     return (
@@ -3526,6 +3611,7 @@ function SlashCommandPopoverItem({
 }
 
 function ComposerWithInterrupt({
+  opusplanActive,
   currentModel,
   currentResolved,
   availableModels,
@@ -3541,6 +3627,7 @@ function ComposerWithInterrupt({
   currentEffort,
   onSelectEffort,
 }: {
+  opusplanActive: boolean | undefined;
   currentModel?: string;
   currentResolved?: string;
   availableModels: string[];
@@ -3645,11 +3732,13 @@ function ComposerWithInterrupt({
       />
       <div className="flex items-center gap-2 px-2.5 pb-2 pt-0.5">
         <ModelSelector
+          opusplanActive={opusplanActive}
           currentModel={currentModel}
           currentResolved={currentResolved}
           availableModels={availableModels}
           availableModelResolved={availableModelResolved}
           modelSwitchVersion={modelSwitchVersion}
+          permissionMode={permissionMode}
         />
         <PermissionModeSelector
           currentMode={permissionMode}

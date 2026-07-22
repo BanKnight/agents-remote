@@ -1470,6 +1470,54 @@ function extractSyntheticBody(msg: SessionStreamServerMessage): string {
   return JSON.stringify(msg).slice(0, 2000);
 }
 
+// ── /model echo parsers ─────────────────────────────────────────────
+
+// CLI 原生 alias 1M-context 后缀（opus[1m] / sonnet[1m] / opusplan[1m]）。
+// 复用于 isOpusplanBase + 路由层 modelDisplayLabel/resolveDisplayModelId 的后缀剥离，
+// 避免散写魔数 -4。
+export const MODEL_1M_SUFFIX = "[1m]";
+
+const MODEL_QUERY_RE = /^Current model:/m;
+const OPUSPLAN_OVERRIDE_RE = /in plan mode, else/;
+const MODEL_SET_RE = /^Set model to\s+(\S+)/m;
+
+// /model 探测时序参数：防抖（合并连发的 set/switch 触发）+ 回显丢失兜底（echo 3s 未回
+// 则释放 in-flight 槽，避免一条探测永久占住后续探测）。
+const MODEL_PROBE_DEBOUNCE_MS = 200;
+const MODEL_PROBE_ECHO_LOSS_TIMEOUT_MS = 3000;
+
+// /model query echo → opusplan override engaged. Non-/model echo → undefined.
+export function resolveOpusplanActive(body: string | undefined): boolean | undefined {
+  if (!body || !MODEL_QUERY_RE.test(body)) return undefined;
+  return OPUSPLAN_OVERRIDE_RE.test(body);
+}
+
+// /model echo → display text. query → "Current model:" tail; set → alias.
+export function extractModelEchoLabel(body: string | undefined): string | undefined {
+  if (!body) return undefined;
+  const q = body.match(/^Current model:\s*(.+)$/m);
+  if (q) return q[1].trim();
+  const s = body.match(MODEL_SET_RE);
+  if (s) return s[1].trim();
+  return undefined;
+}
+
+// typed `/model X` set echo → alias X (setCurrentModel). Non-set → undefined.
+export function parseModelSetAlias(body: string | undefined): string | undefined {
+  if (!body) return undefined;
+  const s = body.match(MODEL_SET_RE);
+  return s ? s[1].trim() : undefined;
+}
+
+// alias → base is "opusplan" (strip [1m] suffix if present).
+export function isOpusplanBase(alias: string | undefined): boolean {
+  if (!alias) return false;
+  return (
+    (alias.endsWith(MODEL_1M_SUFFIX) ? alias.slice(0, -MODEL_1M_SUFFIX.length) : alias) ===
+    "opusplan"
+  );
+}
+
 // CLI emits "AbortError: Compaction canceled." when a compaction is aborted
 // (user stop or upstream abort). Live form: assistant {model:"<synthetic>"}
 // echo. Replay form: system local_command <local-command-stderr>…</…>. The
@@ -1715,6 +1763,16 @@ export type ChatStreamItem =
       stderr?: string;
       input?: string;
       sourceType: "local-command" | "bash";
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
+      // /model slash-command rendered as a lightweight inline notice (like
+      // ModeChangeNotice) instead of the heavy CommandOutputCard. Converted
+      // from command-output{commandName:"model"} by Pass E.
+      kind: "model-change";
+      echoLabel?: string;
+      sourceType: "local-command";
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
@@ -2896,6 +2954,29 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     }
   }
 
+  // Pass E — convert /model command-output cards into lightweight model-change
+  // notices (live/replay unified: live Form E rewrites slash-echo+body into
+  // command-output; replay Pass B/D fill commandName on the same card shape).
+  // Only convert when the body is a recognizable /model echo (query → "Current
+  // model:" tail; set → alias token). An unrecognizable body (e.g. invalid
+  // `/model bogus` error, diagnostic output, or a CLI version whose echo
+  // phrasing drifted) is left as a command-output card so its stdout/stderr stay
+  // visible — converting it would render an empty "模型 · " notice and swallow
+  // the error the user needs to see.
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind !== "command-output" || it.commandName !== "model") continue;
+    const echoLabel = extractModelEchoLabel(it.stdout);
+    if (!echoLabel) continue;
+    items[i] = {
+      kind: "model-change",
+      echoLabel,
+      sourceType: "local-command",
+      sourceUuids: it.sourceUuids,
+      _rawSnapshots: it._rawSnapshots,
+    } as Extract<ChatStreamItem, { kind: "model-change" }>;
+  }
+
   return items;
 }
 
@@ -3261,6 +3342,21 @@ export function renderChatStream(
         });
         break;
       }
+      case "model-change": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "model-change",
+              echoLabel: item.echoLabel,
+            },
+          },
+        });
+        break;
+      }
       case "compact-abort": {
         messages.push({
           role: "system",
@@ -3593,6 +3689,9 @@ export function useClaude2Session(
               setCurrentModel(pending.priorModel);
               setResolvedModel(pending.priorModel);
             }
+            // Re-probe opusplanActive after every model switch (success or
+            // rollback) — the override may have engaged / disengaged.
+            requestModelProbeRef.current?.();
             break;
           case "set_permission_mode":
             if (r.response.subtype === "error" && pending.priorMode != null) {
@@ -3677,7 +3776,24 @@ export function useClaude2Session(
       if (msg.type === "assistant") {
         setRetryInfo(null);
         if (isExternalApiErrorMessage(msg)) return;
-        if (isSyntheticAssistantMessage(msg)) return;
+        if (isSyntheticAssistantMessage(msg)) {
+          const body = extractSyntheticBody(msg);
+          // /model query echo → authoritative opusplanActive (probe + manual
+          // typed /model both arrive here).
+          const active = resolveOpusplanActive(body);
+          if (active !== undefined) {
+            setOpusplanActive(active);
+            modelProbeInFlightRef.current = false;
+          }
+          // typed `/model X` set echo → update currentModel (dropdown switches
+          // go through control_request, not here).
+          const setAlias = parseModelSetAlias(body);
+          if (setAlias) {
+            setCurrentModel(setAlias);
+            requestModelProbeRef.current?.();
+          }
+          return;
+        }
         const ops = extractTaskOps(msg);
         if (ops.length > 0) setTasks((prev) => ops.reduce(applyTaskSystemMessage, prev));
         if (hasToolUseNamed(msg, "EnterPlanMode")) setPermissionMode("plan");
@@ -3776,6 +3892,15 @@ export function useClaude2Session(
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
+  // opusplanActive: whether the opusplan alias override is truly engaged by CLI.
+  // undefined = unknown (before first probe / init optimism). Optimistic from
+  // currentModel, authoritative from /model query echo.
+  const [opusplanActive, setOpusplanActive] = useState<boolean | undefined>();
+  const modelProbeInFlightRef = useRef(false);
+  const modelProbeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modelProbeEchoLossTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestModelProbeRef = useRef<(() => void) | null>(null);
+  const probedOnceRef = useRef(false);
   const [aiTitle, setAiTitle] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
   const lastAiTitleRef = useRef<string | null>(null);
@@ -3815,6 +3940,44 @@ export function useClaude2Session(
   const compactActiveRef = useRef(false);
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
+
+  // ── /model probe sender (debounced, in-flight guard, 3s echo-loss timeout) ──
+  // Exposed via ref so applyMessageScalarState can trigger re-probe after typed
+  // /model X set without adding projectName/sessionId to its deps.
+  const requestModelProbe = useCallback(() => {
+    if (modelProbeTimerRef.current) clearTimeout(modelProbeTimerRef.current);
+    modelProbeTimerRef.current = setTimeout(() => {
+      modelProbeTimerRef.current = null;
+      if (modelProbeInFlightRef.current) return;
+      if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+      modelProbeInFlightRef.current = true;
+      bridgeRef.current?.sendMessage("/model\n");
+      // echo 丢失兜底：回显未在超时窗口内到达则释放 in-flight 槽，避免一条探测
+      // 永久占住后续探测。句柄存 ref 以便 reset/unmount 清理。
+      modelProbeEchoLossTimerRef.current = setTimeout(() => {
+        modelProbeEchoLossTimerRef.current = null;
+        modelProbeInFlightRef.current = false;
+      }, MODEL_PROBE_ECHO_LOSS_TIMEOUT_MS);
+    }, MODEL_PROBE_DEBOUNCE_MS);
+  }, []);
+  requestModelProbeRef.current = requestModelProbe;
+
+  // Unmount: clear any pending /model probe timers so they don't fire on a
+  // torn-down session (the echo-loss callback only writes a ref today, but
+  // clearing keeps that invariant explicit).
+  useEffect(() => {
+    return () => {
+      if (modelProbeTimerRef.current) clearTimeout(modelProbeTimerRef.current);
+      if (modelProbeEchoLossTimerRef.current) clearTimeout(modelProbeEchoLossTimerRef.current);
+    };
+  }, []);
+
+  // Optimistic opusplanActive from currentModel (instant, probe corrects async).
+  useEffect(() => {
+    if (!currentModel) return;
+    setOpusplanActive(isOpusplanBase(currentModel));
+  }, [currentModel]);
+
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [inputQueue, setInputQueue] = useState<QueueEntry[]>([]);
@@ -3833,6 +3996,17 @@ export function useClaude2Session(
     setLastPrompt(null);
     setSessionLeafUuid(null);
     setRetryInfo(null);
+    setOpusplanActive(undefined);
+    if (modelProbeTimerRef.current) {
+      clearTimeout(modelProbeTimerRef.current);
+      modelProbeTimerRef.current = null;
+    }
+    if (modelProbeEchoLossTimerRef.current) {
+      clearTimeout(modelProbeEchoLossTimerRef.current);
+      modelProbeEchoLossTimerRef.current = null;
+    }
+    modelProbeInFlightRef.current = false;
+    probedOnceRef.current = false;
     if (retryCountdownRef.current) {
       clearInterval(retryCountdownRef.current);
       retryCountdownRef.current = null;
@@ -4212,6 +4386,12 @@ export function useClaude2Session(
           // capture it BEFORE processBatch so the re-render it triggers reads the
           // new value. Empty history (non-resume) leaves liveStart at its 0 reset.
           liveStartRef.current = batch.length;
+          // Proactive /model probe to establish opusplanActive ground-truth
+          // once per connection (history loaded, entering live region).
+          if (!probedOnceRef.current) {
+            probedOnceRef.current = true;
+            requestModelProbe();
+          }
           processBatch(batch);
           // Inject a batch divider whenever the batch carried any messages at
           // all; whether it actually renders is decided in renderChatStream
@@ -4446,6 +4626,7 @@ export function useClaude2Session(
     currentModel,
     resolvedModel,
     modelSwitchVersion,
+    opusplanActive,
     permissionMode,
     aiTitle,
     agentName,

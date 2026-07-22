@@ -387,6 +387,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.tasks": "任务",
   "claude2.taskFallback": "任务 #{{id}}",
   "claude2.mode.changed": "已切换到 {{mode}}",
+  "claude2.model.changed": "模型 · {{model}}",
   "claude2.command.title": "命令",
   "claude2.command.args": "参数",
   "claude2.command.input": "输入",
