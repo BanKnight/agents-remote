@@ -505,6 +505,7 @@ export type AgentSession = {
   status: AgentSessionStatus;
   createdAt: string;
   model?: string;
+  modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
   claudeSessionId?: string;

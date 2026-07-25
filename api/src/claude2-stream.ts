@@ -251,7 +251,7 @@ export class Claude2StreamController {
       metadata?.projectPath ?? "",
       data.sessionId,
       metadata?.claudeSessionId,
-      metadata?.model,
+      metadata?.modelAlias ?? metadata?.model,
       metadata?.permissionMode,
       metadata?.effort,
     );

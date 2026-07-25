@@ -51,6 +51,24 @@ test("buildSeedInitLine returns undefined when no scalar is available", () => {
   expect(buildSeedInitLine("", "")).toBeUndefined();
 });
 
+test("buildSeedInitLine includes modelAlias so reconnect seeds the alias-form currentModel", () => {
+  // modelAlias alone — the alias is what the client folds into currentModel
+  // (opusplanActive derives from it), no concrete model needed.
+  const aliasOnly = JSON.parse(buildSeedInitLine(undefined, undefined, "opusplan")!) as Record<
+    string,
+    unknown
+  >;
+  expect(aliasOnly).toMatchObject({ type: "system", subtype: "seed_init", modelAlias: "opusplan" });
+  expect(aliasOnly).not.toHaveProperty("model");
+
+  // model (concrete/spinner value) + modelAlias (alias) coexist when both exist.
+  const both = JSON.parse(buildSeedInitLine("claude-sonnet-4-6", undefined, "opusplan")!) as Record<
+    string,
+    unknown
+  >;
+  expect(both).toMatchObject({ model: "claude-sonnet-4-6", modelAlias: "opusplan" });
+});
+
 test("seed init line is not matched by the real-init capture condition", () => {
   const parsed = JSON.parse(buildSeedInitLine("opus", "plan")!) as Record<string, unknown>;
   // Mirror claude2-stream onRealtimeRow / runtime captureSystemInitFromLine guard.
@@ -140,7 +158,7 @@ test("captureModelFromLine folds state.model and fires onModelChange with the in
 
   // Drive the private fold: seed a process state, then invoke captureModelFromLine.
   const internal = runtime as unknown as {
-    processes: Map<string, { sessionId: string; model?: string }>;
+    processes: Map<string, { sessionId: string; model?: string; modelAlias?: string }>;
     captureModelFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
   };
   internal.processes.set("rt-key", { sessionId: "internal-session-id", model: "old" });
@@ -155,6 +173,9 @@ test("captureModelFromLine folds state.model and fires onModelChange with the in
   });
 
   expect(runtime.getSessionState("rt-key")?.model).toBe("haiku");
+  // modelAlias folds alongside model so a reconnect seeds the client's
+  // alias-form currentModel (opusplanActive derives from it, no /model probe).
+  expect(internal.processes.get("rt-key")?.modelAlias).toBe("haiku");
   expect(calls).toEqual([{ sessionId: "internal-session-id", model: "haiku" }]);
 });
 
@@ -163,7 +184,7 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
   const calls: Array<{ sessionId: string; model: string }> = [];
   runtime.setOnModelChange((sessionId, model) => calls.push({ sessionId, model }));
   const internal = runtime as unknown as {
-    processes: Map<string, { sessionId: string; model?: string }>;
+    processes: Map<string, { sessionId: string; model?: string; modelAlias?: string }>;
     captureModelFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
   };
   internal.processes.set("rt-key", { sessionId: "internal-session-id", model: "old" });

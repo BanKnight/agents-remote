@@ -32,6 +32,7 @@ export type SessionMetadata = {
   lastConnectedAt?: string;
   claudeSessionId?: string;
   model?: string;
+  modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
 };
@@ -249,6 +250,7 @@ export class SessionRegistry {
     const updated: SessionMetadata = {
       ...metadata,
       model,
+      modelAlias: model,
       updatedAt: this.now().toISOString(),
     };
     await this.writeMetadata(updated);
@@ -570,6 +572,7 @@ export class SessionRegistry {
       updatedAt: timestamp,
       claudeSessionId: input.claudeSessionId,
       model: input.model,
+      modelAlias: input.model,
       permissionMode: input.permissionMode,
       effort: input.effort,
     };
@@ -800,6 +803,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   status: metadata.status as AgentSessionStatus,
   createdAt: metadata.createdAt,
   model: metadata.model,
+  modelAlias: metadata.modelAlias,
   permissionMode: metadata.permissionMode,
   effort: metadata.effort,
   claudeSessionId: metadata.claudeSessionId,

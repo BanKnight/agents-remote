@@ -409,7 +409,7 @@ export function Claude2Chat({
   } = useClaude2Session(
     projectName,
     sessionId,
-    detail.data?.session.model,
+    detail.data?.session.modelAlias ?? detail.data?.session.model,
     detail.data?.session.permissionMode,
   );
 

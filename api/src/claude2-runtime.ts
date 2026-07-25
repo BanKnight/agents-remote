@@ -20,12 +20,17 @@ type BunSubprocess = ReturnType<typeof Bun.spawn>;
 // both ignore it — it only folds scalars via a dedicated seed_init branch; model /
 // permissionMode surface in the session header, no bubble.
 // See docs/design/message-replay.md 「特殊时期 history 缩容」.
-export function buildSeedInitLine(model?: string, permissionMode?: string): string | undefined {
-  if (!model && !permissionMode) return undefined;
+export function buildSeedInitLine(
+  model?: string,
+  permissionMode?: string,
+  modelAlias?: string,
+): string | undefined {
+  if (!model && !permissionMode && !modelAlias) return undefined;
   return JSON.stringify({
     type: "system",
     subtype: "seed_init",
     ...(model ? { model } : {}),
+    ...(modelAlias ? { modelAlias } : {}),
     ...(permissionMode ? { permissionMode } : {}),
   });
 }
@@ -115,6 +120,7 @@ type Claude2Process = {
   sessionId: string;
   claudeSessionId?: string;
   model?: string;
+  modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
 };
@@ -257,7 +263,7 @@ export class Claude2Runtime implements RuntimeResources {
       metadata.projectPath,
       metadata.id,
       metadata.claudeSessionId,
-      metadata.model,
+      metadata.modelAlias ?? metadata.model,
       metadata.permissionMode,
       metadata.effort,
     );
@@ -358,7 +364,7 @@ export class Claude2Runtime implements RuntimeResources {
     // Scalar seed init: system.init is stdout-only (absent from JSONL/tail), so on
     // reconnect the client's scalar fold has no seed. Inject a synthetic init with
     // the CURRENT model/permissionMode before history.
-    const seedInitLine = buildSeedInitLine(proc.model, proc.permissionMode);
+    const seedInitLine = buildSeedInitLine(proc.model, proc.permissionMode, proc.modelAlias);
 
     return relay.addSubscriber(onData, onError, seedInitLine);
   }
@@ -410,6 +416,7 @@ export class Claude2Runtime implements RuntimeResources {
       sessionId,
       claudeSessionId,
       model,
+      modelAlias: model,
       permissionMode,
       effort: resolvedEffort,
     });
@@ -655,6 +662,7 @@ export class Claude2Runtime implements RuntimeResources {
     const state = this.processes.get(sessionName);
     if (!state) return;
     state.model = next;
+    state.modelAlias = next;
     this.onModelChange?.(state.sessionId, next);
   }
 
