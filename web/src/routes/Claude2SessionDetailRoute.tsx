@@ -572,7 +572,10 @@ export function Claude2Chat({
                     <CompactIndicator />
                     <div
                       data-composer-float
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
+                      // pb 默认含 env(safe-area-inset-bottom) 避让 home indicator；textarea 获焦
+                      // （focus-within 命中）时浮动区已被 --composer-keyboard-offset 抬到键盘正上方，
+                      // chin 被键盘覆盖，去掉 safe-area 把这块高度让给外部工具栏。桌面 lg:pb-2.5 收尾覆盖。
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] focus-within:pb-[var(--composer-gap,0.5rem)] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
                     >
                       <div
                         className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
@@ -3647,6 +3650,14 @@ function ComposerWithInterrupt({
   // thread.isRunning drives the stop overlay for assistant turns; compactStatus
   // extends it to compactions (which don't produce an assistant turn).
   const isRunning = useAuiState((s) => s.thread.isRunning);
+  // composer.isEmpty 驱动卡片内 Send/Stop 互斥（hasInput = !isEmpty）。
+  const isEmpty = useAuiState((s) => s.composer.isEmpty);
+  // 触屏判定（与 useComposerKeyboardAvoidance 的 coarse-pointer guard 同源）。卡片内 Send 按钮
+  // 仅触屏出现（hasInput && isCoarsePointer）——桌面非触屏恒无 Send（Enter=发送），布局完全不变。
+  // mount 时一次性判定。
+  const [isCoarsePointer] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches,
+  );
 
   // Full skill+slash catalog is the sole source for the slash menu (project +
   // user + plugin + builtin). Always fetched on open — it does not depend on the
@@ -3699,96 +3710,127 @@ function ComposerWithInterrupt({
     return triggerCtx.subscribeAria(update);
   }, [triggerCtx]);
 
-  // Three composer states, mutually exclusive: blocked (awaiting user action)
-  // takes priority over running, which takes priority over idle.
+  // Composer 状态优先级：blocked（等待用户动作）> running > idle。
   const blocked = pendingInteraction;
   const running = isRunning || compactStatus === "compacting";
-  const showStop = running && !!onCancel && !blocked;
+  const hasInput = !isEmpty;
+  // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（触屏有
+  // 输入）不显示 Stop。Send 仅触屏（hasInput && isCoarsePointer）；Stop 在 Send 未占用时显示
+  //（running && !showSend）——桌面无 Send，running 总显示 Stop（零回归）。底行恒渲染 → textarea
+  // 上方位置稳定不跳变。
+  const showSend = hasInput && isCoarsePointer && !blocked;
+  const showStop = running && !!onCancel && !blocked && !showSend;
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
-      <ComposerPrimitive.Input
-        placeholder={blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")}
-        disabled={blocked}
-        enterKeyHint="send"
-        className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
-        rows={1}
-        onKeyDown={(e) => {
-          // Record key for slash command's Enter-submit (see Action.onExecute).
-          lastKeyRef.current = e.key;
-          if (e.key !== "Enter") return;
-          // Hand Enter off to these paths first (let them newline/handle it):
-          if (e.nativeEvent.isComposing) return; // mid-IME composition → newline
-          if (e.shiftKey) return; // Shift+Enter → newline (desktop; mobile has no Shift)
-          if (slashOpenRef.current) return; // slash menu open → popover handles it
-          if (blocked) return; // awaiting user action → disabled anyway
-          // Enter → send on both desktop and mobile. preventDefault short-circuits
-          // the library's handleKeyPress, which would otherwise no-op on isRunning
-          // (its queue capability is false in external-store mode) and drop Enter to
-          // a newline. composer.send() bypasses that guard — it only checks canSend.
-          e.preventDefault();
-          composer.send();
-        }}
-      />
-      <div className="flex items-center gap-2 px-2.5 pb-2 pt-0.5">
-        <ModelSelector
-          opusplanActive={opusplanActive}
-          currentModel={currentModel}
-          currentResolved={currentResolved}
-          availableModels={availableModels}
-          availableModelResolved={availableModelResolved}
-          modelSwitchVersion={modelSwitchVersion}
-          permissionMode={permissionMode}
+    <>
+      <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
+        <ComposerPrimitive.Input
+          placeholder={
+            blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")
+          }
+          disabled={blocked}
+          // 触屏设备 Enter 换行、非触屏 Enter 发送（库自带 (pointer: coarse) 检测，
+          // 稳态可靠）。回归 mobile-session-interaction 既定原则：Enter 换行、显式 Send 才发送。
+          unstable_insertNewlineOnTouchEnter
+          className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
+          rows={1}
+          onKeyDown={(e) => {
+            // Record key for slash command's Enter-submit (see Action.onExecute).
+            lastKeyRef.current = e.key;
+            if (e.key !== "Enter") return;
+            // Hand Enter off to these paths first (let them newline/handle it):
+            if (e.nativeEvent.isComposing) return; // mid-IME composition → newline
+            if (slashOpenRef.current) return; // slash menu open → popover handles it
+            if (blocked) return; // awaiting user action → disabled anyway
+            // Enter 的换行/发送语义交由库的 unstable_insertNewlineOnTouchEnter 处理
+            //（触屏换行 / 桌面发送），这里不再手动 composer.send() 抢占——避免与库冲突。
+          }}
         />
-        <PermissionModeSelector
-          currentMode={permissionMode}
-          availableModes={availablePermissionModes}
-        />
-        <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
-        {showStop ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label={t("session.stop")}
-            title={t("session.stop")}
-            className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-assistant-deep/90 text-white shadow-lg transition hover:bg-assistant cursor-pointer"
+        {/* 卡片底行（恒渲染）：selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。 */}
+        <div className="flex h-9 items-center gap-2 px-2.5 pb-2 pt-0.5">
+          <ModelSelector
+            opusplanActive={opusplanActive}
+            currentModel={currentModel}
+            currentResolved={currentResolved}
+            availableModels={availableModels}
+            availableModelResolved={availableModelResolved}
+            modelSwitchVersion={modelSwitchVersion}
+            permissionMode={permissionMode}
+          />
+          <PermissionModeSelector
+            currentMode={permissionMode}
+            availableModes={availablePermissionModes}
+          />
+          <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
+          {showStop ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label={t("session.stop")}
+              title={t("session.stop")}
+              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-assistant-deep/90 text-white shadow-lg transition hover:bg-assistant cursor-pointer"
+            >
+              <span className="h-2.5 w-2.5 rounded-[2px] bg-white/90" />
+            </button>
+          ) : null}
+          {showSend ? (
+            <button
+              type="button"
+              // preventDefault 阻止 mousedown 把焦点从 textarea 转移到按钮 → textarea 保焦 →
+              // 键盘不收（发送后输入清空，用户大概率继续输入，保焦=键盘不收）。
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => composer.send()}
+              aria-label={t("claude2.composer.send")}
+              title={t("claude2.composer.send")}
+              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-user text-white shadow-lg transition hover:opacity-90 cursor-pointer"
+            >
+              <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                <path
+                  d="M12 19V5M5 12l7-7 7 7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+        {slashItems.length > 0 ? (
+          <ComposerPrimitive.Unstable_TriggerPopover
+            char="/"
+            adapter={slash.adapter}
+            className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
           >
-            <span className="h-2.5 w-2.5 rounded-[2px] bg-white/90" />
-          </button>
+            <ComposerPrimitive.Unstable_TriggerPopover.Action
+              formatter={cliSlashFormatter}
+              onExecute={(item) => {
+                slash.action.onExecute?.(item);
+                if (lastKeyRef.current === "Enter") {
+                  api.thread().append(`/${item.id}`);
+                  composer.setText("");
+                }
+                lastKeyRef.current = "";
+              }}
+            />
+            <ComposerPrimitive.Unstable_TriggerPopoverItems>
+              {(items) =>
+                items.map((item, index) => (
+                  <SlashCommandPopoverItem
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    kind={kindById.get(item.id)}
+                  />
+                ))
+              }
+            </ComposerPrimitive.Unstable_TriggerPopoverItems>
+          </ComposerPrimitive.Unstable_TriggerPopover>
         ) : null}
       </div>
-      {slashItems.length > 0 ? (
-        <ComposerPrimitive.Unstable_TriggerPopover
-          char="/"
-          adapter={slash.adapter}
-          className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
-        >
-          <ComposerPrimitive.Unstable_TriggerPopover.Action
-            formatter={cliSlashFormatter}
-            onExecute={(item) => {
-              slash.action.onExecute?.(item);
-              if (lastKeyRef.current === "Enter") {
-                api.thread().append(`/${item.id}`);
-                composer.setText("");
-              }
-              lastKeyRef.current = "";
-            }}
-          />
-          <ComposerPrimitive.Unstable_TriggerPopoverItems>
-            {(items) =>
-              items.map((item, index) => (
-                <SlashCommandPopoverItem
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  kind={kindById.get(item.id)}
-                />
-              ))
-            }
-          </ComposerPrimitive.Unstable_TriggerPopoverItems>
-        </ComposerPrimitive.Unstable_TriggerPopover>
-      ) : null}
-    </div>
+      {/* 外部工具栏已废弃：工具/按钮收回卡片内部底行（见上方）。曾用 focus + keyboardVisible
+          驱动外部工具栏，iOS 26 visualViewport 瞬态误判导致 Send 不稳定，已回退到卡片内部。 */}
+    </>
   );
 }
 

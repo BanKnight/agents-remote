@@ -5,17 +5,21 @@ import { useEffect } from "react";
  * CSS 变量（内层 translateY 上抬），让 composer 在键盘弹起时就已浮在键盘上方 →
  * iOS 判定焦点 input 已可见 → 不触发 scroll-to-reveal（连 overflow:hidden 都绕不过的
  * 那个 layout-viewport 强制滚动）。这是 iOS 上唯一可靠的键盘避让路径：dvh/svh、
- * interactive-widget meta、VirtualKeyboard API 在 iOS 全不触发键盘（见
+ * interactive-widget meta、VirtualKeyboard API 在 iOS 全不触发（见
  * docs/research/claude2-ios-keyboard-viewport.md）。
  *
  * 监听 visualViewport 的 resize + scroll（键盘动画收尾 scroll 仍 fire，保证 offset 准确）。
- * 关闭用 keyboardVisible = vv.height < innerHeight 判断并强制归零，绕过 iOS 26 layout
- * scroll 不复位 bug。不用 window.scrollTo 对抗——body 被 pin 时 document scroll 本就是 0，
+ * 关闭用 visible = vv.height < innerHeight 判断并强制归零，绕过 iOS 26 layout scroll
+ * 不复位 bug。不用 window.scrollTo 对抗——body 被 pin 时 document scroll 本就是 0，
  * 碰不到 visual-viewport pan 轴，逐帧对抗只抖动（之前 mobile-keyboard.ts 失败的原因）。
  *
  * 第二个 effect：克隆 ShellLayout 的 ResizeObserver→CSS 变量→inset 模式，测浮动区总高
  * 写 `--composer-float-inset`，消息列表底部 spacer 消费，保证滚动到底时最后一条消息
  * 不被悬浮 composer 遮挡。
+ *
+ * 只负责键盘避让（写 CSS 变量），不暴露键盘可见性 state——曾用 visualViewport 派生
+ * keyboardVisible 驱动外部工具栏显隐，iOS 26 键盘动画瞬态误判导致工具栏/Send 不稳定，
+ * 已废弃；工具/按钮收回卡片内部，不再依赖键盘可见性。
  */
 export function useComposerKeyboardAvoidance(): void {
   useEffect(() => {
@@ -27,12 +31,10 @@ export function useComposerKeyboardAvoidance(): void {
     const root = document.documentElement;
 
     const apply = () => {
-      const keyboardVisible = vv.height < window.innerHeight;
+      const visible = vv.height < window.innerHeight;
       // 视口底被键盘吃掉的高度 = layout viewport 高 - visual viewport 高 - 其顶部偏移。
-      // keyboardVisible=false 时强制 0，绕过 iOS 26 关键盘后 offset 残留。
-      const offset = keyboardVisible
-        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-        : 0;
+      // visible=false 时强制 0，绕过 iOS 26 关键盘后 offset 残留。
+      const offset = visible ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
       root.style.setProperty("--composer-keyboard-offset", `${offset}px`);
     };
 

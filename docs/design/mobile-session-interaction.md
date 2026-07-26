@@ -21,6 +21,7 @@
 - 底部 input panel 默认展开；用户需要查看更多输出时可以一键收起，收起后必须保留明显的恢复入口，不依赖手势作为唯一恢复方式。
 - 输入控制区不得 fixed/floating 覆盖终端输出；它应与 header、输出区一起参与全高 flex 布局，让输出区根据剩余空间滚动。
 - 普通文本输入使用多行 textarea；Enter 保持换行，只有显式 Send 才把内容写入当前 stream。非空输入按 CLI/shell 直觉保留内容并按需补末尾换行，全空白输入不发送。
+- Claude2 移动端 composer 在输入卡片内部底行实现上一条原则：Model/Perm/Effort selector + Stop/Send 按钮同处卡片底行（恒渲染，保持卡片高度稳定，UI 不随获焦/键盘跳变）；Stop/Send 互斥占同一槽位（ml-auto 右对齐），加 Send 不增加宽度——Stop 仅 running 且无输入时出现（不分平台），Send 仅触屏且有输入时出现（hasInput && coarse-pointer；桌面 Enter=发送，故无独立 Send）。Stop/Send 按钮点击不夺 textarea 焦点（mousedown preventDefault）——发送后输入清空，用户大概率继续输入，保焦=键盘不收。Enter 换行/发送由 `ComposerPrimitive.Input` 的 `unstable_insertNewlineOnTouchEnter` 处理（库自带 `(pointer: coarse) and (not (any-pointer: fine))` 检测）：触屏 Enter 换行、显式 Send 才发送（回归本原则），非触屏 Enter 发送。Claude2 早期因卡片内无独立 Send 的空间而让 Enter 兼任发送、偏离了本原则；曾尝试「textarea 获焦外部工具栏」方案（focus/blur + visualViewport 派生 keyboardVisible 驱动），但 iOS 26 键盘动画 visualViewport 瞬态误判导致 Send/工具栏不稳定，已回退到卡片内部——Send 与 Stop 互斥占同槽解决了空间问题。桌面端非触屏，Enter 发送、无独立 Send，不受影响。
 - Quick keys 是即时控制动作：按钮点击直接向 stream 发送对应 control sequence，不写入 textarea，也不等待用户再点 Send；移动端展示时放在 textarea 上方。
 - Agent Session 与 Terminal Session 使用不同默认 quick key 集合和排序，但共享渲染与发送模式；Agent 默认集合必须覆盖上/下方向键和 Enter，以支持 CLI 选择项导航；第一轮不提供用户配置、排序持久化或 provider capability API。
 - 原型中出现但当前真实 stream/control model 不支持的 mode/selection 类快捷键不得伪造成可用按钮；应登记为后续 terminal interaction 能力，并等协议、capability discovery 或前端 model 明确后再展示。
