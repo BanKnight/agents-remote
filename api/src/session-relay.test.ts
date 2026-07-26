@@ -1,7 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Claude2SessionRelay } from "./session-relay";
+import {
+  Claude2SessionRelay,
+  HISTORY_TAIL_SCAN_BYTES,
+  sliceLastCompactBlock,
+} from "./session-relay";
 import { claudeJsonlPath } from "./session-routes";
 
 const cleanupDirs = new Set<string>();
@@ -425,6 +429,72 @@ test("Claude2SessionRelay reads the full file when no compact boundary exists", 
   const historyStart = messages.findIndex((m) => m.type === "history_start");
   // never compacted → full file (fallback)
   expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 2 });
+
+  relay.destroy();
+});
+
+test("sliceLastCompactBlock returns the last block, or null to force a full-read fallback", () => {
+  const boundary = compactBoundaryLine("c1");
+  const tail = userLine("u-tail", "tail");
+
+  // boundary in the middle of a multi-line buffer → block = boundary line start → EOF
+  const block = sliceLastCompactBlock(
+    Buffer.from(`${[userLine("u-pre", "old"), boundary, tail].join("\n")}\n`),
+  );
+  expect(block).not.toBeNull();
+  expect(block?.toString("utf8").trim().split("\n")).toEqual([boundary, tail]);
+
+  // no boundary → null (caller reads the full file)
+  expect(
+    sliceLastCompactBlock(Buffer.from(`${[userLine("u1", "a"), tail].join("\n")}\n`)),
+  ).toBeNull();
+
+  // boundary marker present but its line start is outside the buffer (truncated
+  // tail whose first line is mid-boundary) → null so the caller falls back
+  expect(sliceLastCompactBlock(Buffer.from(`${boundary.slice(10)}\n${tail}\n`))).toBeNull();
+});
+
+test("Claude2SessionRelay falls back to a full read when the boundary is older than the tail window", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-tail-fallback";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  // A padding line whose length exceeds the tail scan window pushes the boundary
+  // beyond the trailing read → the tail read misses it, the full-read fallback
+  // finds it and recovers the whole last block (boundary + padding + tail).
+  const padding = userLine("u-pad", "x".repeat(HISTORY_TAIL_SCAN_BYTES));
+  const content = [
+    userLine("u-pre", "old"),
+    compactBoundaryLine("c1"),
+    padding,
+    userLine("u-tail", "tail"),
+  ].join("\n");
+  await writeFile(jsonlPath, `${content}\n`);
+
+  const relay = new Claude2SessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((m) => m.type === "history_start");
+  const historyEnd = messages.findIndex((m) => m.type === "history_end");
+  // full-read fallback recovers the last block; pre-boundary u-pre stays compacted away
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 3 });
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages).toEqual([
+    JSON.parse(compactBoundaryLine("c1")),
+    JSON.parse(padding),
+    JSON.parse(userLine("u-tail", "tail")),
+  ]);
 
   relay.destroy();
 });

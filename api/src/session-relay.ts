@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { COMPACT_BOUNDARY_SUBTYPES, isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claudeJsonlPath } from "./session-routes";
 import type { RuntimeStream } from "./session-registry";
@@ -7,6 +7,14 @@ import type { RuntimeStream } from "./session-registry";
 // subscribers. Bounds memory on long-lived sessions; consecutive thinking_tokens
 // are coalesced (see appendLive) so a single thinking phase no longer dominates.
 const LIVE_BUFFER_CAP = 10000;
+
+// Only the trailing bytes of the JSONL are read to locate the last compact
+// boundary. The replayed block (last boundary → EOF) is typically < 2MB, so 8MB
+// covers it with headroom. Reading the whole (often 100MB+) file just to use
+// that small tail would block the event loop on the resume-activation critical
+// path; boundaries older than this window fall back to a full read (unchanged
+// behavior for the rare over-window block / never-compacted session).
+export const HISTORY_TAIL_SCAN_BYTES = 8 * 1024 * 1024;
 
 type Subscriber = {
   onData(line: string): void;
@@ -246,22 +254,38 @@ export class Claude2SessionRelay {
 
     try {
       const jsonlPath = claudeJsonlPath(this.projectPath, this.claudeSessionId);
-      const buf = readFileSync(jsonlPath);
-      // compact-block windowing: keep only the last compact block. Locate the last
-      // boundary by backward-scanning the raw buffer for each boundary subtype's
-      // wire marker — one lastIndexOf pass per subtype (two total), no full-file
-      // line parse — then slice from that boundary's line start (inclusive) to EOF.
-      // No boundary ⇒ the session was never compacted: parse the whole file.
-      let lastBoundary = -1;
-      for (const subtype of COMPACT_BOUNDARY_SUBTYPES) {
-        const off = buf.lastIndexOf(`"subtype":"${subtype}"`);
-        if (off > lastBoundary) lastBoundary = off;
-      }
-      const segment =
-        lastBoundary < 0 ? buf : buf.subarray(buf.lastIndexOf(0x0a, lastBoundary) + 1);
-      return this.parseJsonlLines(segment.toString("utf8"));
+      return this.parseJsonlLines(this.readLastCompactBlock(jsonlPath).toString("utf8"));
     } catch {
       return [];
+    }
+  }
+
+  // Read only the last compact block from disk. The block is the tail of the
+  // file (last boundary → EOF), so read just the trailing HISTORY_TAIL_SCAN_BYTES
+  // and locate the boundary there — avoiding a synchronous readFileSync of a
+  // multi-hundred-MB JSONL on the resume-activation critical path. Falls back to
+  // a full read when the boundary is older than the tail window (a compact block
+  // larger than the window, or a never-compacted session) so those rare cases
+  // behave exactly as a whole-file read would.
+  private readLastCompactBlock(jsonlPath: string): Buffer {
+    const fd = openSync(jsonlPath, "r");
+    try {
+      const size = fstatSync(fd).size;
+      const start = Math.max(0, size - HISTORY_TAIL_SCAN_BYTES);
+      const tail = Buffer.allocUnsafe(size - start);
+      const bytesRead = readSync(fd, tail, 0, tail.length, start);
+      const window = tail.subarray(0, bytesRead);
+
+      const block = sliceLastCompactBlock(window);
+      if (block) return block;
+      // Tail didn't contain the whole last block. If we already read from offset
+      // 0, `window` IS the full file (no boundary, or boundary on the first line)
+      // → return it as-is; otherwise fall back to a full read.
+      if (start === 0) return window;
+      const full = readFileSync(jsonlPath);
+      return sliceLastCompactBlock(full) ?? full;
+    } finally {
+      closeSync(fd);
     }
   }
 
@@ -299,6 +323,26 @@ export class Claude2SessionRelay {
       }
     }
   }
+}
+
+// Locate the last compact boundary in `buf` and return the byte segment from
+// that boundary's line start (inclusive) to EOF — the "last compact block".
+// Backward-scans for each boundary subtype's wire marker (one lastIndexOf per
+// subtype), no full-file line parse. Returns null when there is no boundary, OR
+// when the boundary's line start falls outside `buf` (i.e. `buf` is a truncated
+// file tail whose first line is mid-boundary) — the caller then falls back to a
+// full read. A whole-file `buf` with a boundary on its very first line also
+// returns null, and the caller's `?? full` yields the identical whole file.
+export function sliceLastCompactBlock(buf: Buffer): Buffer | null {
+  let lastBoundary = -1;
+  for (const subtype of COMPACT_BOUNDARY_SUBTYPES) {
+    const off = buf.lastIndexOf(`"subtype":"${subtype}"`);
+    if (off > lastBoundary) lastBoundary = off;
+  }
+  if (lastBoundary < 0) return null;
+  const lineStart = buf.lastIndexOf(0x0a, lastBoundary);
+  if (lineStart < 0) return null;
+  return buf.subarray(lineStart + 1);
 }
 
 // True if a raw JSONL line is a system/thinking_tokens row. Called only when the
