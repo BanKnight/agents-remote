@@ -240,3 +240,53 @@ Playwright 探针点 trigger 后查 `aria-expanded` / `data-state`：两者都 `
 - xterm.js 6.x `Gesture` class document 层 `preventDefault` + scrollbar 只处理 wheel。
 - tmux SGR 鼠标模式 1006：`\x1b[<btn;col;row>M`。
 - memory `web-terminal-tmux-attach-research`（web terminal 共享终端走 tmux attach 非 capture-pane 半态快照）。
+
+## 7. 触屏能力（pointer）与视口宽度（viewport）是正交维度（hover 显隐 / 点击区错绑断点）
+
+### 现象（iPad 横屏等「宽屏 + 触屏」复合设备）
+
+操作按钮（中栏 tab ✕、文件/Git 行 ⋯、卡片 ⋯、表格行 ⋯）在 **iPad 横屏（≥1024px 触屏）** 这类「宽屏 + 触屏」复合设备上：① 永久不可见（默认 `opacity-0`、hover 又唤不醒）；② 即使可见，点击区只有 28px（鼠标紧凑尺寸），HIG 44px 触摸目标不达标。
+
+根因是代码与 DESIGN 契约**用视口断点（`sm:`/`max-sm:`）代理「是否触屏 / 是否有 hover」**：`sm:opacity-0 sm:group-hover:opacity-100`（宽屏才隐藏 + hover 显）、`max-sm:h-11 max-sm:w-11`（窄屏才放大点击区）。iPad 横屏 ≥1024px 命中 `sm:` 分支被当成鼠标——隐藏生效、hover 唤不醒、点击区不放大。
+
+### 机制（两个正交维度 + Tailwind v4 hover 守卫的盲区）
+
+- **触屏能力（pointer）与视口宽度（viewport）是两个正交维度**，不能互相代理。典型反例就是 iPad 横屏：宽视口 + 触屏。用视口断点判断「是否触屏」必然在复合设备上失效。判定交互能力必须用对应的媒体特性：`(hover: hover)`（能否 hover）、`(pointer: coarse)`（主指针是否粗糙 = 触屏）。
+- **Tailwind v4 默认已把 `hover:`/`group-hover:` 包进 `@media (hover: hover)`**——所以触屏设备上 `hover:bg-*` 本就不触发（这是好事）。但反模式的坑在 **`opacity-0` / `sm:opacity-0` 这层「默认隐藏」不在 hover 守卫内**：它无条件生效，触屏宽屏上隐藏生效、hover 又唤不醒 → 永久不可见。守卫只护住了 hover 那一瞬，护不住「默认就藏起来」这层基线。
+- **正解范例（项目内已有）**：`composer-enter.ts` `isMobileComposerMode({coarse, wide}) = coarse && !wide`——「指针粗糙 且 窄屏」双条件，而非单看视口；`drag-source.tsx` 拖放用运行时 `event.pointerType === "touch"` 判定，不受 `(pointer: coarse)` 误报伤害（与 composer Enter bug 同源：某些非触摸桌面环境会误报 coarse）。
+
+### 标准做法（`@custom-variant hover-capable/touch` + 渐进增强）
+
+1. **新增两个指针能力 variant**（`web/src/styles/index.css`，紧邻 `@custom-variant dark`）：
+   ```css
+   @custom-variant hover-capable (@media (hover: hover) and (pointer: fine));
+   @custom-variant touch (@media (hover: none) and (pointer: coarse));
+   ```
+2. **渐进增强（核心范式）**：默认（触屏 / 未知设备）= 常显 + 大点击区（可达优先）；`hover-capable`（鼠标）才降级为 hover 显隐 + 紧凑尺寸。取「无害方向」——`(pointer: coarse)` 误报环境命中 `touch` 只是按钮常显 + 放大，对桌面鼠标用户是轻微视觉噪音，不是功能失效（与 composer Enter 取「发送」而非「换行」的无害取舍同源，见 §1 同属「视口与设备维度分离」家族）。
+3. **hover 显隐**（A 组，默认常显 + hover-capable 才显隐）：`max-sm:opacity-100 opacity-0 group-hover/tab:opacity-100` → `opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100`。
+4. **点击区放大**（B 组，touch 放大、鼠标保留紧凑）：`max-sm:h-N max-sm:w-N` → `touch:h-N touch:w-N`。`hover:bg-*` 等 hover 视觉无需改（v4 自带守卫）；`active:` 走 `:active` 不受守卫影响，触屏按下仍有反馈。
+5. **判定边界（哪些改、哪些不改）**：
+   - hover 显隐操作按钮（⋯/✕）→ 交互能力 `(hover: hover)` → **改**（hover-capable）。
+   - 点击区 44px → 交互能力 `(pointer: coarse)` → **改**（touch）。
+   - ActionMenu 分流 popover vs 底部 sheet → 布局形态 → 视口 `useIsMobile` → **不改**（响应式正确，触屏 popover 也能点开）。
+   - 拖放启用 → 运行时 `event.pointerType` → **不改**（正解范例）。
+6. **判定铁律**：判定「是否触屏 / 是否有 hover」用 `(hover: hover)`/`(pointer: coarse)` 媒体查询或运行时 `event.pointerType`；视口断点（`sm:/max-sm:/lg:`）**只管布局结构**（形态切换、列数、显隐区），不代理交互能力。
+
+### 相邻发现（不在本次范围，记录待后续单开）
+
+- **断点阈值不一致**：`index.css` `--breakpoint-sm=1024px`（CSS `sm:`/`max-sm:` 阈值）vs `use-is-mobile.ts` `(max-width:639px)`（JS `useIsMobile` 阈值）。~800px 窗口下 ActionMenu 走桌面 popover、⋯ 按钮却已放大（命中 `max-sm:`）——这是「视口断点内部不自洽」的独立问题，影响面广，建议后续单开（统一到 1024 或 640）。
+- **claude2 ActionBar** 纯 `opacity-0 group-hover:opacity-100`（无断点）—— 触屏同样不可见，属 claude2 范围，留后续。
+
+### 自动化测试局限（Chromium 无法模拟 hover/pointer）
+
+- **Chromium 的 CDP `Emulation.setEmulatedMedia` 不支持模拟 `(hover)` 与 `(pointer)` media feature**——实测 `setEmulatedMedia({features:[{name:"hover",value:"none"}]})` 后 `window.matchMedia("(hover: hover)").matches` 仍为 true。Chrome DevTools "Rendering" 面板同样只暴露 `prefers-color-scheme` / `prefers-reduced-motion` / `prefers-contrast` / `forced-colors`，无 hover/pointer；Playwright 1.60 的 `emulateMedia` 也仅支持这五项（`@playwright/test` 1.60 `types.d.ts` 实测）。
+- **故 iPad 横屏（hover:none + pointer:coarse）无法在 Playwright/Chromium 自动化里精确复现**。指针 variant 的自动化验证只能用混合策略（`scripts/probe-pointer-variants.mjs`）：① 运行时验证桌面态（hover-capable 匹配时行为正确，A 组 opacity 0→hover 1、B 组点击区 28px）；② 静态分析 CSS 文件，确认 utility 被正确的 media query 包裹（`@media (hover:hover)+(pointer:fine)` 含 hover-capable、`@media (hover:none)+(pointer:coarse)` 含 touch）。由 CSS 规范保证：media query 不匹配则规则不应用，故触屏必不触发 hover-capable（opacity 保持默认常显→反模式修复）、必触发 touch（点击区放大）。
+- **触屏真机最终验证不可省**——iPad 横屏 / 触屏笔记本是自动化覆盖不到的最后一公里，交用户。
+
+### 来源
+
+- 实现：`web/src/styles/index.css`（`hover-capable`/`touch` variant）+ `instance-area.tsx` TabChip ✕ / `file-browser.tsx` 文件行 ⋯（A 组）/ `shell-primitives.tsx` 卡片 ⋯ + `workbench-table.tsx` 表格行 ⋯ + `global-projects-overview.tsx` 项目卡片 ⋯（B 组）。
+- DESIGN.md 契约条目：「触屏触摸目标 44px」「action-menu 触发器」+ Do's/Don'ts 两条（视口断点不代理指针能力 / 渐进增强）。
+- 与 composer Enter 修复同根：`composer-enter.ts` `isMobileComposerMode({coarse, wide}) = coarse && !wide` 是「指针 + 窄屏」双条件范例；本次是「指针能力独立于视口」的纯指针维度正交化。两者同源洞察：视口与指针是两个维度。
+- Tailwind v4 `hover:` 自带 `@media (hover: hover)` 守卫：https://tailwindcss.com/docs/hover-focus-and-other-states
+- W3C Media Queries Level 4 `hover` / `pointer` 特性：https://www.w3.org/TR/mediaqueries-4/#hover 、 https://www.w3.org/TR/mediaqueries-4/#pointer

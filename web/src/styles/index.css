@@ -10,6 +10,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/** 鼠标/精确指针设备（hover: hover + pointer: fine）：支持 hover。用于"hover 才显示
+ *  操作按钮"的降噪——仅在能 hover 的设备上把按钮默认隐藏 + hover 唤醒。与视口断点
+ *  （sm:/max-sm:）正交：iPad 横屏（宽屏 + 触屏）不匹配本 variant、走 touch 分支，
+ *  不被 sm: 误判成鼠标。见 DESIGN.md「移动触摸目标 44px」、frontend-notes.md §7。 */
+@custom-variant hover-capable (@media (hover: hover) and (pointer: fine));
+
+/** 触屏设备（hover: none + pointer: coarse）：无 hover。操作按钮必须常显才可达；
+ *  点击区放大到 ≥40px 触屏标准。 */
+@custom-variant touch (@media (hover: none) and (pointer: coarse));
+
 :root {
   color-scheme: dark;
   color: #e2e8f0;

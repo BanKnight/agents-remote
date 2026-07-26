@@ -1815,7 +1815,9 @@ function TabChip({
         <button
           aria-label={t("workbench.tabMinimize")}
           className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
-            isActive ? "opacity-100" : "max-sm:opacity-100 opacity-0 group-hover/tab:opacity-100"
+            isActive
+              ? "opacity-100"
+              : "opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
           }`}
           onClick={onClose}
           title={t("workbench.tabMinimize")}

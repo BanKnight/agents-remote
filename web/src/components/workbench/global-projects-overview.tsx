@@ -340,7 +340,7 @@ function GroupedProjectsList({
                 trigger={
                   <button
                     aria-label={t("session.actions")}
-                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface max-sm:h-10 max-sm:w-10"
+                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
                     type="button"
                   >
                     <ShellIcon className="h-4 w-4" name="ellipsis" />

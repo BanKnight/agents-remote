@@ -240,7 +240,7 @@ export function FileEntryList({
         ]}
         trigger={
           <button
-            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition sm:opacity-0 sm:group-hover:opacity-100 max-sm:h-10 max-sm:w-10 ${shellSurfaceClasses.raisedHover}`}
+            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:h-10 touch:w-10 ${shellSurfaceClasses.raisedHover}`}
             onClick={(e) => e.stopPropagation()}
             type="button"
             aria-label={`${entry.name} actions`}
