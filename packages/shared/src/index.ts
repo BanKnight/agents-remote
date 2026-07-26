@@ -1309,7 +1309,8 @@ export type Claude2PermissionMode =
   | "bypassPermissions"
   | "plan"
   | "auto"
-  | "dontAsk";
+  | "dontAsk"
+  | "manual";
 
 // Client → server control actions (model switch, permission mode switch, interrupt).
 // These become stdin control_request messages to the CLI; the CLI replies with
