@@ -572,10 +572,13 @@ export function Claude2Chat({
                     <CompactIndicator />
                     <div
                       data-composer-float
-                      // pb 默认含 env(safe-area-inset-bottom) 避让 home indicator；textarea 获焦
-                      // （focus-within 命中）时浮动区已被 --composer-keyboard-offset 抬到键盘正上方，
-                      // chin 被键盘覆盖，去掉 safe-area 把这块高度让给外部工具栏。桌面 lg:pb-2.5 收尾覆盖。
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] focus-within:pb-[var(--composer-gap,0.5rem)] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
+                      // pb 恒含 env(safe-area-inset-bottom) 避让 home indicator——focus 前后 padding 不变，
+                      // 避免 textarea 获焦瞬间因 pb 骤减引发 layout shift。曾用 focus-within:pb- 在获焦时
+                      // 去掉 safe-area 给外部工具栏让位，工具栏回退后该变体成了纯 layout shift 源：iOS 26
+                      // 真机 env≈34px，获焦时 pb 从 42px→8px，absolute bottom-0 锚定使容器顶部+textarea 下移
+                      // 34px，iOS WebKit 据此 ~50% 取消键盘触发（边框亮=focus 成功，键盘不弹）。键盘弹起后
+                      // --composer-keyboard-offset 把浮动区抬到键盘上方，pb 自然成为卡片与键盘间距。桌面 lg:pb-2.5 收尾覆盖。
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
                     >
                       <div
                         className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
