@@ -6,21 +6,45 @@ import type {
   SessionMetadata,
 } from "./session-registry";
 
+/**
+ * 单个 tmux 命令超时上限。tmux 是单线程 server：并发 capture-pane 客户端阻塞在 unix socket recv
+ * 时永不退出 → `close` 永不触发 → Promise 永久 pending。超时兜底把「永久 hang」降级为「~5s 内
+ * fail fast」，让上层 try/catch 保守处理。只作用于走 runTmux 的短命令，不影响 attach（Bun.spawn 长驻）。
+ */
+export const TMUX_CMD_TIMEOUT_MS = 5_000;
+
 export const runTmux = (args: string[]) =>
   new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn("tmux", args, { stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
 
+    // close / error / timeout 三路互斥收尾：首个到达者 settle，其余变 no-op。
+    // 关键：SIGKILL 后 child 的 `close` 仍会触发（让 Node waitpid 回收，不留 <defunct>），
+    // 但此时已 settled → close 回调是 no-op，不会在 timeout reject 之后再 resolve（避免 double-settle）。
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(() => reject(new TmuxTimeoutError(args)));
+    }, TMUX_CMD_TIMEOUT_MS);
+    const finish = (apply: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      apply();
+    };
+
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
+    child.on("error", (error) => finish(() => reject(error)));
     child.on("close", (exitCode) => {
-      resolve({
-        exitCode: exitCode ?? 1,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-      });
+      finish(() =>
+        resolve({
+          exitCode: exitCode ?? 1,
+          stdout: Buffer.concat(stdout).toString("utf8"),
+          stderr: Buffer.concat(stderr).toString("utf8"),
+        }),
+      );
     });
   });
 
@@ -214,6 +238,17 @@ export class TmuxRuntimeError extends Error {
   ) {
     super(message);
     this.name = "TmuxRuntimeError";
+  }
+}
+
+/**
+ * runTmux 超时（tmux server 无响应，子进程已 SIGKILL）。继承 TmuxRuntimeError 让调用方 try/catch
+ * 语义统一——超时和其他 tmux 失败一样，由上层保守处理（overview 探测路径保守保留 entry）。
+ */
+export class TmuxTimeoutError extends TmuxRuntimeError {
+  constructor(args: string[]) {
+    super(`tmux command timed out after ${TMUX_CMD_TIMEOUT_MS}ms`, args.join(" "));
+    this.name = "TmuxTimeoutError";
   }
 }
 

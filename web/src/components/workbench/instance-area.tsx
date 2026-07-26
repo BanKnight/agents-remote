@@ -44,6 +44,7 @@ import {
   createAgentSession,
   createTerminalSession,
   fetchOverview,
+  fetchOverviewSubtitles,
   getAgentSession,
   getTerminalSession,
   listAgentSessions,
@@ -1099,9 +1100,18 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
     enabled: isGlobal,
     staleTime: 5_000,
   });
+  // overview 第二阶段：subtitle（terminal lastCommand）走独立端点慢填充，不 gate isLoaded——
+  // 核心卡片先渲染（overview.data 就绪即 isLoaded），subtitle 到达后 patch 进第二行（缺则不显）。
+  const subtitles = useQuery({
+    queryKey: ["overview", "subtitles"],
+    queryFn: fetchOverviewSubtitles,
+    enabled: isGlobal,
+    staleTime: 5_000,
+  });
   // dataUpdatedAt fingerprint：overview data 内容变化时 timestamp 才变，作 useMemo 单一 dep，
   // 让返回引用在 data 不变时稳定（useQuery 每 render 返回新对象引用，直接进 deps 会每 render 重算）。
-  const dataKey = `${isGlobal}|${overview.dataUpdatedAt}`;
+  // subtitles.dataUpdatedAt 一并纳入：subtitle 到达触发重算，把第二行 patch 进已渲染卡片。
+  const dataKey = `${isGlobal}|${overview.dataUpdatedAt}|${subtitles.dataUpdatedAt}`;
   return useMemo(() => {
     if (!isGlobal) return { candidates: [], projectNames: [], isLoaded: true };
     if (overview.data === undefined) {
@@ -1110,18 +1120,20 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
       // 失败时显示骨架而非空态，避免「overview 失败 → 清光全部 session tab」灾难）。
       return { candidates: [], projectNames: [], isLoaded: false };
     }
+    // subtitle 从第二阶段 map 补入（未回则 undefined，卡片退化 2 行）。overview 核心响应不再带 subtitle。
+    const subtitleMap = subtitles.data?.subtitles;
     const candidates: GlobalInstanceCandidate[] = overview.data.candidates.map((c) => ({
       createdAt: c.createdAt,
       displayName: c.displayName,
       provider: c.provider,
       ref: { kind: "session", projectName: c.projectName, sessionId: c.sessionId },
       status: c.status,
-      subtitle: c.subtitle,
+      subtitle: subtitleMap?.[c.sessionId],
       type: c.type,
       updatedAt: c.updatedAt,
     }));
     return { candidates, projectNames: overview.data.projectNames, isLoaded: true };
-    // isGlobal/overview 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
+    // isGlobal/overview/subtitles 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);
 }

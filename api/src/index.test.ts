@@ -179,6 +179,24 @@ test("createFetchHandler aggregates overview across projects in a single request
   }
 });
 
+test("createFetchHandler serves overview subtitles map on dedicated endpoint", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler, sessionRegistry } = createTestHandler();
+  const project = { name: "demo", path: join(root, "demo") };
+  await sessionRegistry.createTerminalSession({ project });
+
+  const response = await handler(
+    new Request("http://localhost/api/overview/subtitles", { headers: authHeader(auth) }),
+    { upgrade: () => false },
+  );
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  // 第二阶段响应形状：{ subtitles: Record<sessionId, string> }（capture 结果依 runtime 实际状态）。
+  expect(typeof body.subtitles).toBe("object");
+  expect(body.subtitles).not.toBeNull();
+});
+
 test("createFetchHandler creates projects and returns details", async () => {
   const { auth, handler } = createTestHandler();
   const createResponse = await handler(

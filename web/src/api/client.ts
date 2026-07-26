@@ -30,6 +30,7 @@ import type {
   LoginRequest,
   LoginResponse,
   OverviewResponse,
+  OverviewSubtitlesResponse,
   ProjectDetailResponse,
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
@@ -114,6 +115,14 @@ export async function listProjects(): Promise<ProjectListResponse> {
  */
 export async function fetchOverview(): Promise<OverviewResponse> {
   return fetchJson("/api/overview", "api.projectListFailed");
+}
+
+/**
+ * overview 第二阶段（GET /api/overview/subtitles）：拿 sessionId → 卡片第二行 map，前端补进
+ * 对应卡片。与 fetchOverview 分离，让核心列表毫秒级返回、subtitle 慢填充。失败语义同 fetchOverview。
+ */
+export async function fetchOverviewSubtitles(): Promise<OverviewSubtitlesResponse> {
+  return fetchJson("/api/overview/subtitles", "api.projectListFailed");
 }
 
 export async function createProject(path: string): Promise<CreateProjectResponse> {

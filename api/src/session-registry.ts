@@ -328,8 +328,10 @@ export class SessionRegistry {
 
   /**
    * 全 project 全类型候选聚合（GET /api/overview）：遍历内存索引全部 metadata（不分 project，一次
-   * 遍历）→ 批量探活过滤（keepIfRuntimeExists：死 terminal 清理 + claude2+claudeSessionId 保留）
-   * → terminal 走 capture（TmuxRuntime 内 TTL 缓存）填 subtitle。替代前端 1+2N 瀑布的单后端聚合。
+   * 遍历）→ 批量探活过滤（keepIfRuntimeExists：死 terminal 清理 + claude2+claudeSessionId 保留）。
+   * 只返回核心元数据，**不填 subtitle**——subtitle（terminal capture-pane）是纯装饰、且是 overview
+   * 卡死主因（capture 阻塞拖垮整批），改由独立 listCandidateSubtitles / GET /api/overview/subtitles
+   * 异步补全。替代前端 1+2N 瀑布的单后端聚合。
    */
   async listAllCandidates(): Promise<OverviewCandidate[]> {
     await this.ensureLoaded();
@@ -342,12 +344,42 @@ export class SessionRegistry {
       return left.createdAt.localeCompare(right.createdAt);
     });
     const live = await Promise.all(entries.map((entry) => this.keepIfRuntimeExists(entry)));
-    const enriched = await Promise.all(
-      live.map(async (metadata) =>
-        metadata ? metadataToCandidate(metadata, await this.captureSubtitle(metadata)) : null,
-      ),
+    return live
+      .filter((metadata): metadata is SessionMetadata => metadata !== null)
+      .map((metadata) => metadataToCandidate(metadata));
+  }
+
+  /**
+   * overview 第二阶段（GET /api/overview/subtitles）：只为存活 terminal 批量 capture lastCommand，
+   * 返回 `{ sessionId → subtitle }`。与 listAllCandidates 分离，让核心列表毫秒级返回、subtitle 慢填充。
+   * - 用 getAliveKeys() 只读快照过滤（不调 keepIfRuntimeExists——后者有 removeMetadata 破坏性副作用，
+   *   此端点必须纯读）；探测失败保守回退「全部 terminal」（capture 超时仍兜底）。复用 /api/overview
+   *   刚填充的同一 5s aliveCache → 通常 0 额外 list-sessions spawn。
+   * - Promise.allSettled + captureSubtitle（内部 terminal-guard + captureWithCache 5s TTL + 吞错返
+   *   undefined）：单个 capture 超时 reject 不拖垮整批。只收非空字符串 subtitle。
+   */
+  async listCandidateSubtitles(): Promise<Record<string, string>> {
+    await this.ensureLoaded();
+    const terminals = Array.from(this.index.values()).filter((m) => m.type === "terminal");
+
+    let alive: Set<string> | null;
+    try {
+      alive = await this.getAliveKeys();
+    } catch {
+      alive = null; // 探测不可信：保守回退全部 terminal，capture 超时兜底。
+    }
+    const targets = alive ? terminals.filter((m) => alive.has(m.runtimeKey)) : terminals;
+
+    const results = await Promise.allSettled(
+      targets.map(async (m) => ({ id: m.id, subtitle: await this.captureSubtitle(m) })),
     );
-    return enriched.filter((candidate): candidate is OverviewCandidate => candidate !== null);
+    const subtitles: Record<string, string> = {};
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value.subtitle) {
+        subtitles[result.value.id] = result.value.subtitle;
+      }
+    }
+    return subtitles;
   }
 
   async getAgentSession(projectName: string, sessionId: string): Promise<AgentSession | undefined> {
@@ -610,7 +642,13 @@ export class SessionRegistry {
     // 新鲜 exists 二次确认才删：避免误删刚创建的 live session（旧实现每次 has-session 是新鲜的，
     // 不会误杀；TTL 快照引入了陈旧窗口，此二次确认补回该保证）。绝大多数 entry 走上面快路径
     //（快照判活），仅快照判死的少数才付这一次 exists spawn。
-    if (this.runtime.exists && (await this.runtime.exists(metadata.runtimeKey))) {
+    // exists 现在会超时 reject（runTmux 超时兜底）：探测不可信时保守保留（语义同上面 getAliveKeys
+    // 的 catch）——绝不因探测失败而误删 live session。
+    try {
+      if (this.runtime.exists && (await this.runtime.exists(metadata.runtimeKey))) {
+        return metadata;
+      }
+    } catch {
       return metadata;
     }
 

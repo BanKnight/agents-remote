@@ -6,6 +6,7 @@ import {
   createProject,
   createTerminalSession,
   fetchOverview,
+  fetchOverviewSubtitles,
   getAuthStatus,
   getProject,
   getProjectGitFileDiff,
@@ -82,6 +83,18 @@ test("web api client fetches global overview via single request", async () => {
   await fetchOverview();
 
   expect(calls[0][0]).toBe("/api/overview");
+});
+
+test("web api client fetches overview subtitles via dedicated endpoint", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ subtitles: {} });
+  }) as typeof fetch;
+
+  await fetchOverviewSubtitles();
+
+  expect(calls[0][0]).toBe("/api/overview/subtitles");
 });
 
 test("web api client creates projects with JSON body", async () => {

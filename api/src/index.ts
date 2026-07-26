@@ -4,6 +4,7 @@ import type {
   DeleteProjectResponse,
   HealthResponse,
   OverviewResponse,
+  OverviewSubtitlesResponse,
   ProjectDetailResponse,
   ProjectListResponse,
 } from "@agents-remote/shared";
@@ -235,17 +236,25 @@ const handleOverview = async (
   projectService: ProjectService,
   sessionRegistry: SessionRegistry,
 ): Promise<Response | undefined> => {
-  // GET /api/overview：聚合全 project 名 + 全活跃实例候选，替代前端 global 总览的 1+2N 瀑布
-  //（listProjects → 每项目 listAgent/listTerminal）。projectNames 不带计数（grouped 视图空状态用），
-  // candidates 经内存索引 + 批量探活过滤 + terminal capture（TTL 缓存）。
-  if (url.pathname !== "/api/overview" || request.method !== "GET") {
-    return undefined;
+  // GET /api/overview（第一阶段，核心列表）：聚合全 project 名 + 全活跃实例候选，替代前端 global
+  // 总览的 1+2N 瀑布（listProjects → 每项目 listAgent/listTerminal）。projectNames 不带计数
+  //（grouped 视图空状态用），candidates 经内存索引 + 批量探活过滤（**不含 subtitle capture**，毫秒级）。
+  if (url.pathname === "/api/overview" && request.method === "GET") {
+    const [projectNames, candidates] = await Promise.all([
+      projectService.listProjectNames(),
+      sessionRegistry.listAllCandidates(),
+    ]);
+    return Response.json({ projectNames, candidates } satisfies OverviewResponse);
   }
-  const [projectNames, candidates] = await Promise.all([
-    projectService.listProjectNames(),
-    sessionRegistry.listAllCandidates(),
-  ]);
-  return Response.json({ projectNames, candidates } satisfies OverviewResponse);
+
+  // GET /api/overview/subtitles（第二阶段，慢填充）：只为存活 terminal 批量 capture lastCommand，
+  // 前端拿到后补进对应卡片第二行。与核心列表分离，subtitle capture 的 tmux 阻塞不再拖垮 overview。
+  if (url.pathname === "/api/overview/subtitles" && request.method === "GET") {
+    const subtitles = await sessionRegistry.listCandidateSubtitles();
+    return Response.json({ subtitles } satisfies OverviewSubtitlesResponse);
+  }
+
+  return undefined;
 };
 
 const handleProjects = async (

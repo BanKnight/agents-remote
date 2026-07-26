@@ -244,6 +244,15 @@ export type OverviewResponse = {
   candidates: OverviewCandidate[];
 };
 
+/**
+ * GET /api/overview/subtitles 响应：sessionId → 卡片第二行（terminal lastCommand）。
+ * overview 第二阶段异步补全通道——核心列表（OverviewResponse）毫秒级返回后，前端再拉此 map 把
+ * subtitle 补进对应卡片。缺失的 sessionId 表示无 subtitle（capture 失败/非 terminal），卡片不显第二行。
+ */
+export type OverviewSubtitlesResponse = {
+  subtitles: Record<string, string>;
+};
+
 export type UploadFileResponse = {
   entry: ProjectFileEntry;
 };

@@ -374,7 +374,7 @@ test("SessionRegistry keeps claude2 metadata with claudeSessionId even when runt
   expect(sessions[0].claudeSessionId).toBe("claude-session-xyz");
 });
 
-test("SessionRegistry listAllCandidates aggregates across projects with terminal subtitle", async () => {
+test("SessionRegistry listAllCandidates aggregates across projects without subtitle", async () => {
   const captureCalls: string[] = [];
   const registry = new SessionRegistry({
     runDir,
@@ -405,14 +405,73 @@ test("SessionRegistry listAllCandidates aggregates across projects with terminal
   expect(agent?.projectName).toBe("demo");
   expect(agent?.sessionId).toBe("agent_overview456");
   expect(agent?.provider).toBe("claude");
-  // agent 无 subtitle（lastAssistantMessage 未落 metadata）。
   expect(agent?.subtitle).toBeUndefined();
-  // terminal subtitle 来自 capture 最后一行非空（lastCommand）。
+  // 核心列表不再带 subtitle（移到 listCandidateSubtitles），terminal 也无第二行、零 capture。
   const terminal = candidates.find((c) => c.type === "terminal");
   expect(terminal?.projectName).toBe("other");
-  expect(terminal?.subtitle).toBe("user@host:~$ ls -la");
-  // 仅 terminal 触发 capture（agent 不 capture）。
+  expect(terminal?.subtitle).toBeUndefined();
+  expect(captureCalls).toHaveLength(0);
+});
+
+test("SessionRegistry listCandidateSubtitles captures only live terminals", async () => {
+  const captureCalls: string[] = [];
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: (type) => (type === "agent" ? "agent_overview456" : "terminal_overview456"),
+    runtime: {
+      // 无 listAliveRuntimeKeys → getAliveKeys 回退 collectAliveByExists（exists=true → 全存活）。
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async capture(runtimeKey) {
+        captureCalls.push(runtimeKey);
+        return "user@host:~$ ls -la\r\n";
+      },
+    },
+  });
+
+  const demo = { name: "demo", path: "/projects/demo" };
+  const other = { name: "other", path: "/projects/other" };
+  await registry.createAgentSession({ project: demo, provider: "claude" });
+  await registry.createTerminalSession({ project: other });
+
+  const subtitles = await registry.listCandidateSubtitles();
+
+  // 只 terminal 有 subtitle，agent 不在 map；恰好 1 次 capture。
+  expect(subtitles).toEqual({ terminal_overview456: "user@host:~$ ls -la" });
+  expect(subtitles.agent_overview456).toBeUndefined();
   expect(captureCalls).toHaveLength(1);
+});
+
+test("SessionRegistry listCandidateSubtitles skips dead terminals (no capture)", async () => {
+  const captureCalls: string[] = [];
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "terminal_overview456",
+    runtime: {
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async capture(runtimeKey) {
+        captureCalls.push(runtimeKey);
+        return "user@host:~$ ls -la\r\n";
+      },
+      // 空存活快照：terminal 判死 → 存活过滤剔除，不 capture。
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  await registry.createTerminalSession({ project });
+  const subtitles = await registry.listCandidateSubtitles();
+
+  expect(subtitles).toEqual({});
+  expect(captureCalls).toHaveLength(0);
 });
 
 test("SessionRegistry keeps live session missing from stale alive snapshot via fresh exists re-check", async () => {
