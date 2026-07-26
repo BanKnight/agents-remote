@@ -39,6 +39,11 @@ import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
+import {
+  COMPOSER_DESKTOP_MIN_WIDTH_PX,
+  decideDesktopEnterAction,
+  isMobileComposerMode,
+} from "../lib/composer-enter";
 import { measureFrom, timed } from "../lib/perf-trace";
 import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
@@ -3655,11 +3660,21 @@ function ComposerWithInterrupt({
   const isRunning = useAuiState((s) => s.thread.isRunning);
   // composer.isEmpty 驱动卡片内 Send/Stop 互斥（hasInput = !isEmpty）。
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
-  // 触屏判定（与 useComposerKeyboardAvoidance 的 coarse-pointer guard 同源）。卡片内 Send 按钮
-  // 仅触屏出现（hasInput && isCoarsePointer）——桌面非触屏恒无 Send（Enter=发送），布局完全不变。
-  // mount 时一次性判定。
-  const [isCoarsePointer] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches,
+  // 「移动 composer 模式」判定 = 触屏 **且** 窄屏（见 isMobileComposerMode）。卡片内 Send 按钮
+  // 仅移动模式出现（hasInput && isMobileComposer）——桌面（含误报 coarse 的宽屏台式机）恒无 Send
+  //（Enter=发送），布局完全不变。mount 时一次性判定。
+  const [isMobileComposer] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return isMobileComposerMode({
+      coarse: window.matchMedia("(pointer: coarse)").matches,
+      wide: window.matchMedia(`(min-width: ${COMPOSER_DESKTOP_MIN_WIDTH_PX}px)`).matches,
+    });
+  });
+  // 平台判定（桌面 Enter 键分支用）：Mac 上 Cmd+Enter 换行、其余平台无此修饰键语义。mount 时一次性判定。
+  const [isMac] = useState(
+    () =>
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent),
   );
 
   // Full skill+slash catalog is the sole source for the slash menu (project +
@@ -3694,6 +3709,19 @@ function ComposerWithInterrupt({
   // depending on composer text state, so it races cleanly against insertDirective.
   const api = useAui();
   const composer = useComposerRuntime();
+  // 在 textarea 光标处插入换行（桌面 Cmd+Enter 换行用）。execCommand insertText 触发原生 input
+  // 事件 → 库 onChange → setText，浏览器自动维护光标与撤销栈（受控组件下手动 setText 复位光标不可靠）。
+  const insertNewlineAtCursor = (ta: HTMLTextAreaElement) => {
+    ta.focus();
+    if (document.execCommand("insertText", false, "\n")) return;
+    // 回退：execCommand 不可用时手动 setText + 复位光标到换行后。
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? start;
+    composer.setText(`${ta.value.slice(0, start)}\n${ta.value.slice(end)}`);
+    requestAnimationFrame(() => {
+      ta.selectionStart = ta.selectionEnd = start + 1;
+    });
+  };
   const lastKeyRef = useRef<string>("");
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
@@ -3717,11 +3745,11 @@ function ComposerWithInterrupt({
   const blocked = pendingInteraction;
   const running = isRunning || compactStatus === "compacting";
   const hasInput = !isEmpty;
-  // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（触屏有
-  // 输入）不显示 Stop。Send 仅触屏（hasInput && isCoarsePointer）；Stop 在 Send 未占用时显示
+  // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（移动模式有
+  // 输入）不显示 Stop。Send 仅移动模式（hasInput && isMobileComposer）；Stop 在 Send 未占用时显示
   //（running && !showSend）——桌面无 Send，running 总显示 Stop（零回归）。底行恒渲染 → textarea
   // 上方位置稳定不跳变。
-  const showSend = hasInput && isCoarsePointer && !blocked;
+  const showSend = hasInput && isMobileComposer && !blocked;
   const showStop = running && !!onCancel && !blocked && !showSend;
 
   return (
@@ -3732,8 +3760,9 @@ function ComposerWithInterrupt({
             blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")
           }
           disabled={blocked}
-          // 触屏设备 Enter 换行、非触屏 Enter 发送（库自带 (pointer: coarse) 检测，
-          // 稳态可靠）。回归 mobile-session-interaction 既定原则：Enter 换行、显式 Send 才发送。
+          // 触屏设备：Enter 换行、卡片内显式 Send 才发送（库自带 (pointer: coarse) 检测处理）。
+          // 桌面（非触屏）：由下方 onKeyDown 显式接管——库 handleKeyPress 在 external-store 下
+          // isRunning 会把 Enter 丢成换行、且在 "enter" 模式把 Cmd+Enter 当发送，均不符合预期。
           unstable_insertNewlineOnTouchEnter
           className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
           rows={1}
@@ -3741,12 +3770,28 @@ function ComposerWithInterrupt({
             // Record key for slash command's Enter-submit (see Action.onExecute).
             lastKeyRef.current = e.key;
             if (e.key !== "Enter") return;
-            // Hand Enter off to these paths first (let them newline/handle it):
-            if (e.nativeEvent.isComposing) return; // mid-IME composition → newline
-            if (slashOpenRef.current) return; // slash menu open → popover handles it
-            if (blocked) return; // awaiting user action → disabled anyway
-            // Enter 的换行/发送语义交由库的 unstable_insertNewlineOnTouchEnter 处理
-            //（触屏换行 / 桌面发送），这里不再手动 composer.send() 抢占——避免与库冲突。
+            // 先把 Enter 让给这些路径（换行/自行处理）：
+            if (e.nativeEvent.isComposing) return; // IME 组字中 → 默认换行/确认
+            if (slashOpenRef.current) return; // slash 菜单打开 → popover 提交高亮项
+            if (blocked) return; // 等待用户动作 → 已 disabled
+            // 移动模式（触屏+窄屏）：交库 unstable_insertNewlineOnTouchEnter（Enter 换行）+ 卡片内显式 Send。
+            if (isMobileComposer) return;
+            // 桌面：显式决策。Shift+Enter（通用）/ Cmd+Enter（Mac）换行，其余 Enter 发送。
+            if (
+              decideDesktopEnterAction({ shiftKey: e.shiftKey, metaKey: e.metaKey, isMac }) ===
+              "newline"
+            ) {
+              // Shift+Enter 交默认换行（不 preventDefault，库遇 shiftKey 亦 return）；Mac 的
+              // Cmd+Enter 库会当发送，故必须接管并手动插入换行。
+              if (e.shiftKey) return;
+              e.preventDefault();
+              insertNewlineAtCursor(e.currentTarget);
+              return;
+            }
+            // 桌面 plain Enter → 发送。preventDefault 阻断库/默认换行；composer.send() 只查
+            // canSend，可在运行中排队发送（库 handleKeyPress 会因 isRunning && !queue 丢成换行）。
+            e.preventDefault();
+            void composer.send();
           }}
         />
         {/* 卡片底行（恒渲染）：selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。 */}
