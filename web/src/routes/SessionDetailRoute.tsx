@@ -210,7 +210,6 @@ export function SessionDetail({
     reconnectAttemptsRef.current = 0;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let initialTimer: ReturnType<typeof setTimeout> | null = null;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
     const socketIsCurrent = () => connGeneration.current === generation;
@@ -316,17 +315,13 @@ export function SessionDetail({
       };
     };
 
-    // Defer by 0 so StrictMode's synchronous mount→unmount→remount only
-    // creates one WebSocket instead of two rapid-fire connections that mobile
-    // browsers / tunnels may reject.
-    initialTimer = setTimeout(connect, 0);
+    // 同步发起 WS：子组件 XtermOutput 的 useEffect 先于父 effect 执行，
+    // 但 xterm term.open/WebGL/fit 同步初始化阻塞的是 WS onopen 回调（而非 connect 本身）。
+    // connect() 同步执行让 TCP handshake 尽早开始，减少整体等待时间。
+    connect();
 
     return () => {
       connGeneration.current += 1;
-      if (initialTimer) {
-        clearTimeout(initialTimer);
-        initialTimer = null;
-      }
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
