@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { useWorkbenchRouteContext } from "../../routes/workbench-model";
 import { ShellIcon } from "./icons";
-import { SettingsDialog } from "./settings-dialog";
+
+// 设置弹窗（runtime/effort/model 选择器，raw ~161KB / gz ~48KB）按需加载：避免每个工作台页面
+// boot 时都 parse 这坨仅点设置按钮才用到的 JS。首次打开后由 SW precache 命中，瞬时。
+const SettingsDialog = lazy(() =>
+  import("./settings-dialog").then((m) => ({ default: m.SettingsDialog })),
+);
 
 /**
  * 活动栏按钮 className（设计文档 DESIGN.md activity-bar-button）。
@@ -107,7 +112,11 @@ export function ActivityBar() {
           <ShellIcon className="h-5 w-5" name="settings" />
         </button>
       </nav>
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog onClose={() => setSettingsOpen(false)} />
+        </Suspense>
+      )}
     </>
   );
 }
