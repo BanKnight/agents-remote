@@ -634,7 +634,8 @@ type MobileProjectOverviewProps = {
  * = FIRST_PARTY_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
  * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
  * 是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key} 切项目 remount，重置
- * inspection 内部 state。底部 pb-24 lg:pb-0 避让一级底部胶囊（桌面 lg:pb-0 抵消）。
+ * inspection 内部 state。底部消费 --shell-mobile-bottom-nav-space 避让一级底部胶囊
+ * （MobileWorkbench 已测量注入；桌面 lg: 无额外 pb）。
  */
 function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const { t } = useT();
@@ -738,7 +739,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
         {activePlugin ? (
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
         ) : activeTab === "history" ? (
-          <div className="h-full overflow-y-auto p-3 pb-24 lg:pb-3">
+          <div className="h-full overflow-y-auto p-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-3">
             {/* range 控件置顶（移动整页滚动内可接受），周/半月/全部默认周。 */}
             <div className="mb-2">
               <HistoryRangeControl onChange={setRange} value={range} />
@@ -770,7 +771,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                 />
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto pb-24 lg:pb-0">
+            <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
               {resolvedView === "table" ? (
                 tableRows.length === 0 ? (
                   isLoading ? (
@@ -828,7 +829,8 @@ function MobileGlobalOverview() {
   const navigateWorkbench = useWorkbenchNavigate();
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
-  //（MobilePageHeader 标题 + pb-24 底部胶囊避让），实例聚焦/新建/删除/三视图全在共享组件内（批 J 折叠废弃）。
+  //（MobilePageHeader 标题；底部胶囊避让由 GlobalProjectsOverview 消费 CSS var），
+  // 实例聚焦/新建/删除/三视图全在共享组件内（批 J 折叠废弃）。
   const focusInstance = (sessionId: string) => {
     // 从总观点实例卡片进 focus → 重置 Output（不继承上次切到的 Files/Git 记忆，避免落到
     // 项目文件造成「进错地方」误会）。focus 内 ‹› 切实例走 switchInstance 不经此，tab 保持正交。
