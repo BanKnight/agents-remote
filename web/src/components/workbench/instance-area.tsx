@@ -1712,6 +1712,7 @@ function GroupHeader({
   const { t } = useT();
   const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
   return (
+    // h-9=36px 须与 WORKBENCH_TAB_BAR_PX 对齐：表现层靠此固定值把面板顶部 calc 下推避让 tab 栏。
     <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
         {group.tabs.map((tab) => (
@@ -1942,9 +1943,35 @@ function pct(n: number): string {
   return `${n * 100}%`;
 }
 
-/** 归一化 rect → React absolute 定位 style（left/top/width/height 百分比）。 */
-function rectStyle(r: FlatRect): CSSProperties {
-  return { height: pct(r.h), left: pct(r.x), position: "absolute", top: pct(r.y), width: pct(r.w) };
+/** group tab 栏（GroupHeader）固定高度 px，与 GroupHeader 的 `h-9`（=2.25rem=36px）对齐。
+ *
+ *  flatten-layout 的 contentRect 不含 tab 栏偏移（归一化比例无法精确表达固定 px，矮容器下会偏），
+ *  改由 `rectStyle` 的 insetTopPx 用 CSS calc 把面板顶部下推固定 36px——无论容器多高都精确对齐
+ *  GroupHeader 底，不再"矮容器下 tab 下半被面板遮挡"。改 GroupHeader 高度时必须同步改此常量。 */
+const WORKBENCH_TAB_BAR_PX = 36;
+
+/** 归一化 rect → React absolute 定位 style（left/top/width/height 百分比）。
+ *
+ *  insetTopPx>0 时 top/height 用 `calc(百分比 ± 固定px)`：把元素顶部下推固定像素（避让固定高度的
+ *  GroupHeader），height 同步减去该像素保持底部对齐——百分比随容器缩放、固定 px 不随容器变，
+ *  两者相加既精确又无需 ResizeObserver。 */
+function rectStyle(r: FlatRect, insetTopPx = 0): CSSProperties {
+  if (insetTopPx <= 0) {
+    return {
+      height: pct(r.h),
+      left: pct(r.x),
+      position: "absolute",
+      top: pct(r.y),
+      width: pct(r.w),
+    };
+  }
+  return {
+    height: `calc(${pct(r.h)} - ${insetTopPx}px)`,
+    left: pct(r.x),
+    position: "absolute",
+    top: `calc(${pct(r.y)} + ${insetTopPx}px)`,
+    width: pct(r.w),
+  };
 }
 
 /**
@@ -2013,7 +2040,7 @@ export function WorkspaceTree({
               : "hidden"
           }
           key={p.tabId}
-          style={p.visible ? rectStyle(p.rect) : undefined}
+          style={p.visible ? rectStyle(p.rect, WORKBENCH_TAB_BAR_PX) : undefined}
         >
           {/* embeddedHeader 对齐移动端聚焦态：面板自带 SessionDetailHeader/ChatHeader 不渲染，
               title/projectName 由 group tab 栏 chip + 中栏 tab 行显示，Files/Git 走中栏顶部 tab，

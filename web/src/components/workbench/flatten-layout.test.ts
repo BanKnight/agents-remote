@@ -53,9 +53,12 @@ test("flattenLayout: 单 leaf → 1 group + 1 panel（占满），无 gutter", (
   expect(r.groups[0]!.id).toBe("g1");
   expect(r.groups[0]!.isMaximized).toBe(false);
   closeTo(r.groups[0]!.rect, rect(0, 0, 1, 1));
-  // contentRect 内缩（去掉 tab 栏 + padding）。
-  expect(r.groups[0]!.contentRect.y).toBeGreaterThan(0);
+  // contentRect 不含 tab 栏偏移（tab 栏固定 36px，归一化比例无法精确，交表现层 CSS calc 下推）；
+  // 仅左右 + 底 pad 内缩，y === groupRect.y（顶部由 rectStyle 的 insetTopPx 下推 36px 避让 GroupHeader）。
+  expect(r.groups[0]!.contentRect.y).toBe(0);
+  expect(r.groups[0]!.contentRect.x).toBeGreaterThan(0);
   expect(r.groups[0]!.contentRect.h).toBeLessThan(1);
+  expect(r.groups[0]!.contentRect.w).toBeLessThan(1);
   expect(r.panels).toHaveLength(1);
   expect(r.panels[0]!.tabId).toBe("s1");
   expect(r.panels[0]!.visible).toBe(true);
