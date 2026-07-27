@@ -322,15 +322,6 @@ function WorkbenchContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scope, candidates, focusPanel],
   );
-  const closeInstance = useCallback(
-    (sessionId: string, type: "agent" | "terminal") => {
-      const projectName = resolveProjectName(sessionId);
-      if (!projectName) return;
-      void close({ kind: "session", projectName, sessionId }, type);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, candidates, close],
-  );
   const renameInstance = useCallback(
     (sessionId: string, type: "agent" | "terminal", currentName: string, projectName: string) => {
       if (!projectName) return;
@@ -517,6 +508,25 @@ function WorkbenchContent({
       navigateToSkill,
       scope,
     ],
+  );
+  // 关实例 = close session API + 从中栏删 tab（与 onCloseTab 对称：onCloseTab 删 tab 不关
+  // session；closeInstance 两者都做，修复「关实例后 tab 残留成空白」）。onAfterClose 在用户
+  // 确认 + API 完成后触发——取消确认框则 session 存活、不删 tab（语义一致）。复用 onCloseTab
+  // 封装的删 tab + focusId 导航到新 active。located 取调用时快照；API 期间 layout 若变，
+  // removeTabFromLeaf 的 containsId 守护使其 no-op（安全），残留由 stale-tab prune 兜底。
+  const closeInstance = useCallback(
+    (sessionId: string, type: "agent" | "terminal") => {
+      const projectName = resolveProjectName(sessionId);
+      if (!projectName) return;
+      const located = findLeafBySessionId(layout, sessionId);
+      void close(
+        { kind: "session", projectName, sessionId },
+        type,
+        located ? () => onCloseTab(located.leafId, sessionId) : undefined,
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, candidates, close, layout, onCloseTab],
   );
   const onSelectTab = useCallback(
     (groupId: string, tabId: string) => {
