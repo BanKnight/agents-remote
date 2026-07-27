@@ -106,8 +106,11 @@ type CreateTerminalSessionInput = {
 };
 
 export class SessionRegistry {
-  /** 存活探活缓存 TTL：list-sessions 结果短时复用，避免每次 list/count 都 spawn。 */
-  private static readonly ALIVE_TTL_MS = 5_000;
+  /**
+   * 存活探活缓存 TTL：list-sessions 结果短时复用，避免每次 list/count 都 spawn。
+   * 4× 前端 staleTime(5s)：降低 revalidate 撞缓存过期的相位耦合概率（降频非根除）。
+   */
+  private static readonly ALIVE_TTL_MS = 20_000;
   /** capture-pane 输出缓存 TTL：list/overview 短时重复读同一 pane 不重 spawn。 */
   private static readonly CAPTURE_TTL_MS = 5_000;
   /** recordActivity 分钟级平滑粒度：updatedAt 按整分钟截断，同分钟短路不写盘（用户要求不频繁写盘）。 */
@@ -354,7 +357,7 @@ export class SessionRegistry {
    * 返回 `{ sessionId → subtitle }`。与 listAllCandidates 分离，让核心列表毫秒级返回、subtitle 慢填充。
    * - 用 getAliveKeys() 只读快照过滤（不调 keepIfRuntimeExists——后者有 removeMetadata 破坏性副作用，
    *   此端点必须纯读）；探测失败保守回退「全部 terminal」（capture 超时仍兜底）。复用 /api/overview
-   *   刚填充的同一 5s aliveCache → 通常 0 额外 list-sessions spawn。
+   *   刚填充的同一 aliveCache → 通常 0 额外 list-sessions spawn。
    * - Promise.allSettled + captureSubtitle（内部 terminal-guard + captureWithCache 5s TTL + 吞错返
    *   undefined）：单个 capture 超时 reject 不拖垮整批。只收非空字符串 subtitle。
    */

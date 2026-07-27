@@ -694,18 +694,31 @@ export async function removeSkillSource(id: string): Promise<RemoveSkillSourceRe
   });
 }
 
+/**
+ * REST JSON 请求默认超时：兜底移动端网络切换 / 隧道断连导致的 fetch 无限挂死（降级为失败 +
+ * queryClient retry）。不救"慢"——偶发尖峰 <8s 不触发（救慢靠后端 TTL 降频 + stale-while-revalidate），
+ * 只防单请求永久 pending。两处 fetch 各新建 signal（retry 不共享首次剩余时长）。
+ */
+const API_REQUEST_TIMEOUT_MS = 8_000;
+
 const fetchJson = async <T>(
   url: string,
   failureKey: TranslationKey,
   init?: RequestInit,
 ): Promise<T> => {
-  const response = await fetch(url, init);
+  const response = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
+  });
 
   if (response.status === 401) {
     const refreshed = await refreshAuth();
 
     if (refreshed) {
-      const retryResponse = await fetch(url, init);
+      const retryResponse = await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
+      });
 
       if (retryResponse.ok) {
         return retryResponse.json();
