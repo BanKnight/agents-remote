@@ -1426,6 +1426,11 @@ export type SessionStreamServerMessage =
     }
   | {
       type: "live_end";
+    }
+  | {
+      // 心跳 ack：服务端收到 {type:"ping"} 回此帧，客户端据 lastPong 做 half-open
+      // 检测（pong 超时即判定连接静默断开、主动重连）。详见 web/src/lib/ws-heartbeat.ts。
+      type: "pong";
     };
 
 export type HealthResponse = {

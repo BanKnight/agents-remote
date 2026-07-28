@@ -10,3 +10,12 @@
  * 了定时器压力,服务端不额外维护心跳定时器(Bun 内置 sendPings 是 C 层兜底)。
  */
 export const HEARTBEAT_INTERVAL_MS = 25_000;
+
+/**
+ * 距上次 pong 超过此阈值即判定连接 half-open（readyState 仍 OPEN 但对端不回 pong）。
+ *
+ * 取 2 倍心跳周期：容忍 1 次丢包/网络抖动，连续 2 次心跳仍无 pong 才判死，避免误杀
+ * 健康连接。挂后台很久（分钟~小时级）回前台时 lastPong 必然远超此值 → visibilitychange
+ * 立即触发重连；前台持续 half-open 的检测延迟 ≤ 此值。
+ */
+export const PONG_TIMEOUT_MS = HEARTBEAT_INTERVAL_MS * 2; // 50_000

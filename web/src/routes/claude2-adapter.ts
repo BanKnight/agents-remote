@@ -10,7 +10,7 @@ import type {
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
-import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
+import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 import {
   count,
   markOnce,
@@ -3912,6 +3912,10 @@ export function useClaude2Session(
   const compactActiveRef = useRef(false);
   const compactInterruptedRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
+  // 最近一次收到 pong 的时刻（onopen 时初始化为连上时刻）。心跳 tick 与 visibilitychange
+  // 回前台用它判定 half-open：readyState 仍 OPEN 但 Date.now()-lastPong 超过 PONG_TIMEOUT_MS
+  // 即说明对端不回 pong、连接已静默断开，主动 close / bump 重连。
+  const lastPongRef = useRef<number>(0);
 
   // opusplanActive derives purely from currentModel: alias === "opusplan".
   useEffect(() => {
@@ -4162,7 +4166,8 @@ export function useClaude2Session(
     const onVisibilityChange = () => {
       if (
         document.visibilityState === "visible" &&
-        socketRef.current?.readyState !== WebSocket.OPEN
+        (socketRef.current?.readyState !== WebSocket.OPEN ||
+          Date.now() - lastPongRef.current > PONG_TIMEOUT_MS)
       ) {
         setConnectionVersion((version) => version + 1);
       }
@@ -4196,11 +4201,18 @@ export function useClaude2Session(
 
     socket.onopen = () => {
       console.log("[claude2-adapter] ws open");
+      lastPongRef.current = Date.now();
       // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
       // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
       heartbeatTimer = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ type: "ping" }));
+          // half-open 检测:ping 已发但若距上次 pong 超时,说明对端不回 pong(连接静默断,
+          // readyState 仍 OPEN 但数据进黑洞)。主动 close → onclose → scheduleReconnect 自愈。
+          if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
+            console.log("[claude2-adapter] pong timeout — closing half-open socket");
+            socket.close();
+          }
         }
       }, HEARTBEAT_INTERVAL_MS);
     };
@@ -4355,6 +4367,11 @@ export function useClaude2Session(
           liveEndPendingRef.current = true;
           if (isSocketLoggingEnabled())
             console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
+          return;
+        }
+
+        if (msg.type === "pong") {
+          lastPongRef.current = Date.now();
           return;
         }
 

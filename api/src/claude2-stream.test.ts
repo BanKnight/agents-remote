@@ -306,7 +306,7 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     expect(socket.sends).toEqual([]);
   });
 
-  test("ping heartbeat is dropped without touching business state (no stdin write, no echo, no ack)", async () => {
+  test("ping heartbeat replies with pong ack (no stdin write, no echo, no effort)", async () => {
     const { controller, writes, injections, closedKeys, effortUpdates } = makeController();
     const socket = makeSocket();
     await controller.message(socket, JSON.stringify({ type: "ping" }));
@@ -314,8 +314,8 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     expect(injections).toEqual([]);
     expect(closedKeys).toEqual([]);
     expect(effortUpdates).toEqual([]);
-    // 不回 ack——出站 ping 流量本身已双向保活,服务端无需响应。
-    expect(socket.sends).toEqual([]);
+    // 回 pong ack——客户端据 lastPong 做 half-open 检测;其余业务 state 不动。
+    expect(socket.sends).toEqual([JSON.stringify({ type: "pong" })]);
   });
 
   test("user message is echoed into the live cache (CLI never echoes user input on stdout)", async () => {

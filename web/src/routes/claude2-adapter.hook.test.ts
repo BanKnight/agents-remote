@@ -6,6 +6,7 @@ import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaude2Session } from "./claude2-adapter";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
+import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
 
 class MockSocket {
   static instances: MockSocket[] = [];
@@ -135,6 +136,51 @@ describe("useClaude2Session websocket lifecycle", () => {
 
     expect(result.current.loading).toBe(false);
     expect(result.current.tasks).toEqual([]);
+  });
+
+  test("pong heartbeat ack is not rendered into the message stream", async () => {
+    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit({ type: "live_start", count: 0 } as never);
+      socket.emit({ type: "live_end" } as never);
+      socket.emit({ type: "pong" } as never);
+    });
+
+    // pong 是 transport 控制帧(心跳 ack),在 handleTextFrame 早返回——
+    // 不进 rawMessages、不渲染成消息气泡。
+    expect(result.current.storeAdapter.messages).toHaveLength(0);
+    expect(result.current.loading).toBe(false);
+  });
+
+  test("pong timeout closes half-open socket and triggers reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useClaude2Session("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+      expect(socket.readyState).toBe(MockSocket.OPEN);
+
+      // 模拟 half-open:服务端不回 pong(lastPongRef 停在 onopen 时刻)。心跳每
+      // HEARTBEAT_INTERVAL_MS tick;累计超过 PONG_TIMEOUT_MS(2 倍周期)后,心跳检查
+      // 判定超时 → socket.close → onclose → scheduleReconnect 自愈。
+      // 第 3 次 tick(75s)时 75000-0 > 50000 → close。
+      act(() => {
+        vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS * 3);
+      });
+      expect(socket.readyState).toBe(MockSocket.CLOSED);
+
+      act(() => {
+        vi.advanceTimersByTime(500); // scheduleReconnect 的 500ms 退避
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("handles replay, switch model, and control_request branches", async () => {
