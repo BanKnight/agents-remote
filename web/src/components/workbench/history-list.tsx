@@ -166,25 +166,27 @@ export function HistoryList({
     );
   }
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {showLabel ? (
-        <ShellSectionLabel className="px-3 pb-1 pt-2">
+        <ShellSectionLabel className="shrink-0 px-3 pb-1 pt-2">
           {t("workbench.historySection")}
         </ShellSectionLabel>
       ) : null}
-      <ListGroup ariaLabel={t("workbench.historySection")}>
-        {entries.map((entry) => (
-          <HistorySessionNode
-            active={entry.hasActiveSession && entry.activeSessionId === focusId}
-            entry={entry}
-            isResuming={isResuming}
-            key={entry.claudeSessionId}
-            onClick={() => handleClick(entry)}
-          />
-        ))}
-      </ListGroup>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <ListGroup ariaLabel={t("workbench.historySection")}>
+          {entries.map((entry) => (
+            <HistorySessionNode
+              active={entry.hasActiveSession && entry.activeSessionId === focusId}
+              entry={entry}
+              isResuming={isResuming}
+              key={entry.claudeSessionId}
+              onClick={() => handleClick(entry)}
+            />
+          ))}
+        </ListGroup>
+      </div>
       {promptHolder}
-    </>
+    </div>
   );
 }
 

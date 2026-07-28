@@ -156,7 +156,7 @@ export function ProjectLeftPanel({
           <HistoryRangeControl onChange={setRange} value={range} />
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {scope.kind === "global" ? overview : middleBody}
       </div>
     </div>
