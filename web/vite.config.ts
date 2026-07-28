@@ -51,10 +51,9 @@ const deployConfig = readDeployConfig();
 const apiPort = process.env.API_PORT ?? String(deployConfig.api_port ?? "3001");
 const webPort = Number(process.env.WEB_PORT ?? deployConfig.web_port ?? "3000");
 const apiTarget = process.env.WEB_API_PROXY_TARGET ?? `http://127.0.0.1:${apiPort}`;
-const allowedHosts = (process.env.WEB_ALLOWED_HOSTS ?? "service-remotes-agent.8811156.xyz")
-  .split(",")
-  .map((host) => host.trim())
-  .filter(Boolean);
+// Private deployment behind a Cloudflare Tunnel: allow any host so the tunnel
+// domain (and any future one) reaches the server/preview without an allowlist.
+const allowedHosts = true;
 // Shared by the dev server and the preview server so /api and the session
 // WebSocket reach the api process in either mode.
 const apiProxy = {
