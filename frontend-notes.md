@@ -290,3 +290,36 @@ Playwright 探针点 trigger 后查 `aria-expanded` / `data-state`：两者都 `
 - 与 composer Enter 修复同根：`composer-enter.ts` `isMobileComposerMode({coarse, wide}) = coarse && !wide` 是「指针 + 窄屏」双条件范例；本次是「指针能力独立于视口」的纯指针维度正交化。两者同源洞察：视口与指针是两个维度。
 - Tailwind v4 `hover:` 自带 `@media (hover: hover)` 守卫：https://tailwindcss.com/docs/hover-focus-and-other-states
 - W3C Media Queries Level 4 `hover` / `pointer` 特性：https://www.w3.org/TR/mediaqueries-4/#hover 、 https://www.w3.org/TR/mediaqueries-4/#pointer
+
+## 8. flex 高度链：`flex-1` 子要滚，父必须是 flex container（overflow 只裁不传约束）
+
+### 现象（本项目工作台左栏实测）
+
+工作台左栏（项目 scope）文件树 / git 变更列表 / 历史列表，内容超过可用高度时**无法滚动**——多出的内容被直接裁掉看不到，滚轮/触摸都不动。三者同源，同一个父容器出问题。而同位置的「实例总览」（overview tab）却一直能滚。
+
+### 机制（真根因 = flex item 内部非 flex container，子的 flex-1 不生效）
+
+滚动要成立需三者齐备：① 滚动容器有 `overflow-y-auto`；② 它有**确定的、被约束的高度**（不随内容撑开）；③ 内容 > 该高度。三个左栏的 `overflow-y-auto` 都在（②③ 出问题）。
+
+- 父容器 `ProjectLeftPanel` 主体是 `<div class="min-h-0 flex-1 overflow-hidden">`——它自己是 flex item（`flex-1`，被祖先 flex column 约束到确定高 820px），但**内部不是 flex container**（没有 `flex`/`flex-col`）。
+- 它的子（`FilesPanel`/`GitChangesList` 根）是 `flex min-h-0 flex-1 flex-col`。`flex-1`（= `flex:1 1 0%`）**只在父是 flex container 时生效**；父是普通 block 流时 `flex-1` 是死属性，子按 `height:auto`（内容高）撑开。
+- 于是子长到 1136px（内容全高）> 父 820px，父 `overflow-hidden` 把多出的 316px **裁掉**——现象就是「内容被截断、且不滚」。`overflow-hidden` 只负责裁剪，**不会把自己的高度约束传给子**；传约束靠的是 flex 布局（`flex-1 + min-h-0`）。
+- **为何 overview 不受影响**：`InstanceLeftOverview` 根用 `flex h-full min-h-0 flex-col`——`h-full`（= `height:100%`）直接取父的 height（820px，父有确定高），不依赖父是 flex container，所以高度被正确约束、内部 `overflow-y-auto` 正常滚。这也解释了为何「同一个父，overview 能滚、files/git 不能」——两条子路径用了不同的高度获取方式（`h-full` vs `flex-1`）。
+
+### 标准做法（父补 flex container，或子改 h-full）
+
+- **首选：让承载不同主体的父成为 flex column container**。`min-h-0 flex-1 overflow-hidden` → `flex min-h-0 flex-1 flex-col overflow-hidden`。这样 `flex-1` 子被约束到父高、`h-full` 子仍取父高，两类子都对，一处修复覆盖全部 tab。
+- **列表本身要有滚动层**：主体根 = `flex h-full min-h-0 flex-col`（或 `flex-1 min-h-0`），内部 header `shrink-0` + 列表区 `min-h-0 flex-1 overflow-y-auto` 包 `ListGroup`。`HistoryList` 原本是 Fragment 顶层（label + ListGroup 直接铺开，无滚动层），补齐成此结构才滚（对齐 `GitChangesList` 的 header+scroll body 范式）。
+- **`min-h-0` 是 flex item 可收缩的前提**：flex item 默认 `min-height:auto`（= 内容高，不可压缩到内容以下）。高度链上每一层 flex item 都要 `min-h-0`，否则某层按内容撑开、把 `overflow` 顶破。这条与 §1 坑 2「高度链混用单位」同属「整条链逐层核对」家族。
+- **判定铁律**：想让某元素内部滚动，从它沿父链上溯到确定高度源，逐层确认——每个 flex item 有 `min-h-0`、每个「父是 flex item 但要约束子高」的容器自身也是 flex container（或子改用 `h-full`）。`overflow-hidden`/`overflow-y-auto` 只是裁剪/滚动开关，**给不了高度约束**，别指望它替代 flex 布局传约束。
+
+### 诊断方法（DOM 几何硬数据，不靠 vision）
+
+Playwright 定位滚动容器（`overflow-y-auto` 那层），evaluate 取 `scrollHeight` / `clientHeight`，并**实测可滚性**：设 `el.scrollTop = 80` 后读回是否 == 80（`actuallyScrolls`）。`scrollHeight > clientHeight` 才可能滚；设 scrollTop 生效才真滚。再遍历父链打印每层 `className` / `height` / `minHeight` / `display` / `flex` / `clientHeight` / `scrollHeight`——一眼看出哪层 `clientH < scrollH`（约束在此、被裁）、哪层 `display` 非 flex 却期望 `flex-1` 子（断点在此）。本次实测：文件树 `scrollH1089/clientH773`、git 74 改动 `scrollH20297/clientH684`、历史 32 行 `scrollH1007/clientH753`，修复后 `actuallyScrolls` 均 true。内容不足时（如改动少的 git）`canScrollDown=false` 是正常的，需造足量数据（临时 fixture）才能触发溢出验证。
+
+### 来源
+
+- 修复 commit `fix(web): 工作台左栏文件树/git/历史列表内容溢出无法滚动——补齐高度链`（`project-left-panel.tsx` 主体容器加 `flex flex-col` + `history-list.tsx` 正常分支补 `flex h-full min-h-0 flex-col` 根 + 滚动层）。
+- 探针（诊断后删除，未入库）：登录 → 项目工作台 → 切 Files/Git/History tab → 定位 `[aria-label]` ListGroup 的 `overflow-y-auto` 祖先 → 测 scrollTop 可滚性 + 父链几何。
+- 与 §1（高度链混用单位）、§3（结构关系是 state）同属「高度链 / 布局链逐层核对」方法论；与 CLAUDE.md 的 DOM 几何验证铁律一致（`verify-css-via-dom-geometry-not-vision`）。
+- MDN flexbox `min-height:auto` 与 `flex-1`：https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Mastering_wrapping_of_flex_items
