@@ -7,7 +7,7 @@
 // 直接走 ESM 路径（bundle-barrel-imports 约束）。
 
 import { createElement, type CSSProperties, type ReactNode } from "react";
-import { PrismLight } from "react-syntax-highlighter";
+import PrismLight from "react-syntax-highlighter/dist/esm/prism-light";
 import { refractor } from "refractor/core";
 import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";

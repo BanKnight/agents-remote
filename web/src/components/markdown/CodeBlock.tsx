@@ -1,6 +1,6 @@
 import { type CSSProperties, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { PrismLight } from "react-syntax-highlighter";
+import PrismLight from "react-syntax-highlighter/dist/esm/prism-light";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useT } from "../../i18n";
 import { KNOWN_LANGUAGES } from "./prism-languages";
