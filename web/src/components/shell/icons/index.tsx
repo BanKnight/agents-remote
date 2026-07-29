@@ -9,11 +9,13 @@ import folderPlus from "./folder-plus.svg?raw";
 import gitNav from "./git-nav.svg?raw";
 import info from "./info.svg?raw";
 import maximize from "./maximize.svg?raw";
+import minus from "./minus.svg?raw";
 import openai from "./openai.svg?raw";
 import plus from "./plus.svg?raw";
 import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
 import restore from "./restore.svg?raw";
+import rotate from "./rotate.svg?raw";
 import settings from "./settings.svg?raw";
 import skillsNav from "./skills-nav.svg?raw";
 import terminal from "./terminal.svg?raw";
@@ -32,11 +34,13 @@ const svgMap: Record<string, string> = {
   "git-nav": gitNav,
   info,
   maximize,
+  minus,
   openai,
   plus,
   project,
   refresh,
   restore,
+  rotate,
   settings,
   "skills-nav": skillsNav,
   terminal,

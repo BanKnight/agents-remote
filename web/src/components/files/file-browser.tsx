@@ -42,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
+import { ImageViewer } from "./image-viewer";
 
 // CodeMirror 体积较大，只在用户打开文本文件 source 预览时按需加载，避免进首屏 chunk。
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
@@ -642,12 +643,7 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
     );
   }
 
-  if (preview.type === "image")
-    return (
-      <div className="p-3">
-        <img className="mx-auto h-auto max-w-full" src={preview.dataUrl} alt={preview.name} />
-      </div>
-    );
+  if (preview.type === "image") return <ImageViewer alt={preview.name} src={preview.dataUrl} />;
 
   if (preview.type === "too_large")
     return (
@@ -1180,7 +1176,7 @@ export function FilesPanel({
                     "fixed inset-0 z-50 flex flex-col bg-surface",
                     "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
                     previewExiting
-                      ? "animate-out slide-out-to-bottom-full duration-300 ease-in"
+                      ? "animate-out slide-out-to-bottom-full duration-300 ease-in fill-mode-forwards"
                       : "animate-in slide-in-from-bottom-full duration-300 ease-out",
                     "sm:static sm:inset-auto sm:z-auto sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col sm:bg-transparent sm:pt-0 sm:pb-0 sm:animate-none",
                   ].join(" ")

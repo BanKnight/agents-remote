@@ -156,6 +156,10 @@ export const zh: Record<TranslationKey, string> = {
   "files.hidden": "隐藏",
   "files.dirMarker": "DR",
   "files.fileMarker": "FL",
+  "files.imageZoomIn": "放大",
+  "files.imageZoomOut": "缩小",
+  "files.imageRotate": "旋转",
+  "files.imageReset": "重置",
 
   // ── Markdown（共享代码块） ────────────────────────────────────
   "markdown.copy": "复制代码",

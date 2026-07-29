@@ -1285,7 +1285,7 @@ export function GitDiffPanel({
                   "fixed inset-0 z-50 flex flex-col bg-surface",
                   "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
                   diffExiting
-                    ? "animate-out slide-out-to-bottom-full duration-300 ease-in"
+                    ? "animate-out slide-out-to-bottom-full duration-300 ease-in fill-mode-forwards"
                     : "animate-in slide-in-from-bottom-full duration-300 ease-out",
                   "sm:static sm:inset-auto sm:z-auto sm:min-h-0 sm:min-w-0 sm:flex-1 sm:flex-col sm:bg-transparent sm:pt-0 sm:pb-0 sm:animate-none",
                 ].join(" ")

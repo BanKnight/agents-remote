@@ -323,3 +323,46 @@ Playwright 定位滚动容器（`overflow-y-auto` 那层），evaluate 取 `scro
 - 探针（诊断后删除，未入库）：登录 → 项目工作台 → 切 Files/Git/History tab → 定位 `[aria-label]` ListGroup 的 `overflow-y-auto` 祖先 → 测 scrollTop 可滚性 + 父链几何。
 - 与 §1（高度链混用单位）、§3（结构关系是 state）同属「高度链 / 布局链逐层核对」方法论；与 CLAUDE.md 的 DOM 几何验证铁律一致（`verify-css-via-dom-geometry-not-vision`）。
 - MDN flexbox `min-height:auto` 与 `flex-1`：https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Mastering_wrapping_of_flex_items
+
+## 9. CSS animation `fill-mode: none` 导致退出动画结束回原位闪动（exit 动画要 fill-mode-forwards）
+
+### 现象（本项目移动端文件预览 / Git diff 浮窗实测）
+
+移动端全屏浮窗（`fixed inset-0` takeover，经 `useMobileExitClose` 编排）关闭时：关闭动画（`animate-out slide-out-to-bottom-full`）播完滑出屏幕后，**会突然闪一下**——元素瞬间在原位（满屏可见、不透明）闪现一帧，然后才消失。进入动画（`animate-in slide-in-from-bottom-full`）无此现象。
+
+### 机制（`fill-mode: none` + React setState 滞后一帧）
+
+`useMobileExitClose` 编排浮窗 dismiss：close → `setExiting(true)` → 浮窗 div 切到 `animate-out slide-out-to-bottom-full` → `onAnimationEnd` 才真正清 state（`setSelectedFilePath(undefined)` + `setExiting(false)`）→ React 重渲染把 div 切到 `hidden` 分支。
+
+`tw-animate-css` 的 `.animate-out` 默认 `--tw-animation-fill-mode: none`（源码 `var(--tw-animation-fill-mode,none)`）。`fill-mode: none` 语义：**动画结束后元素回到未动画的初始状态**——对 `slide-out-to-bottom-full` 即回到 `translateY(0)`（原位、opacity 1、可见）。
+
+时序断裂点：
+1. 动画播完，元素在 `translateY(100%)`（屏幕外）。
+2. `fill-mode: none` → 动画结束，元素**瞬间回原位**（`translateY(0)`、可见）。
+3. `animationend` 事件触发 → React 合成 `onAnimationEnd` → setState。
+4. React 重渲染 commit（切 `hidden`）——发生在下一帧。
+
+第 2 步（回原位）与第 4 步（切 hidden）之间隔了一帧，浏览器把「回原位的可见态」paint 出来 → 闪一下。
+
+进入动画 `animate-in` 无此问题：其终态（`translateY(0)`）恰好等于未动画初始态，`fill-mode: none` 回弹无视觉差。
+
+### 标准做法（exit 动画加 `fill-mode-forwards`）
+
+给**退出**动画 className 追加 `fill-mode-forwards`（`tw-animate-css` 提供 `fill-mode-backwards/both/forwards/none` utility），让动画结束后元素保持终态（`translateY(100%)`、屏幕外不可见），直到 React 把它切 `hidden`——中间帧元素始终不可见，无闪动。进入动画不需 forwards（终态即原位）。
+
+- `animate-out slide-out-to-bottom-full duration-300 ease-in` → `animate-out slide-out-to-bottom-full duration-300 ease-in fill-mode-forwards`
+- 两处移动浮窗同 bug 同修：`file-browser.tsx` FilesPanel 浮窗、`git-diff-viewer.tsx` GitDiffPanel 浮窗。
+- `fill-mode: forwards` 与 `fill-mode: both` 区别：`both` = backwards（动画前保持 0% keyframe）+ forwards（动画后保持 100%）。exit 动画只需 forwards（前面是 exiting 态触发、无「动画前」窗口）；若 enter 动画也想消除「动画前闪现原位」（罕见，因通常动画即起播），可对 enter 用 backwards/both。
+
+### 排查要点（同类「动画结束闪动」先查 fill-mode）
+
+- 看到「CSS 动画播完闪一下 / 跳回 / 鬼影」先查动画元素的 `animation-fill-mode`——默认 `none` 是最常见的「动画结束回到非动画态」根因，与 React unmount/条件渲染切换的时序差叠加即闪。
+- 验证方法：DevTools 给该元素临时加 `animation-fill-mode: forwards`，闪动消失即确认。
+- 对称路径（`overlay-dismiss-symmetry`，DESIGN.md）：dismiss 动画要与 enter 同路径，但 fill-mode 是独立维度——同路径不保证同 fill-mode，exit 需单独 forwards。
+
+### 来源
+
+- 修复 commit `fix(web): 移动浮窗关闭闪动——exit 动画 fill-mode-forwards + 图片查看器`（`file-browser.tsx` + `git-diff-viewer.tsx` 两处 `animate-out` 加 `fill-mode-forwards`）。
+- `tw-animate-css@1.4.0` `dist/tw-animate.css`：`.animate-out{animation:exit … var(--tw-animation-fill-mode,none)}` + `@keyframes exit{to{transform:translate3d(…,var(--tw-exit-translate-y,0),…)}}`。
+- 与 §4（portal fiber 冒泡）同属「现象在视觉层、根因在浏览器机制层，需溯源而非在渲染层打补丁」方法论；DESIGN.md `overlay-dismiss-symmetry`（apple-design §7）+ `mobile-sheet-fullscreen`。
+- MDN `animation-fill-mode`：https://developer.mozilla.org/en-US/docs/Web/CSS/animation-fill-mode

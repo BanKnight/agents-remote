@@ -156,6 +156,10 @@ export const en = {
   "files.hidden": "hidden",
   "files.dirMarker": "DR",
   "files.fileMarker": "FL",
+  "files.imageZoomIn": "Zoom in",
+  "files.imageZoomOut": "Zoom out",
+  "files.imageRotate": "Rotate",
+  "files.imageReset": "Reset",
 
   // ── Markdown (shared code block) ─────────────────────────────
   "markdown.copy": "Copy code",
