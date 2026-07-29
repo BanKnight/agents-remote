@@ -522,8 +522,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.dockChipRestore": "从 dock 恢复面板",
   "workbench.panelPreview": "面板预览",
   "workbench.panelPreviewEmpty": "暂无输出",
-  "workbench.switchPrev": "上一个实例",
-  "workbench.switchNext": "下一个实例",
   "workbench.globalOverviewTitle": "实例",
   "workbench.globalOverviewEmpty": "暂无活跃实例。",
   "workbench.dropUp": "放置到上方：分屏到新行",

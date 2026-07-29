@@ -523,8 +523,6 @@ export const en = {
   "workbench.dockChipRestore": "Restore panel from dock",
   "workbench.panelPreview": "Panel preview",
   "workbench.panelPreviewEmpty": "No output yet",
-  "workbench.switchPrev": "Previous instance",
-  "workbench.switchNext": "Next instance",
   "workbench.globalOverviewTitle": "Instances",
   "workbench.globalOverviewEmpty": "No active instances.",
   "workbench.dropUp": "Drop above: split into a new row",

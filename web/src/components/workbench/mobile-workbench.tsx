@@ -11,7 +11,6 @@ import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
 import { MobileSkillsOverview, SkillTabPreview } from "../../routes/SkillsRoute";
 import {
-  ensureTabOpenLeaf,
   filterWorkbenchViews,
   findTabRefLeaf,
   type WorkbenchMobileFocusTab,
@@ -70,7 +69,7 @@ type MobileWorkbenchProps = {
 
 /**
  * 移动端工作台（设计文档 §7）。Stage 5 按桌面分 stage 升级：A 聚焦态单实例化
- *（修窄屏多面板挤压）→ B header tab inspection → C ‹› 悬浮切 → D 列表态二级总览
+ *（修窄屏多面板挤压）→ B header tab inspection → D 列表态二级总览
  * + 一级底部 tab → E 路由收口。
  *
  * 当前：无 focusId → 实例列表（MobileGlobalOverview/MobileProjectOverview + 创建入口，
@@ -258,16 +257,14 @@ type MobileFocusBodyProps = {
  * model/permission/createdAt，terminal 不显这些行 —— UI=f(state) 不伪造）；✕ 触发 useCloseSession
  *（confirm → close API → navigate 回列表）。projectName：project 作用域直接 scope.key；global
  * 作用域从布局面板查 focusId 所属项目。detail 查询（useAgentDetail/useTerminalDetail）query key
- * 与 PanelRouter 一致，React Query dedupe 零额外网络。‹› 浮动切实例 overlay 在内容区中点，
- * z-30 不遮挡 header。
+ * 与 PanelRouter 一致，React Query dedupe 零额外网络。
  */
 function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
-  const [layout, updateLayout] = useWorkbenchLayout();
+  const [layout] = useWorkbenchLayout();
   const [tab, setTab] = useAtom(workbenchMobileFocusTabAtom);
   const { refs: order } = useScopeInstanceOrder(scope);
-  const currentIndex = order.findIndex((o) => o.sessionId === focusId);
   // global scope 从布局查 focusId 所属项目（focusId 是 session id，查到的 ref 收窄到 session
   // 取 projectName；FilePanelRef 无 projectName 字段故需 kind 收窄，设计 workbench-stable-refactor Phase 3）。
   const focusRef = scope.kind === "global" ? findTabRefLeaf(layout, focusId) : null;
@@ -304,21 +301,6 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
     tab === "output" || visiblePlugins.some((p) => p.id === tab) ? tab : "output";
   const activePlugin =
     activeTab === "output" ? null : (visiblePlugins.find((p) => p.id === activeTab) ?? null);
-
-  // ‹› 浮动切实例（设计文档 §7）：范围 = 当前 scope 活跃实例（useScopeInstanceOrder），
-  // 循环切换；tab 不重置（维度正交，workbenchMobileFocusTabAtom 跨切换保持）。global 作用域
-  // 聚焦态 projectName 从 findTabRefLeaf 查，切到不在布局的实例需先 ensureTabOpenLeaf 再导航。
-  // atom 何时重置：仅从总观点实例卡片新进 focus 时（focusInstance setFocusTab("output")，§7.7），
-  // ‹› 切换不重置——区分「新进入」(→ Output) 与「focus 内切换」(→ 保持 tab)。
-  const switchInstance = (delta: number) => {
-    if (order.length < 2 || currentIndex < 0) return;
-    const next = order[(currentIndex + delta + order.length) % order.length];
-    if (scope.kind === "global") {
-      updateLayout((prev) => ensureTabOpenLeaf(prev, next));
-    }
-    void navigateWorkbench(scope, next.sessionId);
-  };
-  const showSwitcher = order.length > 1 && currentIndex >= 0;
 
   // ℹ sheet 字段装配（UI=f(state)：terminal 无 model/permissionMode/createdAt，不伪造占位行）。
   const openInfo = () => {
@@ -378,14 +360,6 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {showSwitcher ? (
-        <MobileInstanceSwitcher
-          nextLabel={t("workbench.switchNext")}
-          onNext={() => switchInstance(1)}
-          onPrev={() => switchInstance(-1)}
-          prevLabel={t("workbench.switchPrev")}
-        />
-      ) : null}
       <MobileFocusHeader
         activeTab={activeTab}
         onBack={() => void navigateWorkbench(scope)}
@@ -566,61 +540,6 @@ function MobileTabHeader<TabId extends string>({
   );
 }
 
-type MobileInstanceSwitcherProps = {
-  nextLabel: string;
-  onNext: () => void;
-  onPrev: () => void;
-  prevLabel: string;
-};
-
-/**
- * ‹› 浮动切实例（设计文档 §7）：absolute overlay 贴内容区左右边缘中点，不占布局；
- * 半透明 backdrop-blur 降低对实例输出的遮挡。仅当前 scope 活跃实例 > 1 时由 MobileFocusBody 渲染。
- */
-function MobileInstanceSwitcher({
-  nextLabel,
-  onNext,
-  onPrev,
-  prevLabel,
-}: MobileInstanceSwitcherProps) {
-  return (
-    <>
-      <button
-        aria-label={prevLabel}
-        className="absolute left-1 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
-        onClick={onPrev}
-        type="button"
-      >
-        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16">
-          <path
-            d="M10 3L5 8l5 5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            stroke="currentColor"
-          />
-        </svg>
-      </button>
-      <button
-        aria-label={nextLabel}
-        className="absolute right-1 top-1/2 z-30 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg bg-surface-raised/60 text-on-surface-soft backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface"
-        onClick={onNext}
-        type="button"
-      >
-        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16">
-          <path
-            d="M6 3l5 5-5 5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            stroke="currentColor"
-          />
-        </svg>
-      </button>
-    </>
-  );
-}
-
 type MobileProjectOverviewProps = {
   scope: { kind: "project"; key: string };
 };
@@ -683,7 +602,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   const focusInstance = (sessionId: string) => {
     // 从总观点实例卡片进 focus → 重置 Output（同 MobileGlobalOverview，避免继承 Files/Git 记忆
-    // 落到项目文件）。focus 内 ‹› 切实例保持 tab 不变。
+    // 落到项目文件）。
     setFocusTab("output");
     void navigateWorkbench(scope, sessionId);
   };
@@ -833,7 +752,7 @@ function MobileGlobalOverview() {
   // 实例聚焦/新建/删除/三视图全在共享组件内（批 J 折叠废弃）。
   const focusInstance = (sessionId: string) => {
     // 从总观点实例卡片进 focus → 重置 Output（不继承上次切到的 Files/Git 记忆，避免落到
-    // 项目文件造成「进错地方」误会）。focus 内 ‹› 切实例走 switchInstance 不经此，tab 保持正交。
+    // 项目文件造成「进错地方」误会）。
     setFocusTab("output");
     void navigateWorkbench({ kind: "global" }, sessionId);
   };

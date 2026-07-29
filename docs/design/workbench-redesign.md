@@ -1,6 +1,6 @@
 # 三栏工作台重设计（WIP 草案）
 
-> 状态：**已落地**：桌面三栏 + 移动两层主体已实现于 app（`WorkbenchShell` 桌面三栏 grid + 栏折叠/resize、`InstanceArea`/`SplitLayout` 中栏自由 split、`RightPanelTabs`/`FIRST_PARTY_PLUGINS` 右栏 files/git、`mobile-workbench` 移动两层 + ‹› 切实例、`WorkbenchRoute` URL 模型 `/projects/$key`、`/global`、`/projects/$key/session/$id`）。本文是新导航模型的权威设计记录。剩余待定项见 §9（marketplace）。
+> 状态：**已落地**：桌面三栏 + 移动两层主体已实现于 app（`WorkbenchShell` 桌面三栏 grid + 栏折叠/resize、`InstanceArea`/`SplitLayout` 中栏自由 split、`RightPanelTabs`/`FIRST_PARTY_PLUGINS` 右栏 files/git、`mobile-workbench` 移动两层、`WorkbenchRoute` URL 模型 `/projects/$key`、`/global`、`/projects/$key/session/$id`）。本文是新导航模型的权威设计记录。剩余待定项见 §9（marketplace）。移动端「‹ › 悬浮切实例」已移除（见下方该节说明）。
 >
 > **演进（2026-07）**：本文「左栏=项目+实例树 / 中栏=自由 split 铺开」的导航模型，已被 [`workbench-views.md`](./workbench-views.md) 进一步演进——左栏收敛为导航条目列表、中栏新增二级导航 5 tab + 视图切换、中栏重构为「左总览（固定单列卡片）+ 右工作区（拖放分屏）」的统一左右结构，取消独立 split 视图与面板三态状态机。新 IA 以 workbench-views.md 为准，实施计划见 [`workbench-views-plan.md`](./workbench-views-plan.md)。本文的桌面三栏 grid / 移动两层 / 右栏 inspection / URL 模型**仍有效**。
 >
@@ -254,11 +254,11 @@ type PluginContext = {
 ```
 ┌─────────────────────┐
 │ ◄ 〔输出〕文件 git  ℹ ✕ │
-├─┬─────────────────┬─┤
-│‹│  agent 输出流    │›│
-│ │                 │ │
-├─┴─────────────────┴─┤
-│ $ input → agent1     │
+├─────────────────────┤
+│   agent 输出流      │
+│                     │
+├─────────────────────┤
+│ $ input → agent1    │
 └─────────────────────┘
 ```
 
@@ -268,9 +268,11 @@ type PluginContext = {
 - **文件 / git = 项目级 inspection**（跟随当前聚焦实例所属项目；与桌面右栏、全局实例区统一项目级语义）。
 - 切 tab = 切视图，非「隐藏输入区」：inspection 视图本无输入区，回输出才有。
 
-### ‹ › 悬浮切实例
+### ‹ › 悬浮切实例（已移除）
 
-输出区左右边缘悬浮 ‹ ›（absolute overlay，不占布局、半透明）：
+> **已移除**：输出区左右边缘悬浮的 ‹ › 切实例按钮已删除——实测 UI/UX 不合适（悬浮按钮遮挡输出、与边缘返回/代码块横向滚冲突、发现性差）。切实例回到列表态点卡片这一条路径。本节保留作为历史记录。
+
+原设计：输出区左右边缘悬浮 ‹ ›（absolute overlay，不占布局、半透明）：
 
 - **语义**：切「当前聚焦实例」，tab 不重置（保持维度）。‹ › = 沿列表移动，tab = 关心维度，两者正交。
 - **范围** = 进入实例前的列表里的**活跃实例**（项目总览进 = 该项目活跃实例；全局进 = 全局聚合活跃实例）；**不切历史 session**（历史 session 要点开 resume 成实例，是另一条路径）。顺序沿用列表排序（关注程度）。首尾 disabled。
