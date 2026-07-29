@@ -269,8 +269,19 @@ function WorkbenchContent({
     if (next === layout) return;
     update(() => next);
     if (focusId && stale.some((s) => s.tabId === focusId)) {
+      // 与 onCloseTab 同：切 focus 时保持当前 scope，不用 next tab 的 projectName 重写左栏。
       const active = activeTabRefLeaf(next);
-      if (active?.kind === "session") navigateSession(active);
+      const search = {
+        rightTab,
+        tab: tabFromUrl,
+        view: viewFromUrl,
+        ...(leftMode !== "auto" ? { leftMode } : {}),
+      };
+      if (active?.kind === "session") {
+        void navigateWorkbench(scope, active.sessionId, search);
+      } else {
+        void navigateWorkbench(scope, undefined, search);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, focusId, layout, isDesktop, refs, refsLoaded, globalRefs, globalRefsLoaded]);
@@ -474,27 +485,64 @@ function WorkbenchContent({
   );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
+  //
+  // 关键：切 focus 时**保持当前 scope / leftMode / middle tab**——左栏与中栏 tab 正交，关 tab
+  // 不应改左栏。旧实现走 navigateSession(next) 会用 next.projectName 重写 scope，跨项目 tab
+  // 场景下左栏跟着跳项目。session 一律 navigateWorkbench(当前 scope, nextId)；file/git 仅当
+  // 属于当前 project scope 时走对应 URL，否则只清 focus 保 scope（中栏靠 layout.activeTabId
+  // 显示，不把 scope 拽去 next tab 的项目 /global）。
   const onCloseTab = useCallback(
     (groupId: string, tabId: string) => {
       const next = removeTabFromLeaf(layout, groupId, tabId);
       update(() => next);
-      if (focusId === tabId) {
-        const active = activeTabRefLeaf(next);
-        if (active?.kind === "session") navigateSession(active);
-        else if (active?.kind === "file") {
-          // file ref path=全路径，拆出 projectName + 项目相对路径调 navigateToFile。
-          const { projectName, path } = splitFilePath(active.path);
+      if (focusId !== tabId) return;
+      const active = activeTabRefLeaf(next);
+      const search = {
+        rightTab,
+        tab: tabFromUrl,
+        view: viewFromUrl,
+        ...(leftMode !== "auto" ? { leftMode } : {}),
+      };
+      if (!active) {
+        // 无剩余 tab：清 focus，保 scope（避免 focus effect 把刚关的 tab 再 ensure 回来）。
+        void navigateWorkbench(scope, undefined, search);
+        return;
+      }
+      if (active.kind === "session") {
+        void navigateWorkbench(scope, active.sessionId, search);
+        return;
+      }
+      if (active.kind === "file") {
+        const { projectName, path } = splitFilePath(active.path);
+        // 同 scope 才走 file URL；跨项目 file 无法在当前 project URL 下表达，清 focus 保 scope。
+        if (scope.kind === "global" || (scope.kind === "project" && projectName === scope.key)) {
           void navigateToFile(projectName, path);
-        } else if (active?.kind === "git") {
-          if (active.mode === "compare")
+        } else {
+          void navigateWorkbench(scope, undefined, search);
+        }
+        return;
+      }
+      if (active.kind === "git") {
+        if (scope.kind === "project" && active.projectName === scope.key) {
+          if (active.mode === "compare") {
             void navigateToGitCompareFile(
               active.projectName,
               active.base,
               active.compare,
               active.path,
             );
-          else void navigateToGitFile(active.projectName, active.scope, active.path);
-        } else if (active?.kind === "skill") void navigateToSkill(active.name);
+          } else {
+            void navigateToGitFile(active.projectName, active.scope, active.path);
+          }
+        } else {
+          void navigateWorkbench(scope, undefined, search);
+        }
+        return;
+      }
+      if (active.kind === "skill") {
+        // skill URL 固定 global（/skills/skill/$）；仅当前已是 global 才导航，否则保 project scope。
+        if (scope.kind === "global") void navigateToSkill(active.name);
+        else void navigateWorkbench(scope, undefined, search);
       }
     },
     [
@@ -507,6 +555,10 @@ function WorkbenchContent({
       navigateToGitCompareFile,
       navigateToSkill,
       scope,
+      rightTab,
+      tabFromUrl,
+      viewFromUrl,
+      leftMode,
     ],
   );
   // 关实例 = close session API + 从中栏删 tab（与 onCloseTab 对称：onCloseTab 删 tab 不关
