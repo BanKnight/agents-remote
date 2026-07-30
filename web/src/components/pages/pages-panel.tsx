@@ -74,7 +74,7 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
       <div className="flex min-h-0 flex-1 flex-col">
         <div
           aria-hidden="true"
-          className="flex shrink-0 items-center justify-end border-b border-neutral-line/40 px-3.5 py-2.5"
+          className="flex shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5"
         >
           <span className="skeleton-shimmer h-8 w-24 rounded-lg" />
         </div>
@@ -101,7 +101,7 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-end border-b border-neutral-line/40 px-3.5 py-2.5">
+      <div className="flex shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5">
         <ActionButton compact onClick={() => beginEdit({ mode: "add" })} tone="accent">
           <span className="inline-flex items-center gap-1">
             <ShellIcon className="h-3.5 w-3.5" name="plus" />
