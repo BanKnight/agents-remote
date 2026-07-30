@@ -75,6 +75,32 @@ export type ProjectFilePreviewResponse =
   | ProjectUnsupportedFilePreview
   | ProjectTooLargeFilePreview;
 
+// ── Pages 静态托管（per-project `.agents-remote/pages.json`）──────────
+// 类 nginx 简化：用户配置若干「URL 路径 → 项目内目录」静态根映射，内容（由用户/Agent
+// 自行产出，我们不管来源）直接通过 URL 访问。默认 public，per-根可选 token 鉴权。
+// producer = 用户交互的 Agent（经我们提供的工具维护内容），consumer = 我们渲染/serve。
+export type PagesRootAuth = "public" | "token";
+
+export type PagesRoot = {
+  /** URL 路径前缀，规范化的绝对路径，如 "/" "/docs"。空串非法。规范化见后端 normalizeUrlPath。 */
+  urlPath: string;
+  /** 项目内相对目录，如 "site" "site/dist"。空串非法（防整盘暴露）；含 ".." 段非法。 */
+  fsDir: string;
+  auth: PagesRootAuth;
+};
+
+/** 写盘结构。缺文件 → `{ schemaVersion: 1, roots: [] }`。 */
+export type PagesConfig = {
+  schemaVersion: 1;
+  roots: PagesRoot[];
+};
+
+export type PagesConfigResponse = { config: PagesConfig };
+
+/** PUT 整体覆盖写（简单语义）。 */
+export type UpdatePagesConfigRequest = { roots: PagesRoot[] };
+export type UpdatePagesConfigResponse = { config: PagesConfig };
+
 export type GitDiffScope = "worktree" | "staged";
 
 export type GitDiffFileStatus = "modified" | "added" | "deleted" | "renamed";
@@ -1463,6 +1489,8 @@ export type ApiErrorCode =
   | "PROJECT_GIT_FILE_NOT_CHANGED"
   | "PROJECT_GIT_UNAVAILABLE"
   | "PROJECT_FS_ERROR"
+  | "PROJECT_PAGES_CONFIG_INVALID"
+  | "PROJECT_PAGES_ROOT_CONFLICT"
   | "PROJECT_DELETE_FAILED"
   | "SESSION_NOT_FOUND"
   | "SESSION_RUNTIME_MISSING"

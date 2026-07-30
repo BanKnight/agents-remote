@@ -23,9 +23,10 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
 
 /**
  * 右栏 inspection tab 标识。V1 两个第一方 tab（设计文档 §6）：
- * `files` / `git`。Stage 3 以 RightPanelPlugin 契约落地注册表。
+ * `files` / `git`；pages 为 per-project 静态托管根配置（与 files/git 同构 inspection）。
+ * Stage 3 以 RightPanelPlugin 契约落地注册表。
  */
-export type WorkbenchRightTab = "files" | "git";
+export type WorkbenchRightTab = "files" | "git" | "pages";
 
 /**
  * 中栏左总览视图样式（设计文档 workbench-views.md §5）。左总览固定单列宽，view 切换的是
@@ -36,9 +37,9 @@ export type WorkbenchView = "grouped" | "grid" | "table";
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（切 grouped/grid/table）；
- * history=历史 session；files/git=复用右栏 inspection plugin。
+ * history=历史 session；files/git/pages=复用右栏 inspection plugin。
  */
-export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git";
+export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "pages";
 
 /**
  * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §6）。
@@ -301,7 +302,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     gitCompare?: string;
     leftMode?: "auto" | "files" | "skills";
   } = {};
-  if (search.rightTab === "files" || search.rightTab === "git") {
+  if (search.rightTab === "files" || search.rightTab === "git" || search.rightTab === "pages") {
     result.rightTab = search.rightTab;
   }
   if (search.view === "grouped" || search.view === "grid" || search.view === "table") {
@@ -311,7 +312,8 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     search.tab === "overview" ||
     search.tab === "history" ||
     search.tab === "files" ||
-    search.tab === "git"
+    search.tab === "git" ||
+    search.tab === "pages"
   ) {
     result.tab = search.tab;
   }

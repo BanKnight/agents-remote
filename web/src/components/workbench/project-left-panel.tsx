@@ -11,6 +11,7 @@ import { TabButton } from "./right-panel-tabs";
 import { HistoryList, HistoryRangeControl } from "./history-list";
 import { FilesLeftPanel } from "../files/files-left-panel";
 import { GitChangesList } from "../git/git-diff-viewer";
+import { PagesPanel } from "../pages/pages-panel";
 import { type CardDragStartHandler } from "./drag-source";
 
 type ProjectLeftPanelProps = {
@@ -123,6 +124,8 @@ export function ProjectLeftPanel({
           selectedFile={selectedGitFile}
         />
       );
+    } else if (resolvedTab === "pages") {
+      middleBody = <PagesPanel projectName={scope.key} />;
     }
     // resolvedTab === "overview" → middleBody 保持 overview（InstanceLeftOverview 实例总览）。
   }

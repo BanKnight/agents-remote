@@ -634,7 +634,7 @@ const isNotFoundError = (error: unknown) =>
 const isAlreadyExistsError = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 
-const rawFileMimeType = (path: string): string => {
+export const rawFileMimeType = (path: string): string => {
   switch (extname(path).toLowerCase()) {
     case ".css":
       return "text/css; charset=utf-8";

@@ -4,6 +4,7 @@ import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import type { WorkbenchMiddleTab, WorkbenchRightTab } from "../../routes/workbench-model";
 import { FilesPanel } from "../files/file-browser";
 import { GitDiffPanel } from "../git/git-diff-viewer";
+import { PagesPanel } from "../pages/pages-panel";
 
 /** Files inspection 的 query-key 隔离段（与 ProjectConsole section 缓存分离）。 */
 const WORKBENCH_FILES_QUERY_SCOPE = "workbench-files";
@@ -37,7 +38,8 @@ export type RightPanelPlugin = {
 /**
  * 第一方右栏插件注册表（设计文档 §5、§6）。Stage 3 commit ② 由 RightPanelTabs
  * 与中栏 visibleTabs 消费。Files 全局可见（项目作用域可写 + 全局根目录只读）；
- * Git 仅项目作用域（when: ctx.projectKey !== null）。
+ * Git/pages 仅项目作用域（when: ctx.projectKey !== null）——pages 是 per-project
+ * 静态根配置，从项目内 middle tab 进入。
  */
 export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
   {
@@ -59,6 +61,12 @@ export const FIRST_PARTY_PLUGINS: RightPanelPlugin[] = [
       ctx.projectKey ? (
         <GitDiffPanel projectName={ctx.projectKey} queryScope={WORKBENCH_GIT_QUERY_SCOPE} />
       ) : null,
+    when: (ctx) => ctx.projectKey !== null,
+  },
+  {
+    id: "pages",
+    labelKey: "workbench.tabPages",
+    render: (ctx) => (ctx.projectKey ? <PagesPanel projectName={ctx.projectKey} /> : null),
     when: (ctx) => ctx.projectKey !== null,
   },
 ];

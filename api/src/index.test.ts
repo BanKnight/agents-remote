@@ -6,6 +6,7 @@ import { AuthService } from "./auth";
 import { createFetchHandler } from "./index";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
+import { ProjectPagesService } from "./project-pages";
 import { ProjectService } from "./projects";
 import { SessionRegistry } from "./session-registry";
 let root: string;
@@ -35,6 +36,7 @@ const createTestHandler = () => {
   const projectService = new ProjectService(root, sessionRegistry);
   const projectFilesService = new ProjectFilesService(root);
   const projectGitDiffService = new ProjectGitDiffService(root);
+  const projectPagesService = new ProjectPagesService(root);
 
   return {
     auth,
@@ -42,6 +44,7 @@ const createTestHandler = () => {
     handler: createFetchHandler(auth, {
       projectFilesService,
       projectGitDiffService,
+      projectPagesService,
       projectService,
       projectsRoot: root,
       sessionRegistry,
@@ -657,6 +660,166 @@ test("createFetchHandler maps project errors", async () => {
   expect((await outsideTarget.json()).error.code).toBe("PROJECT_TARGET_INVALID");
   expect(missingDetail.status).toBe(404);
   expect((await missingDetail.json()).error.code).toBe("PROJECT_NOT_FOUND");
+});
+
+test("createFetchHandler serves pages public roots with ETag and no fallback", async () => {
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(root, "demo", "site", "index.html"), "<h1>hello</h1>");
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  // PUT 配置 public 根（需鉴权，留守卫后）。
+  const put = await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: [{ urlPath: "/", fsDir: "site", auth: "public" }] }),
+    }),
+    { upgrade: () => false },
+  );
+  expect(put.status).toBe(200);
+  expect((await put.json()).config.roots).toEqual([
+    { urlPath: "/", fsDir: "site", auth: "public" },
+  ]);
+
+  // public 根无 auth 直接访问 → 200 + Content-Type + ETag + no-cache。
+  const served = await handler(new Request("http://localhost/api/projects/demo/pages/index.html"), {
+    upgrade: () => false,
+  });
+  expect(served.status).toBe(200);
+  expect(served.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+  expect(await served.text()).toBe("<h1>hello</h1>");
+  const etag = served.headers.get("ETag");
+  expect(etag?.startsWith('W/"')).toBe(true);
+  expect(served.headers.get("Cache-Control")).toBe("no-cache");
+
+  // If-None-Match 命中弱 ETag → 304。
+  const notModified = await handler(
+    new Request("http://localhost/api/projects/demo/pages/index.html", {
+      headers: { "If-None-Match": etag ?? "" },
+    }),
+    { upgrade: () => false },
+  );
+  expect(notModified.status).toBe(304);
+
+  // 目录访问 → 404（无列表、无 SPA fallback）。
+  const dir = await handler(new Request("http://localhost/api/projects/demo/pages/"), {
+    upgrade: () => false,
+  });
+  expect(dir.status).toBe(404);
+
+  // 不存在的文件 → 404（无 SPA fallback）。
+  const missing = await handler(
+    new Request("http://localhost/api/projects/demo/pages/missing.html"),
+    { upgrade: () => false },
+  );
+  expect(missing.status).toBe(404);
+});
+
+test("createFetchHandler requires token auth for token pages roots", async () => {
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(root, "demo", "site", "index.html"), "<h1>secret</h1>");
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: [{ urlPath: "/", fsDir: "site", auth: "token" }] }),
+    }),
+    { upgrade: () => false },
+  );
+
+  // 无 token → 401。
+  const blocked = await handler(
+    new Request("http://localhost/api/projects/demo/pages/index.html"),
+    { upgrade: () => false },
+  );
+  expect(blocked.status).toBe(401);
+
+  // 带 token（?token= 查询参数，镜像浏览器 URL）→ 200。
+  const token = auth.login("secret").token;
+  const ok = await handler(
+    new Request(`http://localhost/api/projects/demo/pages/index.html?token=${token}`),
+    { upgrade: () => false },
+  );
+  expect(ok.status).toBe(200);
+  expect(await ok.text()).toBe("<h1>secret</h1>");
+});
+
+test("createFetchHandler protects pages config and validates writes", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  // GET /pages/config 需鉴权：无 auth → 401。
+  const blocked = await handler(new Request("http://localhost/api/projects/demo/pages/config"), {
+    upgrade: () => false,
+  });
+  expect(blocked.status).toBe(401);
+
+  // 带 auth 读缺省配置 → 200 + empty roots。
+  const get = await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", { headers }),
+    { upgrade: () => false },
+  );
+  expect(get.status).toBe(200);
+  expect((await get.json()).config).toEqual({ schemaVersion: 1, roots: [] });
+
+  // PUT 非 array roots → 400。
+  const badBody = await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: "nope" }),
+    }),
+    { upgrade: () => false },
+  );
+  expect(badBody.status).toBe(400);
+  expect((await badBody.json()).error.code).toBe("PROJECT_PAGES_CONFIG_INVALID");
+
+  // PUT 重复 urlPath → 400（ROOT_CONFLICT）。
+  const conflict = await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        roots: [
+          { urlPath: "/", fsDir: "site", auth: "public" },
+          { urlPath: "/", fsDir: "other", auth: "public" },
+        ],
+      }),
+    }),
+    { upgrade: () => false },
+  );
+  expect(conflict.status).toBe(400);
+  expect((await conflict.json()).error.code).toBe("PROJECT_PAGES_ROOT_CONFLICT");
+});
+
+test("createFetchHandler rejects pages path escape at HTTP layer", async () => {
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(root, "secret.txt"), "SECRET");
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: [{ urlPath: "/", fsDir: "site", auth: "public" }] }),
+    }),
+    { upgrade: () => false },
+  );
+
+  // %2F 不被 URL parser 解码，matcher 解码后得 /../../secret.txt，
+  // resolveProjectRelativePath 词法校验即拦（PROJECT_PATH_OUTSIDE_ROOT → 400）。
+  const escape = await handler(
+    new Request("http://localhost/api/projects/demo/pages/..%2F..%2Fsecret.txt"),
+    { upgrade: () => false },
+  );
+  expect(escape.status).toBe(400);
+  expect((await escape.json()).error.code).toBe("PROJECT_PATH_OUTSIDE_ROOT");
 });
 
 const git = async (projectPath: string, args: string[]) => {

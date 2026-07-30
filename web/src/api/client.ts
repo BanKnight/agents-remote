@@ -31,10 +31,13 @@ import type {
   LoginResponse,
   OverviewResponse,
   OverviewSubtitlesResponse,
+  PagesConfigResponse,
   ProjectDetailResponse,
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
   ProjectListResponse,
+  UpdatePagesConfigRequest,
+  UpdatePagesConfigResponse,
   RenameAgentSessionResponse,
   RenameFileResponse,
   RenameSessionRequest,
@@ -234,6 +237,31 @@ export async function previewProjectFile(
 
 export async function listProjectGitDiff(projectName: string): Promise<GitDiffListResponse> {
   return fetchJson(projectGitDiffPath(projectName), "api.projectGitDiffFailed");
+}
+
+export async function getPagesConfig(projectName: string): Promise<PagesConfigResponse> {
+  return fetchJson(pagesConfigPath(projectName), "api.projectPagesConfigFailed");
+}
+
+export async function updatePagesConfig(
+  projectName: string,
+  input: UpdatePagesConfigRequest,
+): Promise<UpdatePagesConfigResponse> {
+  return fetchJson(pagesConfigPath(projectName), "api.projectPagesUpdateFailed", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies UpdatePagesConfigRequest),
+  });
+}
+
+/**
+ * pages serve 的同源绝对 URL（GET /api/projects/{name}/pages{urlPath}）。浏览器直访新标签页：
+ * HttpOnly cookie Path=/api 自动携带——public 根免登录，token 根凭已登录态 cookie 放行。
+ * urlPath 须含前导 "/"（根传 "/"）；根返回无尾斜杠的 `/pages`（后端 matcher tail="" → urlPath "/"）。
+ */
+export function pagesServeUrl(projectName: string, urlPath: string): string {
+  const path = urlPath.startsWith("/") ? urlPath : `/${urlPath}`;
+  return `/api/projects/${encodeURIComponent(projectName)}/pages${path === "/" ? "" : path}`;
 }
 
 export async function getProjectGitFileDiff(
@@ -619,6 +647,9 @@ const withPathQuery = (basePath: string, path: string) => {
 
   return `${basePath}?path=${encodeURIComponent(path)}`;
 };
+
+const pagesConfigPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/pages/config`;
 
 const agentSessionsPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/agent-sessions`;

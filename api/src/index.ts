@@ -5,8 +5,10 @@ import type {
   HealthResponse,
   OverviewResponse,
   OverviewSubtitlesResponse,
+  PagesConfigResponse,
   ProjectDetailResponse,
   ProjectListResponse,
+  UpdatePagesConfigResponse,
 } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
@@ -21,6 +23,7 @@ import {
   requireHttpAuth,
 } from "./http-auth";
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
+import { ProjectPagesError, ProjectPagesService } from "./project-pages";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { readFile, writeFile } from "node:fs/promises";
@@ -45,6 +48,7 @@ type FetchHandlerOptions = {
   claude2Runtime?: Claude2Runtime;
   claude2StreamController?: Claude2StreamController;
   projectFilesService?: ProjectFilesService;
+  projectPagesService?: ProjectPagesService;
   projectGitDiffService?: ProjectGitDiffService;
   projectService?: ProjectService;
   projectsRoot?: string;
@@ -102,6 +106,47 @@ export const createFetchHandler =
       }
 
       return new Response("WebSocket upgrade required", { status: 426 });
+    }
+
+    // pages 静态托管 serve：默认 public，per-根可选 token 鉴权（决策点 2）。必须在统一
+    // /api/ token 守卫之前，否则 public 根也会被拦。/pages/config 端点除外（鉴权敏感，
+    // 留守卫后处理）。serve 不调 applyAuthRefresh：对外资源不应带 Set-Cookie。
+    if (
+      options.projectPagesService &&
+      url.pathname.startsWith("/api/projects/") &&
+      request.method === "GET"
+    ) {
+      const pagesMatch = matchProjectPagesPath(url.pathname);
+      if (pagesMatch && !pagesMatch.isConfig) {
+        try {
+          const served = await options.projectPagesService.serve(
+            pagesMatch.projectName,
+            pagesMatch.urlPath,
+          );
+          if (served.root.auth === "token") {
+            const authResult = requireHttpAuth(request, auth);
+            if (authResult.status === "unauthenticated") {
+              return authResult.response;
+            }
+          }
+          if (request.headers.get("If-None-Match") === served.etag) {
+            return new Response(null, { status: 304, headers: { ETag: served.etag } });
+          }
+          return new Response(new Uint8Array(served.content), {
+            headers: {
+              "Content-Type": served.mimeType,
+              ETag: served.etag,
+              // 弱缓存：浏览器每次校验 ETag（决策点 4「不强缓存」）。
+              "Cache-Control": "no-cache",
+            },
+          });
+        } catch (error) {
+          if (error instanceof ProjectPagesError) {
+            return projectPagesErrorResponse(error);
+          }
+          throw error;
+        }
+      }
     }
 
     let authRefreshToken: import("./auth").TokenIssue | undefined;
@@ -210,6 +255,17 @@ export const createFetchHandler =
       );
       if (overviewResponse) {
         return withRefresh(overviewResponse);
+      }
+    }
+
+    if (options.projectPagesService) {
+      const pagesConfigResponse = await handlePagesConfig(
+        request,
+        url,
+        options.projectPagesService,
+      );
+      if (pagesConfigResponse) {
+        return withRefresh(pagesConfigResponse);
       }
     }
 
@@ -500,6 +556,46 @@ const handleProjects = async (
   return undefined;
 };
 
+// GET/PUT /api/projects/{name}/pages/config — pages 静态根配置（鉴权敏感，已在统一守卫后）。
+const handlePagesConfig = async (
+  request: Request,
+  url: URL,
+  projectPagesService: ProjectPagesService,
+): Promise<Response | undefined> => {
+  const match = matchProjectPagesPath(url.pathname);
+  if (!match || !match.isConfig) return undefined;
+
+  try {
+    if (request.method === "GET") {
+      const config = await projectPagesService.readConfig(match.projectName);
+      const response: PagesConfigResponse = { config };
+      return Response.json(response);
+    }
+
+    if (request.method === "PUT") {
+      let body: { roots?: unknown };
+      try {
+        body = (await request.json()) as { roots?: unknown };
+      } catch {
+        return jsonError("PROJECT_PAGES_CONFIG_INVALID", "Request body must be JSON", 400);
+      }
+      if (!Array.isArray(body.roots)) {
+        return jsonError("PROJECT_PAGES_CONFIG_INVALID", "roots must be an array", 400);
+      }
+      const config = await projectPagesService.writeConfig(match.projectName, body.roots);
+      const response: UpdatePagesConfigResponse = { config };
+      return Response.json(response);
+    }
+
+    return undefined;
+  } catch (error) {
+    if (error instanceof ProjectPagesError) {
+      return projectPagesErrorResponse(error);
+    }
+    throw error;
+  }
+};
+
 const readCreateProjectRequest = async (request: Request): Promise<CreateProjectRequest> => {
   try {
     return (await request.json()) as CreateProjectRequest;
@@ -514,6 +610,46 @@ const decodeProjectName = (encodedName: string) => {
   } catch {
     return undefined;
   }
+};
+
+type ProjectPagesPathMatch = {
+  projectName: string;
+  /** 请求的 URL 路径（含前导 "/"，根为 "/"），供 serve 匹配根。 */
+  urlPath: string;
+  /** 命中 /pages/config 固定端点（鉴权敏感，走守卫后 handler）。 */
+  isConfig: boolean;
+};
+
+// 匹配 /api/projects/{name}/pages{/*urlPath} 与 /api/projects/{name}/pages/config。
+// project 段 encode + 强制不含 "/"；urlPath 段 splat 解码，无后续段时为 "/"。
+// config 是固定 suffix，单独置 isConfig=true。
+const matchProjectPagesPath = (pathname: string): ProjectPagesPathMatch | undefined => {
+  const prefix = "/api/projects/";
+  if (!pathname.startsWith(prefix)) return undefined;
+  const rest = pathname.slice(prefix.length);
+  const infix = "/pages";
+  const idx = rest.indexOf(infix);
+  if (idx === -1) return undefined;
+  const encodedName = rest.slice(0, idx);
+  if (encodedName.length === 0 || encodedName.includes("/")) return undefined;
+  const projectName = decodeProjectName(encodedName);
+  if (!projectName) return undefined;
+
+  let tail = rest.slice(idx + infix.length);
+  // tail: "" (根, /pages)、"/config"、"/docs/x" 等。
+  if (tail.length === 0) {
+    return { projectName, urlPath: "/", isConfig: false };
+  }
+  let decodedTail: string;
+  try {
+    decodedTail = decodeURIComponent(tail);
+  } catch {
+    return undefined;
+  }
+  if (decodedTail === "/config") {
+    return { projectName, urlPath: "/config", isConfig: true };
+  }
+  return { projectName, urlPath: decodedTail, isConfig: false };
 };
 
 type ProjectGitDiffPathMatch = {
@@ -698,6 +834,20 @@ const projectFilesErrorResponse = (error: ProjectFilesError) => {
   return jsonError(error.code, error.message, 400);
 };
 
+const projectPagesErrorResponse = (error: ProjectPagesError) => {
+  if (error.code === "PROJECT_NOT_FOUND" || error.code === "PROJECT_FILE_NOT_FOUND") {
+    return jsonError(error.code, error.message, 404);
+  }
+
+  if (error.code === "PROJECT_FS_ERROR") {
+    return jsonError(error.code, error.message, 500);
+  }
+
+  // PATH_OUTSIDE_ROOT（含 symlink 逃逸）、PAGES_CONFIG_INVALID、PAGES_ROOT_CONFLICT、
+  // PROJECT_NAME_INVALID、PROJECT_TARGET_INVALID → 400。
+  return jsonError(error.code, error.message, 400);
+};
+
 const projectErrorResponse = (error: ProjectServiceError) => {
   if (error.code === "PROJECT_NOT_FOUND") {
     return jsonError(error.code, error.message, 404);
@@ -803,6 +953,7 @@ export const startApi = async () => {
   });
   const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(settings.projectsRoot);
+  const projectPagesService = new ProjectPagesService(settings.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);
   // skill install/uninstall spawn `npx skills add/remove`：走 git clone 可数十秒，spawn 期间
   // handler 未向 client socket 写任何字节 → 默认 idleTimeout=10s 在静默期关闭连接（Empty
@@ -816,6 +967,7 @@ export const startApi = async () => {
       claude2Runtime,
       claude2StreamController,
       projectFilesService,
+      projectPagesService,
       projectGitDiffService,
       projectService,
       projectsRoot: settings.projectsRoot,
