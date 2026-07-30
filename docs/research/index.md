@@ -4,7 +4,7 @@
 
 ## 子目录
 
-- （无）
+- [inbox/](./inbox/) — 未定型调研区：带调研但方案未定、尚未进入实现期的意图文档。非沉淀结论，定型后须迁出至 `docs/research/` 根或 `docs/specs/`。见 `./inbox/index.md`。
 
 ## 文档
 
@@ -18,4 +18,4 @@
 - [web-terminal-tmux-attach.md](./web-terminal-tmux-attach.md) — Web terminal 共享终端的 attach 模式架构调研：capture-pane 半态根因、竞品对照（ttyd/gotty vs VSCode 系 vs orca）、tmux 多端尺寸协调（window-size/resize-window/aggressive-resize）、Bun 原生 PTY 落地、orca 可丢/可借鉴清单，结论是废弃 capture-pane 改 tmux attach。
 - [design-prototyping-tool-research.md](./design-prototyping-tool-research.md) — AI 设计/原型工具赛道调研（OpenDesign 嵌入可行性）：三派竞品全景（设计编辑器派 / Prompt→产物 agent 派 / App builder 派）+ Reddit 社区评价；OpenDesign 源码逐行深剖（DESIGN.md 契约、skills/CLI/MCP 三件套、AG-UI adapter、GenUI surface 两套机制、iframe sandbox 渲染），结论是 npm 上零个可装包、只能 fork，最小复刻切入点为 GenUI declarative surface + iframe sandbox 预览。
 - [skill-marketplace.md](./skill-marketplace.md) — Skill 市场/包管理功能调研：skills.sh 公开 search API 实测（只有 name/installs/source，无 description，无公开详情端点）、vercel-labs/skills（npx skills）CLI 能力边界与可 wrap 性（执行类命令可 wrap、查询类走 API）、cc-switch 产品对标（发现页+管理面板+源管理三件套、自实现 GitHub zipball 安装、SHA-256 更新检测、per-app 开关）、Claude/Codex 安装目录映射、agents-remote 现有 reload-skills 闭环/catalog 扫描/markdown 预览的复用点、安全边界（路径穿越 + 执行信任模型）、两条技术路线（wrap CLI vs 自实现）对比与未决问题。
-- [pages-static-hosting.md](./pages-static-hosting.md) — pages 静态托管技术方案：per-project 静态目录托管（类 nginx 简化），6 个决策点（配置文件位置、URL 路由 + 默认无 auth per-根可选开启、安全边界、弱 ETag 缓存、配置即启用、复用 Files 安全读取原语），参考 Cloudflare Drop 默认无 auth 设计。
+- [pages-static-hosting.md](./pages-static-hosting.md) — pages 静态托管技术方案（已细化，待实现）：per-project 静态目录托管（类 nginx 简化），6 个决策点已定（配置文件位置、URL 路由 + 默认无 auth per-根可选开启、安全边界、弱 ETag 缓存、配置即启用、复用 Files 安全读取原语），参考 Cloudflare Drop 默认无 auth 设计；三个新需求（wiki/pages/browser）统筹排序中 pages 排第一，wiki/browser 调研见 `./inbox/`。

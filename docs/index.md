@@ -6,7 +6,7 @@
 
 - [architecture](./architecture/index.md) — 存放系统级长期 HOW、架构边界、集成模式与 ADR。
 - [design](./design/index.md) — 存放工作流、技能体系与设计模型等长期设计文档。
-- [research](./research/index.md) — 存放调研资料、调研过程与调研结论。
+- [research](./research/index.md) — 存放调研资料、调研过程与调研结论；`research/inbox/` 为未定型调研区（方案未定、待深化的意图文档，非沉淀结论，定型后迁出）。
 - [runbooks](./runbooks/index.md) — 存放运维、故障、迁移、发布等操作手册。
 - [specs](./specs/index.md) — 存放长期 WHAT：能力规格、行为契约与可验证需求。
 - [templates](./templates/index.md) — 存放长期文档模板。
