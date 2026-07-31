@@ -1,7 +1,7 @@
 # MCP Hub 定位共识
 
 > 状态:定位共识(2026-07-31),**待深化**,位于 `docs/research/inbox/`(未定型区,非沉淀结论)。
-> 本文件立**定位与方向**;传输 / 接入 / 进程模型三项已结合竞品调研([mcp-hub-competitors](./mcp-hub-competitors.md))消解;工具集设计 / 外部对接形态 / 移动端留「待深化」实现期再定。
+> 本文件立**定位与方向**;传输 / 接入 / 进程模型 / **概念层级 scope**(per-project + session 继承,被 Codex 源码 / WorkBuddy 文档验证)四项已结合竞品调研([mcp-hub-competitors](./mcp-hub-competitors.md))消解;工具集设计 / 外部对接形态(含 trust 门 + 凭据管理)/ 移动端留「待深化」实现期再定。
 > 上游需求来源:`./llm-wiki-okf.md`(wiki)、`./embedded-browser.md`(browser)、`../pages-static-hosting.md`(pages,已实现)。
 
 ## 一句话定位
@@ -24,6 +24,7 @@
 | 传输 | **Streamable HTTP**(最新版,**无状态**)——内外统一 | 同 Streamable HTTP(外部 server 本就用它) |
 | 我们的角色 | server 的实现者 + 把连接信息注入 CLI spawn | 配置管理者(用户填外部 server URL / 命令,我们 spawn CLI 时带进去) |
 | 鉴权 | 进程内信任(同机子进程) | 透传 CLI 与外部 server 之间的鉴权(bearer/OAuth,由外部 server 定) |
+| **trust / 安全门** | **无需**——内部能力域(wiki/browser 等)是**官方可信能力**,用户理解为由平台官方提供,信任度最高 | **需要**(防任意 project 静默起外部 MCP,参考 Codex trust 模型)+ 凭据管理(全局 vs per-project,见「待深化」) |
 
 **「市面上已有成熟抽象」落地到具体**:统一抽象就是 MCP 协议本身——内部 hub 用它建 server,外部对接用它当 client 网关。两者不再各造一套。
 
@@ -88,10 +89,10 @@ MCP Hub 定位(只立方向)
 调研覆盖 hapi(参考实现,源码级)、Claude Code 2.1.88 / Codex CLI(我们 spawn 的目标)、5 个编辑器(Cursor / Windsurf / Cline / Continue / Zed)、4 个 MCP 网关(Smithery / Glama / Composio / mcp.so)。核心对照:
 
 - **「统一 Streamable HTTP 无状态」被验证为前瞻方向**:SEP-2575(Final)定 stateless-by-default;hapi 源码注释明说 `sessionIdGenerator: undefined`(无状态)是与 Claude SDK 兼容的必要条件(带 session id 会让 spawn 失败);两端 CLI 都原生支持 `type:"http"` 无状态。
-- **我们是全场最激进的一个,且加强为全场独一份**:累计 **13 个竞品**(2 CLI + 5 编辑器 + 4 网关 + 2 桌面应用 Orca/Proma + 2 大厂平台 扣子/WorkBuddy)无一用 stateless HTTP 给 local 工具。竞品分布:编辑器内置工具走进程内函数、local 外部 MCP 一律 stdio stateful、Streamable HTTP 只用于 remote;Orca 干脆不建 MCP server(能力走 prompt 注入);扣子空间的 MCP 是**云端 remote**形态(local 对云平台不成立),WorkBuddy 用自研协议不用 MCP。偏离可辩护,记为**显式决策**(非偶然):我们的差异点是**服务端多租户 / 按需 spawn agent / 需水平扩展**——正是与桌面 IDE / 单进程桌面应用的根本不同。
+- **我们是全场最激进的一个,且加强为全场独一份**:累计 **13 个竞品**(2 CLI + 5 编辑器 + 4 网关 + 2 桌面应用 Orca/Proma + 2 大厂平台 扣子/WorkBuddy)无一用 stateless HTTP 给 local 工具。竞品分布:编辑器内置工具走进程内函数、local 外部 MCP 一律 stdio stateful、Streamable HTTP 只用于 remote;Orca 干脆不建 MCP server(能力走 prompt 注入);扣子空间的 MCP 是**云端 remote**形态(local 对云平台不成立);WorkBuddy 的 Connectors 也走 MCP(三轮更正——办公桌面形态,非云端 remote,非自研协议)。偏离可辩护,记为**显式决策**(非偶然):我们的差异点是**服务端多租户 / 按需 spawn agent / 需水平扩展**——正是与桌面 IDE / 单进程桌面应用的根本不同。
 - **无状态有两条路,由部署形态决定(第二样本 Proma 对照)**:桌面单进程可走**进程内 SDK MCP**(`createSdkMcpServer`,Claude Code `type:"sdk"`,无 wire 天然无状态,如 Proma);我们因**服务端多租户 / 可水平扩展**定位锁死 **stateless HTTP**。两者都无状态,不是路线之争而是部署形态的必然——桌面单进程进程内即可,服务端多租户必须 HTTP(进程内锁死单一 SDK runtime,stateless HTTP 对所有 `type:"http"` runtime 通用,这是我们选 HTTP 而非进程内的额外收益)。这比第一轮「无状态损失 stdio 白给的东西」更深:**不是「我们丢了什么」,而是「部署形态决定了哪条无状态路」**。
 - **Smithery 实证 stateful stdio-桥单实例 ~50 并发天花板**(员工亲口)——正是我们「不用 stdio」规避的扩展瓶颈。
-- **大厂平台工具层选择分化(扣子 / WorkBuddy 对照)**:扣子空间用 MCP(云端 remote)、扣子经典 Bot 与 WorkBuddy 用**自研协议**(OpenAPI / Skills+Connectors+Experts)。MCP 在大厂是「新 agent 工作台」选项,不是「全平台统一」。我们「统一 MCP」比大厂更激进——大厂可保留自研协议闭环可控,我们必须用 MCP 才能开放接任意第三方 + 跨 agent runtime 通用。这是**定位差异不是技术优劣**。
+- **大厂平台工具层选择分化(扣子 / WorkBuddy 对照,三轮修正)**:扣子空间用 MCP(云端 remote)、扣子经典 Bot 用**自研 OpenAPI**、**WorkBuddy 用 MCP**(Connectors 标准化协议,三轮更正)。即大厂「新 agent 工作台」(扣子空间/WorkBuddy)已普遍采纳 MCP,经典产品线(扣子 Bot)保留自研协议。我们「统一 MCP」与采纳 MCP 的大厂新工作台方向一致,差别在我们**对所有 runtime 通用**,大厂**分产品线选**。这是**定位差异不是技术优劣**。
 - **可借鉴**:Claude Code `--mcp-config '<json>' --strict-mcp-config`(spawn 时注入,config `{mcpServers:{hub:{type:"http",url,headers}}}`);Composio `allowed_tools` + per-user 动态 `tools/list`(贴合我们 per-project 能力域开关);stdio→HTTP 桥作「只能说 stdio 的 agent」适配层(hapi `hapi mcp --url`),非 canonical;Proma `default-mcp.json` 单一事实源 + 内/外 MCP 分层原语(保留名 / 错误隔离 / `required:false` 可选降级),直接抄;Orca Design Mode「点击 UI → 进 prompt」是 browser_ 域的**非 MCP 降级形态**(简单场景 prompt 注入比 MCP 工具轻);扣子「工作流发布为 MCP server」双向暴露(我们外部转发可对称提供内部能力外发)。
 
 ## 待深化(实现期再定,当前不锁)
@@ -105,7 +106,7 @@ MCP Hub 定位(只立方向)
 
 - **基线读写默认值**:hub 默认给所有 agent 文件读写,还是按项目配置开——实现期配置策略,不影响 hub 架构。
 - **工具集设计**:wiki_* 的确切工具签名、能力域边界(基线 vs 语义层的切分点)。
-- **外部 MCP 对接的具体形态**:配置 schema、转发/隔离边界、鉴权透传(Glama / Composio 的 token-vault + OAuth auto-refresh 可借鉴)。
+- **外部 MCP 对接的具体形态**(含 trust 门 + 凭据管理,**基座/wiki/browser 阶段不引入**):配置 schema、转发/隔离边界、鉴权透传(Glama / Composio 的 token-vault + OAuth auto-refresh 可借鉴)。**三轮调研([mcp-hub-competitors](./mcp-hub-competitors.md)「概念层级 × scope」)明确**:① **trust 门**(防任意 project 静默起外部 MCP,Codex 的「untrusted project MCP 解析但不连」模型可参考)随外部转发一起设计;② **凭据管理**(OAuth token 全局 vs per-project)——办公场景(WorkBuddy)凭据全局合理,我们 DevOps/代码仓库定位(project ≈ 仓库边界)**per-project 凭据更安全**,实现期定;③ 当前内部 hub(官方可信能力)**无需 trust 门**,这些机制是「外部 MCP 转发」能力域的专属,与「落地顺序」一致。
 - **移动端**:browser 能力域的移动端策略(降级 / 仅桌面),wiki 的 consumer 渲染移动端适配。
 
 ## 命名清理(已完成)

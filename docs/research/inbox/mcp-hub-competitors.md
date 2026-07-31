@@ -295,7 +295,7 @@ hapi 是本项目的参考实现(已 clone 到 `~/repos/hapi`,commit ~2025-05)�
 
 ### 横切结论(先看)
 
-- **5 个里仍无一用「服务端 stateless HTTP 给 agent 装 local 工具」**。两个桌面应用(Orca/Proma)给 agent 装能力走「进程内函数 / stdio 子进程 / prompt 注入」,Streamable HTTP 仅用于用户连远端第三方 MCP;两个大厂平台(扣子/WorkBuddy)是云端 SaaS,工具调用走「平台自有协议 + 云托管 MCP」,都不是「服务端给本地 agent 装 stateless HTTP 工具」这条路径;Codex app 是 CLI 的 GUI 壳,工具/传输完全继承 Codex CLI。
+- **5 个里仍无一用「服务端 stateless HTTP 给 agent 装 local 工具」**。两个桌面应用(Orca/Proma)给 agent 装能力走「进程内函数 / stdio 子进程 / prompt 注入」,Streamable HTTP 仅用于用户连远端第三方 MCP;两个大厂平台——扣子是云端 SaaS(工具走云托管 MCP)、WorkBuddy 是桌面办公应用(Connectors 走 MCP,三轮更正,非自研协议),都不是「服务端给本地 agent 装 stateless HTTP 工具」这条路径;Codex app 是 CLI 的 GUI 壳,工具/传输完全继承 Codex CLI。
 - **新增一个同类样本**:Proma 的内置能力(nano-banana 生图/automation/collaboration)用 Claude Agent SDK 的 `createSdkMcpServer()` 进程内 MCP 注入——即 Claude Code 的 `type:"sdk"` 路径。**进程内 = 天然无状态,但不走 HTTP**。这是「给 agent 装 local 能力」的另一种无状态实现(进程内而非 wire),与我们「stateless HTTP」是同一无状态家族的两个分支,印证「local 工具无状态化」方向,但传输形态不同。
 - **扣子(Coze)是本组最接近「平台用 MCP 给 agent 装能力」的**,但形态是「云托管 MCP server + 平台 agent 当 MCP client 连云上 URL」(remote HTTP),且仅 Coze 空间(扣子空间)这条产品线用 MCP;经典 Bot 插件体系是自研 OpenAPI/HTTP 协议,非 MCP。它不给我们「local 工具 stateless HTTP」提供反例,反而印证「MCP 在大厂平台里是 remote 云端形态」。
 - **「我们仍是最激进的一个」成立**——核心判断加强而非修正。新增 5 个无反例,且 Proma 的进程内无状态 + 扣子的云端 MCP 两条都进一步验证「无状态化」方向,只是没人把我们这条「stateless HTTP 给 local 工具」走通。
@@ -339,7 +339,7 @@ hapi 是本项目的参考实现(已 clone 到 `~/repos/hapi`,commit ~2025-05)�
 #### Codex app(OpenAI 官方桌面应用,Electron,闭源包装)[官方文档 + 弱证据]
 
 - **定位**:OpenAI 官方 Codex 桌面应用(2026-02 发布,Mac-only 起,后扩 Windows)。「agent 的 command center」,多项目/多线程并行跑 Codex agent,diff review + 评论,内置 worktree 支持,与 CLI/IDE 扩展共享历史与配置。**是 CLI 的 GUI 壳 + 多 agent 编排 UX,不是独立工具层**。开源的只有 CLI(`openai/codex`),Electron 包装代码未开源(社区 issue 明说「electron wrapper code isn't in this repo」[弱证据 openai/codex issue #25188])。
-- **怎么给 agent 装能力**:**完全继承 Codex CLI**——工具/能力/MCP 全走 CLI 引擎。app 增加的是「项目/线程/worktree/skills/automations/sandbox/内置终端」的**管理 UI**,不是新的能力接入面。MCP 配置仍读 `~/.codex/config.toml` 的 `[mcp_servers]`(与第一轮 Codex CLI 调研一致)。
+- **怎么给 agent 装能力**:**完全继承 Codex CLI**——工具/能力/MCP 全走 CLI 引擎。app 增加的是「项目/线程/worktree/skills/automations/sandbox/内置终端」的**管理 UI**,不是新的能力接入面。MCP 配置仍读 `~/.codex/config.toml` 的 `[mcp_servers]`(与第一轮 Codex CLI 调研一致)。**三轮源码深挖补充**:Codex MCP 实际是 **project-scoped**(绑 git repo/worktree,thread 共享 project MCP、**无 per-conversation scope**)+ user-global 基线 + **trust 门**(untrusted project 的 MCP 解析但不连接),详见三轮「概念层级 × scope」节。
 - **传输**:继承 CLI——**stdio + Streamable HTTP** 都支持[官方文档多份第三方配置指南一致,弱证据]。社区报告 app 有 **display bug**:把配成 `streamable_http` 的 server 显示成 STDIO[弱证据],但底层连法是 CLI 的。**无 app 自有的 stdio→HTTP 桥,无 app 自建 MCP server**——它不重新实现 transport,只复用 CLI。
 - **内部工具 vs 外部工具**:Codex CLI 内置工具(文件/终端/apply_patch/search 等)进程内;外部 MCP 走 `config.toml`。app 不引入新的内外划分。
 - **部署形态**:本地桌面(Electron)。Cloud 与 local agent 都支持(app 可让 agent 跑本地或远端[官方文档])。**单用户桌面,非多租户**。
@@ -371,18 +371,18 @@ hapi 是本项目的参考实现(已 clone 到 `~/repos/hapi`,commit ~2025-05)�
 #### WorkBuddy(腾讯,workbuddy.ai,闭源)[官方站点 + 弱证据]
 
 - **定位**:腾讯(腾讯云 CodeBuddy 团队)个人 AI agent 工作台。一句话指令 → 多 agent 规划/并行执行 → 交付完整产物(报告/分析/文档/PPT/网站)。对标 OpenAI Codex app / Anthropic Claude 桌面,但面向**办公/知识工作**而非编码。多 agent 架构 + 本地文件访问 + 广泛集成(Slack/Telegram/QQ Mail/腾讯文档等)[官方站点 workbuddy.ai + eigent.ai review]。有 benchmark(tencent/workbuddy-bench on HuggingFace,真实工作任务评测)。
-- **怎么给 agent 装能力**:**Skills + Connectors + Experts 三层自研协议**[弱证据 youmind/eigent review]:
+- **怎么给 agent 装能力**:**Skills + Connectors + Experts 三层**[官方 codebuddy docs + 第三方 review]:
   - **Experts** =「知识」角色(领域专家 prompt,知道怎么做);**Skills** =「做」角色(封装脚本/工作流执行动作:读写文件/生成 PPT/联网搜索);**Connectors** = 接外部服务(QQ Mail/腾讯文档/Slack/Telegram 等,读操作外部服务)。
-  - **未提及 MCP**——所有公开材料(官方站点/腾讯云页/第三方 review/YouTube 测评)均**未出现 MCP / Model Context Protocol 字样**。工具接入是**平台自研 Skills/Connectors 协议**,非 MCP[弱证据,基于公开材料缺失,非官方明文否认]。
-- **传输**:不公开。Skills 是平台内脚本/工作流调用(进程内或云内),Connectors 是平台对接外部 SaaS API(平台侧 HTTP 调用第三方,非给 agent 暴露 MCP wire)。**无证据表明用 MCP / stdio / Streamable HTTP 给 agent 装工具**。
-- **内部工具 vs 外部工具**:Skills(平台自带脚本/工作流,含 nanoskill 生态可加 agent skills[弱证据 nanoskill.ai])= 内部;Connectors(对接外部 SaaS)= 外部;Experts(领域 prompt)= 知识层。三层自研,无 MCP 命名空间。
+  - **Connectors 技术形态含「MCP + CLI(标准化协议)」**——自定义连接器 = 安装 MCP 服务,腾讯会议/腾讯乐享等均走 MCP[官方 codebuddy Connector 文档 + tencent.com 新闻稿]。**【三轮更正】** 二轮基于公开材料缺失推断「不用 MCP」是错的:官方 Connector 文档明文用 MCP。WorkBuddy 是**同类 MCP 产品**,Connectors scope 模型可直接参考(见三轮「概念层级 × scope」)。
+- **传输**:Connectors 走 MCP(标准化协议,CLI 形态)[官方 Connector 文档]。具体 stdio/HTTP 未见明文[弱证据]。Skills 是平台内脚本/工作流(进程内/云内)。
+- **内部工具 vs 外部工具**:Skills(平台自带脚本/工作流,含 nanoskill 生态可加 agent skills[弱证据 nanoskill.ai])= 内部;Connectors(对接外部 SaaS,走 MCP)= 外部;Experts(领域 prompt)= 知识层。三层中 Connectors 走 MCP 标准协议。
 - **部署形态**:**本地桌面应用**(Mac/Windows 下载,workbuddy.ai 官方下载页)+ 云端模型。**单用户桌面**,agent 跑本机 + 调云端模型。团队版/企业版存在(腾讯云页提 Team Edition)。**非服务端 spawn agent 的多租户 hub 形态**(虽有云服务,但定位是桌面 agent 工作台)。
 - **对照我们 hub 定位**:
   - **相似**:多 agent 规划/并行 + 本地文件访问 + 任务工作区边界,与我们控制台 agent 工作区结构相似;「Skills 内部 + Connectors 外部」的内外分层与我们「内部域 + 外部转发」概念同构(只是协议不同)。
-  - **差异**:WorkBuddy **不用 MCP**(公开材料无任何 MCP 痕迹),走自研 Skills/Connectors 协议。我们「统一 MCP」与 WorkBuddy「自研协议」是两条路——WorkBuddy 是大厂闭环生态(自家 Skills/Connectors/Experts 全控),我们是开放协议(MCP 接任意第三方)。WorkBuddy 是**反例对照组**:大厂自研协议不接 MCP,说明 MCP 不是「必选」,我们选 MCP 是为「开放接第三方 + 跨 agent runtime 通用」,WorkBuddy 选自研是为「闭环可控 + 计费/配额/体验全握」。
+  - **差异(三轮更正)**:WorkBuddy **用 MCP**(Connectors 标准化协议,非「自研不用 MCP」)。它是**办公场景**桌面 agent 工作台(凭据全局 OAuth、文件 per-task 授权),我们是**服务端多租户**控制台(project ≈ 仓库边界)。两者同走 MCP,但部署形态不同致凭据/文件粒度取舍不同——WorkBuddy 的 MCP scope 模型(四层概念 + 三层分离,见三轮「概念层级 × scope」)可参考,但别照搬其全局凭据(办公场景合理,我们 DevOps 定位 per-project 凭据更安全)。
   - **可借鉴**:① Experts(knowledge)/Skills(do)/Connectors(external)三层分离 = 「知识 vs 能力 vs 外部接入」的语义分层,我们 hub 也可区分「知识/行为 skill-market」vs「能力/工具 MCP」(定位文档已提 skill-market 与 MCP 互补,WorkBuddy 的 Experts/Skills 切分是参考);② 任务工作区边界(授权文件夹范围) = 我们 project-scoped 能力可见性的办公场景镜像;③ benchmark 驱动(tencent/workbuddy-bench)说明 agent 工作台可用真实任务量化评测。
-  - **需规避**:大厂自研协议闭环(WorkBuddy/Coze Bot 都有此倾向)→ 若我们未来要接的大厂平台是自研协议,我们的「统一 MCP」对它们不直接适用,需适配层(类似 hapi 的 stdio 桥,但是「自研协议→MCP」桥,更重)。
-  - **证据强度**:定位/三层架构 [官方站点 workbuddy.ai + 腾讯云页 + eigent.ai review,弱证据(review 非官方一手)];**MCP 缺失 = 基于公开材料无 MCP 字样的负证据,标 [弱证据]**(非官方明文否认,是推断);benchmark [HuggingFace tencent/workbuddy-bench,官方数据集]。
+  - **需规避**:大厂分产品线选协议——扣子经典 Bot 自研 OpenAPI(适配层问题仍在),但 **WorkBuddy 已用 MCP**(三轮更正,不再是自研协议反例)。若接的大厂平台确是自研协议(如扣子 Bot),「统一 MCP」需适配层(类似 hapi 的 stdio 桥,但「自研协议→MCP」桥更重)。
+  - **证据强度**:定位/三层架构 [官方 codebuddy docs + workbuddy.ai,较一手];**Connectors 用 MCP [官方 Connector 文档 + tencent.com 新闻稿,正证据——三轮更正二轮「公开材料无 MCP」的负证据推断]**;具体传输形态 stdio/HTTP [弱证据,未见明文];benchmark [HuggingFace tencent/workbuddy-bench,官方数据集]。
 
 ### 二轮核心判断修正
 
@@ -396,14 +396,75 @@ hapi 是本项目的参考实现(已 clone 到 `~/repos/hapi`,commit ~2025-05)�
 | **Proma** | 内置能力走 `createSdkMcpServer()` **进程内 SDK MCP**(无 wire,天然无状态);退路 stdio npx spawn(chrome-devtools,stateful);用户外部 MCP 走 stdio/http/sse(HTTP 仅 remote) | **否(进程内无状态,非 HTTP)** | 无状态家族的**进程内分支**,与我们 stateless HTTP 是同族异支。印证「local 工具无状态化」方向,但传输形态不同 |
 | **Codex app** | 继承 Codex CLI(stdio + Streamable HTTP,但 HTTP 用于连远端 server);app 不重造 transport | **否** | 等同第一轮 Codex CLI,无新增 |
 | **扣子/Coze** | 扣子空间 MCP 扩展 = **云托管 remote HTTP**(agent 与 MCP server 都在 Coze 云内);经典 Bot 插件 = 自研 OpenAPI/HTTP(非 MCP) | **否(云端 remote,非 local)** | MCP 在大厂是云端形态,「local 工具」对云平台不成立 |
-| **WorkBuddy** | 自研 Skills/Connectors/Experts 协议,**不用 MCP**(公开材料无 MCP 痕迹) | **否(自研协议,无 MCP)** | 大厂闭环自研,反例对照组 |
+| **WorkBuddy** | Skills/Connectors/Experts 三层,**Connectors 走 MCP**(标准化协议,三轮更正) | **否(桌面办公场景,非服务端 local stateless HTTP)** | ~~反例对照组~~ → 三轮更正为**同类 MCP 产品**(办公桌面形态);补概念层级 scope |
 
 **结论:5 个竞品无一对「服务端 stateless HTTP 给 agent 装 local 工具」做反例。** 因此:
 
 1. **判断不修正,加强**。第一轮「5 编辑器 + 3 网关无一用 stateless HTTP 做 local 工具」+ 第二轮「5 新竞品仍无一」→ 累计 **13 个竞品(2 CLI + 5 编辑器 + 4 网关 + 2 桌面应用 + 2 大厂平台,去重)无一用 stateless HTTP 给 local 工具**。我们的「stateless HTTP 给 local 工具」是**全场独一份**。
 2. **「无状态化」方向被新样本再次验证**(只是分支不同):Proma 选**进程内无状态**(`createSdkMcpServer`,Claude Code `type:"sdk"` 路径),我们选**stateless HTTP**。两者都无状态,驱动力是部署形态——**桌面单进程 → 进程内;服务端多租户/可水平扩展 → stateless HTTP**。我们与 Proma 的差异是**部署形态差异的必然**,不是路线之争。这给第一轮「唯一要正视的取舍」补了第二样本:无状态不只 HTTP 一条路,但我们的服务端多租户定位锁死了 HTTP 这条。
-3. **大厂平台对工具层的选择分化**:扣子空间用 MCP(云端 remote)、扣子经典 Bot 与 WorkBuddy 用**自研协议**(OpenAPI/Skills/Connectors)。MCP 在大厂是「新 agent 工作台」选项,不是「全平台统一」。我们「统一 MCP」比大厂更激进——大厂可保留自研协议闭环可控,我们必须用 MCP 才能开放接任意第三方 + 跨 agent runtime 通用。**这是定位差异,不是技术优劣**。
+3. **大厂平台对工具层的选择分化(三轮修正)**:扣子空间用 MCP(云端 remote)、扣子经典 Bot 用自研 OpenAPI、**WorkBuddy 用 MCP**(Connectors 标准化协议,三轮更正)。即大厂「新 agent 工作台」(扣子空间/WorkBuddy)已普遍采纳 MCP,经典产品线(扣子 Bot)仍保留自研协议。我们「统一 MCP」与采纳 MCP 的大厂新工作台方向一致,差别在我们**对所有 runtime 通用**,大厂是**分产品线选**。
 4. **新可借鉴(本轮增量)**:① Proma `default-mcp.json` 单一事实源 + `RESERVED_BUILTIN_KEYS` 保留名 + `injectBuiltinSafely()` 错误隔离 + `required:false` 可选降级——内/外 MCP 分层的工程原语,直接抄;② Proma Pi runtime 桥(无 `mcpServers` 的 runtime 要自建 MCP→customTools 适配)印证「不同 runtime 能力接入面不一,需适配层」(我们 stdio 桥同族问题);③ Orca Design Mode「点击 UI → HTML/CSS/截图进 prompt」是 browser_ 域的**非 MCP 降级形态**(简单场景 prompt 注入比 MCP 工具轻);④ 扣子「工作流发布为 MCP server」的双向暴露(我们外部转发可对称提供内部能力外发);⑤ WorkBuddy Experts/Skills/Connectors 三层 = 「知识 vs 能力 vs 外部接入」语义分层(定位文档 skill-market vs MCP 互补的参考)。
-5. **新需规避(本轮增量)**:① 别以为「大厂都用 MCP」——扣子经典 Bot 与 WorkBuddy 不用,我们统一 MCP 比大厂更激进,需明确这是为「开放接第三方 + 跨 runtime」的取舍;② GUI 层 transport 展示易与底层不一致(Codex app display bug、第一轮 Cursor 分歧)——我们若有 MCP 管理 UI,展示态必须与 spawn 注入态严格对齐;③ 进程内 SDK MCP(`createSdkMcpServer`)锁死 Claude SDK,对其他 runtime 无等价需自建桥——我们 stateless HTTP 对所有 `type:"http"` runtime 通用,是更解耦的形态,**这是我们选 HTTP 而非进程内的额外收益**(第一轮未提,本轮 Proma 对照补上)。
+5. **新需规避(本轮增量)**:① 大厂分产品线选协议——扣子经典 Bot 自研 OpenAPI,但**扣子空间 + WorkBuddy 已采纳 MCP**(三轮更正 WorkBuddy)。我们「统一 MCP」与采纳 MCP 的大厂新工作台方向一致,差别在我们对所有 runtime 通用、大厂分产品线选;② GUI 层 transport 展示易与底层不一致(Codex app display bug、第一轮 Cursor 分歧)——我们若有 MCP 管理 UI,展示态必须与 spawn 注入态严格对齐;③ 进程内 SDK MCP(`createSdkMcpServer`)锁死 Claude SDK,对其他 runtime 无等价需自建桥——我们 stateless HTTP 对所有 `type:"http"` runtime 通用,是更解耦的形态,**这是我们选 HTTP 而非进程内的额外收益**(第一轮未提,本轮 Proma 对照补上)。
 
 > **给整合者的提示**:本轮不修正 `mcp-hub-positioning.md`,但补强了「我们是最激进的一个」的证据 base(13 竞品无反例)+ 补了「无状态的两条路(进程内 vs stateless HTTP)由部署形态决定」的第二样本(Proma)。整合时建议在 positioning「取舍」节明确:**桌面单进程可走进程内 SDK MCP(如 Proma),我们因服务端多租户/水平扩展定位锁死 stateless HTTP**——这是比第一轮「无状态损失 stdio 白给的东西」更深的辩护(不是「我们丢了什么」,而是「我们部署形态决定了哪条无状态路」)。
+
+## 三轮补充:概念层级 × scope 维度(Codex 源码深挖 + WorkBuddy 更正)
+
+> 状态:三轮补充(2026-07-31)。用户追问「Codex app 有对话/项目概念,MCP 怎么挂;WorkBuddy 怎样」——发现前两轮**未讲清 MCP 配置在产品概念层级(对话/项目/全局)的挂载粒度**,且 WorkBuddy「不用 MCP」是事实错误(已就地更正二轮)。本轮聚焦补这个维度。
+
+### 核心问题:MCP/工具配置挂在哪个概念层级?
+
+前两轮聚焦「传输方式(stdio vs stateless HTTP)」和「是否用 MCP」,没讲清 **MCP/工具配置在概念层级(对话/项目/全局)上的挂载粒度**。这对我们 per-project hub(`/mcp/{project}`)是最该对齐的维度。
+
+### Codex(源码级,最强证据):project-scoped + 无 per-conversation MCP
+
+- **模型**:**project-scoped(主)+ user-global 基线 + CLI override** 混合。MCP **绑在 project 上**,**无 per-conversation MCP scope**——conversation(thread)只是 project 内逻辑分支,共享所属 project 的 MCP。
+- **配置层级(低→高覆盖)**:`system(/etc/codex/config.toml)` < `user(~/.codex/config.toml,主入口)` < `profile` < `cwd` < `tree(父目录链)` < **`repo/project($(git rev-parse --show-toplevel)/.codex/config.toml,核心)`** < `CLI override(-c,最高)`[源码 `config/src/loader/mod.rs` L99-106, L366]。
+- **conversation 继承 project MCP**:`thread/start` 只传 cwd(无 MCP 字段)→ Codex 用 cwd 解析 `active_project` → 读该 project 的 config.toml 叠加 user/global → `ConfigLayerStack.effective_config()` 合并 McpConfig。**同 project 下所有 thread 共享一套 MCP**[deepwiki 源码引用]。
+- **换 worktree/cwd = 换 MCP**:落到不同 git repo/worktree → 触发该 worktree 自带的 `.codex/config.toml`。
+- **trust 模型(安全层,关键)**:cwd/tree/repo 三层均 "loaded but disabled when untrusted"[L104-106 原文]。未在 `~/.codex` 注册为 trusted 的 project,其 project-local MCP **被解析但不连接**——防恶意 repo 自动起外部 MCP。`TrustLevel` + `projects_trust: HashMap`[L841] + `is_trusted()`[L856]。
+- **工具非全可见(多级裁剪)**:`enabled_tools` 白名单 / `disabled_tools` 黑名单 + `default_tools_approval_mode` + per-tool `approval_mode` + `tool_is_model_visible()`(tool 元数据 `ui.visibility` 含 `"model"` 才对模型可见)[源码 gh search `mcp_edit.rs` / `core/src/mcp_tool_exposure.rs`]。
+- **AGENTS.md / codex.md 只承载 instructions,不声明 MCP**——MCP 仅来自 config.toml 的 `[mcp_servers.*]`(`McpServerConfig` 定义于 `config/src/mcp_types.rs`)。
+
+### WorkBuddy(官方文档级):四层概念 + 三层分离 scope
+
+- **概念四层**:`Memory`(个人长期偏好)> `Project`(团队级上下文容器)> `Workspace`(本次任务文件目录)> `Task`(一次指令)[官方 cloud.tencent.com + 第三方 cnblogs 解读]。
+- **三层分离 scope(关键洞察)**——WorkBuddy **没有把工具配置一刀切 per-project**,而是三层分离:
+
+  | 维度 | 挂在哪层 | 为什么 |
+  |---|---|---|
+  | 凭据 / 市场 / 个人偏好 | **全局**(用户账号) | OAuth token 集中维护,一次配所有任务复用 |
+  | 能力编排与默认值(用哪些 Skill/Connector/Expert) | **per-project** | 项目空间预设,注入该项目所有新任务,团队复用 |
+  | 文件访问范围 | **per-task**(Workspace) | 每次任务独立授权工作目录,避免一次授权全盘 |
+
+- **Experts 不持权限**:权限挂在工具(Skill/Connector)上,角色只调用工具。多 agent 并行时每位专家带自己「工具链」,工具可见性按角色**隐式划分**而非运行时动态裁剪[官方 Expert 文档 + 弱推断]。
+- **task 有持久化载体**(任务历史 + 云端 7×24 托管,关客户端仍运行),但**文件范围 per-task**。
+
+### 三列对照:概念层级 × 工具/MCP scope
+
+| 维度 | **Codex**(源码级) | **WorkBuddy**(文档级) | **我们**(当前 hub) |
+|---|---|---|---|
+| 能力主挂载粒度 | project(git repo/worktree/cwd) | project(项目空间预设默认能力) | project(`/mcp/{project}`) |
+| conversation/task 独立挂 MCP | ❌(thread 共享 project MCP) | ❌(task 继承 project 预设) | ❌(session 继承 project) |
+| 全局基线层 | ✅ user/system config.toml | ✅ 凭据/市场/偏好 | ❌ 当前无 |
+| 项目级覆盖 | ✅ .codex/config.toml | ✅ project 预设注入新任务 | ✅ mcp.json 能力开关 |
+| CLI 临时覆盖 | ✅ -c(最高) | — | ✅ spawn --mcp-config(我们注入) |
+| **trust 安全门** | ✅ untrusted project MCP 解析但不连接 | 沙箱 | ❌ 当前无 |
+| 文件访问范围 | cwd=project(+ trust 门) | per-task Workspace | cwd=projectPath |
+| 工具可见性裁剪 | enabled/disabled + approval + model-visible | 按专家角色隐式 | 计划:tools/list 动态裁剪 |
+
+### 对我们的核心结论
+
+1. **方向被验证**:Codex 源码 + WorkBuddy 文档都确认「能力挂 project,conversation/task/thread 不独立挂 MCP,只继承所属 project」。Codex `thread/start` 只传 cwd、无 MCP 字段,thread 用 cwd 解析 project 后读该 project MCP——和我们 session 继承 project MCP 语义一致。**两个成熟产品都是「进 project 锁定一套 MCP,对话只是 project 内分支,不换 MCP」**。我们的 per-project hub + session 继承设计是对的。
+
+2. **trust 门 + 凭据管理 = 「外部 MCP 转发」阶段才引入,当前基座不需要**:
+   - Codex 的 trust 门是因为它**读用户 project 里的 `.codex/config.toml`**(可能含恶意外部 MCP server URL);我们当前**不读用户 project 的任意 MCP**——我们注入的是自己提供的内部 hub,所以没有这个攻击面。
+   - WorkBuddy 的三层分离(全局凭据 + per-project 能力 + per-task 文件)——我们当前「能力 per-project」对齐,但凭据/文件两维折叠在 project 里。短期 OK(内部 hub 无外部凭据、文件 cwd=projectPath 对代码仓库场景合理),**「外部 MCP 转发」阶段凭据维度才真正冒出来**(OAuth token 该全局还是 per-project)。
+   - **内部能力域(wiki/browser 等)= 官方可信能力**(用户理解它们是平台官方提供,信任度最高)——**内部 hub 无需 trust 门**。trust 门纯粹为「外部 MCP 转发」(用户配的第三方 server)准备。
+
+3. **与落地顺序一致**:安全/凭据机制(trust 门、全局凭据、per-task 文件授权)的引入时机是「外部 MCP 转发」能力域,不是基座/wiki/browser 阶段——与 positioning「落地顺序:基座 → wiki → browser,插件抽象等第二个样本再提取」节奏一致。本轮已把这条 deferred 决策写回 positioning「待深化」节。
+
+### 证据强度
+
+- **Codex**:源码原文(`config/src/loader/mod.rs` 层模型 L99-106/L366 + gh search 命中 `mcp_types.rs`/`mcp_edit.rs`/`mcp_tool_exposure.rs` struct/函数)= 最强;thread/MCP 绑定关系为 deepwiki 源码引用(次强)。注:`~/repos/codex` 完整 clone 因仓库较大超时未留存,验证改用 raw 文件 + `gh search code` 远程命中。
+- **WorkBuddy**:[官方一手] workbuddy.ai/workbuddy.cn、cloud.tencent.com/product/workbuddy、codebuddy.cn docs(Connector/Expert-Center/Overview)、tencent.com/en-us/articles/2202350;[第三方·弱] cnblogs.com/tgzhu/articles/21629693(四层解读,清晰但非官方)、eigent.ai/blog/workbuddy-ai-review。**公开材料未覆盖**:Workspace 任务结束后授权是否自动回收、专家团是否做硬性运行时 tool-filter。
