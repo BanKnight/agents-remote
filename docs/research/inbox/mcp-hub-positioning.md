@@ -40,16 +40,17 @@
 
 ## 落地顺序(不建空架子)
 
-定位可以是 hub,但实现从**一个具体能力域**切入,不先搭 hub 空壳:
+定位可以是 hub,但**第一个要实现的是 MCP hub 基座本身**——无状态 Streamable HTTP server + 基线文件读写 + spawn 时 `--mcp-config` 注入这套管线。基座跑通后,wiki 才是它之上第一个能力域:
 
 ```
 MCP Hub 定位(只立方向)
-  └─ 内部 hub 基座 + 基线文件读写
-        └─ wiki 第一个内部能力域(producer 工具 + consumer 渲染)—— 验证 hub 设计
+  └─ 第一步:MCP hub 基座 —— 无状态 Streamable HTTP server + 基线文件读写 + --mcp-config 注入
+        └─ wiki 第一个内部能力域(producer 工具 + consumer 渲染)—— 基座之上第一个能力域,验证 hub 设计
               └─ browser 第二个内部能力域 —— 复用 hub,此时提取正式「工作台能力域插件」抽象
 ```
 
-- **wiki 先于 browser**:wiki 工程量小(consumer 渲染层 + producer MCP 工具),先打通 hub 地基;browser 作第二个能力域复用,并在它身上提取 workspace 注册 / 开关的正式抽象。
+- **MCP 基座先于能力域**:基座(无状态 server + 基线文件读写 + 注入)是所有能力域的共同前置依赖,wiki/browser 都长在它上面。先打通基座 = 打通「agent 能连上 hub 并调用到基线文件读写」这条最小管线;wiki 是基座之上的第一个**能力域**(wiki 语义增强工具),不是第一个要实现的东西。基座本身不建空架子——它必须先有一个被调用的能力域(wiki)才值得存在,但 wiki 工具的运行依赖基座已就绪,故实现期先落地基座再立刻接 wiki 工具。
+- **wiki 先于 browser**:wiki 工程量小(consumer 渲染层 + producer MCP 工具),作基座之上首个能力域验证 hub 设计;browser 作第二个能力域复用,并在它身上提取 workspace 注册 / 开关的正式抽象。
 - **插件抽象时机**:现有 `WORKBENCH_TAB_PLUGINS`(`web/src/components/workbench/workbench-tab-plugin.tsx`)已是 consumer 侧渲染 + 可见性的雏形(pages 即以此接入)。wiki 复用现成加一项即可;**不**在 wiki 阶段就把 hub 抽象成正式插件系统——等 browser(第二个样本)复用时差异点暴露,再提取(rule of three)。
 
 ## 与现有架构的关系
