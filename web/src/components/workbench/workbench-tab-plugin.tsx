@@ -5,6 +5,7 @@ import type { WorkbenchMiddleTab, WorkbenchInspectionTab } from "../../routes/wo
 import { FilesPanel } from "../files/file-browser";
 import { GitDiffPanel } from "../git/git-diff-viewer";
 import { PagesPanel } from "../pages/pages-panel";
+import { WikiPanel } from "../wiki/wiki-panel";
 
 /** Files inspection 的 query-key 隔离段（与 ProjectConsole section 缓存分离）。 */
 const WORKBENCH_FILES_QUERY_SCOPE = "workbench-files";
@@ -67,6 +68,12 @@ export const WORKBENCH_TAB_PLUGINS: WorkbenchTabPlugin[] = [
     id: "pages",
     labelKey: "workbench.tabPages",
     render: (ctx) => (ctx.projectKey ? <PagesPanel projectName={ctx.projectKey} /> : null),
+    when: (ctx) => ctx.projectKey !== null,
+  },
+  {
+    id: "wiki",
+    labelKey: "workbench.tabWiki",
+    render: (ctx) => (ctx.projectKey ? <WikiPanel projectName={ctx.projectKey} /> : null),
     when: (ctx) => ctx.projectKey !== null,
   },
 ];

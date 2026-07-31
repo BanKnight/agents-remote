@@ -9,6 +9,7 @@ import type {
   ProjectDetailResponse,
   ProjectListResponse,
   UpdatePagesConfigResponse,
+  WikiIndexResponse,
 } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
@@ -25,6 +26,7 @@ import {
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectPagesError, ProjectPagesService } from "./project-pages";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
+import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -50,6 +52,7 @@ type FetchHandlerOptions = {
   claude2StreamController?: Claude2StreamController;
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
+  projectWikiService?: ProjectWikiService;
   projectGitDiffService?: ProjectGitDiffService;
   projectService?: ProjectService;
   projectsRoot?: string;
@@ -267,6 +270,13 @@ export const createFetchHandler =
       );
       if (pagesConfigResponse) {
         return withRefresh(pagesConfigResponse);
+      }
+    }
+
+    if (options.projectWikiService) {
+      const wikiResponse = await handleWikiRoute(request, url, options.projectWikiService);
+      if (wikiResponse) {
+        return withRefresh(wikiResponse);
       }
     }
 
@@ -653,6 +663,84 @@ const matchProjectPagesPath = (pathname: string): ProjectPagesPathMatch | undefi
   return { projectName, urlPath: decodedTail, isConfig: false };
 };
 
+type ProjectWikiPathMatch = {
+  projectName: string;
+  slug?: string; // undefined = /wiki(列表);有值 = /wiki/{slug}(读单页)
+};
+
+/**
+ * 匹配 /api/projects/{name}/wiki(列表)与 /api/projects/{name}/wiki/{slug}(读单页)。
+ * project 段 encode + 不含 "/";slug 段 encode + 不含 "/"(flat 目录,首期 slug 无子路径)。
+ * slug 语义校验(sanitizeWikiSlug)留给 ProjectWikiService,路由只做 URL 结构校验。
+ */
+const matchProjectWikiPath = (pathname: string): ProjectWikiPathMatch | undefined => {
+  const prefix = "/api/projects/";
+  if (!pathname.startsWith(prefix)) return undefined;
+  const rest = pathname.slice(prefix.length);
+  const infix = "/wiki";
+  const idx = rest.indexOf(infix);
+  if (idx === -1) return undefined;
+  const encodedName = rest.slice(0, idx);
+  if (encodedName.length === 0 || encodedName.includes("/")) return undefined;
+  const projectName = decodeProjectName(encodedName);
+  if (!projectName) return undefined;
+
+  const tail = rest.slice(idx + infix.length);
+  if (tail.length === 0) {
+    return { projectName }; // /wiki → 列表
+  }
+  // tail 形如 "/{slug}":必须以 "/" 开头,slug 段不含 "/"。
+  if (!tail.startsWith("/")) return undefined;
+  const encodedSlug = tail.slice(1);
+  if (encodedSlug.length === 0 || encodedSlug.includes("/")) return undefined;
+  try {
+    return { projectName, slug: decodeURIComponent(encodedSlug) };
+  } catch {
+    return undefined;
+  }
+};
+
+const projectWikiErrorResponse = (error: ProjectWikiError) => {
+  if (error.code === "PROJECT_NOT_FOUND" || error.code === "PROJECT_FILE_NOT_FOUND") {
+    return jsonError(error.code, error.message, 404);
+  }
+
+  if (error.code === "PROJECT_FS_ERROR") {
+    return jsonError(error.code, error.message, 500);
+  }
+
+  // PATH_OUTSIDE_ROOT(symlink 逃逸)、WIKI_SLUG_INVALID、PROJECT_NAME_INVALID、
+  // PROJECT_TARGET_INVALID → 400。(HTTP consumer 只读,TARGET_EXISTS 不会到这里。)
+  return jsonError(error.code, error.message, 400);
+};
+
+// GET /api/projects/{name}/wiki        → list pages({ pages: [...] })
+// GET /api/projects/{name}/wiki/{slug} → read page(WikiPage)
+// 写只经 MCP 工具(agent producer);HTTP consumer 只读。已在统一 token 守卫后。
+const handleWikiRoute = async (
+  request: Request,
+  url: URL,
+  projectWikiService: ProjectWikiService,
+): Promise<Response | undefined> => {
+  if (request.method !== "GET") return undefined;
+  const match = matchProjectWikiPath(url.pathname);
+  if (!match) return undefined;
+
+  try {
+    if (match.slug === undefined) {
+      const pages = await projectWikiService.listPages(match.projectName);
+      return Response.json({ pages } satisfies WikiIndexResponse);
+    }
+    const page = await projectWikiService.readPage(match.projectName, match.slug);
+    return Response.json(page);
+  } catch (error) {
+    if (error instanceof ProjectWikiError) {
+      return projectWikiErrorResponse(error);
+    }
+    throw error;
+  }
+};
+
 type ProjectGitDiffPathMatch = {
   projectName: string;
   kind: "file" | "diff" | "branches" | "log" | "aheadBehind" | "compare" | "compareFile";
@@ -891,11 +979,13 @@ export const startApi = async () => {
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
   const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore, settings.mcpPort);
+  const projectWikiService = new ProjectWikiService(settings.projectsRoot);
   // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
   // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
   const mcpHub = startMcpHubServer({
     port: settings.mcpPort,
     projectsRoot: settings.projectsRoot,
+    wikiService: projectWikiService,
   });
   const claudePermissionModes = await parseClaudePermissionModes();
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
@@ -975,6 +1065,7 @@ export const startApi = async () => {
       claude2StreamController,
       projectFilesService,
       projectPagesService,
+      projectWikiService,
       projectGitDiffService,
       projectService,
       projectsRoot: settings.projectsRoot,

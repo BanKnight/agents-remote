@@ -47,10 +47,10 @@ Andrej Karpathy 提出的 **pattern / 方法论**（2026-04），不是一个正
 ## 选型结论：不并入外部开源项目
 
 社区主要开源实现：
-- `lucasastorian/llmwiki` — Karpathy LLM Wiki 的开源实现，夜间 Claude Routine 自动维护。
+- `lucasastorian/llmwiki` — Karpathy LLM Wiki 的开源实现（**A 机制**：agent 调 MCP 工具逐页写；「夜间 routine」只是 A 的定时触发器，非 B 编译——见「A/B 路线调研结论」修正说明）。
 - `nashsu/llm_wiki` — 跨平台桌面应用，增量编译成交互链接知识库。
 - `praneybehl/llm-wiki-plugin` — 做成 Claude Code 插件。
-- `llm-wiki-compiler` — Node.js CLI，批量编译源目录成 wiki。
+- `llm-wiki-compiler` — **非独立 repo**（GitHub/npm 查无），实为 Hermes bundled skill `skills/research/llm-wiki`，也是 A（见「A/B 路线调研结论」修正说明）。
 
 **都不并入**，理由：
 1. 它们大多是 **producer 侧或独立应用**（AI 编译生成 wiki），或自己是完整应用。我们的职责是 **consumer 展示**，职责不匹配。
@@ -75,6 +75,74 @@ Andrej Karpathy 提出的 **pattern / 方法论**（2026-04），不是一个正
 2. 上层 wiki skill：一份 SKILL.md，教 Agent 何时、为何维护 wiki（新源到达 → 编译成页面、发现矛盾 → 更新、跨页面链接 → 补 `[[link]]`），内部调底层 MCP 工具。
 
 > MCP 只给 AI 手段，不给 AI 动机；skill 给动机但不保格式正确。底层 MCP 保格式，上层 skill 保行为发生。
+
+## A/B 路线调研结论（2026-07-31，三轮 subagent 源码级）
+
+> 状态：原「待深化」的 A/B 选型经三轮调研已得出结论。**结论不是「A 还是 B」，而是问题被重构了——见下。** 本节优先级最高，是 wiki 能力域进入 plan 前的定位锚点。
+
+### 原始困惑：wiki 走 A 还是 B？
+
+- **A（agent 实时维护）**：agent 对话中自主 read/write 单个知识条目，wiki 是 agent「工作记忆」，细粒度工具。
+- **B（一次性编译）**：routine/batch 把源材料编译成持久 wiki，agent 不在对话里逐页写。
+
+### 三路证据（均源码级）
+
+**路 1 — LLM Wiki 开源实现深挖**（lucasastorian/praneybehl/nashsu/Hermes）：
+- **生态 A 为主（3/4）**。Karpathy 原版 `lucasastorian/llmwiki` = **A**（agent 调 MCP 工具 `guide/search/read/create/edit/append/delete/lint` 逐页写）；praneybehl = A（agent 原生 edit）；Hermes skill = A。仅 nashsu 桌面 app = B。
+- **【修正本文档两处误读】**：① `lucasastorian`「夜间 routine」≠ B——routine 只是 A 的*定时触发器*，机制仍是 agent 逐页写（`mcp/tools/write.py` create/edit/append 装饰器实证）。②「llm-wiki-compiler」根本不是独立 repo（GitHub/npm 查无），是 Hermes bundled skill `skills/research/llm-wiki`，且也是 A。
+- lucasastorian 工具集是我们 `wiki_*` 的一对一现成模板。
+
+**路 2 — agent IDE/CLI 落地**（Claude Code/Cursor/Codex/Windsurf/Continue/Copilot/Gemini/Aider）：
+- 成熟生态是**两层架构**：committed 项目规则（CLAUDE.md/AGENTS.md/.cursor/rules，**全 B，agent 永不自主写**）+ 个人记忆层（Claude Code auto-memory/Codex `~/.codex/memories`/Windsurf Cascade Memories，**全 A，agent 自主写默认开**）。
+- **关键**：我们 spawn 的 claude2/codex **已各自内置 A 层**（auto-memory / memories）——重造「agent 工作记忆」无差异化。
+
+**路 3 — agent 记忆框架**（mem0/Letta/Zep/Graphiti/Devin）：
+- mem0/Zep/Graphiti 主流引擎是 **B**（后台 LLM 抽取器，`mem.add(messages)`→系统抽事实，agent 不逐条写）。
+- 唯一 A 旗手 **Letta/MemGPT**（agent 显式 `core_memory_append` 自写），但记忆是 agent 私人笔记本，不面向人类。
+- Claude Code Auto Memory = A 但扁平 jotter（200 行封顶），非结构化多页 wiki。
+- 真正像 wiki 的 Devin DeepWiki = B 后台编译。
+
+### 综合表：谁缝合了「A 机制 + 可浏览 wiki 产物」
+
+| 产品 | A 机制 | 可浏览 wiki | 缝合 | 对我们的缺口 |
+|---|---|---|---|---|
+| Letta/MemGPT | ✅强 | ❌私人记忆 | 否 | 产物不给人看 |
+| Devin DeepWiki | ❌B | ✅ | 否(B) | agent 不写 |
+| Claude Code Auto Memory | ✅ | 半(扁平 200 行) | 半 | 非结构化 wiki |
+| mem0/Zep | ❌B | 半(事实条目) | 否(B) | agent 不手写 |
+| CLAUDE.md/AGENTS.md | ❌B | ❌单文件 | 否(B) | 是规则非 wiki |
+| **Karpathy/lucasastorian** | ✅ | ✅ | ✅**唯一** | 桌面 routine,非服务端 |
+
+### 结论：空白生态位
+
+**「agent 用工具逐页写（A 机制）+ 给人可浏览的结构化 wiki（产物）+ 服务端多租户 per-project」是空白。** 只有 Karpathy/lucasastorian 缝合了 A+wiki，但它是桌面 routine 形态。Letta 有 A 没 wiki、DeepWiki 有 wiki 但是 B、Claude Code Auto Memory 是 A 但扁平——**无人缝合且落在我们的形态**。
+
+### 推荐定位
+
+> **wiki = agent 用 `wiki_*` MCP 工具逐页维护（A 机制）的、结构化可浏览的 per-project 知识库（产物形态），占「agent 写的可浏览 wiki」空白。**
+
+不重复 agent 内置能力（auto-memory 是给 agent 自己的扁平笔记，非给人浏览的结构化 wiki）；差异化在**产物形态（可浏览 wiki）**，不在机制（A 本身不稀缺）。和我们 hub 天然适配（lucasastorian 工具集是现成模板）。
+
+### 必须正视的张力 + 现成解法
+
+成熟 agent IDE 刻意把 A（agent 自主写）隔离在个人记忆层，绝不碰团队 committed 知识（怕 silent corruption / 自读自输出漂移 / 维护棘轮）。我们让 agent 写「给人浏览的项目 wiki」正踩此张力。**praneybehl 已验证解法**：
+- **三层**：raw（不可变源）/ wiki（agent 拥有的 markdown）/ SCHEMA.md（约定）。
+- **provenance**：每页 `sources:` 指回 raw（可追溯）。
+- **lint 工具**：孤儿页 / 断链 / 超大页 / frontmatter 校验（防 silent corruption）。
+- **atomic 页**：400 行软限制 + YAML frontmatter + `[[wikilink]]`。
+
+### 三项定位决策（已拍板，2026-07-31）
+
+1. **定位**：认可——wiki = agent 用 `wiki_*` MCP 工具逐页写（A 机制）的、结构化可浏览 per-project 知识库（产物），占「agent 写的可浏览 wiki」空白。
+2. **触发方式**：**agent 自主触发（起步）**。agent 对话中自主判断何时调 `wiki_*` 维护，最贴「wiki 作 context layer」+ 最小闭环（无需 cron / slash 路由基建）。routine 定时 / slash 指令作为后续增强，不在首期。
+3. **审批桥**：**agent 直接写 + lint 兜底**。agent 写后即落盘，不设用户审批桥（信任官方能力，保持 wiki 轻盈、不打断 agent 流，与 auto-memory 一致）；silent corruption 由 praneybehl lint（孤儿页 / 断链 / 超大页 / frontmatter 校验）兜底。
+
+### 证据来源（本轮增量）
+
+- `~/repos/llmwiki`（lucasastorian Karpathy 原版，源码级）、`~/repos/llm-wiki-plugin`（praneybehl，源码级）。
+- `~/repos/letta`、`~/repos/graphiti`（Letta/Zep 源码级）。
+- Claude Code v2.1.88 sourcemap（`~/repos/claude-code-sourcemap`）+ openai/codex + codex-rs/memories README。
+- 三轮 subagent 报告存档于本会话 transcript。
 
 ## 待深化问题（进步骤 3 再定）
 

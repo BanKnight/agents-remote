@@ -7,6 +7,7 @@ import { createFetchHandler } from "./index";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
 import { ProjectPagesService } from "./project-pages";
+import { ProjectWikiService } from "./project-wiki";
 import { ProjectService } from "./projects";
 import { SessionRegistry } from "./session-registry";
 let root: string;
@@ -37,14 +38,17 @@ const createTestHandler = () => {
   const projectFilesService = new ProjectFilesService(root);
   const projectGitDiffService = new ProjectGitDiffService(root);
   const projectPagesService = new ProjectPagesService(root);
+  const projectWikiService = new ProjectWikiService(root);
 
   return {
     auth,
     sessionRegistry,
+    projectWikiService,
     handler: createFetchHandler(auth, {
       projectFilesService,
       projectGitDiffService,
       projectPagesService,
+      projectWikiService,
       projectService,
       projectsRoot: root,
       sessionRegistry,
@@ -747,6 +751,52 @@ test("createFetchHandler requires token auth for token pages roots", async () =>
   );
   expect(ok.status).toBe(200);
   expect(await ok.text()).toBe("<h1>secret</h1>");
+});
+
+test("createFetchHandler serves wiki index and single page (token-guarded, read-only)", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler, projectWikiService } = createTestHandler();
+  await projectWikiService.writePage("demo", "intro", {
+    title: "Introduction",
+    content: "# Hello\n\nworld",
+    tags: ["a"],
+  });
+
+  // 列表需鉴权:无 token → 401(wiki 在统一 token 守卫后,非 public serve)。
+  const blocked = await handler(new Request("http://localhost/api/projects/demo/wiki"), {
+    upgrade: () => false,
+  });
+  expect(blocked.status).toBe(401);
+
+  const headers = authHeader(auth);
+
+  // 列表。
+  const index = await handler(new Request("http://localhost/api/projects/demo/wiki", { headers }), {
+    upgrade: () => false,
+  });
+  expect(index.status).toBe(200);
+  const indexJson = await index.json();
+  expect(indexJson.pages).toHaveLength(1);
+  expect(indexJson.pages[0].slug).toBe("intro");
+  expect(indexJson.pages[0].title).toBe("Introduction");
+
+  // 读单页:frontmatter + body。
+  const page = await handler(
+    new Request("http://localhost/api/projects/demo/wiki/intro", { headers }),
+    { upgrade: () => false },
+  );
+  expect(page.status).toBe(200);
+  const pageJson = await page.json();
+  expect(pageJson.slug).toBe("intro");
+  expect(pageJson.frontmatter.title).toBe("Introduction");
+  expect(pageJson.body).toContain("# Hello");
+
+  // 不存在的页 → 404。
+  const missing = await handler(
+    new Request("http://localhost/api/projects/demo/wiki/nope", { headers }),
+    { upgrade: () => false },
+  );
+  expect(missing.status).toBe(404);
 });
 
 test("createFetchHandler protects pages config and validates writes", async () => {

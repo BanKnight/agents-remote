@@ -20,21 +20,20 @@ export class McpError extends Error {
 }
 
 /**
- * 能力域名（McpCapability）校验：基座阶段 McpCapability = string 占位，
- * 但仍需防注入/路径穿越——只允许 `[a-zA-Z0-9._-]`，拒绝空、null byte、`..` 段。
- * wiki 阶段收敛为枚举后此校验仍适用（枚举值都匹配此 pattern）。
+ * 能力域名（McpCapability）校验：收敛为枚举后，只接受已知能力域（首期 "wiki"）。
+ * 拒绝空、null byte、未知值——防注入/路径穿越，也防配置拼写错误静默失效。
  */
-const CAPABILITY_RE = /^[a-zA-Z0-9._-]+$/;
+const ALLOWED_CAPABILITIES: ReadonlySet<McpCapability> = new Set(["wiki"]);
 
 export function sanitizeCapability(input: unknown): McpCapability {
   if (typeof input !== "string" || input.length === 0 || input.includes("\0")) {
     throw new McpError("MCP_CONFIG_INVALID", "Invalid MCP capability name");
   }
   const value = input.trim();
-  if (!CAPABILITY_RE.test(value)) {
-    throw new McpError("MCP_CONFIG_INVALID", `Invalid MCP capability name: ${value}`);
+  if (!ALLOWED_CAPABILITIES.has(value as McpCapability)) {
+    throw new McpError("MCP_CONFIG_INVALID", `Unknown MCP capability: ${value}`);
   }
-  return value;
+  return value as McpCapability;
 }
 
 /**

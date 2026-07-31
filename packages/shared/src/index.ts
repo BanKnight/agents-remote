@@ -435,9 +435,8 @@ export type SkillSourcesResponse = { sources: SkillSource[] };
 // 基座阶段:无状态 Streamable HTTP server + spawn 时 --mcp-config 注入,不暴露业务工具(空壳)。
 // wiki/browser 是后续能力域。定位见 docs/research/inbox/mcp-hub-positioning.md。
 
-// 能力域标识。基座阶段无能力,用 string 占位;wiki 阶段收敛为 "wiki" | "browser" | ...。
-// 不现在锁死枚举,避免每次加能力域都改 shared。
-export type McpCapability = string;
+// 能力域标识。首期 wiki 能力域;后续加 browser 等再扩 union。
+export type McpCapability = "wiki";
 
 // per-project MCP 配置(PROJECTS_ROOT/{project}/.agents-remote/mcp.json)。
 // 只管能力域开关,不描述 server(hub 是单数,server 描述由基座代码 own)。
@@ -446,6 +445,39 @@ export type McpProjectConfig = {
   // capability → enabled。缺失的 capability 视为未开。
   capabilities?: Partial<Record<McpCapability, boolean>>;
 };
+
+// ── Wiki 能力域（per-project `wiki/` markdown 目录）──────────────────
+// wiki = agent 用 wiki_* MCP 工具逐页写的、结构化可浏览的 per-project 知识库（产物）。
+// producer = agent 经 MCP hub 的 wiki_* 工具写；consumer = web 渲染列表 + 页面正文。
+// 起步态：flat wiki/*.md + YAML frontmatter（title/tags/created/updated）。定位见
+// docs/research/inbox/llm-wiki-okf.md。
+// 后续打磨：edit/append/search/lint 工具、raw/SCHEMA/按类型子目录、[[wiki-link]] 图谱。
+
+/** 单页 YAML frontmatter（后端解析/序列化，前端只消费结构化字段）。 */
+export type WikiPageFrontmatter = {
+  title: string;
+  tags: string[];
+  created: string; // YYYY-MM-DD
+  updated: string; // YYYY-MM-DD
+};
+
+/** 列表项摘要（listPages / index 端点）。 */
+export type WikiPageSummary = {
+  slug: string;
+  title: string;
+  tags: string[];
+  updated: string;
+};
+
+/** 单页完整内容（readPage / 单页端点）。body 是去 frontmatter 后的 markdown 正文。 */
+export type WikiPage = {
+  slug: string;
+  frontmatter: WikiPageFrontmatter;
+  body: string;
+};
+
+export type WikiIndexResponse = { pages: WikiPageSummary[] };
+export type WikiPageResponse = { page: WikiPage };
 export type AddSkillSourceResponse = { source: SkillSource };
 export type RemoveSkillSourceResponse = { deleted: true; id: string };
 
@@ -1528,7 +1560,8 @@ export type ApiErrorCode =
   | "SKILL_SOURCE_INVALID"
   | "MCP_HUB_START_FAILED"
   | "MCP_INJECT_UNSUPPORTED"
-  | "MCP_CONFIG_INVALID";
+  | "MCP_CONFIG_INVALID"
+  | "WIKI_SLUG_INVALID";
 
 export type ApiErrorResponse = {
   error: {

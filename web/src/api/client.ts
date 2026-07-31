@@ -68,6 +68,8 @@ import type {
   SkillSourcesResponse,
   UninstallSkillRequest,
   UninstallSkillResponse,
+  WikiIndexResponse,
+  WikiPage,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -252,6 +254,14 @@ export async function updatePagesConfig(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input satisfies UpdatePagesConfigRequest),
   });
+}
+
+export async function getWikiIndex(projectName: string): Promise<WikiIndexResponse> {
+  return fetchJson(wikiIndexPath(projectName), "api.wikiIndexFailed");
+}
+
+export async function getWikiPage(projectName: string, slug: string): Promise<WikiPage> {
+  return fetchJson(wikiPagePath(projectName, slug), "api.wikiPageFailed");
 }
 
 /**
@@ -652,6 +662,12 @@ const withPathQuery = (basePath: string, path: string) => {
 
 const pagesConfigPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/pages/config`;
+
+const wikiIndexPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/wiki`;
+
+const wikiPagePath = (projectName: string, slug: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/wiki/${encodeURIComponent(slug)}`;
 
 const agentSessionsPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/agent-sessions`;

@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { z } from "zod";
+import { readProjectMcpConfig } from "./mcp-config.js";
 import { resolveProjectRelativePath } from "./project-paths.js";
+import { ProjectWikiService } from "./project-wiki.js";
 
 /**
  * MCP Hub 基座 server —— 无状态 Streamable HTTP,绑 127.0.0.1,只给本机 agent 用。
@@ -10,11 +13,12 @@ import { resolveProjectRelativePath } from "./project-paths.js";
  * - 进程模型:api 进程内独立 Bun.serve,不暴露于 Cloudflare Tunnel(tunnel 只转发 api 端口)。
  * - project 上下文:URL `/mcp/{project}` 第一段,每请求重新过 resolveProjectRelativePath
  *   做 realpath 二次校验(不信任任何快照)。
- * - 安全世界:tools/call 实现内部从 server 上下文拿 project,再过 resolver(骨架,基座无工具)。
+ * - 安全世界:wiki_* 工具 handler 从闭包拿 project,再过 wikiService 内部 resolver(不信任快照)。
  * - Origin/Host 校验:防 DNS rebinding,只接受 loopback。
  *
- * 基座阶段不注册任何业务工具(空壳):agent 自带文件工具且 cwd=projectPath,基线文件读写是
- * 重复造轮子。wiki 是第一个往 hub 加工具的能力域(届时在此注册 wiki_* 工具)。
+ * 能力域工具按 per-project mcp.json 的 capabilities 开关注册(首期 wiki:list/read/write);
+ * 未开启的 project 仍是空壳(agent 自带文件工具且 cwd=projectPath,基线文件读写不进 hub)。
+ * 后续能力域(browser 等)按同一 capabilities 开关在此扩展。
  *
  * 定位见 docs/research/inbox/mcp-hub-positioning.md。
  */
@@ -27,8 +31,8 @@ export type McpHubServer = {
 export type StartMcpHubServerOptions = {
   port: number;
   projectsRoot: string;
-  // 预留:wiki 阶段注入 ProjectFilesService / 能力域工具工厂。
-  // projectFilesService?: ProjectFilesService;
+  // wiki 能力域单一数据源:MCP 工具(producer)与 HTTP 路由(consumer)共享同一 service。
+  wikiService: ProjectWikiService;
 };
 
 const MCP_PATH_PREFIX = "/mcp/";
@@ -64,22 +68,113 @@ const isLoopbackRequest = (req: Request, expectedPort: number): boolean => {
 };
 
 /**
- * 为单个请求构造一个 McpServer(无状态:每请求新建,不缓存)。
- * server 持有 { project, projectsRoot } 上下文,供工具实现使用(基座空壳无工具)。
- *
- * wiki 阶段:在此按 per-project mcp.json 的 capabilities 开关注册 wiki_* 工具
- * (readProjectMcpConfig + parseMcpProjectConfig,见 mcp-validate.ts)。
- * 基座阶段:不注册任何工具,tools/list 返回 SDK 默认的 "method not found"(无 tools capability)。
+ * wiki_* 工具内部 ProjectWikiError(越界 slug / 页不存在 / 写冲突等)→ MCP error response。
+ * 不抛:工具错误按 MCP 协议作为正常返回传给 agent(isError=true + message),让 agent
+ * 看到"页不存在/slug 非法"而非连接崩溃。
  */
-const buildRequestServer = (_project: string, _projectsRoot: string): McpServer => {
-  // 基座空壳:不注册工具。wiki 能力域在此按 capabilities 注入工具,例:
-  //   if (config.capabilities?.wiki) server.registerTool("wiki_read", ...);
-  // 工具实现内部用 project + resolveProjectRelativePath 做安全文件操作。
-  return new McpServer({ name: "ar-hub", version: "0.0.0" });
+const wikiErrorResponse = (error: unknown) => ({
+  content: [
+    {
+      type: "text" as const,
+      text: error instanceof Error ? error.message : String(error),
+    },
+  ],
+  isError: true,
+});
+
+/**
+ * 注册 wiki 能力域三工具(list/read/write)。handler 闭包捕获 project + wikiService,
+ * wikiService 每方法内部独立过 resolver(不信任闭包传入的 project 已校验,纵深防御)。
+ * page 对象 JSON 序列化进 content text(agent 可直接消费)。
+ */
+const registerWikiTools = (
+  server: McpServer,
+  project: string,
+  wikiService: ProjectWikiService,
+): void => {
+  server.registerTool(
+    "wiki_list_pages",
+    {
+      description:
+        "List all wiki pages in the current project. Returns { pages: [{ slug, title, tags, updated }] }.",
+    },
+    async () => {
+      const pages = await wikiService.listPages(project);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ pages }) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "wiki_read_page",
+    {
+      description:
+        "Read a single wiki page by slug. Returns { slug, frontmatter: { title, tags, created, updated }, body }.",
+      inputSchema: { slug: z.string() },
+    },
+    async ({ slug }) => {
+      try {
+        const page = await wikiService.readPage(project, slug);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(page) }],
+        };
+      } catch (error) {
+        return wikiErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "wiki_write_page",
+    {
+      description:
+        "Write a wiki page (markdown body; frontmatter title/tags/created/updated auto-injected). Set overwrite=true to replace an existing page; otherwise existing pages are rejected.",
+      inputSchema: {
+        slug: z.string(),
+        title: z.string(),
+        content: z.string(),
+        tags: z.array(z.string()).optional(),
+        overwrite: z.boolean().optional(),
+      },
+    },
+    async ({ slug, title, content, tags, overwrite }) => {
+      try {
+        const result = await wikiService.writePage(project, slug, {
+          slug,
+          title,
+          content,
+          tags,
+          overwrite,
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        };
+      } catch (error) {
+        return wikiErrorResponse(error);
+      }
+    },
+  );
+};
+
+/**
+ * 为单个请求构造 McpServer(无状态:每请求新建,不缓存)。按 wikiEnabled 决定是否注册
+ * wiki_* 工具:未开启时 tools/list 返回空 capability(基座空壳行为保留)。
+ */
+const buildRequestServer = (
+  project: string,
+  wikiService: ProjectWikiService,
+  wikiEnabled: boolean,
+): McpServer => {
+  const server = new McpServer({ name: "ar-hub", version: "0.0.0" });
+  if (wikiEnabled) {
+    registerWikiTools(server, project, wikiService);
+  }
+  return server;
 };
 
 export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServer => {
-  const { port, projectsRoot } = options;
+  const { port, projectsRoot, wikiService } = options;
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -102,8 +197,6 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
       }
 
       // 3. project 上下文校验:每请求重新过 resolver(realpath 二次校验防 symlink 漂移)。
-      //    基座空壳不读 mcp.json(无能力可开关),只校验 project 存在 + 路径合法。
-      //    框架就位:wiki 阶段在此 readProjectMcpConfig 并按 capabilities 决定注册哪些工具。
       try {
         await resolveProjectRelativePath(projectsRoot, project, "");
       } catch {
@@ -111,12 +204,24 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
         return new Response("Not found", { status: 404 });
       }
 
+      // 3b. 读 per-project mcp.json 决定注册哪些能力域工具。config 缺失(ENOENT)→ 默认全关;
+      //     config 非法(JSON/结构错)→ 降级全关(不阻塞 agent 连接),仅记 warn。
+      let wikiEnabled = false;
+      try {
+        const config = await readProjectMcpConfig(projectsRoot, project);
+        wikiEnabled = config?.capabilities?.wiki === true;
+      } catch (error) {
+        console.warn(
+          `[mcp-hub] mcp.json invalid project=${project}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       // 4. 无状态:每请求新建 transport + McpServer,不缓存、不返 session id。
       try {
         const transport = new WebStandardStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
         });
-        const mcp = buildRequestServer(project, projectsRoot);
+        const mcp = buildRequestServer(project, wikiService, wikiEnabled);
         await mcp.connect(transport);
         return await transport.handleRequest(req);
       } catch (error) {
