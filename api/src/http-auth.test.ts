@@ -23,6 +23,8 @@ test("handleLogin returns token for correct password", async () => {
   expect(body.ok).toBe(true);
   expect(typeof body.token).toBe("string");
   expect(response.headers.get("set-cookie")).toContain("agents_remote_token=");
+  // cookie Path=/ 覆盖全站,让 pages 对外 URL /p/... 也带 cookie(token 根鉴权)
+  expect(response.headers.get("set-cookie")).toContain("Path=/");
 });
 
 test("handleLogin rejects wrong password", async () => {

@@ -662,7 +662,7 @@ test("createFetchHandler maps project errors", async () => {
   expect((await missingDetail.json()).error.code).toBe("PROJECT_NOT_FOUND");
 });
 
-test("createFetchHandler serves pages public roots with ETag and no fallback", async () => {
+test("createFetchHandler serves pages public roots with ETag, index default page, and no SPA fallback", async () => {
   await mkdir(join(root, "demo", "site"), { recursive: true });
   await writeFile(join(root, "demo", "site", "index.html"), "<h1>hello</h1>");
   const { auth, handler } = createTestHandler();
@@ -702,11 +702,12 @@ test("createFetchHandler serves pages public roots with ETag and no fallback", a
   );
   expect(notModified.status).toBe(304);
 
-  // 目录访问 → 404（无列表、无 SPA fallback）。
+  // 目录访问(根 /,有 index.html)→ 200 默认页(nginx index 行为;非 SPA fallback)。
   const dir = await handler(new Request("http://localhost/api/projects/demo/pages/"), {
     upgrade: () => false,
   });
-  expect(dir.status).toBe(404);
+  expect(dir.status).toBe(200);
+  expect(await dir.text()).toBe("<h1>hello</h1>");
 
   // 不存在的文件 → 404（无 SPA fallback）。
   const missing = await handler(

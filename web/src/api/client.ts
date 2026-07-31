@@ -255,13 +255,15 @@ export async function updatePagesConfig(
 }
 
 /**
- * pages serve 的同源绝对 URL（GET /api/projects/{name}/pages{urlPath}）。浏览器直访新标签页：
- * HttpOnly cookie Path=/api 自动携带——public 根免登录，token 根凭已登录态 cookie 放行。
- * urlPath 须含前导 "/"（根传 "/"）；根返回无尾斜杠的 `/pages`（后端 matcher tail="" → urlPath "/"）。
+ * pages serve 的对外干净 URL（/p/{name}{urlPath}）。web vite proxy 把 /p/{name}{urlPath}
+ * rewrite 到 /api/projects/{name}/pages{urlPath}（见 web/vite.config.ts）。浏览器直访新标签页:
+ * HttpOnly cookie Path=/ 自动携带——public 根免登录,token 根凭已登录态 cookie 放行。
+ * urlPath 须含前导 "/"（根传 "/"）；根返回带尾斜杠 `/p/{name}/`（触发 index.html 默认页 +
+ * 相对路径资源正确解析）。
  */
 export function pagesServeUrl(projectName: string, urlPath: string): string {
   const path = urlPath.startsWith("/") ? urlPath : `/${urlPath}`;
-  return `/api/projects/${encodeURIComponent(projectName)}/pages${path === "/" ? "" : path}`;
+  return `/p/${encodeURIComponent(projectName)}${path === "/" ? "/" : path}`;
 }
 
 export async function getProjectGitFileDiff(

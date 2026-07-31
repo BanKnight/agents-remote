@@ -16,6 +16,7 @@ import {
   listProjects,
   listTerminalSessions,
   login,
+  pagesServeUrl,
   previewProjectFile,
   renameAgentSession,
   renameTerminalSession,
@@ -306,6 +307,20 @@ test("web api client builds same-origin session stream URLs", () => {
   );
 
   Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
+});
+
+// ── pagesServeUrl (对外干净 URL /p/{name}{urlPath}) ──
+
+test("pagesServeUrl builds clean /p/ URLs with trailing slash for root", () => {
+  // 根 urlPath → 带尾斜杠(触发 index.html 默认页 + 相对路径资源正确解析)
+  expect(pagesServeUrl("demo", "/")).toBe("/p/demo/");
+  // 非根 → 直接拼
+  expect(pagesServeUrl("demo", "/index.html")).toBe("/p/demo/index.html");
+  expect(pagesServeUrl("demo", "/docs/api.html")).toBe("/p/demo/docs/api.html");
+});
+
+test("pagesServeUrl encodes project names in the /p/ URL", () => {
+  expect(pagesServeUrl("hello world 中文", "/")).toBe("/p/hello%20world%20%E4%B8%AD%E6%96%87/");
 });
 
 // ── testPresetModels (内联凭证测试连接) ──

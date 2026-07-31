@@ -178,13 +178,43 @@ test("serve matches longest-prefix root and strips the prefix", async () => {
   expect(served.content.toString()).toBe("body{}");
 });
 
-test("serve rejects a directory path (no listing, no fallback)", async () => {
+test("serve rejects a directory without index.html (no listing)", async () => {
   await mkdir(join(root, "demo", "site", "sub"), { recursive: true });
   await writePagesConfig([{ urlPath: "/", fsDir: "site", auth: "public" }]);
 
   const service = new ProjectPagesService(root);
   await expect(service.serve("demo", "/sub/")).rejects.toMatchObject({
     code: "PROJECT_FILE_NOT_FOUND",
+  });
+});
+
+test("serve serves index.html when a directory is requested (default page)", async () => {
+  await mkdir(join(root, "demo", "site", "sub"), { recursive: true });
+  await writeFile(join(root, "demo", "site", "index.html"), "<h1>root</h1>");
+  await writeFile(join(root, "demo", "site", "sub", "index.html"), "<h1>sub</h1>");
+  await writePagesConfig([{ urlPath: "/", fsDir: "site", auth: "public" }]);
+
+  const service = new ProjectPagesService(root);
+  // 根目录(/)→ site/index.html(默认页,触发 /p/{name}/ 直访场景)
+  const rootPage = await service.serve("demo", "/");
+  expect(rootPage.content.toString()).toBe("<h1>root</h1>");
+  expect(rootPage.mimeType).toBe("text/html; charset=utf-8");
+  // 子目录(/sub/)→ site/sub/index.html
+  const subPage = await service.serve("demo", "/sub/");
+  expect(subPage.content.toString()).toBe("<h1>sub</h1>");
+});
+
+test("serve rejects an index.html that is a symlink escaping the project", async () => {
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(outside, "secret.txt"), "SECRET");
+  // site/index.html 是指向项目外 secret.txt 的符号链接(恶意默认页)
+  await symlink(join(outside, "secret.txt"), join(root, "demo", "site", "index.html"));
+  await writePagesConfig([{ urlPath: "/", fsDir: "site", auth: "public" }]);
+
+  const service = new ProjectPagesService(root);
+  // 请求根目录 → 尝试 site/index.html → realpath 双校验检测越界 → PATH_OUTSIDE_ROOT
+  await expect(service.serve("demo", "/")).rejects.toMatchObject({
+    code: "PROJECT_PATH_OUTSIDE_ROOT",
   });
 });
 

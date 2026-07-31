@@ -61,6 +61,16 @@ const apiProxy = {
     target: apiTarget,
     ws: true,
   },
+  // pages 对外干净前缀:/p/{project}{urlPath} → /api/projects/{project}/pages{urlPath}。
+  // key 用 "/p/"(带尾斜杠):vite proxy 字符串 key 是 startsWith 语义,带尾斜杠只匹配
+  // /p/...,不撞 SPA 的 /page、/projects 等路由。project 段保留 encoded 形式(api 自行 decode)。
+  "/p/": {
+    target: apiTarget,
+    rewrite: (path: string) => {
+      const match = path.match(/^\/p\/([^/]+)(\/.*)?$/);
+      return match ? `/api/projects/${match[1]}/pages${match[2] ?? ""}` : path;
+    },
+  },
 };
 
 export default defineConfig({
@@ -85,6 +95,9 @@ export default defineConfig({
         // requests, so they're untouched (E2E page.route() interception too).
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "index.html",
+        // pages 对外 URL /p/... 是直访的静态站点内容,不是 SPA 路由 —— 必须排除,
+        // 否则 navigateFallback 会把它 fallback 到 precached index.html(SW 劫持)。
+        navigateFallbackDenylist: [/^\/p\//],
       },
       manifest: {
         name: "智控 · AI 远程控制台",

@@ -5,6 +5,7 @@ import {
   type PagesRootAuth,
 } from "@agents-remote/shared";
 import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import type { Stats } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, normalize, sep } from "node:path";
 import { ProjectPathError, resolveProjectPath, resolveProjectRelativePath } from "./project-paths";
@@ -209,7 +210,8 @@ export class ProjectPagesService {
    * 核心：URL 路径 → 匹配根 → serve 文件。
    * 1. readConfig → roots；无匹配根 → PROJECT_FILE_NOT_FOUND（路由层 404）。
    * 2. subPath = requestPath 去掉根前缀；relative = join(root.fsDir, subPath)。
-   * 3. resolveProjectRelativePath 双校验；stat：目录/不存在 → NOT_FOUND（目录列表关）。
+   * 3. resolveProjectRelativePath 双校验 + stat：文件 → serve；目录 → 尝试
+   *    {dir}/index.html 默认页(再校验),无 index.html / 不存在 → NOT_FOUND(目录列表关)。
    * 4. readFile + MIME + 弱 ETag → { content, mimeType, etag, root }。
    */
   async serve(projectName: string, requestPath: string): Promise<ServedPage> {
@@ -226,25 +228,21 @@ export class ProjectPagesService {
     const subPath = root.urlPath === "/" ? path : path.slice(root.urlPath.length) || "/";
     const relative = join(root.fsDir, normalizeUrlPath(subPath) === "/" ? "." : subPath);
 
-    const resolved = await this.resolveServePath(projectName, relative);
-    let targetStat;
-    try {
-      targetStat = await stat(resolved.path);
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        throw new ProjectPagesError("PROJECT_FILE_NOT_FOUND", "Pages file was not found");
-      }
-      throw new ProjectPagesError("PROJECT_FS_ERROR", "Unable to inspect pages file");
+    let target = await this.resolveAndStat(projectName, relative);
+    // 目录 → 尝试 {dir}/index.html 默认页（nginx index 行为）。resolveAndStat 再走一次
+    // resolveServePath(isInsideOrSelf + realpath 双校验)：index.html 若是指向项目外的
+    // symlink 被拦成 PATH_OUTSIDE_ROOT → 400；不存在 → NOT_FOUND → 404。
+    if (!target.stat.isFile()) {
+      target = await this.resolveAndStat(projectName, join(relative, "index.html"));
     }
-
-    if (!targetStat.isFile()) {
-      // 目录列表关、无 SPA fallback（决策点 3）：目录 → 404。
+    if (!target.stat.isFile()) {
+      // 仍非文件(目录 + 无 index.html)：目录列表关、无 SPA fallback（决策点 3）→ 404。
       throw new ProjectPagesError("PROJECT_FILE_NOT_FOUND", "Pages path is not a file");
     }
 
     let content: Buffer;
     try {
-      content = await readFile(resolved.path);
+      content = await readFile(target.path);
     } catch (error) {
       if (isNotFoundError(error)) {
         throw new ProjectPagesError("PROJECT_FILE_NOT_FOUND", "Pages file was not found");
@@ -252,8 +250,8 @@ export class ProjectPagesService {
       throw new ProjectPagesError("PROJECT_FS_ERROR", "Unable to read pages file");
     }
 
-    const mimeType = rawFileMimeType(resolved.path);
-    const etag = computeWeakEtag(targetStat.size, Number(targetStat.mtimeMs), resolved.path);
+    const mimeType = rawFileMimeType(target.path);
+    const etag = computeWeakEtag(target.stat.size, Number(target.stat.mtimeMs), target.path);
 
     return { content, mimeType, etag, root };
   }
@@ -285,6 +283,22 @@ export class ProjectPagesService {
         throw new ProjectPagesError(error.code, error.message);
       }
       throw error;
+    }
+  }
+
+  /** resolveServePath + stat:解析(双校验)并取 stat。ENOENT → NOT_FOUND,其他 FS 错 → FS_ERROR。 */
+  private async resolveAndStat(
+    projectName: string,
+    relative: string,
+  ): Promise<{ path: string; stat: Stats }> {
+    const resolved = await this.resolveServePath(projectName, relative);
+    try {
+      return { path: resolved.path, stat: await stat(resolved.path) };
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        throw new ProjectPagesError("PROJECT_FILE_NOT_FOUND", "Pages file was not found");
+      }
+      throw new ProjectPagesError("PROJECT_FS_ERROR", "Unable to inspect pages file");
     }
   }
 }

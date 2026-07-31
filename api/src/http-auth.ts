@@ -42,7 +42,7 @@ export const extractBearerToken = (request: Request) => {
 const setTokenCookie = (headers: Headers, issue: TokenIssue) => {
   headers.set(
     "Set-Cookie",
-    `agents_remote_token=${encodeURIComponent(issue.token)}; HttpOnly; SameSite=Strict; Path=/api; Expires=${new Date(issue.expiresAt).toUTCString()}`,
+    `agents_remote_token=${encodeURIComponent(issue.token)}; HttpOnly; SameSite=Strict; Path=/; Expires=${new Date(issue.expiresAt).toUTCString()}`,
   );
 };
 
