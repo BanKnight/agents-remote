@@ -1,16 +1,16 @@
 import { useAtom } from "jotai";
 import { useT } from "../../i18n";
-import { type WorkbenchRightTab, workbenchRightTabAtom } from "../../routes/workbench-model";
-import { type PluginContext, type RightPanelPlugin } from "./right-panel-plugin";
+import { type WorkbenchInspectionTab, workbenchRightTabAtom } from "../../routes/workbench-model";
+import { type WorkbenchTabPluginContext, type WorkbenchTabPlugin } from "./workbench-tab-plugin";
 
 type RightPanelTabsProps = {
-  activeTab?: WorkbenchRightTab;
-  ctx: PluginContext;
-  onTabChange: (tab: WorkbenchRightTab) => void;
+  activeTab?: WorkbenchInspectionTab;
+  ctx: WorkbenchTabPluginContext;
+  onTabChange: (tab: WorkbenchInspectionTab) => void;
 };
 
 /**
- * 右栏 inspection tab 容器（设计文档 §5）。消费 FIRST_PARTY_PLUGINS 注册表，
+ * 右栏 inspection tab 容器（设计文档 §5）。消费 WORKBENCH_TAB_PLUGINS 注册表，
  * 按 ctx 过滤可见 tab，active tab 渲染对应插件面板。Stage 3 commit ③ 把
  * active tab 提升到 URL rightTab（语义核心、刷新可分享），URL 未指定时回退
  * workbenchRightTabAtom 记忆；若所得 tab 不可见则回退首个可见 tab。
@@ -21,9 +21,9 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
   // 桌面右栏 inspection 暂停：files/git 已移至左栏 middle tab（[文件]/[git]）+ 中栏点文件
   // 开的 diff tab，右栏内部留空待未来扩展。visiblePlugins 留空数组骨架——find/render
   // 分支静态保留（lint 仍认其在用、无 unused），恢复 inspection 只需把这行改回
-  // `FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx))` 并恢复 import。
-  // 移动端 MobileFocusBody + 左栏 buildOverviewTabs 仍直接消费 FIRST_PARTY_PLUGINS。
-  const visiblePlugins: RightPanelPlugin[] = [];
+  // `WORKBENCH_TAB_PLUGINS.filter((plugin) => plugin.when(ctx))` 并恢复 import。
+  // 移动端 MobileFocusBody + 左栏 buildOverviewTabs 仍直接消费 WORKBENCH_TAB_PLUGINS。
+  const visiblePlugins: WorkbenchTabPlugin[] = [];
   const preferred = activeTab ?? rememberedTab;
   const current = visiblePlugins.find((plugin) => plugin.id === preferred) ?? visiblePlugins[0];
 

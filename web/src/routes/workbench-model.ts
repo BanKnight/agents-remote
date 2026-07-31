@@ -22,11 +22,11 @@ import type {
 export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global" };
 
 /**
- * 右栏 inspection tab 标识。V1 两个第一方 tab（设计文档 §6）：
+ * 工作台 inspection tab 标识。V1 两个第一方 tab（设计文档 §6）：
  * `files` / `git`；pages 为 per-project 静态托管根配置（与 files/git 同构 inspection）。
- * Stage 3 以 RightPanelPlugin 契约落地注册表。
+ * Stage 3 以 WorkbenchTabPlugin 契约落地注册表。
  */
-export type WorkbenchRightTab = "files" | "git" | "pages";
+export type WorkbenchInspectionTab = "files" | "git" | "pages";
 
 /**
  * 中栏左总览视图样式（设计文档 workbench-views.md §5）。左总览固定单列宽，view 切换的是
@@ -37,7 +37,7 @@ export type WorkbenchView = "grouped" | "grid" | "table";
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（切 grouped/grid/table）；
- * history=历史 session；files/git/pages=复用右栏 inspection plugin。
+ * history=历史 session；files/git/pages=复用工作台 inspection tab plugin。
  */
 export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "pages";
 
@@ -160,7 +160,7 @@ export const workbenchMiddleLeftWidthAtom = atomWithLocalOnlyStorage(
  * 右栏当前 tab。Stage 3 起 URL `rightTab` 优先（语义核心、刷新可分享），
  * 此 atom 作「记忆上次 tab」的回退（首次进入 / URL 未指定时）。
  */
-export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchRightTab>(
+export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchInspectionTab>(
   "workbenchRightTab",
   "files",
 );
@@ -189,11 +189,11 @@ export const workbenchMiddleTabAtom = atomWithLocalOnlyStorage<WorkbenchMiddleTa
 /**
  * 移动端聚焦态 header tab（设计文档 §7）。窄屏无法像桌面那样「实例常驻中栏 + inspection
  * 并列右栏」，故实例与 inspection 共占同一区域、tab 切换：`output` = 实例 runtime body
- *（PanelRouter），其余值 = inspection（复用 FIRST_PARTY_PLUGINS 的 render）。默认 `output`
+ *（PanelRouter），其余值 = inspection（复用 WORKBENCH_TAB_PLUGINS 的 render）。默认 `output`
  *（进入聚焦先看实例本体）。localStorage 记忆，不进 URL —— 移动聚焦态的语义核心已是 URL
  * `focusId`（看哪个实例），header tab 是「在该实例上看输出还是文件」的局部视图偏好。
  */
-export type WorkbenchMobileFocusTab = "output" | WorkbenchRightTab;
+export type WorkbenchMobileFocusTab = "output" | WorkbenchInspectionTab;
 
 export const workbenchMobileFocusTabAtom = atomWithLocalOnlyStorage<WorkbenchMobileFocusTab>(
   "workbenchMobileFocusTab",
@@ -203,7 +203,7 @@ export const workbenchMobileFocusTabAtom = atomWithLocalOnlyStorage<WorkbenchMob
 /**
  * 移动端项目列表态二级 header tab（设计文档 §7）。`overview` = 活跃实例 + 历史 session +
  * 创建入口（ProjectInstances）；`history` = project-scoped 历史 session（HistoryList）；
- * 其余值 = inspection（复用 FIRST_PARTY_PLUGINS render）。默认 `overview`（进入项目先看实例
+ * 其余值 = inspection（复用 WORKBENCH_TAB_PLUGINS render）。默认 `overview`（进入项目先看实例
  * 概览）。localStorage 记忆，不进 URL —— 列表态 URL 语义核心已是 scope（哪个项目），header
  * tab 是「看概览还是历史还是文件/Git」的局部视图偏好。值域对齐 WorkbenchMiddleTab（2c-3），
  * atom 独立 localStorage key，不与桌面 URL `?tab` 互污。
@@ -255,7 +255,7 @@ export function useWorkbenchNavigate() {
     scope: WorkbenchScope,
     focusId?: string,
     search?: {
-      rightTab?: WorkbenchRightTab;
+      rightTab?: WorkbenchInspectionTab;
       view?: WorkbenchView;
       tab?: WorkbenchMiddleTab;
       leftMode?: "auto" | "files" | "skills";
@@ -287,7 +287,7 @@ export function useWorkbenchNavigate() {
  * 表达（TanStack Router 据 validateSearch 返回类型推断 search schema）。
  */
 export function validateWorkbenchSearch(search: Record<string, unknown>): {
-  rightTab?: WorkbenchRightTab;
+  rightTab?: WorkbenchInspectionTab;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
@@ -295,7 +295,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   leftMode?: "auto" | "files" | "skills";
 } {
   const result: {
-    rightTab?: WorkbenchRightTab;
+    rightTab?: WorkbenchInspectionTab;
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
@@ -358,7 +358,7 @@ export type WorkbenchRouteContext = {
    * 继承透传值——中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
    */
   leftMode?: "auto" | "files" | "skills";
-  rightTab?: WorkbenchRightTab;
+  rightTab?: WorkbenchInspectionTab;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
@@ -377,7 +377,7 @@ export type WorkbenchRouteContext = {
 export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRouteContext {
   const p = leaf.params as Record<string, string | undefined>;
   const s = leaf.search as {
-    rightTab?: WorkbenchRightTab;
+    rightTab?: WorkbenchInspectionTab;
     view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;

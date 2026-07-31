@@ -6,7 +6,7 @@ import {
   type WorkbenchScope,
   parseGitTabId,
 } from "../../routes/workbench-model";
-import { buildOverviewTabs } from "./right-panel-plugin";
+import { buildOverviewTabs } from "./workbench-tab-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { HistoryList, HistoryRangeControl } from "./history-list";
 import { FilesLeftPanel } from "../files/files-left-panel";
@@ -92,7 +92,7 @@ export function ProjectLeftPanel({
 
   // project scope middle tab 主体内容（设计 §4.2 进入项目层）。global scope 主体恒为 overview。
   // [文件] = 项目内文件树（FilesLeftPanel projectName，点文件→中栏开 file tab）；[git] = git plugin
-  // render（GitDiffPanel，与移动端 MobileProjectOverview 同源 FIRST_PARTY_PLUGINS）。
+  // render（GitDiffPanel，与移动端 MobileProjectOverview 同源 WORKBENCH_TAB_PLUGINS）。
   let middleBody: ReactNode = overview;
   if (scope.kind === "project") {
     if (resolvedTab === "history") {

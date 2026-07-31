@@ -71,7 +71,7 @@ import { FileTabPreview } from "../files/file-preview-panel";
 import { SkillTabPreview } from "../../routes/SkillsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
-import { type PluginContext } from "./right-panel-plugin";
+import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import { ActionMenu } from "../ui/action-menu";
 import {
@@ -397,7 +397,7 @@ type InstanceLeftOverviewProps = {
   /** project 作用域（global 作用域由 GlobalProjectsOverview 承载，不进此组件）。 */
   scope: { kind: "project"; key: string };
   /** inspection 插件上下文；本组件仅用 ctx.projectKey（CreateSessionBar/EmptyInstanceArea/projectName）。 */
-  ctx: PluginContext;
+  ctx: WorkbenchTabPluginContext;
   /** 总览视图（URL `?view` + atom 回退，WorkbenchContent 解析后传入）。 */
   view?: WorkbenchView;
   /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */

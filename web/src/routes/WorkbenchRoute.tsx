@@ -16,7 +16,7 @@ import {
 } from "../components/workbench/instance-area";
 import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
-import { type PluginContext } from "../components/workbench/right-panel-plugin";
+import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
@@ -28,7 +28,7 @@ import {
   type DropZone,
   type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
-  type WorkbenchRightTab,
+  type WorkbenchInspectionTab,
   type WorkbenchScope,
   type WorkbenchView,
   activeTabRefLeaf,
@@ -92,7 +92,7 @@ function WorkbenchContent({
   leftMode = "auto",
 }: {
   focusId?: string;
-  rightTab?: WorkbenchRightTab;
+  rightTab?: WorkbenchInspectionTab;
   scope: WorkbenchScope;
   view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
@@ -118,7 +118,7 @@ function WorkbenchContent({
   const rightCollapsed = useAtomValue(workbenchRightCollapsedAtom);
   const view = viewFromUrl ?? rememberedView;
   const tab = tabFromUrl ?? rememberedMiddleTab;
-  const ctx: PluginContext = {
+  const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
@@ -127,7 +127,7 @@ function WorkbenchContent({
   // rightTab 合并 + 新值）。TanStack Router navigate 整体替换 search 对象（非 merge），
   // 若只传单键会丢失其他维 —— 违反设计 §13「view/tab/rightTab 正交」。用 URL 原始值
   //（而非 view/tab 解析值）合并，避免把 atom 回退值意外写进 URL。
-  const onRightTabChange = (rightTabNext: WorkbenchRightTab) => {
+  const onRightTabChange = (rightTabNext: WorkbenchInspectionTab) => {
     void navigateWorkbench(scope, focusId, {
       rightTab: rightTabNext,
       tab: tabFromUrl,

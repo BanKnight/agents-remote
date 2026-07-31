@@ -50,7 +50,11 @@ import {
 import type { AgentHistoryRange } from "@agents-remote/shared";
 import { HistoryList, HistoryRangeControl } from "./history-list";
 import { SessionTable, type TableColumn } from "./workbench-table";
-import { buildOverviewTabs, FIRST_PARTY_PLUGINS, type PluginContext } from "./right-panel-plugin";
+import {
+  buildOverviewTabs,
+  WORKBENCH_TAB_PLUGINS,
+  type WorkbenchTabPluginContext,
+} from "./workbench-tab-plugin";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
@@ -74,7 +78,7 @@ type MobileWorkbenchProps = {
  *
  * 当前：无 focusId → 实例列表（MobileGlobalOverview/MobileProjectOverview + 创建入口，
  * Stage D 升级为二级总览）；有 focusId → 单实例聚焦（Stage A：PanelRouter 不 split；
- * Stage B：header tab 切 output/文件/Git，inspection 复用 FIRST_PARTY_PLUGINS）
+ * Stage B：header tab 切 output/文件/Git，inspection 复用 WORKBENCH_TAB_PLUGINS）
  * + 顶部返回。
  */
 export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchProps) {
@@ -253,7 +257,7 @@ type MobileFocusBodyProps = {
  * 隐藏（PanelRouter embeddedHeader），消除 title 重复 / Files·Git 与 tab 重复 / meta 独占行
  * 三处冗余。Stage A：单实例面板（PanelRouter），不走桌面 split —— 窄屏不 split 多面板（避免
  * 挤压）。Stage B：tab 切 output / inspection —— 实例与 inspection 共占同一区域、tab 切换；
- * inspection 复用 FIRST_PARTY_PLUGINS render。ℹ 触发底部 info sheet 显实例 meta（agent 显
+ * inspection 复用 WORKBENCH_TAB_PLUGINS render。ℹ 触发底部 info sheet 显实例 meta（agent 显
  * model/permission/createdAt，terminal 不显这些行 —— UI=f(state) 不伪造）；✕ 触发 useCloseSession
  *（confirm → close API → navigate 回列表）。projectName：project 作用域直接 scope.key；global
  * 作用域从布局面板查 focusId 所属项目。detail 查询（useAgentDetail/useTerminalDetail）query key
@@ -289,12 +293,12 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const focusDisplayName = agentSession?.displayName ?? terminalSession?.displayName;
   const infoSheet = useInstanceInfoSheet();
   const { close, holder: closeHolder } = useCloseSession();
-  const ctx: PluginContext = {
+  const ctx: WorkbenchTabPluginContext = {
     projectKey: projectName ?? null,
     focusId,
     sessionType,
   };
-  const visiblePlugins = FIRST_PARTY_PLUGINS.filter((plugin) => plugin.when(ctx));
+  const visiblePlugins = WORKBENCH_TAB_PLUGINS.filter((plugin) => plugin.when(ctx));
   // 记忆的 tab 若在当前 ctx 不可见（如全局作用域下 project-scoped 的 files/git 隐藏，
   // 但记忆值为 files）→ 回退 output，避免内容区空白。
   const activeTab: WorkbenchMobileFocusTab =
@@ -550,7 +554,7 @@ type MobileProjectOverviewProps = {
  * + 二级 tab 行两块）+ 内容区 tab 切换。总览 = 创建入口（左）+ ViewSwitcher（右，两端对齐，
  * 设计 §6）+ 活跃实例 grid/table（本组件直渲 InstanceGrid/SessionTable，单一数据管道
  * useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git
- * = FIRST_PARTY_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
+ * = WORKBENCH_TAB_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
  * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
  * 是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key} 切项目 remount，重置
  * inspection 内部 state。底部消费 --shell-mobile-bottom-nav-space 避让一级底部胶囊
@@ -563,7 +567,11 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   // history tab 时间范围（受控，避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
   const [view, setView] = useAtom(workbenchViewAtom);
-  const ctx: PluginContext = { projectKey: scope.key, focusId: undefined, sessionType: undefined };
+  const ctx: WorkbenchTabPluginContext = {
+    projectKey: scope.key,
+    focusId: undefined,
+    sessionType: undefined,
+  };
   // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
   //（按 ctx 过滤；files/git 需 projectKey）。复用 plugin.when 单一来源。
   const tabs = useMemo(
@@ -578,7 +586,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     : "overview";
   const activePlugin =
     activeTab !== "overview" && activeTab !== "history"
-      ? (FIRST_PARTY_PLUGINS.find((p) => p.id === activeTab) ?? null)
+      ? (WORKBENCH_TAB_PLUGINS.find((p) => p.id === activeTab) ?? null)
       : null;
   // 移动 ViewSwitcher（与桌面 2a 对称）：复用桌面 workbenchViewAtom（不新增 mobile view atom），
   // views = filterWorkbenchViews(scope)（project 自动过滤 grouped）。渲染层 view 切换 Phase 4
