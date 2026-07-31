@@ -9,6 +9,8 @@ import {
   buildAvailableAliases,
   type ModelMappingView,
 } from "./settings-store";
+import { getAgentProviderProfile } from "./agent-provider-profiles";
+import { buildMcpInjectorForProvider } from "./mcp-injector";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -168,6 +170,7 @@ export class Claude2Runtime implements RuntimeResources {
   private readonly relays = new Map<string, Claude2SessionRelay>();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
+  private readonly mcpPort?: number;
   private nextGeneration = 1;
   private onSystemInit:
     | ((sessionId: string, runtimeKey: string, claudeSessionId: string, model: string) => void)
@@ -177,9 +180,10 @@ export class Claude2Runtime implements RuntimeResources {
     null;
   private onSkillReload: ((sessionName: string) => void) | null = null;
 
-  constructor(runDir: string, settingsStore?: SettingsStore) {
+  constructor(runDir: string, settingsStore?: SettingsStore, mcpPort?: number) {
     this.runDir = runDir;
     this.settingsStore = settingsStore;
+    this.mcpPort = mcpPort;
   }
 
   setOnSystemInit(
@@ -261,6 +265,7 @@ export class Claude2Runtime implements RuntimeResources {
     await this.spawnAndStart(
       metadata.runtimeKey,
       metadata.projectPath,
+      metadata.projectName,
       metadata.id,
       metadata.claudeSessionId,
       metadata.modelAlias ?? metadata.model,
@@ -272,6 +277,7 @@ export class Claude2Runtime implements RuntimeResources {
   async ensureRunning(
     sessionName: string,
     projectPath: string,
+    projectName: string,
     sessionId: string,
     claudeSessionId?: string,
     model?: string,
@@ -302,6 +308,7 @@ export class Claude2Runtime implements RuntimeResources {
     await this.spawnAndStart(
       sessionName,
       projectPath,
+      projectName,
       sessionId,
       claudeSessionId,
       model,
@@ -386,6 +393,7 @@ export class Claude2Runtime implements RuntimeResources {
   private async spawnAndStart(
     sessionName: string,
     projectPath: string,
+    projectName: string,
     sessionId: string,
     claudeSessionId?: string,
     model?: string,
@@ -397,6 +405,10 @@ export class Claude2Runtime implements RuntimeResources {
       effort,
     );
 
+    // MCP hub 注入:按 provider 取注入器构造 --mcp-config args。
+    // mcpPort 未配置或 runtime 不支持 → mcpArgs 空,agent 不连 hub(降级,不阻塞 spawn)。
+    const mcpArgs = this.buildMcpArgs(projectName);
+
     const proc = this.spawnClaudeDirect(
       sessionName,
       projectPath,
@@ -406,6 +418,7 @@ export class Claude2Runtime implements RuntimeResources {
       resolvedEffort,
       providerCreds,
       view,
+      mcpArgs,
     );
 
     const generation = this.nextGeneration++;
@@ -452,6 +465,21 @@ export class Claude2Runtime implements RuntimeResources {
     });
   }
 
+  /**
+   * 构造 MCP hub 注入的 argv 片段(--mcp-config inline JSON)。
+   * mcpPort 未配置(0/undefined)或 injector 不可用 → 返回 [],agent 不连 hub(降级,不阻塞 spawn)。
+   * Claude2Runtime 是 claude2 专用,provider 恒为 claude2;injector 注册表供未来 CodexRuntime 复用。
+   */
+  private buildMcpArgs(projectName: string): string[] {
+    if (!this.mcpPort || projectName.length === 0) return [];
+    const profile = getAgentProviderProfile("claude2");
+    if (!profile) return [];
+    const injector = buildMcpInjectorForProvider(profile);
+    if (!injector) return [];
+    const config = injector.buildMcpConfig({ project: projectName, mcpPort: this.mcpPort });
+    return config?.args ?? [];
+  }
+
   private spawnClaudeDirect(
     sessionName: string,
     projectPath: string,
@@ -461,6 +489,7 @@ export class Claude2Runtime implements RuntimeResources {
     effort?: EffortLevel,
     provider?: { apiKey: string; baseUrl?: string },
     view?: ModelMappingView,
+    mcpArgs: string[] = [],
   ): BunSubprocess {
     const args = [
       "claude",
@@ -474,6 +503,7 @@ export class Claude2Runtime implements RuntimeResources {
       ...(permissionMode ? ["--permission-mode", permissionMode] : []),
       ...(model ? ["--model", model] : []),
       ...(claudeSessionId ? ["--resume", claudeSessionId] : []),
+      ...mcpArgs,
     ];
 
     const proc = Bun.spawn({

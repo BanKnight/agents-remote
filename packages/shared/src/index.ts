@@ -429,6 +429,23 @@ export type AddSkillSourceRequest = { repo: string; branch?: string; label?: str
 
 // 源管理响应（/api/skills/sources CRUD）。源在 settings 与 skill 路由两处共用。
 export type SkillSourcesResponse = { sources: SkillSource[] };
+
+// ── MCP hub ───────────────────────────────────────────────
+// MCP hub = 给 agent 装 tool/能力 的统一层（与 skill-market 装「知识/行为」互补）。
+// 基座阶段:无状态 Streamable HTTP server + spawn 时 --mcp-config 注入,不暴露业务工具(空壳)。
+// wiki/browser 是后续能力域。定位见 docs/research/inbox/mcp-hub-positioning.md。
+
+// 能力域标识。基座阶段无能力,用 string 占位;wiki 阶段收敛为 "wiki" | "browser" | ...。
+// 不现在锁死枚举,避免每次加能力域都改 shared。
+export type McpCapability = string;
+
+// per-project MCP 配置(PROJECTS_ROOT/{project}/.agents-remote/mcp.json)。
+// 只管能力域开关,不描述 server(hub 是单数,server 描述由基座代码 own)。
+// 不存在该文件 → 默认(基座阶段注册集为空,任意默认都不影响;wiki 阶段定全关 opt-in)。
+export type McpProjectConfig = {
+  // capability → enabled。缺失的 capability 视为未开。
+  capabilities?: Partial<Record<McpCapability, boolean>>;
+};
 export type AddSkillSourceResponse = { source: SkillSource };
 export type RemoveSkillSourceResponse = { deleted: true; id: string };
 
@@ -1508,7 +1525,10 @@ export type ApiErrorCode =
   | "SKILL_UNINSTALL_FAILED"
   | "SKILL_PREVIEW_FAILED"
   | "SKILL_LIST_FAILED"
-  | "SKILL_SOURCE_INVALID";
+  | "SKILL_SOURCE_INVALID"
+  | "MCP_HUB_START_FAILED"
+  | "MCP_INJECT_UNSUPPORTED"
+  | "MCP_CONFIG_INVALID";
 
 export type ApiErrorResponse = {
   error: {

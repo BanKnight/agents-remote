@@ -24,6 +24,7 @@
    - `api_port`
    - `web_port`
    - `web_api_base_url`
+   - `mcp_port`（可选，默认 `43013`；MCP hub 绑 `127.0.0.1`，仅本机 agent 用，不暴露于 tunnel）
 4. 确认 `projects_root` 是绝对路径。
 5. 确认配置文件仅当前用户可读写。
 6. 重新启动 `api`。
@@ -36,6 +37,7 @@
 - `PROJECTS_ROOT`
 - `API_PORT`
 - `WEB_PORT`
+- `MCP_PORT`
 - `WEB_API_BASE_URL`
 - `AGENTS_REMOTE_RUN_DIR`
 

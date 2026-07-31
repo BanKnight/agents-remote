@@ -38,6 +38,7 @@ import { loadSettings, StartupError } from "./settings";
 import { SettingsStore } from "./settings-store";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
+import { startMcpHubServer } from "./mcp-hub-server";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
@@ -889,7 +890,13 @@ export const startApi = async () => {
   const settingsStore = new SettingsStore();
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
-  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore);
+  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore, settings.mcpPort);
+  // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
+  // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
+  const mcpHub = startMcpHubServer({
+    port: settings.mcpPort,
+    projectsRoot: settings.projectsRoot,
+  });
   const claudePermissionModes = await parseClaudePermissionModes();
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   const runtime: RuntimeResources = {
@@ -1012,6 +1019,7 @@ export const startApi = async () => {
 
   console.log(`api listening on http://localhost:${server.port}`);
   console.log(`api runtime dir ${runtimePaths.runDir}`);
+  console.log(`mcp hub listening on http://127.0.0.1:${mcpHub.port}/mcp/{project}`);
 
   return server;
 };

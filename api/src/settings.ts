@@ -23,6 +23,7 @@ export type AppConfig = {
   projectsRoot?: string;
   apiPort?: number;
   webPort?: number;
+  mcpPort?: number;
   webApiBaseUrl?: string;
   tokenTtlHours?: number;
 };
@@ -32,6 +33,7 @@ export type ResolvedSettings = {
   projectsRoot: string;
   apiPort: number;
   webPort: number;
+  mcpPort: number;
   webApiBaseUrl: string;
   tokenTtlHours: number;
   configPath: string;
@@ -44,6 +46,10 @@ type LoadSettingsOptions = {
 
 const defaultConfigPath = () => join(homedir(), ".agents-remote", "config.toml");
 
+// MCP hub default port (api=43011/web=43012 family in dev; config/env can override).
+// Bound to 127.0.0.1 only — never exposed via the Cloudflare Tunnel.
+const DEFAULT_MCP_PORT = 43013;
+
 const template = `# agents-remote personal deployment config
 # Fill app_password and projects_root, then restart the api service.
 
@@ -51,6 +57,8 @@ app_password = ""
 projects_root = ""
 api_port = 3001
 web_port = 3000
+# MCP hub port (internal, bound to 127.0.0.1). Optional; defaults to 43013.
+# mcp_port = 43013
 web_api_base_url = "/api"
 token_ttl_hours = 720
 `;
@@ -120,6 +128,7 @@ const applyEnvOverrides = (
   projectsRoot: env.PROJECTS_ROOT ?? config.projectsRoot,
   apiPort: env.API_PORT ? parsePort(env.API_PORT, "API_PORT") : config.apiPort,
   webPort: env.WEB_PORT ? parsePort(env.WEB_PORT, "WEB_PORT") : config.webPort,
+  mcpPort: env.MCP_PORT ? parsePort(env.MCP_PORT, "MCP_PORT") : config.mcpPort,
   webApiBaseUrl: env.WEB_API_BASE_URL ?? config.webApiBaseUrl,
   tokenTtlHours: env.TOKEN_TTL_HOURS
     ? parseTokenTtlHours(env.TOKEN_TTL_HOURS)
@@ -174,6 +183,7 @@ const validateConfig = (config: AppConfig, configPath: string): ResolvedSettings
     projectsRoot,
     apiPort,
     webPort,
+    mcpPort: config.mcpPort ?? DEFAULT_MCP_PORT,
     webApiBaseUrl,
     tokenTtlHours: config.tokenTtlHours ?? 720,
     configPath,
@@ -204,6 +214,7 @@ const parseConfigToml = (content: string, configPath: string): AppConfig => {
     projectsRoot: optionalString(values.projects_root, "projects_root", configPath),
     apiPort: optionalPort(values.api_port, "api_port", configPath),
     webPort: optionalPort(values.web_port, "web_port", configPath),
+    mcpPort: optionalPort(values.mcp_port, "mcp_port", configPath),
     webApiBaseUrl: optionalString(values.web_api_base_url, "web_api_base_url", configPath),
     tokenTtlHours: optionalTokenTtlHours(values.token_ttl_hours, configPath),
   };

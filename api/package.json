@@ -10,6 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@agents-remote/shared": "workspace:*"
+    "@agents-remote/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }

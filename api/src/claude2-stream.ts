@@ -249,6 +249,7 @@ export class Claude2StreamController {
     await this.claude2Runtime.ensureRunning(
       data.runtimeKey,
       metadata?.projectPath ?? "",
+      data.projectName,
       data.sessionId,
       metadata?.claudeSessionId,
       metadata?.modelAlias ?? metadata?.model,

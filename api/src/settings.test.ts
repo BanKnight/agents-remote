@@ -30,10 +30,27 @@ test("loadSettings reads config file values", async () => {
     projectsRoot: "/tmp/projects",
     apiPort: 3001,
     webPort: 3000,
+    mcpPort: 43013,
     webApiBaseUrl: "/api",
     tokenTtlHours: 720,
     configPath,
   });
+});
+
+test("loadSettings reads mcp_port from config and lets MCP_PORT env override it", async () => {
+  const dir = await makeTempDir();
+  const configPath = join(dir, "config.toml");
+  await writeFile(
+    configPath,
+    'app_password = "secret"\nprojects_root = "/tmp/projects"\napi_port = 3001\nweb_port = 3000\nmcp_port = 14301\nweb_api_base_url = "/api"\n',
+    { mode: 0o600 },
+  );
+
+  const fromConfig = await loadSettings({ configPath, env: {} });
+  expect(fromConfig.mcpPort).toBe(14301);
+
+  const fromEnv = await loadSettings({ configPath, env: { MCP_PORT: "14302" } });
+  expect(fromEnv.mcpPort).toBe(14302);
 });
 
 test("loadSettings lets environment override config values", async () => {

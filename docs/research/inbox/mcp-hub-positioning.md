@@ -29,27 +29,35 @@
 
 ## 能力域分层(内部 hub)
 
-内部 hub 的工具按「基线 + 能力域」分层:
+内部 hub 的工具按能力域组织,**无基线层**:
 
-- **基线层**:项目内文件读写原语(默认 agent 接上 hub 即具备)。wiki/browser 等能力域在此之上。
-- **能力域层**:`wiki_*`(wiki 语义:link graph / front matter / 搜索)/ `browser_*`(CDP 驱动)/ 后续更多。
+- **基座不暴露工具**(空壳):agent(Claude/Codex)自带文件工具(Read/Write/Edit / apply_patch / shell)且 spawn 时 `cwd=projectPath`,基线文件读写是重复造轮子。基座只提供 server + 注入管线,`tools/list` 返回空。
+- **能力域层**:`wiki_*`(wiki 语义:link graph / front matter / 搜索)/ `browser_*`(CDP 驱动)/ 后续更多。wiki 是基座之上第一个加真实工具的能力域。
 
-> wiki_* 不是从零造一套文件工具:它 = 基线文件读写 + wiki 语义增强。基线复用现有 Project-safe resolver(与 pages、Files 同一安全边界)。
+> wiki_* 工具实现内部复用现有 Project-safe resolver(与 pages、Files 同一安全边界)做文件操作——这是工具实现的细节,不是 hub 的基线层。
 
 **能力域可见性 = `tools/list` 动态裁剪**:MCP 协议原生支持 server 按上下文(项目配置)返回不同工具集(见「MCP 协议事实」)。没开 wiki 的项目,server 在 `tools/list` 不返回 wiki 工具。这让 per-project 能力开关自然落在协议层,不用自建开关系统。
 
+## runtime 兼容维度(McpInjector)
+
+注入能力是 runtime 级维度,与能力开关(project 级)正交:
+
+- **Claude2**(`Claude2McpInjector`):直拉 spawn,argv 可扩展,`--mcp-config` inline JSON + `type:"http"`,基座先行。
+- **Codex**:当前走 tmux 非直拉,无 argv 注入抽象 → 基座暂不支持,等 Codex 直拉 runtime 落地加 `CodexMcpInjector`(TOML `-c mcp_servers.<name>...`)。
+- **不加 `--strict-mcp-config`**:避免干扰 agent 已有的 user/project/enterprise MCP 配置(用户可能已有个人 MCP server,strict 会强制忽略;enterprise 场景还会拒跑)。hub 与 agent 现有 MCP 配置并存,工具列表是合集。strict 留待后续按需再开。
+
 ## 落地顺序(不建空架子)
 
-定位可以是 hub,但**第一个要实现的是 MCP hub 基座本身**——无状态 Streamable HTTP server + 基线文件读写 + spawn 时 `--mcp-config` 注入这套管线。基座跑通后,wiki 才是它之上第一个能力域:
+定位可以是 hub,但**第一个要实现的是 MCP hub 基座本身**——无状态 Streamable HTTP server + spawn 时 `--mcp-config` 注入这套管线。基座跑通后,wiki 才是它之上第一个能力域:
 
 ```
 MCP Hub 定位(只立方向)
-  └─ 第一步:MCP hub 基座 —— 无状态 Streamable HTTP server + 基线文件读写 + --mcp-config 注入
+  └─ 第一步:MCP hub 基座 —— 无状态 Streamable HTTP server(空壳) + --mcp-config 注入管线(Claude2 先行)
         └─ wiki 第一个内部能力域(producer 工具 + consumer 渲染)—— 基座之上第一个能力域,验证 hub 设计
               └─ browser 第二个内部能力域 —— 复用 hub,此时提取正式「工作台能力域插件」抽象
 ```
 
-- **MCP 基座先于能力域**:基座(无状态 server + 基线文件读写 + 注入)是所有能力域的共同前置依赖,wiki/browser 都长在它上面。先打通基座 = 打通「agent 能连上 hub 并调用到基线文件读写」这条最小管线;wiki 是基座之上的第一个**能力域**(wiki 语义增强工具),不是第一个要实现的东西。基座本身不建空架子——它必须先有一个被调用的能力域(wiki)才值得存在,但 wiki 工具的运行依赖基座已就绪,故实现期先落地基座再立刻接 wiki 工具。
+- **MCP 基座先于能力域**:基座(无状态 server + 注入管线)是所有能力域的共同前置依赖,wiki/browser 都长在它上面。基座本身是空壳(不暴露工具),但必须先打通「agent 能连上 hub」这条最小管线,wiki 工具才有地方注册。基座不建空架子——它必须先有一个被调用的能力域(wiki)才值得存在,但 wiki 工具的运行依赖基座已就绪,故实现期先落地基座再立刻接 wiki 工具。
 - **wiki 先于 browser**:wiki 工程量小(consumer 渲染层 + producer MCP 工具),作基座之上首个能力域验证 hub 设计;browser 作第二个能力域复用,并在它身上提取 workspace 注册 / 开关的正式抽象。
 - **插件抽象时机**:现有 `WORKBENCH_TAB_PLUGINS`(`web/src/components/workbench/workbench-tab-plugin.tsx`)已是 consumer 侧渲染 + 可见性的雏形(pages 即以此接入)。wiki 复用现成加一项即可;**不**在 wiki 阶段就把 hub 抽象成正式插件系统——等 browser(第二个样本)复用时差异点暴露,再提取(rule of three)。
 
