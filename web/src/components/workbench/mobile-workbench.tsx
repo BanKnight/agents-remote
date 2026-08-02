@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { MobilePageHeader, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
+import { MobileFab } from "../shell/mobile-fab";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
@@ -31,7 +32,6 @@ import {
 
 import {
   CardGridSkeleton,
-  CreateSessionBar,
   type GridItemCallbacks,
   InstanceGrid,
   instanceToGridItem,
@@ -684,11 +684,6 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
             {/* 创建入口（左）+ ViewSwitcher（右 ml-auto）两端对齐（设计 §6）：shrink-0 header
                 在滚动区外，border-b 与全局总览 / 桌面左总览 header 一致（批 Q 排版对齐）。 */}
             <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
-              <CreateSessionBar
-                isCreating={create.isCreating}
-                onCreateAgent={create.createAgent}
-                onCreateTerminal={create.createTerminal}
-              />
               <div className="ml-auto">
                 <ViewSwitcher
                   ariaLabel={t("workbench.viewSwitcher")}
@@ -698,6 +693,25 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                 />
               </div>
             </div>
+            {/* 移动 FAB（lg:hidden）：新建会话（Claude/Terminal）。桌面 CreateSessionBar 在
+                InstanceLeftOverview tab bar 保留。create.promptHolder 仍在下方统一渲染。 */}
+            <MobileFab
+              ariaLabel={t("workbench.createSessionAria")}
+              cancelLabel={t("cancel")}
+              disabled={create.isCreating}
+              items={[
+                {
+                  label: t("workbench.createClaude2"),
+                  icon: <ShellIcon name="anthropic" />,
+                  onSelect: () => create.createAgent("claude2"),
+                },
+                {
+                  label: t("workbench.createTerminal"),
+                  icon: <ShellIcon name="terminal" />,
+                  onSelect: create.createTerminal,
+                },
+              ]}
+            />
             <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
               {resolvedView === "table" ? (
                 tableRows.length === 0 ? (

@@ -17,6 +17,7 @@ import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
 import { Dialog, DialogContent } from "../ui/dialog";
 import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
+import { MobileFab } from "../shell/mobile-fab";
 import {
   candidateToGridItem,
   candidateToTableRow,
@@ -188,12 +189,18 @@ export function GlobalProjectsOverview({
       <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
         <button
           aria-label={t("home.createProjectAria")}
-          className={actionButtonClasses({ compact: true, tone: "accent" })}
+          className={actionButtonClasses({
+            compact: true,
+            tone: "accent",
+            className: "hidden lg:inline-flex",
+          })}
           onClick={() => setSetupOpen(true)}
           type="button"
         >
           {t("workbench.createMenu")}
         </button>
+        {/* 移动 FAB（lg:hidden）：直开 ProjectSetupPanel Dialog；桌面 header 按钮上方保留。 */}
+        <MobileFab ariaLabel={t("home.createProjectAria")} onClick={() => setSetupOpen(true)} />
         <div className="ml-auto">
           <ViewSwitcher
             ariaLabel={t("workbench.viewSwitcher")}

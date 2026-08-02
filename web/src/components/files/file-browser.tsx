@@ -24,6 +24,7 @@ import {
   deleteFile,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
+import { usePromptDialog } from "../shell/prompt-dialog";
 import {
   ActionButton,
   IconMarker,
@@ -32,6 +33,7 @@ import {
   ListRowSkeleton,
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
+import { MobileFab } from "../shell/mobile-fab";
 import { ShellIcon } from "../shell/icons";
 import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
@@ -891,6 +893,19 @@ export function FilesPanel({
   });
 
   const { confirm, holder: confirmHolder } = useConfirm();
+  // 移动 FAB「新建文件夹」走 prompt 弹框（inline input 在 FAB 范式下无处安放）；桌面 header
+  // 仍用 inline input（showFolderInput），两端共享 mkdir.mutate。
+  const { prompt, holder: promptHolder } = usePromptDialog();
+  const handleNewFolder = useCallback(async () => {
+    const name = await prompt({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("files.newFolder"),
+      placeholder: t("files.newFolder"),
+      title: t("files.newFolderTooltip"),
+    });
+    const trimmed = name?.trim();
+    if (trimmed && !mkdir.isPending) mkdir.mutate(trimmed);
+  }, [prompt, mkdir, t]);
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingName, setRenamingName] = useState("");
@@ -1069,7 +1084,7 @@ export function FilesPanel({
               + breadcrumb 会溢出覆盖 breadcrumb button（click intercept），且写操作语义属中栏 file
               tab（Save）+ 右栏 files inspection（Phase 3 后 project scope 右栏始终有 files inspection）。 */}
           {readOnly || !enablePreview ? null : (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden shrink-0 items-center gap-2 lg:flex">
               {upload.error instanceof Error || mkdir.error instanceof Error ? (
                 <p className="text-xs text-error hidden sm:block">
                   {upload.error instanceof Error
@@ -1189,6 +1204,28 @@ export function FilesPanel({
         ) : null}
       </div>
       {confirmHolder}
+      {promptHolder}
+      {/* 移动 FAB（lg:hidden）：新建文件夹（prompt）/ 上传（file picker）二合一。桌面 header
+          入口保留（上方 hidden lg:flex 块）。仅项目作用域 Files tab（!readOnly && enablePreview）。 */}
+      {!readOnly && enablePreview ? (
+        <MobileFab
+          ariaLabel={t("files.createAria")}
+          cancelLabel={t("cancel")}
+          items={[
+            {
+              label: t("files.newFolder"),
+              icon: <ShellIcon name="folder-plus" />,
+              onSelect: handleNewFolder,
+            },
+            {
+              label: upload.isPending ? t("files.uploading") : t("files.upload"),
+              icon: <ShellIcon name="upload" />,
+              onSelect: () => fileInputRef.current?.click(),
+              disabled: upload.isPending,
+            },
+          ]}
+        />
+      ) : null}
     </div>
   );
 }
