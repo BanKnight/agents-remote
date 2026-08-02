@@ -366,3 +366,39 @@ Playwright 定位滚动容器（`overflow-y-auto` 那层），evaluate 取 `scro
 - `tw-animate-css@1.4.0` `dist/tw-animate.css`：`.animate-out{animation:exit … var(--tw-animation-fill-mode,none)}` + `@keyframes exit{to{transform:translate3d(…,var(--tw-exit-translate-y,0),…)}}`。
 - 与 §4（portal fiber 冒泡）同属「现象在视觉层、根因在浏览器机制层，需溯源而非在渲染层打补丁」方法论；DESIGN.md `overlay-dismiss-symmetry`（apple-design §7）+ `mobile-sheet-fullscreen`。
 - MDN `animation-fill-mode`：https://developer.mozilla.org/en-US/docs/Web/CSS/animation-fill-mode
+
+## 10. vite build --watch 漏 CSS 落盘治本：`cssCodeSplit: false`（build-watch-css-not-flushed）
+
+### 现象（本项目多次复发，用户反复报「布局问题」）
+
+`scripts/ar-dev-web.sh` 用 `vite build --watch`（rolldown bundler）+ `vite preview` 常驻 web（43012）。增量 build **偶发只写 JS、漏写 CSS**——`dist` 缺 HTML 引用的 CSS 文件，preview 把 404 SPA fallback 成 `index.html`（`Content-Type: text/html`），浏览器把 HTML 当 CSS 解析 → **排版全乱但 console 无 JS 报错**，极易误判为业务/样式回归。§2 第 6-7 条是此前「touch 兜底 + ar-verify-css 硬闸」；本条目是 **2026-08-02 落地的治本**（commit `89b3a45`），治本后不应再触发，touch 兜底降级为备用。
+
+### 机制
+
+vite 8（rolldown 转正版）`build --watch` 增量对「内容/hash 未变的 CSS chunk」**跳过重 emit**——一旦产物被清/未写，增量再不会补 → dist 长期缺 CSS。rolldown 的 CSS watch 依赖跟踪仍在 RFC（rolldown#8403，Stage 3），无上游 config 修复。
+
+**dev 环境并发污染（独立根因，曾误判为源码回归）**：多个 `vite build --watch` **孤儿进程**并发写 dist 竞态吞 CSS（ar-dev web 窗口丢失变孤儿 + 新窗口又起一个）。诊断进程数用 `ps -eo pid,args | grep "vite build --watch" | grep -v grep`，应只有 1 个；>1 即并发污染，`pkill -f "vite build --watch"` 后重启。⚠️ **正常态是 2 个 vite 进程**（1 `build --watch` + 1 `preview`，同由 `ar-dev-web.sh` 拉起，同 pts/etime），别误报；「并发污染」特指 2 个都是 `build --watch`。诊断**别用 `wc -l`/`pgrep -cf` 计数**（grep 自身快照竞态/参数串进匹配都会假阳性返回 2），看命令全名。
+
+**增量不可靠还有两面（与 CSS 落盘同根，遇色阶/utility 验证时注意）**：① 保留废弃 utility——增量不删旧 class，`dist` 残留已不消费的 utility，验证色阶收敛必须 clean build（`bunx vite build --outDir /tmp/x --emptyOutDir`）才反映真实源码集合；② 增量缺新 utility——新增 utility 消费后 dev DOM 验证前需 `touch web/src/main.tsx` 触发更完整 rebuild。
+
+### 标准做法（治本 + 改 config 重启 + 兜底 + 硬闸）
+
+1. **治本：`build.cssCodeSplit: false`**（`web/vite.config.ts`）。CSS 作**单一入口副作用**，每次 build（含 watch 增量）必 emit，绕开「内容未变 → 跳过」路径。单页 SPA 无副作用（本就单入口 CSS），precache 25→24 entries（2 CSS 合并为 1：`index-*.css` + `vendor-terminal-*.css` → `style-*.css`）。
+2. **⚠️ 改 vite.config 后必须重启 dev web**：`build --watch` **启动时只加载一次 config，增量 rebuild 不重新评估**（实测：改 config 后 watch rebuild 仍用旧配置）。重启 = `ar-dev:web` by name C-c → `scripts/ar-dev-web.sh`（脚本首步阻塞式 build 会重载 config）。这是 watcher 行为，不是 bug。
+3. **兜底（touch 临时修复仍可用）**：CSS 丢了 → `touch web/src/main.tsx` 触发完整 rebuild。⚠️ 绝不 `touch web/src/index.css`（该文件不存在，touch 会新建 0 字节无引用孤儿，git 显示 `?? web/src/index.css`）。
+4. **硬闸（改 web 包内任何文件后必跑，与改动内容无关）**：`node scripts/ar-verify-css.mjs [本次相关 utility ...]`——三道闸：HTML 注入 stylesheet link + 每条 CSS 响应 `content-type: text/css` + 关键 utility 选择器落正文，不过则 fail。DOM 结构断言（文本/role/aria）对 CSS **完全盲**，探针全绿 ≠ CSS 正确。web DOM 探针须 `import { verifyCssFlushed }` 做强制前置断言。ar-verify-css 与 format:check / lint / typecheck / test **同级**，改 web 后无条件跑，不在 plan 里写「需不需要」。
+5. **交付 checklist（commit/push 后、交用户前，hard）**：① `curl -sI localhost:43012/assets/<index.html 引用的 css> | grep content-type` 必须 `text/css`（`text/html` = CSS 没落盘，preview 把缺失 CSS SPA fallback 成 HTML）；② `ls web/dist/assets/*.css` 非空；③ 若 text/html，`touch web/src/main.tsx` + 轮询到 text/css 再交付。**clean build 验证 ≠ dev 交付验证**：clean build 证明「源码→CSS 映射对」，curl 43012 证明「用户实际看到的 dev 产物可用」，两者都必须，不可互相替代。重复 `touch`/多次 rebuild 后是漏 CSS 最高风险时刻，更必须 curl 确认。
+
+### 验证（治本 commit `89b3a45`）
+
+- 一次性 build → 单 `style-DF42622Y.css`（103497 B，= 旧 99547+3939 合并），HTML 只引用它。
+- 重启 dev web 后 build --watch 生效；`touch main.tsx` 触发增量（built in 2601ms）→ ar-verify-css 三道闸仍全绿（**治本核心证明：增量不再漏 CSS**）。
+- 无回归：桌面 1280×900 / 移动 390×844 DOM 几何探针——middle tab 栏与主体零重叠、body 无横向溢出、wiki 列表渲染正常。
+- 门禁全绿：format / lint(0w0e) / typecheck / test（api 417 + shared 9 + web 551 = 977）/ build（precache 24 entries）。
+
+### 来源
+
+- 治本 commit `fix(web): cssCodeSplit:false 治本 build --watch 漏 CSS 落盘`（`89b3a45`，`web/vite.config.ts` +5 行）。
+- tvly 调研：rolldown/rolldown#8403「Vite-inspired CSS Solution」RFC——rolldown CSS code-splitting + watch 依赖跟踪仍在 Stage 3，无上游 config 绕过。
+- 与 §2 第 6-7 条同族：§2 是「色阶收敛验证 + CSS 落盘硬闸」，本条是「落盘问题的构建层治本」。
+- **本条目自包含（取代旧的机器本地 memory `build-watch-css-not-flushed`）**：旧 memory 在 `~/.claude/projects/.../memory/`，随机器迁移即丢失；本条目是仓库内文件、跟 git 走，才是跨机器长期载体。曾有 5 次复发、完整时间线已并入本条目机制/做法/验证各节。
