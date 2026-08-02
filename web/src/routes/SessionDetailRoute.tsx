@@ -8,7 +8,7 @@ import type {
 } from "@agents-remote/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, MoreVertical } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { Terminal } from "@xterm/xterm";
@@ -815,7 +815,7 @@ function SessionDetailActions({
             items={items}
             trigger={
               <button className={buttonClass} type="button" aria-label={t("session.actionsAria")}>
-                <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                <ShellIcon className="h-4 w-4" name="ellipsis" />
               </button>
             }
           />

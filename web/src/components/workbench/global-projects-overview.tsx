@@ -15,7 +15,7 @@ import { useConfirm } from "../shell/confirm-dialog";
 import { actionButtonClasses, ViewSwitcher } from "../shell/shell-primitives";
 import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
 import { Dialog, DialogContent } from "../ui/dialog";
-import { ActionMenu } from "../ui/action-menu";
+import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import {
   candidateToGridItem,
@@ -275,6 +275,7 @@ function GroupedProjectsList({
     [projectNames, candidates],
   );
   const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
+  const ctx = useRowContextMenu();
 
   const requestDelete = async (projectName: string) => {
     const ok = await confirm({
@@ -299,7 +300,10 @@ function GroupedProjectsList({
             className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
             key={group.projectName}
           >
-            <div className="flex items-center gap-2 pl-5 pr-7 lg:pl-2 lg:pr-2">
+            <div
+              className="flex items-center gap-2 pl-5 pr-7 lg:pl-2 lg:pr-2"
+              onContextMenu={(e) => ctx.openAt(group.projectName, e)}
+            >
               <button
                 className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 lg:px-1 text-left transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
@@ -328,6 +332,7 @@ function GroupedProjectsList({
               <ActionMenu
                 align="end"
                 cancelLabel={t("cancel")}
+                contextMenuPoint={ctx.pointFor(group.projectName)}
                 items={[
                   {
                     label: t("project.deleteProject"),
@@ -337,6 +342,7 @@ function GroupedProjectsList({
                     disabled: deleteMutation.isPending,
                   },
                 ]}
+                onContextMenuClose={ctx.close}
                 trigger={
                   <button
                     aria-label={t("session.actions")}

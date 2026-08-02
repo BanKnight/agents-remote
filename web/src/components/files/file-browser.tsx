@@ -10,7 +10,6 @@ import {
   useState,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreVertical } from "lucide-react";
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
 import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
@@ -34,13 +33,7 @@ import {
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
-import { ActionMenu } from "../ui/action-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
+import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 import { ImageViewer } from "./image-viewer";
 
@@ -205,12 +198,7 @@ export function FileEntryList({
 }: FileEntryListProps) {
   const { t } = useT();
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const [ctxMenu, setCtxMenu] = useState<{
-    name: string;
-    path: string;
-    x: number;
-    y: number;
-  } | null>(null);
+  const ctx = useRowContextMenu();
 
   useEffect(() => {
     if (!renamingPath) return;
@@ -246,12 +234,14 @@ export function FileEntryList({
             type="button"
             aria-label={`${entry.name} actions`}
           >
-            <MoreVertical className="h-4 w-4 text-on-surface-muted" />
+            <ShellIcon className="h-4 w-4 text-on-surface-muted" name="ellipsis" />
           </button>
         }
+        contextMenuPoint={ctx.pointFor(entry.path)}
+        onContextMenuClose={ctx.close}
       />
     ),
-    [t, onDelete, onStartRename],
+    [t, onDelete, onStartRename, ctx.pointFor, ctx.close],
   );
 
   // 结构已知（ListRow 网格），用骨架 mirror loaded 网格，padding 由外层 p-3 提供。
@@ -313,20 +303,16 @@ export function FileEntryList({
             onClick: isRenaming
               ? undefined
               : clickable
-                ? () => (isDirectory ? onOpenDirectory(entry.path) : onPreviewFile(entry.path))
+                ? (e) => {
+                    // §4:移动 sheet scrim / 桌面 popover dismiss 的 click 按 fiber 冒泡到行,
+                    // target 在 body 不在行内 → 忽略,否则点 ⋯ 开菜单后再点外会误打开文件/目录。
+                    if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
+                      return;
+                    if (isDirectory) onOpenDirectory(entry.path);
+                    else onPreviewFile(entry.path);
+                  }
                 : undefined,
-            onContextMenu:
-              isRenaming || readOnly
-                ? undefined
-                : (e) => {
-                    e.preventDefault();
-                    setCtxMenu({
-                      name: entry.name,
-                      path: entry.path,
-                      x: e.clientX,
-                      y: e.clientY,
-                    });
-                  },
+            onContextMenu: isRenaming || readOnly ? undefined : (e) => ctx.openAt(entry.path, e),
             actions: isRenaming || readOnly ? undefined : renderActions(entry),
           };
           // TS 在此分支内 narrow onCardDragStart/fileProjectName 到非空（无需 ! 断言）。
@@ -345,28 +331,6 @@ export function FileEntryList({
           return <ListRow key={`${entry.type}:${entry.path}`} {...rowCommon} />;
         })}
       </ListGroup>
-      {ctxMenu ? (
-        <DropdownMenu
-          open
-          onOpenChange={(open) => {
-            if (!open) setCtxMenu(null);
-          }}
-        >
-          <DropdownMenuTrigger asChild>
-            <div className="fixed size-0" style={{ left: ctxMenu.x, top: ctxMenu.y }} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="bottom">
-            <DropdownMenuItem onSelect={() => onStartRename(ctxMenu.path, ctxMenu.name)}>
-              <ShellIcon name="edit" />
-              {t("files.rename")}
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onSelect={() => onDelete(ctxMenu.path)}>
-              <ShellIcon name="trash" />
-              {t("files.delete")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
     </>
   );
 }

@@ -1,4 +1,11 @@
-import { useState, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useState,
+  type ButtonHTMLAttributes,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { cn } from "@/lib/utils";
@@ -38,6 +45,12 @@ type ActionMenuProps = {
   align?: "start" | "center" | "end";
   /** 移动 sheet 末项「取消」文案。 */
   cancelLabel?: string;
+  /**
+   * 桌面右键坐标触发（非空时在坐标渲染受控 popover，消费同一 items）。移动端忽略（触屏无右键）。
+   * 调用方行/卡 `onContextMenu` → `useRowContextMenu()` 提供 point/close。
+   */
+  contextMenuPoint?: { x: number; y: number } | null;
+  onContextMenuClose?: () => void;
 };
 
 /**
@@ -46,9 +59,17 @@ type ActionMenuProps = {
  * - 移动（`max-sm:`）= 底部 action sheet（Radix Dialog scrim + 从底滑上 + 全宽 48px item + 取消 + safe-area）。
  *
  * 收敛历史四套菜单实现（Radix ×3、InstanceCard 手写、SessionDetail 手写）到同一声明式 API。
- * 桌面右键菜单（`onContextMenu` 坐标触发）不走本原语，保留为桌面快捷。
+ * 桌面右键 = 同一原语坐标触发：调用方行/卡 `onContextMenu`（`useRowContextMenu`）→
+ * `contextMenuPoint` 在坐标渲染受控 popover，消费同一 items（移动端无右键，触屏由 ⋯ 按钮承载）。
  */
-export function ActionMenu({ items, trigger, align = "end", cancelLabel }: ActionMenuProps) {
+export function ActionMenu({
+  items,
+  trigger,
+  align = "end",
+  cancelLabel,
+  contextMenuPoint = null,
+  onContextMenuClose,
+}: ActionMenuProps) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
 
@@ -99,24 +120,76 @@ export function ActionMenu({ items, trigger, align = "end", cancelLabel }: Actio
     );
   }
 
+  const renderItems = () =>
+    items.map((item, index) => (
+      <DropdownMenuItem
+        key={`${item.label}-${index}`}
+        variant={item.variant}
+        disabled={item.disabled}
+        onSelect={() => item.onSelect()}
+      >
+        {item.icon}
+        {item.label}
+      </DropdownMenuItem>
+    ));
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align={align}>
-        {items.map((item, index) => (
-          <DropdownMenuItem
-            key={`${item.label}-${index}`}
-            variant={item.variant}
-            disabled={item.disabled}
-            onSelect={() => item.onSelect()}
-          >
-            {item.icon}
-            {item.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+        <DropdownMenuContent align={align}>{renderItems()}</DropdownMenuContent>
+      </DropdownMenu>
+      {contextMenuPoint ? (
+        <DropdownMenu
+          open
+          onOpenChange={(open) => {
+            if (!open) onContextMenuClose?.();
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <div
+              className="fixed size-0"
+              style={{ left: contextMenuPoint.x, top: contextMenuPoint.y }}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="bottom">
+            {renderItems()}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </>
   );
+}
+
+/**
+ * 行/卡级桌面右键菜单 state（与 ActionMenu 的 `contextMenuPoint` 配套）。**per-row key 设计**：
+ * 列表多行共用一份 ctx，`openAt(key, e)` 记录 key，`pointFor(key)` 只对当前行返回坐标——
+ * 避免非当前行的 ActionMenu 也收到非空 point 导致多菜单同时开。
+ *
+ *   const ctx = useRowContextMenu();
+ *   <div onContextMenu={(e) => ctx.openAt(entry.path, e)}>
+ *     <ActionMenu
+ *       items={items}
+ *       trigger={...}
+ *       contextMenuPoint={ctx.pointFor(entry.path)}
+ *       onContextMenuClose={ctx.close}
+ *     />
+ *   </div>
+ *
+ * 右键与拖放/点击不冲突：`onContextMenu` 独立事件，不经过 pointer-sequence / onClick。
+ */
+export function useRowContextMenu() {
+  const [point, setPoint] = useState<{ key: string; x: number; y: number } | null>(null);
+  const openAt = useCallback((key: string, e: MouseEvent) => {
+    e.preventDefault();
+    setPoint({ key, x: e.clientX, y: e.clientY });
+  }, []);
+  const close = useCallback(() => setPoint(null), []);
+  const pointFor = useCallback(
+    (key: string) => (point && point.key === key ? { x: point.x, y: point.y } : null),
+    [point],
+  );
+  return { openAt, close, pointFor };
 }
 
 /**

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+import { ActionMenu, type ActionMenuItem, useRowContextMenu } from "../ui/action-menu";
 import { ShellIcon } from "./icons";
 
 /**
@@ -714,6 +714,7 @@ export function InstanceCard({
   const isPlain = surface === "plain";
   const hasMetaText = projectName || activity;
   const hasActions = onRename || onClose;
+  const ctx = useRowContextMenu();
   const items: ActionMenuItem[] = [];
   if (onRename) {
     items.push({ label: renameLabel ?? "", icon: <ShellIcon name="edit" />, onSelect: onRename });
@@ -745,6 +746,7 @@ export function InstanceCard({
         if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;
         onSelect();
       }}
+      onContextMenu={hasActions ? (e) => ctx.openAt("card", e) : undefined}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;
@@ -782,7 +784,9 @@ export function InstanceCard({
           <ActionMenu
             align="end"
             cancelLabel={cancelLabel}
+            contextMenuPoint={ctx.pointFor("card")}
             items={items}
+            onContextMenuClose={ctx.close}
             trigger={
               <button
                 aria-label={actionsLabel}

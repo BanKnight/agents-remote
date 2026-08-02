@@ -2,7 +2,7 @@ import type { AgentProvider } from "@agents-remote/shared";
 import type { ReactNode } from "react";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { type ShellTone, sessionMarker, StatusMarker } from "../shell/shell-primitives";
-import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+import { ActionMenu, type ActionMenuItem, useRowContextMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { relativeTime } from "./history-list";
 
@@ -57,6 +57,7 @@ const COL_HEADER_KEY: Record<TableColumn, TranslationKey> = {
  * §9 移动隐藏 project + activity）。
  */
 export function SessionTable({ rows, columns, t }: SessionTableProps) {
+  const ctx = useRowContextMenu();
   return (
     <div className="@container h-full overflow-auto">
       <table className="w-full table-fixed border-collapse text-sm">
@@ -75,10 +76,11 @@ export function SessionTable({ rows, columns, t }: SessionTableProps) {
               className="cursor-pointer border-b border-neutral-line/40 transition hover:bg-surface-raised/30 active:bg-on-surface/10"
               key={row.key}
               onClick={() => row.onFocus()}
+              onContextMenu={(e) => ctx.openAt(row.key, e)}
             >
               {columns.map((col) => (
                 <td className={tdClass(col)} key={col}>
-                  {renderCell(col, row, t)}
+                  {renderCell(col, row, t, ctx.pointFor(row.key), ctx.close)}
                 </td>
               ))}
             </tr>
@@ -128,7 +130,13 @@ function tdClass(col: TableColumn): string {
   return `${base} ${colWidthClass(col)}`;
 }
 
-function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): ReactNode {
+function renderCell(
+  col: TableColumn,
+  row: SessionTableRow,
+  t: TranslateFn,
+  contextMenuPoint?: { x: number; y: number } | null,
+  onContextMenuClose?: () => void,
+): ReactNode {
   switch (col) {
     case "project":
       // project 列 = 进项目超链接（global 表，navigate /projects/$key）；project scope 无此列。
@@ -164,7 +172,15 @@ function renderCell(col: TableColumn, row: SessionTableRow, t: TranslateFn): Rea
       return text ? <span className="block truncate text-on-surface-muted">{text}</span> : null;
     }
     case "actions":
-      return <RowActions onClose={row.onClose} onRename={row.onRename} t={t} />;
+      return (
+        <RowActions
+          onClose={row.onClose}
+          onRename={row.onRename}
+          t={t}
+          contextMenuPoint={contextMenuPoint}
+          onContextMenuClose={onContextMenuClose}
+        />
+      );
   }
 }
 
@@ -178,10 +194,14 @@ function RowActions({
   onClose,
   onRename,
   t,
+  contextMenuPoint = null,
+  onContextMenuClose,
 }: {
   onClose?: () => void;
   onRename?: () => void;
   t: TranslateFn;
+  contextMenuPoint?: { x: number; y: number } | null;
+  onContextMenuClose?: () => void;
 }) {
   const items: ActionMenuItem[] = [];
   if (onRename) {
@@ -200,7 +220,9 @@ function RowActions({
     <ActionMenu
       align="end"
       cancelLabel={t("cancel")}
+      contextMenuPoint={contextMenuPoint}
       items={items}
+      onContextMenuClose={onContextMenuClose}
       trigger={
         <button
           aria-label={t("session.actions")}

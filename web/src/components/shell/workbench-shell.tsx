@@ -114,7 +114,7 @@ export function WorkbenchShell({
             onCollapse={() => setLeftCollapsed(true)}
             title={leftPanelTitle}
           />
-          <div className="min-h-0 flex-1 overflow-hidden">{leftPanel}</div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{leftPanel}</div>
           {leftCollapsed ? null : <ColumnResizeGutter onResize={onResizeLeft} side="left" />}
         </aside>
 
