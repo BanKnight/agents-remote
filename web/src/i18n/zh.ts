@@ -564,6 +564,11 @@ export const zh: Record<TranslationKey, string> = {
   "settings.section.general": "通用",
   "settings.section.claude": "Claude 运行时",
   "settings.generalHint": "通用设置项将在后续版本补充。",
+  "theme.label": "外观",
+  "theme.hint": "选择明亮或暗黑外观，或跟随系统。",
+  "theme.system": "跟随系统",
+  "theme.light": "明亮",
+  "theme.dark": "暗黑",
   "settings.providers": "API Provider",
   "settings.providersHint":
     "管理 API provider 凭证与端点。Claude runtime 使用 Anthropic 协议的 provider；Codex runtime（即将支持）将使用 OpenAI 兼容协议的 provider。",

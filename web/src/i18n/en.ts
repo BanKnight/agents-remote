@@ -565,6 +565,11 @@ export const en = {
   "settings.section.general": "General",
   "settings.section.claude": "Claude runtime",
   "settings.generalHint": "General settings will be added in a future release.",
+  "theme.label": "Appearance",
+  "theme.hint": "Choose light or dark appearance, or follow system.",
+  "theme.system": "System",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
   "settings.providers": "API Providers",
   "settings.providersHint":
     "Manage API provider credentials and endpoints. The Claude runtime uses Anthropic-protocol providers; the Codex runtime (coming soon) will use OpenAI-compatible ones.",

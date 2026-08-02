@@ -10,6 +10,7 @@ import { createElement, type CSSProperties, type ReactNode } from "react";
 import PrismLight from "react-syntax-highlighter/dist/esm/prism-light";
 import { refractor } from "refractor/core";
 import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
+import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
 import css from "react-syntax-highlighter/dist/esm/languages/prism/css";
 import diff from "react-syntax-highlighter/dist/esm/languages/prism/diff";
@@ -126,9 +127,10 @@ export function extToLang(name: string): string | undefined {
 
 // ── diff/单行源码高亮（R7）─────────────────────────────────────────
 // 复用 CodeBlock 同款 refractor（rsh PrismLight 共享 refractor/core 单例，上方 REGISTRATIONS
-// 已注册全部语言）+ oneDark 主题。逐行 tokenize：diff 每行独立高亮，叠加在 diff 行级红绿背景上。
-// oneDark key 形如 "keyword, regex"（纯 token 名）或 "code[class*=language-]"（全局选择器），
-// 只取纯 token 名建 class→inline-style 表，运行时按 refractor 输出的 token class 查表着色。
+// 已注册全部语言）+ oneDark/oneLight 主题（按明暗切换）。逐行 tokenize：diff 每行独立高亮，
+// 叠加在 diff 行级红绿背景上。主题 key 形如 "keyword, regex"（纯 token 名）或
+// "code[class*=language-]"（全局选择器），只取纯 token 名建 class→inline-style 表，
+// 运行时按明暗主题选表 + refractor 输出的 token class 查表着色。
 
 type HastNode = {
   type: string;
@@ -137,9 +139,9 @@ type HastNode = {
   children?: HastNode[];
 };
 
-const TOKEN_STYLE_BY_CLASS: ReadonlyMap<string, CSSProperties> = (() => {
+function buildTokenStyleMap(theme: object): ReadonlyMap<string, CSSProperties> {
   const map = new Map<string, CSSProperties>();
-  for (const [selector, style] of Object.entries(oneDark)) {
+  for (const [selector, style] of Object.entries(theme)) {
     if (selector.includes("[") || selector.includes("::") || selector.includes(">")) continue;
     for (const name of selector.split(",")) {
       const trimmed = name.trim();
@@ -147,26 +149,35 @@ const TOKEN_STYLE_BY_CLASS: ReadonlyMap<string, CSSProperties> = (() => {
     }
   }
   return map;
-})();
+}
 
-function renderHastNode(node: HastNode, key: number): ReactNode {
+const TOKEN_STYLE_DARK = buildTokenStyleMap(oneDark);
+const TOKEN_STYLE_LIGHT = buildTokenStyleMap(oneLight);
+
+function renderHastNode(
+  node: HastNode,
+  key: number,
+  styles: ReadonlyMap<string, CSSProperties>,
+): ReactNode {
   if (node.type === "text") return node.value ?? "";
   const className = (node.properties?.className ?? []) as unknown[];
-  // refractor 输出 className = ['token', '<name>']；取 token 后的语义 class 查 oneDark。
+  // refractor 输出 className = ['token', '<name>']；取 token 后的语义 class 查主题表。
   const tokenClass = className.find((c) => c !== "token") as string | undefined;
-  const style = tokenClass ? TOKEN_STYLE_BY_CLASS.get(tokenClass) : undefined;
-  const children = (node.children ?? []).map((child, i) => renderHastNode(child, i));
+  const style = tokenClass ? styles.get(tokenClass) : undefined;
+  const children = (node.children ?? []).map((child, i) => renderHastNode(child, i, styles));
   return createElement("span", { key, style }, ...children);
 }
 
 /**
  * 单行源码语法高亮（diff content cell 用）。lang 未命中或 tokenize 失败时原样返回文本。
+ * isDark 决定走 oneDark 还是 oneLight 色板，与 CodeBlock 主题保持一致。
  * 跨行结构（块注释/多行模板串）逐行不延续状态，diff 片段以单行为主，已知取舍。
  */
-export function highlightCodeLine(code: string, lang: string): ReactNode {
+export function highlightCodeLine(code: string, lang: string, isDark: boolean): ReactNode {
   try {
     const root = refractor.highlight(code, lang) as unknown as { children: HastNode[] };
-    return root.children.map((child, i) => renderHastNode(child, i));
+    const styles = isDark ? TOKEN_STYLE_DARK : TOKEN_STYLE_LIGHT;
+    return root.children.map((child, i) => renderHastNode(child, i, styles));
   } catch {
     return code;
   }

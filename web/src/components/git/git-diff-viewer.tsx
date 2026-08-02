@@ -19,6 +19,7 @@ import {
   listProjectGitDiff,
 } from "../../api/client";
 import { useT } from "../../i18n";
+import { useTheme } from "../../theme";
 import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
   IconMarker,
@@ -506,6 +507,8 @@ function DiffContent({ diff, filePath }: { diff: string; filePath: string }) {
   const hunkRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const lines = useMemo(() => parseDiff(diff), [diff]);
   const lang = useMemo(() => extToLang(filePath), [filePath]);
+  const { resolved } = useTheme();
+  const isDark = resolved === "dark";
 
   // R7：按文件扩展名对代码行做源码高亮（前缀 +/-/空格 单独渲染，保留 diff 语义）。
   // 仅 add/del/context 行高亮；header/hunk 行纯文本。整表 useMemo 缓存，避免大文件逐次重算。
@@ -519,11 +522,11 @@ function DiffContent({ diff, filePath }: { diff: string; filePath: string }) {
       return (
         <>
           <span aria-hidden="true">{prefix}</span>
-          {highlightCodeLine(rest, lang)}
+          {highlightCodeLine(rest, lang, isDark)}
         </>
       );
     });
-  }, [lines, lang]);
+  }, [lines, lang, isDark]);
 
   // 行号 → 该行是第几个 hunk（0-based），非 hunk 行 = -1。
   const { hunkIndexOfLine, hunkCount } = useMemo(() => {

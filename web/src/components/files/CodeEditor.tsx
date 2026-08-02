@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import CodeMirror, { EditorView, Prec, minimalSetup } from "@uiw/react-codemirror";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { useTheme } from "../../theme";
 import { extToEditorLanguage } from "./editor-languages";
 
 // 可编辑代码容器：CodeMirror 6 + oneDark 主题，视觉与只读 CodeBlock 对齐（透明背景、等宽字体、
@@ -33,17 +34,20 @@ export type CodeEditorProps = {
 };
 
 export function CodeEditor({ value, name, onChange }: CodeEditorProps) {
-  // theme="none" 阻止 @uiw 注入默认 light 主题（白背景），外观完全由 extensions 控制。
-  // oneDark 提供语法色板；THEME 用 Prec.highest 提升优先级，确保透明背景与字体覆盖 oneDark 默认底色。
+  const { resolved } = useTheme();
+  const isDark = resolved === "dark";
+  // theme 按 resolved 切：dark = "none"（阻止 @uiw 默认 light 白底）+ oneDark 语法色板；
+  // light = "light"（@uiw 内置 light），不加 oneDark。THEME 用 Prec.highest 提升优先级，
+  // 确保透明背景与字体覆盖主题默认底色（light/dark 通用）。
   const extensions = useMemo(
     () => [
       ...minimalSetup(),
-      oneDark,
+      ...(isDark ? [oneDark] : []),
       Prec.highest(THEME),
       ...extToEditorLanguage(name),
       EditorView.lineWrapping,
     ],
-    [name],
+    [name, isDark],
   );
 
   // CodeMirror 的 @uiw wrapper（.cm-theme-none）默认按内容撑高，.cm-editor 拿不到受限高度、
@@ -55,7 +59,7 @@ export function CodeEditor({ value, name, onChange }: CodeEditorProps) {
         value={value}
         onChange={onChange}
         height="100%"
-        theme="none"
+        theme={isDark ? "none" : "light"}
         extensions={extensions}
         basicSetup={false}
       />

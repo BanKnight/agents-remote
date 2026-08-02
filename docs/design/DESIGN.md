@@ -238,6 +238,8 @@ components:
 
 移动端是首轮体验重点：竖屏优先，三段式（header/content/输入或底部 nav），safe-area 必须主动消费，输入区绝不遮挡输出。
 
+**明暗双主题**：默认跟随系统（`prefers-color-scheme`）——系统暗→暗主题（Colors 节 frontmatter normative 基准）、系统明→明主题（见 Colors「Light theme tokens」）；用户可在设置覆盖（system/light/dark）。明主题是冷调浅灰白，保持 teal/cyan 品牌血缘，服务阳光下可读场景。切换在首帧前注入 `<html>` class 避免 FOUC。
+
 ## Colors
 
 调色板扎根于高对比深色中性色 + 一个 evocative 的 cyan accent。所有颜色以 `#hex`（sRGB）表达。
@@ -328,6 +330,52 @@ Phase 4 收敛 Claude2 内容角色色后，剩余散写（操作色 cyan、灰�
 **shadow → `primary` / `error`**：`shadow-cyan-950/N` → `shadow-primary/N`（primary 元素 glow；cyan-950 深暗 vs primary 亮，半透明 shadow 略变亮，微色差可接受）、`shadow-rose-950/N` → `shadow-error/N`。
 
 **Skill purple → `permission`**：`purple-400` → `permission`、`purple-200` → `permission-soft`（Skill footer；purple-400 ≈ violet-400，视觉接近；Skill 用 permission 色族区分）。
+
+### Light theme tokens（明主题）
+
+阳光下暗主题看不清，提供明主题。默认**跟随系统**（`prefers-color-scheme`），用户可在设置覆盖（system/light/dark）。明主题是**冷调浅灰白**——保持 teal/cyan 品牌血缘（surface 偏蓝灰浅白、primary cyan 加深一档），非纯中性白或暖调。
+
+实现：`<html>` 加 `.dark` class 驱动（`@custom-variant dark (&:is(.dark *))`），`:root` = light 值、`.dark` = dark 值（上方 frontmatter normative 基准）。首帧前 inline script 注入 class 避免 FOUC。
+
+**token 对照表**（dark = frontmatter 基准；light = 明主题值）：
+
+| token | dark | **light** | 说明 |
+|---|---|---|---|
+| surface-base | `#080b10` | `#eef2f7` | 底层背景（微蓝灰） |
+| surface | `#0f1520` | `#f6f8fb` | shell/面板 |
+| surface-raised | `#141b28` | `#ffffff` | 卡片/行（纯白最亮） |
+| surface-inset | `#05080d` | `#e2e8f0` | 凹陷（浅灰，模拟陷入） |
+| on-surface | `#eef4ff` | `#0f1520` | 主文字（翻转，色相血缘=暗 surface hex） |
+| on-surface-soft | `#c1cad8` | `#344056` | 次主文字 |
+| on-surface-muted | `#8d99aa` | `#64748b` | 辅助文字 |
+| on-primary | `#041019` | `#ffffff` | primary 上文字（白） |
+| on-error | `#041019` | `#ffffff` | error 上文字（白） |
+| neutral-line | `#263245` | `#d7deea` | 边框 |
+| code-text | `#d6e4f7` | `#1e293b` | terminal 文字 |
+| code-muted | `#728197` | `#64748b` | terminal muted |
+| primary | `#7dd3fc` | `#0284c7` | cyan 加深（sky-600，白底 WCAG AA） |
+| secondary | `#a78bfa` | `#8b5cf6` | violet 加深（violet-500） |
+| success | `#34d399` | `#059669` | emerald 加深（白底对比） |
+| warning | `#fbbf24` | `#d97706` | amber 加深（白底对比） |
+| error | `#fb7185` | `#e11d48` | rose 加深（白底对比） |
+| assistant | `#fbbf24` | `#d97706` | 角色色加深 |
+| assistant-soft | `#fde68a` | `#f59e0b` | |
+| assistant-deep | `#92400e` | `#fef3c7` | **翻转**：明主题「deep bg」=浅气泡 |
+| user | `#22d3ee` | `#0891b2` | |
+| user-soft | `#67e8f9` | `#06b6d4` | |
+| user-deep | `#0e7490` | `#cffafe` | **翻转** |
+| permission | `#a78bfa` | `#8b5cf6` | |
+| permission-soft | `#c4b5fd` | `#a78bfa` | |
+
+设计要点：
+
+- **surface 层次保持**。明主题仍是 tonal-layer elevation：`surface-base`（底层）→ `surface`（shell）→ `surface-raised`（卡片，纯白最亮）→ `surface-inset`（凹陷，浅灰）。暗主题「越抬升越浅、凹陷最深」，明主题「越抬升越白、凹陷浅灰模拟陷入」——抬升=变亮的方向一致，只是基底从深色翻成浅色。
+- **primary / 状态色 / 角色色加深一档**。`#7dd3fc`(cyan-300) 在白底对比约 2.3:1 不达 WCAG AA；加深成 `#0284c7`(sky-600) 约 4.6:1 达标。同理 success/warning/error/角色色各加深一档（emerald-600 / amber-600 / rose-600 等）。`on-primary`/`on-error` 翻转成白字。
+- **角色色 deep 档语义翻转**。暗主题 `assistant-deep` `#92400e` 是「深 bg 气泡」；明主题 deep 档翻转为浅色（`#fef3c7` amber-100），配深色文字（`assistant` `#d97706`）——明主题「角色气泡」=浅底深字。token 名 `deep` 在明主题语义=「气泡背景色」（浅），与暗主题「深 bg」相反；代码层不分支（token hex 直接给浅值），语义翻转仅在此标注。
+- **alpha 叠加基准跟随翻转**。`on-surface 5%` 叠加：暗主题 = 近白 5%（深底上微亮）、明主题 = 近黑 5%（浅底上微暗）。交互态 tint（`primary 10%` 等）同理：明主题 primary 加深成 `#0284c7` 后，`primary 10%` 在白底可见。代码用 token + `/N` alpha 表达，token 值翻转后 alpha 自动跟随——**无需逐处改组件 alpha**。
+- **白叠层 utility 翻转**。`interactive-row` / `skeleton-shimmer` 的 `rgb(255 255 255 / x)` 白叠层在白底不可见 → `index.css` 用 `--hover-overlay` / `--active-overlay` token（light = `rgb(0 0 0 / x)`、dark = `rgb(255 255 255 / x)`）驱动，或 `.dark` 覆盖。
+
+**已知限制**：PWA manifest `theme_color` / `background_color` 在 install 时定格、运行时不可切——已安装 PWA 的 splash / 状态栏底色保持暗（浏览器内主题完全跟随）。iOS `apple-mobile-web-app-status-bar-style: black-translucent` 明主题下状态栏白字叠浅底略降可读性，列为已知限制，真机反馈再处理。
 
 ## Typography
 

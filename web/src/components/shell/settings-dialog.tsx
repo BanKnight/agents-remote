@@ -13,11 +13,13 @@ import {
 
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
+import { useTheme } from "../../theme";
 import {
   ActionButton,
   IconMarker,
   ListGroup,
   ListRow,
+  SegmentedControl,
   ShellInput,
   ShellSectionLabel,
   listGroupClasses,
@@ -211,13 +213,24 @@ function SettingsChevron() {
 /** 通用段（决策 48）：诚实占位——无伪造配置，后续版本补充只读系统信息。 */
 function GeneralSection() {
   const { t } = useT();
+  const { theme, setTheme } = useTheme();
   return (
     <Card className="border border-neutral-line bg-surface ring-0">
-      <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
-        <p className="text-sm font-semibold text-on-surface-soft">
-          {t("settings.section.general")}
-        </p>
-        <p className="text-xs leading-5 text-on-surface-muted">{t("settings.generalHint")}</p>
+      <CardContent className="flex flex-col gap-3 p-6">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-semibold text-on-surface-soft">{t("theme.label")}</p>
+          <p className="text-xs leading-5 text-on-surface-muted">{t("theme.hint")}</p>
+        </div>
+        <SegmentedControl
+          ariaLabel={t("theme.label")}
+          onChange={(value) => setTheme(value)}
+          options={[
+            { value: "system", label: t("theme.system") },
+            { value: "light", label: t("theme.light") },
+            { value: "dark", label: t("theme.dark") },
+          ]}
+          value={theme}
+        />
       </CardContent>
     </Card>
   );

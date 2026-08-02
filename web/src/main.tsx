@@ -7,6 +7,7 @@ import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
+import { ThemeSync } from "./theme";
 import "./styles/index.css";
 import { registerSW } from "virtual:pwa-register";
 
@@ -27,6 +28,7 @@ createRoot(root).render(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
         <JotaiProvider>
+          <ThemeSync />
           <RouterProvider router={router} />
         </JotaiProvider>
       </QueryClientProvider>

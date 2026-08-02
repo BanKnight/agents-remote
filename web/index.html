@@ -2,6 +2,24 @@
 <html lang="zh">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // FOUC-free theme injection（与 web/src/theme.ts useTheme 同款逻辑）：在 CSS/React
+      // 加载前据 localStorage["theme"] + prefers-color-scheme 同步注入 <html>.dark class
+      // + 背景色，避免明主题用户首帧看到暗背景（或反之）。theme.ts 根 effect 接管后会清除
+      // 该 inline 背景色、改由 index.css var(--bg-base) 驱动，并接管 theme-color meta。
+      (function () {
+        try {
+          var stored = localStorage.getItem("theme");
+          var dark;
+          if (stored === "light") dark = false;
+          else if (stored === "dark") dark = true;
+          else dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var el = document.documentElement;
+          if (dark) el.classList.add("dark");
+          el.style.backgroundColor = dark ? "#020617" : "#eef2f7";
+        } catch (_) {}
+      })();
+    </script>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
@@ -18,17 +36,6 @@
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>智控 · AI 远程控制台</title>
-    <style>
-      html {
-        background: #020617;
-      }
-      body {
-        min-height: 100vh;
-        margin: 0;
-        background: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
-        background-attachment: fixed;
-      }
-    </style>
     <script>
       (function () {
         // Force-clear stale PWA caches — bump version to trigger full client reset.

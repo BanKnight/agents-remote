@@ -1,8 +1,9 @@
 import { type CSSProperties, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import PrismLight from "react-syntax-highlighter/dist/esm/prism-light";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useT } from "../../i18n";
+import { useTheme } from "../../theme";
 import { KNOWN_LANGUAGES } from "./prism-languages";
 
 // 代码块统一容器：Prism 高亮 + 顶部语言标签 + hover 复制按钮 + 横向滚动。
@@ -34,6 +35,7 @@ export type CodeBlockProps = {
 
 export function CodeBlock({ code, language }: CodeBlockProps) {
   const { t } = useT();
+  const { resolved } = useTheme();
   const [copied, setCopied] = useState(false);
   const known = language !== undefined && KNOWN_LANGUAGES.has(language);
   const label = language ?? "text";
@@ -71,7 +73,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
       {known ? (
         <PrismLight
           language={language as string}
-          style={oneDark}
+          style={resolved === "dark" ? oneDark : oneLight}
           customStyle={PRE_STYLE}
           codeTagProps={{ style: CODE_STYLE }}
         >

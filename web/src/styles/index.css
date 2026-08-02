@@ -21,8 +21,8 @@
 @custom-variant touch (@media (hover: none) and (pointer: coarse));
 
 :root {
-  color-scheme: dark;
-  color: #e2e8f0;
+  color-scheme: light;
+  color: var(--on-surface);
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
   --shell-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --app-viewport-height: 100dvh;
@@ -45,41 +45,79 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  /* shadcn theme vars — values aligned to DESIGN.md (docs/design/DESIGN.md):
-     oklch 灰度 → DESIGN surface/on-surface/primary(cyan)/error(rose) hex。
-     chart-* 低优先保留 oklch（业务零消费）。DESIGN secondary(紫 #a78bfa) 是
-     gradient 终点专用，走 @theme inline 的 --color-secondary 直写，不在此处；
-     故 shadcn --secondary/--secondary-foreground 已移除（无消费方）。*/
-  --background: #080b10; /* surface-base */
-  --foreground: #eef4ff; /* on-surface */
-  --card: #141b28; /* surface-raised */
-  --card-foreground: #eef4ff;
-  --popover: #141b28; /* surface-raised */
-  --popover-foreground: #eef4ff;
-  --primary: #7dd3fc; /* primary (Glacier Cyan) */
-  --primary-foreground: #041019; /* on-primary */
-  --muted: #141b28; /* surface-raised */
-  --muted-foreground: #8d99aa; /* on-surface-muted */
-  --accent: #141b28; /* surface-raised（软 hover/focus 底，tint 由组件加）*/
-  --accent-foreground: #eef4ff;
-  --destructive: #fb7185; /* error (rose-400) */
-  --border: #263245; /* neutral-line */
-  --input: #263245; /* neutral-line */
-  --ring: #7dd3fc; /* primary（focus ring 基色）*/
+  /* DESIGN semantic color vars — LIGHT theme（docs/design/DESIGN.md「Light theme tokens」）。
+     :root = light，.dark 覆盖 dark 值。@theme inline 用 var() 引用这些 vars，使
+     bg-surface-* / text-on-surface-* / border-neutral-line 等 utility 按 <html>.dark
+     class cascade 切换（与 shadcn :root/.dark 同机制，in-repo 已验证）。*/
+  --primary: #0284c7; /* cyan 加深（sky-600），白底 WCAG AA；dark=#7dd3fc */
+  --surface-base: #eef2f7;
+  --surface: #f6f8fb;
+  --surface-raised: #ffffff;
+  --surface-inset: #e2e8f0;
+  --on-surface: #0f1520;
+  --on-surface-soft: #344056;
+  --on-surface-muted: #64748b;
+  --on-primary: #ffffff;
+  --on-error: #ffffff;
+  --neutral-line: #d7deea;
+  --code-text: #1e293b;
+  --code-muted: #64748b;
+  --secondary: #8b5cf6; /* violet 加深（violet-500）；dark=#a78bfa */
+  --success: #059669;
+  --warning: #d97706;
+  --error: #e11d48;
+  --assistant: #d97706;
+  --assistant-soft: #f59e0b;
+  --assistant-deep: #fef3c7; /* 明主题「deep bg」=浅气泡（语义翻转，见 DESIGN.md）*/
+  --user: #0891b2;
+  --user-soft: #06b6d4;
+  --user-deep: #cffafe;
+  --permission: #8b5cf6;
+  --permission-soft: #a78bfa;
+  /* hover/active 叠层：明主题=黑叠层（浅底上微暗）、暗主题=白叠层（深底上微亮）。
+     interactive-row / skeleton 消费，避免白叠层在白底不可见。*/
+  --hover-overlay: rgb(0 0 0 / 0.05);
+  --active-overlay: rgb(0 0 0 / 0.08);
+  /* 全屏氛围光背景（html/body radial-gradient）：明=浅蓝灰、暗=teal 深色。*/
+  --bg-base: #eef2f7;
+  --bg-glow: #dde7f3;
+  /* skeleton shimmer：base 静态底 + sweep 高光横移。明主题 base=微黑、sweep=白高光。*/
+  --shimmer-base: rgb(0 0 0 / 0.04);
+  --shimmer-sweep: rgb(255 255 255 / 0.55);
+  /* scrollbar 拇指（oklch 灰度，与 surface hex 不同体系）：明=浅灰、暗=深灰。*/
+  --scrollbar-thumb: oklch(0.7 0 0);
+  --scrollbar-thumb-hover: oklch(0.55 0 0);
+  /* shadcn theme vars — light（按 DESIGN token 映射，引用上方 semantic vars 保持单一真相）。
+     chart-* 低优先保留 oklch（业务零消费）。DESIGN secondary 走 @theme inline --color-secondary。*/
+  --background: var(--surface-base);
+  --foreground: var(--on-surface);
+  --card: var(--surface-raised);
+  --card-foreground: var(--on-surface);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--on-surface);
+  --primary-foreground: var(--on-primary);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--on-surface-muted);
+  --accent: var(--surface-raised);
+  --accent-foreground: var(--on-surface);
+  --destructive: var(--error);
+  --border: var(--neutral-line);
+  --input: var(--neutral-line);
+  --ring: var(--primary);
   --chart-1: oklch(0.87 0 0); /* 低优先，保留 oklch（业务零消费）*/
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem; /* 10px = DESIGN md 基准 */
-  --sidebar: #141b28; /* surface-raised */
-  --sidebar-foreground: #eef4ff;
-  --sidebar-primary: #7dd3fc; /* primary */
-  --sidebar-primary-foreground: #041019;
-  --sidebar-accent: #141b28; /* surface-raised */
-  --sidebar-accent-foreground: #eef4ff;
-  --sidebar-border: #263245; /* neutral-line */
-  --sidebar-ring: #7dd3fc; /* primary */
+  --sidebar: var(--surface-raised);
+  --sidebar-foreground: var(--on-surface);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--on-primary);
+  --sidebar-accent: var(--surface-raised);
+  --sidebar-accent-foreground: var(--on-surface);
+  --sidebar-border: var(--neutral-line);
+  --sidebar-ring: var(--primary);
 }
 
 /* PWA standalone 下 100dvh 会扣 home indicator chin (~34px), 100vh 不扣;
@@ -101,12 +139,13 @@ body,
 }
 
 html {
-  background-image: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
-  background-color: #020617;
+  background-image: radial-gradient(circle at top, var(--bg-glow) 0, var(--bg-base) 34rem);
+  background-color: var(--bg-base);
 }
 
 body {
-  background: radial-gradient(circle at top, #0f2d3a 0, #020617 34rem);
+  background: radial-gradient(circle at top, var(--bg-glow) 0, var(--bg-base) 34rem);
+  background-attachment: fixed;
 }
 
 body {
@@ -150,38 +189,39 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  /* DESIGN.md semantic color namespace — fixed hex（project dark-only）.
-     Source: docs/design/DESIGN.md. 新代码用 bg-surface-* / text-on-surface-* /
-     border-neutral-line / bg-secondary(violet, gradient) 等，勿散写裸 Tailwind。
-     primary 走 shadcn 映射（cyan 一致），不在此重复。*/
-  --color-surface-base: #080b10;
-  --color-surface: #0f1520;
-  --color-surface-raised: #141b28;
-  --color-surface-inset: #05080d;
-  --color-on-surface: #eef4ff;
-  --color-on-surface-soft: #c1cad8;
-  --color-on-surface-muted: #8d99aa;
-  --color-on-primary: #041019;
-  --color-on-error: #041019;
-  --color-neutral-line: #263245;
-  --color-code-text: #d6e4f7;
-  --color-code-muted: #728197;
-  --color-secondary: #a78bfa;
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
-  --color-error: #fb7185;
+  /* DESIGN.md semantic color namespace — var() 引用 :root(light)/.dark(dark) 的 semantic
+     vars（docs/design/DESIGN.md「Light theme tokens」）。@theme inline 内联 var() 引用，
+     使 bg-surface-* / text-on-surface-* / border-neutral-line / bg-secondary(violet) 等
+     utility 按 <html>.dark cascade 切换。新代码用这些 utility，勿散写裸 Tailwind。
+     primary 走 shadcn 映射（--color-primary: var(--primary)），不在此重复。*/
+  --color-surface-base: var(--surface-base);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-inset: var(--surface-inset);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-soft: var(--on-surface-soft);
+  --color-on-surface-muted: var(--on-surface-muted);
+  --color-on-primary: var(--on-primary);
+  --color-on-error: var(--on-error);
+  --color-neutral-line: var(--neutral-line);
+  --color-code-text: var(--code-text);
+  --color-code-muted: var(--code-muted);
+  --color-secondary: var(--secondary);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
   /* Content role colors — Claude2 session 消息角色色（docs/design/DESIGN.md Colors 节
      「Content role colors」）。与 primary 操作色正交：区分 assistant / user / permission
      三种消息角色，不承担操作语义。assistant/warning 同 hex、permission/secondary 同 hex
      是刻意——语义独立，分开 token 以便未来按角色独立调色相。*/
-  --color-assistant: #fbbf24;
-  --color-assistant-soft: #fde68a;
-  --color-assistant-deep: #92400e;
-  --color-user: #22d3ee;
-  --color-user-soft: #67e8f9;
-  --color-user-deep: #0e7490;
-  --color-permission: #a78bfa;
-  --color-permission-soft: #c4b5fd;
+  --color-assistant: var(--assistant);
+  --color-assistant-soft: var(--assistant-soft);
+  --color-assistant-deep: var(--assistant-deep);
+  --color-user: var(--user);
+  --color-user-soft: var(--user-soft);
+  --color-user-deep: var(--user-deep);
+  --color-permission: var(--permission);
+  --color-permission-soft: var(--permission-soft);
   /* Radius — DESIGN scale（docs/design/DESIGN.md Shapes）。方案 A：覆写衍生比例
      对齐 DESIGN 档；移除无对应档的 3xl/4xl（业务无 rounded-3xl，badge 4xl→full）；
      新增 frame 专用 shell-*。*/
@@ -195,35 +235,67 @@ body {
 }
 
 .dark {
-  --background: #080b10;
-  --foreground: #eef4ff;
-  --card: #141b28;
-  --card-foreground: #eef4ff;
-  --popover: #141b28;
-  --popover-foreground: #eef4ff;
-  --primary: #7dd3fc;
-  --primary-foreground: #041019;
-  --muted: #141b28;
-  --muted-foreground: #8d99aa;
-  --accent: #141b28;
-  --accent-foreground: #eef4ff;
-  --destructive: #fb7185;
-  --border: #263245;
-  --input: #263245;
-  --ring: #7dd3fc;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: #141b28;
-  --sidebar-foreground: #eef4ff;
-  --sidebar-primary: #7dd3fc;
-  --sidebar-primary-foreground: #041019;
-  --sidebar-accent: #141b28;
-  --sidebar-accent-foreground: #eef4ff;
-  --sidebar-border: #263245;
-  --sidebar-ring: #7dd3fc;
+  color-scheme: dark;
+  /* DESIGN semantic color vars — DARK theme（docs/design/DESIGN.md frontmatter normative 基准）。
+     覆盖 :root light 值；@theme inline utility 经 var() 引用自动跟随。*/
+  --primary: #7dd3fc; /* Glacier Cyan */
+  --surface-base: #080b10;
+  --surface: #0f1520;
+  --surface-raised: #141b28;
+  --surface-inset: #05080d;
+  --on-surface: #eef4ff;
+  --on-surface-soft: #c1cad8;
+  --on-surface-muted: #8d99aa;
+  --on-primary: #041019;
+  --on-error: #041019;
+  --neutral-line: #263245;
+  --code-text: #d6e4f7;
+  --code-muted: #728197;
+  --secondary: #a78bfa; /* Periwinkle */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --error: #fb7185;
+  --assistant: #fbbf24;
+  --assistant-soft: #fde68a;
+  --assistant-deep: #92400e;
+  --user: #22d3ee;
+  --user-soft: #67e8f9;
+  --user-deep: #0e7490;
+  --permission: #a78bfa;
+  --permission-soft: #c4b5fd;
+  --hover-overlay: rgb(255 255 255 / 0.05);
+  --active-overlay: rgb(255 255 255 / 0.08);
+  --bg-base: #020617;
+  --bg-glow: #0f2d3a;
+  --shimmer-base: rgb(255 255 255 / 0.04);
+  --shimmer-sweep: rgb(255 255 255 / 0.09);
+  --scrollbar-thumb: oklch(0.3 0 0);
+  --scrollbar-thumb-hover: oklch(0.4 0 0);
+  /* shadcn theme vars — dark（引用 semantic vars，与 :root light 同映射；
+     chart-* 继承 :root oklch，业务零消费不覆盖）。*/
+  --background: var(--surface-base);
+  --foreground: var(--on-surface);
+  --card: var(--surface-raised);
+  --card-foreground: var(--on-surface);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--on-surface);
+  --primary-foreground: var(--on-primary);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--on-surface-muted);
+  --accent: var(--surface-raised);
+  --accent-foreground: var(--on-surface);
+  --destructive: var(--error);
+  --border: var(--neutral-line);
+  --input: var(--neutral-line);
+  --ring: var(--primary);
+  --sidebar: var(--surface-raised);
+  --sidebar-foreground: var(--on-surface);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--on-primary);
+  --sidebar-accent: var(--surface-raised);
+  --sidebar-accent-foreground: var(--on-surface);
+  --sidebar-border: var(--neutral-line);
+  --sidebar-ring: var(--primary);
 }
 
 @layer base {
@@ -241,10 +313,10 @@ body {
 @layer utilities {
   .interactive-row {
     &:hover {
-      background-color: rgb(255 255 255 / 0.05);
+      background-color: var(--hover-overlay);
     }
     &:active {
-      background-color: rgb(255 255 255 / 0.08);
+      background-color: var(--active-overlay);
     }
   }
 }
@@ -298,7 +370,7 @@ body {
 
 @media (min-width: 640px) {
   html {
-    scrollbar-color: oklch(0.3 0 0) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
     scrollbar-width: thin;
   }
 
@@ -315,7 +387,7 @@ body {
 
   html::-webkit-scrollbar-thumb,
   body::-webkit-scrollbar-thumb {
-    background: oklch(0.3 0 0);
+    background: var(--scrollbar-thumb);
     border-radius: 9999px;
     border: 2px solid transparent;
     background-clip: content-box;
@@ -323,7 +395,7 @@ body {
 
   html::-webkit-scrollbar-thumb:hover,
   body::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.4 0 0);
+    background: var(--scrollbar-thumb-hover);
     background-clip: content-box;
   }
 
@@ -353,7 +425,7 @@ body {
   .skeleton-shimmer {
     position: relative;
     overflow: hidden;
-    background-color: rgb(255 255 255 / 0.04);
+    background-color: var(--shimmer-base);
   }
   .skeleton-shimmer::after {
     content: "";
@@ -362,7 +434,7 @@ body {
     background-image: linear-gradient(
       90deg,
       transparent 0%,
-      rgb(255 255 255 / 0.09) 50%,
+      var(--shimmer-sweep) 50%,
       transparent 100%
     );
     transform: translateX(-100%);
