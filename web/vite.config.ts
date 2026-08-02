@@ -145,6 +145,11 @@ export default defineConfig({
     // fetched on demand by DevTools only. Private deployment, so exposing
     // maps on the tunnel is acceptable.
     sourcemap: true,
+    // CSS code split off：每次 build emit 单个 CSS 资源。vite 8(rolldown) build --watch
+    // 增量偶尔跳过重 emit 内容/hash 未变的 CSS chunk，致 dist 缺 HTML 引用的 CSS 文件
+    //（build-watch-css-not-flushed）。关 code split 后 CSS 作单一入口副作用每次必 emit，
+    // watch rebuild 不再漏。单页 SPA 无副作用（本就单入口 CSS）。
+    cssCodeSplit: false,
     rollupOptions: {
       output: {
         manualChunks(id) {
