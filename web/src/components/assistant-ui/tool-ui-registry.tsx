@@ -168,12 +168,12 @@ function makeToolRenderer(config: {
         {needsPermission ? (
           <div className="flex items-center gap-2 rounded-md bg-assistant/10 border border-assistant/25 px-3 py-2 mt-1">
             <span className="h-2 w-2 shrink-0 rounded-full bg-assistant animate-pulse" />
-            <span className="text-xs font-medium text-assistant-soft flex-1">
+            <span className="text-xs font-medium text-assistant flex-1">
               {t("claude2.permission.awaiting")}
             </span>
             <button
               type="button"
-              className="rounded-md bg-assistant/25 px-3 py-1 text-xs font-semibold text-assistant-soft hover:bg-assistant/40 active:bg-assistant/50 transition"
+              className="rounded-md bg-assistant/10 px-3 py-1 text-xs font-semibold text-assistant hover:bg-assistant/15 active:bg-assistant/20 transition"
               onClick={() => bridge?.respondToControlRequest(controlRequestId, args)}
             >
               {t("claude2.permission.allow")}

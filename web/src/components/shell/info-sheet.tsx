@@ -66,7 +66,7 @@ function InfoSheetDialog({ fields, onClose, title }: PendingInfo & { onClose: ()
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
             {fields.map((field) => (
               <div className="contents" key={field.label}>
-                <dt className="text-xs text-on-surface-muted">{field.label}</dt>
+                <dt className="text-xs text-on-surface-soft">{field.label}</dt>
                 <dd className="truncate text-xs font-medium text-on-surface">{field.value}</dd>
               </div>
             ))}

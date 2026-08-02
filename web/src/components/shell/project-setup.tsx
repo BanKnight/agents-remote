@@ -63,7 +63,7 @@ export function ProjectSetupPanel({
         </IconMarker>
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-on-surface">{t("home.setupTitle")}</h2>
-          <p className="mt-1 text-sm leading-6 text-on-surface-muted">{t("home.setupDesc")}</p>
+          <p className="mt-1 text-sm leading-6 text-on-surface-soft">{t("home.setupDesc")}</p>
         </div>
       </div>
 
@@ -89,7 +89,7 @@ export function ProjectSetupPanel({
           {isPending ? t("home.creating") : t("home.createAndEnter")}
         </button>
       </form>
-      <p className="mt-3 text-xs leading-5 text-on-surface-muted">{t("home.setupHint")}</p>
+      <p className="mt-3 text-xs leading-5 text-on-surface-soft">{t("home.setupHint")}</p>
       {createError ? (
         <p className="mt-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
           {createError.message}

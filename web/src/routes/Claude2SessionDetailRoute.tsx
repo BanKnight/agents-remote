@@ -558,14 +558,14 @@ export function Claude2Chat({
                 >
                   {detail.error instanceof Error ? (
                     <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-error/30 px-3 py-2 text-xs text-error">
+                      <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
                         {detail.error.message}
                       </p>
                     </div>
                   ) : null}
                   {closeSession.error instanceof Error ? (
                     <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-error/30 px-3 py-2 text-xs text-error">
+                      <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
                         {closeSession.error.message}
                       </p>
                     </div>
@@ -622,7 +622,7 @@ export function Claude2Chat({
                         </ComposerPrimitive.Unstable_TriggerPopoverRoot>
                         {aiTitle ? (
                           <div className="mt-1 flex justify-end px-1">
-                            <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant-soft/80 whitespace-nowrap">
+                            <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant whitespace-nowrap">
                               {agentName ? (
                                 <span className="mr-1.5 font-semibold text-assistant/60">
                                   {agentName}
@@ -993,7 +993,7 @@ function AssistantChatBubble() {
             <ToolHead
               icon="thinking"
               badge={t("claude2.thinking.title")}
-              badgeClassName="bg-assistant/20 text-assistant-soft"
+              badgeClassName="bg-assistant/10 text-assistant"
               detail={`${formatTokenCount(liveThinkingTokens)} tokens`}
               status="running"
             />
@@ -1139,13 +1139,13 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
         <ToolHead
           icon="thinking"
           badge={t("claude2.thinking.title")}
-          badgeClassName="bg-assistant/20 text-assistant-soft"
+          badgeClassName="bg-assistant/10 text-assistant"
           detail={estimatedTokens != null ? `${formatTokenCount(estimatedTokens)} tokens` : null}
           status={running ? "running" : null}
         />
       }
     >
-      <div className="text-xs text-assistant-soft/70 whitespace-pre-wrap leading-relaxed">
+      <div className="text-xs text-assistant/70 whitespace-pre-wrap leading-relaxed">
         {children}
       </div>
     </CollapsibleSection>
@@ -1494,7 +1494,7 @@ function SystemChatBubble() {
         {progress ? (
           <div className="px-3 pb-2 flex items-center gap-2 text-xs border-t border-neutral-line/50 pt-2 mx-3">
             {progress.subagentType ? (
-              <span className="shrink-0 rounded bg-assistant-deep/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-assistant-soft">
+              <span className="shrink-0 rounded bg-assistant-deep/30 px-1.5 py-0.5 text-[0.65rem] font-medium text-assistant">
                 {progress.subagentType}
               </span>
             ) : null}
@@ -1569,7 +1569,7 @@ function SystemChatBubble() {
       ) : fileSnapshot ? (
         <FileHistorySnapshotView snapshot={fileSnapshot} />
       ) : (
-        <div className="text-xs text-assistant-soft/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
+        <div className="text-xs text-assistant/80 font-mono whitespace-pre-wrap break-all overflow-wrap-anywhere">
           <MessagePrimitive.Parts />
         </div>
       )}
@@ -1591,7 +1591,7 @@ function SystemChatBubble() {
           header={
             <>
               <svg
-                className="h-4 w-4 shrink-0 text-assistant-soft"
+                className="h-4 w-4 shrink-0 text-assistant"
                 viewBox="0 0 24 24"
                 fill="none"
                 aria-hidden="true"
@@ -1636,20 +1636,20 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
 
   return (
     <CollapsibleSection
-      className="min-w-[14rem] text-assistant-soft/90"
+      className="min-w-[14rem] text-assistant/90"
       dividerClassName="border-assistant-deep/20"
       header={
         <ToolHead
           icon="history"
           badge={t("claude2.fileSnapshot.title")}
-          badgeClassName="bg-assistant-deep/30 text-assistant-soft/80"
+          badgeClassName="bg-assistant-deep/30 text-assistant"
           detail={t("claude2.fileSnapshot.files", { count: entries.length })}
           trailing={
             <span
               className={`rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
                 isUpdate
-                  ? "bg-assistant-deep/30 text-assistant-soft/80"
-                  : "bg-assistant-deep/30 text-assistant-soft/60"
+                  ? "bg-assistant-deep/30 text-assistant"
+                  : "bg-assistant-deep/30 text-assistant/60"
               }`}
             >
               {t(isUpdate ? "claude2.fileSnapshot.incremental" : "claude2.fileSnapshot.full")}
@@ -1664,11 +1664,11 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
             const version = typeof info?.version === "number" ? info.version : null;
             return (
               <div key={path} className="flex items-center gap-2 text-[0.65rem]">
-                <span className="truncate text-assistant-soft/70 break-all" title={path}>
+                <span className="truncate text-assistant/70 break-all" title={path}>
                   {path}
                 </span>
                 {version !== null ? (
-                  <span className="ml-auto shrink-0 rounded bg-assistant-deep/30 px-1 py-0.5 text-[0.55rem] font-semibold text-assistant-soft/80">
+                  <span className="ml-auto shrink-0 rounded bg-assistant-deep/30 px-1 py-0.5 text-[0.55rem] font-semibold text-assistant">
                     v{version}
                   </span>
                 ) : null}
@@ -1677,11 +1677,11 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
           })}
         </div>
       ) : (
-        <p className="text-[0.65rem] text-assistant-soft/40">
+        <p className="text-[0.65rem] text-assistant/40">
           {t("claude2.fileSnapshot.noTrackedFiles")}
         </p>
       )}
-      {timeStr ? <p className="mt-1 text-[0.55rem] text-assistant-soft/40">{timeStr}</p> : null}
+      {timeStr ? <p className="mt-1 text-[0.55rem] text-assistant/40">{timeStr}</p> : null}
     </CollapsibleSection>
   );
 }
@@ -1996,7 +1996,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             <button
               type="button"
               onClick={() => onApprove(autoMode)}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-success/50 bg-success/20 px-3.5 py-1.5 text-xs font-semibold text-success shadow-sm transition hover:border-success/70 hover:bg-success/30 active:bg-success/40"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-success/50 bg-success/10 px-3.5 py-1.5 text-xs font-semibold text-success shadow-sm transition hover:border-success/70 hover:bg-success/15 active:bg-success/20"
             >
               ✓ {t("claude2.plan.modeAuto")}
             </button>
@@ -2048,7 +2048,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
       ) : error ? (
         <div className="px-3 py-2 sm:px-5">
           {outcome === "rejected" ? (
-            <span className="text-xs font-medium text-assistant-soft">
+            <span className="text-xs font-medium text-assistant">
               ⊘ {t("claude2.plan.rejected")}
             </span>
           ) : (
@@ -2095,9 +2095,9 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
           <ToolHead
             icon="plan"
-            iconClassName="text-assistant-soft"
+            iconClassName="text-assistant"
             badge={t("claude2.plan.title")}
-            badgeClassName="bg-assistant/20 text-assistant-soft"
+            badgeClassName="bg-assistant/10 text-assistant"
             detail={planFilePath}
           />
           <span className="flex-1" />
@@ -2132,9 +2132,9 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             <>
               <ToolHead
                 icon="plan"
-                iconClassName="text-assistant-soft"
+                iconClassName="text-assistant"
                 badge={t("claude2.plan.title")}
-                badgeClassName="bg-assistant/20 text-assistant-soft"
+                badgeClassName="bg-assistant/10 text-assistant"
                 detail={planFilePath}
               />
               <span className="flex-1" />
@@ -2320,7 +2320,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               <>
                 <button
                   type="button"
-                  className="flex-1 rounded-md border border-assistant/50 bg-assistant/20 px-3.5 py-1.5 text-xs font-semibold text-assistant-soft shadow-sm transition hover:border-assistant/70 hover:bg-assistant/30 active:bg-assistant/40 disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                  className="flex-1 rounded-md border border-assistant/50 bg-assistant/10 px-3.5 py-1.5 text-xs font-semibold text-assistant shadow-sm transition hover:border-assistant/70 hover:bg-assistant/15 active:bg-assistant/20 disabled:opacity-30 disabled:cursor-default cursor-pointer"
                   disabled={!allAnswered}
                   onClick={handleSubmit}
                 >
@@ -2340,7 +2340,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               <>
                 <button
                   type="button"
-                  className="flex-1 rounded-md border border-assistant/50 bg-assistant/20 px-3.5 py-1.5 text-xs font-semibold text-assistant-soft shadow-sm transition hover:border-assistant/70 hover:bg-assistant/30 active:bg-assistant/40 disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                  className="flex-1 rounded-md border border-assistant/50 bg-assistant/10 px-3.5 py-1.5 text-xs font-semibold text-assistant shadow-sm transition hover:border-assistant/70 hover:bg-assistant/15 active:bg-assistant/20 disabled:opacity-30 disabled:cursor-default cursor-pointer"
                   disabled={!allAnswered}
                   onClick={handleSubmit}
                 >
@@ -2361,7 +2361,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 type="button"
                 className={`flex-1 rounded-md px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
                   allAnswered
-                    ? "border border-assistant/50 bg-assistant/20 text-assistant-soft hover:bg-assistant/30"
+                    ? "border border-assistant/50 bg-assistant/10 text-assistant hover:bg-assistant/15"
                     : "border border-assistant/20 bg-assistant/10 text-assistant/40 cursor-default"
                 }`}
                 disabled={!allAnswered}
@@ -2378,9 +2378,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
       ) : error ? (
         <div className="px-3 py-2 sm:px-5">
           {outcome === "skipped" ? (
-            <span className="text-xs font-medium text-assistant-soft">
-              ⊘ {t("claude2.ask.skipped")}
-            </span>
+            <span className="text-xs font-medium text-assistant">⊘ {t("claude2.ask.skipped")}</span>
           ) : (
             <span className="text-xs text-error">{resultStr || t("claude2.ask.error")}</span>
           )}
@@ -2399,7 +2397,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
           </button>
           {resultOpen ? (
             <div className="mt-1 max-h-32 overflow-y-auto">
-              <pre className="text-[0.65rem] text-assistant-soft/70 whitespace-pre-wrap break-all leading-relaxed">
+              <pre className="text-[0.65rem] text-assistant/70 whitespace-pre-wrap break-all leading-relaxed">
                 {resultStr}
               </pre>
             </div>
@@ -2423,9 +2421,9 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
         <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
           <ToolHead
             icon="question"
-            iconClassName="text-assistant-soft"
+            iconClassName="text-assistant"
             badge={t("claude2.ask.title")}
-            badgeClassName="bg-assistant/20 text-assistant-soft"
+            badgeClassName="bg-assistant/10 text-assistant"
           />
           <span className="flex-1" />
           <button
@@ -2459,7 +2457,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                   className="rounded-lg bg-surface-inset/40 border border-neutral-line/30 p-2.5"
                 >
                   {q.header ? (
-                    <p className="text-[0.6rem] font-semibold text-assistant-soft/80 uppercase tracking-wide mb-0.5">
+                    <p className="text-[0.6rem] font-semibold text-assistant/80 uppercase tracking-wide mb-0.5">
                       {q.header}
                     </p>
                   ) : null}
@@ -2481,7 +2479,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                               type="button"
                               className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
                                 isSelected
-                                  ? "bg-assistant/20 text-assistant-soft border border-assistant/40"
+                                  ? "bg-assistant/10 text-assistant border border-assistant/40"
                                   : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                               } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                               disabled={!canAnswer}
@@ -2490,7 +2488,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                               <span
                                 className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
                                   isSelected
-                                    ? "border-assistant bg-assistant/30 text-assistant-soft"
+                                    ? "border-assistant bg-assistant/15 text-assistant"
                                     : "border-neutral-line text-on-surface-muted"
                                 }`}
                               >
@@ -2517,7 +2515,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         type="button"
                         className={`flex items-center gap-2 text-[0.65rem] w-full text-left rounded-lg px-2 py-1.5 transition ${
                           otherActive
-                            ? "bg-assistant/20 text-assistant-soft border border-assistant/40"
+                            ? "bg-assistant/10 text-assistant border border-assistant/40"
                             : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                         } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                         disabled={!canAnswer}
@@ -2526,7 +2524,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         <span
                           className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.55rem] ${
                             otherActive
-                              ? "border-assistant bg-assistant/30 text-assistant-soft"
+                              ? "border-assistant bg-assistant/15 text-assistant"
                               : "border-neutral-line text-on-surface-muted"
                           }`}
                         >
@@ -2591,9 +2589,9 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
             <>
               <ToolHead
                 icon="question"
-                iconClassName="text-assistant-soft"
+                iconClassName="text-assistant"
                 badge={t("claude2.ask.title")}
-                badgeClassName="bg-assistant/20 text-assistant-soft"
+                badgeClassName="bg-assistant/10 text-assistant"
               />
               <span className="flex-1" />
             </>
@@ -2615,7 +2613,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                     className="rounded-lg bg-surface-inset/50 border border-neutral-line/30 p-3"
                   >
                     {q.header ? (
-                      <p className="text-[0.7rem] font-semibold text-assistant-soft/80 uppercase tracking-wide mb-1">
+                      <p className="text-[0.7rem] font-semibold text-assistant/80 uppercase tracking-wide mb-1">
                         {q.header}
                       </p>
                     ) : null}
@@ -2637,7 +2635,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                                 type="button"
                                 className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
                                   isSelected
-                                    ? "bg-assistant/20 text-assistant-soft border border-assistant/40"
+                                    ? "bg-assistant/10 text-assistant border border-assistant/40"
                                     : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                                 } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                                 disabled={!canAnswer}
@@ -2646,7 +2644,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                                 <span
                                   className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
                                     isSelected
-                                      ? "border-assistant bg-assistant/30 text-assistant-soft"
+                                      ? "border-assistant bg-assistant/15 text-assistant"
                                       : "border-neutral-line text-on-surface-muted"
                                   }`}
                                 >
@@ -2673,7 +2671,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           type="button"
                           className={`flex items-center gap-2 text-xs w-full text-left rounded-lg px-3 py-2 transition ${
                             otherActive
-                              ? "bg-assistant/20 text-assistant-soft border border-assistant/40"
+                              ? "bg-assistant/10 text-assistant border border-assistant/40"
                               : "hover:bg-surface-raised/50 text-on-surface-muted border border-transparent"
                           } ${!canAnswer ? "opacity-40 cursor-default" : "cursor-pointer"}`}
                           disabled={!canAnswer}
@@ -2682,7 +2680,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           <span
                             className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
                               otherActive
-                                ? "border-assistant bg-assistant/30 text-assistant-soft"
+                                ? "border-assistant bg-assistant/15 text-assistant"
                                 : "border-neutral-line text-on-surface-muted"
                             }`}
                           >
@@ -2754,7 +2752,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
 function ModeChangeGlyph({ className }: { className?: string }) {
   return (
     <svg
-      className={className ?? "h-3 w-3 shrink-0 text-assistant-soft"}
+      className={className ?? "h-3 w-3 shrink-0 text-assistant"}
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
@@ -2801,7 +2799,7 @@ type ModelChangeCustom = {
 function ModelChangeGlyph({ className }: { className?: string }) {
   return (
     <svg
-      className={className ?? "h-3 w-3 shrink-0 text-assistant-soft"}
+      className={className ?? "h-3 w-3 shrink-0 text-assistant"}
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
@@ -2933,7 +2931,7 @@ function CompactProgress() {
           status="running"
           iconClassName="text-assistant"
           badge={t("claude2.compact.progressBadge")}
-          badgeClassName="bg-assistant/15 text-assistant-soft"
+          badgeClassName="bg-assistant/15 text-assistant"
           detail={
             stage === "summarizing"
               ? t("claude2.compact.progressSummarizing")
@@ -3349,7 +3347,7 @@ function ModelSelector({
 
   if (switchingTo) {
     return (
-      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant/80">
+      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant">
         <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-assistant/40 border-t-assistant" />
         {t("claude2.switchingModel", { model: modelDisplayLabel(switchingTo) })}
       </div>
@@ -3364,7 +3362,7 @@ function ModelSelector({
       trigger={
         <button
           type="button"
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user/80 hover:text-user-soft hover:bg-surface-raised/50 transition cursor-pointer"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user hover:text-user hover:bg-surface-raised/50 transition cursor-pointer"
         >
           <span className="min-w-0 truncate">{label}</span>
           <svg
@@ -3436,7 +3434,7 @@ function PermissionModeSelector({
 
   if (switchingTo) {
     return (
-      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant/80">
+      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant">
         <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-assistant/40 border-t-assistant" />
         {PERMISSION_MODE_LABELS[switchingTo] ?? switchingTo}
       </div>
@@ -3454,7 +3452,7 @@ function PermissionModeSelector({
           className={`inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
             pending
               ? "text-on-surface-muted cursor-default"
-              : "text-permission/80 hover:text-permission-soft hover:bg-surface-raised/50 cursor-pointer"
+              : "text-permission hover:text-permission hover:bg-surface-raised/50 cursor-pointer"
           }`}
           disabled={pending}
         >
@@ -3518,7 +3516,7 @@ function EffortSelector({
       trigger={
         <button
           type="button"
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant/80 hover:text-assistant-soft hover:bg-surface-raised/50 transition cursor-pointer"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant hover:text-assistant hover:bg-surface-raised/50 transition cursor-pointer"
         >
           <span className="min-w-0 truncate">{current}</span>
           <svg
@@ -3816,9 +3814,9 @@ function ComposerWithInterrupt({
               onClick={onCancel}
               aria-label={t("session.stop")}
               title={t("session.stop")}
-              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-assistant-deep/90 text-white shadow-lg transition hover:bg-assistant cursor-pointer"
+              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-error text-on-error shadow-lg transition cursor-pointer"
             >
-              <span className="h-2.5 w-2.5 rounded-[2px] bg-white/90" />
+              <span className="h-2.5 w-2.5 rounded-[2px] bg-on-error/90" />
             </button>
           ) : null}
           {showSend ? (
@@ -3830,7 +3828,7 @@ function ComposerWithInterrupt({
               onClick={() => composer.send()}
               aria-label={t("claude2.composer.send")}
               title={t("claude2.composer.send")}
-              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-user text-white shadow-lg transition hover:opacity-90 cursor-pointer"
+              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg transition hover:opacity-90 cursor-pointer"
             >
               <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
                 <path
@@ -3908,7 +3906,7 @@ function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
     retryInfo.error ?? (retryInfo.errorStatus ? `HTTP ${retryInfo.errorStatus}` : "error");
   return (
     <div className="shrink-0 flex justify-center px-3 py-1">
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-assistant/10 px-3 py-1 text-[0.65rem] text-assistant/70">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-assistant/10 px-3 py-1 text-[0.65rem] text-assistant">
         <span className="h-2 w-2 shrink-0 animate-spin rounded-full border border-assistant/40 border-t-assistant" />
         {retryInfo.maxRetries > 1
           ? t("claude2.retry.bannerMulti", {
