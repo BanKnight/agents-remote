@@ -402,3 +402,68 @@ vite 8（rolldown 转正版）`build --watch` 增量对「内容/hash 未变的 
 - tvly 调研：rolldown/rolldown#8403「Vite-inspired CSS Solution」RFC——rolldown CSS code-splitting + watch 依赖跟踪仍在 Stage 3，无上游 config 绕过。
 - 与 §2 第 6-7 条同族：§2 是「色阶收敛验证 + CSS 落盘硬闸」，本条是「落盘问题的构建层治本」。
 - **本条目自包含（取代旧的机器本地 memory `build-watch-css-not-flushed`）**：旧 memory 在 `~/.claude/projects/.../memory/`，随机器迁移即丢失；本条目是仓库内文件、跟 git 走，才是跨机器长期载体。曾有 5 次复发、完整时间线已并入本条目机制/做法/验证各节。
+
+## 11. 返回 class 字符串的 helper 必须过 twMerge（纯拼接被 Tailwind v4 生成顺序覆盖）
+
+### 现象（本项目 FAB + 移动端 header 隐藏双 bug 实测）
+
+`actionButtonClasses()`（`shell-primitives.tsx`）返回 `inline-flex ... ${mobile} ${buttonToneClasses[tone]}` + 调用方 className **纯字符串拼接**（无 twMerge）。结果两个独立症状同源：
+
+- **FAB 变 56×44 矩形**：调用方传 `size-14 rounded-full justify-center p-0`，base 的 `h-auto` 覆盖 `size-14` 的 h、`rounded-xl` 覆盖 `rounded-full`。
+- **全局总览「+ 新建项目」移动端从未真正隐藏**：调用方传 `hidden lg:inline-flex`，base 的 `inline-flex` 覆盖 `hidden`。
+
+两症状都「看起来像调用方没生效」，实际是拼接序导致 Tailwind v4 同属性 utility 冲突，由 CSS 生成顺序定胜负，base 类永远赢。
+
+### 机制（Tailwind v4 CSS 生成顺序 = 同属性最终裁决）
+
+- Tailwind v4 中，同一 CSS 属性上的多个 utility（如 `inline-flex` vs `hidden`、`h-auto` vs `size-14`、`rounded-xl` vs `rounded-full`）**不冲突时共存、冲突时按 CSS 源顺序后者胜**——与 className 字符串拼接先后无关。
+- `actionButtonClasses` 把 base 拼在 className **前面**：`"base... " + className` → 生成 CSS 时 base utility 出现在前、className utility 在后 → className 本应胜。但实测 base 胜，说明**生成顺序与传入顺序无关，由 Tailwind 内部决定**（utility 排序），纯拼接无法保证覆盖方向。
+- 对比：`ActionButton` 包装 shadcn `<Button>`（内部有 `cn` = twMerge），className 正确 override base；`actionButtonClasses` 被原生 `<button>` 直接用（无 Button 层），才暴露拼接 bug。**封装层恰好在掩盖问题**。
+
+### 标准做法（返回 class 字符串的 helper 一律 `cn(base, className)` 收尾）
+
+```tsx
+// shell-primitives.tsx
+return cn(
+  `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]}`,
+  className,
+);
+```
+
+- `cn` = `twMerge(clsx(...))`（`web/src/lib/utils.ts`）：twMerge 按「**传入靠后的覆盖靠前**」合并同属性 utility，`size-14`/`hidden`/`rounded-full` 正确覆盖 base。
+- **判定铁律**：任何「接受 className prop 拼进返回串」的 helper（`actionButtonClasses`、自定义图标 wrapper、variants 函数），返回前必须过 `cn`/twMerge；纯模板字符串拼接是潜伏 bug——Tailwind v4 生成顺序不是传入顺序，覆盖方向不可控。
+- 排查「className 传了但样式不生效」时，先确认目标元素是否经 helper 拼串而非组件内 `cn`。
+
+### 来源
+
+- 修复 commit `f4fd557`（`shell-primitives.tsx` `actionButtonClasses` 改 `cn(base, className)`）。
+- 双症状实测：FAB `computed h=44px`（h-auto 胜）、移动端 header button `display:inline-flex`（inline-flex 胜 hidden）。
+- Tailwind v4 CSS-first 配置下 utility 冲突裁决 = CSS 级联（同特异性按源顺序），与 className 拼接序无关：https://tailwindcss.com/docs/styling-with-utility-classes
+- 与 §5（asChild props 吞）同族：都是「封装/拼接层悄悄吞掉调用方意图」，根因在机制层不在调用方。
+
+## 12. 底部 nav 按内容条件让位：`group-has-[marker]`（有 FAB 收缩 / 无 FAB 零副作用）
+
+### 现象（本项目移动 FAB 落 nav 避让带实测）
+
+移动端 FAB 与一级导航同高度带（用户苹果设计观察：FAB 落 nav 带、nav 收缩让位）。但底部 nav 胶囊条在移动端**近全宽**（390px 视口占 366px，4 列 tab 撑满），FAB 落进去必重叠。若 nav **永久**让位（`pr-[4.5rem]` 无条件），无 FAB 的页面（如 `/files` 全局）胶囊条永久偏左、偏移 72px——副作用污染全站。
+
+### 机制（`:has()` 条件让位 + marker class 作唯一真相）
+
+- **标记**：FAB 底座带 `mobile-fab` marker class（`FAB_BASE_CLASSES`）。
+- **祖先**：移动端外壳 `<main class="group">`（`mobile-workbench.tsx` 非 focus main；**不是** `shell-layout.tsx`——桌面外壳，移动端不走它，`group` 加错位置 `:has()` 永不命中）。
+- **条件规则**：nav `group-has-[.mobile-fab]:pr-[4.5rem]` = `main.group :has(.mobile-fab)` 时 nav 右 padding 72px，胶囊条自动收缩让出 FAB 位；无 FAB 页保持 `px-3` 居中、零偏移。
+- **FAB 定位**：`fixed bottom-[var(--shell-safe-area-bottom,0px)] right-3`——与 nav 同 safe-area 基线，落在内容滚动区已 `pb-[var(--shell-mobile-bottom-nav-space)]` 避让的 nav 高度带内（navSpace=64 ≥ FAB 高 56），**FAB 完全不在内容区、零遮挡**，无需用户滚动避开。z-30 > nav z-20。
+
+### 标准做法（条件让位优于永久让位；marker + :has 是声明式开关）
+
+1. **让位条件化**：被让位元素（nav）用 `group-has-[.marker]:<让位 utility>`，需让位的标记 class 挂在条件对象（FAB）底座。`group` 加在**实际渲染该元素的祖先**上（先确认哪层 main 是真身，别凭目录猜）。
+2. **测通三态**：有 FAB 页（nav 让位、capsule 缩、FAB 不重叠）+ 无 FAB 页（`px-3` 居中、零偏移）+ 聚焦态（FAB 不渲染、nav 不回让位——聚焦态本不渲染 nav）。探针断言 `capsule.right <= fab.left` 与 navSpace ≥ FAB 高。
+3. **优先级**：条件让位（`:has` 声明式、按内容自动开关、零副作用）优于永久让位（`pr-72` 无条件，污染无 FAB 页）优于 JS 测量位移（运行时状态，多余同步点）。
+4. **判定边界**：marker class 名避免语义化（`mobile-fab` 而非 `has-fab` 类命名），只作机械标记不被业务引用；`:has()` 兼容性是浏览器实现成熟度问题，本项目目标移动端（iOS 16.4+/Chrome 105+）安全，桌面 lg:hidden 不受影响。
+
+### 来源
+
+- 实现 commit `f4fd557`（nav `group-has-[.mobile-fab]:pr-[4.5rem]` + `mobile-workbench.tsx` main 加 `group` + FAB `fixed bottom=safe-area`）。
+- 探针实测：390px 视口 capsule 366px→让位后 306px（4×60px 无溢出），capsule.right=318 ≤ fab.left=322；无 FAB 页（/files）pr=12px capsule 偏移 0。
+- 与 §1（safe-area 单点避让）、§8（高度链逐层核对）同族：都是「避让/约束只做一层、别叠加」方法论；DESIGN.md `floating-action-button` 条目为本模式设计契约。
+- MDN `:has()`：https://developer.mozilla.org/en-US/docs/Web/CSS/:has （`:has` 选择器是「按内容调整容器布局」的标准工具，Tailwind v4 `group-has-*` 变体包装同一选择器）。
