@@ -96,7 +96,7 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
   if (!focusId) {
     return (
       <main
-        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        className={`group relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
         {scope.kind === "global" && leftMode === "skills" ? (

@@ -76,9 +76,12 @@ async function findFab(page) {
     if (!fab) return null;
     const s = getComputedStyle(fab);
     const r = fab.getBoundingClientRect();
+    const navEl = document.querySelector("nav[aria-label]");
+    const capsule = navEl?.querySelector("div.mx-auto");
     return {
       position: s.position,
       bottom: Math.round(parseFloat(s.bottom)),
+      left: Math.round(r.left),
       right: Math.round(parseFloat(s.right)),
       zIndex: s.zIndex,
       width: Math.round(r.width),
@@ -86,6 +89,7 @@ async function findFab(page) {
       borderRadius: s.borderRadius,
       display: s.display,
       ariaLabel: fab.getAttribute("aria-label"),
+      capsuleRight: capsule ? Math.round(capsule.getBoundingClientRect().right) : null,
       inViewport:
         r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1 && r.top >= -1,
     };
@@ -118,8 +122,15 @@ async function runMobile() {
     } else {
       console.log(`  FAB 几何: ${JSON.stringify(fab1)}`);
       record(fab1.position === "fixed", `position=fixed（got ${fab1.position}）`);
-      record(fab1.bottom > 0, `bottom=${fab1.bottom}>0（浮 nav 上方）`);
+      // FAB 落 nav 避让带：bottom=safe-area（playwright 无 safe-area=0；真机=34），不再浮 nav 上方压内容。
+      record(fab1.bottom >= 0, `bottom=${fab1.bottom}=safe-area（落 nav 带）`);
       record(fab1.right > 0 && fab1.right < 30, `right=${fab1.right}≈12`);
+      // nav 胶囊条经 group-has-[.mobile-fab]:pr-[4.5rem] 让位（main.group :has(.mobile-fab) 时触发），
+      // capsule 右沿不与 FAB 水平重叠（有 FAB 页让位 / 无 FAB 页保持 px-3 居中）。
+      record(
+        fab1.capsuleRight !== null && fab1.capsuleRight <= fab1.left,
+        `nav 让位不重叠（capsule.right=${fab1.capsuleRight} <= fab.left=${fab1.left}）`,
+      );
       record(
         fab1.width === 56 && fab1.height === 56,
         `size 56×56（got ${fab1.width}×${fab1.height}）`,
@@ -132,6 +143,14 @@ async function runMobile() {
         `rounded-full（got ${fab1.borderRadius}，radius > width=${fab1.width} 即圆形）`,
       );
       record(fab1.inViewport, "FAB 在视口内不超出");
+      // FAB 全在 nav 避让带内（navSpace ≥ 56），不凸入内容滚动区 = 用户避让策略核心目标。
+      const navSpace = await page.evaluate(() => {
+        const main = document.querySelector("main");
+        return main
+          ? parseFloat(getComputedStyle(main).getPropertyValue("--shell-mobile-bottom-nav-space"))
+          : NaN;
+      });
+      record(navSpace >= 56, `FAB 不压内容（navSpace=${navSpace} ≥ FAB 高 56）`);
       record(
         /adopt Project|新建项目|Create or adopt/.test(fab1.ariaLabel ?? ""),
         `aria-label 直跳（got "${fab1.ariaLabel}"）`,

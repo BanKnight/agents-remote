@@ -320,7 +320,14 @@ export function actionButtonClasses({
   // text-sm——dialog/表单按钮（确认/取消/保存）移动端放大是可用性改善。compact=true 用于
   // 总览 header 行内按钮（新建项目/新建实例），不放大以与 header 行高一致。
   const mobile = compact ? "" : "max-sm:min-h-11 max-sm:px-4 max-sm:text-sm";
-  return `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]} ${className}`;
+  // 经 cn/twMerge 合并：base（h-auto/rounded-xl/px-3 py-1.5 等）与 className 同 property 的 utility
+  // 按 Tailwind v4 生成顺序定胜负，纯拼接会让 base 覆盖 className（hidden 被 inline-flex 覆盖 → 移动
+  // header 按钮不隐藏；size-14 被 h-auto 覆盖 → FAB 变 56×44 矩形）。twMerge 让后传 className 正确
+  // override（FAB size-14/rounded-full、全局总览/pages header hidden lg:inline-flex 均依赖）。
+  return cn(
+    `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]}`,
+    className,
+  );
 }
 
 type ResizeGutterProps = {

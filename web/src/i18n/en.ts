@@ -687,6 +687,7 @@ export const en = {
   "pages.emptyTitle": "No pages roots",
   "pages.emptyDesc": "Map a project directory to a URL path to serve it as a static site.",
   "pages.addRoot": "Add root",
+  "pages.createAria": "Add pages root",
   "pages.openPreview": "Open",
   "pages.openPreviewAria": "Open pages preview",
   "pages.edit": "Edit",

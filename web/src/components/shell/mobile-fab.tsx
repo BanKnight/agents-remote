@@ -3,7 +3,6 @@ import { type ButtonHTMLAttributes, type ReactElement } from "react";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { actionButtonClasses } from "./shell-primitives";
 import { ShellIcon, type ShellIconName } from "./icons";
-import { cn } from "../../lib/utils";
 
 type MobileFabProps = {
   /** 读屏标签（必填——FAB 纯图标无可见文字）。 */
@@ -27,20 +26,21 @@ type MobileFabProps = {
   disabled?: boolean;
 };
 
-// FAB 定位：fixed 锚视口右下角（三外壳结构不统一，absolute 会锚到漂移的 positioned 祖先；
-// 三外壳/FilesPanel 路径无 transform 祖先，fixed 安全）。bottom 叠 safe-area + 底部 nav 实测高
-//（--shell-mobile-bottom-nav-space）+ 0.75rem gap，浮 nav 正上方，落在内容滚动区已有的
-// pb 空白区（不额外遮挡内容；超出 padding 上沿的部分压住 nav 正上方一行，用户滚动避开 = iOS 范式）。
-// z-30 > 底部 nav z-20。lg:hidden 与 nav 同款 CSS 阈值（不用 useIsMobile，避免 639–1023px 间隙 +
-// hydration 闪烁）。详见 DESIGN.md `floating-action-button` 条目。
+// FAB 定位：fixed 锚视口右下角，bottom = safe-area —— 与底部 nav 胶囊条同基线，落在内容滚动区已
+// 避让的 nav 高度带内（pb-[--shell-mobile-bottom-nav-space] 已为整条 nav 让位），FAB 不再凸入内容
+// 滚动区、零遮挡（无需用户滚动避开）。水平上 nav 胶囊条经 ShellMobileBottomNavigation 的
+// group-has-[.mobile-fab]:pr-[4.5rem] 条件让位（移动端 nav 全宽 4 列 tab 撑满，须让位 FAB 才不重叠；
+// main.group :has(.mobile-fab) 时触发，无 FAB 页保持 px-3 居中零副作用），FAB 落在让位区。
+// FAB 底贴 nav 底（safe-area 线），顶部凸出 nav 胶囊条上沿 ~8px（FAB 56 > 胶囊条 ~48，主操作略凸 =
+// iOS 范式）。z-30 > 底部 nav z-20。lg:hidden 与 nav 同款 CSS 阈值（不用 useIsMobile，避免
+// 639–1023px 间隙 + hydration 闪烁）。详见 DESIGN.md `floating-action-button` 条目。
 const FAB_POSITION_CLASSES =
-  "fixed right-3 z-30 lg:hidden " +
-  "bottom-[calc(var(--shell-safe-area-bottom,0px)+var(--shell-mobile-bottom-nav-space,0px)+0.75rem)]";
+  "fixed bottom-[var(--shell-safe-area-bottom,0px)] right-3 z-30 lg:hidden";
 
 // size-14（56px 触摸目标）+ rounded-full 圆形纯图标；p-0/justify-center 覆盖 actionButtonClasses
 // 默认的 px-3 py-1.5。accent token 自带 from-primary to-secondary 渐变 + shadow-lg shadow-primary/25
 // + active:bg-on-surface/10 press-feedback，不散写裸色。
-const FAB_BASE_CLASSES = "size-14 rounded-full justify-center p-0";
+const FAB_BASE_CLASSES = "mobile-fab size-14 rounded-full justify-center p-0";
 
 /**
  * 移动端悬浮 FAB 胶囊（DESIGN.md `floating-action-button`）。承载页面单一主创造动作，
@@ -63,14 +63,10 @@ export function MobileFab({
   const trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>> = (
     <button
       aria-label={ariaLabel}
-      // cn/twMerge 合并：actionButtonClasses 是纯字符串拼接（不经 twMerge），FAB 的
-      // size-14/rounded-full/p-0 必须经 cn 才能覆盖 base 的 h-auto/rounded-xl/px-3 py-1.5
-      //（直接拼会被后者按 Tailwind v4 生成顺序覆盖，FAB 渲染成 56×44 圆角矩形而非 56 圆，probe-fab 验证）。
-      className={cn(
-        actionButtonClasses({ tone: "accent" }),
-        FAB_POSITION_CLASSES,
-        FAB_BASE_CLASSES,
-      )}
+      className={actionButtonClasses({
+        tone: "accent",
+        className: `${FAB_POSITION_CLASSES} ${FAB_BASE_CLASSES}`,
+      })}
       disabled={disabled}
       type="button"
       onClick={onClick}

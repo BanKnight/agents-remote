@@ -680,6 +680,7 @@ export const zh: Record<TranslationKey, string> = {
   "pages.emptyTitle": "尚未配置页面根",
   "pages.emptyDesc": "把项目内的目录映射到 URL 路径，即可作为静态站点对外提供访问。",
   "pages.addRoot": "添加根",
+  "pages.createAria": "添加页面根",
   "pages.openPreview": "打开",
   "pages.openPreviewAria": "打开页面预览",
   "pages.edit": "编辑",

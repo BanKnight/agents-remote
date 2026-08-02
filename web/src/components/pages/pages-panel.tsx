@@ -12,6 +12,7 @@ import {
   ListRowSkeleton,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
+import { MobileFab } from "../shell/mobile-fab";
 import { ResourceStatePanel } from "../files/file-browser";
 import { useConfirm } from "../shell/confirm-dialog";
 import { PagesRootDialog } from "./pages-root-dialog";
@@ -101,8 +102,13 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5">
-        <ActionButton compact onClick={() => beginEdit({ mode: "add" })} tone="accent">
+      <div className="hidden shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5 lg:flex">
+        <ActionButton
+          className="hidden lg:inline-flex"
+          compact
+          onClick={() => beginEdit({ mode: "add" })}
+          tone="accent"
+        >
           <span className="inline-flex items-center gap-1">
             <ShellIcon className="h-3.5 w-3.5" name="plus" />
             {t("pages.addRoot")}
@@ -179,6 +185,7 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
         />
       ) : null}
       {confirmHolder}
+      <MobileFab ariaLabel={t("pages.createAria")} onClick={() => beginEdit({ mode: "add" })} />
     </div>
   );
 }
