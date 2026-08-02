@@ -81,7 +81,7 @@ export function SkillsPanel({
       {/* 移动端消费 --shell-mobile-bottom-nav-space 避让一级底部胶囊（与 file-browser /
           global-projects-overview / ShellPanel docked 同构）；桌面 lg: 无胶囊 → 无额外 pb。
           discover/manage/sources 共用此滚动容器，三 tab 一并覆盖。 */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-raised/15 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-surface-raised max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <div className="p-3">
           {tab === "discover" ? (
             <DiscoverTab agent={agent} query={query} setQuery={setQuery} />

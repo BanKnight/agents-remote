@@ -39,10 +39,10 @@ export function SettingsRoute() {
             : { label: t("settings.title"), onClick: () => setActiveSection("root") }
         }
       />
-      {/* 内容区底用 surface-raised/15，与桌面弹窗 SettingsDialog 内容区底一致——
-          让列表 Card(bg-surface) 在移动端落在与桌面端同款更亮的底上，两端列表颜色对比一致。
+      {/* 内容区底用实色 surface-raised，与桌面弹窗 SettingsDialog 内容区底(workspace 实色)一致——
+          让列表 Card(bg-surface) 落在更亮的实色底上(半透明 /15 明主题叠底发灰，见 DESIGN 浮层内容背景铁律)。
           root 态滚动区 pb 消费实测胶囊高度；detail 态 var=0 无额外 pb。 */}
-      <div className="flex-1 overflow-y-auto bg-surface-raised/15 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+      <div className="flex-1 overflow-y-auto bg-surface-raised max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <div className="mx-auto w-full max-w-2xl p-4">
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>

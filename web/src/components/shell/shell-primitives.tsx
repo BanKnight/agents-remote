@@ -59,7 +59,7 @@ const buttonToneClasses: Record<ShellTone, string> = {
 export const shellSurfaceClasses = {
   shell: "bg-surface/20",
   sidebar: "bg-gradient-to-b from-surface-raised/25 to-surface-base/30",
-  workspace: "border border-neutral-line bg-surface-raised/15",
+  workspace: "border border-neutral-line bg-surface-raised",
   header: "border border-neutral-line bg-surface-inset/20",
   floatingHeader: "sm:border sm:border-neutral-line sm:bg-surface-inset/20",
   runtimeHeader: "border-b border-neutral-line/80",

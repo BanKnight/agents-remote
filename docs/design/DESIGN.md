@@ -423,6 +423,8 @@ Phase 4 收敛 Claude2 内容角色色后，剩余散写（操作色 cyan、灰�
 
 **Scrim（模态遮罩）**：dialog/dropdown 背后的半透明遮罩用 `rgb(0 0 0 / 0.6)`（纯黑 60%，非 surface token——遮罩需要中性衰减，不是层级色）。
 
+**浮层内容背景（实色，非磨砂）**：dialog/sheet/popover 的内容容器用实色 `surface-raised`（`shellSurfaceClasses.workspace`），**禁半透明磨砂**（`bg-surface-raised/15` 等）。磨砂靠透出深色/彩色底层做美感，明主题浅色透不出对比，叠在 scrim（`rgb(0 0 0 / 0.6)`）上发灰发糊——`/15` 盖不住 60% 黑。浮层「脱离表面」的层次由三层分离提供：scrim 半透明遮罩（上条）+ 实色 content bg（本条）+ 浮层 shadow（L419），**不靠 content 自身半透明**。这与 tonal-layer 哲学一致：面板/卡片用实色 `surface-raised`，层次靠色阶差（L410-415）+ shadow（L417），不靠透明叠加。
+
 ## Shapes
 
 形状语言是**一致的圆角档位**，收敛历史中 7 种散乱 arbitrary 值（`0.625/0.875/0.9375/1.25/1.5/1.75/2rem`）。

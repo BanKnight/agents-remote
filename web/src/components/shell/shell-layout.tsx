@@ -146,7 +146,7 @@ export function ShellPanel({
     <Card
       {...props}
       className={cn(
-        `min-w-0 gap-0 rounded-2xl !bg-transparent text-on-surface shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
+        `min-w-0 gap-0 rounded-2xl text-on-surface shadow-xl shadow-black/20 ring-0 ${shellSurfaceClasses.workspace}`,
         densityClass,
         dockedClass,
         className,
