@@ -66,6 +66,17 @@ export function ProjectLeftPanel({
   const { t } = useT();
   // history tab 时间范围（受控，父级持有避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
+  // files tab 当前目录（受控，父级持有避免 middle tab 切换 unmount FilesLeftPanel 丢 cwd）。
+  const [filesPath, setFilesPath] = useState("");
+  // 切项目重置 cwd：ProjectLeftPanel 无 key 隔离（WorkbenchRoute 按 scope 复用同实例），
+  // scope.key 变化时若不重置，项目 A 的子目录会泄漏到项目 B。React 官方 derived-state 模式
+  //（adjusting state when a prop changes）——渲染期同步，无需 effect。
+  const filesScopeKey = scope.kind === "project" ? scope.key : null;
+  const [rememberedFilesScope, setRememberedFilesScope] = useState(filesScopeKey);
+  if (filesScopeKey !== rememberedFilesScope) {
+    setRememberedFilesScope(filesScopeKey);
+    setFilesPath("");
+  }
 
   // Phase 3 middle tab（仅 project scope）：tab 列表（实例/历史/文件/git，includeHistory=true）+
   // resolvedTab。global scope middleTabs=[]（无 tab bar）。ctx 由 scope 决定，scope/t 变才重算。
@@ -109,6 +120,8 @@ export function ProjectLeftPanel({
     } else if (resolvedTab === "files") {
       middleBody = (
         <FilesLeftPanel
+          currentPath={filesPath}
+          onPathChange={setFilesPath}
           onCardDragStart={onCardDragStart}
           onOpenFile={onOpenFile}
           projectName={scope.key}

@@ -26,6 +26,9 @@ export function FileTabPreview({ path }: { path: string }) {
   const preview = useQuery({
     queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", relativePath],
     queryFn: () => previewProjectFile(projectName, relativePath),
+    // 文件预览是易变的服务端状态（agent/外部改动）：不缓存，切回 file tab 即拉最新；
+    // 配合 FilePreviewPanel 手动 refresh 按钮（onRefresh invalidate）兜底常驻态。
+    staleTime: 0,
   });
   const previewData = preview.data;
   const previewTextContent = previewData?.type === "text" ? previewData.content : undefined;
@@ -88,6 +91,12 @@ export function FileTabPreview({ path }: { path: string }) {
       fileName={path.split("/").pop() ?? path}
       editValue={editValue}
       onEditChange={setEditContent}
+      onRefresh={() =>
+        queryClient.invalidateQueries({
+          queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", relativePath],
+        })
+      }
+      isRefreshing={preview.isFetching}
       onRenderModeChange={setRenderMode}
     />
   );

@@ -138,6 +138,7 @@ export const zh: Record<TranslationKey, string> = {
   "files.uploadTooltip": "上传文件到当前目录",
   "files.newFolder": "新建文件夹",
   "files.newFolderTooltip": "在当前目录中创建新文件夹",
+  "files.refresh": "刷新预览",
   "files.creating": "正在创建...",
   "files.rename": "重命名",
   "files.delete": "删除",

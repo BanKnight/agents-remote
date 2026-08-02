@@ -138,6 +138,7 @@ export const en = {
   "files.uploadTooltip": "Upload file to current directory",
   "files.newFolder": "New Folder",
   "files.newFolderTooltip": "Create a new folder in current directory",
+  "files.refresh": "Refresh preview",
   "files.creating": "Creating...",
   "files.rename": "Rename",
   "files.delete": "Delete",

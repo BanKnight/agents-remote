@@ -10,10 +10,18 @@ import { type CardDragStartHandler } from "../workbench/drag-source";
  */
 export function FilesLeftPanel({
   projectName,
+  currentPath,
+  onPathChange,
   onOpenFile,
   onCardDragStart,
 }: {
   projectName: string;
+  /**
+   * 受控当前路径（可选）。透传 FilesPanel currentPath，让父级（ProjectLeftPanel）持有 cwd
+   * 跨 middle tab 切换保活——切输出再切回文件不再回根目录。未传退非受控内部 state。
+   */
+  currentPath?: string;
+  onPathChange?: (path: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   /** 拖动源启动（文件行拖到中栏开 tab，透传 FilesPanel → FileEntryList）。undefined 退纯点击。 */
   onCardDragStart?: CardDragStartHandler;
@@ -21,8 +29,10 @@ export function FilesLeftPanel({
   return (
     <FilesPanel
       initialPath=""
+      currentPath={currentPath}
       projectName={projectName}
       enablePreview={false}
+      onPathChange={onPathChange}
       onOpenFile={onOpenFile}
       onCardDragStart={onCardDragStart}
     />

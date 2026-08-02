@@ -386,6 +386,10 @@ export type FilePreviewPanelProps = {
   onEditChange: (value: string) => void;
   /** 移动端关闭预览（inspection 浮窗用）；file tab 不提供（close 走 tab ✕）→ 不渲染 close 按钮。 */
   onClose?: () => void;
+  /** 手动刷新预览（invalidate preview query 拉最新内容）。提供时 header 渲染 refresh 按钮。 */
+  onRefresh?: () => void;
+  /** 预览正后台 refetch（refresh 按钮 icon animate-spin + disabled 反馈）。 */
+  isRefreshing?: boolean;
   onRenderModeChange: (mode: "source" | "render") => void;
 };
 
@@ -401,6 +405,8 @@ export function FilePreviewPanel({
   editValue,
   onEditChange,
   onClose,
+  onRefresh,
+  isRefreshing,
   onRenderModeChange,
 }: FilePreviewPanelProps) {
   const { t } = useT();
@@ -447,10 +453,24 @@ export function FilePreviewPanel({
           <div className="justify-self-center" aria-hidden="true" />
         )}
         <div
-          className={`inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 ${saveToggle === null ? "sm:hidden" : ""}`}
+          className={`inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 ${saveToggle === null && !onRefresh && !onClose ? "sm:hidden" : ""}`}
           role="group"
         >
           {saveToggle}
+          {onRefresh ? (
+            <button
+              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-primary/10 hover:text-primary disabled:cursor-default disabled:opacity-60"
+              type="button"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              aria-label={t("files.refresh")}
+            >
+              <ShellIcon
+                className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+                name="refresh"
+              />
+            </button>
+          ) : null}
           {onClose ? (
             <button
               className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error sm:hidden"
@@ -700,6 +720,11 @@ export function joinRootBrowseDirectoryPath(
 
 export type FilesPanelProps = {
   initialPath: string;
+  /**
+   * 受控当前路径（可选）。传入时覆盖内部 state，配合 onPathChange 实现跨卸载保活（如左栏
+   * middle tab 切换不丢 cwd）。未传时退化为 initialPath 初始化的内部 state（其他调用方零改）。
+   */
+  currentPath?: string;
   /** 项目作用域（非 rootBrowse 模式必填）。rootBrowse 模式按 currentPath 第一段派生。 */
   projectName?: string;
   /** Show file preview panel when a file is clicked. Default true. */
@@ -725,6 +750,7 @@ export type FilesPanelProps = {
 
 export function FilesPanel({
   initialPath,
+  currentPath: controlledPath,
   projectName,
   enablePreview = true,
   queryScope = "files",
@@ -735,7 +761,9 @@ export function FilesPanel({
   onCardDragStart,
 }: FilesPanelProps) {
   const { t } = useT();
-  const [currentPath, setCurrentPath] = useState(initialPath);
+  const [internalPath, setInternalPath] = useState(initialPath);
+  // 受控优先（调用方持有 cwd 跨卸载保活）；未传退非受控内部 state（其他调用方零改）。
+  const currentPath = controlledPath ?? internalPath;
   const [selectedFilePath, setSelectedFilePath] = useState<string | undefined>();
   const {
     exiting: previewExiting,
@@ -773,6 +801,9 @@ export function FilesPanel({
     enabled: enablePreview && selectedFilePath !== undefined && effectiveProjectName !== undefined,
     queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
     queryFn: () => previewProjectFile(effectiveProjectName ?? "", selectedFilePath ?? ""),
+    // 文件预览是易变的服务端状态（agent/外部改动）：不缓存，切回/重选即拉最新；
+    // 配合 FilePreviewPanel 手动 refresh 按钮（onRefresh invalidate）兜底常驻态。
+    staleTime: 0,
   });
 
   const previewData = preview.data;
@@ -790,7 +821,7 @@ export function FilesPanel({
   const showRenderToggle = isHtml || isMarkdown;
 
   const goToPath = (path: string) => {
-    setCurrentPath(path);
+    setInternalPath(path);
     setSelectedFilePath(undefined);
     onPathChange?.(path);
   };
@@ -1047,6 +1078,13 @@ export function FilesPanel({
       editValue={editValue}
       onEditChange={setEditContent}
       onClose={clearPreview}
+      onRefresh={() => {
+        if (selectedFilePath === undefined || effectiveProjectName === undefined) return;
+        queryClient.invalidateQueries({
+          queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
+        });
+      }}
+      isRefreshing={preview.isFetching}
       onRenderModeChange={setRenderMode}
     />
   );
