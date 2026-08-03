@@ -1466,7 +1466,14 @@ function SystemChatBubble() {
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     const groupPos = (custom?.toolGroupPosition as string) ?? "solo";
     const indent = custom?.toolIndent !== false;
-    const needsPermission = typeof controlRequestId === "string" && controlRequestId.length > 0;
+    // 权限金色边框只在「待批准」期显：controlRequestId 存在 且 tool 未解决（无 result）且
+    // 未中断。批准后 tool 收 result、拒绝经 cancelControlRequest 触发 interrupted —— 两者都
+    // 清边框。镜像 claude2-adapter.ts pendingInteraction（controlRequestId && !result && !isInterrupted）。
+    const needsPermission =
+      typeof controlRequestId === "string" &&
+      controlRequestId.length > 0 &&
+      custom?.result == null &&
+      !(custom?.isInterrupted === true);
     const cardBorder: Record<string, string> = {
       solo: "rounded-lg border border-neutral-line/60",
       first: "rounded-t-lg border-l border-r border-t border-neutral-line/60",

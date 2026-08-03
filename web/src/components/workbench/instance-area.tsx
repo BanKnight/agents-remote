@@ -138,7 +138,7 @@ export function CardGridSkeleton({
           {plain && index > 0 ? (
             <div
               aria-hidden="true"
-              className="absolute right-0 top-0 h-px bg-neutral-line/40 left-15 lg:left-0"
+              className="absolute right-0 top-0 h-px bg-neutral-line/40 left-15"
             />
           ) : null}
           <span aria-hidden="true" className="skeleton-shimmer h-9 w-9 shrink-0 rounded-md" />
@@ -175,10 +175,10 @@ const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
  */
 export function GroupedProjectsSkeleton() {
   return (
-    <div className="space-y-3 px-0 py-3 lg:px-3">
+    <div className="space-y-3 px-3 py-3">
       {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
         <section
-          className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
+          className="overflow-hidden rounded-lg border border-neutral-line bg-surface-raised"
           key={groupIndex}
         >
           {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2

@@ -286,10 +286,21 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const focusDisplayName = agentSession?.displayName ?? terminalSession?.displayName;
   const infoSheet = useInstanceInfoSheet();
   const { close, holder: closeHolder } = useCloseSession();
+  // files tab 当前目录（受控，父级持有避免 middle tab 切换 unmount FilesPanel 丢 cwd）。
+  const [filesPath, setFilesPath] = useState("");
+  // 切项目（focusId 派生的 projectName 变）重置 cwd，避免项目 A 子目录泄漏到项目 B（镜像桌面
+  // ProjectLeftPanel derived-state 重置）。projectName 多数由 focusId 变伴随 remount 兜底，此处保守补。
+  const [rememberedFilesProject, setRememberedFilesProject] = useState(projectName);
+  if (projectName !== rememberedFilesProject) {
+    setRememberedFilesProject(projectName);
+    setFilesPath("");
+  }
   const ctx: WorkbenchTabPluginContext = {
     projectKey: projectName ?? null,
     focusId,
     sessionType,
+    currentPath: filesPath,
+    onPathChange: setFilesPath,
   };
   const visiblePlugins = WORKBENCH_TAB_PLUGINS.filter((plugin) => plugin.when(ctx));
   // 记忆的 tab 若在当前 ctx 不可见（如全局作用域下 project-scoped 的 files/git 隐藏，
@@ -557,10 +568,15 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
   // history tab 时间范围（受控，避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
+  // files tab 当前目录（受控，父级持有避免 middle tab 切换 unmount FilesPanel 丢 cwd）。
+  // 切项目由 key={scope.key} remount 兜底重置（docstring 见下），无需 derived-state。
+  const [filesPath, setFilesPath] = useState("");
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.key,
     focusId: undefined,
     sessionType: undefined,
+    currentPath: filesPath,
+    onPathChange: setFilesPath,
   };
   // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
   //（按 ctx 过滤；files/git 需 projectKey）。复用 plugin.when 单一来源。

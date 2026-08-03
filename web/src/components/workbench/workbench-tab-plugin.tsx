@@ -21,6 +21,13 @@ export type WorkbenchTabPluginContext = {
   projectKey: string | null;
   focusId?: string;
   sessionType?: SessionType;
+  /**
+   * 受控当前路径（可选，仅 files plugin 消费）。透传 FilesPanel currentPath，让移动端父级
+   * （MobileFocusBody / MobileProjectOverview）持有 cwd 跨 tab 切换保活——切输出/git 再切回
+   * 文件不再回根目录。镜像桌面 ProjectLeftPanel.filesPath 模式。未传退非受控内部 state。
+   */
+  currentPath?: string;
+  onPathChange?: (path: string) => void;
 };
 
 /**
@@ -49,6 +56,8 @@ export const WORKBENCH_TAB_PLUGINS: WorkbenchTabPlugin[] = [
     render: (ctx) => (
       <FilesPanel
         initialPath=""
+        currentPath={ctx.currentPath}
+        onPathChange={ctx.onPathChange}
         queryScope={WORKBENCH_FILES_QUERY_SCOPE}
         {...(ctx.projectKey ? { projectName: ctx.projectKey } : { rootBrowse: true })}
       />

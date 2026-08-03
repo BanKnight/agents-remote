@@ -232,9 +232,8 @@ type GroupedProjectsListProps = {
  * **决策 35 marker↔icon 内容对齐在去边框（决策 38）+ 满宽（决策 42）后转 Apple full-bleed 边缘对齐**（移动 nameRow 内容=card 边缘 20 非 marker 32）；桌面 `lg:pl-2 lg:pr-2`=8px 零回归）。批 P 收尾 / 决策 40：⋯ 删除 button `flex size-9`→
  * `flex h-7 w-7 max-sm:h-10 max-sm:w-10` + 自定义 3-dot SVG→`ShellIcon ellipsis h-4 w-4`，与 InstanceCard
  * action 同尺寸同图标同源 → 图标中心均 button.cx 严格同列。实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
- * 折叠废弃无小标题）。**section = `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40`**（批 L + 批 M + 批 O / 决策 38：移动无边框 Apple 列表范式，批 O；
- * 桌面 lg: 才加圆角边框成组——名行=header + 实例区=body 同一边框内；无 bg 透明融入 shell，border-neutral-line/40 半透明淡边——对齐同框 InstanceCard topSeparator inset 分割线，Apple hairline，批 M；实例区外层 `-mt-2`
- * 抵消首卡 InstanceCard p-3 top 收间距；根 `px-0 py-3 lg:px-3`（批 P 收尾 / 决策 42：移动去 px 让 section 贴屏幕、card 距两侧 = peek(20) 单一留白非 px-3+peek 双重叠加；桌面 lg:px-3 保持边框时代内边距；py-3 顶底不动）+ section 间 space-y-3(12px) 缩间距。空项目只名行（与有实例项目结构对称：都一行 header）。
+ * 折叠废弃无小标题）。**section = `overflow-hidden rounded-lg border border-neutral-line bg-surface-raised`**（2026-08-03 两端统一带 bg 边框，撤销决策 38 移动 full-bleed 无边框：名行=header + 实例区=body 同一圆角边框内；`bg-surface-raised` 比 shell 浮起一层，InstanceCard plain 透明露出正常卡片底色——复刻设置 Card grouped 带 bg 范式；同框 InstanceCard topSeparator 两端统一 inset 分割线，Apple hairline；实例区外层 `-mt-2`
+ * 抵消首卡 InstanceCard p-3 top 收间距）；根 `px-3 py-3`（2026-08-03 两端统一，撤销决策 42 移动贴边：section 离屏幕边缘 12px 让 border+bg 可见）+ section 间 space-y-3(12px) 缩间距。空项目只名行（与有实例项目结构对称：都一行 header）。
  */
 function GroupedProjectsList({
   candidates,
@@ -277,13 +276,13 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div className="space-y-3 px-0 py-3 lg:px-3">
+    <div className="space-y-3 px-3 py-3">
       {groups.map((group) => {
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
           <section
-            className="overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40"
+            className="overflow-hidden rounded-lg border border-neutral-line bg-surface-raised"
             key={group.projectName}
           >
             <div

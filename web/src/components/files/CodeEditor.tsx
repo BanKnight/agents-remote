@@ -4,8 +4,8 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { useTheme } from "../../theme";
 import { extToEditorLanguage } from "./editor-languages";
 
-// 可编辑代码容器：CodeMirror 6 + oneDark 主题，视觉与只读 CodeBlock 对齐（透明背景、等宽字体、
-// 0.75rem / 行高 1.6、相同的外层边框/底色）。用 minimalSetup 而非 basicSetup 省去 fold gutter /
+// 可编辑代码容器：CodeMirror 6 + oneDark 主题，透明背景、等宽字体、0.875rem（对齐渲染模式
+// markdown 正文 text-sm）/ 行高 1.6、相同的外层边框/底色。用 minimalSetup 而非 basicSetup 省去 fold gutter /
 // 自动补全等重型功能（约省 75KB）。lineWrapping 让移动端长行自动折行。
 //
 // 受控 value/onChange：value 是可序列化的纯文本，阶段 3 离线草稿可在此基础上挂接 CodeMirror 的
@@ -14,7 +14,7 @@ import { extToEditorLanguage } from "./editor-languages";
 const THEME = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
-    fontSize: "0.75rem",
+    fontSize: "0.875rem",
     height: "100%",
   },
   ".cm-scroller": {

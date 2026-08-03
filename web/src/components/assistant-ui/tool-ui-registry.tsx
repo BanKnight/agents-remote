@@ -173,14 +173,14 @@ function makeToolRenderer(config: {
             </span>
             <button
               type="button"
-              className="rounded-md bg-assistant/10 px-3 py-1 text-xs font-semibold text-assistant hover:bg-assistant/15 active:bg-assistant/20 transition"
+              className="cursor-pointer rounded-md bg-assistant/10 px-3 py-1 text-xs font-semibold text-assistant hover:bg-assistant/15 active:bg-assistant/20 transition"
               onClick={() => bridge?.respondToControlRequest(controlRequestId, args)}
             >
               {t("claude2.permission.allow")}
             </button>
             <button
               type="button"
-              className="rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
+              className="cursor-pointer rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
               onClick={() => bridge?.cancelControlRequest(controlRequestId)}
             >
               {t("claude2.permission.deny")}

@@ -767,7 +767,7 @@ export function InstanceCard({
       {topSeparator ? (
         <div
           aria-hidden="true"
-          className="absolute right-0 top-0 h-px bg-neutral-line/40 left-15 lg:left-0"
+          className="absolute right-0 top-0 h-px bg-neutral-line/40 left-15"
         />
       ) : null}
       <StatusMarker marker={marker} status={status} />
