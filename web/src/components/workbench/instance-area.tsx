@@ -110,8 +110,8 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  * gap-1 对齐真实 flex-col gap-1）+ 右上 actions 占位（absolute right-2 top-2 h-7 w-7，对齐 InstanceCard
  * 折叠触发器）。骨架条用 line-height 而非 font-size——加载完内容栈总高与真实一致（行盒 20+16+16=52，
  * 实测 InstanceCard contentSum=52），消除卡片高度跳变。skeleton-shimmer 与 NavItemSkeleton/ProjectCardSkeleton 一致。
- * plain 占位卡非首张顶部分割线 mirror InstanceCard `topSeparator`（移动 left-15=60px 内容区左 / 桌面 lg:left-0 全宽，
- * 批 O / 决策 38），替代原 `divide-y`（border-top 横跨全宽不支持 inset）。
+ * plain 占位卡非首张顶部分割线 mirror InstanceCard `topSeparator`（两端统一 left-15=60px=p-3+marker lg+gap-3 内容区左，跳过 marker 列；
+ * 2026-08-03 撤销桌面 lg:left-0 全宽），替代原 `divide-y`（border-top 横跨全宽不支持 inset）。
  *
  * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
  * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
@@ -181,10 +181,10 @@ export function GroupedProjectsSkeleton() {
           className="overflow-hidden rounded-lg border border-neutral-line bg-surface-raised"
           key={groupIndex}
         >
-          {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 px-2
+          {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 pl-3 pr-2
               [图标 size-5][项目名 text-base 行盒 h-6 + › size-5 同 button][⋯ size-9 最右]；
               min-h-11 模拟真实名行 button 触控热区（44px），撑高骨架名行到真实行高。 */}
-          <div className="flex min-h-11 items-center gap-2 px-2">
+          <div className="flex min-h-11 items-center gap-2 pl-3 pr-2">
             <span aria-hidden="true" className="skeleton-shimmer size-5 shrink-0 rounded" />
             <span aria-hidden="true" className="skeleton-shimmer h-6 w-1/3 rounded" />
             <span aria-hidden="true" className="skeleton-shimmer size-5 shrink-0 rounded" />
@@ -1261,14 +1261,14 @@ export function InstanceGrid({
   items: InstanceGridItem[];
   /** 卡片 surface：true = plain 扁平连续（去 raised border/bg + rounded-lg，对齐 `list` plain 行 token；
    *  设计 §7 card 段 InstanceCard surface 两态）。grid/grouped 密集网格视图传 true；默认 false = raised
-   *  独立圆角卡。容器分隔：plain 非首卡由 InstanceCard `topSeparator` 绝对定位画 inset 分割线（移动 left-15=60px
-   *  内容区左 / 桌面 lg:left-0 全宽，批 O / 决策 38；原 divide-y border-top 横跨全宽不支持 inset）；非 plain raised 卡靠 gap-2 或自身 border。 */
+   *  独立圆角卡。容器分隔：plain 非首卡由 InstanceCard `topSeparator` 绝对定位画 inset 分割线（两端统一 left-15=60px
+   *  内容区左，跳过 marker 列；2026-08-03 撤销桌面 lg:left-0 全宽；原 divide-y border-top 横跨全宽不支持 inset）；非 plain raised 卡靠 gap-2 或自身 border。 */
   plain?: boolean;
   dragAdapter?: DragSourceAdapter;
   dragRefs?: Map<string, WorkbenchPanelRef>;
 }) {
   const surface = plain ? "plain" : "raised";
-  // plain：非首卡由 InstanceCard topSeparator 绝对定位画 inset 分割线（移动内容区左 / 桌面全宽，批 O / 决策 38），
+  // plain：非首卡由 InstanceCard topSeparator 绝对定位画 inset 分割线（两端统一 left-15=60px 内容区左，跳过 marker 列），
   // 替代原 divide-y（border-top 横跨全宽不支持 inset）；非 plain：raised 独立卡靠 gap-2（grid）或自身 border（grouped）分隔。
   const containerClass = plain ? "grid" : gap ? "grid gap-2" : "grid";
   return (
@@ -1296,14 +1296,14 @@ const INSTANCE_PAGED_CAROUSEL_PAGE_SIZE = 3;
 
 /**
  * 实例分页 carousel（批 J / 决策 33 + 批 M / 决策 36 + 批 N / 决策 37 + 批 P / 决策 39）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
- * 横向 swipe 翻页 + snap-start 双侧 peek（每页 calc(100% - 2.5rem)=containerW-40=左右各 20px；首尾各 w-5 spacer + scroll-px-5 让 snap 对齐
- * snapport-left=scrollLeft+20，中间页左右各露 20px 邻页 peek、首末页露 20px 邻页 + 20px gutter——批 P 反转批 M 单向 peek，用户明示要 page2 见 page1 peek；
- * 批 P 收尾 / 决策 41 peek 12→20px——用户指去边框后 peek 露下一页 p-3 空白看不到内容，peek 20 露到 marker 左缘）；
- * 末页 spacer 让末页 snap 点 ≤ maxScrollLeft 贴左对齐（snap-start + pageW<containerW 时末页 snap 点超 maxScrollLeft 偏移 peek 量，spacer 补足，批 N）；
- * 桌面端 lg:w-full 满宽无 peek（spacer lg:hidden + lg:scroll-px-0）+ 页码行 ‹1·2·3›（scrollIntoView inline:start 对齐 snap-start），移动端靠原生 swipe + 双侧 peek 暗示、隐藏页码。
+ * 横向 swipe 翻页 + snap-start 满宽页（每页 w-full = container；scroll-px-0 让 snap 对齐 snapport-left=scrollLeft，page.left=i·pageW）；
+ * 当前页同步靠 onScroll 算页码（slot=scrollWidth/pageCount；满宽页等宽=container，slot=container，snap 仍工作）。
+ * 移动端 dots 指示器（lg:hidden，active bg-primary / inactive bg-on-surface-muted/40，点击 goTo）+ 原生 swipe 翻页，
+ * = 桌面页码行 ‹1·2·3› 的移动等价 ●○○（2026-08-03 撤销决策 39 swipe+双侧 peek 暗示后的平台差异合理表达）；
+ * 桌面端（不可触摸）lg:w-full 满宽 + 页码行 hidden lg:flex（‹ prev + 页码 button aria-current 高亮 + › next，scrollIntoView inline:start 对齐 snap-start）。
  *
- * ≤1 页退化：InstanceGrid plain gap={false} 包在 px-5 lg:px-0 内（无 carousel 容器、无 snap、无页码行）——
- * 移动端 px-5 让单页卡与多页 carousel 卡同几何（同 20px gutter=peek、action 同列名行 ⋯），桌面 lg:px-0 满宽零回归（批 P 收尾 / 决策 41：peek 12→20 同步 px-3→px-5）。
+ * ≤1 页退化：InstanceGrid plain gap={false} 满宽（无 carousel 容器、无 snap、无 dots/页码行）——
+ * 卡片满宽贴 section content、action right-2 ≡ 名行 ⋯ pr-2 同列（2026-08-03 撤销决策 39-43 peek 范式后退化与 carousel 同满宽几何）。
  * Apple Store 风格 grouped 实例区专用——复用 InstanceGrid 渲染页内卡片（不重写卡片/不加 variant）。
  */
 export function InstancePagedCarousel({
@@ -1327,22 +1327,18 @@ export function InstancePagedCarousel({
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const rafRef = useRef<number | null>(null);
 
-  // ≤1 页退化：直接 InstanceGrid（无 carousel 容器、无 snap、无页码行），单列清单语义。
-  // 移动端 px-5 让单页卡片与多页 carousel 卡片同几何（peek 20px gutter：card [section-left+20, section-right-20]，
-  // action right-2 落 section-right-28，与名行 ⋯ pr-7 同列——批 P / 决策 39 + 收尾 / 决策 41「操作区一列」覆盖 1-3 实例 section；
-  // 不加则单页卡 full-width、action 落 section-right-8，与名行 ⋯(section-right-28) 差 20px=peek 量，多数 section 错位）。
-  // 桌面 lg:px-0 满宽（与 carousel lg:w-full 同），零回归。
+  // ≤1 页退化：直接 InstanceGrid 满宽（无 carousel 容器、无 snap、无 dots/页码行），单列清单语义。
+  // 卡片满宽贴 section content：action right-2 落 section-right-8 ≡ 名行 ⋯ pr-2(8) 同列（2026-08-03 撤销决策 39-43
+  // peek 范式后，名行 pr-2 与满宽 action 同 right-8，两端统一、退化与 carousel 同几何）。
   if (pageCount <= 1) {
     return (
-      <div className="px-5 lg:px-0">
-        <InstanceGrid
-          dragAdapter={dragAdapter}
-          dragRefs={dragRefs}
-          gap={false}
-          items={items}
-          plain={plain}
-        />
-      </div>
+      <InstanceGrid
+        dragAdapter={dragAdapter}
+        dragRefs={dragRefs}
+        gap={false}
+        items={items}
+        plain={plain}
+      />
     );
   }
 
@@ -1372,16 +1368,13 @@ export function InstancePagedCarousel({
   return (
     <div>
       <div
-        className="flex snap-x snap-mandatory overflow-x-auto scroll-px-5 lg:scroll-px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory overflow-x-auto scroll-px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={handleScroll}
         ref={scrollRef}
       >
-        {/* 首页 spacer（批 P / 决策 39）：peek 宽空 div 让 page2 snap 时 page1 右缘露 12px 左 peek（双向 peek 起点对称）。
-            桌面 lg:w-full 满宽无 peek，lg:hidden。aria-hidden 不参与 a11y。 */}
-        <div aria-hidden="true" className="w-5 shrink-0 lg:hidden" />
         {pages.map((pageItems, i) => (
           <div
-            className="w-[calc(100%-2.5rem)] shrink-0 snap-start lg:w-full"
+            className="w-full shrink-0 snap-start"
             key={i}
             ref={(el) => {
               pageRefs.current[i] = el;
@@ -1396,14 +1389,26 @@ export function InstancePagedCarousel({
             />
           </div>
         ))}
-        {/* 末页 spacer（批 N / 决策 37 + 批 P / 决策 39）：peek 宽空 div 让末页 snap 点 ≤ maxScrollLeft，末页能 snap 贴左对齐——
-            避免 snap-start + pageW<containerW 时末页 snap 点(pageW)超 maxScrollLeft((N-1)*pageW-peek) 偏移 peek 量
-            （探针实测：4 实例 2 页，未加 spacer 末页 card 内容左 36 vs 首页 12，偏移 24px）。加后 maxScrollLeft=(N-1)*pageW=末页 snap 点，对齐。
-            批 P 起与首页 spacer 对称（同 w-3=12px），构成双向 peek 首尾 gutter。
-            桌面 lg:w-full 满宽 pageW=containerW 不需 spacer，lg:hidden。aria-hidden 不参与 a11y。 */}
-        <div aria-hidden="true" className="w-5 shrink-0 lg:hidden" />
       </div>
-      {/* 桌面页码行（hidden lg:flex）：移动端靠 swipe 不显页码。‹ prev + 页码 button(aria-current 高亮) + › next。 */}
+      {/* 移动 dots 指示器（lg:hidden）：满宽页无 peek 暗示，用 dots 表达当前页 + 可点击跳页，= 桌面页码行 ‹1·2·3› 的
+          移动等价 ●○○（2026-08-03 撤销决策 39 swipe+peek 暗示后的平台差异合理表达）。active bg-primary / inactive
+          bg-on-surface-muted/40 对齐桌面页码行 primary 高亮语义；i18n 复用 carousel.pageLabel。 */}
+      <div
+        aria-label={t("carousel.pageLabel", { current: page + 1, total: pageCount })}
+        className="flex items-center justify-center gap-1.5 pt-2 lg:hidden"
+      >
+        {pages.map((_, i) => (
+          <button
+            aria-current={i === page ? "true" : undefined}
+            aria-label={t("carousel.pageLabel", { current: i + 1, total: pageCount })}
+            className={`size-1.5 rounded-full transition ${i === page ? "bg-primary" : "bg-on-surface-muted/40"}`}
+            key={i}
+            onClick={() => goTo(i)}
+            type="button"
+          />
+        ))}
+      </div>
+      {/* 桌面页码行（hidden lg:flex）：移动端 dots。‹ prev + 页码 button(aria-current 高亮) + › next。 */}
       <div
         aria-label={t("carousel.pageLabel", { current: page + 1, total: pageCount })}
         className="hidden items-center justify-center gap-1 pt-2 lg:flex"

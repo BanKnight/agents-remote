@@ -680,7 +680,7 @@ export type InstanceCardProps = {
   status?: { label: string; tone: ShellTone };
   /** surface 变体：`raised`（默认，独立圆角卡）/ `plain`（密集网格 `InstanceGrid`，扁平连续，对齐 `list` plain 行 token）。 */
   surface?: "raised" | "plain";
-  /** 顶部 inset 分割线（plain 密集清单专用，移动 left-15=60px 内容区左 / 桌面 lg:left-0 全宽；raised 不传）。批 O / 决策 38。 */
+  /** 顶部 inset 分割线（plain 密集清单专用，两端统一 left-15=60px=p-3+marker lg+gap-3 内容区左，跳过 marker 列；raised 不传）。2026-08-03 撤销桌面 lg:left-0 全宽。 */
   topSeparator?: boolean;
   /** 第二行内容（agent=AI 回复 / terminal=最近命令），1 行截断；缺失则不渲染第二行。 */
   subtitle?: ReactNode;

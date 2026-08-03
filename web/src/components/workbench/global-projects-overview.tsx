@@ -227,11 +227,11 @@ type GroupedProjectsListProps = {
 /**
  * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33 + 批 L / 决策 35）：mergeProjectsWithCandidates
  * 含空项目；项目名行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
- * ≥44px）][⋯ 删除 最右尽头]（名行 `pl-5 pr-7 lg:pl-2 lg:pr-2` + button `px-0 lg:px-1`，批 P / 决策 39 + 收尾 / 决策 40/41/43：移动端 carousel
- * peek 20px 把卡片右移，名行 `pl=peek=20`（决策 43 Apple full-bleed header 对齐 cell 左边缘）+ `pr=peek+8=28` 对齐 card action（决策 40 同列 section-right−28）+ button 移动去 px 让图标=card 边缘 / 桌面保 px-1 维持 marker↔icon；
- * **决策 35 marker↔icon 内容对齐在去边框（决策 38）+ 满宽（决策 42）后转 Apple full-bleed 边缘对齐**（移动 nameRow 内容=card 边缘 20 非 marker 32）；桌面 `lg:pl-2 lg:pr-2`=8px 零回归）。批 P 收尾 / 决策 40：⋯ 删除 button `flex size-9`→
- * `flex h-7 w-7 max-sm:h-10 max-sm:w-10` + 自定义 3-dot SVG→`ShellIcon ellipsis h-4 w-4`，与 InstanceCard
- * action 同尺寸同图标同源 → 图标中心均 button.cx 严格同列。实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行，
+ * ≥44px）][⋯ 删除 最右尽头]（名行两端统一 `pl-3 pr-2` + button `px-0`，2026-08-03 撤销决策 39-43 full-bleed peek 配套：
+ * 卡片满宽后名行不再 peek 缩进——图标 = pl-3(12)+button px-0 = 12 ≡ marker（InstanceCard p-3=12），⋯ = pr-2(8) ≡ 满宽
+ * action（absolute right-2=8），两端图标≡marker、⋯≡action 严格对齐；桌面零回归：原 lg:pl-2(8)+lg:px-1(4)=12 ≡ 现 pl-3(12)+px-0=12）。
+ * 批 P 收尾 / 决策 40：⋯ 删除 button `flex h-7 w-7 touch:h-10 touch:w-10` + `ShellIcon ellipsis h-4 w-4`，与 InstanceCard
+ * action 同尺寸同图标同源 → 图标中心均 button.cx 严格同列。实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行 / 移动 dots，
  * 折叠废弃无小标题）。**section = `overflow-hidden rounded-lg border border-neutral-line bg-surface-raised`**（2026-08-03 两端统一带 bg 边框，撤销决策 38 移动 full-bleed 无边框：名行=header + 实例区=body 同一圆角边框内；`bg-surface-raised` 比 shell 浮起一层，InstanceCard plain 透明露出正常卡片底色——复刻设置 Card grouped 带 bg 范式；同框 InstanceCard topSeparator 两端统一 inset 分割线，Apple hairline；实例区外层 `-mt-2`
  * 抵消首卡 InstanceCard p-3 top 收间距）；根 `px-3 py-3`（2026-08-03 两端统一，撤销决策 42 移动贴边：section 离屏幕边缘 12px 让 border+bg 可见）+ section 间 space-y-3(12px) 缩间距。空项目只名行（与有实例项目结构对称：都一行 header）。
  */
@@ -286,11 +286,11 @@ function GroupedProjectsList({
             key={group.projectName}
           >
             <div
-              className="flex items-center gap-2 pl-5 pr-7 lg:pl-2 lg:pr-2"
+              className="flex items-center gap-2 pl-3 pr-2"
               onContextMenu={(e) => ctx.openAt(group.projectName, e)}
             >
               <button
-                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 lg:px-1 text-left transition hover:bg-on-surface/5"
+                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
                 onClick={() => enterProject(group.projectName)}
                 title={group.projectName}
                 type="button"
