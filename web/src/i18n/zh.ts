@@ -521,7 +521,6 @@ export const zh: Record<TranslationKey, string> = {
   "wiki.pageMissing": "Wiki 页面不存在",
   "workbench.viewSwitcher": "视图",
   "workbench.viewGrid": "网格",
-  "workbench.viewTable": "表格",
   "workbench.viewGrouped": "分组",
   "workbench.viewSplit": "分屏",
   "workbench.rightPanelEmpty": "暂无内容",
@@ -547,13 +546,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.dropToEmpty": "放置到此处：作为首个实例打开",
   "workbench.dragging": "拖动实例中",
   "workbench.dropZoneLabel": "分屏放置区",
-
-  // ── Table 视图（工作台总览）─────────────────────────────────
-  "table.colProject": "项目",
-  "table.colName": "会话",
-  "table.colStatus": "状态",
-  "table.colActivity": "最后活动",
-  "table.colActions": "操作",
 
   // ── Carousel（分组实例分页，批 J / 决策 33）──────────────────
   "carousel.pageLabel": "第 {{current}} 页，共 {{total}} 页",

@@ -20,20 +20,17 @@ import { ShellIcon } from "../shell/icons";
 import { MobileFab } from "../shell/mobile-fab";
 import {
   candidateToGridItem,
-  candidateToTableRow,
   CardGridSkeleton,
   GroupedProjectsSkeleton,
   type DragSourceAdapter,
   type GridItemCallbacks,
   InstanceGrid,
   InstancePagedCarousel,
-  type TableRowCallbacks,
   useCloseSession,
   useGlobalInstanceCandidates,
   useRenameSession,
   VIEW_LABEL_KEY,
 } from "./instance-area";
-import { SessionTable, type TableColumn } from "./workbench-table";
 
 type GlobalProjectsOverviewProps = {
   /** 单击实例 → 进聚焦态（桌面 WorkbenchContent focusInstance；移动 navigateWorkbench）。 */
@@ -63,7 +60,6 @@ export function GlobalProjectsOverview({
   onViewChange,
 }: GlobalProjectsOverviewProps) {
   const { t } = useT();
-  const navigate = useNavigate();
   const inputId = useId();
   const [setupOpen, setSetupOpen] = useState(false);
   const { close, holder: closeHolder } = useCloseSession();
@@ -103,17 +99,8 @@ export function GlobalProjectsOverview({
     const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
     if (ref) void rename(ref, type, currentName);
   };
-  const enterProject = (projectName: string) =>
-    void navigate({ to: "/projects/$key", params: { key: projectName } });
   const gridCallbacks: GridItemCallbacks = {
     onClose: closeInstance,
-    onRename: renameInstance,
-    onSelect: onFocusInstance,
-    t,
-  };
-  const tableCallbacks: TableRowCallbacks = {
-    onClose: closeInstance,
-    onEnterProject: enterProject,
     onRename: renameInstance,
     onSelect: onFocusInstance,
     t,
@@ -123,19 +110,13 @@ export function GlobalProjectsOverview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [candidates, t],
   );
-  const tableRows = useMemo(
-    () => candidates.map((c) => candidateToTableRow(c, tableCallbacks)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [candidates, t],
-  );
   const gridDragRefs = useMemo(() => {
     const m = new Map<string, WorkbenchPanelRef>();
     for (const c of candidates) m.set(c.ref.sessionId, c.ref);
     return m;
   }, [candidates]);
-  const tableColumns: TableColumn[] = ["name", "project", "activity", "actions"];
 
-  // empty/loading gate（决策 28/29）：grouped 以 projectNames 为准；grid/table 看 candidates。
+  // empty/loading gate（决策 28/29）：grouped 以 projectNames 为准；grid 看 candidates。
   // projectNames 与 candidates 同源 `/api/overview`，统一用 isLoaded（success-only：data 就绪）；
   // 请求失败时 isLoaded=false → 显示骨架（与原 projects query 行为一致，不退化为空态）。
   const overviewEmpty =
@@ -160,7 +141,7 @@ export function GlobalProjectsOverview({
       <GroupedProjectsSkeleton />
     ) : (
       <div className="px-3 py-2">
-        <CardGridSkeleton plain={resolvedView === "grid"} />
+        <CardGridSkeleton plain />
       </div>
     )
   ) : overviewEmpty ? (
@@ -176,8 +157,6 @@ export function GlobalProjectsOverview({
       onRename={renameInstance}
       projectNames={projectNames}
     />
-  ) : resolvedView === "table" ? (
-    <SessionTable columns={tableColumns} rows={tableRows} t={t} />
   ) : (
     <div className="px-3 py-2">
       <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />

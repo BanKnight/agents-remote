@@ -30,7 +30,6 @@ import {
   type WorkbenchScope,
   type WorkbenchView,
   deriveZone,
-  filterWorkbenchViews,
   inferSessionTypeFromId,
   rankGlobalInstances,
   tabIdOf,
@@ -64,7 +63,6 @@ import {
   shellSurfaceClasses,
   type ShellTone,
   statusToTone,
-  ViewSwitcher,
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
@@ -72,7 +70,6 @@ import { SkillTabPreview } from "../../routes/SkillsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
-import { SessionTable, type TableColumn, type SessionTableRow } from "./workbench-table";
 import { ActionMenu } from "../ui/action-menu";
 import {
   DropdownMenu,
@@ -83,11 +80,10 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
-/** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。 */
+/** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。仅 global 用。 */
 export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
   grouped: "workbench.viewGrouped",
   grid: "workbench.viewGrid",
-  table: "workbench.viewTable",
 };
 
 /** InstanceCard 内容最小可读宽度（左总览 MIN_REM 的设计依据：放得下一张 220px 卡）。 */
@@ -120,7 +116,7 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
  * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
  *
- * `count` 参数化（默认 INSTANCE_SKELETON_ROW_COUNT * 2 = 6）：grid/table/InstanceArea 用默认 6 张；
+ * `count` 参数化（默认 INSTANCE_SKELETON_ROW_COUNT * 2 = 6）：grid/InstanceArea 用默认 6 张；
  * GroupedProjectsSkeleton 每组传 2（每组实例少，2 张传达「分组+卡片」结构即可）。
  */
 export function CardGridSkeleton({
@@ -382,13 +378,13 @@ export function InstanceArea({
 
 /**
  * 左总览（批 F：project-only）。global [项目] 总览已抽取为 `GlobalProjectsOverview`（桌面/移动共用，
- * 决策 29），本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ ViewSwitcher
- *（grid/table）+ InstanceGrid/SessionTable + EmptyInstanceArea + CardGridSkeleton。承载于
- * WorkbenchShell `leftPanel`（DOM 四栏第 1 列）。
+ * 决策 29），本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ InstanceGrid（grid 单
+ * 视图，project scope 无视图切换）+ EmptyInstanceArea + CardGridSkeleton。承载于 WorkbenchShell
+ * `leftPanel`（DOM 四栏第 1 列）。
  *
  * **无 state**：所有数据（projectInstances/create/回调/dragAdapter）由 WorkbenchContent 经 props
  * 注入；dragState 不进 props（拖动期间不重渲染），故用 `memo` 包裹。内部仅派生纯计算
- *（viewOptions/resolvedView/gridItems/tableRows/gridDragRefs/overviewLoading）。
+ *（gridItems/gridDragRefs/overviewLoading）。
  *
  * 与 InstanceArea（瘦身后的右工作区）互补：本组件出拖放源（dragAdapter），InstanceArea 收拖放
  * 目标（DropZoneOverlay）。onCardDragStart 单一实例由 WorkbenchContent 创建，卡片源 + tab 源共享。
@@ -398,10 +394,6 @@ type InstanceLeftOverviewProps = {
   scope: { kind: "project"; key: string };
   /** inspection 插件上下文；本组件仅用 ctx.projectKey（CreateSessionBar/EmptyInstanceArea/projectName）。 */
   ctx: WorkbenchTabPluginContext;
-  /** 总览视图（URL `?view` + atom 回退，WorkbenchContent 解析后传入）。 */
-  view?: WorkbenchView;
-  /** 切换总览视图（写 URL + atom，WorkbenchContent 注入）。 */
-  onViewChange?: (next: WorkbenchView) => void;
   /** 创建实例 API（useCreateSession，project scope projectName=scope.key）。 */
   create: CreateSessionApi;
   /** project scope 活跃实例（useProjectInstances）。 */
@@ -424,8 +416,6 @@ type InstanceLeftOverviewProps = {
 function InstanceLeftOverviewBase({
   scope,
   ctx,
-  view,
-  onViewChange,
   create,
   projectInstances,
   onFocusInstance,
@@ -434,15 +424,6 @@ function InstanceLeftOverviewBase({
   dragAdapter,
 }: InstanceLeftOverviewProps) {
   const { t } = useT();
-
-  // ViewSwitcher 视图选项（project scope = [grid, table]，grouped 仅 global）。
-  const viewOptions = useMemo(
-    () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
-    [scope, t],
-  );
-  // P3 总览视图守卫：URL/atom 的 view 若不在当前 scope 可见视图集 → 回退 "grid"。
-  const resolvedView: WorkbenchView =
-    view !== undefined && viewOptions.some((opt) => opt.id === view) ? view : "grid";
 
   // grid 数据源：project scope 用 useProjectInstances（本项目全览，WorkbenchContent 注入）。
   const gridCallbacks: GridItemCallbacks = {
@@ -462,10 +443,6 @@ function InstanceLeftOverviewBase({
     [projectInstances.instances, t],
   );
 
-  // 左总览 overview 内容按 view 分支（设计 §5）：grid → InstanceGrid（空 → EmptyInstanceArea）；
-  // table → SessionTable（空 → EmptyInstanceArea）。（grouped 仅 global，已迁 GlobalProjectsOverview。）
-  const showGrid = resolvedView === "grid";
-  const showTable = resolvedView === "table";
   // grid view dragRefs：project 用 projectInstances（sessionId → ref）。
   const gridDragRefs = useMemo(() => {
     const m = new Map<string, WorkbenchPanelRef>();
@@ -478,66 +455,31 @@ function InstanceLeftOverviewBase({
     }
     return m;
   }, [scope, projectInstances.instances]);
-  // table 列回调（与 gridCallbacks 同源）；t 用 TranslateFn（relativeTime 的 time.minutesAgo {count}）。
-  const tableCallbacks: TableRowCallbacks = {
-    onClose: onCloseInstance,
-    onRename: onRenameInstance,
-    onSelect: onFocusInstance,
-    t,
-  };
-  const tableRows = useMemo<SessionTableRow[]>(
-    () =>
-      projectInstances.instances.map((entry) =>
-        instanceToTableRow(entry, scope.key, tableCallbacks),
-      ),
-    // tableCallbacks 闭包依赖 t；projectInstances.instances 引用同 gridItems（hook 内 dataKey fingerprint 稳定）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectInstances.instances, t],
-  );
-  // table 列：project 3 列（隐藏 project，设计 §9）。
-  const tableColumns: TableColumn[] = ["name", "activity", "actions"];
-  // 总览加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
+  // 左总览 overview 内容（设计 §5）：grid 单视图（project scope 无视图切换）。
+  // 加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
   const overviewLoading = projectInstances.isLoading && projectInstances.instances.length === 0;
   const leftOverviewContent = overviewLoading ? (
     <div className="px-3 py-2">
-      <CardGridSkeleton plain={showGrid} />
+      <CardGridSkeleton plain />
     </div>
-  ) : showGrid ? (
-    gridItems.length === 0 ? (
-      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
-    ) : (
-      <div className="px-3 py-2">
-        <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
-      </div>
-    )
-  ) : showTable ? (
-    tableRows.length === 0 ? (
-      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
-    ) : (
-      <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-    )
-  ) : null;
+  ) : gridItems.length === 0 ? (
+    <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+  ) : (
+    <div className="px-3 py-2">
+      <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
+    </div>
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 左总览顶部 header：project scope = CreateSessionBar（创建实例）。ViewSwitcher 用 ml-auto wrapper
-          推到 header 右侧。（global scope header 已随 GlobalProjectsOverview 抽离。） */}
+      {/* 左总览顶部 header：project scope = CreateSessionBar（创建实例）。project 单 grid 视图，
+          无 ViewSwitcher。（global scope header 已随 GlobalProjectsOverview 抽离。） */}
       <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
         <CreateSessionBar
           isCreating={create.isCreating}
           onCreateAgent={create.createAgent}
           onCreateTerminal={create.createTerminal}
         />
-        {onViewChange ? (
-          <div className="ml-auto">
-            <ViewSwitcher
-              ariaLabel={t("workbench.viewSwitcher")}
-              onChange={onViewChange}
-              view={resolvedView}
-              views={viewOptions}
-            />
-          </div>
-        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{leftOverviewContent}</div>
     </div>
@@ -546,9 +488,9 @@ function InstanceLeftOverviewBase({
 
 /**
  * `memo` 包裹：dragState 不进 InstanceLeftOverview props（拖动期间 WorkbenchContent 的 dragState
- * 变化不触发本组件重渲染），仅 scope/ctx/view/create/projectInstances/回调/dragAdapter
- * 变化才重渲染。回调由 WorkbenchContent 用 useCallback 稳定，projectInstances 由 hook
- * fingerprint 稳定 → 拖动高频 setDragState 不波及左总览。（global scope 已迁 GlobalProjectsOverview。）
+ * 变化不触发本组件重渲染），仅 scope/ctx/create/projectInstances/回调/dragAdapter 变化才重渲染。
+ * 回调由 WorkbenchContent 用 useCallback 稳定，projectInstances 由 hook fingerprint 稳定
+ * → 拖动高频 setDragState 不波及左总览。（global scope 已迁 GlobalProjectsOverview。）
  */
 export const InstanceLeftOverview = memo(InstanceLeftOverviewBase);
 
@@ -1596,89 +1538,6 @@ export function candidateToGridItem(
     },
     subtitle: candidate.subtitle,
     title: candidate.displayName,
-  };
-}
-
-/**
- * table 列回调：与 GridItemCallbacks 同源语义（onSelect 进聚焦 / onClose 走 useCloseSession），
- * `t` 用 TranslateFn（带 params）——relativeTime 内部 `t("time.minutesAgo", {count})` 需要第二参数。
- * 与 GridItemCallbacks 等价；保留独立类型因 table 行映射（instanceToTableRow/candidateToTableRow）
- * 与 grid 映射是平行的两套 presentational 投影。
- */
-export type TableRowCallbacks = {
-  onClose?: (sessionId: string, type: "agent" | "terminal") => void;
-  onRename?: (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => void;
-  onSelect: (sessionId: string) => void;
-  /** global 表 project 列点进项目（navigate /projects/$key）；project scope 表无此列不传。 */
-  onEnterProject?: (projectName: string) => void;
-  t: TranslateFn;
-};
-
-/** 项目实例 → SessionTableRow（activityIso = updatedAt ?? createdAt；terminal 无 createdAt）。 */
-export function instanceToTableRow(
-  entry: ProjectInstanceEntry,
-  projectName: string,
-  cb: TableRowCallbacks,
-): SessionTableRow {
-  const session = entry.session;
-  const activityIso =
-    session.updatedAt ?? (entry.type === "agent" ? (session as AgentSession).createdAt : undefined);
-  const onClose = cb.onClose;
-  const onRename = cb.onRename;
-  return {
-    activityIso,
-    displayName: session.displayName,
-    key: session.id,
-    onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
-    onFocus: () => cb.onSelect(session.id),
-    onRename: onRename
-      ? () => onRename(session.id, entry.type, session.displayName, projectName)
-      : undefined,
-    provider: entry.type === "agent" ? (session as AgentSession).provider : undefined,
-    status: {
-      label: cb.t(sessionStatusLabel(session.status)),
-      tone: statusToTone(session.status),
-    },
-    type: entry.type,
-  };
-}
-
-/** 全局候选 → SessionTableRow（candidate 已带 updatedAt/createdAt/provider/projectName）。 */
-export function candidateToTableRow(
-  candidate: GlobalInstanceCandidate,
-  cb: TableRowCallbacks,
-): SessionTableRow {
-  const onClose = cb.onClose;
-  const onRename = cb.onRename;
-  const onEnterProject = cb.onEnterProject;
-  return {
-    activityIso: candidate.updatedAt ?? candidate.createdAt,
-    displayName: candidate.displayName,
-    key: candidate.ref.sessionId,
-    onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
-    onEnterProject: onEnterProject ? () => onEnterProject(candidate.ref.projectName) : undefined,
-    onFocus: () => cb.onSelect(candidate.ref.sessionId),
-    onRename: onRename
-      ? () =>
-          onRename(
-            candidate.ref.sessionId,
-            candidate.type,
-            candidate.displayName,
-            candidate.ref.projectName,
-          )
-      : undefined,
-    projectName: candidate.ref.projectName,
-    provider: candidate.provider,
-    status: {
-      label: cb.t(sessionStatusLabel(candidate.status)),
-      tone: statusToTone(candidate.status),
-    },
-    type: candidate.type,
   };
 }
 

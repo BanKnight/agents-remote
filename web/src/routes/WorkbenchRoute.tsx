@@ -286,7 +286,7 @@ function WorkbenchContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, focusId, layout, isDesktop, refs, refsLoaded, globalRefs, globalRefsLoaded]);
 
-  // grid/table 回调用 projectName 解析：global scope 从 candidates 查（与 InstanceLeftOverview
+  // grid 回调用 projectName 解析：global scope 从 candidates 查（与 InstanceLeftOverview
   // 同源），project scope = scope.key。
   const resolveProjectName = (sessionId: string): string =>
     scope.kind === "project"
@@ -727,10 +727,8 @@ function WorkbenchContent({
         onCloseInstance={closeInstance}
         onFocusInstance={focusInstance}
         onRenameInstance={renameInstance}
-        onViewChange={onViewChange}
         projectInstances={projectInstances}
         scope={scope}
-        view={view}
       />
     );
   const leftPanel =

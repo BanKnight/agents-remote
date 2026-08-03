@@ -3,7 +3,7 @@ import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import { MobilePageHeader, shellSurfaceClasses, ViewSwitcher } from "../shell/shell-primitives";
+import { MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives";
 import { MobileFab } from "../shell/mobile-fab";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
@@ -12,12 +12,10 @@ import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
 import { MobileSkillsOverview, SkillTabPreview } from "../../routes/SkillsRoute";
 import {
-  filterWorkbenchViews,
   findTabRefLeaf,
   type WorkbenchMobileFocusTab,
   type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
-  type WorkbenchView,
   inferSessionTypeFromId,
   parseFileTabId,
   parseSkillTabId,
@@ -27,7 +25,6 @@ import {
   type SessionPanelRef,
   workbenchMobileFocusTabAtom,
   workbenchMobileOverviewTabAtom,
-  workbenchViewAtom,
 } from "../../routes/workbench-model";
 
 import {
@@ -35,9 +32,7 @@ import {
   type GridItemCallbacks,
   InstanceGrid,
   instanceToGridItem,
-  instanceToTableRow,
   PanelRouter,
-  type TableRowCallbacks,
   useAgentDetail,
   useCloseSession,
   useCreateSession,
@@ -45,11 +40,9 @@ import {
   useRenameSession,
   useScopeInstanceOrder,
   useTerminalDetail,
-  VIEW_LABEL_KEY,
 } from "./instance-area";
 import type { AgentHistoryRange } from "@agents-remote/shared";
 import { HistoryList, HistoryRangeControl } from "./history-list";
-import { SessionTable, type TableColumn } from "./workbench-table";
 import {
   buildOverviewTabs,
   WORKBENCH_TAB_PLUGINS,
@@ -551,14 +544,12 @@ type MobileProjectOverviewProps = {
 /**
  * 移动项目列表态（设计文档 §7）：单项目聚焦视图。单行 header（◄ 返回 + tab 横滚区 flex-1 +
  * 项目名右侧 shrink-0 truncate，对齐聚焦态 MobileFocusHeader 同款结构，替代旧 MobilePageHeader
- * + 二级 tab 行两块）+ 内容区 tab 切换。总览 = 创建入口（左）+ ViewSwitcher（右，两端对齐，
- * 设计 §6）+ 活跃实例 grid/table（本组件直渲 InstanceGrid/SessionTable，单一数据管道
- * useProjectInstances）；历史 = HistoryList（project-scoped 历史 session）；文件/Git
- * = WORKBENCH_TAB_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
+ * + 二级 tab 行两块）+ 内容区 tab 切换。总览 = 移动 FAB 新建会话 + 活跃实例 grid（本组件直渲
+ * InstanceGrid，单一数据管道 useProjectInstances）；历史 = HistoryList（project-scoped 历史
+ * session）；文件/Git = WORKBENCH_TAB_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
  * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
- * 是 scope）；view 记忆复用桌面 workbenchViewAtom。key={scope.key} 切项目 remount，重置
- * inspection 内部 state。底部消费 --shell-mobile-bottom-nav-space 避让一级底部胶囊
- * （MobileWorkbench 已测量注入；桌面 lg: 无额外 pb）。
+ * 是 scope）。key={scope.key} 切项目 remount，重置 inspection 内部 state。底部消费
+ * --shell-mobile-bottom-nav-space 避让一级底部胶囊（MobileWorkbench 已测量注入；桌面 lg: 无额外 pb）。
  */
 function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const { t } = useT();
@@ -566,7 +557,6 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
   // history tab 时间范围（受控，避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
-  const [view, setView] = useAtom(workbenchViewAtom);
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.key,
     focusId: undefined,
@@ -588,19 +578,8 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
     activeTab !== "overview" && activeTab !== "history"
       ? (WORKBENCH_TAB_PLUGINS.find((p) => p.id === activeTab) ?? null)
       : null;
-  // 移动 ViewSwitcher（与桌面 2a 对称）：复用桌面 workbenchViewAtom（不新增 mobile view atom），
-  // views = filterWorkbenchViews(scope)（project 自动过滤 grouped）。渲染层 view 切换 Phase 4
-  // 落地（当前切 view 仅写 atom 记忆，overview 渲染层暂不响应；状态记忆生效待 Phase 4 落地，
-  // 非死按钮 —— atom 值已被记录，P4 渲染层接入后即生效）。
-  const viewOptions = useMemo(
-    () => filterWorkbenchViews(scope).map((v) => ({ id: v, label: t(VIEW_LABEL_KEY[v]) })),
-    [scope, t],
-  );
-  // §15：project 总览默认 grid（WORKBENCH_VIEW_ORDER 反转后移动 project viewOptions = [grid, table]，
-  // [0] = grid 已是默认；守卫仍保留以抵挡 atom 残留非法值，与桌面 InstanceArea 同款）。
-  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === view) ? view : "grid";
-  // 总览实例数据 + 回调（设计 §9/§11）：grid/table 两视图共用 useProjectInstances 单一来源
-  //（React Query dedupe）。创建入口 useCreateSession 提至 ViewSwitcher 行（与桌面 §6 两端对齐），
+  // 总览实例数据 + 回调（设计 §9/§11）：project scope 单 grid 视图（无视图切换）。创建入口
+  // useCreateSession（移动端进 MobileFab 菜单，桌面进 InstanceLeftOverview CreateSessionBar），
   // 不再走 ProjectInstances 组件（避免重复 useCloseSession/useCreateSession 双 holder）。
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
@@ -620,18 +599,6 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const renameInstance = (sessionId: string, type: "agent" | "terminal", currentName: string) => {
     void rename({ kind: "session", projectName: scope.key, sessionId }, type, currentName);
   };
-  const tableCallbacks: TableRowCallbacks = {
-    onClose: closeInstance,
-    onRename: (sessionId, type, currentName) => renameInstance(sessionId, type, currentName),
-    onSelect: focusInstance,
-    t,
-  };
-  const tableRows = useMemo(
-    () => instances.map((entry) => instanceToTableRow(entry, scope.key, tableCallbacks)),
-    // tableCallbacks 闭包依赖 scope/t；instances 引用由 hook 内 dataKey fingerprint 稳定。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [instances, t],
-  );
   const gridCallbacks: GridItemCallbacks = {
     onClose: closeInstance,
     onRename: renameInstance,
@@ -640,11 +607,10 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   };
   const gridItems = useMemo(
     () => instances.map((entry) => instanceToGridItem(entry, gridCallbacks, scope.key)),
-    // gridCallbacks 闭包依赖 scope/t；instances 引用同 tableRows（hook 内 dataKey fingerprint 稳定）。
+    // gridCallbacks 闭包依赖 scope/t；instances 引用由 hook 内 dataKey fingerprint 稳定。
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [instances, t],
   );
-  const tableColumns: TableColumn[] = ["name", "actions"];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -681,20 +647,8 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
           </div>
         ) : (
           <Fragment>
-            {/* 创建入口（左）+ ViewSwitcher（右 ml-auto）两端对齐（设计 §6）：shrink-0 header
-                在滚动区外，border-b 与全局总览 / 桌面左总览 header 一致（批 Q 排版对齐）。 */}
-            <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
-              <div className="ml-auto">
-                <ViewSwitcher
-                  ariaLabel={t("workbench.viewSwitcher")}
-                  onChange={(next) => setView(next)}
-                  view={resolvedView}
-                  views={viewOptions}
-                />
-              </div>
-            </div>
             {/* 移动 FAB（lg:hidden）：新建会话（Claude/Terminal）。桌面 CreateSessionBar 在
-                InstanceLeftOverview tab bar 保留。create.promptHolder 仍在下方统一渲染。 */}
+                InstanceLeftOverview header 保留。create.promptHolder 仍在下方统一渲染。 */}
             <MobileFab
               ariaLabel={t("workbench.createSessionAria")}
               cancelLabel={t("cancel")}
@@ -713,21 +667,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
               ]}
             />
             <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
-              {resolvedView === "table" ? (
-                tableRows.length === 0 ? (
-                  isLoading ? (
-                    <div className="px-3">
-                      <CardGridSkeleton />
-                    </div>
-                  ) : (
-                    <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                      {t("workbench.emptyInstanceHint")}
-                    </p>
-                  )
-                ) : (
-                  <SessionTable columns={tableColumns} rows={tableRows} t={t} />
-                )
-              ) : isLoading && gridItems.length === 0 ? (
+              {isLoading && gridItems.length === 0 ? (
                 <div className="px-3 py-2">
                   <CardGridSkeleton plain />
                 </div>
@@ -735,9 +675,13 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                 <div className="px-3 py-2">
                   <InstanceGrid items={gridItems} plain />
                 </div>
-              ) : null}
-              {/* closeHolder + promptHolder 统一渲染（grid/table 两视图共用；
-                  原 ProjectInstances 自含 holder 已随组件删除，无双 holder）。 */}
+              ) : (
+                <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                  {t("workbench.emptyInstanceHint")}
+                </p>
+              )}
+              {/* closeHolder + promptHolder 统一渲染（原 ProjectInstances 自含 holder 已随组件删除，
+                  无双 holder）。 */}
               {closeHolder}
               {renameHolder}
               {create.promptHolder}
@@ -753,14 +697,14 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
  * 移动 [项目] 总览（设计文档 §5/§7/决策 25/28）：跨项目活跃实例聚合 + 项目入口。一级页面，
  * header = MobilePageHeader 标题；新建项目按钮落在 ViewSwitcher 行左侧（批 D 位置 + 批 E 样式），
  * 用 `actionButtonClasses({ tone: "accent" })` pill 文案（同 CreateSessionBar token，文案
- * workbench.createMenu）→ useCreateProject + ProjectSetupPanel Dialog。视图 grouped/grid/table
- *（global 三视图全开）：
+ * workbench.createMenu）→ useCreateProject + ProjectSetupPanel Dialog。视图 grouped/grid
+ *（global 两视图，ViewSwitcher 切换；table 视图已移除）：
  * - grouped = mergeProjectsWithCandidates + listProjects（与桌面 GroupedView 同源），**含无实例
  *   空项目**（批 J / 决策 33：空项目只名行，无空状态文案）；**项目名行 = 名+› 整体 button 进项目**（navigate
  *   `/projects/$key`，热区 min-h-11 ≥44px），**最右 ⋯ ActionMenu 删除项目**（deleteProject + useConfirm confirm，
  *   destructive）；实例区 InstancePagedCarousel 每页最多 3 卡横向 swipe 翻页（折叠废弃）。
- * - grid = 不分段所有候选 InstanceGrid；table = SessionTable（global 6 列）。grid/table 点
- *   卡片/行进 `/projects/session/$focusId` 聚焦，不按项目分段故无删项目入口（仅 grouped 提供）。
+ * - grid = 不分段所有候选 InstanceGrid；点卡片进 `/projects/session/$focusId` 聚焦，
+ *   不按项目分段故无删项目入口（仅 grouped 提供）。
  * 删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/
  * [设置] 一级导航 + 项目内 MobileProjectOverview）。close 复用 useCloseSession；view 记忆复用
  * workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。

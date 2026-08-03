@@ -522,7 +522,6 @@ export const en = {
   "wiki.pageMissing": "Wiki page not found",
   "workbench.viewSwitcher": "View",
   "workbench.viewGrid": "Grid",
-  "workbench.viewTable": "Table",
   "workbench.viewGrouped": "Grouped",
   "workbench.viewSplit": "Split",
   "workbench.rightPanelEmpty": "No content",
@@ -548,13 +547,6 @@ export const en = {
   "workbench.dropToEmpty": "Drop here: open as first instance",
   "workbench.dragging": "Dragging instance",
   "workbench.dropZoneLabel": "Drop zones",
-
-  // ── Table view (workbench overview) ─────────────────────────
-  "table.colProject": "Project",
-  "table.colName": "Session",
-  "table.colStatus": "Status",
-  "table.colActivity": "Last activity",
-  "table.colActions": "Actions",
 
   // ── Carousel（分组实例分页，批 J / 决策 33）──────────────────
   "carousel.pageLabel": "Page {{current}} of {{total}}",

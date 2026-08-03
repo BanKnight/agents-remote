@@ -18,7 +18,7 @@
 
 - **中栏永远左右结构**：左侧 = 总览（实例卡片清单，固定单列宽），右侧 = 工作区（实例 output 面板，可拖放分屏）。两者常驻并存，不互斥。
 - **取消独立 split 视图**：右侧工作区常驻，多实例同屏靠「拖左总览卡片到右侧分屏」实现，不再有独立的 `?view=split`。
-- **视图 = 左总览的卡片样式**：grid/table/grouped 不再是互斥布局，而是同一单列内的卡片呈现样式（详细卡 / 紧凑行 / 分段）。
+- **视图 = 左总览的卡片样式**：grid/grouped 不再是互斥布局，而是同一单列内的卡片呈现样式（详细卡 / 分段）；table 紧凑行视图已移除（2026-08 收敛）。
 - **group 二态**：右侧工作区的面板（group）只有「存在/不存在」，取消 expanded/缩略/最小化三态与底部 dock。
 - **聚焦 = 激活某 group**：`focusId` = 右工作区当前活动 group 的实例，驱动右栏 inspection + 左总览高亮；不再是「中栏换成单实例」。
 - **桌面/移动差异化**：桌面中栏左右分屏工作区；移动中栏窄不分左右，保持「列表态 → 全屏聚焦态」线性模型。
@@ -29,7 +29,7 @@
 桌面三栏（中栏内部分左右）：
 ┌─────────┬──────────────────────────────────────────────┬──────────┐
 │ 左栏     │ 中栏                                          │ 右栏      │
-│         │ ┌─[总览][历史][文件][Git]── ▦≡视图切换─┐  │          │
+│         │ ┌─[总览][历史][文件][Git]── ▦▤视图切换─┐  │          │
 │ 导航   │ │                                            │  │ inspection│
 │         │ │ ┌──────────┬─────────────────────────┐    │  │ 常驻     │
 │ [置顶]  │ │ │ 左：总览  │ 右：工作区（group 分屏）  │    │  │ 跟随活动 │
@@ -45,7 +45,7 @@
 │←左栏→││←左总览固定宽─→│←──── 右工作区 flex-1 ────→││← 右栏 →│
 ```
 
-- **左总览**：固定单列宽（~220–240px，贴合 InstanceGrid `minmax(220px,1fr)` 单列），卡片纵向堆叠。顶部 header 挂 CreateSessionBar（project only，+ 新建 agent/terminal）+ ViewSwitcher（overview only，segmented control 切 grid/table/grouped，ml-auto 右推）；两者随左总览只在 overview tab 渲染（history/inspection tab 全宽，无左总览）。tab 行只剩纯 tab，不再混排视图切换/新建按钮。
+- **左总览**：固定单列宽（~220–240px，贴合 InstanceGrid `minmax(220px,1fr)` 单列），卡片纵向堆叠。顶部 header 挂 CreateSessionBar（project only，+ 新建 agent/terminal）；global 总览 header 另挂 ViewSwitcher（segmented control 切 grid/grouped，ml-auto 右推），project 总览单一 grid 视图无切换器。两者随左总览只在 overview tab 渲染（history/inspection tab 全宽，无左总览）。tab 行只剩纯 tab，不再混排视图切换/新建按钮。
 - **右工作区**：flex-1 吃满中栏剩余。group 网格分屏（详见 §7）。活动 group = `focusId`。
 - **左右比例**：左总览与右工作区之间有 gutter，可拖拽调节（与左栏导航 / 右栏 inspection 的 resize 同一设计语言）。左总览默认贴合一栏卡片宽。
 - **右栏**：容器常驻（聚焦态自动展开 + RailButton 唤出 + `?rightTab` 状态机完整保留）；inspection 内容当前**留空**待扩展——files/git 已移至左栏 middle tab `[文件]`/`[git]` + 中栏点文件开的 diff tab（左栏列表点文件 → 中栏 diff）。非聚焦态默认收起，中栏右边缘 RailButton 唤出（唤出看右栏空态）。project scope 可唤出；global scope 不唤出右栏——全局 files 走中栏 tab（根目录 = `PROJECTS_ROOT` 浏览，见 §4）。
@@ -85,10 +85,9 @@ view switcher 切换的是**同一单列内的卡片呈现样式**（不再是�
 | 样式 | 呈现 | scope 可见 |
 |------|------|-----------|
 | grid | 朋友圈式卡片：左 marker 头像（lg=h-9，上下置顶）+ 右 3 行（会话名 / 末行 output 预览 / 项目名·时间 + close 右推） | 全 scope |
-| table | 紧凑行：marker + 会话名 + 状态点（单行，密度高，无预览） | 全 scope |
 | grouped | 按项目分段（项目名 ShellSectionLabel + 单列详细卡） | 仅 global |
 
-- project scope 无 grouped（单项目无需分段）。
+- project scope 无 grouped（单项目无需分段），即 project 总览 = 单一 grid 视图、无视图切换器。
 - 默认：grid（详细卡片最直观）。
 - 三种样式都在 ~220–240px **固定单列**内呈现——`InstanceGrid` 用 `grid-cols-1`（`gridTemplateColumns: 1fr`），**不用 `auto-fill minmax`**。理由：左总览设计为固定单列卡片清单（§4），`auto-fill` 在用户拖宽左总览（≥28rem=448px）时会自动变 2 列，卡片缩到 220px 内容拥挤，违反「父容器默认以单列宽度排布」的设计意图。`grid-cols-1` 让卡片宽度始终 = 容器宽，拖宽只让卡片变宽（内容更宽松），不增列。
 
@@ -100,23 +99,13 @@ view switcher 切换的是**同一单列内的卡片呈现样式**（不再是�
 
 InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-width: auto`（= content min-content），InstanceCard 内 title/subtitle 的 min-content 会把 `1fr` 列撑开超过容器（实测 16rem 下 257px > 容器 232px，溢出 ~25px）。移动端 grid item 直接是 InstanceCard（外层 `min-w-0`，`shell-primitives.tsx` L539），天然 min-width:0；桌面 grid item 是 DragSourceCard wrapper（启用拖放），wrapper 必须显式 `min-w-0` 对齐移动端——否则 wrapper 的 `min-width:auto` 让 content 撑开列，卡片溢出。`min-w-0` 让 `1fr` 列可收缩到 < min-content，配合 InstanceCard 内部 `truncate` 截断内容而非撑开。
 
-## 5.3 table 视图行契约
-
-table 视图（`SessionTable`）行交互与列宽三条契约（与 grid 卡片「整行进聚焦 + ⋯ 改名/关闭」语义对齐，仅呈现形式从卡片改为紧凑行）：
-
-- **行整体可点 → 开/激活 tab**：整行点击 = onFocus（打开或激活该实例 tab），与 grid 卡片单击同语义。`<tr onClick={onFocus}>` + `cursor-pointer`；操作列按钮 `stopPropagation` 防冒泡。focus 不再单列按钮承担（旧行不整体可点、▶ 按钮触发 focus 的设计废弃——行点击是更直观的主路径，▶ 按钮冗余）。
-- **操作列 = ⋯ 菜单（收起改名 + 关闭）**：与 InstanceCard / GroupedProjectsList 同一 `ActionMenu` 原语（桌面 popover / 移动 action sheet 自适应），单个 ⋯ 触发器收起 rename + close，列宽从 `w-20`(两按钮并排) 收窄到 `w-14`(56px)。trigger `stopPropagation`（click + keydown 两路）防冒泡到行 onFocus；`onClose`/`onRename` 全缺省时按钮不渲染（不可关闭/改名的实例）。
-- **project 列 = 进项目超链接（global 表）**：project 单元格渲染为 primary 色 `<button>`（`onEnterProject` 回调 navigate `/projects/$key`），`stopPropagation` 不触发行 onFocus；`block truncate` 截断长项目名 + `title` 全名。`onEnterProject` 缺省（project scope 表无此列）回退纯文本。project 是进项目入口、不参与窄屏收缩。
-- **窄容器收缩顺序：activity 先截断→隐藏，name 最后吸收**：列宽 `name=w-full`（最后吸收列，内层 `truncate`）、`project=w-24`（链接，入口不收缩）、`activity=w-28 @max-[26rem]:w-16 @max-[22rem]:hidden`（三段式）、`actions=w-14` 固定。表格外层 `@container`，activity 列按容器宽度三段响应——宽容器(≥26rem) `w-28`(112px) 显示完整相对时间；`@max-[26rem]:w-16`(<416px) 收窄到 64px，th+td 加 `max-w-0` + 内层 `block truncate` 截断「最后活动」文字；`@max-[22rem]:hidden`(<352px) th+td 整列消失。name 是 `w-full` 唯一吸收列，activity 收窄/隐藏释放的空间全流向 name——name 在 activity 完全消失前保持稳定、最后才截断（收缩优先级 activity > name：最后活动先截断变窄再整列隐藏，而非会话名先截断；与用户预期一致）。
-
 ## 6. 视图切换器
 
-- **形态**：segmented control，icon only。3 个 icon：`▦ 详细(grid) / ≡ 紧凑(table) / ▤ 分段(grouped)`。
-- **位置**：左总览顶部 header（overview tab 时），与 CreateSessionBar 并排，ml-auto 右推。tab 行只剩纯 tab（不再混排视图切换/新建按钮）。
-- **CreateSessionBar 同位置**：左总览顶部 header 左侧（project only，+ 新建 agent/terminal 下拉）；global scope 无此按钮，header 仅 ViewSwitcher 独占右侧。
-- **按 scope 隐藏**：project 隐藏 grouped（只剩 grid/table）。
-- **记忆**：视图选择记 URL `?view=grid|table|grouped`（可分享/书签）。
-- 移动端：view switcher 在移动列表态 header 下一行右侧（保持现状，移动无左右结构）。
+- **形态**：segmented control，icon only。2 个 icon：`▦ 详细(grid) / ▤ 分段(grouped)`。
+- **位置**：global 总览顶部 header（overview tab 时），与「+ 新建项目」并排，ml-auto 右推。tab 行只剩纯 tab（不再混排视图切换/新建按钮）。
+- **project 总览无切换器**：project scope 单一 grid 视图（§5），顶部 header 只剩 CreateSessionBar（+ 新建 agent/terminal），不渲染 ViewSwitcher。
+- **记忆**：视图选择记 URL `?view=grid|grouped`（可分享/书签）。
+- 移动端：global view switcher 在移动列表态 header 内右侧（保持现状，移动无左右结构）；project 移动总览同样无切换器。
 
 ## 7. 中栏右侧工作区（核心）
 
@@ -345,7 +334,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 - 形态：纯色小圆点（dot），无背景框、无文字，叠加 marker 右上角（`-right-1 -top-1`），`ring-2 ring-surface-raised` 描边与所在 surface 融合（视觉挖空）。
 - 文字 label 留给 `aria-label`（a11y）/ hover tooltip。
 - **跨位置统一**：左总览卡片 marker、右工作区 group tab marker、移动列表卡片 marker 都用同一 `StatusMarker` primitive（relative 容器 + marker + absolute 右上角圆点）。
-- **marker 尺寸按场景区分**：左总览卡片用 `lg`（h-9 w-9=36px，头像式独立左列）；table 紧凑行用 `sm`（h-7 w-7=28px，带 IconMarker 方框 + tone 背景）；**右工作区 group tab 用 `xs`（h-4 w-4=16px 裸 icon，无 IconMarker 方框，tone 用文字色）—— 与 tab label 14px 同高比例 1:1**（Phase 6 批 6b：旧 tab 用 sm=28px 与 14px label 比例 2:1 视觉失调，marker 比标题大；缩为 xs 裸 icon 后视觉平衡，且 tab 收敛到 nav-item 设计语言）。圆点 `-right-1 -top-1` 定位为固定 4px 偏移，不依赖 marker 尺寸，放大后无需调整。`sessionMarker` 加 `size` 参数（`"xs" | "sm" | "lg"`，默认 `sm`，不破坏 GroupHeader/table 紧凑行高），card 两处调用方（`instanceToGridItem` / `candidateToGridItem`）显式传 `lg`，`usePanelMeta`（服务 TabChip + 拖动 ghost）传 `xs`。
+- **marker 尺寸按场景区分**：左总览卡片用 `lg`（h-9 w-9=36px，头像式独立左列）；默认 `sm`（h-7 w-7=28px，带 IconMarker 方框 + tone 背景，GroupHeader / HistoryList 用）；**右工作区 group tab 用 `xs`（h-4 w-4=16px 裸 icon，无 IconMarker 方框，tone 用文字色）—— 与 tab label 14px 同高比例 1:1**（Phase 6 批 6b：旧 tab 用 sm=28px 与 14px label 比例 2:1 视觉失调，marker 比标题大；缩为 xs 裸 icon 后视觉平衡，且 tab 收敛到 nav-item 设计语言）。圆点 `-right-1 -top-1` 定位为固定 4px 偏移，不依赖 marker 尺寸，放大后无需调整。`sessionMarker` 加 `size` 参数（`"xs" | "sm" | "lg"`，默认 `sm`，不破坏 GroupHeader 紧凑行高），card 两处调用方（`instanceToGridItem` / `candidateToGridItem`）显式传 `lg`，`usePanelMeta`（服务 TabChip + 拖动 ghost）传 `xs`。
 - 复用 `statusToTone` 映射状态→颜色；`StatusMarker` 包 `StatusDot`（加 `className` 支持 absolute 定位）。
 
 ## 9. 移动端差异
@@ -355,7 +344,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 | 中栏左右结构 | ✓（左总览 + 右工作区） | ✗（窄屏不分左右） |
 | 右工作区分屏 | ✓（拖放 5 zone） | ✗（窄屏做不了分屏） |
 | 点卡片行为 | 激活（右工作区切活动 group） | 全屏切聚焦态 |
-| 总览视图样式 | grid/table/grouped（左总览单列） | grid/table/grouped（全宽列表） |
+| 总览视图样式 | grid/grouped（左总览单列） | grid/grouped（全宽列表） |
 | 二级导航 5 tab | 中栏顶部常驻 | header 下一行横向滚动 |
 | 右栏 inspection | 容器留空（待扩展） | 聚焦态 tab 切（output/文件/Git） |
 
@@ -366,7 +355,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 ## 10. 会话名（displayName）统一呈现
 
 会话名是一等显示元素，所有位置清晰呈现：
-- 左总览卡片标题（grid/table/grouped）
+- 左总览卡片标题（grid/grouped）
 - 右工作区 group tab 栏
 - 移动列表卡片标题
 - 移动聚焦态 ℹ 信息 sheet
@@ -378,7 +367,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 四个正交 URL 维度（对齐现有 rightTab/tab 做法）：
 
 - `focusId`（path 段 `/global/session/$id` / `/projects/$key/session/$id`）= 右工作区**活动 group 的活动 tab** 实例 sessionId（唯一反查 group+tab）；group/tab 布局进 localStorage、不进 URL（§7.6）
-- `?view=grid|table|grouped` = 左总览卡片样式
+- `?view=grid|grouped` = 左总览卡片样式（仅 global 总览有意义；project 总览单一 grid，URL view 被忽略）
 - `?tab=overview|history|files|git` = 中栏二级 tab
 - `?rightTab=files|git` = 右栏 inspection tab（状态机保留；右栏当前留空待扩展，恢复 inspection 时复用）
 
@@ -403,7 +392,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 **为什么需要 `compact`**：`actionButtonClasses` 默认移动端 `max-sm:min-h-11 max-sm:px-4 max-sm:text-sm`（44px 触摸目标）服务于 dialog / 表单确认按钮；同一 primitive 被 overview header 行内按钮复用后，44px 撑爆 `py-1.5`（~40px）header 行，移动端「新建」按钮明显高出常规。`compact` 是 primitive 层单一开关，让 header 行内按钮回归 `py-1.5` 行高，dialog 按钮零回归。
 
-**移动 project 总览对齐桌面 / global（批 Q 点 3）**：`MobileProjectOverview` 的 ViewSwitcher 行原本在滚动区内、无 `border-b`（桌面 `InstanceLeftOverview` / global `GlobalProjectsOverview` 同行有），与「桌面 / 移动同构」预期不符。改为提到滚动区外作 `shrink-0` header + `border-b border-on-surface/5 px-2 py-1.5`，与桌面 / global 同款。
+**移动 project 总览 header chrome（批 Q 点 3，2026-08 更新）**：project 总览已收敛为单一 grid 视图、移除 ViewSwitcher（`MobileProjectOverview` / `InstanceLeftOverview` 均无切换器）；header 只剩 CreateSessionBar。原「ViewSwitcher 行提到滚动区外作 `shrink-0` header + `border-b border-on-surface/5 px-2 py-1.5`，与桌面 / global 同款」的 chrome 约定仍适用于 CreateSessionBar header 行。global 总览（`GlobalProjectsOverview`）仍保留 grid/grouped ViewSwitcher。
 
 **files 列表 header 对齐（批 Q 点 4）**：`FilesPanel` 顶部 breadcrumb 行原本 `border-b border-neutral-line/40 px-3.5 py-3`（偏高 + 异色边），改为同一 chrome `shrink-0 border-b border-on-surface/5 px-2 py-1.5`；行内 New Folder / Upload `<ActionButton>` 加 `compact`。
 
@@ -440,7 +429,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 | phase | 范围 | 对应完整设计章节 |
 |-------|------|----------------|
-| **A 中栏左右骨架** | 中栏分左右（左总览固定单列 + 右工作区 flex-1，gutter 调比例）+ 左总览单列卡片（grid/table/grouped）+ 右工作区单 group（首个活跃实例，PanelRouter）+ 左总览单击/右工作区点 group 激活 + 右栏 inspection 跟随 + tab 导航常驻 + URL 四维模型 | §2 §3 §4 §5 §6 §11 §13 §14 |
+| **A 中栏左右骨架** | 中栏分左右（左总览固定单列 + 右工作区 flex-1，gutter 调比例）+ 左总览单列卡片（grid/grouped）+ 右工作区单 group（首个活跃实例，PanelRouter）+ 左总览单击/右工作区点 group 激活 + 右栏 inspection 跟随 + tab 导航常驻 + URL 四维模型 | §2 §3 §4 §5 §6 §11 §13 §14 |
 | **B 拖放分屏** | 5 drop zone 拖放（上/下/左/右/中心/空白）+ group 网格布局算法（deriveRows 扩展）+ 多 group 同屏 + 左总览拖动送入分屏 | §7.3 §7.5 |
 | **C group 操作 + 持久化** | group resize（行内/行间 gutter）+ maximize + close（useCloseSession）+ group 布局持久化（localStorage，scope-scoped） | §7.4 §7.6 |
 | **D VSCode group+tab 两级模型** | §7 重写为 group（分屏区）+ tab（实例）两级：group 含 N tab 切换（hidden 保 session）+ tab ✕ 最小化（session 存活）+ group ▢ 最大化（group 级）+ 纵向 resize（行间 gutter）+ drop center 开 tab + 关闭实例 kill 走卡片/右键 + 持久化 atom V2 迁移 + 移动端 API 对齐 | §7.1 §7.2 §7.3 §7.4 §7.5 §7.6 §7.7 |
@@ -460,3 +449,4 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 - 2026-07-06：VSCode group+tab 两级模型重构。用户反馈中栏右侧「1 group = 1 实例」铺开模型 ui/ux 奇怪，要求完全参考 vscode。§7 重写为 group（分屏区，行×列网格，横/纵 resize）+ tab（实例，同 group 多 tab 切换）两级模型：tab ✕ = 最小化（session 存活回左总览）/ group ▢ = 最大化（group 级独占，独占时可切 tab）/ 关闭实例 kill 走左总览卡片 close + tab 右键（不放 tab ✕，避免高频按钮触发破坏性 kill）；左总览 ↔ 工作区 = vscode explorer ↔ editor group（点卡片已开激活/未开活动 group 开新 tab，拖卡片开新 group 分屏）；切 tab 用 CSS hidden 保 WebSocket 长连（不 unmount）；持久化 atom key 升级 workbenchLayoutV2 + migrateLegacyLayout 无损迁移；移动端读写同一 atom 但 group/tab 模型透明。新增 Phase D（§7.1-§7.7）。**设计完整，无「后续」；实现分 phase（A/B/C/D）渐进靠拢。**
 - 2026-07-07：布局模型 n 叉树重构（bug 修复 + 对齐 VSCode）。用户报「拖卡片虚线框显示单 group 上下分屏，松手却横跨整行底部」——根因是 V2 规则行模型（groups+newRowAfter）下「新起一行」与「占满整行」绑定，`dropIntoGroup` 的 up/down 找整行行首/行尾操作，与 `deriveZone`+`DropZoneHighlight` 按单 group rect 画虚线框的维度不一致（示意撒谎）。用户实测 VSCode 后决策「完全对齐 VSCode：up/down/left/right 全改单 group 局部分屏，不做整行横跨」。§7.3 drop zone 改单 group 局部分屏语义、§7.5 规则行 → n 叉树（leaf/split+方向，同方向不嵌套，局部分屏只分裂目标 leaf，removeLeaf 子树提升/同方向合并）、§7.6 atom key V2→V3 三分支迁移（V1→V2→V3 链式）。新增 Phase E。
 - 2026-07-07：渲染层扁平化重构（UI = f(state)）。用户报「tab 跨 group 移动 / group 切分 / 合入塌缩时 terminal 重连（WebSocket 断 + xterm dispose + relay 重放）」——根因是 §7.5 的 n 叉树被直接当渲染结构递归渲染，GroupCell / PanelRouter 嵌在递归树里，布局变化时其「父 + key」身份失稳，React 跨父 / 跨类型不复用 → unmount + mount → terminal 重连。曾尝试 portal 顶层常驻方案（createPortal 把 PanelRouter 注入 slot）失败：React createPortal 在 container 变化时仍卸载重挂子树，未绕开 reconciliation。用户决策「按 UI = f(state)：树关系是 state，不是渲染结构；表现层退化成扁平数组」。新增 §7.8：`flattenLayout(root)` 纯函数把树投影成 groups / gutters / panels 三个并列扁平数组，各用稳定 key（`leaf.id` / `sessionId`）`.map` 渲染；任何「会跨容器移动的对象」一律提到扁平层，不嵌在递归布局树里。split / 合入 / 跨 group 移动 / 加 tab / 切 active 全不重建。state 层零改动，§7.5 树模型 + §7.4 hidden 不 unmount 不变式保持。
+- 2026-08-03：总览视图收敛——移除 table 紧凑行视图。用户决策「project 总览不再需要视图切换，只保留一个；global 总览删表格视图」。`WorkbenchView` 类型 `"grouped" | "grid" | "table"` → `"grouped" | "grid"`；`SessionTable` 组件 + `instanceToTableRow`/`candidateToTableRow`/`TableRowCallbacks`/`TableViewIcon` + i18n `workbench.viewTable`/`table.col*` 全删。project 总览（桌面 `InstanceLeftOverview` / 移动 `MobileProjectOverview`）单一 grid 视图、无 ViewSwitcher；global 总览（`GlobalProjectsOverview`）保留 grid/grouped 两视图 ViewSwitcher。§5 矩阵删 table 行、§5.3 table 行契约整节移除、§6 切换器 3→2 icon、`?view=grid|table|grouped` → `?view=grid|grouped`。旧 `?view=table` URL / atom 残留由 validateWorkbenchSearch + resolvedView 回退 grid 安全忽略。

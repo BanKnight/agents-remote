@@ -30,27 +30,29 @@ export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki";
 
 /**
  * 中栏左总览视图样式（设计文档 workbench-views.md §5）。左总览固定单列宽，view 切换的是
- * 同一单列内的卡片呈现样式（不再是列数/布局差异）：grid=详细卡片；table=紧凑行；
- * grouped=按项目分段（仅 global）。多实例同屏靠 Phase B 拖放分屏，不再有独立 split 视图。
+ * 同一单列内的卡片呈现样式（不再是列数/布局差异）：grid=详细卡片；grouped=按项目分段
+ *（仅 global）。project 作用域单一 grid 视图（无切换）。多实例同屏靠 Phase B 拖放分屏。
  */
-export type WorkbenchView = "grouped" | "grid" | "table";
+export type WorkbenchView = "grouped" | "grid";
 
 /**
- * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（切 grouped/grid/table）；
- * history=历史 session；files/git/pages=复用工作台 inspection tab plugin。
+ * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（global 切
+ * grouped/grid，project 单 grid）；history=历史 session；files/git/pages=复用工作台
+ * inspection tab plugin。
  */
 export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "pages" | "wiki";
 
 /**
  * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §6）。
- * = grouped · grid · table（grouped 最左作 global 默认入口，table 最右）。
+ * = grouped · grid（grouped 最左作 global 默认入口）。project 经 filterWorkbenchViews
+ * 过滤掉 grouped，剩单 grid 视图（不渲染 ViewSwitcher）。
  */
-export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["grouped", "grid", "table"];
+export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["grouped", "grid"];
 
 /**
  * 按作用域过滤 ViewSwitcher 可用视图（设计文档 §6）。project 作用域隐藏 grouped
- *（grouped 仅 global 跨项目分组）；grid/table 全作用域可见。移动端视图样式与桌面一致
- *（移动列表态全宽不分左右结构，但卡片样式同款，故无作用域外的视图差异）。
+ *（grouped 仅 global 跨项目分组）→ project 剩单 grid 视图，调用方据此不渲染 ViewSwitcher。
+ * global 全开（grouped · grid）。移动端视图样式与桌面一致。
  */
 export function filterWorkbenchViews(scope: WorkbenchScope): WorkbenchView[] {
   return WORKBENCH_VIEW_ORDER.filter((v) => {
@@ -168,7 +170,7 @@ export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchInspectio
 /**
  * 中栏总览视图（设计文档 workbench-views.md）。URL `view` 优先（语义核心、刷新可分享），
  * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grouped——global scope 是
- * 项目总览，首屏需显所有项目（含无实例项目，仅 grouped 视图含空项目）；grid/table 仅显实例，
+ * 项目总览，首屏需显所有项目（含无实例项目，仅 grouped 视图含空项目）；grid 仅显实例，
  * 无实例项目不可见无法进入。project scope 因 filterWorkbenchViews 隐藏 grouped，atom=grouped
  * 时 resolvedView 回退 grid（见 InstanceLeftOverview），故本默认值不影响 project scope。
  */
@@ -310,7 +312,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   ) {
     result.rightTab = search.rightTab;
   }
-  if (search.view === "grouped" || search.view === "grid" || search.view === "table") {
+  if (search.view === "grouped" || search.view === "grid") {
     result.view = search.view;
   }
   if (
@@ -1481,9 +1483,9 @@ export type GlobalInstanceCandidate = {
   displayName: string;
   /** agent provider（terminal 无）。 */
   provider?: AgentProvider;
-  /** 最后活动时间（table 视图"最后活动"列，ISO；来自 session.updatedAt）。 */
+  /** 最后活动时间（卡片 activity meta，ISO；来自 session.updatedAt）。 */
   updatedAt?: string;
-  /** 创建时间（table "最后活动"列 fallback；AgentSession 有，terminal 无）。 */
+  /** 创建时间（卡片 activity meta fallback；AgentSession 有，terminal 无）。 */
   createdAt?: string;
   /** 卡片第二行（agent=lastAssistantMessage / terminal=lastCommand）；缺失则卡片不显第二行。 */
   subtitle?: string;

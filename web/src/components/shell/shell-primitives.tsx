@@ -277,7 +277,7 @@ type StatusMarkerProps = {
 /**
  * marker + 状态圆点叠加层（设计文档 §10）：把 StatusDot 作为 badge 叠加到 marker（IconMarker）
  * 右上角（`-right-1 -top-1`），ring 描边与所在 surface 融合（视觉挖空）。跨位置统一 InstanceCard /
- * split header / table 类型列的「marker + 状态」呈现——圆点不再独立占位，精简密度。`status` 缺省时
+ * split header 的「marker + 状态」呈现——圆点不再独立占位，精简密度。`status` 缺省时
  * 仅渲染 marker（无圆点）。`pulse` 默认 `tone === "success"`（running 脉动），调用方显式覆盖。
  */
 export function StatusMarker({ marker, status }: StatusMarkerProps) {
@@ -818,8 +818,8 @@ export function InstanceCard({
 /**
  * 实例 marker：agent 按 provider 选 tone/icon（codex→success/openai，其余→accent/anthropic），
  * terminal→muted/terminal。size 三档：`"xs"`（h-4 w-4=16px 裸 icon，无 IconMarker 方框，tone 用文字色
- * —— workbench group tab 用，与 tab label 14px 同高比例 1:1）；`"sm"`（h-7 w-7=28px 带方框，table
- * 紧凑行 / 默认）；`"lg"`（h-9 w-9=36px 头像式独立左列，icon h-4 w-4，card 用）。消化移动卡片总览两处
+ * —— workbench group tab 用，与 tab label 14px 同高比例 1:1）；`"sm"`（h-7 w-7=28px 带方框，默认）；`"lg"`
+ *（h-9 w-9=36px 头像式独立左列，icon h-4 w-4，card 用）。消化移动卡片总览两处
  *（ProjectInstances card variant + GlobalInstanceCard）的重复 marker 构造。桌面 list（AgentNavItem）
  * 用 ShellNavigationButton 包 IconMarker，不复用此 helper。
  */
@@ -917,7 +917,6 @@ export function ViewSwitcher<T extends string>({
 }
 
 function ViewSwitcherIcon({ kind }: { kind: string }) {
-  if (kind === "table") return <TableViewIcon />;
   if (kind === "grouped") return <GroupedViewIcon />;
   return <GridViewIcon />;
 }
@@ -937,16 +936,6 @@ function GridViewIcon() {
       <rect height="4.5" rx="1" stroke="currentColor" strokeWidth="1.3" width="4.5" x="9" y="2.5" />
       <rect height="4.5" rx="1" stroke="currentColor" strokeWidth="1.3" width="4.5" x="2.5" y="9" />
       <rect height="4.5" rx="1" stroke="currentColor" strokeWidth="1.3" width="4.5" x="9" y="9" />
-    </svg>
-  );
-}
-
-function TableViewIcon() {
-  return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
-      <rect height="10" rx="1" stroke="currentColor" strokeWidth="1.3" width="12" x="2" y="3" />
-      <line stroke="currentColor" strokeWidth="1.3" x1="2" x2="14" y1="6.3" y2="6.3" />
-      <line stroke="currentColor" strokeWidth="1.3" x1="2" x2="14" y1="9.7" y2="9.7" />
     </svg>
   );
 }

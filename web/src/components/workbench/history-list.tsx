@@ -105,7 +105,7 @@ type HistoryListProps = {
 /**
  * 历史 session 列表（设计文档 §3/§4）。供桌面 + 移动中栏 history tab 共用——单一数据管道
  *（useHistorySessions）+ 单一渲染（ListGroup/ListRow plain 连续行 + sessionMarker sm，
- * 与总览 table 行同款 marker）。entries 为空时返回 null（中栏 tab 自然空态，不伪造占位）。
+ * 与总览 grid 卡片同款 marker）。entries 为空时返回 null（中栏 tab 自然空态，不伪造占位）。
  */
 export function HistoryList({
   focusId,

@@ -72,12 +72,12 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
 
   if (config.isLoading) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <div
           aria-hidden="true"
-          className="flex shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5"
+          className="hidden shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5 lg:flex"
         >
-          <span className="skeleton-shimmer h-8 w-24 rounded-lg" />
+          <span className="skeleton-shimmer h-8 w-24 rounded-xl" />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
           <ListRowSkeleton count={3} />
