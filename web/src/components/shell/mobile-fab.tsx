@@ -29,7 +29,8 @@ type MobileFabProps = {
 // FAB 定位：fixed 锚视口右下角，bottom = safe-area —— 与底部 nav 胶囊条同基线，落在内容滚动区已
 // 避让的 nav 高度带内（pb-[--shell-mobile-bottom-nav-space] 已为整条 nav 让位），FAB 不再凸入内容
 // 滚动区、零遮挡（无需用户滚动避开）。水平让位由 nav 胶囊条自身收窄承担：ShellMobileBottomNavigation
-// 的 group-has-[.mobile-fab]:max-w-[13rem]（208px）+ mx-auto 居中，capsule 中心恒定不左推（撤销旧
+// 的 group-has-[.mobile-fab]:max-w-[calc(100vw-9.5rem)]（9.5rem=152px=2×(FAB 占位 4.25rem+间隙
+// 0.5rem)）+ mx-auto 居中，capsule 宽=视口−两侧对称让位、间隙恒 8px、中心恒定不左推（撤销旧
 // pr-[4.5rem] 左推——FAB 出现/消失时 capsule 整体平移位置突兀），FAB 落 capsule 右侧对称留白；
 // 无 FAB 页 capsule max-w-full 撑满（main.group :has(.mobile-fab) 控制，无 FAB 零副作用）。
 // FAB 底贴 nav 底（safe-area 线），顶部凸出 nav 胶囊条上沿 ~8px（FAB 56 > 胶囊条 ~48，主操作略凸 =

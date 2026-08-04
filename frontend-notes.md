@@ -451,12 +451,12 @@ return cn(
 
 - **标记**：FAB 底座带 `mobile-fab` marker class（`FAB_BASE_CLASSES`）。
 - **祖先**：移动端外壳 `<main class="group">`（`mobile-workbench.tsx` 非 focus main；**不是** `shell-layout.tsx`——桌面外壳，移动端不走它，`group` 加错位置 `:has()` 永不命中）。
-- **条件规则**（2026-08-04 优化：pr 左推 → capsule 自身收窄居中）：capsule `group-has-[.mobile-fab]:max-w-[13rem]`（208px）+ `mx-auto` 居中 + item `group-has-[.mobile-fab]:gap-1`/`px-1` 收紧 = `main.group :has(.mobile-fab)` 时胶囊**自身收窄到 208px 居中**（两侧对称留白，FAB 落右侧），中心恒定不左推；无 FAB 页 capsule `max-w-full` 撑满。旧 `group-has-[.mobile-fab]:pr-[4.5rem]`（nav 右 padding 72px 把胶囊左推 ~30px）已弃用——FAB 出现/消失时 capsule 整体平移、位置突兀。
+- **条件规则**（2026-08-04：pr 左推 → capsule 自身收窄居中 → calc 连续自适应）：capsule `group-has-[.mobile-fab]:max-w-[calc(100vw-9.5rem)]`（9.5rem=152px=2×(FAB 占位 4.25rem+间隙 0.5rem)）+ `mx-auto` 居中 + item `group-has-[.mobile-fab]:gap-1`/`px-1` 收紧 = `main.group :has(.mobile-fab)` 时胶囊**自身收窄到「视口−两侧对称让位」居中**（间隙恒 8px、中心恒居中、各视口自适应：390w→238/375w→223/360w→208；两侧对称留白，FAB 落右侧），中心恒定不左推；无 FAB 页 capsule `max-w-full` 撑满。旧 `group-has-[.mobile-fab]:pr-[4.5rem]`（nav 右 padding 72px 把胶囊左推 ~30px）已弃用——FAB 出现/消失时 capsule 整体平移、位置突兀。
 - **FAB 定位**：`fixed bottom-[var(--shell-safe-area-bottom,0px)] right-3`——与 nav 同 safe-area 基线，落在内容滚动区已 `pb-[var(--shell-mobile-bottom-nav-space)]` 避让的 nav 高度带内（navSpace=64 ≥ FAB 高 56），**FAB 完全不在内容区、零遮挡**，无需用户滚动避开。z-30 > nav z-20。
 
 ### 标准做法（capsule 自身收窄居中 优于 左推偏移；marker + :has 是声明式开关）
 
-1. **让位 = 被让位元素自身收窄，不是推兄弟元素**：capsule（被让位元素）用 `group-has-[.marker]:max-w-[13rem]` 自身收窄 + `mx-auto` 居中，让位 marker class 挂条件对象（FAB）底座。`group` 加在**实际渲染该元素的祖先**上（先确认哪层 main 是真身，别凭目录猜）。**收窄居中**（capsule 中心恒定、宽度随有无 FAB 变）优于 **padding 左推**（capsule 整体平移、FAB 出现/消失时位置突兀）——两者都是 `:has` 条件让位，但收窄居中保位置恒定（用户接受宽度变化、不接受位置跳）。
+1. **让位 = 被让位元素自身收窄，不是推兄弟元素**：capsule（被让位元素）用 `group-has-[.marker]:max-w-[calc(100vw-9.5rem)]` 自身收窄（视口−两侧对称让位，间隙恒定）+ `mx-auto` 居中，让位 marker class 挂条件对象（FAB）底座。`group` 加在**实际渲染该元素的祖先**上（先确认哪层 main 是真身，别凭目录猜）。**收窄居中**（capsule 中心恒定、宽度随有无 FAB 变）优于 **padding 左推**（capsule 整体平移、FAB 出现/消失时位置突兀）——两者都是 `:has` 条件让位，但收窄居中保位置恒定（用户接受宽度变化、不接受位置跳）。
 2. **测通三态**：有 FAB 页（capsule 收窄到 ~208px 居中、FAB 不重叠）+ 无 FAB 页（capsule 撑满居中、零偏移）+ 聚焦态（FAB/nav 均不渲染）。探针核心断言：`|capsule.center.x − viewport/2| ≤ 1`（居中恒定不左推）、`capsule.right ≤ fab.left − 间隙`（不重叠，360/375/390 三视口）、有/无 FAB 两次 `capsule.center.x` 相等（零跳变）。
 3. **优先级**：capsule 自身收窄居中（位置恒定、条件触发、零副作用）> 条件左推 pr（位置平移突兀）> 永久让位 pr（无条件污染无 FAB 页）> JS 测量位移（运行时状态，多余同步点）。
 4. **判定边界**：marker class 名避免语义化（`mobile-fab` 而非 `has-fab` 类命名），只作机械标记不被业务引用；`:has()` 兼容性是浏览器实现成熟度问题，本项目目标移动端（iOS 16.4+/Chrome 105+）安全，桌面 lg:hidden 不受影响。
@@ -465,5 +465,6 @@ return cn(
 
 - 初版实现 commit `f4fd557`（nav `group-has-[.mobile-fab]:pr-[4.5rem]` **左推**让位 + `mobile-workbench.tsx` main 加 `group` + FAB `fixed bottom=safe-area`）。
 - **2026-08-04 优化 commit `c40522f`**（pr 左推 → capsule 自身收窄居中）：撤销 `pr-[4.5rem]`，改 capsule `group-has-[.mobile-fab]:max-w-[13rem]`（208px）+ `mx-auto` 居中 + item `group-has-[.mobile-fab]:gap-1`/`px-1` 收紧。探针实测（3 视口）：390w capsule width=208 center=195（≡视口中心 195，**不左推**）right=299 ≤ fab.left=322（间隙 23）；375w right=292 ≤ 307（间隙 15）；360w right=284 ≤ 292（间隙 8）；4 label（Projects/Files/Skills/Settings）无截断；/files 无 FAB capsule 撑满（390w=366）居中；**切换 `/` ↔ `/files` capsule.center 三视口全恒定（195/188/180 ===）= 零跳变**（核心价值；旧 pr 左推时 capsule 整体平移 ~30px、出现/消失突兀）。
+- **2026-08-04 放宽**（13rem 固定 → calc 连续自适应）：用户反馈有 FAB 页 capsule 208 偏窄、390w 间隙 23 浪费。根因——固定 `max-w` 被最小视口（360w）卡死，大屏间隙浪费。改 `max-w-[calc(100vw-9.5rem)]`（9.5rem=152px=2×(FAB 占位 4.25rem+间隙 0.5rem)），capsule 宽=视口−两侧对称让位，间隙恒 8px、各视口自适应（390w→238/375w→223/360w→208）。**优于离散分档**：几何等价（间隙恒定、各视口贴近 FAB）但一行连续自适应、无 `min-[375px]:`/`min-[390px]:` variant 排序风险；`calc(100vw-9.5rem)` 在 arbitrary value 里运算符无空格，Tailwind v4 正确生成 `max-width:calc(100vw - 9.5rem)`。
 - 与 §1（safe-area 单点避让）、§8（高度链逐层核对）同族：都是「避让/约束只做一层、别叠加」方法论；DESIGN.md `floating-action-button` + `nav-item` + Layout §移动工作台 三段为本模式设计契约。
 - MDN `:has()`：https://developer.mozilla.org/en-US/docs/Web/CSS/:has （`:has` 选择器是「按内容调整容器布局」的标准工具，Tailwind v4 `group-has-*` 变体包装同一选择器）。

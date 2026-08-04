@@ -147,9 +147,9 @@ async function runMobile() {
       // FAB 落 nav 避让带：bottom=safe-area（playwright 无 safe-area=0；真机=34），不再浮 nav 上方压内容。
       record(fab1.bottom >= 0, `bottom=${fab1.bottom}=safe-area（落 nav 带）`);
       record(fab1.right > 0 && fab1.right < 30, `right=${fab1.right}≈12`);
-      // nav 胶囊条经 group-has-[.mobile-fab]:max-w-[13rem] 自身收窄 + mx-auto 居中（2026-08-04 改版，
-      // 撤销旧 pr-[4.5rem] 左推）：capsule 中心恒定居中、宽度随 FAB 收窄，右沿不与 FAB 重叠。
-      // 详细几何见 runCapsuleGeometry（三视口 + 无 FAB 对比 + 切换零跳变）。
+      // nav 胶囊条经 group-has-[.mobile-fab]:max-w-[calc(100vw-9.5rem)] 自身收窄 + mx-auto 居中
+      // （2026-08-04 改版，撤销旧 pr-[4.5rem] 左推）：capsule 宽=视口−两侧对称让位（9.5rem=152px），
+      // 中心恒定居中、间隙恒 8px，右沿不与 FAB 重叠。详细几何见 runCapsuleGeometry。
       record(
         fab1.capsuleRight !== null && fab1.capsuleRight <= fab1.left,
         `nav 让位不重叠（capsule.right=${fab1.capsuleRight} <= fab.left=${fab1.left}）`,
@@ -305,15 +305,20 @@ async function runCapsuleGeometry() {
       console.log(
         `  /页 capsule: width=${capFab.width} center=${capFab.center} right=${capFab.right}; FAB.left=${fab.left}`,
       );
+      const expectedWidth = vp.w - 152; // calc(100vw-9.5rem)：9.5rem=152px=2×(FAB 占位 68+间隙 8)
+      const gap = fab.left - capFab.right;
       record(
         Math.abs(capFab.center - vp.w / 2) <= 1,
         `${vp.w}w /页 capsule 居中（center=${capFab.center} ≈ 视口中心 ${vp.w / 2}，不左推——核心）`,
       );
       record(
-        capFab.right <= fab.left - 4,
-        `${vp.w}w /页 capsule 不重叠 FAB（right=${capFab.right} ≤ FAB.left=${fab.left} − 4）`,
+        gap >= 6 && gap <= 10,
+        `${vp.w}w /页 间隙恒定 ~8（gap=${gap}，calc 9.5rem 两侧对称让位）`,
       );
-      record(capFab.width <= 254, `${vp.w}w /页 capsule 收窄（width=${capFab.width}，上限 254）`);
+      record(
+        Math.abs(capFab.width - expectedWidth) <= 1,
+        `${vp.w}w /页 capsule 宽=视口−152（width=${capFab.width} ≈ 预期 ${expectedWidth}，calc 自适应）`,
+      );
       const truncated = capFab.labels.filter((l) => l.truncated);
       record(
         truncated.length === 0,
