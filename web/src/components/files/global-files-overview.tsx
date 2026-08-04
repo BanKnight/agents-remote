@@ -13,9 +13,14 @@ import { type CardDragStartHandler } from "../workbench/drag-source";
  * file tab（桌面中栏 / 移动浮窗 /files/file/$，Phase 3 全路径 tabId 去重）。
  */
 export function GlobalFilesOverview({
+  currentPath,
+  onPathChange,
   onOpenFile,
   onCardDragStart,
 }: {
+  /** 受控 cwd（调用方持久化记忆；未传退 FilesPanel 内部 state，桌面保持现状）。路径不存在回退由 FilesPanel 侧查 files.error 处理。 */
+  currentPath?: string;
+  onPathChange?: (path: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   /** 拖动源启动（文件行拖到中栏开 tab，透传 FilesPanel → FileEntryList）。undefined 退纯点击（移动）。 */
   onCardDragStart?: CardDragStartHandler;
@@ -23,6 +28,8 @@ export function GlobalFilesOverview({
   return (
     <FilesPanel
       initialPath=""
+      currentPath={currentPath}
+      onPathChange={onPathChange}
       enablePreview={false}
       onOpenFile={onOpenFile}
       onCardDragStart={onCardDragStart}

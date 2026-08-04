@@ -218,6 +218,28 @@ export const workbenchMobileOverviewTabAtom = atomWithLocalOnlyStorage<Workbench
 );
 
 /**
+ * 移动端项目文件树 cwd 记忆（按项目 key 分组）。localStorage 持久化，后台被杀/重开/刷新后
+ * 文件树停留在上次打开的目录（用户 2026-08-04 反馈：A→B→C→D 放置后台重开回 A）。桌面端
+ * 不走此 atom（ProjectLeftPanel 内存 state 保持现状）。key 按项目隔离，天然避免「项目 A 子目录
+ * 泄漏到项目 B」（镜像 ProjectLeftPanel / MobileProjectOverview 的 derived-state 重置语义，
+ * 这里用独立 key 实现，无需渲染期同步）。切项目不重置，仅当「当前项目无记忆路径」时回根目录。
+ */
+export const workbenchMobileProjectFilesPathAtom = atomWithLocalOnlyStorage<Record<string, string>>(
+  "workbenchMobileProjectFilesPath",
+  {},
+);
+
+/**
+ * 移动端 `/files` 全局页（rootBrowse 文件树）cwd 记忆。路径格式 = `${projectName}/${relative}`
+ *（与 resolveRootBrowseTarget 解析格式一致），空串 = 根目录。持久化让后台被杀/重开停留在上次
+ * 目录；进入项目子目录后切可写 files，记忆随之更新。
+ */
+export const workbenchMobileGlobalFilesPathAtom = atomWithLocalOnlyStorage<string>(
+  "workbenchMobileGlobalFilesPath",
+  "",
+);
+
+/**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
  * 新路由树以中栏语义命名（global 作用域 `/projects` / project 作用域 `/projects/$key`，
  * 见 workbench-redesign §7 + activity-bar-redesign 决策 22），

@@ -792,6 +792,18 @@ export function FilesPanel({
     onPathChange?.(path);
   };
 
+  // 「路径不存在」回退：文件树停在 localStorage 记忆的目录，但该目录/项目已被删除时，
+  // listProjectFiles 返回错误（fetchJson 对非 2xx 一律抛 Error）。此时清空 cwd 记忆回退根目录，
+  // 避免停留在错误页（用户 2026-08-04 边界要求）。仅受控模式触发——调用方持久化记忆，路径可能
+  // 已失效；非受控内部 state 由用户主动导航驱动，天然可回退。key 变化时新查询 pending、error 归零，
+  // 不会误触发；goToPath 稳定语义（setState + onPathChange 回调），effect 只依赖 error。
+  useEffect(() => {
+    if (files.error !== null && currentPath !== "") {
+      goToPath("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files.error]);
+
   const selectFile = (path: string) => {
     cancelPreviewExit();
     if (!enablePreview) {

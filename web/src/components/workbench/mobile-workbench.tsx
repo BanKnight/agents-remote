@@ -24,7 +24,9 @@ import {
   useWorkbenchNavigate,
   type SessionPanelRef,
   workbenchMobileFocusTabAtom,
+  workbenchMobileGlobalFilesPathAtom,
   workbenchMobileOverviewTabAtom,
+  workbenchMobileProjectFilesPathAtom,
 } from "../../routes/workbench-model";
 
 import {
@@ -286,15 +288,14 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const focusDisplayName = agentSession?.displayName ?? terminalSession?.displayName;
   const infoSheet = useInstanceInfoSheet();
   const { close, holder: closeHolder } = useCloseSession();
-  // files tab 当前目录（受控，父级持有避免 middle tab 切换 unmount FilesPanel 丢 cwd）。
-  const [filesPath, setFilesPath] = useState("");
-  // 切项目（focusId 派生的 projectName 变）重置 cwd，避免项目 A 子目录泄漏到项目 B（镜像桌面
-  // ProjectLeftPanel derived-state 重置）。projectName 多数由 focusId 变伴随 remount 兜底，此处保守补。
-  const [rememberedFilesProject, setRememberedFilesProject] = useState(projectName);
-  if (projectName !== rememberedFilesProject) {
-    setRememberedFilesProject(projectName);
-    setFilesPath("");
-  }
+  // files tab 当前目录（localStorage 记忆，按项目 key 分组）：后台被杀/重开停留在上次目录。
+  // 切项目用独立 key 隔离（替代旧 derived-state 重置，语义等价且天然不串项目）。
+  const [projectFilesPaths, setProjectFilesPaths] = useAtom(workbenchMobileProjectFilesPathAtom);
+  const filesPath = projectName ? (projectFilesPaths[projectName] ?? "") : "";
+  const setFilesPath = (path: string) => {
+    if (!projectName) return;
+    setProjectFilesPaths((prev) => ({ ...prev, [projectName]: path }));
+  };
   const ctx: WorkbenchTabPluginContext = {
     projectKey: projectName ?? null,
     focusId,
@@ -568,9 +569,13 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
   const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
   // history tab 时间范围（受控，避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
-  // files tab 当前目录（受控，父级持有避免 middle tab 切换 unmount FilesPanel 丢 cwd）。
-  // 切项目由 key={scope.key} remount 兜底重置（docstring 见下），无需 derived-state。
-  const [filesPath, setFilesPath] = useState("");
+  // files tab 当前目录（localStorage 记忆，按项目 key 分组）：后台被杀/重开/刷新后停留在上次
+  // 目录，而非回根目录（A→B→C→D 重开停在 D）。切项目用独立 key 隔离，天然不串项目、无需
+  // derived-state 重置。路径不存在回退由 FilesPanel 侧查 files.error 处理（见 file-browser）。
+  const [projectFilesPaths, setProjectFilesPaths] = useAtom(workbenchMobileProjectFilesPathAtom);
+  const filesPath = projectFilesPaths[scope.key] ?? "";
+  const setFilesPath = (path: string) =>
+    setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.key,
     focusId: undefined,
@@ -759,6 +764,9 @@ function MobileGlobalOverview() {
 function MobileFilesOverview() {
   const { t } = useT();
   const navigate = useNavigate();
+  // 全局文件树 cwd（localStorage 记忆，路径 = `${projectName}/${relative}`，空串 = 根目录）：
+  // 后台被杀/重开停留在上次目录。路径不存在回退由 FilesPanel 侧查 files.error 处理。
+  const [globalFilesPath, setGlobalFilesPath] = useAtom(workbenchMobileGlobalFilesPathAtom);
   const onOpenFile = (projectName: string, path: string) => {
     void navigate({
       to: "/files/file/$",
@@ -769,7 +777,11 @@ function MobileFilesOverview() {
     <div className="flex h-full min-h-0 flex-col">
       <MobilePageHeader title={t("nav.files")} />
       <div className="flex min-h-0 flex-1 flex-col">
-        <GlobalFilesOverview onOpenFile={onOpenFile} />
+        <GlobalFilesOverview
+          currentPath={globalFilesPath}
+          onPathChange={setGlobalFilesPath}
+          onOpenFile={onOpenFile}
+        />
       </div>
     </div>
   );

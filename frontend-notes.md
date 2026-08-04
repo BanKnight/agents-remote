@@ -470,3 +470,44 @@ return cn(
 - **2026-08-04 真根因 `w-fit` + 中文短标签 commit `<本轮>`**（calc 8.75rem 间隙 2 → 9.5rem 间隙 8 + `w-full` 条件撑满）：用户多端实测「间隙≈FAB 大小（~48px）」，但本机探针测出 250/间隙 2——矛盾。根因不是 SW 缓存（curl 字节级对比 tunnel 与 localhost CSS md5 完全一致 + Playwright 全新 context 过 tunnel 实测 250/2），而是 **`w-fit`（`width:fit-content`）让 capsule 宽度由内容决定，`max-width` 是「够不着的天花板」**：中文 4 短标签（项目/文件/技能/设置，每标签 ~30px）只把 grid 撑到 ~157px，远没到 max-width 250，右侧空出 ~48px 间隙；探针用 Chrome for Testing + mock overview（有项目）渲染「Projects/Files/Skills/Settings」较宽恰好够到 250，制造假象。**字体/locale 差异让 `w-fit` 宽度不可预测**——这才是探针与真机分歧的真根因（非缓存、非另一台服务器，tunnel 与本机是同一后端）。修法：base 保留 `w-fit`（无 FAB 按内容收缩，不撑满 366——用户反馈"无 FAB 拉宽太多"），有 FAB 加 `group-has-[.mobile-fab]:w-full`（`width:100%` 让 capsule 真撑到 max-width 上限，不被内容拽小）+ max-w 回 `calc(100vw-9.5rem)`（间隙 8 不贴死——用户反馈"贴太紧"）。中文 locale + iPhone 12 Pro 390×844 过 tunnel 实测：有 FAB width=238 gap=8 居中；无 FAB width=290（内容宽度，不拉满）。**判定铁律**：`max-width` 只设上限不设宽度，`width:fit-content/auto` 的元素只会缩到内容宽、不会主动撑到 max-width；要「拉满到 max-width」必须配 `width:100%`（或 `w-full`）。Tailwind v4 中 `.w-fit`/`.w-full` 是独立 utility（`width:fit-content`/`width:100%`），不进 capsule selector——故改 w-fit↔w-full 不改变 capsule 规则的其它部分，只切换 width 来源（内容宽 vs 撑满）。
 - 与 §1（safe-area 单点避让）、§8（高度链逐层核对）同族：都是「避让/约束只做一层、别叠加」方法论；DESIGN.md `floating-action-button` + `nav-item` + Layout §移动工作台 三段为本模式设计契约。
 - MDN `:has()`：https://developer.mozilla.org/en-US/docs/Web/CSS/:has （`:has` 选择器是「按内容调整容器布局」的标准工具，Tailwind v4 `group-has-*` 变体包装同一选择器）。
+
+## 13. 移动端文件树 cwd 记忆：`atomWithLocalOnlyStorage` 按 key 持久化 + error 触发回退
+
+### 现象（本项目移动端实测）
+
+移动端文件树（项目 Files tab / 聚焦态 Files inspection / `/files` 全局页）进入 A→B→C→D 后，把应用放置后台较久或刷新，重开文件树**回到根目录**（停在 A），期望停留在 D。用户要求保留记忆，并处理「重开后路径已不存在（目录/项目被删）」的边界。
+
+### 机制（根因 = cwd 只存组件内存 state）
+
+- 项目 Files tab / 聚焦态 / `/files` 全局页三处 cwd 原本都是**组件内 `useState`**，reload/后台被杀（PWA 重开 reload）即丢——没有任何持久化层。
+- 项目切换时旧实现靠 **derived-state 重置**（`scope.key` 变 → `setFilesPath("")`）防串项目，代价是记忆天然清零。
+- `FilesPanel` cwd 机制：`currentPath = controlledPath ?? internalPath`——调用方传 `currentPath` + `onPathChange` 即变受控模式，cwd 生命周期交给调用方（可跨卸载/刷新保活）；不传退内部 `useState`（桌面左栏等零改动）。
+- localStorage 原子：`atomWithLocalOnlyStorage`（`workbench-model.ts`）是 `atomWithStorage` 但**不带 `storage.subscribe`**——不跨窗口同步、纯 localStorage 落盘，PWA 重开从 localStorage 恢复。
+
+### 标准做法（记忆 = 受控 prop + localStorage 原子按 key 分组；回退 = error effect）
+
+1. **原子按域分组**：项目 Files tab / 聚焦态 inspection 用 `workbenchMobileProjectFilesPathAtom`（`Record<string,string>`，key = projectKey/scope.key）——切项目天然 key 隔离、不串项目，**取代 derived-state 重置**；`/files` 全局页用 `workbenchMobileGlobalFilesPathAtom`（`string`，root-browse 路径）。
+2. **组件受控化**：`MobileProjectOverview`/`MobileFocusWorkbench` 读 `atom[projectKey] ?? ""`、写 `setAtom(prev => ({...prev, [key]: path}))`；`MobileFilesOverview` 把 `currentPath`/`onPathChange` 透传给 `GlobalFilesOverview` → `FilesPanel`。未传受控 prop 的调用方（桌面左栏）保持非受控内部 state 零改动。
+3. **路径不存在回退（边界，`file-browser.tsx` effect）**：
+   ```tsx
+   useEffect(() => {
+     if (files.error !== null && currentPath !== "") {
+       goToPath("");
+     }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [files.error]);
+   ```
+   持久化目录/项目已被删除时，`listProjectFiles`（fetchJson 对非 2xx 一律抛 Error）报错 → `goToPath("")` 清 cwd 记忆回退根目录（`onPathChange("")` 同步清 atom）。**仅受控模式触发**——调用方持久化记忆、路径可能失效；非受控内部 state 由用户主动导航驱动天然可回退。`queryKey` 变化时新查询 pending、error 归零，不会误触发；`goToPath` 稳定语义（setState + 回调），effect 只依赖 `files.error`。
+4. **判定边界**：受控 prop 是「跨卸载/刷新保活」的开关，本地记忆只服务移动端（用户场景 = PWA 后台重开）；桌面左栏 `filesPath` 是跨 middle tab 切换保活（§11 前身 `probe-files-cwd-refresh`），不引入 localStorage 持久化（桌面刷新回根可接受、无用户诉求）。
+
+### 探针（`scripts/probe-files-cwd-memory.mjs`，6 断言 ALL PASS）
+
+- 场景：zh-CN + iPhone 12 Pro 390×844 + 全新 context 无 SW；`/api/overview` mock 出 proj1/proj2 两项目；`/api/projects/*/files?path=` mock 目录树（proj1 = A/B/C/D 链）；登录走真实后端（密码自读）。
+- 断言 1 逐级进 A→B→C→D breadcrumb 停 D；**断言 2 `page.reload()` 后仍停 D**（localStorage 记忆核心）；断言 3 切总览 tab 再切回仍停 D；断言 4 切 proj2 Files 回根（key 隔离）；断言 5 回 proj1 仍停 D（按 key 分组）；**断言 6 把 D 目录 mock 成 404 reload → 回退根 + 记忆清空**（二次 reload 仍在根）。
+- 探针选择器注意：文件树 breadcrumb 是 `div.flex.min-w-0.flex-wrap` 容器（root 按钮 aria-label=files.goRoot 含 home svg + segment 按钮纯文本无 svg）；目录行是 aside 内 `div[role=button]`（非 `<button>`）；移动 header tab 是 header 内 button 文本匹配（总览/文件，非 `role=tab`）。
+
+### 来源
+
+- 实现：`web/src/routes/workbench-model.ts` 两个 atom + `mobile-workbench.tsx` 三处受控接线 + `global-files-overview.tsx` 受控 props 透传 + `file-browser.tsx` 404 回退 effect。
+- 探针：`scripts/probe-files-cwd-memory.mjs`。
+- 与 §3（结构关系是 state）同族：都是「状态该进 state/持久化层就进，别留在渲染层随生命周期丢失」；与 memory `feedback-Universal-single-pipeline` 同族（同一数据单一管道，受控/非受控双路径是 FilesPanel 既有契约，非新增平行渲染）。
