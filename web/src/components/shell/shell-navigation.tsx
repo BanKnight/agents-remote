@@ -130,11 +130,11 @@ export function ShellMobileBottomNavigation({
   return (
     <nav
       ref={ref}
-      className="absolute inset-x-0 bottom-0 z-20 px-3 pb-[var(--shell-safe-area-bottom)] group-has-[.mobile-fab]:pr-[4.5rem] lg:hidden"
+      className="absolute inset-x-0 bottom-0 z-20 px-3 pb-[var(--shell-safe-area-bottom)] lg:hidden"
       aria-label={ariaLabel}
     >
       <div
-        className={`mx-auto grid w-fit max-w-full gap-4 rounded-2xl border border-on-surface/10 bg-surface-raised/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${colsClass}`}
+        className={`mx-auto grid w-fit max-w-full gap-4 group-has-[.mobile-fab]:max-w-[13rem] group-has-[.mobile-fab]:gap-1 rounded-2xl border border-on-surface/10 bg-surface-raised/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${colsClass}`}
       >
         {children}
       </div>

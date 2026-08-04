@@ -96,6 +96,28 @@ async function findFab(page) {
   });
 }
 
+// 读底部 nav 胶囊几何（center/width/right）+ 4 个 label 截断检测（nav span.truncate）。
+async function readCapsule(page) {
+  return await page.evaluate(() => {
+    const navEl = document.querySelector("nav[aria-label]");
+    const capsule = navEl?.querySelector("div.mx-auto");
+    if (!capsule) return null;
+    const r = capsule.getBoundingClientRect();
+    const labels = Array.from(navEl.querySelectorAll("span.truncate")).map((el) => ({
+      text: (el.textContent ?? "").trim(),
+      truncated: el.scrollWidth > el.clientWidth + 1,
+    }));
+    return {
+      left: Math.round(r.left),
+      right: Math.round(r.right),
+      width: Math.round(r.width),
+      center: Math.round(r.left + r.width / 2),
+      viewportW: window.innerWidth,
+      labels,
+    };
+  });
+}
+
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readRawPassword());
@@ -125,8 +147,9 @@ async function runMobile() {
       // FAB 落 nav 避让带：bottom=safe-area（playwright 无 safe-area=0；真机=34），不再浮 nav 上方压内容。
       record(fab1.bottom >= 0, `bottom=${fab1.bottom}=safe-area（落 nav 带）`);
       record(fab1.right > 0 && fab1.right < 30, `right=${fab1.right}≈12`);
-      // nav 胶囊条经 group-has-[.mobile-fab]:pr-[4.5rem] 让位（main.group :has(.mobile-fab) 时触发），
-      // capsule 右沿不与 FAB 水平重叠（有 FAB 页让位 / 无 FAB 页保持 px-3 居中）。
+      // nav 胶囊条经 group-has-[.mobile-fab]:max-w-[13rem] 自身收窄 + mx-auto 居中（2026-08-04 改版，
+      // 撤销旧 pr-[4.5rem] 左推）：capsule 中心恒定居中、宽度随 FAB 收窄，右沿不与 FAB 重叠。
+      // 详细几何见 runCapsuleGeometry（三视口 + 无 FAB 对比 + 切换零跳变）。
       record(
         fab1.capsuleRight !== null && fab1.capsuleRight <= fab1.left,
         `nav 让位不重叠（capsule.right=${fab1.capsuleRight} <= fab.left=${fab1.left}）`,
@@ -249,9 +272,90 @@ async function runDesktop() {
   }
 }
 
+// 5. capsule 居中收窄几何（2026-08-04 nav 让位策略改版：pr 左推 → 自身收窄居中）。
+// 有 FAB 页（/）三视口 capsule 收窄居中 + 不重叠 + label 无截断；无 FAB 页（/files）撑满居中；
+// 切换 / ↔ /files capsule.center 恒定（零跳变——本次核心价值）。
+async function runCapsuleGeometry() {
+  const viewports = [
+    { w: 390, h: 844, name: "iPhone 14" },
+    { w: 375, h: 812, name: "iPhone SE" },
+    { w: 360, h: 740, name: "小 Android" },
+  ];
+  for (const vp of viewports) {
+    const browser = await chromium.launch();
+    try {
+      const ctx = await browser.newContext({
+        viewport: { width: vp.w, height: vp.h },
+        isMobile: true,
+        hasTouch: true,
+      });
+      const page = await ctx.newPage();
+      await setupMocks(page);
+      await login(page);
+      await page.waitForTimeout(700);
+
+      console.log(`\n===== 5. capsule 居中收窄（${vp.name} ${vp.w}×${vp.h}）=====`);
+      // / 页（有 FAB）：capsule 收窄居中。
+      const capFab = await readCapsule(page);
+      const fab = await findFab(page);
+      if (!capFab || !fab) {
+        record(false, `${vp.w}w /页 capsule/FAB 渲染（cap=${!!capFab} fab=${!!fab}）`);
+        continue;
+      }
+      console.log(
+        `  /页 capsule: width=${capFab.width} center=${capFab.center} right=${capFab.right}; FAB.left=${fab.left}`,
+      );
+      record(
+        Math.abs(capFab.center - vp.w / 2) <= 1,
+        `${vp.w}w /页 capsule 居中（center=${capFab.center} ≈ 视口中心 ${vp.w / 2}，不左推——核心）`,
+      );
+      record(
+        capFab.right <= fab.left - 4,
+        `${vp.w}w /页 capsule 不重叠 FAB（right=${capFab.right} ≤ FAB.left=${fab.left} − 4）`,
+      );
+      record(capFab.width <= 254, `${vp.w}w /页 capsule 收窄（width=${capFab.width}，上限 254）`);
+      const truncated = capFab.labels.filter((l) => l.truncated);
+      record(
+        truncated.length === 0,
+        `${vp.w}w /页 4 label 无截断（${capFab.labels.map((l) => l.text).join("/")}）`,
+      );
+
+      // /files 页（无 FAB）：capsule 撑满居中。
+      await page.goto(`${WEB_ORIGIN}/files`);
+      await page.waitForTimeout(700);
+      const capNoFab = await readCapsule(page);
+      const fabNoFab = await findFab(page);
+      if (!capNoFab) {
+        record(false, `${vp.w}w /files页 capsule 渲染`);
+        continue;
+      }
+      console.log(
+        `  /files页 capsule: width=${capNoFab.width} center=${capNoFab.center}; FAB=${!!fabNoFab}`,
+      );
+      record(!fabNoFab, `${vp.w}w /files页 无 FAB（capsule 不需让位）`);
+      record(
+        capNoFab.width > capFab.width + 50,
+        `${vp.w}w /files页 capsule 撑满（width=${capNoFab.width} > /页 收窄 ${capFab.width}）`,
+      );
+      record(
+        Math.abs(capNoFab.center - vp.w / 2) <= 1,
+        `${vp.w}w /files页 capsule 居中（center=${capNoFab.center}）`,
+      );
+      // 切换零跳变：/ 与 /files capsule.center 相等（同视口，核心断言）。
+      record(
+        capFab.center === capNoFab.center,
+        `${vp.w}w 切换 / ↔ /files capsule.center 恒定（${capFab.center} === ${capNoFab.center}，零跳变——核心）`,
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+}
+
 (async () => {
   await runMobile();
   await runDesktop();
+  await runCapsuleGeometry();
   console.log(`\n总计: ${allPass ? "ALL PASS" : "有 FAIL"}`);
   process.exit(allPass ? 0 : 1);
 })();
