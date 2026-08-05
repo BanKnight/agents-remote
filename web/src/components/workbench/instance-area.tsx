@@ -513,8 +513,17 @@ type PanelRouterProps = {
  * 右工作区活动组 + 移动单实例聚焦共用：桌面右工作区 GroupHeader 下调一次，
  * 移动聚焦态调一次（不 split，单实例）。面板内部依赖父级 flex-col 让 flex-1 runtime
  * body 撑满，调用方容器须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
+ *
+ * memo（见下方 `export const PanelRouter = memo(PanelRouterBase)`）：阻断「父级驱动的无关
+ * 重渲染」。桌面多 group 切别的 group 的 tab 会同时改全局 layout root + URL focusId →
+ * WorkspaceTree 全量重渲染所有 panel；agent 面板（ChatPanel/SessionDetail）有 live 自动
+ * 吸底/xterm fit 逻辑，重渲染会触发其内容滚动跳变（往上翻历史被拉回底部）。memo 让 panel
+ * 只在自身 props（panelRef/embeddedHeader）变化时重渲染——桌面 p.ref 引用稳定
+ * （flattenLayout 是纯投影，ref 字段指向 state 树同一节点，切无关 group 的 tab 不变），
+ * 故跳过重渲染 → 滚动保持。panel 自身查询/hook 驱动的更新不受影响（memo 只拦父级重渲染）。
+ * 对齐 InstanceLeftOverview = memo(InstanceLeftOverviewBase) 惯例（本文件 L495）。
  */
-export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
+function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
   // file tab 渲染 FileTabPreview（可编辑预览，queryScope="file-nav"，设计 §6 决策 16/18）。
   // path=全路径（含项目名前缀），FileTabPreview 内部 resolveRootBrowseTarget 解析 projectName
   // 走 project preview API（设计 workbench-stable-refactor Phase 3，去 projectName 字段）。
@@ -555,6 +564,8 @@ export function PanelRouter({ panelRef, embeddedHeader }: PanelRouterProps) {
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
+
+export const PanelRouter = memo(PanelRouterBase);
 
 function AgentPanelRouter({
   panelRef,
