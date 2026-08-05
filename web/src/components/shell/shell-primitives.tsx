@@ -785,14 +785,21 @@ export function InstanceCard({
           {title}
         </span>
         {subtitle ? (
-          <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
+          // onTogglePin 时 pr-9（36px，同 meta 行）：subtitle 是卡片末行时右下角置顶按钮与其垂直重叠，
+          // 文字让开按钮列。36px = touch 按钮列 48px（right-2 8 + w-10 40）− card p-3 12，内容右缘精确到 pin.left。
+          <div
+            className={cn("min-w-0 truncate text-xs text-on-surface-muted", onTogglePin && "pr-9")}
+          >
+            {subtitle}
+          </div>
         ) : null}
         {hasMetaText ? (
-          // onTogglePin 时 pr-6（24px + card p-3=12 = 36px）精确让开右下角置顶按钮列，文字不钻到按钮下方。
+          // onTogglePin 时 pr-9（36px）精确让开右下角置顶按钮列：36px = touch 按钮列 48px（right-2 8 + w-10 40）− card p-3 12，
+          // 内容右缘 = cardRight − 12 − 36 = pin.left；桌面 28px 按钮时多让 12px 无害。文字不钻到按钮下方。
           <div
             className={cn(
               "flex items-center gap-1.5 text-xs text-on-surface-muted",
-              onTogglePin && "pr-6",
+              onTogglePin && "pr-9",
             )}
           >
             {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}

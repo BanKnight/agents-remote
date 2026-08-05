@@ -408,6 +408,38 @@ async function runViewport(mobile) {
       pinnedSec.subtitles.every((t) => t === "probe subtitle"),
       `置顶组卡片 subtitle 第二行渲染（got ${JSON.stringify(pinnedSec.subtitles)}）`,
     );
+    // subtitle 不与右下角置顶按钮重叠：对每张带 pin 按钮的卡片，subtitle 文本区右边界（盒右 - paddingRight，
+    // 即 pr-6 让位后的视觉文本最右）须 ≤ pin 按钮左边界。
+    const subtitleClear = await page.evaluate(() => {
+      const pinBtns = Array.from(
+        document.querySelectorAll(
+          'button[aria-label="Unpin"], button[aria-label="Pin"], button[aria-label="取消置顶"], button[aria-label="置顶"]',
+        ),
+      );
+      return pinBtns.map((pinBtn) => {
+        const card = pinBtn.closest('[class*="group relative flex"]');
+        if (!card) return null;
+        const sub = Array.from(card.querySelectorAll("div")).find(
+          (d) =>
+            d.classList.contains("truncate") &&
+            d.classList.contains("text-on-surface-muted") &&
+            !d.classList.contains("flex"),
+        );
+        if (!sub) return null;
+        const subTextRight =
+          sub.getBoundingClientRect().right - parseFloat(getComputedStyle(sub).paddingRight);
+        const pinLeft = pinBtn.getBoundingClientRect().left;
+        return {
+          subTextRight: Math.round(subTextRight),
+          pinLeft: Math.round(pinLeft),
+          clear: subTextRight <= pinLeft + 1,
+        };
+      });
+    });
+    record(
+      subtitleClear.length > 0 && subtitleClear.every((o) => o === null || o.clear),
+      `subtitle 与置顶按钮零重叠（文本右 ≤ pin.left，got ${JSON.stringify(subtitleClear)}）`,
+    );
 
     // 置顶组折叠记忆：tap 置顶标题行 → 0 卡（▸）→ 再 tap → 恢复 1。
     const pinnedFoldBtn = page.locator(`section:has(${PINNED_NAME}) button[class*='min-h-11']`);
