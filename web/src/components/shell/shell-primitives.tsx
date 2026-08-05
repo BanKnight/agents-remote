@@ -674,8 +674,14 @@ export type InstanceCardProps = {
   onClose?: () => void;
   onSelect: () => void;
   projectName?: string;
+  /** 置顶态（icon 文字色 primary）。 */
+  pinned?: boolean;
   /** 改名回调；缺失则展开后不渲染改名按钮。 */
   onRename?: () => void;
+  /** 置顶 toggle 回调；缺失则不渲染置顶按钮（项目 scope/纯展示卡零改动）。 */
+  onTogglePin?: () => void;
+  /** 置顶按钮 aria-label（caller 按 pinned 态传 t("workbench.pin"/"workbench.unpin")）。 */
+  pinLabel?: string;
   renameLabel?: string;
   status?: { label: string; tone: ShellTone };
   /** surface 变体：`raised`（默认，独立圆角卡）/ `plain`（密集网格 `InstanceGrid`，扁平连续，对齐 `list` plain 行 token）。 */
@@ -710,6 +716,9 @@ export function InstanceCard({
   onClose,
   onSelect,
   onRename,
+  onTogglePin,
+  pinLabel,
+  pinned,
   projectName,
   renameLabel,
   status,
@@ -779,13 +788,42 @@ export function InstanceCard({
           <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
         ) : null}
         {hasMetaText ? (
-          <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
+          // onTogglePin 时 pr-6（24px + card p-3=12 = 36px）精确让开右下角置顶按钮列，文字不钻到按钮下方。
+          <div
+            className={cn(
+              "flex items-center gap-1.5 text-xs text-on-surface-muted",
+              onTogglePin && "pr-6",
+            )}
+          >
             {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
             {projectName && activity ? <span aria-hidden="true">·</span> : null}
             {activity ? <span className="whitespace-nowrap shrink-0">{activity}</span> : null}
           </div>
         ) : null}
       </div>
+      {onTogglePin ? (
+        <button
+          aria-label={pinLabel}
+          aria-pressed={pinned}
+          className={cn(
+            "absolute bottom-2 right-2 z-10 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-10 touch:w-10",
+            pinned
+              ? "text-primary"
+              : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin();
+          }}
+          onKeyDown={(e) => {
+            // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
+            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+          }}
+          type="button"
+        >
+          <ShellIcon className="h-4 w-4" name="pin" />
+        </button>
+      ) : null}
       {hasActions ? (
         <div className="absolute right-2 top-2 z-10">
           <ActionMenu

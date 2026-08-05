@@ -12,6 +12,7 @@ import maximize from "./maximize.svg?raw";
 import minus from "./minus.svg?raw";
 import openai from "./openai.svg?raw";
 import pagesNav from "./pages-nav.svg?raw";
+import pin from "./pin.svg?raw";
 import plus from "./plus.svg?raw";
 import project from "./project.svg?raw";
 import refresh from "./refresh.svg?raw";
@@ -38,6 +39,7 @@ const svgMap: Record<string, string> = {
   minus,
   openai,
   "pages-nav": pagesNav,
+  pin,
   plus,
   project,
   refresh,

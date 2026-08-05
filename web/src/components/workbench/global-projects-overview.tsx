@@ -5,7 +5,9 @@ import { useAtom } from "jotai";
 import { useT } from "../../i18n";
 import {
   mergeProjectsWithCandidates,
+  type GlobalInstanceCandidate,
   type WorkbenchPanelRef,
+  workbenchPinnedSessionsAtom,
   workbenchProjectGroupsCollapsedAtom,
 } from "../../routes/workbench-model";
 import { deleteProject } from "../../api/client";
@@ -160,6 +162,9 @@ type GroupedProjectsListProps = {
   dragAdapter?: DragSourceAdapter;
 };
 
+/** 置顶分组在 workbenchProjectGroupsCollapsedAtom 中的保留哨兵 key（非真实项目名，防冲突）。 */
+const PINNED_GROUP_KEY = "__pinned__";
+
 /**
  * 按项目分段的单列网格（2026-08-05 融合视图 + 2026-08-06 手风琴化）：mergeProjectsWithCandidates
  * 含空项目。项目标题行（2026-08-06 手风琴）= [▾/▸ 折叠 chevron size-4 + 📁 项目名 text-base font-semibold
@@ -170,8 +175,9 @@ type GroupedProjectsListProps = {
  * ⋯ = pr-2(8) ≡ 满宽 action（absolute right-2=8），两端图标≡marker、⋯≡action 严格对齐。空项目无可折叠
  * 内容——主区非按钮（▾ 位 `size-4` 占位保持 📁 图标对齐），仍保留 › 进项目 + ⋯ 删除。实例区 =
  * InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard
- * topSeparator 画 inset 分割线，两端统一 left-15=60px 跳过 marker 列）。根 `px-3 py-2` + section 间
- * space-y-2(8px)。
+ * topSeparator 画 inset 分割线，两端统一 left-15=60px 跳过 marker 列）。最前另渲染「置顶」特殊分组
+ *（📌，`workbenchPinnedSessionsAtom` 纯客户端，无置顶卡片整段不渲染；卡片同时在置顶分组与原项目
+ * 分组出现双显示；标题行只折叠 toggle 无 › / ⋯）。根 `px-3 py-2` + section 间 space-y-2(8px)。
  */
 function GroupedProjectsList({
   candidates,
@@ -202,6 +208,19 @@ function GroupedProjectsList({
   const [collapsed, setCollapsed] = useAtom(workbenchProjectGroupsCollapsedAtom);
   const toggleProject = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
+  // 置顶：特殊分组 key = "__pinned__" 保留哨兵（workbenchProjectGroupsCollapsedAtom 按 key 记忆折叠态）。
+  const [pinned, setPinned] = useAtom(workbenchPinnedSessionsAtom);
+  const togglePin = (sessionId: string) =>
+    setPinned((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
+  // 卡片网格项：candidateToGridItem + 置顶 props（项目组 + 置顶组两处复用，双显示）。
+  const toGridItem = (c: GlobalInstanceCandidate) => ({
+    ...candidateToGridItem(c, callbacks),
+    pinned: !!pinned[c.ref.sessionId],
+    onTogglePin: () => togglePin(c.ref.sessionId),
+    pinLabel: t(pinned[c.ref.sessionId] ? "workbench.unpin" : "workbench.pin"),
+  });
+  const pinnedCandidates = candidates.filter((c) => pinned[c.ref.sessionId]);
+  const pinnedCollapsed = !!collapsed[PINNED_GROUP_KEY];
 
   const requestDelete = async (projectName: string) => {
     const ok = await confirm({
@@ -218,6 +237,50 @@ function GroupedProjectsList({
 
   return (
     <div className="space-y-2 px-3 py-2">
+      {/* 置顶分组：最前（项目 groups.map 前），无置顶卡片时整段不渲染（空隐藏）。标题行只折叠
+          toggle（▾/▸ + 📌 pin + 置顶），无 › 进项目、无 ⋯ 删除（非项目）。 */}
+      {pinnedCandidates.length > 0 ? (
+        <section key={PINNED_GROUP_KEY}>
+          <div className="flex items-center gap-2 pl-3 pr-2">
+            <button
+              aria-expanded={!pinnedCollapsed}
+              className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
+              onClick={() => toggleProject(PINNED_GROUP_KEY)}
+              title={t("workbench.pinnedGroup")}
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                className="size-4 shrink-0 text-on-surface-muted/60"
+                fill="none"
+                viewBox="0 0 16 16"
+              >
+                <path
+                  d={pinnedCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                />
+              </svg>
+              <ShellIcon className="size-5 shrink-0 text-primary" name="pin" />
+              <span className="truncate text-base font-semibold text-on-surface">
+                {t("workbench.pinnedGroup")}
+              </span>
+            </button>
+          </div>
+          {!pinnedCollapsed ? (
+            <div>
+              <InstanceGrid
+                dragAdapter={dragAdapter}
+                dragRefs={new Map(pinnedCandidates.map((c) => [c.ref.sessionId, c.ref]))}
+                items={pinnedCandidates.map(toGridItem)}
+                plain
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {groups.map((group) => {
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
@@ -314,7 +377,7 @@ function GroupedProjectsList({
                 <InstanceGrid
                   dragAdapter={dragAdapter}
                   dragRefs={dragRefs}
-                  items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
+                  items={group.candidates.map(toGridItem)}
                   plain
                 />
               </div>

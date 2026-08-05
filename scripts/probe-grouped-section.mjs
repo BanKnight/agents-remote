@@ -11,6 +11,9 @@
 //   7. › 进项目导航 /projects/$key。
 //   8. 移动端 GlobalProjectsOverview create header 行 display:none（零残留空条/分割线）；桌面 display:flex。
 //   9. 间距几何（用户反馈「项目间距过大、间距不统一」硬数据）：名行↔卡片 gap、项目间 gap、root 内边距。
+//   10. 置顶分组：初始空隐藏（标题行数=2）→ 点 A 卡 Pin → 置顶分组出现（Pinned）+ 置顶组 1 卡 +
+//       A 项目组仍 3 卡（双显示）+ 全部置顶卡 aria-pressed=true → 置顶组单列 + subtitle 第二行 →
+//       折叠记忆（tap 标题行 0/1 卡）→ reload 持久化（2 卡）→ 逐个 Unpin → 分组消失（标题行数回 2）。
 // 桌面 1280×900 + 移动 390×844 两视口。密码自读（config.toml），不打印。DOM 几何（getBoundingClientRect），不用 vision。
 // 用法：bun scripts/probe-grouped-section.mjs
 import { chromium } from "@playwright/test";
@@ -28,6 +31,10 @@ const PROJECT_EMPTY = "probe-merge-empty";
 
 // aria-label（en-US 默认 locale）；enter 按钮两种语言都匹配以免疫 locale。
 const ENTER_SELECTOR = 'button[aria-label="Enter project"], button[aria-label="进入项目"]';
+// 置顶按钮（Pin/置顶）、取消置顶按钮（Unpin/取消置顶）两种语言都匹配；置顶分组名（Pinned/置顶）。
+const PIN_SELECTOR = 'button[aria-label="Pin"], button[aria-label="置顶"]';
+const UNPIN_SELECTOR = 'button[aria-label="Unpin"], button[aria-label="取消置顶"]';
+const PINNED_NAME = 'span:text-is("Pinned"), span:text-is("置顶")';
 
 function candidate(projectName, sessionId, displayName, type, provider) {
   return {
@@ -153,8 +160,9 @@ async function readSections(page, enterSelector) {
         (d) => getComputedStyle(d).display === "grid",
       );
       const cards = grid ? Array.from(grid.children) : [];
-      // group 段判定：名行含 › 进项目按钮。非 group 段（外壳裸 section）isGroup=false。
-      const isGroup = !!enterBtn;
+      // group 段判定：名行含 › 进项目按钮，或含 min-h-11 折叠 toggle（置顶分组行无 › 进项目但可折叠）。
+      // 非 group 段（外壳裸 section）两者皆无 isGroup=false。
+      const isGroup = !!enterBtn || !!foldBtn;
       const rect = (el) => {
         if (!el) return null;
         const r = el.getBoundingClientRect();
@@ -359,6 +367,103 @@ async function runViewport(mobile) {
     after = await readSections(page, ENTER_SELECTOR);
     a2 = after.find((s) => s.isGroup && s.projectName === PROJECT_A);
     record(a2.cardCount === 3, `reload 后展开 A → [${PROJECT_A}] 卡恢复 3（got ${a2.cardCount}）`);
+
+    // ── 置顶分组：置顶出现 + 双显示 → 单列 → 折叠记忆 → reload 持久化 → 空隐藏恢复 ──
+    // （初始空隐藏已由上方「标题行数 = 2」断言覆盖：无置顶卡片 → 无置顶分组。）
+    await page.locator(`section:has(span:text-is("${PROJECT_A}")) ${PIN_SELECTOR}`).first().click();
+    await page.waitForTimeout(300);
+    after = await readSections(page, ENTER_SELECTOR);
+    let pinnedSec = after.find(
+      (s) => s.isGroup && (s.projectName === "Pinned" || s.projectName === "置顶"),
+    );
+    record(!!pinnedSec, `置顶出现：点 A 卡 Pin → 置顶分组出现（${pinnedSec?.projectName}）`);
+    record(
+      after.filter((s) => s.isGroup).length === 3,
+      `标题行数 2 → 3（got ${after.filter((s) => s.isGroup).length}）`,
+    );
+    record(pinnedSec.cardCount === 1, `置顶组 1 卡（got ${pinnedSec.cardCount}）`);
+    const aSec = after.find((s) => s.isGroup && s.projectName === PROJECT_A);
+    record(aSec.cardCount === 3, `[${PROJECT_A}] 项目组仍 3 卡（双显示，got ${aSec.cardCount}）`);
+    const aPinPressed = await page
+      .locator(`section:has(span:text-is("${PROJECT_A}")) ${UNPIN_SELECTOR}`)
+      .first()
+      .getAttribute("aria-pressed");
+    const pinnedPinPressed = await page
+      .locator(`section:has(${PINNED_NAME}) ${UNPIN_SELECTOR}`)
+      .first()
+      .getAttribute("aria-pressed");
+    record(
+      aPinPressed === "true",
+      `[${PROJECT_A}] 原项目组置顶卡 aria-pressed=true（got ${aPinPressed}）`,
+    );
+    record(
+      pinnedPinPressed === "true",
+      `置顶组置顶卡 aria-pressed=true（got ${pinnedPinPressed}）`,
+    );
+    record(
+      pinnedSec.cardLefts.every((l) => Math.abs(l - pinnedSec.cardLefts[0]) <= 1),
+      `置顶组卡片单列（left 全 ${JSON.stringify(pinnedSec.cardLefts)}）`,
+    );
+    record(
+      pinnedSec.subtitles.every((t) => t === "probe subtitle"),
+      `置顶组卡片 subtitle 第二行渲染（got ${JSON.stringify(pinnedSec.subtitles)}）`,
+    );
+
+    // 置顶组折叠记忆：tap 置顶标题行 → 0 卡（▸）→ 再 tap → 恢复 1。
+    const pinnedFoldBtn = page.locator(`section:has(${PINNED_NAME}) button[class*='min-h-11']`);
+    await pinnedFoldBtn.click();
+    await page.waitForTimeout(300);
+    after = await readSections(page, ENTER_SELECTOR);
+    pinnedSec = after.find(
+      (s) => s.isGroup && (s.projectName === "Pinned" || s.projectName === "置顶"),
+    );
+    record(pinnedSec.cardCount === 0, `tap 置顶标题行 → 置顶组卡 0（got ${pinnedSec.cardCount}）`);
+    record(
+      pinnedSec.foldChevrons.includes("M6 4l4 4-4 4"),
+      `折叠态 chevron = ▸ 右（got ${JSON.stringify(pinnedSec.foldChevrons)}）`,
+    );
+    await pinnedFoldBtn.click();
+    await page.waitForTimeout(300);
+    after = await readSections(page, ENTER_SELECTOR);
+    pinnedSec = after.find(
+      (s) => s.isGroup && (s.projectName === "Pinned" || s.projectName === "置顶"),
+    );
+    record(pinnedSec.cardCount === 1, `再 tap → 置顶组卡恢复 1（got ${pinnedSec.cardCount}）`);
+
+    // reload 持久化：置顶第二卡 → 置顶组 2 卡 → reload → 仍 2 卡。
+    await page.locator(`section:has(span:text-is("${PROJECT_A}")) ${PIN_SELECTOR}`).nth(1).click();
+    await page.waitForTimeout(300);
+    after = await readSections(page, ENTER_SELECTOR);
+    pinnedSec = after.find(
+      (s) => s.isGroup && (s.projectName === "Pinned" || s.projectName === "置顶"),
+    );
+    record(pinnedSec.cardCount === 2, `置顶第二卡 → 置顶组 2 卡（got ${pinnedSec.cardCount}）`);
+    await page.reload();
+    await page.waitForTimeout(800);
+    after = await readSections(page, ENTER_SELECTOR);
+    pinnedSec = after.find(
+      (s) => s.isGroup && (s.projectName === "Pinned" || s.projectName === "置顶"),
+    );
+    record(
+      pinnedSec.cardCount === 2,
+      `reload → 置顶组仍 2 卡（localStorage 记忆，got ${pinnedSec.cardCount}）`,
+    );
+
+    // 空隐藏恢复：逐个 Unpin → 置顶组 1 → 0 → 分组消失（标题行数回 2）。
+    await page.locator(`section:has(${PINNED_NAME}) ${UNPIN_SELECTOR}`).first().click();
+    await page.waitForTimeout(300);
+    after = await readSections(page, ENTER_SELECTOR);
+    pinnedSec = after.find(
+      (s) => s.isGroup && (s.projectName === "Pinned" || s.projectName === "置顶"),
+    );
+    record(pinnedSec.cardCount === 1, `逐个 Unpin → 置顶组 1 卡（got ${pinnedSec.cardCount}）`);
+    await page.locator(`section:has(${PINNED_NAME}) ${UNPIN_SELECTOR}`).first().click();
+    await page.waitForTimeout(300);
+    after = await readSections(page, ENTER_SELECTOR);
+    record(
+      after.filter((s) => s.isGroup).length === 2,
+      `全部 Unpin → 置顶分组消失（标题行数 3 → 2，got ${after.filter((s) => s.isGroup).length}）`,
+    );
 
     // ── 进项目导航：点 A 行 › 进项目按钮 → /projects/$key ──
     const before = page.url();
