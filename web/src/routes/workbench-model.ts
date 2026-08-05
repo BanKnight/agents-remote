@@ -201,6 +201,14 @@ export const workbenchMobileGlobalFilesPathAtom = atomWithLocalOnlyStorage<strin
 );
 
 /**
+ * 全局总览项目手风琴折叠态（Record<projectName, true=折叠>）。key=projectName，缺省/undefined=展开。
+ * localStorage 按项目记忆，刷新/重开保留（用户 2026-08-05 反馈页面零散，折叠可收束）。
+ */
+export const workbenchProjectGroupsCollapsedAtom = atomWithLocalOnlyStorage<
+  Record<string, boolean>
+>("workbenchProjectGroupsCollapsed", {});
+
+/**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
  * 新路由树以中栏语义命名（global 作用域 `/projects` / project 作用域 `/projects/$key`，
  * 见 workbench-redesign §7 + activity-bar-redesign 决策 22），

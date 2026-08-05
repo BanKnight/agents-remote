@@ -535,6 +535,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.panelPreviewEmpty": "暂无输出",
   "workbench.globalOverviewTitle": "实例",
   "workbench.globalOverviewEmpty": "暂无活跃实例。",
+  "workbench.enterProject": "进入项目",
   "workbench.dropUp": "放置到上方：分屏到新行",
   "workbench.dropDown": "放置到下方：分屏到新行",
   "workbench.dropLeft": "放置到左侧：分屏到新列",

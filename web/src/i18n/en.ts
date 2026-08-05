@@ -536,6 +536,7 @@ export const en = {
   "workbench.panelPreviewEmpty": "No output yet",
   "workbench.globalOverviewTitle": "Instances",
   "workbench.globalOverviewEmpty": "No active instances.",
+  "workbench.enterProject": "Enter project",
   "workbench.dropUp": "Drop above: split into a new row",
   "workbench.dropDown": "Drop below: split into a new row",
   "workbench.dropLeft": "Drop left: split into a new column",

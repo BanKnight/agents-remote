@@ -1,8 +1,13 @@
 import { type FormEvent, useId, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useAtom } from "jotai";
 import { useT } from "../../i18n";
-import { type WorkbenchPanelRef, mergeProjectsWithCandidates } from "../../routes/workbench-model";
+import {
+  mergeProjectsWithCandidates,
+  type WorkbenchPanelRef,
+  workbenchProjectGroupsCollapsedAtom,
+} from "../../routes/workbench-model";
 import { deleteProject } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { actionButtonClasses } from "../shell/shell-primitives";
@@ -35,8 +40,9 @@ type GlobalProjectsOverviewProps = {
  * 参数化仅 onFocusInstance / dragAdapter?。
  *
  * 单一融合视图（2026-08-05）：原 grid/grouped 双视图合并为「按项目分段的单列网格」——
- * 项目标题行（📁 项目名 + › 进项目 + ⋯ 删除）作 section header 分割，组内 InstanceGrid plain
- * 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页），含空项目只显标题行。ViewSwitcher 下线。
+ * 项目标题行（2026-08-06 手风琴化 = ▾/▸ 折叠 toggle + 📁 项目名 + › 进项目 + ⋯ 删除）作
+ * section header 分割，组内 InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无
+ * carousel 分页），含空项目只显标题行。ViewSwitcher 下线。
  *
  * 外壳（标题、底部 nav）由调用方提供：桌面 WorkbenchShell leftPanelTitle；
  * 移动 MobilePageHeader。
@@ -102,7 +108,8 @@ export function GlobalProjectsOverview({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
+      {/* 桌面专用 header（移动端无 header 行，零残留空条零分割线；FAB 作兄弟节点 fixed 出流仍可见）。 */}
+      <div className="hidden shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5 lg:flex">
         <button
           aria-label={t("home.createProjectAria")}
           className={actionButtonClasses({
@@ -115,9 +122,9 @@ export function GlobalProjectsOverview({
         >
           {t("workbench.createMenu")}
         </button>
-        {/* 移动 FAB（lg:hidden）：直开 ProjectSetupPanel Dialog；桌面 header 按钮上方保留。 */}
-        <MobileFab ariaLabel={t("home.createProjectAria")} onClick={() => setSetupOpen(true)} />
       </div>
+      {/* 移动 FAB（lg:hidden，fixed bottom 出流）：直开 ProjectSetupPanel Dialog。 */}
+      <MobileFab ariaLabel={t("home.createProjectAria")} onClick={() => setSetupOpen(true)} />
       <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
         {body}
       </div>
@@ -154,13 +161,17 @@ type GroupedProjectsListProps = {
 };
 
 /**
- * 按项目分段的单列网格（2026-08-05 融合视图）：mergeProjectsWithCandidates 含空项目；
- * 项目标题行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
- * ≥44px）][⋯ 删除 最右尽头]（名行两端统一 `pl-3 pr-2` + button `px-0`：图标 = pl-3(12)+button px-0
- * = 12 ≡ marker（InstanceCard p-3=12），⋯ = pr-2(8) ≡ 满宽 action（absolute right-2=8），两端图标≡marker、
- * ⋯≡action 严格对齐）。实例区 = InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页；
- * 组内非首卡由 InstanceCard topSeparator 画 inset 分割线，两端统一 left-15=60px 跳过 marker 列）。
- * 根 `px-3 py-2` + section 间 space-y-2(8px)。空项目只名行（与有实例项目结构对称：都一行 header）。
+ * 按项目分段的单列网格（2026-08-05 融合视图 + 2026-08-06 手风琴化）：mergeProjectsWithCandidates
+ * 含空项目。项目标题行（2026-08-06 手风琴）= [▾/▸ 折叠 chevron size-4 + 📁 项目名 text-base font-semibold
+ * 整体 button 折叠/展开（`aria-expanded`，热区 min-h-11 ≥44px；折叠态收纳组内实例区，状态
+ * `workbenchProjectGroupsCollapsedAtom` localStorage 按项目记忆，刷新/重开保留）][› 进项目独立按钮
+ * （`aria-label=workbench.enterProject`，touch:h-10 touch:w-10 44px）][⋯ 删除 最右尽头]。名行两端统一
+ * `pl-3 pr-2` + 折叠 toggle button `px-0`：图标 = pl-3(12)+px-0 = 12 ≡ marker（InstanceCard p-3=12），
+ * ⋯ = pr-2(8) ≡ 满宽 action（absolute right-2=8），两端图标≡marker、⋯≡action 严格对齐。空项目无可折叠
+ * 内容——主区非按钮（▾ 位 `size-4` 占位保持 📁 图标对齐），仍保留 › 进项目 + ⋯ 删除。实例区 =
+ * InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard
+ * topSeparator 画 inset 分割线，两端统一 left-15=60px 跳过 marker 列）。根 `px-3 py-2` + section 间
+ * space-y-2(8px)。
  */
 function GroupedProjectsList({
   candidates,
@@ -188,6 +199,9 @@ function GroupedProjectsList({
   );
   const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
   const ctx = useRowContextMenu();
+  const [collapsed, setCollapsed] = useAtom(workbenchProjectGroupsCollapsedAtom);
+  const toggleProject = (name: string) =>
+    setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
 
   const requestDelete = async (projectName: string) => {
     const ok = await confirm({
@@ -207,28 +221,60 @@ function GroupedProjectsList({
       {groups.map((group) => {
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
+        const hasCards = group.candidates.length > 0;
+        const isCollapsed = hasCards && !!collapsed[group.projectName];
         return (
           <section key={group.projectName}>
             <div
               className="flex items-center gap-2 pl-3 pr-2"
               onContextMenu={(e) => ctx.openAt(group.projectName, e)}
             >
+              {hasCards ? (
+                // 折叠 toggle：▾/▸ + 📁 项目名，tap 折叠/展开（热区 min-h-11 ≥44px）。
+                <button
+                  aria-expanded={!isCollapsed}
+                  className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
+                  onClick={() => toggleProject(group.projectName)}
+                  title={group.projectName}
+                  type="button"
+                >
+                  <svg
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-on-surface-muted/60"
+                    fill="none"
+                    viewBox="0 0 16 16"
+                  >
+                    <path
+                      d={isCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                    />
+                  </svg>
+                  <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
+                  <span className="truncate text-base font-semibold text-on-surface">
+                    {group.projectName}
+                  </span>
+                </button>
+              ) : (
+                // 空项目：无可折叠内容，主区非按钮；▾ 位 size-4 占位保持 📁 图标与有实例行对齐。
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 px-0">
+                  <span aria-hidden="true" className="size-4 shrink-0" />
+                  <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
+                  <span className="truncate text-base font-semibold text-on-surface">
+                    {group.projectName}
+                  </span>
+                </div>
+              )}
+              {/* 独立 › 进项目按钮（镜像 ⋯ 尺寸/样式；touch 放大 44px）。 */}
               <button
-                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
+                aria-label={t("workbench.enterProject")}
+                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
                 onClick={() => enterProject(group.projectName)}
-                title={group.projectName}
                 type="button"
               >
-                <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
-                <span className="truncate text-base font-semibold text-on-surface">
-                  {group.projectName}
-                </span>
-                <svg
-                  aria-hidden="true"
-                  className="size-5 shrink-0 text-on-surface-muted/60"
-                  fill="none"
-                  viewBox="0 0 16 16"
-                >
+                <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 16 16">
                   <path
                     d="M6 4l4 4-4 4"
                     strokeLinecap="round"
@@ -263,7 +309,7 @@ function GroupedProjectsList({
                 }
               />
             </div>
-            {group.candidates.length === 0 ? null : (
+            {hasCards && !isCollapsed ? (
               <div>
                 <InstanceGrid
                   dragAdapter={dragAdapter}
@@ -272,7 +318,7 @@ function GroupedProjectsList({
                   plain
                 />
               </div>
-            )}
+            ) : null}
           </section>
         );
       })}
