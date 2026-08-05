@@ -716,19 +716,13 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
 
 /**
  * 移动 [项目] 总览（设计文档 §5/§7/决策 25/28）：跨项目活跃实例聚合 + 项目入口。一级页面，
- * header = MobilePageHeader 标题；新建项目按钮落在 ViewSwitcher 行左侧（批 D 位置 + 批 E 样式），
- * 用 `actionButtonClasses({ tone: "accent" })` pill 文案（同 CreateSessionBar token，文案
- * workbench.createMenu）→ useCreateProject + ProjectSetupPanel Dialog。视图 grouped/grid
- *（global 两视图，ViewSwitcher 切换；table 视图已移除）：
- * - grouped = mergeProjectsWithCandidates + listProjects（与桌面 GroupedView 同源），**含无实例
- *   空项目**（批 J / 决策 33：空项目只名行，无空状态文案）；**项目名行 = 名+› 整体 button 进项目**（navigate
- *   `/projects/$key`，热区 min-h-11 ≥44px），**最右 ⋯ ActionMenu 删除项目**（deleteProject + useConfirm confirm，
- *   destructive）；实例区 InstancePagedCarousel 每页最多 3 卡横向 swipe 翻页（折叠废弃）。
- * - grid = 不分段所有候选 InstanceGrid；点卡片进 `/projects/session/$focusId` 聚焦，
- *   不按项目分段故无删项目入口（仅 grouped 提供）。
- * 删 inspection tab 行 + 插件分支（[项目] 总览是纯实例聚合 + 项目入口，inspection 归 [文件]/
- * [设置] 一级导航 + 项目内 MobileProjectOverview）。close 复用 useCloseSession；view 记忆复用
- * workbenchViewAtom（与桌面/移动 project 同源，不新增 mobile view atom）。
+ * header = MobilePageHeader 标题。单一融合视图（2026-08-05）：mergeProjectsWithCandidates +
+ * listProjects 按项目分段，**含无实例空项目**（决策 33：空项目只名行，无空状态文案）；**项目名行 =
+ * 名+› 整体 button 进项目**（navigate `/projects/$key`，热区 min-h-11 ≥44px），**最右 ⋯ ActionMenu
+ * 删除项目**（deleteProject + useConfirm confirm，destructive）；实例区 InstanceGrid 单列连续卡片。
+ * 点卡片进 `/projects/session/$focusId` 聚焦。删 inspection tab 行 + 插件分支（[项目] 总览是纯
+ * 实例聚合 + 项目入口，inspection 归 [文件]/[设置] 一级导航 + 项目内 MobileProjectOverview）。
+ * close 复用 useCloseSession。
  */
 function MobileGlobalOverview() {
   const { t } = useT();
@@ -736,7 +730,7 @@ function MobileGlobalOverview() {
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
   //（MobilePageHeader 标题；底部胶囊避让由 GlobalProjectsOverview 消费 CSS var），
-  // 实例聚焦/新建/删除/三视图全在共享组件内（批 J 折叠废弃）。
+  // 实例聚焦/新建/删除全在共享组件内（批 J 折叠废弃）。
   const focusInstance = (sessionId: string) => {
     // 从总观点实例卡片进 focus → 重置 Output（不继承上次切到的 Files/Git 记忆，避免落到
     // 项目文件造成「进错地方」误会）。

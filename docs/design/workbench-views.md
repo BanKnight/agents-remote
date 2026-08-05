@@ -18,7 +18,7 @@
 
 - **中栏永远左右结构**：左侧 = 总览（实例卡片清单，固定单列宽），右侧 = 工作区（实例 output 面板，可拖放分屏）。两者常驻并存，不互斥。
 - **取消独立 split 视图**：右侧工作区常驻，多实例同屏靠「拖左总览卡片到右侧分屏」实现，不再有独立的 `?view=split`。
-- **视图 = 左总览的卡片样式**：grid/grouped 不再是互斥布局，而是同一单列内的卡片呈现样式（详细卡 / 分段）；table 紧凑行视图已移除（2026-08 收敛）。
+- **视图 = 左总览的卡片样式**：单一「按项目分段的单列网格」视图（2026-08-05 融合，原 grid/grouped 双视图合并）；table 紧凑行视图已于 2026-08 移除。
 - **group 二态**：右侧工作区的面板（group）只有「存在/不存在」，取消 expanded/缩略/最小化三态与底部 dock。
 - **聚焦 = 激活某 group**：`focusId` = 右工作区当前活动 group 的实例，驱动右栏 inspection + 左总览高亮；不再是「中栏换成单实例」。
 - **桌面/移动差异化**：桌面中栏左右分屏工作区；移动中栏窄不分左右，保持「列表态 → 全屏聚焦态」线性模型。
@@ -45,7 +45,7 @@
 │←左栏→││←左总览固定宽─→│←──── 右工作区 flex-1 ────→││← 右栏 →│
 ```
 
-- **左总览**：固定单列宽（~220–240px，贴合 InstanceGrid `minmax(220px,1fr)` 单列），卡片纵向堆叠。顶部 header 挂 CreateSessionBar（project only，+ 新建 agent/terminal）；global 总览 header 另挂 ViewSwitcher（segmented control 切 grid/grouped，ml-auto 右推），project 总览单一 grid 视图无切换器。两者随左总览只在 overview tab 渲染（history/inspection tab 全宽，无左总览）。tab 行只剩纯 tab，不再混排视图切换/新建按钮。
+- **左总览**：固定单列宽（~220–240px，贴合 InstanceGrid `minmax(220px,1fr)` 单列），卡片纵向堆叠。顶部 header 挂 CreateSessionBar（project only，+ 新建 agent/terminal）；global 总览 header 挂「+ 新建项目」按钮（2026-08-05 融合：ViewSwitcher 已下线，单一「按项目分段的单列网格」视图，§5）。两者随左总览只在 overview tab 渲染（history/inspection tab 全宽，无左总览）。tab 行只剩纯 tab，不再混排视图切换/新建按钮。
 - **右工作区**：flex-1 吃满中栏剩余。group 网格分屏（详见 §7）。活动 group = `focusId`。
 - **左右比例**：左总览与右工作区之间有 gutter，可拖拽调节（与左栏导航 / 右栏 inspection 的 resize 同一设计语言）。左总览默认贴合一栏卡片宽。
 - **右栏**：容器常驻（聚焦态自动展开 + RailButton 唤出 + `?rightTab` 状态机完整保留）；inspection 内容当前**留空**待扩展——files/git 已移至左栏 middle tab `[文件]`/`[git]` + 中栏点文件开的 diff tab（左栏列表点文件 → 中栏 diff）。非聚焦态默认收起，中栏右边缘 RailButton 唤出（唤出看右栏空态）。project scope 可唤出；global scope 不唤出右栏——全局 files 走中栏 tab（根目录 = `PROJECTS_ROOT` 浏览，见 §4）。
@@ -80,32 +80,29 @@ global scope 的 files tab 是「跨项目根目录浏览器」，与 project sc
 
 ## 5. 左总览视图样式
 
-view switcher 切换的是**同一单列内的卡片呈现样式**（不再是列数/布局差异，因左总览固定单列宽）：
+全局总览与项目总览都是**单一视图**（2026-08-05 融合：原 grid/grouped 两视图合并为「按项目分段的单列网格」，ViewSwitcher 下线）。两者都用同一 `InstanceGrid`（`gridTemplateColumns: 1fr` 固定单列 plain 卡片），区别只在「是否按项目分段」：
 
-| 样式 | 呈现 | scope 可见 |
-|------|------|-----------|
-| grid | 朋友圈式卡片：左 marker 头像（lg=h-9，上下置顶）+ 右 3 行（会话名 / 末行 output 预览 / 项目名·时间 + close 右推） | 全 scope |
-| grouped | 按项目分段（项目名 ShellSectionLabel + 单列详细卡） | 仅 global |
+| scope | 呈现 | 项目分段 |
+|-------|------|---------|
+| global | 项目标题行（📁 项目名 + › 进项目 + ⋯ 删除）作 section header 分割，每段下单列详细卡 | 是（`mergeProjectsWithCandidates`，含无实例空项目只显标题行） |
+| project | 单列详细卡直接平铺（本项目实例，无需分段） | 否 |
 
-- project scope 无 grouped（单项目无需分段），即 project 总览 = 单一 grid 视图、无视图切换器。
-- 默认：grid（详细卡片最直观）。
-- 三种样式都在 ~220–240px **固定单列**内呈现——`InstanceGrid` 用 `grid-cols-1`（`gridTemplateColumns: 1fr`），**不用 `auto-fill minmax`**。理由：左总览设计为固定单列卡片清单（§4），`auto-fill` 在用户拖宽左总览（≥28rem=448px）时会自动变 2 列，卡片缩到 220px 内容拥挤，违反「父容器默认以单列宽度排布」的设计意图。`grid-cols-1` 让卡片宽度始终 = 容器宽，拖宽只让卡片变宽（内容更宽松），不增列。
+- **global 卡片**（朋友圈式）：左 marker 头像（lg=h-9，上下置顶）+ 右 3 行（会话名 / 末行 output 预览 / 项目名·时间 + close 右推）。
+- **项目标题行**：`📁 项目名 text-base font-semibold` + `›` chevron 整体 button 进项目（navigate `/projects/$key`，热区 min-h-11 ≥44px）+ 最右 `⋯` ActionMenu 删除项目（`deleteProject` + useConfirm confirm，destructive）。组与组靠标题行天然分隔，**无圆角 section 边框、无 bg、无 carousel 分页**——卡片连续单列平铺，组内非首卡由 InstanceCard `topSeparator` 画 inset 分割线（两端统一 left-15=60px）。
+- **空项目**：global 含空项目（只显标题行，可进/可删）；project scope 无分段概念。
+- 两种 scope 都在 ~220–240px **固定单列**内呈现——`InstanceGrid` 用 `grid-cols-1`（`gridTemplateColumns: 1fr`），**不用 `auto-fill minmax`**。理由：左总览设计为固定单列卡片清单（§4），`auto-fill` 在用户拖宽左总览（≥28rem=448px）时会自动变 2 列，卡片缩到 220px 内容拥挤，违反「父容器默认以单列宽度排布」的设计意图。`grid-cols-1` 让卡片宽度始终 = 容器宽，拖宽只让卡片变宽（内容更宽松），不增列。
 
 ## 5.1 左总览 padding 规则
 
-左总览 `leftOverviewContent` 三分支（grid / grouped / skeleton）的卡片容器**统一 `px-3 py-2`**——grid 与 skeleton 分支由调用方包 `<div className="px-3 py-2">`（grouped 已在内部每组自带）。理由：grid 视图卡片直接贴 scroll 容器边缘（padding=0）会左右紧贴，与 grouped 视图（每组 `px-3 py-2`）+ 移动端 grid（`px-3 py-2`）不一致；统一 padding 让三视图视觉对齐，卡片有呼吸空间。skeleton 分支用 `NavItemSkeleton` primitive（对齐真实 `NavItemContent` 行高 ~52px：`px-2 py-1.5` + marker `h-7`，加载完不跳到真实行高）；骨架动画范式与「对齐铁律」见 [DESIGN.md Loading 态](./DESIGN.md#loading-态)。
+左总览 `leftOverviewContent` 两分支（global 分段 / project 平铺 / skeleton）的卡片容器**统一 `px-3 py-2`**——project 平铺与 skeleton 分支由调用方包 `<div className="px-3 py-2">`（global 分段在内部 `px-3 py-3` 自带）。理由：卡片直接贴 scroll 容器边缘（padding=0）会左右紧贴；统一 padding 让卡片有呼吸空间。skeleton 分支用 `CardGridSkeleton plain`（对齐真实 InstanceCard 行高：marker h-9 + 内容栈 title/subtitle/meta 三行，加载完不跳到真实行高）；骨架动画范式与「对齐铁律」见 [DESIGN.md Loading 态](./DESIGN.md#loading-态)。
 
 ## 5.2 grid item min-width 规则
 
 InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-width: auto`（= content min-content），InstanceCard 内 title/subtitle 的 min-content 会把 `1fr` 列撑开超过容器（实测 16rem 下 257px > 容器 232px，溢出 ~25px）。移动端 grid item 直接是 InstanceCard（外层 `min-w-0`，`shell-primitives.tsx` L539），天然 min-width:0；桌面 grid item 是 DragSourceCard wrapper（启用拖放），wrapper 必须显式 `min-w-0` 对齐移动端——否则 wrapper 的 `min-width:auto` 让 content 撑开列，卡片溢出。`min-w-0` 让 `1fr` 列可收缩到 < min-content，配合 InstanceCard 内部 `truncate` 截断内容而非撑开。
 
-## 6. 视图切换器
+## 6. 视图切换器（已下线）
 
-- **形态**：segmented control，icon only。2 个 icon：`▦ 详细(grid) / ▤ 分段(grouped)`。
-- **位置**：global 总览顶部 header（overview tab 时），与「+ 新建项目」并排，ml-auto 右推。tab 行只剩纯 tab（不再混排视图切换/新建按钮）。
-- **project 总览无切换器**：project scope 单一 grid 视图（§5），顶部 header 只剩 CreateSessionBar（+ 新建 agent/terminal），不渲染 ViewSwitcher。
-- **记忆**：视图选择记 URL `?view=grid|grouped`（可分享/书签）。
-- 移动端：global view switcher 在移动列表态 header 内右侧（保持现状，移动无左右结构）；project 移动总览同样无切换器。
+2026-08-05 融合：原 grid/grouped 双视图合并为单一「按项目分段的单列网格」（§5），`ViewSwitcher` segmented control、`WorkbenchView` 类型/atom/URL search param、`InstancePagedCarousel`、`GroupedProjectsSkeleton` 全部移除。全局总览不再有视图切换器；项目总览本就无切换器。URL 残留的 `?view=` 值被 `validateWorkbenchSearch` 忽略（私有偏好，不做迁移）。
 
 ## 7. 中栏右侧工作区（核心）
 
@@ -344,7 +341,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 | 中栏左右结构 | ✓（左总览 + 右工作区） | ✗（窄屏不分左右） |
 | 右工作区分屏 | ✓（拖放 5 zone） | ✗（窄屏做不了分屏） |
 | 点卡片行为 | 激活（右工作区切活动 group） | 全屏切聚焦态 |
-| 总览视图样式 | grid/grouped（左总览单列） | grid/grouped（全宽列表） |
+| 总览视图样式 | 按项目分段单列网格（左总览） | 按项目分段单列网格（全宽列表） |
 | 二级导航 5 tab | 中栏顶部常驻 | header 下一行横向滚动 |
 | 右栏 inspection | 容器留空（待扩展） | 聚焦态 tab 切（output/文件/Git） |
 
@@ -355,7 +352,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 ## 10. 会话名（displayName）统一呈现
 
 会话名是一等显示元素，所有位置清晰呈现：
-- 左总览卡片标题（grid/grouped）
+- 左总览卡片标题（单列网格）
 - 右工作区 group tab 栏
 - 移动列表卡片标题
 - 移动聚焦态 ℹ 信息 sheet
@@ -392,7 +389,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 **为什么需要 `compact`**：`actionButtonClasses` 默认移动端 `max-sm:min-h-11 max-sm:px-4 max-sm:text-sm`（44px 触摸目标）服务于 dialog / 表单确认按钮；同一 primitive 被 overview header 行内按钮复用后，44px 撑爆 `py-1.5`（~40px）header 行，移动端「新建」按钮明显高出常规。`compact` 是 primitive 层单一开关，让 header 行内按钮回归 `py-1.5` 行高，dialog 按钮零回归。
 
-**移动 project 总览 header chrome（批 Q 点 3，2026-08 更新）**：project 总览已收敛为单一 grid 视图、移除 ViewSwitcher（`MobileProjectOverview` / `InstanceLeftOverview` 均无切换器）；header 只剩 CreateSessionBar。原「ViewSwitcher 行提到滚动区外作 `shrink-0` header + `border-b border-on-surface/5 px-2 py-1.5`，与桌面 / global 同款」的 chrome 约定仍适用于 CreateSessionBar header 行。global 总览（`GlobalProjectsOverview`）仍保留 grid/grouped ViewSwitcher。
+**移动 project 总览 header chrome（批 Q 点 3，2026-08 更新）**：project 总览已收敛为单一 grid 视图、移除 ViewSwitcher（`MobileProjectOverview` / `InstanceLeftOverview` 均无切换器）；header 只剩 CreateSessionBar。原「ViewSwitcher 行提到滚动区外作 `shrink-0` header + `border-b border-on-surface/5 px-2 py-1.5`，与桌面 / global 同款」的 chrome 约定仍适用于 CreateSessionBar header 行。global 总览（`GlobalProjectsOverview`）的 ViewSwitcher 已于 2026-08-05 融合视图下线（§5/§6）。
 
 **files 列表 header 对齐（批 Q 点 4）**：`FilesPanel` 顶部 breadcrumb 行原本 `border-b border-neutral-line/40 px-3.5 py-3`（偏高 + 异色边），改为同一 chrome `shrink-0 border-b border-on-surface/5 px-2 py-1.5`；行内 New Folder / Upload `<ActionButton>` 加 `compact`。
 
@@ -429,7 +426,7 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 
 | phase | 范围 | 对应完整设计章节 |
 |-------|------|----------------|
-| **A 中栏左右骨架** | 中栏分左右（左总览固定单列 + 右工作区 flex-1，gutter 调比例）+ 左总览单列卡片（grid/grouped）+ 右工作区单 group（首个活跃实例，PanelRouter）+ 左总览单击/右工作区点 group 激活 + 右栏 inspection 跟随 + tab 导航常驻 + URL 四维模型 | §2 §3 §4 §5 §6 §11 §13 §14 |
+| **A 中栏左右骨架** | 中栏分左右（左总览固定单列 + 右工作区 flex-1，gutter 调比例）+ 左总览单列卡片（按项目分段单列网格）+ 右工作区单 group（首个活跃实例，PanelRouter）+ 左总览单击/右工作区点 group 激活 + 右栏 inspection 跟随 + tab 导航常驻 + URL 四维模型 | §2 §3 §4 §5 §6 §11 §13 §14 |
 | **B 拖放分屏** | 5 drop zone 拖放（上/下/左/右/中心/空白）+ group 网格布局算法（deriveRows 扩展）+ 多 group 同屏 + 左总览拖动送入分屏 | §7.3 §7.5 |
 | **C group 操作 + 持久化** | group resize（行内/行间 gutter）+ maximize + close（useCloseSession）+ group 布局持久化（localStorage，scope-scoped） | §7.4 §7.6 |
 | **D VSCode group+tab 两级模型** | §7 重写为 group（分屏区）+ tab（实例）两级：group 含 N tab 切换（hidden 保 session）+ tab ✕ 最小化（session 存活）+ group ▢ 最大化（group 级）+ 纵向 resize（行间 gutter）+ drop center 开 tab + 关闭实例 kill 走卡片/右键 + 持久化 atom V2 迁移 + 移动端 API 对齐 | §7.1 §7.2 §7.3 §7.4 §7.5 §7.6 §7.7 |
@@ -453,3 +450,4 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 - 2026-08-03：移动文件 tab cwd 跨 tab 保活。用户报「移动端查看实例输出 → 切文件 → 切其他 tab → 切回文件，文件树回到根目录，应保持上次位置」。经查**不是回归，是从未实现**：commit 731758f 标题说"移动端项目内切输出/文件 tab"但实际只修桌面 `ProjectLeftPanel`/`FilesLeftPanel` 的 `currentPath` 受控保活。移动端 `MobileFocusBody` 与 `MobileProjectOverview` 都走 `activePlugin.render(ctx)` 条件渲染——切 tab 即卸载 `FilesPanel`，文件 plugin 恒以 `initialPath=""` 重新挂载 → 切回必回根目录。修复：镜像桌面模式——父级 body 持 `filesPath` state，经扩展的 `WorkbenchTabPluginContext.currentPath/onPathChange` 透传 `FilesPanel`，跨 tab 切换保活。`MobileFocusBody` 加 derived-state 切项目重置（projectName 派生自 focusId）；`MobileProjectOverview` 由 `key={scope.key}` remount 兜底重置。移动端两条保活路径并存：输出 PanelRouter 走 `hidden` 保活（避免 stream 重连）、inspection files plugin 走受控 cwd 保活（避免回根目录）。GitDiffPanel/PagesPanel/WikiPanel 不消费 cwd，plugin context 扩展对它们零影响。
 - 2026-08-03：项目总览分组视图两端统一带 bg + 分割条 inset。用户三诉求：① 移动/桌面分组视图不一致（桌面有边框圆角、移动仅 `overflow-hidden` 无边框，靠根 `space-y-3` 分隔）→ 两端统一；② 分组只有边框隔开应带 bg → 参考设置 Card grouped 带 bg 范式；③ 桌面分割条全宽覆盖 marker 列 → 改 inset（marker 列无分割条，对齐移动 + iOS separatorInset）。`GroupedProjectsList` section `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40` → 两端统一 `overflow-hidden rounded-lg border border-neutral-line bg-surface-raised`（撤销决策 38 移动 full-bleed 无边框）；根 `px-0 py-3 lg:px-3` → 两端统一 `px-3 py-3`（撤销决策 42 移动贴边）；`InstanceCard.topSeparator` `left-15 lg:left-0` → 两端统一 `left-15`（60px=p-3+marker lg+gap-3 跳过 marker 列，撤销桌面全宽）；`GroupedProjectsSkeleton` + `CardGridSkeleton` 占位卡同步。bg 用 `surface-raised`（非设置的 `surface`）因分组父底是 shell(`surface`)，`surface-raised` 浮起一层复刻设置 Card 在其底上的浮起关系（InstanceCard plain 透明露出正常卡片底色）。carousel 内部交互（移动 swipe+peek / 桌面满宽+页码）、名行 padding 不动。连带：桌面 grid 视图（`InstanceGrid plain`）分割条也变 inset（InstanceCard 级改动）。
 - 2026-08-03：分组视图移动端对齐桌面端（满宽 + 去 full-bleed peek 残留 + 移动 dots）。用户：「桌面端完全符合要求，仅移动端不符」——三条诉求（标题↔卡片对齐 / 右侧边距太宽 / 两端共用代码）实为同一件事：移动端 `px-5`(20) peek + 名行 `pl-5 pr-7`(20/28) 是上一轮 full-bleed 无边框时代（决策 38-43）残留，section 加 bg+border 后在带 bg 的 section 内变成可见右侧 28px bg 空白（桌面 8px）+ 标题图标(33)与 marker(45)错位 12px（桌面图标 73 ≡ marker 73 已对齐）。撤销 peek 范式、移动对齐桌面满宽：`GroupedProjectsList` 名行 `pl-5 pr-7 lg:pl-2 lg:pr-2` → 两端统一 `pl-3 pr-2` + button `px-0 lg:px-1` → `px-0`（图标≡marker、⋯≡action 两端一致）；`InstancePagedCarousel` 退化态去 `px-5 lg:px-0` wrapper（卡片满宽）；carousel 态去首尾 spacer + 页 `w-[calc(100%-2.5rem)] lg:w-full` → `w-full` + 容器 `scroll-px-5 lg:scroll-px-0` → `scroll-px-0`（满宽 snap）；新增移动 dots 指示器（`lg:hidden`，active `bg-primary`/inactive `bg-on-surface-muted/40`，复用 `carousel.pageLabel`）= 桌面页码行 ‹1·2·3› 的移动等价 ●○○（平台差异合理表达，撤销决策 39 swipe+peek 暗示）；`GroupedProjectsSkeleton` 名行 `px-2` → `pl-3 pr-2` mirror。桌面零回归（满宽 + 名行 pl-3/pr-2 与原 lg:pl-2/lg:pr-2 等价）。撤销决策 38-43 full-bleed peek 范式。
+- 2026-08-05：全局总览双视图融合为单一「按项目分段的单列网格」。用户钟爱网格视图的卡片密度，但希望自然融入项目分组 + 项目操作区（进项目/删除），替换原 grouped 视图——参考他人「用项目标题作分割条」做法。grid（单列满宽平铺，无项目分段）+ grouped（项目 section + InstancePagedCarousel 每页 3 卡 swipe）合并为：项目标题行（📁 项目名 + › 进项目 + ⋯ 删除）作 section header 分割，组内换 `InstanceGrid plain` 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页），含空项目只显标题行。`ViewSwitcher` segmented control + `WorkbenchView` 类型/`workbenchViewAtom`/URL `?view=` search param/`filterWorkbenchViews`/`WORKBENCH_VIEW_ORDER`/`VIEW_LABEL_KEY`/`groupByProject` + `InstancePagedCarousel`/`GroupedProjectsSkeleton` 组件 + i18n `workbench.viewSwitcher`/`viewGrid`/`viewGrouped` 全删。`WorkbenchRoute.tsx` ~9 处 `view: viewFromUrl` 接线、`validateWorkbenchSearch` view 字段、`useWorkbenchNavigate` search.view、`WorkbenchRouteContext.view`/`deriveWorkbenchRouteContext` view 同步清理。§5 重写为单一视图、§6 标注下线；project scope 单 grid 视图本就无切换器，零改动。旧 `?view=` URL / localStorage `workbenchView` 残留由 `validateWorkbenchSearch`（不再返回 view）安全忽略。

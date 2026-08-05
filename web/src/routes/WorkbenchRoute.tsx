@@ -30,7 +30,6 @@ import {
   type WorkbenchPanelRef,
   type WorkbenchInspectionTab,
   type WorkbenchScope,
-  type WorkbenchView,
   activeTabRefLeaf,
   collectLeaves,
   dropIntoLeaf,
@@ -53,7 +52,6 @@ import {
   workbenchMiddleLeftWidthAtom,
   workbenchMiddleTabAtom,
   workbenchRightCollapsedAtom,
-  workbenchViewAtom,
 } from "./workbench-model";
 
 /**
@@ -62,7 +60,7 @@ import {
  * unmount → InstanceArea/WorkspaceTree/PanelRouter 实例保活 → WebSocket/relay/xterm 长连不重连
  *（用户诉求"中栏还是同一个，而不是看起来一样"）。
  *
- * scope/focusId/rightTab/view/tab 从 `useWorkbenchRouteContext()` 派生——单一数据管道，source of
+ * scope/focusId/rightTab/tab 从 `useWorkbenchRouteContext()` 派生——单一数据管道，source of
  * truth = URL（useMatches 末位 leaf match，不引入持久化 atom，无子 render 写/父读时序问题）。
  * 子路由不设 component，只负责 URL 匹配 + validateSearch；本 layout 渲染全部中栏内容（不渲染
  * `<Outlet/>`——子路由无需渲染任何东西，其 params/search 经 useMatches 读得）。
@@ -78,7 +76,6 @@ export function WorkbenchLayoutShell() {
       rightTab={ctx.rightTab}
       scope={ctx.scope}
       tab={ctx.tab}
-      view={ctx.view}
     />
   );
 }
@@ -87,14 +84,12 @@ function WorkbenchContent({
   focusId,
   rightTab,
   scope,
-  view: viewFromUrl,
   tab: tabFromUrl,
   leftMode = "auto",
 }: {
   focusId?: string;
   rightTab?: WorkbenchInspectionTab;
   scope: WorkbenchScope;
-  view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   // 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化）：project scope 恒走
   // ProjectLeftPanel（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview
@@ -110,37 +105,24 @@ function WorkbenchContent({
   const navigate = useNavigate();
   // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。
   const backToProjects = () => void navigate({ to: "/projects" });
-  const [rememberedView, setRememberedView] = useAtom(workbenchViewAtom);
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
   // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件只读，
   // 写入由 WorkbenchShell（RailButton 唤出 / onCollapse 收起）负责。纯手动控制，持久化到
   // localStorage，focusId 变化不覆盖。
   const rightCollapsed = useAtomValue(workbenchRightCollapsedAtom);
-  const view = viewFromUrl ?? rememberedView;
   const tab = tabFromUrl ?? rememberedMiddleTab;
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
   };
-  // 三个 navigate 都传完整 { view, tab, rightTab }（URL 原始值 viewFromUrl/tabFromUrl/
-  // rightTab 合并 + 新值）。TanStack Router navigate 整体替换 search 对象（非 merge），
-  // 若只传单键会丢失其他维 —— 违反设计 §13「view/tab/rightTab 正交」。用 URL 原始值
-  //（而非 view/tab 解析值）合并，避免把 atom 回退值意外写进 URL。
+  // 两个 navigate 都传完整 { tab, rightTab }（URL 原始值 tabFromUrl/rightTab 合并 + 新值）。
+  // TanStack Router navigate 整体替换 search 对象（非 merge），若只传单键会丢失其他维 ——
+  // 违反设计 §13「tab/rightTab 正交」。用 URL 原始值（而非解析值）合并。
   const onRightTabChange = (rightTabNext: WorkbenchInspectionTab) => {
     void navigateWorkbench(scope, focusId, {
       rightTab: rightTabNext,
       tab: tabFromUrl,
-      view: viewFromUrl,
-      ...(leftMode !== "auto" ? { leftMode } : {}),
-    });
-  };
-  const onViewChange = (next: WorkbenchView) => {
-    setRememberedView(next);
-    void navigateWorkbench(scope, focusId, {
-      rightTab,
-      tab: tabFromUrl,
-      view: next,
       ...(leftMode !== "auto" ? { leftMode } : {}),
     });
   };
@@ -149,7 +131,6 @@ function WorkbenchContent({
     void navigateWorkbench(scope, focusId, {
       rightTab,
       tab: next,
-      view: viewFromUrl,
       ...(leftMode !== "auto" ? { leftMode } : {}),
     });
   };
@@ -274,7 +255,6 @@ function WorkbenchContent({
       const search = {
         rightTab,
         tab: tabFromUrl,
-        view: viewFromUrl,
         ...(leftMode !== "auto" ? { leftMode } : {}),
       };
       if (active?.kind === "session") {
@@ -301,18 +281,17 @@ function WorkbenchContent({
       if (ref.kind !== "session") return;
       const navScope: WorkbenchScope =
         scope.kind === "project" ? { kind: "project", key: ref.projectName } : scope;
-      // 与 onRightTabChange/onViewChange/onTabChange 同模式：传完整 {view,tab,rightTab,leftMode}
-      //（URL 原始值）。navigateWorkbench 整体替换 search 对象，不传则会清空 tab/view/rightTab/leftMode
-      // ——点中栏 tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
+      // 与 onRightTabChange/onTabChange 同模式：传完整 {tab,rightTab,leftMode}（URL 原始值）。
+      // navigateWorkbench 整体替换 search 对象，不传则会清空 tab/rightTab/leftMode ——点中栏
+      // tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
       // leftMode 粘性透传（files/skills 写，非 auto）：中栏 tab 切换不改左栏模式（VSCode 式）。
       void navigateWorkbench(navScope, ref.sessionId, {
         rightTab,
         tab: tabFromUrl,
-        view: viewFromUrl,
         ...(leftMode !== "auto" ? { leftMode } : {}),
       });
     },
-    [navigateWorkbench, scope, rightTab, tabFromUrl, viewFromUrl, leftMode],
+    [navigateWorkbench, scope, rightTab, tabFromUrl, leftMode],
   );
   const focusPanel = useCallback(
     (ref: WorkbenchPanelRef) => {
@@ -369,7 +348,6 @@ function WorkbenchContent({
           search: {
             rightTab,
             tab: tabFromUrl,
-            view: viewFromUrl,
             ...(leftMode !== "auto" ? { leftMode } : {}),
           },
         });
@@ -381,12 +359,11 @@ function WorkbenchContent({
         search: {
           rightTab,
           tab: tabFromUrl,
-          view: viewFromUrl,
           ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, viewFromUrl, leftMode],
+    [navigate, scope, rightTab, tabFromUrl, leftMode],
   );
   // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
   //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
@@ -409,13 +386,12 @@ function WorkbenchContent({
         search: {
           rightTab,
           tab: tabFromUrl,
-          view: viewFromUrl,
           gitScope: scope,
           ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
+    [navigate, rightTab, tabFromUrl, leftMode],
   );
   // compare 模式 git tab focus URL：与 navigateToGitFile 同路由（/projects/$key/git/$），
   // search 用 gitCompare（编码 `${base}~${compare}`）替代 gitScope，两者互斥。
@@ -428,13 +404,12 @@ function WorkbenchContent({
         search: {
           rightTab,
           tab: tabFromUrl,
-          view: viewFromUrl,
           gitCompare: `${base}~${compare}`,
           ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
+    [navigate, rightTab, tabFromUrl, leftMode],
   );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
   const onOpenGitFile = useCallback(
@@ -467,12 +442,11 @@ function WorkbenchContent({
         search: {
           rightTab,
           tab: tabFromUrl,
-          view: viewFromUrl,
           ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, viewFromUrl, leftMode],
+    [navigate, rightTab, tabFromUrl, leftMode],
   );
   // Manage tab 点已装 skill 行 → 中栏开/激活 skill tab + focus（对标 onOpenFile）。skill ref
   //（kind:"skill", name）全局去重（tabId=skill_${name}），无 project scope gate（同 file）。
@@ -500,7 +474,6 @@ function WorkbenchContent({
       const search = {
         rightTab,
         tab: tabFromUrl,
-        view: viewFromUrl,
         ...(leftMode !== "auto" ? { leftMode } : {}),
       };
       if (!active) {
@@ -557,7 +530,6 @@ function WorkbenchContent({
       scope,
       rightTab,
       tabFromUrl,
-      viewFromUrl,
       leftMode,
     ],
   );
@@ -713,12 +685,7 @@ function WorkbenchContent({
   // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
   const leftOverview =
     scope.kind === "global" ? (
-      <GlobalProjectsOverview
-        dragAdapter={dragAdapter}
-        onFocusInstance={focusInstance}
-        onViewChange={onViewChange}
-        view={view}
-      />
+      <GlobalProjectsOverview dragAdapter={dragAdapter} onFocusInstance={focusInstance} />
     ) : (
       <InstanceLeftOverview
         create={create}

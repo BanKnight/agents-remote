@@ -1,18 +1,11 @@
 import { type FormEvent, useId, useMemo, useState } from "react";
-import { useAtom } from "jotai";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
-import {
-  filterWorkbenchViews,
-  mergeProjectsWithCandidates,
-  type WorkbenchPanelRef,
-  type WorkbenchView,
-  workbenchViewAtom,
-} from "../../routes/workbench-model";
+import { type WorkbenchPanelRef, mergeProjectsWithCandidates } from "../../routes/workbench-model";
 import { deleteProject } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
-import { actionButtonClasses, ViewSwitcher } from "../shell/shell-primitives";
+import { actionButtonClasses } from "../shell/shell-primitives";
 import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
 import { Dialog, DialogContent } from "../ui/dialog";
 import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
@@ -21,15 +14,12 @@ import { MobileFab } from "../shell/mobile-fab";
 import {
   candidateToGridItem,
   CardGridSkeleton,
-  GroupedProjectsSkeleton,
   type DragSourceAdapter,
   type GridItemCallbacks,
   InstanceGrid,
-  InstancePagedCarousel,
   useCloseSession,
   useGlobalInstanceCandidates,
   useRenameSession,
-  VIEW_LABEL_KEY,
 } from "./instance-area";
 
 type GlobalProjectsOverviewProps = {
@@ -37,18 +27,16 @@ type GlobalProjectsOverviewProps = {
   onFocusInstance: (sessionId: string) => void;
   /** 桌面拖放源；移动不传。 */
   dragAdapter?: DragSourceAdapter;
-  /**
-   * 总览视图。桌面传 URL/atom 解析值 + onViewChange（写 URL+atom）；
-   * 移动不传 → 组件内读/写 workbenchViewAtom。
-   */
-  view?: WorkbenchView;
-  onViewChange?: (next: WorkbenchView) => void;
 };
 
 /**
  * global [项目] 总览共享主体（批 F / 决策 29）。桌面左栏 + 移动 [项目] 胶囊共用，
- * 结束「两端各自改各自」双写。自持 candidates/projects/create/delete/close/rename/view；
- * 参数化仅 onFocusInstance / dragAdapter? / view+onViewChange?。
+ * 结束「两端各自改各自」双写。自持 candidates/projects/create/delete/close/rename；
+ * 参数化仅 onFocusInstance / dragAdapter?。
+ *
+ * 单一融合视图（2026-08-05）：原 grid/grouped 双视图合并为「按项目分段的单列网格」——
+ * 项目标题行（📁 项目名 + › 进项目 + ⋯ 删除）作 section header 分割，组内 InstanceGrid plain
+ * 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页），含空项目只显标题行。ViewSwitcher 下线。
  *
  * 外壳（标题、底部 nav）由调用方提供：桌面 WorkbenchShell leftPanelTitle；
  * 移动 MobilePageHeader。
@@ -56,8 +44,6 @@ type GlobalProjectsOverviewProps = {
 export function GlobalProjectsOverview({
   onFocusInstance,
   dragAdapter,
-  view: viewProp,
-  onViewChange,
 }: GlobalProjectsOverviewProps) {
   const { t } = useT();
   const inputId = useId();
@@ -66,25 +52,6 @@ export function GlobalProjectsOverview({
   const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   const { create: createProject, projectPath, setProjectPath } = useCreateProject();
-  const [atomView, setAtomView] = useAtom(workbenchViewAtom);
-
-  const viewOptions = useMemo(
-    () =>
-      filterWorkbenchViews({ kind: "global" }).map((v) => ({
-        id: v,
-        label: t(VIEW_LABEL_KEY[v]),
-      })),
-    [t],
-  );
-  // 有 prop 用 prop（桌面 URL 维）；否则 atom（移动）。不在 options 内 → 回退 grid。
-  const rawView = viewProp ?? atomView;
-  const resolvedView: WorkbenchView = viewOptions.some((opt) => opt.id === rawView)
-    ? rawView
-    : "grid";
-  const handleViewChange = (next: WorkbenchView) => {
-    if (onViewChange) onViewChange(next);
-    else setAtomView(next);
-  };
 
   const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
     const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
@@ -99,34 +66,12 @@ export function GlobalProjectsOverview({
     const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
     if (ref) void rename(ref, type, currentName);
   };
-  const gridCallbacks: GridItemCallbacks = {
-    onClose: closeInstance,
-    onRename: renameInstance,
-    onSelect: onFocusInstance,
-    t,
-  };
-  const gridItems = useMemo(
-    () => candidates.map((c) => candidateToGridItem(c, gridCallbacks)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [candidates, t],
-  );
-  const gridDragRefs = useMemo(() => {
-    const m = new Map<string, WorkbenchPanelRef>();
-    for (const c of candidates) m.set(c.ref.sessionId, c.ref);
-    return m;
-  }, [candidates]);
 
-  // empty/loading gate（决策 28/29）：grouped 以 projectNames 为准；grid 看 candidates。
+  // empty/loading gate：融合视图以 projectNames 为准（含空项目标题行，无项目才算空）。
   // projectNames 与 candidates 同源 `/api/overview`，统一用 isLoaded（success-only：data 就绪）；
   // 请求失败时 isLoaded=false → 显示骨架（与原 projects query 行为一致，不退化为空态）。
-  const overviewEmpty =
-    resolvedView === "grouped"
-      ? isLoaded && projectNames.length === 0
-      : isLoaded && candidates.length === 0;
-  const overviewLoading =
-    resolvedView === "grouped"
-      ? !isLoaded && projectNames.length === 0
-      : !isLoaded && candidates.length === 0;
+  const overviewEmpty = isLoaded && projectNames.length === 0;
+  const overviewLoading = !isLoaded && projectNames.length === 0;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -137,18 +82,14 @@ export function GlobalProjectsOverview({
   const setupVisible = setupOpen || createProject.isPending || createProject.error instanceof Error;
 
   const body = overviewLoading ? (
-    resolvedView === "grouped" ? (
-      <GroupedProjectsSkeleton />
-    ) : (
-      <div className="px-3 py-2">
-        <CardGridSkeleton plain />
-      </div>
-    )
+    <div className="px-3 py-2">
+      <CardGridSkeleton plain />
+    </div>
   ) : overviewEmpty ? (
     <div className="flex flex-1 items-center justify-center p-6 text-center">
       <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
     </div>
-  ) : resolvedView === "grouped" ? (
+  ) : (
     <GroupedProjectsList
       candidates={candidates}
       dragAdapter={dragAdapter}
@@ -157,10 +98,6 @@ export function GlobalProjectsOverview({
       onRename={renameInstance}
       projectNames={projectNames}
     />
-  ) : (
-    <div className="px-3 py-2">
-      <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
-    </div>
   );
 
   return (
@@ -180,14 +117,6 @@ export function GlobalProjectsOverview({
         </button>
         {/* 移动 FAB（lg:hidden）：直开 ProjectSetupPanel Dialog；桌面 header 按钮上方保留。 */}
         <MobileFab ariaLabel={t("home.createProjectAria")} onClick={() => setSetupOpen(true)} />
-        <div className="ml-auto">
-          <ViewSwitcher
-            ariaLabel={t("workbench.viewSwitcher")}
-            onChange={handleViewChange}
-            view={resolvedView}
-            views={viewOptions}
-          />
-        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
         {body}
@@ -225,15 +154,13 @@ type GroupedProjectsListProps = {
 };
 
 /**
- * grouped 唯一实现（批 F / 决策 29 + 批 J / 决策 33 + 批 L / 决策 35）：mergeProjectsWithCandidates
- * 含空项目；项目名行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
- * ≥44px）][⋯ 删除 最右尽头]（名行两端统一 `pl-3 pr-2` + button `px-0`，2026-08-03 撤销决策 39-43 full-bleed peek 配套：
- * 卡片满宽后名行不再 peek 缩进——图标 = pl-3(12)+button px-0 = 12 ≡ marker（InstanceCard p-3=12），⋯ = pr-2(8) ≡ 满宽
- * action（absolute right-2=8），两端图标≡marker、⋯≡action 严格对齐；桌面零回归：原 lg:pl-2(8)+lg:px-1(4)=12 ≡ 现 pl-3(12)+px-0=12）。
- * 批 P 收尾 / 决策 40：⋯ 删除 button `flex h-7 w-7 touch:h-10 touch:w-10` + `ShellIcon ellipsis h-4 w-4`，与 InstanceCard
- * action 同尺寸同图标同源 → 图标中心均 button.cx 严格同列。实例区 = InstancePagedCarousel（每页最多 3 卡横向 swipe 翻页 + 桌面页码行 / 移动 dots，
- * 折叠废弃无小标题）。**section = `overflow-hidden rounded-lg border border-neutral-line bg-surface-raised`**（2026-08-03 两端统一带 bg 边框，撤销决策 38 移动 full-bleed 无边框：名行=header + 实例区=body 同一圆角边框内；`bg-surface-raised` 比 shell 浮起一层，InstanceCard plain 透明露出正常卡片底色——复刻设置 Card grouped 带 bg 范式；同框 InstanceCard topSeparator 两端统一 inset 分割线，Apple hairline；实例区外层 `-mt-2`
- * 抵消首卡 InstanceCard p-3 top 收间距）；根 `px-3 py-3`（2026-08-03 两端统一，撤销决策 42 移动贴边：section 离屏幕边缘 12px 让 border+bg 可见）+ section 间 space-y-3(12px) 缩间距。空项目只名行（与有实例项目结构对称：都一行 header）。
+ * 按项目分段的单列网格（2026-08-05 融合视图）：mergeProjectsWithCandidates 含空项目；
+ * 项目标题行 = [📁 项目名 text-base font-semibold + › chevron 整体 button 进项目（热区 min-h-11
+ * ≥44px）][⋯ 删除 最右尽头]（名行两端统一 `pl-3 pr-2` + button `px-0`：图标 = pl-3(12)+button px-0
+ * = 12 ≡ marker（InstanceCard p-3=12），⋯ = pr-2(8) ≡ 满宽 action（absolute right-2=8），两端图标≡marker、
+ * ⋯≡action 严格对齐）。实例区 = InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页；
+ * 组内非首卡由 InstanceCard topSeparator 画 inset 分割线，两端统一 left-15=60px 跳过 marker 列）。
+ * 根 `px-3 py-2` + section 间 space-y-2(8px)。空项目只名行（与有实例项目结构对称：都一行 header）。
  */
 function GroupedProjectsList({
   candidates,
@@ -276,15 +203,12 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div className="space-y-3 px-3 py-3">
+    <div className="space-y-2 px-3 py-2">
       {groups.map((group) => {
         const dragRefs = new Map<string, WorkbenchPanelRef>();
         for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
         return (
-          <section
-            className="overflow-hidden rounded-lg border border-neutral-line bg-surface-raised"
-            key={group.projectName}
-          >
+          <section key={group.projectName}>
             <div
               className="flex items-center gap-2 pl-3 pr-2"
               onContextMenu={(e) => ctx.openAt(group.projectName, e)}
@@ -340,13 +264,12 @@ function GroupedProjectsList({
               />
             </div>
             {group.candidates.length === 0 ? null : (
-              <div className="-mt-2">
-                <InstancePagedCarousel
+              <div>
+                <InstanceGrid
                   dragAdapter={dragAdapter}
                   dragRefs={dragRefs}
                   items={group.candidates.map((c) => candidateToGridItem(c, callbacks))}
                   plain
-                  t={t}
                 />
               </div>
             )}

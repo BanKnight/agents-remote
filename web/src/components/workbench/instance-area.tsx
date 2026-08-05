@@ -28,7 +28,6 @@ import {
   type WorkbenchPanelRef,
   type SessionPanelRef,
   type WorkbenchScope,
-  type WorkbenchView,
   deriveZone,
   inferSessionTypeFromId,
   rankGlobalInstances,
@@ -80,12 +79,6 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
-/** 总览视图 label（WorkbenchView → i18n key，ViewSwitcher 按钮 aria-label/title）。仅 global 用。 */
-export const VIEW_LABEL_KEY: Record<WorkbenchView, TranslationKey> = {
-  grouped: "workbench.viewGrouped",
-  grid: "workbench.viewGrid",
-};
-
 /** InstanceCard 内容最小可读宽度（左总览 MIN_REM 的设计依据：放得下一张 220px 卡）。 */
 export const MIN_CARD_WIDTH_PX = 220;
 /**
@@ -116,8 +109,8 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  * 桌面 InstanceArea 总览加载 + 左栏 ProjectInstances 加载 + 移动 grid 加载共用——单一 skeleton
  * 范式，避免三处各写一份。pending 时占位，替代 EmptyInstanceArea 的"伪空态"。
  *
- * `count` 参数化（默认 INSTANCE_SKELETON_ROW_COUNT * 2 = 6）：grid/InstanceArea 用默认 6 张；
- * GroupedProjectsSkeleton 每组传 2（每组实例少，2 张传达「分组+卡片」结构即可）。
+ * `count` 参数化（默认 INSTANCE_SKELETON_ROW_COUNT * 2 = 6）：grid/InstanceArea/global 总览加载
+ * 均用默认 6 张（单列卡片骨架，与融合视图同构）。
  */
 export function CardGridSkeleton({
   plain = false,
@@ -152,48 +145,6 @@ export function CardGridSkeleton({
             className="skeleton-shimmer absolute right-2 top-2 h-7 w-7 rounded-md"
           />
         </div>
-      ))}
-    </div>
-  );
-}
-
-/** grouped 骨架占位分组数（mirror 真实 GroupedProjectsList 分组结构，加载时项目数未知用 2 组）。 */
-const GROUPED_SKELETON_GROUPS = 2;
-/** grouped 骨架每组占位卡数（= InstancePagedCarousel 一页 3 卡，批 J / 决策 33）。 */
-const GROUPED_SKELETON_CARDS_PER_GROUP = 3;
-
-/**
- * grouped 视图加载骨架（批 J / 决策 33 + 批 L / 决策 35 + 批 M / 决策 36 + 批 O / 决策 38）：mirror GroupedProjectsList——
- * 每组 section = `overflow-hidden lg:rounded-lg lg:border lg:border-neutral-line/40`（移动无边框 Apple 列表范式，批 O；桌面 lg:
- * 才加圆角边框成组，批 L 无 bg 透明融入 shell，border-neutral-line/40 半透明淡边 Apple hairline 批 M）+ 根 `space-y-3 px-0 py-3 lg:px-3`（批 P 收尾 / 决策 42：移动去 px 让 section 贴屏幕、card 距两侧 = peek(20) 单一留白非 px-3+peek 双重叠加；桌面 lg:px-3 保持边框时代内边距）；项目名行 [project 图标
- * size-5][项目名 text-base 行盒 h-6=24px][› chevron size-5 同进项目 button][⋯ size-9 删除 最右]（折叠废弃，
- * 无实例区小标题行）+ 实例区 `-mt-2` 包 CardGridSkeleton plain 每组 3 卡（= carousel 一页）。名行 div `flex
- * min-h-11 items-center gap-2 px-2`（min-h-11 撑 44px = 真实名行 button 触控热区高度，批 L 去 py）。去 h-full
- * （与 GroupedProjectsList 同语义，避免 overflow 容器 padding-bottom 不扩展致骨架态被底部胶囊遮挡，见
- * frontend-notes §1 高度链坑）。复用 CardGridSkeleton plain，不重写占位卡结构。global-projects-overview
- * grouped 加载专用。
- */
-export function GroupedProjectsSkeleton() {
-  return (
-    <div className="space-y-3 px-3 py-3">
-      {Array.from({ length: GROUPED_SKELETON_GROUPS }, (_, groupIndex) => (
-        <section
-          className="overflow-hidden rounded-lg border border-neutral-line bg-surface-raised"
-          key={groupIndex}
-        >
-          {/* 项目名行骨架：mirror GroupedProjectsList flex items-center gap-2 pl-3 pr-2
-              [图标 size-5][项目名 text-base 行盒 h-6 + › size-5 同 button][⋯ size-9 最右]；
-              min-h-11 模拟真实名行 button 触控热区（44px），撑高骨架名行到真实行高。 */}
-          <div className="flex min-h-11 items-center gap-2 pl-3 pr-2">
-            <span aria-hidden="true" className="skeleton-shimmer size-5 shrink-0 rounded" />
-            <span aria-hidden="true" className="skeleton-shimmer h-6 w-1/3 rounded" />
-            <span aria-hidden="true" className="skeleton-shimmer size-5 shrink-0 rounded" />
-            <span aria-hidden="true" className="skeleton-shimmer ml-auto size-9 rounded-md" />
-          </div>
-          <div className="-mt-2">
-            <CardGridSkeleton count={GROUPED_SKELETON_CARDS_PER_GROUP} plain />
-          </div>
-        </section>
       ))}
     </div>
   );
@@ -1298,178 +1249,6 @@ export function InstanceGrid({
           <InstanceCard key={key} {...card} surface={surface} topSeparator={i > 0} />
         ),
       )}
-    </div>
-  );
-}
-
-/** 实例分页 carousel 每页最多卡片数（批 J / 决策 33：Apple Store 风格每页 3 张纵向卡片）。 */
-const INSTANCE_PAGED_CAROUSEL_PAGE_SIZE = 3;
-
-/**
- * 实例分页 carousel（批 J / 决策 33 + 批 M / 决策 36 + 批 N / 决策 37 + 批 P / 决策 39）：每页最多 pageSize 卡纵向堆叠（复用 InstanceGrid 单列 plain），
- * 横向 swipe 翻页 + snap-start 满宽页（每页 w-full = container；scroll-px-0 让 snap 对齐 snapport-left=scrollLeft，page.left=i·pageW）；
- * 当前页同步靠 onScroll 算页码（slot=scrollWidth/pageCount；满宽页等宽=container，slot=container，snap 仍工作）。
- * 移动端 dots 指示器（lg:hidden，active bg-primary / inactive bg-on-surface-muted/40，点击 goTo）+ 原生 swipe 翻页，
- * = 桌面页码行 ‹1·2·3› 的移动等价 ●○○（2026-08-03 撤销决策 39 swipe+双侧 peek 暗示后的平台差异合理表达）；
- * 桌面端（不可触摸）lg:w-full 满宽 + 页码行 hidden lg:flex（‹ prev + 页码 button aria-current 高亮 + › next，scrollIntoView inline:start 对齐 snap-start）。
- *
- * ≤1 页退化：InstanceGrid plain gap={false} 满宽（无 carousel 容器、无 snap、无 dots/页码行）——
- * 卡片满宽贴 section content、action right-2 ≡ 名行 ⋯ pr-2 同列（2026-08-03 撤销决策 39-43 peek 范式后退化与 carousel 同满宽几何）。
- * Apple Store 风格 grouped 实例区专用——复用 InstanceGrid 渲染页内卡片（不重写卡片/不加 variant）。
- */
-export function InstancePagedCarousel({
-  items,
-  pageSize = INSTANCE_PAGED_CAROUSEL_PAGE_SIZE,
-  dragAdapter,
-  dragRefs,
-  plain = true,
-  t,
-}: {
-  items: InstanceGridItem[];
-  pageSize?: number;
-  dragAdapter?: DragSourceAdapter;
-  dragRefs?: Map<string, WorkbenchPanelRef>;
-  plain?: boolean;
-  t: TranslateFn;
-}) {
-  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
-  const [page, setPage] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const rafRef = useRef<number | null>(null);
-
-  // ≤1 页退化：直接 InstanceGrid 满宽（无 carousel 容器、无 snap、无 dots/页码行），单列清单语义。
-  // 卡片满宽贴 section content：action right-2 落 section-right-8 ≡ 名行 ⋯ pr-2(8) 同列（2026-08-03 撤销决策 39-43
-  // peek 范式后，名行 pr-2 与满宽 action 同 right-8，两端统一、退化与 carousel 同几何）。
-  if (pageCount <= 1) {
-    return (
-      <InstanceGrid
-        dragAdapter={dragAdapter}
-        dragRefs={dragRefs}
-        gap={false}
-        items={items}
-        plain={plain}
-      />
-    );
-  }
-
-  // onScroll 同步当前页：rAF 节流；slot = scrollWidth / pageCount（每页等宽 + 首尾 spacer 对称，scrollWidth=N·pageW+24），算最近页 index。
-  const handleScroll = () => {
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const slot = el.scrollWidth / pageCount;
-      const next = slot > 0 ? Math.round(el.scrollLeft / slot) : 0;
-      setPage((cur) => (next === cur || next < 0 || next >= pageCount ? cur : next));
-    });
-  };
-  const goTo = (index: number) => {
-    const clamped = Math.max(0, Math.min(pageCount - 1, index));
-    pageRefs.current[clamped]?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "start",
-    });
-  };
-  const pages = Array.from({ length: pageCount }, (_, i) =>
-    items.slice(i * pageSize, i * pageSize + pageSize),
-  );
-
-  return (
-    <div>
-      <div
-        className="flex snap-x snap-mandatory overflow-x-auto scroll-px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onScroll={handleScroll}
-        ref={scrollRef}
-      >
-        {pages.map((pageItems, i) => (
-          <div
-            className="w-full shrink-0 snap-start"
-            key={i}
-            ref={(el) => {
-              pageRefs.current[i] = el;
-            }}
-          >
-            <InstanceGrid
-              dragAdapter={dragAdapter}
-              dragRefs={dragRefs}
-              gap={false}
-              items={pageItems}
-              plain={plain}
-            />
-          </div>
-        ))}
-      </div>
-      {/* 移动 dots 指示器（lg:hidden）：满宽页无 peek 暗示，用 dots 表达当前页 + 可点击跳页，= 桌面页码行 ‹1·2·3› 的
-          移动等价 ●○○（2026-08-03 撤销决策 39 swipe+peek 暗示后的平台差异合理表达）。active bg-primary / inactive
-          bg-on-surface-muted/40 对齐桌面页码行 primary 高亮语义；i18n 复用 carousel.pageLabel。 */}
-      <div
-        aria-label={t("carousel.pageLabel", { current: page + 1, total: pageCount })}
-        className="flex items-center justify-center gap-1.5 pt-2 lg:hidden"
-      >
-        {pages.map((_, i) => (
-          <button
-            aria-current={i === page ? "true" : undefined}
-            aria-label={t("carousel.pageLabel", { current: i + 1, total: pageCount })}
-            className={`size-1.5 rounded-full transition ${i === page ? "bg-primary" : "bg-on-surface-muted/40"}`}
-            key={i}
-            onClick={() => goTo(i)}
-            type="button"
-          />
-        ))}
-      </div>
-      {/* 桌面页码行（hidden lg:flex）：移动端 dots。‹ prev + 页码 button(aria-current 高亮) + › next。 */}
-      <div
-        aria-label={t("carousel.pageLabel", { current: page + 1, total: pageCount })}
-        className="hidden items-center justify-center gap-1 pt-2 lg:flex"
-      >
-        <button
-          aria-label={t("carousel.prev")}
-          className="flex size-6 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/5 active:bg-on-surface/10 disabled:opacity-40"
-          disabled={page === 0}
-          onClick={() => goTo(page - 1)}
-          type="button"
-        >
-          <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M10 4l-4 4 4 4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              stroke="currentColor"
-            />
-          </svg>
-        </button>
-        {pages.map((_, i) => (
-          <button
-            aria-current={i === page ? "true" : undefined}
-            className="flex size-6 items-center justify-center rounded text-xs text-on-surface-muted transition hover:bg-on-surface/5 active:bg-on-surface/10 aria-[current=true]:bg-primary/10 aria-[current=true]:text-primary"
-            key={i}
-            onClick={() => goTo(i)}
-            type="button"
-          >
-            {i + 1}
-          </button>
-        ))}
-        <button
-          aria-label={t("carousel.next")}
-          className="flex size-6 items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/5 active:bg-on-surface/10 disabled:opacity-40"
-          disabled={page === pageCount - 1}
-          onClick={() => goTo(page + 1)}
-          type="button"
-        >
-          <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
-            <path
-              d="M6 4l4 4-4 4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              stroke="currentColor"
-            />
-          </svg>
-        </button>
-      </div>
     </div>
   );
 }

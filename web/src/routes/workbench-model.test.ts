@@ -21,11 +21,10 @@ import {
   deriveZone,
   dropIntoLeaf,
   ensureTabOpenLeaf,
-  filterWorkbenchViews,
   findLeafBySessionId,
   findTabRefLeaf,
-  groupByProject,
   inferSessionTypeFromId,
+  mergeProjectsWithCandidates,
   migrateLegacyLayout,
   migrateV2ToV3,
   parseSkillTabId,
@@ -241,20 +240,15 @@ test("deriveWorkbenchRouteContext: git focus 编码 git_${scope}/${path}，gitSc
   });
 });
 
-test("deriveWorkbenchRouteContext: search 透传 rightTab/view/tab/gitScope", () => {
+test("deriveWorkbenchRouteContext: search 透传 rightTab/tab/gitScope", () => {
   expect(
     deriveWorkbenchRouteContext(
-      routeLeaf(
-        "/projects/$key",
-        { key: "p1" },
-        { rightTab: "files", view: "grid", tab: "history" },
-      ),
+      routeLeaf("/projects/$key", { key: "p1" }, { rightTab: "files", tab: "history" }),
     ),
   ).toEqual({
     scope: { kind: "project", key: "p1" },
     focusId: undefined,
     rightTab: "files",
-    view: "grid",
     tab: "history",
   });
 });
@@ -284,37 +278,15 @@ test("rankGlobalInstances: 同 rank 保持聚合原序（稳定）", () => {
   expect(ranked.map((r) => r.sessionId)).toEqual(["a1", "a2", "a3"]);
 });
 
-test("groupByProject: 按首次出现项目名建组（稳定，组内保聚合原序）", () => {
-  const groups = groupByProject([
-    candidate("p2", "a1", "running", "agent"),
-    candidate("p1", "a2", "running", "agent"),
-    candidate("p2", "a3", "running", "agent"),
-    candidate("p1", "a4", "running", "agent"),
-  ]);
-  expect(groups.map((g) => g.projectName)).toEqual(["p2", "p1"]);
-  expect(groups[0].candidates.map((c) => c.ref.sessionId)).toEqual(["a1", "a3"]);
-  expect(groups[1].candidates.map((c) => c.ref.sessionId)).toEqual(["a2", "a4"]);
-});
-
-test("groupByProject: 空数组 → []；单项目 → 单组", () => {
-  expect(groupByProject([])).toEqual([]);
-  const groups = groupByProject([
-    candidate("solo", "a1", "running", "agent"),
-    candidate("solo", "t1", "running", "terminal"),
-  ]);
-  expect(groups).toHaveLength(1);
-  expect(groups[0].projectName).toBe("solo");
-  expect(groups[0].candidates.map((c) => c.ref.sessionId)).toEqual(["a1", "t1"]);
-});
-
-// ── filterWorkbenchViews（§5 视图矩阵：按 scope 过滤 ViewSwitcher 可用视图）──
-
-test("filterWorkbenchViews: global 两视图全开（grouped/grid）", () => {
-  expect(filterWorkbenchViews({ kind: "global" })).toEqual(["grouped", "grid"]);
-});
-
-test("filterWorkbenchViews: project 隐藏 grouped（仅 grid 单视图）", () => {
-  expect(filterWorkbenchViews({ kind: "project", key: "p" })).toEqual(["grid"]);
+test("mergeProjectsWithCandidates: 以 projectNames 主序分段，含空项目（融合视图）", () => {
+  const groups = mergeProjectsWithCandidates(
+    ["p1", "empty", "p2"],
+    [candidate("p2", "a1", "running", "agent"), candidate("p1", "a2", "running", "agent")],
+  );
+  expect(groups.map((g) => g.projectName)).toEqual(["p1", "empty", "p2"]);
+  expect(groups[0].candidates.map((c) => c.ref.sessionId)).toEqual(["a2"]);
+  expect(groups[1].candidates).toEqual([]);
+  expect(groups[2].candidates.map((c) => c.ref.sessionId)).toEqual(["a1"]);
 });
 
 // ── deriveZone（§7.2 5 zone：边缘 15% + 中心 70%，上下优先于左右）──────────────

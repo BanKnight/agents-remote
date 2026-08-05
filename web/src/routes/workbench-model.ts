@@ -29,37 +29,10 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
 export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki";
 
 /**
- * 中栏左总览视图样式（设计文档 workbench-views.md §5）。左总览固定单列宽，view 切换的是
- * 同一单列内的卡片呈现样式（不再是列数/布局差异）：grid=详细卡片；grouped=按项目分段
- *（仅 global）。project 作用域单一 grid 视图（无切换）。多实例同屏靠 Phase B 拖放分屏。
- */
-export type WorkbenchView = "grouped" | "grid";
-
-/**
- * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（global 切
- * grouped/grid，project 单 grid）；history=历史 session；files/git/pages=复用工作台
- * inspection tab plugin。
+ * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（global 按项目分段
+ * 单列网格，project 单 grid）；history=历史 session；files/git/pages=复用工作台 inspection tab plugin。
  */
 export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "pages" | "wiki";
-
-/**
- * ViewSwitcher 视图渲染顺序（从左到右，设计文档 workbench-views.md §6）。
- * = grouped · grid（grouped 最左作 global 默认入口）。project 经 filterWorkbenchViews
- * 过滤掉 grouped，剩单 grid 视图（不渲染 ViewSwitcher）。
- */
-export const WORKBENCH_VIEW_ORDER: WorkbenchView[] = ["grouped", "grid"];
-
-/**
- * 按作用域过滤 ViewSwitcher 可用视图（设计文档 §6）。project 作用域隐藏 grouped
- *（grouped 仅 global 跨项目分组）→ project 剩单 grid 视图，调用方据此不渲染 ViewSwitcher。
- * global 全开（grouped · grid）。移动端视图样式与桌面一致。
- */
-export function filterWorkbenchViews(scope: WorkbenchScope): WorkbenchView[] {
-  return WORKBENCH_VIEW_ORDER.filter((v) => {
-    if (v === "grouped" && scope.kind === "project") return false;
-    return true;
-  });
-}
 
 /**
  * 左右栏宽度基线（rem）。左栏（项目树）沿用 ShellLayout project sidebar 的 13.125rem。
@@ -168,18 +141,6 @@ export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchInspectio
 );
 
 /**
- * 中栏总览视图（设计文档 workbench-views.md）。URL `view` 优先（语义核心、刷新可分享），
- * 此 atom 作「记忆上次视图」回退（首次进入 / URL 未指定）。默认 grouped——global scope 是
- * 项目总览，首屏需显所有项目（含无实例项目，仅 grouped 视图含空项目）；grid 仅显实例，
- * 无实例项目不可见无法进入。project scope 因 filterWorkbenchViews 隐藏 grouped，atom=grouped
- * 时 resolvedView 回退 grid（见 InstanceLeftOverview），故本默认值不影响 project scope。
- */
-export const workbenchViewAtom = atomWithLocalOnlyStorage<WorkbenchView>(
-  "workbenchView",
-  "grouped",
-);
-
-/**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `tab` 优先，此 atom 作「记忆上次 tab」
  * 回退。默认 overview（实例总览）。
  */
@@ -280,7 +241,6 @@ export function useWorkbenchNavigate() {
     focusId?: string,
     search?: {
       rightTab?: WorkbenchInspectionTab;
-      view?: WorkbenchView;
       tab?: WorkbenchMiddleTab;
       leftMode?: "auto" | "files" | "skills";
     },
@@ -312,7 +272,6 @@ export function useWorkbenchNavigate() {
  */
 export function validateWorkbenchSearch(search: Record<string, unknown>): {
   rightTab?: WorkbenchInspectionTab;
-  view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
   gitCompare?: string;
@@ -320,7 +279,6 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
 } {
   const result: {
     rightTab?: WorkbenchInspectionTab;
-    view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
@@ -333,9 +291,6 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     search.rightTab === "wiki"
   ) {
     result.rightTab = search.rightTab;
-  }
-  if (search.view === "grouped" || search.view === "grid") {
-    result.view = search.view;
   }
   if (
     search.tab === "overview" ||
@@ -389,7 +344,6 @@ export type WorkbenchRouteContext = {
    */
   leftMode?: "auto" | "files" | "skills";
   rightTab?: WorkbenchInspectionTab;
-  view?: WorkbenchView;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
   gitCompare?: string;
@@ -408,7 +362,6 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
   const p = leaf.params as Record<string, string | undefined>;
   const s = leaf.search as {
     rightTab?: WorkbenchInspectionTab;
-    view?: WorkbenchView;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
@@ -1532,38 +1485,14 @@ export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): Sess
 }
 
 /**
- * 按项目名分组全局候选（设计文档 §5 grouped 视图 + 移动 global 默认分段）。返回**稳定数组**
- *（非 Map）：组顺序 = candidates 首次出现的项目名顺序（与 rankGlobalInstances 同源稳定排序，
- * 即聚合时的项目次序 → 项目内 sessions 次序）。纯函数，桌面 GroupedView / 移动 MobileGlobalOverview
- * 共用，避免两处内联 Map 逻辑。
+ * 全局候选 + 项目名分组合并（融合视图分段）：以 projectNames 列表为主序，无实例项目 candidates=[]。
+ * 纯函数，GlobalProjectsOverview GroupedProjectsList 用（global 跨项目分组 + 无实例项目空状态）。
+ * 组顺序 = projectNames 顺序（listProjects 返回顺序，稳定）。
  */
 export type ProjectGroup = {
   projectName: string;
   candidates: GlobalInstanceCandidate[];
 };
-
-export function groupByProject(candidates: GlobalInstanceCandidate[]): ProjectGroup[] {
-  const groups: ProjectGroup[] = [];
-  const indexByName = new Map<string, number>();
-  for (const candidate of candidates) {
-    const name = candidate.ref.projectName;
-    const idx = indexByName.get(name);
-    if (idx === undefined) {
-      indexByName.set(name, groups.length);
-      groups.push({ projectName: name, candidates: [candidate] });
-    } else {
-      groups[idx].candidates.push(candidate);
-    }
-  }
-  return groups;
-}
-
-/**
- * 全项目名（projects 列表顺序）+ candidates 分组合并（设计 §5：分组视图含无实例项目，空状态）。
- * 与 groupByProject 区别：groupByProject 只含 candidates（有实例项目）；本函数以 projects 列表为主序，
- * 无实例项目 candidates=[]。纯函数，桌面 GroupedView 用（global 跨项目分组 + 无实例项目空状态）。
- * 组顺序 = projectNames 顺序（listProjects 返回顺序，稳定）。
- */
 export function mergeProjectsWithCandidates(
   projectNames: string[],
   candidates: GlobalInstanceCandidate[],

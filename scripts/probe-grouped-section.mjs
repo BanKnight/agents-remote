@@ -1,29 +1,26 @@
-// 探针：项目总览分组视图——section 带 bg 边框 + topSeparator inset + 移动端对齐桌面端（满宽 + dots）。
+// 探针：全局总览融合视图（问题 2，2026-08-05）——项目标题行分段 + 单列 InstanceGrid 连续卡片。
 //
-// 覆盖两轮诉求：
-//   轮 1（2026-08-03）：两端统一带 bg 边框 section + topSeparator 两端 inset（撤销决策 38 移动 full-bleed 无边框）。
-//   轮 2（2026-08-03）：移动端对齐桌面端——名行两端统一 pl-3 pr-2 + button px-0（图标≡marker、⋯≡action）、
-//     退化态/carousel 态卡片满宽（撤销决策 39-43 peek 范式）、移动 carousel dots 指示器。
-//
-// 断言策略：
-//   - section border+bg+rounded + topSeparator inset（轮 1）：桌面+移动 grouped。
-//   - 名行图标≡首卡 marker（轮 2 诉求 1）：移动退化态几何（修正原 12px 错位）。
-//   - 名行 ⋯≡卡片 action（轮 2 诉求 1）：移动退化态几何。
-//   - section 右侧 bg 空白≡桌面（轮 2 诉求 2）：移动 ≤ 桌面（原 28px→对齐桌面 8px）。
-//   - carousel 满宽 + dots（轮 2 诉求 3）：移动 carousel 态（1 project × 5 candidate >3）页 w-full + dots 存在。
-//
-// 密码自读（config.toml / /proc/<pid>/environ），不打印。DOM 几何（getBoundingClientRect），不用 vision。
+// 覆盖（替代原 grouped/grid 双视图 + carousel/ViewSwitcher 断言）：
+//   1. 标题行 = projectNames 数（含空项目）；每行 project 图标 + 项目名 + › chevron（进项目）+ ⋯（删除）。
+//   2. 实例区 = InstanceGrid 单列连续（display:grid + 卡片同列）；无 section 圆角边框容器。
+//   3. 无 carousel snap 容器（snap-x 不存在）；无 ViewSwitcher（role=group 视图切换不存在）。
+//   4. 空项目只名行无实例区；有实例项目行下有卡片（含 subtitle 第二行 + 非首卡 topSeparator inset）。
+//   5. 名行进项目导航 /projects/$key；⋯ 删除按钮存在。
+//   6. 间距几何（用户反馈「项目间距过大、间距不统一」硬数据）：名行↔卡片 gap、项目间 gap、root 内边距。
+// 桌面 1280×900 + 移动 390×844 两视口。密码自读（config.toml），不打印。DOM 几何（getBoundingClientRect），不用 vision。
+// 用法：bun scripts/probe-grouped-section.mjs
 import { chromium } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { verifyCssFlushed } from "./ar-verify-css.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 
-// 退化态 mock：2 项目 × 2 candidate（≤pageSize=3 → 退化态满宽）。
-const PROJECT_A = "probe-grouped-a";
-const PROJECT_B = "probe-grouped-b";
+// 融合视图 mock：2 项目（A 3 实例 + EMPTY 空项目）→ 2 标题行，A 行下 3 卡、EMPTY 行只名行。
+const PROJECT_A = "probe-merge-a";
+const PROJECT_EMPTY = "probe-merge-empty";
 
 function candidate(projectName, sessionId, displayName, type, provider) {
   return {
@@ -39,29 +36,13 @@ function candidate(projectName, sessionId, displayName, type, provider) {
   };
 }
 
-const DEGEN_OVERVIEW = {
-  projectNames: [PROJECT_A, PROJECT_B],
+const OVERVIEW = {
+  projectNames: [PROJECT_A, PROJECT_EMPTY],
   candidates: [
-    candidate(PROJECT_A, "agent_aaaaaaaaaaaaaaa1", "Claude A1", "agent", "claude"),
-    candidate(PROJECT_A, "agent_aaaaaaaaaaaaaaa2", "Claude A2", "agent", "claude"),
-    candidate(PROJECT_B, "terminal_bbbbbbbbbbbbbb1", "Terminal B1", "terminal"),
-    candidate(PROJECT_B, "terminal_bbbbbbbbbbbbbb2", "Terminal B2", "terminal"),
+    candidate(PROJECT_A, "agent_aaaaaaaaaaaaaaaa1", "Claude A1", "agent", "claude"),
+    candidate(PROJECT_A, "agent_aaaaaaaaaaaaaaaa2", "Claude A2", "agent", "claude"),
+    candidate(PROJECT_A, "terminal_bbbbbbbbbbbbbb1", "Terminal B1", "terminal"),
   ],
-};
-
-// carousel 态 mock：1 项目 × 5 candidate（>pageSize=3 → carousel 分页 + dots）。
-const CAROUSEL_PROJECT = "probe-carousel-p";
-const CAROUSEL_OVERVIEW = {
-  projectNames: [CAROUSEL_PROJECT],
-  candidates: Array.from({ length: 5 }, (_, i) =>
-    candidate(
-      CAROUSEL_PROJECT,
-      `agent_cccccccccccccc${i + 1}`,
-      `Claude C${i + 1}`,
-      "agent",
-      "claude",
-    ),
-  ),
 };
 
 let allPass = true;
@@ -91,16 +72,24 @@ async function readRawPassword() {
   throw new Error("password not found");
 }
 
-async function setupMocks(page, overview) {
+async function setupMocks(page) {
   await page.route(new RegExp("/api/overview$"), (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(overview),
+      body: JSON.stringify(OVERVIEW),
     }),
   );
+  // overview 第二阶段：subtitle 走独立 subtitles 端点 patch 进卡片第二行（candidate.subtitle 字段已不承载）。
+  const subtitles = Object.fromEntries(
+    OVERVIEW.candidates.map((c) => [c.sessionId, "probe subtitle"]),
+  );
   await page.route(new RegExp("/api/overview/subtitles"), (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) }),
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ subtitles }),
+    }),
   );
 }
 
@@ -121,248 +110,177 @@ async function newPage(browser, mobile) {
   return await ctx.newPage();
 }
 
-// 切 ViewSwitcher 视图（aria-label 双语兼容：en Grouped/Grid · zh 分组/网格）。
-async function switchView(page, view) {
-  const labels = view === "grouped" ? ["Grouped", "分组"] : ["Grid", "网格"];
-  for (const label of labels) {
-    const btn = page.locator(`button[aria-label="${label}"]`).first();
-    if ((await btn.count()) > 0) {
-      await btn.click({ timeout: 3000 }).catch(() => {});
-      return true;
-    }
-  }
-  return false;
-}
-
-// 读所有 grouped section：border / bg / rounded。
+// 读取全部 section：标题行结构 + 实例区 InstanceGrid + 卡片信息 + 间距几何。
+// 只统计 GroupedProjectsList 的项目段（名行含 min-h-11 进项目按钮）——桌面三栏外壳可能有
+// 其它裸 `<section>`（如主工作区），须过滤，否则项目段数虚高。
 async function readSections(page) {
   return await page.evaluate(() => {
-    const sections = Array.from(document.querySelectorAll("section")).filter((s) =>
-      s.className.includes("bg-surface-raised"),
+    const sections = Array.from(document.querySelectorAll("section"));
+    return sections.map((section) => {
+      const nameRow = section.firstElementChild;
+      const enterBtn = nameRow?.querySelector("button[class*='min-h-11']");
+      const nameSpan = enterBtn?.querySelector("span[class*='text-base'][class*='font-semibold']");
+      const hasIcon = !!nameRow?.querySelector("svg");
+      const hasChevron = enterBtn
+        ? Array.from(enterBtn.querySelectorAll("path")).some(
+            (p) => p.getAttribute("d") === "M6 4l4 4-4 4",
+          )
+        : false;
+      const menuBtnCount = nameRow ? nameRow.querySelectorAll("button[aria-label]").length : 0;
+      // InstanceGrid = section 内 display:grid 容器（INSTANCE_GRID_STYLE 1fr 单列）；
+      // 容器 children 即卡片（单列 grid 无其它子节点；勿用 .group 类判卡——桌面挂 hover-capable
+      // 变体卡片可能不带 group 类，而移动带，两视口不一致）。
+      const grid = Array.from(section.querySelectorAll("div")).find(
+        (d) => getComputedStyle(d).display === "grid",
+      );
+      const cards = grid ? Array.from(grid.children) : [];
+      // group 段判定：名行含 min-h-11 进项目按钮。非 group 段（外壳裸 section）isGroup=false。
+      const isGroup = !!enterBtn;
+      const rect = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          top: Math.round(r.top),
+          bottom: Math.round(r.bottom),
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+          height: Math.round(r.height),
+        };
+      };
+      const nameRowRect = rect(nameRow);
+      const gridRect = rect(grid);
+      return {
+        isGroup,
+        projectName: nameSpan?.textContent ?? null,
+        hasIcon,
+        hasChevron,
+        menuBtnCount,
+        cardCount: cards.length,
+        cardLefts: cards.map((c) => Math.round(c.getBoundingClientRect().left)),
+        // subtitle 第二行 = 卡片内非 flex 的 text-xs text-on-surface-muted div（meta 行是 flex）。
+        subtitles: cards.map((c) => {
+          const sub = Array.from(c.querySelectorAll("div")).find(
+            (d) =>
+              d.classList.contains("truncate") &&
+              d.classList.contains("text-on-surface-muted") &&
+              !d.classList.contains("flex"),
+          );
+          return sub ? (sub.textContent ?? "").trim() : null;
+        }),
+        // 非首卡 topSeparator（absolute left-15 h-px）。
+        topSeparatorCount: cards.filter(
+          (c) =>
+            c.querySelector("[class*='left-15']") &&
+            getComputedStyle(c.querySelector("[class*='left-15']")).position === "absolute",
+        ).length,
+        nameRowRect,
+        gridRect,
+        sectionTop: Math.round(section.getBoundingClientRect().top),
+        sectionBottom: Math.round(section.getBoundingClientRect().bottom),
+      };
+    });
+  });
+}
+
+async function runViewport(mobile) {
+  const browser = await chromium.launch();
+  try {
+    const label = mobile ? "移动" : "桌面";
+    const page = await newPage(browser, mobile);
+    await setupMocks(page);
+    await login(page);
+    await page.waitForTimeout(800);
+    await page.goto(`${WEB_ORIGIN}/`);
+    await page.waitForTimeout(1000);
+
+    console.log(`\n===== 融合视图（${label}）：标题行分段 + 单列 InstanceGrid =====`);
+
+    // ── 结构：2 标题行（含空项目），每行 图标+名+chevron+⋯ ──
+    const allSections = await readSections(page);
+    const sections = allSections.filter((s) => s.isGroup);
+    if (allSections.length !== sections.length) {
+      console.log(
+        `  (过滤 ${allSections.length - sections.length} 个外壳裸 section，非 GroupedProjectsList 项目段)`,
+      );
+    }
+    record(sections.length === 2, `标题行数 = 2（含空项目，got ${sections.length}）`);
+    const byName = Object.fromEntries(sections.map((s) => [s.projectName, s]));
+    record(
+      !!byName[PROJECT_A] && !!byName[PROJECT_EMPTY],
+      `标题行含 ${PROJECT_A} 与 ${PROJECT_EMPTY}`,
     );
-    return sections.map((s) => {
-      const cs = getComputedStyle(s);
-      return {
-        borderTopWidth: parseFloat(cs.borderTopWidth),
-        borderStyle: cs.borderTopStyle,
-        backgroundColor: cs.backgroundColor,
-        borderRadius: parseFloat(cs.borderRadius),
-        left: Math.round(s.getBoundingClientRect().left),
-        right: Math.round(s.getBoundingClientRect().right),
-      };
+    for (const [name, s] of Object.entries(byName)) {
+      record(s.hasIcon, `[${name}] 行有 project 图标`);
+      record(
+        s.nameRowRect?.height >= 44,
+        `[${name}] 行高 ≥44px（got ${s.nameRowRect?.height}px，触屏热区）`,
+      );
+      record(s.hasChevron, `[${name}] 行有 › chevron（进项目）`);
+      record(s.menuBtnCount >= 1, `[${name}] 行有 ⋯ 删除按钮`);
+    }
+
+    // ── 实例区：A 3 卡单列（含 subtitle + topSeparator），EMPTY 无卡 ──
+    const a = byName[PROJECT_A];
+    record(a.cardCount === 3, `[${PROJECT_A}] 实例区 3 卡（got ${a.cardCount}）`);
+    record(
+      a.cardLefts.every((l) => Math.abs(l - a.cardLefts[0]) <= 1),
+      `[${PROJECT_A}] 卡片单列（left 全 ${JSON.stringify(a.cardLefts)}）`,
+    );
+    record(
+      a.subtitles.every((t) => t === "probe subtitle"),
+      `[${PROJECT_A}] 卡片 subtitle 第二行全部渲染（got ${JSON.stringify(a.subtitles)}）`,
+    );
+    record(
+      a.topSeparatorCount === 2,
+      `[${PROJECT_A}] 非首卡 topSeparator 数 = 2（got ${a.topSeparatorCount}）`,
+    );
+    record(byName[PROJECT_EMPTY].cardCount === 0, `[${PROJECT_EMPTY}] 空项目只名行、无实例区`);
+
+    // ── 无 carousel / 无 ViewSwitcher ──
+    const noCarousel = await page.evaluate(
+      () => document.querySelectorAll(".snap-x, .snap-mandatory").length,
+    );
+    record(noCarousel === 0, `无 carousel snap 容器（got ${noCarousel}）`);
+    const noSwitcher = await page.evaluate(
+      () =>
+        document.querySelectorAll(
+          '[role="group"][aria-label*="视图"], [role="group"][aria-label*="View"], button[aria-label*="Grouped"], button[aria-label*="分组"], button[aria-label*="Grid"], button[aria-label*="网格"]',
+        ).length,
+    );
+    record(noSwitcher === 0, `无 ViewSwitcher（got ${noSwitcher} 视图切换控件）`);
+
+    // ── 间距几何（用户反馈「项目间距过大、不统一」的硬数据）──
+    const firstCardTop = a.gridRect?.top ?? 0;
+    const nameToCard = firstCardTop - (a.nameRowRect?.bottom ?? 0);
+    const interProject = byName[PROJECT_EMPTY].sectionTop - a.sectionBottom;
+    // root py-2：首 section 顶 - root 顶。root = sections 父容器。
+    const rootTop = await page.evaluate(() => {
+      const first = document.querySelector("section");
+      const parent = first?.parentElement;
+      return parent ? Math.round(parent.getBoundingClientRect().top) : 0;
     });
-  });
-}
+    const rootPy = a.sectionTop - rootTop;
+    console.log(
+      `  间距：名行↔卡片 ${nameToCard}px（负数=紧贴重叠）· 项目间 ${interProject}px · root 顶 padding ${rootPy}px`,
+    );
+    record(Math.abs(nameToCard) <= 2, `名行↔卡片紧贴（|${nameToCard}|px ≤2，无莫名间隙）`);
+    record(interProject <= 10, `项目间间距紧凑（${interProject}px ≤10）`);
+    record(rootPy >= 4 && rootPy <= 12, `root 顶部内边距适中（${rootPy}px）`);
 
-// 读所有 topSeparator（left-15 + absolute + top:0 + height:1px）的 left 计算值。
-async function readTopSeparators(page) {
-  return await page.evaluate(() => {
-    const seps = Array.from(document.querySelectorAll('[class*="left-15"]')).filter((el) => {
-      const cs = getComputedStyle(el);
-      return cs.position === "absolute" && cs.height === "1px" && cs.top === "0px";
-    });
-    return seps.map((el) => parseFloat(getComputedStyle(el).left));
-  });
-}
+    // ── 进项目导航：点 A 名行 → /projects/$key ──
+    const before = page.url();
+    await page
+      .locator(`section:has(span:text-is("${PROJECT_A}")) button[class*='min-h-11']`)
+      .first()
+      .click({ timeout: 3000 })
+      .catch(() => {});
+    await page.waitForTimeout(600);
+    const after = page.url();
+    record(
+      after !== before && after.includes(`/projects/${PROJECT_A}`),
+      `进项目导航 /projects/${PROJECT_A}（${before} → ${after}）`,
+    );
 
-// 读名行图标、首卡 marker 方框、名行 ⋯ trigger、卡片 action 几何（轮 2 诉求 1：对齐断言）。
-async function readNameCardGeom(page) {
-  return await page.evaluate(() => {
-    const section = document.querySelector("section[class*='bg-surface-raised']");
-    if (!section) return { err: "no section" };
-    const nameRow = section.firstElementChild;
-    const nameBtn = nameRow?.querySelector("button");
-    // 名行项目图标 = button 内第一个 ShellIcon svg（name="project"），裸 size-5 无方框，left = button.left。
-    const nameIcon = nameBtn?.querySelector("svg");
-    // 名行 ⋯ trigger = 名行内带 aria-label 的 button（session.actions）。
-    const nameMenuBtn = nameRow?.querySelector("button[aria-label]");
-    // 首卡 InstanceCard 根（含 p-3）。marker 方框 = StatusMarker 外层 span（relative inline-flex shrink-0，
-    // 包裹 IconMarker h-9 w-9 方框 + StatusDot），其 left = card.p-3 = 与 nameIcon left 对齐的基准
-    //（不是 IconMarker 内部 14px icon——那个居中方框内 left=marker+11，会误判差 11px）。
-    const card = section.querySelector("[class*='p-3']");
-    const marker = card?.querySelector("span.relative.shrink-0, span.shrink-0.relative");
-    const actionBtn = card?.querySelector(".absolute.right-2 button[aria-label]");
-    const r = (el) => {
-      if (!el) return null;
-      const x = el.getBoundingClientRect();
-      return {
-        left: Math.round(x.left),
-        right: Math.round(x.right),
-        cx: Math.round(x.left + x.width / 2),
-      };
-    };
-    return {
-      nameIcon: r(nameIcon),
-      marker: r(marker),
-      nameMenuBtn: r(nameMenuBtn),
-      actionBtn: r(actionBtn),
-      sectionRight: Math.round(section.getBoundingClientRect().right),
-    };
-  });
-}
-
-async function runDegenViewport(mobile) {
-  const browser = await chromium.launch();
-  try {
-    const label = mobile ? "移动" : "桌面";
-    const page = await newPage(browser, mobile);
-    await setupMocks(page, DEGEN_OVERVIEW);
-    await login(page);
-    await page.waitForTimeout(800);
-    await page.goto(`${WEB_ORIGIN}/`);
-    await page.waitForTimeout(1000);
-
-    console.log(`\n===== 退化态 grouped（${label}）：section + topSeparator + 名行≡卡片对齐 =====`);
-    await switchView(page, "grouped");
-    await page.waitForTimeout(500);
-
-    // 轮 1：section border+bg+rounded。
-    const sections = await readSections(page);
-    console.log(`  找到 ${sections.length} 个 grouped section`);
-    record(sections.length >= 2, `≥2 个 section（got ${sections.length}，前提）`);
-    for (const [i, s] of sections.entries()) {
-      record(
-        s.borderTopWidth > 0 && s.borderStyle !== "none",
-        `section[${i}] 有 border（width=${s.borderTopWidth}px style=${s.borderStyle}）`,
-      );
-      record(
-        s.backgroundColor !== "rgba(0, 0, 0, 0)",
-        `section[${i}] 有 bg（${s.backgroundColor}）`,
-      );
-      record(s.borderRadius > 0, `section[${i}] 有 rounded（${s.borderRadius}px）`);
-    }
-
-    // 轮 1：topSeparator inset。
-    const seps = await readTopSeparators(page);
-    if (seps.length > 0) {
-      record(
-        seps.every((l) => Math.abs(l - 60) < 1),
-        `topSeparator left≈60（got ${JSON.stringify(seps)}，跳过 marker 列）`,
-      );
-    } else {
-      console.log("  (退化态 carousel 单页可能未渲染 topSeparator——grid 视图覆盖)");
-    }
-
-    // 轮 2 诉求 1：名行图标≡首卡 marker + 名行⋯≡卡片 action。
-    const g = await readNameCardGeom(page);
-    if (g.err) {
-      console.log(`  (skip 几何：${g.err})`);
-    } else if (g.nameIcon && g.marker) {
-      const iconVsMarker = Math.abs(g.nameIcon.left - g.marker.left);
-      record(
-        iconVsMarker <= 1,
-        `名行图标≡首卡 marker left（差 ${iconVsMarker}px，≤1px，修正原移动 12px 错位）`,
-      );
-    }
-    if (g.nameMenuBtn && g.actionBtn) {
-      const menuVsAction = Math.abs(g.nameMenuBtn.cx - g.actionBtn.cx);
-      record(menuVsAction <= 1, `名行⋯≡卡片 action center.x（差 ${menuVsAction}px，≤1px）`);
-    }
-
-    // 轮 2 诉求 2：section 右侧 bg 空白≡桌面。名行⋯trigger.right 到 section.right 的间隙 = 右侧空白。
-    if (g.nameMenuBtn && g.sectionRight) {
-      const rightGap = g.sectionRight - g.nameMenuBtn.right;
-      // 满宽 action absolute right-2=8，名行 pr-2=8 → 两侧右侧空白均 ≈8px（含 button 自身 right-2 padding）。
-      // 退化态断言 ≤12px（容忍 1px 抖动 + border）；原移动 28px。
-      record(rightGap <= 12, `section 右侧空白≤12px（got ${rightGap}px，对齐桌面，原移动 28px）`);
-    }
-
-    await page.close();
-  } finally {
-    await browser.close();
-  }
-}
-
-async function runCarouselViewport(mobile) {
-  const browser = await chromium.launch();
-  try {
-    const label = mobile ? "移动" : "桌面";
-    const page = await newPage(browser, mobile);
-    await setupMocks(page, CAROUSEL_OVERVIEW);
-    await login(page);
-    await page.waitForTimeout(800);
-    await page.goto(`${WEB_ORIGIN}/`);
-    await page.waitForTimeout(1000);
-
-    console.log(`\n===== carousel 态 grouped（${label}）：页满宽 + dots/页码行 =====`);
-    await switchView(page, "grouped");
-    await page.waitForTimeout(500);
-
-    // 轮 2 诉求 3：carousel 页满宽 + dots（移动）/ 页码行（桌面）。
-    const c = await page.evaluate(() => {
-      const section = document.querySelector("section[class*='bg-surface-raised']");
-      if (!section) return { err: "no section" };
-      // carousel 容器 = section 内 flex snap-x 滚动 div。
-      const scroll = section.querySelector(".snap-x");
-      const pages = scroll ? Array.from(scroll.children) : [];
-      // 移动 dots = scroll 容器后的 flex.justify-center.gap-1.5（含 button[aria-current]）。
-      // 桌面页码行 = hidden lg:flex（含 ‹› + 数字 button aria-current）。
-      const dotsOrPager = section.querySelectorAll("button[aria-current]");
-      const pageWidths = pages.map((p) => Math.round(p.getBoundingClientRect().width));
-      const scrollWidth = scroll ? Math.round(scroll.getBoundingClientRect().width) : 0;
-      return {
-        pageCount: pages.length,
-        pageWidths,
-        scrollWidth,
-        indicatorCount: dotsOrPager.length,
-        hasDotsOrPager: dotsOrPager.length > 0,
-      };
-    });
-    if (c.err) {
-      console.log(`  (skip carousel：${c.err})`);
-    } else {
-      record(c.pageCount >= 2, `carousel 分 ≥2 页（got ${c.pageCount}，5 candidate > pageSize 3）`);
-      if (c.pageWidths.length > 0) {
-        const allFull = c.pageWidths.every((w) => Math.abs(w - c.scrollWidth) <= 1);
-        record(
-          allFull,
-          `carousel 页满宽（页宽 ${JSON.stringify(c.pageWidths)} ≈ scroll ${c.scrollWidth}，无 px-5 缩进）`,
-        );
-      }
-      record(
-        c.hasDotsOrPager,
-        `${mobile ? "移动 dots" : "桌面页码行"} 指示器存在（got ${c.indicatorCount} 个 aria-current）`,
-      );
-      if (mobile) {
-        // 移动 dots：aria-label 含「页」/「Page」的 button 数 = pageCount。
-        const dotsCount = await page
-          .locator("button[aria-label*='页'], button[aria-label*='Page']")
-          .count();
-        record(
-          dotsCount === c.pageCount,
-          `移动 dots 数 = 页数（dots ${dotsCount} = pages ${c.pageCount}）`,
-        );
-      }
-    }
-
-    await page.close();
-  } finally {
-    await browser.close();
-  }
-}
-
-// 轮 1：grid 视图 topSeparator 两端 inset（grid 视图平铺多卡，第 2+ 卡必渲染 topSeparator）。
-async function runGridTopSeparator(mobile) {
-  const browser = await chromium.launch();
-  try {
-    const label = mobile ? "移动" : "桌面";
-    const page = await newPage(browser, mobile);
-    await setupMocks(page, DEGEN_OVERVIEW);
-    await login(page);
-    await page.waitForTimeout(800);
-    await page.goto(`${WEB_ORIGIN}/`);
-    await page.waitForTimeout(1000);
-    console.log(`\n===== grid 视图 topSeparator（${label}）：两端 inset left=60 =====`);
-    await switchView(page, "grid");
-    await page.waitForTimeout(500);
-    const gridSeps = await readTopSeparators(page);
-    record(gridSeps.length > 0, `grid 渲染 topSeparator（got ${gridSeps.length}）`);
-    if (gridSeps.length > 0) {
-      record(
-        gridSeps.every((l) => Math.abs(l - 60) < 1),
-        `grid topSeparator 全部 left≈60（got ${JSON.stringify(gridSeps)}）`,
-      );
-    }
     await page.close();
   } finally {
     await browser.close();
@@ -370,15 +288,17 @@ async function runGridTopSeparator(mobile) {
 }
 
 (async () => {
-  // 轮 2 退化态几何：移动（修正对象）+ 桌面（标杆，零回归验证）。
-  await runDegenViewport(false);
-  await runDegenViewport(true);
-  // 轮 2 carousel 态：移动 dots + 桌面页码行。
-  await runCarouselViewport(false);
-  await runCarouselViewport(true);
-  // 轮 1 grid topSeparator 两端 inset（连带验证）。
-  await runGridTopSeparator(false);
-  await runGridTopSeparator(true);
+  // CSS 落盘硬闸（frontend-notes §2/§10）：HTML 注入 stylesheet + content-type text/css + 关键 utility 落正文。
+  const css = await verifyCssFlushed({
+    expectClasses: ["space-y-2", "min-h-11", "left-15", "pl-3", "pr-2"],
+  });
+  if (!css.pass) {
+    console.error(css.details.join("\n"));
+    process.exit(1);
+  }
+  console.log("CSS 落盘三道闸通过（融合视图关键 utility 已生成）");
+  await runViewport(false);
+  await runViewport(true);
   console.log(`\n总计: ${allPass ? "ALL PASS" : "FAIL"}`);
   process.exit(allPass ? 0 : 1);
 })();
