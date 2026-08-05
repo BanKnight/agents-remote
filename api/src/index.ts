@@ -314,8 +314,9 @@ const handleOverview = async (
     return Response.json({ projectNames, candidates } satisfies OverviewResponse);
   }
 
-  // GET /api/overview/subtitles（第二阶段，慢填充）：只为存活 terminal 批量 capture lastCommand，
-  // 前端拿到后补进对应卡片第二行。与核心列表分离，subtitle capture 的 tmux 阻塞不再拖垮 overview。
+  // GET /api/overview/subtitles（第二阶段，慢填充）：为存活实例取卡片第二行——terminal capture
+  // lastCommand + agent 读 JSONL lastAssistantMessage，前端拿到后补进对应卡片第二行。与核心列表
+  // 分离，subtitle 的 tmux/JSONL 慢读取不再拖垮 overview。
   if (url.pathname === "/api/overview/subtitles" && request.method === "GET") {
     const subtitles = await sessionRegistry.listCandidateSubtitles();
     return Response.json({ subtitles } satisfies OverviewSubtitlesResponse);

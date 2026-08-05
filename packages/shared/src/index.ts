@@ -249,7 +249,8 @@ export type DeleteProjectResponse = {
 /**
  * 全局总览候选：聚合所有 project 的活跃实例（agent/terminal），供 global overview 单请求铺开。
  * 替代前端 1+2N 瀑布（listProjects → 每项目 listAgent/listTerminal）。type/provider/status 统一
- * session 语义；subtitle = terminal lastCommand（agent 现状无 lastAssistantMessage 落 metadata）。
+ * session 语义；subtitle = terminal lastCommand / agent lastAssistantMessage（经第二阶段
+ * /api/overview/subtitles 慢填充，与项目总览同款 JSONL 读取机制）。
  */
 export type OverviewCandidate = {
   type: "agent" | "terminal";
@@ -260,7 +261,7 @@ export type OverviewCandidate = {
   provider?: AgentProvider;
   updatedAt?: string;
   createdAt?: string;
-  /** 卡片第二行（terminal=lastCommand）；缺失则卡片不显第二行。 */
+  /** 卡片第二行（terminal=lastCommand / agent=lastAssistantMessage）；缺失则卡片不显第二行。 */
   subtitle?: string;
 };
 
@@ -271,9 +272,9 @@ export type OverviewResponse = {
 };
 
 /**
- * GET /api/overview/subtitles 响应：sessionId → 卡片第二行（terminal lastCommand）。
+ * GET /api/overview/subtitles 响应：sessionId → 卡片第二行（terminal lastCommand / agent lastAssistantMessage）。
  * overview 第二阶段异步补全通道——核心列表（OverviewResponse）毫秒级返回后，前端再拉此 map 把
- * subtitle 补进对应卡片。缺失的 sessionId 表示无 subtitle（capture 失败/非 terminal），卡片不显第二行。
+ * subtitle 补进对应卡片。缺失的 sessionId 表示无 subtitle（capture 失败/无 JSONL 消息），卡片不显第二行。
  */
 export type OverviewSubtitlesResponse = {
   subtitles: Record<string, string>;

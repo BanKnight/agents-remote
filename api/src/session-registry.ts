@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { ResolvedProjectPath } from "./project-paths";
 import { extractLastCommand } from "./tmux-runtime";
+import { getLastAssistantMessage } from "./agent-history";
 
 export type SessionMetadata = {
   schemaVersion: 1;
@@ -353,31 +354,55 @@ export class SessionRegistry {
   }
 
   /**
-   * overview 第二阶段（GET /api/overview/subtitles）：只为存活 terminal 批量 capture lastCommand，
-   * 返回 `{ sessionId → subtitle }`。与 listAllCandidates 分离，让核心列表毫秒级返回、subtitle 慢填充。
+   * overview 第二阶段（GET /api/overview/subtitles）：为存活实例批量取卡片第二行，返回
+   * `{ sessionId → subtitle }`。与 listAllCandidates 分离，让核心列表毫秒级返回、subtitle 慢填充。
+   * - terminal = capture-pane 最后一行非空（captureSubtitle + captureWithCache 5s TTL）；
+   *   agent = JSONL 最后一条 assistant 消息（getLastAssistantMessage，与项目总览
+   *   session-routes.ts:90-93 同款机制，仅 claude/claude2 有 claudeSessionId 适用）。
    * - 用 getAliveKeys() 只读快照过滤（不调 keepIfRuntimeExists——后者有 removeMetadata 破坏性副作用，
-   *   此端点必须纯读）；探测失败保守回退「全部 terminal」（capture 超时仍兜底）。复用 /api/overview
-   *   刚填充的同一 aliveCache → 通常 0 额外 list-sessions spawn。
-   * - Promise.allSettled + captureSubtitle（内部 terminal-guard + captureWithCache 5s TTL + 吞错返
-   *   undefined）：单个 capture 超时 reject 不拖垮整批。只收非空字符串 subtitle。
+   *   此端点必须纯读）；agent 侧 claude2+claudeSessionId 即使不在存活集也保留（复刻 keepIfRuntimeExists
+   *   特例，对齐 listAllCandidates 展示集合）。探测失败保守回退「全部实例」（capture 超时仍兜底）。
+   *   复用 /api/overview 刚填充的同一 aliveCache → 通常 0 额外 list-sessions spawn。
+   * - Promise.all + 内层各 Promise.allSettled（captureSubtitle / getLastAssistantMessage 均吞错返
+   *   undefined）：单个失败 reject 不拖垮整批，terminal 与 agent 两路并行互不阻塞。只收非空字符串。
    */
   async listCandidateSubtitles(): Promise<Record<string, string>> {
     await this.ensureLoaded();
-    const terminals = Array.from(this.index.values()).filter((m) => m.type === "terminal");
+    const all = Array.from(this.index.values());
+    const terminals = all.filter((m) => m.type === "terminal");
+    // agent：仅 claude/claude2（有 claudeSessionId + projectPath）；codex 无 claudeSessionId 不适用
+    //（与项目总览 session-routes.ts:89 的 if(s.claudeSessionId) guard 同源，codex 卡片项目总览也无第二行）。
+    const agents = all.filter((m) => m.type === "agent" && m.claudeSessionId && m.projectPath);
 
     let alive: Set<string> | null;
     try {
       alive = await this.getAliveKeys();
     } catch {
-      alive = null; // 探测不可信：保守回退全部 terminal，capture 超时兜底。
+      alive = null; // 探测不可信：保守回退全部实例，capture 超时兜底。
     }
-    const targets = alive ? terminals.filter((m) => alive.has(m.runtimeKey)) : terminals;
+    const liveTerminals = alive ? terminals.filter((m) => alive.has(m.runtimeKey)) : terminals;
+    // claude2+claudeSessionId 即使不在存活集也保留（与 listAllCandidates 的 keepIfRuntimeExists
+    // 特例同源：已死 claude2 有 JSONL 历史仍展示卡片，subtitle 同档读 JSONL）；terminal 已死会被
+    // keepIfRuntimeExists 清理不展示，故纯 alive 过滤已对齐。
+    const liveAgents = alive
+      ? agents.filter(
+          (m) => alive.has(m.runtimeKey) || (m.provider === "claude2" && m.claudeSessionId),
+        )
+      : agents;
 
-    const results = await Promise.allSettled(
-      targets.map(async (m) => ({ id: m.id, subtitle: await this.captureSubtitle(m) })),
-    );
+    const [terminalResults, agentResults] = await Promise.all([
+      Promise.allSettled(
+        liveTerminals.map(async (m) => ({ id: m.id, subtitle: await this.captureSubtitle(m) })),
+      ),
+      Promise.allSettled(
+        liveAgents.map(async (m) => ({
+          id: m.id,
+          subtitle: (await getLastAssistantMessage(m.projectPath, m.claudeSessionId!)) ?? undefined,
+        })),
+      ),
+    ]);
     const subtitles: Record<string, string> = {};
-    for (const result of results) {
+    for (const result of [...terminalResults, ...agentResults]) {
       if (result.status === "fulfilled" && result.value.subtitle) {
         subtitles[result.value.id] = result.value.subtitle;
       }
@@ -683,9 +708,10 @@ export class SessionRegistry {
   }
 
   /**
-   * candidate subtitle：terminal = capture-pane 最后一行非空（lastCommand）；agent = undefined
-   *（lastAssistantMessage 未落 metadata）。capture 失败容错返 undefined（卡片退化 2 行）。
-   * listTerminalSessions / listAllCandidates / getTerminalSession 共用，集中 capture + 容错逻辑。
+   * candidate subtitle：terminal = capture-pane 最后一行非空（lastCommand）。agent 的 subtitle
+   *（lastAssistantMessage）由 listCandidateSubtitles 直接调 getLastAssistantMessage 覆盖，不经本方法
+   *（capture 对 agent 是 no-op，type 守卫拦截）。capture 失败容错返 undefined（卡片退化 2 行）。
+   * listTerminalSessions / getTerminalSession 共用，集中 capture + 容错逻辑。
    */
   private async captureSubtitle(metadata: SessionMetadata): Promise<string | undefined> {
     if (metadata.type !== "terminal" || !metadata.runtimeKey || !this.runtime.capture) {

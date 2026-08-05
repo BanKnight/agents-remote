@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as agentHistory from "./agent-history";
 import { SessionRegistry, SessionRegistryError, createRuntimeKey } from "./session-registry";
 
 let runDir: string;
@@ -472,6 +473,99 @@ test("SessionRegistry listCandidateSubtitles skips dead terminals (no capture)",
 
   expect(subtitles).toEqual({});
   expect(captureCalls).toHaveLength(0);
+});
+
+test("SessionRegistry listCandidateSubtitles collects claude agent lastAssistantMessage, skips codex", async () => {
+  // 与项目总览 session-routes.ts:90-93 同款机制：仅 claude/claude2（有 claudeSessionId）经
+  // getLastAssistantMessage 取 JSONL 消息；codex 无 claudeSessionId 不适用，不进 map。
+  let agentCounter = 0;
+  const captureCalls: string[] = [];
+  const spy = spyOn(agentHistory, "getLastAssistantMessage").mockResolvedValue(
+    "agent 最后一条回复",
+  );
+  try {
+    const registry = new SessionRegistry({
+      runDir,
+      now: fixedNow,
+      createId: (type) =>
+        type === "agent" ? `agent_subtitle${++agentCounter}` : "terminal_subtitle456",
+      runtime: {
+        // 无 listAliveRuntimeKeys → getAliveKeys 回退 collectAliveByExists（exists=true → 全存活）。
+        async exists() {
+          return true;
+        },
+        async close() {},
+        async capture(runtimeKey) {
+          captureCalls.push(runtimeKey);
+          return "user@host:~$ ls -la\r\n";
+        },
+      },
+    });
+
+    const demo = { name: "demo", path: "/projects/demo" };
+    await registry.createAgentSession({ project: demo, provider: "claude2" });
+    await registry.setClaudeSessionId("agent_subtitle1", "claude-session-xyz");
+    await registry.createAgentSession({ project: demo, provider: "codex" });
+    await registry.createTerminalSession({ project: demo });
+
+    const subtitles = await registry.listCandidateSubtitles();
+
+    expect(subtitles).toEqual({
+      agent_subtitle1: "agent 最后一条回复",
+      terminal_subtitle456: "user@host:~$ ls -la",
+    });
+    // 只对 claude2 agent 读 JSONL（codex 被 filter 排除）；terminal 走原 capture 路径。
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith("/projects/demo", "claude-session-xyz");
+    expect(captureCalls).toHaveLength(1);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("SessionRegistry listCandidateSubtitles keeps dead claude2 agent (JSONL history), drops dead terminal", async () => {
+  // keepIfRuntimeExists 对 claude2+claudeSessionId 无条件保留展示（有 JSONL 历史可看），与
+  // listAllCandidates 展示集合一致——已死 claude2 agent 仍取 JSONL subtitle；terminal 已死会被
+  // keepIfRuntimeExists 清理不展示，故纯存活过滤剔除、不 capture。
+  const captureCalls: string[] = [];
+  const spy = spyOn(agentHistory, "getLastAssistantMessage").mockResolvedValue(
+    "已死 agent 仍有历史",
+  );
+  try {
+    const registry = new SessionRegistry({
+      runDir,
+      now: fixedNow,
+      createId: (type) => (type === "agent" ? "agent_kept1" : "terminal_kept456"),
+      runtime: {
+        async exists() {
+          return true;
+        },
+        async close() {},
+        async capture(runtimeKey) {
+          captureCalls.push(runtimeKey);
+          return "user@host:~$ ls -la\r\n";
+        },
+        // 空存活快照：全部判死。claude2+claudeSessionId agent 仍保留 subtitle，terminal 被剔除。
+        async listAliveRuntimeKeys() {
+          return new Set<string>();
+        },
+      },
+    });
+
+    const demo = { name: "demo", path: "/projects/demo" };
+    await registry.createAgentSession({ project: demo, provider: "claude2" });
+    await registry.setClaudeSessionId("agent_kept1", "claude-session-kept");
+    await registry.createTerminalSession({ project: demo });
+
+    const subtitles = await registry.listCandidateSubtitles();
+
+    expect(subtitles).toEqual({ agent_kept1: "已死 agent 仍有历史" });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith("/projects/demo", "claude-session-kept");
+    expect(captureCalls).toHaveLength(0);
+  } finally {
+    spy.mockRestore();
+  }
 });
 
 test("SessionRegistry keeps live session missing from stale alive snapshot via fresh exists re-check", async () => {
