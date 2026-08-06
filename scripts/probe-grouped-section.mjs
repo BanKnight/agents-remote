@@ -61,6 +61,10 @@ const OVERVIEW = {
   ],
 };
 
+// 新建实例 mock 记录：总览 ⋯ 菜单新建走 POST agent/terminal sessions（续七），探针记录请求 body
+// 断言 provider/displayName + 返回固定 session id 供 navigate detail 断言。不真正建 session。
+let createdSessions = [];
+
 let allPass = true;
 function record(ok, label) {
   if (!ok) allPass = false;
@@ -107,6 +111,33 @@ async function setupMocks(page) {
       body: JSON.stringify({ subtitles }),
     }),
   );
+  // 新建实例（续七）：POST agent/terminal sessions mock。记录请求 body + 返回固定 session id，
+  // 供「菜单项 → name prompt → 创建 API → navigate detail」闭环断言。GET（list）放行真实后端。
+  createdSessions.length = 0;
+  await page.route(new RegExp("/api/projects/[^/]+/agent-sessions"), (r) => {
+    if (r.request().method() !== "POST") return r.continue();
+    const body = JSON.parse(r.request().postData() ?? "{}");
+    createdSessions.push({ type: "agent", body });
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        session: { id: "mock-agent-1", type: "agent", status: "running", provider: body.provider },
+      }),
+    });
+  });
+  await page.route(new RegExp("/api/projects/[^/]+/terminal-sessions"), (r) => {
+    if (r.request().method() !== "POST") return r.continue();
+    const body = JSON.parse(r.request().postData() ?? "{}");
+    createdSessions.push({ type: "terminal", body });
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        session: { id: "mock-terminal-1", type: "terminal", status: "running" },
+      }),
+    });
+  });
 }
 
 async function login(page) {
@@ -608,6 +639,52 @@ async function runViewport(mobile) {
     record(
       afterUrl !== before && afterUrl.includes(`/projects/${PROJECT_A}`),
       `› 进项目导航 /projects/${PROJECT_A}（${before} → ${afterUrl}）`,
+    );
+
+    // ── 项目标题行 ⋯ 菜单新建（2026-08-06 续七）：不需进项目直接建实例 ──
+    // 回总览（› 导航后已在项目页；mock overview 仍在 → 总览恢复）。
+    await page.goto(`${WEB_ORIGIN}/`);
+    await page.waitForTimeout(800);
+    // 标题行 ⋯ = section 第一个子元素（标题行 div）内的 Actions 按钮——排除实例区卡片 ⋯。
+    const rowActions = page.locator(
+      `section:has(span:text-is("${PROJECT_A}")) > :first-child ${ACTIONS_SELECTOR}`,
+    );
+    await rowActions.click();
+    // 桌面 popover / 移动 sheet 都渲染 role=menuitem；断言新建两项 Claude + Terminal 存在。
+    await page.getByRole("menuitem", { name: "Claude", exact: true }).waitFor({ timeout: 3000 });
+    const hasTerminalItem =
+      (await page.getByRole("menuitem", { name: "Terminal", exact: true }).count()) > 0;
+    record(hasTerminalItem, `${label} 项目 ⋯ 菜单含「新建 Claude + 新建 Terminal」`);
+    // 点 Terminal → name prompt（可选名）→ 填名 + Enter → POST terminal-sessions → navigate detail。
+    await page.getByRole("menuitem", { name: "Terminal", exact: true }).click();
+    await page.locator("[data-prompt-input]").waitFor({ timeout: 3000 });
+    await page.locator("[data-prompt-input]").fill("探针终端");
+    await page.locator("[data-prompt-input]").press("Enter");
+    await page.waitForTimeout(800);
+    const createdTerm = createdSessions.find((s) => s.type === "terminal");
+    record(
+      createdTerm?.body.displayName === "探针终端",
+      `点 Terminal → POST terminal-sessions（displayName=${createdTerm?.body.displayName}）`,
+    );
+    record(
+      page.url().includes(`/projects/${PROJECT_A}/session/mock-terminal-1`),
+      `创建 Terminal 后 navigate detail（${page.url()}）`,
+    );
+    // 回总览再建 Claude：断言 POST body provider=claude2（空名也可建）。
+    await page.goto(`${WEB_ORIGIN}/`);
+    await page.waitForTimeout(800);
+    await page
+      .locator(`section:has(span:text-is("${PROJECT_A}")) > :first-child ${ACTIONS_SELECTOR}`)
+      .click();
+    await page.getByRole("menuitem", { name: "Claude", exact: true }).waitFor({ timeout: 3000 });
+    await page.getByRole("menuitem", { name: "Claude", exact: true }).click();
+    await page.locator("[data-prompt-input]").waitFor({ timeout: 3000 });
+    await page.locator("[data-prompt-input]").press("Enter");
+    await page.waitForTimeout(800);
+    const createdAgent = createdSessions.find((s) => s.type === "agent");
+    record(
+      createdAgent?.body.provider === "claude2",
+      `点 Claude → POST agent-sessions（provider=${createdAgent?.body.provider}）`,
     );
 
     await page.close();

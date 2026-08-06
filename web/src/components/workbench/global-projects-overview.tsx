@@ -25,6 +25,7 @@ import {
   type GridItemCallbacks,
   InstanceGrid,
   useCloseSession,
+  useCreateSession,
   useGlobalInstanceCandidates,
   useRenameSession,
 } from "./instance-area";
@@ -145,6 +146,80 @@ export function GlobalProjectsOverview({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+type ProjectRowActionMenuProps = {
+  /** 桌面右键（useRowContextMenu 的 pointFor/close，GroupedProjectsList 级 per-key）。 */
+  contextMenuPoint: { x: number; y: number } | null;
+  /** 删除项目文案（destructive 项）。 */
+  deleteLabel: string;
+  /** 删除 mutation pending（deleteMutation.isPending，禁用删除项）。 */
+  deletePending: boolean;
+  onDelete: () => void;
+  onContextMenuClose: () => void;
+  projectName: string;
+};
+
+/**
+ * 项目标题行 ⋯ 菜单（2026-08-06 续七）：在「删除项目」前置「新建 Claude + 新建 Terminal」——复用
+ * `useCreateSession(projectName)` 的完整创建流程（name prompt → 创建 API → navigate detail +
+ * invalidate），不需进具体项目即可在总览直接建实例。hook 在组件内调用（`groups.map` 内联调 hook
+ * 会破坏 hooks 规则）。空项目行同样渲染（最需要直接建第一个实例）。置顶分组标题行无 ⋯，不经过本组件。
+ */
+function ProjectRowActionMenu({
+  contextMenuPoint,
+  deleteLabel,
+  deletePending,
+  onDelete,
+  onContextMenuClose,
+  projectName,
+}: ProjectRowActionMenuProps) {
+  const { t } = useT();
+  const { createAgent, createTerminal, isCreating, promptHolder } = useCreateSession(projectName);
+  return (
+    <>
+      <ActionMenu
+        align="end"
+        cancelLabel={t("cancel")}
+        contextMenuPoint={contextMenuPoint}
+        items={[
+          // 新建组前置（default）——对齐项目里 CreateSessionBar 的 Claude + Terminal 两项。
+          {
+            label: t("workbench.createClaude2"),
+            icon: <ShellIcon name="anthropic" />,
+            onSelect: () => createAgent("claude2"),
+            disabled: isCreating,
+          },
+          {
+            label: t("workbench.createTerminal"),
+            icon: <ShellIcon name="terminal" />,
+            onSelect: createTerminal,
+            disabled: isCreating,
+          },
+          // 删除组后置（destructive 红色，ActionMenu 无分隔线概念，destructive 视觉已区分）。
+          {
+            label: deleteLabel,
+            icon: <ShellIcon name="trash" />,
+            onSelect: onDelete,
+            variant: "destructive",
+            disabled: deletePending,
+          },
+        ]}
+        onContextMenuClose={onContextMenuClose}
+        trigger={
+          <button
+            aria-label={t("session.actions")}
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="ellipsis" />
+          </button>
+        }
+      />
+      {/* 行级 name prompt（useCreateSession 内建，创建会话前弹可选名称）。 */}
+      {promptHolder}
+    </>
   );
 }
 
@@ -347,29 +422,13 @@ function GroupedProjectsList({
                   />
                 </svg>
               </button>
-              <ActionMenu
-                align="end"
-                cancelLabel={t("cancel")}
+              <ProjectRowActionMenu
                 contextMenuPoint={ctx.pointFor(group.projectName)}
-                items={[
-                  {
-                    label: t("project.deleteProject"),
-                    icon: <ShellIcon name="trash" />,
-                    onSelect: () => void requestDelete(group.projectName),
-                    variant: "destructive",
-                    disabled: deleteMutation.isPending,
-                  },
-                ]}
+                deleteLabel={t("project.deleteProject")}
+                deletePending={deleteMutation.isPending}
                 onContextMenuClose={ctx.close}
-                trigger={
-                  <button
-                    aria-label={t("session.actions")}
-                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
-                    type="button"
-                  >
-                    <ShellIcon className="h-4 w-4" name="ellipsis" />
-                  </button>
-                }
+                onDelete={() => void requestDelete(group.projectName)}
+                projectName={group.projectName}
               />
             </div>
             {hasCards && !isCollapsed ? (
