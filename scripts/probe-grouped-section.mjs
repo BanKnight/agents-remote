@@ -410,41 +410,49 @@ async function runViewport(mobile) {
       pinnedSec.subtitles.every((t) => t === "probe subtitle"),
       `置顶组卡片 subtitle 第二行渲染（got ${JSON.stringify(pinnedSec.subtitles)}）`,
     );
-    // subtitle 不与右下角置顶按钮重叠：对每张带 pin 按钮的卡片，subtitle 文本区右边界（盒右 - paddingRight，
-    // 即 pr-6 让位后的视觉文本最右）须 ≤ pin 按钮左边界。
-    const subtitleClear = await page.evaluate(() => {
-      const pinBtns = Array.from(
+    // 置顶按钮层级（2026-08-06 续三）：pin 移入内容流末行 self-end 右对齐（朋友圈点赞式，不浮正文）。
+    // 断言：pin.top ≥ subtitle.bottom（正文之下）+ pin 不越卡片底 + pin 靠右（右缘 ≈ card p-3 12px 内距）。
+    const pinBelow = await page.evaluate(() => {
+      return Array.from(
         document.querySelectorAll(
           'button[aria-label="Unpin"], button[aria-label="Pin"], button[aria-label="取消置顶"], button[aria-label="置顶"]',
         ),
-      );
-      return pinBtns.map((pinBtn) => {
-        const card = pinBtn.closest('[class*="group relative flex"]');
-        if (!card) return null;
-        const sub = Array.from(card.querySelectorAll("div")).find(
-          (d) =>
-            d.classList.contains("truncate") &&
-            d.classList.contains("text-on-surface-muted") &&
-            !d.classList.contains("flex"),
-        );
-        if (!sub) return null;
-        const subTextRight =
-          sub.getBoundingClientRect().right - parseFloat(getComputedStyle(sub).paddingRight);
-        const pinLeft = pinBtn.getBoundingClientRect().left;
-        return {
-          subTextRight: Math.round(subTextRight),
-          pinLeft: Math.round(pinLeft),
-          clear: subTextRight <= pinLeft + 1,
-        };
-      });
+      )
+        .map((pinBtn) => {
+          const card = pinBtn.closest('[class*="group relative flex"]');
+          const sub = card
+            ? Array.from(card.querySelectorAll("div")).find(
+                (d) =>
+                  d.classList.contains("truncate") &&
+                  d.classList.contains("text-on-surface-muted") &&
+                  !d.classList.contains("flex"),
+              )
+            : null;
+          if (!card || !sub) return null;
+          const pinR = pinBtn.getBoundingClientRect();
+          const subR = sub.getBoundingClientRect();
+          const cardR = card.getBoundingClientRect();
+          const rightGap = cardR.right - pinR.right;
+          return {
+            belowContent: pinR.top >= subR.bottom - 1,
+            belowCardBottom: pinR.bottom <= cardR.bottom + 1,
+            rightAligned: rightGap >= 0 && rightGap <= 28, // ≈ card p-3(12) + 余量，不浮正文/不越卡
+            top: Math.round(pinR.top),
+            subBottom: Math.round(subR.bottom),
+            rightGap: Math.round(rightGap),
+          };
+        })
+        .filter(Boolean);
     });
     record(
-      subtitleClear.length > 0 && subtitleClear.every((o) => o === null || o.clear),
-      `subtitle 与置顶按钮零重叠（文本右 ≤ pin.left，got ${JSON.stringify(subtitleClear)}）`,
+      pinBelow.length > 0 &&
+        pinBelow.every((o) => o.belowContent && o.belowCardBottom && o.rightAligned),
+      `置顶 pin 移内容流末行：subtitle 之下 + 贴卡片底 + 右对齐（got ${JSON.stringify(pinBelow)}）`,
     );
 
-    // 按钮尺寸：pin/⋯ 桌面 36px（h-9 w-9）/ 触屏 44px（touch:h-11 w-11，DESIGN 触屏目标规范 + Apple HIG）。
-    const expectedBtn = mobile ? 44 : 36;
+    // 按钮尺寸主次（2026-08-06 续三）：⋯ 显著（桌面 36 h-9 / 触屏 44 touch:h-11）、pin 小一档
+    //（桌面 28 h-7 / 触屏 36 touch:h-9）。
+    const [expectedMore, expectedPin] = mobile ? [44, 36] : [36, 28];
     const btnSizes = await page.evaluate((actionsSel) => {
       const px = (el) => (el ? el.getBoundingClientRect().width : null);
       const pin = document.querySelector(
@@ -456,11 +464,11 @@ async function runViewport(mobile) {
     record(
       btnSizes.pin !== null &&
         btnSizes.more !== null &&
-        Math.abs(btnSizes.pin - expectedBtn) <= 1 &&
-        Math.abs(btnSizes.more - expectedBtn) <= 1,
-      `pin/⋯ 按钮尺寸 ${expectedBtn}px（h-9 w-9 / touch:h-11 w-11，got pin=${
+        Math.abs(btnSizes.pin - expectedPin) <= 1 &&
+        Math.abs(btnSizes.more - expectedMore) <= 1,
+      `按钮尺寸主次：⋯ ${expectedMore}px / pin ${expectedPin}px（got pin=${
         btnSizes.pin === null ? "null" : Math.round(btnSizes.pin)
-      } more=${btnSizes.more === null ? "null" : Math.round(btnSizes.more)}）`,
+      } more=${btnSizes.more === null ? "null" : Math.round(btnSizes.more)}，⋯ 显著 > pin）`,
     );
 
     // 分组标题行背景：置顶组 + 项目组标题行（nameRow）背景非透明（bg-surface-raised/30 raised 抬升条）。
@@ -566,10 +574,17 @@ async function runViewport(mobile) {
       "left-15",
       "pl-3",
       "pr-2",
+      // ⋯ 显著（右上角 h-9/touch:h-11）
       "h-9",
       "w-9",
       "touch:h-11",
       "touch:w-11",
+      // pin 小一档（内容流末行 h-7/touch:h-9）
+      "h-7",
+      "w-7",
+      "touch:h-9",
+      "touch:w-9",
+      // title 行恒让位给 ⋯
       "pr-10",
       "touch:pr-12",
       "bg-surface-raised/30",

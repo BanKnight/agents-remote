@@ -787,55 +787,43 @@ export function InstanceCard({
           {title}
         </span>
         {subtitle ? (
-          // onTogglePin 时 pr-10 touch:pr-12（40/48px，同 meta 行）：subtitle 是卡片末行时右下角置顶按钮与其垂直重叠，
-          // 文字让开按钮列。40/48px = 按钮列 44/52（right-2 8 + h-9 36 / h-11 44）− card p-3 12，右缘 = pin.left − 8 间隙。
-          <div
-            className={cn(
-              "min-w-0 truncate text-xs text-on-surface-muted",
-              onTogglePin && "pr-10 touch:pr-12",
-            )}
-          >
-            {subtitle}
-          </div>
+          <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
         ) : null}
         {hasMetaText ? (
-          // onTogglePin 时 pr-10 touch:pr-12（40/48px）精确让开右下角置顶按钮列：40/48px = 按钮列 44/52（right-2 8 + h-9 36 / h-11 44）− card p-3 12，
-          // 右缘 = cardRight − 12 − padding = pin.left − 8 间隙。文字不钻到按钮下方。
-          <div
-            className={cn(
-              "flex items-center gap-1.5 text-xs text-on-surface-muted",
-              onTogglePin && "pr-10 touch:pr-12",
-            )}
-          >
+          <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
             {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
             {projectName && activity ? <span aria-hidden="true">·</span> : null}
             {activity ? <span className="whitespace-nowrap shrink-0">{activity}</span> : null}
           </div>
         ) : null}
+        {onTogglePin ? (
+          // 置顶按钮 = 内容流最末一行、右对齐小按钮（微信朋友圈点赞行式），不浮在正文上：
+          // 小尺寸 h-7 w-7（28px 桌面）/ touch:h-9 w-9（36px 触摸），比右上角 ⋯（36/44）小一档
+          // 主次分明；与 subtitle/meta 不重叠（无需让位）。小尺寸属「内容末行次要操作」，
+          // 对齐 DESIGN 操作区例外，不强制 44px。
+          <button
+            aria-label={pinLabel}
+            aria-pressed={pinned}
+            className={cn(
+              "self-end inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-9 touch:w-9",
+              pinned
+                ? "text-primary"
+                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            onKeyDown={(e) => {
+              // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
+              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+            }}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="pin" />
+          </button>
+        ) : null}
       </div>
-      {onTogglePin ? (
-        <button
-          aria-label={pinLabel}
-          aria-pressed={pinned}
-          className={cn(
-            "absolute bottom-2 right-2 z-10 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-11 touch:w-11",
-            pinned
-              ? "text-primary"
-              : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
-          )}
-          onClick={(e) => {
-            e.stopPropagation();
-            onTogglePin();
-          }}
-          onKeyDown={(e) => {
-            // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
-            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-          }}
-          type="button"
-        >
-          <ShellIcon className="h-5 w-5" name="pin" />
-        </button>
-      ) : null}
       {hasActions ? (
         <div className="absolute right-2 top-2 z-10">
           <ActionMenu
