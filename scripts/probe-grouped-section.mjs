@@ -410,9 +410,10 @@ async function runViewport(mobile) {
       pinnedSec.subtitles.every((t) => t === "probe subtitle"),
       `置顶组卡片 subtitle 第二行渲染（got ${JSON.stringify(pinnedSec.subtitles)}）`,
     );
-    // 置顶按钮层级（2026-08-06 续三）：pin 移入内容流末行 self-end 右对齐（朋友圈点赞式，不浮正文）。
-    // 断言：pin.top ≥ subtitle.bottom（正文之下）+ pin 不越卡片底 + pin 靠右（右缘 ≈ card p-3 12px 内距）。
-    const pinBelow = await page.evaluate(() => {
+    // 置顶按钮与时间同行（2026-08-06 续四）：pin 不单独成行，移入 meta 行右侧（ml-auto 推右）。
+    // 断言：pin.parentElement = meta 行（flex + text-xs + text-on-surface-muted，含时间文本 span）+
+    //       pin 与时间文本垂直重叠（同行）+ pin 是 meta 行末子元素（右对齐）+ pin 在 subtitle 之下。
+    const pinInMeta = await page.evaluate(() => {
       return Array.from(
         document.querySelectorAll(
           'button[aria-label="Unpin"], button[aria-label="Pin"], button[aria-label="取消置顶"], button[aria-label="置顶"]',
@@ -428,31 +429,44 @@ async function runViewport(mobile) {
                   !d.classList.contains("flex"),
               )
             : null;
-          if (!card || !sub) return null;
+          if (!card) return null;
+          const metaRow = pinBtn.parentElement;
+          // 时间文本 span = whitespace-nowrap shrink-0（activity）。
+          const timeSpan = metaRow?.querySelector("span[class*='whitespace-nowrap']");
           const pinR = pinBtn.getBoundingClientRect();
-          const subR = sub.getBoundingClientRect();
-          const cardR = card.getBoundingClientRect();
-          const rightGap = cardR.right - pinR.right;
+          const metaR = metaRow?.getBoundingClientRect();
+          const timeR = timeSpan?.getBoundingClientRect();
+          const subR = sub?.getBoundingClientRect();
+          // 同行：pin 垂直范围落在 meta 行内（容差 1px）。
+          const sameLine = !!metaR && pinR.top >= metaR.top - 1 && pinR.bottom <= metaR.bottom + 1;
+          // pin 与时间文本垂直重叠（同行核心证据）。
+          const overlapsTime =
+            !!timeR && pinR.top < timeR.bottom - 1 && pinR.bottom > timeR.top + 1;
+          // pin 是 meta 行最后一个子元素（ml-auto 推右）。
+          const isLast = metaRow?.lastElementChild === pinBtn;
+          // pin 在 subtitle 之下（meta 行本就在 subtitle 之下，兜底确认）。
+          const belowSub = !subR || pinR.top >= subR.bottom - 1;
           return {
-            belowContent: pinR.top >= subR.bottom - 1,
-            belowCardBottom: pinR.bottom <= cardR.bottom + 1,
-            rightAligned: rightGap >= 0 && rightGap <= 28, // ≈ card p-3(12) + 余量，不浮正文/不越卡
-            top: Math.round(pinR.top),
-            subBottom: Math.round(subR.bottom),
-            rightGap: Math.round(rightGap),
+            sameLine,
+            overlapsTime,
+            isLast,
+            belowSub,
+            pinTop: Math.round(pinR.top),
+            metaTop: metaR ? Math.round(metaR.top) : null,
+            timeTop: timeR ? Math.round(timeR.top) : null,
           };
         })
         .filter(Boolean);
     });
     record(
-      pinBelow.length > 0 &&
-        pinBelow.every((o) => o.belowContent && o.belowCardBottom && o.rightAligned),
-      `置顶 pin 移内容流末行：subtitle 之下 + 贴卡片底 + 右对齐（got ${JSON.stringify(pinBelow)}）`,
+      pinInMeta.length > 0 &&
+        pinInMeta.every((o) => o.sameLine && o.overlapsTime && o.isLast && o.belowSub),
+      `置顶 pin 与时间同行：meta 行末 + 与时间文本垂直重叠 + subtitle 之下（got ${JSON.stringify(pinInMeta)}）`,
     );
 
-    // 按钮尺寸主次（2026-08-06 续三）：⋯ 显著（桌面 36 h-9 / 触屏 44 touch:h-11）、pin 小一档
-    //（桌面 28 h-7 / 触屏 36 touch:h-9）。
-    const [expectedMore, expectedPin] = mobile ? [44, 36] : [36, 28];
+    // 按钮尺寸主次（2026-08-06 续五）：⋯ 显著（桌面 36 h-9 / 触屏 44 touch:h-11）、pin 缩小
+    //（桌面 20 h-5 / 触屏 28 touch:h-7），桌面 meta 行仅撑高 4px（回收高度，与时间同行）。
+    const [expectedMore, expectedPin] = mobile ? [44, 28] : [36, 20];
     const btnSizes = await page.evaluate((actionsSel) => {
       const px = (el) => (el ? el.getBoundingClientRect().width : null);
       const pin = document.querySelector(
@@ -579,11 +593,11 @@ async function runViewport(mobile) {
       "w-9",
       "touch:h-11",
       "touch:w-11",
-      // pin 小一档（内容流末行 h-7/touch:h-9）
-      "h-7",
-      "w-7",
-      "touch:h-9",
-      "touch:w-9",
+      // pin 缩小（meta 行同行 h-5/touch:h-7）
+      "h-5",
+      "w-5",
+      "touch:h-7",
+      "touch:w-7",
       // title 行恒让位给 ⋯
       "pr-10",
       "touch:pr-12",

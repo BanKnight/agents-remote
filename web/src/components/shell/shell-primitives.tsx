@@ -789,39 +789,39 @@ export function InstanceCard({
         {subtitle ? (
           <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
         ) : null}
-        {hasMetaText ? (
+        {hasMetaText || onTogglePin ? (
+          // meta 行（项目名 · 最后活动）+ 置顶按钮 同行：左侧时间文本、右侧 pin（ml-auto 推右）。
+          // pin 缩到 h-5 w-5（20px 桌面）/ touch:h-7 w-7（28px 触摸），icon h-3.5——桌面 meta 行只撑高
+          // 4px（20 vs 文字 16）几乎与无 pin 卡齐高；touch 28px 仍撑高但保触摸区。比右上角 ⋯（36/44）
+          // 小一档主次分明；shrink-0 防被压缩。无时间文本时仍渲染该行承载 pin。
           <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
             {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
             {projectName && activity ? <span aria-hidden="true">·</span> : null}
             {activity ? <span className="whitespace-nowrap shrink-0">{activity}</span> : null}
+            {onTogglePin ? (
+              <button
+                aria-label={pinLabel}
+                aria-pressed={pinned}
+                className={cn(
+                  "ml-auto inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-7 touch:w-7",
+                  pinned
+                    ? "text-primary"
+                    : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTogglePin();
+                }}
+                onKeyDown={(e) => {
+                  // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
+                  if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                }}
+                type="button"
+              >
+                <ShellIcon className="h-3.5 w-3.5" name="pin" />
+              </button>
+            ) : null}
           </div>
-        ) : null}
-        {onTogglePin ? (
-          // 置顶按钮 = 内容流最末一行、右对齐小按钮（微信朋友圈点赞行式），不浮在正文上：
-          // 小尺寸 h-7 w-7（28px 桌面）/ touch:h-9 w-9（36px 触摸），比右上角 ⋯（36/44）小一档
-          // 主次分明；与 subtitle/meta 不重叠（无需让位）。小尺寸属「内容末行次要操作」，
-          // 对齐 DESIGN 操作区例外，不强制 44px。
-          <button
-            aria-label={pinLabel}
-            aria-pressed={pinned}
-            className={cn(
-              "self-end inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-9 touch:w-9",
-              pinned
-                ? "text-primary"
-                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              onTogglePin();
-            }}
-            onKeyDown={(e) => {
-              // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
-              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-            }}
-            type="button"
-          >
-            <ShellIcon className="h-4 w-4" name="pin" />
-          </button>
         ) : null}
       </div>
       {hasActions ? (
