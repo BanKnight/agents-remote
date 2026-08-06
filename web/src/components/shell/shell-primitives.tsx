@@ -787,14 +787,22 @@ export function InstanceCard({
           {title}
         </span>
         {subtitle ? (
-          <div className="min-w-0 truncate text-xs text-on-surface-muted">{subtitle}</div>
+          // touch:pr-9（36px）让 subtitle 文字停在 pin 列外：touch pin（h-7=28px）在 meta 行居中时
+          // 上溢 6px 侵入 subtitle 行底部 2px（桌面 pin 20px 只溢 2px、落 gap-1 内，subtitle 不需让位）。
+          // 加让位后 touch 下 subtitle 右缘与 meta 对齐（都清 pin 列），长文字不钻到 pin 下方。
+          <div className="min-w-0 truncate text-xs text-on-surface-muted touch:pr-9">
+            {subtitle}
+          </div>
         ) : null}
         {hasMetaText || onTogglePin ? (
-          // meta 行（项目名 · 最后活动）+ 置顶按钮 同行：左侧时间文本、右侧 pin（ml-auto 推右）。
-          // pin 缩到 h-5 w-5（20px 桌面）/ touch:h-7 w-7（28px 触摸），icon h-3.5——桌面 meta 行只撑高
-          // 4px（20 vs 文字 16）几乎与无 pin 卡齐高；touch 28px 仍撑高但保触摸区。比右上角 ⋯（36/44）
-          // 小一档主次分明；shrink-0 防被压缩。无时间文本时仍渲染该行承载 pin。
-          <div className="flex items-center gap-1.5 text-xs text-on-surface-muted">
+          // meta 行（项目名 · 最后活动）+ 置顶按钮。pin 用 absolute 定位在本行右侧（top-1/2 居中），
+          // 不进 flex 流——meta 行高度由文字决定（text-xs=16px），pin（h-5=20 / touch:h-7=28）虽大于行高
+          // 但上下溢出落在 gap-1（4px）与 p-3（12px）空白内：不撑高行 → 三行高 20/16/16 节奏齐
+          //（subtitle 与 meta 同高）、有 pin 卡与无 pin 卡等高（彻底回收 pin 占的行空间）、底部不再
+          // 因 pin 撑高而空旷。水平不交集：subtitle 因 pr-10 让 ⋯ 早停在右 40px 外；meta 文字 pr-7
+          //（28px）/ touch:pr-9（36px）让位停在 pin 左侧 8px。无时间文本时 min-h-4（16px）仍撑起一行
+          // 承载 pin。pin 比 ⋯（36/44）小一档主次分明。
+          <div className="relative flex min-h-4 items-center gap-1.5 pr-7 text-xs text-on-surface-muted touch:pr-9">
             {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
             {projectName && activity ? <span aria-hidden="true">·</span> : null}
             {activity ? <span className="whitespace-nowrap shrink-0">{activity}</span> : null}
@@ -803,7 +811,7 @@ export function InstanceCard({
                 aria-label={pinLabel}
                 aria-pressed={pinned}
                 className={cn(
-                  "ml-auto inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-7 touch:w-7",
+                  "absolute right-0 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-7 touch:w-7",
                   pinned
                     ? "text-primary"
                     : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",

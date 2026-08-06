@@ -410,62 +410,99 @@ async function runViewport(mobile) {
       pinnedSec.subtitles.every((t) => t === "probe subtitle"),
       `置顶组卡片 subtitle 第二行渲染（got ${JSON.stringify(pinnedSec.subtitles)}）`,
     );
-    // 置顶按钮与时间同行（2026-08-06 续四）：pin 不单独成行，移入 meta 行右侧（ml-auto 推右）。
-    // 断言：pin.parentElement = meta 行（flex + text-xs + text-on-surface-muted，含时间文本 span）+
-    //       pin 与时间文本垂直重叠（同行）+ pin 是 meta 行末子元素（右对齐）+ pin 在 subtitle 之下。
-    const pinInMeta = await page.evaluate(() => {
-      return Array.from(
-        document.querySelectorAll(
-          'button[aria-label="Unpin"], button[aria-label="Pin"], button[aria-label="取消置顶"], button[aria-label="置顶"]',
-        ),
-      )
-        .map((pinBtn) => {
-          const card = pinBtn.closest('[class*="group relative flex"]');
-          const sub = card
-            ? Array.from(card.querySelectorAll("div")).find(
-                (d) =>
-                  d.classList.contains("truncate") &&
-                  d.classList.contains("text-on-surface-muted") &&
-                  !d.classList.contains("flex"),
-              )
-            : null;
-          if (!card) return null;
-          const metaRow = pinBtn.parentElement;
-          // 时间文本 span = whitespace-nowrap shrink-0（activity）。
-          const timeSpan = metaRow?.querySelector("span[class*='whitespace-nowrap']");
-          const pinR = pinBtn.getBoundingClientRect();
-          const metaR = metaRow?.getBoundingClientRect();
-          const timeR = timeSpan?.getBoundingClientRect();
-          const subR = sub?.getBoundingClientRect();
-          // 同行：pin 垂直范围落在 meta 行内（容差 1px）。
-          const sameLine = !!metaR && pinR.top >= metaR.top - 1 && pinR.bottom <= metaR.bottom + 1;
-          // pin 与时间文本垂直重叠（同行核心证据）。
-          const overlapsTime =
-            !!timeR && pinR.top < timeR.bottom - 1 && pinR.bottom > timeR.top + 1;
-          // pin 是 meta 行最后一个子元素（ml-auto 推右）。
-          const isLast = metaRow?.lastElementChild === pinBtn;
-          // pin 在 subtitle 之下（meta 行本就在 subtitle 之下，兜底确认）。
-          const belowSub = !subR || pinR.top >= subR.bottom - 1;
-          return {
-            sameLine,
-            overlapsTime,
-            isLast,
-            belowSub,
-            pinTop: Math.round(pinR.top),
-            metaTop: metaR ? Math.round(metaR.top) : null,
-            timeTop: timeR ? Math.round(timeR.top) : null,
-          };
-        })
-        .filter(Boolean);
+    // 置顶 pin（2026-08-06 续六）：pin 用 absolute 定位在 meta 行右侧（top-1/2 居中），不进 flex 流——
+    // meta 行高度由文字决定（text-xs=16px），pin（h-5=20 / touch:h-7=28）溢出行高但不撑高行。
+    // 断言：① pin position absolute（脱流）；② pin 垂直中心对齐 meta 中心（与时间同行）；
+    //       ③ meta 行高 ≤17px（text-xs 行高，不被 pin 撑到 20 = 回收 meta 行空间核心）；
+    //       ④ pin 不与 meta 文本（projectName/·/activity）2D 重叠（pr-7/touch:pr-9 让位）；
+    //       ⑤ pin 不与 subtitle 文本 2D 重叠（subtitle 在 pin 之上，水平本不交集）；
+    //       ⑥ 三行节奏：subtitle 高 ≈ meta 高（同 text-xs=16px，title text-sm=20px）。
+    const pinGeom = await page.evaluate(() => {
+      const pin = document.querySelector(
+        'button[aria-label="Unpin"], button[aria-label="Pin"], button[aria-label="取消置顶"], button[aria-label="置顶"]',
+      );
+      if (!pin) return null;
+      const card = pin.closest('[class*="group relative flex"]');
+      const metaRow = pin.parentElement;
+      const pinR = pin.getBoundingClientRect();
+      const metaR = metaRow.getBoundingClientRect();
+      // meta 行文本 = 直接子 span（projectName/·/activity）——排除 pin 按钮内的 ShellIcon span
+      //（icons/index.tsx ShellIcon 渲染 <span> 包裹 svg，querySelectorAll("span") 会误纳入）。
+      const metaSpans = Array.from(metaRow.children).filter((el) => el.tagName === "SPAN");
+      const maxMetaTextRight = Math.max(...metaSpans.map((s) => s.getBoundingClientRect().right));
+      const sub = Array.from(card.querySelectorAll("div")).find(
+        (d) =>
+          d.classList.contains("truncate") &&
+          d.classList.contains("text-on-surface-muted") &&
+          !d.classList.contains("flex"),
+      );
+      const subR = sub?.getBoundingClientRect();
+      // subtitle 文字实际范围（Range selectNodeContents）——truncate div 的 box 撑满 flex-col 宽度，
+      // 但 touch:pr-9 让文字停在 pin 列外；用文字范围才能断言「可见文字不碰 pin」。
+      let subTextRect = null;
+      if (sub) {
+        const range = document.createRange();
+        range.selectNodeContents(sub);
+        const r = range.getBoundingClientRect();
+        subTextRect = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      }
+      const title = card.querySelector("span.text-sm");
+      const titleR = title?.getBoundingClientRect();
+      const pinCy = pinR.top + pinR.height / 2;
+      const metaCy = metaR.top + metaR.height / 2;
+      // 2D 重叠：水平交 + 垂直交（容差 1px）。
+      const overlap2d = (a, b) =>
+        a.left < b.right - 1 &&
+        a.right > b.left + 1 &&
+        a.top < b.bottom - 1 &&
+        a.bottom > b.top + 1;
+      return {
+        pinAbsolute: getComputedStyle(pin).position === "absolute",
+        centerAligns: Math.abs(pinCy - metaCy) <= 1,
+        metaHeight: Math.round(metaR.height),
+        pinHeight: Math.round(pinR.height),
+        metaNotInflated: metaR.height <= 17,
+        pinOverflowsMeta: pinR.height > metaR.height + 1,
+        clearsMetaText: !overlap2d(pinR, {
+          left: metaSpans[0]?.getBoundingClientRect().left ?? pinR.left,
+          right: maxMetaTextRight,
+          top: metaR.top,
+          bottom: metaR.bottom,
+        }),
+        clearsSubtitle: !subTextRect || !overlap2d(pinR, subTextRect),
+        titleHeight: titleR ? Math.round(titleR.height) : null,
+        subHeight: subR ? Math.round(subR.height) : null,
+        subTextRight: subTextRect ? Math.round(subTextRect.right) : null,
+        pinLeft: Math.round(pinR.left),
+      };
     });
-    record(
-      pinInMeta.length > 0 &&
-        pinInMeta.every((o) => o.sameLine && o.overlapsTime && o.isLast && o.belowSub),
-      `置顶 pin 与时间同行：meta 行末 + 与时间文本垂直重叠 + subtitle 之下（got ${JSON.stringify(pinInMeta)}）`,
-    );
+    record(!!pinGeom, `读取到置顶 pin 几何`);
+    if (pinGeom) {
+      record(pinGeom.pinAbsolute, `pin position absolute（不进 flex 流，不撑高 meta）`);
+      record(pinGeom.centerAligns, `pin 垂直中心对齐 meta 中心（与时间同行）`);
+      record(
+        pinGeom.metaNotInflated,
+        `meta 行不被 pin 撑高（${pinGeom.metaHeight}px ≤17 = text-xs 行高，回收空间核心）`,
+      );
+      record(
+        pinGeom.pinOverflowsMeta,
+        `pin(${pinGeom.pinHeight}px) > meta 行(${pinGeom.metaHeight}px) → 溢出而非撑高`,
+      );
+      record(pinGeom.clearsMetaText, `pin 不与 meta 文本 2D 重叠（pr-7/touch:pr-9 让位）`);
+      record(
+        pinGeom.clearsSubtitle,
+        `pin 不与 subtitle 文字 2D 重叠（pin.left${pinGeom.pinLeft} vs sub.textRight${pinGeom.subTextRight}）`,
+      );
+      record(
+        pinGeom.subHeight !== null &&
+          Math.abs(pinGeom.subHeight - pinGeom.metaHeight) <= 1 &&
+          pinGeom.metaHeight <= 17,
+        `三行节奏齐：subtitle(${pinGeom.subHeight}px) ≈ meta(${pinGeom.metaHeight}px) 同高 / title(${pinGeom.titleHeight}px)`,
+      );
+    }
 
-    // 按钮尺寸主次（2026-08-06 续五）：⋯ 显著（桌面 36 h-9 / 触屏 44 touch:h-11）、pin 缩小
-    //（桌面 20 h-5 / 触屏 28 touch:h-7），桌面 meta 行仅撑高 4px（回收高度，与时间同行）。
+    // 按钮尺寸主次（2026-08-06 续六）：⋯ 显著（桌面 36 h-9 / 触屏 44 touch:h-11）、pin 缩小
+    //（桌面 20 h-5 / 触屏 28 touch:h-7），pin absolute 不撑高 meta 行（与时间同行 + 回收高度）。
     const [expectedMore, expectedPin] = mobile ? [44, 28] : [36, 20];
     const btnSizes = await page.evaluate((actionsSel) => {
       const px = (el) => (el ? el.getBoundingClientRect().width : null);
@@ -593,11 +630,15 @@ async function runViewport(mobile) {
       "w-9",
       "touch:h-11",
       "touch:w-11",
-      // pin 缩小（meta 行同行 h-5/touch:h-7）
+      // pin 缩小（absolute 居中 meta 行右侧 h-5/touch:h-7）
       "h-5",
       "w-5",
       "touch:h-7",
       "touch:w-7",
+      // meta 行 relative + min-h-4（pin absolute 不撑高）+ pr-7/touch:pr-9 让位 pin
+      "min-h-4",
+      "pr-7",
+      "touch:pr-9",
       // title 行恒让位给 ⋯
       "pr-10",
       "touch:pr-12",
