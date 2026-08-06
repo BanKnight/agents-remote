@@ -13,6 +13,31 @@
 
 **Gen 3 取舍**：放弃 tmux 保活带来的「进程级」持久化，改为「状态级」持久化——CLI 用 `--resume <claudeSessionId>` 从自己的 JSONL 恢复完整历史，API 侧 relay 也从同一份 JSONL 重建历史缓冲。代价是 API 重启丢一个进行中的 turn，收益是管线大幅简化（无 FIFO、无 turn 文件、无 stdout-helper、无 `num_turns` 去重、无 pipe-pane）。
 
+## 备选方案：CLI 进程 daemon 化保活（已否决）
+
+> 本节记录一个**考虑过但未实施**的方向，避免日后重复推演。结论：维持 Gen 3 直拉 + `--resume` 状态级恢复，不引入常驻 daemon。
+
+**动机**：开发期 API 频繁重启（改代码即重启），CLI 子进程随之被杀，进行中的 turn 中断。能否让 CLI 进程**独立于 API 存活**，API 重启后业务顺滑接上？
+
+**根因**（为什么 CLI 必然随 API 死）——CLI 是 API `Bun.spawn` 的子进程，两层耦合：
+
+| 耦合 | 机制 | 后果 |
+|---|---|---|
+| 进程组 | CLI 与 API 同 process group；开发态 `C-c` 重启 API 时 SIGINT 发给整组 | CLI 一起被信号杀 |
+| stdio pipe | CLI 的 stdin/stdout 是连向 API 的 pipe | API 退出 → stdin 写端关闭 → CLI 读到 EOF；stdout 读端关闭 → CLI 写时 SIGPIPE |
+
+`Bun.spawn({ detached: true })`（POSIX `setsid()`）能解进程组耦合，但**单独不够**——pipe 断裂照样杀进程；要把 stdio 也 `ignore` 才彻底脱离，而 stdio 一旦不连 API，CLI 的双向 stream-json 就没了通道。
+
+**唯一彻底解法 = 常驻 supervisor 进程**：在 CLI 与 API 之间插一个 `detached` + `stdio:["ignore","ignore","ignore"]` + `unref()` 的进程，由它持有 CLI 的 stdin/stdout pipe（稳定对端），自己监听 unix socket 让 API 远程驱动。API 重启只断 socket、不动 CLI 的 stdio → CLI 不死。这与 terminal 走 **tmux server** 同构（tmux server 持 PTY 主端，API 只是 attach）；竞品 **orca**（`stablyai/orca`）正是自造了这套 daemon（daemon 持 `@xterm/headless` 权威 buffer + `SerializeAddon` + driver 多端仲裁，详见 [web terminal + tmux attach 调研 §4](../research/web-terminal-tmux-attach.md)）。现有 `Claude2SessionRelay`（history+live 双缓冲 + subscriber fan-out）几乎可原样搬进 supervisor，且因 stream-json 是结构化行，没有 orca 那套终端全态重绘的复杂状态机（alt-screen / 光标 / serialize / 尺寸仲裁全不需要）。
+
+**为何否决**：
+
+1. **MCP hub 的次生耦合（决定性理由）**：CLI 通过 `--mcp-config` 连 **API 进程内的 MCP hub**（`mcpPort`，见 `buildMcpArgs`）。supervisor 保住了 CLI 主进程，但 API 一重启 hub 也重启 → CLI 的 MCP 连接断裂，wiki/browser 等工具能力静默失效。MCP 是本项目活跃开发的能力，**「保住进程却丢了工具」比「丢一个进行中 turn」更隐蔽、更难接受**。
+2. **复杂度与新故障面**：supervisor 进程层带来状态搬迁（`onSystemInit` / `onModelChange` / `onPermissionModeChange` 等进程内回调要变成跨 socket 消息）、socket 协议与 handshake 竞态、孤儿清理与 PID 复用、unix socket 路径长度（≤108 字节，runtimeKey 要 hash 映射）、apiKey 跨进程传输、测试从进程内单测改集成测试——一整层新机制，每条都是新故障面。
+3. **收益不匹配**：相对现状，supervisor 唯一多换来的只是「进行中那一 turn 不丢」；代价是 MCP 断裂风险 + 整层 daemon 复杂度，明显不对等。
+
+**结论**：Gen 3 的「状态级持久化」取舍成立——`--resume <claudeSessionId>` 从 JSONL 恢复完整历史，进行中 turn 以 interrupted 呈现，是可接受的已知限制。CLI 与 API 的 stdio 强耦合是**有意为之**，换来 stream-json 精确直连、无 PTY 干扰、无 daemon 复杂度。除非未来 MCP hub 也独立成 daemon（解掉否决理由 1），否则本方向不重启。
+
 ## 目标
 
 1. 服务端对客户端表现为**单一数据源**（一个 WebSocket），客户端不做多源拼接。
