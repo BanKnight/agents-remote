@@ -241,7 +241,7 @@ function GroupedProjectsList({
           toggle（▾/▸ + 📌 pin + 置顶），无 › 进项目、无 ⋯ 删除（非项目）。 */}
       {pinnedCandidates.length > 0 ? (
         <section key={PINNED_GROUP_KEY}>
-          <div className="flex items-center gap-2 pl-3 pr-2">
+          <div className="flex items-center gap-2 rounded-lg bg-surface-raised/30 pl-3 pr-2">
             <button
               aria-expanded={!pinnedCollapsed}
               className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
@@ -289,7 +289,7 @@ function GroupedProjectsList({
         return (
           <section key={group.projectName}>
             <div
-              className="flex items-center gap-2 pl-3 pr-2"
+              className="flex items-center gap-2 rounded-lg bg-surface-raised/30 pl-3 pr-2"
               onContextMenu={(e) => ctx.openAt(group.projectName, e)}
             >
               {hasCards ? (

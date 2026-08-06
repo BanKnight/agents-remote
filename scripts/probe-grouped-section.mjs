@@ -35,6 +35,8 @@ const ENTER_SELECTOR = 'button[aria-label="Enter project"], button[aria-label="�
 const PIN_SELECTOR = 'button[aria-label="Pin"], button[aria-label="置顶"]';
 const UNPIN_SELECTOR = 'button[aria-label="Unpin"], button[aria-label="取消置顶"]';
 const PINNED_NAME = 'span:text-is("Pinned"), span:text-is("置顶")';
+// 卡片 ⋯ 更多按钮（InstanceCard actionsLabel = t("session.actions")），两种语言都匹配。
+const ACTIONS_SELECTOR = 'button[aria-label="Actions"], button[aria-label="操作"]';
 
 function candidate(projectName, sessionId, displayName, type, provider) {
   return {
@@ -441,6 +443,44 @@ async function runViewport(mobile) {
       `subtitle 与置顶按钮零重叠（文本右 ≤ pin.left，got ${JSON.stringify(subtitleClear)}）`,
     );
 
+    // 按钮尺寸：pin/⋯ 桌面 36px（h-9 w-9）/ 触屏 44px（touch:h-11 w-11，DESIGN 触屏目标规范 + Apple HIG）。
+    const expectedBtn = mobile ? 44 : 36;
+    const btnSizes = await page.evaluate((actionsSel) => {
+      const px = (el) => (el ? el.getBoundingClientRect().width : null);
+      const pin = document.querySelector(
+        'button[aria-label="Unpin"], button[aria-label="Pin"], button[aria-label="取消置顶"], button[aria-label="置顶"]',
+      );
+      const more = document.querySelector(actionsSel);
+      return { pin: px(pin), more: px(more) };
+    }, ACTIONS_SELECTOR);
+    record(
+      btnSizes.pin !== null &&
+        btnSizes.more !== null &&
+        Math.abs(btnSizes.pin - expectedBtn) <= 1 &&
+        Math.abs(btnSizes.more - expectedBtn) <= 1,
+      `pin/⋯ 按钮尺寸 ${expectedBtn}px（h-9 w-9 / touch:h-11 w-11，got pin=${
+        btnSizes.pin === null ? "null" : Math.round(btnSizes.pin)
+      } more=${btnSizes.more === null ? "null" : Math.round(btnSizes.more)}）`,
+    );
+
+    // 分组标题行背景：置顶组 + 项目组标题行（nameRow）背景非透明（bg-surface-raised/30 raised 抬升条）。
+    const rowBg = await page.evaluate((enterSel) => {
+      return Array.from(document.querySelectorAll("section"))
+        .map((s) => {
+          const nameRow = s.firstElementChild;
+          if (!nameRow) return null;
+          const fold = nameRow.querySelector("button[class*='min-h-11']");
+          const enter = nameRow.querySelector(enterSel);
+          if (!fold && !enter) return null;
+          return getComputedStyle(nameRow).backgroundColor;
+        })
+        .filter(Boolean);
+    }, ENTER_SELECTOR);
+    record(
+      rowBg.length >= 2 && rowBg.every((bg) => bg !== "rgba(0, 0, 0, 0)"),
+      `分组标题行 bg 非透明（raised 抬升条，got ${JSON.stringify(rowBg)}）`,
+    );
+
     // 置顶组折叠记忆：tap 置顶标题行 → 0 卡（▸）→ 再 tap → 恢复 1。
     const pinnedFoldBtn = page.locator(`section:has(${PINNED_NAME}) button[class*='min-h-11']`);
     await pinnedFoldBtn.click();
@@ -520,7 +560,21 @@ async function runViewport(mobile) {
 (async () => {
   // CSS 落盘硬闸（frontend-notes §2/§10）：HTML 注入 stylesheet + content-type text/css + 关键 utility 落正文。
   const css = await verifyCssFlushed({
-    expectClasses: ["space-y-2", "min-h-11", "left-15", "pl-3", "pr-2"],
+    expectClasses: [
+      "space-y-2",
+      "min-h-11",
+      "left-15",
+      "pl-3",
+      "pr-2",
+      "h-9",
+      "w-9",
+      "touch:h-11",
+      "touch:w-11",
+      "pr-10",
+      "touch:pr-12",
+      "bg-surface-raised/30",
+      "rounded-lg",
+    ],
   });
   if (!css.pass) {
     console.error(css.details.join("\n"));

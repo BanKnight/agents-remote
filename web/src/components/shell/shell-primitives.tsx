@@ -781,25 +781,30 @@ export function InstanceCard({
       ) : null}
       <StatusMarker marker={marker} status={status} />
       <div className="min-w-0 flex-1 flex flex-col gap-1">
-        <span className="min-w-0 truncate pr-6 text-sm font-semibold text-on-surface group-hover:text-primary">
+        {/* 恒给右上角 ⋯ 让位：pr-10（40px）/ touch:pr-12（48px）= 按钮列 44/52 − card p-3 12，右缘 = ⋯.left − 8 间隙。
+            修复触屏下文字钻到 ⋯ 下方 12px（旧 pr-6=24px 让位不足）。 */}
+        <span className="min-w-0 truncate pr-10 text-sm font-semibold text-on-surface group-hover:text-primary touch:pr-12">
           {title}
         </span>
         {subtitle ? (
-          // onTogglePin 时 pr-9（36px，同 meta 行）：subtitle 是卡片末行时右下角置顶按钮与其垂直重叠，
-          // 文字让开按钮列。36px = touch 按钮列 48px（right-2 8 + w-10 40）− card p-3 12，内容右缘精确到 pin.left。
+          // onTogglePin 时 pr-10 touch:pr-12（40/48px，同 meta 行）：subtitle 是卡片末行时右下角置顶按钮与其垂直重叠，
+          // 文字让开按钮列。40/48px = 按钮列 44/52（right-2 8 + h-9 36 / h-11 44）− card p-3 12，右缘 = pin.left − 8 间隙。
           <div
-            className={cn("min-w-0 truncate text-xs text-on-surface-muted", onTogglePin && "pr-9")}
+            className={cn(
+              "min-w-0 truncate text-xs text-on-surface-muted",
+              onTogglePin && "pr-10 touch:pr-12",
+            )}
           >
             {subtitle}
           </div>
         ) : null}
         {hasMetaText ? (
-          // onTogglePin 时 pr-9（36px）精确让开右下角置顶按钮列：36px = touch 按钮列 48px（right-2 8 + w-10 40）− card p-3 12，
-          // 内容右缘 = cardRight − 12 − 36 = pin.left；桌面 28px 按钮时多让 12px 无害。文字不钻到按钮下方。
+          // onTogglePin 时 pr-10 touch:pr-12（40/48px）精确让开右下角置顶按钮列：40/48px = 按钮列 44/52（right-2 8 + h-9 36 / h-11 44）− card p-3 12，
+          // 右缘 = cardRight − 12 − padding = pin.left − 8 间隙。文字不钻到按钮下方。
           <div
             className={cn(
               "flex items-center gap-1.5 text-xs text-on-surface-muted",
-              onTogglePin && "pr-9",
+              onTogglePin && "pr-10 touch:pr-12",
             )}
           >
             {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
@@ -813,7 +818,7 @@ export function InstanceCard({
           aria-label={pinLabel}
           aria-pressed={pinned}
           className={cn(
-            "absolute bottom-2 right-2 z-10 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-10 touch:w-10",
+            "absolute bottom-2 right-2 z-10 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition active:bg-on-surface/10 touch:h-11 touch:w-11",
             pinned
               ? "text-primary"
               : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface",
@@ -828,7 +833,7 @@ export function InstanceCard({
           }}
           type="button"
         >
-          <ShellIcon className="h-4 w-4" name="pin" />
+          <ShellIcon className="h-5 w-5" name="pin" />
         </button>
       ) : null}
       {hasActions ? (
@@ -842,7 +847,7 @@ export function InstanceCard({
             trigger={
               <button
                 aria-label={actionsLabel}
-                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10 touch:h-10 touch:w-10"
+                className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10 touch:h-11 touch:w-11"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   // Enter/Space 由卡片 onKeyDown 处理（→ onSelect），此处隔离避免误触发。
@@ -850,7 +855,7 @@ export function InstanceCard({
                 }}
                 type="button"
               >
-                <ShellIcon className="h-4 w-4" name="ellipsis" />
+                <ShellIcon className="h-5 w-5" name="ellipsis" />
               </button>
             }
           />
