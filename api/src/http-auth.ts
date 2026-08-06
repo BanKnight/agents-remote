@@ -18,25 +18,33 @@ export const jsonError = (code: ApiErrorCode, message: string, status: number) =
     { status },
   );
 
-export const extractBearerToken = (request: Request) => {
-  const authorization = request.headers.get("authorization");
+export const extractAuthTokens = (request: Request): string[] => {
+  const tokens: string[] = [];
 
+  const authorization = request.headers.get("authorization");
   if (authorization?.startsWith("Bearer ")) {
-    return authorization.slice("Bearer ".length);
+    tokens.push(authorization.slice("Bearer ".length));
   }
 
+  // 同名 cookie 可因不同 Path 并存（RFC 6265：共存不覆盖，浏览器按更长 Path 先发）。
+  // 必须全部收集，由调用方逐个验证取首个有效——否则更长 Path 的旧/失效 cookie 会
+  // 遮蔽有效 cookie（重启后 token-secret 重建，旧签名失效的 cookie 排在前会顶死新 cookie）。
   const cookie = request.headers.get("cookie");
-  const tokenCookie = cookie
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("agents_remote_token="));
-
-  if (tokenCookie) {
-    return decodeURIComponent(tokenCookie.slice("agents_remote_token=".length));
+  if (cookie) {
+    for (const part of cookie.split(";").map((p) => p.trim())) {
+      if (part.startsWith("agents_remote_token=")) {
+        tokens.push(decodeURIComponent(part.slice("agents_remote_token=".length)));
+      }
+    }
   }
 
   const url = new URL(request.url);
-  return url.searchParams.get("token") ?? undefined;
+  const queryToken = url.searchParams.get("token");
+  if (queryToken) {
+    tokens.push(queryToken);
+  }
+
+  return tokens;
 };
 
 const setTokenCookie = (headers: Headers, issue: TokenIssue) => {
@@ -51,17 +59,17 @@ export type HttpAuthResult =
   | { status: "unauthenticated"; response: Response };
 
 export const requireHttpAuth = (request: Request, auth: AuthService): HttpAuthResult => {
-  const token = extractBearerToken(request);
-  const result = auth.verifyWithRefresh(token);
-
-  if (!result.valid) {
-    return {
-      status: "unauthenticated",
-      response: jsonError("UNAUTHENTICATED", "Authentication required", 401),
-    };
+  for (const token of extractAuthTokens(request)) {
+    const result = auth.verifyWithRefresh(token);
+    if (result.valid) {
+      return { status: "authenticated", refreshToken: result.refreshedToken };
+    }
   }
 
-  return { status: "authenticated", refreshToken: result.refreshedToken };
+  return {
+    status: "unauthenticated",
+    response: jsonError("UNAUTHENTICATED", "Authentication required", 401),
+  };
 };
 
 export const applyAuthRefresh = (response: Response, refreshToken?: TokenIssue) => {

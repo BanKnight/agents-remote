@@ -1,5 +1,5 @@
 import { AuthService } from "./auth";
-import { extractBearerToken } from "./http-auth";
+import { extractAuthTokens } from "./http-auth";
 
 export const canUpgradeWebSocket = (request: Request, auth: AuthService) =>
-  auth.verify(extractBearerToken(request));
+  extractAuthTokens(request).some((token) => auth.verify(token));
