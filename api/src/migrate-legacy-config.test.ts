@@ -121,6 +121,24 @@ test("idempotent: settings.yaml exists → providers.json untouched", async () =
   expect(await readFile(providersPath, "utf8")).toContain("runtimes");
 });
 
+test("corrupt providers.json → no crash, moved to .corrupt, no files written", async () => {
+  const dir = await makeTempDir();
+  const providersPath = join(dir, "providers.json");
+  await writeFile(providersPath, "{ this is not valid yaml [", { mode: 0o600 });
+
+  // 不抛错（迁移在启动路径上，抛错即 API 崩溃——损坏用户文件不该杀掉整个 API）。
+  await migrateLegacyUserFiles(dir);
+
+  await expect(readFile(providersPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readFile(`${providersPath}.corrupt`, "utf8")).toContain("not valid yaml");
+  await expect(readFile(join(dir, "settings.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await expect(readFile(join(dir, "state.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
 test("no-op when both files missing (settings.yaml + state.yaml not created)", async () => {
   const dir = await makeTempDir();
 

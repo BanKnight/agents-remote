@@ -61,7 +61,22 @@ export async function migrateLegacyUserFiles(dir = defaultUserDir()): Promise<vo
     throw error;
   }
 
-  const { settings, overview } = splitLegacySettings(parseYaml(raw));
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch (error) {
+    // 损坏的 providers.json（YAML 语法错误/截断）：保留现场改名 .corrupt 后跳过迁移。
+    // 必须不抛——迁移在 startApi 启动路径上，顶层 catch 只接 StartupError，任何其他
+    // throw 都会让整个 API 起不来。旧实现懒读损坏文件只影响 settings 接口（500），
+    // 迁移前置到启动后必须保持「损坏不崩」。改名后下次启动不再重试。
+    await rename(providersPath, `${providersPath}.corrupt`);
+    console.error(
+      `[migrate-legacy] providers.json parse failed (moved to providers.json.corrupt): ${errorMessage(error)}`,
+    );
+    return;
+  }
+
+  const { settings, overview } = splitLegacySettings(parsed);
   await new SettingsStore({ path: settingsPath }).write(settings);
   await new StateStore({ path: join(dir, "state.yaml") }).updateModule("overview", () => overview);
   await rename(providersPath, `${providersPath}.bak`);
@@ -69,3 +84,5 @@ export async function migrateLegacyUserFiles(dir = defaultUserDir()): Promise<vo
 
 const isNotFoundError = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
