@@ -41,13 +41,13 @@ bun install
 bun run dev:api
 ```
 
-编辑生成的 `~/.agents-remote/config.toml`，至少填写：
+编辑生成的 `~/.agents-remote/config.yaml`，至少填写：
 
-```toml
-app_password = "your-password"
-projects_root = "/path/to/your/projects"
-api_port = 43011
-web_port = 43012
+```yaml
+app_password: "your-password"
+projects_root: /path/to/your/projects
+api_port: 43011
+web_port: 43012
 ```
 
 ### 3. 启动开发服务
@@ -97,7 +97,7 @@ tmux send-keys -t ar-dev 'bun run --filter @agents-remote/api dev' Enter
 
 ### 环境变量（可选）
 
-可通过环境变量覆盖 `config.toml` 中的配置：
+可通过环境变量覆盖 `config.yaml` 中的配置：
 
 | 变量 | 说明 |
 |---|---|
