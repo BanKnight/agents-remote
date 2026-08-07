@@ -251,7 +251,7 @@ const PINNED_GROUP_KEY = "__pinned__";
  * 内容——主区非按钮（▾ 位 `size-4` 占位保持 📁 图标对齐），仍保留 › 进项目 + ⋯ 删除。实例区 =
  * InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard
  * topSeparator 画 inset 分割线，两端统一 left-15=60px 跳过 marker 列）。最前另渲染「置顶」特殊分组
- *（📌，pin 状态存服务端 SettingsState.ui.pinnedSessions 跨设备共享，无置顶卡片整段不渲染；卡片同时在置顶分组与原项目
+ *（📌，pin 状态存服务端 state.yaml overview 模块跨设备共享，无置顶卡片整段不渲染；卡片同时在置顶分组与原项目
  * 分组出现双显示；标题行只折叠 toggle 无 › / ⋯）。根 `px-3 py-2` + section 间 space-y-2(8px)。
  */
 function GroupedProjectsList({
@@ -284,7 +284,7 @@ function GroupedProjectsList({
   const toggleProject = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
   // 置顶：特殊分组 key = "__pinned__" 保留哨兵（workbenchProjectGroupsCollapsedAtom 按 key 记忆折叠态）。
-  // pin 状态存服务端 SettingsState.ui.pinnedSessions（跨设备共享）；usePinnedSessions 返回 Set，
+  // pin 状态存服务端 state.yaml overview 模块（跨设备共享）；usePinnedSessions 返回 Set，
   // togglePin 按当前态调 pin/unpin mutation（invalidate 后 refetch）。
   const pinned = usePinnedSessions();
   const pinMutation = usePinSession();

@@ -744,16 +744,16 @@ export async function removeSkillSource(id: string): Promise<RemoveSkillSourceRe
   });
 }
 
-// ── 全局总览置顶会话（跨设备共享，存服务端 SettingsState.ui.pinnedSessions）──
+// ── 全局总览置顶会话（跨设备共享，存服务端 state.yaml overview 模块）──
 // sessionId 走 path 段（encodeURIComponent），与后端 POST/DELETE /:sessionId 对齐。
 
 export async function listPinnedSessions(): Promise<PinnedSessionsResponse> {
-  return fetchJson("/api/preferences/pinned-sessions", "api.pinnedSessionsFailed");
+  return fetchJson("/api/state/overview/pinned-sessions", "api.pinnedSessionsFailed");
 }
 
 export async function pinSession(sessionId: string): Promise<PinnedSessionsResponse> {
   return fetchJson(
-    `/api/preferences/pinned-sessions/${encodeURIComponent(sessionId)}`,
+    `/api/state/overview/pinned-sessions/${encodeURIComponent(sessionId)}`,
     "api.pinnedSessionsFailed",
     { method: "POST" },
   );
@@ -761,7 +761,7 @@ export async function pinSession(sessionId: string): Promise<PinnedSessionsRespo
 
 export async function unpinSession(sessionId: string): Promise<PinnedSessionsResponse> {
   return fetchJson(
-    `/api/preferences/pinned-sessions/${encodeURIComponent(sessionId)}`,
+    `/api/state/overview/pinned-sessions/${encodeURIComponent(sessionId)}`,
     "api.pinnedSessionsFailed",
     { method: "DELETE" },
   );

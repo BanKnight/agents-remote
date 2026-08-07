@@ -15,13 +15,16 @@ import {
   listProjectGitDiff,
   listProjects,
   listTerminalSessions,
+  listPinnedSessions,
   login,
   pagesServeUrl,
+  pinSession,
   previewProjectFile,
   renameAgentSession,
   renameTerminalSession,
   sessionStreamUrl,
   testPresetModels,
+  unpinSession,
 } from "./client";
 
 const originalFetch = globalThis.fetch;
@@ -72,6 +75,24 @@ test("web api client uses same-origin /api paths", async () => {
   await listProjects();
 
   expect(calls[0][0]).toBe("/api/projects");
+});
+
+test("web api client hits /api/state/overview/pinned-sessions for pin methods", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ sessions: [] });
+  }) as typeof fetch;
+
+  await listPinnedSessions();
+  await pinSession("ar-claude-my/proj-1");
+  await unpinSession("ar-claude-my/proj-1");
+
+  expect(calls.map((c) => [c[0], c[1]?.method])).toEqual([
+    ["/api/state/overview/pinned-sessions", undefined],
+    ["/api/state/overview/pinned-sessions/ar-claude-my%2Fproj-1", "POST"],
+    ["/api/state/overview/pinned-sessions/ar-claude-my%2Fproj-1", "DELETE"],
+  ]);
 });
 
 test("web api client fetches global overview via single request", async () => {
