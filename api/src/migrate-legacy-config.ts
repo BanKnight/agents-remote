@@ -38,20 +38,67 @@ const readLegacyUi = (parsed: unknown): string[] => {
   return normalizePinnedSessions(ui?.pinnedSessions);
 };
 
-// 幂等迁移。settings.yaml 存在即跳过；providers.json 存在 → splitLegacySettings → 先写
+// settings.yaml v2-with-ui 中间态 → state.yaml + settings@v3 一次性提取。C3 产物（ui 还
+// 在 SettingsState 顶层、schemaVersion 2）会被 C4 静默丢弃（normalizeSettings 返回不含 ui），
+// 这里在 settings.yaml 存在时读它：有顶层 ui → splitLegacySettings（settings 去 ui 合成 v3 +
+// overview 提取 pinnedSessions）→ state.yaml overview 并集（不覆盖既有 pin）→ settings 重写 v3。
+// 幂等：v3 无 ui → no-op。损坏 YAML → 跳过（不 rename——settings.yaml 是权威文件，rename 即
+// 数据丢失；坏文件的既有 read() 报错行为保留，启动路径不新增崩溃路径）。
+async function migrateSettingsYamlUi(dir: string): Promise<void> {
+  const settingsPath = join(dir, "settings.yaml");
+  const statePath = join(dir, "state.yaml");
+
+  let raw: string;
+  try {
+    raw = await readFile(settingsPath, "utf8");
+  } catch (error) {
+    if (isNotFoundError(error)) return;
+    throw error;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch (error) {
+    console.error(
+      `[migrate-legacy] settings.yaml parse failed (skipping ui extraction): ${errorMessage(error)}`,
+    );
+    return;
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+  if (!("ui" in (parsed as Record<string, unknown>))) return;
+
+  const { settings, overview } = splitLegacySettings(parsed);
+  await new StateStore({ path: statePath }).updateModule("overview", (cur) => ({
+    pinnedSessions: normalizePinnedSessions([...cur.pinnedSessions, ...overview.pinnedSessions]),
+  }));
+  await new SettingsStore({ path: settingsPath }).write(settings);
+}
+
+// 幂等迁移。settings.yaml 存在 → 检查 v2-with-ui 中间态（见 migrateSettingsYamlUi），
+// 无 ui 即无事（已是 v3）；不存在 → providers.json 存在 → splitLegacySettings → 先写
 // settings.yaml（权威，崩溃重启后 settings.yaml 在即跳过）再写 state.yaml（极端崩溃缺
 // state.yaml → readModule 返回默认，pin 丢失可接受，pin 装饰性）再改名 providers.json → .bak。
 // 两者都缺 → 首启走默认，不迁移。
 export async function migrateLegacyUserFiles(dir = defaultUserDir()): Promise<void> {
   const settingsPath = join(dir, "settings.yaml");
-  const providersPath = join(dir, "providers.json");
 
+  // settings.yaml 存在：v2-with-ui → 提取 ui 到 state.yaml + settings 重写 v3；已是 v3 → no-op。
+  // 不存在 → 走下方 providers.json 迁移。stat 只判断存在性，实际读写交给各自分支。
+  let settingsExists = false;
   try {
     await stat(settingsPath);
-    return;
+    settingsExists = true;
   } catch (error) {
     if (!isNotFoundError(error)) throw error;
   }
+  if (settingsExists) {
+    await migrateSettingsYamlUi(dir);
+    return;
+  }
+
+  const providersPath = join(dir, "providers.json");
 
   let raw: string;
   try {

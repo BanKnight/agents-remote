@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { migrateLegacyUserFiles, splitLegacySettings } from "./migrate-legacy-config";
 import { SettingsStore } from "./settings-store";
 import { StateStore } from "./state-store";
@@ -55,6 +55,93 @@ test("splitLegacySettings: 缺省/非法 → 默认 settings + 空 overview（�
 });
 
 // ── migrateLegacyUserFiles（providers.json → settings.yaml + state.yaml 一次性迁移）──
+
+// ── settings.yaml v2-with-ui 中间态（C3 产物，ui 还在 SettingsState 顶层）→ state.yaml + settings@v3 ──
+
+test("migrates settings.yaml v2-with-ui: ui → state.yaml overview, settings rewritten v3", async () => {
+  const dir = await makeTempDir();
+  const settingsPath = join(dir, "settings.yaml");
+  await writeFile(
+    settingsPath,
+    stringifyYaml({
+      schemaVersion: 2,
+      runtimes: { claude: { presets: [], activePresetId: "", effort: "low" } },
+      skills: { sources: [] },
+      ui: { pinnedSessions: ["ar-claude-1", "ar-claude-2"] },
+    }),
+    { mode: 0o600 },
+  );
+
+  await migrateLegacyUserFiles(dir);
+
+  // ui → state.yaml overview
+  const overview = await new StateStore({ path: join(dir, "state.yaml") }).readModule("overview");
+  expect(overview.pinnedSessions).toEqual(["ar-claude-1", "ar-claude-2"]);
+
+  // settings 重写 v3（磁盘无 ui，presets/effort 保留）
+  const onDisk = parseYaml(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
+  expect(onDisk.schemaVersion).toBe(3);
+  expect(onDisk).not.toHaveProperty("ui");
+  expect((onDisk.runtimes as { claude: { effort: string } }).claude.effort).toBe("low");
+});
+
+test("migrates settings.yaml v2-with-ui: unions with existing state.yaml pins (dedup)", async () => {
+  const dir = await makeTempDir();
+  await writeFile(
+    join(dir, "state.yaml"),
+    stringifyYaml({ schemaVersion: 1, overview: { pinnedSessions: ["existing-pin"] } }),
+    { mode: 0o600 },
+  );
+  await writeFile(
+    join(dir, "settings.yaml"),
+    stringifyYaml({
+      schemaVersion: 2,
+      runtimes: { claude: { presets: [], activePresetId: "", effort: "high" } },
+      skills: { sources: [] },
+      ui: { pinnedSessions: ["ar-claude-1", "existing-pin"] },
+    }),
+    { mode: 0o600 },
+  );
+
+  await migrateLegacyUserFiles(dir);
+
+  const overview = await new StateStore({ path: join(dir, "state.yaml") }).readModule("overview");
+  expect(overview.pinnedSessions).toEqual(["existing-pin", "ar-claude-1"]);
+});
+
+test("migrates settings.yaml v3 (no ui): untouched, state.yaml not created", async () => {
+  const dir = await makeTempDir();
+  const settingsPath = join(dir, "settings.yaml");
+  await writeFile(
+    settingsPath,
+    stringifyYaml({
+      schemaVersion: 3,
+      runtimes: { claude: { presets: [], activePresetId: "", effort: "high" } },
+      skills: { sources: [] },
+    }),
+    { mode: 0o600 },
+  );
+
+  await migrateLegacyUserFiles(dir);
+
+  expect(await readFile(settingsPath, "utf8")).toContain("schemaVersion: 3");
+  await expect(readFile(join(dir, "state.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("corrupt settings.yaml → no crash, file untouched, no state.yaml", async () => {
+  const dir = await makeTempDir();
+  const settingsPath = join(dir, "settings.yaml");
+  await writeFile(settingsPath, "{ this is not valid yaml [", { mode: 0o600 });
+
+  await migrateLegacyUserFiles(dir);
+
+  expect(await readFile(settingsPath, "utf8")).toContain("not valid yaml");
+  await expect(readFile(join(dir, "state.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
 
 test("migrates providers.json(v2 with ui) to settings.yaml + state.yaml + .bak", async () => {
   const dir = await makeTempDir();
