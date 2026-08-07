@@ -21,7 +21,7 @@ afterEach(async () => {
 
 const makeStore = async () => {
   const dir = await makeTempDir();
-  return new SettingsStore({ path: join(dir, "providers.json") });
+  return new SettingsStore({ path: join(dir, "settings.yaml") });
 };
 
 const makeUrl = (pathname: string) => new URL(`http://localhost${pathname}`);

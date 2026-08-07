@@ -38,7 +38,7 @@ import { handleSessionStreamUpgrade, SessionStreamController } from "./session-s
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadConfig } from "./config";
 import { StartupError } from "./startup-error";
-import { SettingsStore } from "./settings-store";
+import { migrateLegacyUserFiles, SettingsStore } from "./settings-store";
 import { handlePreferencesRoutes } from "./preferences-routes";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
@@ -986,6 +986,7 @@ export const startApi = async () => {
     tokenSecret,
     tokenTtlMs: config.tokenTtlHours * 3600 * 1000,
   });
+  await migrateLegacyUserFiles();
   const settingsStore = new SettingsStore();
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);

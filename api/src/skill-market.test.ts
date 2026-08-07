@@ -36,7 +36,7 @@ let originalFetch: typeof globalThis.fetch;
 beforeEach(async () => {
   runSkillsCommand.mockReset();
   storeDir = await mkdtemp(join(tmpdir(), "ar-store-"));
-  store = new SettingsStore({ path: join(storeDir, "providers.json") });
+  store = new SettingsStore({ path: join(storeDir, "settings.yaml") });
   originalFetch = globalThis.fetch;
 });
 

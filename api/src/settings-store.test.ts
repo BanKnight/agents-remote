@@ -3,12 +3,14 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { ClaudeModelMapping, SettingsState } from "@agents-remote/shared";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   SettingsStore,
   activePresetView,
   buildAvailableAliases,
   buildAvailableModels,
   maskApiKey,
+  migrateLegacyUserFiles,
   migrateV1ToV2,
   resolveModelId,
   toMaskedPreset,
@@ -41,7 +43,7 @@ afterEach(async () => {
 
 test("SettingsStore.read returns defaults when file is missing (no throw)", async () => {
   const dir = await makeTempDir();
-  const store = new SettingsStore({ path: join(dir, "providers.json") });
+  const store = new SettingsStore({ path: join(dir, "settings.yaml") });
 
   const state = await store.read();
 
@@ -53,7 +55,7 @@ test("SettingsStore.read returns defaults when file is missing (no throw)", asyn
 
 test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 2", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
+  const path = join(dir, "settings.yaml");
   const store = new SettingsStore({ path });
 
   const state: SettingsState = {
@@ -84,13 +86,13 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
   const fileStat = await stat(path);
   expect(fileStat.mode & 0o077).toBe(0);
 
-  const raw = JSON.parse(await readFile(path, "utf8"));
+  const raw = parseYaml(await readFile(path, "utf8"));
   expect(raw.schemaVersion).toBe(2);
 });
 
 test("SettingsStore.update applies mutator as read-modify-write", async () => {
   const dir = await makeTempDir();
-  const store = new SettingsStore({ path: join(dir, "providers.json") });
+  const store = new SettingsStore({ path: join(dir, "settings.yaml") });
 
   const afterCreate = await store.update((s) => ({
     ...s,
@@ -125,8 +127,8 @@ test("SettingsStore.update applies mutator as read-modify-write", async () => {
 
 test("SettingsStore.read tolerates v2 partial files (normalizes missing fields)", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
-  await writeFile(path, JSON.stringify({ runtimes: { claude: { presets: [] } } }), { mode: 0o600 });
+  const path = join(dir, "settings.yaml");
+  await writeFile(path, stringifyYaml({ runtimes: { claude: { presets: [] } } }), { mode: 0o600 });
 
   const state = await new SettingsStore({ path }).read();
 
@@ -249,13 +251,13 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
 
 test("SettingsStore.read 迁移 v1 文件（schemaVersion=1）→ 合成 v2 不落盘", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
+  const path = join(dir, "settings.yaml");
   const v1 = {
     schemaVersion: 1,
     providers: [{ id: "prov_a", label: "A", apiKey: "sk-a", protocol: "anthropic" }],
     runtimes: { claude: { providerId: "prov_a", modelMapping: ALIAS_MAPPING, effort: "high" } },
   };
-  await writeFile(path, JSON.stringify(v1), { mode: 0o600 });
+  await writeFile(path, stringifyYaml(v1), { mode: 0o600 });
 
   const state = await new SettingsStore({ path }).read();
 
@@ -264,17 +266,17 @@ test("SettingsStore.read 迁移 v1 文件（schemaVersion=1）→ 合成 v2 不�
   expect(state.runtimes.claude.activePresetId).toBe("prov_a");
 
   // 迁移是纯内存合成，不主动落盘：磁盘仍是 v1。
-  const raw = JSON.parse(await readFile(path, "utf8"));
+  const raw = parseYaml(await readFile(path, "utf8"));
   expect(raw.schemaVersion).toBe(1);
   expect(Array.isArray(raw.providers)).toBe(true);
 });
 
 test("SettingsStore 迁移后 write 持久化为 v2（v1 磁盘被覆盖，providers 顶层消失）", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
+  const path = join(dir, "settings.yaml");
   await writeFile(
     path,
-    JSON.stringify({
+    stringifyYaml({
       schemaVersion: 1,
       providers: [{ id: "p1", label: "A", apiKey: "sk-a" }],
       runtimes: { claude: { providerId: "p1" } },
@@ -286,7 +288,7 @@ test("SettingsStore 迁移后 write 持久化为 v2（v1 磁盘被覆盖，provi
   // update 触发 read（迁移）+ write（v2 落盘）。
   await store.update((s) => s);
 
-  const raw = JSON.parse(await readFile(path, "utf8"));
+  const raw = parseYaml(await readFile(path, "utf8"));
   expect(raw.schemaVersion).toBe(2);
   expect(raw.runtimes.claude.presets[0].id).toBe("p1");
   expect(raw.runtimes.claude.presets[0].apiKey).toBe("sk-a");
@@ -455,17 +457,17 @@ test("toMaskedPreset strips raw apiKey, exposes masked fingerprint + modelMappin
 
 test("SettingsStore.read returns empty ui.pinnedSessions by default", async () => {
   const dir = await makeTempDir();
-  const store = new SettingsStore({ path: join(dir, "providers.json") });
+  const store = new SettingsStore({ path: join(dir, "settings.yaml") });
   const state = await store.read();
   expect(state.ui?.pinnedSessions).toEqual([]);
 });
 
 test("normalizeSettings: ui.pinnedSessions dedupes + filters non-string/empty", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
+  const path = join(dir, "settings.yaml");
   await writeFile(
     path,
-    JSON.stringify({
+    stringifyYaml({
       runtimes: { claude: { presets: [] } },
       ui: { pinnedSessions: ["a", "b", "a", "", 123, null, "b", "c"] },
     }),
@@ -478,8 +480,8 @@ test("normalizeSettings: ui.pinnedSessions dedupes + filters non-string/empty", 
 
 test("normalizeSettings: ui missing → defaults to empty pinnedSessions", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
-  await writeFile(path, JSON.stringify({ runtimes: { claude: { presets: [] } } }), {
+  const path = join(dir, "settings.yaml");
+  await writeFile(path, stringifyYaml({ runtimes: { claude: { presets: [] } } }), {
     mode: 0o600,
   });
 
@@ -489,10 +491,10 @@ test("normalizeSettings: ui missing → defaults to empty pinnedSessions", async
 
 test("normalizeSettings: ui.pinnedSessions non-array → defaults to []", async () => {
   const dir = await makeTempDir();
-  const path = join(dir, "providers.json");
+  const path = join(dir, "settings.yaml");
   await writeFile(
     path,
-    JSON.stringify({
+    stringifyYaml({
       runtimes: { claude: { presets: [] } },
       ui: { pinnedSessions: "not-an-array" },
     }),
@@ -501,4 +503,82 @@ test("normalizeSettings: ui.pinnedSessions non-array → defaults to []", async 
 
   const state = await new SettingsStore({ path }).read();
   expect(state.ui?.pinnedSessions).toEqual([]);
+});
+
+// ── migrateLegacyUserFiles（providers.json → settings.yaml 一次性迁移）──
+
+test("migrateLegacyUserFiles migrates providers.json(v2) to settings.yaml + .bak", async () => {
+  const dir = await makeTempDir();
+  const settingsPath = join(dir, "settings.yaml");
+  const providersPath = join(dir, "providers.json");
+  await writeFile(
+    providersPath,
+    stringifyYaml({
+      schemaVersion: 2,
+      runtimes: { claude: { presets: [], activePresetId: "", effort: "low" } },
+      skills: { sources: [] },
+      ui: { pinnedSessions: [] },
+    }),
+    { mode: 0o600 },
+  );
+
+  await migrateLegacyUserFiles(dir);
+
+  const migrated = await new SettingsStore({ path: settingsPath }).read();
+  expect(migrated.runtimes.claude.effort).toBe("low");
+  await expect(readFile(providersPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readFile(`${providersPath}.bak`, "utf8")).toContain("schemaVersion: 2");
+});
+
+test("migrateLegacyUserFiles migrates v1 providers.json via migrateV1ToV2", async () => {
+  const dir = await makeTempDir();
+  const settingsPath = join(dir, "settings.yaml");
+  const providersPath = join(dir, "providers.json");
+  await writeFile(
+    providersPath,
+    stringifyYaml({
+      schemaVersion: 1,
+      providers: [
+        {
+          id: "anthropic",
+          label: "Anthropic",
+          apiKey: "sk-1",
+          baseUrl: "https://api.anthropic.com",
+        },
+      ],
+      runtimes: { claude: { providerId: "anthropic", modelMapping: { default: "sonnet" } } },
+    }),
+    { mode: 0o600 },
+  );
+
+  await migrateLegacyUserFiles(dir);
+
+  const migrated = await new SettingsStore({ path: settingsPath }).read();
+  expect(migrated.runtimes.claude.presets).toHaveLength(1);
+  expect(migrated.runtimes.claude.presets[0].id).toBe("anthropic");
+  expect(migrated.runtimes.claude.activePresetId).toBe("anthropic");
+});
+
+test("migrateLegacyUserFiles is idempotent: settings.yaml exists → providers.json untouched", async () => {
+  const dir = await makeTempDir();
+  const settingsPath = join(dir, "settings.yaml");
+  const providersPath = join(dir, "providers.json");
+  await writeFile(settingsPath, stringifyYaml({ schemaVersion: 2 }), { mode: 0o600 });
+  await writeFile(providersPath, stringifyYaml({ schemaVersion: 2, runtimes: {} }), {
+    mode: 0o600,
+  });
+
+  await migrateLegacyUserFiles(dir);
+
+  expect(await readFile(providersPath, "utf8")).toContain("runtimes");
+});
+
+test("migrateLegacyUserFiles is a no-op when both files missing", async () => {
+  const dir = await makeTempDir();
+
+  await migrateLegacyUserFiles(dir);
+
+  await expect(readFile(join(dir, "settings.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
 });
