@@ -100,6 +100,11 @@ const readConfig = async (configPath: string): Promise<DeployConfig> => {
         try {
           await chmod(tomlPath, 0o600);
         } catch (error) {
+          // ENOENT = 并发进程已 rename 掉 toml（stat→chmod 之间被迁走）——与下方
+          // rename ENOENT 同一竞态，rethrow 让外层 catch 走 race 分支（读 yaml），
+          // 不要包成 CONFIG_PERMISSION_UNSAFE（那会绕过容错直接崩）。只有真权限失败
+          // （EACCES/EROFS 等）才 fail-closed 报 unsafe。
+          if (isNotFoundError(error)) throw error;
           throw new StartupError(
             "CONFIG_PERMISSION_UNSAFE",
             `Legacy config file permissions are unsafe and could not be fixed: ${tomlPath}. ${errorMessage(error)}`,

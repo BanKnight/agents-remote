@@ -15,7 +15,7 @@ import { StartupError } from "./startup-error";
 // 会解析回 renameMock，renameMock 闭包再调 realFs.rename → 无限递归（Maximum call
 // stack size exceeded）。必须在 mock.module **之前**把真实实现复制进普通 const（闭包
 // 引用 const 而非活 namespace，mock 生效后不受影响）。
-const { rename: realRename, ...realFsRest } = realFs;
+const { rename: realRename, chmod: realChmod, ...realFsRest } = realFs;
 
 // failBakRename 开启时，rename 源以 .toml 结尾（= 迁移末尾的 toml→.bak）抛 ENOENT，
 // 模拟并发进程已 rename 掉 toml。writeConfigYaml 内部原子写 rename(temp→config) 源是
@@ -28,7 +28,18 @@ const renameMock = mock((from: string, to: string) => {
   }
   return realRename(from, to);
 });
-mock.module("node:fs/promises", () => ({ ...realFsRest, rename: renameMock }));
+
+// failTomlChmod 开启时，chmod 目标以 .toml 结尾抛 ENOENT，模拟并发迁移竞态：B 进程
+// stat(toml) 读到 0644 后、chmod(toml) 之前，A 进程已迁完 rename 掉 toml。config.yaml
+// 主路径 chmod(configPath) 与 writeConfigYaml 的 chmod(temp) 均非 .toml 源，不受影响。
+let failTomlChmod = false;
+const chmodMock = mock((target: string, mode: number) => {
+  if (failTomlChmod && target.endsWith(".toml")) {
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  }
+  return realChmod(target, mode);
+});
+mock.module("node:fs/promises", () => ({ ...realFsRest, rename: renameMock, chmod: chmodMock }));
 
 const tempDirs: string[] = [];
 
@@ -40,6 +51,7 @@ const makeTempDir = async () => {
 
 afterEach(async () => {
   failBakRename = false;
+  failTomlChmod = false;
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -256,4 +268,32 @@ test("migration tightens world-readable legacy toml (0644) to 0600 before .bak",
   expect(bakStat.mode & 0o077).toBe(0);
   const bak = await readFile(`${tomlPath}.bak`, "utf8");
   expect(bak).toContain('app_password = "secret"');
+});
+
+test("concurrent migration race: chmod ENOENT on 0644 toml falls through to race path, not CONFIG_PERMISSION_UNSAFE", async () => {
+  // 0644 老 toml + 双进程冷启动：B 进程 stat(config.yaml) 失败（A 还没写）→ 进 toml
+  // 分支 → stat(toml) 读到 0644 → chmod(toml) 时 A 已迁完 rename 掉 toml → ENOENT。
+  // 修复前 chmod catch 把 ENOENT 包成 CONFIG_PERMISSION_UNSAFE → 绕过 race 容错直接崩
+  // （错误码还误导成「权限不安全」）；修复后 ENOENT rethrow 走外层 race 分支。
+  //
+  // 本测试只验证「chmod ENOENT 不再被误包成 CONFIG_PERMISSION_UNSAFE」——这是修复的
+  // 核心不变量。race 分支后续走 stat(configPath)（本场景 yaml 不存在 → createTemplate
+  // + CONFIG_REQUIRED）属另一路径，不在此断言（避免与「yaml 是否被并发写好」耦合）。
+  const dir = await makeTempDir();
+  const configPath = join(dir, "config.yaml"); // 不创建——模拟 B 启动时 yaml 还没出现
+  const tomlPath = join(dir, "config.toml");
+  await writeFile(
+    tomlPath,
+    'app_password = "secret"\nprojects_root = "/tmp/projects"\napi_port = 3001\nweb_port = 3000\nweb_api_base_url = "/api"\n',
+    { mode: 0o600 },
+  );
+  await chmod(tomlPath, 0o644); // 0644 触发权限分支
+
+  failTomlChmod = true;
+
+  // 修复前：rejects CONFIG_PERMISSION_UNSAFE（chmod 误包）；修复后：rejects 但非该码
+  // （ENOENT 走 race 分支 → yaml 不存在 → CONFIG_REQUIRED）。
+  await expect(loadConfig({ configPath, env: {} })).rejects.not.toMatchObject({
+    code: "CONFIG_PERMISSION_UNSAFE",
+  });
 });
