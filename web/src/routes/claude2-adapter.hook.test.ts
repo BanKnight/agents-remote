@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, test, vi } from "bun:test";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaude2Session } from "./claude2-adapter";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
+
+// bun:test 的 afterEach 不是裸全局（typeof afterEach === "undefined"），RTL 的
+// auto-cleanup 注册条件不满足 → 组件从不跨测试卸载 → 上一测试的 WebSocket/重连
+// 定时器泄漏进后续测试（500ms scheduleReconnect 触发泄漏组件 effect 重跑 → 新
+// socket 污染 MockSocket.instances → waitFor(length 1) 偶发失败）。手动补注册：
+// 每测试结束卸载全部渲染结果，WS effect cleanup 关闭 socket、detach fiber。
+afterEach(() => cleanup());
 
 class MockSocket {
   static instances: MockSocket[] = [];
