@@ -108,11 +108,21 @@ const readConfig = async (configPath: string): Promise<DeployConfig> => {
         );
       }
 
-      await createTemplate(configPath);
-      throw new StartupError(
-        "CONFIG_REQUIRED",
-        `Created config template at ${configPath}. Fill required values and restart the api service.`,
-      );
+      // 并发迁移竞态：另一 API 进程已完成迁移并 rename 掉 config.toml，本进程的
+      // rename(toml → .bak) 因此抛 ENOENT。writeConfigYaml 先于 rename 执行，故此时
+      // config.yaml 应已被写入（本进程或并发进程）——直接读它返回，绝不能
+      // createTemplate 覆盖成空模板（会销毁迁移后的真实配置）。stat 也失败（真·全新
+      // 安装，无 yaml 无 toml）才落回模板路径。
+      try {
+        await stat(configPath);
+      } catch {
+        await createTemplate(configPath);
+        throw new StartupError(
+          "CONFIG_REQUIRED",
+          `Created config template at ${configPath}. Fill required values and restart the api service.`,
+        );
+      }
+      return parseConfigYaml(await readFile(configPath, "utf8"), configPath);
     }
   }
 };
