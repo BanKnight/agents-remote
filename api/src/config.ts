@@ -92,6 +92,20 @@ const readConfig = async (configPath: string): Promise<DeployConfig> => {
 
     const tomlPath = tomlFallbackPath(configPath);
     try {
+      // 与 config.yaml 主路径对称的权限检查：0644 老 toml 含明文密码，迁移末尾
+      // rename(toml→.bak) 保留 inode 权限——不先 chmod 0600，.bak 会把明文密码留在
+      // 世界可读文件里（权限退化）。rename 前收紧，.bak 继承 0600。
+      const tomlStat = await stat(tomlPath);
+      if ((tomlStat.mode & 0o077) !== 0) {
+        try {
+          await chmod(tomlPath, 0o600);
+        } catch (error) {
+          throw new StartupError(
+            "CONFIG_PERMISSION_UNSAFE",
+            `Legacy config file permissions are unsafe and could not be fixed: ${tomlPath}. ${errorMessage(error)}`,
+          );
+        }
+      }
       const legacy = parseConfigToml(await readFile(tomlPath, "utf8"), tomlPath);
       await writeConfigYaml(configPath, stringifyConfigYaml(legacy));
       await rename(tomlPath, `${tomlPath}.bak`);

@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import * as realFs from "node:fs/promises";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadConfig } from "./config";
@@ -230,4 +230,30 @@ test("migration preserves special chars in app_password (YAML auto-quoting round
   // 迁移产物 config.yaml 再次读取，值不变（round-trip 无损）
   const again = await loadConfig({ configPath, env: {} });
   expect(again.appPassword).toBe('p#ss:word "quoted"');
+});
+
+test("migration tightens world-readable legacy toml (0644) to 0600 before .bak", async () => {
+  // 老用户 config.toml 可能是 0644（明文密码世界可读）。迁移末尾 rename(toml→.bak)
+  // 保留 inode 权限——不先 chmod 0600，.bak 会把明文密码留在宽松权限文件里（权限退化）。
+  const dir = await makeTempDir();
+  const configPath = join(dir, "config.yaml");
+  const tomlPath = join(dir, "config.toml");
+  await writeFile(
+    tomlPath,
+    'app_password = "secret"\nprojects_root = "/tmp/projects"\napi_port = 3001\nweb_port = 3000\nweb_api_base_url = "/api"\n',
+    { mode: 0o600 },
+  );
+  // 强制 0644（绕开 umask 可能对新建文件的收紧）——模拟真实宽松权限的 toml。
+  await chmod(tomlPath, 0o644);
+  const tomlStat = await stat(tomlPath);
+  expect(tomlStat.mode & 0o077).not.toBe(0); // 前置：toml 确为世界可读
+
+  const resolved = await loadConfig({ configPath, env: {} });
+  expect(resolved.appPassword).toBe("secret");
+
+  // 迁移成功 + .bak 权限被收紧（chmod 在 rename 前，.bak 继承 0600）——明文密码不再世界可读。
+  const bakStat = await stat(`${tomlPath}.bak`);
+  expect(bakStat.mode & 0o077).toBe(0);
+  const bak = await readFile(`${tomlPath}.bak`, "utf8");
+  expect(bak).toContain('app_password = "secret"');
 });
