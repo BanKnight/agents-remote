@@ -4,8 +4,9 @@ import type { PinnedSessionsResponse } from "@agents-remote/shared";
 import { listPinnedSessions, pinSession, unpinSession } from "../api/client";
 
 const PINNED_SESSIONS_KEY = ["pinned-sessions"] as const;
-// pin/unpin 低频，staleTime 内切回总览页命中缓存秒回；窗口聚焦触发 refetch 拉最新
-//（跨设备共享：另一台设备 pin 后，本机窗口聚焦即同步，无需 WS 实时推送）。
+// pin/unpin 低频，staleTime 内切回总览页命中缓存秒回；跨设备共享靠窗口聚焦 refetch
+//（useQuery 显式开 refetchOnWindowFocus——全局默认关，pin 低频且跨设备故单独开），
+// 另一台设备 pin 后本机聚焦即同步，无需 WS 实时推送。
 const PINNED_SESSIONS_STALE_MS = 30_000;
 
 // ── 旧 localStorage 播种（一次性迁移）────────────────────────────
@@ -61,6 +62,10 @@ export function usePinnedSessions() {
     queryKey: PINNED_SESSIONS_KEY,
     queryFn: listPinnedSessions,
     staleTime: PINNED_SESSIONS_STALE_MS,
+    // pin 跨设备共享：另一台设备 pin 后，本机窗口聚焦即 refetch 拉最新。全局
+    // query-client 关了 refetchOnWindowFocus（快变服务端态不需要），pin 低频且跨设备，
+    // 故此处显式开启——无需 WS 实时推送，聚焦即同步。
+    refetchOnWindowFocus: true,
   });
   useLegacyPinSeed(qc, query.isSuccess || query.isError);
   return useMemo(() => new Set<string>(query.data?.sessions ?? []), [query.data]);
