@@ -116,7 +116,15 @@ export async function migrateLegacyUserFiles(dir = defaultUserDir()): Promise<vo
     // 必须不抛——迁移在 startApi 启动路径上，顶层 catch 只接 StartupError，任何其他
     // throw 都会让整个 API 起不来。旧实现懒读损坏文件只影响 settings 接口（500），
     // 迁移前置到启动后必须保持「损坏不崩」。改名后下次启动不再重试。
-    await rename(providersPath, `${providersPath}.corrupt`);
+    try {
+      await rename(providersPath, `${providersPath}.corrupt`);
+    } catch (renameError) {
+      // rename 失败（并发进程已改名/目录只读等）不崩——.corrupt 改名只是尽力保留
+      // 现场，失败时原损坏文件留在原地，下次启动仍会被读（parse 仍失败 → 再跳过）。
+      console.error(
+        `[migrate-legacy] providers.json parse failed and rename to .corrupt failed (left in place): ${errorMessage(renameError)}`,
+      );
+    }
     console.error(
       `[migrate-legacy] providers.json parse failed (moved to providers.json.corrupt): ${errorMessage(error)}`,
     );

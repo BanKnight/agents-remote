@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -218,6 +218,28 @@ test("corrupt providers.json → no crash, moved to .corrupt, no files written",
 
   await expect(readFile(providersPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(`${providersPath}.corrupt`, "utf8")).toContain("not valid yaml");
+  await expect(readFile(join(dir, "settings.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await expect(readFile(join(dir, "state.yaml"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("corrupt providers.json + rename to .corrupt fails → no crash, original left in place", async () => {
+  // .corrupt 改名失败（并发进程已改名 / 目标被占位成目录 / 目录只读）不应崩 API——
+  // rename 只是尽力保留现场，失败时原损坏文件留原地，下次启动仍会被读（parse 仍
+  // 失败 → 再跳过）。用「.corrupt 已是目录」让 rename 抛 EISDIR 模拟 rename 失败。
+  const dir = await makeTempDir();
+  const providersPath = join(dir, "providers.json");
+  await writeFile(providersPath, "{ this is not valid yaml [", { mode: 0o600 });
+  await mkdir(join(dir, "providers.json.corrupt")); // 占位成目录 → rename 抛 EISDIR
+
+  // 修复前：rename 抛 EISDIR 穿到 startApi 崩 API；修复后：catch 仅日志，不抛。
+  await migrateLegacyUserFiles(dir);
+
+  // 原损坏文件留原地（rename 失败没移走），settings/state 仍不创建。
+  expect(await readFile(providersPath, "utf8")).toContain("not valid yaml");
   await expect(readFile(join(dir, "settings.yaml"), "utf8")).rejects.toMatchObject({
     code: "ENOENT",
   });
