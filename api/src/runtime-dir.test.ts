@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
-import { StartupError } from "./settings";
+import { StartupError } from "./startup-error";
 
 const tempDirs: string[] = [];
 

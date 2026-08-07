@@ -36,7 +36,8 @@ import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 import { TmuxRuntime } from "./tmux-runtime";
-import { loadSettings, StartupError } from "./settings";
+import { loadConfig } from "./config";
+import { StartupError } from "./startup-error";
 import { SettingsStore } from "./settings-store";
 import { handlePreferencesRoutes } from "./preferences-routes";
 import { handleSettingsRoutes } from "./settings-routes";
@@ -968,7 +969,7 @@ const isClaude2SessionName = (sessionName: string) =>
   sessionName.startsWith(`${sessionNamePrefix}-agent-claude2-`);
 
 export const startApi = async () => {
-  const settings = await loadSettings();
+  const config = await loadConfig();
   const runtimePaths = await ensureRuntimeDir(resolveRuntimePaths());
 
   const tokenSecretPath = join(runtimePaths.runDir, "token-secret");
@@ -981,20 +982,20 @@ export const startApi = async () => {
   }
 
   const auth = new AuthService({
-    appPassword: settings.appPassword,
+    appPassword: config.appPassword,
     tokenSecret,
-    tokenTtlMs: settings.tokenTtlHours * 3600 * 1000,
+    tokenTtlMs: config.tokenTtlHours * 3600 * 1000,
   });
   const settingsStore = new SettingsStore();
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
-  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore, settings.mcpPort);
-  const projectWikiService = new ProjectWikiService(settings.projectsRoot);
+  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore, config.mcpPort);
+  const projectWikiService = new ProjectWikiService(config.projectsRoot);
   // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
   // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
   const mcpHub = startMcpHubServer({
-    port: settings.mcpPort,
-    projectsRoot: settings.projectsRoot,
+    port: config.mcpPort,
+    projectsRoot: config.projectsRoot,
     wikiService: projectWikiService,
   });
   const claudePermissionModes = await parseClaudePermissionModes();
@@ -1058,17 +1059,17 @@ export const startApi = async () => {
       JSON.stringify({ type: "system", subtype: "skill_catalog_changed" }),
     );
   });
-  const projectService = new ProjectService(settings.projectsRoot, sessionRegistry);
-  const projectFilesService = new ProjectFilesService(settings.projectsRoot);
-  const projectPagesService = new ProjectPagesService(settings.projectsRoot);
-  const projectGitDiffService = new ProjectGitDiffService(settings.projectsRoot);
+  const projectService = new ProjectService(config.projectsRoot, sessionRegistry);
+  const projectFilesService = new ProjectFilesService(config.projectsRoot);
+  const projectPagesService = new ProjectPagesService(config.projectsRoot);
+  const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);
   // skill install/uninstall spawn `npx skills add/remove`：走 git clone 可数十秒，spawn 期间
   // handler 未向 client socket 写任何字节 → 默认 idleTimeout=10s 在静默期关闭连接（Empty
   // reply from server）。调到 Bun.serve 上限 255s 覆盖典型 clone 耗时（255 是 Bun 硬上限；
   // install/uninstall 自身超时另设 300s/60s）。list/preview 已改 FS 直读（~0.1s），不再受此影响。
   const SKILL_REQUEST_IDLE_TIMEOUT_SECONDS = 255;
   const server = Bun.serve<WebSocketData>({
-    port: settings.apiPort,
+    port: config.apiPort,
     idleTimeout: SKILL_REQUEST_IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(auth, {
       claude2Runtime,
@@ -1078,7 +1079,7 @@ export const startApi = async () => {
       projectWikiService,
       projectGitDiffService,
       projectService,
-      projectsRoot: settings.projectsRoot,
+      projectsRoot: config.projectsRoot,
       sessionRegistry,
       settingsStore,
     }),

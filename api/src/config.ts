@@ -1,24 +1,9 @@
 import { dirname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { StartupError } from "./startup-error";
 
-export type StartupErrorCode =
-  | "CONFIG_REQUIRED"
-  | "CONFIG_INVALID"
-  | "CONFIG_PERMISSION_UNSAFE"
-  | "RUNTIME_DIR_UNAVAILABLE";
-
-export class StartupError extends Error {
-  constructor(
-    readonly code: StartupErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = "StartupError";
-  }
-}
-
-export type AppConfig = {
+export type DeployConfig = {
   appPassword?: string;
   projectsRoot?: string;
   apiPort?: number;
@@ -28,7 +13,7 @@ export type AppConfig = {
   tokenTtlHours?: number;
 };
 
-export type ResolvedSettings = {
+export type ResolvedConfig = {
   appPassword: string;
   projectsRoot: string;
   apiPort: number;
@@ -39,7 +24,7 @@ export type ResolvedSettings = {
   configPath: string;
 };
 
-type LoadSettingsOptions = {
+type LoadConfigOptions = {
   configPath?: string;
   env?: Record<string, string | undefined>;
 };
@@ -65,9 +50,7 @@ token_ttl_hours = 720
 
 export const getDefaultConfigPath = defaultConfigPath;
 
-export const loadSettings = async (
-  options: LoadSettingsOptions = {},
-): Promise<ResolvedSettings> => {
+export const loadConfig = async (options: LoadConfigOptions = {}): Promise<ResolvedConfig> => {
   const configPath = options.configPath ?? defaultConfigPath();
   const env = options.env ?? process.env;
   const source = await readConfig(configPath);
@@ -76,7 +59,7 @@ export const loadSettings = async (
   return validateConfig(config, configPath);
 };
 
-const readConfig = async (configPath: string): Promise<AppConfig> => {
+const readConfig = async (configPath: string): Promise<DeployConfig> => {
   try {
     const configStat = await stat(configPath);
 
@@ -121,9 +104,9 @@ const createTemplate = async (configPath: string) => {
 };
 
 const applyEnvOverrides = (
-  config: AppConfig,
+  config: DeployConfig,
   env: Record<string, string | undefined>,
-): AppConfig => ({
+): DeployConfig => ({
   appPassword: env.APP_PASSWORD ?? config.appPassword,
   projectsRoot: env.PROJECTS_ROOT ?? config.projectsRoot,
   apiPort: env.API_PORT ? parsePort(env.API_PORT, "API_PORT") : config.apiPort,
@@ -135,7 +118,7 @@ const applyEnvOverrides = (
     : config.tokenTtlHours,
 });
 
-const validateConfig = (config: AppConfig, configPath: string): ResolvedSettings => {
+const validateConfig = (config: DeployConfig, configPath: string): ResolvedConfig => {
   const missing: string[] = [];
 
   if (!config.appPassword) {
@@ -190,7 +173,7 @@ const validateConfig = (config: AppConfig, configPath: string): ResolvedSettings
   };
 };
 
-const parseConfigToml = (content: string, configPath: string): AppConfig => {
+const parseConfigToml = (content: string, configPath: string): DeployConfig => {
   const values: Record<string, string | number> = {};
 
   for (const [index, rawLine] of content.split(/\r?\n/).entries()) {

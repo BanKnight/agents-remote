@@ -13,6 +13,7 @@
     "@agents-remote/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "gray-matter": "^4.0.3",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   }
 }

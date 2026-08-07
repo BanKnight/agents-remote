@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
-import { StartupError } from "./settings";
+import { StartupError } from "./startup-error";
 
 export type RuntimePaths = {
   runDir: string;

@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadSettings, StartupError } from "./settings";
+import { loadConfig } from "./config";
+import { StartupError } from "./startup-error";
 
 const tempDirs: string[] = [];
 
@@ -16,7 +17,7 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-test("loadSettings reads config file values", async () => {
+test("loadConfig reads config file values", async () => {
   const dir = await makeTempDir();
   const configPath = join(dir, "config.toml");
   await writeFile(
@@ -25,7 +26,7 @@ test("loadSettings reads config file values", async () => {
     { mode: 0o600 },
   );
 
-  await expect(loadSettings({ configPath, env: {} })).resolves.toEqual({
+  await expect(loadConfig({ configPath, env: {} })).resolves.toEqual({
     appPassword: "secret",
     projectsRoot: "/tmp/projects",
     apiPort: 3001,
@@ -37,7 +38,7 @@ test("loadSettings reads config file values", async () => {
   });
 });
 
-test("loadSettings reads mcp_port from config and lets MCP_PORT env override it", async () => {
+test("loadConfig reads mcp_port from config and lets MCP_PORT env override it", async () => {
   const dir = await makeTempDir();
   const configPath = join(dir, "config.toml");
   await writeFile(
@@ -46,14 +47,14 @@ test("loadSettings reads mcp_port from config and lets MCP_PORT env override it"
     { mode: 0o600 },
   );
 
-  const fromConfig = await loadSettings({ configPath, env: {} });
+  const fromConfig = await loadConfig({ configPath, env: {} });
   expect(fromConfig.mcpPort).toBe(14301);
 
-  const fromEnv = await loadSettings({ configPath, env: { MCP_PORT: "14302" } });
+  const fromEnv = await loadConfig({ configPath, env: { MCP_PORT: "14302" } });
   expect(fromEnv.mcpPort).toBe(14302);
 });
 
-test("loadSettings lets environment override config values", async () => {
+test("loadConfig lets environment override config values", async () => {
   const dir = await makeTempDir();
   const configPath = join(dir, "config.toml");
   await writeFile(
@@ -62,7 +63,7 @@ test("loadSettings lets environment override config values", async () => {
     { mode: 0o600 },
   );
 
-  const settings = await loadSettings({
+  const config = await loadConfig({
     configPath,
     env: {
       APP_PASSWORD: "from-env",
@@ -73,17 +74,17 @@ test("loadSettings lets environment override config values", async () => {
     },
   });
 
-  expect(settings.appPassword).toBe("from-env");
-  expect(settings.projectsRoot).toBe("/env/projects");
-  expect(settings.apiPort).toBe(4001);
-  expect(settings.webPort).toBe(4000);
+  expect(config.appPassword).toBe("from-env");
+  expect(config.projectsRoot).toBe("/env/projects");
+  expect(config.apiPort).toBe(4001);
+  expect(config.webPort).toBe(4000);
 });
 
-test("loadSettings creates a safe template and stops when config is missing", async () => {
+test("loadConfig creates a safe template and stops when config is missing", async () => {
   const dir = await makeTempDir();
   const configPath = join(dir, "missing", "config.toml");
 
-  await expect(loadSettings({ configPath, env: {} })).rejects.toMatchObject({
+  await expect(loadConfig({ configPath, env: {} })).rejects.toMatchObject({
     code: "CONFIG_REQUIRED",
   });
 
@@ -92,7 +93,7 @@ test("loadSettings creates a safe template and stops when config is missing", as
   expect(template).toContain('projects_root = ""');
 });
 
-test("loadSettings fails when required values are missing", async () => {
+test("loadConfig fails when required values are missing", async () => {
   const dir = await makeTempDir();
   const configPath = join(dir, "config.toml");
   await writeFile(configPath, 'api_port = 3001\nweb_port = 3000\nweb_api_base_url = "/api"\n', {
@@ -100,8 +101,8 @@ test("loadSettings fails when required values are missing", async () => {
   });
 
   try {
-    await loadSettings({ configPath, env: {} });
-    throw new Error("Expected loadSettings to fail");
+    await loadConfig({ configPath, env: {} });
+    throw new Error("Expected loadConfig to fail");
   } catch (error) {
     expect(error).toBeInstanceOf(StartupError);
     expect((error as StartupError).code).toBe("CONFIG_REQUIRED");
@@ -110,7 +111,7 @@ test("loadSettings fails when required values are missing", async () => {
   }
 });
 
-test("loadSettings rejects relative projects_root", async () => {
+test("loadConfig rejects relative projects_root", async () => {
   const dir = await makeTempDir();
   const configPath = join(dir, "config.toml");
   await writeFile(
@@ -119,7 +120,7 @@ test("loadSettings rejects relative projects_root", async () => {
     { mode: 0o600 },
   );
 
-  await expect(loadSettings({ configPath, env: {} })).rejects.toMatchObject({
+  await expect(loadConfig({ configPath, env: {} })).rejects.toMatchObject({
     code: "CONFIG_INVALID",
   });
 });
