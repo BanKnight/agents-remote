@@ -496,12 +496,19 @@ export type SettingsState = {
   skills?: {
     sources: SkillSource[];
   };
-  // UI 偏好（optional；settings-store normalizeSettings 补默认 { pinnedSessions: [] }）。
-  // pinnedSessions = 全局总览置顶的 sessionId 列表；跨设备共享，迁自前端 localStorage。
-  ui?: {
-    pinnedSessions?: string[];
-  };
 };
+
+// ── 业务状态柱（state.yaml，state-store.ts）─────────────────────────
+// AppModules = 业务状态模块注册表，是「往 state 新增顶层域」的唯一扩展点：
+// 新模块在此声明 + state-store.ts 加 normalize 分支，两处都是可见、类型检查的改动，
+// 而非在路由里悄悄塞字段。StateStore 只暴露 readModule/updateModule，物理上无法往顶层塞字段。
+export type AppModules = {
+  overview: { pinnedSessions: string[] };
+  // 未来新增模块在此声明（sessions/files/workbench...），需 review，是可见的类型改动
+};
+
+// schemaVersion 由 state-store 写入/校验；顶层就是模块注册表本身。
+export type AppState = { schemaVersion: 1 } & AppModules;
 
 export type GetSettingsResponse = {
   settings: {
@@ -554,8 +561,9 @@ export type UpdateClaudeRuntimeResponse = {
 };
 
 // ── 全局总览置顶会话（pin）──────────────────────────────────
-// 跨设备共享的置顶 sessionId 列表（迁自前端 localStorage，存 SettingsState.ui.pinnedSessions）。
-// GET/POST/DELETE /api/preferences/pinned-sessions 统一返回最新列表。
+// 跨设备共享的置顶 sessionId 列表（迁自前端 localStorage，存 state.yaml overview 模块，
+// 经 StateStore.updateModule("overview") 读写）。
+// GET/POST/DELETE /api/state/overview/pinned-sessions 统一返回最新列表。
 export type PinnedSessionsResponse = {
   sessions: string[];
 };

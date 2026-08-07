@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   CLAUDE_MODEL_TIERS,
@@ -20,12 +20,12 @@ import {
 //（区别于 config.yaml 的 CONFIG_REQUIRED）。
 //
 // schemaVersion：v1 = 旧 providers.json「providers[] + runtime.{providerId,modelMapping}」；
-// v2 = 现「runtimes.claude.{presets[], activePresetId, ...}」。旧 providers.json 由
-// migrateLegacyUserFiles 一次性迁移到 settings.yaml（先写 settings.yaml 权威，再改名 .bak）；
-// read() 保留 v1 分流作兜底（迁移崩溃中断的极端残留）。
-const SCHEMA_VERSION = 2;
+// v2 = 「runtimes.claude.{presets[], activePresetId, ...}」+ ui（ui.pinnedSessions）；
+// v3 = v2 去 ui（ui 迁到 state.yaml overview 模块，见 state-store.ts）。旧 providers.json
+// 由 migrate-legacy-config.ts 的 migrateLegacyUserFiles 一次性迁移（settings@v3 + state@v1，
+// 先写 settings.yaml 权威，再改名 .bak）；read() 保留 v1 分流作兜底（迁移崩溃中断的极端残留）。
+const SCHEMA_VERSION = 3;
 const defaultSettingsPath = () => join(homedir(), ".agents-remote", "settings.yaml");
-const defaultSettingsDir = () => join(homedir(), ".agents-remote");
 
 // 默认 modelMapping = tier alias 字符串本身：不改设置时行为 = 现状（CLI 接受 tier
 // alias 作 --model）；CLAUDE2_MODELS env 仍作 fallback。effort=high 是 Opus 4.8
@@ -93,36 +93,9 @@ export class SettingsStore {
   }
 }
 
-// 旧 providers.json → settings.yaml 一次性迁移（幂等）。settings.yaml 存在即跳过；
-// providers.json 存在 → 按 schemaVersion 分流合成 v2 state（JSON 是 YAML 子集，统一用
-// yaml 解析）→ 先写 settings.yaml（权威，崩溃重启后 settings.yaml 在即跳过）再改名
-// providers.json → .bak。两者都缺 → 首启走默认，不迁移。
-export async function migrateLegacyUserFiles(dir = defaultSettingsDir()): Promise<void> {
-  const settingsPath = join(dir, "settings.yaml");
-  const providersPath = join(dir, "providers.json");
-
-  try {
-    await stat(settingsPath);
-    return;
-  } catch (error) {
-    if (!isNotFoundError(error)) throw error;
-  }
-
-  let raw: string;
-  try {
-    raw = await readFile(providersPath, "utf8");
-  } catch (error) {
-    if (isNotFoundError(error)) return;
-    throw error;
-  }
-
-  const parsed = parseYaml(raw);
-  const state = readSchemaVersion(parsed) === 1 ? migrateV1ToV2(parsed) : normalizeSettings(parsed);
-  await new SettingsStore({ path: settingsPath }).write(state);
-  await rename(providersPath, `${providersPath}.bak`);
-}
-
-const readSchemaVersion = (parsed: unknown): number | undefined => {
+// 旧 providers.json 迁移见 migrate-legacy-config.ts（migrateLegacyUserFiles）。本文件不再
+// 直接负责迁移；readSchemaVersion 供其复用判断 v1/v2 分流。
+export const readSchemaVersion = (parsed: unknown): number | undefined => {
   if (!parsed || typeof parsed !== "object" || !("schemaVersion" in parsed)) return undefined;
   const v = (parsed as { schemaVersion?: unknown }).schemaVersion;
   return typeof v === "number" ? v : undefined;
@@ -312,13 +285,13 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
       },
     },
     skills: { sources: [] },
-    ui: { pinnedSessions: [] },
   };
 }
 
-// normalize（v2）：宽松补缺字段，旧/部分文件不抛错。schemaVersion 由 read() 分流处理，
-// 此处只负责把已是 v2 结构（或缺省）的 parsed 补全为合法 SettingsState。
-function normalizeSettings(parsed: unknown): SettingsState {
+// normalize（v2/v3）：宽松补缺字段，旧/部分文件不抛错。schemaVersion 由 read() 分流处理，
+// 此处只负责把已是 v2 结构（或缺省）的 parsed 补全为合法 SettingsState。导出供
+// migrate-legacy-config.ts 的 splitLegacySettings 复用（v2 分流）。
+export function normalizeSettings(parsed: unknown): SettingsState {
   if (!parsed || typeof parsed !== "object") {
     return cloneDefaultSettings();
   }
@@ -343,7 +316,6 @@ function normalizeSettings(parsed: unknown): SettingsState {
       },
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
-    ui: { pinnedSessions: normalizePinnedSessions(root.ui?.pinnedSessions) },
   };
 }
 
@@ -378,7 +350,6 @@ function cloneDefaultSettings(): SettingsState {
       },
     },
     skills: { sources: [] },
-    ui: { pinnedSessions: [] },
   };
 }
 
@@ -394,21 +365,6 @@ function normalizeSkillSources(input: unknown): SkillSource[] {
     if (typeof s.branch === "string" && s.branch) source.branch = s.branch;
     if (typeof s.label === "string" && s.label) source.label = s.label;
     out.push(source);
-  }
-  return out;
-}
-
-// 全局总览置顶 sessionId 列表宽松规整：非空 string 保留 + 去重，非法兜底 []。
-// session 关闭/消失后残留 id 无候选匹配即不渲染（前端 candidates.filter 取交集），无需后端清理。
-function normalizePinnedSessions(input: unknown): string[] {
-  if (!Array.isArray(input)) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of input) {
-    if (typeof item !== "string" || item.length === 0) continue;
-    if (seen.has(item)) continue;
-    seen.add(item);
-    out.push(item);
   }
   return out;
 }

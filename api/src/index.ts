@@ -38,8 +38,10 @@ import { handleSessionStreamUpgrade, SessionStreamController } from "./session-s
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadConfig } from "./config";
 import { StartupError } from "./startup-error";
-import { migrateLegacyUserFiles, SettingsStore } from "./settings-store";
-import { handlePreferencesRoutes } from "./preferences-routes";
+import { migrateLegacyUserFiles } from "./migrate-legacy-config";
+import { SettingsStore } from "./settings-store";
+import { StateStore } from "./state-store";
+import { handleStateRoutes } from "./state-routes";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
 import { startMcpHubServer } from "./mcp-hub-server";
@@ -60,6 +62,7 @@ type FetchHandlerOptions = {
   projectsRoot?: string;
   sessionRegistry?: SessionRegistry;
   settingsStore?: SettingsStore;
+  stateStore?: StateStore;
 };
 
 type WebSocketData =
@@ -179,20 +182,19 @@ export const createFetchHandler =
       if (settingsResponse) {
         return withRefresh(settingsResponse);
       }
-      const preferencesResponse = await handlePreferencesRoutes(
-        request,
-        url,
-        options.settingsStore,
-      );
-      if (preferencesResponse) {
-        return withRefresh(preferencesResponse);
-      }
       const skillResponse = await handleSkillRoutes(request, url, {
         settingsStore: options.settingsStore,
         claude2Runtime: options.claude2Runtime,
       });
       if (skillResponse) {
         return withRefresh(skillResponse);
+      }
+    }
+
+    if (options.stateStore) {
+      const stateResponse = await handleStateRoutes(request, url, options.stateStore);
+      if (stateResponse) {
+        return withRefresh(stateResponse);
       }
     }
 
@@ -988,6 +990,7 @@ export const startApi = async () => {
   });
   await migrateLegacyUserFiles();
   const settingsStore = new SettingsStore();
+  const stateStore = new StateStore();
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
   const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore, config.mcpPort);
@@ -1083,6 +1086,7 @@ export const startApi = async () => {
       projectsRoot: config.projectsRoot,
       sessionRegistry,
       settingsStore,
+      stateStore,
     }),
     websocket: {
       open(ws) {
