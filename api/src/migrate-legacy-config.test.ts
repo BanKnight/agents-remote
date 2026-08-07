@@ -248,6 +248,33 @@ test("corrupt providers.json + rename to .corrupt fails → no crash, original l
   });
 });
 
+test("corrupt providers.json with secret → console.error logs line/column without echoing source value", async () => {
+  // providers.json（legacy）含 apiKey（机密）。parse 失败时 migrate 的 console.error 打印
+  // 错误 message——修复前 message 含源码 snippet（含 apiKey 值）打到 stderr 即泄漏。
+  // 修复后 summarizeYamlError 只留首行（reason + 行列），apiKey 值不进日志。
+  const dir = await makeTempDir();
+  const providersPath = join(dir, "providers.json");
+  await writeFile(providersPath, 'apiKey: "AR-LEAK-MARKER-22222"\n  bad indent: x', {
+    mode: 0o600,
+  });
+
+  const originalError = console.error;
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => {
+    logged.push(args.map((a) => (a instanceof Error ? a.message : String(a))).join(" "));
+  };
+  try {
+    await migrateLegacyUserFiles(dir);
+  } finally {
+    console.error = originalError;
+  }
+
+  const allLogs = logged.join("\n");
+  expect(allLogs).toContain("providers.json parse failed");
+  expect(allLogs).toContain("line"); // 行列位置保留
+  expect(allLogs).not.toContain("AR-LEAK-MARKER-22222"); // 源码值不进日志（机密收口）
+});
+
 test("no-op when both files missing (settings.yaml + state.yaml not created)", async () => {
   const dir = await makeTempDir();
 

@@ -297,3 +297,25 @@ test("concurrent migration race: chmod ENOENT on 0644 toml falls through to race
     code: "CONFIG_PERMISSION_UNSAFE",
   });
 });
+
+test("corrupt config.yaml → CONFIG_INVALID reports line/column without echoing app_password source", async () => {
+  // config.yaml 含 app_password（机密）。yaml parse 失败时库会把出错行附近的源码 snippet
+  // 附在 error.message 里——修复前 StartupError message 回显整段 snippet（含密码值）。
+  // 修复后 summarizeYamlError 只留首行（reason + 行列），密码值不进 message。
+  const dir = await makeTempDir();
+  const configPath = join(dir, "config.yaml");
+  await writeFile(configPath, 'app_password: "AR-LEAK-MARKER-11111"\n  bad indent: x', {
+    mode: 0o600,
+  });
+
+  try {
+    await loadConfig({ configPath, env: {} });
+    throw new Error("Expected loadConfig to fail");
+  } catch (error) {
+    expect(error).toBeInstanceOf(StartupError);
+    expect((error as StartupError).code).toBe("CONFIG_INVALID");
+    const msg = (error as Error).message;
+    expect(msg).toContain("line"); // 行列位置保留（调试可定位）
+    expect(msg).not.toContain("AR-LEAK-MARKER-11111"); // 源码值不回显（机密收口）
+  }
+});

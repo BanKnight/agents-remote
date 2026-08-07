@@ -10,6 +10,7 @@ import {
   SettingsStore,
 } from "./settings-store";
 import { normalizePinnedSessions, StateStore } from "./state-store";
+import { summarizeYamlError } from "./yaml-error";
 
 // 旧 providers.json → settings.yaml + state.yaml 一次性迁移的组装层。迁移纯逻辑（v1/v2
 // 分流、ui 提取、拆分）在 splitLegacySettings；本文件只负责文件读写顺序与幂等。
@@ -61,7 +62,7 @@ async function migrateSettingsYamlUi(dir: string): Promise<void> {
     parsed = parseYaml(raw);
   } catch (error) {
     console.error(
-      `[migrate-legacy] settings.yaml parse failed (skipping ui extraction): ${errorMessage(error)}`,
+      `[migrate-legacy] settings.yaml parse failed (skipping ui extraction): ${summarizeYamlError(error)}`,
     );
     return;
   }
@@ -126,7 +127,7 @@ export async function migrateLegacyUserFiles(dir = defaultUserDir()): Promise<vo
       );
     }
     console.error(
-      `[migrate-legacy] providers.json parse failed (moved to providers.json.corrupt): ${errorMessage(error)}`,
+      `[migrate-legacy] providers.json parse failed (moved to providers.json.corrupt): ${summarizeYamlError(error)}`,
     );
     return;
   }

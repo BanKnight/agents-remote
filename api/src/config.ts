@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { StartupError } from "./startup-error";
+import { summarizeYamlError } from "./yaml-error";
 
 export type DeployConfig = {
   appPassword?: string;
@@ -155,7 +156,9 @@ const parseConfigYaml = (content: string, configPath: string): DeployConfig => {
   } catch (error) {
     throw new StartupError(
       "CONFIG_INVALID",
-      `Invalid YAML in ${configPath}: ${errorMessage(error)}`,
+      // config.yaml 含 app_password（机密）——yaml 错误 message 附带源码 snippet，
+      // 用 summarizeYamlError 只留行列位置，不回显含密码的源行。
+      `Invalid YAML in ${configPath}: ${summarizeYamlError(error)}`,
     );
   }
 

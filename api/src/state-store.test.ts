@@ -25,6 +25,26 @@ test("readModule returns default overview when file missing (no throw)", async (
   expect(overview).toEqual({ pinnedSessions: [] });
 });
 
+test("corrupt state.yaml → throws error without echoing source (secret containment parity)", async () => {
+  // state.yaml 当前非机密（pinnedSessions），但与 settings-store 同源收口——防未来 state
+  // 模块加机密时遗漏。readRaw parse 失败包装成只含行列位置的摘要错误，源码不进 message。
+  const dir = await makeTempDir();
+  const path = join(dir, "state.yaml");
+  await writeFile(path, 'marker: "AR-LEAK-MARKER-44444"\n  bad indent: x', { mode: 0o600 });
+  const store = new StateStore({ path });
+
+  let thrown: unknown;
+  try {
+    await store.readModule("overview");
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(Error);
+  const msg = (thrown as Error).message;
+  expect(msg).toContain("line");
+  expect(msg).not.toContain("AR-LEAK-MARKER-44444");
+});
+
 test("updateModule writes module and round-trips + keeps 0o600 + schemaVersion 1", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "state.yaml");

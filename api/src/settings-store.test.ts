@@ -52,6 +52,27 @@ test("SettingsStore.read returns defaults when file is missing (no throw)", asyn
   expect(state.runtimes.claude.enable1mContext).toBe(false);
 });
 
+test("corrupt settings.yaml → throws error without echoing apiKey source (secret containment)", async () => {
+  // settings.yaml 含 apiKey（机密）。read() parse 失败时直接 throw 原始 yaml error，上层
+  // （claude2-runtime `console.warn(..., err)`）会把它打到 stderr——message 含源码 snippet
+  // 即泄漏 apiKey。修复后包装成只含行列位置的摘要错误，apiKey 值不进 message。
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  await writeFile(path, 'apiKey: "AR-LEAK-MARKER-33333"\n  bad indent: x', { mode: 0o600 });
+  const store = new SettingsStore({ path });
+
+  let thrown: unknown;
+  try {
+    await store.read();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(Error);
+  const msg = (thrown as Error).message;
+  expect(msg).toContain("line"); // 行列位置保留
+  expect(msg).not.toContain("AR-LEAK-MARKER-33333"); // 源码值不回显（机密收口）
+});
+
 test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 3", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { type AppModules } from "@agents-remote/shared";
+import { summarizeYamlError } from "./yaml-error";
 
 // 业务状态柱（state.yaml）：存运行态业务数据（如 overview.pinnedSessions），与用户配置
 //（settings.yaml）分离。文件缺失 → 各模块返回默认，不抛错（区别于 config.yaml 的 CONFIG_REQUIRED）。
@@ -60,7 +61,11 @@ export class StateStore {
       if (isNotFoundError(error)) {
         return { schemaVersion: SCHEMA_VERSION };
       }
-      throw error;
+      // 与 settings-store 同源：yaml 错误 message 附带源码 snippet，统一包装成只含行列位置
+      // 的摘要错误（state.yaml 当前非机密，收口防未来模块加机密时遗漏）。
+      throw new Error(`Failed to parse ${this.path}: ${summarizeYamlError(error)}`, {
+        cause: error,
+      });
     }
   }
 

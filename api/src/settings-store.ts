@@ -14,6 +14,7 @@ import {
   type SettingsState,
   type SkillSource,
 } from "@agents-remote/shared";
+import { summarizeYamlError } from "./yaml-error";
 
 // settings.yaml 与 config.yaml 同目录（~/.agents-remote/），统一 YAML 格式。settings-store
 // 存用户设置（runtimes.claude + skills），是可选的——首启无文件时走默认，不抛错
@@ -72,7 +73,12 @@ export class SettingsStore {
       if (isNotFoundError(error)) {
         return cloneDefaultSettings();
       }
-      throw error;
+      // settings.yaml 含 apiKey（机密）——yaml 错误 message 附带源码 snippet，直接 throw 原始
+      // error 会被上层（如 claude2-runtime `console.warn(..., err)`）打到 stderr 泄漏 apiKey。
+      // 包装成只含行列位置的摘要错误，原始 error 留 cause 供调试链，message 不外泄。
+      throw new Error(`Failed to parse ${this.path}: ${summarizeYamlError(error)}`, {
+        cause: error,
+      });
     }
   }
 
