@@ -74,6 +74,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
       },
     },
     skills: { sources: [] },
+    ui: { pinnedSessions: [] },
   };
   await store.write(state);
 
@@ -235,12 +236,14 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
     },
     skills: { sources: [] },
+    ui: { pinnedSessions: [] },
   });
   expect(migrateV1ToV2("junk")).toEqual({
     runtimes: {
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
     },
     skills: { sources: [] },
+    ui: { pinnedSessions: [] },
   });
 });
 
@@ -446,4 +449,56 @@ test("toMaskedPreset strips raw apiKey, exposes masked fingerprint + modelMappin
     modelMapping: ALIAS_MAPPING,
   });
   expect(withUrl.baseUrl).toBe("https://relay.example");
+});
+
+// ── ui.pinnedSessions（全局总览置顶 sessionId 列表，跨设备共享）──────────
+
+test("SettingsStore.read returns empty ui.pinnedSessions by default", async () => {
+  const dir = await makeTempDir();
+  const store = new SettingsStore({ path: join(dir, "providers.json") });
+  const state = await store.read();
+  expect(state.ui?.pinnedSessions).toEqual([]);
+});
+
+test("normalizeSettings: ui.pinnedSessions dedupes + filters non-string/empty", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  await writeFile(
+    path,
+    JSON.stringify({
+      runtimes: { claude: { presets: [] } },
+      ui: { pinnedSessions: ["a", "b", "a", "", 123, null, "b", "c"] },
+    }),
+    { mode: 0o600 },
+  );
+
+  const state = await new SettingsStore({ path }).read();
+  expect(state.ui?.pinnedSessions).toEqual(["a", "b", "c"]);
+});
+
+test("normalizeSettings: ui missing → defaults to empty pinnedSessions", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  await writeFile(path, JSON.stringify({ runtimes: { claude: { presets: [] } } }), {
+    mode: 0o600,
+  });
+
+  const state = await new SettingsStore({ path }).read();
+  expect(state.ui?.pinnedSessions).toEqual([]);
+});
+
+test("normalizeSettings: ui.pinnedSessions non-array → defaults to []", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "providers.json");
+  await writeFile(
+    path,
+    JSON.stringify({
+      runtimes: { claude: { presets: [] } },
+      ui: { pinnedSessions: "not-an-array" },
+    }),
+    { mode: 0o600 },
+  );
+
+  const state = await new SettingsStore({ path }).read();
+  expect(state.ui?.pinnedSessions).toEqual([]);
 });

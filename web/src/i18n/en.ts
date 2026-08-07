@@ -324,6 +324,7 @@ export const en = {
   "api.skillPreviewFailed": "Failed to load skill preview",
   "api.skillListFailed": "Failed to load installed skills",
   "api.skillSourceInvalid": "Invalid skill source",
+  "api.pinnedSessionsFailed": "Failed to update pinned sessions",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "just now",

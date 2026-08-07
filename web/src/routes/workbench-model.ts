@@ -208,13 +208,6 @@ export const workbenchProjectGroupsCollapsedAtom = atomWithLocalOnlyStorage<
   Record<string, boolean>
 >("workbenchProjectGroupsCollapsed", {});
 
-/** 全局总览置顶会话（Record<sessionId, true=置顶>）。key=sessionId。localStorage 按会话记忆，刷新/重开保留；
- *  只存客户端，不进服务端协议。会话关闭/消失后残留 key 无候选匹配即不渲染，无需清理（空分组自然隐藏）。 */
-export const workbenchPinnedSessionsAtom = atomWithLocalOnlyStorage<Record<string, boolean>>(
-  "workbenchPinnedSessions",
-  {},
-);
-
 /**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
  * 新路由树以中栏语义命名（global 作用域 `/projects` / project 作用域 `/projects/$key`，

@@ -38,6 +38,7 @@ import { handleSessionStreamUpgrade, SessionStreamController } from "./session-s
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadSettings, StartupError } from "./settings";
 import { SettingsStore } from "./settings-store";
+import { handlePreferencesRoutes } from "./preferences-routes";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
 import { startMcpHubServer } from "./mcp-hub-server";
@@ -176,6 +177,14 @@ export const createFetchHandler =
       const settingsResponse = await handleSettingsRoutes(request, url, options.settingsStore);
       if (settingsResponse) {
         return withRefresh(settingsResponse);
+      }
+      const preferencesResponse = await handlePreferencesRoutes(
+        request,
+        url,
+        options.settingsStore,
+      );
+      if (preferencesResponse) {
+        return withRefresh(preferencesResponse);
       }
       const skillResponse = await handleSkillRoutes(request, url, {
         settingsStore: options.settingsStore,

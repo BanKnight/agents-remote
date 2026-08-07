@@ -281,6 +281,7 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
       },
     },
     skills: { sources: [] },
+    ui: { pinnedSessions: [] },
   };
 }
 
@@ -311,6 +312,7 @@ function normalizeSettings(parsed: unknown): SettingsState {
       },
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
+    ui: { pinnedSessions: normalizePinnedSessions(root.ui?.pinnedSessions) },
   };
 }
 
@@ -345,6 +347,7 @@ function cloneDefaultSettings(): SettingsState {
       },
     },
     skills: { sources: [] },
+    ui: { pinnedSessions: [] },
   };
 }
 
@@ -360,6 +363,21 @@ function normalizeSkillSources(input: unknown): SkillSource[] {
     if (typeof s.branch === "string" && s.branch) source.branch = s.branch;
     if (typeof s.label === "string" && s.label) source.label = s.label;
     out.push(source);
+  }
+  return out;
+}
+
+// 全局总览置顶 sessionId 列表宽松规整：非空 string 保留 + 去重，非法兜底 []。
+// session 关闭/消失后残留 id 无候选匹配即不渲染（前端 candidates.filter 取交集），无需后端清理。
+function normalizePinnedSessions(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of input) {
+    if (typeof item !== "string" || item.length === 0) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
   }
   return out;
 }

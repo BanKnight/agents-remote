@@ -324,6 +324,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.skillPreviewFailed": "加载技能预览失败",
   "api.skillListFailed": "加载已安装技能失败",
   "api.skillSourceInvalid": "无效的技能来源",
+  "api.pinnedSessionsFailed": "置顶会话操作失败",
 
   // ── Time ───────────────────────────────────────────────────────
   "time.justNow": "刚刚",

@@ -496,6 +496,11 @@ export type SettingsState = {
   skills?: {
     sources: SkillSource[];
   };
+  // UI 偏好（optional；settings-store normalizeSettings 补默认 { pinnedSessions: [] }）。
+  // pinnedSessions = 全局总览置顶的 sessionId 列表；跨设备共享，迁自前端 localStorage。
+  ui?: {
+    pinnedSessions?: string[];
+  };
 };
 
 export type GetSettingsResponse = {
@@ -546,6 +551,13 @@ export type UpdateClaudeRuntimeRequest = {
 
 export type UpdateClaudeRuntimeResponse = {
   runtime: ClaudeRuntimeConfig;
+};
+
+// ── 全局总览置顶会话（pin）──────────────────────────────────
+// 跨设备共享的置顶 sessionId 列表（迁自前端 localStorage，存 SettingsState.ui.pinnedSessions）。
+// GET/POST/DELETE /api/preferences/pinned-sessions 统一返回最新列表。
+export type PinnedSessionsResponse = {
+  sessions: string[];
 };
 
 // POST /api/settings/runtimes/claude/presets/:id/models 响应：用该预设凭证请求 /v1/models。
