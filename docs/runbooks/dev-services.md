@@ -14,7 +14,7 @@ web 的 service worker（precache、`navigateFallback`、`registerSW`）**只在
 
 - API dev：`43011`。
 - Web preview：`43012`（`vite.config.ts` 的 `preview.port`）。
-- MCP hub：`43013`（默认，可被 `config.toml mcp_port` 或 `MCP_PORT` env 覆盖）。api 进程内独立 `Bun.serve` 绑 `127.0.0.1`，只给本机 agent 用，**不暴露于 Cloudflare Tunnel**（tunnel 只转发 43012，不转发 43013）。定位见 `docs/research/inbox/mcp-hub-positioning.md`。
+- MCP hub：`43013`（默认，可被 `config.yaml mcp_port` 或 `MCP_PORT` env 覆盖）。api 进程内独立 `Bun.serve` 绑 `127.0.0.1`，只给本机 agent 用，**不暴露于 Cloudflare Tunnel**（tunnel 只转发 43012，不转发 43013）。定位见 `docs/research/inbox/mcp-hub-positioning.md`。
 - preview 的 `proxy` 把 `/api`（含 WebSocket）转发到 api dev，与 dev 模式一致；Cloudflare Tunnel 指向 `43012` 不变。
 - preview 绑定 `host: true`（0.0.0.0）+ `allowedHosts`，tunnel 域名可达。
 

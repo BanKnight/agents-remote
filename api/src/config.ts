@@ -147,7 +147,7 @@ const parseConfigYaml = (content: string, configPath: string): DeployConfig => {
 };
 
 // 序列化迁移产物：undefined 字段省略（对应模板注释掉的 mcp_port），特殊字符由
-// yaml.stringify 自动加引号，保证 config.toml 值 round-trip 无损。
+// yaml.stringify 自动加引号，保证 config.yaml 值 round-trip 无损。
 const stringifyConfigYaml = (config: DeployConfig): string => {
   const entries: Record<string, string | number> = {};
   if (config.appPassword !== undefined) entries.app_password = config.appPassword;

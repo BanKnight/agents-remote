@@ -5,10 +5,7 @@
 //   2. 无 subtitle（codex）的 agent 卡片退化 2 行（无第二行）。
 // 与项目总览对照：同一 agent 卡片第二行文本 = lastAssistantMessage。
 import { chromium } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
+import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const MOCK_AGENT_SUBS = {
@@ -49,26 +46,6 @@ function record(ok, label) {
   return ok;
 }
 
-async function readRawPassword() {
-  if (process.env.APP_PASSWORD) return process.env.APP_PASSWORD;
-  const cfg = path.join(os.homedir(), ".agents-remote", "config.toml");
-  try {
-    const txt = await readFile(cfg, "utf8");
-    const m = txt.match(/^app_password\s*=\s*["']([^"']*)["']/m);
-    if (m && m[1]) return m[1];
-  } catch {}
-  const pid = execSync(
-    "ss -ltnp 2>/dev/null | grep ':43011' | grep -oP 'pid=\\K[0-9]+' | head -1",
-    { encoding: "utf8" },
-  ).trim();
-  if (pid) {
-    const env = await readFile(`/proc/${pid}/environ`, "utf8");
-    const entry = env.split("\0").find((e) => e.startsWith("APP_PASSWORD="));
-    if (entry) return entry.slice("APP_PASSWORD=".length);
-  }
-  throw new Error("password not found");
-}
-
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
   viewport: { width: 1280, height: 900 },
@@ -94,7 +71,7 @@ await page.goto(`${WEB_ORIGIN}/projects`);
 await page
   .getByLabel("密码")
   .or(page.getByLabel("Password"))
-  .fill(await readRawPassword());
+  .fill(await readAppPassword());
 await page.getByRole("button", { name: /解锁|Unlock/ }).click();
 
 // 等待卡片渲染（mock overview 秒回，subtitle 慢填充）

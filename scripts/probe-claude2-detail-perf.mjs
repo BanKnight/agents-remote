@@ -2,40 +2,15 @@
 //   GET  agent-session/:id  → getAgentSession + parseClaudePermissionModes(首次 spawn claude --help，后续缓存)
 //                             + settingsStore.read(每次 readFile 读盘，无缓存) + buildAvailableAliases(纯计算)
 //   WS   claude2-stream      → relay.activate(读 JSONL history) → seed_init(含 modelAlias) → history → live
-// 密码自读（env → config.toml → /proc/<api-pid>/environ），不进 agent 上下文、不打印值。
+// 密码自读（env → config.yaml → /proc/<api-pid>/environ），不进 agent 上下文、不打印值。
 // 用法：node scripts/probe-claude2-detail-perf.mjs
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
+import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const API = process.env.API_ORIGIN ?? "http://127.0.0.1:43011";
 const PROJECTS = (process.env.PROBE_PROJECTS ?? "test,novels,lang-partner,简易会话").split(",");
 const N = Number(process.env.N ?? 6);
 
-async function readPassword() {
-  if (process.env.APP_PASSWORD) return process.env.APP_PASSWORD;
-  const cfg = path.join(os.homedir(), ".agents-remote", "config.toml");
-  try {
-    const txt = await readFile(cfg, "utf8");
-    const m = txt.match(/^app_password\s*=\s*["']([^"']*)["']/m);
-    if (m && m[1]) return m[1];
-  } catch {}
-  try {
-    const pid = execSync(
-      "ss -ltnp 2>/dev/null | grep ':43011' | grep -oP 'pid=\\K[0-9]+' | head -1",
-      { encoding: "utf8" },
-    ).trim();
-    if (pid) {
-      const env = await readFile(`/proc/${pid}/environ`, "utf8");
-      const found = env.split("\0").find((e) => e.startsWith("APP_PASSWORD="));
-      if (found) return found.slice("APP_PASSWORD=".length);
-    }
-  } catch {}
-  throw new Error("password not found (env / config.toml / api environ 均无)");
-}
-
-const pw = await readPassword();
+const pw = await readAppPassword();
 const loginRes = await fetch(`${API}/api/auth/login`, {
   method: "POST",
   headers: { "content-type": "application/json" },

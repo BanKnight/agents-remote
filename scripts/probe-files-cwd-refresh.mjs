@@ -7,37 +7,14 @@
 // - refresh：FilePreviewPanel header 加 onRefresh 按钮（invalidate preview query）+ preview query staleTime:0。
 //
 // 单测验不到（跨组件 unmount/remount + middle tab 切换 + 项目切换），需真实浏览器驱动。
-// 密码自读（config.toml → api environ），不进 agent 上下文、不打印值。
+// 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
 // 用法：node scripts/probe-files-cwd-refresh.mjs
 import { chromium } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
+import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const projectName = process.env.PROBE_PROJECT ?? "test";
 const subdir = process.env.PROBE_SUBDIR ?? "diagrams";
-
-async function readRawPassword() {
-  if (process.env.APP_PASSWORD) return process.env.APP_PASSWORD;
-  const cfg = path.join(os.homedir(), ".agents-remote", "config.toml");
-  try {
-    const txt = await readFile(cfg, "utf8");
-    const m = txt.match(/^app_password\s*=\s*["']([^"']*)["']/m);
-    if (m && m[1]) return m[1];
-  } catch {}
-  const pid = execSync(
-    "ss -ltnp 2>/dev/null | grep ':43011' | grep -oP 'pid=\\K[0-9]+' | head -1",
-    { encoding: "utf8" },
-  ).trim();
-  if (pid) {
-    const env = await readFile(`/proc/${pid}/environ`, "utf8");
-    const entry = env.split("\0").find((e) => e.startsWith("APP_PASSWORD="));
-    if (entry) return entry.slice("APP_PASSWORD=".length);
-  }
-  throw new Error("password not found");
-}
 
 // 读左栏文件树 PathBreadcrumb 的 segments（目录名，不含 root home 按钮）。
 // PathBreadcrumb：flex flex-wrap 容器 + root button(含 svg) + segment buttons(纯文本)。
@@ -61,7 +38,7 @@ async function readFilesCwdSegments(page) {
   const errors = [];
   try {
     await page.goto(`${WEB_ORIGIN}/`);
-    await page.getByLabel("Password").fill(await readRawPassword());
+    await page.getByLabel("Password").fill(await readAppPassword());
     await page.getByRole("button", { name: "Unlock console" }).click();
     await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
     await page.waitForSelector("nav[aria-label]", { timeout: 10000 });

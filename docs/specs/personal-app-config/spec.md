@@ -11,12 +11,17 @@
 
 ### Requirement: API loads first-round configuration from config file and environment overrides
 
-系统 SHALL 以 `~/.agents-remote/config.toml` 作为个人部署默认配置文件，并允许环境变量覆盖配置文件中的第一轮必要配置。
+系统 SHALL 以 `~/.agents-remote/config.yaml`（YAML 格式）作为个人部署默认配置文件，并允许环境变量覆盖配置文件中的第一轮必要配置。
 
 #### Scenario: Configuration file provides defaults
 
-- **WHEN** `api` 启动且 `~/.agents-remote/config.toml` 存在并包含必要配置
-- **THEN** 系统从该 TOML 文件读取 `APP_PASSWORD`、`PROJECTS_ROOT`、`web/api` 本机端口和 `web` 访问 `api` 的地址等第一轮配置
+- **WHEN** `api` 启动且 `~/.agents-remote/config.yaml` 存在并包含必要配置
+- **THEN** 系统从该 YAML 文件读取 `APP_PASSWORD`、`PROJECTS_ROOT`、`web/api` 本机端口和 `web` 访问 `api` 的地址等第一轮配置
+
+#### Scenario: Legacy config.toml migrates to config.yaml
+
+- **WHEN** `api` 启动且 `~/.agents-remote/config.yaml` 不存在但存在旧格式 `config.toml`
+- **THEN** 系统从 `config.toml` 读取配置并原子迁移为 `config.yaml`（0o600），原文件重命名为 `config.toml.bak`，启动继续
 
 #### Scenario: Environment overrides configuration file
 
@@ -30,12 +35,12 @@
 
 ### Requirement: Missing first-run configuration creates a safe template and stops startup
 
-系统 SHALL 在首次启动缺少默认配置文件时生成示例 TOML 配置文件，并拒绝用不安全默认密码启动。
+系统 SHALL 在首次启动缺少默认配置文件时生成示例 YAML 配置文件，并拒绝用不安全默认密码启动。
 
 #### Scenario: Default config file is missing
 
-- **WHEN** `api` 启动且 `~/.agents-remote/config.toml` 不存在
-- **THEN** 系统创建带示例值或注释的 TOML 模板文件，并提示用户填写必要配置后重启
+- **WHEN** `api` 启动且 `~/.agents-remote/config.yaml` 不存在（也无 `config.toml` 可迁移）
+- **THEN** 系统创建带示例值或注释的 YAML 模板文件，并提示用户填写必要配置后重启
 
 #### Scenario: Generated template lacks safe runnable credentials
 
@@ -68,7 +73,7 @@
 #### Scenario: Persistent config is stored
 
 - **WHEN** 系统需要读取或创建个人部署配置文件
-- **THEN** 默认位置位于 `~/.agents-remote/config.toml`
+- **THEN** 默认位置位于 `~/.agents-remote/config.yaml`
 
 #### Scenario: Project or agent output storage is reviewed
 
@@ -77,11 +82,11 @@
 
 ### Requirement: Config file permissions are restricted or reported
 
-系统 SHALL 在创建或更新 `~/.agents-remote/config.toml` 时尽量限制为仅当前用户可读写，并在权限不安全时给出警告或修正。
+系统 SHALL 在创建或更新 `~/.agents-remote/config.yaml` 时尽量限制为仅当前用户可读写，并在权限不安全时给出警告或修正。
 
 #### Scenario: Config file is created
 
-- **WHEN** 系统创建 `~/.agents-remote/config.toml`
+- **WHEN** 系统创建 `~/.agents-remote/config.yaml`
 - **THEN** 该文件权限尽量设置为仅当前用户可读写
 
 #### Scenario: Config file permissions are unsafe

@@ -11,13 +11,10 @@
 //   Part 3（登录后设置弹窗）:ActivityBar 设置按钮 → SettingsDialog → theme SegmentedControl
 //     点 Light/Dark/System → 验 class 实时切换 + system 跟随系统偏好实时变化。
 //
-// 密码自读（config.toml → api environ），不进 agent 上下文、不打印值。
+// 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
 // 用法：node scripts/probe-theme-switch.mjs
 import { chromium } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
+import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const ORIGIN = process.env.AR_WEB_ORIGIN ?? "http://127.0.0.1:43012";
 // index.css `html { background-color: var(--bg-base) }` 的 light/dark 值（FOUC 内联同值）。
@@ -34,26 +31,6 @@ function ok(cond, msg) {
     failCount++;
     console.error(`  ✗ ${msg}`);
   }
-}
-
-async function readRawPassword() {
-  if (process.env.APP_PASSWORD) return process.env.APP_PASSWORD;
-  const cfg = path.join(os.homedir(), ".agents-remote", "config.toml");
-  try {
-    const txt = await readFile(cfg, "utf8");
-    const m = txt.match(/^app_password\s*=\s*["']([^"']*)["']/m);
-    if (m && m[1]) return m[1];
-  } catch {}
-  const pid = execSync(
-    "ss -ltnp 2>/dev/null | grep ':43011' | grep -oP 'pid=\\K[0-9]+' | head -1",
-    { encoding: "utf8" },
-  ).trim();
-  if (pid) {
-    const env = await readFile(`/proc/${pid}/environ`, "utf8");
-    const entry = env.split("\0").find((e) => e.startsWith("APP_PASSWORD="));
-    if (entry) return entry.slice("APP_PASSWORD=".length);
-  }
-  throw new Error("password not found");
 }
 
 // ── Part 1:静态（index.html FOUC script + 无内联背景 style）────────────────────
@@ -136,7 +113,7 @@ ok(true, "dark:meta theme-color → #020617（ThemeSync 根 effect）");
 // ── Part 3:登录 + 设置弹窗三态切换 ─────────────────────────────────────────────
 console.log("Part 3: 设置弹窗三态切换");
 await page.goto(`${ORIGIN}/`);
-await page.getByLabel("App password").fill(await readRawPassword());
+await page.getByLabel("App password").fill(await readAppPassword());
 await page.getByRole("button", { name: "Unlock console" }).click();
 await page.waitForSelector("nav[aria-label]", { timeout: 10000 });
 

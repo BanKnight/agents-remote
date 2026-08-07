@@ -17,8 +17,8 @@
 ## 首次配置流程
 
 1. 启动 `api`。
-2. 如果 `~/.agents-remote/config.toml` 不存在，`api` 会生成配置模板并停止启动。
-3. 编辑 `~/.agents-remote/config.toml`，至少填写：
+2. 如果 `~/.agents-remote/config.yaml` 不存在（也无旧格式 `config.toml` 可迁移），`api` 会生成 YAML 配置模板并停止启动。
+3. 编辑 `~/.agents-remote/config.yaml`，至少填写：
    - `app_password`
    - `projects_root`
    - `api_port`
@@ -28,6 +28,10 @@
 4. 确认 `projects_root` 是绝对路径。
 5. 确认配置文件仅当前用户可读写。
 6. 重新启动 `api`。
+
+## 旧格式迁移
+
+首次启动时若存在旧格式 `config.toml` 而 `config.yaml` 缺失，`api` 会自动读取旧配置并原子迁移为 `config.yaml`（0o600），原文件重命名为 `config.toml.bak`。迁移后编辑与后续修改都以 `config.yaml` 为准，不需要手动搬字段。
 
 ## 环境变量覆盖
 
@@ -41,7 +45,7 @@
 - `WEB_API_BASE_URL`
 - `AGENTS_REMOTE_RUN_DIR`
 
-环境变量只覆盖当前进程，不要求修改 `~/.agents-remote/config.toml`。
+环境变量只覆盖当前进程，不要求修改 `~/.agents-remote/config.yaml`。
 
 ## 常见失败与处理
 

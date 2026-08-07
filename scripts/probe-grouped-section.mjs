@@ -14,14 +14,11 @@
 //   10. 置顶分组：初始空隐藏（标题行数=2）→ 点 A 卡 Pin → 置顶分组出现（Pinned）+ 置顶组 1 卡 +
 //       A 项目组仍 3 卡（双显示）+ 全部置顶卡 aria-pressed=true → 置顶组单列 + subtitle 第二行 →
 //       折叠记忆（tap 标题行 0/1 卡）→ reload 持久化（2 卡）→ 逐个 Unpin → 分组消失（标题行数回 2）。
-// 桌面 1280×900 + 移动 390×844 两视口。密码自读（config.toml），不打印。DOM 几何（getBoundingClientRect），不用 vision。
+// 桌面 1280×900 + 移动 390×844 两视口。密码自读（config.yaml），不打印。DOM 几何（getBoundingClientRect），不用 vision。
 // 用法：bun scripts/probe-grouped-section.mjs
 import { chromium } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
 import { verifyCssFlushed } from "./ar-verify-css.mjs";
+import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 
@@ -70,26 +67,6 @@ function record(ok, label) {
   if (!ok) allPass = false;
   console.log(`  ${ok ? "✓" : "✗"} ${label}`);
   return ok;
-}
-
-async function readRawPassword() {
-  if (process.env.APP_PASSWORD) return process.env.APP_PASSWORD;
-  const cfg = path.join(os.homedir(), ".agents-remote", "config.toml");
-  try {
-    const txt = await readFile(cfg, "utf8");
-    const m = txt.match(/^app_password\s*=\s*["']([^"']*)["']/m);
-    if (m && m[1]) return m[1];
-  } catch {}
-  const pid = execSync(
-    "ss -ltnp 2>/dev/null | grep ':43011' | grep -oP 'pid=\\K[0-9]+' | head -1",
-    { encoding: "utf8" },
-  ).trim();
-  if (pid) {
-    const env = await readFile(`/proc/${pid}/environ`, "utf8");
-    const entry = env.split("\0").find((e) => e.startsWith("APP_PASSWORD="));
-    if (entry) return entry.slice("APP_PASSWORD=".length);
-  }
-  throw new Error("password not found");
 }
 
 async function setupMocks(page) {
@@ -142,7 +119,7 @@ async function setupMocks(page) {
 
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
-  await page.getByLabel("Password").fill(await readRawPassword());
+  await page.getByLabel("Password").fill(await readAppPassword());
   await page.getByRole("button", { name: "Unlock console" }).click();
 }
 

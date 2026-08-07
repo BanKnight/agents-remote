@@ -5,10 +5,7 @@
 //  3. pages 骨架屏（移动）：loading 时 header 骨架行 display:none（hidden lg:flex，对齐 loaded header）。
 // 密码自读不打印。用法：node scripts/probe-view-tabs.mjs
 import { chromium } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
+import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const projectName = process.env.PROBE_PROJECT ?? "test";
@@ -22,26 +19,6 @@ function record(ok, label) {
   if (!ok) allPass = false;
   console.log(`  ${ok ? "✓" : "✗"} ${label}`);
   return ok;
-}
-
-async function readRawPassword() {
-  if (process.env.APP_PASSWORD) return process.env.APP_PASSWORD;
-  const cfg = path.join(os.homedir(), ".agents-remote", "config.toml");
-  try {
-    const txt = await readFile(cfg, "utf8");
-    const m = txt.match(/^app_password\s*=\s*["']([^"']*)["']/m);
-    if (m && m[1]) return m[1];
-  } catch {}
-  const pid = execSync(
-    "ss -ltnp 2>/dev/null | grep ':43011' | grep -oP 'pid=\\K[0-9]+' | head -1",
-    { encoding: "utf8" },
-  ).trim();
-  if (pid) {
-    const env = await readFile(`/proc/${pid}/environ`, "utf8");
-    const entry = env.split("\0").find((e) => e.startsWith("APP_PASSWORD="));
-    if (entry) return entry.slice("APP_PASSWORD=".length);
-  }
-  throw new Error("password not found");
 }
 
 // 统计页面上 view 切换按钮（aria-label 命中视图名）。返回 { count, labels, hasTable }。
@@ -76,7 +53,7 @@ async function setupMocks(page) {
 
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
-  await page.getByLabel("Password").fill(await readRawPassword());
+  await page.getByLabel("Password").fill(await readAppPassword());
   await page.getByRole("button", { name: "Unlock console" }).click();
 }
 
