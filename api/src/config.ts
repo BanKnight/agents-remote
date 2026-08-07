@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { StartupError } from "./startup-error";
 
 export type DeployConfig = {
@@ -29,7 +30,7 @@ type LoadConfigOptions = {
   env?: Record<string, string | undefined>;
 };
 
-const defaultConfigPath = () => join(homedir(), ".agents-remote", "config.toml");
+const defaultConfigPath = () => join(homedir(), ".agents-remote", "config.yaml");
 
 // MCP hub default port (api=43011/web=43012 family in dev; config/env can override).
 // Bound to 127.0.0.1 only — never exposed via the Cloudflare Tunnel.
@@ -38,14 +39,14 @@ const DEFAULT_MCP_PORT = 43013;
 const template = `# agents-remote personal deployment config
 # Fill app_password and projects_root, then restart the api service.
 
-app_password = ""
-projects_root = ""
-api_port = 3001
-web_port = 3000
+app_password: ""
+projects_root: ""
+api_port: 3001
+web_port: 3000
 # MCP hub port (internal, bound to 127.0.0.1). Optional; defaults to 43013.
-# mcp_port = 43013
-web_api_base_url = "/api"
-token_ttl_hours = 720
+# mcp_port: 43013
+web_api_base_url: /api
+token_ttl_hours: 720
 `;
 
 export const getDefaultConfigPath = defaultConfigPath;
@@ -60,6 +61,8 @@ export const loadConfig = async (options: LoadConfigOptions = {}): Promise<Resol
 };
 
 const readConfig = async (configPath: string): Promise<DeployConfig> => {
+  // config.yaml 优先；缺失时回退读旧 config.toml 并迁移（原子写 yaml + toml 改名 .bak），
+  // 老用户升级无感。parseConfigToml 保留作迁移读取器，只读不再新写。
   try {
     const configStat = await stat(configPath);
 
@@ -74,33 +77,99 @@ const readConfig = async (configPath: string): Promise<DeployConfig> => {
       }
     }
 
-    return parseConfigToml(await readFile(configPath, "utf8"), configPath);
+    return parseConfigYaml(await readFile(configPath, "utf8"), configPath);
   } catch (error) {
     if (error instanceof StartupError) {
       throw error;
     }
 
-    if (isNotFoundError(error)) {
+    if (!isNotFoundError(error)) {
+      throw new StartupError(
+        "CONFIG_INVALID",
+        `Failed to read config file ${configPath}. ${errorMessage(error)}`,
+      );
+    }
+
+    const tomlPath = tomlFallbackPath(configPath);
+    try {
+      const legacy = parseConfigToml(await readFile(tomlPath, "utf8"), tomlPath);
+      await writeConfigYaml(configPath, stringifyConfigYaml(legacy));
+      await rename(tomlPath, `${tomlPath}.bak`);
+      return legacy;
+    } catch (tomlError) {
+      if (tomlError instanceof StartupError) {
+        throw tomlError;
+      }
+
+      if (!isNotFoundError(tomlError)) {
+        throw new StartupError(
+          "CONFIG_INVALID",
+          `Failed to read legacy config file ${tomlPath}. ${errorMessage(tomlError)}`,
+        );
+      }
+
       await createTemplate(configPath);
       throw new StartupError(
         "CONFIG_REQUIRED",
         `Created config template at ${configPath}. Fill required values and restart the api service.`,
       );
     }
-
-    throw new StartupError(
-      "CONFIG_INVALID",
-      `Failed to read config file ${configPath}. ${errorMessage(error)}`,
-    );
   }
 };
 
-const createTemplate = async (configPath: string) => {
+const tomlFallbackPath = (configPath: string) => configPath.replace(/\.ya?ml$/i, ".toml");
+
+const parseConfigYaml = (content: string, configPath: string): DeployConfig => {
+  let data: unknown;
+  try {
+    data = parseYaml(content);
+  } catch (error) {
+    throw new StartupError(
+      "CONFIG_INVALID",
+      `Invalid YAML in ${configPath}: ${errorMessage(error)}`,
+    );
+  }
+
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new StartupError("CONFIG_INVALID", `Invalid config structure in ${configPath}.`);
+  }
+
+  const values = data as Record<string, string | number | undefined>;
+  return {
+    appPassword: optionalString(values.app_password, "app_password", configPath),
+    projectsRoot: optionalString(values.projects_root, "projects_root", configPath),
+    apiPort: optionalPort(values.api_port, "api_port", configPath),
+    webPort: optionalPort(values.web_port, "web_port", configPath),
+    mcpPort: optionalPort(values.mcp_port, "mcp_port", configPath),
+    webApiBaseUrl: optionalString(values.web_api_base_url, "web_api_base_url", configPath),
+    tokenTtlHours: optionalTokenTtlHours(values.token_ttl_hours, configPath),
+  };
+};
+
+// 序列化迁移产物：undefined 字段省略（对应模板注释掉的 mcp_port），特殊字符由
+// yaml.stringify 自动加引号，保证 config.toml 值 round-trip 无损。
+const stringifyConfigYaml = (config: DeployConfig): string => {
+  const entries: Record<string, string | number> = {};
+  if (config.appPassword !== undefined) entries.app_password = config.appPassword;
+  if (config.projectsRoot !== undefined) entries.projects_root = config.projectsRoot;
+  if (config.apiPort !== undefined) entries.api_port = config.apiPort;
+  if (config.webPort !== undefined) entries.web_port = config.webPort;
+  if (config.mcpPort !== undefined) entries.mcp_port = config.mcpPort;
+  if (config.webApiBaseUrl !== undefined) entries.web_api_base_url = config.webApiBaseUrl;
+  if (config.tokenTtlHours !== undefined) entries.token_ttl_hours = config.tokenTtlHours;
+  return stringifyYaml(entries);
+};
+
+const writeConfigYaml = async (configPath: string, content: string) => {
   await mkdir(dirname(configPath), { recursive: true, mode: 0o700 });
   const tempPath = `${configPath}.${process.pid}.tmp`;
-  await writeFile(tempPath, template, { mode: 0o600 });
+  await writeFile(tempPath, content, { mode: 0o600 });
   await chmod(tempPath, 0o600);
   await rename(tempPath, configPath);
+};
+
+const createTemplate = async (configPath: string) => {
+  await writeConfigYaml(configPath, template);
 };
 
 const applyEnvOverrides = (

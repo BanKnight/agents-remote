@@ -6,25 +6,36 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { parse as parseYaml } from "yaml";
 
 function readDeployConfig(): Record<string, string> {
-  try {
-    const raw = readFileSync(join(homedir(), ".agents-remote", "config.toml"), "utf8");
-    const result: Record<string, string> = {};
-    for (const line of raw.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq === -1) continue;
-      result[trimmed.slice(0, eq).trim()] = trimmed
-        .slice(eq + 1)
-        .trim()
-        .replace(/^"|"$/g, "");
+  const dir = join(homedir(), ".agents-remote");
+  // config.yaml 优先；config.toml 回退（旧格式过渡，api loadConfig 迁移后不再生成）。
+  for (const name of ["config.yaml", "config.toml"]) {
+    try {
+      const raw = readFileSync(join(dir, name), "utf8");
+      if (name === "config.yaml") {
+        const data = (parseYaml(raw) ?? {}) as Record<string, unknown>;
+        return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)]));
+      }
+      // legacy flat TOML parser
+      const result: Record<string, string> = {};
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq === -1) continue;
+        result[trimmed.slice(0, eq).trim()] = trimmed
+          .slice(eq + 1)
+          .trim()
+          .replace(/^"|"$/g, "");
+      }
+      return result;
+    } catch {
+      // 尝试下一个候选文件
     }
-    return result;
-  } catch {
-    return {};
   }
+  return {};
 }
 
 function getVendorChunkName(id: string): string | undefined {
