@@ -4180,21 +4180,6 @@ export function useClaude2Session(
     const sessionKey = `${projectName}/${sessionId}`;
     const isSessionChange =
       activeSessionKeyRef.current !== null && sessionKey !== activeSessionKeyRef.current;
-    // 防御性复用：某些 React 环境（dev 模式 act double-flush、高负载下）会对已挂载
-    // 组件的 passive effect 重复执行 mount 提交而不先 unmount。对 WebSocket effect 即
-    // 意味着在第一个 socket 仍存活时再 `new WebSocket(url)`——浪费一次连接，高负载下
-    // 演成测试可见的「两个 socket」竞态。若 session 未变、无显式 reconnect
-    // （connectionVersion bump）、且已有存活 socket，则保留现有连接而非拆掉重开。
-    // 正常首次 mount（socketRef 为空）/ reconnect（connectionVersion>0）/ 切 session
-    // （isSessionChange）都绕过此守卫。
-    if (
-      !isSessionChange &&
-      connectionVersion === 0 &&
-      socketRef.current != null &&
-      socketRef.current.readyState !== WebSocket.CLOSED
-    ) {
-      return;
-    }
     activeSessionKeyRef.current = sessionKey;
 
     let cancelled = false;
