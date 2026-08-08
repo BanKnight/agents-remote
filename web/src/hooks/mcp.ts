@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AddMcpServerRequest, McpScope } from "@agents-remote/shared";
-import { addMcpServer, listMcpServers, removeMcpServer } from "../api/client";
+import type { AddMcpServerRequest, McpScope, UpdateMcpServerRequest } from "@agents-remote/shared";
+import { addMcpServer, listMcpServers, removeMcpServer, updateMcpServer } from "../api/client";
 
 const MCP_KEY = ["mcp"] as const;
 /** MCP list 缓存新鲜期：claude mcp / 直读配置在增删后由 mutation invalidate；staleTime 内切换秒回。 */
@@ -29,6 +29,16 @@ export function useRemoveMcpServer(scope: McpScope, projectName?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => removeMcpServer(name, scope, projectName),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: MCP_KEY });
+    },
+  });
+}
+
+export function useUpdateMcpServer(scope: McpScope, projectName?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UpdateMcpServerRequest) => updateMcpServer(req, scope, projectName),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: MCP_KEY });
     },

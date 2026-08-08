@@ -20,6 +20,7 @@ const {
   listProjectMcpServers,
   addMcpServer,
   removeMcpServer,
+  updateMcpServer,
   handleMcpRoutes,
 } = await import("./mcp-management");
 
@@ -227,6 +228,76 @@ describe("removeMcpServer", () => {
   it("throws MCP_REMOVE_FAILED on non-zero exit", async () => {
     runCliTool.mockResolvedValue(fail("not found"));
     await expect(removeMcpServer("srv", "user", {})).rejects.toThrow(/claude mcp remove failed/);
+  });
+});
+
+describe("updateMcpServer", () => {
+  it("runs remove then add (same name) for user scope", async () => {
+    runCliTool.mockResolvedValue(ok());
+    const res = await updateMcpServer(
+      { name: "srv", type: "http", url: "https://e.com/mcp" },
+      "user",
+      {},
+    );
+    const cmds = runCliTool.mock.calls.map((c) => c[0]);
+    expect(cmds[0]).toEqual(["claude", "mcp", "remove", "srv", "-s", "user"]);
+    expect(cmds[1]).toEqual([
+      "claude",
+      "mcp",
+      "add",
+      "--transport",
+      "http",
+      "-s",
+      "user",
+      "srv",
+      "https://e.com/mcp",
+    ]);
+    expect(res).toEqual({
+      ok: true,
+      server: { name: "srv", type: "http", url: "https://e.com/mcp" },
+    });
+  });
+
+  it("throws MCP_UPDATE_FAILED when remove phase fails (no add attempted)", async () => {
+    runCliTool.mockResolvedValue(fail("not found"));
+    await expect(
+      updateMcpServer({ name: "srv", type: "http", url: "u" }, "user", {}),
+    ).rejects.toThrow(/remove phase/);
+    expect(runCliTool).toHaveBeenCalledTimes(1); // 仅 remove，未到 add
+  });
+
+  it("rolls back old config when add phase fails (project scope)", async () => {
+    await makeProject("p1");
+    await writeFile(
+      join(rootDir, "p1", ".mcp.json"),
+      JSON.stringify({ mcpServers: { srv: { type: "http", url: "https://old.example/mcp" } } }),
+    );
+    // remove ok、add 失败、回滚 add ok（第三次调用）。
+    runCliTool
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(fail("conflict"))
+      .mockResolvedValueOnce(ok());
+    await expect(
+      updateMcpServer({ name: "srv", type: "http", url: "https://new.example/mcp" }, "project", {
+        projectsRoot: rootDir,
+        projectName: "p1",
+      }),
+    ).rejects.toThrow(/add phase/);
+    // 第三次调用 = 回滚 add，用旧 url。
+    const rollbackCmd = runCliTool.mock.calls[2][0];
+    expect(rollbackCmd).toContain("https://old.example/mcp");
+    // cwd = project root。
+    expect(runCliTool.mock.calls[0][1]?.cwd).toBe(join(rootDir, "p1"));
+  });
+
+  it("passes project path as cwd for project scope", async () => {
+    await makeProject("p1");
+    runCliTool.mockResolvedValue(ok());
+    await updateMcpServer({ name: "s", type: "stdio", command: "c" }, "project", {
+      projectsRoot: rootDir,
+      projectName: "p1",
+    });
+    expect(runCliTool.mock.calls[0][1]?.cwd).toBe(join(rootDir, "p1"));
   });
 });
 

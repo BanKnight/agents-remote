@@ -70,6 +70,8 @@ import type {
   RemoveMcpServerResponse,
   RemoveSkillSourceResponse,
   SkillAgent,
+  UpdateMcpServerRequest,
+  UpdateMcpServerResponse,
   SkillMarketSearchResponse,
   SkillPreviewResponse,
   SkillSourcesResponse,
@@ -811,6 +813,22 @@ export async function removeMcpServer(
   return fetchJson(path, "api.mcpRemoveFailed", {
     method: "POST",
     body: JSON.stringify({ name }),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function updateMcpServer(
+  req: UpdateMcpServerRequest,
+  scope: McpScope,
+  projectName?: string,
+): Promise<UpdateMcpServerResponse> {
+  const path =
+    scope === "project" && projectName
+      ? `/api/projects/${encodeURIComponent(projectName)}/mcp/update`
+      : "/api/mcp/update";
+  return fetchJson(path, "api.mcpUpdateFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
     headers: { "content-type": "application/json" },
   });
 }

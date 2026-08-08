@@ -330,6 +330,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.mcpListFailed": "MCP 服务器加载失败",
   "api.mcpAddFailed": "MCP 服务器添加失败",
   "api.mcpRemoveFailed": "MCP 服务器移除失败",
+  "api.mcpUpdateFailed": "MCP 服务器更新失败",
   "api.pinnedSessionsFailed": "置顶会话操作失败",
 
   // ── Time ───────────────────────────────────────────────────────
@@ -665,7 +666,6 @@ export const zh: Record<TranslationKey, string> = {
   "skills.checking": "检查中…",
   "skills.update": "更新",
   "skills.updating": "更新中…",
-  "skills.hasUpdate": "有更新",
   "skills.upToDate": "已是最新",
   "skills.local": "本地",
   "skills.bringUnderManagement": "纳入管理",
@@ -692,6 +692,12 @@ export const zh: Record<TranslationKey, string> = {
   "mcp.removeConfirmTitle": "移除 MCP 服务器",
   "mcp.removeConfirmBody": "该服务器将从 CLI 配置中移除，之后新建的会话将不再加载它。",
   "mcp.removeConfirmCta": "移除",
+  "mcp.edit": "编辑",
+  "mcp.save": "保存",
+  "mcp.updating": "保存中…",
+  "mcp.updateConfirmTitle": "修改 MCP 服务器",
+  "mcp.updateConfirmBody": "该服务器的配置将被替换，之后新建的会话将使用新配置。",
+  "mcp.updateConfirmCta": "保存",
   "pages.panelAria": "页面静态根",
   "pages.emptyTitle": "尚未配置页面根",
   "pages.emptyDesc": "把项目内的目录映射到 URL 路径，即可作为静态站点对外提供访问。",

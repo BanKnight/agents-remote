@@ -11,6 +11,7 @@ export type McpErrorCode = Extract<
   | "MCP_LIST_FAILED"
   | "MCP_ADD_FAILED"
   | "MCP_REMOVE_FAILED"
+  | "MCP_UPDATE_FAILED"
 >;
 
 /** MCP hub 操作统一错误类型，携带 ApiErrorCode 供 HTTP 层翻译。 */

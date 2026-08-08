@@ -330,6 +330,7 @@ export const en = {
   "api.mcpListFailed": "Failed to load MCP servers",
   "api.mcpAddFailed": "Failed to add MCP server",
   "api.mcpRemoveFailed": "Failed to remove MCP server",
+  "api.mcpUpdateFailed": "Failed to update MCP server",
   "api.pinnedSessionsFailed": "Failed to update pinned sessions",
 
   // ── Time ───────────────────────────────────────────────────────
@@ -670,7 +671,6 @@ export const en = {
   "skills.checking": "Checking…",
   "skills.update": "Update",
   "skills.updating": "Updating…",
-  "skills.hasUpdate": "Update available",
   "skills.upToDate": "Up to date",
   "skills.local": "Local",
   "skills.bringUnderManagement": "Bring under management",
@@ -699,6 +699,13 @@ export const en = {
   "mcp.removeConfirmBody":
     "The server will be removed from the CLI configuration. Sessions started afterwards will not load it.",
   "mcp.removeConfirmCta": "Remove",
+  "mcp.edit": "Edit",
+  "mcp.save": "Save",
+  "mcp.updating": "Saving…",
+  "mcp.updateConfirmTitle": "Update MCP server",
+  "mcp.updateConfirmBody":
+    "The server configuration will be replaced. Sessions started afterwards will use the new config.",
+  "mcp.updateConfirmCta": "Save",
   "pages.panelAria": "Pages roots",
   "pages.emptyTitle": "No pages roots",
   "pages.emptyDesc": "Map a project directory to a URL path to serve it as a static site.",

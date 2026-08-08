@@ -1,7 +1,9 @@
 import { type ComponentProps, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { atom, useAtom } from "jotai";
 import type {
   AddMcpServerRequest,
+  McpServerEntry,
   McpServerType,
   SkillAgent,
   SkillMarketEntry,
@@ -20,7 +22,13 @@ import {
 } from "../components/shell/shell-primitives";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
 import { DraggableListRow, type CardDragStartHandler } from "../components/workbench/drag-source";
-import { useAddMcpServer, useMcpServers, useRemoveMcpServer } from "../hooks/mcp";
+import { TabButton } from "../components/workbench/right-panel-tabs";
+import {
+  useAddMcpServer,
+  useMcpServers,
+  useRemoveMcpServer,
+  useUpdateMcpServer,
+} from "../hooks/mcp";
 import {
   useAddSkillSource,
   useCheckSkillUpdates,
@@ -56,21 +64,34 @@ export function parseEnvLines(text: string): Record<string, string> | undefined 
 }
 
 /** 插件一级区（skill + mcp）与 skill 二级 tab。 */
-type PluginSection = "skill" | "mcp";
-type SkillTab = "discover" | "manage" | "sources";
+export type PluginSection = "skill" | "mcp";
+export type SkillTab = "discover" | "manage" | "sources";
+
+/**
+ * 插件页视图位置 state（section / skill 二级 tab / 搜索词）。提到 jotai atom（内存级，不持久化）
+ * 而非组件 useState：移动端从 Manage/MCP 点行开 skill focus（navigate /plugins/skill/$）时整个
+ * `<main>` 换分支，PluginsPanel unmount；返回 /plugins 重 mount。useState 会丢位置回到默认
+ * skill/discover，atom 在 jotai 全局 store unmount 后存活，重 mount 读回原位置（对标
+ * workbenchMobileOverviewTabAtom）。桌面 PluginsPanel 常驻不 unmount，读写同一 atom 无行为差异。
+ * 刷新回默认可接受（不持久化到 localStorage）。
+ */
+const pluginsSectionAtom = atom<PluginSection>("skill");
+const pluginsSkillTabAtom = atom<SkillTab>("discover");
+const pluginsQueryAtom = atom("");
 
 /**
  * 插件市场主体（桌面左栏 + 移动主体共用，仿 GlobalFilesOverview）。一级 Skill/MCP
- * SegmentedControl：Skill 子区 = discover/manage/sources 三 tab；MCP 子区 = 外部 server 管理
+ * SegmentedControl：Skill 子区 = discover/manage/sources 三弱文字 tab；MCP 子区 = 外部 server 管理
  *（user scope，Phase 3 接 project scope）。agent 首版 claude-code（架构透传 --agent 支持 codex）。
  *
  * 由 workbench layout 消费：桌面 `WorkbenchContent` leftMode="plugins" → leftPanel=PluginsPanel；
  * 移动 `MobileWorkbench` → MobilePluginsOverview 外壳 + PluginsPanel 主体。
  *
- * tab memory：query/二级 tab 提升到此（PluginsPanel 是 section 的 parent，section/tab 切换不
- * unmount）→ 切回 discover 时 useSkillSearch(query) 命中 TanStack 缓存，搜索结果保留；manage
- * 的 useInstalledSkills 切回 refetch（staleTime 0）= "必要项刷新"。装/卸后 server 遍历活跃
- * session 发 /reload-skills，slash catalog 经 WS 广播自动刷新。
+ * tab 层级：一级 Skill/MCP 用强 SegmentedControl（互斥主区），二级 Discover/Manage/Sources 用弱
+ * 文字 tab（TabButton，active primary 色、无容器）——避免两层同款 segment 叠加（非原生移动端做法）。
+ *
+ * tab memory：query/二级 tab/section 提到 jotai atom（见上）→ 切回 discover 时 useSkillSearch(query)
+ * 命中 TanStack 缓存，搜索结果保留；移动端开 skill focus 再返回不丢位置。
  *
  * `onOpenSkill` 依赖注入（仿 GlobalFilesOverview.onOpenFile）：桌面 WorkbenchContent 注入
  * 「开中栏 skill tab + focus」，移动 MobilePluginsOverview 注入「navigate /plugins/skill/$」
@@ -85,10 +106,9 @@ export function PluginsPanel({
   onCardDragStart?: CardDragStartHandler;
 }) {
   const { t } = useT();
-  const [section, setSection] = useState<PluginSection>("skill");
-  // 提升至 parent：section/tab 切换 PluginsPanel 不 unmount，query 保留 → 搜索结果 memory。
-  const [skillTab, setSkillTab] = useState<SkillTab>("discover");
-  const [query, setQuery] = useState("");
+  const [section, setSection] = useAtom(pluginsSectionAtom);
+  const [skillTab, setSkillTab] = useAtom(pluginsSkillTabAtom);
+  const [query, setQuery] = useAtom(pluginsQueryAtom);
   const agent: SkillAgent = DEFAULT_SKILL_AGENT;
 
   return (
@@ -106,16 +126,21 @@ export function PluginsPanel({
       </div>
       {section === "skill" ? (
         <>
-          <div className="shrink-0 border-b border-neutral-line/40 bg-surface px-3 py-2">
-            <SegmentedControl
-              ariaLabel={t("plugins.skillTab")}
-              onChange={setSkillTab}
-              options={[
-                { value: "discover", label: t("skills.tabDiscover") },
-                { value: "manage", label: t("skills.tabManage") },
-                { value: "sources", label: t("skills.tabSources") },
-              ]}
-              value={skillTab}
+          <div className="flex shrink-0 items-center gap-1 border-b border-neutral-line/40 bg-surface px-3 py-2">
+            <TabButton
+              active={skillTab === "discover"}
+              label={t("skills.tabDiscover")}
+              onClick={() => setSkillTab("discover")}
+            />
+            <TabButton
+              active={skillTab === "manage"}
+              label={t("skills.tabManage")}
+              onClick={() => setSkillTab("manage")}
+            />
+            <TabButton
+              active={skillTab === "sources"}
+              label={t("skills.tabSources")}
+              onClick={() => setSkillTab("sources")}
             />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-surface-raised max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
@@ -395,12 +420,10 @@ function ManageTab({
               </>
             ),
             meta: status ? (
+              // 有更新行不显徽标——右侧「更新」按钮本身即「有更新」信号，徽标冗余（去重）。
+              // 仅「已最新」（manageable 无更新）与「本地」（不可管理）显徽标。
               status.manageable ? (
-                status.hasUpdate ? (
-                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                    {t("skills.hasUpdate")}
-                  </span>
-                ) : (
+                status.hasUpdate ? null : (
                   <span className="rounded-full bg-on-surface/10 px-2 py-0.5 text-[10px] font-semibold text-on-surface-muted">
                     {t("skills.upToDate")}
                   </span>
@@ -574,20 +597,26 @@ function McpPanel() {
   const servers = useMcpServers("user");
   const addServer = useAddMcpServer("user");
   const removeServer = useRemoveMcpServer("user");
+  const updateServer = useUpdateMcpServer("user");
   const [name, setName] = useState("");
   const [type, setType] = useState<McpServerType>("stdio");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [env, setEnv] = useState("");
   const [url, setUrl] = useState("");
-  // 信任确认：pendingAdd=true 提交新增、pendingRemove=server name 提交移除。
+  // 编辑态：editing 非 null 时表单为「编辑」模式（name 只读、提交调 update）。
+  const [editing, setEditing] = useState<McpServerEntry | null>(null);
+  // 信任确认：pendingAdd=true 提交新增、pendingRemove=server name 提交移除、pendingUpdate=true 提交修改。
   const [pendingAdd, setPendingAdd] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState(false);
 
   const list = servers.data?.servers ?? [];
+  // 编辑模式下 name 锁定为 editing.name（update = remove+add 同名，不允许改名）。
+  const effectiveName = editing ? editing.name : name;
 
   const buildDraft = (): AddMcpServerRequest | null => {
-    const trimmedName = name.trim();
+    const trimmedName = effectiveName.trim();
     if (!trimmedName) return null;
     if (type === "stdio") {
       const trimmedCommand = command.trim();
@@ -614,17 +643,36 @@ function McpPanel() {
     setArgs("");
     setEnv("");
     setUrl("");
+    setEditing(null);
+  };
+
+  /** 进入编辑模式：回填表单字段（name 锁定为 entry.name，只读）。 */
+  const fillForm = (entry: McpServerEntry) => {
+    setEditing(entry);
+    setType(entry.type);
+    setCommand(entry.command ?? "");
+    setArgs(entry.args?.join(" ") ?? "");
+    setEnv(
+      entry.env
+        ? Object.entries(entry.env)
+            .map(([k, v]) => `${k}=${v}`)
+            .join("\n")
+        : "",
+    );
+    setUrl(entry.url ?? "");
+    setName(entry.name);
   };
 
   return (
     <div className="space-y-4">
-      {/* 新增表单 */}
+      {/* 新增/编辑表单（editing 非 null = 编辑模式：name 只读、提交调 update） */}
       <div className="space-y-2 rounded-xl border border-neutral-line/40 bg-surface p-4">
         <ShellInput
           aria-label={t("mcp.name")}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("mcp.name")}
-          value={name}
+          readOnly={!!editing}
+          value={effectiveName}
         />
         <SegmentedControl
           ariaLabel={t("mcp.type")}
@@ -667,16 +715,39 @@ function McpPanel() {
             value={url}
           />
         )}
-        <ActionButton
-          disabled={addServer.isPending || !buildDraft()}
-          onClick={() => setPendingAdd(true)}
-          tone="accent"
-        >
-          {addServer.isPending ? t("mcp.adding") : t("mcp.add")}
-        </ActionButton>
-        {addServer.error ? (
+        <div className="flex gap-2">
+          {editing ? (
+            <ActionButton
+              onClick={() => {
+                resetForm();
+                addServer.reset();
+                updateServer.reset();
+              }}
+            >
+              {t("cancel")}
+            </ActionButton>
+          ) : null}
+          <ActionButton
+            disabled={
+              editing
+                ? updateServer.isPending || !buildDraft()
+                : addServer.isPending || !buildDraft()
+            }
+            onClick={() => (editing ? setPendingUpdate(true) : setPendingAdd(true))}
+            tone="accent"
+          >
+            {editing
+              ? updateServer.isPending
+                ? t("mcp.updating")
+                : t("mcp.save")
+              : addServer.isPending
+                ? t("mcp.adding")
+                : t("mcp.add")}
+          </ActionButton>
+        </div>
+        {(editing ? updateServer.error : addServer.error) ? (
           <p className="rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
-            {addServer.error.message}
+            {(editing ? updateServer.error : addServer.error)?.message}
           </p>
         ) : null}
       </div>
@@ -691,14 +762,19 @@ function McpPanel() {
           {list.map((s) => (
             <ListRow
               actions={
-                <ActionButton
-                  compact
-                  disabled={removeServer.isPending}
-                  onClick={() => setPendingRemove(s.name)}
-                  tone="danger"
-                >
-                  {t("mcp.remove")}
-                </ActionButton>
+                <>
+                  <ActionButton compact onClick={() => fillForm(s)}>
+                    {t("mcp.edit")}
+                  </ActionButton>
+                  <ActionButton
+                    compact
+                    disabled={removeServer.isPending}
+                    onClick={() => setPendingRemove(s.name)}
+                    tone="danger"
+                  >
+                    {t("mcp.remove")}
+                  </ActionButton>
+                </>
               }
               key={s.name}
               meta={
@@ -756,13 +832,36 @@ function McpPanel() {
           }}
         />
       ) : null}
+      {pendingUpdate ? (
+        <McpConfirmDialog
+          busy={updateServer.isPending}
+          error={updateServer.error ? updateServer.error.message : null}
+          kind="update"
+          name={effectiveName.trim()}
+          onCancel={() => {
+            updateServer.reset();
+            setPendingUpdate(false);
+          }}
+          onConfirm={async () => {
+            const draft = buildDraft();
+            if (!draft) return;
+            try {
+              await updateServer.mutateAsync(draft);
+              setPendingUpdate(false);
+              resetForm();
+            } catch {
+              // 失败保留 dialog，error 文案显示，用户可取消或重试。
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
 /**
- * MCP 增/删信任确认（Radix Dialog，对称 InstallConfirmDialog）。外部 MCP 可访问本机资源并
- * 执行命令，增删前必须提示用户确认——与 skill install 同级的第三方引入安全面。失败保留
+ * MCP 增/删/改信任确认（Radix Dialog，对称 InstallConfirmDialog）。外部 MCP 可访问本机资源并
+ * 执行命令，增删改前必须提示用户确认——与 skill install 同级的第三方引入安全面。失败保留
  * dialog，显示 error 文案，不自动关闭（用户可见失败原因、可取消或重试）。
  */
 function McpConfirmDialog({
@@ -773,7 +872,7 @@ function McpConfirmDialog({
   onCancel,
   onConfirm,
 }: {
-  kind: "add" | "remove";
+  kind: "add" | "remove" | "update";
   name: string;
   error: string | null;
   busy: boolean;
@@ -781,7 +880,26 @@ function McpConfirmDialog({
   onConfirm: () => void;
 }) {
   const { t } = useT();
-  const isAdd = kind === "add";
+  const labels = {
+    add: {
+      title: t("mcp.addConfirmTitle"),
+      body: t("mcp.addConfirmBody"),
+      cta: t("mcp.addConfirmCta"),
+      busy: t("mcp.adding"),
+    },
+    remove: {
+      title: t("mcp.removeConfirmTitle"),
+      body: t("mcp.removeConfirmBody"),
+      cta: t("mcp.removeConfirmCta"),
+      busy: t("mcp.removing"),
+    },
+    update: {
+      title: t("mcp.updateConfirmTitle"),
+      body: t("mcp.updateConfirmBody"),
+      cta: t("mcp.updateConfirmCta"),
+      busy: t("mcp.updating"),
+    },
+  }[kind];
   return (
     <Dialog
       onOpenChange={(open) => {
@@ -791,10 +909,10 @@ function McpConfirmDialog({
     >
       <DialogContent className="gap-4 p-5">
         <DialogTitle className="text-base font-semibold text-on-surface">
-          {isAdd ? t("mcp.addConfirmTitle") : t("mcp.removeConfirmTitle")}
+          {labels.title}
         </DialogTitle>
         <DialogDescription className="text-sm text-on-surface-muted">
-          {isAdd ? t("mcp.addConfirmBody") : t("mcp.removeConfirmBody")}
+          {labels.body}
         </DialogDescription>
         <div className="rounded-lg bg-surface-inset px-3 py-2 text-sm">
           <div className="font-semibold text-on-surface">{name}</div>
@@ -807,13 +925,7 @@ function McpConfirmDialog({
             {t("cancel")}
           </ActionButton>
           <ActionButton disabled={busy} onClick={onConfirm} tone="accent">
-            {busy
-              ? isAdd
-                ? t("mcp.adding")
-                : t("mcp.removing")
-              : isAdd
-                ? t("mcp.addConfirmCta")
-                : t("mcp.removeConfirmCta")}
+            {busy ? labels.busy : labels.cta}
           </ActionButton>
         </div>
       </DialogContent>

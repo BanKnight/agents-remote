@@ -562,7 +562,16 @@ export function ListRow({
           </span>
         </span>
         {meta ? <span className="flex shrink-0 items-center gap-1.5">{meta}</span> : null}
-        {actions ? <span className="flex shrink-0 items-center">{actions}</span> : null}
+        {/* actions 容器拦截 click 冒泡：行根是 role="button" 响应 onClick（导航/打开详情），行内
+            操作按钮（卸载/更新/编辑）的 click 不应触发行级 onClick。此前各调用方各自手动
+            stopPropagation 补此洞（file-browser/pages-panel/settings-dialog/git-branch），根因修复
+            收敛到此 primitive 层，所有 ListRow 自动受益。对 DraggableListRow 的 onSelect 激活路径
+            无影响（onSelect 走 window pointerup + inClose=closest("button")，与 click 是不同事件）。 */}
+        {actions ? (
+          <span className="flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
+            {actions}
+          </span>
+        ) : null}
       </span>
     </div>
   );

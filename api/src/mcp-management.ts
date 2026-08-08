@@ -6,6 +6,8 @@ import {
   type McpServerEntry,
   type McpServerType,
   type RemoveMcpServerResponse,
+  type UpdateMcpServerRequest,
+  type UpdateMcpServerResponse,
 } from "@agents-remote/shared";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -220,6 +222,84 @@ export async function removeMcpServer(
   return { ok: true, name };
 }
 
+/**
+ * 读当前 scope 的 server 列表（回滚查旧配置用）。user scope 直读 ~/.claude.json；
+ * project scope 直读 cwd（已 resolve）下的 .mcp.json。复用 readMcpServersFile。
+ */
+async function readScopeServers(
+  scope: McpScope,
+  cwd: string | undefined,
+): Promise<McpServerEntry[]> {
+  const filePath =
+    scope === "user" ? join(homedir(), USER_CONFIG_FILE) : join(cwd ?? "", PROJECT_MCP_FILE);
+  return readMcpServersFile(filePath);
+}
+
+/** McpServerEntry → AddMcpServerRequest（回滚 add 复用 buildAddArgs，字段透传）。 */
+function entryToAddRequest(entry: McpServerEntry): AddMcpServerRequest {
+  const req: AddMcpServerRequest = { name: entry.name, type: entry.type };
+  if (entry.command) req.command = entry.command;
+  if (entry.args) req.args = entry.args;
+  if (entry.env) req.env = entry.env;
+  if (entry.url) req.url = entry.url;
+  return req;
+}
+
+/**
+ * 改 MCP server 配置（name 不变，换 type/command/args/env/url）。`claude mcp` 无 update 子命令，
+ * 实现 = remove(name) + add(name, 新配置)。原子性：add 失败时回滚（把旧配置 add 回去），best-effort
+ * ——回滚失败不掩盖原 add 错误（抛 MCP_UPDATE_FAILED 带 add 阶段信息，前端 invalidate list 后反映
+ * 真实状态：server 已被 remove 删除）。remove 阶段失败直接抛（未动 add，配置未变）。
+ */
+export async function updateMcpServer(
+  req: UpdateMcpServerRequest,
+  scope: McpScope,
+  context: { projectsRoot?: string; projectName?: string },
+): Promise<UpdateMcpServerResponse> {
+  const name = sanitizeMcpName(req.name);
+  const cwd = await resolveProjectCwd(scope, context);
+  // 1. 先读旧配置（回滚用）——在 remove 之前读，remove 后文件已无此条目。
+  const oldList = await readScopeServers(scope, cwd);
+  const oldEntry = oldList.find((s) => s.name === name);
+  // 2. remove 阶段。
+  const rmResult = await runCliTool([CLAUDE_BIN, "mcp", "remove", name, "-s", scope], {
+    cwd,
+    timeoutMs: MCP_CLI_TIMEOUT_MS,
+    makeError: (m) => new McpError("MCP_UPDATE_FAILED", m),
+  });
+  if (rmResult.exitCode !== 0) {
+    throw new McpError("MCP_UPDATE_FAILED", `remove phase: ${trimResult(rmResult)}`);
+  }
+  // 3. add 阶段（同名新配置）。
+  const addResult = await runCliTool(
+    [CLAUDE_BIN, "mcp", "add", ...buildAddArgs(name, req, scope)],
+    {
+      cwd,
+      timeoutMs: MCP_CLI_TIMEOUT_MS,
+      makeError: (m) => new McpError("MCP_UPDATE_FAILED", m),
+    },
+  );
+  if (addResult.exitCode !== 0) {
+    // 回滚：把旧配置加回去（best-effort）。回滚失败不掩盖 add 错误——原 MCP_UPDATE_FAILED 仍抛出。
+    if (oldEntry) {
+      try {
+        await runCliTool(
+          [CLAUDE_BIN, "mcp", "add", ...buildAddArgs(name, entryToAddRequest(oldEntry), scope)],
+          {
+            cwd,
+            timeoutMs: MCP_CLI_TIMEOUT_MS,
+            makeError: (m) => new McpError("MCP_UPDATE_FAILED", m),
+          },
+        );
+      } catch {
+        /* 回滚失败：server 已被 remove 删除且未能恢复，不掩盖 add 阶段错误 */
+      }
+    }
+    throw new McpError("MCP_UPDATE_FAILED", `add phase: ${trimResult(addResult)}`);
+  }
+  return { ok: true, server: entryFromRequest(name, req) };
+}
+
 // ── 路由：/api/mcp/*（user scope）+ /api/projects/{name}/mcp/*（project scope） ──
 
 export type McpManagementDeps = {
@@ -229,7 +309,7 @@ export type McpManagementDeps = {
 
 function matchProjectMcpPath(
   pathname: string,
-): { projectName: string; action: "list" | "add" | "remove" } | undefined {
+): { projectName: string; action: "list" | "add" | "remove" | "update" } | undefined {
   const prefix = "/api/projects/";
   if (!pathname.startsWith(prefix)) return undefined;
   const rest = pathname.slice(prefix.length);
@@ -249,6 +329,7 @@ function matchProjectMcpPath(
   if (tail === "") return { projectName, action: "list" };
   if (tail === "/add") return { projectName, action: "add" };
   if (tail === "/remove") return { projectName, action: "remove" };
+  if (tail === "/update") return { projectName, action: "update" };
   return undefined;
 }
 
@@ -308,6 +389,10 @@ export async function handleMcpRoutes(
     const body = await readJson<{ name: string }>(request);
     return runMcpHandler(() => removeMcpServer(body.name, "user", {}));
   }
+  if (url.pathname === "/api/mcp/update" && isPost) {
+    const body = await readJson<UpdateMcpServerRequest>(request);
+    return runMcpHandler(() => updateMcpServer(body, "user", {}));
+  }
 
   // ── project scope ──
   const match = matchProjectMcpPath(url.pathname);
@@ -328,6 +413,12 @@ export async function handleMcpRoutes(
       const body = await readJson<{ name: string }>(request);
       return runMcpHandler(() =>
         removeMcpServer(body.name, "project", { projectsRoot, projectName: match.projectName }),
+      );
+    }
+    if (match.action === "update" && isPost) {
+      const body = await readJson<UpdateMcpServerRequest>(request);
+      return runMcpHandler(() =>
+        updateMcpServer(body, "project", { projectsRoot, projectName: match.projectName }),
       );
     }
   }

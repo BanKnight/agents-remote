@@ -513,6 +513,10 @@ export type AddMcpServerRequest = {
 };
 export type AddMcpServerResponse = { ok: true; server: McpServerEntry };
 export type RemoveMcpServerResponse = { ok: true; name: string };
+/** MCP server 改配置：name 不变，换 type/command/args/env/url。`claude mcp` 无 update 子命令，
+ * 实现是 remove + add 同名（后端 mcp-management.ts）。请求体复用 AddMcpServerRequest 字段。 */
+export type UpdateMcpServerRequest = AddMcpServerRequest;
+export type UpdateMcpServerResponse = { ok: true; server: McpServerEntry };
 
 // ── Wiki 能力域（per-project `wiki/` markdown 目录）──────────────────
 // wiki = agent 用 wiki_* MCP 工具逐页写的、结构化可浏览的 per-project 知识库（产物）。
@@ -1654,6 +1658,7 @@ export type ApiErrorCode =
   | "MCP_LIST_FAILED"
   | "MCP_ADD_FAILED"
   | "MCP_REMOVE_FAILED"
+  | "MCP_UPDATE_FAILED"
   | "WIKI_SLUG_INVALID";
 
 export type ApiErrorResponse = {
