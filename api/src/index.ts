@@ -44,6 +44,8 @@ import { StateStore } from "./state-store";
 import { handleStateRoutes } from "./state-routes";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
+import { handleSkillUpdateRoutes } from "./skill-update";
+import { handleMcpRoutes } from "./mcp-management";
 import { startMcpHubServer } from "./mcp-hub-server";
 import { canUpgradeWebSocket } from "./ws-auth";
 
@@ -189,6 +191,18 @@ export const createFetchHandler =
       if (skillResponse) {
         return withRefresh(skillResponse);
       }
+      const skillUpdateResponse = await handleSkillUpdateRoutes(request, url, {
+        settingsStore: options.settingsStore,
+        claude2Runtime: options.claude2Runtime,
+      });
+      if (skillUpdateResponse) {
+        return withRefresh(skillUpdateResponse);
+      }
+    }
+
+    const mcpResponse = await handleMcpRoutes(request, url, { projectsRoot: options.projectsRoot });
+    if (mcpResponse) {
+      return withRefresh(mcpResponse);
     }
 
     if (options.stateStore) {

@@ -383,10 +383,17 @@ export type ClaudeRuntimeConfig = {
 export type SkillAgent = "claude-code" | "codex";
 export const SKILL_AGENTS: readonly SkillAgent[] = ["claude-code", "codex"];
 
-// 用户自定义 skill 源（GitHub owner/name）。对应 skills CLI 的 source 语法 owner/repo[@skill]。
+// 用户自定义 skill 源。type 判别来源形态：github=owner/name、git=仓库 URL、local=本地目录。
+// 对应 skills CLI 的 source 语法（owner/repo[@skill] | git URL | 本地路径）。旧数据无 type →
+// settings-store normalizeSkillSources 补 "github"（向后兼容）。
+export type SkillSourceType = "github" | "local" | "git";
 export type SkillSource = {
   id: string;
-  repo: string; // "owner/name"
+  type: SkillSourceType;
+  /** github / git：owner/name 或 git URL。local 源无此字段。 */
+  repo?: string;
+  /** local：绝对路径。github/git 源无此字段。 */
+  path?: string;
   branch?: string;
   label?: string;
 };
@@ -426,10 +433,33 @@ export type InstallSkillRequest = { source: string; skillId: string; agent: Skil
 export type InstallSkillResponse = { ok: true; skill: InstalledSkill };
 export type UninstallSkillRequest = { name: string; agent: SkillAgent };
 export type UninstallSkillResponse = { ok: true };
-export type AddSkillSourceRequest = { repo: string; branch?: string; label?: string };
+export type AddSkillSourceRequest = {
+  type?: SkillSourceType; // 缺省 "github"
+  repo?: string; // github / git
+  path?: string; // local
+  branch?: string;
+  label?: string;
+};
 
 // 源管理响应（/api/skills/sources CRUD）。源在 settings 与 skill 路由两处共用。
 export type SkillSourcesResponse = { sources: SkillSource[] };
+
+// ── skill 更新检测（第三方技能版本比对）──────────────────────────
+// 机制：读 ~/.agents/.skill-lock.json 的 skillFolderHash（40 位 git tree SHA）+ sourceUrl →
+// GitHub Trees API 取远端最新 tree SHA 比对。手写 skill（无锁记录）/ local 源 → manageable=false。
+// 用户手动触发（不自动批量，避 GitHub API 限速），详见 docs/research/plugin-extension-system.md。
+export type SkillUpdateStatus = {
+  name: string;
+  /** 是否有新版本（仅 manageable=true 时有意义）。 */
+  hasUpdate: boolean;
+  /** 是否纳入版本管理（有锁记录 + 可比对的 git 源）。无锁记录的手写 skill → false。 */
+  manageable: boolean;
+  sourceType?: string;
+  sourceUrl?: string;
+};
+export type CheckSkillUpdatesResponse = { updates: SkillUpdateStatus[] };
+export type UpdateSkillRequest = { name: string; agent: SkillAgent };
+export type UpdateSkillResponse = { ok: true; name: string };
 
 // ── MCP hub ───────────────────────────────────────────────
 // MCP hub = 给 agent 装 tool/能力 的统一层（与 skill-market 装「知识/行为」互补）。
@@ -446,6 +476,43 @@ export type McpProjectConfig = {
   // capability → enabled。缺失的 capability 视为未开。
   capabilities?: Partial<Record<McpCapability, boolean>>;
 };
+
+// ── MCP 管理（外部 server，wrap claude mcp）──────────────────────────
+// 外部 MCP server = 用户配的第三方工具（stdio/sse/http），与内部 ar-hub（上面的能力开关）并存：
+// ar-hub 走 spawn 时 --mcp-config 注入；外部 server 由 claude mcp 原生读写 ~/.claude.json
+// （user scope）/ 项目 .mcp.json（project scope），agent 实例由 CLI 原生合并生效。
+// agents-remote 只管「配置」（增删改 + 直读结构化文件），不解析 claude mcp list 文本。
+// 详见 docs/research/plugin-extension-system.md。
+export type McpServerType = "stdio" | "sse" | "http";
+export type McpScope = "user" | "project";
+
+/** 单个外部 MCP server（对应 ~/.claude.json / .mcp.json 的 mcpServers 条目）。 */
+export type McpServerEntry = {
+  name: string;
+  type: McpServerType;
+  /** stdio：可执行命令。sse/http 无。 */
+  command?: string;
+  /** stdio：命令参数。 */
+  args?: string[];
+  /** stdio：环境变量。 */
+  env?: Record<string, string>;
+  /** sse/http：server URL。 */
+  url?: string;
+  /** http：自定义请求头（读保真；首版 add 表单不设，直接 CLI 配的 server 仍能完整列出）。 */
+  headers?: Record<string, string>;
+};
+
+export type ListMcpServersResponse = { servers: McpServerEntry[] };
+export type AddMcpServerRequest = {
+  name: string;
+  type: McpServerType;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+};
+export type AddMcpServerResponse = { ok: true; server: McpServerEntry };
+export type RemoveMcpServerResponse = { ok: true; name: string };
 
 // ── Wiki 能力域（per-project `wiki/` markdown 目录）──────────────────
 // wiki = agent 用 wiki_* MCP 工具逐页写的、结构化可浏览的 per-project 知识库（产物）。
@@ -1579,9 +1646,14 @@ export type ApiErrorCode =
   | "SKILL_PREVIEW_FAILED"
   | "SKILL_LIST_FAILED"
   | "SKILL_SOURCE_INVALID"
+  | "SKILL_UPDATE_CHECK_FAILED"
+  | "SKILL_UPDATE_FAILED"
   | "MCP_HUB_START_FAILED"
   | "MCP_INJECT_UNSUPPORTED"
   | "MCP_CONFIG_INVALID"
+  | "MCP_LIST_FAILED"
+  | "MCP_ADD_FAILED"
+  | "MCP_REMOVE_FAILED"
   | "WIKI_SLUG_INVALID";
 
 export type ApiErrorResponse = {

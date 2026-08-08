@@ -288,6 +288,33 @@ test("SettingsStore.read 迁移 v1 文件（schemaVersion=1）→ 合成 v3 不�
   expect(Array.isArray(raw.providers)).toBe(true);
 });
 
+test("SettingsStore.read normalizeSkillSources：legacy 补 github、local/git 保真、无 id 丢弃", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  await writeFile(
+    path,
+    stringifyYaml({
+      // 无 schemaVersion → 走 normalizeSettings（非 v1 迁移）。
+      runtimes: { claude: { presets: [], activePresetId: "", effort: "high" } },
+      skills: {
+        sources: [
+          { id: "legacy", repo: "foo/bar" }, // 旧数据无 type → github
+          { id: "local-src", type: "local", path: "/abs/path", label: "My" },
+          { id: "git-src", type: "git", repo: "org/repo", branch: "dev" },
+          { noId: true }, // 无 id → 丢弃
+        ],
+      },
+    }),
+  );
+
+  const state = await new SettingsStore({ path }).read();
+  expect(state.skills.sources).toEqual([
+    { id: "legacy", type: "github", repo: "foo/bar" },
+    { id: "local-src", type: "local", path: "/abs/path", label: "My" },
+    { id: "git-src", type: "git", repo: "org/repo", branch: "dev" },
+  ]);
+});
+
 test("SettingsStore 迁移后 write 持久化为 v3（v1 磁盘被覆盖，providers 顶层消失）", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");

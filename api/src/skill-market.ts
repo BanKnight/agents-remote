@@ -16,6 +16,7 @@ import {
   type SkillMarketSearchResponse,
   type SkillPreviewResponse,
   type SkillSource,
+  type SkillSourceType,
   type SkillSourcesResponse,
   type UninstallSkillRequest,
   type UninstallSkillResponse,
@@ -60,14 +61,14 @@ function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function trimErr(result: SkillsCommandResult): string {
+export function trimErr(result: SkillsCommandResult): string {
   return (result.stderr.trim() || result.stdout.trim() || `exit code ${result.exitCode}`).slice(
     0,
     500,
   );
 }
 
-function parseAgent(value: string | null): SkillAgent {
+export function parseAgent(value: string | null): SkillAgent {
   const a = (value ?? "claude-code").trim();
   return (SKILL_AGENTS as readonly string[]).includes(a) ? (a as SkillAgent) : "claude-code";
 }
@@ -215,8 +216,8 @@ export async function listInstalledSkills(
 
 // ── 执行层：`npx skills add/remove`（只信 exit code，事后 list --json 回读真相） ──
 
-/** 装/卸成功后，遍历活跃 claude2 session 发 /reload-skills，触发现有 catalog 刷新闭环。 */
-async function reloadAliveSessions(deps: SkillMarketDeps): Promise<void> {
+/** 装/卸/更新成功后，遍历活跃 claude2 session 发 /reload-skills，触发现有 catalog 刷新闭环。 */
+export async function reloadAliveSessions(deps: SkillMarketDeps): Promise<void> {
   const runtime = deps.claude2Runtime;
   if (!runtime) return;
   let keys: Set<string>;
@@ -328,15 +329,27 @@ export async function addSkillSource(
   req: AddSkillSourceRequest,
   deps: SkillMarketDeps,
 ): Promise<AddSkillSourceResponse> {
-  const repo = sanitizeSource(req.repo);
-  const branch = typeof req.branch === "string" ? req.branch.trim() : "";
+  const type: SkillSourceType = req.type === "local" || req.type === "git" ? req.type : "github";
   const label = typeof req.label === "string" ? req.label.trim() : "";
-  const source: SkillSource = {
-    id: randomUUID(),
-    repo,
-    ...(branch ? { branch } : {}),
-    ...(label ? { label } : {}),
-  };
+  const branch = typeof req.branch === "string" ? req.branch.trim() : "";
+  const source: SkillSource = { id: randomUUID(), type };
+  if (type === "local") {
+    // local 源：绝对路径 + realpath 规范化 + 存在性校验（拒不存在的路径，防存入无效源）。
+    const path = sanitizeSource(typeof req.path === "string" ? req.path : "", "local");
+    try {
+      source.path = await realpath(path);
+    } catch (error) {
+      throw new SkillError(
+        "SKILL_SOURCE_INVALID",
+        `Local source path not accessible: ${path}: ${errMsg(error)}`,
+      );
+    }
+  } else {
+    // github / git：owner/name shorthand。
+    source.repo = sanitizeSource(typeof req.repo === "string" ? req.repo : "", type);
+    if (branch) source.branch = branch;
+  }
+  if (label) source.label = label;
   await deps.settingsStore.update((s) => ({
     ...s,
     skills: { sources: [...(s.skills?.sources ?? []), source] },

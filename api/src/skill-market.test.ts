@@ -292,6 +292,36 @@ describe("skill sources CRUD", () => {
       code: "SKILL_SOURCE_INVALID",
     });
   });
+
+  it("adds local source with realpath, rejects missing path", async () => {
+    const localDir = join(storeDir, "local-src");
+    await mkdir(localDir, { recursive: true });
+    const deps = { settingsStore: store };
+    const { source } = await addSkillSource(
+      { type: "local", path: localDir, label: "My Skills" },
+      deps,
+    );
+    expect(source.type).toBe("local");
+    expect(source.path).toBe(localDir);
+    expect(source.label).toBe("My Skills");
+    expect(await listSkillSources(deps)).toHaveLength(1);
+
+    // 相对路径 / 不存在路径 → SKILL_SOURCE_INVALID
+    await expect(
+      addSkillSource({ type: "local", path: "relative/dir" }, deps),
+    ).rejects.toMatchObject({ code: "SKILL_SOURCE_INVALID" });
+    await expect(
+      addSkillSource({ type: "local", path: join(storeDir, "nope") }, deps),
+    ).rejects.toMatchObject({ code: "SKILL_SOURCE_INVALID" });
+  });
+
+  it("adds git source with branch", async () => {
+    const deps = { settingsStore: store };
+    const { source } = await addSkillSource({ type: "git", repo: "org/repo", branch: "dev" }, deps);
+    expect(source.type).toBe("git");
+    expect(source.repo).toBe("org/repo");
+    expect(source.branch).toBe("dev");
+  });
 });
 
 describe("handleSkillRoutes", () => {

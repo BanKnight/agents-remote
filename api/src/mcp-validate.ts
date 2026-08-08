@@ -1,11 +1,16 @@
 import type { ApiErrorCode, McpCapability, McpProjectConfig } from "@agents-remote/shared";
 
 /**
- * MCP hub 相关错误码子集。
+ * MCP 相关错误码子集（hub 能力开关 + 外部 server 管理）。
  */
 export type McpErrorCode = Extract<
   ApiErrorCode,
-  "MCP_HUB_START_FAILED" | "MCP_INJECT_UNSUPPORTED" | "MCP_CONFIG_INVALID"
+  | "MCP_HUB_START_FAILED"
+  | "MCP_INJECT_UNSUPPORTED"
+  | "MCP_CONFIG_INVALID"
+  | "MCP_LIST_FAILED"
+  | "MCP_ADD_FAILED"
+  | "MCP_REMOVE_FAILED"
 >;
 
 /** MCP hub 操作统一错误类型，携带 ApiErrorCode 供 HTTP 层翻译。 */
