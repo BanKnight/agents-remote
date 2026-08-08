@@ -24,10 +24,11 @@ import {
 } from "../api/client";
 import { useT } from "../i18n";
 import type { TranslationKey } from "../i18n/types";
-import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
+import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 import {
   canSendToSession,
   inputDrawerCollapsedAtom,
+  isConnectionFresh,
   normalizeSessionTextInput,
   sessionQuickKeys,
   consoleSections,
@@ -85,6 +86,10 @@ export function SessionDetail({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
+  // 最近一次收到 pong 的时刻（onopen 初始化）。心跳 tick 与发送瞬间用它判定 half-open：
+  // readyState 仍 OPEN 但 Date.now()-lastPong 超过 PONG_TIMEOUT_MS 即对端不回 pong、连接
+  // 静默断开（iOS Safari/中间层掐断不发 close 帧）。心跳 tick 主动 close 自愈，发送瞬间兜底。
+  const lastPongRef = useRef(0);
   const [reconnectKey, setReconnectKey] = useState(0);
   const reconnectAttemptsRef = useRef(0);
   const [connectionStatus, setConnectionStatus] = useState<StreamConnectionStatus>("connecting");
@@ -231,12 +236,19 @@ export function SessionDetail({
       socket.onopen = () => {
         if (!socketIsCurrent()) return;
         reconnectAttemptsRef.current = 0;
+        lastPongRef.current = Date.now();
         setConnectionStatus("connected");
         // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
         // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
         heartbeatTimer = setInterval(() => {
           if (socket?.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "ping" }));
+            // half-open 检测:ping 已发但若距上次 pong 超时,说明对端不回 pong(连接静默断,
+            // readyState 仍 OPEN 但数据进黑洞)。主动 close → onclose → scheduleReconnect 自愈。
+            if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
+              console.log("[session-detail] pong timeout — closing half-open socket");
+              socket.close();
+            }
           }
         }, HEARTBEAT_INTERVAL_MS);
       };
@@ -258,6 +270,12 @@ export function SessionDetail({
         }
 
         if (message.type === "status") {
+          // 心跳 ping 的响应是 status:connected（session-stream 服务端对 {type:"ping"}
+          // 回此，非独立 pong）。它既是初始连接信号也是周期存活信号——更新 lastPong，
+          // 供心跳 tick 与发送瞬间的 half-open 兜底（isConnectionFresh）。
+          if (message.status === "connected") {
+            lastPongRef.current = Date.now();
+          }
           if (isTransportStatus(message.status)) {
             setConnectionStatus(message.status);
           } else {
@@ -339,14 +357,22 @@ export function SessionDetail({
   }, [projectName, reconnectKey, sessionId, sessionType]);
 
   // 回前台立即重连:移动端切后台一段时间后 WS 被中间层超时断开,回前台时若仍走
-  // 指数退避要等 1-10s。监听 visibilitychange,回前台且连接已断时立即 bump
-  // reconnectKey(触发主 effect 重跑:重置 attempt + setTimeout(connect,0)),跳过退避。
+  // 指数退避要等 1-10s。监听 visibilitychange,回前台且连接已断(或 half-open:readyState
+  // 仍 OPEN 但 pong 早过期,iOS 后台未立即释放 WS 的场景)时立即 bump reconnectKey(触发主
+  // effect 重跑:重置 attempt + setTimeout(connect,0)),跳过退避。half-open 判定用 lastPong
+  // (readyState 骗人时的兜底,非 UI 猜测);重连本身没错,iOS 后台挂起会释放 WS → 短后台也
+  // 重连,代价由 overlay 降级(轻量提示,不挡已渲染内容)承接。诊断日志供真机核对真实因果。
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (
-        document.visibilityState === "visible" &&
-        socketRef.current?.readyState !== WebSocket.OPEN
-      ) {
+      if (document.visibilityState !== "visible") return;
+      const readyState = socketRef.current?.readyState;
+      const pongAge = Date.now() - lastPongRef.current;
+      const shouldReconnect =
+        readyState !== WebSocket.OPEN || !isConnectionFresh(lastPongRef.current);
+      console.log(
+        `[session-detail] visibility visible: readyState=${readyState} pongAge=${pongAge}ms reconnect=${shouldReconnect}`,
+      );
+      if (shouldReconnect) {
         setReconnectKey((value) => value + 1);
       }
     };
@@ -355,11 +381,20 @@ export function SessionDetail({
   }, []);
 
   const sendMessage = (message: SessionStreamClientMessage) => {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) {
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    // half-open 兜底：readyState 仍 OPEN 但距上次存活信号超时 → 中间层静默掐断未发
+    // close 帧，send 会进黑洞。主动 close → onclose → scheduleReconnect 自愈，返回失败
+    // 让调用方（handleInputSubmit 已被 canSend 门控；此处兜底边界情况）。
+    if (!isConnectionFresh(lastPongRef.current)) {
+      console.log("[session-detail] send blocked: half-open detected, closing to reconnect");
+      socket.close();
       return false;
     }
 
-    socketRef.current.send(JSON.stringify(message));
+    socket.send(JSON.stringify(message));
     return true;
   };
 
@@ -513,6 +548,7 @@ export function SessionDetail({
         <SessionInputDrawer
           canSend={canSend}
           collapsed={inputDrawerCollapsed}
+          connectionStatus={connectionStatus}
           input={input}
           isDesktop={isDesktop}
           quickKeys={quickKeys}
@@ -976,7 +1012,14 @@ function XtermOutput({
   }, [connectionStatus, onResize]);
 
   const { t } = useT();
-  const overlay = terminalOverlay(connectionStatus, t);
+  // 重连 overlay 降级:connecting 时若终端已有内容(非首次加载),不挡已渲染内容——
+  // 强制 animated:false 走轻量 pill(顶部小标签),对齐 claude2 静默重连。首次加载(无内容)
+  // 维持全屏 spinner。terminalDataRef 是 ref,但本处随 connectionStatus 重渲染时读取实时正确。
+  const baseOverlay = terminalOverlay(connectionStatus, t);
+  const overlay =
+    baseOverlay?.animated && terminalDataRef.current !== null
+      ? { ...baseOverlay, animated: false }
+      : baseOverlay;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1447,6 +1490,7 @@ const terminalOverlay = (
 type SessionInputDrawerProps = {
   canSend: boolean;
   collapsed: boolean;
+  connectionStatus: StreamConnectionStatus;
   input: string;
   isDesktop: boolean;
   quickKeys: SessionQuickKey[];
@@ -1460,6 +1504,7 @@ type SessionInputDrawerProps = {
 function SessionInputDrawer({
   canSend,
   collapsed,
+  connectionStatus,
   input,
   isDesktop,
   quickKeys,
@@ -1525,7 +1570,11 @@ function SessionInputDrawer({
               disabled={!canSend}
               id="session-input"
               placeholder={
-                sessionType === "agent" ? t("session.typePrompt") : t("session.typeShell")
+                connectionStatus === "connected"
+                  ? sessionType === "agent"
+                    ? t("session.typePrompt")
+                    : t("session.typeShell")
+                  : t("session.disconnected")
               }
               rows={rows}
               spellCheck={false}

@@ -3,6 +3,7 @@ import {
   canSendToSession,
   consoleSections,
   defaultConsoleSection,
+  isConnectionFresh,
   normalizeSessionTextInput,
   projectConsolePath,
   sectionForId,
@@ -71,4 +72,15 @@ test("canSendToSession only allows connected non-closing streams", () => {
   expect(canSendToSession("disconnected")).toBe(false);
   expect(canSendToSession("ended")).toBe(false);
   expect(canSendToSession("error")).toBe(false);
+});
+
+test("isConnectionFresh: fresh within PONG_TIMEOUT_MS, stale beyond, never-connected is stale", () => {
+  const now = 1_000_000;
+  // 收到 pong 后窗口内 → 新鲜。
+  expect(isConnectionFresh(now - 10_000, now)).toBe(true);
+  expect(isConnectionFresh(now - 49_999, now)).toBe(true);
+  // 超过窗口（half-open：readyState 仍 OPEN 但对端不回 pong）→ 不新鲜。
+  expect(isConnectionFresh(now - 50_001, now)).toBe(false);
+  // 从未收到 pong（连接未建立 / lastPongAt=0）→ 不新鲜。
+  expect(isConnectionFresh(0, now)).toBe(false);
 });

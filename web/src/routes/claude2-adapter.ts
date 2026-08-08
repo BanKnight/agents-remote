@@ -9,6 +9,7 @@ import type {
 } from "@agents-remote/shared";
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claude2StreamUrl } from "../api/client";
+import { isConnectionFresh } from "./console-model";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 import {
@@ -3863,6 +3864,9 @@ export function useClaude2Session(
     [rawMessages],
   );
   const [loading, setLoading] = useState(true);
+  // 直接连接状态（onopen/onclose 驱动，不用 lastPong 推断）——供 composer 门控：
+  // 断开时禁用输入 + 提示「重连中」，消息留框不丢，避免 half-open 黑洞期间静默发送。
+  const [connected, setConnected] = useState(false);
   // Pending live_end: set synchronously when the live batch ends, consumed by the
   // deferred-loading effect to flip loading=false on the next render.
   const liveEndPendingRef = useRef(false);
@@ -4024,35 +4028,54 @@ export function useClaude2Session(
 
   const activeSessionKeyRef = useRef<string | null>(null);
 
-  const sendToSocket = useCallback((data: unknown) => {
-    const socket = socketRef.current;
-    if (!socket) return;
-    const raw = JSON.stringify(data);
-    if (isSocketLoggingEnabled()) {
-      console.log(
-        `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
-      );
-    }
-    if (socket.readyState === WebSocket.OPEN) {
-      try {
-        socket.send(raw);
-      } catch (err) {
-        console.error("[claude2-adapter] ws send error", err);
+  const sendToSocket = useCallback(
+    (data: unknown) => {
+      const socket = socketRef.current;
+      if (!socket) {
+        // socketRef 已清（onclose 后/重连退避期）——不再静默丢，主动 bump 重连。
+        scheduleReconnect();
+        return;
       }
-    } else if (socket.readyState === WebSocket.CONNECTING) {
-      socket.addEventListener(
-        "open",
-        () => {
-          try {
-            socket.send(raw);
-          } catch (err) {
-            console.error("[claude2-adapter] ws deferred send error", err);
+      const raw = JSON.stringify(data);
+      if (isSocketLoggingEnabled()) {
+        console.log(
+          `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
+        );
+      }
+      if (socket.readyState === WebSocket.OPEN) {
+        // half-open 兜底：readyState 仍 OPEN 但距上次 pong 超时 → 中间层（cloudflare/NAT）
+        // 静默掐断未发 close 帧，send 会进黑洞。主动 close 触发 onclose → scheduleReconnect。
+        if (!isConnectionFresh(lastPongRef.current)) {
+          if (isSocketLoggingEnabled()) {
+            console.log("[claude2-adapter] ws send: half-open detected, closing to reconnect");
           }
-        },
-        { once: true },
-      );
-    }
-  }, []);
+          socket.close();
+          return;
+        }
+        try {
+          socket.send(raw);
+        } catch (err) {
+          console.error("[claude2-adapter] ws send error", err);
+        }
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener(
+          "open",
+          () => {
+            try {
+              socket.send(raw);
+            } catch (err) {
+              console.error("[claude2-adapter] ws deferred send error", err);
+            }
+          },
+          { once: true },
+        );
+      } else {
+        // CLOSED/CLOSING——旧实现静默丢消息，现主动 bump 重连，避免消息无声消失。
+        scheduleReconnect();
+      }
+    },
+    [scheduleReconnect],
+  );
 
   const bridge = useMemo<Claude2Bridge>(
     () => ({
@@ -4202,6 +4225,7 @@ export function useClaude2Session(
     socket.onopen = () => {
       console.log("[claude2-adapter] ws open");
       lastPongRef.current = Date.now();
+      setConnected(true);
       // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
       // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
       heartbeatTimer = setInterval(() => {
@@ -4429,6 +4453,7 @@ export function useClaude2Session(
     socket.onclose = () => {
       if (!cancelled) {
         socketRef.current = null;
+        setConnected(false);
         setLoading(true);
         scheduleReconnect();
       }
@@ -4573,6 +4598,7 @@ export function useClaude2Session(
     aiTitle,
     agentName,
     loading,
+    connected,
     liveThinkingTokens,
     tasks,
     mcpServers,

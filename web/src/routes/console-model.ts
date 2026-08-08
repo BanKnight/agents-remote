@@ -7,6 +7,7 @@ import type {
   TransportStatus,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
+import { PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 
 export type ConsoleSection = "agents" | "git" | "files";
 
@@ -118,6 +119,18 @@ export function normalizeSessionTextInput(input: string) {
 
 export function canSendToSession(status: SessionSendStatus, isClosing = false) {
   return status === "connected" && !isClosing;
+}
+
+/**
+ * 距上次 pong 是否仍在窗口内（连接存活判定，half-open 兜底）。
+ *
+ * readyState === OPEN 不等于连接活着——iOS Safari / 中间层（cloudflare/NAT）静默掐断
+ * 时不发 close 帧，readyState 仍 OPEN 但 send 进黑洞。lastPongAt 是唯一可靠信号：
+ * 心跳 25s 发 ping、服务端回 pong，超过 PONG_TIMEOUT_MS（2 倍周期）无 pong 即判死。
+ * lastPongAt = 0 表示从未收到 pong（连接未建立），不新鲜。
+ */
+export function isConnectionFresh(lastPongAt: number, now = Date.now()) {
+  return lastPongAt > 0 && now - lastPongAt <= PONG_TIMEOUT_MS;
 }
 
 export function projectSummary(project: Project) {

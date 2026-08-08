@@ -406,6 +406,7 @@ export function Claude2Chat({
     aiTitle,
     agentName,
     loading,
+    connected,
     liveThinkingTokens,
     tasks,
     retryInfo,
@@ -614,6 +615,7 @@ export function Claude2Chat({
                               sessionId={sessionId}
                               compactStatus={compactStatus}
                               pendingInteraction={pendingInteraction}
+                              connected={connected}
                               onCancel={storeAdapter.onCancel}
                               currentEffort={session?.effort}
                               onSelectEffort={onSelectEffort}
@@ -3639,6 +3641,7 @@ function ComposerWithInterrupt({
   sessionId,
   compactStatus,
   pendingInteraction,
+  connected,
   onCancel,
   currentEffort,
   onSelectEffort,
@@ -3655,6 +3658,7 @@ function ComposerWithInterrupt({
   sessionId: string;
   compactStatus: CompactStatus;
   pendingInteraction: boolean;
+  connected: boolean;
   onCancel?: () => void;
   currentEffort?: EffortLevel;
   onSelectEffort: (effort: EffortLevel) => void;
@@ -3746,15 +3750,19 @@ function ComposerWithInterrupt({
     return triggerCtx.subscribeAria(update);
   }, [triggerCtx]);
 
-  // Composer 状态优先级：blocked（等待用户动作）> running > idle。
+  // Composer 状态优先级：blocked（等待用户动作）> disconnected（断开）> running > idle。
+  // disconnected 由 onopen/onclose 直接驱动（不猜 lastPong）：断开时禁用输入 + 提示「重连中」，
+  // 消息留框不丢——避免 half-open / 重连退避期发送静默进黑洞或被丢。
   const blocked = pendingInteraction;
+  const disconnected = !connected;
+  const inputDisabled = blocked || disconnected;
   const running = isRunning || compactStatus === "compacting";
   const hasInput = !isEmpty;
   // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（移动模式有
   // 输入）不显示 Stop。Send 仅移动模式（hasInput && isMobileComposer）；Stop 在 Send 未占用时显示
   //（running && !showSend）——桌面无 Send，running 总显示 Stop（零回归）。底行恒渲染 → textarea
-  // 上方位置稳定不跳变。
-  const showSend = hasInput && isMobileComposer && !blocked;
+  // 上方位置稳定不跳变。断开时 Send 隐藏（不可发送），Stop 仍可（interrupt 走 sendToSocket 自带兜底）。
+  const showSend = hasInput && isMobileComposer && !inputDisabled;
   const showStop = running && !!onCancel && !blocked && !showSend;
 
   return (
@@ -3762,9 +3770,13 @@ function ComposerWithInterrupt({
       <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
         <ComposerPrimitive.Input
           placeholder={
-            blocked ? t("claude2.blockedByPendingAction") : t("claude2.inputPlaceholder")
+            blocked
+              ? t("claude2.blockedByPendingAction")
+              : disconnected
+                ? t("claude2.disconnected")
+                : t("claude2.inputPlaceholder")
           }
-          disabled={blocked}
+          disabled={inputDisabled}
           // 触屏设备：Enter 换行、卡片内显式 Send 才发送（库自带 (pointer: coarse) 检测处理）。
           // 桌面（非触屏）：由下方 onKeyDown 显式接管——库 handleKeyPress 在 external-store 下
           // isRunning 会把 Enter 丢成换行、且在 "enter" 模式把 Cmd+Enter 当发送，均不符合预期。
@@ -3778,7 +3790,7 @@ function ComposerWithInterrupt({
             // 先把 Enter 让给这些路径（换行/自行处理）：
             if (e.nativeEvent.isComposing) return; // IME 组字中 → 默认换行/确认
             if (slashOpenRef.current) return; // slash 菜单打开 → popover 提交高亮项
-            if (blocked) return; // 等待用户动作 → 已 disabled
+            if (inputDisabled) return; // 等待用户动作 / 断开 → 已 disabled
             // 移动模式（触屏+窄屏）：交库 unstable_insertNewlineOnTouchEnter（Enter 换行）+ 卡片内显式 Send。
             if (isMobileComposer) return;
             // 桌面：显式决策。Shift+Enter（通用）/ Cmd+Enter（Mac）换行，其余 Enter 发送。
