@@ -250,7 +250,7 @@ export function useWorkbenchNavigate() {
     search?: {
       rightTab?: WorkbenchInspectionTab;
       tab?: WorkbenchMiddleTab;
-      leftMode?: "auto" | "files" | "skills";
+      leftMode?: "auto" | "files" | "plugins";
     },
   ) => {
     if (scope.kind === "global") {
@@ -283,14 +283,14 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
   gitCompare?: string;
-  leftMode?: "auto" | "files" | "skills";
+  leftMode?: "auto" | "files" | "plugins";
 } {
   const result: {
     rightTab?: WorkbenchInspectionTab;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
-    leftMode?: "auto" | "files" | "skills";
+    leftMode?: "auto" | "files" | "plugins";
   } = {};
   if (
     search.rightTab === "files" ||
@@ -317,7 +317,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   if (typeof search.gitCompare === "string" && search.gitCompare.length > 0) {
     result.gitCompare = search.gitCompare;
   }
-  if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "skills") {
+  if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "plugins") {
     result.leftMode = search.leftMode;
   }
   return result;
@@ -350,7 +350,7 @@ export type WorkbenchRouteContext = {
    * "files"、`/projects` 强制 "auto"；中栏 tab focus（`/files/file/$`、`/projects/session/$id`）
    * 继承透传值——中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
    */
-  leftMode?: "auto" | "files" | "skills";
+  leftMode?: "auto" | "files" | "plugins";
   rightTab?: WorkbenchInspectionTab;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
@@ -384,13 +384,14 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       // 全局文件总览（review 收口）：scope=global + leftMode 强制 "files"（放 ...s 后，左栏
       // GlobalFilesOverview）。无 focusId（文件树整页，点文件 → /files/file/$ 开 file tab focus）。
       return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "files" };
-    case "/skills":
-      // 全局技能市场（对标 /files，一级页面）：scope=global + leftMode 强制 "skills"（左栏
-      // SkillsPanel / 移动 MobileSkillsOverview）。无 focusId（技能管理整页，装/卸在左栏内完成）。
-      return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "skills" };
-    case "/skills/skill/$": {
+    case "/plugins":
+      // 全局插件市场（对标 /files，一级页面）：scope=global + leftMode 强制 "plugins"（左栏
+      // PluginsPanel / 移动 MobilePluginsOverview）。无 focusId（插件管理整页，skill 装/卸 + MCP
+      // 增删在左栏内完成）。
+      return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "plugins" };
+    case "/plugins/skill/$": {
       // 全局 skill 详情 tab focus（对标 /files/file/$，同构）：_splat = skill name。scope=global；
-      // leftMode **不强制**，继承 ...s 透传值——从 /skills 进来透传 skills 保技能管理左栏
+      // leftMode **不强制**，继承 ...s 透传值——从 /plugins 进来透传 plugins 保插件管理左栏
       //（中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。focusId=`skill_${name}`（与 tabIdOf 一致）。
       const skillName = p._splat ? decodeURIComponent(p._splat) : "";
       return {
@@ -540,7 +541,7 @@ export type GitPanelRef = {
 
 /**
  * skill 详情面板引用（对标 FilePanelRef）。name = skill 名（如 `"tdd"`）——Manage tab 点已装
- * skill 行开/激活中栏 skill tab，只读预览本地 SKILL.md。不带 agent 字段：当前 SkillsPanel 固定
+ * skill 行开/激活中栏 skill tab，只读预览本地 SKILL.md。不带 agent 字段：当前 PluginsPanel 固定
  * 单 agent，渲染层用 `DEFAULT_SKILL_AGENT`（"claude-code"），tabId=`skill_${name}` 足够去重；
  * 未来支持 codex 同名 skill 再扩展（YAGNI）。
  */

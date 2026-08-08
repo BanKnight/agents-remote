@@ -57,11 +57,17 @@ import type {
   UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
+  AddMcpServerRequest,
+  AddMcpServerResponse,
   AddSkillSourceRequest,
   AddSkillSourceResponse,
+  CheckSkillUpdatesResponse,
   InstallSkillRequest,
   InstallSkillResponse,
   InstalledSkillsResponse,
+  ListMcpServersResponse,
+  McpScope,
+  RemoveMcpServerResponse,
   RemoveSkillSourceResponse,
   SkillAgent,
   SkillMarketSearchResponse,
@@ -69,6 +75,8 @@ import type {
   SkillSourcesResponse,
   UninstallSkillRequest,
   UninstallSkillResponse,
+  UpdateSkillRequest,
+  UpdateSkillResponse,
   WikiIndexResponse,
   WikiPage,
 } from "@agents-remote/shared";
@@ -741,6 +749,69 @@ export async function addSkillSource(req: AddSkillSourceRequest): Promise<AddSki
 export async function removeSkillSource(id: string): Promise<RemoveSkillSourceResponse> {
   return fetchJson(`/api/skills/sources?id=${encodeURIComponent(id)}`, "api.skillListFailed", {
     method: "DELETE",
+  });
+}
+
+// skill 更新检测/执行（第三方技能版本比对：读 .skill-lock.json hash vs GitHub Trees API）。
+// 用户手动触发（useCheckSkillUpdates 手动 refetch），不自动批量（避 GitHub API 限速）。
+export async function checkSkillUpdates(agent: SkillAgent): Promise<CheckSkillUpdatesResponse> {
+  return fetchJson(
+    `/api/skills/updates?agent=${encodeURIComponent(agent)}`,
+    "api.skillUpdateCheckFailed",
+  );
+}
+
+export async function updateSkill(req: UpdateSkillRequest): Promise<UpdateSkillResponse> {
+  return fetchJson("/api/skills/update", "api.skillUpdateFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+// ── MCP（外部 server 管理：user scope ~/.claude.json / project scope .mcp.json）──
+// agent 实例由 CLI 原生合并生效，这里只管配置。project scope 走 /api/projects/{name}/mcp。
+
+export async function listMcpServers(
+  scope: McpScope,
+  projectName?: string,
+): Promise<ListMcpServersResponse> {
+  const path =
+    scope === "project" && projectName
+      ? `/api/projects/${encodeURIComponent(projectName)}/mcp`
+      : "/api/mcp";
+  return fetchJson(path, "api.mcpListFailed");
+}
+
+export async function addMcpServer(
+  req: AddMcpServerRequest,
+  scope: McpScope,
+  projectName?: string,
+): Promise<AddMcpServerResponse> {
+  const path =
+    scope === "project" && projectName
+      ? `/api/projects/${encodeURIComponent(projectName)}/mcp/add`
+      : "/api/mcp/add";
+  return fetchJson(path, "api.mcpAddFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function removeMcpServer(
+  name: string,
+  scope: McpScope,
+  projectName?: string,
+): Promise<RemoveMcpServerResponse> {
+  const path =
+    scope === "project" && projectName
+      ? `/api/projects/${encodeURIComponent(projectName)}/mcp/remove`
+      : "/api/mcp/remove";
+  return fetchJson(path, "api.mcpRemoveFailed", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+    headers: { "content-type": "application/json" },
   });
 }
 

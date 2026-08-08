@@ -10,7 +10,7 @@ import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
-import { MobileSkillsOverview, SkillTabPreview } from "../../routes/SkillsRoute";
+import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
 import {
   findTabRefLeaf,
   type WorkbenchMobileFocusTab,
@@ -59,11 +59,11 @@ type MobileWorkbenchProps = {
   focusId?: string;
   /**
    * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端 `scope=global` 下 leftMode 有意义
-   *——leftMode="files"（/files 全局文件总览）→ MobileFilesOverview；leftMode="skills"（/skills 技能市场）
-   * → MobileSkillsOverview；leftMode="auto" → MobileGlobalOverview。project scope 无视 leftMode 走
+   *——leftMode="files"（/files 全局文件总览）→ MobileFilesOverview；leftMode="plugins"（/plugins 插件市场）
+   * → MobilePluginsOverview；leftMode="auto" → MobileGlobalOverview。project scope 无视 leftMode 走
    * MobileProjectOverview。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
    */
-  leftMode?: "auto" | "files" | "skills";
+  leftMode?: "auto" | "files" | "plugins";
 };
 
 /**
@@ -94,8 +94,8 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
         className={`group relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
-        {scope.kind === "global" && leftMode === "skills" ? (
-          <MobileSkillsOverview />
+        {scope.kind === "global" && leftMode === "plugins" ? (
+          <MobilePluginsOverview />
         ) : scope.kind === "global" && leftMode === "files" ? (
           <MobileFilesOverview />
         ) : scope.kind === "global" ? (
@@ -198,22 +198,22 @@ function MobileFileFocus({ path }: { path: string }) {
 }
 
 /**
- * 移动端 skill 聚焦浮窗（对标 MobileFileFocus，设计 §6 决策 3 同款范式）：`/skills/skill/$name`
- * URL 在移动端用此组件打开。单行 header（◄ 返回 /skills + skill name + ✕）+ SkillTabPreview
- * 只读 SKILL.md 预览（详情只读，区别于 FileTabPreview 可编辑）。返回 / ✕ = navigate 回 `/skills`
- * 技能管理列表（对标 MobileFileFocus 回文件树）。复用 MobileTabHeader 保持同款 header 结构。
+ * 移动端 skill 聚焦浮窗（对标 MobileFileFocus，设计 §6 决策 3 同款范式）：`/plugins/skill/$name`
+ * URL 在移动端用此组件打开。单行 header（◄ 返回 /plugins + skill name + ✕）+ SkillTabPreview
+ * 只读 SKILL.md 预览（详情只读，区别于 FileTabPreview 可编辑）。返回 / ✕ = navigate 回 `/plugins`
+ * 插件管理列表（对标 MobileFileFocus 回文件树）。复用 MobileTabHeader 保持同款 header 结构。
  */
 function MobileSkillFocus({ name }: { name: string }) {
   const { t } = useT();
   const navigate = useNavigate();
   const back = () => {
-    void navigate({ to: "/skills" });
+    void navigate({ to: "/plugins" });
   };
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <MobileTabHeader
         activeTabId="skill"
-        back={{ ariaLabelKey: "skills.backToSkills", onClick: back }}
+        back={{ ariaLabelKey: "plugins.backToPlugins", onClick: back }}
         onTabSelect={() => {
           /* skill focus 单 tab，无切换 */
         }}

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SkillAgent } from "@agents-remote/shared";
 import {
   addSkillSource,
+  checkSkillUpdates,
   installSkill,
   listInstalledSkills,
   listSkillSources,
@@ -9,10 +10,12 @@ import {
   removeSkillSource,
   searchSkills,
   uninstallSkill,
+  updateSkill,
 } from "../api/client";
 
 const SKILLS_KEY = ["skills"] as const;
 const SKILL_SOURCES_KEY = ["skill-sources"] as const;
+const SKILL_UPDATES_KEY = ["skill-updates"] as const;
 const SEARCH_MIN_CHARS = 2;
 /** skills list/preview 缓存新鲜期：npx skills spawn 11-17s，列表只在装/卸时变（mutation invalidate）。 */
 const SKILLS_STALE_MS = 60_000;
@@ -92,6 +95,30 @@ export function useRemoveSkillSource() {
     mutationFn: (id: string) => removeSkillSource(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: SKILL_SOURCES_KEY });
+    },
+  });
+}
+
+// 第三方技能更新检测：GitHub Trees API 比对锁文件 hash，逐 repo 限速 → 用户手动
+// 「检查更新」触发（enabled:false + refetch()），不自动批量（避 60 req/h 限速）。
+export function useCheckSkillUpdates(agent: SkillAgent) {
+  return useQuery({
+    queryKey: [...SKILL_UPDATES_KEY, agent] as const,
+    queryFn: () => checkSkillUpdates(agent),
+    enabled: false,
+    staleTime: SKILLS_STALE_MS,
+  });
+}
+
+// update 服务端走 npx skills update + reloadAliveSessions（/reload-skills → skill_catalog_changed
+// 广播，无需这里手动 invalidate catalog）。这里刷新「已装列表 + 更新检测结果」。
+export function useUpdateSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: updateSkill,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: SKILLS_KEY });
+      void qc.invalidateQueries({ queryKey: SKILL_UPDATES_KEY });
     },
   });
 }

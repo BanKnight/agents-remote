@@ -13,7 +13,7 @@ import { ShellMobileBottomNavigation, ShellMobileNavItemContent } from "./shell-
  *
  * active 跟随当前 URL pathname：[项目] = `/` 或 `/projects`（含 global scope index 与
  * project scope `/projects/$key`，同属项目导航语义）；[文件] = `/files`（rootBrowse 根目录
- * 浏览，决策 24）；[技能] = `/skills`（全局 skill 市场页）；[设置] = `/settings`。聚焦态（`/projects/$key/session/$id`、
+ * 浏览，决策 24）；[插件] = `/plugins`（全局插件页：skill + mcp）；[设置] = `/settings`。聚焦态（`/projects/$key/session/$id`、
  * `/projects/session/$id`）不渲染本组件（§7：单实例聚焦时一级 tab 让位给输入区）——
  * 由调用方按 focusId 决定。
  *
@@ -25,7 +25,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
   const { pathname } = useLocation();
   const projectsActive = pathname === "/" || pathname.startsWith("/projects");
   const filesActive = pathname === "/files";
-  const skillsActive = pathname === "/skills";
+  const pluginsActive = pathname === "/plugins";
   const settingsActive = pathname === "/settings";
 
   return (
@@ -46,11 +46,11 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           marker={<ShellIcon className="h-3.5 w-3.5" name="file" />}
         />
       </Link>
-      <Link className="min-w-0 cursor-pointer" to="/skills">
+      <Link className="min-w-0 cursor-pointer" to="/plugins">
         <ShellMobileNavItemContent
-          active={skillsActive}
+          active={pluginsActive}
           interactive
-          label={t("nav.skills")}
+          label={t("nav.plugins")}
           marker={<ShellIcon className="h-3.5 w-3.5" name="skills-nav" />}
         />
       </Link>

@@ -65,7 +65,7 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
-import { SkillTabPreview } from "../../routes/SkillsRoute";
+import { SkillTabPreview } from "../../routes/PluginsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";

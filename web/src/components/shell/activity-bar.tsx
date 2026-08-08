@@ -29,7 +29,7 @@ export function activityBarButtonClasses(active: boolean): string {
 }
 
 type ActivityBarItem = {
-  id: "projects" | "files" | "skills";
+  id: "projects" | "files" | "plugins";
   icon: "project" | "file" | "skills-nav";
   label: TranslationKey;
   onSelect: () => void;
@@ -50,14 +50,14 @@ export function ActivityBar() {
   const { t } = useT();
   const navigate = useNavigate();
   // active 跟随左栏实际模式（leftMode，URL search 派生，非 pathname）：[项目] = project scope 或
-  // global + leftMode==="auto"；[文件] = global + leftMode==="files"；[技能] = global + leftMode==="skills"。
+  // global + leftMode==="auto"；[文件] = global + leftMode==="files"；[插件] = global + leftMode==="plugins"。
   // 三者互斥覆盖 global 全部 leftMode + project scope，含中栏 file/git tab focus（leftMode 粘性透传）
   // 时 active 与左栏一致——旧 pathname 严格匹配漏 /files/file/$。
   const { scope, leftMode } = useWorkbenchRouteContext();
   const projectsActive =
     scope.kind === "project" || (scope.kind === "global" && leftMode === "auto");
   const filesActive = scope.kind === "global" && leftMode === "files";
-  const skillsActive = scope.kind === "global" && leftMode === "skills";
+  const pluginsActive = scope.kind === "global" && leftMode === "plugins";
 
   const mainItems: ActivityBarItem[] = [
     {
@@ -75,11 +75,11 @@ export function ActivityBar() {
       active: filesActive,
     },
     {
-      id: "skills",
+      id: "plugins",
       icon: "skills-nav",
-      label: "nav.skills",
-      onSelect: () => void navigate({ to: "/skills" }),
-      active: skillsActive,
+      label: "nav.plugins",
+      onSelect: () => void navigate({ to: "/plugins" }),
+      active: pluginsActive,
     },
   ];
 

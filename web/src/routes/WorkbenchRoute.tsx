@@ -22,7 +22,7 @@ import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
-import { SkillsPanel } from "./SkillsRoute";
+import { PluginsPanel } from "./PluginsRoute";
 import { useT } from "../i18n";
 import {
   type DropZone,
@@ -93,11 +93,11 @@ function WorkbenchContent({
   tab?: WorkbenchMiddleTab;
   // 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化）：project scope 恒走
   // ProjectLeftPanel（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview
-  //（全局 rootBrowse），leftMode="skills" → SkillsPanel（技能市场），leftMode="auto" →
+  //（全局 rootBrowse），leftMode="plugins" → PluginsPanel（插件管理：skill + mcp），leftMode="auto" →
   // ProjectLeftPanel(global overview=GlobalProjectsOverview)。leftMode 是 URL search 维度
   //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
   // 强制，中栏 tab focus 透传不改（VSCode 式）。
-  leftMode?: "auto" | "files" | "skills";
+  leftMode?: "auto" | "files" | "plugins";
 }) {
   const { t } = useT();
   const isDesktop = useIsDesktopViewport();
@@ -284,7 +284,7 @@ function WorkbenchContent({
       // 与 onRightTabChange/onTabChange 同模式：传完整 {tab,rightTab,leftMode}（URL 原始值）。
       // navigateWorkbench 整体替换 search 对象，不传则会清空 tab/rightTab/leftMode ——点中栏
       // tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
-      // leftMode 粘性透传（files/skills 写，非 auto）：中栏 tab 切换不改左栏模式（VSCode 式）。
+      // leftMode 粘性透传（files/plugins 写，非 auto）：中栏 tab 切换不改左栏模式（VSCode 式）。
       void navigateWorkbench(navScope, ref.sessionId, {
         rightTab,
         tab: tabFromUrl,
@@ -431,13 +431,13 @@ function WorkbenchContent({
     },
     [update, navigateToGitCompareFile],
   );
-  // skill tab focus URL（对标 /files/file/$，skill 为第 4 种 WorkbenchPanelRef kind）：/skills/skill/$
-  // splat 捕获 skill name。leftMode 继承 ?leftMode 透传（从 /skills 进来=skills 保技能管理左栏，
+  // skill tab focus URL（对标 /files/file/$，skill 为第 4 种 WorkbenchPanelRef kind）：/plugins/skill/$
+  // splat 捕获 skill name。leftMode 继承 ?leftMode 透传（从 /plugins 进来=plugins 保插件管理左栏，
   // 中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。
   const navigateToSkill = useCallback(
     (name: string) => {
       void navigate({
-        to: "/skills/skill/$",
+        to: "/plugins/skill/$",
         params: { _splat: name },
         search: {
           rightTab,
@@ -513,7 +513,7 @@ function WorkbenchContent({
         return;
       }
       if (active.kind === "skill") {
-        // skill URL 固定 global（/skills/skill/$）；仅当前已是 global 才导航，否则保 project scope。
+        // skill URL 固定 global（/plugins/skill/$）；仅当前已是 global 才导航，否则保 project scope。
         if (scope.kind === "global") void navigateToSkill(active.name);
         else void navigateWorkbench(scope, undefined, search);
       }
@@ -711,8 +711,8 @@ function WorkbenchContent({
         scope={scope}
         tab={tab}
       />
-    ) : leftMode === "skills" ? (
-      <SkillsPanel onCardDragStart={onCardDragStart} onOpenSkill={onOpenSkill} />
+    ) : leftMode === "plugins" ? (
+      <PluginsPanel onCardDragStart={onCardDragStart} onOpenSkill={onOpenSkill} />
     ) : (
       <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
     );
@@ -723,8 +723,8 @@ function WorkbenchContent({
       leftPanelTitle={
         scope.kind === "project" ? (
           <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
-        ) : leftMode === "skills" ? (
-          t("nav.skills")
+        ) : leftMode === "plugins" ? (
+          t("nav.plugins")
         ) : leftMode === "files" ? (
           t("nav.files")
         ) : (

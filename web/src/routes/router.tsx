@@ -126,25 +126,25 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import("./SettingsRoute"), "SettingsRoute"),
 });
 
-// /skills — 全局 skill 市场/包管理一级页（对标 cc-switch）。workbench layout 子（同 /files）：
-// 桌面左栏渲染 SkillsPanel（leftMode="skills"），移动渲染 MobileSkillsOverview（无返回 header）。
+// /plugins — 全局插件（skill + mcp）一级页（对标 cc-switch）。workbench layout 子（同 /files）：
+// 桌面左栏渲染 PluginsPanel（leftMode="plugins"），移动渲染 MobilePluginsOverview（无返回 header）。
 // 子路由不设 component——layout 已渲染全部内容，与 /files 等其它 layout 子一致（仅 URL 匹配 +
-// validateSearch）。装/卸后 server 遍历活跃 session 发 /reload-skills → catalog 自动刷新
+// validateSearch）。skill 装/卸/更新后 server 遍历活跃 session 发 /reload-skills → catalog 自动刷新
 //（见 api/src/skill-market.ts reloadAliveSessions）。
-const skillsRoute = createRoute({
+const pluginsRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
-  path: "/skills",
+  path: "/plugins",
   validateSearch: validateWorkbenchSearch,
 });
 
-// 全局 skill 详情 tab focus（对标 /files/file/$，同构）：/skills/skill/$ splat 捕获 skill name。
+// 全局 skill 详情 tab focus（对标 /files/file/$，同构）：/plugins/skill/$ splat 捕获 skill name。
 // layout 解析 _splat 为 focusId=`skill_${name}`（useWorkbenchRouteContext，与 tabIdOf 一致）；
-// leftMode 继承 ?leftMode 透传值（从 /skills 进来=skills 保技能管理左栏，中栏 tab 切换不改左栏）。
+// leftMode 继承 ?leftMode 透传值（从 /plugins 进来=plugins 保插件管理左栏，中栏 tab 切换不改左栏）。
 // 子路由不设 component——layout 渲染（桌面中栏 skill tab / 移动 MobileSkillFocus 主体），与其它
 // focus 子路由一致。
-const skillsSkillFocusRoute = createRoute({
+const pluginsSkillFocusRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
-  path: "/skills/skill/$",
+  path: "/plugins/skill/$",
   validateSearch: validateWorkbenchSearch,
 });
 
@@ -205,6 +205,34 @@ const terminalSessionDetailRedirect = createRoute({
   },
 });
 
+// /skills → /plugins 旧路由兼容（退役期，无并行）：深链/书签不破。redirect-only，无 component。
+// search 迁移：旧 `?leftMode=skills` → `plugins`（新白名单不认 skills，不转则回退 auto 丢左栏意图）；
+// 其余 search（tab/rightTab 等）经 redirect 默认合并保留。
+const skillsRedirect = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/skills",
+  beforeLoad: ({ search }) => {
+    const s = search as { leftMode?: unknown };
+    throw redirect({
+      to: "/plugins",
+      search: s.leftMode === "skills" ? { leftMode: "plugins" } : undefined,
+    });
+  },
+});
+
+const skillsSkillFocusRedirect = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/skills/skill/$",
+  beforeLoad: ({ params, search }) => {
+    const s = search as { leftMode?: unknown };
+    throw redirect({
+      to: "/plugins/skill/$",
+      params: { _splat: params._splat },
+      search: s.leftMode === "skills" ? { leftMode: "plugins" } : undefined,
+    });
+  },
+});
+
 const workbenchScopeRedirect = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workbench/$scope",
@@ -243,13 +271,15 @@ const routeTree = rootRoute.addChildren([
     globalFocusRoute,
     globalFileFocusRoute,
     filesRoute,
-    skillsRoute,
-    skillsSkillFocusRoute,
+    pluginsRoute,
+    pluginsSkillFocusRoute,
   ]),
   settingsRoute,
   agentSessionDetailRedirect,
   claude2SessionDetailRedirect,
   terminalSessionDetailRedirect,
+  skillsRedirect,
+  skillsSkillFocusRedirect,
   workbenchScopeRedirect,
   workbenchFocusRedirect,
 ]);

@@ -198,24 +198,24 @@ test("deriveWorkbenchRouteContext: /files 全局文件总览 → scope global + 
   });
 });
 
-test("deriveWorkbenchRouteContext: skill focus /skills/skill/$ → focusId=skill_${name} + leftMode 继承 search（对标 /files/file/$）", () => {
+test("deriveWorkbenchRouteContext: skill focus /plugins/skill/$ → focusId=skill_${name} + leftMode 继承 search（对标 /files/file/$）", () => {
   // _splat = skill name，focusId = skill_${name}（与 tabIdOf 一致）。scope=global。
-  // leftMode 继承 search（从 /skills 进来=skills 保技能管理左栏，中栏 tab 切换不改左栏，VSCode 式）。
-  expect(deriveWorkbenchRouteContext(routeLeaf("/skills/skill/$", { _splat: "tdd" }))).toEqual({
+  // leftMode 继承 search（从 /plugins 进来=plugins 保插件管理左栏，中栏 tab 切换不改左栏，VSCode 式）。
+  expect(deriveWorkbenchRouteContext(routeLeaf("/plugins/skill/$", { _splat: "tdd" }))).toEqual({
     scope: { kind: "global" },
     focusId: "skill_tdd",
   });
   // 空 splat → 无 focus
-  expect(deriveWorkbenchRouteContext(routeLeaf("/skills/skill/$", { _splat: "" }))).toEqual({
+  expect(deriveWorkbenchRouteContext(routeLeaf("/plugins/skill/$", { _splat: "" }))).toEqual({
     scope: { kind: "global" },
     focusId: undefined,
   });
-  // 透传 leftMode=skills（从 /skills 进来）→ leftMode skills（左栏保技能管理）
+  // 透传 leftMode=plugins（从 /plugins 进来）→ leftMode plugins（左栏保插件管理）
   expect(
     deriveWorkbenchRouteContext(
-      routeLeaf("/skills/skill/$", { _splat: "tdd" }, { leftMode: "skills" }),
+      routeLeaf("/plugins/skill/$", { _splat: "tdd" }, { leftMode: "plugins" }),
     ),
-  ).toEqual({ scope: { kind: "global" }, focusId: "skill_tdd", leftMode: "skills" });
+  ).toEqual({ scope: { kind: "global" }, focusId: "skill_tdd", leftMode: "plugins" });
 });
 
 test("splitFilePath: 全路径拆 projectName + 项目相对路径", () => {

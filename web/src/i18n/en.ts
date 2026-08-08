@@ -226,7 +226,7 @@ export const en = {
   "nav.projectWorkspaceAria": "Project workspace navigation",
   "nav.projectMobileAria": "Project mobile workspace navigation",
   "nav.settings": "Settings",
-  "nav.skills": "Skills",
+  "nav.plugins": "Plugins",
 
   // ── Console Sections ─────────────────────────────────────────
   "section.agents": "Agent",
@@ -325,6 +325,11 @@ export const en = {
   "api.skillPreviewFailed": "Failed to load skill preview",
   "api.skillListFailed": "Failed to load installed skills",
   "api.skillSourceInvalid": "Invalid skill source",
+  "api.skillUpdateCheckFailed": "Failed to check skill updates",
+  "api.skillUpdateFailed": "Failed to update skill",
+  "api.mcpListFailed": "Failed to load MCP servers",
+  "api.mcpAddFailed": "Failed to add MCP server",
+  "api.mcpRemoveFailed": "Failed to remove MCP server",
   "api.pinnedSessionsFailed": "Failed to update pinned sessions",
 
   // ── Time ───────────────────────────────────────────────────────
@@ -623,8 +628,13 @@ export const en = {
     "The active preset's base URL, API key, and model mapping apply when newly creating sessions. Already-open sessions are not affected.",
   "settings.activePresetNone": "None (use server env)",
 
+  // Plugins（插件入口：skill + mcp 两层作用域，导航重命名为 /plugins）
+  "plugins.title": "Plugins",
+  "plugins.backToPlugins": "Back to plugins",
+  "plugins.skillTab": "Skills",
+  "plugins.mcpTab": "MCP",
+
   // Skills（市场发现 / 管理 / 来源）
-  "skills.title": "Skills",
   "skills.tabDiscover": "Discover",
   "skills.tabManage": "Manage",
   "skills.tabSources": "Sources",
@@ -639,7 +649,6 @@ export const en = {
   "skills.empty": "No skills found",
   "skills.emptyInstalled": "No installed skills",
   "skills.previewLoading": "Loading skill…",
-  "skills.backToSkills": "Back to skills",
   "skills.installConfirmTitle": "Install skill",
   "skills.installConfirmBody":
     "Skills run with full agent permissions. Only install skills from sources you trust.",
@@ -657,6 +666,39 @@ export const en = {
   "skills.runtime": "Runtime",
   "skills.runtimeClaude": "Claude Code",
   "skills.runtimeCodexSoon": "Codex (coming soon)",
+  "skills.checkUpdates": "Check for updates",
+  "skills.checking": "Checking…",
+  "skills.update": "Update",
+  "skills.updating": "Updating…",
+  "skills.hasUpdate": "Update available",
+  "skills.upToDate": "Up to date",
+  "skills.local": "Local",
+  "skills.bringUnderManagement": "Bring under management",
+
+  // MCP（外部 server 管理：wrap claude mcp 读写 ~/.claude.json / .mcp.json）
+  "mcp.title": "MCP servers",
+  "mcp.empty": "No MCP servers",
+  "mcp.add": "Add server",
+  "mcp.adding": "Adding…",
+  "mcp.remove": "Remove",
+  "mcp.removing": "Removing…",
+  "mcp.name": "Name",
+  "mcp.type": "Type",
+  "mcp.typeStdio": "Stdio",
+  "mcp.typeSse": "SSE",
+  "mcp.typeHttp": "HTTP",
+  "mcp.command": "Command",
+  "mcp.args": "Args",
+  "mcp.env": "Env",
+  "mcp.url": "URL",
+  "mcp.addConfirmTitle": "Add MCP server",
+  "mcp.addConfirmBody":
+    "MCP servers can access local resources and run commands on this machine. Only add servers you trust.",
+  "mcp.addConfirmCta": "Add",
+  "mcp.removeConfirmTitle": "Remove MCP server",
+  "mcp.removeConfirmBody":
+    "The server will be removed from the CLI configuration. Sessions started afterwards will not load it.",
+  "mcp.removeConfirmCta": "Remove",
   "pages.panelAria": "Pages roots",
   "pages.emptyTitle": "No pages roots",
   "pages.emptyDesc": "Map a project directory to a URL path to serve it as a static site.",
