@@ -561,18 +561,11 @@ export const zh: Record<TranslationKey, string> = {
   "settings.back": "返回",
   "settings.section.general": "通用",
   "settings.section.claude": "Claude 运行时",
-  "settings.generalHint": "通用设置项将在后续版本补充。",
   "theme.label": "外观",
   "theme.hint": "选择明亮或暗黑外观，或跟随系统。",
   "theme.system": "跟随系统",
   "theme.light": "明亮",
   "theme.dark": "暗黑",
-  "settings.providers": "API Provider",
-  "settings.providersHint":
-    "管理 API provider 凭证与端点。Claude runtime 使用 Anthropic 协议的 provider；Codex runtime（即将支持）将使用 OpenAI 兼容协议的 provider。",
-  "settings.addProvider": "新增 provider",
-  "settings.editProvider": "编辑 provider",
-  "settings.noProviders": "尚未配置 provider，将回退使用服务进程的环境变量。",
   "settings.label": "名称",
   "settings.labelHint": "用于辨识此 provider 的名称",
   "settings.apiKey": "API key",
@@ -581,17 +574,6 @@ export const zh: Record<TranslationKey, string> = {
   "settings.baseUrlHint":
     "provider 的 API 端点 URL（如 https://api.anthropic.com 或 OpenAI 兼容端点）。",
   "settings.baseUrlRequired": "Base URL 不能为空。",
-  "settings.deleteProvider": "删除 provider",
-  "settings.deleteConfirm": "删除 provider「{{label}}」？使用它的会话将回退到服务进程环境变量。",
-  "settings.runtime": "运行时",
-  "settings.runtimeHint":
-    "按 agent 类型切换；所选配置作为之后新建会话的全局默认值，已打开的会话不受影响。",
-  "settings.runtimeTabClaude": "Claude",
-  "settings.runtimeTabCodex": "Codex",
-  "settings.codexRuntimeUnsupported": "Codex 运行时即将支持",
-  "settings.codexRuntimeUnsupportedHint": "Codex agent 接入后，将在此配置 provider 与模型。",
-  "settings.runtimeProvider": "Provider",
-  "settings.runtimeProviderNone": "无（使用服务进程环境变量）",
   "settings.modelMapping": "Model 映射",
   "settings.modelMappingHint":
     "把每个 tier 映射到具体 model ID（如 claude-opus-4-8）。直接填 tier 名（sonnet）则原样透传。",
@@ -609,11 +591,6 @@ export const zh: Record<TranslationKey, string> = {
   "settings.unsavedChanges": "有未保存的改动",
 
   // ── Settings: 协议与模型发现 ──────────────────────────────────
-  "settings.protocol": "协议",
-  "settings.protocolHint":
-    "决定「查看可用模型」时的请求方式（/v1/models 的 header）。不影响 spawn。",
-  "settings.protocol.anthropic": "Anthropic",
-  "settings.protocol.openaiCompatible": "OpenAI 兼容",
   "settings.testConnection": "测试连接",
   "settings.testConnectionRunning": "测试中…",
   "settings.testConnectionOk": "连接成功，可用 {{count}} 个模型。",
@@ -622,7 +599,6 @@ export const zh: Record<TranslationKey, string> = {
   "settings.modelSelectPlaceholder": "选择模型",
   "settings.modelSelectLoading": "加载模型中…",
   "settings.modelSelectCustom": "（自定义）",
-  "settings.modelSelectFetchError": "无法加载模型，可手动输入。",
   "settings.modelSelectManual": "手动输入模型…",
   "settings.modelSelectBackToList": "从列表选择",
   "settings.modelsDialogTitle": "可用模型（{{count}}）",

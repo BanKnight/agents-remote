@@ -562,18 +562,11 @@ export const en = {
   "settings.back": "Back",
   "settings.section.general": "General",
   "settings.section.claude": "Claude runtime",
-  "settings.generalHint": "General settings will be added in a future release.",
   "theme.label": "Appearance",
   "theme.hint": "Choose light or dark appearance, or follow system.",
   "theme.system": "System",
   "theme.light": "Light",
   "theme.dark": "Dark",
-  "settings.providers": "API Providers",
-  "settings.providersHint":
-    "Manage API provider credentials and endpoints. The Claude runtime uses Anthropic-protocol providers; the Codex runtime (coming soon) will use OpenAI-compatible ones.",
-  "settings.addProvider": "Add provider",
-  "settings.editProvider": "Edit provider",
-  "settings.noProviders": "No providers configured. Server process env is used as fallback.",
   "settings.label": "Name",
   "settings.labelHint": "A name to identify this provider",
   "settings.apiKey": "API key",
@@ -582,19 +575,6 @@ export const en = {
   "settings.baseUrlHint":
     "The provider's API endpoint URL (e.g. https://api.anthropic.com or an OpenAI-compatible endpoint).",
   "settings.baseUrlRequired": "Base URL is required.",
-  "settings.deleteProvider": "Delete provider",
-  "settings.deleteConfirm":
-    'Delete provider "{{label}}"? Sessions using it will fall back to server env.',
-  "settings.runtime": "Runtime",
-  "settings.runtimeHint":
-    "Switch by agent type; the selected config applies as the global default when newly creating sessions. Already-open sessions are not affected.",
-  "settings.runtimeTabClaude": "Claude",
-  "settings.runtimeTabCodex": "Codex",
-  "settings.codexRuntimeUnsupported": "Codex runtime coming soon",
-  "settings.codexRuntimeUnsupportedHint":
-    "Once Codex agent lands, you'll configure its provider and models here.",
-  "settings.runtimeProvider": "Provider",
-  "settings.runtimeProviderNone": "None (use server env)",
   "settings.modelMapping": "Model mapping",
   "settings.modelMappingHint":
     "Map each tier to a model ID (e.g. claude-opus-4-8). A bare tier name passes through unchanged.",
@@ -614,11 +594,6 @@ export const en = {
   "settings.unsavedChanges": "Unsaved changes",
 
   // ── Settings: protocol & model discovery ──────────────────────
-  "settings.protocol": "Protocol",
-  "settings.protocolHint":
-    "Determines how the available-models request is built (/v1/models headers). Does not affect spawning.",
-  "settings.protocol.anthropic": "Anthropic",
-  "settings.protocol.openaiCompatible": "OpenAI-compatible",
   "settings.testConnection": "Test connection",
   "settings.testConnectionRunning": "Testing…",
   "settings.testConnectionOk": "Connected. {{count}} models available.",
@@ -627,7 +602,6 @@ export const en = {
   "settings.modelSelectPlaceholder": "Select a model",
   "settings.modelSelectLoading": "Loading models…",
   "settings.modelSelectCustom": "(custom)",
-  "settings.modelSelectFetchError": "Could not load models. Type manually.",
   "settings.modelSelectManual": "Enter model ID manually…",
   "settings.modelSelectBackToList": "Choose from list",
   "settings.modelsDialogTitle": "Available models ({{count}})",
