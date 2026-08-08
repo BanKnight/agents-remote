@@ -380,6 +380,11 @@ function ManageTab({
       >
         {updates.isFetching ? t("skills.checking") : t("skills.checkUpdates")}
       </ActionButton>
+      {update.error ? (
+        <p className="rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+          {update.error.message}
+        </p>
+      ) : null}
       <ListGroup ariaLabel={t("skills.tabManage")}>
         {skills.map((s) => {
           const status = statusByName.get(s.name);

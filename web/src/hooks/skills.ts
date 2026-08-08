@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SkillAgent } from "@agents-remote/shared";
+import type { SkillAgent, SkillUpdateStatus } from "@agents-remote/shared";
 import {
   addSkillSource,
   checkSkillUpdates,
@@ -111,14 +111,28 @@ export function useCheckSkillUpdates(agent: SkillAgent) {
 }
 
 // update 服务端走 npx skills update + reloadAliveSessions（/reload-skills → skill_catalog_changed
-// 广播，无需这里手动 invalidate catalog）。这里刷新「已装列表 + 更新检测结果」。
+// 广播，无需这里手动 invalidate catalog）。刷新「已装列表」+ 乐观更新「该 skill 的更新检测结果」。
 export function useUpdateSkill() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: updateSkill,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void qc.invalidateQueries({ queryKey: SKILLS_KEY });
-      void qc.invalidateQueries({ queryKey: SKILL_UPDATES_KEY });
+      // updates query 是 enabled:false（手动 refetch 驱动），invalidateQueries 不会触发它重拉，
+      // 旧 hasUpdate:true 残留会导致 UI 仍显「有更新」（用户体感「更新中→又变更新」）。
+      // 乐观把该 skill 的 hasUpdate 置 false：update 成功即本地已是最新，UI 立即反映
+      //（按钮消失/徽标变「已最新」）；用户可再用「检查更新」复核真实远程状态。
+      qc.setQueriesData<{ updates: SkillUpdateStatus[] }>(
+        { queryKey: SKILL_UPDATES_KEY },
+        (old) => {
+          if (!old?.updates) return old;
+          return {
+            updates: old.updates.map((u) =>
+              u.name === variables.name ? { ...u, hasUpdate: false } : u,
+            ),
+          };
+        },
+      );
     },
   });
 }

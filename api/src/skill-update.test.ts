@@ -199,17 +199,11 @@ describe("checkSkillUpdates", () => {
 });
 
 describe("updateSkill", () => {
-  it("runs skills update with global+agent and returns ok", async () => {
+  it("runs skills update with global (no --agent) and returns ok", async () => {
     runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     const res = await updateSkill({ name: "my-skill", agent: "claude-code" }, deps);
-    expect(runSkillsCommand.mock.calls[0][0]).toEqual([
-      "update",
-      "my-skill",
-      "--global",
-      "--agent",
-      "claude-code",
-      "--yes",
-    ]);
+    // update 不带 --agent：skills update --help 不支持 --agent（add 独有），带会被 commander 拒绝。
+    expect(runSkillsCommand.mock.calls[0][0]).toEqual(["update", "my-skill", "--global", "--yes"]);
     expect(res).toEqual({ ok: true, name: "my-skill" });
   });
 

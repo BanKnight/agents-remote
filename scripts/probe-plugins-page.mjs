@@ -4,7 +4,7 @@
 // MCP 增删改（① Edit 回填）。DOM 结构断言（不靠 vision），覆盖单测渲染不到的真实组件接线。
 // 密码自读，不进 agent 上下文、不打印值。web DOM 探针前置过 ar-verify-css 三道闸。
 // 用法：bun scripts/probe-plugins-page.mjs
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
 import { verifyCssFlushed } from "./ar-verify-css.mjs";
 
@@ -77,6 +77,15 @@ async function setupMocks(page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ content: "# tdd\n\nskill preview body" }),
+    }),
+  );
+  // skill update（POST /api/skills/update$）：探针 mock 成功，验证乐观更新（onSuccess 置 hasUpdate=false）。
+  // update$ 精确匹配 POST 端点（不匹配 GET /api/skills/updates，后者以 updates 结尾）。
+  await page.route(new RegExp("/api/skills/update$"), (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, name: "tdd" }),
     }),
   );
   // MCP 列表（GET /api/mcp）：stdio + http 各一。
@@ -268,6 +277,17 @@ async function login(page) {
     check("本地徽标 (handwritten)", (await page.getByText("Local", { exact: true }).count()) >= 1);
     const bringBtn = page.getByRole("button", { name: "Bring under management", exact: true });
     check("纳入管理按钮 (handwritten)", (await bringBtn.count()) >= 1);
+
+    // 【①乐观更新】点 tdd [Update] → mock 成功 → onSuccess 乐观置 hasUpdate=false → 按钮消失、
+    //   tdd 加入「已最新」。修复「更新中→又变更新」：updates query enabled:false 不自动 refetch，
+    //   必须乐观更新缓存，否则成功后 UI 仍显「有更新」（按钮还在，用户体感更新没生效）。
+    await page.getByRole("button", { name: "Update", exact: true }).first().click();
+    // 乐观反映：Up to date 徽标从 1（cloudflare）→ 2（+tdd）。hasUpdate 残留则停在 1，expect 超时 fail。
+    await expect(page.getByText("Up to date", { exact: true })).toHaveCount(2, { timeout: 5000 });
+    check(
+      "① 乐观更新成功后 [Update] 按钮消失（成功 UI 反映）",
+      (await page.getByRole("button", { name: "Update", exact: true }).count()) === 0,
+    );
 
     // 【⑤】ListRow actions 不冒泡：点「纳入管理」只切 Sources tab，不应冒泡触发行 onClick → navigate skill focus。
     const urlBeforeAction = page.url();

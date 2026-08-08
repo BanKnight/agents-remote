@@ -225,7 +225,10 @@ export async function updateSkill(
   if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
   }
-  const result = await runSkillsCommand(["update", name, "--global", "--agent", agent, "--yes"], {
+  // `skills update` 不支持 --agent（实测 `skills update --help` Update Options 仅 -g/-p/-y；
+  // --agent 是 add 命令独有）。update 按 skill name 更新全局 skill（默认 claude-code 目录），
+  // agent 仅作业务层校验（上方 SKILL_AGENTS）。带 --agent 会被 commander 拒绝 → exitCode≠0 → 更新失败。
+  const result = await runSkillsCommand(["update", name, "--global", "--yes"], {
     timeoutMs: INSTALL_SKILL_TIMEOUT_MS,
     failureCode: "SKILL_UPDATE_FAILED",
   });
