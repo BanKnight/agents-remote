@@ -628,6 +628,10 @@ export const en = {
   "settings.modelSelectLoading": "Loading models…",
   "settings.modelSelectCustom": "(custom)",
   "settings.modelSelectFetchError": "Could not load models. Type manually.",
+  "settings.modelSelectManual": "Enter model ID manually…",
+  "settings.modelSelectBackToList": "Choose from list",
+  "settings.modelsDialogTitle": "Available models ({{count}})",
+  "settings.viewAllModels": "View all {{count}} models",
 
   // ── Settings: presets（决策 4：预设合并进 Claude 运行时段） ─────
   "settings.presets": "Presets",

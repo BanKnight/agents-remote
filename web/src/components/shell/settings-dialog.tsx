@@ -611,6 +611,8 @@ function PresetDialog({
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // 测试连接拉到 >5 模型时「查看全部」弹窗的受控 open。
+  const [modelsOpen, setModelsOpen] = useState(false);
 
   // 模型发现：queryKey 含 presetId + baseUrl + apiKey 签名，凭证变即重拉。编辑态未输内联 key
   // → listPresetModels 回退已保存原 key（原 key 永不出 api 进程，前端只持 masked）。
@@ -768,6 +770,15 @@ function PresetDialog({
                   {modelsQuery.data.models.slice(0, 5).join(" · ")}
                 </p>
               )}
+              {modelsQuery.data?.ok && modelsQuery.data.models.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => setModelsOpen(true)}
+                  className="flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-primary"
+                >
+                  {t("settings.viewAllModels", { count: modelsQuery.data.models.length })}
+                </button>
+              )}
             </div>
           </div>
 
@@ -780,6 +791,58 @@ function PresetDialog({
             <ActionButton tone="accent" onClick={handleSubmit} disabled={saving}>
               {saving ? t("settings.saving") : t("settings.save")}
             </ActionButton>
+          </div>
+        </div>
+      </DialogContent>
+      <ModelsListDialog open={modelsOpen} models={models} onClose={() => setModelsOpen(false)} />
+    </Dialog>
+  );
+}
+
+// 测试连接拉到 >5 模型时展示完整列表的弹窗。受控 open，与 PresetDialog 自身 Dialog
+// 同级嵌套（两个 Portal 都落 body，内层后挂载 DOM 序靠后，同 stacking context 盖上层，
+// Radix 支持嵌套 focus scope，无需动 z-index）。
+function ModelsListDialog({
+  open,
+  models,
+  onClose,
+}: {
+  open: boolean;
+  models: string[];
+  onClose: () => void;
+}) {
+  const { t } = useT();
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <div
+          className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
+          <div className="flex shrink-0 items-center gap-2">
+            <DialogTitle className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
+              {t("settings.modelsDialogTitle", { count: models.length })}
+            </DialogTitle>
+            <button
+              type="button"
+              aria-label={t("session.close")}
+              onClick={onClose}
+              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            >
+              <ShellIcon className="h-4 w-4" name="close" />
+            </button>
+          </div>
+          <DialogDescription className="sr-only">
+            {t("settings.modelsDialogTitle", { count: models.length })}
+          </DialogDescription>
+          <div className="max-h-[55vh] min-h-0 overflow-y-auto pr-1">
+            {models.map((m, index) => (
+              <div
+                key={`${m}-${index}`}
+                className="break-words border-b border-neutral-line/60 py-1.5 font-mono text-xs text-on-surface-soft last:border-b-0"
+              >
+                {m}
+              </div>
+            ))}
           </div>
         </div>
       </DialogContent>
@@ -851,8 +914,12 @@ function ModelTierSelect({
   onChange: (next: string) => void;
 }) {
   const { t } = useT();
+  // 手填模式：用户显式从下拉「手动输入模型…」进入，输入任意模型 ID（列表之外也可）。
+  // 输入即存进 modelMapping[tier]（与降级分支一致）；切回下拉只换渲染形态、不回滚已输入值。
+  const [editing, setEditing] = useState(false);
   const unavailable = !loading && models.length === 0;
   if (unavailable) {
+    // 无模型列表（提供商无 /v1/models 端点或拉取失败）→ 直接手填，无切回需求。
     return (
       <ShellInput
         value={value}
@@ -860,6 +927,26 @@ function ModelTierSelect({
         placeholder={tier}
         aria-label={t(TIER_LABEL[tier])}
       />
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="flex w-full flex-col gap-1">
+        <ShellInput
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={tier}
+          aria-label={t(TIER_LABEL[tier])}
+        />
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-primary"
+        >
+          {t("settings.modelSelectBackToList")}
+        </button>
+      </div>
     );
   }
 
@@ -873,11 +960,16 @@ function ModelTierSelect({
       align="start"
       cancelLabel={t("cancel")}
       trigger={<SelectorTrigger label={triggerLabel} />}
-      items={options.map((m) => ({
-        label: m === value && !fetchedSet.has(m) ? `${m} ${t("settings.modelSelectCustom")}` : m,
-        isActive: m === value,
-        onSelect: () => onChange(m),
-      }))}
+      items={[
+        // 手填入口：列表之外的自定义模型 ID 也能配置。保持纯 label（无 description），
+        // 否则 OptionMenu 的 hasDescription 会让整份移动 sheet 切到 items-start 对齐。
+        { label: t("settings.modelSelectManual"), onSelect: () => setEditing(true) },
+        ...options.map((m) => ({
+          label: m === value && !fetchedSet.has(m) ? `${m} ${t("settings.modelSelectCustom")}` : m,
+          isActive: m === value,
+          onSelect: () => onChange(m),
+        })),
+      ]}
     />
   );
 }

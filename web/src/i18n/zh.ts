@@ -623,6 +623,10 @@ export const zh: Record<TranslationKey, string> = {
   "settings.modelSelectLoading": "加载模型中…",
   "settings.modelSelectCustom": "（自定义）",
   "settings.modelSelectFetchError": "无法加载模型，可手动输入。",
+  "settings.modelSelectManual": "手动输入模型…",
+  "settings.modelSelectBackToList": "从列表选择",
+  "settings.modelsDialogTitle": "可用模型（{{count}}）",
+  "settings.viewAllModels": "查看全部 {{count}} 个模型",
 
   // ── Settings: presets（决策 4：预设合并进 Claude 运行时段） ─────
   "settings.presets": "预设",
