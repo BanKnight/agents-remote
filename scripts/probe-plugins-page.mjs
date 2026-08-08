@@ -79,15 +79,17 @@ async function setupMocks(page) {
       body: JSON.stringify({ content: "# tdd\n\nskill preview body" }),
     }),
   );
-  // skill update（POST /api/skills/update$）：探针 mock 成功，验证乐观更新（onSuccess 置 hasUpdate=false）。
-  // update$ 精确匹配 POST 端点（不匹配 GET /api/skills/updates，后者以 updates 结尾）。
-  await page.route(new RegExp("/api/skills/update$"), (r) =>
-    r.fulfill({
+  // skill update（POST /api/skills/update$）：延迟 9s（>8s 默认超时）模拟 skills update 的 git clone
+  // 慢响应。update 走 API_LONG_TIMEOUT_MS（310s ≥ 服务端 5min）应不被 abort；若退回 8s 默认 →
+  // 9s 前 abort → "fetch is aborted" + 乐观更新不生效。update$ 精确匹配（不匹配 GET /api/skills/updates）。
+  await page.route(new RegExp("/api/skills/update$"), async (r) => {
+    await new Promise((resolve) => setTimeout(resolve, 9000));
+    await r.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ ok: true, name: "tdd" }),
-    }),
-  );
+    });
+  });
   // MCP 列表（GET /api/mcp）：stdio + http 各一。
   await page.route(new RegExp("/api/mcp$"), (r) =>
     r.fulfill({
@@ -282,8 +284,9 @@ async function login(page) {
     //   tdd 加入「已最新」。修复「更新中→又变更新」：updates query enabled:false 不自动 refetch，
     //   必须乐观更新缓存，否则成功后 UI 仍显「有更新」（按钮还在，用户体感更新没生效）。
     await page.getByRole("button", { name: "Update", exact: true }).first().click();
-    // 乐观反映：Up to date 徽标从 1（cloudflare）→ 2（+tdd）。hasUpdate 残留则停在 1，expect 超时 fail。
-    await expect(page.getByText("Up to date", { exact: true })).toHaveCount(2, { timeout: 5000 });
+    // 乐观反映：Up to date 徽标从 1（cloudflare）→ 2（+tdd）。mock 延迟 9s（验证长超时），故 timeout 15s。
+    // 8s 超时 bug → 9s 前 abort → 乐观更新不生效（停在 1）→ expect 超时 fail。
+    await expect(page.getByText("Up to date", { exact: true })).toHaveCount(2, { timeout: 15000 });
     check(
       "① 乐观更新成功后 [Update] 按钮消失（成功 UI 反映）",
       (await page.getByRole("button", { name: "Update", exact: true }).count()) === 0,

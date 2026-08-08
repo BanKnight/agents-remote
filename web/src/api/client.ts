@@ -721,11 +721,17 @@ export async function previewSkill(name: string, agent: SkillAgent): Promise<Ski
 }
 
 export async function installSkill(req: InstallSkillRequest): Promise<InstallSkillResponse> {
-  return fetchJson("/api/skills/install", "api.skillInstallFailed", {
-    method: "POST",
-    body: JSON.stringify(req),
-    headers: { "content-type": "application/json" },
-  });
+  // skills add = git clone（服务端 INSTALL_SKILL_TIMEOUT_MS=5min），同 update 用长超时。
+  return fetchJson(
+    "/api/skills/install",
+    "api.skillInstallFailed",
+    {
+      method: "POST",
+      body: JSON.stringify(req),
+      headers: { "content-type": "application/json" },
+    },
+    API_LONG_TIMEOUT_MS,
+  );
 }
 
 export async function uninstallSkill(req: UninstallSkillRequest): Promise<UninstallSkillResponse> {
@@ -764,11 +770,18 @@ export async function checkSkillUpdates(agent: SkillAgent): Promise<CheckSkillUp
 }
 
 export async function updateSkill(req: UpdateSkillRequest): Promise<UpdateSkillResponse> {
-  return fetchJson("/api/skills/update", "api.skillUpdateFailed", {
-    method: "POST",
-    body: JSON.stringify(req),
-    headers: { "content-type": "application/json" },
-  });
+  // skills update = git clone 重装（服务端 INSTALL_SKILL_TIMEOUT_MS=5min），用长超时避免 8s 默认
+  // abort → "fetch is aborted"。
+  return fetchJson(
+    "/api/skills/update",
+    "api.skillUpdateFailed",
+    {
+      method: "POST",
+      body: JSON.stringify(req),
+      headers: { "content-type": "application/json" },
+    },
+    API_LONG_TIMEOUT_MS,
+  );
 }
 
 // ── MCP（外部 server 管理：user scope ~/.claude.json / project scope .mcp.json）──
@@ -860,17 +873,23 @@ export async function unpinSession(sessionId: string): Promise<PinnedSessionsRes
  * REST JSON 请求默认超时：兜底移动端网络切换 / 隧道断连导致的 fetch 无限挂死（降级为失败 +
  * queryClient retry）。不救"慢"——偶发尖峰 <8s 不触发（救慢靠后端 TTL 降频 + stale-while-revalidate），
  * 只防单请求永久 pending。两处 fetch 各新建 signal（retry 不共享首次剩余时长）。
+ *
+ * 已知慢操作（git clone / npx spawn 分钟级）由调用方显式传 timeoutMs 覆盖默认 8s，见 API_LONG_TIMEOUT_MS。
  */
 const API_REQUEST_TIMEOUT_MS = 8_000;
+// 慢操作专用超时：install/update 走 `npx skills add/update`，git clone 远程仓库可达分钟级；
+// 服务端 INSTALL_SKILL_TIMEOUT_MS=300s，客户端必须 ≥ 否则先 abort → "fetch is aborted"（用户实测报）。
+const API_LONG_TIMEOUT_MS = 310_000;
 
 const fetchJson = async <T>(
   url: string,
   failureKey: TranslationKey,
   init?: RequestInit,
+  timeoutMs: number = API_REQUEST_TIMEOUT_MS,
 ): Promise<T> => {
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (response.status === 401) {
@@ -879,7 +898,7 @@ const fetchJson = async <T>(
     if (refreshed) {
       const retryResponse = await fetch(url, {
         ...init,
-        signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (retryResponse.ok) {
