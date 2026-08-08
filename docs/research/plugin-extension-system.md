@@ -2,7 +2,7 @@
 
 > 调研日期 2026-08-08。目标：把 agents-remote 的扩展能力从「只有 skill、只有全局层」演进为统一的**插件（plugin）入口**——插件 = skill + mcp 两类扩展 × **全局 + 项目**两层作用域。agent 实例消费全局+项目合并结果（CLI 原生合并，不做管理）。
 >
-> 状态：**方案蓝图已对齐**（用户拍板 4 组决策），**实现前需先调研** `claude mcp` 命令行为与 `npx skills` 更新机制（见 §7 待调研）。本文是决策 + 设计蓝图沉淀，承接 [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研）与 [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（MCP hub 定位）。
+> 状态：**方案蓝图已对齐**（用户拍板 7 项决策），**实现前两项调研已闭环**（`claude mcp` 命令行为、`npx skills` 更新机制，见 §实现前调研结论）。下一步可据此出分阶段实现计划。本文是决策 + 设计蓝图沉淀，承接 [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研）与 [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（MCP hub 定位）。
 
 ## TL;DR（结论先行）
 
@@ -105,7 +105,7 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
 - **manage（版本化，D5/D6）**：
   - 每项显示：来源 repo + **「有新版」徽标** + 一键更新按钮（第三方技能）。
   - 手写技能标「本地」，可编辑/删除（D6：通过挂源 local/git 纳入版本追踪）。
-  - 更新检测机制：**待调研**（§7）——倾向自读锁文件 + 源 hash 比对，而非解析 `npx skills check` 输出。
+  - 更新检测机制：读锁文件 git SHA + GitHub Trees API 比对（见 §实现前调研结论）。
 - **sources（源管理扩展，D6）**：GitHub repo + **local 目录 + git 仓库**三类源，统一一套版本/更新机制（`npx skills` 本就支持 local 与 git 两类源类型，见 skill-marketplace.md §3.4）。
 
 ### MCP 子区（新增，D1/D2）
@@ -126,7 +126,54 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
 | 技能更新 API | 版本检测 + 更新动作，第三方 + local/git 源（D5/D6） |
 | 技能源扩展 | sources 支持 local/git 类型（D6） |
 
-## 待调研（实现前必做，影响设计）
+## 实现前调研结论（已闭环）
+
+> **2026-08-08 已实测**：MCP 与 skill 更新两项均已闭环（见下）。`claude mcp` 2.1.212、`npx skills` 1.5.22，本机。
+
+### MCP 实测结论（已闭环）
+
+实测 `claude mcp`（CLI 2.1.212，本机）结论：
+
+| 事实 | 实测 | 设计影响 |
+|------|------|---------|
+| **无 `--json`/`--output`** | `claude mcp list --json` → `error: unknown option '--json'` | ⚠️ UI 数据源不能靠 `list` 文本解析 |
+| **`list` 做 health-check** | `list` 耗时 4.075s；失败 server 标 `✘ Failed to connect`；pending approval 的 `.mcp.json` server 显示 `⏸` | list 慢且含状态，只适合「当前生效+健康」只读视图 |
+| **底层配置结构** | `~/.claude.json` 的 `mcpServers`：`{name: {type, command?, url?, env}}`；project scope 写 `.mcp.json`（同结构） | ✅ **直接读底层文件**是正解（结构化、无网络、秒级） |
+| **project scope 落点** | `claude mcp add --scope project <name> <cmdOrUrl>` 写当前目录 `.mcp.json` | ✅ 项目插件入口管理它 |
+| **user scope 落点** | `--scope user` 写 `~/.claude.json` | ✅ 全局插件入口管理它 |
+| **add/remove 非交互** | 非 TTY 直接执行，exit 0，无 prompt | ✅ 可 wrap（只信 exit code） |
+| **scope 语义** | `local`(默认)/`user`/`project` 三档 | 用 `user` + `project` 两档即可 |
+| **多 server 合并** | `list` 输出合并所有 scope（含 project 的 pending approval 语义） | agent 实例「生效的 MCP」= CLI 原生合并，agents-remote 只管理不合并 |
+| **add-json** | 存在，`--scope` 同 add | 结构化 add 的后备 |
+
+**决策落点（MCP 管理）**：
+- **清单（读）**：直接读 `~/.claude.json`（全局）与项目 `.mcp.json`（项目），结构化、无网络、秒级。**不解析 `claude mcp list` 文本**（无 json、4s+ health-check）。
+- **增删改（写）**：wrap `claude mcp add/remove --scope user|project`（可靠、非交互、处理 OAuth/审批等 CLI 边缘逻辑），只信 exit code + 事后回读文件。
+- **「当前生效」只读视图（可选）**：`claude mcp list`（含 health-check 状态），对齐 CLI 原生合并（user+project）语义。
+- **与 skill 混合路线同构**：管理 wrap 命令、清单自读存储。两个子系统共用同一「wrap + 自读」架构模式。
+
+### `npx skills` 更新机制实测结论
+
+> **2026-08-08 已实测**：更新检测机制已闭环（见下）。`update` 执行未深挖（结论已够支撑设计）。
+
+**`npx skills` 更新机制实测结论**（CLI 1.5.22，本机）：
+
+| 事实 | 实测 | 设计影响 |
+|------|------|---------|
+| **`update` 存在且非交互可驱动** | `npx skills update [names...] -g\|-p -y`（skip scope prompt）；exit code 表成败 | 增删改 wrap 模式可复用，但**更新检测不该 wrap `update`** |
+| **`update` 输出 TUI 文本** | 输出带 ANSI 颜色码（`Updating…` / `✓ All global skills are up to date`），难解析 | ⚠️ **不能解析 `update` 文本判断「有无新版」** |
+| **`skills list --json` 丢失来源** | `source`/`sourceUrl`/`sourceType` 全 `null`（裁剪版输出） | ⚠️ **不能靠 `list --json` 做更新检测**（无来源无 hash） |
+| **锁文件有完整版本/来源** | `~/.agents/.skill-lock.json` v3：`skills[name] = {sourceType, sourceUrl, skillFolderHash, skillPath, installedAt, updatedAt}` | ✅ **更新检测读锁文件** |
+| **`skillFolderHash` = 40 位 git SHA** | 配合 `sourceUrl`（git repo）+ `skillPath`，可直接 GitHub Trees API 比对远端最新 tree SHA | ✅ **无需执行 `update`**，纯比对判「有无新版」 |
+| **手写 skill = 无锁记录** | 本机 19 目录 / 锁文件 16 条，多出的 3 个（`agent-browser`/`context7-mcp`/`find-skills`）无锁记录（非 `npx skills add` 装的） | 锁文件 key = skill 目录名；**有锁记录 = 第三方可更新，无锁记录 = 手写无源** |
+| **手写 skill 挂源（D6）** | `npx skills add` 支持 local（`./path`、绝对路径）+ git 源（skill-marketplace.md §3.4） | 手写 skill 经 `npx skills add <local-dir>` 重装即获得锁记录 → 纳入版本/更新机制 |
+
+**决策落点（skill 更新检测）**：
+- **「有新版」判断**：读锁文件 `skillFolderHash`（git SHA）+ `sourceUrl`/`skillPath` → 调 GitHub Trees API 取远端最新 tree SHA → 比对。**不执行 `npx skills update`**（无副作用、无 blob 限速、可批量并发）。
+- **执行更新**：wrap `npx skills update <name> -g -y`（exit code 判成败），更新后重读锁文件刷新 hash + updatedAt。
+- **手写 skill 可更新（D6）**：引导用户用 `npx skills add <local-dir>`（local 源）或 git repo 重装，使其获得锁记录 → 走同一套 hash 比对更新机制。UI 上手写 skill 标「本地，尚未纳入版本管理」+「纳入管理」按钮。
+- **GitHub API 限速**：未认证 60 req/h，可注入 `GITHUB_TOKEN`/`GH_TOKEN`（skill-marketplace.md §3.7 已记录）。批量检测需并发控制 + token。
+- **与 MCP 同构**：skill 与 MCP 都是「读结构化存储 + wrap 命令执行」混合路线。锁文件 ↔ `~/.claude.json`/`.mcp.json`；`update` ↔ `claude mcp add/remove`；hash 比对 ↔ 读配置。
 
 1. **`claude mcp` 命令行为**（D1 的落地前提）：
    - scope 语义：`local` vs `project` vs `user` 各写哪、`--global`/`--local` 的区别。
@@ -160,7 +207,8 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
   - `web/src/routes/SkillsRoute.tsx`（Skill 三 tab）+ `web/src/components/shell/activity-bar.tsx`（全局 nav）。
   - [skill-marketplace.md](./skill-marketplace.md) §3.4（npx skills 源类型 local/git）、§3.6（锁文件 + 更新）、§8（混合路线落地）、§7（安全边界）。
   - [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（内部 hub 定位 + 外部 MCP = 配置管理者 + 不加 --strict-mcp-config）。
-- **待调研**（§7 两项，实现前必做）。
+- **实测**（2026-08-08，本机）：`claude mcp` 2.1.212 + `npx skills` 1.5.22，见 §实现前调研结论。
+- **待调研**（实现期）：执行信任模型 UI（§开放问题 2）、`/skills`→`/plugins` 路由迁移影响、项目级 skill 更新机制。
 
 ## 承接
 
