@@ -3946,6 +3946,7 @@ export function useClaude2Session(
     setSessionLeafUuid(null);
     setRetryInfo(null);
     setOpusplanActive(undefined);
+    setConnected(false);
     if (retryCountdownRef.current) {
       clearInterval(retryCountdownRef.current);
       retryCountdownRef.current = null;
