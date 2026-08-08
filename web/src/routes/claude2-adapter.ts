@@ -3946,7 +3946,6 @@ export function useClaude2Session(
     setSessionLeafUuid(null);
     setRetryInfo(null);
     setOpusplanActive(undefined);
-    setConnected(false);
     if (retryCountdownRef.current) {
       clearInterval(retryCountdownRef.current);
       retryCountdownRef.current = null;
@@ -4213,6 +4212,12 @@ export function useClaude2Session(
     // Reset on session change or initial mount; reconnect otherwise.
     if (isSessionChange || connectionVersion === 0) {
       resetSessionState();
+      // Connection state belongs to the socket lifecycle (onopen/onclose), not to
+      // resetSessionState — which is ALSO invoked from the onmessage session_init
+      // branch on every (re)connect, after onopen already set connected=true.
+      // Resetting it there would leave connected=false forever while messages
+      // replay. Here (pre-open) it's the correct pre-open baseline.
+      setConnected(false);
     } else {
       setLoading(true);
     }
