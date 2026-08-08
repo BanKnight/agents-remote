@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * 移动端一级底部胶囊导航 项目/文件/设置 全链路（设计 activity-bar-redesign §5/决策 22-25，
- * Phase 4）。移动视口（<lg=1024）下 `/` = [项目] 总览（MobileGlobalOverview），底部三胶囊
- * 切换 [项目]/[文件]/[设置] 一级页面。验证导航结构与各页可达，不依赖运行态 session
- *（[项目] 总览无实例时显空态，header + 三胶囊仍在）。
+ * 移动端一级底部胶囊导航 项目/文件/插件/设置 全链路（设计 activity-bar-redesign §5/决策 22-25，
+ * Phase 4；插件胶囊为插件体系 Phase 2 新增）。移动视口（<lg=1024）下 `/` = [项目] 总览
+ *（MobileGlobalOverview），底部四胶囊切换 [项目]/[文件]/[插件]/[设置] 一级页面。验证导航结构
+ * 与各页可达，不依赖运行态 session（[项目] 总览无实例时显空态，header + 四胶囊仍在）。
  */
 
 const password = process.env.E2E_PASSWORD ?? "secret";
@@ -20,13 +20,16 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Unlock console" }).click();
 });
 
-test("mobile primary nav has three items: projects / files / settings", async ({ page }) => {
-  // 移动 `/` = [项目] 总览，底部胶囊渲染三项。用 nav aria-label 定位底部导航。
+test("mobile primary nav has four items: projects / files / plugins / settings", async ({
+  page,
+}) => {
+  // 移动 `/` = [项目] 总览，底部胶囊渲染四项。用 nav aria-label 定位底部导航。
   const bottomNav = page.getByRole("navigation", { name: /primary|项目|主/i });
   await expect(bottomNav).toBeVisible();
-  // 三项 label（i18n：nav.projects / nav.files / nav.settings）。
+  // 四项 label（i18n：nav.projects / nav.files / nav.plugins / nav.settings）。
   await expect(bottomNav.getByRole("link", { name: /项目|Projects/ })).toBeVisible();
   await expect(bottomNav.getByRole("link", { name: /文件|Files/ })).toBeVisible();
+  await expect(bottomNav.getByRole("link", { name: /插件|Plugins/ })).toBeVisible();
   await expect(bottomNav.getByRole("link", { name: /设置|Settings/ })).toBeVisible();
 });
 
@@ -55,6 +58,14 @@ test("mobile [files] nav opens rootBrowse file tree at /files", async ({ page })
   ).toBeVisible({
     timeout: 10_000,
   });
+});
+
+test("mobile [plugins] nav opens plugins page at /plugins", async ({ page }) => {
+  const bottomNav = page.getByRole("navigation", { name: /primary|项目|主/i });
+  await bottomNav.getByRole("link", { name: /插件|Plugins/ }).click();
+  await expect(page).toHaveURL(/\/plugins$/);
+  // MobilePluginsOverview 渲染（MobilePageHeader title = nav.plugins，用 header 内 text 断言）。
+  await expect(page.locator("header").first()).toContainText(/插件|Plugins/);
 });
 
 test("mobile [settings] nav opens settings page", async ({ page }) => {

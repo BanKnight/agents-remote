@@ -45,6 +45,9 @@ const main = async () => {
 
   const apiPort = await freePort();
   const webPort = await freePort();
+  // MCP hub 默认固定 43013，本地常驻 ar-dev api 时 E2E 第二实例必撞（EADDRINUSE）——
+  // 显式分配自由端口隔离，避免依赖「此刻 43013 恰好空着」。
+  const mcpPort = await freePort();
   const apiUrl = `http://127.0.0.1:${apiPort}`;
   const webUrl = `http://127.0.0.1:${webPort}`;
 
@@ -54,6 +57,7 @@ const main = async () => {
     PROJECTS_ROOT: projectsRoot,
     AGENTS_REMOTE_RUN_DIR: runtimeDir,
     AGENTS_REMOTE_SESSION_PREFIX: "e2e-ar",
+    MCP_PORT: String(mcpPort),
   });
   const web = spawnLogged(
     [
@@ -79,7 +83,8 @@ const main = async () => {
     await waitForUrl(webUrl, "web");
 
     const playwright = Bun.spawn({
-      cmd: ["bun", "x", "playwright", "test"],
+      // 可选透传 spec 路径（如 `bun run scripts/run-e2e.ts mobile-nav.spec.ts`）；不带则跑全量。
+      cmd: ["bun", "x", "playwright", "test", ...(process.argv[2] ? [process.argv[2]] : [])],
       env: {
         ...process.env,
         E2E_BASE_URL: webUrl,
