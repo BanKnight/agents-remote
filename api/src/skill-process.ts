@@ -10,6 +10,8 @@ export {
 } from "./skill-validate";
 import { SkillError, type SkillErrorCode } from "./skill-validate";
 import { runCliTool } from "./cli-process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 /**
  * skills CLI 一次性执行结果。
@@ -22,13 +24,25 @@ export type SkillsCommandResult = {
   stderr: string;
 };
 
-const SKILLS_BIN = "npx";
-const SKILLS_BASE_ARGS = ["-y", "skills@latest"];
+const SKILLS_BIN = "node"; // skills bin 是 .mjs（shebang #!/usr/bin/env node），用 node 直跑
+
+// skills 作 api 本地依赖（省 `npx -y skills@latest` 每次 ~8s 的 registry 往返 + 下载，实测
+// spawn 8.316s → 0.169s）。resolve 包实体路径（Bun 内容寻址 layout hoist 到
+// node_modules/.bun/skills@<ver>/node_modules/skills/），拼 bin/cli.mjs —— 不依赖 cwd / PATH。
+// lazy resolve：首次 runSkillsCommand 调用时解析并缓存，避免模块 import 副作用 + test 场景触发。
+let skillsCliPath: string | undefined;
+function resolveSkillsCli(): string {
+  if (skillsCliPath) return skillsCliPath;
+  const pkg = createRequire(import.meta.url).resolve("skills/package.json");
+  skillsCliPath = join(dirname(pkg), "bin", "cli.mjs");
+  return skillsCliPath;
+}
+
 /** add/update 走 git clone，给足时间（与 vercel-labs/skills 内置 5min 一致）。 */
 export const INSTALL_SKILL_TIMEOUT_MS = 300_000;
 
 /**
- * 非交互 spawn `npx skills`，委托通用 {@link runCliTool}。
+ * 非交互 spawn 本地 skills CLI（`node <resolved>/bin/cli.mjs`），委托通用 {@link runCliTool}。
  *
  * failureCode 由调用方按业务场景传入（install→SKILL_INSTALL_FAILED、list→SKILL_LIST_FAILED…），
  * 任何 spawn/超时/exited 错误统一归到该 code，UI 翻译才能对症。
@@ -38,7 +52,7 @@ export async function runSkillsCommand(
   opts: { timeoutMs?: number; failureCode?: SkillErrorCode } = {},
 ): Promise<SkillsCommandResult> {
   const failureCode = opts.failureCode ?? "SKILL_INSTALL_FAILED";
-  const cmd = [SKILLS_BIN, ...SKILLS_BASE_ARGS, ...args];
+  const cmd = [SKILLS_BIN, resolveSkillsCli(), ...args];
   return runCliTool(cmd, {
     timeoutMs: opts.timeoutMs,
     makeError: (message) => new SkillError(failureCode, message),
