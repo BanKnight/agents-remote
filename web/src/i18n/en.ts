@@ -547,6 +547,8 @@ export const en = {
   "workbench.globalOverviewTitle": "Instances",
   "workbench.globalOverviewEmpty": "No active instances.",
   "workbench.enterProject": "Enter project",
+  "workbench.collapseProjectGroup": "Collapse project group",
+  "workbench.expandProjectGroup": "Expand project group",
   "workbench.pin": "Pin",
   "workbench.pinnedGroup": "Pinned",
   "workbench.unpin": "Unpin",

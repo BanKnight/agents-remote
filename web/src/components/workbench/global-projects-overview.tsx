@@ -15,7 +15,6 @@ import { useConfirm } from "../shell/confirm-dialog";
 import { actionButtonClasses } from "../shell/shell-primitives";
 import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
 import { Dialog, DialogContent } from "../ui/dialog";
-import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { MobileFab } from "../shell/mobile-fab";
 import {
@@ -43,9 +42,9 @@ type GlobalProjectsOverviewProps = {
  * 参数化仅 onFocusInstance / dragAdapter?。
  *
  * 单一融合视图（2026-08-05）：原 grid/grouped 双视图合并为「按项目分段的单列网格」——
- * 项目标题行（2026-08-06 手风琴化 = ▾/▸ 折叠 toggle + 📁 项目名 + › 进项目 + ⋯ 删除）作
- * section header 分割，组内 InstanceGrid plain 连续单列卡片（无圆角 section 边框/bg、无
- * carousel 分页），含空项目只显标题行。ViewSwitcher 下线。
+ * 项目标题行（2026-08-06 手风琴化，2026-08-10 重设计 = ▾ 折叠独立按钮 + 📁 项目名点击进入 +
+ * 行内新建 Claude/Terminal/删除按钮 + › 进项目）作 section header 分割，组内 InstanceGrid
+ * plain 连续单列卡片（无圆角 section 边框/bg、无 carousel 分页），含空项目只显标题行。ViewSwitcher 下线。
  *
  * 外壳（标题、底部 nav）由调用方提供：桌面 WorkbenchShell leftPanelTitle；
  * 移动 MobilePageHeader。
@@ -155,74 +154,56 @@ export function GlobalProjectsOverview({
   );
 }
 
-type ProjectRowActionMenuProps = {
-  /** 桌面右键（useRowContextMenu 的 pointFor/close，GroupedProjectsList 级 per-key）。 */
-  contextMenuPoint: { x: number; y: number } | null;
-  /** 删除项目文案（destructive 项）。 */
-  deleteLabel: string;
+type ProjectRowActionsProps = {
   /** 删除 mutation pending（deleteMutation.isPending，禁用删除项）。 */
   deletePending: boolean;
   onDelete: () => void;
-  onContextMenuClose: () => void;
   projectName: string;
 };
 
 /**
- * 项目标题行 ⋯ 菜单（2026-08-06 续七）：在「删除项目」前置「新建 Claude + 新建 Terminal」——复用
- * `useCreateSession(projectName)` 的完整创建流程（name prompt → 创建 API → navigate detail +
- * invalidate），不需进具体项目即可在总览直接建实例。hook 在组件内调用（`groups.map` 内联调 hook
- * 会破坏 hooks 规则）。空项目行同样渲染（最需要直接建第一个实例）。置顶分组标题行无 ⋯，不经过本组件。
+ * 项目标题行行内操作按钮组（2026-08-10 由 ⋯ ProjectRowActionMenu 展开）：原 ⋯ 菜单项（新建
+ * Claude + 新建 Terminal + 删除）改为 3 个行内 icon 独立按钮，⋯ 触发器与桌面右键随之下线（行内
+ * 已暴露全部操作）。`useCreateSession(projectName)` 是 per-project hook（`groups.map` 内联调
+ * hook 会破坏 hooks 规则），本子组件保持「每项目行一个实例」；promptHolder（创建前 name prompt
+ * Dialog）在此渲染。空项目行同样渲染（最需要直接建第一个实例）。置顶分组标题行无操作按钮，不经过本组件。
  */
-function ProjectRowActionMenu({
-  contextMenuPoint,
-  deleteLabel,
-  deletePending,
-  onDelete,
-  onContextMenuClose,
-  projectName,
-}: ProjectRowActionMenuProps) {
+function ProjectRowActions({ deletePending, onDelete, projectName }: ProjectRowActionsProps) {
   const { t } = useT();
   const { createAgent, createTerminal, isCreating, promptHolder } = useCreateSession(projectName);
   return (
     <>
-      <ActionMenu
-        align="end"
-        cancelLabel={t("cancel")}
-        contextMenuPoint={contextMenuPoint}
-        items={[
-          // 新建组前置（default）——对齐项目里 CreateSessionBar 的 Claude + Terminal 两项。
-          {
-            label: t("workbench.createClaude2"),
-            icon: <ShellIcon name="anthropic" />,
-            onSelect: () => createAgent("claude2"),
-            disabled: isCreating,
-          },
-          {
-            label: t("workbench.createTerminal"),
-            icon: <ShellIcon name="terminal" />,
-            onSelect: createTerminal,
-            disabled: isCreating,
-          },
-          // 删除组后置（destructive 红色，ActionMenu 无分隔线概念，destructive 视觉已区分）。
-          {
-            label: deleteLabel,
-            icon: <ShellIcon name="trash" />,
-            onSelect: onDelete,
-            variant: "destructive",
-            disabled: deletePending,
-          },
-        ]}
-        onContextMenuClose={onContextMenuClose}
-        trigger={
-          <button
-            aria-label={t("session.actions")}
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
-            type="button"
-          >
-            <ShellIcon className="h-4 w-4" name="ellipsis" />
-          </button>
-        }
-      />
+      <button
+        aria-label={t("workbench.createClaude2")}
+        className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50 touch:h-10 touch:w-10"
+        disabled={isCreating}
+        onClick={() => createAgent("claude2")}
+        title={t("workbench.createClaude2")}
+        type="button"
+      >
+        <ShellIcon className="h-4 w-4" name="anthropic" />
+      </button>
+      <button
+        aria-label={t("workbench.createTerminal")}
+        className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50 touch:h-10 touch:w-10"
+        disabled={isCreating}
+        onClick={createTerminal}
+        title={t("workbench.createTerminal")}
+        type="button"
+      >
+        <ShellIcon className="h-4 w-4" name="terminal" />
+      </button>
+      {/* 删除 destructive：静息 muted，hover 转 error（对齐 mobileSheetItemClasses destructive 语义）。 */}
+      <button
+        aria-label={t("project.deleteProject")}
+        className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-error/10 hover:text-error disabled:cursor-not-allowed disabled:opacity-50 touch:h-10 touch:w-10"
+        disabled={deletePending}
+        onClick={onDelete}
+        title={t("project.deleteProject")}
+        type="button"
+      >
+        <ShellIcon className="h-4 w-4" name="trash" />
+      </button>
       {/* 行级 name prompt（useCreateSession 内建，创建会话前弹可选名称）。 */}
       {promptHolder}
     </>
@@ -288,7 +269,6 @@ function GroupedProjectsList({
     [projectNames, candidates],
   );
   const callbacks: GridItemCallbacks = { onClose, onRename, onSelect: onFocus, t };
-  const ctx = useRowContextMenu();
   const [collapsed, setCollapsed] = useAtom(workbenchProjectGroupsCollapsedAtom);
   const toggleProject = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -375,25 +355,23 @@ function GroupedProjectsList({
         const isCollapsed = hasCards && !!collapsed[group.projectName];
         return (
           <section key={group.projectName}>
-            <div
-              className="flex items-center gap-2 rounded-lg bg-surface-raised/30 pl-3 pr-2"
-              onContextMenu={(e) => ctx.openAt(group.projectName, e)}
-            >
+            <div className="flex items-center gap-2 rounded-lg bg-surface-raised/30 pl-3 pr-2">
               {hasCards ? (
-                // 折叠 toggle：▾/▸ + 📁 项目名，tap 折叠/展开（热区 min-h-11 ≥44px）。
+                // 折叠独立按钮：▾/▸，折叠/展开唯一入口（2026-08-10 由整行 toggle 拆出）——点行
+                // 主体不再折叠、改进入项目；chevron ▾ 下 / ▸ 右，touch:h-10 w-10 ≥40px。
                 <button
                   aria-expanded={!isCollapsed}
-                  className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
+                  aria-label={t(
+                    isCollapsed ? "workbench.expandProjectGroup" : "workbench.collapseProjectGroup",
+                  )}
+                  className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
                   onClick={() => toggleProject(group.projectName)}
-                  title={group.projectName}
+                  title={t(
+                    isCollapsed ? "workbench.expandProjectGroup" : "workbench.collapseProjectGroup",
+                  )}
                   type="button"
                 >
-                  <svg
-                    aria-hidden="true"
-                    className="size-4 shrink-0 text-on-surface-muted/60"
-                    fill="none"
-                    viewBox="0 0 16 16"
-                  >
+                  <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16">
                     <path
                       d={isCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
                       strokeLinecap="round"
@@ -402,22 +380,30 @@ function GroupedProjectsList({
                       stroke="currentColor"
                     />
                   </svg>
-                  <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
-                  <span className="truncate text-base font-semibold text-on-surface">
-                    {group.projectName}
-                  </span>
                 </button>
               ) : (
-                // 空项目：无可折叠内容，主区非按钮；▾ 位 size-4 占位保持 📁 图标与有实例行对齐。
-                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 px-0">
-                  <span aria-hidden="true" className="size-4 shrink-0" />
-                  <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
-                  <span className="truncate text-base font-semibold text-on-surface">
-                    {group.projectName}
-                  </span>
-                </div>
+                // 空项目：无折叠内容，▾ 位 h-7 w-7 占位（touch:h-10 w-10 随按钮）保持 📁 图标与有实例行对齐。
+                <span aria-hidden="true" className="h-7 w-7 shrink-0 touch:h-10 touch:w-10" />
               )}
-              {/* 独立 › 进项目按钮（镜像 ⋯ 尺寸/样式；touch 放大 44px）。 */}
+              {/* 名 button：行主体，点击进入项目（flex-1 撑满中间空白 = 整行进入；行 div 无 onClick，
+                  避 createPortal fiber 冒泡）。热区 min-h-11 ≥44px。 */}
+              <button
+                className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
+                onClick={() => enterProject(group.projectName)}
+                title={group.projectName}
+                type="button"
+              >
+                <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
+                <span className="truncate text-base font-semibold text-on-surface">
+                  {group.projectName}
+                </span>
+              </button>
+              <ProjectRowActions
+                deletePending={deleteMutation.isPending}
+                onDelete={() => void requestDelete(group.projectName)}
+                projectName={group.projectName}
+              />
+              {/* 独立 › 进项目按钮（与名 button 同为进入入口，最右视觉锚；touch 放大 ≥40px）。 */}
               <button
                 aria-label={t("workbench.enterProject")}
                 className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10 touch:w-10"
@@ -434,14 +420,6 @@ function GroupedProjectsList({
                   />
                 </svg>
               </button>
-              <ProjectRowActionMenu
-                contextMenuPoint={ctx.pointFor(group.projectName)}
-                deleteLabel={t("project.deleteProject")}
-                deletePending={deleteMutation.isPending}
-                onContextMenuClose={ctx.close}
-                onDelete={() => void requestDelete(group.projectName)}
-                projectName={group.projectName}
-              />
             </div>
             {hasCards && !isCollapsed ? (
               <div>
