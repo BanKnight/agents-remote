@@ -774,6 +774,71 @@ export async function updateSkill(req: UpdateSkillRequest): Promise<UpdateSkillR
   });
 }
 
+// ── 项目级 skill（scope 由 URL 段表达：/api/projects/{name}/skills/*）──
+// body 复用全局类型（InstallSkillRequest 等），与全局 skill 方法唯一差异是 URL 段。
+// install/update 同样返 taskId（202），hook 接 waitForSkillTask（taskId UUID，项目/全局共享 SSE）。
+export async function listProjectInstalledSkills(
+  projectName: string,
+  agent: SkillAgent,
+): Promise<InstalledSkillsResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills?agent=${encodeURIComponent(agent)}`,
+    "api.skillListFailed",
+  );
+}
+
+export async function previewProjectSkill(
+  projectName: string,
+  name: string,
+  agent: SkillAgent,
+): Promise<SkillPreviewResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills/preview?name=${encodeURIComponent(name)}&agent=${encodeURIComponent(agent)}`,
+    "api.skillPreviewFailed",
+  );
+}
+
+export async function installProjectSkill(
+  projectName: string,
+  req: InstallSkillRequest,
+): Promise<InstallSkillResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills/install`,
+    "api.skillInstallFailed",
+    {
+      method: "POST",
+      body: JSON.stringify(req),
+      headers: { "content-type": "application/json" },
+    },
+  );
+}
+
+export async function uninstallProjectSkill(
+  projectName: string,
+  req: UninstallSkillRequest,
+): Promise<UninstallSkillResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills/uninstall`,
+    "api.skillUninstallFailed",
+    { method: "POST", body: JSON.stringify(req), headers: { "content-type": "application/json" } },
+  );
+}
+
+export async function updateProjectSkill(
+  projectName: string,
+  req: UpdateSkillRequest,
+): Promise<UpdateSkillResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills/update`,
+    "api.skillUpdateFailed",
+    {
+      method: "POST",
+      body: JSON.stringify(req),
+      headers: { "content-type": "application/json" },
+    },
+  );
+}
+
 // ── skill install/update 异步任务 SSE 订阅 ──
 // POST /api/skills/install|update 立即返 taskId（202），后台 spawn skills CLI（git clone，分钟级）。
 // 前端用 EventSource 订阅 /api/skills/task/:id/events，只消费 status 转换（两态 UI：spinner→done/error）。

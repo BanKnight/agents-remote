@@ -92,6 +92,15 @@ function lockEntry(overrides: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
+/** 构造 JSON body Request（handleSkillUpdateRoutes 测试共用）。 */
+function req(method: string, pathname: string, body?: unknown): Request {
+  return new Request(`http://x${pathname}`, {
+    method,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
+  });
+}
+
 describe("checkSkillUpdates", () => {
   it("marks hand-written skill (no lock record) as not manageable", async () => {
     await makeInstalledSkill("handmade");
@@ -225,14 +234,6 @@ describe("executeUpdate", () => {
 });
 
 describe("handleSkillUpdateRoutes", () => {
-  function req(method: string, pathname: string, body?: unknown): Request {
-    return new Request(`http://x${pathname}`, {
-      method,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-    });
-  }
-
   it("dispatches GET updates", async () => {
     await makeInstalledSkill("handmade");
     setGithub();
@@ -287,6 +288,72 @@ describe("handleSkillUpdateRoutes", () => {
       req("GET", "/api/skills/installed"),
       new URL("http://x/api/skills/installed"),
       deps,
+    );
+    expect(res).toBeUndefined();
+  });
+});
+
+describe("project scope update", () => {
+  let projectsRoot: string;
+  beforeEach(async () => {
+    projectsRoot = await mkdtemp(join(tmpdir(), "ar-skill-up-proj-"));
+  });
+  afterEach(async () => {
+    await rm(projectsRoot, { recursive: true, force: true });
+  });
+
+  async function makeProject(name: string): Promise<void> {
+    await mkdir(join(projectsRoot, name), { recursive: true });
+  }
+
+  it("executeUpdate project: argv -p + cwd=projectRoot（无 --agent）", async () => {
+    await makeProject("proj1");
+    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const name = await executeUpdate(
+      { name: "tdd", agent: "claude-code" },
+      { skillsHome: home },
+      { projectsRoot, projectKey: "proj1" },
+    );
+    const call = runSkillsCommand.mock.calls[0] as [string[], { cwd?: string }];
+    expect(call[0]).toEqual(["update", "tdd", "-p", "--yes"]);
+    expect(call[1]?.cwd).toBe(join(projectsRoot, "proj1"));
+    expect(name).toBe("tdd");
+  });
+
+  it("handleSkillUpdateRoutes project POST /skills/update → 202 + 后台 done", async () => {
+    await makeProject("proj1");
+    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const res = await handleSkillUpdateRoutes(
+      req("POST", "/api/projects/proj1/skills/update", { name: "tdd", agent: "claude-code" }),
+      new URL("http://x/api/projects/proj1/skills/update"),
+      { skillsHome: home, projectsRoot },
+    );
+    expect(res?.status).toBe(202);
+    const body = (await res?.json()) as { taskId: string; status: string };
+    expect(body.status).toBe("running");
+    const task = skillTaskRegistry.get(body.taskId);
+    for (let i = 0; i < 50 && task!.status === "running"; i++) {
+      await new Promise<void>((r) => setTimeout(r, 10));
+    }
+    expect(task!.status).toBe("done");
+  });
+
+  it("handleSkillUpdateRoutes project POST 未知项目 → 同步 404（不进后台）", async () => {
+    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const res = await handleSkillUpdateRoutes(
+      req("POST", "/api/projects/nope/skills/update", { name: "tdd", agent: "claude-code" }),
+      new URL("http://x/api/projects/nope/skills/update"),
+      { skillsHome: home, projectsRoot },
+    );
+    expect(res?.status).toBe(404);
+    expect(runSkillsCommand).not.toHaveBeenCalled();
+  });
+
+  it("handleSkillUpdateRoutes project POST deps 缺 projectsRoot → undefined", async () => {
+    const res = await handleSkillUpdateRoutes(
+      req("POST", "/api/projects/proj1/skills/update", { name: "tdd", agent: "claude-code" }),
+      new URL("http://x/api/projects/proj1/skills/update"),
+      { skillsHome: home },
     );
     expect(res).toBeUndefined();
   });

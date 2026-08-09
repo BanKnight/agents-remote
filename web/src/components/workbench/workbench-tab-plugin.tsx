@@ -109,5 +109,12 @@ export function buildOverviewTabs(
   for (const plugin of WORKBENCH_TAB_PLUGINS) {
     if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
   }
+  // plugins middle tab（项目级 skill+MCP，仅 project scope）。非 inspection tab——不进
+  // WORKBENCH_TAB_PLUGINS（那是右栏 inspection 注册表，被 right-panel-tabs / focus tab 消费），
+  // 单独 push 到 middle tab 列表；主体 render 由 project-left-panel / MobileProjectOverview 手写
+  // PluginsPanel 分支（与 pages/wiki 同构：middle tab + 消费者各自手写渲染）。
+  if (ctx.projectKey !== null) {
+    options.push({ id: "plugins", label: t("workbench.tabPlugins") });
+  }
   return options;
 }

@@ -190,6 +190,7 @@ export const createFetchHandler =
       const skillResponse = await handleSkillRoutes(request, url, {
         settingsStore: options.settingsStore,
         claude2Runtime: options.claude2Runtime,
+        projectsRoot: options.projectsRoot,
       });
       if (skillResponse) {
         return withRefresh(skillResponse);
@@ -197,6 +198,7 @@ export const createFetchHandler =
       const skillUpdateResponse = await handleSkillUpdateRoutes(request, url, {
         settingsStore: options.settingsStore,
         claude2Runtime: options.claude2Runtime,
+        projectsRoot: options.projectsRoot,
       });
       if (skillUpdateResponse) {
         return withRefresh(skillUpdateResponse);

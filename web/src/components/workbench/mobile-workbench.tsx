@@ -10,7 +10,7 @@ import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
-import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
+import { MobilePluginsOverview, PluginsPanel, SkillTabPreview } from "../../routes/PluginsRoute";
 import {
   findTabRefLeaf,
   type WorkbenchMobileFocusTab,
@@ -652,6 +652,11 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden" key={scope.key}>
         {activePlugin ? (
           <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
+        ) : activeTab === "plugins" ? (
+          // plugins middle tab（项目级 skill+MCP，仅 project scope）。非 inspection tab——不进
+          // WORKBENCH_TAB_PLUGINS（activePlugin 找不到），手写分支渲染 PluginsPanel（与桌面
+          // project-left-panel 同构：middle tab + 消费者各自手写渲染）。
+          <PluginsPanel projectName={scope.key} />
         ) : activeTab === "history" ? (
           <div className="h-full overflow-y-auto p-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-3">
             {/* range 控件置顶（移动整页滚动内可接受），周/半月/全部默认周。 */}

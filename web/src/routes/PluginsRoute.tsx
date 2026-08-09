@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { atom, useAtom } from "jotai";
 import type {
   AddMcpServerRequest,
+  McpScope,
   McpServerEntry,
   McpServerType,
   SkillAgent,
@@ -98,10 +99,17 @@ const pluginsQueryAtom = atom("");
  *（移动无中栏，开 focus 主体）。Manage tab 点已装 skill 行触发，详情在中栏/focus 打开（非 inline）。
  */
 export function PluginsPanel({
+  projectName,
   onOpenSkill,
   onCardDragStart,
 }: {
-  onOpenSkill: (name: string) => void;
+  /**
+   * 项目 scope 信号：给定 → 项目工作台插件 tab（skill 写 <project>/.claude/skills、MCP 写
+   * <project>/.mcp.json，隐藏 sources tab 与「检查更新」）。undefined → 全局 /plugins（user scope）。
+   */
+  projectName?: string;
+  /** 全局 scope 打开 skill 详情（开中栏 tab / navigate）。项目 scope 走 inline setSelectedSkill，不调此 prop → 可选。 */
+  onOpenSkill?: (name: string) => void;
   /** 拖动源启动（skill 行拖到中栏开 skill tab，WorkbenchContent onCardDragStart）。undefined 退纯点击（移动端不传）。 */
   onCardDragStart?: CardDragStartHandler;
 }) {
@@ -110,6 +118,30 @@ export function PluginsPanel({
   const [skillTab, setSkillTab] = useAtom(pluginsSkillTabAtom);
   const [query, setQuery] = useAtom(pluginsQueryAtom);
   const agent: SkillAgent = DEFAULT_SKILL_AGENT;
+  // 项目 scope skill 详情：项目工作台无中栏 tab 树（不进路由），用内部 state inline 切换
+  //（selectedSkill 非 null → SkillTabPreview + 顶部返回；null → 主体）。桌面项目左栏、移动
+  // MobileProjectOverview 都走这条 inline 路径。全局 scope 仍走 onOpenSkill（开中栏 tab / navigate）。
+  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
+
+  // 项目 scope 的「打开 skill 详情」= inline setSelectedSkill；全局 = 调用方 onOpenSkill。
+  const openSkill = (name: string) => {
+    if (projectName) setSelectedSkill(name);
+    else onOpenSkill?.(name);
+  };
+
+  if (projectName && selectedSkill) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-line/40 bg-surface px-3 py-2">
+          <ActionButton compact onClick={() => setSelectedSkill(null)}>
+            {t("nav.back")}
+          </ActionButton>
+          <span className="truncate text-sm font-semibold text-on-surface">{selectedSkill}</span>
+        </div>
+        <SkillTabPreview name={selectedSkill} projectName={projectName} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -137,33 +169,42 @@ export function PluginsPanel({
               label={t("skills.tabManage")}
               onClick={() => setSkillTab("manage")}
             />
-            <TabButton
-              active={skillTab === "sources"}
-              label={t("skills.tabSources")}
-              onClick={() => setSkillTab("sources")}
-            />
+            {/* sources 是全局 settings（项目 scope 无源概念），项目时隐藏。 */}
+            {projectName ? null : (
+              <TabButton
+                active={skillTab === "sources"}
+                label={t("skills.tabSources")}
+                onClick={() => setSkillTab("sources")}
+              />
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-surface-raised max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
             <div className="p-3">
               {skillTab === "discover" ? (
-                <DiscoverTab agent={agent} query={query} setQuery={setQuery} />
+                <DiscoverTab
+                  agent={agent}
+                  projectName={projectName}
+                  query={query}
+                  setQuery={setQuery}
+                />
               ) : null}
               {skillTab === "manage" ? (
                 <ManageTab
                   agent={agent}
+                  projectName={projectName}
                   onCardDragStart={onCardDragStart}
                   onGoToSources={() => setSkillTab("sources")}
-                  onOpenSkill={onOpenSkill}
+                  onOpenSkill={openSkill}
                 />
               ) : null}
-              {skillTab === "sources" ? <SourcesTab /> : null}
+              {skillTab === "sources" && !projectName ? <SourcesTab /> : null}
             </div>
           </div>
         </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto bg-surface-raised max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
           <div className="p-3">
-            <McpPanel />
+            <McpPanel projectName={projectName} />
           </div>
         </div>
       )}
@@ -195,16 +236,18 @@ export function MobilePluginsOverview() {
 
 function DiscoverTab({
   agent,
+  projectName,
   query,
   setQuery,
 }: {
   agent: SkillAgent;
+  projectName?: string;
   query: string;
   setQuery: (q: string) => void;
 }) {
   const { t } = useT();
   const search = useSkillSearch(query);
-  const install = useInstallSkill();
+  const install = useInstallSkill(projectName);
   const [pending, setPending] = useState<SkillMarketEntry | null>(null);
 
   const trimmed = query.trim();
@@ -337,11 +380,17 @@ function InstallConfirmDialog({
 
 function ManageTab({
   agent,
+  projectName,
   onGoToSources,
   onOpenSkill,
   onCardDragStart,
 }: {
   agent: SkillAgent;
+  /**
+   * 项目 scope 信号：给定 → 每行恒显「更新」（直接拉取，无检测）、隐藏「检查更新」按钮 +
+   * update 徽标 + 「纳入管理」按钮。undefined → 全局 scope（hasUpdate 驱动）。
+   */
+  projectName?: string;
   /** 未纳入版本管理（手写/本地）skill 的「纳入管理」入口：跳 Sources tab 挂 local/git 源。 */
   onGoToSources: () => void;
   onOpenSkill: (name: string) => void;
@@ -349,10 +398,12 @@ function ManageTab({
   onCardDragStart?: CardDragStartHandler;
 }) {
   const { t } = useT();
-  const installed = useInstalledSkills(agent);
-  const uninstall = useUninstallSkill();
+  const installed = useInstalledSkills(agent, projectName);
+  const uninstall = useUninstallSkill(projectName);
+  // 项目 update 直接拉取同步，无 checkUpdates；hook 仍调（Rules of Hooks + 全局分支用），
+  // 项目分支不渲染检查更新按钮，updates.data 不参与项目行徽标。
   const updates = useCheckSkillUpdates(agent);
-  const update = useUpdateSkill();
+  const update = useUpdateSkill(projectName);
   const [updating, setUpdating] = useState<string | null>(null);
 
   if (installed.isLoading) {
@@ -370,16 +421,17 @@ function ManageTab({
 
   return (
     <div className="space-y-3">
-      {/* 第三方技能版本检测：手动触发（GitHub Trees API 逐 repo 限速，不自动批量），
-          结果驱动每行「有更新 / 已是最新 / 本地」徽标与一键更新按钮。 */}
-      <ActionButton
-        compact
-        disabled={updates.isFetching}
-        onClick={() => void updates.refetch()}
-        tone="accent"
-      >
-        {updates.isFetching ? t("skills.checking") : t("skills.checkUpdates")}
-      </ActionButton>
+      {/* 全局 scope 才有「检查更新」（GitHub Trees API 检测）；项目 update 直接拉取，无检测按钮。 */}
+      {projectName ? null : (
+        <ActionButton
+          compact
+          disabled={updates.isFetching}
+          onClick={() => void updates.refetch()}
+          tone="accent"
+        >
+          {updates.isFetching ? t("skills.checking") : t("skills.checkUpdates")}
+        </ActionButton>
+      )}
       {update.error ? (
         <p className="rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
           {update.error.message}
@@ -388,13 +440,16 @@ function ManageTab({
       <ListGroup ariaLabel={t("skills.tabManage")}>
         {skills.map((s) => {
           const status = statusByName.get(s.name);
+          // 更新按钮：项目 scope 每行恒显（直接拉取同步）；全局仅「有更新」(manageable+hasUpdate) 显。
+          const showUpdate =
+            Boolean(projectName) || Boolean(status?.manageable && status.hasUpdate);
           // rowCommon 复用：onClick 是键盘 Enter/Space → click 路径；actions 的 uninstall 按钮点击
           // 走原生 click（inClose 判定：closest("button") → 不触发拖动 onSelect）。onCardDragStart
           // 存在 → DraggableListRow 拖到中栏开 skill tab（设计 §7.2）。
           const rowCommon: ComponentProps<typeof ListRow> = {
             actions: (
               <>
-                {status?.manageable && status.hasUpdate ? (
+                {showUpdate ? (
                   <ActionButton
                     compact
                     disabled={updating === s.name}
@@ -409,7 +464,8 @@ function ManageTab({
                     {updating === s.name ? t("skills.updating") : t("skills.update")}
                   </ActionButton>
                 ) : null}
-                {status && !status.manageable ? (
+                {/* 「纳入管理」仅全局 scope（手写/本地 skill 跳 Sources 挂源）；项目无源概念。 */}
+                {projectName ? null : status && !status.manageable ? (
                   <ActionButton compact onClick={onGoToSources}>
                     {t("skills.bringUnderManagement")}
                   </ActionButton>
@@ -424,9 +480,8 @@ function ManageTab({
                 </ActionButton>
               </>
             ),
-            meta: status ? (
-              // 有更新行不显徽标——右侧「更新」按钮本身即「有更新」信号，徽标冗余（去重）。
-              // 仅「已最新」（manageable 无更新）与「本地」（不可管理）显徽标。
+            // 徽标仅全局 scope（项目无检测，无 hasUpdate/manageable 信号）。
+            meta: projectName ? null : status ? (
               status.manageable ? (
                 status.hasUpdate ? null : (
                   <span className="rounded-full bg-on-surface/10 px-2 py-0.5 text-[10px] font-semibold text-on-surface-muted">
@@ -469,9 +524,9 @@ function ManageTab({
  * PanelRouter 渲染、移动由 MobileSkillFocus 包 header 后渲染 body。顶层组件
  *（rerender-no-inline-components），不嵌套定义。
  */
-export function SkillTabPreview({ name }: { name: string }) {
+export function SkillTabPreview({ name, projectName }: { name: string; projectName?: string }) {
   const { t } = useT();
-  const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT);
+  const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT, projectName);
 
   return (
     <section
@@ -592,17 +647,18 @@ function SourcesTab() {
 }
 
 /**
- * MCP 外部 server 管理（user scope，wrap claude mcp 读写 ~/.claude.json）。列表 + 新增表单
- *（stdio: command+args+env；sse/http: url）+ 删除。增删前弹信任确认 Dialog（外部 MCP 可访问
- * 本机资源并执行命令，是引入第三方工具的主要安全面——对称 InstallConfirmDialog）。
- * agent 实例由 CLI 原生合并生效（下次 spawn 读配置），无需 reload 闭环。
+ * MCP 外部 server 管理（scope 由 projectName 决定：user 读写 ~/.claude.json / project 读写
+ * <project>/.mcp.json，wrap claude mcp）。列表 + 新增表单（stdio: command+args+env；sse/http:
+ * url）+ 删除。增删前弹信任确认 Dialog（外部 MCP 可访问本机资源并执行命令，是引入第三方工具的
+ * 主要安全面——对称 InstallConfirmDialog）。agent 实例由 CLI 原生合并生效（下次 spawn 读配置）。
  */
-function McpPanel() {
+function McpPanel({ projectName }: { projectName?: string }) {
   const { t } = useT();
-  const servers = useMcpServers("user");
-  const addServer = useAddMcpServer("user");
-  const removeServer = useRemoveMcpServer("user");
-  const updateServer = useUpdateMcpServer("user");
+  const scope: McpScope = projectName ? "project" : "user";
+  const servers = useMcpServers(scope, projectName);
+  const addServer = useAddMcpServer(scope, projectName);
+  const removeServer = useRemoveMcpServer(scope, projectName);
+  const updateServer = useUpdateMcpServer(scope, projectName);
   const [name, setName] = useState("");
   const [type, setType] = useState<McpServerType>("stdio");
   const [command, setCommand] = useState("");

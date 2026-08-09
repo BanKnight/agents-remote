@@ -24,6 +24,7 @@ import {
 import { parseFrontmatter } from "./claude2-slash-commands";
 import type { Claude2Runtime } from "./claude2-runtime";
 import { jsonError } from "./http-auth";
+import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import type { SettingsStore } from "./settings-store";
 import {
   INSTALL_SKILL_TIMEOUT_MS,
@@ -50,6 +51,20 @@ export type SkillMarketDeps = {
    * codex→.codex，与 skills CLI 的 globalSkillsDir 一致）。
    */
   skillsHome?: string;
+  /**
+   * 项目级 skill（/api/projects/{name}/skills/*）解析与 cwd 需要；缺失则项目路由不处理（交 404）。
+   * 镜像 mcp-management.ts 的 McpManagementDeps.projectsRoot。
+   */
+  projectsRoot?: string;
+};
+
+/**
+ * 项目级 skill 上下文：决定 cwd（=projectRoot）+ argv（去 --global）+ 锁文件位置
+ * （<project>/skills-lock.json，区别于全局 ~/.agents/.skill-lock.json）。undefined = 全局 scope。
+ */
+export type ProjectSkillCtx = {
+  projectsRoot: string;
+  projectKey: string;
 };
 
 // skills.sh search 的最少必填字符（实测：<2 返回 400）。
@@ -166,8 +181,13 @@ function agentGlobalSkillsDir(agent: SkillAgent, home: string): string {
 async function scanInstalledSkillsFromFs(
   agent: SkillAgent,
   home: string,
+  projectRoot?: string,
 ): Promise<InstalledSkill[]> {
-  const dir = agentGlobalSkillsDir(agent, home);
+  // 项目 scope：读 <projectRoot>/.<agentHome>/skills（skills CLI 项目 scope 安装位置）；
+  // 全局 scope：读 ~/.<agentHome>/skills。scope 标签由目录来源决定，调用方无需另传。
+  const dir = projectRoot
+    ? join(projectRoot, AGENT_SKILLS_HOME_DIR[agent], "skills")
+    : agentGlobalSkillsDir(agent, home);
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -200,7 +220,7 @@ async function scanInstalledSkillsFromFs(
     skills.push({
       name: fm.name || entry,
       path: realPath,
-      scope: "global",
+      scope: projectRoot ? "project" : "global",
       agents: [AGENT_DISPLAY_NAME[agent]],
     });
   }
@@ -210,9 +230,28 @@ async function scanInstalledSkillsFromFs(
 export async function listInstalledSkills(
   agent: SkillAgent,
   deps?: SkillMarketDeps,
+  projectRoot?: string,
 ): Promise<InstalledSkillsResponse> {
-  const skills = await scanInstalledSkillsFromFs(agent, resolveSkillsHome(deps));
+  const skills = await scanInstalledSkillsFromFs(agent, resolveSkillsHome(deps), projectRoot);
   return { skills };
+}
+
+/**
+ * 解析项目级 skill 的 cwd（=projectRoot realpath）。复用 Project-safe resolver
+ * （resolveProjectPath：防越界 + realpath 规范化），与 mcp-management.ts 的 resolveProjectCwd 同口径。
+ * skills CLI 项目 scope 的 add/remove/update 由 cwd 决定写入位置（<cwd>/.claude/skills + <cwd>/skills-lock.json）。
+ */
+export async function resolveProjectSkillCwd(ctx: ProjectSkillCtx): Promise<string> {
+  const project = await resolveProjectPath(ctx.projectsRoot, ctx.projectKey);
+  return project.path;
+}
+
+/** ProjectPathError → HTTP 状态码（精细版，对齐 session-routes.ts：FS 错误 500，其余 400，未找到 404）。
+ *  导出供 skill-update.ts 复用（同口径，避免两处状态码分叉）。 */
+export function projectPathErrorStatus(error: ProjectPathError): number {
+  if (error.code === "PROJECT_NOT_FOUND") return 404;
+  if (error.code === "PROJECT_FS_ERROR") return 500;
+  return 400;
 }
 
 // ── 执行层：`npx skills add/remove`（只信 exit code，事后 list --json 回读真相） ──
@@ -244,6 +283,7 @@ export async function reloadAliveSessions(deps: SkillMarketDeps): Promise<void> 
 export async function executeInstall(
   req: InstallSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<InstalledSkill> {
   const source = sanitizeSource(req.source);
   const skillId = sanitizeSkillId(req.skillId);
@@ -251,26 +291,33 @@ export async function executeInstall(
   if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
   }
+  // 项目 scope：cwd=projectRoot，argv 不带 --global（skills CLI 默认项目 scope，写 <cwd>/.claude/skills）；
+  // 全局 scope：argv 带 --global（写 ~/.claude/skills）。
+  const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
   const result = await runSkillsCommand(
-    ["add", `${source}@${skillId}`, "--global", "--agent", agent, "--yes"],
+    projectCtx
+      ? ["add", `${source}@${skillId}`, "--agent", agent, "--yes"]
+      : ["add", `${source}@${skillId}`, "--global", "--agent", agent, "--yes"],
     {
       timeoutMs: INSTALL_SKILL_TIMEOUT_MS,
       failureCode: "SKILL_INSTALL_FAILED",
       killProcessGroup: true,
+      cwd,
     },
   );
   if (result.exitCode !== 0) {
     throw new SkillError("SKILL_INSTALL_FAILED", `skills add failed: ${trimErr(result)}`);
   }
   await reloadAliveSessions(deps);
-  // UI = f(state)：真相以 list --json 为准（不信 stdout）。list 回读失败时，
-  // install 本身已成功，用 skillId 占位让前端 refetch 补全。
+  // UI = f(state)：真相以 list 回读为准（不信 stdout），扫项目/全局对应目录。
+  // list 回读失败时，install 本身已成功，用 skillId 占位让前端 refetch 补全。
+  const scope = projectCtx ? "project" : "global";
   try {
-    const { skills } = await listInstalledSkills(agent, deps);
+    const { skills } = await listInstalledSkills(agent, deps, cwd);
     const found = skills.find((s) => s.name === skillId);
-    return found ?? { name: skillId, path: "", scope: "global", agents: [agent] };
+    return found ?? { name: skillId, path: "", scope, agents: [agent] };
   } catch {
-    return { name: skillId, path: "", scope: "global", agents: [agent] };
+    return { name: skillId, path: "", scope, agents: [agent] };
   }
 }
 
@@ -282,6 +329,7 @@ export async function executeInstall(
 export async function startInstallTask(
   req: InstallSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<Response> {
   let source: string;
   let skillId: string;
@@ -293,16 +341,25 @@ export async function startInstallTask(
     if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
       throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
     }
+    // 项目 scope 同步校验项目存在性 + 越界：与 list/preview/uninstall 同步 404 语义一致，
+    // 避免项目未知时 install 返 202 再后台 failed 的延迟暴露（前端立即拿到 404）。
+    if (projectCtx) await resolveProjectSkillCwd(projectCtx);
   } catch (error) {
     if (error instanceof SkillError) {
       return jsonError(error.code, error.message, skillErrorStatus(error.code));
     }
+    if (error instanceof ProjectPathError) {
+      return jsonError(error.code, error.message, projectPathErrorStatus(error));
+    }
     throw error;
   }
-  const dedupKey = `install:${agent}:${source}/${skillId}`;
+  // 项目 dedupKey 加 project: 前缀，防跨项目同 source/skillId 碰撞（不同项目 install 互不串）。
+  const dedupKey = projectCtx
+    ? `install:project:${projectCtx.projectKey}:${agent}:${source}/${skillId}`
+    : `install:${agent}:${source}/${skillId}`;
   const { taskId, joined } = skillTaskRegistry.startOrJoin("install", dedupKey, skillId);
   if (!joined) {
-    void runInstallTask(taskId, req, deps);
+    void runInstallTask(taskId, req, deps, projectCtx);
   }
   return Response.json({ taskId, status: "running" } satisfies InstallSkillResponse, {
     status: 202,
@@ -314,9 +371,10 @@ async function runInstallTask(
   taskId: string,
   req: InstallSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<void> {
   try {
-    const skill = await executeInstall(req, deps);
+    const skill = await executeInstall(req, deps, projectCtx);
     skillTaskRegistry.finish(taskId, { status: "done", skill });
   } catch (error) {
     skillTaskRegistry.finish(taskId, {
@@ -330,15 +388,22 @@ async function runInstallTask(
 export async function uninstallSkill(
   req: UninstallSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<UninstallSkillResponse> {
   const name = sanitizeSkillName(req.name);
   const agent = req.agent;
   if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
   }
-  const result = await runSkillsCommand(["remove", name, "--global", "--agent", agent, "--yes"], {
-    failureCode: "SKILL_UNINSTALL_FAILED",
-  });
+  // 项目 scope：cwd=projectRoot + argv 不带 --global（删 <cwd>/.claude/skills/<name>）；
+  // 全局 scope：argv 带 --global（删 ~/.claude/skills/<name>）。
+  const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
+  const result = await runSkillsCommand(
+    projectCtx
+      ? ["remove", name, "--agent", agent, "--yes"]
+      : ["remove", name, "--global", "--agent", agent, "--yes"],
+    { failureCode: "SKILL_UNINSTALL_FAILED", cwd },
+  );
   if (result.exitCode !== 0) {
     throw new SkillError("SKILL_UNINSTALL_FAILED", `skills remove failed: ${trimErr(result)}`);
   }
@@ -352,10 +417,13 @@ export async function previewInstalledSkill(
   name: string,
   agent: SkillAgent,
   deps?: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<SkillPreviewResponse> {
   // sanitize 拒绝 `..`/`/`/null byte，锁死在 agent skills 目录内（路径穿越不可达）。
   const safeName = sanitizeSkillName(name);
-  const dir = join(agentGlobalSkillsDir(agent, resolveSkillsHome(deps)), safeName);
+  // 项目 scope：读 <projectRoot>/.<agentHome>/skills/<name>；全局 scope：读 ~/.<agentHome>/skills/<name>。
+  const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
+  const dir = join(cwd ?? agentGlobalSkillsDir(agent, resolveSkillsHome(deps)), safeName);
   let content: string;
   try {
     content = await readFile(join(dir, SKILL_MD), "utf8"); // 跟随 symlink 读 canonical SKILL.md
@@ -455,6 +523,9 @@ async function runSkillHandler<T>(fn: () => Promise<T>, okStatus = 200): Promise
     if (error instanceof SkillError) {
       return jsonError(error.code, error.message, skillErrorStatus(error.code));
     }
+    if (error instanceof ProjectPathError) {
+      return jsonError(error.code, error.message, projectPathErrorStatus(error));
+    }
     throw error;
   }
 }
@@ -466,6 +537,40 @@ const readJson = async <T>(request: Request): Promise<T> => {
     return {} as T;
   }
 };
+
+/**
+ * 匹配项目级 skill 路由 /api/projects/{name}/skills[/(install|uninstall|update|preview)]。
+ * bare prefix = list。镜像 mcp-management.ts 的 matchProjectMcpPath（同口径：单 path 段 + decode）。
+ * update action 由 skill-update.ts 的 handleSkillUpdateRoutes 消费（避免循环 import）。
+ */
+export function matchProjectSkillPath(
+  pathname: string,
+):
+  | { projectName: string; action: "list" | "install" | "uninstall" | "update" | "preview" }
+  | undefined {
+  const prefix = "/api/projects/";
+  if (!pathname.startsWith(prefix)) return undefined;
+  const rest = pathname.slice(prefix.length);
+  const infix = "/skills";
+  const idx = rest.indexOf(infix);
+  if (idx === -1) return undefined;
+  const encodedName = rest.slice(0, idx);
+  // encodedName 是单个 path 段（无 `/`）——与 mcp-management.ts matchProjectMcpPath 同口径。
+  if (encodedName.length === 0 || encodedName.includes("/")) return undefined;
+  let projectName: string;
+  try {
+    projectName = decodeURIComponent(encodedName);
+  } catch {
+    return undefined;
+  }
+  const tail = rest.slice(idx + infix.length);
+  if (tail === "") return { projectName, action: "list" };
+  if (tail === "/install") return { projectName, action: "install" };
+  if (tail === "/uninstall") return { projectName, action: "uninstall" };
+  if (tail === "/update") return { projectName, action: "update" };
+  if (tail === "/preview") return { projectName, action: "preview" };
+  return undefined;
+}
 
 export async function handleSkillRoutes(
   request: Request,
@@ -520,6 +625,38 @@ export async function handleSkillRoutes(
         return { deleted: true, id };
       });
     }
+  }
+
+  // ── 项目级 skill：/api/projects/{name}/skills/*（scope 由 URL 段表达，body 复用全局类型） ──
+  // update 路由交 handleSkillUpdateRoutes 处理（避免与 skill-update.ts 循环 import）。
+  const projectMatch = matchProjectSkillPath(url.pathname);
+  if (projectMatch) {
+    if (!deps.projectsRoot) return undefined;
+    const projectCtx: ProjectSkillCtx = {
+      projectsRoot: deps.projectsRoot,
+      projectKey: projectMatch.projectName,
+    };
+    if (projectMatch.action === "list" && isGet) {
+      const agent = parseAgent(url.searchParams.get("agent"));
+      return runSkillHandler(async () => {
+        const cwd = await resolveProjectSkillCwd(projectCtx);
+        return listInstalledSkills(agent, deps, cwd);
+      });
+    }
+    if (projectMatch.action === "preview" && isGet) {
+      const name = url.searchParams.get("name") ?? "";
+      const agent = parseAgent(url.searchParams.get("agent"));
+      return runSkillHandler(() => previewInstalledSkill(name, agent, deps, projectCtx));
+    }
+    if (projectMatch.action === "install" && isPost) {
+      const body = await readJson<InstallSkillRequest>(request);
+      return startInstallTask(body, deps, projectCtx);
+    }
+    if (projectMatch.action === "uninstall" && isPost) {
+      const body = await readJson<UninstallSkillRequest>(request);
+      return runSkillHandler(() => uninstallSkill(body, deps, projectCtx));
+    }
+    // action === "update" → 不处理，交 handleSkillUpdateRoutes（index.ts 顺序调用）。
   }
 
   return undefined;

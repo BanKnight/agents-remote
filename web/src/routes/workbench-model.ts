@@ -30,9 +30,17 @@ export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki";
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（global 按项目分段
- * 单列网格，project 单 grid）；history=历史 session；files/git/pages=复用工作台 inspection tab plugin。
+ * 单列网格，project 单 grid）；history=历史 session；files/git/pages=复用工作台 inspection tab plugin；
+ * plugins=项目级 skill + MCP 管理（仅 project scope，inline 详情，不进右栏 inspection）。
  */
-export type WorkbenchMiddleTab = "overview" | "history" | "files" | "git" | "pages" | "wiki";
+export type WorkbenchMiddleTab =
+  | "overview"
+  | "history"
+  | "files"
+  | "git"
+  | "pages"
+  | "wiki"
+  | "plugins";
 
 /**
  * 左右栏宽度基线（rem）。左栏（项目树）沿用 ShellLayout project sidebar 的 13.125rem。
@@ -306,7 +314,8 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     search.tab === "files" ||
     search.tab === "git" ||
     search.tab === "pages" ||
-    search.tab === "wiki"
+    search.tab === "wiki" ||
+    search.tab === "plugins"
   ) {
     result.tab = search.tab;
   }

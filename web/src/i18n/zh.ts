@@ -522,6 +522,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.tabGit": "Git",
   "workbench.tabPages": "页面",
   "workbench.tabWiki": "Wiki",
+  "workbench.tabPlugins": "插件",
   "wiki.panelAria": "Wiki 页面",
   "wiki.emptyTitle": "还没有 Wiki 页面",
   "wiki.emptyDesc": "Agent 通过 wiki MCP 工具写入的页面会显示在这里。",

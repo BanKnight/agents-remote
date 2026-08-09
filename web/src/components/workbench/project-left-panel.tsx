@@ -13,6 +13,7 @@ import { FilesLeftPanel } from "../files/files-left-panel";
 import { GitChangesList } from "../git/git-diff-viewer";
 import { PagesPanel } from "../pages/pages-panel";
 import { WikiPanel } from "../wiki/wiki-panel";
+import { PluginsPanel } from "../../routes/PluginsRoute";
 import { type CardDragStartHandler } from "./drag-source";
 
 type ProjectLeftPanelProps = {
@@ -142,6 +143,8 @@ export function ProjectLeftPanel({
       middleBody = <PagesPanel projectName={scope.key} />;
     } else if (resolvedTab === "wiki") {
       middleBody = <WikiPanel projectName={scope.key} />;
+    } else if (resolvedTab === "plugins") {
+      middleBody = <PluginsPanel projectName={scope.key} />;
     }
     // resolvedTab === "overview" → middleBody 保持 overview（InstanceLeftOverview 实例总览）。
   }

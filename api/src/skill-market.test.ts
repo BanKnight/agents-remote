@@ -22,6 +22,7 @@ const {
   searchSkillMarket,
   listInstalledSkills,
   executeInstall,
+  matchProjectSkillPath,
   uninstallSkill,
   previewInstalledSkill,
   listSkillSources,
@@ -418,6 +419,202 @@ describe("handleSkillRoutes", () => {
 
   it("unmatched route → undefined", async () => {
     const url = new URL("http://x/api/skills/unknown");
+    const res = await handleSkillRoutes(new Request(url), url, { settingsStore: store });
+    expect(res).toBeUndefined();
+  });
+});
+
+describe("project scope skills", () => {
+  let projectsRoot: string;
+  beforeEach(async () => {
+    projectsRoot = await mkdtemp(join(tmpdir(), "ar-skill-proj-"));
+  });
+  afterEach(async () => {
+    await rm(projectsRoot, { recursive: true, force: true });
+  });
+
+  async function makeProject(name: string): Promise<string> {
+    const dir = join(projectsRoot, name);
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+  // 模拟 skills CLI 项目 scope 写入：<projectsRoot>/<proj>/.claude/skills/<name>/SKILL.md
+  async function writeProjectSkill(proj: string, skillName: string): Promise<void> {
+    const dir = join(projectsRoot, proj, ".claude", "skills", skillName);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SKILL.md"), `---\nname: ${skillName}\n---\n# ${skillName}`);
+  }
+
+  it("matchProjectSkillPath 解析 5 action + 拒绝越界", () => {
+    expect(matchProjectSkillPath("/api/projects/proj1/skills")).toEqual({
+      projectName: "proj1",
+      action: "list",
+    });
+    expect(matchProjectSkillPath("/api/projects/proj1/skills/install")?.action).toBe("install");
+    expect(matchProjectSkillPath("/api/projects/proj1/skills/uninstall")?.action).toBe("uninstall");
+    expect(matchProjectSkillPath("/api/projects/proj1/skills/update")?.action).toBe("update");
+    expect(matchProjectSkillPath("/api/projects/proj1/skills/preview")?.action).toBe("preview");
+    // 全局 skill 路由不匹配项目段
+    expect(matchProjectSkillPath("/api/skills/install")).toBeUndefined();
+    // 项目名含 `/`（越界）→ undefined
+    expect(matchProjectSkillPath("/api/projects/a/b/skills")).toBeUndefined();
+    // URL-encoded 项目名
+    expect(matchProjectSkillPath("/api/projects/proj%201/skills")?.projectName).toBe("proj 1");
+  });
+
+  it("listInstalledSkills reads project .claude/skills with scope=project", async () => {
+    await makeProject("proj1");
+    await writeProjectSkill("proj1", "tdd");
+    const res = await listInstalledSkills("claude-code", store, join(projectsRoot, "proj1"));
+    expect(res.skills.map((s) => s.name)).toEqual(["tdd"]);
+    expect(res.skills[0].scope).toBe("project");
+  });
+
+  it("executeInstall project: argv 无 --global + cwd=projectRoot + scope=project", async () => {
+    await makeProject("proj1");
+    await writeProjectSkill("proj1", "tdd"); // 模拟 CLI 写入；readback 走 FS 直读
+    runSkillsCommand.mockImplementation(async (args) => {
+      if (args[0] === "add") return { exitCode: 0, stdout: "", stderr: "" };
+      throw new Error("unexpected runSkillsCommand call (readback should be FS)");
+    });
+    const skill = await executeInstall(
+      { source: "a/b", skillId: "tdd", agent: "claude-code" },
+      store,
+      { projectsRoot, projectKey: "proj1" },
+    );
+    const [args, opts] = runSkillsCommand.mock.calls[0];
+    expect(args).toEqual(["add", "a/b@tdd", "--agent", "claude-code", "--yes"]); // 无 --global
+    expect(opts?.cwd).toBe(join(projectsRoot, "proj1"));
+    expect(skill.scope).toBe("project");
+  });
+
+  it("uninstallSkill project: argv 无 --global + cwd=projectRoot", async () => {
+    await makeProject("proj1");
+    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    await uninstallSkill({ name: "tdd", agent: "claude-code" }, store, {
+      projectsRoot,
+      projectKey: "proj1",
+    });
+    const [args, opts] = runSkillsCommand.mock.calls[0];
+    expect(args).toEqual(["remove", "tdd", "--agent", "claude-code", "--yes"]);
+    expect(opts?.cwd).toBe(join(projectsRoot, "proj1"));
+  });
+
+  it("handleSkillRoutes GET project /skills → list（scope=project）", async () => {
+    await makeProject("proj1");
+    await writeProjectSkill("proj1", "tdd");
+    const url = new URL("http://x/api/projects/proj1/skills?agent=claude-code");
+    const res = await handleSkillRoutes(new Request(url), url, {
+      settingsStore: store,
+      projectsRoot,
+    });
+    expect(res?.status).toBe(200);
+    const body = (await res?.json()) as { skills: { scope: string }[] };
+    expect(body.skills[0].scope).toBe("project");
+  });
+
+  it("handleSkillRoutes POST project /skills/install → 202 + 后台 done", async () => {
+    await makeProject("proj1");
+    await writeProjectSkill("proj1", "tdd");
+    runSkillsCommand.mockImplementation(async (args) => {
+      if (args[0] === "add") return { exitCode: 0, stdout: "", stderr: "" };
+      throw new Error("unexpected");
+    });
+    const url = new URL("http://x/api/projects/proj1/skills/install");
+    const req = new Request(url, {
+      method: "POST",
+      body: JSON.stringify({ source: "a/b", skillId: "tdd", agent: "claude-code" }),
+    });
+    const res = await handleSkillRoutes(req, url, { settingsStore: store, projectsRoot });
+    expect(res?.status).toBe(202);
+    const body = (await res?.json()) as { taskId: string; status: string };
+    expect(body.status).toBe("running");
+    const task = skillTaskRegistry.get(body.taskId);
+    expect(task).toBeDefined();
+    for (let i = 0; i < 50 && task!.status === "running"; i++) {
+      await new Promise<void>((r) => setTimeout(r, 10));
+    }
+    expect(task!.status).toBe("done");
+  });
+
+  it("项目 install 去重 + 跨项目隔离（dedupKey 项目前缀）", async () => {
+    await makeProject("proj1");
+    await makeProject("proj2");
+    await writeProjectSkill("proj1", "tdd");
+    await writeProjectSkill("proj2", "tdd");
+    runSkillsCommand.mockImplementation(
+      async () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ exitCode: 0, stdout: "", stderr: "" }), 100),
+        ),
+    );
+    const makeReq = (proj: string) =>
+      new Request(`http://x/api/projects/${proj}/skills/install`, {
+        method: "POST",
+        body: JSON.stringify({ source: "a/b", skillId: "tdd", agent: "claude-code" }),
+      });
+    const deps = { settingsStore: store, projectsRoot };
+    // 同 proj1 两次 → 同 taskId（去重命中）
+    const [r1a, r1b] = await Promise.all([
+      handleSkillRoutes(
+        makeReq("proj1"),
+        new URL("http://x/api/projects/proj1/skills/install"),
+        deps,
+      ),
+      handleSkillRoutes(
+        makeReq("proj1"),
+        new URL("http://x/api/projects/proj1/skills/install"),
+        deps,
+      ),
+    ]);
+    const b1a = (await r1a?.json()) as { taskId: string };
+    const b1b = (await r1b?.json()) as { taskId: string };
+    expect(b1a.taskId).toBe(b1b.taskId);
+    // proj2 同 source/skillId → 不同 taskId（跨项目隔离，dedupKey 项目前缀生效）
+    const r2 = await handleSkillRoutes(
+      makeReq("proj2"),
+      new URL("http://x/api/projects/proj2/skills/install"),
+      deps,
+    );
+    const b2 = (await r2?.json()) as { taskId: string };
+    expect(b2.taskId).not.toBe(b1a.taskId);
+  });
+
+  it("handleSkillRoutes project 未知项目 → 404", async () => {
+    const url = new URL("http://x/api/projects/nope/skills?agent=claude-code");
+    const res = await handleSkillRoutes(new Request(url), url, {
+      settingsStore: store,
+      projectsRoot,
+    });
+    expect(res?.status).toBe(404);
+  });
+
+  it("handleSkillRoutes POST project /skills/install 未知项目 → 同步 404（不进后台）", async () => {
+    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const url = new URL("http://x/api/projects/nope/skills/install");
+    const req = new Request(url, {
+      method: "POST",
+      body: JSON.stringify({ source: "a/b", skillId: "tdd", agent: "claude-code" }),
+    });
+    const res = await handleSkillRoutes(req, url, { settingsStore: store, projectsRoot });
+    expect(res?.status).toBe(404);
+    expect(runSkillsCommand).not.toHaveBeenCalled(); // 项目校验拦截，未 spawn CLI
+  });
+
+  it("handleSkillRoutes POST project /skills/uninstall 未知项目 → 同步 404", async () => {
+    runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const url = new URL("http://x/api/projects/nope/skills/uninstall");
+    const req = new Request(url, {
+      method: "POST",
+      body: JSON.stringify({ name: "tdd", agent: "claude-code" }),
+    });
+    const res = await handleSkillRoutes(req, url, { settingsStore: store, projectsRoot });
+    expect(res?.status).toBe(404);
+    expect(runSkillsCommand).not.toHaveBeenCalled();
+  });
+
+  it("handleSkillRoutes project 路由但 deps 缺 projectsRoot → undefined（不处理）", async () => {
+    const url = new URL("http://x/api/projects/proj1/skills?agent=claude-code");
     const res = await handleSkillRoutes(new Request(url), url, { settingsStore: store });
     expect(res).toBeUndefined();
   });

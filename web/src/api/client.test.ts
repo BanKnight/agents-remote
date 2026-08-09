@@ -25,6 +25,11 @@ import {
   sessionStreamUrl,
   testPresetModels,
   unpinSession,
+  installProjectSkill,
+  listProjectInstalledSkills,
+  previewProjectSkill,
+  uninstallProjectSkill,
+  updateProjectSkill,
 } from "./client";
 
 const originalFetch = globalThis.fetch;
@@ -384,4 +389,58 @@ test("web api client testPresetModels passes id for edit-mode fallback", async (
   expect(JSON.parse(body)).toEqual({ id: "p1" });
   expect(response.ok).toBe(false);
   expect(response.error).toBe("bad key");
+});
+
+// ── Project-scoped skill routes（scope 由 URL 段表达：/api/projects/{name}/skills/*）──
+
+test("web api client calls Project-scoped skill routes with encoded paths", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    // install/update POST 秒回 {taskId,status}（202，后台 spawn），uninstall 同 POST 返 {ok:true}。
+    if (init?.method === "POST") {
+      if (input.toString().endsWith("/uninstall")) return Response.json({ ok: true });
+      return Response.json({ taskId: "task_123", status: "running" });
+    }
+    if (input.toString().includes("preview")) {
+      return Response.json({ name: "tdd", content: "# tdd", source: "github" });
+    }
+    return Response.json({ skills: [] });
+  }) as typeof fetch;
+
+  await listProjectInstalledSkills("hello world 中文", "claude-code");
+  await previewProjectSkill("hello world 中文", "tdd", "claude-code");
+  await installProjectSkill("hello world 中文", {
+    source: "owner/repo",
+    skillId: "tdd",
+    agent: "claude-code",
+  });
+  await uninstallProjectSkill("hello world 中文", { name: "tdd", agent: "claude-code" });
+  await updateProjectSkill("hello world 中文", { name: "tdd", agent: "claude-code" });
+
+  // list / preview 走 GET（无 method），URL 编码项目名 + query。
+  expect(calls[0][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/skills?agent=claude-code",
+  );
+  expect(calls[1][0]).toBe(
+    "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/skills/preview?name=tdd&agent=claude-code",
+  );
+  // install / uninstall / update 走 POST，URL 段表达操作，body 复用全局 skill 请求类型。
+  expect(calls[2][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/skills/install");
+  expect(calls[2][1]?.method).toBe("POST");
+  expect(JSON.parse(calls[2][1]?.body?.toString() ?? "{}")).toEqual({
+    source: "owner/repo",
+    skillId: "tdd",
+    agent: "claude-code",
+  });
+  expect(calls[3][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/skills/uninstall");
+  expect(JSON.parse(calls[3][1]?.body?.toString() ?? "{}")).toEqual({
+    name: "tdd",
+    agent: "claude-code",
+  });
+  expect(calls[4][0]).toBe("/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/skills/update");
+  expect(JSON.parse(calls[4][1]?.body?.toString() ?? "{}")).toEqual({
+    name: "tdd",
+    agent: "claude-code",
+  });
 });

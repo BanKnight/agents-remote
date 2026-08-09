@@ -12,11 +12,16 @@ import { join } from "node:path";
 import { jsonError } from "./http-auth.js";
 import {
   listInstalledSkills,
+  matchProjectSkillPath,
   parseAgent,
+  projectPathErrorStatus,
   reloadAliveSessions,
+  resolveProjectSkillCwd,
   trimErr,
+  type ProjectSkillCtx,
   type SkillMarketDeps,
 } from "./skill-market.js";
+import { ProjectPathError } from "./project-paths.js";
 import {
   INSTALL_SKILL_TIMEOUT_MS,
   runSkillsCommand,
@@ -225,20 +230,27 @@ export async function checkSkillUpdates(
 export async function executeUpdate(
   req: UpdateSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<string> {
   const name = sanitizeSkillName(req.name);
   const agent = req.agent;
   if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
   }
-  // `skills update` 不支持 --agent（实测 `skills update --help` Update Options 仅 -g/-p/-y；
-  // --agent 是 add 命令独有）。update 按 skill name 更新全局 skill（默认 claude-code 目录），
-  // agent 仅作业务层校验（上方 SKILL_AGENTS）。带 --agent 会被 commander 拒绝 → exitCode≠0 → 更新失败。
-  const result = await runSkillsCommand(["update", name, "--global", "--yes"], {
-    timeoutMs: INSTALL_SKILL_TIMEOUT_MS,
-    failureCode: "SKILL_UPDATE_FAILED",
-    killProcessGroup: true,
-  });
+  // `skills update` 不支持 --agent（实测 Update Options 仅 -g/-p/-y；--agent 是 add 命令独有）。
+  // 全局：`update <name> --global`（写 ~/.claude/skills）；项目：`update <name> -p` + cwd=projectRoot
+  //（直接从源重新拉取同步，写 <cwd>/.claude/skills + 刷新 <cwd>/skills-lock.json）。项目 update 不做
+  // 远程 hash 检测（区别于全局 checkSkillUpdates 的 GitHub Trees 比对），用户主动点「更新」直接拉取覆盖。
+  const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
+  const result = await runSkillsCommand(
+    projectCtx ? ["update", name, "-p", "--yes"] : ["update", name, "--global", "--yes"],
+    {
+      timeoutMs: INSTALL_SKILL_TIMEOUT_MS,
+      failureCode: "SKILL_UPDATE_FAILED",
+      killProcessGroup: true,
+      cwd,
+    },
+  );
   if (result.exitCode !== 0) {
     throw new SkillError("SKILL_UPDATE_FAILED", `skills update failed: ${trimErr(result)}`);
   }
@@ -254,6 +266,7 @@ export async function executeUpdate(
 export async function startUpdateTask(
   req: UpdateSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<Response> {
   let name: string;
   let agent: SkillAgent;
@@ -263,16 +276,25 @@ export async function startUpdateTask(
     if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
       throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
     }
+    // 项目 scope 同步校验项目存在性 + 越界（与 skill-market.ts startInstallTask 同口径，
+    // 未知项目立即 404 而非 202 后台 failed）。
+    if (projectCtx) await resolveProjectSkillCwd(projectCtx);
   } catch (error) {
     if (error instanceof SkillError) {
       return jsonError(error.code, error.message, skillUpdateErrorStatus(error.code));
     }
+    if (error instanceof ProjectPathError) {
+      return jsonError(error.code, error.message, projectPathErrorStatus(error));
+    }
     throw error;
   }
-  const dedupKey = `update:${agent}:${name}`;
+  // 项目 dedupKey 加 project: 前缀，防跨项目同 name 碰撞。
+  const dedupKey = projectCtx
+    ? `update:project:${projectCtx.projectKey}:${agent}:${name}`
+    : `update:${agent}:${name}`;
   const { taskId, joined } = skillTaskRegistry.startOrJoin("update", dedupKey, name);
   if (!joined) {
-    void runUpdateTask(taskId, req, deps);
+    void runUpdateTask(taskId, req, deps, projectCtx);
   }
   return Response.json({ taskId, status: "running" } satisfies UpdateSkillResponse, {
     status: 202,
@@ -284,9 +306,10 @@ async function runUpdateTask(
   taskId: string,
   req: UpdateSkillRequest,
   deps: SkillMarketDeps,
+  projectCtx?: ProjectSkillCtx,
 ): Promise<void> {
   try {
-    const name = await executeUpdate(req, deps);
+    const name = await executeUpdate(req, deps, projectCtx);
     skillTaskRegistry.finish(taskId, { status: "done", name });
   } catch (error) {
     skillTaskRegistry.finish(taskId, {
@@ -340,6 +363,17 @@ export async function handleSkillUpdateRoutes(
   if (url.pathname === "/api/skills/update" && request.method === "POST") {
     const body = await readJson<UpdateSkillRequest>(request);
     return startUpdateTask(body, deps);
+  }
+  // 项目级 update：/api/projects/{name}/skills/update（matchProjectSkillPath 含 update action）。
+  // 项目 update 无 hash 检测（直接拉取同步），故无项目 /updates 路由。
+  const projectMatch = matchProjectSkillPath(url.pathname);
+  if (projectMatch?.action === "update" && request.method === "POST" && deps.projectsRoot) {
+    const body = await readJson<UpdateSkillRequest>(request);
+    const projectCtx: ProjectSkillCtx = {
+      projectsRoot: deps.projectsRoot,
+      projectKey: projectMatch.projectName,
+    };
+    return startUpdateTask(body, deps, projectCtx);
   }
   return undefined;
 }
