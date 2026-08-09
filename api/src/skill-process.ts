@@ -49,12 +49,21 @@ export const INSTALL_SKILL_TIMEOUT_MS = 300_000;
  */
 export async function runSkillsCommand(
   args: string[],
-  opts: { timeoutMs?: number; failureCode?: SkillErrorCode } = {},
+  opts: {
+    timeoutMs?: number;
+    failureCode?: SkillErrorCode;
+    // install/update（git clone，孙进程 git/npm 易孤儿）开启进程组 kill；
+    // onChunk 两态 UI 不传（drain 本身防管道死锁，非为进度）。其余场景（list/search…）走默认 mcp 同构路径。
+    onChunk?: (stream: "stdout" | "stderr", chunk: string) => void;
+    killProcessGroup?: boolean;
+  } = {},
 ): Promise<SkillsCommandResult> {
   const failureCode = opts.failureCode ?? "SKILL_INSTALL_FAILED";
   const cmd = [SKILLS_BIN, resolveSkillsCli(), ...args];
   return runCliTool(cmd, {
     timeoutMs: opts.timeoutMs,
     makeError: (message) => new SkillError(failureCode, message),
+    onChunk: opts.onChunk,
+    killProcessGroup: opts.killProcessGroup,
   });
 }

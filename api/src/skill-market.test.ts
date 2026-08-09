@@ -5,6 +5,7 @@ import { join } from "node:path";
 import * as validate from "./skill-validate";
 import { SettingsStore } from "./settings-store";
 import type { Claude2Runtime } from "./claude2-runtime";
+import { skillTaskRegistry } from "./skill-tasks";
 
 type CmdResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -20,7 +21,7 @@ mock.module("./skill-process", () => ({
 const {
   searchSkillMarket,
   listInstalledSkills,
-  installSkill,
+  executeInstall,
   uninstallSkill,
   previewInstalledSkill,
   listSkillSources,
@@ -43,6 +44,7 @@ beforeEach(async () => {
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   await rm(storeDir, { recursive: true, force: true });
+  skillTaskRegistry.clear();
 });
 
 function setFetch(response: { ok: boolean; status: number; json: () => Promise<unknown> }): void {
@@ -165,7 +167,7 @@ describe("listInstalledSkills", () => {
   });
 });
 
-describe("installSkill", () => {
+describe("executeInstall", () => {
   it("installs, reloads alive sessions, reads back truth via FS", async () => {
     const home = await mkdtemp(join(tmpdir(), "ar-install-home-"));
     try {
@@ -184,12 +186,11 @@ describe("installSkill", () => {
         listAliveRuntimeKeys: () => Promise.resolve(new Set(["s1"])),
         write,
       } as unknown as Claude2Runtime;
-      const res = await installSkill(
+      const skill = await executeInstall(
         { source: "mattpocock/skills", skillId: "tdd", agent: "claude-code" },
         { settingsStore: store, claude2Runtime, skillsHome: home },
       );
-      expect(res.ok).toBe(true);
-      expect(res.skill.name).toBe("tdd");
+      expect(skill.name).toBe("tdd");
       expect(write).toHaveBeenCalledTimes(1);
       expect(write.mock.calls[0][1]).toBe("/reload-skills\n");
     } finally {
@@ -200,7 +201,7 @@ describe("installSkill", () => {
   it("throws SKILL_INSTALL_FAILED on add failure", async () => {
     runSkillsCommand.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "nope" });
     await expect(
-      installSkill(
+      executeInstall(
         { source: "a/b", skillId: "tdd", agent: "claude-code" },
         { settingsStore: store },
       ),
@@ -209,7 +210,7 @@ describe("installSkill", () => {
 
   it("rejects invalid source before spawning", async () => {
     await expect(
-      installSkill(
+      executeInstall(
         { source: "../etc", skillId: "tdd", agent: "claude-code" },
         { settingsStore: store },
       ),
@@ -340,6 +341,67 @@ describe("handleSkillRoutes", () => {
     });
     const res = await handleSkillRoutes(req, url, { settingsStore: store });
     expect(res?.status).toBe(400);
+  });
+
+  it("POST /api/skills/install 成功 → 202 + taskId；后台完成 registry 终态 done", async () => {
+    const home = await mkdtemp(join(tmpdir(), "ar-install-route-"));
+    try {
+      const skillDir = join(home, ".claude", "skills", "tdd");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "---\nname: tdd\n---\ntdd");
+      runSkillsCommand.mockImplementation(async (args) => {
+        if (args[0] === "add") return { exitCode: 0, stdout: "", stderr: "" };
+        throw new Error("unexpected runSkillsCommand call");
+      });
+      const url = new URL("http://x/api/skills/install");
+      const req = new Request(url, {
+        method: "POST",
+        body: JSON.stringify({
+          source: "mattpocock/skills",
+          skillId: "tdd",
+          agent: "claude-code",
+        }),
+      });
+      const res = await handleSkillRoutes(req, url, {
+        settingsStore: store,
+        skillsHome: home,
+      });
+      expect(res?.status).toBe(202);
+      const body = (await res?.json()) as { taskId: string; status: string };
+      expect(body.status).toBe("running");
+      expect(body.taskId).toBeTruthy();
+      // 后台 runInstallTask 是 fire-and-forget，轮询 registry 到终态
+      const task = skillTaskRegistry.get(body.taskId);
+      expect(task).toBeDefined();
+      for (let i = 0; i < 50 && task!.status === "running"; i++) {
+        await new Promise<void>((r) => setTimeout(r, 10));
+      }
+      expect(task!.status).toBe("done");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/skills/install 并发去重 → 同 dedupKey 返同 taskId（joined）", async () => {
+    runSkillsCommand.mockImplementation(
+      async () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ exitCode: 0, stdout: "", stderr: "" }), 100),
+        ),
+    );
+    const url = new URL("http://x/api/skills/install");
+    const makeReq = () =>
+      new Request(url, {
+        method: "POST",
+        body: JSON.stringify({ source: "a/b", skillId: "tdd", agent: "claude-code" }),
+      });
+    const [r1, r2] = await Promise.all([
+      handleSkillRoutes(makeReq(), url, { settingsStore: store }),
+      handleSkillRoutes(makeReq(), url, { settingsStore: store }),
+    ]);
+    const b1 = (await r1?.json()) as { taskId: string };
+    const b2 = (await r2?.json()) as { taskId: string };
+    expect(b1.taskId).toBe(b2.taskId); // 去重命中，复用同 taskId
   });
 
   it("POST /api/skills/sources adds source → 201", async () => {

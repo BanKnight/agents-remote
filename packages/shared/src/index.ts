@@ -430,7 +430,8 @@ export type SkillPreviewResponse = {
 };
 
 export type InstallSkillRequest = { source: string; skillId: string; agent: SkillAgent };
-export type InstallSkillResponse = { ok: true; skill: InstalledSkill };
+// POST /api/skills/install 立即返 202（异步任务，git clone 在后台跑）；完成态走 SSE SkillTaskFrame。
+export type InstallSkillResponse = { taskId: string; status: "running" };
 export type UninstallSkillRequest = { name: string; agent: SkillAgent };
 export type UninstallSkillResponse = { ok: true };
 export type AddSkillSourceRequest = {
@@ -459,7 +460,22 @@ export type SkillUpdateStatus = {
 };
 export type CheckSkillUpdatesResponse = { updates: SkillUpdateStatus[] };
 export type UpdateSkillRequest = { name: string; agent: SkillAgent };
-export type UpdateSkillResponse = { ok: true; name: string };
+// POST /api/skills/update 立即返 202（异步任务，git clone 在后台跑）；完成态走 SSE SkillTaskFrame。
+export type UpdateSkillResponse = { taskId: string; status: "running" };
+
+// skill install/update 异步任务的 SSE 进度帧（GET /api/skills/task/:id/events，EventSource 订阅）。
+// 两态 UI 只消费 status 转换（running→done/failed），不展示阶段进度；done/failed 后服务端关闭流。
+// taskId 失效（API 重启丢内存任务）→ failed + error.code="SKILL_TASK_NOT_FOUND"，前端干净 reject 不重连。
+export type SkillTaskFrame = {
+  taskId: string;
+  status: "running" | "done" | "failed";
+  // 信息性字段：前端 waitForSkillTask 只看 status/error，kind 由调用方上下文已知。
+  // 未知 taskId（失效/API 重启丢）的 failed 帧省略 kind。
+  kind?: "install" | "update";
+  skill?: InstalledSkill; // done (install)：回读的已装条目
+  name?: string; // done (update)：skill 名
+  error?: { code: string; message: string }; // failed
+};
 
 // ── MCP hub ───────────────────────────────────────────────
 // MCP hub = 给 agent 装 tool/能力 的统一层（与 skill-market 装「知识/行为」互补）。

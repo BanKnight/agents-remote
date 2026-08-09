@@ -11,6 +11,7 @@ import {
   searchSkills,
   uninstallSkill,
   updateSkill,
+  waitForSkillTask,
 } from "../api/client";
 
 const SKILLS_KEY = ["skills"] as const;
@@ -59,10 +60,14 @@ export function useSkillSources() {
 // install/uninstall 后 server 自动遍历活跃 session 发 /reload-skills → CLI reload →
 // broadcast skill_catalog_changed → 各 session 的 slash catalog query 经 WS 自动失效
 //（无需这里手动 invalidate catalog）。这里只刷新「已装列表」。
+// install 已异步化：POST 秒回 taskId → waitForSkillTask 走 SSE 等终态；onSuccess 在任务真完成时跑。
 export function useInstallSkill() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: installSkill,
+    mutationFn: async (vars: Parameters<typeof installSkill>[0]) => {
+      const { taskId } = await installSkill(vars);
+      await waitForSkillTask(taskId, "api.skillInstallFailed");
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: SKILLS_KEY });
     },
@@ -112,10 +117,15 @@ export function useCheckSkillUpdates(agent: SkillAgent) {
 
 // update 服务端走 npx skills update + reloadAliveSessions（/reload-skills → skill_catalog_changed
 // 广播，无需这里手动 invalidate catalog）。刷新「已装列表」+ 乐观更新「该 skill 的更新检测结果」。
+// update 已异步化：POST 秒回 taskId → waitForSkillTask 走 SSE 等终态；onSuccess 在任务真完成时跑
+//（天然消除旧版「更新中→又变更新」体感——乐观 hasUpdate:false 现在在真完成时叠加）。
 export function useUpdateSkill() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: updateSkill,
+    mutationFn: async (vars: Parameters<typeof updateSkill>[0]) => {
+      const { taskId } = await updateSkill(vars);
+      await waitForSkillTask(taskId, "api.skillUpdateFailed");
+    },
     onSuccess: (_data, variables) => {
       void qc.invalidateQueries({ queryKey: SKILLS_KEY });
       // updates query 是 enabled:false（手动 refetch 驱动），invalidateQueries 不会触发它重拉，

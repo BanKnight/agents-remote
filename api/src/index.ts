@@ -45,12 +45,15 @@ import { handleStateRoutes } from "./state-routes";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
 import { handleSkillUpdateRoutes } from "./skill-update";
+import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
 import { startMcpHubServer } from "./mcp-hub-server";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
   upgrade(request: Request, options?: { data?: WebSocketData }): boolean;
+  // Bun Server.timeout：SSE 端点禁用 per-connection idle 超时（skill-tasks handleSkillTaskEvents 用）。
+  timeout(request: Request, seconds: number): unknown;
 };
 
 type FetchHandlerOptions = {
@@ -198,6 +201,12 @@ export const createFetchHandler =
       if (skillUpdateResponse) {
         return withRefresh(skillUpdateResponse);
       }
+    }
+
+    // skill install/update 异步任务的 SSE 进度流（不依赖 settingsStore，只需 registry + server）。
+    const taskEventsResponse = await handleSkillTaskEvents(request, url, server);
+    if (taskEventsResponse) {
+      return withRefresh(taskEventsResponse);
     }
 
     const mcpResponse = await handleMcpRoutes(request, url, { projectsRoot: options.projectsRoot });
@@ -1081,10 +1090,11 @@ export const startApi = async () => {
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);
-  // skill install/uninstall spawn `npx skills add/remove`：走 git clone 可数十秒，spawn 期间
-  // handler 未向 client socket 写任何字节 → 默认 idleTimeout=10s 在静默期关闭连接（Empty
-  // reply from server）。调到 Bun.serve 上限 255s 覆盖典型 clone 耗时（255 是 Bun 硬上限；
-  // install/uninstall 自身超时另设 300s/60s）。list/preview 已改 FS 直读（~0.1s），不再受此影响。
+  // 全局 idleTimeout：MCP 同步 spawn（mcp-management runCliTool 默认 60s）静默期需覆盖，
+  // 默认 10s 会在中途关闭连接（Empty reply）。调到 Bun.serve 上限 255s。
+  // skill install/update 已异步化（POST 立即返 202 + 后台 spawn），其 SSE 进度流用
+  // per-request server.timeout(req,0) 自给自足（skill-tasks.ts），不再依赖此全局值。
+  // 完整撤除此 hack 待 MCP 也异步化。list/preview 已 FS 直读（~0.1s）不受影响。
   const SKILL_REQUEST_IDLE_TIMEOUT_SECONDS = 255;
   const server = Bun.serve<WebSocketData>({
     port: config.apiPort,

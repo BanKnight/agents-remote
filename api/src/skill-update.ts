@@ -24,6 +24,7 @@ import {
   SkillError,
   type SkillErrorCode,
 } from "./skill-process.js";
+import { skillTaskRegistry } from "./skill-tasks.js";
 
 /**
  * skill 更新检测 + 执行（wrap `npx skills update` + 自读锁文件比对）。
@@ -216,10 +217,15 @@ export async function checkSkillUpdates(
   return { updates };
 }
 
-export async function updateSkill(
+/**
+ * 执行更新（后台任务体）：spawn `skills update`（重装 = git clone）→ reload 活跃 session。
+ * 由 {@link startUpdateTask} 在后台 fire-and-forget 调用，抛错由 runUpdateTask 兜底转终态。
+ * `killProcessGroup:true` 防超时/取消时 git/npm 孙进程孤儿（见 cli-process 进程组路径）。
+ */
+export async function executeUpdate(
   req: UpdateSkillRequest,
   deps: SkillMarketDeps,
-): Promise<UpdateSkillResponse> {
+): Promise<string> {
   const name = sanitizeSkillName(req.name);
   const agent = req.agent;
   if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
@@ -231,12 +237,64 @@ export async function updateSkill(
   const result = await runSkillsCommand(["update", name, "--global", "--yes"], {
     timeoutMs: INSTALL_SKILL_TIMEOUT_MS,
     failureCode: "SKILL_UPDATE_FAILED",
+    killProcessGroup: true,
   });
   if (result.exitCode !== 0) {
     throw new SkillError("SKILL_UPDATE_FAILED", `skills update failed: ${trimErr(result)}`);
   }
   await reloadAliveSessions(deps); // 更新 = 重装，需触发现有 catalog 刷新闭环
-  return { ok: true, name };
+  return name;
+}
+
+/**
+ * 启动 update 异步任务：同步校验（无效输入立即 400，不进后台）→ registry 去重起 task →
+ * !joined 时后台 fire-and-forget 执行 → 立即返 202 {taskId,status:"running"}。
+ * 同 dedupKey running 中 → 复用 taskId（joined），不重复 spawn。
+ */
+export async function startUpdateTask(
+  req: UpdateSkillRequest,
+  deps: SkillMarketDeps,
+): Promise<Response> {
+  let name: string;
+  let agent: SkillAgent;
+  try {
+    name = sanitizeSkillName(req.name);
+    agent = req.agent;
+    if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
+      throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
+    }
+  } catch (error) {
+    if (error instanceof SkillError) {
+      return jsonError(error.code, error.message, skillUpdateErrorStatus(error.code));
+    }
+    throw error;
+  }
+  const dedupKey = `update:${agent}:${name}`;
+  const { taskId, joined } = skillTaskRegistry.startOrJoin("update", dedupKey, name);
+  if (!joined) {
+    void runUpdateTask(taskId, req, deps);
+  }
+  return Response.json({ taskId, status: "running" } satisfies UpdateSkillResponse, {
+    status: 202,
+  });
+}
+
+/** 后台执行体：executeUpdate → finish(done,{name})；catch → finish(failed)。 */
+async function runUpdateTask(
+  taskId: string,
+  req: UpdateSkillRequest,
+  deps: SkillMarketDeps,
+): Promise<void> {
+  try {
+    const name = await executeUpdate(req, deps);
+    skillTaskRegistry.finish(taskId, { status: "done", name });
+  } catch (error) {
+    skillTaskRegistry.finish(taskId, {
+      status: "failed",
+      code: error instanceof SkillError ? error.code : "SKILL_UPDATE_FAILED",
+      message: errMsg(error),
+    });
+  }
 }
 
 // ── 路由：/api/skills/updates + /api/skills/update（独立 handler，避免与 skill-market 循环 import） ──
@@ -281,7 +339,7 @@ export async function handleSkillUpdateRoutes(
   }
   if (url.pathname === "/api/skills/update" && request.method === "POST") {
     const body = await readJson<UpdateSkillRequest>(request);
-    return runSkillUpdateHandler(() => updateSkill(body, deps));
+    return startUpdateTask(body, deps);
   }
   return undefined;
 }

@@ -35,6 +35,7 @@ import {
   type SkillErrorCode,
   type SkillsCommandResult,
 } from "./skill-process";
+import { skillTaskRegistry } from "./skill-tasks";
 
 /**
  * skill 路由依赖。claude2Runtime 可选（缺失则跳过装/卸后的 reload，
@@ -235,10 +236,15 @@ export async function reloadAliveSessions(deps: SkillMarketDeps): Promise<void> 
   }
 }
 
-export async function installSkill(
+/**
+ * 执行安装（后台任务体）：spawn `skills add`（git clone）→ reload 活跃 session → list 回读真相。
+ * 由 {@link startInstallTask} 在后台 fire-and-forget 调用，抛错由 runInstallTask 兜底转终态。
+ * `killProcessGroup:true` 防超时/取消时 git/npm 孙进程孤儿（见 cli-process 进程组路径）。
+ */
+export async function executeInstall(
   req: InstallSkillRequest,
   deps: SkillMarketDeps,
-): Promise<InstallSkillResponse> {
+): Promise<InstalledSkill> {
   const source = sanitizeSource(req.source);
   const skillId = sanitizeSkillId(req.skillId);
   const agent = req.agent;
@@ -247,7 +253,11 @@ export async function installSkill(
   }
   const result = await runSkillsCommand(
     ["add", `${source}@${skillId}`, "--global", "--agent", agent, "--yes"],
-    { timeoutMs: INSTALL_SKILL_TIMEOUT_MS, failureCode: "SKILL_INSTALL_FAILED" },
+    {
+      timeoutMs: INSTALL_SKILL_TIMEOUT_MS,
+      failureCode: "SKILL_INSTALL_FAILED",
+      killProcessGroup: true,
+    },
   );
   if (result.exitCode !== 0) {
     throw new SkillError("SKILL_INSTALL_FAILED", `skills add failed: ${trimErr(result)}`);
@@ -258,12 +268,62 @@ export async function installSkill(
   try {
     const { skills } = await listInstalledSkills(agent, deps);
     const found = skills.find((s) => s.name === skillId);
-    return {
-      ok: true,
-      skill: found ?? { name: skillId, path: "", scope: "global", agents: [agent] },
-    };
+    return found ?? { name: skillId, path: "", scope: "global", agents: [agent] };
   } catch {
-    return { ok: true, skill: { name: skillId, path: "", scope: "global", agents: [agent] } };
+    return { name: skillId, path: "", scope: "global", agents: [agent] };
+  }
+}
+
+/**
+ * 启动 install 异步任务：同步校验（无效输入立即 400，不进后台）→ registry 去重起 task →
+ * !joined 时后台 fire-and-forget 执行 → 立即返 202 {taskId,status:"running"}。
+ * 同 dedupKey running 中 → 复用 taskId（joined），不重复 spawn。
+ */
+export async function startInstallTask(
+  req: InstallSkillRequest,
+  deps: SkillMarketDeps,
+): Promise<Response> {
+  let source: string;
+  let skillId: string;
+  let agent: SkillAgent;
+  try {
+    source = sanitizeSource(req.source);
+    skillId = sanitizeSkillId(req.skillId);
+    agent = req.agent;
+    if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
+      throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
+    }
+  } catch (error) {
+    if (error instanceof SkillError) {
+      return jsonError(error.code, error.message, skillErrorStatus(error.code));
+    }
+    throw error;
+  }
+  const dedupKey = `install:${agent}:${source}/${skillId}`;
+  const { taskId, joined } = skillTaskRegistry.startOrJoin("install", dedupKey, skillId);
+  if (!joined) {
+    void runInstallTask(taskId, req, deps);
+  }
+  return Response.json({ taskId, status: "running" } satisfies InstallSkillResponse, {
+    status: 202,
+  });
+}
+
+/** 后台执行体：executeInstall → finish(done,{skill})；catch → finish(failed)。 */
+async function runInstallTask(
+  taskId: string,
+  req: InstallSkillRequest,
+  deps: SkillMarketDeps,
+): Promise<void> {
+  try {
+    const skill = await executeInstall(req, deps);
+    skillTaskRegistry.finish(taskId, { status: "done", skill });
+  } catch (error) {
+    skillTaskRegistry.finish(taskId, {
+      status: "failed",
+      code: error instanceof SkillError ? error.code : "SKILL_INSTALL_FAILED",
+      message: errMsg(error),
+    });
   }
 }
 
@@ -432,7 +492,7 @@ export async function handleSkillRoutes(
 
   if (url.pathname === "/api/skills/install" && isPost) {
     const body = await readJson<InstallSkillRequest>(request);
-    return runSkillHandler(() => installSkill(body, deps), 201);
+    return startInstallTask(body, deps);
   }
 
   if (url.pathname === "/api/skills/uninstall" && isPost) {

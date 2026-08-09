@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as skillProcess from "./skill-process";
+import { skillTaskRegistry } from "./skill-tasks";
 
 type CmdResult = { exitCode: number; stdout: string; stderr: string };
 type SkillDeps = { skillsHome: string };
@@ -15,7 +16,8 @@ mock.module("./skill-process", () => ({
   runSkillsCommand,
 }));
 
-const { checkSkillUpdates, updateSkill, handleSkillUpdateRoutes } = await import("./skill-update");
+const { checkSkillUpdates, executeUpdate, handleSkillUpdateRoutes } =
+  await import("./skill-update");
 
 let home: string;
 let deps: SkillDeps;
@@ -31,6 +33,7 @@ beforeEach(async () => {
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   await rm(home, { recursive: true, force: true });
+  skillTaskRegistry.clear();
 });
 
 /** 在临时 home 下造一个 installed skill：{home}/.claude/skills/<name>/SKILL.md */
@@ -198,25 +201,25 @@ describe("checkSkillUpdates", () => {
   });
 });
 
-describe("updateSkill", () => {
-  it("runs skills update with global (no --agent) and returns ok", async () => {
+describe("executeUpdate", () => {
+  it("runs skills update with global (no --agent) and returns name", async () => {
     runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-    const res = await updateSkill({ name: "my-skill", agent: "claude-code" }, deps);
+    const name = await executeUpdate({ name: "my-skill", agent: "claude-code" }, deps);
     // update 不带 --agent：skills update --help 不支持 --agent（add 独有），带会被 commander 拒绝。
     expect(runSkillsCommand.mock.calls[0][0]).toEqual(["update", "my-skill", "--global", "--yes"]);
-    expect(res).toEqual({ ok: true, name: "my-skill" });
+    expect(name).toBe("my-skill");
   });
 
   it("throws SKILL_UPDATE_FAILED on non-zero exit", async () => {
     runSkillsCommand.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "boom" });
-    await expect(updateSkill({ name: "my-skill", agent: "claude-code" }, deps)).rejects.toThrow(
+    await expect(executeUpdate({ name: "my-skill", agent: "claude-code" }, deps)).rejects.toThrow(
       /skills update failed/,
     );
   });
 
   it("rejects unsupported agent", async () => {
     await expect(
-      updateSkill({ name: "my-skill", agent: "unknown" as "claude-code" }, deps),
+      executeUpdate({ name: "my-skill", agent: "unknown" as "claude-code" }, deps),
     ).rejects.toThrow(/Unsupported agent/);
   });
 });
@@ -243,15 +246,40 @@ describe("handleSkillUpdateRoutes", () => {
     expect(Array.isArray(body.updates)).toBe(true);
   });
 
-  it("dispatches POST update", async () => {
+  it("dispatches POST update → 202 + taskId；后台完成 registry 终态 done", async () => {
     runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     const res = await handleSkillUpdateRoutes(
       req("POST", "/api/skills/update", { name: "s", agent: "claude-code" }),
       new URL("http://x/api/skills/update"),
       deps,
     );
-    expect(res?.status).toBe(200);
-    expect(await res!.json()).toEqual({ ok: true, name: "s" });
+    expect(res?.status).toBe(202);
+    const body = (await res!.json()) as { taskId: string; status: string };
+    expect(body.status).toBe("running");
+    expect(body.taskId).toBeTruthy();
+    const task = skillTaskRegistry.get(body.taskId);
+    expect(task).toBeDefined();
+    for (let i = 0; i < 50 && task!.status === "running"; i++) {
+      await new Promise<void>((r) => setTimeout(r, 10));
+    }
+    expect(task!.status).toBe("done");
+  });
+
+  it("POST update 失败 → 202 + taskId；后台 registry 终态 failed", async () => {
+    runSkillsCommand.mockResolvedValue({ exitCode: 1, stdout: "", stderr: "boom" });
+    const res = await handleSkillUpdateRoutes(
+      req("POST", "/api/skills/update", { name: "s", agent: "claude-code" }),
+      new URL("http://x/api/skills/update"),
+      deps,
+    );
+    expect(res?.status).toBe(202);
+    const body = (await res!.json()) as { taskId: string };
+    const task = skillTaskRegistry.get(body.taskId);
+    for (let i = 0; i < 50 && task!.status === "running"; i++) {
+      await new Promise<void>((r) => setTimeout(r, 10));
+    }
+    expect(task!.status).toBe("failed");
+    expect(task!.error?.code).toBe("SKILL_UPDATE_FAILED");
   });
 
   it("returns undefined for unmatched path", async () => {

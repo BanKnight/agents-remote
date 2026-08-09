@@ -75,6 +75,7 @@ import type {
   SkillMarketSearchResponse,
   SkillPreviewResponse,
   SkillSourcesResponse,
+  SkillTaskFrame,
   UninstallSkillRequest,
   UninstallSkillResponse,
   UpdateSkillRequest,
@@ -721,17 +722,12 @@ export async function previewSkill(name: string, agent: SkillAgent): Promise<Ski
 }
 
 export async function installSkill(req: InstallSkillRequest): Promise<InstallSkillResponse> {
-  // skills add = git clone（服务端 INSTALL_SKILL_TIMEOUT_MS=5min），同 update 用长超时。
-  return fetchJson(
-    "/api/skills/install",
-    "api.skillInstallFailed",
-    {
-      method: "POST",
-      body: JSON.stringify(req),
-      headers: { "content-type": "application/json" },
-    },
-    API_LONG_TIMEOUT_MS,
-  );
+  // POST 秒回 taskId（202）：git clone 在后台 spawn，进度走 SSE（waitForSkillTask），用默认 8s 超时。
+  return fetchJson("/api/skills/install", "api.skillInstallFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export async function uninstallSkill(req: UninstallSkillRequest): Promise<UninstallSkillResponse> {
@@ -770,18 +766,66 @@ export async function checkSkillUpdates(agent: SkillAgent): Promise<CheckSkillUp
 }
 
 export async function updateSkill(req: UpdateSkillRequest): Promise<UpdateSkillResponse> {
-  // skills update = git clone 重装（服务端 INSTALL_SKILL_TIMEOUT_MS=5min），用长超时避免 8s 默认
-  // abort → "fetch is aborted"。
-  return fetchJson(
-    "/api/skills/update",
-    "api.skillUpdateFailed",
-    {
-      method: "POST",
-      body: JSON.stringify(req),
-      headers: { "content-type": "application/json" },
-    },
-    API_LONG_TIMEOUT_MS,
-  );
+  // POST 秒回 taskId（202）：git clone 重装在后台 spawn，进度走 SSE（waitForSkillTask），用默认 8s 超时。
+  return fetchJson("/api/skills/update", "api.skillUpdateFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+// ── skill install/update 异步任务 SSE 订阅 ──
+// POST /api/skills/install|update 立即返 taskId（202），后台 spawn skills CLI（git clone，分钟级）。
+// 前端用 EventSource 订阅 /api/skills/task/:id/events，只消费 status 转换（两态 UI：spinner→done/error）。
+
+/** 构造 SSE 订阅 URL（同源，EventSource 自动带 cookie 鉴权，/api/ 守卫天然覆盖）。 */
+export function taskEventsUrl(taskId: string): string {
+  return `/api/skills/task/${encodeURIComponent(taskId)}/events`;
+}
+
+/** 订阅任务进度帧；返回取消订阅函数（关闭 EventSource）。EventSource 自动重连，不在 onerror reject。 */
+export function subscribeSkillTask(
+  taskId: string,
+  onFrame: (frame: SkillTaskFrame) => void,
+): () => void {
+  const es = new EventSource(taskEventsUrl(taskId));
+  es.onmessage = (ev) => {
+    try {
+      onFrame(JSON.parse(ev.data) as SkillTaskFrame);
+    } catch {
+      // 忽略坏帧（EventSource 自动重连）
+    }
+  };
+  return () => es.close();
+}
+
+/**
+ * 等待任务到终态：done → resolve(frame)；failed → reject(failureKey 翻译)。
+ * guard 兜底防永久 pending（> 服务端 300s INSTALL_SKILL_TIMEOUT_MS；正常服务端超时会推 failed 帧）。
+ * failureKey 由调用方按 install/update 场景传入，保持与旧 fetchJson 失败 i18n 一致。
+ */
+const SKILL_TASK_GUARD_MS = 320_000;
+export async function waitForSkillTask(
+  taskId: string,
+  failureKey: TranslationKey,
+): Promise<SkillTaskFrame> {
+  return new Promise<SkillTaskFrame>((resolve, reject) => {
+    const unsubscribe = subscribeSkillTask(taskId, (frame) => {
+      if (frame.status === "done") {
+        clearTimeout(guard);
+        unsubscribe();
+        resolve(frame);
+      } else if (frame.status === "failed") {
+        clearTimeout(guard);
+        unsubscribe();
+        reject(new Error(resolveTranslation(failureKey)));
+      }
+    });
+    const guard = setTimeout(() => {
+      unsubscribe();
+      reject(new Error(resolveTranslation(failureKey)));
+    }, SKILL_TASK_GUARD_MS);
+  });
 }
 
 // ── MCP（外部 server 管理：user scope ~/.claude.json / project scope .mcp.json）──
@@ -874,12 +918,10 @@ export async function unpinSession(sessionId: string): Promise<PinnedSessionsRes
  * queryClient retry）。不救"慢"——偶发尖峰 <8s 不触发（救慢靠后端 TTL 降频 + stale-while-revalidate），
  * 只防单请求永久 pending。两处 fetch 各新建 signal（retry 不共享首次剩余时长）。
  *
- * 已知慢操作（git clone / npx spawn 分钟级）由调用方显式传 timeoutMs 覆盖默认 8s，见 API_LONG_TIMEOUT_MS。
+ * 慢操作（install/update 的 git clone 分钟级）已异步化：POST 秒回 taskId，进度走 SSE
+ * （见 waitForSkillTask），不再经此 fetchJson 长超时。
  */
 const API_REQUEST_TIMEOUT_MS = 8_000;
-// 慢操作专用超时：install/update 走 `npx skills add/update`，git clone 远程仓库可达分钟级；
-// 服务端 INSTALL_SKILL_TIMEOUT_MS=300s，客户端必须 ≥ 否则先 abort → "fetch is aborted"（用户实测报）。
-const API_LONG_TIMEOUT_MS = 310_000;
 
 const fetchJson = async <T>(
   url: string,
