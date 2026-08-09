@@ -545,7 +545,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.panelPreviewEmpty": "暂无输出",
   "workbench.globalOverviewTitle": "实例",
   "workbench.globalOverviewEmpty": "暂无活跃实例。",
-  "workbench.enterProject": "进入项目",
   "workbench.collapseProjectGroup": "折叠项目组",
   "workbench.expandProjectGroup": "展开项目组",
   "workbench.pin": "置顶",

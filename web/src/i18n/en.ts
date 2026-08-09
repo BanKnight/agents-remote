@@ -546,7 +546,6 @@ export const en = {
   "workbench.panelPreviewEmpty": "No output yet",
   "workbench.globalOverviewTitle": "Instances",
   "workbench.globalOverviewEmpty": "No active instances.",
-  "workbench.enterProject": "Enter project",
   "workbench.collapseProjectGroup": "Collapse project group",
   "workbench.expandProjectGroup": "Expand project group",
   "workbench.pin": "Pin",
