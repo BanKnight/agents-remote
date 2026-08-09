@@ -78,7 +78,7 @@ async function run() {
   const css = await verifyCssFlushed({
     origin: WEB_ORIGIN,
     expectClasses: [
-      "bg-surface-raised/30",
+      "bg-on-surface/10",
       "text-on-surface-muted",
       "divide-on-surface/5",
       "touch:h-10",
@@ -181,10 +181,11 @@ async function run() {
       `断言7a ▾ chevron 紧挨 📁（gap=${gap.toFixed(1)}px ≤10，非首版 14px）`,
     );
     // chevron 贴左 = 相对标题行容器左缘 ≈ pl-3(12)（绝对 left 受左总览栏偏移影响，改用相对偏移）。
-    // 行容器 = bg-surface-raised/30 的标题行 div（2026-08-10 去 rounded-lg 后不再有 rounded-lg 标记）。
+    // 行容器 = bg-on-surface/10 的标题行 div（2026-08-10 去 rounded-lg 后不再有 rounded-lg 标记；
+    // 2026-08-10 bg 从 surface-raised/30 → on-surface/10 主题自适应）。
     const chevronRelRow = await foldBtn.evaluate((el) => {
       let node = el.parentElement;
-      while (node && !node.className.includes("surface-raised")) node = node.parentElement;
+      while (node && !node.className.includes("bg-on-surface/10")) node = node.parentElement;
       const row = node ?? el.parentElement;
       return (
         el.querySelector("svg").getBoundingClientRect().left - row.getBoundingClientRect().left
@@ -330,8 +331,8 @@ async function run() {
     // 断言 9：分组间无空隙（divide-y 紧贴）+ 标题行横跨 content（去 rounded-lg 方角让分割线贯通）。
     // 折叠态每个 section 只剩标题行 div（卡片区 null），section > div = 标题行。
     const layout = await apage.evaluate(() => {
-      // 标题行 = surface-raised + pl-3 + pr-2 + gap-2（过滤同名 surface-raised 的非标题行）。
-      const rows = [...document.querySelectorAll('[class*="surface-raised"]')]
+      // 标题行 = bg-on-surface/10 + pl-3 + pr-2 + gap-2（2026-08-10 bg 从 surface-raised/30 改主题自适应）。
+      const rows = [...document.querySelectorAll('[class*="bg-on-surface/10"]')]
         .filter(
           (el) =>
             el.className.includes("pl-3") &&
@@ -366,6 +367,61 @@ async function run() {
     record(
       maxGap <= 1,
       `断言9b 分组间无空隙（相邻 gap max=${maxGap.toFixed(1)}px ≤1，divide-y 紧贴非 space-y-2 的 8px）`,
+    );
+    // 断言 10：on-surface/10 两主题都明显（用户「多主题」核心诉求）。直接读 :root 的 --on-surface +
+    // --surface-raised（左栏底近似）hex，手算 on-surface @10% alpha 叠加底色的合成色 Δ（绕过 getComputedStyle
+    // 解析 color-mix 的不确定性）。明主题 + 加 .dark class 暗主题各一次。on-surface 主题自适应[明 #0f1520 深 /
+    // 暗 #eef4ff 浅]，两主题 Δ≈66~69（三通道和）远高于旧 surface-raised/30 与底自我叠加的 ≈0。
+    const themeDelta = await apage.evaluate(() => {
+      function color(s) {
+        s = (s || "").trim();
+        let m = s.match(/^#([0-9a-f]{6})$/i);
+        if (m) {
+          const n = parseInt(m[1], 16);
+          return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+        }
+        // 浏览器 getComputedStyle 会把 #ffffff 规范化成 3 位简写 #fff。
+        m = s.match(/^#([0-9a-f]{3})$/i);
+        if (m) {
+          return {
+            r: parseInt(m[1][0] + m[1][0], 16),
+            g: parseInt(m[1][1] + m[1][1], 16),
+            b: parseInt(m[1][2] + m[1][2], 16),
+          };
+        }
+        // 或解析成 rgb()（空格或逗号分隔）。
+        m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+        if (m) return { r: +m[1], g: +m[2], b: +m[3] };
+        return null;
+      }
+      function read() {
+        const cs = getComputedStyle(document.documentElement);
+        const onSurfaceRaw = cs.getPropertyValue("--on-surface");
+        const baseRaw = cs.getPropertyValue("--surface-raised");
+        const onSurface = color(onSurfaceRaw);
+        const base = color(baseRaw);
+        let delta = null;
+        if (onSurface && base) {
+          const a = 0.1;
+          const final = {
+            r: onSurface.r * a + base.r * (1 - a),
+            g: onSurface.g * a + base.g * (1 - a),
+            b: onSurface.b * a + base.b * (1 - a),
+          };
+          delta =
+            Math.abs(final.r - base.r) + Math.abs(final.g - base.g) + Math.abs(final.b - base.b);
+        }
+        return { delta, onSurfaceRaw: onSurfaceRaw.trim(), baseRaw: baseRaw.trim() };
+      }
+      const light = read();
+      document.documentElement.classList.add("dark");
+      const dark = read();
+      document.documentElement.classList.remove("dark");
+      return { light, dark };
+    });
+    record(
+      themeDelta.light?.delta > 30 && themeDelta.dark?.delta > 30,
+      `断言10 on-surface/10 两主题都明显（明 Δ=${themeDelta.light?.delta?.toFixed(0)} / 暗 Δ=${themeDelta.dark?.delta?.toFixed(0)} >30；旧 surface-raised/30 自叠加 ≈0）`,
     );
     await actx.close();
   } finally {

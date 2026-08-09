@@ -47,7 +47,7 @@ async function run() {
   // 前置：CSS 落盘三道闸（web DOM 探针铁律，frontend-notes §2/§10）。
   const css = await verifyCssFlushed({
     origin: WEB_ORIGIN,
-    expectClasses: ["bg-surface-raised/30", "text-on-surface-muted"],
+    expectClasses: ["bg-on-surface/10", "text-on-surface-muted"],
   });
   if (!css.pass) {
     console.error("CSS 落盘验证失败，探针中止：");

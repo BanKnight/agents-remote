@@ -249,7 +249,7 @@ const PINNED_GROUP_KEY = "__pinned__";
  * 去 › 进入按钮，整行进入已够）。折叠/展开只由 ▾ 独立按钮触发（`aria-expanded` + `aria-label` 按态切换
  * collapse/expandProjectGroup，状态 `workbenchProjectGroupsCollapsedAtom` localStorage 按项目记忆）。
  * 新建合并为 ➕ 二级菜单（ActionMenu，对齐项目内 CreateSessionBar）+ 🗑 删除独立。名行容器
- * `bg-surface-raised/30`（方角去 rounded-lg，让分割线横跨整行），两端 `pl-3 pr-2`。空项目无折叠内容——▾ 位 size-4 占位
+ * `bg-on-surface/10`（主题自适应文字色叠加——明主题加深 / 暗主题加浅，两主题对称明显；旧 `surface-raised/30` 与左栏 `surface-raised` 底自我叠加两主题都不可见；方角去 rounded-lg 让分割线横跨整行），两端 `pl-3 pr-2`。空项目无折叠内容——▾ 位 size-4 占位
  * span 保持 📁 与有实例行对齐，仍保留 ➕/🗑。实例区 = InstanceGrid plain 连续单列卡片（无圆角 section
  * 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard topSeparator 画 inset 分割线，两端统一 left-15=60px
  * 跳过 marker 列）。最前另渲染「置顶」特殊分组（📌，pin 状态存服务端 state.yaml overview 模块跨设备共享，
@@ -321,7 +321,7 @@ function GroupedProjectsList({
           toggle（▾/▸ + 📌 pin + 置顶），无 › 进项目、无 ⋯ 删除（非项目）。 */}
       {pinnedCandidates.length > 0 ? (
         <section key={PINNED_GROUP_KEY}>
-          <div className="flex items-center gap-2 bg-surface-raised/30 pl-3 pr-2">
+          <div className="flex items-center gap-2 bg-on-surface/10 pl-3 pr-2">
             <button
               aria-expanded={!pinnedCollapsed}
               className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
@@ -368,7 +368,7 @@ function GroupedProjectsList({
         const isCollapsed = hasCards && !!collapsed[group.projectName];
         return (
           <section key={group.projectName}>
-            <div className="flex items-center gap-2 bg-surface-raised/30 pl-3 pr-2">
+            <div className="flex items-center gap-2 bg-on-surface/10 pl-3 pr-2">
               {/* 左组：折叠 chevron + 名，复刻置顶分组「chevron+icon+文字」紧凑结构（gap-1.5）。
                   ▾ size-4 紧贴容器左缘（pl-3=12，对齐置顶 ▾ 同 x 位）+ 紧挨 📁（gap-1.5=6，纠正
                   首版 ▾ h-7 w-7 方块 button 致 chevron 偏右 6px、离 📁 隔 14px 的布局错误）。

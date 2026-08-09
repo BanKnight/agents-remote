@@ -530,7 +530,7 @@ async function runViewport(mobile) {
       } more=${btnSizes.more === null ? "null" : Math.round(btnSizes.more)}，⋯ 显著 > pin）`,
     );
 
-    // 分组标题行背景：置顶组 + 项目组标题行（nameRow）背景非透明（bg-surface-raised/30 raised 抬升条）。
+    // 分组标题行背景：置顶组 + 项目组标题行（nameRow）背景非透明（bg-on-surface/10 主题自适应中性叠加）。
     const rowBg = await page.evaluate((enterSel) => {
       return Array.from(document.querySelectorAll("section"))
         .map((s) => {
@@ -696,7 +696,7 @@ async function runViewport(mobile) {
       // title 行恒让位给 ⋯
       "pr-10",
       "touch:pr-12",
-      "bg-surface-raised/30",
+      "bg-on-surface/10",
       "rounded-lg",
     ],
   });
