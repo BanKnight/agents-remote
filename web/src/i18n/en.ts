@@ -675,6 +675,14 @@ export const en = {
   "skills.upToDate": "Up to date",
   "skills.local": "Local",
   "skills.bringUnderManagement": "Bring under management",
+  // 操作按钮 hover tooltip（原生 title=，*Tooltip key 命名；描述性完整句）
+  "skills.installTooltip": "Install this skill",
+  "skills.updateTooltip": "Pull latest version from source",
+  "skills.uninstallTooltip": "Remove this skill",
+  "skills.bringUnderManagementTooltip": "Add a source to track updates",
+  "skills.checkUpdatesTooltip": "Check all skills for updates",
+  "skills.addSourceTooltip": "Add a skill source",
+  "skills.removeSourceTooltip": "Remove this source",
 
   // MCP（外部 server 管理：wrap claude mcp 读写 ~/.claude.json / .mcp.json）
   "mcp.title": "MCP servers",
@@ -707,6 +715,11 @@ export const en = {
   "mcp.updateConfirmBody":
     "The server configuration will be replaced. Sessions started afterwards will use the new config.",
   "mcp.updateConfirmCta": "Save",
+  // 操作按钮 hover tooltip（原生 title=）
+  "mcp.addTooltip": "Add MCP server config",
+  "mcp.saveTooltip": "Save MCP server config",
+  "mcp.editTooltip": "Edit this server config",
+  "mcp.removeTooltip": "Remove this server",
   "pages.panelAria": "Pages roots",
   "pages.emptyTitle": "No pages roots",
   "pages.emptyDesc": "Map a project directory to a URL path to serve it as a static site.",

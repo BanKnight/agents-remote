@@ -23,11 +23,12 @@ afterEach(async () => {
   await rm(outside, { recursive: true, force: true });
 });
 
-test("listFiles excludes hidden entries and returns directories first with names sorted", async () => {
+test("listFiles hides only blocklisted entries (.git); other dot items visible", async () => {
   await mkdir(join(root, "demo", "z-dir"));
-  await mkdir(join(root, "demo", ".config"));
+  await mkdir(join(root, "demo", ".config")); // 非 .git dot 目录 → 可见
+  await mkdir(join(root, "demo", ".git")); // 黑名单 → 隐藏
   await writeFile(join(root, "demo", "beta.txt"), "beta");
-  await writeFile(join(root, "demo", ".env"), "SECRET=example");
+  await writeFile(join(root, "demo", ".env"), "SECRET=example"); // 非 .git dot 文件 → 可见
 
   const service = new ProjectFilesService(root);
 
@@ -36,16 +37,19 @@ test("listFiles excludes hidden entries and returns directories first with names
     path: "",
     parentPath: null,
     entries: [
+      { name: ".config", path: ".config", type: "directory", hidden: false, size: null },
       { name: "z-dir", path: "z-dir", type: "directory", hidden: false, size: null },
+      { name: ".env", path: ".env", type: "file", hidden: false, size: 14 },
       { name: "beta.txt", path: "beta.txt", type: "file", hidden: false, size: 4 },
     ],
   });
 });
 
-test("listRootFiles lists PROJECTS_ROOT top-level entries (directories first, hidden excluded)", async () => {
-  // root 已含 demo 目录（beforeEach）；补几个同级项目目录 + 隐藏项 + 散落文件
+test("listRootFiles hides only blocklisted entries (.git); other dot items visible", async () => {
+  // root 已含 demo 目录（beforeEach）；补几个同级项目目录 + dot 项 + 黑名单 + 散落文件
   await mkdir(join(root, "alpha"));
   await mkdir(join(root, ".config"));
+  await mkdir(join(root, ".git")); // 黑名单 → 隐藏
   await writeFile(join(root, "README.md"), "root readme");
   await writeFile(join(root, ".env"), "SECRET=example");
 
@@ -56,8 +60,10 @@ test("listRootFiles lists PROJECTS_ROOT top-level entries (directories first, hi
     path: "",
     parentPath: null,
     entries: [
+      { name: ".config", path: ".config", type: "directory", hidden: false, size: null },
       { name: "alpha", path: "alpha", type: "directory", hidden: false, size: null },
       { name: "demo", path: "demo", type: "directory", hidden: false, size: null },
+      { name: ".env", path: ".env", type: "file", hidden: false, size: 14 },
       { name: "README.md", path: "README.md", type: "file", hidden: false, size: 11 },
     ],
   });

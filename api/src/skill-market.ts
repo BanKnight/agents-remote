@@ -188,6 +188,9 @@ async function scanInstalledSkillsFromFs(
   const dir = projectRoot
     ? join(projectRoot, AGENT_SKILLS_HOME_DIR[agent], "skills")
     : agentGlobalSkillsDir(agent, home);
+  // 项目 scope 读一次项目锁判断每 skill 是否有源（manageable）；全局 scope 不读（manageable 走
+  // 独立的 checkSkillUpdates）。循环外读一次，不 per-skill 重复 IO。
+  const lockNames = projectRoot ? await readProjectSkillLockNames(projectRoot) : null;
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -217,14 +220,40 @@ async function scanInstalledSkillsFromFs(
     } catch {
       realPath = entryPath;
     }
+    const name = fm.name || entry;
     skills.push({
-      name: fm.name || entry,
+      name,
       path: realPath,
       scope: projectRoot ? "project" : "global",
       agents: [AGENT_DISPLAY_NAME[agent]],
+      // 项目 scope：锁记录存在 = 有源可更新；手写 skill（无锁记录）= false。全局不填（undefined）。
+      ...(lockNames ? { manageable: lockNames.has(name) } : {}),
     });
   }
   return skills;
+}
+
+/**
+ * 读项目锁 `<projectRoot>/skills-lock.json` 的 skill name 集合（判断项目 scope skill 是否
+ * 有源 = 纳入版本管理）。文件缺失/损坏 → empty set（list 容错：锁损坏不应让已装列表整体失败）。
+ * 与全局锁 `~/.agents/.skill-lock.json` 结构同构（{version, skills:{[name]:{...}}}），但路径
+ * 与容错策略不同：全局 readSkillLock 损坏抛错（checkSkillUpdates 需感知）；项目锁仅判存在性，容错。
+ */
+async function readProjectSkillLockNames(projectRoot: string): Promise<Set<string>> {
+  let raw: string;
+  try {
+    raw = await readFile(join(projectRoot, "skills-lock.json"), "utf8");
+  } catch {
+    return new Set(); // 文件缺失（项目无第三方 skill）= 空集，非错误。
+  }
+  try {
+    const parsed = JSON.parse(raw) as { skills?: unknown };
+    const skills = parsed.skills;
+    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return new Set();
+    return new Set(Object.keys(skills as Record<string, unknown>));
+  } catch {
+    return new Set(); // JSON 损坏 → 空集（list 容错，不抛）。
+  }
 }
 
 export async function listInstalledSkills(

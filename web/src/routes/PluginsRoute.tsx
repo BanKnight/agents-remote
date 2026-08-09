@@ -136,7 +136,9 @@ export function PluginsPanel({
           <ActionButton compact onClick={() => setSelectedSkill(null)}>
             {t("nav.back")}
           </ActionButton>
-          <span className="truncate text-sm font-semibold text-on-surface">{selectedSkill}</span>
+          <span className="truncate text-sm font-semibold text-on-surface" title={selectedSkill}>
+            {selectedSkill}
+          </span>
         </div>
         <SkillTabPreview name={selectedSkill} projectName={projectName} />
       </div>
@@ -276,6 +278,7 @@ function DiscoverTab({
                   compact
                   disabled={install.isPending}
                   onClick={() => setPending(s)}
+                  title={t("skills.installTooltip")}
                   tone="accent"
                 >
                   {t("skills.install")}
@@ -387,8 +390,9 @@ function ManageTab({
 }: {
   agent: SkillAgent;
   /**
-   * 项目 scope 信号：给定 → 每行恒显「更新」（直接拉取，无检测）、隐藏「检查更新」按钮 +
-   * update 徽标 + 「纳入管理」按钮。undefined → 全局 scope（hasUpdate 驱动）。
+   * 项目 scope 信号：给定 → 有源 skill（skills-lock.json 有记录）显「更新」（直接拉取，无检测）、
+   * 手写 skill 显「本地」徽标、隐藏「检查更新」按钮。undefined → 全局 scope（hasUpdate 驱动 +
+   * 「纳入管理」按钮）。
    */
   projectName?: string;
   /** 未纳入版本管理（手写/本地）skill 的「纳入管理」入口：跳 Sources tab 挂 local/git 源。 */
@@ -427,6 +431,7 @@ function ManageTab({
           compact
           disabled={updates.isFetching}
           onClick={() => void updates.refetch()}
+          title={t("skills.checkUpdatesTooltip")}
           tone="accent"
         >
           {updates.isFetching ? t("skills.checking") : t("skills.checkUpdates")}
@@ -440,9 +445,11 @@ function ManageTab({
       <ListGroup ariaLabel={t("skills.tabManage")}>
         {skills.map((s) => {
           const status = statusByName.get(s.name);
-          // 更新按钮：项目 scope 每行恒显（直接拉取同步）；全局仅「有更新」(manageable+hasUpdate) 显。
-          const showUpdate =
-            Boolean(projectName) || Boolean(status?.manageable && status.hasUpdate);
+          // 更新按钮：项目 scope 仅有源 skill（skills-lock.json 有记录）显——手写 skill 点了必失败；
+          // 全局仅「有更新」(manageable+hasUpdate) 显。
+          const showUpdate = projectName
+            ? s.manageable === true
+            : Boolean(status?.manageable && status.hasUpdate);
           // rowCommon 复用：onClick 是键盘 Enter/Space → click 路径；actions 的 uninstall 按钮点击
           // 走原生 click（inClose 判定：closest("button") → 不触发拖动 onSelect）。onCardDragStart
           // 存在 → DraggableListRow 拖到中栏开 skill tab（设计 §7.2）。
@@ -459,6 +466,7 @@ function ManageTab({
                         setUpdating(null);
                       });
                     }}
+                    title={t("skills.updateTooltip")}
                     tone="accent"
                   >
                     {updating === s.name ? t("skills.updating") : t("skills.update")}
@@ -466,7 +474,11 @@ function ManageTab({
                 ) : null}
                 {/* 「纳入管理」仅全局 scope（手写/本地 skill 跳 Sources 挂源）；项目无源概念。 */}
                 {projectName ? null : status && !status.manageable ? (
-                  <ActionButton compact onClick={onGoToSources}>
+                  <ActionButton
+                    compact
+                    onClick={onGoToSources}
+                    title={t("skills.bringUnderManagementTooltip")}
+                  >
                     {t("skills.bringUnderManagement")}
                   </ActionButton>
                 ) : null}
@@ -474,14 +486,22 @@ function ManageTab({
                   compact
                   disabled={uninstall.isPending}
                   onClick={() => uninstall.mutate({ name: s.name, agent })}
+                  title={t("skills.uninstallTooltip")}
                   tone="danger"
                 >
                   {uninstall.isPending ? t("skills.uninstalling") : t("skills.uninstall")}
                 </ActionButton>
               </>
             ),
-            // 徽标仅全局 scope（项目无检测，无 hasUpdate/manageable 信号）。
-            meta: projectName ? null : status ? (
+            // 徽标：项目 scope 手写 skill（无锁记录）显「本地」；全局 scope 按 checkUpdates 信号
+            //（manageable+已最新 / 手写本地）。两类 scope 共用 local/upToDate 徽标样式。
+            meta: projectName ? (
+              s.manageable ? null : (
+                <span className="rounded-full bg-on-surface/10 px-2 py-0.5 text-[10px] font-semibold text-on-surface-muted">
+                  {t("skills.local")}
+                </span>
+              )
+            ) : status ? (
               status.manageable ? (
                 status.hasUpdate ? null : (
                   <span className="rounded-full bg-on-surface/10 px-2 py-0.5 text-[10px] font-semibold text-on-surface-muted">
@@ -594,6 +614,7 @@ function SourcesTab() {
         />
         <ActionButton
           disabled={!repo.trim() || addSource.isPending}
+          title={t("skills.addSourceTooltip")}
           onClick={async () => {
             try {
               await addSource.mutateAsync({
@@ -630,6 +651,7 @@ function SourcesTab() {
                   compact
                   disabled={removeSource.isPending}
                   onClick={() => removeSource.mutate(src.id)}
+                  title={t("skills.removeSourceTooltip")}
                   tone="danger"
                 >
                   {t("skills.removeSource")}
@@ -795,6 +817,7 @@ function McpPanel({ projectName }: { projectName?: string }) {
                 : addServer.isPending || !buildDraft()
             }
             onClick={() => (editing ? setPendingUpdate(true) : setPendingAdd(true))}
+            title={editing ? t("mcp.saveTooltip") : t("mcp.addTooltip")}
             tone="accent"
           >
             {editing
@@ -824,13 +847,14 @@ function McpPanel({ projectName }: { projectName?: string }) {
             <ListRow
               actions={
                 <>
-                  <ActionButton compact onClick={() => fillForm(s)}>
+                  <ActionButton compact onClick={() => fillForm(s)} title={t("mcp.editTooltip")}>
                     {t("mcp.edit")}
                   </ActionButton>
                   <ActionButton
                     compact
                     disabled={removeServer.isPending}
                     onClick={() => setPendingRemove(s.name)}
+                    title={t("mcp.removeTooltip")}
                     tone="danger"
                   >
                     {t("mcp.remove")}

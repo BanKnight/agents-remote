@@ -670,6 +670,14 @@ export const zh: Record<TranslationKey, string> = {
   "skills.upToDate": "已是最新",
   "skills.local": "本地",
   "skills.bringUnderManagement": "纳入管理",
+  // 操作按钮 hover tooltip（原生 title=，*Tooltip key 命名；描述性完整句）
+  "skills.installTooltip": "安装此技能",
+  "skills.updateTooltip": "从源拉取最新版本",
+  "skills.uninstallTooltip": "移除此技能",
+  "skills.bringUnderManagementTooltip": "添加源以跟踪更新",
+  "skills.checkUpdatesTooltip": "检查所有技能的更新",
+  "skills.addSourceTooltip": "添加技能源",
+  "skills.removeSourceTooltip": "移除此源",
 
   // MCP（外部 server 管理：wrap claude mcp 读写 ~/.claude.json / .mcp.json）
   "mcp.title": "MCP 服务器",
@@ -699,6 +707,11 @@ export const zh: Record<TranslationKey, string> = {
   "mcp.updateConfirmTitle": "修改 MCP 服务器",
   "mcp.updateConfirmBody": "该服务器的配置将被替换，之后新建的会话将使用新配置。",
   "mcp.updateConfirmCta": "保存",
+  // 操作按钮 hover tooltip（原生 title=）
+  "mcp.addTooltip": "添加 MCP server 配置",
+  "mcp.saveTooltip": "保存 MCP server 配置",
+  "mcp.editTooltip": "编辑此 server 配置",
+  "mcp.removeTooltip": "移除此 server",
   "pages.panelAria": "页面静态根",
   "pages.emptyTitle": "尚未配置页面根",
   "pages.emptyDesc": "把项目内的目录映射到 URL 路径，即可作为静态站点对外提供访问。",

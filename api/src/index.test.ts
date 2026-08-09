@@ -367,7 +367,8 @@ test("createFetchHandler closes sessions through Project-scoped action routes", 
 
 test("createFetchHandler serves Project-scoped file browsing and preview", async () => {
   await mkdir(join(root, "demo", "src"), { recursive: true });
-  await mkdir(join(root, "demo", ".config"));
+  await mkdir(join(root, "demo", ".config")); // 非黑名单 dot 目录 → 可见
+  await mkdir(join(root, "demo", ".git")); // 黑名单 → 隐藏
   await writeFile(join(root, "demo", "src", "index.ts"), "console.log('ok')\n");
   await writeFile(join(root, "demo", "image.png"), Buffer.from([1, 2, 3]));
   const { auth, handler } = createTestHandler();
@@ -398,6 +399,7 @@ test("createFetchHandler serves Project-scoped file browsing and preview", async
 
   expect(list.status).toBe(200);
   expect(listBody.entries.map((entry: { name: string }) => entry.name)).toEqual([
+    ".config",
     "src",
     "image.png",
   ]);

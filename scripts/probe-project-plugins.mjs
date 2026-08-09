@@ -7,8 +7,9 @@
 //    4. skill Manage tab 无「Check for updates」按钮（项目 update 直接拉取，隐藏全局检测入口）
 //    5. 切 MCP → MCP 区渲染（scope=project 透传；test 无 .mcp.json → 空态 + add 表单）
 //    6. 项目级端点：skills/mcp list 200 空、未知项目 → 404
-//  B（mock 项目 skills，独立 context）：项目 Manage 每行恒显「Update」按钮 + 无「Check for updates」
-//    （mock 单个 project skill，验证「有 skill 时」项目分支——真实后端 test 空态覆盖不到）。
+//  B（mock 项目 skills，独立 context）：manageable 驱动 Update 显隐（有源 skill 显 / 手写不显）+
+//    手写 skill 显「Local」徽标（mock sourced manageable:true + handwritten manageable:false，
+//    反映后端 scanInstalledSkillsFromFs 读项目锁填的 manageable——真实后端 test 空态覆盖不到）。
 //  C（真实后端，移动 390×844）：MobileProjectOverview header 含「Plugins」tab。
 // 密码自读不打印。web DOM 探针前置过 ar-verify-css 三道闸。
 // 用法：bun scripts/probe-project-plugins.mjs
@@ -105,12 +106,16 @@ async function sectionA(browser) {
   }
 }
 
-// ── 段 B：mock 项目 skills（验证「有 skill 时」项目 Manage 分支）──
+// ── 段 B：mock 项目 skills（验证 manageable 驱动 Update 显隐 + 本地徽标）──
 async function sectionB(browser) {
-  console.log("\n== B. mock 项目 skills ==");
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  console.log("\n== B. mock 项目 skills manageable 联动 ==");
+  const ctx = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    locale: "en-US",
+  });
   const page = await ctx.newPage();
-  // mock 项目 skill list → 单个 tdd（scope=project），preview 兜底。
+  // mock 项目 skill list → 两 skill：sourced（manageable:true 有源）+ handwritten（manageable:false 手写）。
+  // 反映后端 scanInstalledSkillsFromFs 读项目锁填的 manageable（有锁记录=true / 手写=false）。
   await page.route(new RegExp(`/api/projects/${projectName}/skills\\?`), (r) =>
     r.fulfill({
       status: 200,
@@ -118,10 +123,18 @@ async function sectionB(browser) {
       body: JSON.stringify({
         skills: [
           {
-            name: "tdd",
-            path: `/projects/${projectName}/.claude/skills/tdd`,
+            name: "sourced",
+            path: `/projects/${projectName}/.claude/skills/sourced`,
             scope: "project",
             agents: ["claude-code"],
+            manageable: true,
+          },
+          {
+            name: "handwritten",
+            path: `/projects/${projectName}/.claude/skills/handwritten`,
+            scope: "project",
+            agents: ["claude-code"],
+            manageable: false,
           },
         ],
       }),
@@ -131,7 +144,7 @@ async function sectionB(browser) {
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ name: "tdd", content: "# tdd", source: "github" }),
+      body: JSON.stringify({ name: "sourced", content: "# sourced", source: "github" }),
     }),
   );
   try {
@@ -139,14 +152,23 @@ async function sectionB(browser) {
     const middleNav = await gotoProject(page);
     await middleNav.getByRole("button", { name: "Plugins", exact: true }).click();
     await page.getByRole("button", { name: "Manage", exact: true }).click();
-    await page.getByText("tdd", { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
+    await page.getByText("sourced", { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
+
+    // 有源 skill（manageable:true）显 Update；手写 skill（manageable:false）不显——手写点了
+    // `skills update -p` 必失败（CLI 找不到源）。整页 Update 按钮数 === 1（仅 sourced 行）。
+    const updateCount = await page.getByRole("button", { name: "Update", exact: true }).count();
+    check(
+      "B1 仅 manageable:true 的 skill 显「Update」按钮（手写不显）",
+      updateCount === 1,
+      `got ${updateCount}`,
+    );
+
+    // 手写 skill（manageable:false）显「Local」徽标；有源 skill 无徽标。整页 Local 徽标数 === 1。
+    const localCount = await page.getByText("Local", { exact: true }).count();
+    check("B2 仅 manageable:false 的 skill 显「Local」徽标", localCount === 1, `got ${localCount}`);
 
     check(
-      "B1 项目 Manage 有 skill 行恒显「Update」按钮（直接拉取）",
-      (await page.getByRole("button", { name: "Update", exact: true }).count()) > 0,
-    );
-    check(
-      "B2 项目 Manage 有 skill 行仍无「Check for updates」（隐藏全局检测入口）",
+      "B3 项目 Manage 无「Check for updates」（隐藏全局检测入口）",
       (await page.getByRole("button", { name: "Check for updates", exact: true }).count()) === 0,
     );
   } finally {

@@ -551,11 +551,18 @@ export function ListRow({
         <span className="flex min-w-0 items-center gap-3">
           {marker}
           <span className="min-w-0">
-            <span className="block truncate font-semibold text-on-surface" data-list-row-title>
+            <span
+              className="block truncate font-semibold text-on-surface"
+              data-list-row-title
+              title={typeof title === "string" ? title : undefined}
+            >
               {title}
             </span>
             {subtitle ? (
-              <span className="mt-0.5 block truncate text-xs text-on-surface-muted">
+              <span
+                className="mt-0.5 block truncate text-xs text-on-surface-muted"
+                title={typeof subtitle === "string" ? subtitle : undefined}
+              >
                 {subtitle}
               </span>
             ) : null}

@@ -26,6 +26,14 @@ export type RawFileResult = {
 
 export const UPLOAD_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
 
+/**
+ * 文件 tab 列表黑名单：仅这些精确名字的一级条目被隐藏（list 不返回 + hidden 标记）。
+ * 最小黑名单——只藏 `.git`（仓库元数据），其余 dot 项（`.claude/`、`.mcp.json`、
+ * `.env` 等）保持可见，让用户能在文件 tab 检查插件管理的配置文件。
+ * 精确匹配：`.gitignore`/`.gitattributes` 等不以 `.git` 为整名的不受影响。
+ */
+const FILE_LIST_BLOCKLIST = new Set([".git"]);
+
 type ProjectFilesErrorCode = Extract<
   ApiErrorCode,
   | "PROJECT_NAME_INVALID"
@@ -74,7 +82,7 @@ export class ProjectFilesService {
             return [];
           }
 
-          if (entry.name.startsWith(".")) {
+          if (FILE_LIST_BLOCKLIST.has(entry.name)) {
             return [];
           }
 
@@ -112,7 +120,7 @@ export class ProjectFilesService {
             return [];
           }
 
-          if (entry.name.startsWith(".")) {
+          if (FILE_LIST_BLOCKLIST.has(entry.name)) {
             return [];
           }
 
@@ -398,7 +406,7 @@ export class ProjectFilesService {
         name: newName,
         path: entryPath,
         type: entryStat.isDirectory() ? "directory" : "file",
-        hidden: newName.startsWith("."),
+        hidden: FILE_LIST_BLOCKLIST.has(newName),
         size: entryStat.isFile() ? entryStat.size : null,
       },
     };
@@ -458,7 +466,7 @@ export class ProjectFilesService {
         name,
         path: resolved.relativePath,
         type: "file",
-        hidden: name.startsWith("."),
+        hidden: FILE_LIST_BLOCKLIST.has(name),
         size: entryStat.size,
       },
     };
@@ -476,7 +484,7 @@ export class ProjectFilesService {
       name: entry.name,
       path: relative(projectPath, path),
       type: entry.isDirectory() ? "directory" : "file",
-      hidden: entry.name.startsWith("."),
+      hidden: FILE_LIST_BLOCKLIST.has(entry.name),
       size: entryStat?.size ?? null,
     };
   }

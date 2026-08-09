@@ -166,6 +166,16 @@ describe("listInstalledSkills", () => {
     const res = await listInstalledSkills("codex", { settingsStore: store, skillsHome: home });
     expect(res.skills).toEqual([]);
   });
+
+  it("does not populate manageable for global scope (走独立 checkSkillUpdates)", async () => {
+    await writeSkill(".claude", "tdd");
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
+    });
+    // 全局 scope 不读锁；manageable 走独立 checkSkillUpdates → SkillUpdateStatus。
+    expect(res.skills[0].manageable).toBeUndefined();
+  });
 });
 
 describe("executeInstall", () => {
@@ -468,6 +478,43 @@ describe("project scope skills", () => {
     const res = await listInstalledSkills("claude-code", store, join(projectsRoot, "proj1"));
     expect(res.skills.map((s) => s.name)).toEqual(["tdd"]);
     expect(res.skills[0].scope).toBe("project");
+  });
+
+  it("listInstalledSkills project: manageable 由 skills-lock.json 决定（有锁=true/手写=false）", async () => {
+    await makeProject("proj1");
+    await writeProjectSkill("proj1", "sourced"); // 有源（锁有记录）
+    await writeProjectSkill("proj1", "handwritten"); // 手写（锁无记录）
+    // 项目锁：只 sourced 有记录（模拟 skills CLI 装 sourced 时写入；手写 skill 不写锁）。
+    await writeFile(
+      join(projectsRoot, "proj1", "skills-lock.json"),
+      JSON.stringify({
+        version: 1,
+        skills: {
+          sourced: {
+            source: "owner/repo",
+            sourceType: "github",
+            skillPath: "skills/sourced/SKILL.md",
+          },
+        },
+      }),
+    );
+    const res = await listInstalledSkills("claude-code", store, join(projectsRoot, "proj1"));
+    const byName = Object.fromEntries(res.skills.map((s) => [s.name, s]));
+    expect(byName.sourced.manageable).toBe(true);
+    expect(byName.handwritten.manageable).toBe(false);
+  });
+
+  it("listInstalledSkills project: 锁缺失/损坏 → 全部 manageable=false（list 容错不抛）", async () => {
+    await makeProject("proj1");
+    await writeProjectSkill("proj1", "tdd");
+    // 不写锁文件 → 缺失 = 空集
+    const noLock = await listInstalledSkills("claude-code", store, join(projectsRoot, "proj1"));
+    expect(noLock.skills[0].manageable).toBe(false);
+
+    // 写损坏锁 → 容错空集，不抛
+    await writeFile(join(projectsRoot, "proj1", "skills-lock.json"), "{not valid json");
+    const corrupt = await listInstalledSkills("claude-code", store, join(projectsRoot, "proj1"));
+    expect(corrupt.skills[0].manageable).toBe(false);
   });
 
   it("executeInstall project: argv 无 --global + cwd=projectRoot + scope=project", async () => {

@@ -418,6 +418,12 @@ export type InstalledSkill = {
   path: string;
   scope: "project" | "global";
   agents: string[];
+  /**
+   * 是否纳入版本管理（项目 scope：有 <project>/skills-lock.json 记录=有源可更新）。
+   * 仅项目 scope 填 true/false；全局 scope 不填（undefined，manageable 走独立的
+   * checkSkillUpdates → SkillUpdateStatus）。手写 skill（项目锁无记录）→ false。
+   */
+  manageable?: boolean;
 };
 export type InstalledSkillsResponse = { skills: InstalledSkill[] };
 
