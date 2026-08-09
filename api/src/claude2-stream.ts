@@ -447,8 +447,9 @@ export class Claude2StreamController {
             );
           }
         }
-        // agent 产出（每条 stdout 行）= session 活动 → bump updatedAt。高频但同分钟短路 O(1) 廉价。
-        void this.sessionRegistry.recordActivity(data.sessionId);
+        // 活动记录（recordActivity）不在此触发：onRealtimeRow 既走真实新行也走 relay 回放的
+        // session_init/seedInit（裸行），在此 bump 会导致重连即刷新。已下沉到
+        // Claude2Runtime.processStdoutLine（真实新 stdout 行唯一入口，回放不经它）。
         emit(line);
         if (parsed.type === "result") {
           emit(JSON.stringify({ type: "ended" }));

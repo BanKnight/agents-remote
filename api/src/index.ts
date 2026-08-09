@@ -1088,6 +1088,10 @@ export const startApi = async () => {
       JSON.stringify({ type: "system", subtype: "skill_catalog_changed" }),
     );
   });
+  // 真实新 stdout 行 → bump updatedAt（「上次活跃时间」）。recordActivity 分钟截断，同分钟短路。
+  claude2Runtime.setOnActivity((sessionId) => {
+    void sessionRegistry.recordActivity(sessionId);
+  });
   const projectService = new ProjectService(config.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);

@@ -342,6 +342,62 @@ test("captureSkillReloadFromLine does not fire onSkillReload for non-reload stdo
   expect(calls).toEqual([]);
 });
 
+// ── processStdoutLine → onActivity：真实新 stdout 行触发活动回调 ──
+// recordActivity 从 onRealtimeRow（含回放）下沉到 processStdoutLine（真实新行唯一入口），
+// 确保 relay 回放的 session_init/seedInit 不会误刷新 updatedAt。本测试覆盖：真实新行 → onActivity。
+
+test("processStdoutLine fires onActivity with the internal sessionId for a real new stdout line", async () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const calls: string[] = [];
+  runtime.setOnActivity((sessionId) => calls.push(sessionId));
+
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; generation: number }>;
+    relays: Map<string, unknown>;
+    processStdoutLine: (name: string, gen: number, line: string) => Promise<void>;
+    isCurrentGeneration: (name: string, gen: number) => boolean;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id", generation: 1 });
+
+  // 不设 relay → processStdoutLine 跳过 relay.handleStdoutLine，但仍触发 onActivity。
+  await internal.processStdoutLine("rt-key", 1, JSON.stringify({ type: "assistant" }));
+
+  expect(calls).toEqual(["internal-session-id"]);
+});
+
+test("processStdoutLine does not fire onActivity when process state is missing", async () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  const calls: string[] = [];
+  runtime.setOnActivity((sessionId) => calls.push(sessionId));
+
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string }>;
+    relays: Map<string, unknown>;
+    processStdoutLine: (name: string, gen: number, line: string) => Promise<void>;
+  };
+  // 无 process 记录（进程未注册 / race）→ state?.sessionId 为 undefined → 不触发。
+
+  await internal.processStdoutLine("missing-key", 1, JSON.stringify({ type: "assistant" }));
+
+  expect(calls).toEqual([]);
+});
+
+test("processStdoutLine does not fire onActivity when no callback is registered", async () => {
+  const runtime = new Claude2Runtime(tmpdir());
+  // 未调 setOnActivity → onActivity 为 null → 不报错、不触发。
+
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; generation: number }>;
+    relays: Map<string, unknown>;
+    processStdoutLine: (name: string, gen: number, line: string) => Promise<void>;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id", generation: 1 });
+
+  await expect(
+    internal.processStdoutLine("rt-key", 1, JSON.stringify({ type: "assistant" })),
+  ).resolves.toBeUndefined();
+});
+
 test("injectLiveLine forwards the line to the registered relay", () => {
   const runtime = new Claude2Runtime(tmpdir());
   const injected: string[] = [];

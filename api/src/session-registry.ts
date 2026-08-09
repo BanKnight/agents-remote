@@ -30,7 +30,6 @@ export type SessionMetadata = {
   createdAt: string;
   /** 最后活动时间：create/rename/setModel 等元数据操作写入，活动时由 recordActivity 按整分钟截断刷新。 */
   updatedAt: string;
-  lastConnectedAt?: string;
   claudeSessionId?: string;
   model?: string;
   modelAlias?: string;
@@ -532,22 +531,6 @@ export class SessionRegistry {
     };
     await this.writeMetadata(renamed);
     return terminalSessionFromMetadata(renamed);
-  }
-
-  async markConnected(projectName: string, type: SessionType, sessionId: string) {
-    const metadata = await this.getLiveMetadata(projectName, type, sessionId);
-
-    if (!metadata) {
-      return undefined;
-    }
-
-    const connected = {
-      ...metadata,
-      lastConnectedAt: this.now().toISOString(),
-      updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(connected);
-    return connected;
   }
 
   /**

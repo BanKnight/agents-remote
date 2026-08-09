@@ -179,6 +179,9 @@ export class Claude2Runtime implements RuntimeResources {
   private onPermissionModeChange: ((sessionId: string, permissionMode: string) => void) | null =
     null;
   private onSkillReload: ((sessionName: string) => void) | null = null;
+  // 真实新 stdout 行 = session 活动 → bump updatedAt。只在 processStdoutLine（真实新行入口）
+  // 触发，不在 onRealtimeRow/relay 回放触发（回放的 session_init/seedInit 会误刷新 updatedAt）。
+  private onActivity: ((sessionId: string) => void) | null = null;
 
   constructor(runDir: string, settingsStore?: SettingsStore, mcpPort?: number) {
     this.runDir = runDir;
@@ -202,6 +205,10 @@ export class Claude2Runtime implements RuntimeResources {
 
   setOnSkillReload(cb: (sessionName: string) => void) {
     this.onSkillReload = cb;
+  }
+
+  setOnActivity(cb: (sessionId: string) => void) {
+    this.onActivity = cb;
   }
 
   getSessionState(sessionName: string) {
@@ -622,6 +629,12 @@ export class Claude2Runtime implements RuntimeResources {
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed && this.isCurrentGeneration(sessionName, generation)) {
       await relay.handleStdoutLine(trimmed, parsed);
+    }
+    // 真实新 stdout 行 = session 活动 → bump updatedAt（下沉到此：回放不经 processStdoutLine，
+    // 故重连/回放不会误刷新）。sessionId 在 runtime 内从 processes 解析，与 onSystemInit 同契约。
+    const state = this.processes.get(sessionName);
+    if (state?.sessionId) {
+      this.onActivity?.(state.sessionId);
     }
   }
 

@@ -130,8 +130,9 @@ export class SessionStreamController {
       const handle = await this.runtime.attach(
         data.runtimeKey,
         (output) => {
-          // terminal 产出 = session 活动 → bump updatedAt（分钟截断，同分钟短路）。
-          void this.sessionRegistry.recordActivity(data.sessionId);
+          // output 不计活动：tmux attach 时 data 回调对「当前屏重放」与「实时输出」无边界区分，
+          // 在此 bump updatedAt 会导致重连即刷新（违背「上次活跃时间」语义）。
+          // terminal 活跃只认用户输入（见 message() 的 input 分支）。
           send(socket, { type: "output", data: output });
         },
         (error) => {
