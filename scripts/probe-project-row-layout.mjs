@@ -328,26 +328,23 @@ async function run() {
       iconDelta <= 1,
       `断言8b 📁 icon 对齐置顶 📌（Δ=${iconDelta.toFixed(1)}px ≤1，置顶📌=${pinnedIcon.x.toFixed(1)} 项目📁=${projIcon.x.toFixed(1)}）`,
     );
-    // 断言 9：分组间无空隙（divide-y 紧贴）+ 标题行横跨 content（去 rounded-lg 方角让分割线贯通）。
-    // 折叠态每个 section 只剩标题行 div（卡片区 null），section > div = 标题行。
+    // 断言 9：分组无空隙 + 标题行 section 横跨 content。2026-08-10 bg 从标题行 div 上移到 section
+    // 容器（展开块标题行+卡片一体 bg），列表根去 divide-y。全折叠时 section 是连续圆角条带段——
+    // 相邻 collapsed section 间 border-t 紧贴（gap=0），无 space-y-2 空隙。
     const layout = await apage.evaluate(() => {
-      // 标题行 = bg-on-surface/10 + pl-3 + pr-2 + gap-2（2026-08-10 bg 从 surface-raised/30 改主题自适应）。
-      const rows = [...document.querySelectorAll('[class*="bg-on-surface/10"]')]
-        .filter(
-          (el) =>
-            el.className.includes("pl-3") &&
-            el.className.includes("pr-2") &&
-            el.className.includes("gap-2"),
-        )
-        .map((el) => {
+      const secs = [...document.querySelectorAll('section[class*="bg-on-surface/10"]')].map(
+        (el) => {
           const r = el.getBoundingClientRect();
           return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
-        });
-      const c = document.querySelector('[class*="divide-y"]');
-      const cr = c.getBoundingClientRect();
-      const cs = getComputedStyle(c);
+        },
+      );
+      const root = secs.length
+        ? document.querySelector('section[class*="bg-on-surface/10"]').parentElement
+        : null;
+      const cr = root.getBoundingClientRect();
+      const cs = getComputedStyle(root);
       return {
-        rows,
+        rows: secs,
         contentLeft: cr.left + parseFloat(cs.paddingLeft),
         contentRight: cr.right - parseFloat(cs.paddingRight),
       };
@@ -358,7 +355,7 @@ async function run() {
     );
     record(
       allSpan,
-      `断言9a 标题行横跨 content（${layout.rows.length} 行 left/right ≈ content 内边=${allSpan}）`,
+      `断言9a 标题行 section 横跨 content（${layout.rows.length} 行 left/right ≈ content 内边=${allSpan}）`,
     );
     const gaps = [];
     for (let i = 1; i < layout.rows.length; i++)
@@ -366,7 +363,7 @@ async function run() {
     const maxGap = gaps.length ? Math.max(...gaps) : 0;
     record(
       maxGap <= 1,
-      `断言9b 分组间无空隙（相邻 gap max=${maxGap.toFixed(1)}px ≤1，divide-y 紧贴非 space-y-2 的 8px）`,
+      `断言9b 折叠条带段内无空隙（相邻 gap max=${maxGap.toFixed(1)}px ≤1，border-t 紧贴非 space-y-2 的 8px）`,
     );
     // 断言 10：on-surface/10 两主题都明显（用户「多主题」核心诉求）。直接读 :root 的 --on-surface +
     // --surface-raised（左栏底近似）hex，手算 on-surface @10% alpha 叠加底色的合成色 Δ（绕过 getComputedStyle
@@ -422,6 +419,66 @@ async function run() {
     record(
       themeDelta.light?.delta > 30 && themeDelta.dark?.delta > 30,
       `断言10 on-surface/10 两主题都明显（明 Δ=${themeDelta.light?.delta?.toFixed(0)} / 暗 Δ=${themeDelta.dark?.delta?.toFixed(0)} >30；旧 surface-raised/30 自叠加 ≈0）`,
+    );
+    // 断言 11：Apple 动态圆角（2026-08-10，inset grouped）。当前状态 = 全折叠（置顶 + proj1 折叠、
+    // proj-empty 空）→ 3 个连续折叠 section 组圆角条带段：首行置顶 rounded-t-lg、末行 proj-empty
+    // rounded-b-lg、中段 proj1 方角 + 段内 border-t 分割线、无间距。展开 proj1 后：proj1 脱离成独立
+    // 圆角块（rounded-lg 四角），置顶/proj-empty 各成独立圆角块（上下圆），展开块与折叠段间 mt-2
+    // 间距断开、无分割线（分割线不穿过展开块）。
+    const strip = await apage.evaluate(() =>
+      [...document.querySelectorAll('section[class*="bg-on-surface/10"]')].map((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          topRadius: cs.borderTopLeftRadius,
+          bottomRadius: cs.borderBottomLeftRadius,
+          borderTop: cs.borderTopWidth,
+          marginTop: cs.marginTop,
+        };
+      }),
+    );
+    record(
+      strip.length === 3 &&
+        strip[0].topRadius !== "0px" &&
+        strip[0].bottomRadius === "0px" &&
+        strip[1].topRadius === "0px" &&
+        strip[1].bottomRadius === "0px" &&
+        strip[2].topRadius === "0px" &&
+        strip[2].bottomRadius !== "0px" &&
+        strip[1].borderTop !== "0px" &&
+        strip[2].borderTop !== "0px" &&
+        strip.every((s) => s.marginTop === "0px"),
+      `断言11a 全折叠条带段（置顶顶圆/中段方角/末行底圆 + 段内分割线 + 紧贴：topR=${strip.map((s) => s.topRadius).join(",")} botR=${strip.map((s) => s.bottomRadius).join(",")} border=${strip.map((s) => s.borderTop).join(",")} mt=${strip.map((s) => s.marginTop).join(",")}）`,
+    );
+    // 展开 proj1（当前折叠态 ▾ 按钮 aria-label=展开项目组；proj-empty 空无 ▾，置顶无 aria-label）。
+    await apage
+      .getByRole("button", { name: /展开项目组/ })
+      .first()
+      .click();
+    await apage.waitForTimeout(250);
+    const expanded = await apage.evaluate(() =>
+      [...document.querySelectorAll('section[class*="bg-on-surface/10"]')].map((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          topRadius: cs.borderTopLeftRadius,
+          bottomRadius: cs.borderBottomLeftRadius,
+          borderTop: cs.borderTopWidth,
+          marginTop: cs.marginTop,
+        };
+      }),
+    );
+    record(
+      expanded.length === 3 &&
+        expanded[0].topRadius !== "0px" &&
+        expanded[0].bottomRadius !== "0px" &&
+        expanded[1].topRadius !== "0px" &&
+        expanded[1].bottomRadius !== "0px" &&
+        expanded[2].topRadius !== "0px" &&
+        expanded[2].bottomRadius !== "0px" &&
+        expanded[0].marginTop === "0px" &&
+        expanded[1].marginTop === "8px" &&
+        expanded[2].marginTop === "8px" &&
+        expanded.every((s) => s.borderTop === "0px"),
+      `断言11b 展开 proj1 后（置顶/展开块/proj-empty 各四角圆 + mt-2 间距断开 + 无分割线：topR=${expanded.map((s) => s.topRadius).join(",")} botR=${expanded.map((s) => s.bottomRadius).join(",")} border=${expanded.map((s) => s.borderTop).join(",")} mt=${expanded.map((s) => s.marginTop).join(",")}）`,
     );
     await actx.close();
   } finally {

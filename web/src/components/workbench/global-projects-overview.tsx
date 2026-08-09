@@ -1,8 +1,9 @@
-import { type FormEvent, useId, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { useT } from "../../i18n";
+import { cn } from "../../lib/utils";
 import {
   mergeProjectsWithCandidates,
   type GlobalInstanceCandidate,
@@ -248,13 +249,18 @@ const PINNED_GROUP_KEY = "__pinned__";
  * portal fiber 冒泡）。名 button flex-1 撑满 ▾ 外空间 = 点行主体进入项目（navigate `/projects/$key`；2026-08-10
  * 去 › 进入按钮，整行进入已够）。折叠/展开只由 ▾ 独立按钮触发（`aria-expanded` + `aria-label` 按态切换
  * collapse/expandProjectGroup，状态 `workbenchProjectGroupsCollapsedAtom` localStorage 按项目记忆）。
- * 新建合并为 ➕ 二级菜单（ActionMenu，对齐项目内 CreateSessionBar）+ 🗑 删除独立。名行容器
- * `bg-on-surface/10`（主题自适应文字色叠加——明主题加深 / 暗主题加浅，两主题对称明显；旧 `surface-raised/30` 与左栏 `surface-raised` 底自我叠加两主题都不可见；方角去 rounded-lg 让分割线横跨整行），两端 `pl-3 pr-2`。空项目无折叠内容——▾ 位 size-4 占位
+ * 新建合并为 ➕ 二级菜单（ActionMenu，对齐项目内 CreateSessionBar）+ 🗑 删除独立。section 容器
+ * `bg-on-surface/10` + Apple 动态圆角（2026-08-10 inset grouped）：连续折叠标题行组圆角条带段（首尾圆角 /
+ * 中间方角 + 分割线），展开分组脱离成独立圆角块（标题行顶圆 + 卡片底圆一体 `rounded-lg`），展开块与
+ * 折叠段间 `mt-2` 间距断开（分割线不穿过展开块）。主题自适应文字色叠加——明主题加深 / 暗主题加浅，
+ * 两主题对称明显；旧 `surface-raised/30` 与左栏 `surface-raised` 底自我叠加两主题都不可见。标题行
+ * div（`pl-3 pr-2`）去 bg（移到 section）。空项目无折叠内容——▾ 位 size-4 占位
  * span 保持 📁 与有实例行对齐，仍保留 ➕/🗑。实例区 = InstanceGrid plain 连续单列卡片（无圆角 section
  * 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard topSeparator 画 inset 分割线，两端统一 left-15=60px
  * 跳过 marker 列）。最前另渲染「置顶」特殊分组（📌，pin 状态存服务端 state.yaml overview 模块跨设备共享，
  * 无置顶卡片整段不渲染；卡片同时在置顶分组与原项目分组出现双显示；标题行只折叠 toggle 无 ➕/🗑）。根
- * `px-3 py-2` + `divide-y divide-on-surface/5`（分组间分割线，首组无线，去 space-y-2 空隙）。
+ * `px-3 py-2`（去 `divide-y`；分割线改每个 section 条件 `border-t border-on-surface/5`——段内紧贴、
+ * 触及展开块则 `mt-2` 间距，去 `space-y-2` 空隙）。
  */
 function GroupedProjectsList({
   candidates,
@@ -315,125 +321,164 @@ function GroupedProjectsList({
   const enterProject = (name: string) =>
     void navigate({ to: "/projects/$key", params: { key: name } });
 
-  return (
-    <div className="divide-y divide-on-surface/5 px-3 py-2">
-      {/* 置顶分组：最前（项目 groups.map 前），无置顶卡片时整段不渲染（空隐藏）。标题行只折叠
-          toggle（▾/▸ + 📌 pin + 置顶），无 › 进项目、无 ⋯ 删除（非项目）。 */}
-      {pinnedCandidates.length > 0 ? (
-        <section key={PINNED_GROUP_KEY}>
-          <div className="flex items-center gap-2 bg-on-surface/10 pl-3 pr-2">
+  // 统一 sections 列表（置顶 + 项目 groups），每个 section 按自身展开态 + 上下邻居态算
+  // Apple 动态圆角 + 上边界（inset grouped 范式，2026-08-10）：
+  //   - collapsed 顶圆当 !prev || prev.expanded、底圆当 !next || next.expanded、中段方角；
+  //     expanded 恒四角圆（标题行顶圆 + 卡片底圆共享 section bg 一体成独立圆角块）。
+  //   - 上边界：prev.collapsed && self.collapsed → border-t 分割线（段内紧贴）；否则（触及展开块）
+  //     → mt-2 间距断开（分割线不穿过展开块）；首 section 无上边界。
+  const sections: Array<{
+    key: string;
+    expanded: boolean;
+    header: ReactNode;
+    cards: ReactNode | null;
+  }> = [];
+  // 置顶分组：最前（无置顶卡片时整段不渲染，空隐藏）。标题行只折叠 toggle（▾/▸ + 📌 pin + 置顶），
+  // 无 › 进项目、无 ⋯ 删除（非项目）。
+  if (pinnedCandidates.length > 0) {
+    sections.push({
+      key: PINNED_GROUP_KEY,
+      expanded: !pinnedCollapsed,
+      header: (
+        <div className="flex items-center gap-2 pl-3 pr-2">
+          <button
+            aria-expanded={!pinnedCollapsed}
+            className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
+            onClick={() => toggleProject(PINNED_GROUP_KEY)}
+            title={t("workbench.pinnedGroup")}
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              className="size-4 shrink-0 text-on-surface-muted/60"
+              fill="none"
+              viewBox="0 0 16 16"
+            >
+              <path
+                d={pinnedCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+              />
+            </svg>
+            <ShellIcon className="size-5 shrink-0 text-primary" name="pin" />
+            <span className="truncate text-base font-semibold text-on-surface">
+              {t("workbench.pinnedGroup")}
+            </span>
+          </button>
+        </div>
+      ),
+      cards: (
+        <div>
+          <InstanceGrid
+            dragAdapter={dragAdapter}
+            dragRefs={new Map(pinnedCandidates.map((c) => [c.ref.sessionId, c.ref]))}
+            items={pinnedCandidates.map(toGridItem)}
+            plain
+          />
+        </div>
+      ),
+    });
+  }
+  // 项目分组：[左组：▾ 折叠 + 📁 项目名 flex-1 进入][➕ 新建二级菜单][🗑 删除]。左组（flex min-h-11
+  // flex-1 items-center gap-1.5）复刻置顶紧凑结构——▾ size-4 紧贴 pl-3=12 + 紧挨 📁（gap-1.5=6），
+  // 拆两个 button：▾ 折叠 / 📁名 进入（左组 div 无 onClick，避 portal fiber 冒泡）。空项目无折叠内容，
+  // ▾ 位 size-4 占位 span 保持 📁 与有实例行对齐，仍保留 ➕/🗑。
+  for (const group of groups) {
+    const dragRefs = new Map<string, WorkbenchPanelRef>();
+    for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
+    const hasCards = group.candidates.length > 0;
+    const isCollapsed = hasCards && !!collapsed[group.projectName];
+    sections.push({
+      key: group.projectName,
+      expanded: hasCards && !isCollapsed,
+      header: (
+        <div className="flex items-center gap-2 pl-3 pr-2">
+          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5">
+            {hasCards ? (
+              <button
+                aria-expanded={!isCollapsed}
+                aria-label={t(
+                  isCollapsed ? "workbench.expandProjectGroup" : "workbench.collapseProjectGroup",
+                )}
+                className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10"
+                onClick={() => toggleProject(group.projectName)}
+                title={t(
+                  isCollapsed ? "workbench.expandProjectGroup" : "workbench.collapseProjectGroup",
+                )}
+                type="button"
+              >
+                <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16">
+                  <path
+                    d={isCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  />
+                </svg>
+              </button>
+            ) : (
+              // 空项目：无折叠内容，▾ 位 size-4 占位（touch:h-10 随名 button 热区）保持 📁 与有实例行对齐。
+              <span aria-hidden="true" className="size-4 shrink-0 touch:h-10" />
+            )}
+            {/* 名 button：左组内 flex-1 撑满 ▾ 外空间 = 点行主体进入项目；热区 min-h-11 ≥44px。 */}
             <button
-              aria-expanded={!pinnedCollapsed}
               className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
-              onClick={() => toggleProject(PINNED_GROUP_KEY)}
-              title={t("workbench.pinnedGroup")}
+              onClick={() => enterProject(group.projectName)}
+              title={group.projectName}
               type="button"
             >
-              <svg
-                aria-hidden="true"
-                className="size-4 shrink-0 text-on-surface-muted/60"
-                fill="none"
-                viewBox="0 0 16 16"
-              >
-                <path
-                  d={pinnedCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                />
-              </svg>
-              <ShellIcon className="size-5 shrink-0 text-primary" name="pin" />
+              <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
               <span className="truncate text-base font-semibold text-on-surface">
-                {t("workbench.pinnedGroup")}
+                {group.projectName}
               </span>
             </button>
           </div>
-          {!pinnedCollapsed ? (
-            <div>
-              <InstanceGrid
-                dragAdapter={dragAdapter}
-                dragRefs={new Map(pinnedCandidates.map((c) => [c.ref.sessionId, c.ref]))}
-                items={pinnedCandidates.map(toGridItem)}
-                plain
-              />
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-      {groups.map((group) => {
-        const dragRefs = new Map<string, WorkbenchPanelRef>();
-        for (const c of group.candidates) dragRefs.set(c.ref.sessionId, c.ref);
-        const hasCards = group.candidates.length > 0;
-        const isCollapsed = hasCards && !!collapsed[group.projectName];
+          <ProjectRowActions
+            deletePending={deleteMutation.isPending}
+            onDelete={() => void requestDelete(group.projectName)}
+            projectName={group.projectName}
+          />
+        </div>
+      ),
+      cards: hasCards ? (
+        <div>
+          <InstanceGrid
+            dragAdapter={dragAdapter}
+            dragRefs={dragRefs}
+            items={group.candidates.map(toGridItem)}
+            plain
+          />
+        </div>
+      ) : null,
+    });
+  }
+
+  return (
+    <div className="px-3 py-2">
+      {sections.map((sec, i) => {
+        const prev = sections[i - 1];
+        const next = sections[i + 1];
+        const topRound = sec.expanded || !prev || prev.expanded;
+        const bottomRound = sec.expanded || !next || next.expanded;
+        const upperDivider = !!prev && !prev.expanded && !sec.expanded;
+        const upperGap = !!prev && !upperDivider;
         return (
-          <section key={group.projectName}>
-            <div className="flex items-center gap-2 bg-on-surface/10 pl-3 pr-2">
-              {/* 左组：折叠 chevron + 名，复刻置顶分组「chevron+icon+文字」紧凑结构（gap-1.5）。
-                  ▾ size-4 紧贴容器左缘（pl-3=12，对齐置顶 ▾ 同 x 位）+ 紧挨 📁（gap-1.5=6，纠正
-                  首版 ▾ h-7 w-7 方块 button 致 chevron 偏右 6px、离 📁 隔 14px 的布局错误）。
-                  拆两个 button：▾ 折叠 / 📁名 进入（左组 div 无 onClick，避 portal fiber 冒泡）。 */}
-              <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5">
-                {hasCards ? (
-                  <button
-                    aria-expanded={!isCollapsed}
-                    aria-label={t(
-                      isCollapsed
-                        ? "workbench.expandProjectGroup"
-                        : "workbench.collapseProjectGroup",
-                    )}
-                    className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10"
-                    onClick={() => toggleProject(group.projectName)}
-                    title={t(
-                      isCollapsed
-                        ? "workbench.expandProjectGroup"
-                        : "workbench.collapseProjectGroup",
-                    )}
-                    type="button"
-                  >
-                    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16">
-                      <path
-                        d={isCollapsed ? "M6 4l4 4-4 4" : "M4 6l4 4 4-4"}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        stroke="currentColor"
-                      />
-                    </svg>
-                  </button>
-                ) : (
-                  // 空项目：无折叠内容，▾ 位 size-4 占位（touch:size-10 随按钮）保持 📁 与有实例行对齐。
-                  <span aria-hidden="true" className="size-4 shrink-0 touch:h-10" />
-                )}
-                {/* 名 button：左组内 flex-1 撑满 ▾ 外空间 = 点行主体进入项目；热区 min-h-11 ≥44px。 */}
-                <button
-                  className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
-                  onClick={() => enterProject(group.projectName)}
-                  title={group.projectName}
-                  type="button"
-                >
-                  <ShellIcon className="size-5 shrink-0 text-on-surface-muted" name="project" />
-                  <span className="truncate text-base font-semibold text-on-surface">
-                    {group.projectName}
-                  </span>
-                </button>
-              </div>
-              <ProjectRowActions
-                deletePending={deleteMutation.isPending}
-                onDelete={() => void requestDelete(group.projectName)}
-                projectName={group.projectName}
-              />
-            </div>
-            {hasCards && !isCollapsed ? (
-              <div>
-                <InstanceGrid
-                  dragAdapter={dragAdapter}
-                  dragRefs={dragRefs}
-                  items={group.candidates.map(toGridItem)}
-                  plain
-                />
-              </div>
-            ) : null}
+          <section
+            key={sec.key}
+            className={cn(
+              "flex flex-col bg-on-surface/10",
+              sec.expanded
+                ? "rounded-lg"
+                : cn(topRound && "rounded-t-lg", bottomRound && "rounded-b-lg"),
+              upperDivider && "border-t border-on-surface/5",
+              upperGap && "mt-2",
+            )}
+          >
+            {sec.header}
+            {sec.expanded ? sec.cards : null}
           </section>
         );
       })}
