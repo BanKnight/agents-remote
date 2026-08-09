@@ -123,3 +123,31 @@ describe("usePinnedSessions 旧 localStorage 播种", () => {
     expect(localStorage.getItem("workbenchPinnedSessions")).toBe("{ bad json");
   });
 });
+
+describe("usePinnedSessions isLoaded（首次结算 gate）", () => {
+  it("pending 时 isLoaded=false、pinned 空；结算后 isLoaded=true、pinned 含服务端集合", async () => {
+    listPinnedSessionsMock.mockResolvedValueOnce({
+      sessions: ["ar-claude-1", "ar-terminal-2"],
+    });
+
+    const { result } = renderPinned();
+
+    // 首次渲染（pending）：isLoaded=false，pinned 空集（不阻塞，但 gate 会让总览等结算）。
+    expect(result.current.isLoaded).toBe(false);
+    expect(result.current.pinned.size).toBe(0);
+
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.pinned.has("ar-claude-1")).toBe(true);
+    expect(result.current.pinned.has("ar-terminal-2")).toBe(true);
+    expect(result.current.pinned.has("ar-missing-3")).toBe(false);
+  });
+
+  it("请求失败时 isLoaded=true（settled）、pinned 空 Set（不阻塞列表）", async () => {
+    listPinnedSessionsMock.mockRejectedValueOnce(new Error("network down"));
+
+    const { result } = renderPinned();
+
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.pinned.size).toBe(0);
+  });
+});

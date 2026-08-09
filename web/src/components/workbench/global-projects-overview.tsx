@@ -60,6 +60,9 @@ export function GlobalProjectsOverview({
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
+  // pinned 与 candidates 同级并发触发（不再在 GroupedProjectsList 内才发），并参与下方 gate：
+  // 两 query 都首次结算（settled）才渲染列表，避免 pinned 后到导致置顶组从顶部插入跳变。
+  const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
   const { create: createProject, projectPath, setProjectPath } = useCreateProject();
 
   const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
@@ -76,11 +79,13 @@ export function GlobalProjectsOverview({
     if (ref) void rename(ref, type, currentName);
   };
 
-  // empty/loading gate：融合视图以 projectNames 为准（含空项目标题行，无项目才算空）。
-  // projectNames 与 candidates 同源 `/api/overview`，统一用 isLoaded（success-only：data 就绪）；
-  // 请求失败时 isLoaded=false → 显示骨架（与原 projects query 行为一致，不退化为空态）。
-  const overviewEmpty = isLoaded && projectNames.length === 0;
-  const overviewLoading = !isLoaded && projectNames.length === 0;
+  // empty/loading gate：candidates 与 pinned 都首次结算（settled）才渲染列表——置顶是整组卡片
+  // 插入（结构性），必须与项目组同一次 commit 出现，否则 pinned 后到 → 置顶组从顶部插入跳变。
+  // candidates 用 isLoaded（success-only：data 就绪，失败则骨架）；pinned 用 pinnedLoaded
+  //（settled：失败按无置顶不阻塞列表）。切回页面两 query 命中缓存即 settled，秒回不骨架。
+  const settled = isLoaded && pinnedLoaded;
+  const overviewEmpty = settled && projectNames.length === 0;
+  const overviewLoading = !settled;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -105,6 +110,7 @@ export function GlobalProjectsOverview({
       onClose={closeInstance}
       onFocus={onFocusInstance}
       onRename={renameInstance}
+      pinned={pinned}
       projectNames={projectNames}
     />
   );
@@ -226,6 +232,8 @@ function ProjectRowActionMenu({
 type GroupedProjectsListProps = {
   candidates: ReturnType<typeof useGlobalInstanceCandidates>["candidates"];
   projectNames: string[];
+  /** 置顶 sessionId 集合（由 GlobalProjectsOverview 顶层 usePinnedSessions 提供，与 candidates 同级 gate）。 */
+  pinned: Set<string>;
   onClose: (sessionId: string, type: "agent" | "terminal") => void;
   onFocus: (sessionId: string) => void;
   onRename: (
@@ -257,6 +265,7 @@ const PINNED_GROUP_KEY = "__pinned__";
 function GroupedProjectsList({
   candidates,
   projectNames,
+  pinned,
   onClose,
   onFocus,
   onRename,
@@ -284,9 +293,8 @@ function GroupedProjectsList({
   const toggleProject = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
   // 置顶：特殊分组 key = "__pinned__" 保留哨兵（workbenchProjectGroupsCollapsedAtom 按 key 记忆折叠态）。
-  // pin 状态存服务端 state.yaml overview 模块（跨设备共享）；usePinnedSessions 返回 Set，
-  // togglePin 按当前态调 pin/unpin mutation（invalidate 后 refetch）。
-  const pinned = usePinnedSessions();
+  // pinned Set 由 prop 传入（GlobalProjectsOverview 顶层 usePinnedSessions，与 candidates 同级 gate）；
+  // togglePin 按当前态调 pin/unpin mutation（乐观更新 cache → 父级 usePinnedSessions 重渲染 → 新 prop 传下）。
   const pinMutation = usePinSession();
   const unpinMutation = useUnpinSession();
   const togglePin = (sessionId: string) =>

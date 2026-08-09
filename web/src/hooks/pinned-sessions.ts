@@ -54,8 +54,10 @@ function useLegacyPinSeed(qc: QueryClient, querySettled: boolean): void {
   }, [qc, querySettled]);
 }
 
-// 当前置顶 sessionId 集合。加载中/出错返回空 Set——总览页渲染按 candidates 取交集，
-// 空集 = 无置顶组（与 localStorage 时代无 pin 的渲染一致）。useMemo 让 data 不变时 Set 引用稳定。
+// 当前置顶 sessionId 集合 + 首次加载是否结算。加载中/出错 pinned 返回空 Set（总览页按
+// candidates 取交集，空集 = 无置顶组）；isLoaded = isSuccess || isError（settled）——供
+// GlobalProjectsOverview 与 candidates 一起 gate，避免 pinned 后到导致置顶组插入跳变。
+// useMemo 让 data 不变时 Set 引用稳定。
 export function usePinnedSessions() {
   const qc = useQueryClient();
   const query = useQuery({
@@ -68,7 +70,8 @@ export function usePinnedSessions() {
     refetchOnWindowFocus: true,
   });
   useLegacyPinSeed(qc, query.isSuccess || query.isError);
-  return useMemo(() => new Set<string>(query.data?.sessions ?? []), [query.data]);
+  const pinned = useMemo(() => new Set<string>(query.data?.sessions ?? []), [query.data]);
+  return { pinned, isLoaded: query.isSuccess || query.isError };
 }
 
 // 乐观更新（用户 2026-08-07 实测「点击置顶有明显延迟感」→ 启用计划预留路径）：onMutate 同步
