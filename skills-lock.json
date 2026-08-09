@@ -29,7 +29,7 @@
       "source": "assistant-ui/skills",
       "sourceType": "github",
       "skillPath": "assistant-ui/skills/observability/SKILL.md",
-      "computedHash": "27e48ebf864a7fe0b5325caf252df136fd5177a90ff41ac9c0ed90daafa23799"
+      "computedHash": "8f6d74ce5866554479504e4d04bd6c74a0c0a214daae7f1a3308e8bdd16bd4d5"
     },
     "primitives": {
       "source": "assistant-ui/skills",

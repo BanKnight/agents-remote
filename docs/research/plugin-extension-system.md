@@ -2,7 +2,7 @@
 
 > 调研日期 2026-08-08。目标：把 agents-remote 的扩展能力从「只有 skill、只有全局层」演进为统一的**插件（plugin）入口**——插件 = skill + mcp 两类扩展 × **全局 + 项目**两层作用域。agent 实例消费全局+项目合并结果（CLI 原生合并，不做管理）。
 >
-> 状态：**方案蓝图已对齐**（用户拍板 7 项决策），**实现前两项调研已闭环**（`claude mcp` 命令行为、`npx skills` 更新机制，见 §实现前调研结论）。下一步可据此出分阶段实现计划。本文是决策 + 设计蓝图沉淀，承接 [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研）与 [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（MCP hub 定位）。
+> 状态：**已实现并上线**。项目层 skill + MCP（项目工作台「插件」tab，D4/D7）= commit `2fbfcc3`；项目 skill 版本化管理（有源/手写区分，读 `<project>/skills-lock.json` 填 `manageable`）+ 文件 tab dot 项改黑名单让插件配置（`.claude/`、`.mcp.json`）可见 = commit `fd424ff`。下方「现状盘点」是 2026-08-08 调研时的快照（说明为什么需要这个蓝图），**实现进度以本状态行为准**。本文是决策 + 设计蓝图沉淀，承接 [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研）与 [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（MCP hub 定位）。
 
 ## TL;DR（结论先行）
 
@@ -28,7 +28,7 @@
 | D6 | 手写技能可更新 | 给手写技能**挂源**（local 目录即源 / git 仓库即源，两类都支持），统一一套版本/更新机制 |
 | D7 | 项目插件入口位置 | **项目工作区 tab**（与 Files/Git/Terminal 平级） |
 
-## 现状盘点（为什么需要这个蓝图）
+## 现状盘点（2026-08-08 调研时快照；实现状态见顶部状态行）
 
 ### Skill —— 只有全局层，无更新、无项目层
 
@@ -196,7 +196,7 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
 2. 执行信任模型（skill-marketplace.md §7.2 / mcp-hub-positioning「trust 门」）：UI 确认/权限设计，本轮未定。
 3. 全局 MCP 的**合并视图**：agent 实例「当前生效」的 MCP 列表（user+project 合并）是否需要只读展示（D4 拍了不做管理，但未拍是否做只读视图）。
 4. 发现扩展点：MCP 目录 API（glama/mcp.so）接入时机，本轮不实现。
-5. 项目级 skill 更新：第三方 skill 装了 project scope 后，更新机制与全局是否同源（待 §7 调研后定）。
+5. 项目级 skill 更新：第三方 skill 装了 project scope 后，更新机制与全局是否同源。**已实现（commit `fd424ff`）**：项目 scope 读 `<project>/skills-lock.json` 判 `manageable`，Update 按钮直接拉取（`skills update -p`，无 GitHub hash 比对 = 同步重装）；手写 skill（无锁记录）显「本地」徽标、不显 Update。**与全局不同源**（全局走 `~/.agents/.skill-lock.json` + GitHub Trees API hash 比对，`checkSkillUpdates`）。
 
 ## 来源 / 证据
 
@@ -208,7 +208,7 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
   - [skill-marketplace.md](./skill-marketplace.md) §3.4（npx skills 源类型 local/git）、§3.6（锁文件 + 更新）、§8（混合路线落地）、§7（安全边界）。
   - [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（内部 hub 定位 + 外部 MCP = 配置管理者 + 不加 --strict-mcp-config）。
 - **实测**（2026-08-08，本机）：`claude mcp` 2.1.212 + `npx skills` 1.5.22，见 §实现前调研结论。
-- **待调研**（实现期）：执行信任模型 UI（§开放问题 2）、`/skills`→`/plugins` 路由迁移影响、项目级 skill 更新机制。
+- **待调研**（实现期）：执行信任模型 UI（§开放问题 2）、`/skills`→`/plugins` 路由迁移影响。（项目级 skill 更新机制已实现，见 commit `fd424ff`。）
 
 ## 承接
 
