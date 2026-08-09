@@ -54,14 +54,22 @@ async function loginAndMock(page, viewport) {
 // 点 ➕ trigger（aria-label=新建会话/New session）→ 等菜单 menuitem → 点匹配项。
 async function openCreateMenuAndPick(page, itemRe) {
   // Radix 在快速「DropdownMenu 开 → Dialog 开 → Dialog 关」连续 modal 切换后，body pointer-events
-  // lock 解除有延迟，Playwright 严格 actionability 撞上 <html> intercepts（探针时序，非真实 UI bug——
-  // 真实用户操作间隔远大于 lock 解除时间）。force click 绕过 hit-test 直接触发 ➕ onClick 开菜单。
-  await page
-    .getByRole("button", { name: /新建会话|New session/ })
-    .first()
-    .click({ force: true });
+  // lock 解除有延迟，第二次 ➕ force click 可能因 lock 残留致 Trigger 不响应（探针时序，非真实 UI bug——
+  // 真实用户操作间隔远大于 lock 解除时间）。清残留 pointer-events + 菜单未开重试兜底。
+  const trigger = page.getByRole("button", { name: /新建会话|New session/ }).first();
   const item = page.getByRole("menuitem", { name: itemRe }).first();
-  await item.waitFor({ timeout: 5000 });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.evaluate(() => {
+      document.body.style.pointerEvents = "";
+    });
+    await trigger.click({ force: true });
+    try {
+      await item.waitFor({ timeout: 3000 });
+      break;
+    } catch {
+      // lock 残留致菜单未开，重试。
+    }
+  }
   await item.click();
 }
 
@@ -69,7 +77,12 @@ async function run() {
   // 前置：CSS 落盘三道闸（web DOM 探针铁律，frontend-notes §2/§10）。
   const css = await verifyCssFlushed({
     origin: WEB_ORIGIN,
-    expectClasses: ["bg-surface-raised/30", "text-on-surface-muted"],
+    expectClasses: [
+      "bg-surface-raised/30",
+      "text-on-surface-muted",
+      "divide-on-surface/5",
+      "touch:h-10",
+    ],
   });
   if (!css.pass) {
     console.error("CSS 落盘验证失败，探针中止：");
@@ -141,7 +154,15 @@ async function run() {
 
     // 断言 5：点 🗑 → 删除 confirm，取消不导航。
     const urlD = page.url();
-    await page.getByRole("button", { name: "删除项目", exact: true }).first().click();
+    // 🗑 处在 body 层（非 Dialog Content 内），断言 4b 的 createTerminal Dialog 关闭后 Radix body
+    // pointer-events lock 解除有延迟会拦截 click——清残留 lock + force click 绕过 hit-test。
+    await page.evaluate(() => {
+      document.body.style.pointerEvents = "";
+    });
+    await page
+      .getByRole("button", { name: "删除项目", exact: true })
+      .first()
+      .click({ force: true });
     await page.getByRole("dialog").filter({ hasText: "删除项目" }).waitFor({ timeout: 5000 });
     record(true, "断言5a 点🗑弹删除 confirm");
     await page.getByRole("button", { name: "取消" }).first().click();
@@ -159,10 +180,11 @@ async function run() {
       gap >= 0 && gap <= 10,
       `断言7a ▾ chevron 紧挨 📁（gap=${gap.toFixed(1)}px ≤10，非首版 14px）`,
     );
-    // chevron 贴左 = 相对行容器左缘 ≈ pl-3(12)（绝对 left 受左总览栏偏移影响，改用相对偏移）。
+    // chevron 贴左 = 相对标题行容器左缘 ≈ pl-3(12)（绝对 left 受左总览栏偏移影响，改用相对偏移）。
+    // 行容器 = bg-surface-raised/30 的标题行 div（2026-08-10 去 rounded-lg 后不再有 rounded-lg 标记）。
     const chevronRelRow = await foldBtn.evaluate((el) => {
       let node = el.parentElement;
-      while (node && !node.classList.contains("rounded-lg")) node = node.parentElement;
+      while (node && !node.className.includes("surface-raised")) node = node.parentElement;
       const row = node ?? el.parentElement;
       return (
         el.querySelector("svg").getBoundingClientRect().left - row.getBoundingClientRect().left
@@ -220,6 +242,132 @@ async function run() {
     record(nameSpanCls.includes("truncate"), `断言6f 项目名 span 挂 truncate`);
 
     await mctx.close();
+
+    // 断言 8：chevron 对齐置顶（用户诉求「以置顶为参考」）。mock 一个置顶 session → 置顶分组渲染，
+    // 对比置顶组 chevron svg 与项目组 chevron svg 的 left。Chromium 无法模拟 (pointer:coarse)（§7），
+    // touch:h-10 在 headless 不生效——用 addStyleTag 强制 .touch:h-10 无条件生效模拟移动真机 touch 态。
+    // 改 touch:h-10（只放大高度不放大宽度）后，项目组 chevron button 宽度保持 16（= 置顶 chevron 直接子宽），
+    // svg 不居中偏移 → 两组 Δ≤1（旧 touch:size-10 撑大 40 致 svg 居中偏右 12px 已修）。
+    const actx = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      locale: "zh-CN",
+    });
+    const apage = await actx.newPage();
+    await apage.route(/\/api\/overview$/, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: OVERVIEW_BODY }),
+    );
+    await apage.route(/\/api\/state\/overview\/pinned-sessions$/, (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ sessions: ["row-agent-1"] }),
+      }),
+    );
+    await apage.goto(`${WEB_ORIGIN}/`);
+    await apage
+      .getByLabel("密码")
+      .or(apage.getByLabel("Password"))
+      .fill(await readAppPassword());
+    await apage.getByRole("button", { name: /解锁|Unlock/ }).click();
+    await apage.waitForResponse((r) => r.url().endsWith("/api/overview"), { timeout: 10000 });
+    await apage.waitForTimeout(500);
+    // 强制 touch:h-10 / touch:size-10 / touch:w-10 无条件生效（模拟移动真机 pointer:coarse）。
+    await apage.addStyleTag({
+      content: [
+        ".touch\\:h-10 { height:2.5rem !important; }",
+        ".touch\\:w-10 { width:2.5rem !important; }",
+        ".touch\\:size-10 { width:2.5rem !important; height:2.5rem !important; }",
+      ].join("\n"),
+    });
+    await apage.waitForTimeout(200);
+    // 折叠两组（测「全折叠对齐」）。
+    await apage
+      .getByRole("button", { name: /置顶|Pinned/ })
+      .first()
+      .click();
+    await apage.waitForTimeout(150);
+    await apage
+      .getByRole("button", { name: /折叠项目组/ })
+      .first()
+      .click();
+    await apage.waitForTimeout(200);
+    const pinnedChev = await apage
+      .getByRole("button", { name: /置顶|Pinned/ })
+      .first()
+      .locator("svg")
+      .first()
+      .boundingBox();
+    const projChev = await apage
+      .getByRole("button", { name: /展开项目组|折叠项目组/ })
+      .first()
+      .locator("svg")
+      .first()
+      .boundingBox();
+    const delta = Math.abs(projChev.x - pinnedChev.x);
+    record(
+      delta <= 1,
+      `断言8 ▾ chevron 对齐置顶（touch 强制下 Δ=${delta.toFixed(1)}px ≤1，置顶=${pinnedChev.x.toFixed(1)} 项目=${projChev.x.toFixed(1)}）`,
+    );
+    // 同步验证 📁 与置顶 📌 icon 对齐（chevron 同宽 → icon 列对齐）。
+    const pinnedIcon = await apage
+      .getByRole("button", { name: /置顶|Pinned/ })
+      .first()
+      .locator("svg")
+      .nth(1)
+      .boundingBox();
+    const projIcon = await apage
+      .locator("button")
+      .filter({ hasText: "proj1" })
+      .first()
+      .locator("svg")
+      .first()
+      .boundingBox();
+    const iconDelta = Math.abs(projIcon.x - pinnedIcon.x);
+    record(
+      iconDelta <= 1,
+      `断言8b 📁 icon 对齐置顶 📌（Δ=${iconDelta.toFixed(1)}px ≤1，置顶📌=${pinnedIcon.x.toFixed(1)} 项目📁=${projIcon.x.toFixed(1)}）`,
+    );
+    // 断言 9：分组间无空隙（divide-y 紧贴）+ 标题行横跨 content（去 rounded-lg 方角让分割线贯通）。
+    // 折叠态每个 section 只剩标题行 div（卡片区 null），section > div = 标题行。
+    const layout = await apage.evaluate(() => {
+      // 标题行 = surface-raised + pl-3 + pr-2 + gap-2（过滤同名 surface-raised 的非标题行）。
+      const rows = [...document.querySelectorAll('[class*="surface-raised"]')]
+        .filter(
+          (el) =>
+            el.className.includes("pl-3") &&
+            el.className.includes("pr-2") &&
+            el.className.includes("gap-2"),
+        )
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+        });
+      const c = document.querySelector('[class*="divide-y"]');
+      const cr = c.getBoundingClientRect();
+      const cs = getComputedStyle(c);
+      return {
+        rows,
+        contentLeft: cr.left + parseFloat(cs.paddingLeft),
+        contentRight: cr.right - parseFloat(cs.paddingRight),
+      };
+    });
+    const allSpan = layout.rows.every(
+      (r) =>
+        Math.abs(r.left - layout.contentLeft) <= 1 && Math.abs(r.right - layout.contentRight) <= 1,
+    );
+    record(
+      allSpan,
+      `断言9a 标题行横跨 content（${layout.rows.length} 行 left/right ≈ content 内边=${allSpan}）`,
+    );
+    const gaps = [];
+    for (let i = 1; i < layout.rows.length; i++)
+      gaps.push(layout.rows[i].top - layout.rows[i - 1].bottom);
+    const maxGap = gaps.length ? Math.max(...gaps) : 0;
+    record(
+      maxGap <= 1,
+      `断言9b 分组间无空隙（相邻 gap max=${maxGap.toFixed(1)}px ≤1，divide-y 紧贴非 space-y-2 的 8px）`,
+    );
+    await actx.close();
   } finally {
     await browser.close();
   }

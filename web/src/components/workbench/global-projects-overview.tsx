@@ -244,17 +244,17 @@ const PINNED_GROUP_KEY = "__pinned__";
  * 按项目分段的单列网格（2026-08-05 融合视图 + 2026-08-06 手风琴化 + 2026-08-10 重设计）：mergeProjectsWithCandidates
  * 含空项目。项目标题行 = `[左组：▾ 折叠 chevron size-4 + 📁 项目名 flex-1 button 点击进入][➕ 新建二级菜单][🗑 删除]`。
  * 左组（`flex min-h-11 flex-1 items-center gap-1.5`）复刻置顶分组紧凑结构——▾ size-4 紧贴 pl-3=12 左缘
- *（对齐置顶 ▾ 同 x 位）+ 紧挨 📁（gap-1.5=6）；▾ 折叠 / 📁名 进入拆两个 button（左组 div 无 onClick，避
+ *（对齐置顶 ▾ 同 x 位；touch:h-10 只放大高度不放大宽度，纠正 touch:size-10 撑大致偏右）+ 紧挨 📁（gap-1.5=6）；▾ 折叠 / 📁名 进入拆两个 button（左组 div 无 onClick，避
  * portal fiber 冒泡）。名 button flex-1 撑满 ▾ 外空间 = 点行主体进入项目（navigate `/projects/$key`；2026-08-10
  * 去 › 进入按钮，整行进入已够）。折叠/展开只由 ▾ 独立按钮触发（`aria-expanded` + `aria-label` 按态切换
  * collapse/expandProjectGroup，状态 `workbenchProjectGroupsCollapsedAtom` localStorage 按项目记忆）。
  * 新建合并为 ➕ 二级菜单（ActionMenu，对齐项目内 CreateSessionBar）+ 🗑 删除独立。名行容器
- * `bg-surface-raised/30 rounded-lg` raised 抬升条，两端 `pl-3 pr-2`。空项目无折叠内容——▾ 位 size-4 占位
+ * `bg-surface-raised/30`（方角去 rounded-lg，让分割线横跨整行），两端 `pl-3 pr-2`。空项目无折叠内容——▾ 位 size-4 占位
  * span 保持 📁 与有实例行对齐，仍保留 ➕/🗑。实例区 = InstanceGrid plain 连续单列卡片（无圆角 section
  * 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard topSeparator 画 inset 分割线，两端统一 left-15=60px
  * 跳过 marker 列）。最前另渲染「置顶」特殊分组（📌，pin 状态存服务端 state.yaml overview 模块跨设备共享，
  * 无置顶卡片整段不渲染；卡片同时在置顶分组与原项目分组出现双显示；标题行只折叠 toggle 无 ➕/🗑）。根
- * `px-3 py-2` + section 间 space-y-2(8px)。
+ * `px-3 py-2` + `divide-y divide-on-surface/5`（分组间分割线，首组无线，去 space-y-2 空隙）。
  */
 function GroupedProjectsList({
   candidates,
@@ -316,12 +316,12 @@ function GroupedProjectsList({
     void navigate({ to: "/projects/$key", params: { key: name } });
 
   return (
-    <div className="space-y-2 px-3 py-2">
+    <div className="divide-y divide-on-surface/5 px-3 py-2">
       {/* 置顶分组：最前（项目 groups.map 前），无置顶卡片时整段不渲染（空隐藏）。标题行只折叠
           toggle（▾/▸ + 📌 pin + 置顶），无 › 进项目、无 ⋯ 删除（非项目）。 */}
       {pinnedCandidates.length > 0 ? (
         <section key={PINNED_GROUP_KEY}>
-          <div className="flex items-center gap-2 rounded-lg bg-surface-raised/30 pl-3 pr-2">
+          <div className="flex items-center gap-2 bg-surface-raised/30 pl-3 pr-2">
             <button
               aria-expanded={!pinnedCollapsed}
               className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-0 text-left transition hover:bg-on-surface/5"
@@ -368,7 +368,7 @@ function GroupedProjectsList({
         const isCollapsed = hasCards && !!collapsed[group.projectName];
         return (
           <section key={group.projectName}>
-            <div className="flex items-center gap-2 rounded-lg bg-surface-raised/30 pl-3 pr-2">
+            <div className="flex items-center gap-2 bg-surface-raised/30 pl-3 pr-2">
               {/* 左组：折叠 chevron + 名，复刻置顶分组「chevron+icon+文字」紧凑结构（gap-1.5）。
                   ▾ size-4 紧贴容器左缘（pl-3=12，对齐置顶 ▾ 同 x 位）+ 紧挨 📁（gap-1.5=6，纠正
                   首版 ▾ h-7 w-7 方块 button 致 chevron 偏右 6px、离 📁 隔 14px 的布局错误）。
@@ -382,7 +382,7 @@ function GroupedProjectsList({
                         ? "workbench.expandProjectGroup"
                         : "workbench.collapseProjectGroup",
                     )}
-                    className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:size-10"
+                    className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface touch:h-10"
                     onClick={() => toggleProject(group.projectName)}
                     title={t(
                       isCollapsed
@@ -403,7 +403,7 @@ function GroupedProjectsList({
                   </button>
                 ) : (
                   // 空项目：无折叠内容，▾ 位 size-4 占位（touch:size-10 随按钮）保持 📁 与有实例行对齐。
-                  <span aria-hidden="true" className="size-4 shrink-0 touch:size-10" />
+                  <span aria-hidden="true" className="size-4 shrink-0 touch:h-10" />
                 )}
                 {/* 名 button：左组内 flex-1 撑满 ▾ 外空间 = 点行主体进入项目；热区 min-h-11 ≥44px。 */}
                 <button
