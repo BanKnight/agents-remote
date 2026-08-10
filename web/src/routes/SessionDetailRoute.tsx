@@ -1003,7 +1003,7 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
     const v = (name: string) => cs.getPropertyValue(name).trim();
     const primary = v("--primary");
     return {
-      background: v(resolved === "dark" ? "--surface-inset" : "--surface"),
+      background: resolved === "dark" ? v("--surface-inset") : "#ffffff",
       foreground: v("--code-text"),
       cursor: primary,
       selectionBackground: hexToRgba(primary, 0.25),
@@ -1030,20 +1030,20 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
 }
 
 /**
- * 亮色最低对比度（WCAG AA）。claude CLI 等 256 色 / truecolor 走 xterm 内置固定调色板，
- * 不受 --terminal-* ANSI 16 色 token 控制——浅色档（如 claude `38;5;153` #AFD7FF）在浅底
- * #f6f8fb 上对比度极低（~1.3），字芯淡、抗锯齿边缘融入浅底显白边发糊。minimumContrastRatio
- * 让 xterm 自动把低于阈值的前景色加深至达标（全局兜底，所有低对比彩色都受益）。暗色高对比
- * 用不到，给 1（=默认=关闭，零变化）。
+ * minimumContrastRatio 实测有害已关掉（续九）。xterm 的 reduceLuminance 是朴素算法
+ * （各通道均减 10%），把 claude 鲜艳 256 色（`#87D7FF`/`#ffd700`）推成暗沉灰蓝（`#467086`）
+ * /暗橄榄（`#867000`），失色相变灰蒙——这是用户「整体字迹不清楚」真根因之一（续六续七都暗
+ * 故区别不大）。亮暗都给 1（=xterm 默认=关闭）让原色鲜艳呈现，字芯清晰反而更可读。配合
+ * `fontWeight: 500` 解决笔画细、亮色纯白底最大化对比，整体浅色终端清晰和谐。
  */
-const MINIMUM_CONTRAST_RATIO_LIGHT = 4.5;
+const MINIMUM_CONTRAST_RATIO_LIGHT = 1;
 function minimumContrastRatioFor(resolved: ResolvedTheme): number {
   return resolved === "dark" ? 1 : MINIMUM_CONTRAST_RATIO_LIGHT;
 }
 
 /**
  * 主题切换时把新 theme 写到已创建的 xterm 实例（options.theme setter 赋值即重绘，含 WebGL）；
- * 同步切 minimumContrastRatio（亮色启用对比度兜底 / 暗色关闭）。
+ * 同步切 minimumContrastRatio（亮暗都关闭，续九）。
  */
 export function useTerminalTheme(termRef: RefObject<Terminal | null>, resolved: ResolvedTheme) {
   useEffect(() => {
@@ -1117,6 +1117,10 @@ function XtermOutput({
       minimumContrastRatio: minimumContrastRatioFor(resolvedRef.current),
       fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
       fontSize: 12,
+      // 非加粗文本字重 500（默认 normal=400 在浅色底 + 12px WebGL 下笔画偏细显「不清楚」；
+      // 加粗的 700 因笔画厚而清晰——用户实测「加粗清晰、普通 fg 不行」精确指向字重根因）。
+      // 500 中等偏粗让普通文本笔画厚起来，又不至于像 bold 那样重；暗色同步受益（字重不分主题）。
+      fontWeight: 500,
       lineHeight: 1.35,
       cursorBlink: true,
       cursorInactiveStyle: "outline",

@@ -81,10 +81,8 @@ describe("readTerminalTheme", () => {
   test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=surface 实色", () => {
     setTokens(LIGHT);
     const theme = readTerminalTheme("light");
-    // xterm 的 css.toColor 不支持 "transparent"（canvas 解析要求 alpha=0xFF），必须给不透明实色，
-    // 否则 parseColor fallback 成 DEFAULT_BACKGROUND 纯黑。亮色 background ← --surface（浅蓝灰，
-    // 比 surface-inset 灰底干净）；bright-blue 亮色 blue-700（浅底亮蓝对比不足改深一档）。
-    expect(theme.background).toBe("#f6f8fb");
+    // 亮色 background ← 纯白 #ffffff（续十对比：字重已解决清晰度，白底对比看效果）。
+    expect(theme.background).toBe("#ffffff");
     expect(theme.brightBlue).toBe("#1d4ed8");
     expect(theme.foreground).toBe("#1e293b");
     expect(theme.cursor).toBe("#0284c7");
@@ -131,7 +129,7 @@ describe("useTerminalTheme", () => {
   const termRef = (): RefObject<Terminal | null> =>
     ({ current: { options: {} as ITheme } }) as unknown as RefObject<Terminal | null>;
 
-  test("resolved 变化 → term.options.theme 更新（foreground 翻转）+ minimumContrastRatio 翻转", () => {
+  test("resolved 变化 → term.options.theme 更新（foreground 翻转）+ minimumContrastRatio 亮暗都关闭", () => {
     setTokens(LIGHT);
     const ref = termRef();
     const { rerender } = renderHook(
@@ -139,8 +137,8 @@ describe("useTerminalTheme", () => {
       { initialProps: { resolved: "light" } },
     );
     expect(ref.current?.options.theme?.foreground).toBe("#1e293b");
-    // 亮色启用对比度兜底（claude CLI 256 色 #AFD7FF 等浅档在浅底可读）；暗色 1=关闭。
-    expect(ref.current?.options.minimumContrastRatio).toBe(4.5);
+    // 续九：minimumContrastRatio 实测有害（算法把鲜艳 256 色推成暗沉灰蓝）已关掉，亮暗都 1。
+    expect(ref.current?.options.minimumContrastRatio).toBe(1);
     setTokens(DARK);
     rerender({ resolved: "dark" });
     expect(ref.current?.options.theme?.foreground).toBe("#d6e4f7");
