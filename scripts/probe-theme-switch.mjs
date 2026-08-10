@@ -21,6 +21,70 @@ const ORIGIN = process.env.AR_WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const LIGHT_BG = "rgb(238, 242, 247)"; // #eef2f7
 const DARK_BG = "rgb(2, 6, 23)"; // #020617
 
+// Terminal xterm 外壳 token（DESIGN.md「Terminal theme」节 + index.css --terminal-*）。
+// readTerminalTheme 的映射源——单测（session-detail.test.tsx）已测映射逻辑，这里测真实 CSS 落盘值
+// 在 light/dark 下解析到设计值（foreground ← --code-text、cursor ← --primary、ANSI 16 色 ← --terminal-*）。
+const TOKEN_KEYS = [
+  "--code-text",
+  "--primary",
+  "--terminal-black",
+  "--terminal-bright-black",
+  "--terminal-red",
+  "--terminal-bright-red",
+  "--terminal-green",
+  "--terminal-bright-green",
+  "--terminal-yellow",
+  "--terminal-bright-yellow",
+  "--terminal-blue",
+  "--terminal-bright-blue",
+  "--terminal-magenta",
+  "--terminal-bright-magenta",
+  "--terminal-cyan",
+  "--terminal-bright-cyan",
+  "--terminal-white",
+  "--terminal-bright-white",
+];
+const LIGHT_TOKENS = {
+  "--code-text": "#1e293b",
+  "--primary": "#0284c7",
+  "--terminal-black": "#1e293b",
+  "--terminal-bright-black": "#64748b",
+  "--terminal-red": "#dc2626",
+  "--terminal-bright-red": "#ef4444",
+  "--terminal-green": "#16a34a",
+  "--terminal-bright-green": "#22c55e",
+  "--terminal-yellow": "#ca8a04",
+  "--terminal-bright-yellow": "#eab308",
+  "--terminal-blue": "#2563eb",
+  "--terminal-bright-blue": "#3b82f6",
+  "--terminal-magenta": "#9333ea",
+  "--terminal-bright-magenta": "#a855f7",
+  "--terminal-cyan": "#0891b2",
+  "--terminal-bright-cyan": "#06b6d4",
+  "--terminal-white": "#64748b",
+  "--terminal-bright-white": "#0f1520",
+};
+const DARK_TOKENS = {
+  "--code-text": "#d6e4f7",
+  "--primary": "#7dd3fc",
+  "--terminal-black": "#0f172a",
+  "--terminal-bright-black": "#334155",
+  "--terminal-red": "#f87171",
+  "--terminal-bright-red": "#fca5a5",
+  "--terminal-green": "#4ade80",
+  "--terminal-bright-green": "#86efac",
+  "--terminal-yellow": "#fbbf24",
+  "--terminal-bright-yellow": "#fde68a",
+  "--terminal-blue": "#60a5fa",
+  "--terminal-bright-blue": "#93c5fd",
+  "--terminal-magenta": "#c084fc",
+  "--terminal-bright-magenta": "#d8b4fe",
+  "--terminal-cyan": "#22d3ee",
+  "--terminal-bright-cyan": "#67e8f9",
+  "--terminal-white": "#cbd5e1",
+  "--terminal-bright-white": "#f1f5f9",
+};
+
 let passCount = 0;
 let failCount = 0;
 function ok(cond, msg) {
@@ -74,15 +138,32 @@ async function snapshot() {
   });
 }
 
+async function readTokenSnapshot() {
+  return page.evaluate((keys) => {
+    const cs = getComputedStyle(document.documentElement);
+    const out = {};
+    for (const k of keys) out[k] = cs.getPropertyValue(k).trim();
+    return out;
+  }, TOKEN_KEYS);
+}
+
+function assertTokens(label, actual, expected) {
+  for (const k of TOKEN_KEYS) {
+    ok(actual[k] === expected[k], `${label} ${k}=${actual[k]} 命中 ${expected[k]}`);
+  }
+}
+
 await gotoWithTheme("light", "light");
 let s = await snapshot();
 ok(!s.dark, "light:html 无 .dark");
 ok(s.bg === LIGHT_BG, `light:html bg=${s.bg} 命中 ${LIGHT_BG}`);
+assertTokens("light", await readTokenSnapshot(), LIGHT_TOKENS);
 
 await gotoWithTheme("dark", "dark");
 s = await snapshot();
 ok(s.dark, "dark:html 有 .dark");
 ok(s.bg === DARK_BG, `dark:html bg=${s.bg} 命中 ${DARK_BG}`);
+assertTokens("dark", await readTokenSnapshot(), DARK_TOKENS);
 
 await gotoWithTheme(null, "dark");
 s = await snapshot();

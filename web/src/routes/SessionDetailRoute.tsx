@@ -9,9 +9,9 @@ import type {
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import {
@@ -24,6 +24,7 @@ import {
 } from "../api/client";
 import { useT } from "../i18n";
 import type { TranslationKey } from "../i18n/types";
+import { useTheme, type ResolvedTheme } from "../theme";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 import {
   canSendToSession,
@@ -972,6 +973,65 @@ type TerminalCoreProps = {
   onResize: (cols: number, rows: number) => boolean;
 };
 
+/** hex #rrggbb → rgba() 字符串（selectionBackground = --primary @ 25%）。非 #rrggbb 输入原样兜底。 */
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return `rgba(${hex}, ${alpha})`;
+  const r = parseInt(m[1], 16);
+  const g = parseInt(m[2], 16);
+  const b = parseInt(m[3], 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * 从 CSS 变量读取 xterm theme（DESIGN.md「Terminal theme」节）。显式按 resolved 临时切
+ * `<html>.dark` class 读 token 再恢复原态——不依赖调用方 class 落盘时序（ThemeSync 兄弟 effect
+ * 先于本组件，但防御起见不赌），同 resolved 恒返回同套值：foreground ← --code-text、
+ * cursor/selection ← --primary（selection @25%）、ANSI 16 色 ← --terminal-*、
+ * background 保持 transparent（透容器 bg-surface-inset/15 已随主题）。
+ */
+export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
+  const el = document.documentElement;
+  const darkBefore = el.classList.contains("dark");
+  el.classList.toggle("dark", resolved === "dark");
+  try {
+    const cs = getComputedStyle(el);
+    const v = (name: string) => cs.getPropertyValue(name).trim();
+    const primary = v("--primary");
+    return {
+      background: "transparent",
+      foreground: v("--code-text"),
+      cursor: primary,
+      selectionBackground: hexToRgba(primary, 0.25),
+      black: v("--terminal-black"),
+      brightBlack: v("--terminal-bright-black"),
+      red: v("--terminal-red"),
+      brightRed: v("--terminal-bright-red"),
+      green: v("--terminal-green"),
+      brightGreen: v("--terminal-bright-green"),
+      yellow: v("--terminal-yellow"),
+      brightYellow: v("--terminal-bright-yellow"),
+      blue: v("--terminal-blue"),
+      brightBlue: v("--terminal-bright-blue"),
+      magenta: v("--terminal-magenta"),
+      brightMagenta: v("--terminal-bright-magenta"),
+      cyan: v("--terminal-cyan"),
+      brightCyan: v("--terminal-bright-cyan"),
+      white: v("--terminal-white"),
+      brightWhite: v("--terminal-bright-white"),
+    };
+  } finally {
+    el.classList.toggle("dark", darkBefore);
+  }
+}
+
+/** 主题切换时把新 theme 写到已创建的 xterm 实例（options.theme setter 赋值即重绘，含 WebGL）。 */
+export function useTerminalTheme(termRef: RefObject<Terminal | null>, resolved: ResolvedTheme) {
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = readTerminalTheme(resolved);
+  }, [resolved, termRef]);
+}
+
 function TerminalOutput(props: TerminalCoreProps) {
   return <XtermOutput {...props} />;
 }
@@ -993,6 +1053,12 @@ function XtermOutput({
   const initialFitTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const writeQueueRef = useRef(Promise.resolve());
   const _isComposingRef = useRef(false);
+  const { resolved } = useTheme();
+  // resolved 用 ref 给下方创建 effect 闭包读（主题切换由 useTerminalTheme 单独 effect 处理，
+  // 创建 effect 不因主题重跑重建 xterm）；主题切换经 term.options.theme 动态更新。
+  const resolvedRef = useRef(resolved);
+  resolvedRef.current = resolved;
+  useTerminalTheme(termRef, resolved);
 
   useEffect(() => {
     if (connectionStatus !== "connected") {
@@ -1026,28 +1092,7 @@ function XtermOutput({
     if (!container) return;
 
     const term = new Terminal({
-      theme: {
-        background: "transparent",
-        foreground: "#d6e4f7",
-        cursor: "#7dd3fc",
-        selectionBackground: "rgba(125,211,252,0.25)",
-        black: "#0f172a",
-        brightBlack: "#334155",
-        red: "#f87171",
-        brightRed: "#fca5a5",
-        green: "#4ade80",
-        brightGreen: "#86efac",
-        yellow: "#fbbf24",
-        brightYellow: "#fde68a",
-        blue: "#60a5fa",
-        brightBlue: "#93c5fd",
-        magenta: "#c084fc",
-        brightMagenta: "#d8b4fe",
-        cyan: "#22d3ee",
-        brightCyan: "#67e8f9",
-        white: "#cbd5e1",
-        brightWhite: "#f1f5f9",
-      },
+      theme: readTerminalTheme(resolvedRef.current),
       fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
       fontSize: 12,
       lineHeight: 1.35,

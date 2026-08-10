@@ -380,6 +380,43 @@ Phase 4 收敛 Claude2 内容角色色后，剩余散写（操作色 cyan、灰�
 
 **已知限制**：PWA manifest `theme_color` / `background_color` 在 install 时定格、运行时不可切——已安装 PWA 的 splash / 状态栏底色保持暗（浏览器内主题完全跟随）。iOS `apple-mobile-web-app-status-bar-style: black-translucent` 明主题下状态栏白字叠浅底略降可读性，列为已知限制，真机反馈再处理。
 
+### Terminal theme（xterm 外壳随主题）
+
+web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会话共用同一 xterm 实例）的**外壳色随亮暗主题切换**——`new Terminal` 的 theme 对象不硬编码，由 `readTerminalTheme(resolved)` 从 CSS 变量读取构造，主题切换时经 `term.options.theme` 动态更新（xterm 官方 setter，赋值即触发重绘，含 WebGL renderer）。**只跟随外壳**：背景/文字/光标/ANSI 显示色随主题；运行在 tmux 里的程序（vim/htop/prompt/ls 色）由程序自身配色决定，不在 xterm 范围。
+
+**token 契约**：
+
+| xterm 槽位 | token 源 | dark | light |
+|---|---|---|---|
+| background | `transparent`（透容器 `bg-surface-inset/15`，已随主题） | — | — |
+| foreground | `--code-text` | `#d6e4f7` | `#1e293b` |
+| cursor | `--primary` | `#7dd3fc` | `#0284c7` |
+| selectionBackground | `--primary` @ 25% | `rgba(125,211,252,0.25)` | `rgba(2,132,199,0.25)` |
+| ANSI 16 色 | `--terminal-*`（下表） | 见下表 | 见下表 |
+
+**`--terminal-*` ANSI 16 色**（暗色档 = 原 xterm 硬编码暗色调色板，零回归；亮色档 = Tailwind 深档保证浅底可读）：
+
+| token | dark | light | 亮色对应 Tailwind |
+|---|---|---|---|
+| `terminal-black` | `#0f172a` | `#1e293b` | slate-800 |
+| `terminal-bright-black` | `#334155` | `#64748b` | slate-500 |
+| `terminal-red` | `#f87171` | `#dc2626` | red-600 |
+| `terminal-bright-red` | `#fca5a5` | `#ef4444` | red-500 |
+| `terminal-green` | `#4ade80` | `#16a34a` | green-600 |
+| `terminal-bright-green` | `#86efac` | `#22c55e` | green-500 |
+| `terminal-yellow` | `#fbbf24` | `#ca8a04` | yellow-600 |
+| `terminal-bright-yellow` | `#fde68a` | `#eab308` | yellow-500 |
+| `terminal-blue` | `#60a5fa` | `#2563eb` | blue-600 |
+| `terminal-bright-blue` | `#93c5fd` | `#3b82f6` | blue-500 |
+| `terminal-magenta` | `#c084fc` | `#9333ea` | purple-600 |
+| `terminal-bright-magenta` | `#d8b4fe` | `#a855f7` | purple-500 |
+| `terminal-cyan` | `#22d3ee` | `#0891b2` | cyan-600 |
+| `terminal-bright-cyan` | `#67e8f9` | `#06b6d4` | cyan-500 |
+| `terminal-white` | `#cbd5e1` | `#64748b` | slate-500（浅底上「白」=中灰） |
+| `terminal-bright-white` | `#f1f5f9` | `#0f1520` | on-surface（浅底上最亮文字=最深的 on-surface） |
+
+> 亮色档语义：bright 档 = 普通档浅 100 档（red-600→red-500），与暗色档同构（red-400→red-300）；`white`/`bright-white` 例外——亮色下「白色」应呈现为中灰、最亮文字用最深 on-surface，否则浅底白字不可读。
+
 ## Typography
 
 字体策略以 **Geist Variable** 为 UI 字族，等宽用 `SFMono-Regular, Consolas, Liberation Mono, monospace`。共 8 个层级，覆盖 headline / body / label / caption / code 五个角色。
