@@ -984,6 +984,31 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
+ * 亮色 256 色精准映射（续七）。claude CLI 实测用 3 个 256 色索引（pty 抓 raw ANSI 验证），
+ * 走 xterm 内置 256 色调色板，不受 --terminal-* ANSI 16 色 token 控制——浅档（153 浅蓝
+ * #87D7FF）在浅底低对比。xterm.js 公开 API `ITheme.extendedAnsi`（typings「ANSI extended
+ * colors (16-255)」）从源头替换 16-255 档：数组下标 i → colors.ansi[i+16]，`parseColor("")`
+ * 抛错走 fallback 保留 DEFAULT_ANSI_COLORS[i+16] 默认（空串 = 保留默认，契合稀疏覆盖）。
+ * 映射到 Solarized Light 精确色（ethanschoonover.com）——官方只有 16 精确色、无现成 256 cube，
+ * 故只精准映射这 3 个（不做全量 240 档 CIELAB nearest-color，避免 htop/vim 渐变退化）。
+ * 仅亮色挂；暗色 undefined → 全用 xterm 默认零变化。truecolor（38;2;r;g;b）绕过调色板，
+ * extendedAnsi 管不到，由 minimumContrastRatio 兜底（两者并存）。
+ */
+const SOLARIZED_LIGHT_256: Record<number, string> = {
+  153: "#268bd2", // 选中高亮浅蓝 → Solarized blue
+  220: "#b58900", // 金标题 → Solarized yellow
+  246: "#586e75", // 灰次要文本 → Solarized base01
+};
+function extendedAnsiFor(resolved: ResolvedTheme): string[] | undefined {
+  if (resolved === "dark") return undefined;
+  // 覆盖到最大目标索引 246 → 数组长度 246-16+1 = 231；其余位置空串保留 xterm 默认。
+  const arr = Array.from({ length: 246 - 16 + 1 }, () => "");
+  for (const idx of Object.keys(SOLARIZED_LIGHT_256).map(Number))
+    arr[idx - 16] = SOLARIZED_LIGHT_256[idx];
+  return arr;
+}
+
+/**
  * 从 CSS 变量读取 xterm theme（DESIGN.md「Terminal theme」节）。显式按 resolved 临时切
  * `<html>.dark` class 读 token 再恢复原态——不依赖调用方 class 落盘时序（ThemeSync 兄弟 effect
  * 先于本组件，但防御起见不赌），同 resolved 恒返回同套值：foreground ← --code-text、
@@ -1023,6 +1048,7 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
       brightCyan: v("--terminal-bright-cyan"),
       white: v("--terminal-white"),
       brightWhite: v("--terminal-bright-white"),
+      extendedAnsi: extendedAnsiFor(resolved),
     };
   } finally {
     el.classList.toggle("dark", darkBefore);

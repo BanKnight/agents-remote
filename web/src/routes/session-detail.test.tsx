@@ -97,6 +97,13 @@ describe("readTerminalTheme", () => {
     expect(theme.cyan).toBe("#0891b2");
     expect(theme.white).toBe("#64748b");
     expect(theme.brightWhite).toBe("#0f1520");
+    // 续七：extendedAnsi 精准映射 claude 实测 3 个 256 索引到 Solarized Light，其余空串保留默认。
+    expect(theme.extendedAnsi?.length).toBe(231); // 覆盖 16..246
+    expect(theme.extendedAnsi?.[153 - 16]).toBe("#268bd2");
+    expect(theme.extendedAnsi?.[220 - 16]).toBe("#b58900");
+    expect(theme.extendedAnsi?.[246 - 16]).toBe("#586e75");
+    expect(theme.extendedAnsi?.[0]).toBe(""); // 非目标位置保留默认
+    expect(theme.extendedAnsi?.[100]).toBe("");
   });
 
   test("dark：映射 dark 值 + 读后恢复调用前 .dark class", () => {
@@ -110,6 +117,8 @@ describe("readTerminalTheme", () => {
     expect(theme.black).toBe("#0f172a");
     expect(theme.green).toBe("#4ade80");
     expect(theme.brightWhite).toBe("#f1f5f9");
+    // 续七：暗色不挂 extendedAnsi → xterm 全用 DEFAULT_ANSI_COLORS[16+] 默认，零变化。
+    expect(theme.extendedAnsi).toBeUndefined();
     // finally 恢复调用前的 .dark class（不残留）
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
