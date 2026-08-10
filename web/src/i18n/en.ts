@@ -406,6 +406,8 @@ export const en = {
   "claude2.compact.abortUnknown": "Reason not recorded",
   "claude2.tasks": "Tasks",
   "claude2.taskFallback": "Task #{{id}}",
+  "claude2.backgroundRunning": "Running in background",
+  "claude2.backgroundTask": "Background task",
   "claude2.mode.changed": "Switched to {{mode}}",
   "claude2.model.changed": "Model · {{model}}",
   "claude2.command.title": "Command",

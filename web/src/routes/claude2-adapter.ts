@@ -1637,6 +1637,15 @@ export type NormalizedPart =
       // system{permission_denied}: classifier/permission auto-deny of this tool
       // call. Violet banner; coexists with isError result (red), not interchangeable.
       permissionDenied?: { reasonType?: string; reason?: string };
+      // system{background_tasks_changed}: Bash run_in_background 后台命令运行态。
+      // taskId === tool_use_result.backgroundTaskId 关联到本 tool-call；active =
+      // taskId 在最新 tasks 全量快照里（后台运行中）。注入 Bash tool-card 后台行。
+      backgroundTask?: {
+        taskId: string;
+        taskType?: string;
+        description?: string;
+        active: boolean;
+      };
     };
 
 // Per-turn statistics lifted from the `result` message. All fields optional —
@@ -1878,6 +1887,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
   // Most-recent tool_use_id seen via tool_result — fallback anchor for
   // synthetic / meta skill bodies that carry no sourceToolUseID.
   let lastToolUseId: string | null = null;
+  // backgroundTaskId → tool_use_id：Bash run_in_background 的 tool_result 带
+  // backgroundTaskId，而 system.background_tasks_changed 只带 task_id（= backgroundTaskId）
+  // 不带 tool_use_id。在此单遍建映射，收到 background_tasks_changed 时反查注入 tool-call part。
+  const bgTaskByToolUseId = new Map<string, string>();
   // api_error messages whose parent isn't emitted yet; resolved lazily.
   const pendingApiErrors: SessionStreamServerMessage[] = [];
   // Slash-command names awaiting their synthetic response, in send order.
@@ -2325,6 +2338,9 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         (msg as Record<string, unknown>).toolUseResult ??
         (msg as Record<string, unknown>).tool_use_result;
       if (toolUseResult && lastToolUseId) {
+        const rawBgId = (toolUseResult as Record<string, unknown>).backgroundTaskId;
+        const bgTaskId = typeof rawBgId === "string" ? rawBgId : undefined;
+        if (bgTaskId) bgTaskByToolUseId.set(bgTaskId, lastToolUseId);
         for (const item of items) {
           if (item.kind !== "assistant") continue;
           const partIdx = item.parts.findIndex(
@@ -2333,7 +2349,13 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           if (partIdx >= 0) {
             item.parts = item.parts.map((p, j) =>
               j === partIdx && p.type === "tool-call"
-                ? ({ ...p, structuredResult: toolUseResult } as NormalizedPart)
+                ? ({
+                    ...p,
+                    structuredResult: toolUseResult,
+                    // Bash run_in_background：标记后台任务，active 暂 false，由后续
+                    // background_tasks_changed 全量快照判定（无该消息则保持 false，不误报）。
+                    ...(bgTaskId ? { backgroundTask: { taskId: bgTaskId, active: false } } : {}),
+                  } as NormalizedPart)
                 : p,
             );
             pushPartRaw(lastToolUseId, msg);
@@ -2544,6 +2566,50 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
             );
             pushPartRaw(toolUseId, msg);
             break;
+          }
+        }
+        continue;
+      }
+
+      // BackgroundTasksChanged: Bash run_in_background 后台任务集合的**全量快照**。
+      // task_id === tool_use_result.backgroundTaskId（经 bgTaskByToolUseId 映射到 tool_use_id）。
+      // 不产独立 item；按最新 tasks 数组更新对应 Bash tool-call part 的 backgroundTask
+      //（active = task_id 在数组里 = 后台运行中）。注意与 TaskPanel 的 task_started 那套隔离。
+      if (subtype === "background_tasks_changed") {
+        const tasks =
+          (
+            msg as {
+              tasks?: { task_id?: string; task_type?: string; description?: string }[];
+            }
+          ).tasks ?? [];
+        const activeById = new Map<string, { task_type?: string; description?: string }>();
+        for (const tk of tasks) {
+          if (typeof tk.task_id === "string") activeById.set(tk.task_id, tk);
+        }
+        for (const [bgId, toolUseId] of bgTaskByToolUseId) {
+          const active = activeById.get(bgId);
+          for (const item of items) {
+            if (item.kind !== "assistant") continue;
+            const partIdx = item.parts.findIndex(
+              (p) => p.type === "tool-call" && p.toolCallId === toolUseId,
+            );
+            if (partIdx >= 0) {
+              item.parts = item.parts.map((p, j) =>
+                j === partIdx && p.type === "tool-call"
+                  ? {
+                      ...p,
+                      backgroundTask: {
+                        taskId: bgId,
+                        taskType: active?.task_type,
+                        description: active?.description,
+                        active: activeById.has(bgId),
+                      },
+                    }
+                  : p,
+              );
+              pushPartRaw(toolUseId, msg);
+              break;
+            }
           }
         }
         continue;
@@ -3170,6 +3236,7 @@ export function renderChatStream(
                 toolIndent: hasTextParts,
                 ...(part.progress ? { progress: part.progress } : {}),
                 ...(part.permissionDenied ? { permissionDenied: part.permissionDenied } : {}),
+                ...(part.backgroundTask ? { backgroundTask: part.backgroundTask } : {}),
               };
               messages.push({
                 role: "system",

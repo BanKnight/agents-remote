@@ -4355,3 +4355,112 @@ describe("mapTurnStatusTone", () => {
     expect(mapTurnStatusTone("some_future_value", "success")).toBe("completed");
   });
 });
+
+describe("background_tasks_changed (Bash run_in_background)", () => {
+  // Bash tool_use with run_in_background:true — input carries description + flag.
+  const bashBgToolUse = (id: string): SessionStreamServerMessage =>
+    assistant(id, [
+      {
+        type: "tool_use",
+        id,
+        name: "Bash",
+        input: {
+          command: "curl -o geoip.dat https://example.com/geoip.dat",
+          description: "Download geoip",
+          run_in_background: true,
+        },
+      },
+    ]);
+
+  // tool_result for a backgrounded Bash — envelope carries backgroundTaskId
+  // (=== background_tasks_changed.tasks[].task_id). Content is the placeholder text.
+  const bashBgResult = (toolUseId: string, bgId: string): SessionStreamServerMessage =>
+    ({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: toolUseId, content: `background ID: ${bgId}` },
+        ],
+      },
+      tool_use_result: { backgroundTaskId: bgId },
+    }) as unknown as SessionStreamServerMessage;
+
+  const bgTasksChanged = (
+    tasks: { task_id: string; task_type?: string; description?: string }[],
+  ): SessionStreamServerMessage =>
+    ({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks,
+    }) as unknown as SessionStreamServerMessage;
+
+  // Locate the tool-call part for a given tool_use id; return type exposes backgroundTask.
+  const bgPart = (
+    items: ChatStreamItem[],
+    toolUseId: string,
+  ):
+    | {
+        backgroundTask?: {
+          taskId: string;
+          taskType?: string;
+          description?: string;
+          active: boolean;
+        };
+      }
+    | undefined => {
+    for (const it of items) {
+      if (it.kind !== "assistant") continue;
+      for (const p of it.parts) {
+        if (p.type === "tool-call" && p.toolCallId === toolUseId) return p;
+      }
+    }
+    return undefined;
+  };
+
+  test("tool_result(backgroundTaskId) + tasks 含 task_id → 注入 backgroundTask{active:true}", () => {
+    const items = normalizeChatStream([
+      bashBgToolUse("call_00_X"),
+      bashBgResult("call_00_X", "bjelca3k3"),
+      bgTasksChanged([
+        { task_id: "bjelca3k3", task_type: "local_bash", description: "Download geoip" },
+      ]),
+    ]);
+    const p = bgPart(items, "call_00_X");
+    expect(p).toBeDefined();
+    expect(p?.backgroundTask?.active).toBe(true);
+    expect(p?.backgroundTask?.taskId).toBe("bjelca3k3");
+    expect(p?.backgroundTask?.taskType).toBe("local_bash");
+    expect(p?.backgroundTask?.description).toBe("Download geoip");
+  });
+
+  test("tasks 数组移除该 task_id → active=false（任务结束）", () => {
+    const items = normalizeChatStream([
+      bashBgToolUse("call_00_X"),
+      bashBgResult("call_00_X", "bjelca3k3"),
+      bgTasksChanged([{ task_id: "bjelca3k3", task_type: "local_bash" }]),
+      bgTasksChanged([]),
+    ]);
+    const p = bgPart(items, "call_00_X");
+    expect(p?.backgroundTask?.active).toBe(false);
+    expect(p?.backgroundTask?.taskId).toBe("bjelca3k3");
+  });
+
+  test("resume：仅 tool_result、无 background_tasks_changed → active=false（不误报运行中）", () => {
+    const items = normalizeChatStream([
+      bashBgToolUse("call_00_X"),
+      bashBgResult("call_00_X", "bjelca3k3"),
+    ]);
+    const p = bgPart(items, "call_00_X");
+    expect(p?.backgroundTask).toBeDefined();
+    expect(p?.backgroundTask?.active).toBe(false);
+  });
+
+  test("background_tasks_changed 不产独立 fallback item（消除丑气泡）", () => {
+    const items = normalizeChatStream([
+      bgTasksChanged([{ task_id: "orphan", task_type: "local_bash" }]),
+    ]);
+    expect(items).toHaveLength(0);
+    expect(items.every((i) => i.kind !== "fallback")).toBe(true);
+  });
+});

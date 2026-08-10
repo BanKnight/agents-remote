@@ -12,7 +12,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 - **CLI stdin 输入**：`user` / `control_request` / `control_response` / `keep_alive` / `update_environment_variables`（5 种顶层 type；`interrupt` / `set_model` / `set_permission_mode` 等是 `control_request` 的 subtype，详见 [control_request subtype 全表](#control_request-subtype-全表)）
 - **JSONL 磁盘文件独有**：`attachment` / `last-prompt` / `ai-title` / `agent-name` / `permission-mode` / `mode` / `file-history-snapshot` / `queue-operation` / `custom-title`
 
-其中 `system.*` 目前已知包含 `system.init`、`system.status`、`system.compact_boundary` / `system.microcompact_boundary`、`system.api_retry`、`system.api_error`、`system.turn_duration`、`system.thinking_tokens`、`system.task_started` / `system.task_updated` / `system.task_notification` / `system.task_progress`、`system.local_command`，以及运行时控制信号（`permission_denied`）。JSONL 独有类型是独立的顶层类型（如 `type: "attachment"`），**不是** `system` 子类型。
+其中 `system.*` 目前已知包含 `system.init`、`system.status`、`system.compact_boundary` / `system.microcompact_boundary`、`system.api_retry`、`system.api_error`、`system.turn_duration`、`system.thinking_tokens`、`system.task_started` / `system.task_updated` / `system.task_notification` / `system.task_progress`、`system.background_tasks_changed`、`system.local_command`，以及运行时控制信号（`permission_denied`）。JSONL 独有类型是独立的顶层类型（如 `type: "attachment"`），**不是** `system` 子类型。
 
 ## 启动参数
 
@@ -49,6 +49,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | `system` | `task_updated` | 子任务状态更新 | 否 | 是 | 是 |
 | `system` | `task_notification` | 子任务通知 / 完成 | 否 | 是 | 是 |
 | `system` | `task_progress` | 子 agent 运行进度（挂载在 AgentTool 内部） | 否 | 是 | 否 |
+| `system` | `background_tasks_changed` | 后台任务集合变更（Bash run_in_background，注入 Bash tool-card） | 否 | 是 | 否 |
 | `system` | `permission_denied` | 自动权限拒绝 | 否 | 是 | 是 |
 | `system` | `turn_duration` | turn 耗时统计 | 是 | 是 | 是 |
 | `assistant` | 见下方 [assistant content 子类型](#assistant-messagecontent-子类型) | AI 回复流 | 是 | 是 | 是 |
@@ -656,6 +657,53 @@ Claude CLI 会话中，主 agent 可以通过 `TaskCreate` 或 Workflow 创建�
 | 数据内容     | 状态变更（running/completed/error）             | 累计统计快照（tokens, tool_uses, duration）          |
 | 消息通道     | stdout → normalize 统一处理                     | stdout → normalize 注入 part，不产生独立 item         |
 | UI 表现      | 底部 TaskPanel 条目                             | tool-card 内部进度行 "Plan · Design… · 10 tools · 17K tokens · 27s" |
+
+---
+
+#### `system` / `background_tasks_changed` — 后台任务集合变更（Bash run_in_background）
+
+**含义**：当 Bash 工具以 `run_in_background: true` 发起后台命令时，CLI 持续推送当前后台任务集合的**全量快照**——每次集合变化（新增/完成/移除）重发完整 `tasks` 数组。它是后台命令执行模式的运行态遥测，**与 `task_started/updated/notification`（TaskCreate/subagent 那套）是两套不同的东西**，字段、语义、关联键都不同，不能混。
+
+**字段**（实机样本）：
+
+| 字段                | 类型                          | 说明                                                          |
+| ------------------- | ----------------------------- | ------------------------------------------------------------- |
+| `type`              | `"system"`                    | 消息类型                                                      |
+| `subtype`           | `"background_tasks_changed"`  | 后台任务集合变更                                              |
+| `tasks`             | array                         | 当前所有后台任务的**全量快照**（每次变更重发整个数组）        |
+| `tasks[].task_id`   | string                        | 后台任务 ID（=== 对应 Bash `tool_use_result.backgroundTaskId`） |
+| `tasks[].task_type` | string                        | 任务类型（实机见 `"local_bash"`）                             |
+| `tasks[].description` | string                      | 任务描述（=== Bash tool_use input.description）               |
+| `uuid`              | string                        | 消息 UUID                                                     |
+| `session_id`        | string                        | 会话 ID                                                       |
+
+**关联链**（三段协议是同一个后台命令的三个面）：
+
+```
+assistant Bash tool_use (input.run_in_background: true, input.description: "Download ...")
+  → user tool_result (content: "Command running in background with ID: bjelca3k3 ...")
+  → user tool_use_result.backgroundTaskId = "bjelca3k3"
+  → system background_tasks_changed (tasks: [{ task_id: "bjelca3k3", task_type: "local_bash", description: "Download ..." }])
+```
+
+`task_id === tool_use_result.backgroundTaskId` 是唯一关联键（本消息**不带 tool_use_id**，须经此键中转）。
+
+**处理方法**：
+
+1. `background_tasks_changed` **不产生独立 ChatStreamItem**（不渲染聊天气泡），也**不进 TaskPanel**（与 task_started 那套隔离）。
+2. 在 `normalizeChatStream` 单遍遍历里建 `backgroundTaskId → tool_use_id` 映射（tool_result 带 `backgroundTaskId` 时建立，时序保证 tool_result 先于本消息），收到本消息时用 `task_id` 反查映射，把后台运行态注入对应 **Bash tool-call part** 的 `backgroundTask` 字段（照搬 `task_progress` 挂 AgentTool 卡片的范式）。
+3. `active` 语义：`task_id` 在 `tasks` 数组里 = 后台运行中（active=true）；移除 = 已结束（active=false）。以最后一次 `tasks` 全量快照为准。
+4. 渲染层在 Bash tool-card 内（ToolUIAny 外、progress 行同位）显示「后台运行中」标记（spinner + task_type + #task_id + description），与前台同步 Bash 的完成态视觉区分。
+5. 属于**实时流 telemetry，不写入 Claude CLI JSONL**（与 task_* 系列同），resume 后丢失——故 resume 时无本消息，`active` 默认 false（不误报运行中）。
+
+**与 `task_started/updated/notification` / `task_progress` 的区别**：
+
+| 维度     | task_started/updated/notification | task_progress          | background_tasks_changed                  |
+| -------- | --------------------------------- | ---------------------- | ----------------------------------------- |
+| 本质     | TaskCreate 待办 / subagent 子任务 | subagent 实时进度      | **Bash 后台命令**（run_in_background）     |
+| 消费方   | TaskPanel（composer 上方）        | Agent tool-card 进度行 | **Bash tool-card 后台行**                  |
+| 关联键   | 独立 task_id（TaskInfo 列表）     | tool_use_id            | **task_id === backgroundTaskId**（经映射转 tool_use_id） |
+| 生命周期 | 增量（单 task 操作）              | 增量进度快照           | **全量快照**（每次重发整个 tasks 数组）    |
 
 ---
 

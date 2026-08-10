@@ -406,6 +406,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude2.compact.abortUnknown": "原因未记录",
   "claude2.tasks": "任务",
   "claude2.taskFallback": "任务 #{{id}}",
+  "claude2.backgroundRunning": "后台运行中",
+  "claude2.backgroundTask": "后台任务",
   "claude2.mode.changed": "已切换到 {{mode}}",
   "claude2.model.changed": "模型 · {{model}}",
   "claude2.command.title": "命令",

@@ -1445,6 +1445,14 @@ function SystemChatBubble() {
           usage: { total_tokens: number; tool_uses: number; duration_ms: number };
         }
       | undefined;
+    const backgroundTask = custom?.backgroundTask as
+      | {
+          taskId: string;
+          taskType?: string;
+          description?: string;
+          active: boolean;
+        }
+      | undefined;
     const argsText = (custom?.argsText as string) ?? "{}";
     const controlRequestId = custom?.controlRequestId as string | undefined;
     const toolProps = {
@@ -1514,6 +1522,27 @@ function SystemChatBubble() {
               {progress.usage.duration_ms >= 10000
                 ? `${Math.round(progress.usage.duration_ms / 1000)}s`
                 : `${progress.usage.duration_ms}ms`}
+            </span>
+          </div>
+        ) : null}
+        {backgroundTask ? (
+          <div className="mx-3 mb-2 flex items-center gap-2 border-t border-neutral-line/50 px-3 pb-2 pt-2 text-xs">
+            <span
+              className={`inline-block h-3 w-3 shrink-0 rounded-full ${backgroundTask.active ? "animate-spin border-2 border-assistant/40 border-t-assistant" : "border border-neutral-line"}`}
+            />
+            <span
+              className={`shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-medium ${backgroundTask.active ? "bg-assistant-deep/30 text-assistant" : "bg-on-surface/5 text-on-surface-muted"}`}
+            >
+              {backgroundTask.active ? t("claude2.backgroundRunning") : t("claude2.backgroundTask")}
+            </span>
+            {backgroundTask.taskType ? (
+              <span className="shrink-0 text-on-surface-muted">{backgroundTask.taskType}</span>
+            ) : null}
+            <span className="truncate text-on-surface-soft">
+              <span className="text-on-surface-muted">#{backgroundTask.taskId.slice(0, 8)}</span>{" "}
+              {backgroundTask.description ??
+                (custom?.args as { description?: string } | undefined)?.description ??
+                ""}
             </span>
           </div>
         ) : null}
