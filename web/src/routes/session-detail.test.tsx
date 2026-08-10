@@ -81,8 +81,9 @@ describe("readTerminalTheme", () => {
   test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=surface 实色", () => {
     setTokens(LIGHT);
     const theme = readTerminalTheme("light");
-    // 亮色 background ← 纯白 #ffffff（续十对比：字重已解决清晰度，白底对比看效果）。
-    expect(theme.background).toBe("#ffffff");
+    // 亮色 background ← --surface #f6f8fb 浅蓝灰（续十二恢复：续九曾改纯白衬托字重清晰度，
+    // 续十 DOM 渲染器根治模糊 + 续十一删字重后纯白衬托不再需要，回浅蓝灰底）。
+    expect(theme.background).toBe("#f6f8fb");
     expect(theme.brightBlue).toBe("#1d4ed8");
     expect(theme.foreground).toBe("#1e293b");
     expect(theme.cursor).toBe("#0284c7");
@@ -95,6 +96,17 @@ describe("readTerminalTheme", () => {
     expect(theme.cyan).toBe("#0891b2");
     expect(theme.white).toBe("#64748b");
     expect(theme.brightWhite).toBe("#0f1520");
+    // 续十二：仅亮色挂 256 色精准映射，claude 不达标前景 9 色（max idx 248 → length 233）。
+    // 抽查各映射位 + 一个未映射位保留默认（空串 fallback）。
+    expect(theme.extendedAnsi?.[137]).toBe("#1d4ed8"); // 153 蓝
+    expect(theme.extendedAnsi?.[204]).toBe("#a16207"); // 220 金
+    expect(theme.extendedAnsi?.[158]).toBe("#be123c"); // 174 边框
+    expect(theme.extendedAnsi?.[200]).toBe("#b45309"); // 216 浅橙
+    expect(theme.extendedAnsi?.[98]).toBe("#15803d"); // 114 浅绿
+    expect(theme.extendedAnsi?.[230]).toBe("#6b7280"); // 246 次要灰
+    expect(theme.extendedAnsi?.[228]).toBe("#4b5563"); // 244 灰
+    expect(theme.extendedAnsi?.length).toBe(233);
+    expect(theme.extendedAnsi?.[0]).toBe("");
   });
 
   test("dark：映射 dark 值 + 读后恢复调用前 .dark class", () => {
@@ -108,6 +120,8 @@ describe("readTerminalTheme", () => {
     expect(theme.black).toBe("#0f172a");
     expect(theme.green).toBe("#4ade80");
     expect(theme.brightWhite).toBe("#f1f5f9");
+    // 续十一：暗色不挂 extendedAnsi（undefined → xterm 走默认 256 调色板，#afd7ff 深底高对比）。
+    expect(theme.extendedAnsi).toBeUndefined();
     // finally 恢复调用前的 .dark class（不残留）
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });

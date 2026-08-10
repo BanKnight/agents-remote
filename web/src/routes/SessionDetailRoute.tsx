@@ -1003,7 +1003,7 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
     const v = (name: string) => cs.getPropertyValue(name).trim();
     const primary = v("--primary");
     return {
-      background: resolved === "dark" ? v("--surface-inset") : "#ffffff",
+      background: resolved === "dark" ? v("--surface-inset") : v("--surface"),
       foreground: v("--code-text"),
       cursor: primary,
       selectionBackground: hexToRgba(primary, 0.25),
@@ -1023,6 +1023,9 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
       brightCyan: v("--terminal-bright-cyan"),
       white: v("--terminal-white"),
       brightWhite: v("--terminal-bright-white"),
+      // 仅亮色挂 256 色精准映射（claude 不达标前景 9 色，见 LIGHT_EXTENDED_ANSI）；暗色
+      // undefined → xterm 走默认调色板（浅色在深底高对比，零变化）。
+      ...(resolved === "light" ? { extendedAnsi: LIGHT_EXTENDED_ANSI } : {}),
     };
   } finally {
     el.classList.toggle("dark", darkBefore);
@@ -1030,11 +1033,56 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
 }
 
 /**
+ * 亮色 256 色精准映射（续十一单色 → 续十二扩为 9 色）。pty 抓 claude 启动+对话 raw ANSI，
+ * 列出 `#f6f8fb` 底（--surface，luminance 0.9369）对比度 < 4.5（WCAG AA 不达标）的 claude
+ * 前景 256 色，逐色映射到达标深色。稀疏数组：目标位填映射色、其余空串 → parseColor 空串
+ * fallback DEFAULT_ANSI_COLORS 保留原色（ThemeService._setTheme L129-134），故只动这 9 色、
+ * 其余 256 色不动。暗色不挂（浅色在深底高对比，零变化）。
+ *
+ * idx  用途(出现次数)        原色(cube)  对比度  映射               映射后对比度
+ * 153  蓝(×2)                #afd7ff    1.41    #1d4ed8 blue-700   6.30
+ * 220  金(×14)               #ffd700    1.32    #a16207 yellow-700 4.63
+ * 174  边框线(×84,主用)      #d78787    2.56    #be123c rose-700   5.91
+ * 216  浅橙(×20)             #ffaf87    1.68    #b45309 amber-700  4.72
+ * 114  浅绿(×1)              #87d787    1.63    #15803d green-700  4.71
+ * 246  次要灰(×63)           #949494    2.85    #6b7280 gray-500   4.54
+ * 244  灰(×20)               #808080    3.71    #4b5563 gray-600   7.10（保留比 246 更深层次）
+ * 248  浅灰(×1)              #a8a8a8    2.23    #6b7280 gray-500   4.54
+ * 247  浅灰(×1)              #9e9e9e    2.52    #6b7280 gray-500   4.54
+ *
+ * 231 白字(×2) #ffffff 不映射：SGM 上下文确认主用是反色块前景（配 48;5;237 深灰底白字，
+ * 本就清晰），extendedAnsi 全局替换无法只改浅底那次（浅底仅 1 次 spinner 瞬态）——映射会让
+ * 深底白字变深字反而不可见，顾此失彼。
+ *
+ * 另：ANSI 16 色 token 在 #f6f8fb 底也大面积不达标（green 3.10/yellow 2.76/cyan 3.46 等），
+ * 但那是 ls/git 等所有程序用的颜色（改影响面大）且 claude CLI 抓包确认只用 256 色不用 ANSI 16，
+ * 故本轮聚焦 claude 256 色，ANSI 16 色留待单独立项。
+ */
+const LIGHT_EXTENDED_ANSI: string[] = (() => {
+  // 256 → 稀疏映射：key=调色板索引(16..255)，value=达标色。length 取最大索引+1。
+  const mapping: Record<number, string> = {
+    153: "#1d4ed8",
+    220: "#a16207",
+    174: "#be123c",
+    216: "#b45309",
+    114: "#15803d",
+    246: "#6b7280",
+    244: "#4b5563",
+    248: "#6b7280",
+    247: "#6b7280",
+  };
+  const maxIdx = Math.max(...Object.keys(mapping).map(Number));
+  const arr = Array.from({ length: maxIdx - 16 + 1 }, () => "");
+  for (const [idx, color] of Object.entries(mapping)) arr[Number(idx) - 16] = color;
+  return arr;
+})();
+
+/**
  * minimumContrastRatio 实测有害已关掉（续九）。xterm 的 reduceLuminance 是朴素算法
  * （各通道均减 10%），把 claude 鲜艳 256 色（`#87D7FF`/`#ffd700`）推成暗沉灰蓝（`#467086`）
  * /暗橄榄（`#867000`），失色相变灰蒙——这是用户「整体字迹不清楚」真根因之一（续六续七都暗
- * 故区别不大）。亮暗都给 1（=xterm 默认=关闭）让原色鲜艳呈现，字芯清晰反而更可读。配合
- * `fontWeight: 500` 解决笔画细、亮色纯白底最大化对比，整体浅色终端清晰和谐。
+ * 故区别不大）。亮暗都给 1（=xterm 默认=关闭）让原色鲜艳呈现，字芯清晰反而更可读；不达标
+ * 前景交由 LIGHT_EXTENDED_ANSI 精准映射逐色解决（续十二），而非全局兜底钝化全部颜色。
  */
 const MINIMUM_CONTRAST_RATIO_LIGHT = 1;
 function minimumContrastRatioFor(resolved: ResolvedTheme): number {
@@ -1117,10 +1165,9 @@ function XtermOutput({
       minimumContrastRatio: minimumContrastRatioFor(resolvedRef.current),
       fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
       fontSize: 12,
-      // 非加粗文本字重 500（默认 normal=400 在浅色底 + 12px WebGL 下笔画偏细显「不清楚」；
-      // 加粗的 700 因笔画厚而清晰——用户实测「加粗清晰、普通 fg 不行」精确指向字重根因）。
-      // 500 中等偏粗让普通文本笔画厚起来，又不至于像 bold 那样重；暗色同步受益（字重不分主题）。
-      fontWeight: 500,
+      // 字重用 xterm 默认 normal(400)（续十一）：续九曾加 500 缓解 WebGL 模糊下笔画偏细，但续十
+      // 把桌面端切到 DOM 渲染器（原生字体抗锯齿）、移动端 WebGL 整数 DPR 本就不模糊——两种渲染器
+      // 都不模糊，500 失去存在理由，回默认。字重是全局选项不分桌面/移动。
       lineHeight: 1.35,
       cursorBlink: true,
       cursorInactiveStyle: "outline",
@@ -1136,12 +1183,16 @@ function XtermOutput({
       logLevel: "warn",
     });
 
-    // Use WebGL renderer for smoother scrolling on mobile. Falls back to the
-    // DOM renderer if WebGL is unavailable.
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      // WebGL not available, DOM renderer is fine
+    // WebGL 渲染器在非整数 DPR（桌面 1.5 缩放常见）下纹理采样模糊（续十）；整数 DPR
+    // （移动端 2/3）清晰且性能好，故仅整数 DPR 加载 WebGL，非整数 DPR 回退 xterm 内置
+    // DOM 渲染器（浏览器原生字体渲染，任意 DPR 清晰，零新依赖）。判据用 DPR 整数性而非
+    // isDesktop——iPad 横屏宽屏 DPR=2 仍享 WebGL。
+    if (Number.isInteger(window.devicePixelRatio)) {
+      try {
+        term.loadAddon(new WebglAddon());
+      } catch {
+        // WebGL 不可用，DOM 渲染器兜底（xterm 默认）
+      }
     }
 
     term.open(container);

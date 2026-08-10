@@ -388,7 +388,7 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 
 | xterm 槽位 | token 源 | dark | light |
 |---|---|---|---|
-| background | 亮 `#ffffff` 纯白 / 暗 `--surface-inset`（不透明实色；**不能传 `transparent`**——xterm `css.toColor` 只支持 `#hex`/`rgb()`/`rgba()`，canvas 解析路径要求 alpha=0xFF，否则 `parseColor` fallback 成 `DEFAULT_BACKGROUND` 纯黑 `#000`，背景永不随主题）。亮色纯白底（续九：字重 500 解决笔画清晰度后，纯白底比浅蓝灰 `--surface` 更干净、对比更强，256 色/truecolor 在白底对比度最高）；深色近黑（`--surface-inset` `#05080d` 保持现状零变化） | `#05080d` | `#ffffff` |
+| background | 亮 `--surface`（`#f6f8fb` 浅蓝灰，与 app shell 同底）/ 暗 `--surface-inset`（不透明实色；**不能传 `transparent`**——xterm `css.toColor` 只支持 `#hex`/`rgb()`/`rgba()`，canvas 解析路径要求 alpha=0xFF，否则 `parseColor` fallback 成 `DEFAULT_BACKGROUND` 纯黑 `#000`，背景永不随主题）。亮色用 `--surface`（续九曾改纯白 `#ffffff` 衬托字重清晰度，续十 DOM 渲染器根治模糊 + 续十一删字重后不再需要纯白衬托，续十二恢复 `--surface` 与 shell 同底、视觉连贯）；深色近黑（`--surface-inset` `#05080d` 保持现状零变化） | `#05080d` | `#f6f8fb` |
 | foreground | `--code-text` | `#d6e4f7` | `#1e293b` |
 | cursor | `--primary` | `#7dd3fc` | `#0284c7` |
 | selectionBackground | `--primary` @ 25% | `rgba(125,211,252,0.25)` | `rgba(2,132,199,0.25)` |
@@ -419,9 +419,25 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 
 **`minimumContrastRatio` 路线已否决（续六启用 → 续九关掉）**：续六曾设 `minimumContrastRatio`：亮色 `4.5`（WCAG AA）/ 暗色 `1`，想兜底 claude CLI 256 色（`38;5;153` `#87D7FF`、`38;5;220`、`38;5;246`，不受 `--terminal-*` ANSI 16 色 token 控制）在浅底的低对比。但**实测有害已关掉**：xterm 的 `reduceLuminance` 是朴素算法（各通道均减 10%），把 claude 鲜艳 256 色推成暗沉灰蓝（`#87D7FF`→`#467086`、`#ffd700`→`#867000`）——失色相变灰蒙，是用户「整体字迹不清楚」的真根因之一（续六续七都暗故区别不大）。续九改为亮暗都 `1`（=xterm 默认=关闭），让原色鲜艳呈现，字芯清晰反而更可读。
 
-**`extendedAnsi` 路线已否决（续七试错，2026-08-10）**：xterm.js 确有公开 API `ITheme.extendedAnsi?: string[]`（typings「ANSI extended colors (16-255)」）可从源头替换 256 色调色板 16-255 档，曾尝试精准映射 claude 实测的 3 个索引到 Solarized Light 精确色（`153`→blue `#268bd2`、`220`→yellow `#b58900`、`246`→base01 `#586e75`），但用户实测「整体字迹不清楚」后回退。**真根因（WCAG 对比度验证）**：Solarized Light 强调色是为它**自己的暖米黄底 `#fdf6e3`** 设计的——blue `#268bd2` 在该底上 4.6:1、yellow `#b58900` 4.7:1（刚好达标，因暖底对蓝/黄对比有加成）；挪到我们的底上 blue 仅 **3.46:1**、yellow **3.02:1**，均低于 WCAG AA 4.5。**换纯白底也救不了**：blue 在 `#ffffff` 上仍只有 4.0:1。教训：**Solarized 强调色只有配 Solarized 底才成立，不能只拿强调色不拿底**。且 `extendedAnsi` 源头替换后 xterm 用新色算对比度，`minimumContrastRatio` 仍会加深这些已不达标的色，结果比续六直接加深原 xterm 浅蓝更糟。结论：不映射 256 色，原色鲜艳呈现 + 字重 500 保证笔画清晰（见下）。
+**`extendedAnsi` 精准映射 claude 256 色（续十一启用 153 → 续十二扩为完整 9 色；续七试错后重新启用，前提已变）**：xterm.js 公开 API `ITheme.extendedAnsi?: string[]`（typings「ANSI extended colors (16-255)」）从源头替换 256 色调色板 16-255 档。机制（`ThemeService._setTheme` L129-134）：`colors.ansi[i+16] = parseColor(theme.extendedAnsi[i], DEFAULT_ANSI_COLORS[i+16])`——第二参数是 fallback，`parseColor("")` 抛错 → 返回 fallback = 保留默认原色，故**稀疏数组**（目标位填值、其余空串）= 只改指定索引、其余 256 色保留默认。**续十二方案（pty 抓 claude 启动+对话 raw ANSI，列出所有不达标前景 256 色，`#f6f8fb` 亮底对比度）**：
 
-**`fontWeight: 500`（续九，浅色字迹不清的真根因）**：续六到续八一直在调颜色，方向错了——用户实测「**加粗的清晰、普通 fg 不行**」精确指向**字重**根因。claude 普通文本用 `\e[39m`（default fg = `#1e293b`，对比度 13.75，颜色本该非常清晰），加粗文本用 `\e[1m`（同色，字重 700）——颜色对比度一样，唯一区别是字重：默认 `fontWeight: normal`(400) vs 加粗 700。在 12px + WebGL + 浅色底上，400 字重笔画偏细 → 普通文本「不清楚」；700 笔画厚 → 加粗清晰。**这是字体渲染粗细问题，不是颜色问题**，故调颜色（续六 minimumContrastRatio / 续七 Solarized / 续八纯白底）均无改善。续九改 `new Terminal({ fontWeight: 500 })`（非加粗文本从 400 提到 500，中等偏粗让笔画厚起来又不至于像 bold 那么重），用户实测「清晰的非常明显」。字重不分主题，亮暗都受益。配合亮色纯白底（256 色/truecolor 在白底对比度最高），整体浅色终端达到清晰和谐。
+| 索引 | 原色 | 语义 | 原对比 | → 映射 | 新对比 |
+|---|---|---|---|---|---|
+| 153 | `#afd7ff` 浅蓝 | 链接/选中 | 1.41 | `#1d4ed8` blue-700（= `--terminal-bright-blue`） | 6.30 ✓ |
+| 220 | `#ffd700` 金 | 标题/品牌 | 1.32 | `#a16207` yellow-700 | 4.63 ✓ |
+| 174 | `#d78787` 浅粉 | 边框线（对话主用 84 次） | 2.56 | `#be123c` rose-700（暖色系保留） | 5.91 ✓ |
+| 216 | `#ffaf87` 浅橙 | spinner/字符 | 1.68 | `#b45309` amber-700 | 4.72 ✓ |
+| 114 | `#87d787` 浅绿 | 低频 | 1.63 | `#15803d` green-700 | 4.71 ✓ |
+| 246 | `#949494` 灰 | 次要文本（63 次） | 2.85 | `#6b7280` gray-500 | 4.54 ✓ |
+| 244 | `#808080` 灰 | 灰档（20 次，比 246 深） | 3.71 | `#4b5563` gray-600（保留更深层次） | 7.10 ✓ |
+| 248 | `#a8a8a8` 浅灰 | 低频 | 2.23 | `#6b7280` gray-500 | 4.54 ✓ |
+| 247 | `#9e9e9e` 浅灰 | 低频 | 2.52 | `#6b7280` gray-500 | 4.54 ✓ |
+
+仅亮色挂（暗色这些色在深底本就高对比，零变化）。**231 `#ffffff` 白字不映射**：它主用是**反色块前景**（配 `48;5;237` 深灰底白字，如标题栏，本就清晰），extendedAnsi 是全局替换无法只改浅底那次（浅底仅 1 次 spinner 瞬态）——映射会让深底白字变深字反而不可见，顾此失彼。**反转续七否决的理由**：续七否决时字重还是 400（续九根因未发现），用户把所有不清归到颜色 → extendedAnsi 被误判；续九（字重）+ 续十（DOM 渲染器根治模糊）解决清晰度后，extendedAnsi 能真实生效；且续七用的 Solarized blue `#268bd2` 白底仅 4.0 不达标，续十二各映射目标均 ≥ 4.5 达 WCAG AA。教训沉淀：Solarized 强调色只配 Solarized 暖底成立，故续十二不沿用 Solarized，直接用 Tailwind 各色 -700 深档。
+
+**`fontWeight`（续九加 500 → 续十一删，回到默认 400）**：续六到续八一直在调颜色，方向错了——用户实测「**加粗的清晰、普通 fg 不行**」精确指向**字重**根因。claude 普通文本用 `\e[39m`（default fg = `#1e293b`，对比度 13.75，颜色本该非常清晰），加粗文本用 `\e[1m`（同色，字重 700）——颜色对比度一样，唯一区别是字重：默认 `fontWeight: normal`(400) vs 加粗 700。在 12px + WebGL + 浅色底上，400 字重笔画偏细 → 普通文本「不清楚」；700 笔画厚 → 加粗清晰。**这是字体渲染粗细问题，不是颜色问题**，故调颜色（续六 minimumContrastRatio / 续七 Solarized / 续八纯白底）均无改善。续九改 `new Terminal({ fontWeight: 500 })`（非加粗文本从 400 提到 500，中等偏粗让笔画厚起来又不至于像 bold 那么重），用户实测「清晰的非常明显」。**续十一删除**：续十（DPR 渲染器分流）把桌面端切到内置 DOM 渲染器（浏览器原生字体抗锯齿，任意 DPR 清晰）、移动端 WebGL 整数 DPR 本就不模糊——两种渲染器都不再模糊，**500 字重本是 WebGL 模糊下的笔画缓解，现失去存在理由**，回到 xterm 默认 `normal`(400)。字重不分主题（全局选项），亮暗都受益。配合亮色 `--surface` 浅蓝灰底 + extendedAnsi 256 色可读化映射（见上），整体浅色终端达到清晰和谐。
+
+**渲染器按 DPR 整数性分流（续十，桌面端字迹模糊的真根因）**：续九解决字重后用户发现残留问题——**移动端清晰、桌面端仍字迹模糊**，且明确不是主题选项造成（字重/底色/对比度都不分桌面/移动）。真根因是 **xterm WebGL 渲染器在非整数 `devicePixelRatio` 下纹理采样模糊**：WebGL 把字形烘焙成图集（`fontSize × devicePixelRatio`，xterm `TextureAtlas.ts`），渲染到屏幕时缩放——整数 DPR（移动端 2/3）整数倍缩放、每像素精确映射 → 锐利；非整数 DPR（桌面端 1.5，Windows/Mac UI 缩放常见）1.5 倍线性采样、字形边缘亚像素落在像素边界半亮半暗 → 发虚发灰（暗色主题因深底浅边的视觉特性不明显，但同样存在）。MDN WebGL best practices 明确「non-integer devicePixelRatio… causes moire artifacts」，VS Code terminal 同源问题。**方案**：仅整数 DPR 加载 `WebglAddon`，非整数 DPR 跳过 → xterm 自动回退内置 `DomRenderer`（`CoreBrowserTerminal.ts:584`，浏览器原生字体抗锯齿，任意 DPR 清晰，**零新依赖**，不引入 `@xterm/addon-canvas`）。判据用 DPR 整数性（`Number.isInteger(window.devicePixelRatio)`）而非 `isDesktop`——iPad 横屏宽屏 DPR=2 仍享 WebGL。移动端 WebGL 路径完全不动（整数 DPR = 原逻辑 + 整数性守卫）。**不动态切渲染器**：DPR 变化（拖窗到不同显示器、改系统缩放）是低频场景，动态切需销毁重建 terminal（丢 scrollback/重连 WebSocket），代价远大于收益；terminal 创建时读一次 DPR 定渲染器，DPR 变后最坏回到「未优化状态」而非崩溃。
 
 ## Typography
 
