@@ -250,10 +250,11 @@ const PINNED_GROUP_KEY = "__pinned__";
  * 去 › 进入按钮，整行进入已够）。折叠/展开只由 ▾ 独立按钮触发（`aria-expanded` + `aria-label` 按态切换
  * collapse/expandProjectGroup，状态 `workbenchProjectGroupsCollapsedAtom` localStorage 按项目记忆）。
  * 新建合并为 ➕ 二级菜单（ActionMenu，对齐项目内 CreateSessionBar）+ 🗑 删除独立。section 容器
- * `bg-on-surface/10` + Apple 动态圆角（2026-08-10 inset grouped）：连续折叠标题行组圆角条带段（首尾圆角 /
+ * `bg-surface-raised` + Apple 动态圆角（2026-08-10 inset grouped）：连续折叠标题行组圆角条带段（首尾圆角 /
  * 中间方角 + 分割线），展开分组脱离成独立圆角块（标题行顶圆 + 卡片底圆一体 `rounded-lg`），展开块与
- * 折叠段间 `mt-2` 间距断开（分割线不穿过展开块）。主题自适应文字色叠加——明主题加深 / 暗主题加浅，
- * 两主题对称明显；旧 `surface-raised/30` 与左栏 `surface-raised` 底自我叠加两主题都不可见。标题行
+ * 折叠段间 `mt-2` 间距断开（分割线不穿过展开块）。`surface-raised` 凸起语义（苹果 inset-grouped「分组
+ * 永远比底亮」）——明 `#ffffff` 纯白 / 暗 `#141b28` 亮灰，两主题都比底色（shell `bg-surface/20`）亮 →
+ * 凸起方向统一；弃用 `on-surface/10`（文字色叠加，明主题凹陷 / 暗主题凸起，方向翻转）。标题行
  * div（`pl-3 pr-2`）去 bg（移到 section）。空项目无折叠内容——▾ 位 size-4 占位
  * span 保持 📁 与有实例行对齐，仍保留 ➕/🗑。实例区 = InstanceGrid plain 连续单列卡片（无圆角 section
  * 边框/bg、无 carousel 分页；组内非首卡由 InstanceCard topSeparator 画 inset 分割线，两端统一 left-15=60px
@@ -469,7 +470,7 @@ function GroupedProjectsList({
           <section
             key={sec.key}
             className={cn(
-              "flex flex-col bg-on-surface/10",
+              "flex flex-col bg-surface-raised",
               sec.expanded
                 ? "rounded-lg"
                 : cn(topRound && "rounded-t-lg", bottomRound && "rounded-b-lg"),

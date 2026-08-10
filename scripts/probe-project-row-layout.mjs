@@ -105,7 +105,7 @@ async function run() {
   const css = await verifyCssFlushed({
     origin: WEB_ORIGIN,
     expectClasses: [
-      "bg-on-surface/10",
+      "bg-surface-raised",
       "text-on-surface-muted",
       "divide-on-surface/5",
       "touch:h-10",
@@ -208,11 +208,10 @@ async function run() {
       `断言7a ▾ chevron 紧挨 📁（gap=${gap.toFixed(1)}px ≤10，非首版 14px）`,
     );
     // chevron 贴左 = 相对标题行容器左缘 ≈ pl-3(12)（绝对 left 受左总览栏偏移影响，改用相对偏移）。
-    // 行容器 = bg-on-surface/10 的标题行 div（2026-08-10 去 rounded-lg 后不再有 rounded-lg 标记；
-    // 2026-08-10 bg 从 surface-raised/30 → on-surface/10 主题自适应）。
+    // 行容器 = chevron 所在 section（含 bg-surface-raised 的祖先；2026-08-10 section bg 凸起语义 token）。
     const chevronRelRow = await foldBtn.evaluate((el) => {
       let node = el.parentElement;
-      while (node && !node.className.includes("bg-on-surface/10")) node = node.parentElement;
+      while (node && !node.className.includes("bg-surface-raised")) node = node.parentElement;
       const row = node ?? el.parentElement;
       return (
         el.querySelector("svg").getBoundingClientRect().left - row.getBoundingClientRect().left
@@ -227,7 +226,7 @@ async function run() {
     // 断言 12：proj1 3 卡单列 + 非首卡 topSeparator inset + 空项目无实例区 + 无 carousel/ViewSwitcher
     // + 折叠 localStorage 记忆（reload 后仍折叠）+ create header 桌面 flex。
     const gridData = await page.evaluate(() => {
-      const secs = [...document.querySelectorAll('section[class*="bg-on-surface/10"]')];
+      const secs = [...document.querySelectorAll('section[class*="bg-surface-raised"]')];
       const proj = secs.find((s) =>
         [...s.querySelectorAll("button")].some((b) => b.textContent.trim() === "proj1"),
       );
@@ -260,7 +259,7 @@ async function run() {
       `断言12c 非首卡 topSeparator = 2（got ${gridData?.topSep ?? "null"}）`,
     );
     const emptyNoGrid = await page.evaluate(() => {
-      const secs = [...document.querySelectorAll('section[class*="bg-on-surface/10"]')];
+      const secs = [...document.querySelectorAll('section[class*="bg-surface-raised"]')];
       const empty = secs.find((s) =>
         [...s.querySelectorAll("button")].some((b) => b.textContent.trim() === "proj-empty"),
       );
@@ -471,14 +470,14 @@ async function run() {
     // 容器（展开块标题行+卡片一体 bg），列表根去 divide-y。全折叠时 section 是连续圆角条带段——
     // 相邻 collapsed section 间 border-t 紧贴（gap=0），无 space-y-2 空隙。
     const layout = await apage.evaluate(() => {
-      const secs = [...document.querySelectorAll('section[class*="bg-on-surface/10"]')].map(
+      const secs = [...document.querySelectorAll('section[class*="bg-surface-raised"]')].map(
         (el) => {
           const r = el.getBoundingClientRect();
           return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
         },
       );
       const root = secs.length
-        ? document.querySelector('section[class*="bg-on-surface/10"]').parentElement
+        ? document.querySelector('section[class*="bg-surface-raised"]').parentElement
         : null;
       const cr = root.getBoundingClientRect();
       const cs = getComputedStyle(root);
@@ -504,11 +503,13 @@ async function run() {
       maxGap <= 1,
       `断言9b 折叠条带段内无空隙（相邻 gap max=${maxGap.toFixed(1)}px ≤1，border-t 紧贴非 space-y-2 的 8px）`,
     );
-    // 断言 10：on-surface/10 两主题都明显（用户「多主题」核心诉求）。直接读 :root 的 --on-surface +
-    // --surface-raised（左栏底近似）hex，手算 on-surface @10% alpha 叠加底色的合成色 Δ（绕过 getComputedStyle
-    // 解析 color-mix 的不确定性）。明主题 + 加 .dark class 暗主题各一次。on-surface 主题自适应[明 #0f1520 深 /
-    // 暗 #eef4ff 浅]，两主题 Δ≈66~69（三通道和）远高于旧 surface-raised/30 与底自我叠加的 ≈0。
-    const themeDelta = await apage.evaluate(() => {
+    // 断言 10：surface-raised 凸起方向两主题统一（用户「明亮灰底+更灰分组凹陷」真根因修正）。
+    // 旧 on-surface/10 = 文字色叠加，明主题深色叠加浅底=凹陷、暗主题浅色叠加深底=凸起，方向翻转（明暗不对称）。
+    // 改 surface-raised（凸起语义 token）：明 #ffffff / 暗 #141b28，两主题都比底色（shell bg-surface/20 on
+    // bg-base）亮 → 凸起方向统一，对齐苹果 inset-grouped「分组永远比底亮」。验证：读 :root token hex 算
+    // WCAG 相对亮度（分组=surface-raised / 底=surface@20% alpha 叠加 bg-base），断言 分组L > 底L 两主题成立；
+    // 辅以 getComputedStyle(section) 实色 = surface-raised（明 rgb(255,255,255) / 暗 rgb(20,27,40)）确认落盘。
+    const raised = await apage.evaluate(() => {
       function color(s) {
         s = (s || "").trim();
         let m = s.match(/^#([0-9a-f]{6})$/i);
@@ -525,29 +526,38 @@ async function run() {
             b: parseInt(m[1][2] + m[1][2], 16),
           };
         }
-        // 或解析成 rgb()（空格或逗号分隔）。
-        m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
-        if (m) return { r: +m[1], g: +m[2], b: +m[3] };
         return null;
+      }
+      function channel(c) {
+        c = c / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      }
+      function luminance({ r, g, b }) {
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
       }
       function read() {
         const cs = getComputedStyle(document.documentElement);
-        const onSurfaceRaw = cs.getPropertyValue("--on-surface");
-        const baseRaw = cs.getPropertyValue("--surface-raised");
-        const onSurface = color(onSurfaceRaw);
-        const base = color(baseRaw);
-        let delta = null;
-        if (onSurface && base) {
-          const a = 0.1;
-          const final = {
-            r: onSurface.r * a + base.r * (1 - a),
-            g: onSurface.g * a + base.g * (1 - a),
-            b: onSurface.b * a + base.b * (1 - a),
-          };
-          delta =
-            Math.abs(final.r - base.r) + Math.abs(final.g - base.g) + Math.abs(final.b - base.b);
-        }
-        return { delta, onSurfaceRaw: onSurfaceRaw.trim(), baseRaw: baseRaw.trim() };
+        const group = color(cs.getPropertyValue("--surface-raised"));
+        const surface = color(cs.getPropertyValue("--surface"));
+        const bgBase = color(cs.getPropertyValue("--bg-base"));
+        // 底色 = shell bg-surface/20：surface @20% alpha 叠加 bg-base（body radial 近似底）。
+        const a = 0.2;
+        const base =
+          surface && bgBase
+            ? {
+                r: surface.r * a + bgBase.r * (1 - a),
+                g: surface.g * a + bgBase.g * (1 - a),
+                b: surface.b * a + bgBase.b * (1 - a),
+              }
+            : null;
+        // section 实际渲染 bg（surface-raised 实色，绕过半透明叠加）。
+        const sec = document.querySelector('section[class*="bg-surface-raised"]');
+        const secBg = sec ? getComputedStyle(sec).backgroundColor : null;
+        return {
+          groupL: group ? luminance(group) : null,
+          baseL: base ? luminance(base) : null,
+          secBg,
+        };
       }
       const light = read();
       document.documentElement.classList.add("dark");
@@ -556,8 +566,17 @@ async function run() {
       return { light, dark };
     });
     record(
-      themeDelta.light?.delta > 30 && themeDelta.dark?.delta > 30,
-      `断言10 on-surface/10 两主题都明显（明 Δ=${themeDelta.light?.delta?.toFixed(0)} / 暗 Δ=${themeDelta.dark?.delta?.toFixed(0)} >30；旧 surface-raised/30 自叠加 ≈0）`,
+      raised.light?.groupL !== null &&
+        raised.light?.baseL !== null &&
+        raised.light.groupL > raised.light.baseL &&
+        raised.dark?.groupL !== null &&
+        raised.dark?.baseL !== null &&
+        raised.dark.groupL > raised.dark.baseL,
+      `断言10a surface-raised 凸起方向两主题统一（分组L > 底L：明 ${raised.light?.groupL?.toFixed(3)} > ${raised.light?.baseL?.toFixed(3)}；暗 ${raised.dark?.groupL?.toFixed(4)} > ${raised.dark?.baseL?.toFixed(4)}）`,
+    );
+    record(
+      raised.light?.secBg === "rgb(255, 255, 255)" && raised.dark?.secBg === "rgb(20, 27, 40)",
+      `断言10b section bg = surface-raised 实色（明 ${raised.light?.secBg} = #fff；暗 ${raised.dark?.secBg} = #141b28）`,
     );
     // 断言 11：Apple 动态圆角（2026-08-10，inset grouped）。当前状态 = 全折叠（置顶 + proj1 折叠、
     // proj-empty 空）→ 3 个连续折叠 section 组圆角条带段：首行置顶 rounded-t-lg、末行 proj-empty
@@ -565,7 +584,7 @@ async function run() {
     // 圆角块（rounded-lg 四角），置顶/proj-empty 各成独立圆角块（上下圆），展开块与折叠段间 mt-2
     // 间距断开、无分割线（分割线不穿过展开块）。
     const strip = await apage.evaluate(() =>
-      [...document.querySelectorAll('section[class*="bg-on-surface/10"]')].map((el) => {
+      [...document.querySelectorAll('section[class*="bg-surface-raised"]')].map((el) => {
         const cs = getComputedStyle(el);
         return {
           topRadius: cs.borderTopLeftRadius,
@@ -595,7 +614,7 @@ async function run() {
       .click();
     await apage.waitForTimeout(250);
     const expanded = await apage.evaluate(() =>
-      [...document.querySelectorAll('section[class*="bg-on-surface/10"]')].map((el) => {
+      [...document.querySelectorAll('section[class*="bg-surface-raised"]')].map((el) => {
         const cs = getComputedStyle(el);
         return {
           topRadius: cs.borderTopLeftRadius,
@@ -639,12 +658,12 @@ async function run() {
     );
     // 13b：置顶组卡（首个 section）取消置顶 → 置顶组消失（sections 3→2，会话A 回 1）。
     await apage
-      .locator('section[class*="bg-on-surface/10"]')
+      .locator('section[class*="bg-surface-raised"]')
       .first()
       .getByRole("button", { name: "取消置顶", exact: true })
       .click();
     await apage.waitForTimeout(250);
-    const secsAfterUnpin = await apage.locator('section[class*="bg-on-surface/10"]').count();
+    const secsAfterUnpin = await apage.locator('section[class*="bg-surface-raised"]').count();
     const aAfterUnpin = await apage
       .locator('[role="button"]')
       .filter({ hasText: "会话 A" })
@@ -660,7 +679,7 @@ async function run() {
       .getByRole("button", { name: "置顶", exact: true })
       .click();
     await apage.waitForTimeout(250);
-    const secsAfterPin = await apage.locator('section[class*="bg-on-surface/10"]').count();
+    const secsAfterPin = await apage.locator('section[class*="bg-surface-raised"]').count();
     const aAfterPin = await apage.locator('[role="button"]').filter({ hasText: "会话 A" }).count();
     record(
       secsAfterPin === 3 && aAfterPin === 2,
@@ -747,7 +766,7 @@ async function run() {
       .first()
       .click();
     await apage.waitForTimeout(250);
-    const secsAfterFold = await apage.locator('section[class*="bg-on-surface/10"]').count();
+    const secsAfterFold = await apage.locator('section[class*="bg-surface-raised"]').count();
     const aAfterFold = await apage.locator('[role="button"]').filter({ hasText: "会话 A" }).count();
     record(
       secsAfterFold === 3 && aAfterFold === 1,
