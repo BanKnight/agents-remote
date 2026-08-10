@@ -35,7 +35,7 @@ function setTokens(values: Record<string, string>) {
 const LIGHT: Record<string, string> = {
   "--code-text": "#1e293b",
   "--primary": "#0284c7",
-  "--surface-inset": "#e2e8f0",
+  "--surface": "#f6f8fb",
   "--terminal-black": "#1e293b",
   "--terminal-bright-black": "#64748b",
   "--terminal-red": "#dc2626",
@@ -45,7 +45,7 @@ const LIGHT: Record<string, string> = {
   "--terminal-yellow": "#ca8a04",
   "--terminal-bright-yellow": "#eab308",
   "--terminal-blue": "#2563eb",
-  "--terminal-bright-blue": "#3b82f6",
+  "--terminal-bright-blue": "#1d4ed8",
   "--terminal-magenta": "#9333ea",
   "--terminal-bright-magenta": "#a855f7",
   "--terminal-cyan": "#0891b2",
@@ -78,12 +78,14 @@ const DARK: Record<string, string> = {
 };
 
 describe("readTerminalTheme", () => {
-  test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=surface-inset 实色", () => {
+  test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=surface 实色", () => {
     setTokens(LIGHT);
     const theme = readTerminalTheme("light");
     // xterm 的 css.toColor 不支持 "transparent"（canvas 解析要求 alpha=0xFF），必须给不透明实色，
-    // 否则 parseColor fallback 成 DEFAULT_BACKGROUND 纯黑。background ← --surface-inset（终端 inset 面板）。
-    expect(theme.background).toBe("#e2e8f0");
+    // 否则 parseColor fallback 成 DEFAULT_BACKGROUND 纯黑。亮色 background ← --surface（浅蓝灰，
+    // 比 surface-inset 灰底干净）；bright-blue 亮色 blue-700（浅底亮蓝对比不足改深一档）。
+    expect(theme.background).toBe("#f6f8fb");
+    expect(theme.brightBlue).toBe("#1d4ed8");
     expect(theme.foreground).toBe("#1e293b");
     expect(theme.cursor).toBe("#0284c7");
     expect(theme.selectionBackground).toBe("rgba(2, 132, 199, 0.25)");

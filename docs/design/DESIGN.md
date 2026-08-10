@@ -388,7 +388,7 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 
 | xterm 槽位 | token 源 | dark | light |
 |---|---|---|---|
-| background | `--surface-inset`（不透明实色；**不能传 `transparent`**——xterm `css.toColor` 只支持 `#hex`/`rgb()`/`rgba()`，canvas 解析路径要求 alpha=0xFF，否则 `parseColor` fallback 成 `DEFAULT_BACKGROUND` 纯黑 `#000`，背景永不随主题） | `#05080d` | `#e2e8f0` |
+| background | 亮 `--surface` / 暗 `--surface-inset`（不透明实色；**不能传 `transparent`**——xterm `css.toColor` 只支持 `#hex`/`rgb()`/`rgba()`，canvas 解析路径要求 alpha=0xFF，否则 `parseColor` fallback 成 `DEFAULT_BACKGROUND` 纯黑 `#000`，背景永不随主题）。亮/暗取不同层级：浅色终端要干净浅底（`--surface` `#f6f8fb`，比 `surface-inset` 灰底干净，配深字+饱和蓝和谐），深色要近黑（`--surface-inset` `#05080d` 保持现状零变化） | `#05080d` | `#f6f8fb` |
 | foreground | `--code-text` | `#d6e4f7` | `#1e293b` |
 | cursor | `--primary` | `#7dd3fc` | `#0284c7` |
 | selectionBackground | `--primary` @ 25% | `rgba(125,211,252,0.25)` | `rgba(2,132,199,0.25)` |
@@ -407,7 +407,7 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 | `terminal-yellow` | `#fbbf24` | `#ca8a04` | yellow-600 |
 | `terminal-bright-yellow` | `#fde68a` | `#eab308` | yellow-500 |
 | `terminal-blue` | `#60a5fa` | `#2563eb` | blue-600 |
-| `terminal-bright-blue` | `#93c5fd` | `#3b82f6` | blue-500 |
+| `terminal-bright-blue` | `#93c5fd` | `#1d4ed8` | blue-700（浅底亮蓝对比不足，bright 改深一档；见下方说明） |
 | `terminal-magenta` | `#c084fc` | `#9333ea` | purple-600 |
 | `terminal-bright-magenta` | `#d8b4fe` | `#a855f7` | purple-500 |
 | `terminal-cyan` | `#22d3ee` | `#0891b2` | cyan-600 |
@@ -415,7 +415,7 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 | `terminal-white` | `#cbd5e1` | `#64748b` | slate-500（浅底上「白」=中灰） |
 | `terminal-bright-white` | `#f1f5f9` | `#0f1520` | on-surface（浅底上最亮文字=最深的 on-surface） |
 
-> 亮色档语义：bright 档 = 普通档浅 100 档（red-600→red-500），与暗色档同构（red-400→red-300）；`white`/`bright-white` 例外——亮色下「白色」应呈现为中灰、最亮文字用最深 on-surface，否则浅底白字不可读。
+> 亮色档语义：bright 档 = 普通档浅 100 档（red-600→red-500），与暗色档同构（red-400→red-300）；`white`/`bright-white` 例外——亮色下「白色」应呈现为中灰、最亮文字用最深 on-surface，否则浅底白字不可读。**`bright-blue` 例外**：浅底上 bright 若沿用浅档（blue-500 `#3b82f6`）对比不足（ls 目录、prompt 蓝字发糊），改深一档 blue-700 `#1d4ed8`——浅色终端通行做法（浅底上「更亮的彩色」不可读，bright 只能往深走）。仅蓝色特殊处理（饱和度高 + 人眼对蓝敏感度低，浅底最难读），其余彩色 bright 仍循「浅一档」同构。
 
 ## Typography
 

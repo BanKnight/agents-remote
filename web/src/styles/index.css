@@ -76,8 +76,10 @@
   --permission-soft: #a78bfa;
   /* Terminal ANSI 16 色（xterm 外壳随主题，DESIGN.md「Terminal theme」节）：
      亮色档 = Tailwind 深档保证浅底可读（dark=#4ade80 这类 400 档在浅底对比不足）；
-     white 亮色=slate-500（浅底上「白」应为中灰）、bright-white=on-surface
-     （浅底上最亮文字=最深的 on-surface）。暗色档值见 .dark 覆盖（原 xterm 硬编码值零回归）。*/
+     bright-blue 亮色=blue-700（比 normal blue-600 更深——浅底上 bright 若用浅档 500 对比不足，
+     ls 目录/prompt 蓝字发糊，改深一档保证清晰，浅色终端通行做法）。white 亮色=slate-500
+     （浅底上「白」应为中灰）、bright-white=on-surface（浅底上最亮文字=最深的 on-surface）。
+     暗色档值见 .dark 覆盖（原 xterm 硬编码值零回归）。*/
   --terminal-black: #1e293b;
   --terminal-bright-black: #64748b;
   --terminal-red: #dc2626;
@@ -87,7 +89,7 @@
   --terminal-yellow: #ca8a04;
   --terminal-bright-yellow: #eab308;
   --terminal-blue: #2563eb;
-  --terminal-bright-blue: #3b82f6;
+  --terminal-bright-blue: #1d4ed8;
   --terminal-magenta: #9333ea;
   --terminal-bright-magenta: #a855f7;
   --terminal-cyan: #0891b2;

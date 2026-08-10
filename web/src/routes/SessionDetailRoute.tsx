@@ -988,9 +988,11 @@ function hexToRgba(hex: string, alpha: number): string {
  * `<html>.dark` class 读 token 再恢复原态——不依赖调用方 class 落盘时序（ThemeSync 兄弟 effect
  * 先于本组件，但防御起见不赌），同 resolved 恒返回同套值：foreground ← --code-text、
  * cursor/selection ← --primary（selection @25%）、ANSI 16 色 ← --terminal-*、
- * background ← --surface-inset（不透明实色）。注意不能用 "transparent"——xterm 的
- * css.toColor 只支持 #hex / rgb() / rgba()，canvas 解析路径要求 alpha=0xFF，否则
- * parseColor fallback 成 DEFAULT_BACKGROUND 纯黑 #000，背景永不随主题。
+ * background 亮色 ← --surface（#f6f8fb 浅蓝灰，比 surface-inset 灰底干净）/ 暗色 ←
+ * --surface-inset（#05080d 近黑，零变化）——分主题取不同层级：浅色终端要干净浅底、
+ * 深色要近黑。注意不能用 "transparent"——xterm 的 css.toColor 只支持 #hex / rgb() /
+ * rgba()，canvas 解析路径要求 alpha=0xFF，否则 parseColor fallback 成
+ * DEFAULT_BACKGROUND 纯黑 #000，背景永不随主题。
  */
 export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
   const el = document.documentElement;
@@ -1001,7 +1003,7 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
     const v = (name: string) => cs.getPropertyValue(name).trim();
     const primary = v("--primary");
     return {
-      background: v("--surface-inset"),
+      background: v(resolved === "dark" ? "--surface-inset" : "--surface"),
       foreground: v("--code-text"),
       cursor: primary,
       selectionBackground: hexToRgba(primary, 0.25),

@@ -28,6 +28,7 @@ const DARK_BG = "rgb(2, 6, 23)"; // #020617
 const TOKEN_KEYS = [
   "--code-text",
   "--primary",
+  "--surface",
   "--surface-inset",
   "--terminal-black",
   "--terminal-bright-black",
@@ -49,6 +50,7 @@ const TOKEN_KEYS = [
 const LIGHT_TOKENS = {
   "--code-text": "#1e293b",
   "--primary": "#0284c7",
+  "--surface": "#f6f8fb",
   "--surface-inset": "#e2e8f0",
   "--terminal-black": "#1e293b",
   "--terminal-bright-black": "#64748b",
@@ -59,7 +61,7 @@ const LIGHT_TOKENS = {
   "--terminal-yellow": "#ca8a04",
   "--terminal-bright-yellow": "#eab308",
   "--terminal-blue": "#2563eb",
-  "--terminal-bright-blue": "#3b82f6",
+  "--terminal-bright-blue": "#1d4ed8",
   "--terminal-magenta": "#9333ea",
   "--terminal-bright-magenta": "#a855f7",
   "--terminal-cyan": "#0891b2",
@@ -70,6 +72,7 @@ const LIGHT_TOKENS = {
 const DARK_TOKENS = {
   "--code-text": "#d6e4f7",
   "--primary": "#7dd3fc",
+  "--surface": "#0f1520",
   "--surface-inset": "#05080d",
   "--terminal-black": "#0f172a",
   "--terminal-bright-black": "#334155",
