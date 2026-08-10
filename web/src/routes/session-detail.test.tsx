@@ -131,7 +131,7 @@ describe("useTerminalTheme", () => {
   const termRef = (): RefObject<Terminal | null> =>
     ({ current: { options: {} as ITheme } }) as unknown as RefObject<Terminal | null>;
 
-  test("resolved 变化 → term.options.theme 更新（foreground 翻转）", () => {
+  test("resolved 变化 → term.options.theme 更新（foreground 翻转）+ minimumContrastRatio 翻转", () => {
     setTokens(LIGHT);
     const ref = termRef();
     const { rerender } = renderHook(
@@ -139,9 +139,12 @@ describe("useTerminalTheme", () => {
       { initialProps: { resolved: "light" } },
     );
     expect(ref.current?.options.theme?.foreground).toBe("#1e293b");
+    // 亮色启用对比度兜底（claude CLI 256 色 #AFD7FF 等浅档在浅底可读）；暗色 1=关闭。
+    expect(ref.current?.options.minimumContrastRatio).toBe(4.5);
     setTokens(DARK);
     rerender({ resolved: "dark" });
     expect(ref.current?.options.theme?.foreground).toBe("#d6e4f7");
+    expect(ref.current?.options.minimumContrastRatio).toBe(1);
   });
 
   test("termRef.current 为 null 时安全不抛", () => {

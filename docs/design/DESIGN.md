@@ -417,6 +417,8 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 
 > 亮色档语义：bright 档 = 普通档浅 100 档（red-600→red-500），与暗色档同构（red-400→red-300）；`white`/`bright-white` 例外——亮色下「白色」应呈现为中灰、最亮文字用最深 on-surface，否则浅底白字不可读。**`bright-blue` 例外**：浅底上 bright 若沿用浅档（blue-500 `#3b82f6`）对比不足（ls 目录、prompt 蓝字发糊），改深一档 blue-700 `#1d4ed8`——浅色终端通行做法（浅底上「更亮的彩色」不可读，bright 只能往深走）。仅蓝色特殊处理（饱和度高 + 人眼对蓝敏感度低，浅底最难读），其余彩色 bright 仍循「浅一档」同构。
 
+**`minimumContrastRatio`（256 色 / truecolor 可读性兜底）**：上述 `--terminal-*` 仅映射 ANSI 16 色（`\e[3xm`/`\e[9xm`）；程序（如 claude CLI）常用 **256 色**（`\e[38;5;N m`）或 truecolor 输出色，走 xterm 内置固定调色板，**不受 theme token 控制**。实测 claude CLI 用 `38;5;153`（浅蓝 `#AFD7FF`，选中高亮）、`38;5;220`（金，标题）、`38;5;246`（灰，次要文字）——这些浅色在浅底上对比度极低（字芯淡、抗锯齿边缘融入浅底显「白色描边」/发糊），暗底上则高对比清晰。故 `XtermOutput` 设 `minimumContrastRatio`：**亮色 `4.5`（WCAG AA，启用）/ 暗色 `1`（xterm 默认，关闭，零变化）**——xterm 自动给低于阈值的彩色加深前景至达标（claude 浅蓝 → 可读深蓝），暗色完全不启用。效果是**全局**的（亮色下所有低对比彩色都会提对比，不只 153），随 `resolved` 切换；仅实时流可见的渲染效果交用户真机确认（自动化只能验 options 被正确设置，验不了像素）。
+
 ## Typography
 
 字体策略以 **Geist Variable** 为 UI 字族，等宽用 `SFMono-Regular, Consolas, Liberation Mono, monospace`。共 8 个层级，覆盖 headline / body / label / caption / code 五个角色。

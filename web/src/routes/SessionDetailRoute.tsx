@@ -1029,10 +1029,27 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
   }
 }
 
-/** 主题切换时把新 theme 写到已创建的 xterm 实例（options.theme setter 赋值即重绘，含 WebGL）。 */
+/**
+ * 亮色最低对比度（WCAG AA）。claude CLI 等 256 色 / truecolor 走 xterm 内置固定调色板，
+ * 不受 --terminal-* ANSI 16 色 token 控制——浅色档（如 claude `38;5;153` #AFD7FF）在浅底
+ * #f6f8fb 上对比度极低（~1.3），字芯淡、抗锯齿边缘融入浅底显白边发糊。minimumContrastRatio
+ * 让 xterm 自动把低于阈值的前景色加深至达标（全局兜底，所有低对比彩色都受益）。暗色高对比
+ * 用不到，给 1（=默认=关闭，零变化）。
+ */
+const MINIMUM_CONTRAST_RATIO_LIGHT = 4.5;
+function minimumContrastRatioFor(resolved: ResolvedTheme): number {
+  return resolved === "dark" ? 1 : MINIMUM_CONTRAST_RATIO_LIGHT;
+}
+
+/**
+ * 主题切换时把新 theme 写到已创建的 xterm 实例（options.theme setter 赋值即重绘，含 WebGL）；
+ * 同步切 minimumContrastRatio（亮色启用对比度兜底 / 暗色关闭）。
+ */
 export function useTerminalTheme(termRef: RefObject<Terminal | null>, resolved: ResolvedTheme) {
   useEffect(() => {
-    if (termRef.current) termRef.current.options.theme = readTerminalTheme(resolved);
+    if (!termRef.current) return;
+    termRef.current.options.theme = readTerminalTheme(resolved);
+    termRef.current.options.minimumContrastRatio = minimumContrastRatioFor(resolved);
   }, [resolved, termRef]);
 }
 
@@ -1097,6 +1114,7 @@ function XtermOutput({
 
     const term = new Terminal({
       theme: readTerminalTheme(resolvedRef.current),
+      minimumContrastRatio: minimumContrastRatioFor(resolvedRef.current),
       fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
       fontSize: 12,
       lineHeight: 1.35,
