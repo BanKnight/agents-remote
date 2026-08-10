@@ -35,6 +35,7 @@ function setTokens(values: Record<string, string>) {
 const LIGHT: Record<string, string> = {
   "--code-text": "#1e293b",
   "--primary": "#0284c7",
+  "--surface-inset": "#e2e8f0",
   "--terminal-black": "#1e293b",
   "--terminal-bright-black": "#64748b",
   "--terminal-red": "#dc2626",
@@ -57,6 +58,7 @@ const LIGHT: Record<string, string> = {
 const DARK: Record<string, string> = {
   "--code-text": "#d6e4f7",
   "--primary": "#7dd3fc",
+  "--surface-inset": "#05080d",
   "--terminal-black": "#0f172a",
   "--terminal-bright-black": "#334155",
   "--terminal-red": "#f87171",
@@ -76,10 +78,12 @@ const DARK: Record<string, string> = {
 };
 
 describe("readTerminalTheme", () => {
-  test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background transparent", () => {
+  test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=surface-inset 实色", () => {
     setTokens(LIGHT);
     const theme = readTerminalTheme("light");
-    expect(theme.background).toBe("transparent");
+    // xterm 的 css.toColor 不支持 "transparent"（canvas 解析要求 alpha=0xFF），必须给不透明实色，
+    // 否则 parseColor fallback 成 DEFAULT_BACKGROUND 纯黑。background ← --surface-inset（终端 inset 面板）。
+    expect(theme.background).toBe("#e2e8f0");
     expect(theme.foreground).toBe("#1e293b");
     expect(theme.cursor).toBe("#0284c7");
     expect(theme.selectionBackground).toBe("rgba(2, 132, 199, 0.25)");
@@ -97,6 +101,7 @@ describe("readTerminalTheme", () => {
     setTokens(DARK);
     document.documentElement.classList.add("dark");
     const theme = readTerminalTheme("dark");
+    expect(theme.background).toBe("#05080d");
     expect(theme.foreground).toBe("#d6e4f7");
     expect(theme.cursor).toBe("#7dd3fc");
     expect(theme.selectionBackground).toBe("rgba(125, 211, 252, 0.25)");

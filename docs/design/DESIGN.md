@@ -388,7 +388,7 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude2 与 terminal 会
 
 | xterm 槽位 | token 源 | dark | light |
 |---|---|---|---|
-| background | `transparent`（透容器 `bg-surface-inset/15`，已随主题） | — | — |
+| background | `--surface-inset`（不透明实色；**不能传 `transparent`**——xterm `css.toColor` 只支持 `#hex`/`rgb()`/`rgba()`，canvas 解析路径要求 alpha=0xFF，否则 `parseColor` fallback 成 `DEFAULT_BACKGROUND` 纯黑 `#000`，背景永不随主题） | `#05080d` | `#e2e8f0` |
 | foreground | `--code-text` | `#d6e4f7` | `#1e293b` |
 | cursor | `--primary` | `#7dd3fc` | `#0284c7` |
 | selectionBackground | `--primary` @ 25% | `rgba(125,211,252,0.25)` | `rgba(2,132,199,0.25)` |

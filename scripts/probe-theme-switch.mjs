@@ -23,10 +23,12 @@ const DARK_BG = "rgb(2, 6, 23)"; // #020617
 
 // Terminal xterm 外壳 token（DESIGN.md「Terminal theme」节 + index.css --terminal-*）。
 // readTerminalTheme 的映射源——单测（session-detail.test.tsx）已测映射逻辑，这里测真实 CSS 落盘值
-// 在 light/dark 下解析到设计值（foreground ← --code-text、cursor ← --primary、ANSI 16 色 ← --terminal-*）。
+// 在 light/dark 下解析到设计值（background ← --surface-inset、foreground ← --code-text、
+// cursor ← --primary、ANSI 16 色 ← --terminal-*）。
 const TOKEN_KEYS = [
   "--code-text",
   "--primary",
+  "--surface-inset",
   "--terminal-black",
   "--terminal-bright-black",
   "--terminal-red",
@@ -47,6 +49,7 @@ const TOKEN_KEYS = [
 const LIGHT_TOKENS = {
   "--code-text": "#1e293b",
   "--primary": "#0284c7",
+  "--surface-inset": "#e2e8f0",
   "--terminal-black": "#1e293b",
   "--terminal-bright-black": "#64748b",
   "--terminal-red": "#dc2626",
@@ -67,6 +70,7 @@ const LIGHT_TOKENS = {
 const DARK_TOKENS = {
   "--code-text": "#d6e4f7",
   "--primary": "#7dd3fc",
+  "--surface-inset": "#05080d",
   "--terminal-black": "#0f172a",
   "--terminal-bright-black": "#334155",
   "--terminal-red": "#f87171",
