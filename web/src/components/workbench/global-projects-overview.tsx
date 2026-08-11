@@ -173,8 +173,13 @@ type ProjectRowActionsProps = {
 function ProjectRowActions({ deletePending, onDelete, projectName }: ProjectRowActionsProps) {
   const { t } = useT();
   const { createAgent, createTerminal, isCreating, promptHolder } = useCreateSession(projectName);
+  // flex（无 gap）：➕ 新建与 🗑 删除紧贴成「项目操作组」。移动端按钮 touch:h-10 w-10（40px 触摸目标）
+  // 但 icon 居中，按钮内 icon padding 已占主导——gap>0 时两 icon 视觉间距 = padding×2 + gap，gap 即便 4px
+  // 也让 icon 间距明显大于桌面端（桌面 28px 按钮+16px icon=16px 间距不嫌远；移动 40px 按钮+16px icon=28px
+  // 间距嫌远）。故移动端 gap 0 + icon 放大到 touch:h-6（24px），icon 间距回到 16px=桌面端。与左组
+  // （▾+📁 gap-1.5 子容器）对偶——header 由「左组 / 操作组」两个 flex 子容器构成。
   return (
-    <>
+    <div className="flex items-center">
       {/* 新建合并为 ➕ 二级菜单（2026-08-10 迭代）：+Claude/+Terminal 收进 ActionMenu，对齐
           项目内 CreateSessionBar 同款菜单（桌面 popover / 移动 sheet）。trigger=plus icon，
           aria-label=workbench.createSessionAria；isCreating 禁用。 */}
@@ -201,7 +206,7 @@ function ProjectRowActions({ deletePending, onDelete, projectName }: ProjectRowA
             title={t("workbench.createSessionAria")}
             type="button"
           >
-            <ShellIcon className="h-4 w-4" name="plus" />
+            <ShellIcon className="h-4 w-4 touch:h-6 touch:w-6" name="plus" />
           </button>
         }
       />
@@ -214,11 +219,11 @@ function ProjectRowActions({ deletePending, onDelete, projectName }: ProjectRowA
         title={t("project.deleteProject")}
         type="button"
       >
-        <ShellIcon className="h-4 w-4" name="trash" />
+        <ShellIcon className="h-4 w-4 touch:h-6 touch:w-6" name="trash" />
       </button>
       {/* 行级 name prompt（useCreateSession 内建，创建会话前弹可选名称）。 */}
       {promptHolder}
-    </>
+    </div>
   );
 }
 
