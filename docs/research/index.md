@@ -2,11 +2,15 @@
 
 本层用于沉淀调研资料、调研过程与调研结论，服务后续决策与长期知识复用。
 
+> OPC 多 agent 产品调研批次（参考产品 PM 调研 + 证据底座）已独立成专题，迁至 [../opc/research/index.md](../opc/research/index.md)。
+
 ## 子目录
 
 - [inbox/](./inbox/) — 未定型调研区：带调研但方案未定、尚未进入实现期的意图文档。非沉淀结论，定型后须迁出至 `docs/research/` 根或 `docs/specs/`。见 `./inbox/index.md`。
 
 ## 文档
+
+### 其他调研
 
 - [agent-access-options.md](./agent-access-options.md) — 汇总 hapi、remodex、Codex、Claude 与社区反馈对 Agent 接入路线、第一轮真实可用链路和统一协议设计的调研结论。
 - [claude-cli-stream-protocol.md](./claude-cli-stream-protocol.md) — Claude CLI stdio stream-json 协议完整文档：消息类型、system.init 字段、control_request 机制、生命周期和集成方式；三维度运行态配置（model/permission/effort）见 claude-cli-runtime-config.md。
