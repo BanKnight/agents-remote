@@ -20,6 +20,31 @@
 
 我们的 agent 形态就是 agentmore,不是常驻服务(agent-server),不是纯无状态函数(serverless)。
 
+## 2.5 两层栈:产品结构北极星(2026-08 定)
+
+**产品分两层,面向两类用户,观测/介入的粒度也不同**:
+
+```
+顶层:协作层(raft.build 形态)—— 面向常规用户
+  人和 agent 相处:channel/DM/@mention、teammate 身份、记忆、看板
+  观测 = 刷对话流;介入 = 发消息(对的粒度,不是妥协)
+
+底层:会话层(orca / hermes / agents-remote)—— 面向专业用户
+  真正的 runtime 控制:spawn、stream-json 全量观测、permission
+  control_request、model/effort 切换、terminal attach、--resume 续接
+  观测 = 逐 token 流;介入 = 精确到 turn/工具审批
+```
+
+**这个拆分解开"包工头"死结**(此前试图在单层里同时解决"人观测介入"与"质量保证"而卡死):
+
+1. **人 → 包工头走顶层**:人不钻进 worker 内部,在 channel 里与包工头对话(Raft 首页形态:"how's CI on PR #982?" → "All green, merging once @tygg signs off")。人的观测粒度 = 对话,介入粒度 = 消息。
+2. **包工头 → worker 走底层**:正是 agents-remote 已有的东西——claude2 stream-json 透传、permission 审批、control_request/response、model/effort 切换、JSONL 回放。**"人可以观测并且介入"在会话层已完全实现**;包工头 agent(或专业用户)用底层工具看 worker 内部、精确介入。
+3. **Hermes 的痛印证拆分**:用户抱怨"看不到 worker 内部、介入是盲的"(`pm-hermes-user-observe-worker.md`),是 `delegate_task` 匿名后台子 agent 的病——它的 Kanban 路径其实把中缝观测做全了(任务事件流/attempt 历史/心跳/mid-turn `/kanban` 介入),但顶层会话形态和底层 worker 逐 token 观测都缺。即:**两层都要真实存在且各有粒度,任何一层缺失,人的观测介入就会在最缺的那层断掉**。
+
+**定位含义**:agents-remote 不是整个产品,是产品的**底层**。已做一年多的 claude2/terminal/session 管理就是在造第二层(orca、hermes 同层竞争);Raft 证明了顶层形态。路线 = **把底层做透 → 在上面长出 raft 形态的顶层**。顶层形态学 Raft,机制从调研产品拼(质量门学 multica PR review / OpenOPC reviewer、沉默即成功、AX 四问)。Raft 自己也是这个结构的压缩版("team collaboration layer around agents",协作面在云、执行在本机 daemon),只是它把中间的会话层压成薄 daemon、没有专业控制面——**我们的机会就是把中间层做成真的:专业级观测介入控制面 + 顶层长协作**。
+
+**Hermes bot mode 反向验证这个结构**(`pm-hermes-bots-profiles.md`):Hermes 正在从会话层往上长协作层——身份单位提到整台 profile(独立记忆/人格/IM bot token),协调介质做成持久 SQLite Kanban 板(每个 handoff 是人和 agent 平等读写的 DB 行,`/kanban` 豁免 running-agent guard 让人 mid-turn 介入,断路器/循环计数全是确定性 DB 守卫)——**中缝(协调介质)它做得很完整,恰好证明协调介质做成"人和 agent 平等读写的持久数据"时,审计/回放/mid-turn 介入/确定性护栏全都自然获得**。但顶层长得很挣扎:#86135(2026-08-14)CEO `delegate_task` 派活给 C-suite 仍是静默后台子 agent,操作者看不到 CTO 线程只收摘要——"Operator cannot audit the chief. **Makes C-suite feel fake**",用户明确要求 Grok Bot 式可点开的 per-chief 真实对话。结论:**顶层(人和 agent 相处的会话形态)不是会话层产品顺手就能长出来的,得被当成一等产品设计——这正是 Raft 的功夫所在,也是 Hermes 的教训**。对 agents-remote 的具体机会:底层 claude2 派生的每个 worker 会话天然是可点开、可逐 token 观测、可 --resume 的真实会话——Hermes 用户要而不可得的"可见 chief 线程",我们的底层已具备实现基础,缺的只是顶层的会话形态。
+
 ## 3. 状态焊点:三层模型
 
 每个产品都要回答"状态焊在哪",这是产品形态的根决策。参考产品焊在不同的地方:
