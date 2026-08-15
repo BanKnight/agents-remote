@@ -159,7 +159,7 @@ export function ProjectLeftPanel({
         // aria-label=nav.primaryAria）；e2e projectsNav 据此定位 middle tab 按钮。
         <nav
           aria-label={t("workbench.projectsAria")}
-          className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5"
+          className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5"
         >
           {middleTabs.map((opt) => (
             <TabButton
