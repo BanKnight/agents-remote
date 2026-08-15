@@ -55,14 +55,21 @@ export function FileTabPreview({ path }: { path: string }) {
   const save = useMutation({
     mutationFn: ({ content }: { content: string }) =>
       saveFileContent(projectName, relativePath, content),
-    onSuccess: () => {
+    onSuccess: (_data, { content }) => {
       // Refresh preview（new content/size）；file tab 无文件树列表，不 invalidate files query。
-      queryClient.invalidateQueries({
-        queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", relativePath],
-      });
-      setEditContent(undefined);
+      // 必须等 preview refetch 把新内容拉回缓存后再清 editContent，否则 editValue 短暂回落到
+      // 旧服务端内容，CodeMirror 受控 value 全文档 replace，滚动位置被重置（同 FilesPanel 修法）。
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), SAVED_FLASH_MS);
+      void (async () => {
+        try {
+          await queryClient.invalidateQueries({
+            queryKey: ["projects", projectName, FILE_NAV_QUERY_SCOPE, "preview", relativePath],
+          });
+        } finally {
+          setEditContent((prev) => (prev === content ? undefined : prev));
+        }
+      })();
     },
   });
   const handleSave = () => {

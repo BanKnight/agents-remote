@@ -892,15 +892,25 @@ export function FilesPanel({
   const save = useMutation({
     mutationFn: ({ path, content }: { path: string; content: string }) =>
       saveFileContent(effectiveProjectName ?? "", path, content),
-    onSuccess: () => {
+    onSuccess: (_data, { path, content }) => {
       // Refresh both the preview (new content/size) and the list (size/mtime).
-      queryClient.invalidateQueries({
-        queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
-      });
-      invalidateFiles();
-      setEditContent(undefined);
+      // 必须等 preview refetch 把新内容（= 刚保存的 content）拉回缓存后再清 editContent：
+      // 若在 refetch 前清，editValue 会瞬间回落到旧服务端内容，@uiw/react-codemirror 对受控
+      // value 变化做全文档 replace（from:0 → 整篇），滚动锚点失效 → 保存后滚动跳回文件开头。
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), SAVED_FLASH_MS);
+      void (async () => {
+        try {
+          await queryClient.invalidateQueries({
+            queryKey: ["projects", effectiveProjectName, queryScope, "preview", path],
+          });
+        } finally {
+          // 仅当用户保存后未继续输入才清（清后 editValue = 新 previewTextContent，与 CodeMirror
+          // doc 相等 → 不 replace → 滚动保留）；保存期间又有新输入则保留，避免丢弃后续编辑。
+          setEditContent((prev) => (prev === content ? undefined : prev));
+        }
+      })();
+      invalidateFiles();
     },
   });
 
