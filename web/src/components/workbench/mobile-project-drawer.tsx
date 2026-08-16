@@ -1,9 +1,14 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
 import type { AgentHistoryRange } from "@agents-remote/shared";
+import { createFolder, uploadFile } from "../../api/client";
+import { usePromptDialog } from "../shell/prompt-dialog";
+import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+import { PagesPanel } from "../pages/pages-panel";
 import { PluginsPanel } from "../../routes/PluginsRoute";
 import { FilesLeftPanel } from "../files/files-left-panel";
 import { GitChangesList } from "../git/git-diff-viewer";
@@ -83,6 +88,36 @@ export function MobileProjectDrawer({
   const filesPath = projectFilesPaths[scope.key] ?? "";
   const setFilesPath = (path: string) =>
     setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
+
+  // 文件段新建文件夹/上传（drawer 顶部按钮消费；queryScope 对齐 FilesLeftPanel 默认 "files"）。
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { prompt, holder: promptHolder } = usePromptDialog();
+  const mkdir = useMutation({
+    mutationFn: (name: string) => createFolder(scope.key, filesPath, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", scope.key, "files", filesPath] });
+    },
+  });
+  const upload = useMutation({
+    mutationFn: (file: File) => uploadFile(scope.key, filesPath, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", scope.key, "files", filesPath] });
+    },
+  });
+  const handleNewFolder = useCallback(async () => {
+    const name = await prompt({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("files.newFolder"),
+      placeholder: t("files.newFolder"),
+      title: t("files.newFolderTooltip"),
+    });
+    const trimmed = name?.trim();
+    if (trimmed && !mkdir.isPending) mkdir.mutate(trimmed);
+  }, [prompt, mkdir, t]);
+  // 页面段「新建页面根」外部触发信号（递增计数，PagesPanel useEffect 消费）。
+  const [pagesCreateRequest, setPagesCreateRequest] = useState(0);
+
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.key,
     focusId: undefined,
@@ -130,6 +165,53 @@ export function MobileProjectDrawer({
     [instances, scope.key, t],
   );
 
+  // 顶部行右上角「+」按段新建（2026-08-17 用户修正：更顶部的 header 右上角 = drawer 顶部行；
+  // 聚焦态 tab 内容是查看语义，不提供新建）。总览=新建会话、文件=新建文件夹/上传、
+  // 页面=新建页面根；其他段（历史/Git/Wiki/插件）无新建动作不渲染。
+  const createItems: ActionMenuItem[] | null =
+    activeSection === "overview"
+      ? [
+          {
+            label: t("workbench.createClaude2"),
+            icon: <ShellIcon name="anthropic" />,
+            onSelect: () => create.createAgent("claude2"),
+          },
+          {
+            label: t("workbench.createTerminal"),
+            icon: <ShellIcon name="terminal" />,
+            onSelect: create.createTerminal,
+          },
+        ]
+      : activeSection === "files"
+        ? [
+            {
+              label: t("files.newFolder"),
+              icon: <ShellIcon name="folder-plus" />,
+              onSelect: handleNewFolder,
+            },
+            {
+              label: upload.isPending ? t("files.uploading") : t("files.upload"),
+              icon: <ShellIcon name="upload" />,
+              onSelect: () => fileInputRef.current?.click(),
+              disabled: upload.isPending,
+            },
+          ]
+        : activeSection === "pages"
+          ? [
+              {
+                label: t("pages.addRoot"),
+                icon: <ShellIcon name="plus" />,
+                onSelect: () => setPagesCreateRequest((n) => n + 1),
+              },
+            ]
+          : null;
+  const createAria =
+    activeSection === "files"
+      ? t("files.createAria")
+      : activeSection === "pages"
+        ? t("pages.createAria")
+        : t("workbench.createSessionAria");
+
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
@@ -162,6 +244,24 @@ export function MobileProjectDrawer({
             <span className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-on-surface">
               {scope.key}
             </span>
+            {/* 按段新建入口（右上角，与 ☰ 对称位）：总览=新建会话 / 文件=新建文件夹·上传 /
+                页面=新建页面根；其他段不渲染。 */}
+            {createItems ? (
+              <ActionMenu
+                align="end"
+                cancelLabel={t("cancel")}
+                items={createItems}
+                trigger={
+                  <button
+                    aria-label={createAria}
+                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+                    type="button"
+                  >
+                    <ShellIcon className="h-5 w-5" name="plus" />
+                  </button>
+                }
+              />
+            ) : null}
           </div>
           {/* 7 段横向 tab 行（对齐桌面左栏 middle tab bar：TabButton + overflow-x-auto 可横滚，
               nav-item token active bg-primary/10 text-primary）。 */}
@@ -204,6 +304,9 @@ export function MobileProjectDrawer({
                 }}
                 projectName={scope.key}
               />
+            ) : activeSection === "pages" ? (
+              // 页面段手写（不走 plugin render）：drawer 顶部「新建页面根」需传 createRequest 信号。
+              <PagesPanel createRequest={pagesCreateRequest} projectName={scope.key} />
             ) : activePlugin ? (
               <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
             ) : activeSection === "plugins" ? (
@@ -238,28 +341,6 @@ export function MobileProjectDrawer({
                       {t("workbench.emptyInstanceHint")}
                     </p>
                   )}
-                  {/* 新建入口（总览段底部，与浏览态 FAB 同一 useCreateSession 单例——
-                      navigate onSuccess 自动聚焦 + 关 drawer 由 URL focus 驱动）。 */}
-                  <div className="flex items-center justify-center gap-2 p-3">
-                    <button
-                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-neutral-line/60 bg-surface-inset/60 px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-on-surface/5 active:bg-on-surface/10"
-                      disabled={create.isCreating}
-                      onClick={() => create.createAgent("claude2")}
-                      type="button"
-                    >
-                      <ShellIcon className="h-4 w-4" name="anthropic" />
-                      {t("workbench.createClaude2")}
-                    </button>
-                    <button
-                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-neutral-line/60 bg-surface-inset/60 px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-on-surface/5 active:bg-on-surface/10"
-                      disabled={create.isCreating}
-                      onClick={create.createTerminal}
-                      type="button"
-                    >
-                      <ShellIcon className="h-4 w-4" name="terminal" />
-                      {t("workbench.createTerminal")}
-                    </button>
-                  </div>
                 </div>
                 {closeHolder}
                 {renameHolder}
@@ -268,6 +349,18 @@ export function MobileProjectDrawer({
             )}
           </div>
         </div>
+        {/* 隐藏 file input（文件段上传）+ prompt holder（文件段新建文件夹）。 */}
+        <input
+          ref={fileInputRef}
+          className="hidden"
+          type="file"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) upload.mutate(file);
+            e.target.value = "";
+          }}
+        />
+        {promptHolder}
         {/* Radix a11y：DialogTitle 视觉隐藏（aria-label 不足以覆盖 aria-labelledby 默认行为）。 */}
         <DialogTitle className="sr-only">{t("workbench.sidebar")}</DialogTitle>
       </DialogContent>

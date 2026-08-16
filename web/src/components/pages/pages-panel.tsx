@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PagesRoot } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
@@ -18,6 +18,11 @@ import { PagesRootDialog } from "./pages-root-dialog";
 
 type PagesPanelProps = {
   projectName: string;
+  /**
+   * 外部「新建根」触发信号（可选，移动 drawer 顶部按钮消费）。递增计数，每次变化打开
+   * PagesRootDialog 的 add 模式。桌面左栏不传 → 零影响。
+   */
+  createRequest?: number;
 };
 
 type EditingRoot = { mode: "add" } | { mode: "edit"; root: PagesRoot };
@@ -29,7 +34,7 @@ type EditingRoot = { mode: "add" } | { mode: "edit"; root: PagesRoot };
  *（整体 PUT 覆盖）。删除走共享 useConfirm。UI=f(state)：roots 从 query 派生，写经 mutation
  * invalidate 回 query，单一数据管道。
  */
-export function PagesPanel({ projectName }: PagesPanelProps) {
+export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
   const { t } = useT();
   const config = usePagesConfig(projectName, PAGES_QUERY_SCOPE);
   const update = useUpdatePagesConfig(projectName, PAGES_QUERY_SCOPE);
@@ -37,6 +42,15 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
   const [editing, setEditing] = useState<EditingRoot | null>(null);
 
   const roots: PagesRoot[] = config.data?.config.roots ?? [];
+
+  // 外部「新建根」信号（移动 drawer 顶部按钮）：createRequest 递增触发 add 模式。
+  useEffect(() => {
+    if (createRequest !== undefined && createRequest > 0) {
+      update.reset();
+      setEditing({ mode: "add" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createRequest]);
 
   const openPreview = (root: PagesRoot) => {
     window.open(pagesServeUrl(projectName, root.urlPath), "_blank", "noopener,noreferrer");
@@ -114,18 +128,8 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
           </span>
         </ActionButton>
       </div>
-      {/* 移动新建入口（2026-08-16：FAB 迁 header 右上角）：与桌面 header 行镜像，
-          justify-end 放 + icon 按钮开 PagesRootDialog。 */}
-      <div className="flex shrink-0 items-center justify-end border-b border-neutral-line/40 px-2 py-1.5 lg:hidden">
-        <button
-          aria-label={t("pages.createAria")}
-          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-          onClick={() => beginEdit({ mode: "add" })}
-          type="button"
-        >
-          <ShellIcon className="h-5 w-5" name="plus" />
-        </button>
-      </div>
+      {/* 移动新建入口统一在项目 drawer 顶部行右上角（按段切换，mobile-project-drawer.tsx），
+          PagesPanel 不再内嵌移动 header 行。 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
         {roots.length === 0 ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-2 lg:justify-center lg:pt-0">

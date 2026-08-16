@@ -3,9 +3,8 @@
 // 断言：
 //  1. 全局总览（/）：header 右上角「新建项目」+ icon 按钮渲染（header 行内、x 靠右）→ 点击开
 //     ProjectSetupPanel Dialog；全页无 fixed 悬浮按钮（FAB 已删）。
-//  2. 项目工作台 drawer 文件段（FilesLeftPanel 树模式，enablePreview=false）：header 行右上角
-//     「新建」ActionMenu trigger（max-lg:flex，!readOnly 即渲染）→ 点开底部 sheet → 点「上传」
-//     → filechooser 触发（Radix Dialog menuitem onSelect 同步链保持用户激活，风险点 C）。
+//  2. 项目工作台 drawer 顶部行右上角「新建」按钮（按段切换）：文件段 → 点开底部 sheet →
+//     点「上传」→ filechooser 触发（Radix Dialog menuitem onSelect 同步链保持用户激活，风险点 C）。
 //  3. 桌面（lg: 1280px）：移动 icon 按钮 display:none（max-lg:flex）；桌面 header「+ 新建」
 //     文字按钮仍可见。
 //  4. 底部 nav 胶囊（三视口）：无 FAB 让位（w-fit 内容宽、居中、/ ↔ /files 零跳变、label
@@ -162,12 +161,12 @@ async function runMobile() {
       await page.waitForTimeout(350);
     }
 
-    console.log("\n===== 3. 项目工作台 drawer 文件段 header 新建 + 上传时序（风险点 C）=====");
+    console.log("\n===== 3. 项目工作台 drawer 顶部行文件段新建 + 上传时序（风险点 C）=====");
     await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
     await page.waitForTimeout(800);
-    // 2026-08-16 起项目工作台 = drawer + tab 带：Files 在 drawer 段导航（TabButton 裸 button，
-    // 无 role=tab）。drawer 默认展开（浏览态）；点「文件」段按钮切换段主体 = FilesLeftPanel
-    //（enablePreview=false 树模式，!readOnly 时移动 header ActionMenu 渲染——写操作入口）。
+    // 2026-08-17 起新建入口统一在 drawer 顶部行右上角（返回+项目名那行，按段切换）：drawer 默认
+    // 展开（浏览态）；点「文件」段按钮 → activeSection=files → 顶部按钮 aria 变 files.createAria，
+    // sheet = 新建文件夹/上传。FilesPanel 不再内嵌移动入口（聚焦态 tab 内容是查看语义）。
     await page
       .getByRole("button", { name: /^Files$|^文件$/ })
       .first()
@@ -182,11 +181,11 @@ async function runMobile() {
     await page.waitForTimeout(800);
 
     // aria-label：zh「新建文件或文件夹」/ en "New file or folder"（files.createAria）——
-    // header 行右侧 ActionMenu trigger（drawer 文件树 header，树模式也渲染）。
+    // drawer 顶部行右上角 ActionMenu trigger（文件段，按段切换后 aria 命中）。
     const filesBtn = await findCreateButton(page, "新建文件或文件夹|New file or folder");
     record(
       !!filesBtn,
-      "drawer 文件段 header 新建按钮渲染（树模式 enablePreview=false, readOnly=false）",
+      "drawer 顶部行文件段新建按钮渲染（按段切换，files 段 aria=files.createAria）",
     );
     if (filesBtn) {
       console.log(`  按钮几何: ${JSON.stringify(filesBtn)}`);
@@ -223,6 +222,41 @@ async function runMobile() {
         "上传 menuitem 触发原生 filechooser（用户激活上下文保持，风险点 C 通过）",
       );
       // FileChooser 触发即验证通过；picker 由 finally 中 browser.close() 清理（FileChooser 无 cancel API）。
+    }
+
+    console.log("\n===== 3b. drawer 页面段新建页面根（createRequest 信号触发 PagesPanel）=====");
+    await page
+      .getByRole("button", { name: /^Pages$|^页面$/ })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(async () => {
+        await page.evaluate(() => {
+          const els = Array.from(document.querySelectorAll("button"));
+          const t = els.find((el) => /^(Pages|页面)$/.test((el.textContent ?? "").trim()));
+          if (t) t.click();
+        });
+      });
+    await page.waitForTimeout(600);
+    const pagesBtn = await findCreateButton(page, "添加页面根|Add pages root");
+    record(
+      !!pagesBtn,
+      "drawer 顶部行页面段新建按钮渲染（按段切换，pages 段 aria=pages.createAria）",
+    );
+    if (pagesBtn) {
+      const trigger = page.locator(
+        'button[aria-label*="添加页面根"], button[aria-label*="Add pages root"]',
+      );
+      await trigger
+        .first()
+        .click({ timeout: 5000 })
+        .catch(() => {});
+      await page.waitForTimeout(450);
+      // 点「添加根」→ createRequest 信号 → PagesPanel useEffect → PagesRootDialog。dialog 计数
+      // 从 drawer 1 个增至 ≥2（drawer + PagesRootDialog）。
+      const dialogs = await page.evaluate(
+        () => document.querySelectorAll('[role="dialog"]').length,
+      );
+      record(dialogs >= 2, `点「添加根」打开 PagesRootDialog（dialog 数 ${dialogs} ≥ 2）`);
     }
   } finally {
     await browser.close();
