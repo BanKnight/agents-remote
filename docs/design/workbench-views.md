@@ -252,11 +252,12 @@ type WorkbenchLayoutV3 = {
 - scope 切换（global ↔ project）各自独立布局。
 - **跨窗口同步已禁用**：所有布局 atom（栏宽 / 折叠 / tab / view 偏好 + WorkbenchLayoutV3）持久化到 localStorage（刷新保持），但**不跨窗口/tab 实时同步**。`atomWithStorage` 默认经 `storage.subscribe` 监听 `window` storage 事件实现多窗口同步；个人布局无需跨窗口一致（多窗口独立布局更符合预期，且避免多窗口测试时互相干扰），故这些 atom 走无 `subscribe` 的 storage（`atomWithLocalOnlyStorage`，见 `workbench-model.ts`）——仍读写 localStorage，但不监听跨窗口广播。WorkbenchLayoutV3 的自定义迁移 storage（本节迁移链）本就无 `subscribe`，行为一致。
 
-### 7.7 移动端：drawer + 内容 tab 带（2026-08-16 重设计）
+### 7.7 移动端：drawer + 内容 tab 带（2026-08-16 重设计，2026-08-17 drawer 改 push 并排）
 
 group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），**不渲染多 group**（窄屏不分屏，分屏结构只在桌面消费）。但自 2026-08-16 重设计起，**项目 scope 移动端把「中栏打开 tab 集合」展示为 header 内容 tab 带**（不再对 tab 透明），对齐桌面中栏：
 
 - **结构 = 桌面三栏的前两栏在窄屏的投影**：**侧边栏 drawer = 左栏投影**（7 段横向 tab 行：总览/历史/文件/Git/页面/Wiki/插件 + 各段主体；浏览态进入项目（无 focusId）默认展开总览段，会话列表即入口；**聚焦态进入（带 focusId，如从 global 总览点会话卡）drawer 收起**——用户已明确要看会话，总览段是多余遮挡）；**header 内容 tab 带 = 中栏投影**（共享 `workbenchLayoutV4` 打开集合，`projectTabStrip(layout, projectKey)` 纯投影——只含当前项目 session/file/git tab + 全部 skill，skill 无 projectName 刻意全局包含）。聚焦态 body = `<PanelRouter>`（与桌面中栏主体同一渲染源，session 含底部输入、file/git/skill 只读预览）。
+- **drawer push 并排（2026-08-17 用户决策：覆盖式 → 推开）**：用户观察多个 app 后反馈「侧边栏都是从左往右推、和原页面并排」更自然——drawer 不再是 Radix `Dialog` portal overlay（scrim 盖住页面），改为 `MobileProjectWorkbench` header 下方横向 flex `[drawer 宽度过渡容器][内容区 flex-1]` 的固定部分：展开 `min(88vw,340px)` 时**内容被推到右侧可见**（390px 视口下剩 ~50px 窄条），无 scrim；开合 = 外层容器 `w-[min(88vw,340px)]` ↔ `w-0` 宽度过渡（`transition-[width] duration-300 ease-in-out`，替代旧 slide-in/out-left 位移动画），aside 内层固定宽 + `overflow-hidden`（过渡期间内容不换行跳动）；**收起 = w-0 非 unmount**（DOM 常驻，重展开无重挂）。关闭交互：点被推内容区（父级透明拦截层 `absolute inset-0 z-10` 无视觉，关闭时不渲染不拦截）+ Esc（`useEffect` 手动监听 window keydown，原 Radix dismissable 职责）+ 点列表项/新建自动关（行为与覆盖式时期一致）。非 modal（无 focus trap / body scroll lock）——工作台 main 本身固定高 `overflow-hidden`，drawer 内部自滚，无泄漏，可接受。嵌套 Dialog（ActionMenu sheet / prompt / PagesRootDialog）从普通 aside 打开，反而消除 Dialog 套 Dialog。
 - **URL focusId 是激活语义核心**：点 drawer 会话行 → `navigateWorkbench(scope, sessionId)` → focus effect（§11 同款）开/激活 tab → tab 带显示；点 tab → `onSelectTab(leafId, tabId)`（`setActiveTabInLeaf` + navigate focus）。tab ✕ = 最小化（`removeTabFromLeaf`，session 存活）；关闭实例走聚焦态 header ℹ✕ 胶囊的 ✕（`useCloseSession`）。
 - **文件/skill 并入 tab 带**：drawer 文件段点文件 → `onOpenFile`（`ensureTabOpenLeaf` + `navigateToFile`）+ 关 drawer → 文件以 content tab 形态进带（`/projects/$key/file/$`）。skill 同理（`/projects/$key/skill/$` 新路由，项目 scope 停在项目内，与 file/git 一致）。
 - **底部 nav 只在全局一级页**：项目工作台是二级，无底部 nav（`useMeasuredBottomNav(scope.kind !== "project" && !focusId ? … : null)`）。

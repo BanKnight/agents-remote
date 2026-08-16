@@ -1,13 +1,14 @@
 // 探针：移动端项目工作台（侧边栏 drawer + header 内容 tab 带，2026-08-16 重设计，设计
-// workbench-views §7.7）。桌面左栏+中栏在窄屏的两栏投影：drawer（Radix Dialog 左抽屉）+
-// MobileTabStrip（projectTabStrip 纯投影）。
+// workbench-views §7.7）。桌面左栏+中栏在窄屏的两栏投影：drawer（push 并排 aside，2026-08-17
+// 从 Radix Dialog 覆盖式改造）+ MobileTabStrip（projectTabStrip 纯投影）。
 //
 // 断言（zh-CN + iPhone 12 Pro 390×844，全新 context 无 SW）：
-//  1. 进 /projects/proj1 → drawer 默认展开（dialog 可见 + scrim 在 + 宽度 = min(88vw,340px) = 340px）。
+//  1. 进 /projects/proj1 → drawer 默认展开（aside 宽度 = min(88vw,340px) = 340px + 内容区
+//     被推到右侧可见：内容容器 left ≈ 340，无 scrim）。
 //  2. 7 个段文字标签（总览/历史/文件/Git/页面/Wiki/插件）按序渲染。
-//  3. 点总览会话行 → URL 变 /projects/proj1/session/agent_probe-1 + drawer 关 + tab 带出现
-//     该会话 chip（active）。
-//  4. ☰ 重开 drawer；点 scrim（drawer 右缘外）关闭。
+//  3. 点总览会话行 → URL 变 /projects/proj1/session/agent_probe-1 + drawer 关（宽度 0）+
+//     tab 带出现该会话 chip（active）。
+//  4. ☰ 重开 drawer；点内容区（被推区域）关闭（替代旧 scrim 点击关闭）。
 //  5. tab ✕ → layout 更新（chip 消失）+ URL 回 /projects/proj1（无 focus）+ 会话仍存活
 //     （浏览态 grid 仍有该会话卡）。
 //  6. 项目 scope 底部无一级 nav（移动端主导航）；/projects（global）有一级 nav。
@@ -150,12 +151,58 @@ async function login(page) {
   await page.waitForTimeout(700);
 }
 
-// 等待 drawer dialog 可见 + 进入动画播完（slide-in-from-left 300ms）。
+// push 并排（2026-08-17）：drawer = aside（flex 布局一部分，非 dialog portal）。展开/收起 =
+// 外层宽度过渡容器 w-[min(88vw,340px)] ↔ w-0（transition-[width] 300ms）。
+// ⚠️ 本常量含逗号（并集），**不可直接 + " 子选择器" 拼接**（逗号会把子选择器只绑到最后
+// 一个分支，第一个分支命中 aside 本身）——拼接子选择器用 DRAWER_SCOPE（:is 包裹）。
+const DRAWER_ASIDE = 'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]';
+/** drawer 作用域（可安全拼接子选择器）。 */
+const DRAWER_SCOPE = ':is(aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i])';
+
+// 等待 drawer 展开（宽度过渡到 > 300px）+ 动画播完。
 async function waitDrawerVisible(page) {
-  const dialog = page.locator('[role="dialog"]');
-  await dialog.waitFor({ state: "visible", timeout: 8000 });
+  await page.waitForFunction(
+    (sel) => {
+      const aside = document.querySelector(sel);
+      return aside !== null && aside.parentElement.getBoundingClientRect().width > 300;
+    },
+    DRAWER_ASIDE,
+    { timeout: 8000 },
+  );
   await page.waitForTimeout(450);
-  return dialog;
+  return page.locator(DRAWER_ASIDE).first();
+}
+
+// 等待 drawer 收起（宽度过渡到 ≈ 0）。
+async function waitDrawerClosed(page) {
+  await page.waitForFunction(
+    (sel) => {
+      const aside = document.querySelector(sel);
+      return aside !== null && aside.parentElement.getBoundingClientRect().width <= 1;
+    },
+    DRAWER_ASIDE,
+    { timeout: 8000 },
+  );
+}
+
+// 读 drawer + 被推内容区几何。
+async function readDrawerGeometry(page) {
+  return await page.evaluate((sel) => {
+    const aside = document.querySelector(sel);
+    if (!aside) return null;
+    const container = aside.parentElement;
+    const drawerBox = aside.getBoundingClientRect();
+    // 内容区 = drawer 容器的下一个 flex 兄弟（relative flex-1）。
+    const content = container.nextElementSibling;
+    const contentBox = content ? content.getBoundingClientRect() : null;
+    return {
+      drawerW: Math.round(drawerBox.width),
+      drawerX: Math.round(drawerBox.x),
+      containerW: Math.round(container.getBoundingClientRect().width),
+      contentLeft: contentBox ? Math.round(contentBox.x) : null,
+      contentW: contentBox ? Math.round(contentBox.width) : null,
+    };
+  }, DRAWER_ASIDE);
 }
 
 const TAB_CHIP = "div.group\\/tab";
@@ -169,22 +216,31 @@ async function run() {
     await setupMocks(page);
     await login(page);
 
-    console.log("\n===== 1. 进 /projects/proj1 → drawer 默认展开 =====");
+    console.log("\n===== 1. 进 /projects/proj1 → drawer 默认展开（push 并排）=====");
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
-    const dialog = await waitDrawerVisible(page);
-    const dBox = await dialog.boundingBox();
-    record(
-      dBox !== null && Math.abs(dBox.width - 340) <= 1,
-      `drawer 宽度 = min(88vw,340px) = 340（实际 ${dBox?.width?.toFixed(1)}）`,
-    );
-    record(dBox !== null && Math.abs(dBox.x) <= 1, `drawer 贴左缘（x=${dBox?.x?.toFixed(1)}）`);
-    const overlay = page.locator('[data-slot="dialog-overlay"]');
-    await overlay.waitFor({ state: "visible", timeout: 5000 });
-    const oBox = await overlay.boundingBox();
-    record(
-      oBox !== null && oBox.width >= 389 && oBox.height >= 843,
-      `scrim 全屏（${oBox?.width?.toFixed(0)}×${oBox?.height?.toFixed(0)}）`,
-    );
+    await waitDrawerVisible(page);
+    const geo1 = await readDrawerGeometry(page);
+    if (!geo1) {
+      record(false, "drawer aside 渲染");
+    } else {
+      console.log(`  几何: ${JSON.stringify(geo1)}`);
+      record(
+        Math.abs(geo1.drawerW - 340) <= 1,
+        `drawer 宽度 = min(88vw,340px) = 340（实际 ${geo1.drawerW}）`,
+      );
+      record(geo1.drawerX === 0, `drawer 贴左缘（x=${geo1.drawerX}）`);
+      // push 核心断言：内容区被推到 drawer 右侧（left ≈ 340）且仍可见，非被 scrim 盖住。
+      record(
+        geo1.contentLeft !== null && Math.abs(geo1.contentLeft - 340) <= 2,
+        `内容区被推到右侧（contentLeft=${geo1.contentLeft} ≈ 340）`,
+      );
+      record(
+        geo1.contentW !== null && geo1.contentW > 0,
+        `内容区仍可见非零宽（contentW=${geo1.contentW}）`,
+      );
+    }
+    const scrimCount = await page.locator('[data-slot="dialog-overlay"]').count();
+    record(scrimCount === 0, `无 scrim（push 非覆盖，got ${scrimCount}）`);
 
     console.log("\n===== 2. 7 个段文字标签 =====");
     const nav = page.getByRole("navigation", { name: "项目侧边栏" });
@@ -211,10 +267,11 @@ async function run() {
     record(sameRow && xIncreasing, "7 段横向 tab 行（同一行 y 对齐 + x 递增）");
 
     console.log("\n===== 3. 点会话行 → focus + drawer 关 + tab 带 active chip =====");
-    const card = page.locator('[role="dialog"] [role="button"]', { hasText: "Probe Agent A" });
+    const card = page.locator(`${DRAWER_SCOPE} [role="button"]`, { hasText: "Probe Agent A" });
     await card.click({ timeout: 5000 });
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-1/, { timeout: 8000 });
-    await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 8000 });
+    await waitDrawerClosed(page);
+    record(true, "点会话行后 drawer 收起（宽度 → 0）");
     const chip = page.locator(TAB_CHIP, { hasText: "Probe Agent A" });
     await chip.waitFor({ timeout: 8000 });
     const chipActive = await chip
@@ -222,13 +279,14 @@ async function run() {
       .then((c) => (c ?? "").includes("bg-primary/10"));
     record(chipActive, "tab 带出现该会话 chip 且 active（bg-primary/10）");
 
-    console.log("\n===== 4. ☰ 重开 drawer；点 scrim 关闭 =====");
+    console.log("\n===== 4. ☰ 重开 drawer；点内容区（被推区域）关闭 =====");
     await page.getByRole("button", { name: "切换侧边栏" }).click({ timeout: 5000 });
     await waitDrawerVisible(page);
     record(true, "☰ 重开 drawer 可见");
-    await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 380, y: 400 } });
-    await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 8000 });
-    record(true, "点 scrim 关闭 drawer");
+    // 点内容区（390px 视口下被推到 x≈340-390 的右侧窄条）→ 透明拦截层关闭 drawer。
+    await page.mouse.click(370, 400);
+    await waitDrawerClosed(page);
+    record(true, "点内容区（被推区域）关闭 drawer");
 
     console.log("\n===== 5. tab ✕ → chip 消失 + URL 回浏览态 + 会话存活 =====");
     const closeBtn = chip.getByRole("button", { name: "关闭" });
@@ -238,7 +296,9 @@ async function run() {
       timeout: 8000,
     });
     record(true, "✕ 后 tab 带空（layout 已移除 tab）");
-    const alive = page.locator('[role="button"]', { hasText: "Probe Agent A" });
+    // push 收起 drawer 的 DOM 保留（w-0 非 unmount）——卡片可能同时存在于 drawer 内 grid +
+    // 浏览态 grid，取 .first()（浏览态「会话存活」语义不受影响）。
+    const alive = page.locator('[role="button"]', { hasText: "Probe Agent A" }).first();
     await alive.waitFor({ timeout: 8000 });
     record(true, "会话仍存活（浏览态 grid 仍有该会话卡）");
 
@@ -250,13 +310,15 @@ async function run() {
     record((await primaryNav.count()) === 1, "/projects（global）有底部一级 nav");
 
     console.log("\n===== 7. 浏览态 InstanceGrid + header 新建按钮可见 =====");
-    // 回 proj1 浏览态（无 focus）：drawer 默认展开会挡，先关掉。
+    // 回 proj1 浏览态（无 focus）：drawer 默认展开，点内容区关闭。
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await waitDrawerVisible(page);
-    await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 380, y: 400 } });
-    await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 8000 });
+    await page.mouse.click(370, 400);
+    await waitDrawerClosed(page);
     await page.waitForTimeout(400);
-    const createBtn = page.getByRole("button", { name: "新建会话" });
+    // push 收起 drawer DOM 保留：新建按钮在 header trailing + drawer 顶部行各一个，断言语义
+    // 是「header 右上角」——限定 header。
+    const createBtn = page.locator("header").getByRole("button", { name: "新建会话" });
     await createBtn.waitFor({ timeout: 5000 });
     const menuBtn = page.getByRole("button", { name: "切换侧边栏" });
     await menuBtn.waitFor({ timeout: 5000 });
@@ -264,7 +326,7 @@ async function run() {
     const mBox = await menuBtn.boundingBox();
     const inHeader =
       cBox !== null && mBox !== null && Math.abs(cBox.y - mBox.y) <= 2 && cBox.x > mBox.x;
-    const gridCard = page.locator('[role="button"]', { hasText: "Probe Agent A" });
+    const gridCard = page.locator('[role="button"]', { hasText: "Probe Agent A" }).first();
     await gridCard.waitFor({ timeout: 5000 });
     record(
       inHeader,
@@ -329,8 +391,8 @@ async function run() {
     await page3.waitForURL(/\/projects\/proj1\/session\/agent_probe-1/, { timeout: 8000 });
     record(true, "global 点会话卡 → URL = project scope /projects/proj1/session/agent_probe-1");
     // 聚焦态进入 drawer 收起（drawerOpen 初始 = focusId==null ? true : false），不遮挡会话面板。
-    const dialogCount = await page3.locator('[role="dialog"]').count();
-    record(dialogCount === 0, `聚焦态进入 drawer 收起（dialog count=${dialogCount}）`);
+    await waitDrawerClosed(page3);
+    record(true, "聚焦态进入 drawer 收起（宽度 → 0）");
     const chip9 = page3.locator(TAB_CHIP, { hasText: "Probe Agent A" });
     await chip9.waitFor({ timeout: 8000 });
     const chip9Active = await chip9

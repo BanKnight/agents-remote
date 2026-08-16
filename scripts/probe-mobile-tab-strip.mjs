@@ -189,6 +189,19 @@ async function panelState(page, tabId) {
   }, tabId);
 }
 
+/** 读 drawer 展开状态（2026-08-17 push 并排改造后）：aside 外层宽度过渡容器
+ *  `w-[min(88vw,340px)]` ↔ `w-0`。open = 宽度 > 200（展开/动画中），closed = ≤ 1。 */
+async function drawerOpenState(page) {
+  return await page.evaluate(() => {
+    const aside = document.querySelector(
+      'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
+    );
+    if (!aside) return { present: false, open: false, width: 0 };
+    const w = aside.parentElement.getBoundingClientRect().width;
+    return { present: true, open: w > 200, width: Math.round(w) };
+  });
+}
+
 /** 等待面板切到指定可见性（auto-scroll / focus effect 异步后稳定）。 */
 async function waitPanelVisible(page, tabId, visible) {
   await page
@@ -217,8 +230,18 @@ async function run() {
     console.log("\n===== 1. 聚焦态进入 drawer 收起 =====");
     await page.goto(`${WEB_ORIGIN}/projects/proj1/session/agent_probe-1`);
     await page.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
-    const dialogCount = await page.locator('[role="dialog"]').count();
-    record(dialogCount === 0, `聚焦态进入 drawer 收起（dialog count=${dialogCount}）`);
+    // push 并排（2026-08-17）：drawer 收起 = 宽度过渡容器 w-0（不再是 Radix dialog portal）。
+    await page.waitForFunction(
+      () => {
+        const aside = document.querySelector(
+          'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
+        );
+        return aside !== null && aside.parentElement.getBoundingClientRect().width <= 1;
+      },
+      { timeout: 8000 },
+    );
+    const drawer1 = await drawerOpenState(page);
+    record(!drawer1.open, `聚焦态进入 drawer 收起（宽度=${drawer1.width}px）`);
 
     console.log("\n===== 2. 聚焦过即可：进入只挂载当前激活 =====");
     const a0 = await panelState(page, "agent_probe-1");
@@ -268,10 +291,19 @@ async function run() {
 
     console.log("\n===== 6. drawer 总览段新建 → 新 tab 激活 + drawer 自动关（问题 1）=====");
     await page.getByRole("button", { name: "切换侧边栏" }).click({ timeout: 5000 });
-    await page.locator('[role="dialog"]').waitFor({ state: "visible", timeout: 8000 });
+    // push 并排：等宽度过渡到展开（340px）。
+    await page.waitForFunction(
+      () => {
+        const aside = document.querySelector(
+          'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
+        );
+        return aside !== null && aside.parentElement.getBoundingClientRect().width > 300;
+      },
+      { timeout: 8000 },
+    );
     await page.waitForTimeout(450);
     const createTrigger = page.locator(
-      '[role="dialog"] button[aria-label="新建会话"], [role="dialog"] button[aria-label="New session"]',
+      'aside button[aria-label="新建会话"], aside button[aria-label="New session"]',
     );
     await createTrigger
       .first()
@@ -310,11 +342,18 @@ async function run() {
       });
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-9/, { timeout: 8000 });
     await page.waitForSelector('[data-tab-id="agent_probe-9"]', { timeout: 8000 });
-    // drawer 关闭动画（slide-out-to-left duration-300）后 Radix 才移除 dialog DOM——等 hidden
-    // 再数，避免把「关闭动画中的 drawer」误判为没关。
-    await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 8000 });
-    const drawerAfter = await page.locator('[role="dialog"]').count();
-    record(drawerAfter === 0, `新建后 drawer 自动关闭（dialog count=${drawerAfter}）`);
+    // push 并排：drawer 收起 = 宽度过渡回 0（等 transition-[width] 300ms 完成）。
+    await page.waitForFunction(
+      () => {
+        const aside = document.querySelector(
+          'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
+        );
+        return aside !== null && aside.parentElement.getBoundingClientRect().width <= 1;
+      },
+      { timeout: 8000 },
+    );
+    const drawerAfter = await drawerOpenState(page);
+    record(!drawerAfter.open, `新建后 drawer 自动关闭（宽度=${drawerAfter.width}px）`);
     const newPanel = await panelState(page, "agent_probe-9");
     record(newPanel !== null && newPanel.visible, "新 tab 激活可见（面板挂载）");
     const newChip = page.locator(TAB_CHIP, { hasText: "Probe New Agent" });

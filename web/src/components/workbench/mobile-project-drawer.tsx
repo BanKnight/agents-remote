@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,12 +34,10 @@ import {
   WORKBENCH_TAB_PLUGINS,
   type WorkbenchTabPluginContext,
 } from "./workbench-tab-plugin";
-import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
-/** Material navigation-drawer：小屏 ≥88% 视口宽、上限 340px（DESIGN.md navigation-drawer）。 */
+/** Material navigation-drawer：小屏 ≥88% 视口宽、上限 340px（DESIGN.md navigation-drawer）。
+ * push 并排（2026-08-17）：aside 内层固定宽（外层容器管宽度过渡），右缘 16px 圆角保留。 */
 const DRAWER_WIDTH_CLASSES = "w-[min(88vw,340px)]";
-/** scrim 黑 32%（Material，轻于居中 dialog 的 60%）。 */
-const DRAWER_SCRIM_CLASSES = "bg-black/32 backdrop-blur-none";
 
 type MobileProjectDrawerProps = {
   scope: { kind: "project"; key: string };
@@ -57,16 +55,17 @@ type MobileProjectDrawerProps = {
 
 /**
  * 移动项目侧边栏 drawer（设计 workbench-views §7.7 / DESIGN.md navigation-drawer，
- * 2026-08-16 重设计）：桌面左栏的窄屏投影。Radix `Dialog modal=true` 左侧抽屉——scrim
- * 点按关闭 / Esc / focus trap 全交 Radix dismissable-layer（frontend-notes §4，不手写 scrim）。
+ * 2026-08-16 重设计）：桌面左栏的窄屏投影。**2026-08-17 覆盖式 → push 并排**（用户决策：
+ * 侧边栏从左往右推、和原页面并排，非覆盖盖住）——本组件不再是 Radix Dialog portal overlay，
+ * 是 `MobileProjectWorkbench` flex 布局的固定部分：外层容器管 `w-[min(88vw,340px)]` ↔ `w-0`
+ * 宽度过渡（内容被推到右侧），本 aside 内层固定宽 + `overflow-hidden`（过渡期间内容不换行
+ * 跳动，视觉是抽屉从右缘向内收起）。无 scrim；点内容区关闭由父级透明拦截层承载；Esc 本组件
+ * 手动监听（原 Radix dismissable 职责）。
  *
  * 结构：顶部返回入口 A（离开项目回 `/` 项目列表）+ 项目名；7 段文字导航（总览/历史/文件/
  * Git/页面/Wiki/插件，`buildOverviewTabs` 复用——与桌面左栏 middle tab 同源）；段主体随
  * `workbenchMobileOverviewTabAtom` 切换（同现 MobileProjectOverview 语义，tab 记忆不进 URL）。
  * 点会话行 / 文件 / skill 自动关 drawer（内容由 tab 带接管）。
- *
- * 动画：enter slide-in-from-left / exit slide-out-to-left + `fill-mode-forwards`
- *（frontend-notes §9：`animate-out` 默认 fill-mode none，动画结束回原位闪一帧）。
  */
 export function MobileProjectDrawer({
   scope,
@@ -212,158 +211,164 @@ export function MobileProjectDrawer({
         ? t("pages.createAria")
         : t("workbench.createSessionAria");
 
+  // Esc 关闭（原 Radix dismissable 职责，迁出 Dialog 后手动补）：open 时监听 window keydown。
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onOpenChange]);
+
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent
-        aria-label={t("workbench.sidebar")}
-        className={`inset-y-0 left-0 grid h-full w-full max-w-none translate-x-0 translate-y-0 rounded-none rounded-r-2xl p-0 ${DRAWER_WIDTH_CLASSES} bg-surface text-on-surface shadow-2xl data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-left data-[state=open]:duration-300 data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-left data-[state=closed]:duration-300 data-[state=closed]:fill-mode-forwards ease-in-out`}
-        overlayClassName={DRAWER_SCRIM_CLASSES}
-      >
-        <div className="flex h-full min-h-0 flex-col overflow-hidden">
-          {/* 顶部：返回入口 A（离开项目回 / 项目列表）+ 项目名。safe-area 单点避让（frontend-notes §1）。 */}
-          <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 pb-2 pt-[calc(var(--shell-safe-area-top)+0.5rem)]">
-            <button
-              aria-label={t("project.backToProjects")}
-              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-              onClick={() => {
-                onOpenChange(false);
-                void navigate({ to: "/" });
-              }}
-              type="button"
-            >
-              <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-                <path
-                  d="M15 18l-6-6 6-6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  stroke="currentColor"
-                />
-              </svg>
-            </button>
-            <span className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-on-surface">
-              {scope.key}
-            </span>
-            {/* 按段新建入口（右上角，与 ☰ 对称位）：总览=新建会话 / 文件=新建文件夹·上传 /
-                页面=新建页面根；其他段不渲染。 */}
-            {createItems ? (
-              <ActionMenu
-                align="end"
-                cancelLabel={t("cancel")}
-                items={createItems}
-                trigger={
-                  <button
-                    aria-label={createAria}
-                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-                    type="button"
-                  >
-                    <ShellIcon className="h-5 w-5" name="plus" />
-                  </button>
-                }
-              />
-            ) : null}
-          </div>
-          {/* 7 段横向 tab 行（对齐桌面左栏 middle tab bar：TabButton + overflow-x-auto 可横滚，
-              nav-item token active bg-primary/10 text-primary）。 */}
-          <nav
-            aria-label={t("workbench.sidebar")}
-            className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5"
+    <aside
+      aria-label={t("workbench.sidebar")}
+      className={`grid h-full ${DRAWER_WIDTH_CLASSES} overflow-hidden rounded-r-2xl bg-surface text-on-surface`}
+    >
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        {/* 顶部：返回入口 A（离开项目回 / 项目列表）+ 项目名。push 后 drawer 在 header 下方，
+              main 已统一 pt safe-area（单点避让，frontend-notes §1），本行不再叠 top 避让。 */}
+        <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 pb-2 pt-2">
+          <button
+            aria-label={t("project.backToProjects")}
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            onClick={() => {
+              onOpenChange(false);
+              void navigate({ to: "/" });
+            }}
+            type="button"
           >
-            {sections.map((opt) => (
-              <TabButton
-                active={opt.id === activeSection}
-                key={opt.id}
-                label={opt.label}
-                onClick={() => setTab(opt.id)}
+            <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <path
+                d="M15 18l-6-6 6-6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                stroke="currentColor"
               />
-            ))}
-          </nav>
-          {/* 段主体：总览=会话列表+新建入口 / 历史=HistoryList / 文件=项目内文件树（FilesLeftPanel
+            </svg>
+          </button>
+          <span className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-on-surface">
+            {scope.key}
+          </span>
+          {/* 按段新建入口（右上角，与 ☰ 对称位）：总览=新建会话 / 文件=新建文件夹·上传 /
+                页面=新建页面根；其他段不渲染。 */}
+          {createItems ? (
+            <ActionMenu
+              align="end"
+              cancelLabel={t("cancel")}
+              items={createItems}
+              trigger={
+                <button
+                  aria-label={createAria}
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+                  type="button"
+                >
+                  <ShellIcon className="h-5 w-5" name="plus" />
+                </button>
+              }
+            />
+          ) : null}
+        </div>
+        {/* 7 段横向 tab 行（对齐桌面左栏 middle tab bar：TabButton + overflow-x-auto 可横滚，
+              nav-item token active bg-primary/10 text-primary）。 */}
+        <nav
+          aria-label={t("workbench.sidebar")}
+          className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5"
+        >
+          {sections.map((opt) => (
+            <TabButton
+              active={opt.id === activeSection}
+              key={opt.id}
+              label={opt.label}
+              onClick={() => setTab(opt.id)}
+            />
+          ))}
+        </nav>
+        {/* 段主体：总览=会话列表+新建入口 / 历史=HistoryList / 文件=项目内文件树（FilesLeftPanel
               范式，点文件开 content tab + 关 drawer）/ Git=GitChangesList（点变更文件开 git tab +
               关 drawer）/ 页面·Wiki=plugin render / 插件=PluginsPanel。safe-area 底部单点避让。 */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
-            {activeSection === "files" ? (
-              <FilesLeftPanel
-                currentPath={filesPath}
-                onOpenFile={(projectName, path) => {
-                  onOpenChange(false);
-                  onOpenFile(projectName, path);
-                }}
-                onPathChange={setFilesPath}
-                projectName={scope.key}
-              />
-            ) : activeSection === "git" ? (
-              <GitChangesList
-                onOpenGitCompareFile={(projectName, base, compare, path) => {
-                  onOpenChange(false);
-                  onOpenGitCompareFile(projectName, base, compare, path);
-                }}
-                onSelectGitFile={(file) => {
-                  onOpenChange(false);
-                  onOpenGitFile(scope.key, file.scope, file.path);
-                }}
-                projectName={scope.key}
-              />
-            ) : activeSection === "pages" ? (
-              // 页面段手写（不走 plugin render）：drawer 顶部「新建页面根」需传 createRequest 信号。
-              <PagesPanel createRequest={pagesCreateRequest} projectName={scope.key} />
-            ) : activePlugin ? (
-              <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
-            ) : activeSection === "plugins" ? (
-              // 插件段（项目级 skill+MCP）：openSkill 已 scope-aware（navigate /projects/$key/skill/$）。
-              <PluginsPanel projectName={scope.key} />
-            ) : activeSection === "history" ? (
-              <div className="h-full overflow-y-auto p-3">
-                <div className="mb-2">
-                  <HistoryRangeControl onChange={setRange} value={range} />
-                </div>
-                <HistoryList
-                  focusId={undefined}
-                  onRangeChange={setRange}
-                  projectName={scope.key}
-                  range={range}
-                  showLabel={false}
-                />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
+          {activeSection === "files" ? (
+            <FilesLeftPanel
+              currentPath={filesPath}
+              onOpenFile={(projectName, path) => {
+                onOpenChange(false);
+                onOpenFile(projectName, path);
+              }}
+              onPathChange={setFilesPath}
+              projectName={scope.key}
+            />
+          ) : activeSection === "git" ? (
+            <GitChangesList
+              onOpenGitCompareFile={(projectName, base, compare, path) => {
+                onOpenChange(false);
+                onOpenGitCompareFile(projectName, base, compare, path);
+              }}
+              onSelectGitFile={(file) => {
+                onOpenChange(false);
+                onOpenGitFile(scope.key, file.scope, file.path);
+              }}
+              projectName={scope.key}
+            />
+          ) : activeSection === "pages" ? (
+            // 页面段手写（不走 plugin render）：drawer 顶部「新建页面根」需传 createRequest 信号。
+            <PagesPanel createRequest={pagesCreateRequest} projectName={scope.key} />
+          ) : activePlugin ? (
+            <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
+          ) : activeSection === "plugins" ? (
+            // 插件段（项目级 skill+MCP）：openSkill 已 scope-aware（navigate /projects/$key/skill/$）。
+            <PluginsPanel projectName={scope.key} />
+          ) : activeSection === "history" ? (
+            <div className="h-full overflow-y-auto p-3">
+              <div className="mb-2">
+                <HistoryRangeControl onChange={setRange} value={range} />
               </div>
-            ) : (
-              <Fragment>
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {isLoading && gridItems.length === 0 ? (
-                    <div className="px-3 py-2">
-                      <CardGridSkeleton plain />
-                    </div>
-                  ) : gridItems.length > 0 ? (
-                    <div className="px-3 py-2">
-                      <InstanceGrid items={gridItems} plain />
-                    </div>
-                  ) : (
-                    <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                      {t("workbench.emptyInstanceHint")}
-                    </p>
-                  )}
-                </div>
-                {closeHolder}
-                {renameHolder}
-                {create.promptHolder}
-              </Fragment>
-            )}
-          </div>
+              <HistoryList
+                focusId={undefined}
+                onRangeChange={setRange}
+                projectName={scope.key}
+                range={range}
+                showLabel={false}
+              />
+            </div>
+          ) : (
+            <Fragment>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {isLoading && gridItems.length === 0 ? (
+                  <div className="px-3 py-2">
+                    <CardGridSkeleton plain />
+                  </div>
+                ) : gridItems.length > 0 ? (
+                  <div className="px-3 py-2">
+                    <InstanceGrid items={gridItems} plain />
+                  </div>
+                ) : (
+                  <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                    {t("workbench.emptyInstanceHint")}
+                  </p>
+                )}
+              </div>
+              {closeHolder}
+              {renameHolder}
+              {create.promptHolder}
+            </Fragment>
+          )}
         </div>
-        {/* 隐藏 file input（文件段上传）+ prompt holder（文件段新建文件夹）。 */}
-        <input
-          ref={fileInputRef}
-          className="hidden"
-          type="file"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) upload.mutate(file);
-            e.target.value = "";
-          }}
-        />
-        {promptHolder}
-        {/* Radix a11y：DialogTitle 视觉隐藏（aria-label 不足以覆盖 aria-labelledby 默认行为）。 */}
-        <DialogTitle className="sr-only">{t("workbench.sidebar")}</DialogTitle>
-      </DialogContent>
-    </Dialog>
+      </div>
+      {/* 隐藏 file input（文件段上传）+ prompt holder（文件段新建文件夹）。 */}
+      <input
+        ref={fileInputRef}
+        className="hidden"
+        type="file"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) upload.mutate(file);
+          e.target.value = "";
+        }}
+      />
+      {promptHolder}
+    </aside>
   );
 }

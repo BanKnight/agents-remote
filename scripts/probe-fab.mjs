@@ -251,12 +251,13 @@ async function runMobile() {
         .click({ timeout: 5000 })
         .catch(() => {});
       await page.waitForTimeout(450);
-      // 点「添加根」→ createRequest 信号 → PagesPanel useEffect → PagesRootDialog。dialog 计数
-      // 从 drawer 1 个增至 ≥2（drawer + PagesRootDialog）。
+      // 点「添加根」→ createRequest 信号 → PagesPanel useEffect → PagesRootDialog。push 并排
+      //（2026-08-17）drawer 不再是 Radix dialog（aside 非 portal），点开后 dialog 数应 ≥1
+      //（PagesRootDialog 自身；上方断言 3 的 sheet 已关）。
       const dialogs = await page.evaluate(
         () => document.querySelectorAll('[role="dialog"]').length,
       );
-      record(dialogs >= 2, `点「添加根」打开 PagesRootDialog（dialog 数 ${dialogs} ≥ 2）`);
+      record(dialogs >= 1, `点「添加根」打开 PagesRootDialog（dialog 数 ${dialogs} ≥ 1）`);
     }
   } finally {
     await browser.close();
