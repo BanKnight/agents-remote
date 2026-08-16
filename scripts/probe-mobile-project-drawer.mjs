@@ -11,7 +11,7 @@
 //  5. tab ✕ → layout 更新（chip 消失）+ URL 回 /projects/proj1（无 focus）+ 会话仍存活
 //     （浏览态 grid 仍有该会话卡）。
 //  6. 项目 scope 底部无一级 nav（移动端主导航）；/projects（global）有一级 nav。
-//  7. 浏览态（drawer 关）InstanceGrid + FAB（新建会话）可见。
+//  7. 浏览态（drawer 关）InstanceGrid + header 右上角新建按钮（与 ☰ 同 header 行，x>☰）可见。
 //  8. tab 带只显示当前项目：预置 layout 含 proj1+proj2 会话 tab → proj1 strip 只有 proj1 chip
 //     （proj2 被 projectTabStrip 过滤）。
 //  9. 从 global 总览（/projects）点会话卡 → URL 进该会话所属项目的 project scope
@@ -249,18 +249,27 @@ async function run() {
     await page.waitForTimeout(600);
     record((await primaryNav.count()) === 1, "/projects（global）有底部一级 nav");
 
-    console.log("\n===== 7. 浏览态 InstanceGrid + FAB 可见 =====");
+    console.log("\n===== 7. 浏览态 InstanceGrid + header 新建按钮可见 =====");
     // 回 proj1 浏览态（无 focus）：drawer 默认展开会挡，先关掉。
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await waitDrawerVisible(page);
     await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 380, y: 400 } });
     await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 8000 });
     await page.waitForTimeout(400);
-    const fab = page.getByRole("button", { name: "新建会话" });
-    await fab.waitFor({ timeout: 5000 });
+    const createBtn = page.getByRole("button", { name: "新建会话" });
+    await createBtn.waitFor({ timeout: 5000 });
+    const menuBtn = page.getByRole("button", { name: "切换侧边栏" });
+    await menuBtn.waitFor({ timeout: 5000 });
+    const cBox = await createBtn.boundingBox();
+    const mBox = await menuBtn.boundingBox();
+    const inHeader =
+      cBox !== null && mBox !== null && Math.abs(cBox.y - mBox.y) <= 2 && cBox.x > mBox.x;
     const gridCard = page.locator('[role="button"]', { hasText: "Probe Agent A" });
     await gridCard.waitFor({ timeout: 5000 });
-    record(true, "浏览态 FAB（新建会话）+ InstanceGrid 会话卡可见");
+    record(
+      inHeader,
+      `浏览态 header 右上角新建按钮（与 ☰ 同 header 行 y≈${cBox?.y?.toFixed(0)}、x=${cBox?.x?.toFixed(0)}>☰=${mBox?.x?.toFixed(0)}）+ InstanceGrid 会话卡可见`,
+    );
     await ctx.close();
 
     // ── context 2：断言 8（预置 layout，只显示当前项目 tab）──────────────

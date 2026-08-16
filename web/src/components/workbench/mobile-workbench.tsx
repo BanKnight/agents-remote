@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives";
-import { MobileFab } from "../shell/mobile-fab";
+import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
@@ -722,6 +722,10 @@ function MobileProjectWorkbench({
               }
               projectName={scope.key}
             />
+          ) : !focusId ? (
+            // 浏览态（无 focus）：header 右上角新建按钮（icon 方按钮，与 ☰ 对称），
+            // 取代旧右下角 FAB（二级页无底部 nav，让位语义失效，见 workbench-views §7.7）。
+            <MobileCreateButton create={create} />
           ) : undefined
         }
       />
@@ -745,25 +749,8 @@ function MobileProjectWorkbench({
           </div>
         ) : (
           <Fragment>
-            {/* 浏览态（无 focus）：实例 grid + MobileFab 新建。FAB z-30 < drawer scrim z-50
-                （drawer 打开时被 scrim 盖住，天然不可误触）。 */}
-            <MobileFab
-              ariaLabel={t("workbench.createSessionAria")}
-              cancelLabel={t("cancel")}
-              disabled={create.isCreating}
-              items={[
-                {
-                  label: t("workbench.createClaude2"),
-                  icon: <ShellIcon name="anthropic" />,
-                  onSelect: () => create.createAgent("claude2"),
-                },
-                {
-                  label: t("workbench.createTerminal"),
-                  icon: <ShellIcon name="terminal" />,
-                  onSelect: create.createTerminal,
-                },
-              ]}
-            />
+            {/* 浏览态（无 focus）：实例 grid。新建入口已移到 header 右上角（MobileTabStrip
+                trailing 的 MobileCreateButton），FAB 移除。 */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               {isLoading && gridItems.length === 0 ? (
                 <div className="px-3 py-2">
@@ -795,6 +782,41 @@ function MobileProjectWorkbench({
         scope={scope}
       />
     </div>
+  );
+}
+
+/** 项目浏览态 tab 带 trailing：新建按钮（icon 方按钮，与 ☰ 对称同款 className；ActionMenu
+ * Claude/Terminal 移动端底部 sheet）。取代旧右下角 FAB——二级页无底部 nav，FAB「落 nav 带、
+ * nav 收缩让位」语义锚点消失（见 workbench-views §7.7 / DESIGN.md floating-action-button 例外）。 */
+function MobileCreateButton({ create }: { create: CreateSessionApi }) {
+  const { t } = useT();
+  return (
+    <ActionMenu
+      align="end"
+      cancelLabel={t("cancel")}
+      items={[
+        {
+          label: t("workbench.createClaude2"),
+          icon: <ShellIcon name="anthropic" />,
+          onSelect: () => create.createAgent("claude2"),
+        },
+        {
+          label: t("workbench.createTerminal"),
+          icon: <ShellIcon name="terminal" />,
+          onSelect: create.createTerminal,
+        },
+      ]}
+      trigger={
+        <button
+          aria-label={t("workbench.createSessionAria")}
+          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+          disabled={create.isCreating}
+          type="button"
+        >
+          <ShellIcon className="h-5 w-5" name="plus" />
+        </button>
+      }
+    />
   );
 }
 
