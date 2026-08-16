@@ -14,6 +14,9 @@
 //  7. 浏览态（drawer 关）InstanceGrid + FAB（新建会话）可见。
 //  8. tab 带只显示当前项目：预置 layout 含 proj1+proj2 会话 tab → proj1 strip 只有 proj1 chip
 //     （proj2 被 projectTabStrip 过滤）。
+//  9. 从 global 总览（/projects）点会话卡 → URL 进该会话所属项目的 project scope
+//     （/projects/proj1/session/agent_probe-1，非旧 global focus /projects/session/$id）+
+//     聚焦态进入 drawer 收起（不遮挡会话）+ tab 带 chip active。
 //
 // 密码由脚本自读（env → config.yaml → api 进程 environ），不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-mobile-project-drawer.mjs
@@ -41,6 +44,20 @@ const AGENT_B = {
   createdAt: "2026-07-26T00:00:00.000Z",
 };
 
+// global 总览 `/api/overview` candidates（useGlobalInstanceCandidates 读 c.sessionId/projectName/
+// type/provider/displayName/status/createdAt 聚合 SessionPanelRef）。断言 9 用它渲染 global 会话卡。
+const CANDIDATES = [
+  {
+    sessionId: AGENT_A.id,
+    projectName: AGENT_A.projectName,
+    type: "agent",
+    provider: AGENT_A.provider,
+    displayName: AGENT_A.displayName,
+    status: AGENT_A.status,
+    createdAt: AGENT_A.createdAt,
+  },
+];
+
 let allPass = true;
 function record(ok, label) {
   if (!ok) allPass = false;
@@ -66,12 +83,12 @@ function sessionDetail(session) {
   };
 }
 
-async function setupMocks(page, { includeProj2 = false } = {}) {
+async function setupMocks(page, { includeProj2 = false, candidates = [] } = {}) {
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ projectNames: ["proj1", "proj2"], candidates: [] }),
+      body: JSON.stringify({ projectNames: ["proj1", "proj2"], candidates }),
     }),
   );
   // proj1 会话（列表 + 详情）：drawer 总览 grid + tab chip label（usePanelMeta）数据源。
@@ -272,6 +289,32 @@ async function run() {
       "proj2 会话 tab 被过滤（无 Probe Agent B）",
     );
     await ctx2.close();
+
+    // ── context 3：断言 9（2026-08-16 迭代：从 global 总览点会话卡 → 进该会话所属项目的
+    // project scope 工作台，而非旧 global 全屏聚焦态 MobileFocusBody）──────────────────────
+    console.log("\n===== 9. 从 global 总览点会话卡 → 进 project scope 工作台 =====");
+    const ctx3 = await browser.newContext(MOBILE_CTX);
+    const page3 = await ctx3.newPage();
+    await setupMocks(page3, { candidates: CANDIDATES });
+    await login(page3);
+    await page3.goto(`${WEB_ORIGIN}/projects`);
+    // 会话卡是 div role=button（InstanceCard），accessible name = title+projectName+activity；
+    // 用 name 定位（hasText 会误命中 FAB，见探针历史），title "Probe Agent A" 唯一。
+    const gcard = page3.getByRole("button", { name: /Probe Agent A/ }).first();
+    await gcard.waitFor({ timeout: 8000 });
+    await gcard.click({ timeout: 5000 });
+    await page3.waitForURL(/\/projects\/proj1\/session\/agent_probe-1/, { timeout: 8000 });
+    record(true, "global 点会话卡 → URL = project scope /projects/proj1/session/agent_probe-1");
+    // 聚焦态进入 drawer 收起（drawerOpen 初始 = focusId==null ? true : false），不遮挡会话面板。
+    const dialogCount = await page3.locator('[role="dialog"]').count();
+    record(dialogCount === 0, `聚焦态进入 drawer 收起（dialog count=${dialogCount}）`);
+    const chip9 = page3.locator(TAB_CHIP, { hasText: "Probe Agent A" });
+    await chip9.waitFor({ timeout: 8000 });
+    const chip9Active = await chip9
+      .getAttribute("class")
+      .then((c) => (c ?? "").includes("bg-primary/10"));
+    record(chip9Active, "tab 带出现该会话 chip 且 active");
+    await ctx3.close();
   } finally {
     await browser.close();
   }

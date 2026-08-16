@@ -256,15 +256,13 @@ type WorkbenchLayoutV3 = {
 
 group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），**不渲染多 group**（窄屏不分屏，分屏结构只在桌面消费）。但自 2026-08-16 重设计起，**项目 scope 移动端把「中栏打开 tab 集合」展示为 header 内容 tab 带**（不再对 tab 透明），对齐桌面中栏：
 
-- **结构 = 桌面三栏的前两栏在窄屏的投影**：**侧边栏 drawer = 左栏投影**（7 段：总览/历史/文件/Git/页面/Wiki/插件 + 各段主体；进入项目默认展开总览段，会话列表即入口）；**header 内容 tab 带 = 中栏投影**（共享 `workbenchLayoutV4` 打开集合，`projectTabStrip(layout, projectKey)` 纯投影——只含当前项目 session/file/git tab + 全部 skill，skill 无 projectName 刻意全局包含）。聚焦态 body = `<PanelRouter>`（与桌面中栏主体同一渲染源，session 含底部输入、file/git/skill 只读预览）。
+- **结构 = 桌面三栏的前两栏在窄屏的投影**：**侧边栏 drawer = 左栏投影**（7 段：总览/历史/文件/Git/页面/Wiki/插件 + 各段主体；浏览态进入项目（无 focusId）默认展开总览段，会话列表即入口；**聚焦态进入（带 focusId，如从 global 总览点会话卡）drawer 收起**——用户已明确要看会话，总览段是多余遮挡）；**header 内容 tab 带 = 中栏投影**（共享 `workbenchLayoutV4` 打开集合，`projectTabStrip(layout, projectKey)` 纯投影——只含当前项目 session/file/git tab + 全部 skill，skill 无 projectName 刻意全局包含）。聚焦态 body = `<PanelRouter>`（与桌面中栏主体同一渲染源，session 含底部输入、file/git/skill 只读预览）。
 - **URL focusId 是激活语义核心**：点 drawer 会话行 → `navigateWorkbench(scope, sessionId)` → focus effect（§11 同款）开/激活 tab → tab 带显示；点 tab → `onSelectTab(leafId, tabId)`（`setActiveTabInLeaf` + navigate focus）。tab ✕ = 最小化（`removeTabFromLeaf`，session 存活）；关闭实例走聚焦态 header ℹ✕ 胶囊的 ✕（`useCloseSession`）。
 - **文件/skill 并入 tab 带**：drawer 文件段点文件 → `onOpenFile`（`ensureTabOpenLeaf` + `navigateToFile`）+ 关 drawer → 文件以 content tab 形态进带（`/projects/$key/file/$`）。skill 同理（`/projects/$key/skill/$` 新路由，项目 scope 停在项目内，与 file/git 一致）。
 - **底部 nav 只在全局一级页**：项目工作台是二级，无底部 nav（`useMeasuredBottomNav(scope.kind !== "project" && !focusId ? … : null)`）。
-- **global scope 移动端不变**：保持「列表态 → 全屏聚焦态」线性模型（`MobileGlobalOverview` / `MobileFilesOverview` / `MobilePluginsOverview` / `MobileFocusBody` / `MobileFileFocus` / `MobileSkillFocus`）。
+- **global scope 移动端**：列表态保持（`MobileGlobalOverview` / `MobileFilesOverview` / `MobilePluginsOverview`）；**点会话卡不再进 global 全屏聚焦态，而是进入该会话所属项目的 project scope 工作台**（`navigateSession` 对 `!isDesktop` 用 `ref.projectName` 构造 project scope URL，2026-08-16 迭代——移动端无「左栏保持」语义，旧 global focus URL `/projects/session/$id` 只剩 URL 直达兜底走 `MobileFocusBody`）；文件/skill focus 仍走 `MobileFileFocus` / `MobileSkillFocus`。
 
 **移动端 focus 态 header tab（Output/Files/Git）记忆语义**（`workbenchMobileFocusTabAtom`，`atomWithLocalOnlyStorage` 持久）：global scope 聚焦态仍用（从 `MobileGlobalOverview` 点实例卡片新进 focus 时 `focusInstance` 重置 tab 到 Output，避免 Files/Git 记忆落到项目文件）。项目 scope 聚焦态已无 inspection tab（被内容 tab 带取代），该 atom 不再消费。
-
-**移动端 focus 态 header tab（Output/Files/Git）记忆语义**（`workbenchMobileFocusTabAtom`，`atomWithLocalOnlyStorage` 持久）：从总览（`MobileGlobalOverview` / `MobileProjectOverview`）点实例卡片**新进** focus 时，`focusInstance` 重置 tab 到 Output——避免上次切到的 Files/Git 记忆被继承、直接落到项目文件，造成「点实例卡片却进了项目文件」的误会（用户预期：点实例卡片 → 到达该实例的输出）。（移动端「‹› 切实例」已移除，见 workbench-redesign.md 对应节。）
 
 ### 7.8 渲染层：树投影为扁平数组（UI = f(state)）
 

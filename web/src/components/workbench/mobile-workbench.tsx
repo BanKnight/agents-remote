@@ -38,6 +38,7 @@ import {
   PanelRouter,
   useAgentDetail,
   useCloseSession,
+  useGlobalInstanceCandidates,
   useProjectInstances,
   useScopeInstanceOrder,
   useTerminalDetail,
@@ -663,7 +664,11 @@ function MobileProjectWorkbench({
 }: MobileProjectWorkbenchProps) {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  // 进入项目 drawer 默认态：浏览态（无 focusId）= 展开总览段（设计决策 ①「进入项目默认展开侧边栏」，
+  // 会话列表即入口）；聚焦态（带 focusId，如从 global 总览点会话卡进入）= 收起——用户已明确要看
+  // 会话，drawer 总览段是多余遮挡（2026-08-16 迭代）。key={scope.key} 切项目重挂才重新评估；
+  // 同项目内浏览↔聚焦切换保留 state（Material 保留 drawer 状态，设计 §7.7）。
+  const [drawerOpen, setDrawerOpen] = useState(() => focusId == null);
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   const { instances, isLoading } = useProjectInstances(scope.key);
 
@@ -899,11 +904,19 @@ function MobileGlobalOverview() {
   // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
   //（MobilePageHeader 标题；底部胶囊避让由 GlobalProjectsOverview 消费 CSS var），
   // 实例聚焦/新建/删除全在共享组件内（批 J 折叠废弃）。
+  // global 点会话卡 → 进该会话所属项目的 project scope 工作台（drawer + tab 带，2026-08-16
+  // 迭代）：旧实现硬编码 `navigateWorkbench({ kind: "global" }, sessionId)` → global focus URL
+  // `/projects/session/$id` → 旧 MobileFocusBody 全屏聚焦态（无 tab 无 drawer）。candidates 由
+  // useGlobalInstanceCandidates 提供（与 GlobalProjectsOverview 同 queryKey ["overview"]，React
+  // Query dedupe 无额外请求），resolve sessionId → projectName。
+  const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   const focusInstance = (sessionId: string) => {
     // 从总观点实例卡片进 focus → 重置 Output（不继承上次切到的 Files/Git 记忆，避免落到
     // 项目文件造成「进错地方」误会）。
     setFocusTab("output");
-    void navigateWorkbench({ kind: "global" }, sessionId);
+    const projectName = candidates.find((c) => c.ref.sessionId === sessionId)?.ref.projectName;
+    if (!projectName) return;
+    void navigateWorkbench({ kind: "project", key: projectName }, sessionId);
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
