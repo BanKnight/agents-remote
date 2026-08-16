@@ -189,19 +189,17 @@ async function panelState(page, tabId) {
   }, tabId);
 }
 
-/** 读 drawer 展开状态（2026-08-17 Reddit 式 push 整页平移后）：drawer aside absolute 左侧
- *  静态常驻（宽度恒 340），开合 = 页面容器 translate-x。open = 页面 left > 200（展开/动画中），
- *  closed = left ≤ 1（平移回 0 盖回）。 */
+/** 读 drawer 展开状态（2026-08-17 Reddit 式 push 刚体联动后）：drawer 与页面并排在同一
+ *  平移行，开合 = 行 wrapper 整体 translate-x（开 0 / 关 -340）。open = drawer 在窗口左缘
+ *  可见（right > 200），closed = drawer 移出窗口左缘（right ≤ 1）。 */
 async function drawerOpenState(page) {
   return await page.evaluate(() => {
     const aside = document.querySelector(
       'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
     );
-    if (!aside) return { present: false, open: false, shift: -1 };
-    const pageEl = aside.parentElement.nextElementSibling;
-    if (!pageEl) return { present: true, open: false, shift: -1 };
-    const shift = Math.round(pageEl.getBoundingClientRect().left);
-    return { present: true, open: shift > 200, shift };
+    if (!aside) return { present: false, open: false, drawerRight: -1 };
+    const drawerRight = Math.round(aside.getBoundingClientRect().right);
+    return { present: true, open: drawerRight > 200, drawerRight };
   });
 }
 
@@ -233,20 +231,23 @@ async function run() {
     console.log("\n===== 1. 聚焦态进入 drawer 收起 =====");
     await page.goto(`${WEB_ORIGIN}/projects/proj1/session/agent_probe-1`);
     await page.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
-    // Reddit 式 push（2026-08-17 二次修正）：drawer 收起 = 页面平移回 0 盖回（非 dialog portal）。
+    // Reddit 式 push 刚体联动（2026-08-17 三次修正）：drawer 收起 = 平移行滑到 -340、
+    // drawer 移出窗口左缘（非 dialog portal）。
     await page.waitForFunction(
       () => {
         const aside = document.querySelector(
           'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
         );
         if (!aside) return false;
-        const pageEl = aside.parentElement.nextElementSibling;
-        return pageEl !== null && Math.abs(pageEl.getBoundingClientRect().left) <= 1;
+        return aside.getBoundingClientRect().right <= 1;
       },
       { timeout: 8000 },
     );
     const drawer1 = await drawerOpenState(page);
-    record(!drawer1.open, `聚焦态进入 drawer 收起（页面平移=${drawer1.shift}px）`);
+    record(
+      !drawer1.open,
+      `聚焦态进入 drawer 收起（drawerRight=${drawer1.drawerRight}px 移出窗口）`,
+    );
 
     console.log("\n===== 2. 聚焦过即可：进入只挂载当前激活 =====");
     const a0 = await panelState(page, "agent_probe-1");
@@ -296,15 +297,14 @@ async function run() {
 
     console.log("\n===== 6. drawer 总览段新建 → 新 tab 激活 + drawer 自动关（问题 1）=====");
     await page.getByRole("button", { name: "切换侧边栏" }).click({ timeout: 5000 });
-    // Reddit 式 push：等页面平移到展开（left ≈ 340 露出 drawer）。
+    // Reddit 式 push 刚体联动：等 drawer 滑入窗口左缘（x ≈ 0 可见）。
     await page.waitForFunction(
       () => {
         const aside = document.querySelector(
           'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
         );
         if (!aside) return false;
-        const pageEl = aside.parentElement.nextElementSibling;
-        return pageEl !== null && pageEl.getBoundingClientRect().left > 300;
+        return Math.abs(aside.getBoundingClientRect().left) <= 1;
       },
       { timeout: 8000 },
     );
@@ -349,20 +349,23 @@ async function run() {
       });
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-9/, { timeout: 8000 });
     await page.waitForSelector('[data-tab-id="agent_probe-9"]', { timeout: 8000 });
-    // Reddit 式 push：drawer 收起 = 页面平移回 0（等 transition-transform 300ms 完成）。
+    // Reddit 式 push 刚体联动：drawer 收起 = 平移行滑回 -340、drawer 移出窗口左缘
+    //（等 transition-transform 300ms 完成）。
     await page.waitForFunction(
       () => {
         const aside = document.querySelector(
           'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
         );
         if (!aside) return false;
-        const pageEl = aside.parentElement.nextElementSibling;
-        return pageEl !== null && Math.abs(pageEl.getBoundingClientRect().left) <= 1;
+        return aside.getBoundingClientRect().right <= 1;
       },
       { timeout: 8000 },
     );
     const drawerAfter = await drawerOpenState(page);
-    record(!drawerAfter.open, `新建后 drawer 自动关闭（页面平移=${drawerAfter.shift}px）`);
+    record(
+      !drawerAfter.open,
+      `新建后 drawer 自动关闭（drawerRight=${drawerAfter.drawerRight}px 移出窗口）`,
+    );
     const newPanel = await panelState(page, "agent_probe-9");
     record(newPanel !== null && newPanel.visible, "新 tab 激活可见（面板挂载）");
     const newChip = page.locator(TAB_CHIP, { hasText: "Probe New Agent" });

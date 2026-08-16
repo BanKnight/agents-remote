@@ -4,12 +4,11 @@
 // 露出、保持视口宽不压缩）+ MobileTabStrip（projectTabStrip 纯投影）。
 //
 // 断言（zh-CN + iPhone 12 Pro 390×844，全新 context 无 SW）：
-//  1. 进 /projects/proj1 → drawer 默认展开（aside 常驻 340px + 页面整体被平移：页面容器
-//     translate-x ≈ 340 且 header 随页面移动（同 transform）、页面保持视口宽不压缩（≈390），
-//     无 scrim）。
+//  1. 进 /projects/proj1 → drawer 默认展开（drawer 在窗口左 340px + 页面紧随其后被推右
+//     并排无缝（gap≈0 永不叠加）、header 随页面移动、页面保持视口宽不压缩 ≈390，无 scrim）。
 //  2. 7 个段文字标签（总览/历史/文件/Git/页面/Wiki/插件）按序渲染。
-//  3. 点总览会话行 → URL 变 /projects/proj1/session/agent_probe-1 + drawer 收（页面平移回
-//     translate-x=0 盖回）+ tab 带出现该会话 chip（active）。
+//  3. 点总览会话行 → URL 变 /projects/proj1/session/agent_probe-1 + drawer 收（平移行整体
+//     translate-x=-340 滑回，drawer 移出窗口左缘）+ tab 带出现该会话 chip（active）。
 //  4. ☰ 重开 drawer；点页面（被推区域）关闭（替代旧 scrim 点击关闭）。
 //  5. tab ✕ → layout 更新（chip 消失）+ URL 回 /projects/proj1（无 focus）+ 会话仍存活
 //     （浏览态 grid 仍有该会话卡）。
@@ -153,16 +152,19 @@ async function login(page) {
   await page.waitForTimeout(700);
 }
 
-// Reddit 式 push 整页平移（2026-08-17 二次修正）：drawer = aside absolute 左侧**静态常驻**
-//（宽度恒 340，自身无过渡）；开合 = 页面容器 translate-x-[min(88vw,340px)] ↔ translate-x-0
-//（transition-transform 300ms）。展开 = 页面整体平移露出 drawer，收起 = 平移回 0 盖回。
+// Reddit 式 push 刚体联动（2026-08-17 三次修正）：drawer 与页面并排在同一平移行（flex，
+// 永不重叠），行 wrapper 整体 translate-x——打开 = 0（drawer 在窗口左 340px + 页面紧随其后），
+// 关闭 = -min(88vw,340px)（drawer 移出窗口左缘、页面正好填满窗口）。页面 layout 宽 =
+// 视口宽（basis 撑满行剩余空间），transform 不改 layout 宽 → 不压缩。
 // ⚠️ 本常量含逗号（并集），**不可直接 + " 子选择器" 拼接**（逗号会把子选择器只绑到最后
 // 一个分支，第一个分支命中 aside 本身）——拼接子选择器用 DRAWER_SCOPE（:is 包裹）。
 const DRAWER_ASIDE = 'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]';
 /** drawer 作用域（可安全拼接子选择器）。 */
 const DRAWER_SCOPE = ':is(aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i])';
 
-// 等待 drawer 展开（页面平移到 ≈ 340）+ 动画播完。
+/** aside 的容器 = drawer flex 成员（basis 340）；其父 = 平移行 wrapper；行的下一层结构：
+ * drawer 容器.nextElementSibling = 页面容器（flex-1）。 */
+// 等待 drawer 展开（平移行 shift 回 0，drawer 在窗口左缘可见）+ 动画播完。
 async function waitDrawerVisible(page) {
   await page.waitForFunction(
     () => {
@@ -170,8 +172,9 @@ async function waitDrawerVisible(page) {
         'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
       );
       if (!aside) return false;
-      const pageEl = aside.parentElement.nextElementSibling;
-      return pageEl !== null && pageEl.getBoundingClientRect().left > 300;
+      const drawerBox = aside.getBoundingClientRect();
+      // 打开态：drawer 在窗口左缘（x ≈ 0）且完整可见。
+      return Math.abs(drawerBox.left) <= 1;
     },
     { timeout: 8000 },
   );
@@ -179,7 +182,7 @@ async function waitDrawerVisible(page) {
   return page.locator(DRAWER_ASIDE).first();
 }
 
-// 等待 drawer 收起（页面平移回 ≈ 0 盖回）。
+// 等待 drawer 收起（平移行 shift 到 -340，drawer 移出窗口左缘、页面填满窗口）。
 async function waitDrawerClosed(page) {
   await page.waitForFunction(
     () => {
@@ -187,27 +190,27 @@ async function waitDrawerClosed(page) {
         'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
       );
       if (!aside) return false;
-      const pageEl = aside.parentElement.nextElementSibling;
-      return pageEl !== null && Math.abs(pageEl.getBoundingClientRect().left) <= 1;
+      const drawerBox = aside.getBoundingClientRect();
+      // 收起态：drawer 整体在窗口左缘外（right ≤ 1）。
+      return drawerBox.right <= 1;
     },
     { timeout: 8000 },
   );
 }
 
-// 读 drawer + 被推页面几何（整页不压缩核心断言）。
+// 读 drawer + 被推页面几何（刚体联动 + 整页不压缩核心断言）。
 async function readDrawerGeometry(page) {
   return await page.evaluate(() => {
     const aside = document.querySelector(
       'aside[aria-label*="侧边栏"], aside[aria-label*="sidebar" i]',
     );
     if (!aside) return null;
-    const container = aside.parentElement;
     const drawerBox = aside.getBoundingClientRect();
-    // 页面容器 = drawer absolute 容器的下一个兄弟（w-full + translate-x）。
-    const pageEl = container.nextElementSibling;
+    // 页面容器 = drawer flex 成员的下一个兄弟（平移行内 flex-1）。
+    const pageEl = aside.parentElement.nextElementSibling;
     if (!pageEl) return null;
     const pageBox = pageEl.getBoundingClientRect();
-    // header 在页面容器内（随页面整体平移——「整个页面被推」核心）。
+    // header 在页面容器内（随页面整体被推——「整个页面被推」核心）。
     const header = pageEl.querySelector("header");
     const headerBox = header ? header.getBoundingClientRect() : null;
     return {
@@ -216,6 +219,8 @@ async function readDrawerGeometry(page) {
       pageLeft: Math.round(pageBox.left),
       pageW: Math.round(pageBox.width),
       headerLeft: headerBox ? Math.round(headerBox.left) : null,
+      // 刚体联动：drawer 右缘 == 页面左缘（并排无缝，非叠加）。
+      gap: Math.round(pageBox.left - drawerBox.right),
     };
   });
 }
@@ -231,7 +236,7 @@ async function run() {
     await setupMocks(page);
     await login(page);
 
-    console.log("\n===== 1. 进 /projects/proj1 → drawer 默认展开（Reddit 式 push 整页平移）=====");
+    console.log("\n===== 1. 进 /projects/proj1 → drawer 默认展开（Reddit 式 push 刚体联动）=====");
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await waitDrawerVisible(page);
     const geo1 = await readDrawerGeometry(page);
@@ -241,13 +246,17 @@ async function run() {
       console.log(`  几何: ${JSON.stringify(geo1)}`);
       record(
         Math.abs(geo1.drawerW - 340) <= 1,
-        `drawer 常驻宽度 = min(88vw,340px) = 340（实际 ${geo1.drawerW}）`,
+        `drawer 宽度 = min(88vw,340px) = 340（实际 ${geo1.drawerW}）`,
       );
       record(geo1.drawerX === 0, `drawer 贴左缘（x=${geo1.drawerX}）`);
-      // Reddit 式 push 核心断言：整个页面（含 header tab 带）被平移到 drawer 右侧。
+      // 刚体联动核心断言：drawer 右缘与页面左缘无缝相接（并排非叠加）。
+      record(
+        geo1.gap >= -1 && geo1.gap <= 1,
+        `drawer 与页面并排无缝相接（gap=${geo1.gap} ≈ 0，永不叠加）`,
+      );
       record(
         geo1.pageLeft >= 338 && geo1.pageLeft <= 342,
-        `页面整体被平移（pageLeft=${geo1.pageLeft} ≈ 340）`,
+        `页面被推到 drawer 右侧（pageLeft=${geo1.pageLeft} ≈ 340）`,
       );
       record(
         geo1.pageW !== null && geo1.pageW >= 388,
@@ -255,7 +264,7 @@ async function run() {
       );
       record(
         geo1.headerLeft !== null && Math.abs(geo1.headerLeft - geo1.pageLeft) <= 1,
-        `header tab 带随页面整体平移（headerLeft=${geo1.headerLeft} = pageLeft）`,
+        `header tab 带随页面整体被推（headerLeft=${geo1.headerLeft} = pageLeft）`,
       );
     }
     const scrimCount = await page.locator('[data-slot="dialog-overlay"]').count();
@@ -290,7 +299,7 @@ async function run() {
     await card.click({ timeout: 5000 });
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-1/, { timeout: 8000 });
     await waitDrawerClosed(page);
-    record(true, "点会话行后 drawer 收起（页面平移回 0 盖回）");
+    record(true, "点会话行后 drawer 收起（平移行整体滑回，drawer 移出窗口）");
     const chip = page.locator(TAB_CHIP, { hasText: "Probe Agent A" });
     await chip.waitFor({ timeout: 8000 });
     const chipActive = await chip
@@ -411,7 +420,7 @@ async function run() {
     record(true, "global 点会话卡 → URL = project scope /projects/proj1/session/agent_probe-1");
     // 聚焦态进入 drawer 收起（drawerOpen 初始 = focusId==null ? true : false），不遮挡会话面板。
     await waitDrawerClosed(page3);
-    record(true, "聚焦态进入 drawer 收起（页面平移回 0 盖回）");
+    record(true, "聚焦态进入 drawer 收起（平移行整体滑回，drawer 移出窗口）");
     const chip9 = page3.locator(TAB_CHIP, { hasText: "Probe Agent A" });
     await chip9.waitFor({ timeout: 8000 });
     const chip9Active = await chip9

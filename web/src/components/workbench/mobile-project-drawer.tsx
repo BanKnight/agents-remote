@@ -36,8 +36,9 @@ import {
 } from "./workbench-tab-plugin";
 
 /** Material navigation-drawer：小屏 ≥88% 视口宽、上限 340px（DESIGN.md navigation-drawer）。
- * Reddit 式 push（2026-08-17 二次修正）：drawer absolute 左侧静态常驻（宽度恒定），由页面
- * 整体平移（translate-x）滑开露出——本组件不再管开合宽度/过渡。右缘 16px 圆角保留。 */
+ * Reddit 式 push 刚体联动（2026-08-17 三次修正）：本组件是平移行里与页面并排的 flex 成员
+ *（父给 shrink-0 basis，宽度恒定），开合动画由父级单 wrapper translate-x 统一管。右缘
+ * 16px 圆角保留。 */
 const DRAWER_WIDTH_CLASSES = "w-[min(88vw,340px)]";
 
 type MobileProjectDrawerProps = {
@@ -56,13 +57,14 @@ type MobileProjectDrawerProps = {
 
 /**
  * 移动项目侧边栏 drawer（设计 workbench-views §7.7 / DESIGN.md navigation-drawer，
- * 2026-08-16 重设计）：桌面左栏的窄屏投影。**2026-08-17 覆盖式 → Reddit 式 push 整页平移**
- *（用户两次反馈修正：① 整个页面含 header tab 带一起被推，非只推内容区；② 被推页面**保持
- * 视口宽不被压缩**，仅整体往右平移）——本组件不再是 Radix Dialog portal overlay，而是
- * `MobileProjectWorkbench` 里 absolute 左侧**静态常驻**层（宽度恒 `min(88vw,340px)`、
- * 自身无开合过渡），由页面整体 `translate-x-[min(88vw,340px)]` 平移滑开逐渐露出、回
- * `translate-x-0` 盖回。无 scrim；点被推页面（父级透明拦截层）关闭；Esc 本组件手动监听
- *（原 Radix dismissable 职责）。
+ * 2026-08-16 重设计）：桌面左栏的窄屏投影。**2026-08-17 覆盖式 → Reddit 式 push 刚体联动**
+ *（三次反馈修正收敛：① 整页含 header tab 带被推；② 页面保持视口宽不压缩仅平移；③ drawer
+ * 自身要有滑入动画、关闭时不得两页叠加）——本组件不再是 Radix Dialog portal overlay，而是
+ * `MobileProjectWorkbench` 平移行里与页面**并排**的 flex 成员（永不重叠）：drawer 在行首
+ * `shrink-0 basis-[min(88vw,340px)]`、页面 `flex-1`（页面 layout 宽 = 视口宽，行总宽 =
+ * 340+390）。开合 = 单一 wrapper 整体 `translate-x`（开 0 / 关 -340），drawer 从窗口左缘
+ * 滑入 + 页面同步被推右（同速同向刚体），关闭一起回、无叠加。无 scrim；点页面（父级透明
+ * 拦截层）关闭；Esc 本组件手动监听（原 Radix dismissable 职责）。
  *
  * 结构：顶部返回入口 A（离开项目回 `/` 项目列表）+ 项目名；7 段文字导航（总览/历史/文件/
  * Git/页面/Wiki/插件，`buildOverviewTabs` 复用——与桌面左栏 middle tab 同源）；段主体随
