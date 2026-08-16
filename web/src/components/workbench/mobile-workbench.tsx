@@ -751,108 +751,110 @@ function MobileProjectWorkbench({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col" key={scope.key}>
-      <MobileTabStrip
-        activeTabId={focusId}
-        onClose={handleCloseTab}
-        onSelect={onSelectTab}
-        onToggleSidebar={() => setDrawerOpen(true)}
-        tabs={stripItems}
-        trailing={
-          focusId && isSessionFocus && focusRef?.kind === "session" ? (
-            <MobileFocusActions
-              focusId={focusId}
-              onClose={() =>
-                closeInstance(focusRef.sessionId, inferSessionTypeFromId(focusId) ?? "terminal")
-              }
-              projectName={scope.key}
-            />
-          ) : !focusId ? (
-            // 浏览态（无 focus）：header 右上角新建按钮（icon 方按钮，与 ☰ 对称），
-            // 取代旧右下角 FAB（二级页无底部 nav，让位语义失效，见 workbench-views §7.7）。
-            <MobileCreateButton create={create} />
-          ) : undefined
-        }
-      />
-      {/* push 并排容器（2026-08-17 用户决策：侧边栏从左往右推、和原页面并排，非覆盖）：
-          [drawer 宽度过渡容器][内容区 flex-1]。drawer 展开 = 内容被推到右侧可见（无 scrim）；
-          收起 = w-0（aside 内层固定宽 + overflow-hidden，过渡期间内容不换行跳动）。 */}
-      <div className="flex min-h-0 flex-1">
-        <div
-          className={`shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out ${
-            drawerOpen ? "w-[min(88vw,340px)]" : "w-0"
-          }`}
-        >
-          <MobileProjectDrawer
-            onFocusInstance={focusInstance}
-            onOpenChange={setDrawerOpen}
-            onOpenFile={onOpenFile}
-            onOpenGitCompareFile={onOpenGitCompareFile}
-            onOpenGitFile={onOpenGitFile}
-            open={drawerOpen}
-            scope={scope}
+    // Reddit 式 push（2026-08-17 用户反馈修正：整个页面被推、保持视口宽不压缩）：页面
+    //（header tab 带 + 内容）作为一个整体 w-full 保持视口宽，用 translate-x 平移到右侧
+    //（transform 不改 layout 宽度，内容零重排——「保持大小、仅被往右推」），右侧溢出被本
+    // 容器 overflow-hidden 裁掉；drawer absolute 左侧静态常驻（宽度恒 min(88vw,340px)），
+    // 由页面滑开逐渐露出（非 drawer 自身滑入）。
+    <div className="relative min-h-0 flex-1 overflow-hidden" key={scope.key}>
+      <div className="absolute inset-y-0 left-0 w-[min(88vw,340px)]">
+        <MobileProjectDrawer
+          onFocusInstance={focusInstance}
+          onOpenChange={setDrawerOpen}
+          onOpenFile={onOpenFile}
+          onOpenGitCompareFile={onOpenGitCompareFile}
+          onOpenGitFile={onOpenGitFile}
+          open={drawerOpen}
+          scope={scope}
+        />
+      </div>
+      <div
+        className={`relative h-full w-full transition-transform duration-300 ease-in-out ${
+          drawerOpen ? "translate-x-[min(88vw,340px)]" : "translate-x-0"
+        }`}
+      >
+        {/* 透明点击拦截层：drawer 打开时盖住（被推右的）页面，点击关闭（替代 scrim；透明不遮
+            视觉——露出的页面内容仍可见）。关闭时不渲染，不拦截交互。 */}
+        {drawerOpen ? (
+          <div aria-hidden className="absolute inset-0 z-10" onClick={() => setDrawerOpen(false)} />
+        ) : null}
+        <div className="flex h-full min-h-0 flex-col">
+          <MobileTabStrip
+            activeTabId={focusId}
+            onClose={handleCloseTab}
+            onSelect={onSelectTab}
+            onToggleSidebar={() => setDrawerOpen(true)}
+            tabs={stripItems}
+            trailing={
+              focusId && isSessionFocus && focusRef?.kind === "session" ? (
+                <MobileFocusActions
+                  focusId={focusId}
+                  onClose={() =>
+                    closeInstance(focusRef.sessionId, inferSessionTypeFromId(focusId) ?? "terminal")
+                  }
+                  projectName={scope.key}
+                />
+              ) : !focusId ? (
+                // 浏览态（无 focus）：header 右上角新建按钮（icon 方按钮，与 ☰ 对称），
+                // 取代旧右下角 FAB（二级页无底部 nav，让位语义失效，见 workbench-views §7.7）。
+                <MobileCreateButton create={create} />
+              ) : undefined
+            }
           />
-        </div>
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {/* 透明点击拦截层：drawer 打开时点内容区关闭（替代原 scrim 点击关闭语义；透明不遮
-              视觉——push 语义内容可见）。关闭时不渲染，不拦截内容交互。 */}
-          {drawerOpen ? (
-            <div
-              aria-hidden
-              className="absolute inset-0 z-10"
-              onClick={() => setDrawerOpen(false)}
-            />
-          ) : null}
-          {/* 保活面板层（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」
-              的已打开 tab（含当前激活）保持挂载，visible 由 focusId 用 hidden class 切换——
-              切 tab 再切回 WS 不断（对齐桌面 WorkspaceTree 扁平化保活；移动端单面板只保活
-              聚焦过的，刷新重进 layout 恢复 N tab 只挂载当前激活的，随切换逐步纳入）。
-              file/git/skill 同规则。浏览态（无 focusId）保活面板保持 hidden 挂载——回聚焦态
-              零重连。 */}
-          {stripItems.map((item) => {
-            if (item.tabId !== focusId && !focusedTabIds.has(item.tabId)) return null;
-            return (
-              <div
-                className={
-                  item.tabId === focusId ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "hidden"
-                }
-                data-tab-id={item.tabId}
-                key={item.tabId}
-              >
-                <PanelRouter embeddedHeader panelRef={item.ref} />
-              </div>
-            );
-          })}
-          {/* 主体层：无 focus = 浏览态实例 grid；focus 未入 layout（focus effect 同步前瞬态）
-               = 骨架承接（effect 立即补齐）。 */}
-          {focusId ? (
-            focusRef ? null : (
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/* 保活面板层（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」
+                的已打开 tab（含当前激活）保持挂载，visible 由 focusId 用 hidden class 切换——
+                切 tab 再切回 WS 不断（对齐桌面 WorkspaceTree 扁平化保活；移动端单面板只保活
+                聚焦过的，刷新重进 layout 恢复 N tab 只挂载当前激活的，随切换逐步纳入）。
+                file/git/skill 同规则。浏览态（无 focusId）保活面板保持 hidden 挂载——回聚焦态
+                零重连。 */}
+            {stripItems.map((item) => {
+              if (item.tabId !== focusId && !focusedTabIds.has(item.tabId)) return null;
+              return (
+                <div
+                  className={
+                    item.tabId === focusId
+                      ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                      : "hidden"
+                  }
+                  data-tab-id={item.tabId}
+                  key={item.tabId}
+                >
+                  <PanelRouter embeddedHeader panelRef={item.ref} />
+                </div>
+              );
+            })}
+            {/* 主体层：无 focus = 浏览态实例 grid；focus 未入 layout（focus effect 同步前瞬态）
+                 = 骨架承接（effect 立即补齐）。 */}
+            {focusId ? (
+              focusRef ? null : (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <div className="px-3 py-2">
+                    <CardGridSkeleton plain />
+                  </div>
+                </div>
+              )
+            ) : (
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="px-3 py-2">
-                  <CardGridSkeleton plain />
-                </div>
+                {isLoading && gridItems.length === 0 ? (
+                  <div className="px-3 py-2">
+                    <CardGridSkeleton plain />
+                  </div>
+                ) : gridItems.length > 0 ? (
+                  <div className="px-3 py-2">
+                    <InstanceGrid items={gridItems} plain />
+                  </div>
+                ) : (
+                  <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                    {t("workbench.emptyInstanceHint")}
+                  </p>
+                )}
+                {closeHolder}
+                {renameHolder}
+                {createPromptHolder}
               </div>
-            )
-          ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {isLoading && gridItems.length === 0 ? (
-                <div className="px-3 py-2">
-                  <CardGridSkeleton plain />
-                </div>
-              ) : gridItems.length > 0 ? (
-                <div className="px-3 py-2">
-                  <InstanceGrid items={gridItems} plain />
-                </div>
-              ) : (
-                <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                  {t("workbench.emptyInstanceHint")}
-                </p>
-              )}
-              {closeHolder}
-              {renameHolder}
-              {createPromptHolder}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

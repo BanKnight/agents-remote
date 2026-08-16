@@ -36,7 +36,8 @@ import {
 } from "./workbench-tab-plugin";
 
 /** Material navigation-drawer：小屏 ≥88% 视口宽、上限 340px（DESIGN.md navigation-drawer）。
- * push 并排（2026-08-17）：aside 内层固定宽（外层容器管宽度过渡），右缘 16px 圆角保留。 */
+ * Reddit 式 push（2026-08-17 二次修正）：drawer absolute 左侧静态常驻（宽度恒定），由页面
+ * 整体平移（translate-x）滑开露出——本组件不再管开合宽度/过渡。右缘 16px 圆角保留。 */
 const DRAWER_WIDTH_CLASSES = "w-[min(88vw,340px)]";
 
 type MobileProjectDrawerProps = {
@@ -55,12 +56,13 @@ type MobileProjectDrawerProps = {
 
 /**
  * 移动项目侧边栏 drawer（设计 workbench-views §7.7 / DESIGN.md navigation-drawer，
- * 2026-08-16 重设计）：桌面左栏的窄屏投影。**2026-08-17 覆盖式 → push 并排**（用户决策：
- * 侧边栏从左往右推、和原页面并排，非覆盖盖住）——本组件不再是 Radix Dialog portal overlay，
- * 是 `MobileProjectWorkbench` flex 布局的固定部分：外层容器管 `w-[min(88vw,340px)]` ↔ `w-0`
- * 宽度过渡（内容被推到右侧），本 aside 内层固定宽 + `overflow-hidden`（过渡期间内容不换行
- * 跳动，视觉是抽屉从右缘向内收起）。无 scrim；点内容区关闭由父级透明拦截层承载；Esc 本组件
- * 手动监听（原 Radix dismissable 职责）。
+ * 2026-08-16 重设计）：桌面左栏的窄屏投影。**2026-08-17 覆盖式 → Reddit 式 push 整页平移**
+ *（用户两次反馈修正：① 整个页面含 header tab 带一起被推，非只推内容区；② 被推页面**保持
+ * 视口宽不被压缩**，仅整体往右平移）——本组件不再是 Radix Dialog portal overlay，而是
+ * `MobileProjectWorkbench` 里 absolute 左侧**静态常驻**层（宽度恒 `min(88vw,340px)`、
+ * 自身无开合过渡），由页面整体 `translate-x-[min(88vw,340px)]` 平移滑开逐渐露出、回
+ * `translate-x-0` 盖回。无 scrim；点被推页面（父级透明拦截层）关闭；Esc 本组件手动监听
+ *（原 Radix dismissable 职责）。
  *
  * 结构：顶部返回入口 A（离开项目回 `/` 项目列表）+ 项目名；7 段文字导航（总览/历史/文件/
  * Git/页面/Wiki/插件，`buildOverviewTabs` 复用——与桌面左栏 middle tab 同源）；段主体随
