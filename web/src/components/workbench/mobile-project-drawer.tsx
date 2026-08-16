@@ -38,7 +38,8 @@ import {
 /** Material navigation-drawer：小屏 ≥88% 视口宽、上限 340px（DESIGN.md navigation-drawer）。
  * Reddit 式 push 刚体联动（2026-08-17 三次修正）：本组件是平移行里与页面并排的 flex 成员
  *（父给 shrink-0 basis，宽度恒定），开合动画由父级单 wrapper translate-x 统一管。右缘
- * 16px 圆角保留。 */
+ * 16px 圆角保留。高度与旧覆盖式 inset-y-0 等价全高（safe-area 顶带在壳上避让，bg 延伸
+ * 进刘海带）。 */
 const DRAWER_WIDTH_CLASSES = "w-[min(88vw,340px)]";
 
 type MobileProjectDrawerProps = {
@@ -64,7 +65,8 @@ type MobileProjectDrawerProps = {
  * `shrink-0 basis-[min(88vw,340px)]`、页面 `flex-1`（页面 layout 宽 = 视口宽，行总宽 =
  * 340+390）。开合 = 单一 wrapper 整体 `translate-x`（开 0 / 关 -340），drawer 从窗口左缘
  * 滑入 + 页面同步被推右（同速同向刚体），关闭一起回、无叠加。无 scrim；点页面（父级透明
- * 拦截层）关闭；Esc 本组件手动监听（原 Radix dismissable 职责）。
+ * 拦截层）关闭；Esc 本组件手动监听（原 Radix dismissable 职责）。drawer 全高含 safe-area
+ * 顶带（2026-08-17 高度修正：壳 pt 避让、页面侧 main→页面成员自行消费，两页顶行对齐）。
  *
  * 结构：顶部返回入口 A（离开项目回 `/` 项目列表）+ 项目名；7 段文字导航（总览/历史/文件/
  * Git/页面/Wiki/插件，`buildOverviewTabs` 复用——与桌面左栏 middle tab 同源）；段主体随
@@ -228,12 +230,13 @@ export function MobileProjectDrawer({
   return (
     <aside
       aria-label={t("workbench.sidebar")}
-      className={`grid h-full ${DRAWER_WIDTH_CLASSES} overflow-hidden rounded-r-2xl bg-surface text-on-surface`}
+      className={`grid h-full ${DRAWER_WIDTH_CLASSES} overflow-hidden rounded-r-2xl bg-surface pt-[var(--shell-safe-area-top)] text-on-surface`}
     >
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        {/* 顶部：返回入口 A（离开项目回 / 项目列表）+ 项目名。push 后 drawer 在 header 下方，
-              main 已统一 pt safe-area（单点避让，frontend-notes §1），本行不再叠 top 避让。 */}
-        <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 pb-2 pt-2">
+        {/* 顶部：返回入口 A（离开项目回 / 项目列表）+ 项目名。safe-area 顶带避让在 aside 壳
+            单点消费（bg/圆角延伸进刘海带，内容避让——2026-08-17 恢复旧覆盖式全高语义）。
+            本行 h-11 与页面 MobileTabStrip header 同构 → 两页分隔线水平对齐。 */}
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
           <button
             aria-label={t("project.backToProjects")}
             className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"

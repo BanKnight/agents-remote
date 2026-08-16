@@ -213,12 +213,21 @@ async function readDrawerGeometry(page) {
     // header 在页面容器内（随页面整体被推——「整个页面被推」核心）。
     const header = pageEl.querySelector("header");
     const headerBox = header ? header.getBoundingClientRect() : null;
+    // drawer 顶行（返回+项目名）与页面 header 的底部分隔线（2026-08-17 高度修正：
+    // drawer 全高含 safe-area 顶带 + 顶行 h-11 与页面 header 同构 → 两页分隔线对齐）。
+    const drawerTopRow = aside.firstElementChild?.firstElementChild;
+    const drawerTopBox = drawerTopRow ? drawerTopRow.getBoundingClientRect() : null;
     return {
       drawerW: Math.round(drawerBox.width),
       drawerX: Math.round(drawerBox.x),
+      drawerH: Math.round(drawerBox.height),
+      drawerY: Math.round(drawerBox.y),
+      viewportH: Math.round(window.innerHeight),
       pageLeft: Math.round(pageBox.left),
       pageW: Math.round(pageBox.width),
       headerLeft: headerBox ? Math.round(headerBox.left) : null,
+      drawerTopBottom: drawerTopBox ? Math.round(drawerTopBox.bottom) : null,
+      headerBottom: headerBox ? Math.round(headerBox.bottom) : null,
       // 刚体联动：drawer 右缘 == 页面左缘（并排无缝，非叠加）。
       gap: Math.round(pageBox.left - drawerBox.right),
     };
@@ -265,6 +274,19 @@ async function run() {
       record(
         geo1.headerLeft !== null && Math.abs(geo1.headerLeft - geo1.pageLeft) <= 1,
         `header tab 带随页面整体被推（headerLeft=${geo1.headerLeft} = pageLeft）`,
+      );
+      // 高度断言（2026-08-17 高度修正）：drawer 全高 = 视口高（含 safe-area 顶带，同旧覆盖式
+      // inset-y-0），顶上不漏 main 底色；顶行底部分隔线与页面 header 分隔线水平对齐。
+      record(
+        geo1.drawerH !== null && Math.abs(geo1.drawerH - geo1.viewportH) <= 1,
+        `drawer 全高覆盖视口（drawerH=${geo1.drawerH} ≈ viewportH=${geo1.viewportH}，含 safe-area 顶带）`,
+      );
+      record(geo1.drawerY === 0, `drawer 从设备顶部开始（y=${geo1.drawerY}，顶上不漏底色）`);
+      record(
+        geo1.drawerTopBottom !== null &&
+          geo1.headerBottom !== null &&
+          Math.abs(geo1.drawerTopBottom - geo1.headerBottom) <= 1,
+        `两页顶行分隔线水平对齐（drawer 顶行 bottom=${geo1.drawerTopBottom} = header bottom=${geo1.headerBottom}）`,
       );
     }
     const scrimCount = await page.locator('[data-slot="dialog-overlay"]').count();

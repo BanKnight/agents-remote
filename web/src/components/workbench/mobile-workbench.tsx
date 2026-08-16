@@ -136,10 +136,14 @@ export function MobileWorkbench({
   } as CSSProperties;
 
   // project scope（含聚焦态）统一走 drawer + tab 带工作台。
+  // ⚠️ 本分支 main 不吃 pt-safe-area（其余分支保留）：drawer 要全高覆盖（旧覆盖式
+  // inset-y-0 语义，2026-08-17 用户反馈「高度缺一块/顶上漏底色」），safe-area 顶带避让
+  // 下放到平移行两侧各自消费——页面成员 pt（tab 带仍在刘海下）+ drawer 壳 pt（bg 延伸
+  // 进刘海带、内容避让）。
   if (scope.kind === "project") {
     return (
       <main
-        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
         <MobileProjectWorkbench
@@ -774,7 +778,7 @@ function MobileProjectWorkbench({
             scope={scope}
           />
         </div>
-        <div className="relative h-full w-full shrink-0">
+        <div className="relative h-full w-full shrink-0 pt-[var(--shell-safe-area-top)]">
           {/* 透明点击拦截层：drawer 打开时盖住页面，点击关闭（替代 scrim；透明不遮视觉）。
               关闭时不渲染，不拦截交互。 */}
           {drawerOpen ? (
@@ -784,6 +788,8 @@ function MobileProjectWorkbench({
               onClick={() => setDrawerOpen(false)}
             />
           ) : null}
+          {/* 页面侧 safe-area 顶带避让在此单点消费（main 已不吃 pt，2026-08-17 drawer 全高
+              修正）；页面视觉与 push 改造前一致（tab 带在刘海下）。 */}
           <div className="flex h-full min-h-0 flex-col">
             <MobileTabStrip
               activeTabId={focusId}
