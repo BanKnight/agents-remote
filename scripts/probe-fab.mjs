@@ -1,11 +1,16 @@
-// 探针：移动 FAB 渲染/定位 + 上传 picker 时序（风险点 C）+ 桌面 lg:hidden。
+// 探针：移动新建入口 header 右上角（2026-08-16 FAB 全迁 header）+ 上传 picker 时序
+//（风险点 C）+ 桌面 lg:hidden + 底部 nav 胶囊无 FAB 让位。
 // 断言：
-//  1. 全局总览 FAB（移动默认页）：position fixed / bottom>0 / right≈12 / size 56×56 / rounded-full / 在视口内。
-//  2. 全局总览 FAB 点击 → ProjectSetupPanel Dialog 打开（直跳模式）。
-//  3. 项目工作台 Files tab FAB：渲染（enablePreview=true, readOnly=false）；点 FAB→底部 sheet→点「上传」→
-//     filechooser 触发（Radix Dialog menuitem onSelect 同步链保持用户激活，风险点 C）。
-//  4. 桌面（lg: 1280px）：FAB display:none（lg:hidden，桌面保留 header 入口）。
-// 密码自读不打印。用法：node scripts/probe-fab.mjs
+//  1. 全局总览（/）：header 右上角「新建项目」+ icon 按钮渲染（header 行内、x 靠右）→ 点击开
+//     ProjectSetupPanel Dialog；全页无 fixed 悬浮按钮（FAB 已删）。
+//  2. 项目工作台 drawer 文件段（FilesLeftPanel 树模式，enablePreview=false）：header 行右上角
+//     「新建」ActionMenu trigger（max-lg:flex，!readOnly 即渲染）→ 点开底部 sheet → 点「上传」
+//     → filechooser 触发（Radix Dialog menuitem onSelect 同步链保持用户激活，风险点 C）。
+//  3. 桌面（lg: 1280px）：移动 icon 按钮 display:none（max-lg:flex）；桌面 header「+ 新建」
+//     文字按钮仍可见。
+//  4. 底部 nav 胶囊（三视口）：无 FAB 让位（w-fit 内容宽、居中、/ ↔ /files 零跳变、label
+//     无截断）——FAB 删除后 group-has-[.mobile-fab] 让位 CSS 已清理，capsule 恒为 base 态。
+// 密码自读不打印。用法：bun scripts/probe-fab.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
 
@@ -42,38 +47,44 @@ async function setupMocks(page) {
   );
 }
 
-// 找 FAB：position fixed + className 含 size-14（MobileFab 底座）。返回几何 + 是否在视口内。
-async function findFab(page) {
-  return await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll("button"));
-    const fab = btns.find((b) => {
-      const s = getComputedStyle(b);
-      return s.position === "fixed" && b.className.includes("size-14");
-    });
-    if (!fab) return null;
-    const s = getComputedStyle(fab);
-    const r = fab.getBoundingClientRect();
-    const navEl = document.querySelector("nav[aria-label]");
-    const capsule = navEl?.querySelector("div.mx-auto");
+// 找 header 新建 icon 按钮（aria-label 匹配，2026-08-16 起 header 右上角，替代旧 FAB）。
+// 返回几何 + 是否在视口内 + display。regex 匹配 i18n 两语 aria-label。
+async function findCreateButton(page, ariaRegex) {
+  return await page.evaluate((pattern) => {
+    const re = new RegExp(pattern);
+    const btns = Array.from(document.querySelectorAll("button[aria-label]"));
+    const btn = btns.find((b) => re.test(b.getAttribute("aria-label") ?? ""));
+    if (!btn) return null;
+    const s = getComputedStyle(btn);
+    const r = btn.getBoundingClientRect();
+    const header = btn.closest("header");
+    const hr = header?.getBoundingClientRect() ?? null;
     return {
-      position: s.position,
-      bottom: Math.round(parseFloat(s.bottom)),
-      left: Math.round(r.left),
-      right: Math.round(parseFloat(s.right)),
-      zIndex: s.zIndex,
+      ariaLabel: btn.getAttribute("aria-label"),
+      display: s.display,
+      x: Math.round(r.left),
+      y: Math.round(r.top),
       width: Math.round(r.width),
       height: Math.round(r.height),
-      borderRadius: s.borderRadius,
-      display: s.display,
-      ariaLabel: fab.getAttribute("aria-label"),
-      capsuleRight: capsule ? Math.round(capsule.getBoundingClientRect().right) : null,
+      inHeader: hr !== null,
+      headerRight: hr ? Math.round(hr.right) : null,
+      viewportW: window.innerWidth,
       inViewport:
         r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1 && r.top >= -1,
     };
-  });
+  }, ariaRegex);
 }
 
-// 读底部 nav 胶囊几何（center/width/right）+ 4 个 label 截断检测（nav span.truncate）。
+// 全页扫 fixed 悬浮按钮（FAB 残留检测：FAB 删除后应为空）。
+async function findFixedFloatButtons(page) {
+  return await page.evaluate(() =>
+    Array.from(document.querySelectorAll("button"))
+      .filter((b) => getComputedStyle(b).position === "fixed")
+      .map((b) => b.getAttribute("aria-label") ?? b.className),
+  );
+}
+
+// 读底部 nav 胶囊几何（center/width）+ 4 个 label 截断检测（nav span.truncate）。
 async function readCapsule(page) {
   return await page.evaluate(() => {
     const navEl = document.querySelector("nav[aria-label]");
@@ -114,87 +125,87 @@ async function runMobile() {
     await login(page);
     await page.waitForTimeout(700);
 
-    console.log("\n===== 1. 全局总览 FAB（移动默认页，直跳模式）=====");
-    const fab1 = await findFab(page);
-    if (!fab1) {
-      record(false, "全局总览 FAB 渲染");
+    console.log("\n===== 1. 全局总览（/）header 右上角「新建项目」=====");
+    // aria-label：zh「创建或采用项目」/ en "Create or adopt Project"（home.createProjectAria）。
+    const btn1 = await findCreateButton(page, "创建或采用项目|Create or adopt");
+    if (!btn1) {
+      record(false, "全局总览 header「新建项目」icon 按钮渲染");
     } else {
-      console.log(`  FAB 几何: ${JSON.stringify(fab1)}`);
-      record(fab1.position === "fixed", `position=fixed（got ${fab1.position}）`);
-      // FAB 落 nav 避让带：bottom=safe-area（playwright 无 safe-area=0；真机=34），不再浮 nav 上方压内容。
-      record(fab1.bottom >= 0, `bottom=${fab1.bottom}=safe-area（落 nav 带）`);
-      record(fab1.right > 0 && fab1.right < 30, `right=${fab1.right}≈12`);
-      // nav 胶囊条经 group-has-[.mobile-fab]:max-w-[calc(100vw-8.75rem)] 自身收窄 + mx-auto 居中
-      // （2026-08-04 改版，撤销旧 pr-[4.5rem] 左推）：capsule 宽=视口−两侧对称让位（8.75rem=140px），
-      // 中心恒定居中、紧贴 FAB（间隙 2px），右沿不与 FAB 重叠。详细几何见 runCapsuleGeometry。
+      console.log(`  按钮几何: ${JSON.stringify(btn1)}`);
+      record(btn1.display !== "none", "按钮可见（非 display:none）");
+      record(btn1.inHeader, "按钮在 header 行内（MobilePageHeader.actions）");
       record(
-        fab1.capsuleRight !== null && fab1.capsuleRight <= fab1.left,
-        `nav 让位不重叠（capsule.right=${fab1.capsuleRight} <= fab.left=${fab1.left}）`,
+        btn1.headerRight !== null && btn1.x > btn1.viewportW * 0.7,
+        `按钮靠右上角（x=${btn1.x} > 视口 70%=${Math.round(btn1.viewportW * 0.7)}）`,
       );
+      record(btn1.inViewport, "按钮在视口内");
       record(
-        fab1.width === 56 && fab1.height === 56,
-        `size 56×56（got ${fab1.width}×${fab1.height}）`,
-      );
-      // Tailwind v4 rounded-full = calc(infinity*1px)，浏览器 computed 成 ~3.35e7px
-      //（>> 元素尺寸即视觉圆形，非旧 v3 的 9999px）。
-      const radiusPx1 = parseFloat(fab1.borderRadius);
-      record(
-        Number.isFinite(radiusPx1) && radiusPx1 > fab1.width,
-        `rounded-full（got ${fab1.borderRadius}，radius > width=${fab1.width} 即圆形）`,
-      );
-      record(fab1.inViewport, "FAB 在视口内不超出");
-      // FAB 全在 nav 避让带内（navSpace ≥ 56），不凸入内容滚动区 = 用户避让策略核心目标。
-      const navSpace = await page.evaluate(() => {
-        const main = document.querySelector("main");
-        return main
-          ? parseFloat(getComputedStyle(main).getPropertyValue("--shell-mobile-bottom-nav-space"))
-          : NaN;
-      });
-      record(navSpace >= 56, `FAB 不压内容（navSpace=${navSpace} ≥ FAB 高 56）`);
-      record(
-        /adopt Project|新建项目|Create or adopt/.test(fab1.ariaLabel ?? ""),
-        `aria-label 直跳（got "${fab1.ariaLabel}"）`,
+        btn1.width >= 36 && btn1.height >= 36,
+        `触控目标 ≥36px（got ${btn1.width}×${btn1.height}）`,
       );
     }
+    const fixed1 = await findFixedFloatButtons(page);
+    record(fixed1.length === 0, `全页无 fixed 悬浮按钮（FAB 已删，got ${fixed1.length} 个）`);
 
-    console.log("\n===== 2. 全局总览 FAB 点击 → ProjectSetupPanel Dialog =====");
-    await page.locator("button.size-14").first().click();
-    await page.waitForTimeout(450);
-    const dialogOpen = await page.evaluate(() => !!document.querySelector('[role="dialog"]'));
-    record(dialogOpen, "点 FAB 打开 Dialog（直跳 onClick=setSetupOpen(true)）");
-    await page.keyboard.press("Escape").catch(() => {});
-    await page.waitForTimeout(350);
+    console.log("\n===== 2. header「新建项目」点击 → ProjectSetupPanel Dialog =====");
+    const createBtn = page.locator(
+      'button[aria-label*="创建或采用项目"], button[aria-label*="Create or adopt"]',
+    );
+    if ((await createBtn.count()) === 0) {
+      record(false, "「新建项目」按钮存在（可点击）");
+    } else {
+      await createBtn.first().click();
+      await page.waitForTimeout(450);
+      const dialogOpen = await page.evaluate(() => !!document.querySelector('[role="dialog"]'));
+      record(dialogOpen, "点按钮打开 Dialog（useCreateProjectDialog openCreate）");
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.waitForTimeout(350);
+    }
 
-    console.log("\n===== 3. 项目工作台 Files tab FAB + 上传时序（风险点 C）=====");
+    console.log("\n===== 3. 项目工作台 drawer 文件段 header 新建 + 上传时序（风险点 C）=====");
     await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
     await page.waitForTimeout(800);
-    // 切 Files tab（MobileTabHeader，label Files/文件）。
+    // 2026-08-16 起项目工作台 = drawer + tab 带：Files 在 drawer 段导航（TabButton 裸 button，
+    // 无 role=tab）。drawer 默认展开（浏览态）；点「文件」段按钮切换段主体 = FilesLeftPanel
+    //（enablePreview=false 树模式，!readOnly 时移动 header ActionMenu 渲染——写操作入口）。
     await page
-      .getByRole("tab", { name: /^Files$|^文件$/ })
-      .or(page.getByText(/^Files$|^文件$/, { exact: true }).first())
+      .getByRole("button", { name: /^Files$|^文件$/ })
       .first()
       .click({ timeout: 5000 })
       .catch(async () => {
         await page.evaluate(() => {
-          const els = Array.from(document.querySelectorAll('[role="tab"], button'));
+          const els = Array.from(document.querySelectorAll("button"));
           const t = els.find((el) => /^(Files|文件)$/.test((el.textContent ?? "").trim()));
           if (t) t.click();
         });
       });
     await page.waitForTimeout(800);
 
-    const fab2 = await findFab(page);
-    record(!!fab2, "Files tab FAB 渲染（enablePreview=true, readOnly=false）");
-    if (fab2) {
-      console.log(`  FAB 几何: ${JSON.stringify(fab2)}`);
-      // 上传时序：点 FAB → 底部 sheet → 点「上传」→ filechooser。
+    // aria-label：zh「新建文件或文件夹」/ en "New file or folder"（files.createAria）——
+    // header 行右侧 ActionMenu trigger（drawer 文件树 header，树模式也渲染）。
+    const filesBtn = await findCreateButton(page, "新建文件或文件夹|New file or folder");
+    record(
+      !!filesBtn,
+      "drawer 文件段 header 新建按钮渲染（树模式 enablePreview=false, readOnly=false）",
+    );
+    if (filesBtn) {
+      console.log(`  按钮几何: ${JSON.stringify(filesBtn)}`);
+      const fixed3 = await findFixedFloatButtons(page);
+      record(fixed3.length === 0, `Files tab 无 fixed 悬浮按钮（got ${fixed3.length} 个）`);
+      // 上传时序：点 trigger → 底部 sheet → 点「上传」→ filechooser。
       const fileChooserPromise = page
         .waitForEvent("filechooser", { timeout: 5000 })
         .catch(() => null);
-      await page.locator("button.size-14").first().click();
+      const trigger = page.locator(
+        'button[aria-label*="新建文件或文件夹"], button[aria-label*="New file or folder"]',
+      );
+      await trigger
+        .first()
+        .click({ timeout: 5000 })
+        .catch(() => {});
       await page.waitForTimeout(450);
       const opened = await page.evaluate(() => !!document.querySelector('[role="dialog"]'));
-      record(opened, "点 Files FAB 打开底部 sheet 菜单");
+      record(opened, "点 header 新建按钮打开底部 sheet 菜单");
       await page
         .getByText(/^Upload$|^上传$/, { exact: true })
         .first()
@@ -226,13 +237,24 @@ async function runDesktop() {
     await setupMocks(page);
     await login(page);
     await page.waitForTimeout(700);
-    console.log("\n===== 4. 桌面（lg: 1280px）FAB 不渲染 =====");
-    const fab = await findFab(page);
-    const hidden = !fab || fab.display === "none";
+    console.log("\n===== 4. 桌面（lg: 1280px）移动按钮不渲染 + header 入口保留 =====");
+    // 桌面命中桌面 header 按钮（GlobalProjectsOverview hidden lg:flex 行，同 aria-label）
+    // 属预期——断言的是「MobilePageHeader.actions 移动按钮」不可见：h-9 w-9 纯 icon 方按钮
+    //（无文本内容）。桌面视口下它应 display:none（max-lg:flex）。
+    const mobileBtn = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button[aria-label]")).filter((b) =>
+        /创建或采用项目|Create or adopt/.test(b.getAttribute("aria-label") ?? ""),
+      );
+      // 纯 icon 按钮（textContent 空或仅空白）= 移动 MobilePageHeader.actions 的那个。
+      const icon = btns.find((b) => (b.textContent ?? "").trim().length === 0);
+      if (!icon) return null;
+      return { display: getComputedStyle(icon).display };
+    });
+    const hidden = !mobileBtn || mobileBtn.display === "none";
     record(
       hidden,
-      `桌面 FAB display:none（lg:hidden，桌面保留 header 入口）${
-        fab ? `（got display=${fab.display}）` : "（FAB 未在 DOM）"
+      `桌面移动 icon 按钮 display:none（max-lg:flex）${
+        mobileBtn ? `（got display=${mobileBtn.display}）` : "（未在 DOM）"
       }`,
     );
     // 桌面应保留 header「+ 新建项目」按钮（hidden lg:inline-flex）。
@@ -249,9 +271,8 @@ async function runDesktop() {
   }
 }
 
-// 5. capsule 居中收窄几何（2026-08-04 nav 让位策略改版：pr 左推 → 自身收窄居中）。
-// 有 FAB 页（/）三视口 capsule 收窄居中 + 不重叠 + label 无截断；无 FAB 页（/files）撑满居中；
-// 切换 / ↔ /files capsule.center 恒定（零跳变——本次核心价值）。
+// 5. capsule 无 FAB 让位几何（2026-08-16 FAB 全删后）：所有页 capsule 恒为 base 态
+//（w-fit 内容宽 + mx-auto 居中），/ ↔ /files 切换零跳变、label 无截断。
 async function runCapsuleGeometry() {
   const viewports = [
     { w: 390, h: 844, name: "iPhone 14" },
@@ -271,62 +292,39 @@ async function runCapsuleGeometry() {
       await login(page);
       await page.waitForTimeout(700);
 
-      console.log(`\n===== 5. capsule 居中收窄（${vp.name} ${vp.w}×${vp.h}）=====`);
-      // / 页（有 FAB）：capsule 收窄居中。
-      const capFab = await readCapsule(page);
-      const fab = await findFab(page);
-      if (!capFab || !fab) {
-        record(false, `${vp.w}w /页 capsule/FAB 渲染（cap=${!!capFab} fab=${!!fab}）`);
+      console.log(`\n===== 5. capsule 无 FAB 让位（${vp.name} ${vp.w}×${vp.h}）=====`);
+      const capHome = await readCapsule(page);
+      if (!capHome) {
+        record(false, `${vp.w}w /页 capsule 渲染`);
         continue;
       }
-      console.log(
-        `  /页 capsule: width=${capFab.width} center=${capFab.center} right=${capFab.right}; FAB.left=${fab.left}`,
-      );
-      const expectedWidth = vp.w - 140; // calc(100vw-8.75rem)：8.75rem=140px=2×(FAB 占位 68+间隙 2)
-      const gap = fab.left - capFab.right;
+      console.log(`  /页 capsule: width=${capHome.width} center=${capHome.center}`);
       record(
-        Math.abs(capFab.center - vp.w / 2) <= 1,
-        `${vp.w}w /页 capsule 居中（center=${capFab.center} ≈ 视口中心 ${vp.w / 2}，不左推——核心）`,
+        Math.abs(capHome.center - vp.w / 2) <= 1,
+        `${vp.w}w /页 capsule 居中（center=${capHome.center} ≈ 视口中心 ${vp.w / 2}）`,
       );
-      record(
-        gap >= 0 && gap <= 4,
-        `${vp.w}w /页 紧贴 FAB 间隙~2（gap=${gap}，calc 8.75rem 居中拉满）`,
-      );
-      record(
-        Math.abs(capFab.width - expectedWidth) <= 1,
-        `${vp.w}w /页 capsule 宽=视口−140（width=${capFab.width} ≈ 预期 ${expectedWidth}，calc 自适应）`,
-      );
-      const truncated = capFab.labels.filter((l) => l.truncated);
+      const truncated = capHome.labels.filter((l) => l.truncated);
       record(
         truncated.length === 0,
-        `${vp.w}w /页 4 label 无截断（${capFab.labels.map((l) => l.text).join("/")}）`,
+        `${vp.w}w /页 label 无截断（${capHome.labels.map((l) => l.text).join("/")}）`,
       );
 
-      // /files 页（无 FAB）：capsule 撑满居中。
       await page.goto(`${WEB_ORIGIN}/files`);
       await page.waitForTimeout(700);
-      const capNoFab = await readCapsule(page);
-      const fabNoFab = await findFab(page);
-      if (!capNoFab) {
+      const capFiles = await readCapsule(page);
+      if (!capFiles) {
         record(false, `${vp.w}w /files页 capsule 渲染`);
         continue;
       }
-      console.log(
-        `  /files页 capsule: width=${capNoFab.width} center=${capNoFab.center}; FAB=${!!fabNoFab}`,
-      );
-      record(!fabNoFab, `${vp.w}w /files页 无 FAB（capsule 不需让位）`);
+      console.log(`  /files页 capsule: width=${capFiles.width} center=${capFiles.center}`);
       record(
-        capNoFab.width > capFab.width + 50,
-        `${vp.w}w /files页 capsule 撑满（width=${capNoFab.width} > /页 收窄 ${capFab.width}）`,
+        Math.abs(capFiles.center - vp.w / 2) <= 1,
+        `${vp.w}w /files页 capsule 居中（center=${capFiles.center}）`,
       );
+      // 无 FAB 让位：两页 capsule 都是内容宽（w-fit），宽度随 label 内容而非 FAB 让位变化。
       record(
-        Math.abs(capNoFab.center - vp.w / 2) <= 1,
-        `${vp.w}w /files页 capsule 居中（center=${capNoFab.center}）`,
-      );
-      // 切换零跳变：/ 与 /files capsule.center 相等（同视口，核心断言）。
-      record(
-        capFab.center === capNoFab.center,
-        `${vp.w}w 切换 / ↔ /files capsule.center 恒定（${capFab.center} === ${capNoFab.center}，零跳变——核心）`,
+        capHome.center === capFiles.center,
+        `${vp.w}w 切换 / ↔ /files capsule.center 恒定（${capHome.center} === ${capFiles.center}，零跳变）`,
       );
     } finally {
       await browser.close();

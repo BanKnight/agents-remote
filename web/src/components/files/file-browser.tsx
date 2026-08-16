@@ -33,7 +33,6 @@ import {
   ListRowSkeleton,
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
-import { MobileFab } from "../shell/mobile-fab";
 import { ShellIcon } from "../shell/icons";
 import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
@@ -1101,10 +1100,13 @@ export function FilesPanel({
           // 总高 47px 与总览 ViewSwitcher 行一致（批 Q 点 4 收尾：原本 min-h-7=28 → 41px 独树一帜）。
         >
           <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
-          {/* 写操作 actions（New Folder/Upload）只在 inspection 模式（enablePreview=true）渲染；
-              FilesLeftPanel 纯导航树（enablePreview=false）不挂写操作——窄左栏（256px）actions 文字
-              + breadcrumb 会溢出覆盖 breadcrumb button（click intercept），且写操作语义属中栏 file
-              tab（Save）+ 右栏 files inspection（Phase 3 后 project scope 右栏始终有 files inspection）。 */}
+          {/* 写操作 actions（New Folder/Upload）分两层：
+              · 桌面（lg:flex 文字 actions）只在 inspection 模式（enablePreview=true）渲染——
+                FilesLeftPanel 纯导航树（enablePreview=false）不挂文字 actions：窄左栏（256px）文字
+                + breadcrumb 会溢出覆盖 breadcrumb button（click intercept）。
+              · 移动（max-lg:flex icon ActionMenu）在 !readOnly 时渲染（树 + inspection 都显示）——
+                移动项目 Files 主表面是 drawer 文件树（FilesLeftPanel），新建文件夹/上传入口必须在此
+                保留（2026-08-16 FAB 迁 header 后 FAB #3 的移动落点）；icon 按钮不溢出。 */}
           {readOnly || !enablePreview ? null : (
             <div className="hidden shrink-0 items-center gap-2 lg:flex">
               {upload.error instanceof Error || mkdir.error instanceof Error ? (
@@ -1116,16 +1118,6 @@ export function FilesPanel({
                       : null}
                 </p>
               ) : null}
-              <input
-                ref={fileInputRef}
-                className="hidden"
-                type="file"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileDrop(file);
-                  e.target.value = "";
-                }}
-              />
               {showFolderInput ? (
                 <div className="flex items-center gap-1.5">
                   <input
@@ -1179,6 +1171,50 @@ export function FilesPanel({
               </ActionButton>
             </div>
           )}
+          {/* 移动新建入口（2026-08-16：FAB 迁 header 右上角）：max-lg:flex ActionMenu（plus
+              trigger），items 与桌面 actions 同源（新建文件夹 prompt / 上传 file picker）。
+              !readOnly 时渲染（含 tree 模式）——移动项目 Files 主表面是 drawer 文件树，写操作
+              入口必须在此；file input 随此 fragment 常驻，桌面/移动 actions 共用 fileInputRef。 */}
+          {readOnly ? null : (
+            <>
+              <input
+                ref={fileInputRef}
+                className="hidden"
+                type="file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileDrop(file);
+                  e.target.value = "";
+                }}
+              />
+              <ActionMenu
+                align="end"
+                cancelLabel={t("cancel")}
+                items={[
+                  {
+                    label: t("files.newFolder"),
+                    icon: <ShellIcon name="folder-plus" />,
+                    onSelect: handleNewFolder,
+                  },
+                  {
+                    label: upload.isPending ? t("files.uploading") : t("files.upload"),
+                    icon: <ShellIcon name="upload" />,
+                    onSelect: () => fileInputRef.current?.click(),
+                    disabled: upload.isPending,
+                  },
+                ]}
+                trigger={
+                  <button
+                    aria-label={t("files.createAria")}
+                    className="hidden h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10 max-lg:flex"
+                    type="button"
+                  >
+                    <ShellIcon className="h-4 w-4" name="plus" />
+                  </button>
+                }
+              />
+            </>
+          )}
         </div>
       </div>
       <div
@@ -1227,27 +1263,6 @@ export function FilesPanel({
       </div>
       {confirmHolder}
       {promptHolder}
-      {/* 移动 FAB（lg:hidden）：新建文件夹（prompt）/ 上传（file picker）二合一。桌面 header
-          入口保留（上方 hidden lg:flex 块）。仅项目作用域 Files tab（!readOnly && enablePreview）。 */}
-      {!readOnly && enablePreview ? (
-        <MobileFab
-          ariaLabel={t("files.createAria")}
-          cancelLabel={t("cancel")}
-          items={[
-            {
-              label: t("files.newFolder"),
-              icon: <ShellIcon name="folder-plus" />,
-              onSelect: handleNewFolder,
-            },
-            {
-              label: upload.isPending ? t("files.uploading") : t("files.upload"),
-              icon: <ShellIcon name="upload" />,
-              onSelect: () => fileInputRef.current?.click(),
-              disabled: upload.isPending,
-            },
-          ]}
-        />
-      ) : null}
     </div>
   );
 }

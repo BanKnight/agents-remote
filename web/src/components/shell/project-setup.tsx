@@ -1,11 +1,11 @@
-import type { FormEvent } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { createProject } from "../../api/client";
 import { useT } from "../../i18n";
 import { IconMarker, ShellInput } from "./shell-primitives";
 import { ShellPanel } from "./shell-layout";
+import { Dialog, DialogContent } from "../ui/dialog";
 
 /**
  * createProject mutation + 提交后导航（设计文档 §3）。HomeRoute 桌面 ShellHeaderSurface
@@ -31,6 +31,41 @@ export function useCreateProject() {
     },
   });
   return { create, projectPath, setProjectPath };
+}
+
+/**
+ * create 入口 dialog 单一来源（设计文档 §3）。GlobalProjectsOverview 桌面「+ 新建项目」
+ * header 按钮与移动 MobileGlobalOverview 的 MobilePageHeader.actions「+」按钮共用此 hook：
+ * 收敛 useCreateProject + Dialog open 态 + ProjectSetupPanel，调用方只拿 { openCreate, dialog }。
+ * 成功后 invalidate ["projects"] + ["overview"] 并 navigate 到新项目（useCreateProject 内）。
+ */
+export function useCreateProjectDialog(): { openCreate: () => void; dialog: ReactNode } {
+  const inputId = useId();
+  const [open, setOpen] = useState(false);
+  const { create, projectPath, setProjectPath } = useCreateProject();
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedPath = projectPath.trim();
+    if (trimmedPath.length === 0 || create.isPending) return;
+    create.mutate(trimmedPath);
+  };
+  // setupVisible：open 或 pending 或 error 都保持 dialog 打开（error 时用户能看到错误信息）。
+  const setupVisible = open || create.isPending || create.error instanceof Error;
+  const dialog = (
+    <Dialog open={setupVisible} onOpenChange={(next) => !next && setOpen(false)}>
+      <DialogContent className="overflow-y-auto p-0">
+        <ProjectSetupPanel
+          createError={create.error instanceof Error ? create.error : null}
+          inputId={inputId}
+          isPending={create.isPending}
+          onProjectPathChange={setProjectPath}
+          onSubmit={handleSubmit}
+          projectPath={projectPath}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+  return { openCreate: () => setOpen(true), dialog };
 }
 
 type ProjectSetupPanelProps = {

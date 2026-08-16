@@ -12,7 +12,6 @@ import {
   ListRowSkeleton,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
-import { MobileFab } from "../shell/mobile-fab";
 import { ResourceStatePanel } from "../files/file-browser";
 import { useConfirm } from "../shell/confirm-dialog";
 import { PagesRootDialog } from "./pages-root-dialog";
@@ -115,6 +114,18 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
           </span>
         </ActionButton>
       </div>
+      {/* 移动新建入口（2026-08-16：FAB 迁 header 右上角）：与桌面 header 行镜像，
+          justify-end 放 + icon 按钮开 PagesRootDialog。 */}
+      <div className="flex shrink-0 items-center justify-end border-b border-neutral-line/40 px-2 py-1.5 lg:hidden">
+        <button
+          aria-label={t("pages.createAria")}
+          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+          onClick={() => beginEdit({ mode: "add" })}
+          type="button"
+        >
+          <ShellIcon className="h-5 w-5" name="plus" />
+        </button>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
         {roots.length === 0 ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-2 lg:justify-center lg:pt-0">
@@ -185,7 +196,6 @@ export function PagesPanel({ projectName }: PagesPanelProps) {
         />
       ) : null}
       {confirmHolder}
-      <MobileFab ariaLabel={t("pages.createAria")} onClick={() => beginEdit({ mode: "add" })} />
     </div>
   );
 }

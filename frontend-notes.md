@@ -443,7 +443,9 @@ return cn(
 
 ## 12. 底部 nav 按内容条件让位：`group-has-[marker]`（有 FAB 收缩 / 无 FAB 零副作用）
 
-### 现象（本项目移动 FAB 落 nav 避让带实测）
+> ⚠️ **本场景已下线（2026-08-16）**：FAB 全量移到 header 右上角（新建会话/项目/文件夹/页面四个入口，见 DESIGN.md `floating-action-button` 条目的现状落点），`MobileFab` 组件已删、`group-has-[.mobile-fab]` 让位 CSS 已清理、capsule 恒为 base 态（`w-fit max-w-full` 居中）。本条目保留——`:has()` 条件让位机制（marker class 作唯一真相 + 被让位元素自身收窄居中）是通用范式，未来任何「按内容条件让位」场景（如浮动工具条、角标）可整体复用；`max-width` 只设上限不设宽度、要撑满必须配 `w-full` 的判定铁律同样通用。
+
+### 现象（本项目移动 FAB 落 nav 避让带实测，历史记录）
 
 移动端 FAB 与一级导航同高度带（用户苹果设计观察：FAB 落 nav 带、nav 收缩让位）。但底部 nav 胶囊条在移动端**近全宽**（390px 视口占 366px，4 列 tab 撑满），FAB 落进去必重叠。若 nav **永久**让位（`pr-[4.5rem]` 无条件），无 FAB 的页面（如 `/files` 全局）胶囊条永久偏左、偏移 72px——副作用污染全站。
 

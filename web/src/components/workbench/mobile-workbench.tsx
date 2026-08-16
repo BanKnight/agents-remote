@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives";
+import { useCreateProjectDialog } from "../shell/project-setup";
 import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
@@ -130,7 +131,7 @@ export function MobileWorkbench({
   if (scope.kind === "project") {
     return (
       <main
-        className={`group relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
         <MobileProjectWorkbench
@@ -156,7 +157,7 @@ export function MobileWorkbench({
   if (!focusId) {
     return (
       <main
-        className={`group relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
         {leftMode === "plugins" ? (
@@ -638,7 +639,7 @@ type MobileProjectWorkbenchProps = {
  * 投影：侧边栏 drawer（左栏投影，`MobileProjectDrawer`）+ header 内容 tab 带（中栏投影，
  * `MobileTabStrip` 消费 `projectTabStrip(layout, key)`）。
  *
- * - **无 focusId（浏览态）**：tab 带 + InstanceGrid 浏览 + MobileFab 新建。
+ * - **无 focusId（浏览态）**：tab 带 + InstanceGrid 浏览 + header 右上角新建按钮。
  * - **有 focusId（聚焦态）**：tab 带 + `<PanelRouter embeddedHeader>`——与桌面中栏主体同一
  *   渲染源（session 含底部输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab
  *   尚未入 layout）渲染骨架不闪浏览态。
@@ -923,6 +924,10 @@ function MobileGlobalOverview() {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
+  // 新建项目 dialog（useCreateProjectDialog 单一来源，与桌面 GlobalProjectsOverview header
+  // 按钮共用同一 hook）；入口 = MobilePageHeader.actions 右上角 + icon 按钮（2026-08-16：
+  // FAB 全部迁 header 右上角，对齐「新建会话」按钮语言）。
+  const { openCreate, dialog: createProjectDialog } = useCreateProjectDialog();
   // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
   //（MobilePageHeader 标题；底部胶囊避让由 GlobalProjectsOverview 消费 CSS var），
   // 实例聚焦/新建/删除全在共享组件内（批 J 折叠废弃）。
@@ -942,10 +947,23 @@ function MobileGlobalOverview() {
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MobilePageHeader title={t("workbench.global")} />
+      <MobilePageHeader
+        actions={
+          <button
+            aria-label={t("home.createProjectAria")}
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            onClick={openCreate}
+            type="button"
+          >
+            <ShellIcon className="h-5 w-5" name="plus" />
+          </button>
+        }
+        title={t("workbench.global")}
+      />
       <div className="min-h-0 flex-1">
         <GlobalProjectsOverview onFocusInstance={focusInstance} />
       </div>
+      {createProjectDialog}
     </div>
   );
 }

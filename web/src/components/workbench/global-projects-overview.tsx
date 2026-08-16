@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
@@ -14,11 +14,9 @@ import { deleteProject } from "../../api/client";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { useConfirm } from "../shell/confirm-dialog";
 import { actionButtonClasses } from "../shell/shell-primitives";
-import { ProjectSetupPanel, useCreateProject } from "../shell/project-setup";
-import { Dialog, DialogContent } from "../ui/dialog";
+import { useCreateProjectDialog } from "../shell/project-setup";
 import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
-import { MobileFab } from "../shell/mobile-fab";
 import {
   candidateToGridItem,
   CardGridSkeleton,
@@ -56,15 +54,13 @@ export function GlobalProjectsOverview({
   dragAdapter,
 }: GlobalProjectsOverviewProps) {
   const { t } = useT();
-  const inputId = useId();
-  const [setupOpen, setSetupOpen] = useState(false);
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   // pinned 与 candidates 同级并发触发（不再在 GroupedProjectsList 内才发），并参与下方 gate：
   // 两 query 都首次结算（settled）才渲染列表，避免 pinned 后到导致置顶组从顶部插入跳变。
   const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
-  const { create: createProject, projectPath, setProjectPath } = useCreateProject();
+  const { openCreate, dialog } = useCreateProjectDialog();
 
   const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
     const ref = candidates.find((c) => c.ref.sessionId === sessionId)?.ref;
@@ -88,14 +84,6 @@ export function GlobalProjectsOverview({
   const overviewEmpty = settled && projectNames.length === 0;
   const overviewLoading = !settled;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedPath = projectPath.trim();
-    if (trimmedPath.length === 0 || createProject.isPending) return;
-    createProject.mutate(trimmedPath);
-  };
-  const setupVisible = setupOpen || createProject.isPending || createProject.error instanceof Error;
-
   const body = overviewLoading ? (
     <div className="px-3 py-2">
       <CardGridSkeleton plain />
@@ -118,7 +106,8 @@ export function GlobalProjectsOverview({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 桌面专用 header（移动端无 header 行，零残留空条零分割线；FAB 作兄弟节点 fixed 出流仍可见）。 */}
+      {/* 桌面专用 header（移动端无 header 行，零残留空条零分割线；移动新建入口在外壳
+          MobilePageHeader.actions，dialog 由 useCreateProjectDialog 提供）。 */}
       <div className="hidden shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5 lg:flex">
         <button
           aria-label={t("home.createProjectAria")}
@@ -127,31 +116,18 @@ export function GlobalProjectsOverview({
             tone: "accent",
             className: "hidden lg:inline-flex",
           })}
-          onClick={() => setSetupOpen(true)}
+          onClick={openCreate}
           type="button"
         >
           {t("workbench.createMenu")}
         </button>
       </div>
-      {/* 移动 FAB（lg:hidden，fixed bottom 出流）：直开 ProjectSetupPanel Dialog。 */}
-      <MobileFab ariaLabel={t("home.createProjectAria")} onClick={() => setSetupOpen(true)} />
       <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
         {body}
       </div>
       {closeHolder}
       {renameHolder}
-      <Dialog open={setupVisible} onOpenChange={(open) => !open && setSetupOpen(false)}>
-        <DialogContent className="overflow-y-auto p-0">
-          <ProjectSetupPanel
-            createError={createProject.error instanceof Error ? createProject.error : null}
-            inputId={inputId}
-            isPending={createProject.isPending}
-            onProjectPathChange={setProjectPath}
-            onSubmit={handleSubmit}
-            projectPath={projectPath}
-          />
-        </DialogContent>
-      </Dialog>
+      {dialog}
     </div>
   );
 }
