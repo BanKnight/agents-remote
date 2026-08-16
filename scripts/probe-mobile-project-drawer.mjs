@@ -195,6 +195,20 @@ async function run() {
       labels.length === expected.length && labels.every((l, i) => l.trim() === expected[i]),
       `7 段文字按序渲染（实际 ${labels.map((l) => l.trim()).join("/")}）`,
     );
+    // 段导航 = 横向 tab 行（对齐桌面左栏 middle tab bar，2026-08-16 迭代）：7 个 button
+    // 同一行（y 对齐）+ x 递增（横向排列），非纵向堆叠。
+    const navButtons = nav.getByRole("button");
+    const navBoxes = [];
+    for (let i = 0; i < (await navButtons.count()); i++) {
+      navBoxes.push(await navButtons.nth(i).boundingBox());
+    }
+    const sameRow =
+      navBoxes.length > 0 &&
+      navBoxes.every((b) => b !== null && Math.abs((b?.y ?? 0) - (navBoxes[0]?.y ?? 0)) <= 2);
+    const xIncreasing = navBoxes.every(
+      (b, i) => i === 0 || b === null || navBoxes[i - 1] === null || b.x >= navBoxes[i - 1].x,
+    );
+    record(sameRow && xIncreasing, "7 段横向 tab 行（同一行 y 对齐 + x 递增）");
 
     console.log("\n===== 3. 点会话行 → focus + drawer 关 + tab 带 active chip =====");
     const card = page.locator('[role="dialog"] [role="button"]', { hasText: "Probe Agent A" });

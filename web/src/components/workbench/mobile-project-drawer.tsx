@@ -23,6 +23,7 @@ import {
   useRenameSession,
 } from "./instance-area";
 import { HistoryList, HistoryRangeControl } from "./history-list";
+import { TabButton } from "./right-panel-tabs";
 import {
   buildOverviewTabs,
   WORKBENCH_TAB_PLUGINS,
@@ -162,21 +163,19 @@ export function MobileProjectDrawer({
               {scope.key}
             </span>
           </div>
-          {/* 7 段导航行（nav-item 设计语言，行高 56px ≥44px 触控目标）。 */}
-          <nav aria-label={t("workbench.sidebar")} className="shrink-0 p-2">
+          {/* 7 段横向 tab 行（对齐桌面左栏 middle tab bar：TabButton + overflow-x-auto 可横滚，
+              nav-item token active bg-primary/10 text-primary）。 */}
+          <nav
+            aria-label={t("workbench.sidebar")}
+            className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-on-surface/5 px-1.5"
+          >
             {sections.map((opt) => (
-              <button
-                className={`flex h-14 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 text-sm font-medium transition ${
-                  opt.id === activeSection
-                    ? "bg-primary/10 text-primary"
-                    : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-                }`}
+              <TabButton
+                active={opt.id === activeSection}
                 key={opt.id}
+                label={opt.label}
                 onClick={() => setTab(opt.id)}
-                type="button"
-              >
-                {opt.label}
-              </button>
+              />
             ))}
           </nav>
           {/* 段主体：总览=会话列表+新建入口 / 历史=HistoryList / 文件=项目内文件树（FilesLeftPanel

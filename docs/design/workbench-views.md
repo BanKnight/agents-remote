@@ -256,7 +256,7 @@ type WorkbenchLayoutV3 = {
 
 group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），**不渲染多 group**（窄屏不分屏，分屏结构只在桌面消费）。但自 2026-08-16 重设计起，**项目 scope 移动端把「中栏打开 tab 集合」展示为 header 内容 tab 带**（不再对 tab 透明），对齐桌面中栏：
 
-- **结构 = 桌面三栏的前两栏在窄屏的投影**：**侧边栏 drawer = 左栏投影**（7 段：总览/历史/文件/Git/页面/Wiki/插件 + 各段主体；浏览态进入项目（无 focusId）默认展开总览段，会话列表即入口；**聚焦态进入（带 focusId，如从 global 总览点会话卡）drawer 收起**——用户已明确要看会话，总览段是多余遮挡）；**header 内容 tab 带 = 中栏投影**（共享 `workbenchLayoutV4` 打开集合，`projectTabStrip(layout, projectKey)` 纯投影——只含当前项目 session/file/git tab + 全部 skill，skill 无 projectName 刻意全局包含）。聚焦态 body = `<PanelRouter>`（与桌面中栏主体同一渲染源，session 含底部输入、file/git/skill 只读预览）。
+- **结构 = 桌面三栏的前两栏在窄屏的投影**：**侧边栏 drawer = 左栏投影**（7 段横向 tab 行：总览/历史/文件/Git/页面/Wiki/插件 + 各段主体；浏览态进入项目（无 focusId）默认展开总览段，会话列表即入口；**聚焦态进入（带 focusId，如从 global 总览点会话卡）drawer 收起**——用户已明确要看会话，总览段是多余遮挡）；**header 内容 tab 带 = 中栏投影**（共享 `workbenchLayoutV4` 打开集合，`projectTabStrip(layout, projectKey)` 纯投影——只含当前项目 session/file/git tab + 全部 skill，skill 无 projectName 刻意全局包含）。聚焦态 body = `<PanelRouter>`（与桌面中栏主体同一渲染源，session 含底部输入、file/git/skill 只读预览）。
 - **URL focusId 是激活语义核心**：点 drawer 会话行 → `navigateWorkbench(scope, sessionId)` → focus effect（§11 同款）开/激活 tab → tab 带显示；点 tab → `onSelectTab(leafId, tabId)`（`setActiveTabInLeaf` + navigate focus）。tab ✕ = 最小化（`removeTabFromLeaf`，session 存活）；关闭实例走聚焦态 header ℹ✕ 胶囊的 ✕（`useCloseSession`）。
 - **文件/skill 并入 tab 带**：drawer 文件段点文件 → `onOpenFile`（`ensureTabOpenLeaf` + `navigateToFile`）+ 关 drawer → 文件以 content tab 形态进带（`/projects/$key/file/$`）。skill 同理（`/projects/$key/skill/$` 新路由，项目 scope 停在项目内，与 file/git 一致）。
 - **底部 nav 只在全局一级页**：项目工作台是二级，无底部 nav（`useMeasuredBottomNav(scope.kind !== "project" && !focusId ? … : null)`）。
