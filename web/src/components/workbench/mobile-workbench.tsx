@@ -1,4 +1,12 @@
-import { Fragment, type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import {
+  Fragment,
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
@@ -670,6 +678,27 @@ function MobileProjectWorkbench({
   // 会话，drawer 总览段是多余遮挡（2026-08-16 迭代）。key={scope.key} 切项目重挂才重新评估；
   // 同项目内浏览↔聚焦切换保留 state（Material 保留 drawer 状态，设计 §7.7）。
   const [drawerOpen, setDrawerOpen] = useState(() => focusId == null);
+  // 聚焦后 drawer 收起（2026-08-17 问题 1）：drawer 总览段「新建」/点会话行 navigate 后 focusId
+  // 变化 → 自动关 drawer，新激活 tab 立即可见（覆盖 focusInstance 已手关之外的路径，如 drawer
+  // 顶部新建）。focusId 为空（回浏览态）不动 drawer（Material 保留 state）。
+  useEffect(() => {
+    if (focusId) setDrawerOpen(false);
+  }, [focusId]);
+  // 保活集合（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」（含当前
+  // 激活）的已打开 tab。移动端单面板不照搬桌面全挂载——刷新重进 layout 恢复 N tab 只挂载当前
+  // 激活的（focusedTabIds 初始仅 focusId），随切换逐步纳入保活。切 tab 再切回不重连（WS 不断）。
+  const [focusedTabIds, setFocusedTabIds] = useState<Set<string>>(
+    () => new Set(focusId ? [focusId] : []),
+  );
+  useEffect(() => {
+    if (!focusId) return;
+    setFocusedTabIds((prev) => {
+      if (prev.has(focusId)) return prev;
+      const next = new Set(prev);
+      next.add(focusId);
+      return next;
+    });
+  }, [focusId]);
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   const { instances, isLoading } = useProjectInstances(scope.key);
 
@@ -679,6 +708,21 @@ function MobileProjectWorkbench({
     setFocusTab("output");
     void navigateWorkbench(scope, sessionId);
   };
+
+  // tab ✕ = 最小化（removeTabFromLeaf，session 存活）：从保活集合移除该 tab（stripItems 已不含
+  // 它不再渲染；显式移除防 Set 无限增长），再走 WorkbenchContent 的 onCloseTab 删 tab + focus 回退。
+  const handleCloseTab = useCallback(
+    (leafId: string, tabId: string) => {
+      setFocusedTabIds((prev) => {
+        if (!prev.has(tabId)) return prev;
+        const next = new Set(prev);
+        next.delete(tabId);
+        return next;
+      });
+      onCloseTab(leafId, tabId);
+    },
+    [onCloseTab],
+  );
 
   // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（skill 全局包含）。label/marker 由
   // MobileTabChip 内 usePanelMeta 派生（与桌面 TabChip 同一渲染源）。
@@ -710,7 +754,7 @@ function MobileProjectWorkbench({
     <div className="flex h-full min-h-0 flex-col" key={scope.key}>
       <MobileTabStrip
         activeTabId={focusId}
-        onClose={onCloseTab}
+        onClose={handleCloseTab}
         onSelect={onSelectTab}
         onToggleSidebar={() => setDrawerOpen(true)}
         tabs={stripItems}
@@ -731,46 +775,55 @@ function MobileProjectWorkbench({
         }
       />
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {focusId && focusRef ? (
-          focusRef.kind === "session" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <PanelRouter embeddedHeader key={focusId} panelRef={focusRef} />
+        {/* 保活面板层（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」
+            的已打开 tab（含当前激活）保持挂载，visible 由 focusId 用 hidden class 切换——
+            切 tab 再切回 WS 不断（对齐桌面 WorkspaceTree 扁平化保活；移动端单面板只保活
+            聚焦过的，刷新重进 layout 恢复 N tab 只挂载当前激活的，随切换逐步纳入）。
+            file/git/skill 同规则。浏览态（无 focusId）保活面板保持 hidden 挂载——回聚焦态
+            零重连。 */}
+        {stripItems.map((item) => {
+          if (item.tabId !== focusId && !focusedTabIds.has(item.tabId)) return null;
+          return (
+            <div
+              className={
+                item.tabId === focusId ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "hidden"
+              }
+              data-tab-id={item.tabId}
+              key={item.tabId}
+            >
+              <PanelRouter embeddedHeader panelRef={item.ref} />
             </div>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <PanelRouter embeddedHeader key={focusId} panelRef={focusRef} />
+          );
+        })}
+        {/* 主体层：无 focus = 浏览态实例 grid；focus 未入 layout（focus effect 同步前瞬态）
+             = 骨架承接（effect 立即补齐）。 */}
+        {focusId ? (
+          focusRef ? null : (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="px-3 py-2">
+                <CardGridSkeleton plain />
+              </div>
             </div>
           )
-        ) : focusId ? (
-          // 聚焦瞬态：focus effect 同步前 tab 尚未入 layout——骨架承接（effect 立即补齐）。
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="px-3 py-2">
-              <CardGridSkeleton plain />
-            </div>
-          </div>
         ) : (
-          <Fragment>
-            {/* 浏览态（无 focus）：实例 grid。新建入口已移到 header 右上角（MobileTabStrip
-                trailing 的 MobileCreateButton），FAB 移除。 */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {isLoading && gridItems.length === 0 ? (
-                <div className="px-3 py-2">
-                  <CardGridSkeleton plain />
-                </div>
-              ) : gridItems.length > 0 ? (
-                <div className="px-3 py-2">
-                  <InstanceGrid items={gridItems} plain />
-                </div>
-              ) : (
-                <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                  {t("workbench.emptyInstanceHint")}
-                </p>
-              )}
-              {closeHolder}
-              {renameHolder}
-              {createPromptHolder}
-            </div>
-          </Fragment>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {isLoading && gridItems.length === 0 ? (
+              <div className="px-3 py-2">
+                <CardGridSkeleton plain />
+              </div>
+            ) : gridItems.length > 0 ? (
+              <div className="px-3 py-2">
+                <InstanceGrid items={gridItems} plain />
+              </div>
+            ) : (
+              <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                {t("workbench.emptyInstanceHint")}
+              </p>
+            )}
+            {closeHolder}
+            {renameHolder}
+            {createPromptHolder}
+          </div>
         )}
       </div>
       <MobileProjectDrawer

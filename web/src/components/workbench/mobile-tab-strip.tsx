@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
 import { usePanelMeta } from "./instance-area";
@@ -40,6 +40,41 @@ export function MobileTabStrip({
   trailing,
 }: MobileTabStripProps) {
   const { t } = useT();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // 激活 tab 滚入视野（2026-08-17）：tab 多时横滚区 scrollLeft 停留原位，激活 chip 可能
+  // 在视野外（尤其从 drawer 新建/切换激活到尾部 tab）。activeTabId 变化时手动算 scrollLeft
+  // 让 chip 完全可见（只动横向容器，不用 scrollIntoView 避免连带页面滚动）。对齐桌面
+  // GroupHeader tab 栏的交互预期。
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !activeTabId) return;
+    // 对齐激活 chip 到横滚区视野内。返回是否仍溢出（需继续校准）。
+    const align = () => {
+      const chip = el.querySelector<HTMLElement>('[data-active="true"]');
+      if (!chip) return false;
+      // chip 相对容器内容左缘的 X（= 视觉位置 + 当前 scrollLeft）。
+      const left =
+        chip.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft;
+      const right = left + chip.offsetWidth;
+      if (left < el.scrollLeft) {
+        el.scrollTo({ left, behavior: "smooth" });
+        return true;
+      }
+      if (right > el.scrollLeft + el.clientWidth) {
+        el.scrollTo({ left: right - el.clientWidth, behavior: "smooth" });
+        return true;
+      }
+      return false;
+    };
+    // 首次立即对齐；之后周期校准直到布局稳定——chip 宽度依赖 usePanelMeta 异步查询，
+    // meta 到达后 chip 变宽、active 可能重新溢出（首次进入尾部 tab 时常见）。仅一次
+    // deps 触发的对齐会停在旧布局算出的目标，故用 interval 覆盖「布局变化后仍需滚」。
+    align();
+    const timer = window.setInterval(() => {
+      if (!align()) window.clearInterval(timer);
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [activeTabId, tabs.length]);
   return (
     <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
       <button
@@ -50,7 +85,10 @@ export function MobileTabStrip({
       >
         <ShellIcon className="h-5 w-5" name="menu" />
       </button>
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        ref={scrollRef}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {tabs.map((opt) => (
           <MobileTabChip
             active={opt.tabId === activeTabId}
@@ -94,6 +132,7 @@ function MobileTabChip({
           ? "bg-primary/10 text-primary"
           : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
       }`}
+      data-active={active ? "true" : undefined}
       key={item.tabId}
       onClick={() => onSelect(item.leafId, item.tabId)}
       onKeyDown={(e) => {
