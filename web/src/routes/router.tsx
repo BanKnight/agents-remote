@@ -105,6 +105,15 @@ const projectGitFocusRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
+// 项目内 skill 详情 tab focus（2026-08-16 移动工作台重设计，对标 /projects/$key/file/$）：_splat 捕获
+// skill name，scope=project（skill 停在项目内，与 file/git 同语义）。layout 解析 _splat 为
+// focusId=`skill_${name}`（useWorkbenchRouteContext，与 tabIdOf 一致，focus effect 全局处理）。
+const projectSkillFocusRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/projects/$key/skill/$",
+  validateSearch: validateWorkbenchSearch,
+});
+
 // global scope 路由（设计 activity-bar-redesign §6 决策 22）：`/global` 重命名为 `/projects`
 //（语义=项目总览，[项目] 导航）。scope kind `global` 类型保留，只改 URL path 段。与
 // `/projects/$key`（project scope）不冲突——TanStack Router 字面量段 `session` 优先于参数 `$key`。
@@ -267,6 +276,7 @@ const routeTree = rootRoute.addChildren([
     projectFocusRoute,
     projectFileFocusRoute,
     projectGitFocusRoute,
+    projectSkillFocusRoute,
     globalScopeRoute,
     globalFocusRoute,
     globalFileFocusRoute,

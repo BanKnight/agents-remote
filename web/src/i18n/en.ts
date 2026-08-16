@@ -526,6 +526,8 @@ export const en = {
   "workbench.tabPages": "Pages",
   "workbench.tabWiki": "Wiki",
   "workbench.tabPlugins": "Plugins",
+  "workbench.toggleSidebar": "Toggle sidebar",
+  "workbench.sidebar": "Project sidebar",
   "wiki.panelAria": "Wiki pages",
   "wiki.emptyTitle": "No wiki pages yet",
   "wiki.emptyDesc": "Agent-authored pages appear here once written via the wiki MCP tools.",

@@ -431,11 +431,25 @@ function WorkbenchContent({
     },
     [update, navigateToGitCompareFile],
   );
-  // skill tab focus URL（对标 /files/file/$，skill 为第 4 种 WorkbenchPanelRef kind）：/plugins/skill/$
-  // splat 捕获 skill name。leftMode 继承 ?leftMode 透传（从 /plugins 进来=plugins 保插件管理左栏，
-  // 中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。
+  // skill tab focus URL（对标 navigateToFile 的 project/global 分流，2026-08-16 scope-aware 化）：
+  // - 项目 scope → /projects/$key/skill/$（skill 停在项目内，与 file/git 同语义；focus effect 全局
+  //   处理 skill tab，无 scope gate）。
+  // - 全局/其他 → /plugins/skill/$（skill 的 global 规范 URL，leftMode 继承 ?leftMode 透传——从
+  //   /plugins 进来=plugins 保插件管理左栏，中栏 tab 切换不改左栏，VSCode 式）。
   const navigateToSkill = useCallback(
     (name: string) => {
+      if (scope.kind === "project") {
+        void navigate({
+          to: "/projects/$key/skill/$",
+          params: { key: scope.key, _splat: name },
+          search: {
+            rightTab,
+            tab: tabFromUrl,
+            ...(leftMode !== "auto" ? { leftMode } : {}),
+          },
+        });
+        return;
+      }
       void navigate({
         to: "/plugins/skill/$",
         params: { _splat: name },
@@ -446,7 +460,7 @@ function WorkbenchContent({
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, leftMode],
+    [navigate, scope, rightTab, tabFromUrl, leftMode],
   );
   // Manage tab 点已装 skill 行 → 中栏开/激活 skill tab + focus（对标 onOpenFile）。skill ref
   //（kind:"skill", name）全局去重（tabId=skill_${name}），无 project scope gate（同 file）。
@@ -667,7 +681,25 @@ function WorkbenchContent({
   };
 
   if (!isDesktop) {
-    return <MobileWorkbench focusId={focusId} leftMode={leftMode} scope={scope} />;
+    return (
+      <MobileWorkbench
+        closeHolder={closeHolder}
+        closeInstance={closeInstance}
+        create={create}
+        createPromptHolder={create.promptHolder}
+        focusId={focusId}
+        layout={layout}
+        leftMode={leftMode}
+        onCloseTab={onCloseTab}
+        onOpenFile={onOpenFile}
+        onOpenGitCompareFile={onOpenGitCompareFile}
+        onOpenGitFile={onOpenGitFile}
+        onSelectTab={onSelectTab}
+        renameHolder={renameHolder}
+        renameInstance={renameInstance}
+        scope={scope}
+      />
+    );
   }
   // project 可唤出右栏（inspection 只依赖 projectKey，非聚焦态唤出看 files/git）；
   // global scope 不唤出右栏（全局 inspection 走中栏 files tab，见 workbench-views §4.1）。

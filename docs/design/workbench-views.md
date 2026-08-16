@@ -252,9 +252,17 @@ type WorkbenchLayoutV3 = {
 - scope 切换（global ↔ project）各自独立布局。
 - **跨窗口同步已禁用**：所有布局 atom（栏宽 / 折叠 / tab / view 偏好 + WorkbenchLayoutV3）持久化到 localStorage（刷新保持），但**不跨窗口/tab 实时同步**。`atomWithStorage` 默认经 `storage.subscribe` 监听 `window` storage 事件实现多窗口同步；个人布局无需跨窗口一致（多窗口独立布局更符合预期，且避免多窗口测试时互相干扰），故这些 atom 走无 `subscribe` 的 storage（`atomWithLocalOnlyStorage`，见 `workbench-model.ts`）——仍读写 localStorage，但不监听跨窗口广播。WorkbenchLayoutV3 的自定义迁移 storage（本节迁移链）本就无 `subscribe`，行为一致。
 
-### 7.7 移动端不变
+### 7.7 移动端：drawer + 内容 tab 带（2026-08-16 重设计）
 
-移动端保持现有「列表态 → 全屏聚焦态」线性模型（`mobile-workbench.tsx`），不渲染多 group / tab 栏（窄屏不分屏）。group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），但只关心单实例聚焦（`activeTabRef` 派生活动 tab）。
+group/tab 两级模型对移动端透明——移动端读写同一 layout atom（§7.6），**不渲染多 group**（窄屏不分屏，分屏结构只在桌面消费）。但自 2026-08-16 重设计起，**项目 scope 移动端把「中栏打开 tab 集合」展示为 header 内容 tab 带**（不再对 tab 透明），对齐桌面中栏：
+
+- **结构 = 桌面三栏的前两栏在窄屏的投影**：**侧边栏 drawer = 左栏投影**（7 段：总览/历史/文件/Git/页面/Wiki/插件 + 各段主体；进入项目默认展开总览段，会话列表即入口）；**header 内容 tab 带 = 中栏投影**（共享 `workbenchLayoutV4` 打开集合，`projectTabStrip(layout, projectKey)` 纯投影——只含当前项目 session/file/git tab + 全部 skill，skill 无 projectName 刻意全局包含）。聚焦态 body = `<PanelRouter>`（与桌面中栏主体同一渲染源，session 含底部输入、file/git/skill 只读预览）。
+- **URL focusId 是激活语义核心**：点 drawer 会话行 → `navigateWorkbench(scope, sessionId)` → focus effect（§11 同款）开/激活 tab → tab 带显示；点 tab → `onSelectTab(leafId, tabId)`（`setActiveTabInLeaf` + navigate focus）。tab ✕ = 最小化（`removeTabFromLeaf`，session 存活）；关闭实例走聚焦态 header ℹ✕ 胶囊的 ✕（`useCloseSession`）。
+- **文件/skill 并入 tab 带**：drawer 文件段点文件 → `onOpenFile`（`ensureTabOpenLeaf` + `navigateToFile`）+ 关 drawer → 文件以 content tab 形态进带（`/projects/$key/file/$`）。skill 同理（`/projects/$key/skill/$` 新路由，项目 scope 停在项目内，与 file/git 一致）。
+- **底部 nav 只在全局一级页**：项目工作台是二级，无底部 nav（`useMeasuredBottomNav(scope.kind !== "project" && !focusId ? … : null)`）。
+- **global scope 移动端不变**：保持「列表态 → 全屏聚焦态」线性模型（`MobileGlobalOverview` / `MobileFilesOverview` / `MobilePluginsOverview` / `MobileFocusBody` / `MobileFileFocus` / `MobileSkillFocus`）。
+
+**移动端 focus 态 header tab（Output/Files/Git）记忆语义**（`workbenchMobileFocusTabAtom`，`atomWithLocalOnlyStorage` 持久）：global scope 聚焦态仍用（从 `MobileGlobalOverview` 点实例卡片新进 focus 时 `focusInstance` 重置 tab 到 Output，避免 Files/Git 记忆落到项目文件）。项目 scope 聚焦态已无 inspection tab（被内容 tab 带取代），该 atom 不再消费。
 
 **移动端 focus 态 header tab（Output/Files/Git）记忆语义**（`workbenchMobileFocusTabAtom`，`atomWithLocalOnlyStorage` 持久）：从总览（`MobileGlobalOverview` / `MobileProjectOverview`）点实例卡片**新进** focus 时，`focusInstance` 重置 tab 到 Output——避免上次切到的 Files/Git 记忆被继承、直接落到项目文件，造成「点实例卡片却进了项目文件」的误会（用户预期：点实例卡片 → 到达该实例的输出）。（移动端「‹› 切实例」已移除，见 workbench-redesign.md 对应节。）
 
@@ -343,11 +351,13 @@ absolute + 百分比定位（leaf 与 gutter 同一套坐标），不用 CSS gri
 | 中栏左右结构 | ✓（左总览 + 右工作区） | ✗（窄屏不分左右） |
 | 右工作区分屏 | ✓（拖放 5 zone） | ✗（窄屏做不了分屏） |
 | 点卡片行为 | 激活（右工作区切活动 group） | 全屏切聚焦态 |
-| 总览视图样式 | 按项目分段单列网格（左总览） | 按项目分段单列网格（全宽列表） |
-| 二级导航 5 tab | 中栏顶部常驻 | header 下一行横向滚动 |
-| 右栏 inspection | 容器留空（待扩展） | 聚焦态 tab 切（output/文件/Git） |
+| 总览视图样式 | 按项目分段单列网格（左总览） | **项目 scope = 侧边栏 drawer 总览段会话列表**（默认展开）；global scope = 全宽单列网格 |
+| 二级导航 5 tab | 中栏顶部常驻 | **项目 scope = 侧边栏 drawer 7 段**（总览/历史/文件/Git/页面/Wiki/插件，文字行）+ **header 内容 tab 带**（打开 tab 集合）；global scope = header 下一行横向滚动 |
+| 右栏 inspection | 容器留空（待扩展） | **项目 scope 聚焦态无 inspection tab**（文件/Git 以 content tab 形态并入 tab 带）；global scope 聚焦态保留 output/文件/Git |
 
-移动端聚焦态（点卡片全屏切）：**单行合并 header**（◄ 返回 + tab 横滚区 output/文件/Git + ℹ✕ 胶囊操作区），面板自带 header 在聚焦态隐藏（`embeddedHeader` prop），消除旧「返回 header / tab 行 / 面板自带 header」三块冗余。实例名与 meta 进 ℹ 底部 sheet（agent 显 model/permission/createdAt/status，terminal 仅 type/status —— UI=f(state) 不伪造）。✕ 触发 `useCloseSession`（confirm → close API → 回列表）；Retry 在内容区错误态 Notice（`connectionStatus==="error"` 时显示，与桌面 header Retry 共用 `onReconnect`）。+Terminal 在聚焦态去除（列表态 `CreateSessionBar` 已覆盖创建需求）。body 仍是 PanelRouter（output）或 inspection plugin render。
+**项目 scope 聚焦态**（2026-08-16 重设计）：**header = 内容 tab 带**（☰ drawer 开关 + 打开 tab 横滚区 + ℹ✕ 胶囊操作区），body = `<PanelRouter>`（session 含底部输入区；file/git/skill 只读预览）。面板自带 header 在聚焦态隐藏（`embeddedHeader` prop）。实例名与 meta 进 ℹ 底部 sheet（agent 显 model/permission/createdAt/status，terminal 仅 type/status —— UI=f(state) 不伪造）。✕ 触发 `useCloseSession`（confirm → close API → navigate 回项目列表态）；tab 带内 tab ✕ = 最小化（session 存活）。Retry 在内容区错误态 Notice（`connectionStatus==="error"` 时显示，与桌面 header Retry 共用 `onReconnect`）。返回入口 A（离开项目回列表）在 drawer 顶部。
+
+**global scope 聚焦态**（不变）：**单行合并 header**（◄ 返回 + tab 横滚区 output/文件/Git + ℹ✕ 胶囊操作区），body 仍是 PanelRouter（output）或 inspection plugin render。
 
 **桌面右工作区对齐移动端**（Phase 6 批 6a）：右工作区 `WorkspaceTree` 的 `PanelRouter` 也传 `embeddedHeader`，面板自带 `SessionDetailHeader`/`ChatHeader` 整个不渲染。操作去向与移动端聚焦态一致：Files/Git 走中栏顶部二级 tab（已覆盖，无重复入口）；+Terminal 走左总览 `CreateSessionBar`（已覆盖）；Retry 走内容区错误态 Notice（`embeddedHeader && connectionStatus==="error"` 分支，现有实现）；Close 由 tab ✕ + 左总览卡片 close 承担（embedded 已 `showClose=false`）。实例名由 group tab 栏 chip 显示（marker + displayName），projectName 由中栏顶部 tab 行所在的 project 作用域显式（聚焦态右工作区不重复显示）。`GroupHeader`（tab 栏 + ▢ maximize）仍在，与移动端 `MobileFocusHeader` 同为 group/scope 级 header，不属于面板自带 header。
 

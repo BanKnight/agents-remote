@@ -10,46 +10,41 @@ import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { sessionStatusLabel } from "../../routes/console-model";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
-import { MobilePluginsOverview, PluginsPanel, SkillTabPreview } from "../../routes/PluginsRoute";
+import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
 import {
   findTabRefLeaf,
+  type WorkbenchLayoutV3,
   type WorkbenchMobileFocusTab,
-  type WorkbenchMobileOverviewTab,
   type WorkbenchScope,
   inferSessionTypeFromId,
   parseFileTabId,
   parseSkillTabId,
+  projectTabStrip,
   splitFilePath,
   useWorkbenchLayout,
   useWorkbenchNavigate,
   type SessionPanelRef,
   workbenchMobileFocusTabAtom,
   workbenchMobileGlobalFilesPathAtom,
-  workbenchMobileOverviewTabAtom,
   workbenchMobileProjectFilesPathAtom,
 } from "../../routes/workbench-model";
 
 import {
   CardGridSkeleton,
+  type CreateSessionApi,
   type GridItemCallbacks,
   InstanceGrid,
   instanceToGridItem,
   PanelRouter,
   useAgentDetail,
   useCloseSession,
-  useCreateSession,
   useProjectInstances,
-  useRenameSession,
   useScopeInstanceOrder,
   useTerminalDetail,
 } from "./instance-area";
-import type { AgentHistoryRange } from "@agents-remote/shared";
-import { HistoryList, HistoryRangeControl } from "./history-list";
-import {
-  buildOverviewTabs,
-  WORKBENCH_TAB_PLUGINS,
-  type WorkbenchTabPluginContext,
-} from "./workbench-tab-plugin";
+import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
+import { MobileProjectDrawer } from "./mobile-project-drawer";
+import { MobileTabStrip } from "./mobile-tab-strip";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
@@ -61,32 +56,101 @@ type MobileWorkbenchProps = {
    * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端 `scope=global` 下 leftMode 有意义
    *——leftMode="files"（/files 全局文件总览）→ MobileFilesOverview；leftMode="plugins"（/plugins 插件市场）
    * → MobilePluginsOverview；leftMode="auto" → MobileGlobalOverview。project scope 无视 leftMode 走
-   * MobileProjectOverview。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
+   * MobileProjectWorkbench（drawer + tab 带）。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
    */
   leftMode?: "auto" | "files" | "plugins";
+  /** 布局（workbenchLayoutV4，桌面/移动共享打开集合）。project scope tab 带投影数据源。 */
+  layout: WorkbenchLayoutV3;
+  /** tab 点选 = setActiveTabInLeaf + navigate focus（WorkbenchContent 注入）。 */
+  onSelectTab: (leafId: string, tabId: string) => void;
+  /** tab ✕ = 最小化（removeTabFromLeaf + focus 回退，WorkbenchContent 注入）。 */
+  onCloseTab: (leafId: string, tabId: string) => void;
+  /** 左栏/抽屉文件树点文件 → 开 file tab + focus（WorkbenchContent 注入）。 */
+  onOpenFile: (projectName: string, path: string) => void;
+  /** git 变更点文件 → 开 git diff tab + focus（WorkbenchContent 注入）。 */
+  onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
+  /** 分支 compare 点文件 → 开 git compare tab + focus（WorkbenchContent 注入）。 */
+  onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
+  /** 关闭实例（confirm → close API → 删 tab，WorkbenchContent 注入）。 */
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
+  /** 改名实例（prompt → rename API，WorkbenchContent 注入）。 */
+  renameInstance: (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => void;
+  /** 创建会话（useCreateSession，WorkbenchContent 注入；promptHolder 同源）。 */
+  create: CreateSessionApi;
+  /** create promptHolder（useCreateSession 同源，统一渲染）。 */
+  createPromptHolder: ReactNode;
+  /** close/rename confirm-prompt holders（WorkbenchContent 注入统一渲染）。 */
+  closeHolder: ReactNode;
+  renameHolder: ReactNode;
 };
 
 /**
- * 移动端工作台（设计文档 §7）。Stage 5 按桌面分 stage 升级：A 聚焦态单实例化
- *（修窄屏多面板挤压）→ B header tab inspection → D 列表态二级总览
- * + 一级底部 tab → E 路由收口。
- *
- * 当前：无 focusId → 实例列表（MobileGlobalOverview/MobileProjectOverview + 创建入口，
- * Stage D 升级为二级总览）；有 focusId → 单实例聚焦（Stage A：PanelRouter 不 split；
- * Stage B：header tab 切 output/文件/Git，inspection 复用 WORKBENCH_TAB_PLUGINS）
- * + 顶部返回。
+ * 移动端工作台（设计文档 §7 / §7.7，2026-08-16 重设计）。project scope = 侧边栏 drawer
+ *（左栏投影）+ header 内容 tab 带（中栏投影，`MobileProjectWorkbench`）；global scope 保持
+ * 「列表态 → 全屏聚焦态」线性模型（MobileGlobalOverview / MobileFilesOverview /
+ * MobilePluginsOverview / MobileFocusBody / MobileFileFocus / MobileSkillFocus）。
  */
-export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchProps) {
+export function MobileWorkbench({
+  closeHolder,
+  closeInstance,
+  create,
+  createPromptHolder,
+  focusId,
+  layout,
+  leftMode,
+  onCloseTab,
+  onOpenFile,
+  onOpenGitCompareFile,
+  onOpenGitFile,
+  onSelectTab,
+  renameHolder,
+  renameInstance,
+  scope,
+}: MobileWorkbenchProps) {
   // workbench 不走 ShellLayout，这里自行测量一级底部 nav 高度并注入
   // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
   // Git diff 等）底部正确避让胶囊（参考 ShellLayout 同款 useMeasuredBottomNav）。
-  // 聚焦态（focusId）无一级底部 nav（底部让位给输入区），传 null → height=0 → var=0px。
+  // 底部 nav 只在全局一级页（设计 §7.7 决策 ⑥）：project scope（二级页）与聚焦态
+  //（focusId，底部让位给输入区）都传 null → height=0 → var=0px。
+  const showPrimaryNav = scope.kind !== "project" && !focusId;
   const { height: bottomNavHeight, measured: measuredBottomNav } = useMeasuredBottomNav(
-    focusId ? null : <MobilePrimaryNav />,
+    showPrimaryNav ? <MobilePrimaryNav /> : null,
   );
   const mainStyle = {
     "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
   } as CSSProperties;
+
+  // project scope（含聚焦态）统一走 drawer + tab 带工作台。
+  if (scope.kind === "project") {
+    return (
+      <main
+        className={`group relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        style={mainStyle}
+      >
+        <MobileProjectWorkbench
+          closeHolder={closeHolder}
+          closeInstance={closeInstance}
+          create={create}
+          createPromptHolder={createPromptHolder}
+          focusId={focusId}
+          layout={layout}
+          onCloseTab={onCloseTab}
+          onOpenFile={onOpenFile}
+          onOpenGitCompareFile={onOpenGitCompareFile}
+          onOpenGitFile={onOpenGitFile}
+          onSelectTab={onSelectTab}
+          renameHolder={renameHolder}
+          renameInstance={renameInstance}
+          scope={scope}
+        />
+      </main>
+    );
+  }
 
   if (!focusId) {
     return (
@@ -94,14 +158,12 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
         className={`group relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
-        {scope.kind === "global" && leftMode === "plugins" ? (
+        {leftMode === "plugins" ? (
           <MobilePluginsOverview />
-        ) : scope.kind === "global" && leftMode === "files" ? (
+        ) : leftMode === "files" ? (
           <MobileFilesOverview />
-        ) : scope.kind === "global" ? (
-          <MobileGlobalOverview />
         ) : (
-          <MobileProjectOverview scope={scope} />
+          <MobileGlobalOverview />
         )}
         {measuredBottomNav}
       </main>
@@ -109,9 +171,8 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
   }
 
   // file focus（focusId 形如 file_demo/src/index.ts，path=全路径含项目名前缀，设计 §6 决策 3 /
-  // workbench-stable-refactor Phase 3）：移动端不实现 V3 group，用 MobileFileFocus 浮窗式预览打开
-  // 该文件（复用 FileTabPreview 可编辑预览 + 顶部返回/✕ header）。全局/项目文件都走此分支（全路径
-  // 自带项目名，MobileFileFocus 内部解析）。
+  // workbench-stable-refactor Phase 3）：global scope 文件 tab 用 MobileFileFocus 浮窗式预览
+  //（复用 FileTabPreview 可编辑预览 + 顶部返回/✕ header）；project scope 文件走 tab 带已在上分支。
   const filePath = parseFileTabId(focusId);
   if (filePath !== null) {
     return (
@@ -124,9 +185,8 @@ export function MobileWorkbench({ focusId, leftMode, scope }: MobileWorkbenchPro
     );
   }
 
-  // skill focus（focusId 形如 skill_tdd，name=skill 名）：移动端 skill 详情对标 file focus，
-  // 用 MobileSkillFocus 浮窗式只读预览（SkillTabPreview SKILL.md markdown + 顶部返回/✕ header，
-  // 复用 MobileTabHeader 同款结构）。详情只读（区别于 FileTabPreview 可编辑）。
+  // skill focus（focusId 形如 skill_tdd，name=skill 名）：global scope（/plugins/skill/$）用
+  // MobileSkillFocus 浮窗式只读预览；project scope skill 走 tab 带（上方 project 分支）。
   const skillName = parseSkillTabId(focusId);
   if (skillName !== null) {
     return (
@@ -549,132 +609,139 @@ function MobileTabHeader<TabId extends string>({
   );
 }
 
-type MobileProjectOverviewProps = {
+type MobileProjectWorkbenchProps = {
   scope: { kind: "project"; key: string };
+  focusId?: string;
+  layout: WorkbenchLayoutV3;
+  onSelectTab: (leafId: string, tabId: string) => void;
+  onCloseTab: (leafId: string, tabId: string) => void;
+  onOpenFile: (projectName: string, path: string) => void;
+  onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
+  onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
+  renameInstance: (
+    sessionId: string,
+    type: "agent" | "terminal",
+    currentName: string,
+    projectName: string,
+  ) => void;
+  create: CreateSessionApi;
+  /** create promptHolder（useCreateSession 同源 holder，统一渲染）。 */
+  createPromptHolder: ReactNode;
+  closeHolder: ReactNode;
+  renameHolder: ReactNode;
 };
 
 /**
- * 移动项目列表态（设计文档 §7）：单项目聚焦视图。单行 header（◄ 返回 + tab 横滚区 flex-1 +
- * 项目名右侧 shrink-0 truncate，对齐聚焦态 MobileFocusHeader 同款结构，替代旧 MobilePageHeader
- * + 二级 tab 行两块）+ 内容区 tab 切换。总览 = 移动 FAB 新建会话 + 活跃实例 grid（本组件直渲
- * InstanceGrid，单一数据管道 useProjectInstances）；历史 = HistoryList（project-scoped 历史
- * session）；文件/Git = WORKBENCH_TAB_PLUGINS render（移动响应式，单一数据管道）。tab 记忆在
- * workbenchMobileOverviewTabAtom（值域 = WorkbenchMiddleTab），不进 URL（列表态 URL 语义核心
- * 是 scope）。key={scope.key} 切项目 remount，重置 inspection 内部 state。底部消费
- * --shell-mobile-bottom-nav-space 避让一级底部胶囊（MobileWorkbench 已测量注入；桌面 lg: 无额外 pb）。
+ * 移动项目工作台（设计 workbench-views §7.7，2026-08-16 重设计）＝桌面三栏的前两栏在窄屏的
+ * 投影：侧边栏 drawer（左栏投影，`MobileProjectDrawer`）+ header 内容 tab 带（中栏投影，
+ * `MobileTabStrip` 消费 `projectTabStrip(layout, key)`）。
+ *
+ * - **无 focusId（浏览态）**：tab 带 + InstanceGrid 浏览 + MobileFab 新建。
+ * - **有 focusId（聚焦态）**：tab 带 + `<PanelRouter embeddedHeader>`——与桌面中栏主体同一
+ *   渲染源（session 含底部输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab
+ *   尚未入 layout）渲染骨架不闪浏览态。
+ * - **进入项目默认展开 drawer（总览段）**；drawer 开合 state 在本组件（`key={scope.key}` 切
+ *   项目重挂 → 默认展开），浏览↔聚焦切换不重置。
+ * - tab 带只显示当前项目 tab（skill 全局包含）；active = `focusId === tabId`。
  */
-function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
+function MobileProjectWorkbench({
+  closeHolder,
+  closeInstance,
+  create,
+  createPromptHolder,
+  focusId,
+  layout,
+  onCloseTab,
+  onOpenFile,
+  onOpenGitCompareFile,
+  onOpenGitFile,
+  onSelectTab,
+  renameHolder,
+  renameInstance,
+  scope,
+}: MobileProjectWorkbenchProps) {
   const { t } = useT();
-  const navigate = useNavigate();
-  const [tab, setTab] = useAtom(workbenchMobileOverviewTabAtom);
-  // history tab 时间范围（受控，避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
-  const [range, setRange] = useState<AgentHistoryRange>("week");
-  // files tab 当前目录（localStorage 记忆，按项目 key 分组）：后台被杀/重开/刷新后停留在上次
-  // 目录，而非回根目录（A→B→C→D 重开停在 D）。切项目用独立 key 隔离，天然不串项目、无需
-  // derived-state 重置。路径不存在回退由 FilesPanel 侧查 files.error 处理（见 file-browser）。
-  const [projectFilesPaths, setProjectFilesPaths] = useAtom(workbenchMobileProjectFilesPathAtom);
-  const filesPath = projectFilesPaths[scope.key] ?? "";
-  const setFilesPath = (path: string) =>
-    setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
-  const ctx: WorkbenchTabPluginContext = {
-    projectKey: scope.key,
-    focusId: undefined,
-    sessionType: undefined,
-    currentPath: filesPath,
-    onPathChange: setFilesPath,
-  };
-  // tab 顺序：总览 / 历史（project-only，列表态恒 project scope 无条件）/ inspection 插件
-  //（按 ctx 过滤；files/git 需 projectKey）。复用 plugin.when 单一来源。
-  const tabs = useMemo(
-    () => buildOverviewTabs(t, ctx, true),
-    // ctx 由 scope 决定，scope/t 变才重算。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, t],
-  );
-  // 记忆 tab 若在当前 ctx 不可见 → 回退 overview，避免内容区空白。
-  const activeTab: WorkbenchMobileOverviewTab = tabs.some((opt) => opt.id === tab)
-    ? tab
-    : "overview";
-  const activePlugin =
-    activeTab !== "overview" && activeTab !== "history"
-      ? (WORKBENCH_TAB_PLUGINS.find((p) => p.id === activeTab) ?? null)
-      : null;
-  // 总览实例数据 + 回调（设计 §9/§11）：project scope 单 grid 视图（无视图切换）。创建入口
-  // useCreateSession（移动端进 MobileFab 菜单，桌面进 InstanceLeftOverview CreateSessionBar），
-  // 不再走 ProjectInstances 组件（避免重复 useCloseSession/useCreateSession 双 holder）。
-  const { close, holder: closeHolder } = useCloseSession();
-  const { rename, holder: renameHolder } = useRenameSession();
-  const { instances, isLoading } = useProjectInstances(scope.key);
-  const create = useCreateSession(scope.key);
   const navigateWorkbench = useWorkbenchNavigate();
+  const [drawerOpen, setDrawerOpen] = useState(true);
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
+  const { instances, isLoading } = useProjectInstances(scope.key);
+
   const focusInstance = (sessionId: string) => {
-    // 从总观点实例卡片进 focus → 重置 Output（同 MobileGlobalOverview，避免继承 Files/Git 记忆
-    // 落到项目文件）。
+    // 从 drawer/浏览态点实例卡片进 focus → 重置 Output（同 MobileGlobalOverview，避免继承
+    // Files/Git 记忆落到项目文件）。
     setFocusTab("output");
     void navigateWorkbench(scope, sessionId);
   };
-  const closeInstance = (sessionId: string, type: "agent" | "terminal") => {
-    void close({ kind: "session", projectName: scope.key, sessionId }, type);
-  };
-  const renameInstance = (sessionId: string, type: "agent" | "terminal", currentName: string) => {
-    void rename({ kind: "session", projectName: scope.key, sessionId }, type, currentName);
-  };
+
+  // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（skill 全局包含）。label/marker 由
+  // MobileTabChip 内 usePanelMeta 派生（与桌面 TabChip 同一渲染源）。
+  const stripItems = useMemo(() => projectTabStrip(layout, scope.key), [layout, scope.key]);
+
+  // 聚焦态主体：findTabRefLeaf 命中 → PanelRouter（与桌面中栏同源）；未命中（focus effect
+  // 同步前瞬态 / 已最小化但 URL 未清）→ 骨架。
+  const focusRef = focusId ? findTabRefLeaf(layout, focusId) : null;
+  const isSessionFocus = focusId ? inferSessionTypeFromId(focusId) !== null : false;
+
   const gridCallbacks: GridItemCallbacks = {
     onClose: closeInstance,
-    onRename: renameInstance,
-    onSelect: focusInstance,
+    onRename: (sessionId, type, currentName) => {
+      renameInstance(sessionId, type, currentName, scope.key);
+    },
+    onSelect: (sessionId) => {
+      setDrawerOpen(false);
+      focusInstance(sessionId);
+    },
     t,
   };
   const gridItems = useMemo(
     () => instances.map((entry) => instanceToGridItem(entry, gridCallbacks, scope.key)),
-    // gridCallbacks 闭包依赖 scope/t；instances 引用由 hook 内 dataKey fingerprint 稳定。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [instances, t],
+    [instances, scope.key, t],
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <MobileTabHeader
-        activeTabId={activeTab}
-        back={{
-          ariaLabelKey: "project.backToProjects",
-          onClick: () => void navigate({ to: "/" }),
-        }}
-        onTabSelect={setTab}
-        tabs={tabs}
+    <div className="flex h-full min-h-0 flex-col" key={scope.key}>
+      <MobileTabStrip
+        activeTabId={focusId}
+        onClose={onCloseTab}
+        onSelect={onSelectTab}
+        onToggleSidebar={() => setDrawerOpen(true)}
+        tabs={stripItems}
         trailing={
-          <span className="ml-auto shrink-0 max-w-[40%] truncate text-sm font-semibold text-on-surface px-2">
-            {scope.key}
-          </span>
+          focusId && isSessionFocus && focusRef?.kind === "session" ? (
+            <MobileFocusActions
+              focusId={focusId}
+              onClose={() =>
+                closeInstance(focusRef.sessionId, inferSessionTypeFromId(focusId) ?? "terminal")
+              }
+              projectName={scope.key}
+            />
+          ) : undefined
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden" key={scope.key}>
-        {activePlugin ? (
-          <Fragment key={scope.key}>{activePlugin.render(ctx)}</Fragment>
-        ) : activeTab === "plugins" ? (
-          // plugins middle tab（项目级 skill+MCP，仅 project scope）。非 inspection tab——不进
-          // WORKBENCH_TAB_PLUGINS（activePlugin 找不到），手写分支渲染 PluginsPanel（与桌面
-          // project-left-panel 同构：middle tab + 消费者各自手写渲染）。
-          <PluginsPanel projectName={scope.key} />
-        ) : activeTab === "history" ? (
-          <div className="h-full overflow-y-auto p-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-3">
-            {/* range 控件置顶（移动整页滚动内可接受），周/半月/全部默认周。 */}
-            <div className="mb-2">
-              <HistoryRangeControl onChange={setRange} value={range} />
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {focusId && focusRef ? (
+          focusRef.kind === "session" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <PanelRouter embeddedHeader key={focusId} panelRef={focusRef} />
             </div>
-            <HistoryList
-              focusId={undefined}
-              onRangeChange={setRange}
-              projectName={scope.key}
-              range={range}
-              showLabel={false}
-            />
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <PanelRouter embeddedHeader key={focusId} panelRef={focusRef} />
+            </div>
+          )
+        ) : focusId ? (
+          // 聚焦瞬态：focus effect 同步前 tab 尚未入 layout——骨架承接（effect 立即补齐）。
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="px-3 py-2">
+              <CardGridSkeleton plain />
+            </div>
           </div>
         ) : (
           <Fragment>
-            {/* 移动 FAB（lg:hidden）：新建会话（Claude/Terminal）。桌面 CreateSessionBar 在
-                InstanceLeftOverview header 保留。create.promptHolder 仍在下方统一渲染。 */}
+            {/* 浏览态（无 focus）：实例 grid + MobileFab 新建。FAB z-30 < drawer scrim z-50
+                （drawer 打开时被 scrim 盖住，天然不可误触）。 */}
             <MobileFab
               ariaLabel={t("workbench.createSessionAria")}
               cancelLabel={t("cancel")}
@@ -692,7 +759,7 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                 },
               ]}
             />
-            <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {isLoading && gridItems.length === 0 ? (
                 <div className="px-3 py-2">
                   <CardGridSkeleton plain />
@@ -706,15 +773,111 @@ function MobileProjectOverview({ scope }: MobileProjectOverviewProps) {
                   {t("workbench.emptyInstanceHint")}
                 </p>
               )}
-              {/* closeHolder + promptHolder 统一渲染（原 ProjectInstances 自含 holder 已随组件删除，
-                  无双 holder）。 */}
               {closeHolder}
               {renameHolder}
-              {create.promptHolder}
+              {createPromptHolder}
             </div>
           </Fragment>
         )}
       </div>
+      <MobileProjectDrawer
+        onFocusInstance={focusInstance}
+        onOpenChange={setDrawerOpen}
+        onOpenFile={onOpenFile}
+        onOpenGitCompareFile={onOpenGitCompareFile}
+        onOpenGitFile={onOpenGitFile}
+        open={drawerOpen}
+        scope={scope}
+      />
+    </div>
+  );
+}
+
+/** 项目聚焦态 tab 带 trailing：ℹ✕ 胶囊（复用 MobileFocusHeader 同款；ℹ = info sheet、✕ = 关实例）。
+ * info 字段装配与 MobileFocusBody 同源（detail query key 一致，React Query dedupe 零额外网络）。 */
+function MobileFocusActions({
+  onClose,
+  focusId,
+  projectName,
+}: {
+  onClose: () => void;
+  focusId: string;
+  projectName: string;
+}) {
+  const infoSheet = useInstanceInfoSheet();
+  const { t } = useT();
+  const sessionType = inferSessionTypeFromId(focusId);
+  const panelRef: SessionPanelRef = { kind: "session", projectName, sessionId: focusId };
+  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
+  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
+  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
+  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
+  const openInfo = () => {
+    const fields: InfoField[] = [];
+    if (agentSession?.displayName ?? terminalSession?.displayName) {
+      fields.push({
+        label: t("session.instanceInfo.name"),
+        value: (agentSession ?? terminalSession)!.displayName,
+      });
+    }
+    fields.push({ label: t("session.instanceInfo.project"), value: projectName });
+    if (sessionType === "agent" && agentSession) {
+      fields.push({
+        label: t("session.instanceInfo.type"),
+        value: providerDisplayName(agentSession.provider),
+      });
+      if (agentSession.model) {
+        fields.push({ label: t("session.instanceInfo.model"), value: agentSession.model });
+      }
+      if (agentSession.permissionMode) {
+        fields.push({
+          label: t("session.instanceInfo.permission"),
+          value: agentSession.permissionMode,
+        });
+      }
+      if (agentSession.createdAt) {
+        fields.push({
+          label: t("session.instanceInfo.createdAt"),
+          value: formatCreatedAt(agentSession.createdAt),
+        });
+      }
+      fields.push({
+        label: t("session.instanceInfo.status"),
+        value: t(sessionStatusLabel(agentSession.status)),
+      });
+    } else if (sessionType === "terminal" && terminalSession) {
+      fields.push({
+        label: t("session.instanceInfo.type"),
+        value: t("session.instanceInfo.terminal"),
+      });
+      fields.push({
+        label: t("session.instanceInfo.status"),
+        value: t(sessionStatusLabel(terminalSession.status)),
+      });
+    }
+    infoSheet.open(t("session.instanceInfo.title"), fields);
+  };
+  return (
+    <div
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+      role="group"
+    >
+      <button
+        aria-label={t("session.instanceInfo.title")}
+        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+        onClick={openInfo}
+        type="button"
+      >
+        <ShellIcon className="h-4 w-4" name="info" />
+      </button>
+      <button
+        aria-label={t("session.close")}
+        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+        onClick={onClose}
+        type="button"
+      >
+        <ShellIcon className="h-4 w-4" name="close" />
+      </button>
     </div>
   );
 }

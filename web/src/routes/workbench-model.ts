@@ -455,6 +455,18 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
         ...s,
       };
     }
+    case "/projects/$key/skill/$": {
+      // 项目内 skill 详情 tab focus（2026-08-16 移动工作台重设计，对标 /projects/$key/file/$）：
+      // _splat = skill name，focusId=`skill_${name}`（与 tabIdOf 一致，focus effect 全局处理）。
+      // scope=project 让 skill 停在项目内（桌面/移动项目 scope 点 skill 不再跳出项目 URL，
+      // 与 file/git 同语义；全局 /plugins/skill/$ 仍是 skill 的 global 规范 URL）。
+      const skillName = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "project", key: p.key ?? "" },
+        focusId: skillName ? `skill_${skillName}` : undefined,
+        ...s,
+      };
+    }
     default:
       // 非 workbench 路由（理论上 layout 不应被非 workbench 子路由命中）；回退 global 空态。
       return { scope: { kind: "global" }, focusId: undefined, ...s };
@@ -1342,6 +1354,41 @@ export function activeTabRefLeaf(layout: WorkbenchLayoutV3): WorkbenchPanelRef |
   const leaf = findLeafNode(layout.root, layout.activeGroupId);
   if (!leaf) return null;
   return leaf.tabs.find((t) => tabIdOf(t) === leaf.activeTabId) ?? null;
+}
+
+/** 移动项目 tab 带单项（2026-08-16 移动工作台重设计）：leaf 位置 + tabId + 完整引用（label 派生用）。 */
+export type ProjectTabStripItem = {
+  leafId: string;
+  tabId: string;
+  ref: WorkbenchPanelRef;
+};
+
+/**
+ * 移动项目 tab 带纯投影：从共享 layout（workbenchLayoutV4）派生「当前项目」的打开 tab 集合（设计
+ * workbench-views §7.7）。过滤规则——session/git tab 用 projectName；file tab 从全路径首段取项目名
+ * （splitFilePath，与 resolveRootBrowseTarget 同语义）；skill tab 无 projectName（全局资源、跨项目小
+ * 集合），**刻意例外全部包含**——「tab 带只显示当前项目」针对的是 session 跨项目污染，skill 不在此列。
+ * 返回 { leafId, tabId, ref }[]，供移动 tab 带 onSelectTab(leafId, tabId) / onCloseTab(leafId, tabId)
+ * 直接消费（session 存活、✕ = 最小化 removeTabFromLeaf）。
+ */
+export function projectTabStrip(
+  layout: WorkbenchLayoutV3,
+  projectKey: string,
+): ProjectTabStripItem[] {
+  if (!layout.root) return [];
+  const out: ProjectTabStripItem[] = [];
+  for (const leaf of collectLeaves(layout.root)) {
+    for (const tab of leaf.tabs) {
+      if (tab.kind === "session" || tab.kind === "git") {
+        if (tab.projectName !== projectKey) continue;
+      } else if (tab.kind === "file") {
+        if (splitFilePath(tab.path).projectName !== projectKey) continue;
+      }
+      // skill：全局包含（见 JSDoc）
+      out.push({ leafId: leaf.id, tabId: tabIdOf(tab), ref: tab });
+    }
+  }
+  return out;
 }
 
 /**

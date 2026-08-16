@@ -29,6 +29,7 @@ import {
   migrateV2ToV3,
   parseSkillTabId,
   parseWorkbenchScope,
+  projectTabStrip,
   rankGlobalInstances,
   removeLeaf,
   removeTabFromLeaf,
@@ -238,6 +239,16 @@ test("deriveWorkbenchRouteContext: git focus 编码 git_${scope}/${path}，gitSc
     focusId: "git_staged/a.ts",
     gitScope: "staged",
   });
+});
+
+test("deriveWorkbenchRouteContext: project skill focus /projects/$key/skill/$ → scope project + focusId=skill_${name}（移动 tab 带）", () => {
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/$key/skill/$", { key: "p1", _splat: "tdd" })),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "skill_tdd" });
+  // 空 splat → 无 focus（对标 /plugins/skill/$ 边界）
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/$key/skill/$", { key: "p1", _splat: "" })),
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: undefined });
 });
 
 test("deriveWorkbenchRouteContext: search 透传 rightTab/tab/gitScope", () => {
@@ -833,6 +844,81 @@ test("activeTabRefLeaf: 活动 leaf 活动 tab / null", () => {
   expect(activeTabRefLeaf(l)).toEqual(ref("p", "a"));
   const l2 = v3({ root: leaf("g1", ["a"]), activeGroupId: null });
   expect(activeTabRefLeaf(l2)).toBeNull();
+});
+
+// ── projectTabStrip（移动端项目 tab 带投影，设计 workbench-views §7.7）──────────
+
+test("projectTabStrip: 跨项目过滤——session/file/git 按项目归属，skill 全局包含", () => {
+  // 两 leaf 两项目：g1 = p1 会话 + p2 会话 + file(p1) + skill；g2 = p2 会话 + git(p1)
+  const l = v3({
+    root: split("s1", "horizontal", [
+      {
+        kind: "leaf",
+        id: "g1",
+        activeTabId: "a",
+        tabs: [
+          ref("p1", "a"),
+          ref("p2", "x"),
+          { kind: "file", path: "p1/src/index.ts" },
+          { kind: "skill", name: "tdd" },
+        ],
+      },
+      {
+        kind: "leaf",
+        id: "g2",
+        activeTabId: "b",
+        tabs: [
+          ref("p2", "b"),
+          { kind: "git", projectName: "p1", path: "a.ts", mode: "scope", scope: "worktree" },
+        ],
+      },
+    ]),
+    activeGroupId: "g1",
+  });
+  // p1 strip：g1 的 a + file + skill、g2 的 git；p2 的 x/b 被过滤
+  expect(projectTabStrip(l, "p1").map((t) => `${t.leafId}:${t.tabId}`)).toEqual([
+    "g1:a",
+    "g1:file_p1/src/index.ts",
+    "g1:skill_tdd",
+    "g2:git_worktree/a.ts",
+  ]);
+  // p2 strip：x + skill + b（skill 全局包含）；file/git 属 p1 被过滤
+  expect(projectTabStrip(l, "p2").map((t) => t.tabId)).toEqual(["x", "skill_tdd", "b"]);
+});
+
+test("projectTabStrip: skill 无 projectName 字段，任何项目的 strip 都包含（刻意全局例外）", () => {
+  const l = v3({
+    root: {
+      kind: "leaf",
+      id: "g1",
+      activeTabId: "skill_tdd",
+      tabs: [{ kind: "skill", name: "tdd" }],
+    },
+    activeGroupId: "g1",
+  });
+  expect(projectTabStrip(l, "any-project").map((t) => t.ref.kind)).toEqual(["skill"]);
+  expect(projectTabStrip(l, "another").map((t) => t.tabId)).toEqual(["skill_tdd"]);
+});
+
+test("projectTabStrip: file tab 按 splitFilePath 首段（项目名）过滤", () => {
+  const l = v3({
+    root: {
+      kind: "leaf",
+      id: "g1",
+      activeTabId: "file_demo/README.md",
+      tabs: [
+        { kind: "file", path: "p1/src/a.ts" },
+        { kind: "file", path: "demo/README.md" },
+      ],
+    },
+    activeGroupId: "g1",
+  });
+  expect(projectTabStrip(l, "demo").map((t) => t.tabId)).toEqual(["file_demo/README.md"]);
+  expect(projectTabStrip(l, "p1").map((t) => t.tabId)).toEqual(["file_p1/src/a.ts"]);
+});
+
+test("projectTabStrip: 空 layout → 空数组", () => {
+  expect(projectTabStrip(EMPTY_WORKBENCH_LAYOUT_V3, "p1")).toEqual([]);
 });
 
 test("ensureTabOpenLeaf: ref 已在 → 激活", () => {

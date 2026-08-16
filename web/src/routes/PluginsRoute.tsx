@@ -108,42 +108,28 @@ export function PluginsPanel({
    * <project>/.mcp.json，隐藏 sources tab 与「检查更新」）。undefined → 全局 /plugins（user scope）。
    */
   projectName?: string;
-  /** 全局 scope 打开 skill 详情（开中栏 tab / navigate）。项目 scope 走 inline setSelectedSkill，不调此 prop → 可选。 */
+  /** 全局 scope 打开 skill 详情（开中栏 tab / navigate）。项目 scope 自身 navigate /projects/$key/skill/$，不调此 prop → 可选。 */
   onOpenSkill?: (name: string) => void;
   /** 拖动源启动（skill 行拖到中栏开 skill tab，WorkbenchContent onCardDragStart）。undefined 退纯点击（移动端不传）。 */
   onCardDragStart?: CardDragStartHandler;
 }) {
   const { t } = useT();
+  const navigate = useNavigate();
   const [section, setSection] = useAtom(pluginsSectionAtom);
   const [skillTab, setSkillTab] = useAtom(pluginsSkillTabAtom);
   const [query, setQuery] = useAtom(pluginsQueryAtom);
   const agent: SkillAgent = DEFAULT_SKILL_AGENT;
-  // 项目 scope skill 详情：项目工作台无中栏 tab 树（不进路由），用内部 state inline 切换
-  //（selectedSkill 非 null → SkillTabPreview + 顶部返回；null → 主体）。桌面项目左栏、移动
-  // MobileProjectOverview 都走这条 inline 路径。全局 scope 仍走 onOpenSkill（开中栏 tab / navigate）。
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
 
-  // 项目 scope 的「打开 skill 详情」= inline setSelectedSkill；全局 = 调用方 onOpenSkill。
+  // 打开 skill 详情（2026-08-16 移动工作台重设计）：项目 scope 与文件/Git 同语义——开内容 tab
+  //（navigate /projects/$key/skill/$，skill 并入 tab 带；取代旧 inline selectedSkill 预览，理由见
+  // workbench-views §7.7）；全局 scope 走调用方 onOpenSkill（开中栏 skill tab / navigate /plugins/skill/$）。
   const openSkill = (name: string) => {
-    if (projectName) setSelectedSkill(name);
-    else onOpenSkill?.(name);
+    if (projectName) {
+      void navigate({ to: "/projects/$key/skill/$", params: { key: projectName, _splat: name } });
+    } else {
+      onOpenSkill?.(name);
+    }
   };
-
-  if (projectName && selectedSkill) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-line/40 bg-surface px-3 py-2">
-          <ActionButton compact onClick={() => setSelectedSkill(null)}>
-            {t("nav.back")}
-          </ActionButton>
-          <span className="truncate text-sm font-semibold text-on-surface" title={selectedSkill}>
-            {selectedSkill}
-          </span>
-        </div>
-        <SkillTabPreview name={selectedSkill} projectName={projectName} />
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

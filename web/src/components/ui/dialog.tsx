@@ -38,9 +38,14 @@ function DialogDescription({ ...props }: React.ComponentProps<typeof DialogPrimi
 
 function DialogContent({
   className,
+  overlayClassName,
   children,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  /** Overlay（scrim）追加类：覆盖默认 bg-black/60 backdrop-blur-sm（cn/twMerge 靠后者胜）。
+   * 左侧 drawer 用 `bg-black/32 backdrop-blur-none`（Material navigation-drawer scrim 32%，DESIGN.md）。 */
+  overlayClassName?: string;
+}) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
@@ -48,6 +53,7 @@ function DialogContent({
         className={cn(
           "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+          overlayClassName,
         )}
       />
       <DialogPrimitive.Content
@@ -58,6 +64,7 @@ function DialogContent({
           // 点卡片外（Overlay 全屏 scrim 区）= outside → Radix onPointerDownOutside dismiss。
           // 非居中形态必须中和默认 top/left/translate 并解除 max-w：
           //   底部 sheet = `inset-x-0 bottom-0 top-auto translate-x-0 translate-y-0 w-full max-w-none`；
+          //   左侧 drawer = `inset-y-0 left-0 translate-x-0 translate-y-0 max-w-none`（右缘 16px 圆角）；
           //   全屏 reader = `inset-0 translate-x-0 translate-y-0 max-w-none`（无 outside 区，靠 ✕/Esc 关）。
           "pointer-events-auto fixed left-1/2 top-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 outline-none sm:max-w-lg",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",

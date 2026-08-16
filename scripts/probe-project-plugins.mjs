@@ -10,7 +10,7 @@
 //  B（mock 项目 skills，独立 context）：manageable 驱动 Update 显隐（有源 skill 显 / 手写不显）+
 //    手写 skill 显「Local」徽标（mock sourced manageable:true + handwritten manageable:false，
 //    反映后端 scanInstalledSkillsFromFs 读项目锁填的 manageable——真实后端 test 空态覆盖不到）。
-//  C（真实后端，移动 390×844）：MobileProjectOverview header 含「Plugins」tab。
+//  C（真实后端，移动 390×844）：移动项目工作台 drawer 导航含「Plugins」段，点开 PluginsPanel 渲染。
 // 密码自读不打印。web DOM 探针前置过 ar-verify-css 三道闸。
 // 用法：bun scripts/probe-project-plugins.mjs
 import { chromium } from "@playwright/test";
@@ -188,13 +188,17 @@ async function sectionC(browser) {
   try {
     await login(page);
     await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
-    // 移动项目总览 header（MobileTabHeader）含 7 个 tab button（含 Plugins）。
-    const pluginsTab = page.locator("header button", { hasText: "Plugins" }).first();
-    await pluginsTab.waitFor({ state: "visible", timeout: 10_000 });
-    check("C1 移动 MobileProjectOverview header 含「Plugins」tab", (await pluginsTab.count()) > 0);
+    // 移动项目工作台（2026-08-16 重设计）：drawer 默认展开，7 段导航在 drawer 内 nav
+    //（aria-label=workbench.sidebar="Project sidebar"，取代旧 MobileProjectOverview header tab 行）。
+    const drawerNav = page.getByRole("navigation", { name: "Project sidebar" });
+    await drawerNav.waitFor({ state: "visible", timeout: 10_000 });
+    check(
+      "C1 移动 drawer 导航含「Plugins」段",
+      (await drawerNav.getByRole("button", { name: "Plugins", exact: true }).count()) === 1,
+    );
 
-    // 点 Plugins → 移动端 PluginsPanel（MobileProjectOverview plugins 手写分支）。
-    await pluginsTab.click();
+    // 点「Plugins」段 → drawer 主体 PluginsPanel（项目级，Skills/MCP SegmentedControl）。
+    await drawerNav.getByRole("button", { name: "Plugins", exact: true }).click();
     await page.getByRole("button", { name: "Skills", exact: true }).waitFor({ state: "visible" });
     check(
       "C2 移动 PluginsPanel 渲染（SegmentedControl Skills/MCP）",
