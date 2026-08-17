@@ -5,11 +5,13 @@ import { shellSurfaceClasses } from "./shell-primitives";
 
 /**
  * 信息字段（两列表格的一行）：label 弱化色右对齐，value 主体色左对齐 truncate。
- * value 由调用方装配（已 i18n + 格式化），本组件不区分语义。
+ * value 由调用方装配（已 i18n + 格式化），本组件不区分语义。wrap=true 时 value 不 truncate、
+ * break-all 完整换行显示（长 ID 类值，如 resume id 的 UUID，供用户核对/复制）。
  */
 export type InfoField = {
   label: string;
   value: string;
+  wrap?: boolean;
 };
 
 /** 信息弹窗形态：sheet = 移动端底部滑出；modal = 桌面端居中卡片。 */
@@ -84,7 +86,11 @@ function InfoSheetDialog({
               {fields.map((field) => (
                 <div className="contents" key={field.label}>
                   <dt className="text-xs text-on-surface-soft">{field.label}</dt>
-                  <dd className="truncate text-xs font-medium text-on-surface">{field.value}</dd>
+                  <dd
+                    className={`text-xs font-medium text-on-surface ${field.wrap ? "break-all" : "truncate"}`}
+                  >
+                    {field.value}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -106,7 +112,11 @@ function InfoSheetDialog({
             {fields.map((field) => (
               <div className="contents" key={field.label}>
                 <dt className="text-xs text-on-surface-soft">{field.label}</dt>
-                <dd className="truncate text-xs font-medium text-on-surface">{field.value}</dd>
+                <dd
+                  className={`text-xs font-medium text-on-surface ${field.wrap ? "break-all" : "truncate"}`}
+                >
+                  {field.value}
+                </dd>
               </div>
             ))}
           </dl>

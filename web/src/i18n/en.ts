@@ -115,6 +115,7 @@ export const en = {
   "session.instanceInfo.model": "Model",
   "session.instanceInfo.permission": "Permission",
   "session.instanceInfo.createdAt": "Created",
+  "session.instanceInfo.resumeId": "Resume ID",
   "session.connectionError": "Connection failed",
 
   // ── Files ────────────────────────────────────────────────────

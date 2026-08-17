@@ -23,6 +23,7 @@ const AGENT = {
   createdAt: "2026-08-17T00:00:00.000Z",
   model: "sonnet",
   permissionMode: "default",
+  claudeSessionId: "claude-resume-uuid-1234-5678",
 };
 
 let allPass = true;
@@ -133,9 +134,18 @@ async function run() {
       "Claude 2",
       AGENT.model,
       AGENT.permissionMode,
+      AGENT.claudeSessionId,
     ]) {
       record(bodyText.includes(expected), `modal 含字段值 ${expected}`);
     }
+    // resume id wrap 展示：value 不 truncate（scrollWidth ≤ clientWidth，无溢出截断）+ label 行存在
+    const resumeWrap = await dialog.evaluate((el) => {
+      const dds = Array.from(el.querySelectorAll("dd"));
+      const dd = dds.find((n) => (n.textContent ?? "").includes("claude-resume-uuid"));
+      if (!dd) return { found: false, notTruncated: false };
+      return { found: true, notTruncated: dd.scrollWidth <= dd.clientWidth };
+    });
+    record(resumeWrap.found && resumeWrap.notTruncated, "resume id 完整展示（wrap 不 truncate）");
 
     console.log("===== 4. Esc 关闭 modal =====");
     await page.keyboard.press("Escape");

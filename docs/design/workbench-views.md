@@ -142,7 +142,7 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 | 切 tab | group 内 tab 栏点另一 tab | 设该 group `activeTabId` + URL focusId | 是 |
 | tab ✕（最小化） | tab 栏 ✕ | 移除该 tab（`removeTabFromGroup`）；session 存活，回左总览，可重新点开；group 最后一个 tab → group 合并消失 | 是 |
 | group ▢（最大化） | group header ▢ | group 级独占（其他 group `hidden`，布局保留可还原）；独占时该 group tab 栏仍在，可切 tab | 是 |
-| 查看实例信息（ℹ） | tab 栏 ℹ（仅 session tab，hover 显隐与 ✕ 一致） | 居中 modal 信息弹窗（agent 显 name/project/type/model/permission/createdAt/status，terminal 仅 name/project/type/status——UI=f(state) 不伪造）；装配复用 `useInstanceInfoActions`（与移动端 ℹ sheet 同源，detail 查询同 query key 零额外网络） | 是 |
+| 查看实例信息（ℹ） | tab 栏 ℹ（仅 session tab，hover 显隐与 ✕ 一致） | 居中 modal 信息弹窗（agent 显 name/project/type/model/permission/createdAt/status/**resume ID**（claudeSessionId，CLI --resume 用，wrap 完整展示不 truncate），terminal 仅 name/project/type/status——UI=f(state) 不伪造）；装配复用 `useInstanceInfoActions`（与移动端 ℹ sheet 同源，detail 查询同 query key 零额外网络） | 是 |
 | 关闭实例（kill） | 左总览卡片 close / tab 右键菜单 | `useCloseSession`（confirm → close API → 失效缓存）；**不放 tab ✕**（避免高频按钮触发破坏性 kill） | 否 |
 | 拖卡片 → group | 左总览拖卡片到 group | center zone = 在该 group 开新 tab（不替换）；左/右/上/下 zone = **单 group 局部分屏**（开新 group 与目标分裂，不横跨整行，§7.3） | 是 |
 | 拖卡片 → 空白 | 左总览拖卡片到空白 | 创建首个 group（单 tab） | 是 |

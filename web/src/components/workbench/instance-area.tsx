@@ -733,6 +733,14 @@ export function useInstanceInfoActions(
         label: t("session.instanceInfo.status"),
         value: t(sessionStatusLabel(agentSession.status)),
       });
+      // resume id（claudeSessionId，CLI --resume 用）——用户核对/手动恢复用，完整展示不 truncate。
+      if (agentSession.claudeSessionId) {
+        fields.push({
+          label: t("session.instanceInfo.resumeId"),
+          value: agentSession.claudeSessionId,
+          wrap: true,
+        });
+      }
     } else if (sessionType === "terminal" && terminalSession) {
       fields.push({
         label: t("session.instanceInfo.type"),

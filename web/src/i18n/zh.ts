@@ -115,6 +115,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.instanceInfo.model": "模型",
   "session.instanceInfo.permission": "权限",
   "session.instanceInfo.createdAt": "创建时间",
+  "session.instanceInfo.resumeId": "恢复 ID",
   "session.connectionError": "连接失败",
 
   // ── Files ────────────────────────────────────────────────────
