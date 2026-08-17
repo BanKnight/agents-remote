@@ -115,6 +115,14 @@ async function run() {
       triggerText.includes("proj1"),
       `左栏 header 项目名可点击（切换器 trigger 显示 proj1：${triggerText.trim()}）`,
     );
+    // cursor pointer 断言（2026-08-17 用户反馈修复）：桌面端切换器 + 折叠按钮是 `<button>`，
+    // Tailwind v4 默认 cursor:default 无 pointer——computed style 硬数据验证两个都回到 pointer。
+    const switcherCursor = await switcher.evaluate((el) => getComputedStyle(el).cursor);
+    record(switcherCursor === "pointer", `切换器 trigger cursor=pointer（实际 ${switcherCursor}）`);
+    const collapseBtn = page.getByRole("button", { name: "收起左栏" });
+    await collapseBtn.waitFor({ timeout: 5000 });
+    const collapseCursor = await collapseBtn.evaluate((el) => getComputedStyle(el).cursor);
+    record(collapseCursor === "pointer", `左栏折叠按钮 cursor=pointer（实际 ${collapseCursor}）`);
 
     console.log("===== 2. 点击 → popover 项目列表（当前勾选 disabled + 其他项目）=====");
     await switcher.click({ timeout: 5000 });

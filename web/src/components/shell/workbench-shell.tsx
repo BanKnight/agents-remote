@@ -181,7 +181,7 @@ function PanelHeader({ chevron, collapseLabel, onCollapse, title }: PanelHeaderP
         type="button"
         aria-label={collapseLabel}
         onClick={onCollapse}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
+        className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
       >
         {chevron === "left" ? <ChevronLeft /> : <ChevronRight />}
       </button>

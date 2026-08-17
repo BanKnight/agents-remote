@@ -53,7 +53,7 @@ export function ProjectSwitcher({
         <button
           aria-label={t("workbench.switchProject")}
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-left transition hover:bg-on-surface/5 active:bg-on-surface/10",
+            "flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md px-1 text-left transition hover:bg-on-surface/5 active:bg-on-surface/10",
             className,
           )}
           type="button"
