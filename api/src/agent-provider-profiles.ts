@@ -12,18 +12,6 @@ export type AgentProviderProfile = {
   permissionModes?: ClaudePermissionMode[];
 };
 
-const readClaudeModels = (): string[] => {
-  const env = (process.env.CLAUDE_MODELS ?? "").trim();
-  if (env.length > 0)
-    return env
-      .split(",")
-      .map((m) => m.trim())
-      .filter(Boolean);
-  // Claude Code standard model aliases — these are the portable tier identifiers
-  // that Claude CLI resolves to the latest model version at runtime.
-  return ["sonnet", "opus", "haiku"];
-};
-
 // `claude --help` 列出的 `--permission-mode` choices —— CLI 当前实际支持、用户可主动切换的
 // 权限模式。spawn 成功时解析得到的也是这组；spawn 失败时作 fallback。只维护这一套内容：
 // 硬编码权威列表 = CLI choices，spawn 只为跟上未来 CLI 版本变化。
@@ -90,7 +78,9 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     capabilities: {
       history: "native",
     },
-    availableModels: readClaudeModels(),
+    // Claude Code standard model aliases — portable tier identifiers that the
+    // CLI resolves to the latest model version at runtime.
+    availableModels: ["sonnet", "opus", "haiku"],
   },
   codex: {
     provider: "codex",

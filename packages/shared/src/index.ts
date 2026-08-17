@@ -753,15 +753,6 @@ export type CloseAgentSessionResponse = {
   session: AgentSession;
 };
 
-export type AgentSessionMessagesResponse = {
-  sessionId: string;
-  messages: SessionStreamServerMessage[];
-  pagination: {
-    hasOlder: boolean;
-    nextCursor: string | null;
-  };
-};
-
 // -- Agent History --
 
 /**

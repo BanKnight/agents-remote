@@ -1,9 +1,7 @@
-import { open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
   AgentHistoryRange,
-  AgentSessionMessagesResponse,
   CloseAgentSessionResponse,
   CloseTerminalSessionResponse,
   CreateAgentSessionRequest,
@@ -20,7 +18,6 @@ import type {
   RenameAgentSessionResponse,
   RenameTerminalSessionResponse,
 } from "@agents-remote/shared";
-import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { listAgentHistory, getLastAssistantMessage, projectToSlug } from "./agent-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
@@ -167,39 +164,6 @@ const handleAgentSessionRoute = async (
 
       throw error;
     }
-  }
-
-  // /messages must be checked before the generic GET to avoid being captured
-  // by the session-detail handler below.
-  if (sessionId && request.method === "GET" && requestUrlEndsWith(request, "/messages")) {
-    const metadata = await registry.getAgentMetadata(project.name, sessionId);
-
-    if (!metadata) {
-      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
-    }
-
-    if (metadata.provider !== "claude") {
-      return jsonError("SESSION_STREAM_MISMATCH", "Not a Claude session", 400);
-    }
-
-    const url = new URL(request.url);
-    const limit = Math.min(
-      parseInt(url.searchParams.get("limit") ?? String(MESSAGE_LIMIT), 10) || MESSAGE_LIMIT,
-      1000,
-    );
-    const cursor = url.searchParams.get("cursor") ?? undefined;
-
-    const { messages, hasOlder, nextCursor } = await loadClaudeMessages(
-      metadata.projectPath,
-      metadata.claudeSessionId,
-      { limit, cursor },
-    );
-    const response: AgentSessionMessagesResponse = {
-      sessionId: metadata.id,
-      messages,
-      pagination: { hasOlder, nextCursor },
-    };
-    return Response.json(response);
   }
 
   if (sessionId && request.method === "GET") {
@@ -387,11 +351,6 @@ const matchSessionRoute = (pathname: string) => {
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }
 
-  if (segments.length === 6 && segments[5] === "messages") {
-    const sessionId = decodePathSegment(segments[4]);
-    return sessionId ? { projectName, resource, sessionId } : undefined;
-  }
-
   return undefined;
 };
 
@@ -464,126 +423,9 @@ export const isStreamingMessage = (msg: Record<string, unknown>): boolean => {
 export const isThinkingTokens = (msg: Record<string, unknown>): boolean =>
   msg.type === "system" && (msg.subtype as string) === "thinking_tokens";
 
-// Count only visible messages (user/assistant) toward the pagination limit.
-// result and system.init are included in the output for grouping fidelity
-// but do not consume a slot in the limit.
-const isVisibleMessage = (msg: Record<string, unknown>): boolean => {
-  const type = msg.type as string | undefined;
-  return type === "user" || type === "assistant";
-};
-
 export const claudeJsonlPath = (projectPath: string, claudeSessionId: string): string => {
   const projectDir = projectToSlug(projectPath);
   return join(homedir(), ".claude", "projects", projectDir, `${claudeSessionId}.jsonl`);
-};
-
-type MessagePaginationParams = {
-  limit: number;
-  cursor?: string;
-};
-
-const decodeCursor = (cursor: string): number | null => {
-  try {
-    return parseInt(Buffer.from(cursor, "base64").toString("utf-8"), 10);
-  } catch {
-    return null;
-  }
-};
-
-const encodeCursor = (lineIndex: number): string =>
-  Buffer.from(lineIndex.toString(), "utf-8").toString("base64");
-
-const MESSAGE_LIMIT = Math.max(parseInt(process.env.CLAUDE_MESSAGE_LIMIT ?? "200", 10) || 200, 1);
-
-const loadClaudeMessages = async (
-  projectPath: string,
-  claudeSessionId: string | undefined,
-  params: MessagePaginationParams = { limit: 200 },
-): Promise<{
-  messages: SessionStreamServerMessage[];
-  hasOlder: boolean;
-  nextCursor: string | null;
-}> => {
-  if (!claudeSessionId) return { messages: [], hasOlder: false, nextCursor: null };
-
-  const filePath = claudeJsonlPath(projectPath, claudeSessionId);
-
-  try {
-    const handle = await openFile(filePath, "r");
-    try {
-      // targetLine: 0-indexed line number to read up to (exclusive).
-      // No cursor → read entire file; cursor → read up to that line.
-      const targetLine = params.cursor ? decodeCursor(params.cursor) : Infinity;
-      if (params.cursor && targetLine === null) {
-        return { messages: [], hasOlder: false, nextCursor: null };
-      }
-
-      const messages: { lineIndex: number; msg: Record<string, unknown>; visible: boolean }[] = [];
-      let lineIndex = 0;
-
-      for await (const line of handle.readLines()) {
-        if (lineIndex >= targetLine!) break;
-        try {
-          const msg = JSON.parse(line) as Record<string, unknown>;
-          if (isChatMessage(msg)) {
-            messages.push({
-              lineIndex,
-              msg,
-              visible: isVisibleMessage(msg),
-            });
-          }
-        } catch {
-          // skip malformed
-        }
-        lineIndex++;
-      }
-
-      const visibleCount = messages.filter((m) => m.visible).length;
-
-      // Return all if visible messages fit within the limit
-      if (visibleCount <= params.limit) {
-        console.log(
-          `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} visible=${visibleCount} returned=${messages.length} hasOlder=false`,
-        );
-        return {
-          messages: messages.map((m) => m.msg as unknown as SessionStreamServerMessage),
-          hasOlder: false,
-          nextCursor: null,
-        };
-      }
-
-      // Find the slice window containing the last `limit` visible messages.
-      // Include all non-visible messages (result/system.init) within the window.
-      let visibleSeen = 0;
-      let sliceStart = messages.length;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i]!.visible) {
-          visibleSeen++;
-          if (visibleSeen === params.limit) {
-            sliceStart = i;
-            break;
-          }
-        }
-      }
-
-      const sliced = messages.slice(sliceStart);
-      const firstLineIndex = sliced[0]!.lineIndex;
-      const hasOlder = messages[0]!.lineIndex < firstLineIndex;
-      console.log(
-        `[messages] session=${claudeSessionId} cursor=${params.cursor ?? "none"} total=${messages.length} returned=${sliced.length} hasOlder=${hasOlder} cursorLine=${firstLineIndex}`,
-      );
-
-      return {
-        messages: sliced.map((m) => m.msg as unknown as SessionStreamServerMessage),
-        hasOlder,
-        nextCursor: encodeCursor(firstLineIndex),
-      };
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    return { messages: [], hasOlder: false, nextCursor: null };
-  }
 };
 
 const projectPathErrorResponse = (error: ProjectPathError) => {

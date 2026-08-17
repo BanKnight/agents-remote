@@ -2,7 +2,6 @@ import type {
   AgentHistoryRange,
   AgentProvider,
   AgentSessionDetailResponse,
-  AgentSessionMessagesResponse,
   AuthMeResponse,
   CloseAgentSessionResponse,
   CloseTerminalSessionResponse,
@@ -397,19 +396,6 @@ export async function getSkillSlashCatalog(
     `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/skill-slash-catalog`,
     "api.agentSessionDetailFailed",
   );
-}
-
-export async function getAgentSessionMessages(
-  projectName: string,
-  sessionId: string,
-  params?: { limit?: number; cursor?: string },
-): Promise<AgentSessionMessagesResponse> {
-  const base = `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/messages`;
-  const qs = new URLSearchParams();
-  if (params?.limit) qs.set("limit", params.limit.toString());
-  if (params?.cursor) qs.set("cursor", params.cursor);
-  const url = qs.toString() ? `${base}?${qs}` : base;
-  return fetchJson(url, "api.agentSessionDetailFailed");
 }
 
 export async function closeAgentSession(
