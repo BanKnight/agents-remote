@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useAtomValue, useSetAtom } from "jotai";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AgentProvider,
@@ -32,6 +33,7 @@ import {
   type WorkbenchScope,
   deriveZone,
   inferSessionTypeFromId,
+  instanceNameMemoAtom,
   rankGlobalInstances,
   tabIdOf,
   useIsDesktopViewport,
@@ -645,6 +647,20 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     queryFn: fetchOverview,
     queryKey: ["overview"],
   });
+  // sidecar 实例名记忆（第三层兜底 + 权威写回）：detail/列表缓存全 miss（刷新后 layout 恢复
+  // tab、缓存未热）时读 localStorage 记忆显名字（免闪 id）；拿到权威 session 时写回记忆。
+  // 读用 useAtomValue（jotai storage atom 同步出 localStorage 初值）；写走下方
+  // useInstanceNameMemoWriter（独立 hook，effect 依赖已 flatten）。
+  const nameMemo = useAtomValue(instanceNameMemoAtom);
+  const sessionMemo = panelRef.kind === "session" ? nameMemo[panelRef.sessionId] : undefined;
+  const authoritativeSession =
+    panelRef.kind === "session"
+      ? ((panelRef.kind === "session" && inferSessionTypeFromId(panelRef.sessionId) === "agent"
+          ? agent.data?.session
+          : terminal.data?.session) ??
+        cachedSessionFromLists(panelRef, agentList, terminalList, overviewCache))
+      : undefined;
+  useInstanceNameMemoWriter(panelRef, authoritativeSession);
   if (panelRef.kind === "file" || panelRef.kind === "git") {
     // file/git icon marker 对齐 sessionMarker xs 裸 icon 模型（h-4 w-4 + tone 文字色）；
     // label 取 basename（如 src/index.ts → index.ts）。
@@ -676,35 +692,80 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     };
   }
   if (sessionType === "agent") {
-    // detail（权威）优先，未回时列表缓存预填（marker + label + statusDot 首帧即全量）。
+    // detail（权威）优先 → 列表缓存预填 → sidecar 记忆兜底（刷新后冷启动，只给 label+marker，
+    // 无 statusDot——memo 只存稳定身份字段，status 高频变化存了必过期误导）。
     const cached = cachedSessionFromLists(panelRef, agentList, terminalList, overviewCache);
     const session = agent.data?.session ?? cached;
-    if (!session) return undefined;
-    return {
-      label: session.displayName,
-      marker: sessionMarker("agent", session.provider, "xs"),
-      statusDot: {
-        label: t(sessionStatusLabel(session.status)),
-        pulse: session.status === "running",
-        tone: statusToTone(session.status),
-      },
-    };
+    if (session) {
+      return {
+        label: session.displayName,
+        marker: sessionMarker("agent", session.provider, "xs"),
+        statusDot: {
+          label: t(sessionStatusLabel(session.status)),
+          pulse: session.status === "running",
+          tone: statusToTone(session.status),
+        },
+      };
+    }
+    if (sessionMemo && sessionMemo.type === "agent") {
+      return {
+        label: sessionMemo.name,
+        marker: sessionMarker("agent", sessionMemo.provider, "xs"),
+      };
+    }
+    return undefined;
   }
   if (sessionType === "terminal") {
     const cached = cachedSessionFromLists(panelRef, agentList, terminalList, overviewCache);
     const session = terminal.data?.session ?? cached;
-    if (!session) return undefined;
-    return {
-      label: session.displayName,
-      marker: sessionMarker("terminal", undefined, "xs"),
-      statusDot: {
-        label: t(sessionStatusLabel(session.status)),
-        pulse: session.status === "running",
-        tone: statusToTone(session.status),
-      },
-    };
+    if (session) {
+      return {
+        label: session.displayName,
+        marker: sessionMarker("terminal", undefined, "xs"),
+        statusDot: {
+          label: t(sessionStatusLabel(session.status)),
+          pulse: session.status === "running",
+          tone: statusToTone(session.status),
+        },
+      };
+    }
+    if (sessionMemo && sessionMemo.type === "terminal") {
+      return { label: sessionMemo.name, marker: sessionMarker("terminal", undefined, "xs") };
+    }
+    return undefined;
   }
   return undefined;
+}
+
+/**
+ * sidecar 记忆写回：usePanelMeta 拿到权威 session（detail/列表缓存）时按 sessionId 写
+ * instanceNameMemoAtom。浅比较防无限循环（effect 依赖 memo 值，值不变不写）。entry 无需
+ * GC——改名/关实例后下次权威数据到达即覆盖，或（tab 已关）不再被读取。
+ */
+export function useInstanceNameMemoWriter(
+  panelRef: WorkbenchPanelRef,
+  session: { displayName: string; provider?: AgentProvider } | undefined,
+) {
+  const setMemo = useSetAtom(instanceNameMemoAtom);
+  const sessionId = panelRef.kind === "session" ? panelRef.sessionId : undefined;
+  const sessionType = sessionId ? inferSessionTypeFromId(sessionId) : undefined;
+  const displayName = session?.displayName;
+  const provider = session?.provider;
+  useEffect(() => {
+    if (!sessionId || !sessionType || !displayName) return;
+    setMemo((prev) => {
+      const entry = prev[sessionId];
+      if (
+        entry &&
+        entry.name === displayName &&
+        entry.provider === provider &&
+        entry.type === sessionType
+      ) {
+        return prev;
+      }
+      return { ...prev, [sessionId]: { name: displayName, provider, type: sessionType } };
+    });
+  }, [sessionId, sessionType, displayName, provider, setMemo]);
 }
 
 /**

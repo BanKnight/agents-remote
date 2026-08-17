@@ -1725,3 +1725,22 @@ export function useWorkbenchLayout() {
   const update = (fn: (layout: WorkbenchLayoutV3) => WorkbenchLayoutV3) => setState(fn);
   return [layout, update] as const;
 }
+
+// ── 实例名 sidecar 记忆（tab 首帧免闪 id，第三层兜底）─────────────────────────
+// 刷新后 layout（workbenchLayoutV4）恢复打开的 tab 但只有 sessionId——detail query 与
+// 列表缓存都未热时 tab 只能 fallback id 片段。本 atom 按 sessionId 记一份
+// {name, provider, type}（atomWithLocalOnlyStorage，不跨窗口广播）：usePanelMeta 拿到
+// 权威数据（detail/列表缓存）时写回，全 miss 时读它兜底。改名/关实例后 entry 过期，
+// 下次权威数据到达即覆盖或（关闭后 tab 被 prune）不再读取，自愈无需 GC。
+export type InstanceNameEntry = {
+  name: string;
+  provider?: AgentProvider;
+  type: "agent" | "terminal";
+};
+
+export type InstanceNameMemo = Record<string, InstanceNameEntry>;
+
+export const instanceNameMemoAtom = atomWithLocalOnlyStorage<InstanceNameMemo>(
+  "instanceNameMemo",
+  {},
+);
