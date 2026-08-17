@@ -100,9 +100,10 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
   },
   claude2: {
     provider: "claude2",
-    label: "Claude 2",
+    // 对外正式名统一 "Claude"（二代实现已取代一代）；"claude2" 只是协议层 provider id。
+    label: "Claude",
     command: "claude",
-    displayNamePrefix: "Claude 2 Agent",
+    displayNamePrefix: "Claude Agent",
     capabilities: {
       history: "native",
     },

@@ -887,12 +887,12 @@ export function useInstanceInfoActions(
   return { openInfo, holder: infoSheet.holder };
 }
 
-/** Agent provider 全名（claude2 → "Claude 2"；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
+/** Agent provider 全名（claude2 → "Claude"——二代实现已取代一代，对外统一正式名；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
 function providerDisplayName(provider: string | undefined): string {
   if (!provider) return "—";
   if (provider === "claude") return "Claude";
   if (provider === "codex") return "Codex";
-  if (provider === "claude2") return "Claude 2";
+  if (provider === "claude2") return "Claude";
   return provider;
 }
 

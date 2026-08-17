@@ -131,7 +131,7 @@ async function run() {
     for (const expected of [
       AGENT.displayName,
       "proj1",
-      "Claude 2",
+      "Claude",
       AGENT.model,
       AGENT.permissionMode,
       AGENT.claudeSessionId,

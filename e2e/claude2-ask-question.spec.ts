@@ -21,7 +21,7 @@ test("Claude2: session detail renders with mocked REST data", async ({ page }) =
             id: fakeSessionId,
             projectName,
             provider: "claude2",
-            displayName: "Claude 2 Agent (e2e-test)",
+            displayName: "Claude Agent (e2e-test)",
             status: "idle",
             createdAt: new Date().toISOString(),
           },
@@ -47,7 +47,7 @@ test("Claude2: session detail renders with mocked REST data", async ({ page }) =
             id: fakeSessionId,
             projectName,
             provider: "claude2",
-            displayName: "Claude 2 Agent (e2e-test)",
+            displayName: "Claude Agent (e2e-test)",
             status: "idle",
             createdAt: new Date().toISOString(),
           },
@@ -70,7 +70,7 @@ test("Claude2: session detail renders with mocked REST data", async ({ page }) =
             type: "agent",
             projectName,
             sessionId: fakeSessionId,
-            displayName: "Claude 2 Agent (e2e-test)",
+            displayName: "Claude Agent (e2e-test)",
             status: "idle",
             provider: "claude2",
             createdAt: new Date().toISOString(),
@@ -110,6 +110,6 @@ test("Claude2: session detail renders with mocked REST data", async ({ page }) =
   // to avoid matching the same displayName in the left-overview InstanceCard,
   // whose accessible name is prefixed with the status ("Waiting for input …").
   await expect(
-    page.getByRole("button", { name: "Claude 2 Agent (e2e-test)", exact: true }),
+    page.getByRole("button", { name: "Claude Agent (e2e-test)", exact: true }),
   ).toBeVisible();
 });
