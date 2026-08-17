@@ -755,125 +755,129 @@ function MobileProjectWorkbench({
   );
 
   return (
-    // Reddit 式 push 刚体联动（2026-08-17 三次修正：① drawer 要有动画非静态避让；② 关闭时
-    // 不得两页叠加）。结构 = 裁剪窗口 + 单一平移行：drawer 与页面并排在同一 flex 行（永不
-    // 重叠），行整体 translate-x 平移——打开 = 0（drawer 在窗口左、页面在右并排可见）；
-    // 关闭 = -min(88vw,340px)（drawer 移出窗口左缘、页面正好填满窗口）。两者作为刚体一起
-    // 动（drawer 从左滑入 + 页面同步被推右，同速同向），页面保持视口宽不压缩（transform
-    // 不改 layout 宽度，零重排）。
-    <div className="relative min-h-0 flex-1 overflow-hidden" key={scope.key}>
-      <div
-        className={`flex h-full w-full transition-transform duration-300 ease-in-out ${
-          drawerOpen ? "translate-x-0" : "-translate-x-[min(88vw,340px)]"
-        }`}
-      >
-        <div className="h-full shrink-0 basis-[min(88vw,340px)]">
-          <MobileProjectDrawer
-            onFocusInstance={focusInstance}
-            onOpenChange={setDrawerOpen}
-            onOpenFile={onOpenFile}
-            onOpenGitCompareFile={onOpenGitCompareFile}
-            onOpenGitFile={onOpenGitFile}
-            open={drawerOpen}
-            scope={scope}
-          />
-        </div>
-        <div className="relative h-full w-full shrink-0 pt-[var(--shell-safe-area-top)]">
-          {/* 透明点击拦截层：drawer 打开时盖住页面，点击关闭（替代 scrim；透明不遮视觉）。
+    <>
+      {/* Reddit 式 push 刚体联动（2026-08-17 三次修正：① drawer 要有动画非静态避让；② 关闭时
+       不得两页叠加）。结构 = 裁剪窗口 + 单一平移行：drawer 与页面并排在同一 flex 行（永不
+       重叠），行整体 translate-x 平移——打开 = 0（drawer 在窗口左、页面在右并排可见）；
+       关闭 = -min(88vw,340px)（drawer 移出窗口左缘、页面正好填满窗口）。两者作为刚体一起
+       动（drawer 从左滑入 + 页面同步被推右，同速同向），页面保持视口宽不压缩（transform
+       不改 layout 宽度，零重排）。 */}
+      <div className="relative min-h-0 flex-1 overflow-hidden" key={scope.key}>
+        <div
+          className={`flex h-full w-full transition-transform duration-300 ease-in-out ${
+            drawerOpen ? "translate-x-0" : "-translate-x-[min(88vw,340px)]"
+          }`}
+        >
+          <div className="h-full shrink-0 basis-[min(88vw,340px)]">
+            <MobileProjectDrawer
+              onFocusInstance={focusInstance}
+              onOpenChange={setDrawerOpen}
+              onOpenFile={onOpenFile}
+              onOpenGitCompareFile={onOpenGitCompareFile}
+              onOpenGitFile={onOpenGitFile}
+              open={drawerOpen}
+              scope={scope}
+            />
+          </div>
+          <div className="relative h-full w-full shrink-0 pt-[var(--shell-safe-area-top)]">
+            {/* 透明点击拦截层：drawer 打开时盖住页面，点击关闭（替代 scrim；透明不遮视觉）。
               关闭时不渲染，不拦截交互。 */}
-          {drawerOpen ? (
-            <div
-              aria-hidden
-              className="absolute inset-0 z-10"
-              onClick={() => setDrawerOpen(false)}
-            />
-          ) : null}
-          {/* 页面侧 safe-area 顶带避让在此单点消费（main 已不吃 pt，2026-08-17 drawer 全高
+            {drawerOpen ? (
+              <div
+                aria-hidden
+                className="absolute inset-0 z-10"
+                onClick={() => setDrawerOpen(false)}
+              />
+            ) : null}
+            {/* 页面侧 safe-area 顶带避让在此单点消费（main 已不吃 pt，2026-08-17 drawer 全高
               修正）；页面视觉与 push 改造前一致（tab 带在刘海下）。 */}
-          <div className="flex h-full min-h-0 flex-col">
-            <MobileTabStrip
-              activeTabId={focusId}
-              onClose={handleCloseTab}
-              onSelect={onSelectTab}
-              onToggleSidebar={() => setDrawerOpen(true)}
-              tabs={stripItems}
-              trailing={
-                focusId && isSessionFocus && focusRef?.kind === "session" ? (
-                  <MobileFocusActions
-                    focusId={focusId}
-                    onClose={() =>
-                      closeInstance(
-                        focusRef.sessionId,
-                        inferSessionTypeFromId(focusId) ?? "terminal",
-                      )
-                    }
-                    projectName={scope.key}
-                  />
-                ) : !focusId ? (
-                  // 浏览态（无 focus）：header 右上角新建按钮（icon 方按钮，与 ☰ 对称），
-                  // 取代旧右下角 FAB（二级页无底部 nav，让位语义失效，见 workbench-views §7.7）。
-                  <MobileCreateButton create={create} />
-                ) : undefined
-              }
-            />
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-              {/* 保活面板层（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」
+            <div className="flex h-full min-h-0 flex-col">
+              <MobileTabStrip
+                activeTabId={focusId}
+                onClose={handleCloseTab}
+                onSelect={onSelectTab}
+                onToggleSidebar={() => setDrawerOpen(true)}
+                tabs={stripItems}
+                trailing={
+                  focusId && isSessionFocus && focusRef?.kind === "session" ? (
+                    <MobileFocusActions
+                      focusId={focusId}
+                      onClose={() =>
+                        closeInstance(
+                          focusRef.sessionId,
+                          inferSessionTypeFromId(focusId) ?? "terminal",
+                        )
+                      }
+                      projectName={scope.key}
+                    />
+                  ) : !focusId ? (
+                    // 浏览态（无 focus）：header 右上角新建按钮（icon 方按钮，与 ☰ 对称），
+                    // 取代旧右下角 FAB（二级页无底部 nav，让位语义失效，见 workbench-views §7.7）。
+                    <MobileCreateButton create={create} />
+                  ) : undefined
+                }
+              />
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                {/* 保活面板层（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」
                   的已打开 tab（含当前激活）保持挂载，visible 由 focusId 用 hidden class 切换——
                   切 tab 再切回 WS 不断（对齐桌面 WorkspaceTree 扁平化保活；移动端单面板只保活
                   聚焦过的，刷新重进 layout 恢复 N tab 只挂载当前激活的，随切换逐步纳入）。
                   file/git/skill 同规则。浏览态（无 focusId）保活面板保持 hidden 挂载——回聚焦态
                   零重连。 */}
-              {stripItems.map((item) => {
-                if (item.tabId !== focusId && !focusedTabIds.has(item.tabId)) return null;
-                return (
-                  <div
-                    className={
-                      item.tabId === focusId
-                        ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-                        : "hidden"
-                    }
-                    data-tab-id={item.tabId}
-                    key={item.tabId}
-                  >
-                    <PanelRouter embeddedHeader panelRef={item.ref} />
-                  </div>
-                );
-              })}
-              {/* 主体层：无 focus = 浏览态实例 grid；focus 未入 layout（focus effect 同步前瞬态）
+                {stripItems.map((item) => {
+                  if (item.tabId !== focusId && !focusedTabIds.has(item.tabId)) return null;
+                  return (
+                    <div
+                      className={
+                        item.tabId === focusId
+                          ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                          : "hidden"
+                      }
+                      data-tab-id={item.tabId}
+                      key={item.tabId}
+                    >
+                      <PanelRouter embeddedHeader panelRef={item.ref} />
+                    </div>
+                  );
+                })}
+                {/* 主体层：无 focus = 浏览态实例 grid；focus 未入 layout（focus effect 同步前瞬态）
                    = 骨架承接（effect 立即补齐）。 */}
-              {focusId ? (
-                focusRef ? null : (
+                {focusId ? (
+                  focusRef ? null : (
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                      <div className="px-3 py-2">
+                        <CardGridSkeleton plain />
+                      </div>
+                    </div>
+                  )
+                ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto">
-                    <div className="px-3 py-2">
-                      <CardGridSkeleton plain />
-                    </div>
+                    {isLoading && gridItems.length === 0 ? (
+                      <div className="px-3 py-2">
+                        <CardGridSkeleton plain />
+                      </div>
+                    ) : gridItems.length > 0 ? (
+                      <div className="px-3 py-2">
+                        <InstanceGrid items={gridItems} plain />
+                      </div>
+                    ) : (
+                      <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
+                        {t("workbench.emptyInstanceHint")}
+                      </p>
+                    )}
                   </div>
-                )
-              ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {isLoading && gridItems.length === 0 ? (
-                    <div className="px-3 py-2">
-                      <CardGridSkeleton plain />
-                    </div>
-                  ) : gridItems.length > 0 ? (
-                    <div className="px-3 py-2">
-                      <InstanceGrid items={gridItems} plain />
-                    </div>
-                  ) : (
-                    <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                      {t("workbench.emptyInstanceHint")}
-                    </p>
-                  )}
-                  {closeHolder}
-                  {renameHolder}
-                  {createPromptHolder}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+      {/* holders 提升到顶层（2026-08-17 修复）：此前只在浏览态分支渲染，聚焦态 ✕（closeInstance
+        confirm）/ rename / create prompt 永不挂载 → 「点击无响应」。顶层常驻，浏览/聚焦都挂载。 */}
+      {closeHolder}
+      {renameHolder}
+      {createPromptHolder}
+    </>
   );
 }
 
@@ -977,27 +981,32 @@ function MobileFocusActions({
     infoSheet.open(t("session.instanceInfo.title"), fields);
   };
   return (
-    <div
-      className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-      role="group"
-    >
-      <button
-        aria-label={t("session.instanceInfo.title")}
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-        onClick={openInfo}
-        type="button"
+    <>
+      <div
+        className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+        role="group"
       >
-        <ShellIcon className="h-4 w-4" name="info" />
-      </button>
-      <button
-        aria-label={t("session.close")}
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-        onClick={onClose}
-        type="button"
-      >
-        <ShellIcon className="h-4 w-4" name="close" />
-      </button>
-    </div>
+        <button
+          aria-label={t("session.instanceInfo.title")}
+          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+          onClick={openInfo}
+          type="button"
+        >
+          <ShellIcon className="h-4 w-4" name="info" />
+        </button>
+        <button
+          aria-label={t("session.close")}
+          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+          onClick={onClose}
+          type="button"
+        >
+          <ShellIcon className="h-4 w-4" name="close" />
+        </button>
+      </div>
+      {/* info sheet holder（2026-08-17 修复：此前漏渲染 → ℹ 点击 sheet 永不挂载，对齐桌面
+          MobileFocusHeader {infoSheet.holder}）。 */}
+      {infoSheet.holder}
+    </>
   );
 }
 
