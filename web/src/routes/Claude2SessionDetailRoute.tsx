@@ -45,6 +45,7 @@ import {
   isMobileComposerMode,
 } from "../lib/composer-enter";
 import { measureFrom, timed } from "../lib/perf-trace";
+import { useIsMobile } from "../lib/use-is-mobile";
 import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { consoleSections, tasksExpandedAtom } from "./console-model";
@@ -818,6 +819,7 @@ function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [fullscreen, setFullscreen] = useState(false);
 
   const renderBody = () => (
@@ -833,7 +835,7 @@ function UserChatBubble() {
       <RawDebugTooltip custom={custom} className="self-end" />
       <div
         className="max-w-[90%] rounded-2xl rounded-br-md bg-user-deep/60 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
-        onDoubleClick={() => setFullscreen(true)}
+        onDoubleClick={isMobile ? () => setFullscreen(true) : undefined}
       >
         {renderBody()}
       </div>
@@ -982,6 +984,7 @@ function AssistantChatBubble() {
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const turnStats = custom?.turnStats as TurnStats | undefined;
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [fullscreen, setFullscreen] = useState(false);
   const liveThinkingTokens = useContext(LiveThinkingTokensContext);
 
@@ -1052,7 +1055,7 @@ function AssistantChatBubble() {
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
       <div
         className="max-w-[90%] rounded-2xl rounded-bl-md bg-surface-raised/70 px-4 py-2.5 max-h-[55vh] overflow-y-auto cursor-zoom-in sm:cursor-default self-start"
-        onDoubleClick={() => setFullscreen(true)}
+        onDoubleClick={isMobile ? () => setFullscreen(true) : undefined}
       >
         {renderBody()}
       </div>
@@ -1429,6 +1432,7 @@ function SystemChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [fullscreen, setFullscreen] = useState(false);
   const systemMessageType = custom?.systemMessageType as string | undefined;
 
@@ -1620,7 +1624,7 @@ function SystemChatBubble() {
     <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group">
       <div
         className="max-w-[90%] rounded-2xl rounded-bl-md bg-assistant-deep/30 px-4 py-2.5 overflow-x-hidden overflow-y-auto max-h-[55vh] cursor-zoom-in sm:cursor-default self-start"
-        onDoubleClick={() => setFullscreen(true)}
+        onDoubleClick={isMobile ? () => setFullscreen(true) : undefined}
       >
         {renderBody()}
       </div>

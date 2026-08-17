@@ -304,6 +304,8 @@ Claude2 session（及用 assistant-ui 渲染的 tool / hook / attachment 组件�
 
 > **`assistant`/`warning` 同 hex（`#fbbf24`）、`permission`/`secondary` 同 hex（`#a78bfa`）是刻意的**——语义独立（角色 vs 状态 / 渐变终点），分开 token 让代码读出「这是 assistant 角色」而非「这是 warning」，且未来可按角色独立调色相（如 codex 接入时 `assistant` 改用 codex 品牌色，不影响 warning）。
 
+**气泡双击放大仅移动端（2026-08-17）**：三个聊天气泡（user / assistant / system）的双击进 FullscreenReader 用 `useIsMobile()` gate（`onDoubleClick={isMobile ? () => setFullscreen(true) : undefined}`），与 cursor 提示 `cursor-zoom-in sm:cursor-default` 断点互补一致（639px/640px 同源）。桌面端双击是文本选词手势，不承载缩放语义——误触全屏 reader 是交互冲突；桌面展开走气泡 hover ActionBar 的 ExpandGlyph 按钮（显式单击）。ExitPlanModeCard / AskUserQuestionCard 本就只有 header 展开按钮（无双击），两端行为一致不受影响。
+
 ### Phase 5 散写收敛映射（操作色 / 灰度 / 状态色 / shadow / Skill）
 
 Phase 4 收敛 Claude2 内容角色色后，剩余散写（操作色 cyan、灰度 slate、状态色 emerald/rose、shadow、Skill purple）按本表收敛到**既有 token**（不新增）。这是 Phase 3/4 收敛的收尾，让 `web/src` 全部色阶归 token 管理。收敛工作流（怎么发现散写、怎么分批、怎么验证）见 `frontend-notes.md` §2。
