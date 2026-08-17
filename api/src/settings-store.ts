@@ -30,7 +30,7 @@ const SCHEMA_VERSION = 3;
 const defaultSettingsPath = () => join(homedir(), ".agents-remote", "settings.yaml");
 
 // 默认 modelMapping = tier alias 字符串本身：不改设置时行为 = 现状（CLI 接受 tier
-// alias 作 --model）；CLAUDE2_MODELS env 仍作 fallback。effort=high 是 Opus 4.8
+// alias 作 --model）；CLAUDE_MODELS env 仍作 fallback。effort=high 是 Opus 4.8
 // 内置默认（见 docs/research/claude-cli-runtime-config.md）。
 //
 // modelMapping 不再属于 runtime（v2 下沉到每个 preset 与端点绑定）；这里仅作

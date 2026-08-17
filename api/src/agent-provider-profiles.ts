@@ -13,7 +13,7 @@ export type AgentProviderProfile = {
 };
 
 const readClaudeModels = (): string[] => {
-  const env = (process.env.CLAUDE2_MODELS ?? "").trim();
+  const env = (process.env.CLAUDE_MODELS ?? "").trim();
   if (env.length > 0)
     return env
       .split(",")

@@ -493,7 +493,7 @@ const decodeCursor = (cursor: string): number | null => {
 const encodeCursor = (lineIndex: number): string =>
   Buffer.from(lineIndex.toString(), "utf-8").toString("base64");
 
-const MESSAGE_LIMIT = Math.max(parseInt(process.env.CLAUDE2_MESSAGE_LIMIT ?? "200", 10) || 200, 1);
+const MESSAGE_LIMIT = Math.max(parseInt(process.env.CLAUDE_MESSAGE_LIMIT ?? "200", 10) || 200, 1);
 
 const loadClaudeMessages = async (
   projectPath: string,
