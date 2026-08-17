@@ -16,6 +16,8 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tansta
 import type {
   AgentProvider,
   AgentSession,
+  ListAgentSessionsResponse,
+  ListTerminalSessionsResponse,
   OverviewResponse,
   TerminalSession,
 } from "@agents-remote/shared";
@@ -604,9 +606,9 @@ export function useTerminalDetail(panelRef: SessionPanelRef, enabled = true) {
 export type PanelMeta = {
   /** 实例 marker（agent 按 provider，terminal 固定）；与 InstanceCard 同源（设计 §10/§12）。 */
   marker: ReactNode;
-  /** 显示名（detail.displayName；未就绪时 undefined，调用方 fallback sessionId 前 12 位）。 */
+  /** 显示名（detail.displayName；detail 未回时从列表缓存预填，见 usePanelMeta）。 */
   label?: string;
-  /** 状态点（detail.status → tone + i18n label；running 时 pulse）。未就绪时 undefined。 */
+  /** 状态点（status → tone + i18n label；running 时 pulse）。detail/缓存均未就绪时 undefined。 */
   statusDot?: { label: string; pulse: boolean; tone: ShellTone };
 };
 
@@ -622,6 +624,27 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
   const projReady = panelRef.kind === "session" && !!panelRef.projectName;
   const agent = useAgentDetail(sessionRef, projReady && sessionType === "agent");
   const terminal = useTerminalDetail(sessionRef, projReady && sessionType === "terminal");
+  // 列表缓存预填（zero-request）：打开 tab 的入口（左总览/全局总览点卡片）必然来自已拉热的
+  // 项目列表 / overview 聚合缓存，响应自带 displayName/provider/status——detail 未回时先从
+  // 缓存派生完整 meta（marker + label + statusDot），tab 首帧即显实例名不再闪 sessionId。三个
+  // disabled useQuery 同 key 只读缓存不发请求（cache 命中返回 data，miss 返回 undefined）；
+  // queryFn 照常提供（disabled 下永不调用，但缺失会让 React Query 每次渲染打 dev 警告）。
+  // 非 session tab（file/git/skill）在下方早返，缓存读取只服务 session 分支。
+  const agentList = useQuery<ListAgentSessionsResponse>({
+    enabled: false,
+    queryFn: () => listAgentSessions(sessionRef.projectName),
+    queryKey: ["projects", sessionRef.projectName, "agent-sessions"],
+  });
+  const terminalList = useQuery<ListTerminalSessionsResponse>({
+    enabled: false,
+    queryFn: () => listTerminalSessions(sessionRef.projectName),
+    queryKey: ["projects", sessionRef.projectName, "terminal-sessions"],
+  });
+  const overviewCache = useQuery<OverviewResponse>({
+    enabled: false,
+    queryFn: fetchOverview,
+    queryKey: ["overview"],
+  });
   if (panelRef.kind === "file" || panelRef.kind === "git") {
     // file/git icon marker 对齐 sessionMarker xs 裸 icon 模型（h-4 w-4 + tone 文字色）；
     // label 取 basename（如 src/index.ts → index.ts）。
@@ -653,7 +676,9 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     };
   }
   if (sessionType === "agent") {
-    const session = agent.data?.session;
+    // detail（权威）优先，未回时列表缓存预填（marker + label + statusDot 首帧即全量）。
+    const cached = cachedSessionFromLists(panelRef, agentList, terminalList, overviewCache);
+    const session = agent.data?.session ?? cached;
     if (!session) return undefined;
     return {
       label: session.displayName,
@@ -666,7 +691,8 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     };
   }
   if (sessionType === "terminal") {
-    const session = terminal.data?.session;
+    const cached = cachedSessionFromLists(panelRef, agentList, terminalList, overviewCache);
+    const session = terminal.data?.session ?? cached;
     if (!session) return undefined;
     return {
       label: session.displayName,
@@ -679,6 +705,50 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     };
   }
   return undefined;
+}
+
+/**
+ * 从已拉热的列表缓存（项目 agent/terminal 列表 + overview 聚合）查 sessionId 对应的
+ * displayName/provider/status，供 usePanelMeta 在 detail query 未回时预填（tab 首帧即显
+ * 实例名）。三个缓存按序尝试：项目列表（同 project scope 打开 tab 的常态路径）→ overview
+ *（跨项目/global 总览点开的 tab）。全部 miss（如刷新后直进聚焦态、缓存尚未拉热）返回
+ * undefined，调用方维持原 fallback（sessionId 前 12 位）。
+ *
+ * 类型注意：overview candidate 与项目列表 session 的 status/provider 字段同名同语义
+ *（OverviewCandidate 就是它们的聚合投影），共用同一查找类型；agent 的 provider 从
+ * overview candidate 提取（可能 undefined——候选缺 provider 时退默认 claude 色）。
+ */
+function cachedSessionFromLists(
+  panelRef: SessionPanelRef,
+  agentList: { data?: ListAgentSessionsResponse },
+  terminalList: { data?: ListTerminalSessionsResponse },
+  overviewCache: { data?: OverviewResponse },
+):
+  | {
+      displayName: string;
+      status: AgentSession["status"] | TerminalSession["status"];
+      provider?: AgentProvider;
+    }
+  | undefined {
+  const inProjectList =
+    agentList.data?.sessions.find((s) => s.id === panelRef.sessionId) ??
+    terminalList.data?.sessions.find((s) => s.id === panelRef.sessionId);
+  if (inProjectList) {
+    return {
+      displayName: inProjectList.displayName,
+      provider: "provider" in inProjectList ? inProjectList.provider : undefined,
+      status: inProjectList.status,
+    };
+  }
+  const candidate = overviewCache.data?.candidates.find(
+    (c) => c.sessionId === panelRef.sessionId && c.projectName === panelRef.projectName,
+  );
+  if (!candidate) return undefined;
+  return {
+    displayName: candidate.displayName,
+    provider: candidate.provider,
+    status: candidate.status,
+  };
 }
 
 /**
