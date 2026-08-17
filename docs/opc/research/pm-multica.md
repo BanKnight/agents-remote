@@ -367,9 +367,9 @@ Multica 是把 AI coding agent（Claude/Codex/Copilot 等）当成**项目里的
 ### 12.1 印证（Multica 做对了、PRD 方向一致）
 1. **issue = unit of work = 看板卡片 = 任务容器** ✅ 印证 PRD「任务」概念——Multica 把 issue 当一等容器，agent task 是其执行记录（一个 issue 多 task = 初版/修复/反馈轮），与 PRD「OrchestrationGoal × OrchestrationTask 双层」完全同构。OPC 应直接采纳「Goal（看板卡片）× Task（执行记录）」双层。
 2. **agent 不能自己标 done，走 PR review 闸门** ✅ 印证 PRD 决策 2「agent 不能自己把任务标完成，必须你审批」——Multica agent 只能推 in_review，done 由 merge 系统行为触发。OPC 审批闭环设计被官方实践验证。
-3. **agent = 配置非常驻进程，CLI spawn 干完即退** ✅ 印证 PRD「编排层在现有 session runtime 之上加一层，runtime 零改动」——Multica 的 daemon + 隔离 workspace + GC 是「非常驻」范式的成熟实现，OPC 可复用 daemon/claim/spawn/GC 思路（agents-remote 已有 Claude2Runtime spawn + relay，缺的是 daemon 化 poll/claim 与隔离 workspace）。
+3. **agent = 配置非常驻进程，CLI spawn 干完即退** ✅ 印证 PRD「编排层在现有 session runtime 之上加一层，runtime 零改动」——Multica 的 daemon + 隔离 workspace + GC 是「非常驻」范式的成熟实现，OPC 可复用 daemon/claim/spawn/GC 思路（agents-remote 已有 ClaudeRuntime spawn + relay，缺的是 daemon 化 poll/claim 与隔离 workspace）。
 4. **Skills 作为 team knowledge 沉淀层** ✅ 印证 PRD「记忆」——Multica skills 注入 provider native 路径（`.claude/skills/{name}/SKILL.md`）是跨 issue 复用知识的好范式，OPC 的「角色 systemPrompt + 长记忆」可拆出 skills 层（与 PRD 后续「长记忆」对齐，但 Multica 的 skills 是更轻、更可落地的起点）。
-5. **自动探测 PATH CLI + 多 provider 抹平** ✅ 印证 agents-remote 现有 ProviderProfile（claude/codex/claude2）+ Multica 进一步抹平到 20+ CLI——OPC 的 provider 抽象方向正确，且 Multica 的「自动探测 + 注册」是「agent 接入零配置」的好范式（agents-remote 现在是手动配 ProviderProfile，可借鉴自动探测）。
+5. **自动探测 PATH CLI + 多 provider 抹平** ✅ 印证 agents-remote 现有 ProviderProfile（claude/codex/claude）+ Multica 进一步抹平到 20+ CLI——OPC 的 provider 抽象方向正确，且 Multica 的「自动探测 + 注册」是「agent 接入零配置」的好范式（agents-remote 现在是手动配 ProviderProfile，可借鉴自动探测）。
 6. **Mention-driven coordination（comment 即派活）** ✅ 印证 PRD「房间」里的 @mention——Multica 的 `[@Label](mention://<type>/<id>)` + computeCommentAgentTriggers + 防环（mention suppression / self-trigger 防环）是「评论驱动协调」的成熟工程实现，OPC 圆桌的 @mention 路由可直接借鉴（含防双触发 bug 的解法）。
 
 ### 12.2 挑战（Multica 暴露的难点，PRD 需正视）

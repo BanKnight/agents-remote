@@ -64,7 +64,7 @@
 
 ### agent 实例 —— 合并是 CLI 原生，非 agents-remote 要做的
 
-- **skill**：Claude Code 自动合并 `~/.claude/skills/`（user）+ 项目 `.claude/skills/`（project）+ plugins + builtin（`claude2-slash-commands.ts` `resolveSkillSlashCatalog` 扫 4 源）。
+- **skill**：Claude Code 自动合并 `~/.claude/skills/`（user）+ 项目 `.claude/skills/`（project）+ plugins + builtin（`claude-slash-commands.ts` `resolveSkillSlashCatalog` 扫 4 源）。
 - **mcp**：Claude Code 自动合并 user scope（`~/.claude.json`）+ project scope（项目 `.mcp.json`）+ enterprise。
 - 结论：**「全局+项目合并」是 CLI 原生能力**，agents-remote 只需保证「配置落在 CLI 会读的地方」，不需要自建合并逻辑。
 
@@ -203,7 +203,7 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
 - **强**（本仓库源码 / 已沉淀调研）：
   - `api/src/skill-market.ts`（skill 安装/卸载/list/预览/sources，混合路线）。
   - `api/src/mcp-injector.ts` + `api/src/mcp-hub-server.ts` + `api/src/mcp-config.ts`（内部 hub + 注入管线 + 项目能力开关）。
-  - `api/src/claude2-runtime.ts` `buildMcpArgs`/`resolveSpawnInputs`（spawn 时注入 MCP）。
+  - `api/src/claude-runtime.ts` `buildMcpArgs`/`resolveSpawnInputs`（spawn 时注入 MCP）。
   - `web/src/routes/SkillsRoute.tsx`（Skill 三 tab）+ `web/src/components/shell/activity-bar.tsx`（全局 nav）。
   - [skill-marketplace.md](./skill-marketplace.md) §3.4（npx skills 源类型 local/git）、§3.6（锁文件 + 更新）、§8（混合路线落地）、§7（安全边界）。
   - [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（内部 hub 定位 + 外部 MCP = 配置管理者 + 不加 --strict-mcp-config）。

@@ -1,10 +1,10 @@
-# Claude2 客户端调试开关
+# Claude 客户端调试开关
 
-面向可执行操作的手册：如何在浏览器运行时打开 Claude2 session 客户端的调试输出（socket 流量日志、原始消息 tooltip），以及每个开关控制什么。
+面向可执行操作的手册：如何在浏览器运行时打开 Claude session 客户端的调试输出（socket 流量日志、原始消息 tooltip），以及每个开关控制什么。
 
 两个开关默认都是 **OFF**，让默认 UI 保持干净；需要排查协议、消息流或渲染问题时再在控制台临时打开。代码实现见 `web/src/lib/debug-flags.ts`。
 
-> 本手册只覆盖**客户端运行时调试开关**。完整的下行/上行/回放数据流逐层排查（CLI stdout → turn file → relay → WebSocket → 浏览器）见 `CLAUDE.md` 的「Claude2 Session 数据流调试指南」；协议消息类型与字段见 [Claude CLI stream-json 协议](../research/claude-cli-stream-protocol.md) 与 [Claude2 Provider 协议设计](../design/claude2-provider-protocol.md)。
+> 本手册只覆盖**客户端运行时调试开关**。完整的下行/上行/回放数据流逐层排查（CLI stdout → turn file → relay → WebSocket → 浏览器）见 `CLAUDE.md` 的「Claude Session 数据流调试指南」；协议消息类型与字段见 [Claude CLI stream-json 协议](../research/claude-cli-stream-protocol.md) 与 [Claude Provider 协议设计](../design/claude-provider-protocol.md)。
 
 ## 开关一览
 
@@ -51,7 +51,7 @@ localStorage.setItem("ar-debug:debug-button", "0") // 关闭
 
 ### socket 日志（`ar-debug:socket-log`）
 
-控制 `web/src/routes/claude2-adapter.ts` 中覆盖 socket 流量与批次边界的 `console.log`：
+控制 `web/src/routes/claude-adapter.ts` 中覆盖 socket 流量与批次边界的 `console.log`：
 
 | 日志 | 位置 | 含义 |
 |------|------|------|
@@ -72,7 +72,7 @@ localStorage.setItem("ar-debug:debug-button", "0") // 关闭
 
 ### 调试按钮（`ar-debug:debug-button`）
 
-控制 `web/src/routes/Claude2SessionDetailRoute.tsx` 的 `RawDebugTooltip` 组件——消息气泡上的 (i) 图标，点击展开该消息的原始 JSON（`_rawMessages` / `_raw`）。
+控制 `web/src/routes/ClaudeSessionDetailRoute.tsx` 的 `RawDebugTooltip` 组件——消息气泡上的 (i) 图标，点击展开该消息的原始 JSON（`_rawMessages` / `_raw`）。
 
 开关关闭时 `RawDebugTooltip` 在 hooks 之后 `return null`，**一处 early-return 覆盖全部 10 个调用点**（user/assistant/tool 卡片/compact-block 等都统一隐藏）。
 

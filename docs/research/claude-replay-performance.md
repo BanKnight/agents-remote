@@ -1,6 +1,6 @@
-# Claude2 Replay 性能分析与验收基线
+# Claude Replay 性能分析与验收基线
 
-本文档是「打开 Claude2 长会话很慢（分钟级）」这一问题的**分析依据 + 验收基线**。所有数字都来自可重跑的脚本/埋点，方法可复现；优化前后用同一方法、同一样本测量，才能作为验收标准。
+本文档是「打开 Claude 长会话很慢（分钟级）」这一问题的**分析依据 + 验收基线**。所有数字都来自可重跑的脚本/埋点，方法可复现；优化前后用同一方法、同一样本测量，才能作为验收标准。
 
 > 相关：协议消息类型与生命周期见 [Claude CLI stream-json 协议](./claude-cli-stream-protocol.md)；会话运行时架构见 [Session Runtime 架构](../architecture/session-runtime.md)。本文只分析**回放/加载**路径的性能。
 
@@ -77,12 +77,12 @@
 |---|------|------|----------|------|----------|
 | 1 | 服务端全量 `readFileSync` + 34k parse | `session-relay.ts:173` | ~1s | 阻塞 server event loop | 否 |
 | 2 | 服务端同步 flush 34k 行 | `session-relay.ts:56` | 34k 次 `onData`，不 yield/不看背压 | 制造 73MB 瞬时 burst | 否（CPU 低，但放大下游） |
-| 3 | 客户端 onmessage `JSON.parse` ×34k | `claude2-adapter.ts:3040` | ~0.7s | 阻塞主线程 | 否（次要） |
-| 4 | **`history_end` 一次性 `setRawMessages(34k)` → normalize+render+computeRunning+deriveLiveThinking 全量同步重算** | `claude2-adapter.ts:3066→2783`、`3166-3168`、`2793-2794` | O(n)，单块不 yield | 阻塞主线程 | **是（主因）** |
-| 5 | React 首次 commit + virtualizer | `Claude2SessionDetailRoute.tsx`（已 `useVirtualizer`） | 仅可见窗口 mount | 可能次要 | 待 profiling |
+| 3 | 客户端 onmessage `JSON.parse` ×34k | `claude-adapter.ts:3040` | ~0.7s | 阻塞主线程 | 否（次要） |
+| 4 | **`history_end` 一次性 `setRawMessages(34k)` → normalize+render+computeRunning+deriveLiveThinking 全量同步重算** | `claude-adapter.ts:3066→2783`、`3166-3168`、`2793-2794` | O(n)，单块不 yield | 阻塞主线程 | **是（主因）** |
+| 5 | React 首次 commit + virtualizer | `ClaudeSessionDetailRoute.tsx`（已 `useVirtualizer`） | 仅可见窗口 mount | 可能次要 | 待 profiling |
 | 6 | live 阶段每条新消息触发全量 O(n) 重算 | 同 #4 的 `useMemo` 依赖 `rawMessages` | 每条消息 O(n) | 长会话 live 卡顿 | 衍生问题 |
 
-**算法已排除**：`renderChatStream` 是 O(n) 不是 O(n²)——batch-boundary 前瞻遇首个可见项即 break（`claude2-adapter.ts:2470`），turn-end 回扫被 turn 边界夹住。
+**算法已排除**：`renderChatStream` 是 O(n) 不是 O(n²)——batch-boundary 前瞻遇首个可见项即 break（`claude-adapter.ts:2470`），turn-end 回扫被 turn 边界夹住。
 
 ## 三、诊断
 
@@ -113,7 +113,7 @@ B 与 A 互补不是二选一：B 让「全量加载/回填」永不冻结；A �
 1. **第 0 步——埋点 + 复现测量** ✅：已在 `onmessage`/`history_end`/`normalize`/`render`/React commit + `historyRecv`/`arrival` 剖点；实测结论见上方专节，已回填「验收基线」。
 2. ~~**第 1 步——派生增量**~~（降级）：实测 `normalize` ~0.3s、派生全 <50ms，非瓶颈。重构为 append-only 增量仅省 <0.3s；保留作 live 阶段防卡备选。
 3. ~~**第 2 步——历史分帧喂入**~~（降级）：派生非瓶颈，分帧收益有限。
-4. **应用层 gzip 压缩 + 多帧分块（E）** ✅：history/live 回放批次先按 ~256KB（未压缩）切成多块，每块 gzip 成独立二进制帧（服务端 `createBatchEmitter` 在 `claude2-stream` callback 内切分压缩，relay 不动；客户端逐块 `DecompressionStream('gzip')` 解压，串行链保序，文本帧保持同步）。顺带修掉回放路径双重序列化（行原样转发，不 parse/stringify）。**第一手压缩比**（真实 session JSONL）：26.7MB→5.3MB(5x)、20.4MB→5.7MB(3.6x)、17.3MB→3.9MB(4.5x)、72.3MB→13.8MB(5.2x)。**墙钟 A/B（桌面 Chrome，同 12MB/5471 样本，经 cloudflared tunnel）**：原始逐行 6.2–8.4s；单 blob 压缩版 ~3.5s（单 2.68MB 帧 cloudflared 仅 ~6.3Mbps）；**分块版 `historyRecv` 1.71s / `loadE2E` 2.0s**（53 帧，多帧流水 ~13.4Mbps；decompress 53×2.2ms=117ms 可忽略；传输时间 ≈1.59s）。结论：cloudflared 对单大 WS 帧有明显 stall，多帧流水让有效吞吐翻倍。
+4. **应用层 gzip 压缩 + 多帧分块（E）** ✅：history/live 回放批次先按 ~256KB（未压缩）切成多块，每块 gzip 成独立二进制帧（服务端 `createBatchEmitter` 在 `claude-stream` callback 内切分压缩，relay 不动；客户端逐块 `DecompressionStream('gzip')` 解压，串行链保序，文本帧保持同步）。顺带修掉回放路径双重序列化（行原样转发，不 parse/stringify）。**第一手压缩比**（真实 session JSONL）：26.7MB→5.3MB(5x)、20.4MB→5.7MB(3.6x)、17.3MB→3.9MB(4.5x)、72.3MB→13.8MB(5.2x)。**墙钟 A/B（桌面 Chrome，同 12MB/5471 样本，经 cloudflared tunnel）**：原始逐行 6.2–8.4s；单 blob 压缩版 ~3.5s（单 2.68MB 帧 cloudflared 仅 ~6.3Mbps）；**分块版 `historyRecv` 1.71s / `loadE2E` 2.0s**（53 帧，多帧流水 ~13.4Mbps；decompress 53×2.2ms=117ms 可忽略；传输时间 ≈1.59s）。结论：cloudflared 对单大 WS 帧有明显 stall，多帧流水让有效吞吐翻倍。
 5. **compact-block windowing（A + D）** ✅ 已落地：服务端 `readHistoryFromJsonl` tail-load（只载最后一个 `compact_boundary` → end）+ live `compact_boundary` 主动 trim；客户端 `renderChatStream` 只投影最后一块。这取代了原计划的"尾部分页 + 向上滚回填"——用 CLI 自带的 compact 天然边界，把服务端持有/回放的 history 缩到尾部一块，全量仍在磁盘 JSONL。配套**标量重建**（`system.init` 是 stdout-only、不在 JSONL/tail）：注入种子 init（model/permissionMode）+ runtime fold 当前 permissionMode；skills/slash 走**全量 catalog REST**（读 SKILL.md 真实描述），客户端用会话可用列表过滤。详见 [message-replay.md](../design/message-replay.md)「特殊时期 history 缩容」。
 
 **实证数字**（2026-06-23，同 f4dd7cbe session 手动 QA，经 cloudflared tunnel，dev build）：

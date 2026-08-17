@@ -58,9 +58,9 @@ Key patterns:
 - AssistantModal for floating chat widget
 - useChatRuntime hook with AI SDK transport
 
-## Claude2 Session 数据流调试指南
+## Claude Session 数据流调试指南
 
-Claude2 session 消息经过多层管道，排查问题时**必须逐层沿数据流方向检查**，而不是到处看代码猜原因。
+Claude session 消息经过多层管道，排查问题时**必须逐层沿数据流方向检查**，而不是到处看代码猜原因。
 
 ### 下行数据流（CLI → 浏览器）
 
@@ -71,12 +71,12 @@ Claude2 session 消息经过多层管道，排查问题时**必须逐层沿数�
 
 | 环节 | 文件 | 关键日志 | 检查方法 |
 |------|------|---------|---------|
-| CLI stdout | `claude2-runtime.ts` `spawnClaudeDirect()` / `readStdout()` | `[claude2-stdout] <line>` | 检查 CLI 进程是否在跑（`proc.exitCode === null`）；stderr 在 `runDir/claude2-stderr/<session>.log` |
-| stdout → relay | `claude2-runtime.ts` `readStdout()` → `relay.handleStdoutLine()` | `[relay] addSubscriber: phase=... history=.. live=..` | 看 stdout 行流是否在喂 relay；generation 守卫是否误停了 reader |
-| relay → WebSocket | `claude2-stream.ts` `startStream()`（`createBatchEmitter` 压缩/分块） | `[claude2-stream] blob flushed: bytes=.. sendMs=..` / `captured claudeSessionId=..` | 确认 relay 的 `emit` 被调用；batch 是否正常发 |
-| WebSocket → 浏览器 | `claude2-adapter.ts` `socket.onmessage` | `[claude2-adapter] ws recv: ...` | 浏览器 Console 看是否有消息到达 |
+| CLI stdout | `claude-runtime.ts` `spawnClaudeDirect()` / `readStdout()` | `[claude-stdout] <line>` | 检查 CLI 进程是否在跑（`proc.exitCode === null`）；stderr 在 `runDir/claude-stderr/<session>.log` |
+| stdout → relay | `claude-runtime.ts` `readStdout()` → `relay.handleStdoutLine()` | `[relay] addSubscriber: phase=... history=.. live=..` | 看 stdout 行流是否在喂 relay；generation 守卫是否误停了 reader |
+| relay → WebSocket | `claude-stream.ts` `startStream()`（`createBatchEmitter` 压缩/分块） | `[claude-stream] blob flushed: bytes=.. sendMs=..` / `captured claudeSessionId=..` | 确认 relay 的 `emit` 被调用；batch 是否正常发 |
+| WebSocket → 浏览器 | `claude-adapter.ts` `socket.onmessage` | `[claude-adapter] ws recv: ...` | 浏览器 Console 看是否有消息到达 |
 
-> 完整进程模型/缓冲/时序设计见 [Claude2 进程模型与消息回放设计](./docs/design/message-replay.md)。CLI 用 `Bun.spawn` 直拉（**非 tmux**）；stdin 直写 `proc.stdin`（**无 FIFO**）；stdout 直读（**无 stdout-helper/turn 文件/pipe-pane**）。
+> 完整进程模型/缓冲/时序设计见 [Claude 进程模型与消息回放设计](./docs/design/message-replay.md)。CLI 用 `Bun.spawn` 直拉（**非 tmux**）；stdin 直写 `proc.stdin`（**无 FIFO**）；stdout 直读（**无 stdout-helper/turn 文件/pipe-pane**）。
 
 ### 上行数据流（浏览器 → CLI）
 
@@ -86,10 +86,10 @@ Claude2 session 消息经过多层管道，排查问题时**必须逐层沿数�
 
 | 环节 | 文件 | 关键日志 | 检查方法 |
 |------|------|---------|---------|
-| 浏览器发送 | `claude2-adapter.ts` `sendToSocket()` | `[claude2-adapter] ws send: ...` | 浏览器 Console |
-| WebSocket → server | `index.ts` `websocket.message` | — | 检查 `ws.data.kind === "claude2-stream"` 路由是否命中 |
-| controller.message() | `claude2-stream.ts` `message()` | `[claude2-stream] message ${type}: ${sessionName}` | **如果没有这条日志，说明消息没到达 message()** |
-| stdin 写入 | `claude2-runtime.ts` `write()` | 无显式日志 | 确认 `proc.exitCode === null` 且 `proc.stdin` 可写（直接 pipe，无 FIFO 文件） |
+| 浏览器发送 | `claude-adapter.ts` `sendToSocket()` | `[claude-adapter] ws send: ...` | 浏览器 Console |
+| WebSocket → server | `index.ts` `websocket.message` | — | 检查 `ws.data.kind === "claude-stream"` 路由是否命中 |
+| controller.message() | `claude-stream.ts` `message()` | `[claude-stream] message ${type}: ${sessionName}` | **如果没有这条日志，说明消息没到达 message()** |
+| stdin 写入 | `claude-runtime.ts` `write()` | 无显式日志 | 确认 `proc.exitCode === null` 且 `proc.stdin` 可写（直接 pipe，无 FIFO 文件） |
 | CLI 读取 | CLI 进程 | stderr log | 如果没有响应，检查 CLI 进程是否存活 |
 
 ### 历史回放数据流（reconnect）
@@ -114,7 +114,7 @@ relay.activate() 已在 spawn 时完成：resume 才 readHistoryFromJsonl() 定�
 2. **`claudeSessionId` 为 none 时无历史**：新会话首次连接（system.init 尚未到 / id 未回填）`historyLines` 为空，只有 `liveLines`。回放依赖 `--resume`。
 3. **全新 session 长驻丢早消息**：relay 从不重读 JSONL，`liveLines` 上限 5000，更早的消息只在磁盘 JSONL——下次 API 重启 `--resume` 才作为 history 补回。
 4. **generation 守卫**：重启 spawn 后，确认 `readStdout` 跑在新 generation；旧 generation 的 reader 会把旧进程输出灌进新 relay（已由守卫拦截，排查时先确认 generation）。
-5. **dev 进程用 tmux 管理（与 claude2 spawn 无关）**：API/Web 进程必须在 `ar-dev-api` tmux session 内运行，不能在外面跑；进程变孤儿（PPID=1）后只能 `kill` 再在 tmux 内重启。注意这是开发态进程管理，claude2 本身**不**用 tmux 拉 CLI。
+5. **dev 进程用 tmux 管理（与 claude spawn 无关）**：API/Web 进程必须在 `ar-dev-api` tmux session 内运行，不能在外面跑；进程变孤儿（PPID=1）后只能 `kill` 再在 tmux 内重启。注意这是开发态进程管理，claude 本身**不**用 tmux 拉 CLI。
 
 ### 第一手信息核对要求
 

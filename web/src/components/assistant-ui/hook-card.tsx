@@ -36,7 +36,7 @@ export function HookCard({ custom }: { custom?: Record<string, unknown> }) {
       <ToolHead
         icon="hook"
         status={status}
-        badge={t("claude2.hook.title")}
+        badge={t("claude.hook.title")}
         badgeClassName="bg-assistant/15 text-assistant-soft"
         detail={hookName}
         detailClassName="font-mono text-[0.65rem] font-normal text-on-surface-muted"

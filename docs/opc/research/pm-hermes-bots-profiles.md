@@ -97,7 +97,7 @@ Hermes v0.17.0："Hermes reaches the Raft agent network as a gateway channel"—
 
 1. **该抄（中缝）**：协调介质 = 持久 DB 行而非进程内 RPC。agents-remote 若做多 agent 编排，任务板应为唯一真相：人/包工头/worker 三方读写同一 `kanban_db` 等价物，每个 handoff 是可审计的行；断路器/循环计数/respawn guard 用确定性 DB 守卫不用 LLM 判断。
 2. **该抄（身份）**：agent 身份单位 = 整台 profile（独立记忆/人格/token），禁止共享 profile 的"双写者互染"警告值得直接写进设计文档。
-3. **该补（Hermes 的缺口=我们的机会）**：`delegate_task` 静默后台子 agent 是 #86135 与 #18127 共同的病根。agents-remote 底层已有 claude2 stream-json 全量观测 + JSONL 回放——**包工头派活给 worker 时，每条派生会话天然是可点开、可逐 token 观测、可 --resume 的真实会话**，这正是 Hermes 用户要而不可得的"Grok Bot 式可见 chief 线程"在会话层的实现基础。
+3. **该补（Hermes 的缺口=我们的机会）**：`delegate_task` 静默后台子 agent 是 #86135 与 #18127 共同的病根。agents-remote 底层已有 claude stream-json 全量观测 + JSONL 回放——**包工头派活给 worker 时，每条派生会话天然是可点开、可逐 token 观测、可 --resume 的真实会话**，这正是 Hermes 用户要而不可得的"Grok Bot 式可见 chief 线程"在会话层的实现基础。
 4. **该防**：顶层不要做成"摘要回传进 CEO 聊天"——摘要不是会话，用户要的是可审计的线程本体。
 5. **parent link 的上下文交接**：子任务携带已完成父任务的 summary+metadata 原文，"repo 告诉你 what，handoff 告诉你 why"——多 agent 编排里上下文交接通道要显式设计，不能假设子 agent 自己去翻 git。
 

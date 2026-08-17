@@ -6,7 +6,7 @@ import { JSDOM } from "jsdom";
 import { useMobileExitClose } from "./use-mobile-exit-close";
 
 // bun:test 无内置 jsdom 环境（@vitest-environment 指令不被识别），手动建 JSDOM 并挂到
-// globalThis（claude2-adapter.hook.test.ts:75-78 同款范式）。每个 it 一个新干净 DOM。
+// globalThis（claude-adapter.hook.test.ts:75-78 同款范式）。每个 it 一个新干净 DOM。
 let dom: JSDOM;
 beforeEach(() => {
   dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost" });

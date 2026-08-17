@@ -75,7 +75,7 @@ export class SettingsStore {
         return cloneDefaultSettings();
       }
       // settings.yaml 含 apiKey（机密）——yaml 错误 message 附带源码 snippet，直接 throw 原始
-      // error 会被上层（如 claude2-runtime `console.warn(..., err)`）打到 stderr 泄漏 apiKey。
+      // error 会被上层（如 claude-runtime `console.warn(..., err)`）打到 stderr 泄漏 apiKey。
       // 包装成只含行列位置的摘要错误，原始 error 留 cause 供调试链，message 不外泄。
       throw new Error(`Failed to parse ${this.path}: ${summarizeYamlError(error)}`, {
         cause: error,
@@ -117,7 +117,7 @@ export function isConcreteModelId(model: string): boolean {
 
 // resolveModelId/buildAvailableModels 所需的视图：某 preset 的 modelMapping + runtime 的 1m 开关。
 // v2 起 modelMapping 下沉到 preset、不再属于 runtime，故这两个纯函数入参改为结构视图，
-// 由 activePresetView() 从 runtime + presets 派生（claude2-runtime/session-routes 复用）。
+// 由 activePresetView() 从 runtime + presets 派生（claude-runtime/session-routes 复用）。
 export type ModelMappingView = {
   modelMapping: ClaudeModelMapping;
   enable1mContext: boolean;

@@ -1,11 +1,11 @@
-// 探针：验证 claude2 composer 桌面 Enter 键行为 + 移动端回归保护。
+// 探针：验证 claude composer 桌面 Enter 键行为 + 移动端回归保护。
 //
 // 桌面目标：plain Enter 发送（textarea 不换行）/ Shift+Enter 换行 / Mac Cmd+Enter 换行。
 // 移动目标：plain Enter 换行 + 卡片内显式 Send 才发送（不应被本修复破坏）。
 //
 // 核心断言不依赖 send 是否成功——preventDefault 已阻止换行，与 send 路径无关。
 // 密码由脚本自读（env → config.yaml → api 进程 environ），不进 agent 上下文、不打印值。
-// 用法：node scripts/probe-claude2-composer-enter.mjs
+// 用法：node scripts/probe-claude-composer-enter.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword, readAppPasswordSource } from "./lib/deploy-config.mjs";
 
@@ -17,7 +17,7 @@ async function setupMocks(page) {
   const session = {
     id: fakeSessionId,
     projectName,
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -47,7 +47,7 @@ async function setupMocks(page) {
     }),
   );
   // WS 路由真实 server（fake session 不存在 → error，但 composer 仍渲染）。
-  await page.routeWebSocket(/claude2-stream/, (ws) => ws.connectToServer());
+  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
 
 // 在 textarea 上挂 bubble 阶段 keydown listener，记录我们的 handler 跑完后 e.defaultPrevented。
@@ -106,7 +106,7 @@ async function probe(browser, label, contextOptions, isMac) {
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
   await page.getByRole("button", { name: "Unlock console" }).click();
-  await page.goto(`${WEB_ORIGIN}/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2`);
+  await page.goto(`${WEB_ORIGIN}/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
   const textarea = page.locator("[data-composer-float] textarea").first();
   await textarea.waitFor({ state: "visible", timeout: 15000 });

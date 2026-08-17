@@ -1,4 +1,4 @@
-// Read-only performance tracing for the Claude2 replay pipeline.
+// Read-only performance tracing for the Claude replay pipeline.
 //
 // Every entry point short-circuits when isPerfTraceEnabled() is false (default):
 // `timed`, `markOnce`/`peekMark`/`measureSince`, `measureFrom`, `count` are no-ops — no
@@ -8,7 +8,7 @@
 // Samples accumulate in a module-level ring buffer (NOT React state), so tracing
 // never triggers a re-render and never alters render output. Toggle from the
 // console, load a long session, then call __arDebug.perfReport() for the
-// aggregated table. See docs/research/claude2-replay-performance.md for what
+// aggregated table. See docs/research/claude-replay-performance.md for what
 // each label measures and the (a)/(b)/(c) decision it drives.
 import { isPerfTraceEnabled } from "./debug-flags";
 

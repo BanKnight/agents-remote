@@ -64,8 +64,8 @@ import { CollapsibleSection } from "../components/assistant-ui/collapsible-secti
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import {
-  Claude2BridgeContext,
-  useClaude2Session,
+  ClaudeBridgeContext,
+  useClaudeSession,
   deriveStatus,
   mapTurnStatusTone,
   MODEL_1M_SUFFIX,
@@ -79,8 +79,8 @@ import {
   type TaskInfo,
   type TurnStats,
   type TurnStatusTone,
-} from "./claude2-adapter";
-import type { Claude2FileHistorySnapshot, EffortLevel } from "@agents-remote/shared";
+} from "./claude-adapter";
+import type { ClaudeFileHistorySnapshot, EffortLevel } from "@agents-remote/shared";
 import { EFFORT_LEVELS } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
@@ -128,7 +128,7 @@ type CompactState = {
   reset: () => void;
 };
 
-const Claude2CompactContext = createContext<CompactState | null>(null);
+const ClaudeCompactContext = createContext<CompactState | null>(null);
 
 // Synthetic tail message rendered as the inline CompactProgress card while a
 // compaction is in flight. Appended to storeAdapter.messages only while
@@ -225,7 +225,7 @@ function TaskPanel({
       task.summary ||
       task.agentType ||
       task.workflowName ||
-      t("claude2.taskFallback", { id: task.id.slice(0, 6) });
+      t("claude.taskFallback", { id: task.id.slice(0, 6) });
     const hasTooltip = !!task.description && task.subject;
     const meta = [task.agentType, task.workflowName].filter(Boolean);
     return (
@@ -306,7 +306,7 @@ function TaskPanel({
             strokeLinejoin="round"
           />
         </svg>
-        <span className="text-xs font-medium text-on-surface-muted">{t("claude2.tasks")}</span>
+        <span className="text-xs font-medium text-on-surface-muted">{t("claude.tasks")}</span>
         <span className="text-[0.65rem] text-on-surface-muted">
           {collapsed ? `${doneCount}/${sorted.length}` : sorted.length}
         </span>
@@ -321,7 +321,7 @@ function TaskPanel({
                 firstInProgress.summary ||
                 firstInProgress.agentType ||
                 firstInProgress.workflowName ||
-                t("claude2.taskFallback", { id: firstInProgress.id.slice(0, 6) })}
+                t("claude.taskFallback", { id: firstInProgress.id.slice(0, 6) })}
             </span>
           </>
         )}
@@ -336,7 +336,7 @@ function TaskPanel({
   );
 }
 
-export function Claude2Chat({
+export function ClaudeChat({
   projectName,
   sessionId,
   embedded = false,
@@ -346,13 +346,13 @@ export function Claude2Chat({
   sessionId: string;
   /**
    * 嵌入模式（workbench 中栏用）：跳过 ShellLayout/sidebar，直接渲染面板主体，
-   * 由 WorkbenchShell 提供外壳。默认 false（旧路由 Claude2SessionDetailRoute 用 ShellLayout）。
+   * 由 WorkbenchShell 提供外壳。默认 false（旧路由 ClaudeSessionDetailRoute 用 ShellLayout）。
    */
   embedded?: boolean;
   /**
    * 省略面板自带 header（ChatHeader 整个不渲染）。桌面右工作区与移动端聚焦态都用：
    * header 由 GroupHeader（tab 栏 + ▢）/ MobileFocusHeader 承担，避免 title/projectName 双显
-   * 冗余（设计 §11 对齐）。claude2 的 Files/Git 走中栏 tab，+Terminal 走左总览 CreateSessionBar，
+   * 冗余（设计 §11 对齐）。claude 的 Files/Git 走中栏 tab，+Terminal 走左总览 CreateSessionBar，
    * Retry 走内容区 RetryIndicator，Close 由 tab ✕。默认 false（旧路由用）。
    */
   embeddedHeader?: boolean;
@@ -413,7 +413,7 @@ export function Claude2Chat({
     retryInfo,
     pendingInteraction,
     opusplanActive,
-  } = useClaude2Session(
+  } = useClaudeSession(
     projectName,
     sessionId,
     detail.data?.session.modelAlias ?? detail.data?.session.model,
@@ -428,9 +428,9 @@ export function Claude2Chat({
   const onSelectEffort = async (effort: EffortLevel) => {
     if (session?.status === "running") {
       const ok = await confirm({
-        title: t("claude2.effort.restartTitle"),
-        message: t("claude2.effort.restartConfirmRunning"),
-        confirmLabel: t("claude2.effort.restart"),
+        title: t("claude.effort.restartTitle"),
+        message: t("claude.effort.restartConfirmRunning"),
+        confirmLabel: t("claude.effort.restart"),
         cancelLabel: t("cancel"),
         tone: "danger",
       });
@@ -551,10 +551,10 @@ export function Claude2Chat({
       ) : null}
 
       <AssistantRuntimeProvider runtime={runtime}>
-        <Claude2BridgeContext.Provider value={bridge}>
+        <ClaudeBridgeContext.Provider value={bridge}>
           <PermissionModesContext.Provider value={availablePermissionModes}>
             <LiveThinkingTokensContext.Provider value={liveThinkingTokens}>
-              <Claude2CompactContext.Provider value={compactState}>
+              <ClaudeCompactContext.Provider value={compactState}>
                 <div
                   className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
                 >
@@ -639,10 +639,10 @@ export function Claude2Chat({
                     </div>
                   </ThreadPrimitive.Root>
                 </div>
-              </Claude2CompactContext.Provider>
+              </ClaudeCompactContext.Provider>
             </LiveThinkingTokensContext.Provider>
           </PermissionModesContext.Provider>
-        </Claude2BridgeContext.Provider>
+        </ClaudeBridgeContext.Provider>
       </AssistantRuntimeProvider>
       {holder}
     </>
@@ -858,12 +858,12 @@ function UserChatBubble() {
                 />
               </svg>
               <span className="text-xs font-medium text-on-surface-soft">
-                {t("claude2.message.roleUser")}
+                {t("claude.message.roleUser")}
               </span>
             </>
           }
           onClose={() => setFullscreen(false)}
-          closeLabel={t("claude2.message.exitFullscreen")}
+          closeLabel={t("claude.message.exitFullscreen")}
         >
           <div className="mx-auto max-w-4xl">
             <div className="rounded-2xl rounded-br-md bg-user-deep/60 px-4 py-3">
@@ -877,7 +877,7 @@ function UserChatBubble() {
           type="button"
           onClick={() => setFullscreen(true)}
           className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:text-on-surface-soft"
-          aria-label={t("claude2.message.expand")}
+          aria-label={t("claude.message.expand")}
         >
           <ExpandGlyph />
         </button>
@@ -921,13 +921,13 @@ function OptionPreview({ text, className }: { text: string; className?: string }
 
 // tone → localized status word (shown first, colored) for the turn-end footer.
 const TURN_STATUS_LABEL: Record<TurnStatusTone, TranslationKey> = {
-  completed: "claude2.turnStatus.completed",
-  interrupted: "claude2.turnStatus.interrupted",
-  maxTurns: "claude2.turnStatus.maxTurns",
-  error: "claude2.turnStatus.error",
-  rateLimited: "claude2.turnStatus.rateLimited",
-  hookStopped: "claude2.turnStatus.hookStopped",
-  toolDeferred: "claude2.turnStatus.toolDeferred",
+  completed: "claude.turnStatus.completed",
+  interrupted: "claude.turnStatus.interrupted",
+  maxTurns: "claude.turnStatus.maxTurns",
+  error: "claude.turnStatus.error",
+  rateLimited: "claude.turnStatus.rateLimited",
+  hookStopped: "claude.turnStatus.hookStopped",
+  toolDeferred: "claude.turnStatus.toolDeferred",
 };
 
 // tone → status-word color. Cost/tokens/duration stay muted slate.
@@ -950,7 +950,7 @@ function TurnStatsFooter({ stats }: { stats: TurnStats }) {
 
   const tailParts: string[] = [];
   if (typeof stats.numTurns === "number")
-    tailParts.push(t("claude2.turn.turns", { count: stats.numTurns }));
+    tailParts.push(t("claude.turn.turns", { count: stats.numTurns }));
   if (typeof stats.totalCostUsd === "number") tailParts.push(`$${stats.totalCostUsd.toFixed(2)}`);
   const tokenBits: string[] = [];
   if (typeof stats.inputTokens === "number")
@@ -997,7 +997,7 @@ function AssistantChatBubble() {
           <div className="flex items-center gap-2 py-1 text-assistant/90">
             <ToolHead
               icon="thinking"
-              badge={t("claude2.thinking.title")}
+              badge={t("claude.thinking.title")}
               badgeClassName="bg-assistant/10 text-assistant"
               detail={`${formatTokenCount(liveThinkingTokens)} tokens`}
               status="running"
@@ -1077,12 +1077,12 @@ function AssistantChatBubble() {
                 />
               </svg>
               <span className="text-xs font-medium text-on-surface-soft">
-                {t("claude2.message.roleAssistant")}
+                {t("claude.message.roleAssistant")}
               </span>
             </>
           }
           onClose={() => setFullscreen(false)}
-          closeLabel={t("claude2.message.exitFullscreen")}
+          closeLabel={t("claude.message.exitFullscreen")}
         >
           <div className="mx-auto max-w-4xl">
             <div className="rounded-2xl rounded-bl-md bg-surface-raised/70 px-4 py-3">
@@ -1099,7 +1099,7 @@ function AssistantChatBubble() {
               type="button"
               onClick={() => setFullscreen(true)}
               className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:text-on-surface-soft"
-              aria-label={t("claude2.message.expand")}
+              aria-label={t("claude.message.expand")}
             >
               <ExpandGlyph />
             </button>
@@ -1143,7 +1143,7 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
       header={
         <ToolHead
           icon="thinking"
-          badge={t("claude2.thinking.title")}
+          badge={t("claude.thinking.title")}
           badgeClassName="bg-assistant/10 text-assistant"
           detail={estimatedTokens != null ? `${formatTokenCount(estimatedTokens)} tokens` : null}
           status={running ? "running" : null}
@@ -1268,12 +1268,12 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
         <span className="text-[0.6rem] text-error/50 ml-auto shrink-0 whitespace-nowrap">
           {retry
             ? retry.seconds
-              ? t("claude2.retry.attemptSeconds", {
+              ? t("claude.retry.attemptSeconds", {
                   attempt: retry.attempt,
                   max: retry.max,
                   seconds: retry.seconds,
                 })
-              : t("claude2.retry.attempt", { attempt: retry.attempt, max: retry.max })
+              : t("claude.retry.attempt", { attempt: retry.attempt, max: retry.max })
             : null}
           {!expanded ? " ▸" : null}
         </span>
@@ -1482,7 +1482,7 @@ function SystemChatBubble() {
     const indent = custom?.toolIndent !== false;
     // 权限金色边框只在「待批准」期显：controlRequestId 存在 且 tool 未解决（无 result）且
     // 未中断。批准后 tool 收 result、拒绝经 cancelControlRequest 触发 interrupted —— 两者都
-    // 清边框。镜像 claude2-adapter.ts pendingInteraction（controlRequestId && !result && !isInterrupted）。
+    // 清边框。镜像 claude-adapter.ts pendingInteraction（controlRequestId && !result && !isInterrupted）。
     const needsPermission =
       typeof controlRequestId === "string" &&
       controlRequestId.length > 0 &&
@@ -1537,7 +1537,7 @@ function SystemChatBubble() {
             <span
               className={`shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-medium ${backgroundTask.active ? "bg-assistant-deep/30 text-assistant" : "bg-on-surface/5 text-on-surface-muted"}`}
             >
-              {backgroundTask.active ? t("claude2.backgroundRunning") : t("claude2.backgroundTask")}
+              {backgroundTask.active ? t("claude.backgroundRunning") : t("claude.backgroundTask")}
             </span>
             {backgroundTask.taskType ? (
               <span className="shrink-0 text-on-surface-muted">{backgroundTask.taskType}</span>
@@ -1601,7 +1601,7 @@ function SystemChatBubble() {
   const rawData = custom?._raw as Record<string, unknown> | undefined;
   const fileSnapshot =
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
-      ? (rawData as Claude2FileHistorySnapshot)
+      ? (rawData as ClaudeFileHistorySnapshot)
       : null;
 
   const renderBody = () => (
@@ -1647,12 +1647,12 @@ function SystemChatBubble() {
                 />
               </svg>
               <span className="text-xs font-medium text-on-surface-soft">
-                {t("claude2.message.roleSystem")}
+                {t("claude.message.roleSystem")}
               </span>
             </>
           }
           onClose={() => setFullscreen(false)}
-          closeLabel={t("claude2.message.exitFullscreen")}
+          closeLabel={t("claude.message.exitFullscreen")}
         >
           <div className="mx-auto max-w-4xl">
             <div className="rounded-2xl rounded-bl-md bg-assistant-deep/30 px-4 py-3 overflow-hidden">
@@ -1668,7 +1668,7 @@ function SystemChatBubble() {
 
 // file-history-snapshot: CLI's internal file-tracking checkpoint.
 // trackedFileBackups maps file path → { backupFileName, version, backupTime }.
-function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySnapshot }) {
+function FileHistorySnapshotView({ snapshot }: { snapshot: ClaudeFileHistorySnapshot }) {
   const { t } = useT();
   const backups = snapshot.snapshot?.trackedFileBackups ?? {};
   const entries = Object.entries(backups);
@@ -1683,9 +1683,9 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
       header={
         <ToolHead
           icon="history"
-          badge={t("claude2.fileSnapshot.title")}
+          badge={t("claude.fileSnapshot.title")}
           badgeClassName="bg-assistant-deep/30 text-assistant"
-          detail={t("claude2.fileSnapshot.files", { count: entries.length })}
+          detail={t("claude.fileSnapshot.files", { count: entries.length })}
           trailing={
             <span
               className={`rounded px-1.5 py-0.5 text-[0.55rem] font-semibold ${
@@ -1694,7 +1694,7 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
                   : "bg-assistant-deep/30 text-assistant/60"
               }`}
             >
-              {t(isUpdate ? "claude2.fileSnapshot.incremental" : "claude2.fileSnapshot.full")}
+              {t(isUpdate ? "claude.fileSnapshot.incremental" : "claude.fileSnapshot.full")}
             </span>
           }
         />
@@ -1720,7 +1720,7 @@ function FileHistorySnapshotView({ snapshot }: { snapshot: Claude2FileHistorySna
         </div>
       ) : (
         <p className="text-[0.65rem] text-assistant/40">
-          {t("claude2.fileSnapshot.noTrackedFiles")}
+          {t("claude.fileSnapshot.noTrackedFiles")}
         </p>
       )}
       {timeStr ? <p className="mt-1 text-[0.55rem] text-assistant/40">{timeStr}</p> : null}
@@ -1984,7 +1984,7 @@ type ExitPlanModeCustom = {
 // falling back to acceptEdits) / 手动模式 (default) / 告诉AI怎么修改 (feedback).
 function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   const { t } = useT();
-  const bridge = useContext(Claude2BridgeContext);
+  const bridge = useContext(ClaudeBridgeContext);
   const availableModes = useContext(PermissionModesContext);
   const autoMode = resolveAutoPermissionMode(availableModes);
   const custom = useAuiState(
@@ -2014,7 +2014,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
     if (!controlRequestId) return;
     setOutcome("approved");
     setApprovedModeLabel(
-      mode === "default" ? t("claude2.plan.modeManualShort") : t("claude2.plan.modeAutoShort"),
+      mode === "default" ? t("claude.plan.modeManualShort") : t("claude.plan.modeAutoShort"),
     );
     const permissionUpdates: PermissionUpdate[] = [
       { type: "setMode", mode, destination: "session" },
@@ -2040,21 +2040,21 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
               onClick={() => onApprove(autoMode)}
               className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-success/50 bg-success/10 px-3.5 py-1.5 text-xs font-semibold text-success shadow-sm transition hover:border-success/70 hover:bg-success/15 active:bg-success/20"
             >
-              ✓ {t("claude2.plan.modeAuto")}
+              ✓ {t("claude.plan.modeAuto")}
             </button>
             <button
               type="button"
               onClick={() => onApprove("default")}
               className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-success/30 px-3.5 py-1.5 text-xs font-semibold text-success/90 transition hover:border-success/50 hover:bg-success/15 active:bg-success/25"
             >
-              ✓ {t("claude2.plan.modeManual")}
+              ✓ {t("claude.plan.modeManual")}
             </button>
             <button
               type="button"
               onClick={() => setFeedbackOpen(!feedbackOpen)}
               className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-neutral-line/60 px-3.5 py-1.5 text-xs font-medium text-on-surface-soft transition hover:border-neutral-line hover:bg-neutral-line/50 active:bg-neutral-line/70"
             >
-              ✎ {t("claude2.plan.feedback")}
+              ✎ {t("claude.plan.feedback")}
             </button>
           </div>
           {feedbackOpen ? (
@@ -2068,20 +2068,20 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
                     onReject();
                   }
                 }}
-                placeholder={t("claude2.plan.feedbackPlaceholder")}
+                placeholder={t("claude.plan.feedbackPlaceholder")}
                 rows={2}
                 className="w-full resize-none rounded-md border border-neutral-line/60 bg-surface-inset/50 px-2 py-1.5 text-xs text-on-surface-soft placeholder:text-on-surface-muted focus:border-assistant/60 focus:outline-none"
               />
               <div className="flex items-center justify-end gap-2">
                 <span className="text-[0.6rem] text-on-surface-muted">
-                  {t("claude2.plan.enterToSend")}
+                  {t("claude.plan.enterToSend")}
                 </span>
                 <button
                   type="button"
                   onClick={onReject}
                   className="cursor-pointer rounded-md bg-error/20 px-3 py-1 text-xs font-semibold text-error hover:bg-error/35 transition"
                 >
-                  {t("claude2.plan.send")}
+                  {t("claude.plan.send")}
                 </button>
               </div>
             </div>
@@ -2091,10 +2091,10 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         <div className="px-3 py-2 sm:px-5">
           {outcome === "rejected" ? (
             <span className="text-xs font-medium text-assistant">
-              ⊘ {t("claude2.plan.rejected")}
+              ⊘ {t("claude.plan.rejected")}
             </span>
           ) : (
-            <span className="text-xs text-error">{result ?? t("claude2.plan.error")}</span>
+            <span className="text-xs text-error">{result ?? t("claude.plan.error")}</span>
           )}
           {outcome === "rejected" && result ? (
             <div className="mt-1 text-[0.65rem] text-on-surface-muted">{result}</div>
@@ -2103,7 +2103,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
       ) : complete && result ? (
         <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
           <span className="text-xs font-medium text-success">
-            ✓ {t("claude2.plan.approved")}
+            ✓ {t("claude.plan.approved")}
             {approvedModeLabel ? ` · ${approvedModeLabel}` : ""}
           </span>
           <button
@@ -2111,7 +2111,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             onClick={() => setResultOpen(!resultOpen)}
             className="ml-2 cursor-pointer text-[0.65rem] text-on-surface-muted hover:text-on-surface-soft"
           >
-            {resultOpen ? "▾" : "▸"} {t("claude2.plan.result")}
+            {resultOpen ? "▾" : "▸"} {t("claude.plan.result")}
           </button>
           {resultOpen ? (
             <div className="mt-1 max-h-48 overflow-y-auto">
@@ -2121,7 +2121,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
         </div>
       ) : (
         <div className="px-3 py-1.5 text-[0.65rem] text-on-surface-muted sm:px-5">
-          {t("claude2.plan.orphaned")}
+          {t("claude.plan.orphaned")}
         </div>
       )}
     </div>
@@ -2138,7 +2138,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
           <ToolHead
             icon="plan"
             iconClassName="text-assistant"
-            badge={t("claude2.plan.title")}
+            badge={t("claude.plan.title")}
             badgeClassName="bg-assistant/10 text-assistant"
             detail={planFilePath}
           />
@@ -2147,7 +2147,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             type="button"
             onClick={() => setFullscreen(true)}
             className="cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-assistant"
-            aria-label={t("claude2.plan.expand")}
+            aria-label={t("claude.plan.expand")}
           >
             <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
@@ -2175,7 +2175,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
               <ToolHead
                 icon="plan"
                 iconClassName="text-assistant"
-                badge={t("claude2.plan.title")}
+                badge={t("claude.plan.title")}
                 badgeClassName="bg-assistant/10 text-assistant"
                 detail={planFilePath}
               />
@@ -2183,7 +2183,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
             </>
           }
           onClose={() => setFullscreen(false)}
-          closeLabel={t("claude2.plan.exitFullscreen")}
+          closeLabel={t("claude.plan.exitFullscreen")}
           footer={renderTail()}
         >
           <div className="mx-auto max-w-4xl">
@@ -2191,7 +2191,7 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
               <MarkdownString text={plan} />
             ) : (
               <p className="py-8 text-center text-xs text-on-surface-muted">
-                {t("claude2.plan.orphaned")}
+                {t("claude.plan.orphaned")}
               </p>
             )}
           </div>
@@ -2221,7 +2221,7 @@ type AskUserQuestionCustom = {
 
 function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   const { t } = useT();
-  const bridge = useContext(Claude2BridgeContext);
+  const bridge = useContext(ClaudeBridgeContext);
   const composer = useComposerRuntime();
   const custom = useAuiState(
     (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as AskUserQuestionCustom,
@@ -2367,15 +2367,15 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                   onClick={handleSubmit}
                 >
                   {questions.length > 1
-                    ? `${t("claude2.ask.submit")} ${answeredCount}/${questions.length}`
-                    : t("claude2.ask.submit")}
+                    ? `${t("claude.ask.submit")} ${answeredCount}/${questions.length}`
+                    : t("claude.ask.submit")}
                 </button>
                 <button
                   type="button"
                   className="rounded-md border border-neutral-line/50 px-3.5 py-1.5 text-xs font-medium text-on-surface-muted transition hover:border-neutral-line hover:text-on-surface-soft cursor-pointer"
                   onClick={handleCancel}
                 >
-                  {t("claude2.ask.skip")}
+                  {t("claude.ask.skip")}
                 </button>
               </>
             ) : custom.toolCallId ? (
@@ -2387,15 +2387,15 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                   onClick={handleSubmit}
                 >
                   {questions.length > 1
-                    ? `${t("claude2.ask.submit")} ${answeredCount}/${questions.length}`
-                    : t("claude2.ask.submit")}
+                    ? `${t("claude.ask.submit")} ${answeredCount}/${questions.length}`
+                    : t("claude.ask.submit")}
                 </button>
                 <button
                   type="button"
                   className="rounded-md border border-neutral-line/50 px-3.5 py-1.5 text-xs font-medium text-on-surface-muted transition hover:border-neutral-line hover:text-on-surface-soft cursor-pointer"
                   onClick={handleCancel}
                 >
-                  {t("claude2.ask.skip")}
+                  {t("claude.ask.skip")}
                 </button>
               </>
             ) : (
@@ -2409,33 +2409,33 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                 disabled={!allAnswered}
                 onClick={handleSubmit}
               >
-                {t("claude2.ask.fillComposer")}
+                {t("claude.ask.fillComposer")}
               </button>
             )}
           </div>
           <p className="mt-1 text-[0.55rem] text-assistant/40 text-center">
-            {t("claude2.ask.waitingHint")}
+            {t("claude.ask.waitingHint")}
           </p>
         </div>
       ) : error ? (
         <div className="px-3 py-2 sm:px-5">
           {outcome === "skipped" ? (
-            <span className="text-xs font-medium text-assistant">⊘ {t("claude2.ask.skipped")}</span>
+            <span className="text-xs font-medium text-assistant">⊘ {t("claude.ask.skipped")}</span>
           ) : (
-            <span className="text-xs text-error">{resultStr || t("claude2.ask.error")}</span>
+            <span className="text-xs text-error">{resultStr || t("claude.ask.error")}</span>
           )}
         </div>
       ) : complete && resultStr ? (
         <div className="px-3 pt-1.5 pb-1.5 sm:px-5">
           <span className="text-xs font-medium text-success">
-            ✓ {t("claude2.ask.statusAnswered")}
+            ✓ {t("claude.ask.statusAnswered")}
           </span>
           <button
             type="button"
             onClick={() => setResultOpen(!resultOpen)}
             className="ml-2 cursor-pointer text-[0.65rem] text-on-surface-muted hover:text-on-surface-soft"
           >
-            {resultOpen ? "▾" : "▸"} {t("claude2.ask.result")}
+            {resultOpen ? "▾" : "▸"} {t("claude.ask.result")}
           </button>
           {resultOpen ? (
             <div className="mt-1 max-h-32 overflow-y-auto">
@@ -2447,7 +2447,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
         </div>
       ) : (
         <div className="px-3 py-1.5 text-[0.65rem] text-on-surface-muted sm:px-5">
-          {t("claude2.ask.orphaned")}
+          {t("claude.ask.orphaned")}
         </div>
       )}
     </div>
@@ -2464,7 +2464,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
           <ToolHead
             icon="question"
             iconClassName="text-assistant"
-            badge={t("claude2.ask.title")}
+            badge={t("claude.ask.title")}
             badgeClassName="bg-assistant/10 text-assistant"
           />
           <span className="flex-1" />
@@ -2472,7 +2472,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
             type="button"
             onClick={() => setFullscreen(true)}
             className="cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-assistant"
-            aria-label={t("claude2.ask.expand")}
+            aria-label={t("claude.ask.expand")}
           >
             <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
@@ -2507,7 +2507,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                     {q.question}
                     {multi ? (
                       <span className="text-[0.55rem] text-assistant/60 ml-1">
-                        {t("claude2.ask.multiSelect")}
+                        {t("claude.ask.multiSelect")}
                       </span>
                     ) : null}
                   </p>
@@ -2572,13 +2572,13 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                         >
                           ✎
                         </span>
-                        <span className="flex-1">{t("claude2.ask.other")}</span>
+                        <span className="flex-1">{t("claude.ask.other")}</span>
                       </button>
                       {otherActive ? (
                         <textarea
                           className="w-full rounded-lg bg-surface-inset/60 border border-assistant/20 px-2 py-1.5 text-[0.65rem] text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                           rows={2}
-                          placeholder={t("claude2.ask.inputPlaceholder")}
+                          placeholder={t("claude.ask.inputPlaceholder")}
                           disabled={!canAnswer}
                           value={freeText[i] ?? ""}
                           onChange={(e) =>
@@ -2605,13 +2605,13 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           />
                         </svg>
                         <span className="text-[0.55rem] text-assistant/60">
-                          {t("claude2.ask.typeOpinion")}
+                          {t("claude.ask.typeOpinion")}
                         </span>
                       </div>
                       <textarea
                         className="w-full bg-transparent px-2 py-1.5 text-[0.65rem] text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                         rows={2}
-                        placeholder={t("claude2.ask.inputPlaceholder")}
+                        placeholder={t("claude.ask.inputPlaceholder")}
                         disabled={!canAnswer}
                         value={freeText[i] ?? ""}
                         onChange={(e) => setFreeText((prev) => ({ ...prev, [i]: e.target.value }))}
@@ -2632,14 +2632,14 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               <ToolHead
                 icon="question"
                 iconClassName="text-assistant"
-                badge={t("claude2.ask.title")}
+                badge={t("claude.ask.title")}
                 badgeClassName="bg-assistant/10 text-assistant"
               />
               <span className="flex-1" />
             </>
           }
           onClose={() => setFullscreen(false)}
-          closeLabel={t("claude2.ask.exitFullscreen")}
+          closeLabel={t("claude.ask.exitFullscreen")}
           footer={renderTail()}
         >
           <div className="mx-auto max-w-4xl space-y-3">
@@ -2663,7 +2663,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                       {q.question}
                       {multi ? (
                         <span className="text-xs text-assistant/60 ml-1">
-                          {t("claude2.ask.multiSelect")}
+                          {t("claude.ask.multiSelect")}
                         </span>
                       ) : null}
                     </p>
@@ -2728,13 +2728,13 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                           >
                             ✎
                           </span>
-                          <span className="flex-1">{t("claude2.ask.other")}</span>
+                          <span className="flex-1">{t("claude.ask.other")}</span>
                         </button>
                         {otherActive ? (
                           <textarea
                             className="w-full rounded-lg bg-surface-inset/60 border border-assistant/20 px-3 py-2 text-xs text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                             rows={3}
-                            placeholder={t("claude2.ask.inputPlaceholder")}
+                            placeholder={t("claude.ask.inputPlaceholder")}
                             disabled={!canAnswer}
                             value={freeText[i] ?? ""}
                             onChange={(e) =>
@@ -2761,13 +2761,13 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
                             />
                           </svg>
                           <span className="text-xs text-assistant/60">
-                            {t("claude2.ask.typeOpinion")}
+                            {t("claude.ask.typeOpinion")}
                           </span>
                         </div>
                         <textarea
                           className="w-full bg-transparent px-3 py-2 text-xs text-on-surface-soft placeholder:text-on-surface-muted outline-none resize-none"
                           rows={3}
-                          placeholder={t("claude2.ask.inputPlaceholder")}
+                          placeholder={t("claude.ask.inputPlaceholder")}
                           disabled={!canAnswer}
                           value={freeText[i] ?? ""}
                           onChange={(e) =>
@@ -2781,7 +2781,7 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
               })
             ) : (
               <p className="py-8 text-center text-xs text-on-surface-muted">
-                {t("claude2.ask.orphaned")}
+                {t("claude.ask.orphaned")}
               </p>
             )}
           </div>
@@ -2826,7 +2826,7 @@ function ModeChangeNotice({ headIndex }: { headIndex: number }) {
       <div className="flex-1 border-t border-assistant-deep/30" />
       <ModeChangeGlyph />
       <span className="shrink-0 whitespace-nowrap text-[0.6rem] font-medium text-assistant/70">
-        {t("claude2.mode.changed", { mode: label })}
+        {t("claude.mode.changed", { mode: label })}
       </span>
       <div className="flex-1 border-t border-assistant-deep/30" />
     </div>
@@ -2867,7 +2867,7 @@ function ModelChangeNotice({ headIndex }: { headIndex: number }) {
       <div className="flex-1 border-t border-assistant-deep/30" />
       <ModelChangeGlyph />
       <span className="shrink-0 text-[0.6rem] font-medium text-assistant/70">
-        {t("claude2.model.changed", { model: custom.echoLabel ?? "" })}
+        {t("claude.model.changed", { model: custom.echoLabel ?? "" })}
       </span>
       <div className="flex-1 border-t border-assistant-deep/30" />
     </div>
@@ -2897,19 +2897,19 @@ function CommandOutputCard({ headIndex }: { headIndex: number }) {
   const title = isBash
     ? custom.input
       ? `! ${custom.input}`
-      : t("claude2.command.title")
+      : t("claude.command.title")
     : custom.commandName
       ? `/${custom.commandName}`
-      : t("claude2.command.title");
+      : t("claude.command.title");
   const sections: Array<{ label: string; value: string; tone: "default" | "error" }> = [];
   if (custom.args)
-    sections.push({ label: t("claude2.command.args"), value: custom.args, tone: "default" });
+    sections.push({ label: t("claude.command.args"), value: custom.args, tone: "default" });
   if (custom.input && !isBash)
-    sections.push({ label: t("claude2.command.input"), value: custom.input, tone: "default" });
+    sections.push({ label: t("claude.command.input"), value: custom.input, tone: "default" });
   if (custom.stdout)
-    sections.push({ label: t("claude2.command.stdout"), value: custom.stdout, tone: "default" });
+    sections.push({ label: t("claude.command.stdout"), value: custom.stdout, tone: "default" });
   if (custom.stderr)
-    sections.push({ label: t("claude2.command.stderr"), value: custom.stderr, tone: "error" });
+    sections.push({ label: t("claude.command.stderr"), value: custom.stderr, tone: "error" });
 
   return (
     <div className="px-3 py-1 sm:px-5">
@@ -2924,7 +2924,7 @@ function CommandOutputCard({ headIndex }: { headIndex: number }) {
           />
         </div>
         {sections.length === 0 ? (
-          <p className="mt-1 text-xs text-on-surface-muted">{t("claude2.command.empty")}</p>
+          <p className="mt-1 text-xs text-on-surface-muted">{t("claude.command.empty")}</p>
         ) : (
           <div className="mt-2 flex flex-col gap-2 border-t border-neutral-line/30 pt-2">
             {sections.map((s, i) => (
@@ -2962,7 +2962,7 @@ function CommandOutputCard({ headIndex }: { headIndex: number }) {
 // the permanent CompactBlock once the compact_boundary lands. Stage (running →
 // summarizing) comes from the compact context, driven by onCompact via bridgeRef.
 function CompactProgress() {
-  const compact = useContext(Claude2CompactContext);
+  const compact = useContext(ClaudeCompactContext);
   const { t } = useT();
   const stage = compact?.stage ?? "running";
   return (
@@ -2972,12 +2972,12 @@ function CompactProgress() {
           icon="compact"
           status="running"
           iconClassName="text-assistant"
-          badge={t("claude2.compact.progressBadge")}
+          badge={t("claude.compact.progressBadge")}
           badgeClassName="bg-assistant/15 text-assistant"
           detail={
             stage === "summarizing"
-              ? t("claude2.compact.progressSummarizing")
-              : t("claude2.compact.progressRunning")
+              ? t("claude.compact.progressSummarizing")
+              : t("claude.compact.progressRunning")
           }
         />
       </div>
@@ -2999,22 +2999,22 @@ function CompactAbortBanner({
   source: "live" | "replay";
   custom?: Record<string, unknown>;
 }) {
-  const compact = useContext(Claude2CompactContext);
+  const compact = useContext(ClaudeCompactContext);
   const { t } = useT();
   const reason = source === "live" ? compact?.lastAbortReason : null;
   const detail =
     source === "replay"
-      ? t("claude2.compact.abortUnknown")
+      ? t("claude.compact.abortUnknown")
       : reason === "system"
-        ? t("claude2.compact.abortSystem")
-        : t("claude2.compact.abortManual");
+        ? t("claude.compact.abortSystem")
+        : t("claude.compact.abortManual");
   return (
     <div className="flex justify-start px-3 py-1 sm:px-5">
       <div className="inline-flex items-center gap-1.5 rounded-lg bg-error/10 px-2.5 py-1">
         <ToolHead
           icon="compact"
           status="error"
-          badge={t("claude2.compact.abortedBadge")}
+          badge={t("claude.compact.abortedBadge")}
           badgeClassName="bg-error/15 text-error"
           detail={detail}
           trailing={<RawDebugTooltip custom={custom} className="-mr-1" compact />}
@@ -3330,7 +3330,7 @@ function ModelSelector({
   permissionMode?: string;
 }) {
   const { t } = useT();
-  const bridge = useContext(Claude2BridgeContext);
+  const bridge = useContext(ClaudeBridgeContext);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const preSwitchResolvedRef = useRef<string | undefined>(undefined);
 
@@ -3391,7 +3391,7 @@ function ModelSelector({
     return (
       <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant">
         <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-assistant/40 border-t-assistant" />
-        {t("claude2.switchingModel", { model: modelDisplayLabel(switchingTo) })}
+        {t("claude.switchingModel", { model: modelDisplayLabel(switchingTo) })}
       </div>
     );
   }
@@ -3457,7 +3457,7 @@ function PermissionModeSelector({
   availableModes: string[];
 }) {
   const { t } = useT();
-  const bridge = useContext(Claude2BridgeContext);
+  const bridge = useContext(ClaudeBridgeContext);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
 
   const modes =
@@ -3804,10 +3804,10 @@ function ComposerWithInterrupt({
         <ComposerPrimitive.Input
           placeholder={
             blocked
-              ? t("claude2.blockedByPendingAction")
+              ? t("claude.blockedByPendingAction")
               : disconnected
-                ? t("claude2.disconnected")
-                : t("claude2.inputPlaceholder")
+                ? t("claude.disconnected")
+                : t("claude.inputPlaceholder")
           }
           disabled={inputDisabled}
           // 触屏设备：Enter 换行、卡片内显式 Send 才发送（库自带 (pointer: coarse) 检测处理）。
@@ -3878,8 +3878,8 @@ function ComposerWithInterrupt({
               // 键盘不收（发送后输入清空，用户大概率继续输入，保焦=键盘不收）。
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => composer.send()}
-              aria-label={t("claude2.composer.send")}
-              title={t("claude2.composer.send")}
+              aria-label={t("claude.composer.send")}
+              title={t("claude.composer.send")}
               className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg transition hover:opacity-90 cursor-pointer"
             >
               <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
@@ -3961,13 +3961,13 @@ function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
       <span className="inline-flex items-center gap-1.5 rounded-full bg-assistant/10 px-3 py-1 text-[0.65rem] text-assistant">
         <span className="h-2 w-2 shrink-0 animate-spin rounded-full border border-assistant/40 border-t-assistant" />
         {retryInfo.maxRetries > 1
-          ? t("claude2.retry.bannerMulti", {
+          ? t("claude.retry.bannerMulti", {
               attempt: retryInfo.attempt,
               max: retryInfo.maxRetries,
               error: errorText,
               seconds: countdown,
             })
-          : t("claude2.retry.bannerSingle", { error: errorText, seconds: countdown })}
+          : t("claude.retry.bannerSingle", { error: errorText, seconds: countdown })}
       </span>
     </div>
   );

@@ -1,6 +1,6 @@
-# Claude2 Provider 协议设计
+# Claude Provider 协议设计
 
-定义 Claude2 agent provider 基于 `--output-format stream-json --permission-prompt-tool stdio` 的完整协议契约，包括消息流、双层 ID 架构、权限生命周期、缓冲策略和状态驱动 UI 规则。
+定义 Claude agent provider 基于 `--output-format stream-json --permission-prompt-tool stdio` 的完整协议契约，包括消息流、双层 ID 架构、权限生命周期、缓冲策略和状态驱动 UI 规则。
 
 本协议设计参考了 [hapi](https://github.com/tiann/hapi) 的 Query/Permission 架构，并预留 Codex 等后续 provider 的统一接入模式。
 
@@ -9,7 +9,7 @@
 ```
 浏览器 (assistant-ui Chat UI)
     ↕ WebSocket（结构化 JSON 消息）
-Bun API Server (Claude2StreamController)
+Bun API Server (ClaudeStreamController)
     ↕ stdin/stdout（newline-delimited JSON）
 Claude CLI 子进程 (--permission-prompt-tool stdio)
 ```
@@ -25,18 +25,18 @@ Claude CLI 子进程 (--permission-prompt-tool stdio)
 
 | 类型 | 用途 |
 |------|------|
-| `Claude2SystemInit` | 会话初始化（session_id, model, cwd, tools, slash_commands） |
-| `Claude2AssistantMessage` | 助手消息（text + tool_use + thinking blocks），每个 message 有唯一 `id` |
-| `Claude2UserMessage` | 用户消息回显（包括 tool_result echo） |
-| `Claude2Result` | Turn 完成（subtype: success/error/interrupted，携带 usage/cost） |
-| `Claude2ControlRequest` | 权限请求（Bash/Write/AskUserQuestion 等通过 stdio 路由） |
+| `ClaudeSystemInit` | 会话初始化（session_id, model, cwd, tools, slash_commands） |
+| `ClaudeAssistantMessage` | 助手消息（text + tool_use + thinking blocks），每个 message 有唯一 `id` |
+| `ClaudeUserMessage` | 用户消息回显（包括 tool_result echo） |
+| `ClaudeResult` | Turn 完成（subtype: success/error/interrupted，携带 usage/cost） |
+| `ClaudeControlRequest` | 权限请求（Bash/Write/AskUserQuestion 等通过 stdio 路由） |
 
 ### Client → Server（`SessionStreamClientMessage` 的子类型）
 
 | 类型 | 用途 |
 |------|------|
-| `claude2:user` | 用户文本输入 |
-| `claude2:control_response` | 权限响应（request_id + answers/response） |
+| `claude:user` | 用户文本输入 |
+| `claude:control_response` | 权限响应（request_id + answers/response） |
 
 ## 核心设计：双层 ID 架构
 
@@ -177,7 +177,7 @@ control_request 到达 onmessage
 
 ## 与 hapi 的对照
 
-| 方面 | hapi | agents-remote (claude2) |
+| 方面 | hapi | agents-remote (claude) |
 |------|------|------------------------|
 | Permission 存储 | Hub `AgentState.requests[request_id]` | 缓冲在客户端 memory |
 | 消息传输 | CLI → WebSocket → Hub → SSE → UI | CLI → Bun.spawn stdout → WebSocket → UI |

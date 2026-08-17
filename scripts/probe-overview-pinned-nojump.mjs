@@ -14,7 +14,7 @@ const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const EXEC =
   "/home/deploy/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell";
 
-// 一个 claude2 agent 实例，会被 pin。
+// 一个 claude agent 实例，会被 pin。
 const MOCK_CANDIDATES = [
   {
     type: "agent",
@@ -22,7 +22,7 @@ const MOCK_CANDIDATES = [
     sessionId: "agent-pinned-1",
     displayName: "被置顶的会话",
     status: "running",
-    provider: "claude2",
+    provider: "claude",
   },
   {
     type: "agent",
@@ -30,7 +30,7 @@ const MOCK_CANDIDATES = [
     sessionId: "agent-normal-2",
     displayName: "普通会话",
     status: "running",
-    provider: "claude2",
+    provider: "claude",
   },
 ];
 const PINNED_SESSION_ID = "agent-pinned-1";

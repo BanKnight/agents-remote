@@ -22,7 +22,7 @@
 
 ### 问题 1：中栏进/出项目重建
 - `router.tsx:22-97` 七个 workbench 路由（`/`、`/projects`、`/projects/$key`、`/projects/$key/session/$id`、`/projects/$key/file/$`、`/projects/$key/git/$`、`/projects/session/$id`）全是 `rootRoute` 平级兄弟叶子，各自 `lazyRouteComponent` 挂不同 component，都渲染 `WorkbenchContent(scope 不同)`。
-- 进/出项目 = TanStack Router unmount 整棵 `WorkbenchContent` 子树（`WorkbenchRoute.tsx:192`）→ `InstanceArea`(`instance-area.tsx:268`) → `WorkspaceTree`(`:1949`) → 所有 `PanelRouter`(`:2014` key=tabId) unmount → WebSocket（终端 `SessionDetailRoute.tsx:207`、Claude2 `claude2-adapter.ts:4050`，都在 useEffect mount 建/unmount 断）+ xterm 全部重建。
+- 进/出项目 = TanStack Router unmount 整棵 `WorkbenchContent` 子树（`WorkbenchRoute.tsx:192`）→ `InstanceArea`(`instance-area.tsx:268`) → `WorkspaceTree`(`:1949`) → 所有 `PanelRouter`(`:2014` key=tabId) unmount → WebSocket（终端 `SessionDetailRoute.tsx:207`、Claude `claude-adapter.ts:4050`，都在 useEffect mount 建/unmount 断）+ xterm 全部重建。
 - `workbenchLayoutAtom`(`workbench-model.ts:1433` `workbenchLayoutV4`) 数据已单一化跨 scope 稳定，但承载它的组件实例被路由销毁。无 key prop 强制重建，纯路由 unmount 导致。
 
 ### 问题 2：活动栏 [文件] 锁死全局

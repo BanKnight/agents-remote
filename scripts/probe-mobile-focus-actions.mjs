@@ -24,7 +24,7 @@ const EXEC =
 const SESSION = {
   id: "agent_probe-1",
   projectName: "proj1",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe Agent A",
   status: "idle",
   model: "sonnet",
@@ -83,7 +83,7 @@ async function setupMocks(page) {
     }),
   );
   // 聚焦 session 面板连真实 WS（fake session 不存在 → error，但 panel 容器仍渲染）。
-  await page.routeWebSocket(/claude2-stream/, (ws) => ws.connectToServer());
+  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
 
 async function login(page) {

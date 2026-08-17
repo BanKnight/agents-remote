@@ -1,6 +1,6 @@
 import { printReport } from "./perf-trace";
 
-// Runtime debug affordances for the Claude2 session client.
+// Runtime debug affordances for the Claude session client.
 //
 // Three localStorage-backed switches, cached in module-level booleans so the hot
 // path (every inbound/outbound socket message) is a plain boolean read — no
@@ -8,7 +8,7 @@ import { printReport } from "./perf-trace";
 // socket-traffic logging is perf-heavy, the (i) raw-message tooltips are a
 // debugging affordance, and perf tracing is a measurement tool, not part of the
 // default experience.
-// See docs/runbooks/claude2-client-debugging.md for the full operations guide.
+// See docs/runbooks/claude-client-debugging.md for the full operations guide.
 //
 //   • socket logging  — OFF. Logging every ws send/recv serializes large
 //                       message objects and dominates CPU on active sessions.
@@ -17,7 +17,7 @@ import { printReport } from "./perf-trace";
 //   • perf trace      — OFF. Times the replay pipeline (normalize/render/
 //                       messageSignature/buildTurns/processBatch + E2E) to locate
 //                       the long-session load bottleneck. See
-//                       docs/research/claude2-replay-performance.md.
+//                       docs/research/claude-replay-performance.md.
 //
 // Flip either at runtime from the browser console (no rebuild, no reload for
 // the socket flag — it's re-read on every message):

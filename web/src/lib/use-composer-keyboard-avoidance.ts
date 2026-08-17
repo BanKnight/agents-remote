@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 
 /**
- * iOS Safari 键盘避让：驱动 claude2 composer 浮动区的 `--composer-keyboard-offset`
+ * iOS Safari 键盘避让：驱动 claude composer 浮动区的 `--composer-keyboard-offset`
  * CSS 变量（内层 translateY 上抬），让 composer 在键盘弹起时就已浮在键盘上方 →
  * iOS 判定焦点 input 已可见 → 不触发 scroll-to-reveal（连 overflow:hidden 都绕不过的
  * 那个 layout-viewport 强制滚动）。这是 iOS 上唯一可靠的键盘避让路径：dvh/svh、
  * interactive-widget meta、VirtualKeyboard API 在 iOS 全不触发（见
- * docs/research/claude2-ios-keyboard-viewport.md）。
+ * docs/research/claude-ios-keyboard-viewport.md）。
  *
  * 监听 visualViewport 的 resize + scroll（键盘动画收尾 scroll 仍 fire，保证 offset 准确）。
  * 关闭用 visible = vv.height < innerHeight 判断并强制归零，绕过 iOS 26 layout scroll

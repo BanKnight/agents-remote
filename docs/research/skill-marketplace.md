@@ -114,15 +114,15 @@ Agent Registry（`src/agents.ts`，70+ agent）每个 agent 定义 `skillsDir`�
 | Codex | `~/.codex/skills/<name>/SKILL.md` | `<proj>/.codex/skills/<name>/` | `$CODEX_HOME` |
 | Universal canonical | `~/.agents/skills/<name>/` | `<proj>/.agents/skills/<name>/` | — |
 
-来源：`~/repos/hapi/cli/src/modules/common/skills.ts:43,53-77`、vercel-labs/skills deepwiki 5.4、agents-remote `api/src/claude2-slash-commands.ts:184-186`。
+来源：`~/repos/hapi/cli/src/modules/common/skills.ts:43,53-77`、vercel-labs/skills deepwiki 5.4、agents-remote `api/src/claude-slash-commands.ts:184-186`。
 
 ### 5.2 装完后如何被识别（agents-remote 已有完整闭环，强）
 - Claude Code CLI **不自动 watch 目录**，装后必须发 `/reload-skills`（或重启 session）。
-- agents-remote 已实现 `/reload-skills` 检测闭环：`claude2-runtime.ts:67-103` `extractSkillReloadFromStdoutLine`（正则 `/Reloaded skills:\s+\d+\s+skills/i`）→ `captureSkillReloadFromLine` → `onSkillReload` → **index.ts 重新扫盘 + 广播 `skill_catalog_changed`**。
+- agents-remote 已实现 `/reload-skills` 检测闭环：`claude-runtime.ts:67-103` `extractSkillReloadFromStdoutLine`（正则 `/Reloaded skills:\s+\d+\s+skills/i`）→ `captureSkillReloadFromLine` → `onSkillReload` → **index.ts 重新扫盘 + 广播 `skill_catalog_changed`**。
 - 这条管道已就绪，**无需新代码**。
 
 ### 5.3 现状已扫 `~/.claude/skills`（对接路径已验证，强）
-`claude2-slash-commands.ts` `scanSkillDir()`（`:89-114`）读 `<dir>/<name>/SKILL.md` frontmatter；`resolveSkillSlashCatalog()`（`:203-259`）扫 4 源：project `.claude/skills` + user `~/.claude/skills` + plugins + builtin。**skill 一旦装进 `~/.claude/skills/<name>/`，立即被现有 slash 菜单 catalog 看到**（下次刷新）。插件 namespacing（`plugin:entry`）也已处理。
+`claude-slash-commands.ts` `scanSkillDir()`（`:89-114`）读 `<dir>/<name>/SKILL.md` frontmatter；`resolveSkillSlashCatalog()`（`:203-259`）扫 4 源：project `.claude/skills` + user `~/.claude/skills` + plugins + builtin。**skill 一旦装进 `~/.claude/skills/<name>/`，立即被现有 slash 菜单 catalog 看到**（下次刷新）。插件 namespacing（`plugin:entry`）也已处理。
 
 > **关键复用点**：安装不需要新写扫描逻辑，只需 (a) 写文件到 `~/.claude/skills/<name>/`，(b) 触发 `/reload-skills`。
 
@@ -130,9 +130,9 @@ Agent Registry（`src/agents.ts`，70+ agent）每个 agent 定义 `skillsDir`�
 
 | 能力 | 现有位置 | 复用方式 |
 |---|---|---|
-| 已装 skill catalog | `api/src/claude2-slash-commands.ts` `scanSkillDir`/`resolveSkillSlashCatalog` | 直接读 `~/.claude/skills`，装进去即被 slash 菜单看到 |
-| reload 闭环 | `api/src/claude2-runtime.ts` + `index.ts` `skill_catalog_changed` | 装后发 `/reload-skills` 自动刷新 |
-| SKILL.md frontmatter 解析 | `claude2-slash-commands.ts:7-25` `parseFrontmatter` | 提取 name/description |
+| 已装 skill catalog | `api/src/claude-slash-commands.ts` `scanSkillDir`/`resolveSkillSlashCatalog` | 直接读 `~/.claude/skills`，装进去即被 slash 菜单看到 |
+| reload 闭环 | `api/src/claude-runtime.ts` + `index.ts` `skill_catalog_changed` | 装后发 `/reload-skills` 自动刷新 |
+| SKILL.md frontmatter 解析 | `claude-slash-commands.ts:7-25` `parseFrontmatter` | 提取 name/description |
 | Markdown 渲染组件 | `web/src/components/markdown/MarkdownText.tsx` 等 | 预览 SKILL.md 正文（纯展示，喂 content 字符串） |
 | Files preview 面板 | `web/src/components/files/file-preview-panel.tsx` | 参考，但它是 project-scoped（走 `resolveProjectRelativePath`），**不能直接用于 `~/.claude/skills`**，需新建 skill-scope 读端点 |
 | PROJECTS_ROOT 安全模型 | `api/src/project-paths.ts` | 借鉴 `isInsideOrSelf`/`realpath` 模式，但**不复用**（写 `~/.claude` 在项目外） |
@@ -156,7 +156,7 @@ Skill 是 markdown + 资源，但 **Claude Code 会执行 skill 指令**——�
 | 多 runtime 目录映射 | CLI 内置（`--agent claude-code`/`codex`），零成本 | 自己维护 claude/codex/universal 目录映射表 |
 | 源解析 | CLI `parseSource` 内置 5 种源类型 | 自己写（至少 GitHub shorthand + URL + subpath + branch） |
 | 安全校验 | CLI 内置 `isPathSafe`/`sanitizeName` | 自己复刻 |
-| 运行时依赖 | **npx + node + 网络**（claude2 CLI 是独立二进制，不自带 node） | 仅 Bun + 网络 |
+| 运行时依赖 | **npx + node + 网络**（claude CLI 是独立二进制，不自带 node） | 仅 Bun + 网络 |
 | 可控性 | 受 CLI 行为约束（stdout 不机读、telemetry 上报、版本耦合） | 完全可控、行为可预测 |
 | 与 cc-switch 一致 | ❌（cc-switch 自实现） | ✅ |
 | 工作量 | 小（省掉安装/更新/安全/源解析全部逻辑） | 大 |
@@ -167,7 +167,7 @@ Skill 是 markdown + 资源，但 **Claude Code 会执行 skill 指令**——�
 > **✅ 实现落地（2026-07）**：采用**混合**——安装/卸载走路线 A（`npx skills add/remove`，git clone 需 CLI），**list/preview 改自扫** `~/.<agent>/skills/`（FS 直读 SKILL.md frontmatter，实测 ~0.1s vs `npx list` 11-17s，100x+）。理由：`npx list` 的 11-17s 全是 npx+node 启动开销、零网络，CLI 自身也只是扫本地目录；自扫单 agent 目录（symlink→canonical 或 agent-only 真实目录）精确复刻单 agent 视角。见 `api/src/skill-market.ts` `scanInstalledSkillsFromFs`。
 
 - subagent 建议：vercel-labs 调研倾向**混合**（发现走 API、执行 wrap CLI）；cc-switch 调研倾向**默认自实现**（可控、与 cc-switch 一致、无外部 CLI 依赖，CLI 作可选后端）。
-- agents-remote 架构特点：已习惯「直拉外部 CLI」（claude2/tmux/git），但服务器是否装 node/npx 需确认；Bun 服务端做 zip 下载解压/symlink 也很自然。
+- agents-remote 架构特点：已习惯「直拉外部 CLI」（claude/tmux/git），但服务器是否装 node/npx 需确认；Bun 服务端做 zip 下载解压/symlink 也很自然。
 
 ## 9. 未决问题（实现前需确认）
 
@@ -184,7 +184,7 @@ Skill 是 markdown + 资源，但 **Claude Code 会执行 skill 指令**——�
 **强**：
 - 实测 curl `https://skills.sh/api/search`（2026-07-17，本机）。
 - `~/repos/hapi/cli/src/modules/common/skills.ts`（flavor → 目录映射）。
-- agents-remote 本地源码：`api/src/claude2-slash-commands.ts`、`api/src/claude2-runtime.ts`、`api/src/project-paths.ts`、`web/src/components/markdown/`、`web/src/components/files/file-preview-panel.tsx`。
+- agents-remote 本地源码：`api/src/claude-slash-commands.ts`、`api/src/claude-runtime.ts`、`api/src/project-paths.ts`、`web/src/components/markdown/`、`web/src/components/files/file-preview-panel.tsx`。
 - deepwiki `vercel-labs/skills`（CLI 源码索引：`src/agents.ts`、`src/find.ts`、`src/source-parser.ts`、`src/installer.ts`、`src/skill-lock.ts`、`src/blob.ts`、`src/git.ts`）。
 - cc-switch 官方 `README` / `package.json` / `CHANGELOG` + deepwiki `farion1231/cc-switch` §7（源码级）。
 

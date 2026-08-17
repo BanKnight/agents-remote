@@ -54,7 +54,7 @@ test("SettingsStore.read returns defaults when file is missing (no throw)", asyn
 
 test("corrupt settings.yaml → throws error without echoing apiKey source (secret containment)", async () => {
   // settings.yaml 含 apiKey（机密）。read() parse 失败时直接 throw 原始 yaml error，上层
-  // （claude2-runtime `console.warn(..., err)`）会把它打到 stderr——message 含源码 snippet
+  // （claude-runtime `console.warn(..., err)`）会把它打到 stderr——message 含源码 snippet
   // 即泄漏 apiKey。修复后包装成只含行列位置的摘要错误，apiKey 值不进 message。
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");

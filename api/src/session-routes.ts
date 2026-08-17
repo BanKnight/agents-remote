@@ -101,19 +101,19 @@ const handleAgentSessionRoute = async (
   if (!sessionId && request.method === "POST") {
     const body = await readJson<CreateAgentSessionRequest>(request);
 
-    if (body.provider !== "claude" && body.provider !== "codex" && body.provider !== "claude2") {
+    if (body.provider !== "claude" && body.provider !== "codex") {
       return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Agent provider is required", 400);
     }
 
     const profile = getAgentProviderProfile(body.provider);
 
-    // claude2: settings 是 model/effort 权威来源。model 默认 tier alias "sonnet"（不读
+    // claude: settings 是 model/effort 权威来源。model 默认 tier alias "sonnet"（不读
     // modelMapping.default——避免 default tier 配成具体 ID 时绕过 1M 开关 + 改变 tier 语义），
-    // spawn 瞬间由 Claude2Runtime.resolveSpawnModel 把 tier 解析成具体 ID。effort 默认全局档。
-    // 非 claude2 或无 settingsStore（E2E/旧调用）：保留 profile.availableModels 默认 + 校验。
+    // spawn 瞬间由 ClaudeRuntime.resolveSpawnModel 把 tier 解析成具体 ID。effort 默认全局档。
+    // 非 claude 或无 settingsStore（E2E/旧调用）：保留 profile.availableModels 默认 + 校验。
     let model: string | undefined;
     let effort: EffortLevel | undefined;
-    if (body.provider === "claude2" && settingsStore) {
+    if (body.provider === "claude" && settingsStore) {
       const claudeSettings = await settingsStore.read();
       model = body.model ?? "sonnet";
       effort = claudeSettings.runtimes.claude.effort;
@@ -125,7 +125,7 @@ const handleAgentSessionRoute = async (
     }
 
     let permissionMode = body.permissionMode ?? "auto";
-    if (body.provider === "claude2") {
+    if (body.provider === "claude") {
       const modes: readonly string[] = profile?.permissionModes ?? [
         "default",
         "acceptEdits",
@@ -178,8 +178,8 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
     }
 
-    if (metadata.provider !== "claude2") {
-      return jsonError("SESSION_STREAM_MISMATCH", "Not a Claude2 session", 400);
+    if (metadata.provider !== "claude") {
+      return jsonError("SESSION_STREAM_MISMATCH", "Not a Claude session", 400);
     }
 
     const url = new URL(request.url);
@@ -189,7 +189,7 @@ const handleAgentSessionRoute = async (
     );
     const cursor = url.searchParams.get("cursor") ?? undefined;
 
-    const { messages, hasOlder, nextCursor } = await loadClaude2Messages(
+    const { messages, hasOlder, nextCursor } = await loadClaudeMessages(
       metadata.projectPath,
       metadata.claudeSessionId,
       { limit, cursor },
@@ -211,18 +211,18 @@ const handleAgentSessionRoute = async (
 
     const profile = getAgentProviderProfile(session.provider);
     const permissionModes =
-      session.provider === "claude2" ? await parseClaudePermissionModes() : undefined;
-    // claude2: 菜单发 model alias（opus/sonnet/haiku + opusplan + 对应 [1m] 变体），
+      session.provider === "claude" ? await parseClaudePermissionModes() : undefined;
+    // claude: 菜单发 model alias（opus/sonnet/haiku + opusplan + 对应 [1m] 变体），
     // switchModel 透传 alias。env 注裸 ID（ANTHROPIC_DEFAULT_*_MODEL 不带 [1m]），
     // CLI 经 alias [1m] 后缀在 env 裸 ID 上拼 [1m]。availableModelResolved 仅作菜单
     //「alias + 对应 ID」配对展示；opusplan/opusplan[1m] 不进映射（CLI 自选 opus/sonnet）。
-    // 非 claude2 或无 settingsStore：保留 profile.availableModels 默认。
+    // 非 claude 或无 settingsStore：保留 profile.availableModels 默认。
     const claudeRuntime = settingsStore ? (await settingsStore.read()).runtimes.claude : undefined;
     const presetView = claudeRuntime
       ? activePresetView(claudeRuntime, claudeRuntime.presets)
       : undefined;
     const aliasView =
-      session.provider === "claude2" && presetView ? buildAvailableAliases(presetView) : undefined;
+      session.provider === "claude" && presetView ? buildAvailableAliases(presetView) : undefined;
     const availableModels = aliasView
       ? [...aliasView.aliases, "opusplan", ...(presetView?.enable1mContext ? ["opusplan[1m]"] : [])]
       : profile?.availableModels;
@@ -495,7 +495,7 @@ const encodeCursor = (lineIndex: number): string =>
 
 const MESSAGE_LIMIT = Math.max(parseInt(process.env.CLAUDE2_MESSAGE_LIMIT ?? "200", 10) || 200, 1);
 
-const loadClaude2Messages = async (
+const loadClaudeMessages = async (
   projectPath: string,
   claudeSessionId: string | undefined,
   params: MessagePaginationParams = { limit: 200 },

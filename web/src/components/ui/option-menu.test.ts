@@ -3,14 +3,14 @@ import { describe, expect, test } from "bun:test";
 import { mobileOptionItemClasses, optionActiveClasses } from "./option-menu";
 
 describe("optionActiveClasses", () => {
-  test("user accent → user 角色色（claude2 model）", () => {
+  test("user accent → user 角色色（claude model）", () => {
     const cls = optionActiveClasses("user");
     expect(cls).toContain("text-user");
     expect(cls).toContain("bg-user/10");
     expect(cls).not.toContain("permission");
   });
 
-  test("permission accent → permission 角色色（claude2 mode）", () => {
+  test("permission accent → permission 角色色（claude mode）", () => {
     const cls = optionActiveClasses("permission");
     expect(cls).toContain("text-permission");
     expect(cls).toContain("bg-permission/10");

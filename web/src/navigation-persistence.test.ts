@@ -21,7 +21,7 @@ const fakeLocalStorage = {
 
 // Snapshot globals so we can restore them afterAll — bun test shares globalThis
 // across files in the same process, and leaking window/localStorage breaks other
-// suites (e.g. claude2-adapter.hook.test.ts sets up its own JSDOM).
+// suites (e.g. claude-adapter.hook.test.ts sets up its own JSDOM).
 const prevWindow = (globalThis as { window?: Window }).window;
 const prevLocalStorage = (globalThis as { localStorage?: Storage }).localStorage;
 

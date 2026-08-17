@@ -332,7 +332,7 @@ orca：共享一个尺寸，driver/mobile-presence-lock 三态（`idle`/`desktop
 - **`window-size=latest` + `aggressive-resize=off` + 删 `resize-window -x -y`**：靠 client PTY TIOCSWINSZ 驱动，tmux 原生协调多端尺寸。
 - **重连不 replay**：新 attach 进程，tmux 自动全态重绘；xterm attach 前 `reset()`。
 - **保留 capture-pane 只给 list/detail 的 `extractLastCommand`**（只读，不走实时流）。
-- **claude2 路径（Bun.spawn CLI，非 tmux）不受影响**。
+- **claude 路径（Bun.spawn CLI，非 tmux）不受影响**。
 - **接受多端共享尺寸 + 最近操作者胜出**（移动端如需不污染桌面可用 `ignore-size`）。
 
 ## 证据链接

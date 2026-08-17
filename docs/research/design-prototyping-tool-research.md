@@ -8,7 +8,7 @@
 - **两个锚点项目身份**:`opendesign` = `nexu-io/open-design`(②派代表);`openpencil` = `open-pencil/open-pencil` + `ZSeven-W/openpencil`(①派代表)。
 - **没有"既 AI-native 设计工具、又能作为可编辑 React 19 library 嵌入"的现成开源项目**。所有 `@open-design/*` 包 `private:true`,npm 上零个可装,**只能 fork/vendor 源码**。
 - **OpenDesign 倾向成立,但以"借鉴机制"为主而非"整体嵌入"**:它的 daemon/CLI/MCP 方向与本项目相反(web 控制 CLI vs CLI 编排);真正值得搬的是 **GenUI declarative surface 协议**(agent 请求受控 UI,~300 行可照搬)、**iframe sandbox 安全模板**、**token-contract 机制**。
-- **最小复刻三步**:① GenUI surface(给 claude2 流加可中断问询)→ ② iframe sandbox 预览(agent 产出 HTML/JSX)→ ③ agui-adapter(可选,生态投资)。
+- **最小复刻三步**:① GenUI surface(给 claude 流加可中断问询)→ ② iframe sandbox 预览(agent 产出 HTML/JSX)→ ③ agui-adapter(可选,生态投资)。
 
 ## 背景与目标
 
@@ -132,7 +132,7 @@ Reddit 讨论常把三个不同物种混在一起,先分派才好对比:
 
 ✅ 确证(全 3 文件逐行读;SSE 路由逐行读)
 
-**对本项目的意义**:**整个项目里最干净、最可独立抽取的模块**。本项目的 claude2 session 已有等价的 native event 流(JSONL + relay live buffer)。agui-adapter 是 312 行纯函数映射,**复制粘贴 + 改 event union 即可**让 session 也说 AG-UI 方言。但要注意:OD 的 GenUI surface 事件(`genui_surface_*`)是 OD 自己加进 union 的,**AG-UI 协议本身没有这套 surface 语义**——adapter 把它强行映射成 `ui.surface_requested/responded`,这部分是 OD 私有扩展蹭 AG-UI 的壳。
+**对本项目的意义**:**整个项目里最干净、最可独立抽取的模块**。本项目的 claude session 已有等价的 native event 流(JSONL + relay live buffer)。agui-adapter 是 312 行纯函数映射,**复制粘贴 + 改 event union 即可**让 session 也说 AG-UI 方言。但要注意:OD 的 GenUI surface 事件(`genui_surface_*`)是 OD 自己加进 union 的,**AG-UI 协议本身没有这套 surface 语义**——adapter 把它强行映射成 `ui.surface_requested/responded`,这部分是 OD 私有扩展蹭 AG-UI 的壳。
 
 ### 3.4 GenUI surface 协议(嵌入最关键)
 
@@ -168,7 +168,7 @@ agent 发 `genui_surface_request{ payload }`,payload 是 **JSON Schema 数据**,
 
 ✅ 确证(`GenUISurfaceRenderer.tsx` 全文 958 行、`manifest.ts` L89-127、`genui.ts` L50、plugins-spec L2279)
 
-**对本项目的意义(嵌入判断核心)**:这正是"agent 请求 UI surface,由受控组件渲染"的工程化范本。**机制 A 几乎可以照搬**:给 claude2 流加一个 `surface_request` 事件类型 + 一个 `<SurfaceRenderer>` 组件(form/choice/confirmation 三件套 ≈ 300 行)+ 一个 respond 回传 endpoint,就拿到 agent 可中断问询能力。机制 B 的 sandbox attr 方案(`allow-scripts` only + postMessage shape filter + path sanitize)是**本项目做"agent 生成可预览 HTML"时的安全模板**。
+**对本项目的意义(嵌入判断核心)**:这正是"agent 请求 UI surface,由受控组件渲染"的工程化范本。**机制 A 几乎可以照搬**:给 claude 流加一个 `surface_request` 事件类型 + 一个 `<SurfaceRenderer>` 组件(form/choice/confirmation 三件套 ≈ 300 行)+ 一个 respond 回传 endpoint,就拿到 agent 可中断问询能力。机制 B 的 sandbox attr 方案(`allow-scripts` only + postMessage shape filter + path sanitize)是**本项目做"agent 生成可预览 HTML"时的安全模板**。
 
 ### 3.5 代码生成 + iframe 渲染机制
 
@@ -209,7 +209,7 @@ agent 发 `genui_surface_request{ payload }`,payload 是 **JSON Schema 数据**,
 
 | 模块 | 文件 | 抽取成本 | 对本项目的价值 |
 |---|---|---|---|
-| **agui-adapter** | `packages/agui-adapter/src/*.ts`(312 行) | **极低**:纯 TS,仅依赖 contracts,零 fs。复制 3 文件 + 改 event union | 让 claude2 session 说 AG-UI 方言,可被 CopilotKit 等消费 |
+| **agui-adapter** | `packages/agui-adapter/src/*.ts`(312 行) | **极低**:纯 TS,仅依赖 contracts,零 fs。复制 3 文件 + 改 event union | 让 claude session 说 AG-UI 方言,可被 CopilotKit 等消费 |
 | **GenUI declarative surface 协议** | `contracts/plugins/manifest.ts` GenUISurfaceSpec + `events.ts` + `GenUISurfaceRenderer.tsx` form/choice/confirmation 部分 | **中**:renderer 是单体 958 行,但 form/choice/confirmation 三件套 ≈ 300 行可独立 | agent 可中断问询能力(permission 确认/选项选择) |
 | **iframe sandbox 安全模板** | `GenUISurfaceRenderer.tsx` SandboxedComponentSurface + `react-component.ts` | **低**:纯前端,~250 行 | 做"agent 生成 HTML 预览"时的 sandbox + postMessage + path sanitize 范本 |
 | **token-contract 机制** | `design-systems/token-contract.ts` + `token-schema.ts` | **中**:需 design-systems 目录生态配合 | 把本项目 DESIGN.md 从文本升级成可校验 token 契约 |
@@ -218,7 +218,7 @@ agent 发 `genui_surface_request{ payload }`,payload 是 **JSON Schema 数据**,
 ### 耦合死在 OD 自己栈里的(不建议抽取)
 
 - **CLI `od`**(35 命令):和 daemon HTTP API + project/run/skill 生态深度耦合,且方向相反(本项目是 web 控制 CLI,不是 CLI 编排)。
-- **daemon 整体**(express + better-sqlite3 + node-pty + langfuse + posthog + Electron 壳):重型本地运行时,本项目 Bun api + 现有 claude2 runtime 已覆盖等价能力。
+- **daemon 整体**(express + better-sqlite3 + node-pty + langfuse + posthog + Electron 壳):重型本地运行时,本项目 Bun api + 现有 claude runtime 已覆盖等价能力。
 - **MCP server**:方向相反(OD 当 MCP server 给外部 agent;本项目是 web 当 controller)。
 - **prompt composer**(`prompts/system.ts`):和 OD 的"专家设计师人格 + 5 维 critique + direction picker"产品定位绑定,agent 控制台用不上这套 design-specific 人格。
 - **163 个 skills / 154 design-systems / 115 templates**:内容资产,非代码,按需 cherry-pick 个别 skill 思路即可。
@@ -231,7 +231,7 @@ agent 发 `genui_surface_request{ payload }`,payload 是 **JSON Schema 数据**,
 
 给本项目的 React 19 + Vite + TS + Bun agent 控制台,**最高性价比的三步**:
 
-1. **GenUI declarative surface(最先做)**:在 claude2 事件流加 `surface_request{kind, schema, prompt}` 事件 → web 加 `<SurfaceRenderer>`(form/choice/confirmation,~300 行,参考 `GenUISurfaceRenderer` 的 JSON Schema→React 表单部分,**不要抄 diff-review/sandbox-component**)→ 加 respond 回传。这是 agent 可中断问询的最小闭环,和本项目的 permission 模式天然契合。
+1. **GenUI declarative surface(最先做)**:在 claude 事件流加 `surface_request{kind, schema, prompt}` 事件 → web 加 `<SurfaceRenderer>`(form/choice/confirmation,~300 行,参考 `GenUISurfaceRenderer` 的 JSON Schema→React 表单部分,**不要抄 diff-review/sandbox-component**)→ 加 respond 回传。这是 agent 可中断问询的最小闭环,和本项目的 permission 模式天然契合。
 
 2. **iframe sandbox 预览(按需)**:若要让 agent 产出可预览 HTML/JSX,fork `react-component.ts`(231 行,正则剥 import + CDN Babel + eval + opaque sandbox)。**务必补 CSP + 评估 CDN 依赖**(离线/内网要 vendor babel)。
 

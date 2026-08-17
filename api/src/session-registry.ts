@@ -66,8 +66,8 @@ export type RuntimeResources = {
     opts: AttachOptions,
   ): Promise<AttachHandle>;
   /**
-   * 批量返回当前存活的 runtimeKey 集合（terminal/非claude2 agent = `tmux list-sessions`；
-   * claude2 = 进程内 exitCode===null）。供 SessionRegistry 做存活探活缓存，替代逐个
+   * 批量返回当前存活的 runtimeKey 集合（terminal/非claude agent = `tmux list-sessions`；
+   * claude = 进程内 exitCode===null）。供 SessionRegistry 做存活探活缓存，替代逐个
    * has-session spawn（1 次 list-sessions 替代 M 次 has-session）。可选，缺失则回退逐个 exists。
    */
   listAliveRuntimeKeys?(): Promise<Set<string>>;
@@ -123,7 +123,7 @@ export class SessionRegistry {
   /** 内存索引：sessionId → metadata，source of truth。启动 load 一次，写操作事件维护。 */
   private readonly index = new Map<string, SessionMetadata>();
   private indexLoadPromise: Promise<void> | null = null;
-  /** 存活 runtimeKey 集合缓存（list-sessions + claude2 进程内），TTL 见 ALIVE_TTL_MS。 */
+  /** 存活 runtimeKey 集合缓存（list-sessions + claude 进程内），TTL 见 ALIVE_TTL_MS。 */
   private aliveCache: { keys: Set<string>; expiresAt: number } | null = null;
   /** getAliveKeys 在途 promise：冷缓存时并发 caller 共享同一次 spawn（去重）。 */
   private aliveInFlight: Promise<Set<string>> | null = null;
@@ -243,7 +243,7 @@ export class SessionRegistry {
 
   // Persist a mid-session model switch to metadata.model, so API restart /
   // session reopen spawns the CLI with the switched model (the --model arg in
-  // claude2-runtime spawnClaudeDirect). Triggered via Claude2Runtime onModelChange
+  // claude-runtime spawnClaudeDirect). Triggered via ClaudeRuntime onModelChange
   // when a <local-command-stdout>Set model to (id)</local-command-stdout> echo is
   // folded. Only updates model; claudeSessionId is untouched.
   async setModel(sessionId: string, model: string): Promise<void> {
@@ -261,8 +261,8 @@ export class SessionRegistry {
 
   // Persist a mid-session permission-mode switch to metadata.permissionMode, so
   // an API restart (--resume) spawns the CLI with the switched mode (the
-  // --permission-mode arg in claude2-runtime spawnClaudeDirect). Triggered via
-  // Claude2Runtime onPermissionModeChange when a system.status{permissionMode}
+  // --permission-mode arg in claude-runtime spawnClaudeDirect). Triggered via
+  // ClaudeRuntime onPermissionModeChange when a system.status{permissionMode}
   // echo is folded. Only updates permissionMode; claudeSessionId is untouched.
   // Symmetric to setModel above.
   async setPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
@@ -308,7 +308,7 @@ export class SessionRegistry {
     const metadata = await this.listMetadata("agent", projectName);
     const map = new Map<string, string>();
     for (const m of metadata) {
-      if (m.provider === "claude2" && m.claudeSessionId) {
+      if (m.provider === "claude" && m.claudeSessionId) {
         map.set(m.claudeSessionId, m.id);
       }
     }
@@ -331,7 +331,7 @@ export class SessionRegistry {
 
   /**
    * 全 project 全类型候选聚合（GET /api/overview）：遍历内存索引全部 metadata（不分 project，一次
-   * 遍历）→ 批量探活过滤（keepIfRuntimeExists：死 terminal 清理 + claude2+claudeSessionId 保留）。
+   * 遍历）→ 批量探活过滤（keepIfRuntimeExists：死 terminal 清理 + claude+claudeSessionId 保留）。
    * 只返回核心元数据，**不填 subtitle**——subtitle（terminal capture-pane）是纯装饰、且是 overview
    * 卡死主因（capture 阻塞拖垮整批），改由独立 listCandidateSubtitles / GET /api/overview/subtitles
    * 异步补全。替代前端 1+2N 瀑布的单后端聚合。
@@ -357,9 +357,9 @@ export class SessionRegistry {
    * `{ sessionId → subtitle }`。与 listAllCandidates 分离，让核心列表毫秒级返回、subtitle 慢填充。
    * - terminal = capture-pane 最后一行非空（captureSubtitle + captureWithCache 5s TTL）；
    *   agent = JSONL 最后一条 assistant 消息（getLastAssistantMessage，与项目总览
-   *   session-routes.ts:90-93 同款机制，仅 claude/claude2 有 claudeSessionId 适用）。
+   *   session-routes.ts:90-93 同款机制，仅 claude 有 claudeSessionId 适用）。
    * - 用 getAliveKeys() 只读快照过滤（不调 keepIfRuntimeExists——后者有 removeMetadata 破坏性副作用，
-   *   此端点必须纯读）；agent 侧 claude2+claudeSessionId 即使不在存活集也保留（复刻 keepIfRuntimeExists
+   *   此端点必须纯读）；agent 侧 claude+claudeSessionId 即使不在存活集也保留（复刻 keepIfRuntimeExists
    *   特例，对齐 listAllCandidates 展示集合）。探测失败保守回退「全部实例」（capture 超时仍兜底）。
    *   复用 /api/overview 刚填充的同一 aliveCache → 通常 0 额外 list-sessions spawn。
    * - Promise.all + 内层各 Promise.allSettled（captureSubtitle / getLastAssistantMessage 均吞错返
@@ -369,7 +369,7 @@ export class SessionRegistry {
     await this.ensureLoaded();
     const all = Array.from(this.index.values());
     const terminals = all.filter((m) => m.type === "terminal");
-    // agent：仅 claude/claude2（有 claudeSessionId + projectPath）；codex 无 claudeSessionId 不适用
+    // agent：仅 claude（有 claudeSessionId + projectPath）；codex 无 claudeSessionId 不适用
     //（与项目总览 session-routes.ts:89 的 if(s.claudeSessionId) guard 同源，codex 卡片项目总览也无第二行）。
     const agents = all.filter((m) => m.type === "agent" && m.claudeSessionId && m.projectPath);
 
@@ -380,12 +380,12 @@ export class SessionRegistry {
       alive = null; // 探测不可信：保守回退全部实例，capture 超时兜底。
     }
     const liveTerminals = alive ? terminals.filter((m) => alive.has(m.runtimeKey)) : terminals;
-    // claude2+claudeSessionId 即使不在存活集也保留（与 listAllCandidates 的 keepIfRuntimeExists
-    // 特例同源：已死 claude2 有 JSONL 历史仍展示卡片，subtitle 同档读 JSONL）；terminal 已死会被
+    // claude+claudeSessionId 即使不在存活集也保留（与 listAllCandidates 的 keepIfRuntimeExists
+    // 特例同源：已死 claude 有 JSONL 历史仍展示卡片，subtitle 同档读 JSONL）；terminal 已死会被
     // keepIfRuntimeExists 清理不展示，故纯 alive 过滤已对齐。
     const liveAgents = alive
       ? agents.filter(
-          (m) => alive.has(m.runtimeKey) || (m.provider === "claude2" && m.claudeSessionId),
+          (m) => alive.has(m.runtimeKey) || (m.provider === "claude" && m.claudeSessionId),
         )
       : agents;
 
@@ -645,7 +645,7 @@ export class SessionRegistry {
       return metadata;
     }
 
-    if (metadata.provider === "claude2" && metadata.claudeSessionId) {
+    if (metadata.provider === "claude" && metadata.claudeSessionId) {
       return metadata;
     }
 
@@ -793,6 +793,12 @@ const parseMetadata = (raw: string): SessionMetadata | undefined => {
   // Backward compat: old metadata files use "tmuxSessionName"
   if (typeof rawParsed.runtimeKey !== "string" && typeof rawParsed.tmuxSessionName === "string") {
     rawParsed.runtimeKey = rawParsed.tmuxSessionName;
+  }
+  // claude2 → claude 归一化：二代实现已取代一代，存量 metadata 的 provider 仍是旧值 "claude2"。
+  // 不归一化则 keepIfRuntimeExists 的 `provider === "claude"` 保留分支失配，claude 会话（非 tmux，
+  // alive/exists 均不命中）会被当死会话误删 metadata 文件（2026-08-18 改名误删事故）。
+  if (rawParsed.provider === "claude2") {
+    rawParsed.provider = "claude";
   }
   const parsed = rawParsed as Partial<SessionMetadata>;
 

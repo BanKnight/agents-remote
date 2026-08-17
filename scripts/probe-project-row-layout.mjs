@@ -28,7 +28,7 @@ const OVERVIEW_BODY = JSON.stringify({
       sessionId: "row-agent-1",
       displayName: "会话 A",
       status: "running",
-      provider: "claude2",
+      provider: "claude",
     },
     {
       type: "agent",
@@ -36,7 +36,7 @@ const OVERVIEW_BODY = JSON.stringify({
       sessionId: "row-agent-2",
       displayName: "会话 B",
       status: "idle",
-      provider: "claude2",
+      provider: "claude",
     },
     {
       type: "terminal",

@@ -833,9 +833,9 @@ function MobileCreateButton({ create }: { create: CreateSessionApi }) {
       cancelLabel={t("cancel")}
       items={[
         {
-          label: t("workbench.createClaude2"),
+          label: t("workbench.createClaude"),
           icon: <ShellIcon name="anthropic" />,
-          onSelect: () => create.createAgent("claude2"),
+          onSelect: () => create.createAgent("claude"),
         },
         {
           label: t("workbench.createTerminal"),

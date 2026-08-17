@@ -21,7 +21,7 @@ type Subscriber = {
   onError(err: Error): void;
 };
 
-export class Claude2SessionRelay {
+export class ClaudeSessionRelay {
   private historyLines: string[] = [];
   private liveLines: string[] = [];
   private subscribers = new Set<Subscriber>();
@@ -182,7 +182,7 @@ export class Claude2SessionRelay {
   // Inject a line into the live buffer AND broadcast it. Unlike injectLine
   // (broadcast-only), this also pushes into liveLines so subscribers that
   // connect LATER replay it from the live batch. Used to echo user input the
-  // CLI never emits on stream-json stdout (see claude2-stream.ts message()).
+  // CLI never emits on stream-json stdout (see claude-stream.ts message()).
   injectLiveLine(line: string): void {
     this.appendLive(line, null);
     this.broadcast(line);

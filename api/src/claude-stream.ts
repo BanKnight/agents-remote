@@ -1,16 +1,16 @@
-import type { Claude2StreamClientMessage, SessionStreamServerMessage } from "@agents-remote/shared";
+import type { ClaudeStreamClientMessage, SessionStreamServerMessage } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, type RuntimeResources, type RuntimeStream } from "./session-registry";
 import { EFFORT_LEVELS, type AgentSessionStatus, type SessionType } from "@agents-remote/shared";
-import type { Claude2Runtime } from "./claude2-runtime";
+import type { ClaudeRuntime } from "./claude-runtime";
 
 type UpgradeServer = {
   upgrade(request: Request, options?: { data?: Record<string, unknown> }): boolean;
 };
 
-export type Claude2WebSocketData = {
-  kind: "claude2-stream";
+export type ClaudeWebSocketData = {
+  kind: "claude-stream";
   sessionType: SessionType;
   projectName: string;
   sessionId: string;
@@ -119,7 +119,7 @@ export function createBatchEmitter(opts: BatchEmitterOptions): (line: string) =>
               opts.emit(Bun.gzipSync(Buffer.from(chunk)));
             }
           } catch (e) {
-            console.error("[claude2-stream] gzip failed, falling back to text rows", e);
+            console.error("[claude-stream] gzip failed, falling back to text rows", e);
             for (const raw of batch) opts.emit(raw);
           }
         }
@@ -142,14 +142,14 @@ type StreamRouteMatch = {
   sessionId: string;
 };
 
-export const handleClaude2StreamUpgrade = async (
+export const handleClaudeStreamUpgrade = async (
   request: Request,
   url: URL,
   projectsRoot: string,
   registry: SessionRegistry,
   server: UpgradeServer,
 ): Promise<{ matched: boolean; response?: Response }> => {
-  const match = matchClaude2StreamRoute(url.pathname);
+  const match = matchClaudeStreamRoute(url.pathname);
 
   if (!match) {
     return { matched: false };
@@ -159,10 +159,10 @@ export const handleClaude2StreamUpgrade = async (
     const project = await resolveProjectPath(projectsRoot, match.projectName);
     const metadata = await registry.getAgentMetadata(project.name, match.sessionId);
 
-    if (!metadata || metadata.provider !== "claude2") {
+    if (!metadata || metadata.provider !== "claude") {
       return {
         matched: true,
-        response: jsonError("SESSION_STREAM_MISMATCH", "Session is not a Claude2 session", 400),
+        response: jsonError("SESSION_STREAM_MISMATCH", "Session is not a Claude session", 400),
       };
     }
 
@@ -177,7 +177,7 @@ export const handleClaude2StreamUpgrade = async (
     if (
       server.upgrade(request, {
         data: {
-          kind: "claude2-stream",
+          kind: "claude-stream",
           sessionType: "agent",
           projectName: project.name,
           sessionId: metadata.id,
@@ -199,7 +199,7 @@ export const handleClaude2StreamUpgrade = async (
   }
 };
 
-export class Claude2StreamController {
+export class ClaudeStreamController {
   private readonly streams = new WeakMap<StreamSocket, RuntimeStream>();
   // Reverse index runtimeKey → live sockets, so an effort switch (which must
   // reconnect ALL clients of a session to respawn the CLI) can close every
@@ -207,7 +207,7 @@ export class Claude2StreamController {
   private readonly socketsByRuntimeKey = new Map<string, Set<StreamSocket>>();
 
   constructor(
-    private readonly claude2Runtime: Claude2Runtime,
+    private readonly claudeRuntime: ClaudeRuntime,
     private readonly runtime: RuntimeResources,
     private readonly sessionRegistry: SessionRegistry,
   ) {}
@@ -232,21 +232,21 @@ export class Claude2StreamController {
     const data = sessionData(socket);
 
     if (!data) {
-      console.log("[claude2-stream] open: no session data");
+      console.log("[claude-stream] open: no session data");
       return;
     }
 
-    console.log(`[claude2-stream] open: sessionId=${data.sessionId} tmux=${data.runtimeKey}`);
+    console.log(`[claude-stream] open: sessionId=${data.sessionId} tmux=${data.runtimeKey}`);
     this.registerSocket(data.runtimeKey, socket);
 
     // Resolve metadata for projectPath and claudeSessionId
     const metadata = await this.sessionRegistry.getAgentMetadata(data.projectName, data.sessionId);
     console.log(
-      `[claude2-stream] metadata found=${!!metadata} claudeSessionId=${metadata?.claudeSessionId ?? "none"}`,
+      `[claude-stream] metadata found=${!!metadata} claudeSessionId=${metadata?.claudeSessionId ?? "none"}`,
     );
 
-    // Ensure the Claude2 process is running (respawn with --resume if needed)
-    await this.claude2Runtime.ensureRunning(
+    // Ensure the Claude process is running (respawn with --resume if needed)
+    await this.claudeRuntime.ensureRunning(
       data.runtimeKey,
       metadata?.projectPath ?? "",
       data.projectName,
@@ -263,11 +263,11 @@ export class Claude2StreamController {
     try {
       await this.startStream(socket, data);
     } catch (e) {
-      console.error(`[claude2-stream] startStream error ${data.sessionId}`, e);
+      console.error(`[claude-stream] startStream error ${data.sessionId}`, e);
       send(socket, {
         type: "error",
         code: "SESSION_RUNTIME_ERROR",
-        message: "Failed to start Claude2 stream",
+        message: "Failed to start Claude stream",
       });
     }
   }
@@ -277,14 +277,14 @@ export class Claude2StreamController {
 
     if (!data) {
       console.log(
-        `[claude2-stream] message dropped — no session data, kind=${(socket.data as Record<string, unknown> | null)?.kind ?? "none"} raw=${raw.toString().slice(0, 200)}`,
+        `[claude-stream] message dropped — no session data, kind=${(socket.data as Record<string, unknown> | null)?.kind ?? "none"} raw=${raw.toString().slice(0, 200)}`,
       );
       return;
     }
 
-    let parsed: Claude2StreamClientMessage;
+    let parsed: ClaudeStreamClientMessage;
     try {
-      parsed = JSON.parse(raw.toString()) as Claude2StreamClientMessage;
+      parsed = JSON.parse(raw.toString()) as ClaudeStreamClientMessage;
     } catch {
       send(socket, {
         type: "error",
@@ -322,9 +322,9 @@ export class Claude2StreamController {
           });
           return;
         }
-        console.log(`[claude2-stream] set_runtime_effort ${parsed.effort}: ${data.runtimeKey}`);
+        console.log(`[claude-stream] set_runtime_effort ${parsed.effort}: ${data.runtimeKey}`);
         await this.sessionRegistry.setEffort(data.sessionId, parsed.effort);
-        await this.claude2Runtime.close(data.runtimeKey);
+        await this.claudeRuntime.close(data.runtimeKey);
         // Close the requesting socket and any other sockets streaming this
         // session so every client reconnects into the respawned stream.
         // open() registers each socket, so the index normally already contains
@@ -356,15 +356,15 @@ export class Claude2StreamController {
         // lose [1m] / version pinning. request_id is untouched → CLI
         // control_response correlation holds. Default config (alias mapping,
         // 1m off) resolves to the same value → no-op.
-        let forwarded: Claude2StreamClientMessage = parsed;
+        let forwarded: ClaudeStreamClientMessage = parsed;
         if (parsed.type === "control_request" && parsed.request.subtype === "set_model") {
-          const resolved = await this.claude2Runtime.resolveControlModel(parsed.request.model);
+          const resolved = await this.claudeRuntime.resolveControlModel(parsed.request.model);
           if (resolved && resolved !== parsed.request.model) {
             forwarded = { ...parsed, request: { ...parsed.request, model: resolved } };
           }
         }
-        console.log(`[claude2-stream] message ${parsed.type}: ${data.runtimeKey}`);
-        await this.claude2Runtime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
+        console.log(`[claude-stream] message ${parsed.type}: ${data.runtimeKey}`);
+        await this.claudeRuntime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
         // 用户消息 / 权限响应 / 控制请求都算 session 活动 → bump updatedAt（分钟截断，同分钟短路）。
         void this.sessionRegistry.recordActivity(data.sessionId);
 
@@ -382,14 +382,14 @@ export class Claude2StreamController {
             isUserInput: true,
             uuid: `injected-${crypto.randomUUID()}`,
           });
-          this.claude2Runtime.injectLiveLine(data.runtimeKey, echo);
+          this.claudeRuntime.injectLiveLine(data.runtimeKey, echo);
         }
       }
     } catch {
       send(socket, {
         type: "error",
         code: "SESSION_RUNTIME_ERROR",
-        message: "Failed to write to Claude2 stream",
+        message: "Failed to write to Claude stream",
       });
     }
   }
@@ -404,7 +404,7 @@ export class Claude2StreamController {
     }
   }
 
-  private async startStream(socket: StreamSocket, data: NonNullable<Claude2WebSocketData>) {
+  private async startStream(socket: StreamSocket, data: NonNullable<ClaudeWebSocketData>) {
     const emit: BatchEmit = (frame) => {
       if (frame instanceof Uint8Array) {
         // Time socket.send for each compressed chunk frame. send() is normally
@@ -415,7 +415,7 @@ export class Claude2StreamController {
         const t0 = performance.now();
         socket.send(frame);
         console.log(
-          `[claude2-stream] blob flushed: bytes=${frame.byteLength} sendMs=${(performance.now() - t0).toFixed(0)}`,
+          `[claude-stream] blob flushed: bytes=${frame.byteLength} sendMs=${(performance.now() - t0).toFixed(0)}`,
         );
       } else {
         socket.send(frame);
@@ -425,7 +425,7 @@ export class Claude2StreamController {
       emit,
       onRealtimeRow: (line, parsed) => {
         // Capture claudeSessionId and model from system.init. The replay seed
-        // (claude2-runtime buildSeedInitLine) uses subtype "seed_init" precisely so
+        // (claude-runtime buildSeedInitLine) uses subtype "seed_init" precisely so
         // this branch skips it — it is excluded by subtype, not by a missing
         // session_id, so the seed can never hijack claudeSessionId/model.
         if (
@@ -437,9 +437,9 @@ export class Claude2StreamController {
           const init = parsed as { session_id: string; model?: string };
           if (init.session_id) {
             console.log(
-              `[claude2-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
+              `[claude-stream] captured claudeSessionId=${init.session_id} model=${init.model ?? "none"}`,
             );
-            this.claude2Runtime.setClaudeSessionId(data.runtimeKey, init.session_id, init.model);
+            this.claudeRuntime.setClaudeSessionId(data.runtimeKey, init.session_id, init.model);
             void this.sessionRegistry.setClaudeSessionId(
               data.sessionId,
               init.session_id,
@@ -449,14 +449,14 @@ export class Claude2StreamController {
         }
         // 活动记录（recordActivity）不在此触发：onRealtimeRow 既走真实新行也走 relay 回放的
         // session_init/seedInit（裸行），在此 bump 会导致重连即刷新。已下沉到
-        // Claude2Runtime.processStdoutLine（真实新 stdout 行唯一入口，回放不经它）。
+        // ClaudeRuntime.processStdoutLine（真实新 stdout 行唯一入口，回放不经它）。
         emit(line);
         if (parsed.type === "result") {
           emit(JSON.stringify({ type: "ended" }));
         }
       },
     });
-    const stream = await this.claude2Runtime.stream(data.runtimeKey, onData, (error: Error) => {
+    const stream = await this.claudeRuntime.stream(data.runtimeKey, onData, (error: Error) => {
       emit(
         JSON.stringify({
           type: "error",
@@ -469,14 +469,14 @@ export class Claude2StreamController {
   }
 }
 
-export const matchClaude2StreamRoute = (pathname: string): StreamRouteMatch | undefined => {
+export const matchClaudeStreamRoute = (pathname: string): StreamRouteMatch | undefined => {
   const segments = pathname.split("/").filter(Boolean);
 
   if (
     segments[0] !== "api" ||
     segments[1] !== "projects" ||
     segments[3] !== "agent-sessions" ||
-    segments[5] !== "claude2-stream"
+    segments[5] !== "claude-stream"
   ) {
     return undefined;
   }
@@ -495,21 +495,21 @@ const send = (socket: StreamSocket, message: SessionStreamServerMessage) => {
   socket.send(JSON.stringify(message));
 };
 
-const sessionData = (socket: StreamSocket): Claude2WebSocketData | undefined => {
+const sessionData = (socket: StreamSocket): ClaudeWebSocketData | undefined => {
   const data = socket.data;
 
   if (
     typeof data === "object" &&
     data !== null &&
     "kind" in data &&
-    data.kind === "claude2-stream" &&
+    data.kind === "claude-stream" &&
     "sessionType" in data &&
     "projectName" in data &&
     "sessionId" in data &&
     "runtimeKey" in data &&
     "status" in data
   ) {
-    return data as Claude2WebSocketData;
+    return data as ClaudeWebSocketData;
   }
 
   return undefined;

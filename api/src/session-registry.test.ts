@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as agentHistory from "./agent-history";
@@ -229,7 +229,7 @@ test("SessionRegistry.setEffort persists a runtime effort level to metadata", as
 
   const agent = await registry.createAgentSession({
     project,
-    provider: "claude2",
+    provider: "claude",
     model: "sonnet",
     effort: "high",
   });
@@ -346,11 +346,11 @@ test("SessionRegistry reuses listAliveRuntimeKeys result within TTL cache window
   expect(aliveCalls).toBe(1);
 });
 
-test("SessionRegistry keeps claude2 metadata with claudeSessionId even when runtime is dead", async () => {
+test("SessionRegistry keeps claude metadata with claudeSessionId even when runtime is dead", async () => {
   const registry = new SessionRegistry({
     runDir,
     now: fixedNow,
-    createId: () => "agent_claude2res456",
+    createId: () => "agent_clauderes456",
     runtime: {
       async exists() {
         return false;
@@ -364,15 +364,61 @@ test("SessionRegistry keeps claude2 metadata with claudeSessionId even when runt
 
   await registry.createAgentSession({
     project,
-    provider: "claude2",
+    provider: "claude",
     claudeSessionId: "claude-session-xyz",
   });
   const sessions = await registry.listAgentSessions(project.name);
 
-  // claude2 + claudeSessionId → 即使 runtime 已死也保留（API 重启可 --resume）。
+  // claude + claudeSessionId → 即使 runtime 已死也保留（API 重启可 --resume）。
   expect(sessions).toHaveLength(1);
-  expect(sessions[0].provider).toBe("claude2");
+  expect(sessions[0].provider).toBe("claude");
   expect(sessions[0].claudeSessionId).toBe("claude-session-xyz");
+});
+
+test("SessionRegistry normalizes legacy claude2 provider on metadata load (rename compat)", async () => {
+  // 存量 metadata 文件（claude2 → claude 改名前创建）provider 仍是 "claude2"。parseMetadata
+  // 归一化为 "claude" 后，keepIfRuntimeExists 的 claude 保留分支才命中——否则 claude 会话
+  //（非 tmux，alive/exists 均不命中）会被当死会话误删 metadata 文件（2026-08-18 改名误删事故）。
+  const legacy = {
+    schemaVersion: 1,
+    id: "agent_legacyclaude456",
+    projectName: project.name,
+    projectPath: project.path,
+    type: "agent",
+    provider: "claude2",
+    displayName: "Claude Agent legacy",
+    status: "running",
+    runtimeKey: "ar-agent-claude2-hello-world-8f3a2b1c-agent_legacy",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    claudeSessionId: "claude-legacy-session-abc",
+  };
+  await mkdir(join(runDir, "sessions"), { recursive: true });
+  await writeFile(
+    join(runDir, "sessions", "agent_legacyclaude456.json"),
+    JSON.stringify(legacy, null, 2),
+  );
+
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  const sessions = await registry.listAgentSessions(project.name);
+
+  // 归一化 + claude 保留分支 → 会话不被误删，provider 对外显示为 "claude"。
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0].provider).toBe("claude");
+  expect(sessions[0].claudeSessionId).toBe("claude-legacy-session-abc");
 });
 
 test("SessionRegistry listAllCandidates aggregates across projects without subtitle", async () => {
@@ -476,7 +522,7 @@ test("SessionRegistry listCandidateSubtitles skips dead terminals (no capture)",
 });
 
 test("SessionRegistry listCandidateSubtitles collects claude agent lastAssistantMessage, skips codex", async () => {
-  // 与项目总览 session-routes.ts:90-93 同款机制：仅 claude/claude2（有 claudeSessionId）经
+  // 与项目总览 session-routes.ts:90-93 同款机制：仅 claude（有 claudeSessionId）经
   // getLastAssistantMessage 取 JSONL 消息；codex 无 claudeSessionId 不适用，不进 map。
   let agentCounter = 0;
   const captureCalls: string[] = [];
@@ -503,7 +549,7 @@ test("SessionRegistry listCandidateSubtitles collects claude agent lastAssistant
     });
 
     const demo = { name: "demo", path: "/projects/demo" };
-    await registry.createAgentSession({ project: demo, provider: "claude2" });
+    await registry.createAgentSession({ project: demo, provider: "claude" });
     await registry.setClaudeSessionId("agent_subtitle1", "claude-session-xyz");
     await registry.createAgentSession({ project: demo, provider: "codex" });
     await registry.createTerminalSession({ project: demo });
@@ -514,7 +560,7 @@ test("SessionRegistry listCandidateSubtitles collects claude agent lastAssistant
       agent_subtitle1: "agent 最后一条回复",
       terminal_subtitle456: "user@host:~$ ls -la",
     });
-    // 只对 claude2 agent 读 JSONL（codex 被 filter 排除）；terminal 走原 capture 路径。
+    // 只对 claude agent 读 JSONL（codex 被 filter 排除）；terminal 走原 capture 路径。
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith("/projects/demo", "claude-session-xyz");
     expect(captureCalls).toHaveLength(1);
@@ -523,9 +569,9 @@ test("SessionRegistry listCandidateSubtitles collects claude agent lastAssistant
   }
 });
 
-test("SessionRegistry listCandidateSubtitles keeps dead claude2 agent (JSONL history), drops dead terminal", async () => {
-  // keepIfRuntimeExists 对 claude2+claudeSessionId 无条件保留展示（有 JSONL 历史可看），与
-  // listAllCandidates 展示集合一致——已死 claude2 agent 仍取 JSONL subtitle；terminal 已死会被
+test("SessionRegistry listCandidateSubtitles keeps dead claude agent (JSONL history), drops dead terminal", async () => {
+  // keepIfRuntimeExists 对 claude+claudeSessionId 无条件保留展示（有 JSONL 历史可看），与
+  // listAllCandidates 展示集合一致——已死 claude agent 仍取 JSONL subtitle；terminal 已死会被
   // keepIfRuntimeExists 清理不展示，故纯存活过滤剔除、不 capture。
   const captureCalls: string[] = [];
   const spy = spyOn(agentHistory, "getLastAssistantMessage").mockResolvedValue(
@@ -545,7 +591,7 @@ test("SessionRegistry listCandidateSubtitles keeps dead claude2 agent (JSONL his
           captureCalls.push(runtimeKey);
           return "user@host:~$ ls -la\r\n";
         },
-        // 空存活快照：全部判死。claude2+claudeSessionId agent 仍保留 subtitle，terminal 被剔除。
+        // 空存活快照：全部判死。claude+claudeSessionId agent 仍保留 subtitle，terminal 被剔除。
         async listAliveRuntimeKeys() {
           return new Set<string>();
         },
@@ -553,7 +599,7 @@ test("SessionRegistry listCandidateSubtitles keeps dead claude2 agent (JSONL his
     });
 
     const demo = { name: "demo", path: "/projects/demo" };
-    await registry.createAgentSession({ project: demo, provider: "claude2" });
+    await registry.createAgentSession({ project: demo, provider: "claude" });
     await registry.setClaudeSessionId("agent_kept1", "claude-session-kept");
     await registry.createTerminalSession({ project: demo });
 

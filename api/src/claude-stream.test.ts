@@ -3,10 +3,10 @@ import { describe, expect, mock, test } from "bun:test";
 import {
   chunkBatchLines,
   createBatchEmitter,
-  Claude2StreamController,
+  ClaudeStreamController,
   type BatchEmit,
-} from "./claude2-stream";
-import type { Claude2Runtime } from "./claude2-runtime";
+} from "./claude-stream";
+import type { ClaudeRuntime } from "./claude-runtime";
 import type { RuntimeResources, SessionRegistry } from "./session-registry";
 
 // A minimal legal non-batch row. createBatchEmitter only branches on `type`, so
@@ -148,7 +148,7 @@ describe("chunkBatchLines", () => {
   });
 });
 
-describe("Claude2StreamController.message routes CLI stdin inputs", () => {
+describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
   // The fix for the model-switch bug: model/mode switches are sent as
   // control_request{set_model / set_permission_mode} per the CLI's real
   // stream-json protocol, forwarded verbatim to stdin. They are NOT a kill +
@@ -168,11 +168,11 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
   const makeSocket = (): FakeSocket => {
     const socket: FakeSocket = {
       data: {
-        kind: "claude2-stream",
+        kind: "claude-stream",
         sessionType: "agent",
         projectName: "demo",
         sessionId: "sess-1",
-        runtimeKey: "ar-claude2-claude-demo-sess-1",
+        runtimeKey: "ar-claude-claude-demo-sess-1",
         status: "running",
       },
       sends: [],
@@ -194,7 +194,7 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     const injections: Array<{ key: string; line: string }> = [];
     const closedKeys: string[] = [];
     const effortUpdates: Array<{ sessionId: string; effort: string }> = [];
-    const claude2Runtime = {
+    const claudeRuntime = {
       write: async (_key: string, data: string) => {
         writes.push(data);
       },
@@ -225,8 +225,8 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
       },
       recordActivity: async () => {},
     };
-    const controller = new Claude2StreamController(
-      claude2Runtime as unknown as Claude2Runtime,
+    const controller = new ClaudeStreamController(
+      claudeRuntime as unknown as ClaudeRuntime,
       {} as RuntimeResources,
       sessionRegistry as unknown as SessionRegistry,
     );
@@ -332,7 +332,7 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     // isUserInput so the client can open running on it before the first
     // assistant event (the CLI's own user messages don't carry this flag).
     expect(injections).toHaveLength(1);
-    expect(injections[0]!.key).toBe("ar-claude2-claude-demo-sess-1");
+    expect(injections[0]!.key).toBe("ar-claude-claude-demo-sess-1");
     const echoed = JSON.parse(injections[0]!.line) as Record<string, unknown>;
     expect(echoed).toMatchObject({ type: "user", message: msg.message });
     expect(echoed.isUserInput).toBe(true);
@@ -358,7 +358,7 @@ describe("Claude2StreamController.message routes CLI stdin inputs", () => {
     const socket = makeSocket();
     await controller.message(socket, JSON.stringify({ type: "set_runtime_effort", effort: "max" }));
     expect(effortUpdates).toEqual([{ sessionId: "sess-1", effort: "max" }]);
-    expect(closedKeys).toEqual(["ar-claude2-claude-demo-sess-1"]);
+    expect(closedKeys).toEqual(["ar-claude-claude-demo-sess-1"]);
     // requesting socket closed → client auto-reconnects → ensureRunning respawns
     expect(socket.closeCalls).toBe(1);
     // nothing forwarded to stdin (not a control_request) + no error frame

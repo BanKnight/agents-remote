@@ -7,7 +7,7 @@ import type { AgentProviderProfile } from "./agent-provider-profiles.js";
  * 注入能力是 runtime 级维度(各 runtime 的 spawn 方式 / MCP 配置支持不同),
  * 与能力开关(project 级,per-project mcp.json)是正交两维度。
  *
- * 基座阶段只有 Claude2McpInjector(直拉 spawn,argv 可扩展,支持 --mcp-config HTTP)。
+ * 基座阶段只有 ClaudeMcpInjector(直拉 spawn,argv 可扩展,支持 --mcp-config HTTP)。
  * Codex 当前走 tmux 非直拉,无 argv 注入抽象 → canInject false,等 Codex 直拉 runtime
  * 落地后加 CodexMcpInjector(TOML -c mcp_servers.<name>... 形式)。
  *
@@ -48,10 +48,10 @@ type ClaudeMcpConfigJson = {
   };
 };
 
-/** Claude2(Claude Code CLI)注入器:--mcp-config inline JSON,type:"http"。 */
-export class Claude2McpInjector implements McpInjector {
+/** Claude(Claude Code CLI)注入器:--mcp-config inline JSON,type:"http"。 */
+export class ClaudeMcpInjector implements McpInjector {
   canInject(profile: AgentProviderProfile): boolean {
-    return profile.provider === "claude2";
+    return profile.provider === "claude";
   }
 
   buildMcpConfig({ project, mcpPort }: BuildMcpConfigOptions): McpSpawnConfig | null {
@@ -71,7 +71,7 @@ export class Claude2McpInjector implements McpInjector {
 }
 
 const injectors: Partial<Record<AgentProvider, McpInjector>> = {
-  claude2: new Claude2McpInjector(),
+  claude: new ClaudeMcpInjector(),
 };
 
 /** 按 provider 取注入器;无适配器返回 null(runtime 不支持 MCP 注入,spawn 不带 --mcp-config)。 */

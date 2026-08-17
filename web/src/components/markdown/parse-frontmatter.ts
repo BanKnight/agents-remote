@@ -1,5 +1,5 @@
 // 前端 markdown frontmatter（YAML `---` 块）解析——零依赖轻量解析，同构复用后端
-// `parseFrontmatter`（api/src/claude2-slash-commands.ts）的逐行 colon split + 引号剥离模式。
+// `parseFrontmatter`（api/src/claude-slash-commands.ts）的逐行 colon split + 引号剥离模式。
 //
 // 用途：把 markdown 原文拆成 { frontmatter, body }。文档开头的 frontmatter 块存在即从 body
 // 剥离（避免 remark 把 `---` 当 <hr>、把 yaml 当正文段落），有字段时由 FrontmatterCard 在

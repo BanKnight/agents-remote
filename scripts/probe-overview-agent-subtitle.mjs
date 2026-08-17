@@ -19,7 +19,7 @@ const MOCK_AGENTS = [
     sessionId: "a1",
     displayName: "路由网关",
     status: "running",
-    provider: "claude2",
+    provider: "claude",
   },
   {
     type: "agent",
@@ -27,7 +27,7 @@ const MOCK_AGENTS = [
     sessionId: "a2",
     displayName: "语伴",
     status: "running",
-    provider: "claude2",
+    provider: "claude",
   },
   {
     type: "agent",
@@ -103,12 +103,12 @@ console.log(`\n渲染卡片（title → subtitle）：`);
 for (const c of cards)
   console.log(`  ${c.title} → ${c.subtitle ? JSON.stringify(c.subtitle) : "(无第二行)"}`);
 
-// 断言 1：claude2 agent 卡片有第二行，文本与 mock 一致
-for (const a of MOCK_AGENTS.filter((a) => a.provider === "claude2")) {
+// 断言 1：claude agent 卡片有第二行，文本与 mock 一致
+for (const a of MOCK_AGENTS.filter((a) => a.provider === "claude")) {
   const card = cards.find((c) => c.title === a.displayName);
   record(
     !!card && card.subtitle === MOCK_AGENT_SUBS[a.sessionId],
-    `claude2 agent「${a.displayName}」卡片第二行 = "${MOCK_AGENT_SUBS[a.sessionId]}"`,
+    `claude agent「${a.displayName}」卡片第二行 = "${MOCK_AGENT_SUBS[a.sessionId]}"`,
   );
 }
 

@@ -189,16 +189,16 @@ function selectedLinesBody(raw: Record<string, unknown>): ReactNode | null {
 
 const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   // Mode transitions — simple system bubble, no body
-  plan_mode: { icon: "plan", labelKey: "claude2.attachment.plan_mode" },
-  plan_mode_exit: { icon: "plan", labelKey: "claude2.attachment.plan_mode_exit" },
-  plan_mode_reentry: { icon: "plan", labelKey: "claude2.attachment.plan_mode_reentry" },
-  auto_mode: { icon: "auto", labelKey: "claude2.attachment.auto_mode" },
-  auto_mode_exit: { icon: "auto", labelKey: "claude2.attachment.auto_mode_exit" },
+  plan_mode: { icon: "plan", labelKey: "claude.attachment.plan_mode" },
+  plan_mode_exit: { icon: "plan", labelKey: "claude.attachment.plan_mode_exit" },
+  plan_mode_reentry: { icon: "plan", labelKey: "claude.attachment.plan_mode_reentry" },
+  auto_mode: { icon: "auto", labelKey: "claude.attachment.auto_mode" },
+  auto_mode_exit: { icon: "auto", labelKey: "claude.attachment.auto_mode_exit" },
 
   // Files — collapsible bubbles
   file: {
     icon: "file",
-    labelKey: "claude2.attachment.file",
+    labelKey: "claude.attachment.file",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       return ((a?.displayPath as string) || (a?.filename as string)) ?? null;
@@ -207,13 +207,13 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   edited_text_file: {
     icon: "edit",
-    labelKey: "claude2.attachment.edited_text_file",
+    labelKey: "claude.attachment.edited_text_file",
     badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filename as string) ?? null,
     body: editedTextBody,
   },
   compact_file_reference: {
     icon: "file",
-    labelKey: "claude2.attachment.compact_file_reference",
+    labelKey: "claude.attachment.compact_file_reference",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       return ((a?.displayPath as string) || (a?.filename as string)) ?? null;
@@ -221,7 +221,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   plan_file_reference: {
     icon: "plan",
-    labelKey: "claude2.attachment.plan_file_reference",
+    labelKey: "claude.attachment.plan_file_reference",
     badge: (raw) => ((raw.attachment as Record<string, unknown>)?.planFilePath as string) ?? null,
     body: planFileBody,
   },
@@ -229,7 +229,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   // Hooks — collapsible bubbles
   hook_success: {
     icon: "hook",
-    labelKey: "claude2.attachment.hook_success",
+    labelKey: "claude.attachment.hook_success",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       const name = (a?.hookName as string) ?? "";
@@ -241,7 +241,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   hook_non_blocking_error: {
     icon: "hook",
-    labelKey: "claude2.attachment.hook_non_blocking_error",
+    labelKey: "claude.attachment.hook_non_blocking_error",
     accent: "text-error/80",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
@@ -253,7 +253,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   hook_additional_context: {
     icon: "hook",
-    labelKey: "claude2.attachment.hook_additional_context",
+    labelKey: "claude.attachment.hook_additional_context",
     badge: (raw) => ((raw.attachment as Record<string, unknown>)?.hookName as string) ?? null,
     body: hookContextBody,
   },
@@ -261,12 +261,12 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   // Environment — single-line or collapsible
   date_change: {
     icon: "calendar",
-    labelKey: "claude2.attachment.date_change",
+    labelKey: "claude.attachment.date_change",
     badge: (raw) => ((raw.attachment as Record<string, unknown>)?.newDate as string) ?? null,
   },
   queued_command: {
     icon: "queue",
-    labelKey: "claude2.attachment.queued_command",
+    labelKey: "claude.attachment.queued_command",
     badge: (raw) => {
       const prompt = (raw.attachment as Record<string, unknown>)?.prompt;
       const text = attachmentTextValue(prompt);
@@ -275,12 +275,12 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   opened_file_in_ide: {
     icon: "file",
-    labelKey: "claude2.attachment.opened_file_in_ide",
+    labelKey: "claude.attachment.opened_file_in_ide",
     badge: (raw) => ((raw.attachment as Record<string, unknown>)?.filename as string) ?? null,
   },
   selected_lines_in_ide: {
     icon: "edit",
-    labelKey: "claude2.attachment.selected_lines_in_ide",
+    labelKey: "claude.attachment.selected_lines_in_ide",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       const start = a?.lineStart;
@@ -291,7 +291,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   diagnostics: {
     icon: "search",
-    labelKey: "claude2.attachment.diagnostics",
+    labelKey: "claude.attachment.diagnostics",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       const files = a?.files as Array<unknown> | undefined;
@@ -301,7 +301,7 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   },
   goal_status: {
     icon: "goal",
-    labelKey: "claude2.attachment.goal_status",
+    labelKey: "claude.attachment.goal_status",
     badge: (raw) => {
       const a = raw.attachment as Record<string, unknown>;
       const met = a?.met;

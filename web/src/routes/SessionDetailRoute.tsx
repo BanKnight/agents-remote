@@ -771,11 +771,11 @@ function SessionDetailActions({
     "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:text-on-surface-soft disabled:opacity-40";
 
   // Close 之外还有其他操作（Files/Git/+Terminal/Retry）时才用 ⋯ 菜单收起；
-  // terminal 详情页正常状态下只有 Close，直接展开（与 claude2 详情页一致）
+  // terminal 详情页正常状态下只有 Close，直接展开（与 claude 详情页一致）
   const hasExtraActions = sessionType === "agent" || connectionStatus === "error";
 
   // 统一的 Close 按钮（h-8 + 16px 图标 + 桌面文字）：桌面端那排与移动端展开共用，
-  // 并与 claude2 详情页 ChatHeader 的 Close 完全一致。embedded 模式（workbench split）
+  // 并与 claude 详情页 ChatHeader 的 Close 完全一致。embedded 模式（workbench split）
   // 由 SplitPanel 工具条承载 close，此处 showClose=false → null，避免双 close。
   const closeButton = showClose ? (
     <button
@@ -1148,7 +1148,7 @@ function XtermOutput({
 
   const { t } = useT();
   // 重连 overlay 降级:connecting 时若终端已有内容(非首次加载),不挡已渲染内容——
-  // 强制 animated:false 走轻量 pill(顶部小标签),对齐 claude2 静默重连。首次加载(无内容)
+  // 强制 animated:false 走轻量 pill(顶部小标签),对齐 claude 静默重连。首次加载(无内容)
   // 维持全屏 spinner。terminalDataRef 是 ref,但本处随 connectionStatus 重渲染时读取实时正确。
   const baseOverlay = terminalOverlay(connectionStatus, t);
   const overlay =
@@ -1402,7 +1402,7 @@ function XtermOutput({
     // 这里复制 fit 的尺寸算法但不减 scrollbar 宽度，让 canvas 顶到 container 右边。
     const customFit = () => {
       if (!term.element || !term.element.parentElement) return;
-      // GroupCell 多 tab：非活动 tab 用 display:none 保留 xterm 不卸载（claude2 relay 不重读
+      // GroupCell 多 tab：非活动 tab 用 display:none 保留 xterm 不卸载（claude relay 不重读
       // JSONL，避免丢早消息）。display:none / 未挂载的容器不参与布局，computed height/width 解析为
       // "auto" → parseInt 得 NaN → term.resize 触发 xterm "only accepts integers"。offsetParent
       // === null 涵盖 display:none 与脱离布局；这些场景跳过本次 fit，等 tab 切回可见（ResizeObserver

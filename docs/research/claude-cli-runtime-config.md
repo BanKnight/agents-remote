@@ -52,13 +52,13 @@
 
 - argv `--model <tier>`；1M 上下文传 `--model claude-opus-4-8[1m]`。
 - 或设 `ANTHROPIC_MODEL` 环境变量。
-- **本项目已实现**：`spawnClaudeDirect`（`api/src/claude2-runtime.ts`）已从 `metadata.model` 注入 `--model`，并经 `session-registry.ts` 的 `setModel` 持久化到 metadata，`--resume` 重启时重新应用。
+- **本项目已实现**：`spawnClaudeDirect`（`api/src/claude-runtime.ts`）已从 `metadata.model` 注入 `--model`，并经 `session-registry.ts` 的 `setModel` 持久化到 metadata，`--resume` 重启时重新应用。
 
 ### Q3 运行时切换
 
 `control_request{subtype:"set_model", model, request_id}` → CLI 进程内切换 → 回 `control_response{subtype:"success"|"error", request_id}`。进程不退出、relay 不重放历史。协议机制详见 [stream-json 协议 · 模型切换](./claude-cli-stream-protocol.md#模型切换)。
 
-- **本项目已实现**：`switchModel`（前端 → WS → `claude2-stream.ts message()` → CLI stdin），按 `request_id` 匹配 pending action，success 应用新 model、error 回退 priorModel。
+- **本项目已实现**：`switchModel`（前端 → WS → `claude-stream.ts message()` → CLI stdin），按 `request_id` 匹配 pending action，success 应用新 model、error 回退 priorModel。
 - 早期"杀进程重启 CLI + `switch_model_result`"的设计已废弃。
 
 ---
@@ -111,7 +111,7 @@
 2. **`--effort <level>` argv flag**（官方二进制字面量证实：`--effort <level>` + `Unknown --effort value '<X>'` + `.effort?["--effort",H.effort]:[]`）。
    - 或 `~/.claude/settings.json` 的 `effortLevel` 键（官方二进制 `effortLevel` 字面量 24 处）。
 
-**本项目已实现**：`spawnClaudeDirect` 的 `Bun.spawn` 经 `buildSpawnEnv`（`claude2-runtime.ts:113-123`）注入 `CLAUDE_CODE_EFFORT_LEVEL`（`if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort`）；effort 来自 `metadata.effort ?? 全局默认`（`ensureRunning` 读 `settingsStore` 解析），并经 `SessionRegistry.setEffort` 持久化到 metadata，`--resume` 重启时重新应用（对齐 model/permissionMode 的持久化模式）。
+**本项目已实现**：`spawnClaudeDirect` 的 `Bun.spawn` 经 `buildSpawnEnv`（`claude-runtime.ts:113-123`）注入 `CLAUDE_CODE_EFFORT_LEVEL`（`if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort`）；effort 来自 `metadata.effort ?? 全局默认`（`ensureRunning` 读 `settingsStore` 解析），并经 `SessionRegistry.setEffort` 持久化到 metadata，`--resume` 重启时重新应用（对齐 model/permissionMode 的持久化模式）。
 
 ### Q3 运行时切换
 
@@ -128,9 +128,9 @@
 
 ```
 客户端 switchEffort → WS 发 {type:"set_runtime_effort", effort}
-  → claude2-stream.ts message()：
+  → claude-stream.ts message()：
       ① sessionRegistry.setEffort(sessionId, effort)  // 持久化 metadata.effort
-      ② claude2Runtime.close(runtimeKey)              // 杀 CLI + 销毁 relay（确保重连时 ensureRunning 走 respawn 而非 early-return）
+      ② claudeRuntime.close(runtimeKey)              // 杀 CLI + 销毁 relay（确保重连时 ensureRunning 走 respawn 而非 early-return）
       ③ close 该 session 全部 WS socket                // session→sockets 索引，多客户端同 session 一并重连
   → 客户端 socket.onclose (cancelled=false) → scheduleReconnect(500ms)
   → setConnectionVersion+1 → WS 重建 → open() → ensureRunning(metadata.effort)

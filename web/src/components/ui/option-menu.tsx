@@ -33,7 +33,7 @@ type OptionMenuProps = {
    * 不覆盖调用方原有 className / disabled（如 PermissionModeSelector 的 pending 态）。
    */
   trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
-  /** 选中态角色色（claude2 角色色刻意保留）：user / permission / assistant，默认 user。 */
+  /** 选中态角色色（claude 角色色刻意保留）：user / permission / assistant，默认 user。 */
   accent?: OptionMenuAccent;
   /** 桌面 popover 对齐，默认 start（model/mode 都左对齐向上展开）。 */
   align?: "start" | "center" | "end";

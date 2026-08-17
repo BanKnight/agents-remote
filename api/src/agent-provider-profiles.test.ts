@@ -8,8 +8,9 @@ test("getAgentProviderProfile returns internal Claude and Codex profiles", () =>
     command: "claude",
     displayNamePrefix: "Claude Agent",
     capabilities: {
-      history: "unsupported",
+      history: "native",
     },
+    availableModels: ["sonnet", "opus", "haiku"],
   });
   expect(getAgentProviderProfile("codex")).toEqual({
     provider: "codex",

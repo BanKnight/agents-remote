@@ -252,7 +252,7 @@
 - **per-bot computer 独立**（deterministic naming，磁盘态跨 turn 持久）。✅
 - **context 怎么喂 agent**：transcript（最近 40 条）+ resumeCursor 续 session + system prompt（persona + computer 提示 + mention nudge）+ 注入的 MCP servers（computer proxy / agents-proxy / composio）。
 
-**OPC 启示**：OpenMausBot 是 **memory 维度的反面参考**——它停在「transcript 即记忆」，没做 OPC PRD 要的「长效记忆」（§4 角色记忆）。但它证明「transcript + resumeCursor」是**最小可用的 per-turn spawn 续接机制**（与 agents-remote 的 claude2 runtime 同源，可工程对照）。OPC memory 设计应明确**超越 transcript replay**（学 Raft MEMORY.md / OpenClaw Markdown 派 / todos.dev 三层 + bounded curation），不能停在 OpenMausBot 这个最小形态。
+**OPC 启示**：OpenMausBot 是 **memory 维度的反面参考**——它停在「transcript 即记忆」，没做 OPC PRD 要的「长效记忆」（§4 角色记忆）。但它证明「transcript + resumeCursor」是**最小可用的 per-turn spawn 续接机制**（与 agents-remote 的 claude runtime 同源，可工程对照）。OPC memory 设计应明确**超越 transcript replay**（学 Raft MEMORY.md / OpenClaw Markdown 派 / todos.dev 三层 + bounded curation），不能停在 OpenMausBot 这个最小形态。
 
 ## 6. 审批与介入
 
@@ -267,7 +267,7 @@
 
 ## 7. 执行与持久
 
-### 7.1 per-turn spawn + resumeCursor（与 agents-remote claude2 同源）
+### 7.1 per-turn spawn + resumeCursor（与 agents-remote claude 同源）
 
 - **CLI driver per-turn spawn**：Claude/Codex 每 turn spawn 新 CLI 进程，进程在 turn 结束时停。✅
 - **resumeCursor 续 session**：Claude `--resume <session-id>` / Codex `thread/resume`。`BotRecord.resumeCursors` 存。✅
@@ -276,7 +276,7 @@
 - **busy 重启清零**：`Store` init 时所有 bot `busy` 强制 reset false（无 turn 跨重启存活）。✅
 - **active CLI 进程重启时被杀**（per-turn spawn 的天然结果）。✅
 
-**OPC 启示**：OpenMausBot 的执行模型与 agents-remote 的 claude2 runtime **几乎同构**——都是 per-turn spawn + `--resume` + transcript 持久。**这印证 agents-remote 的工程方向对**（Buzz 走查也印证 per-turn spawn 是主流，`../design/opc-product-discussion.md` §7 共性 ②）。可直接对照借鉴的工程细节：resumeCursor 多 driver 抽象（Claude session ID / Codex thread ID / Grok 无 cursor 走 transcript replay，三类续接策略统一在 adapter 接口）。
+**OPC 启示**：OpenMausBot 的执行模型与 agents-remote 的 claude runtime **几乎同构**——都是 per-turn spawn + `--resume` + transcript 持久。**这印证 agents-remote 的工程方向对**（Buzz 走查也印证 per-turn spawn 是主流，`../design/opc-product-discussion.md` §7 共性 ②）。可直接对照借鉴的工程细节：resumeCursor 多 driver 抽象（Claude session ID / Codex thread ID / Grok 无 cursor 走 transcript replay，三类续接策略统一在 adapter 接口）。
 
 ### 7.2 harness server 持所有进程
 
@@ -340,7 +340,7 @@
 
 ### 9.2 印证了什么（已有方向被开源同类验证）
 
-1. **per-turn spawn + --resume 是主流执行模型** ✅ 强印证——OpenMausBot 的 ClaudeDriver 用 `--resume <session-id>` + Codex `thread/resume`，与 agents-remote claude2 runtime 几乎同构。Buzz 走查（`../design/opc-product-discussion.md` §7 共性 ②）+ OpenMausBot 双重印证：per-turn spawn 是这个品类的工程默认。
+1. **per-turn spawn + --resume 是主流执行模型** ✅ 强印证——OpenMausBot 的 ClaudeDriver 用 `--resume <session-id>` + Codex `thread/resume`，与 agents-remote claude runtime 几乎同构。Buzz 走查（`../design/opc-product-discussion.md` §7 共性 ②）+ OpenMausBot 双重印证：per-turn spawn 是这个品类的工程默认。
 2. **harness server + 单 SSE 流 + 前端零 transport** ✅ 强印证——OpenMausBot 的「harness 持所有进程 + EventBus fan-in 单 SSE + React 单 reducer fold」与 agents-remote 的「Bun 服务端 + WebSocket 单流」几乎同构。这是「本地优先 agent 控制面」的**事实标准架构**。
 3. **permission broker per-action 朴素审批** ✅ 印证——OpenMausBot 与 agents-remote 的 `permissionMode=plan` + `can_use_tool` 同构（per-action 弹卡 + 回灌），是这个品类的审批默认。
 4. **driver SPI 开放扩展** ✅ 印证——OpenMausBot 的 `server/contracts.ts` ProviderDriver 接口（加 provider = 一文件 + 一行注册）与 agents-remote 的 ProviderProfile 同设计。BYO CLI + 多 provider 是对冲 Grok Bot 锁单一模型痛点的正解。
@@ -352,7 +352,7 @@
 
 1. **⚠️ 「角色级独立电脑」是一等公民**——OpenMausBot 每 bot 一台独立云 box（deterministic naming + 磁盘态持久），这是 Grok Bot「共享账户级 VM」的反向解。agents-remote 当前是 project-scoped 服务器 + per-session 文件/git/terminal，**没有「角色级独立工作区」概念**。**启示**：PRD 角色应考虑绑「持久工作环境」（学 OpenMausBot per-bot box 或 Grok Bot 共享 VM，二选一）——这与 Grok Bot 走查 §9 挑战 1 同源（「共享持久工作环境是 agents-remote 盲点」）。OpenMausBot 给出了**第三条路**：per-bot 独立 box（隔离 + 每角色独立磁盘态），代价是每 bot 一台 box 的开销。
 2. **⚠️ permission broker 作 MCP 工具包装（permission-proxy）**——OpenMausBot 把「审批」包装成 agent 调用的 MCP 工具（`approve` / `ask_user`），agent CLI spawn 时挂 permission-proxy 作 MCP server，agent 调工具时 proxy 截获 → broker → 卡片 → 回灌。这是把「审批」做成**MCP tool 而非 CLI flag**的干净抽象。**启示**：agents-remote 当前 `permissionMode=plan` 是 CLI flag 模式，可考虑升级到「审批作 MCP 工具」的抽象（更通用，跨 provider 统一）。
-3. **⚠️ driver SPI 比 agents-remote ProviderProfile 更激进**——OpenMausBot 的 contracts.ts 把「normalize 协议」也做进 driver 职责（每 driver 把 stream-JSON/JSON-RPC/ACP 翻译成 canonical RuntimeEvent），agents-remote 的 claude2 runtime 是单一协议（stream-JSON）单一 adapter。**启示**：若 agents-remote 要支持多协议 provider（Codex JSON-RPC / Grok ACP / 第三方），OpenMausBot 的「driver 负责 normalize」是可借鉴架构（contracts.ts 的 ProviderDriver + ProviderInstance + ProviderAdapter 三层 + RuntimeEvent union）。
+3. **⚠️ driver SPI 比 agents-remote ProviderProfile 更激进**——OpenMausBot 的 contracts.ts 把「normalize 协议」也做进 driver 职责（每 driver 把 stream-JSON/JSON-RPC/ACP 翻译成 canonical RuntimeEvent），agents-remote 的 claude runtime 是单一协议（stream-JSON）单一 adapter。**启示**：若 agents-remote 要支持多协议 provider（Codex JSON-RPC / Grok ACP / 第三方），OpenMausBot 的「driver 负责 normalize」是可借鉴架构（contracts.ts 的 ProviderDriver + ProviderInstance + ProviderAdapter 三层 + RuntimeEvent union）。
 
 ### 9.4 盲点（OpenMausBot 没做的，是 OPC 的差异化机会）
 
@@ -366,14 +366,14 @@
 
 ### 9.5 与 agents-remote 技术栈重叠的可借鉴点（核心节）
 
-OpenMausBot 与 agents-remote 技术栈**重叠度极高**（都用 TypeScript/React/claude2-style per-turn spawn + --resume），是**最可直接借鉴工程实现**的参考产品。4 个可借鉴点：
+OpenMausBot 与 agents-remote 技术栈**重叠度极高**（都用 TypeScript/React/claude-style per-turn spawn + --resume），是**最可直接借鉴工程实现**的参考产品。4 个可借鉴点：
 
 | # | 可借鉴点 | OpenMausBot 实现 | agents-remote 对照 | 价值 |
 |---|---------|----------|----------|------|
-| 1 | **driver SPI + canonical RuntimeEvent union** | `server/contracts.ts` ProviderDriver/ProviderInstance/ProviderAdapter 三层 + RuntimeEvent union（session/turn/item/content/request/token-usage/error 7 类） | agents-remote claude2 runtime 是单协议单 adapter | 多协议 provider 接入时的 normalize 架构范本（若接 Codex JSON-RPC / Grok ACP） |
+| 1 | **driver SPI + canonical RuntimeEvent union** | `server/contracts.ts` ProviderDriver/ProviderInstance/ProviderAdapter 三层 + RuntimeEvent union（session/turn/item/content/request/token-usage/error 7 类） | agents-remote claude runtime 是单协议单 adapter | 多协议 provider 接入时的 normalize 架构范本（若接 Codex JSON-RPC / Grok ACP） |
 | 2 | **permission broker 作 MCP 工具** | permission-proxy 暴露 approve/ask_user MCP 工具，Unix socket 转发，agent 调工具时截获 → 卡片 → 回灌 | agents-remote `permissionMode=plan` CLI flag 模式 | 「审批作 MCP 工具」是更通用抽象，跨 provider 统一 |
 | 3 | **agents-proxy = bot 间委派 MCP 注入** | 每 bot agent 进程注入 agents-proxy MCP server，暴露 ask_bot/list_bots，agent 调工具委派另一 bot | agents-remote 当前无 agent 间协作 | **最简可用的 agent 间协作原语**（带 busy/depth 上限防护）——OPC 若做轻编排，这是起点 |
-| 4 | **resumeCursor 多 driver 抽象** | BotRecord.resumeCursors 统一存 Claude session ID / Codex thread ID / Grok 无 cursor 走 transcript replay | agents-remote claude2 用 claudeSessionId 单一 cursor | 多 provider 续接策略统一在 adapter 接口的工程范本 |
+| 4 | **resumeCursor 多 driver 抽象** | BotRecord.resumeCursors 统一存 Claude session ID / Codex thread ID / Grok 无 cursor 走 transcript replay | agents-remote claude 用 claudeSessionId 单一 cursor | 多 provider 续接策略统一在 adapter 接口的工程范本 |
 
 **⚠️ 注意**：借鉴时要**避开 OpenMausBot 的两个工程缺口**：① connected apps account-level 共享（accountability sink 风险，OPC 要 per-agent scoped）；② memory 只 transcript replay（OPC 要长效记忆层）。
 

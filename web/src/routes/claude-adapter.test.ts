@@ -38,7 +38,7 @@ import {
   resolveAutoPermissionMode,
   isCompactWindowUserNoise,
   sortTasks,
-} from "./claude2-adapter";
+} from "./claude-adapter";
 import type {
   ApiErrorAttachment,
   QueueEntry,
@@ -46,7 +46,7 @@ import type {
   ChatStreamItem,
   NormalizedPart,
   TaskInfo,
-} from "./claude2-adapter";
+} from "./claude-adapter";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 

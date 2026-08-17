@@ -45,7 +45,7 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
 
   // 外部「新建根」信号（移动 drawer 顶部按钮）：createRequest 递增触发 add 模式。ref 初值吃掉
   // mount 首跑——PagesPanel 在 drawer 内随段切换卸载重挂，若不加守卫，重挂时 effect 对着旧非零
-  // 计数再跑，add dialog 无操作自动打开（对齐 claude2-adapter activeSessionKeyRef 先例）。
+  // 计数再跑，add dialog 无操作自动打开（对齐 claude-adapter activeSessionKeyRef 先例）。
   const lastCreateRequestRef = useRef(createRequest);
   useEffect(() => {
     if (createRequest !== undefined && createRequest !== lastCreateRequestRef.current) {

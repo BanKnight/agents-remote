@@ -191,7 +191,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 4. `compact_result: "failed"` → 显示失败信息，`compact_error` 说明原因
 5. compact 变体需配合 `compact_boundary` 消息实现完整的 compact 阶段跟踪（见下方生命周期章节）
 
-> 渲染区分（参考下文渲染表）：**权限模式切换变体渲染为内联提示 + 更新 permissionMode**；**compact 变体不渲染**（由 `CompactIndicator` 独立驱动，见 `Claude2SessionDetailRoute.tsx`）。
+> 渲染区分（参考下文渲染表）：**权限模式切换变体渲染为内联提示 + 更新 permissionMode**；**compact 变体不渲染**（由 `CompactIndicator` 独立驱动，见 `ClaudeSessionDetailRoute.tsx`）。
 
 ---
 
@@ -308,7 +308,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 **处理方法**：
 
 1. **合并为一条瞬时重试状态**（`RetryIndicator`），而非逐条 inline——网络波动常连续多条 api_retry（attempt 1→max），逐条 inline 会刷屏。Pass-1 `applyMessageScalarState` 收到每条 api_retry 时更新同一个 `retryInfo` 标量（`attempt` / `maxRetries` / `retryDelayMs` / `error` / `errorStatus`），渲染为输入区附近的 spinner 胶囊（`attempt/max · error · Xs 后`），随每条更新、倒计时到 0 或 `result` 到达自动消失
-2. 文案由 i18n `claude2.retry.bannerMulti`（`{attempt}/{max}`）/ `bannerSingle` 拼装
+2. 文案由 i18n `claude.retry.bannerMulti`（`{attempt}/{max}`）/ `bannerSingle` 拼装
 3. **不产生聊天气泡**：Pass-2 `normalizeChatStream` 对 api_retry `continue`（不落 fallback、不出 inline error）
 4. 不表示最终失败——最终失败由 `result` 的 `is_error: true` 表达为终态 error divider；重试成功则后续 assistant 自然覆盖，`retryInfo` 由倒计时或 `result` 清空
 
@@ -1087,7 +1087,7 @@ z.type === "tool_result" && z.tool_use_id === H
 
 **`<command-name>` 标签值的前导 `/`**：JSONL 中 `<command-name>/usage</command-name>` 的 tag 值是 `"/usage"`（含前导斜杠），而 live 路径 `pendingSlash.shift()` 已经去掉斜杠（`"usage"`）。前端在 `buildCommandOutputItem` 中统一 `commandName.replace(/^\//, "")`，避免 `CommandOutputCard` 渲染成 `//usage`。
 
-**渲染处理**（`web/src/routes/claude2-adapter.ts`）：
+**渲染处理**（`web/src/routes/claude-adapter.ts`）：
 1. **识别**（纯函数 `parseCommandArtifactTags` / `hasCommandArtifactTags`）：用带反向引用的正则 `<tag>...</tag>` 提取标签内容，覆盖除 caveat 外的全部标签。string content 与 array text-block 两条路径都检测。
 2. **产出**（`normalizeChatStream`）：识别到的命令回显消息产出 `kind: "command-output"` ChatStreamItem，携带 `commandName` / `args` / `stdout` / `stderr` / `input` / `sourceType: "local-command" | "bash"`。`system/local_command` 不再落入 fallback。
 3. **合并**：三遍扫描。Pass A：synthetic assistant echo（有 stdout，可能无准确 commandName）紧跟 tag-based command-output（有 commandName，无 stdout）时，把 synthetic stdout 折叠进 tag 卡片。Pass B：相邻 `command-output` 输入（有 commandName）与输出（有 stdout 无 commandName）合并成一条，保证一条命令只产生一个卡片。Pass D：合并后仍无 commandName 的单 stdout 卡片（form C）用 `STDOUT_COMMAND_HINTS` 白名单启发式推断命令名。（form E 的 live echo→synthetic 合并在 walk 阶段就地完成，不经过 Pass A/B/D。）
@@ -1102,10 +1102,10 @@ CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显�
 
 ```
 客户端 sendToSocket({type:"user", ...})
-  → server Claude2StreamController.message()
-  → Claude2Runtime.write()
+  → server ClaudeStreamController.message()
+  → ClaudeRuntime.write()
     → proc.stdin  // 直接写入 CLI stdin（pipe，非 FIFO）
-  → Claude2Runtime.injectLiveLine(echo)  // 写入 relay.liveLines + 广播
+  → ClaudeRuntime.injectLiveLine(echo)  // 写入 relay.liveLines + 广播
     → WebSocket → 客户端 onmessage → setRawMessages
 ```
 
@@ -1426,7 +1426,7 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 
 **服务端行为**：
 
-1. 写入 CLI stdin FIFO（`claude2Runtime.write()`）
+1. 写入 CLI stdin FIFO（`claudeRuntime.write()`）
 2. 同时通过 `relay.injectLine()` 将消息注入 relay buffer 并广播回客户端
 
 ---
@@ -1720,7 +1720,7 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 | `error` (传输层)                                  | **inline / toast**           | 连接错误通知                                                                                                                 |
 | `control_response`                               | **不渲染**                   | 匹配 `request_id` 更新 model / permission mode 标量（`set_model` / `set_permission_mode` / `interrupt` 的 CLI 回执）        |
 
-**回归测试覆盖统计**：`claude2-adapter.test.ts` 共 241 个测试、585 个断言，覆盖了 `deriveThread` 的所有语义分类分支和 task 状态的完整生命周期。
+**回归测试覆盖统计**：`claude-adapter.test.ts` 共 241 个测试、585 个断言，覆盖了 `deriveThread` 的所有语义分类分支和 task 状态的完整生命周期。
 
 ### 持续流（有进行中→完成生命周期）
 
@@ -1798,9 +1798,9 @@ CLI 进程**全程不退出**：`compact_boundary` 等重放标记是 CLI 在同
 ```
 用户选择新 model
   → WebSocket 发送 control_request { subtype: "set_model", model }（带 request_id）
-  → API server 原样写入 CLI stdin（claude2-stream.ts message()，进程不重启）
+  → API server 原样写入 CLI stdin（claude-stream.ts message()，进程不重启）
   → CLI 进程内切换 model，回 control_response { subtype: "success" | "error", request_id }
-  → 前端按 request_id 匹配 pending action（claude2-adapter.ts）：success 应用新 model；error 回退 priorModel
+  → 前端按 request_id 匹配 pending action（claude-adapter.ts）：success 应用新 model；error 回退 priorModel
 ```
 
 ### 权限模式切换

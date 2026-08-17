@@ -161,7 +161,7 @@ OpenOPC 造的不是聊天框，是**「AI 公司的操作系统」**。核心�
 具体拆解（与 Paperclip / Multica / Raft 对照）：
 
 - **状态焊在 work item（phase 是 single source of truth）**：`phase.py` 的设计注释明确「A `Phase` is the single authoritative state of a delegation work item. It replaces the previous mixture of `status` + 5 metadata sub-state fields which were tangled and could disagree with each other」——OpenOPC **刻意把多种 sub-state 收敛成单一 phase enum**，所有派生（kanban column / owner / runnability / verdict）用纯函数从 phase 投影。这比 Paperclip（issue + 多字段并存）+ Multica（issue 状态机）**更激进地单一化**。✅
-- **持久焊在 SQLite（混合持久）**：核心状态（task / work item / comms state / observability / cost / approval）在 `store.py` 352KB SQLite（同步 sqlite3）；comms 细节落 `.opc-comms/` 文件（可 replay 可唤醒）；employee evolution JSON。**比 Paperclip 的全 PostgreSQL 轻**（无 server 依赖），**比 Multica 的 issue-on-Git 重**（状态在本地数据库不在 Git 平台），**和我们的 claude2 JSONL + relay 双缓冲同量级但更显式**（phase enum 而非隐式 status）。✅
+- **持久焊在 SQLite（混合持久）**：核心状态（task / work item / comms state / observability / cost / approval）在 `store.py` 352KB SQLite（同步 sqlite3）；comms 细节落 `.opc-comms/` 文件（可 replay 可唤醒）；employee evolution JSON。**比 Paperclip 的全 PostgreSQL 轻**（无 server 依赖），**比 Multica 的 issue-on-Git 重**（状态在本地数据库不在 Git 平台），**和我们的 claude JSONL + relay 双缓冲同量级但更显式**（phase enum 而非隐式 status）。✅
 - **身份焊在 org chart（role + employee 两层）**：role 是 schema（可被多 employee 实例化），employee 是 instance（带 experience_score + learned_skill_refs）。**换 employee 干同一个 role = 接管同一组 work item，role 配置不动 + employee 的 experience profile 跟着走**。这比 Paperclip（agent = role 一体）**多了一层 schema/instance 分离**，更接近「class vs instance」的 OOP 模型。✅
 - **执行身份焊在 root session + checkpoint**：company runtime 身份锚在 root session + active suspend checkpoint（不是单个 task，task 只是执行信封）。agent 进程是临时的，runtime 是常驻的——重启可恢复（2026-07-14 News）。✅
 
@@ -387,7 +387,7 @@ work item 的 `WorkItemReviewPolicy`：`review_owner_role_id` + `review_level: m
 
 ### 10.4 Task Mode 单 agent 怎么跑
 
-Task Mode 选执行 agent（native/codex/claude_code/cursor/opencode），一条消息触发一次 run，per-turn spawn + external resume token（claude `--resume` / codex thread resume）。**与我们 claude2 的 Bun.spawn 直拉 CLI 几乎同构**（见 §12）。✅
+Task Mode 选执行 agent（native/codex/claude_code/cursor/opencode），一条消息触发一次 run，per-turn spawn + external resume token（claude `--resume` / codex thread resume）。**与我们 claude 的 Bun.spawn 直拉 CLI 几乎同构**（见 §12）。✅
 
 ---
 
@@ -459,8 +459,8 @@ README 列九垂直领域（AI Tech / 软件开发 / 金融投资 / 销售增长
 
 1. **状态焊 work-item（phase enum）是正确方向**：OpenOPC 用 14 态 phase enum + 静态转换表 + 纯函数投影（kanban column / owner / runnability / verdict），**与 Paperclip 焊 issue + Multica 焊 GitHub issue 同品类但更工程化**。我们 PRD 第一期「任务 + 看板」方向被强印证——但 OpenOPC 给了我们**更进一步的工程范式**：把 task status 收敛成单一 phase enum（不是 status + 多 sub-state 字段并存），所有派生用纯函数投影。这比 Paperclip 的多字段并存更不易出 bug。✅
 2. **agent 不能自标 done + review 闭环**：OpenOPC 的 `AWAITING_MANAGER_REVIEW` + `max_reworks: 10` + reviewer verdict（accept/rework/escalate）+ 超预算自动顶 human——与 PRD §7 决策点 2（agent 只能说「做完了请过目」）+ Paperclip executionPolicy 双阶段审批同源。OpenOPC 多了「review 超预算自动 escalate human」这条**防 manager 无限 rework worker 的保护**，值得吸收。✅
-3. **混合持久（SQLite + 文件 + JSON + markdown）比全 PostgreSQL 轻**：OpenOPC 用 sync sqlite3 + 文件 comms + JSON evolution + markdown memory，**无 server 依赖**。与 PRD §7 决策点 4「任务记录先存本地文件」+ 我们 claude2 JSONL + relay 双缓冲同量级。**印证我们「先本地文件后数据库」的轻量化方向**——OpenOPC 的 SQLite 就是「本地文件之后的下一步」的参考形态。✅
-4. **per-role session + external resume（claude --resume / codex thread resume）**：OpenOPC 的 `SeatExecutor` + `external_broker` 用 `external_resume_session_id` 续跑 claude_code（2026-08-07 commit 修了 #36 "keep claude_code resume across failed/cancelled runs"）——**与我们 claude2 的 `--resume` + relay 双缓冲几乎同构**。印证我们 claude2 runtime 的 resume 路径正确。✅
+3. **混合持久（SQLite + 文件 + JSON + markdown）比全 PostgreSQL 轻**：OpenOPC 用 sync sqlite3 + 文件 comms + JSON evolution + markdown memory，**无 server 依赖**。与 PRD §7 决策点 4「任务记录先存本地文件」+ 我们 claude JSONL + relay 双缓冲同量级。**印证我们「先本地文件后数据库」的轻量化方向**——OpenOPC 的 SQLite 就是「本地文件之后的下一步」的参考形态。✅
+4. **per-role session + external resume（claude --resume / codex thread resume）**：OpenOPC 的 `SeatExecutor` + `external_broker` 用 `external_resume_session_id` 续跑 claude_code（2026-08-07 commit 修了 #36 "keep claude_code resume across failed/cancelled runs"）——**与我们 claude 的 `--resume` + relay 双缓冲几乎同构**。印证我们 claude runtime 的 resume 路径正确。✅
 5. **blocker 不静默绕过（surface problems）**：OpenOPC 两级 escalate（团队内 blocking + 超权限 human）与 Paperclip「surface problems, don't silently fix」+ PRD「agent 遇阻停下来问」同源。✅
 6. **risk 分级 auto-approve 是务实审批**：OpenOPC 的 `max_auto_approve_risk` knob（low/medium/high/critical）+ safe allowlist 自动放 + destructive 必 escalate + medium 走 LLM review——**比 Paperclip 的 executionPolicy 双阶段更细粒度**，与我们 `permissionMode=plan` + `can_use_tool` 审批卡可融合。✅
 

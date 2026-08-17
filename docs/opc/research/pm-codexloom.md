@@ -347,7 +347,7 @@ README「Compaction Preserves Continuity」节 + epoch-context-coverage.md 全�
 
 **对比 Paperclip**：Paperclip 的 goal ancestry ≤6 现拼策略在实战中**把 context 吹到 20-30k**（HN Glemllksdf + GitHub #11253 claude_local 81% thinking_tokens 互证，见 `pm-paperclip-community.md`）。CodexLoom 不走 ancestry 现拼，走**「thread 持续累积 + compaction 保前缀 + Epoch Coverage 重新覆盖 durable」**——这是另一条解 context 膨胀的路。
 
-⚠️ PM 判断：**CodexLoom 的解法是否真的避免了 Paperclip 的成本爆炸，尚无社区实战验证**（项目 5 周龄、361 stars、0 watcher、社区真空，见 §11）。理论上「thread 持续累积」也有累积膨胀风险，但 CodexLoom 用 (a) codex 自己的 compaction 压旧历史 (b) Epoch Coverage 只保证 durable source（Prompt/Profile/关系快照，体积 bounded 128 KiB）(c) prompt caching 省前缀处理——三重控制。**这是比 Paperclip ancestry ≤6 更工程化的方案**，但需真实长会话验证才能下定论（呼应 `docs/research/claude2-replay-performance.md` 我们自己的长会话回放问题）。
+⚠️ PM 判断：**CodexLoom 的解法是否真的避免了 Paperclip 的成本爆炸，尚无社区实战验证**（项目 5 周龄、361 stars、0 watcher、社区真空，见 §11）。理论上「thread 持续累积」也有累积膨胀风险，但 CodexLoom 用 (a) codex 自己的 compaction 压旧历史 (b) Epoch Coverage 只保证 durable source（Prompt/Profile/关系快照，体积 bounded 128 KiB）(c) prompt caching 省前缀处理——三重控制。**这是比 Paperclip ancestry ≤6 更工程化的方案**，但需真实长会话验证才能下定论（呼应 `docs/research/claude-replay-performance.md` 我们自己的长会话回放问题）。
 
 ### 5.3 不共享 brain（与 Raft「You Don't Need a Company Brain」同源）
 
@@ -439,7 +439,7 @@ zh guide「选择过程管理还是结果管理」节——**审批不是二元�
 
 - **Schedules** + **durable external Triggers**（GitHub PR/workflow-run adapter，polling 30s）+ **全局运行态** + **按需备份** + **active turns 完成后优雅重启**（active Goal 在当前 turn 边界停自动续，新进程后续）。✅
 
-⚠️ **OPC 启示**：CodexLoom 的「Hub ↔ CodexHost JSON-RPC ↔ codex app-server」三层与 agents-remote 的「Bun 服务端 ↔ claude2 runtime ↔ Claude CLI stream-json」**结构同构**（都是「控制面 ↔ 执行面桥 ↔ 底层 CLI runtime」），但 CodexLoom 的 CodexHost 用 **codex app-server JSON-RPC**（codex 官方的进程间协议），agents-remote 的 claude2 用 **stream-json stdio**（Claude CLI 的无头协议）。**CodexLoom 的 CodexHost 是我们 Codex 对接待办的工程参考**（我们 PRD §7 决策 5「Codex 角色人设注入先降级处理」+ CLAUDE.md 已记 Codex 对接待办）。详见 §12.6。
+⚠️ **OPC 启示**：CodexLoom 的「Hub ↔ CodexHost JSON-RPC ↔ codex app-server」三层与 agents-remote 的「Bun 服务端 ↔ claude runtime ↔ Claude CLI stream-json」**结构同构**（都是「控制面 ↔ 执行面桥 ↔ 底层 CLI runtime」），但 CodexLoom 的 CodexHost 用 **codex app-server JSON-RPC**（codex 官方的进程间协议），agents-remote 的 claude 用 **stream-json stdio**（Claude CLI 的无头协议）。**CodexLoom 的 CodexHost 是我们 Codex 对接待办的工程参考**（我们 PRD §7 决策 5「Codex 角色人设注入先降级处理」+ CLAUDE.md 已记 Codex 对接待办）。详见 §12.6。
 
 ---
 
@@ -537,7 +537,7 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 ⚠️ **关键启示（给 PRD）**：
 1. **第一期不上持久 thread 是合理的**（Task Agent 轻量启动），但**第二期持久化时不要只想到向量检索**——CodexLoom 的「thread 持久 + compaction + Epoch Coverage durable 重注入」是另一条路，且更贴近「agent 有持续工作轨迹」的语义（向量检索是「跨任务召回」，thread 持久是「同一 agent 工作轨迹延续」，两者不等价）。
 2. **「持久 thread」≠「常驻进程」**——CodexLoom 的 CodexHost 常驻但 agent turn 按需，thread 是 rollout 文件持久（不是进程常驻）。我们之前在 opc-product-discussion.md §9 把 Grok Bot 的「常驻 VM」当反面，但 CodexLoom 的「常驻 Hub + 按需 turn + 持久 rollout」是**第三条路**——可以「持久」不「常驻」。这条修正我们的二元（按需 vs 常驻）为三元（按需 spawn / 常驻 VM / **常驻 Hub + 持久 thread + 按需 turn**）。
-3. **Epoch Context Coverage 的双证机制（replayable rollout evidence + 同 turn model event）可直接抄解决我们 `docs/research/claude2-replay-performance.md` 长会话回放上下文压缩问题**——见 §12.9。
+3. **Epoch Context Coverage 的双证机制（replayable rollout evidence + 同 turn model event）可直接抄解决我们 `docs/research/claude-replay-performance.md` 长会话回放上下文压缩问题**——见 §12.9。
 
 ### 12.2 Profile = Identity/Domain/Scope，vs 我们「角色 = 名字 + 宽能力倾向」——**要补 Scope 这一层**
 
@@ -614,7 +614,7 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 
 ### 12.6 ★ Built ON Codex（不重写 runtime）vs 我们「不重写现有 agent 运行时」——**完全同构 + CodexHost 给我们 Codex 对接工程借鉴**
 
-**结论**：✅ **完全同构**。CodexLoom 怎么把 Codex thread「变成」Domain Agent 工作区的——CodexHost + codex app-server JSON-RPC 这套，**对我们 claude2-runtime 的 Codex 对接有直接工程借鉴**。
+**结论**：✅ **完全同构**。CodexLoom 怎么把 Codex thread「变成」Domain Agent 工作区的——CodexHost + codex app-server JSON-RPC 这套，**对我们 claude-runtime 的 Codex 对接有直接工程借鉴**。
 
 证据：
 - **CodexLoom 三层**（deepwiki + handbook，✅）：
@@ -629,14 +629,14 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 - **thread/inject_items 注入 Developer context**（✅）：原生 role=developer message，不伪装 user，不触发新 turn。
 
 **对照 agents-remote**：
-- agents-remote 三层：Bun 服务端（控制面）↔ claude2-runtime（执行面桥，stream-json stdio）↔ Claude CLI（底层 runtime）。
+- agents-remote 三层：Bun 服务端（控制面）↔ claude-runtime（执行面桥，stream-json stdio）↔ Claude CLI（底层 runtime）。
 - **结构同构**：控制面 ↔ 执行面桥 ↔ 底层 CLI runtime。
 - **协议差异**：CodexLoom 用 **codex app-server JSON-RPC**（codex 官方进程间协议），agents-remote 用 **stream-json stdio**（Claude CLI 无头协议）。
 
 ⚠️ **OPC 启示（直接工程借鉴）**：
 1. **Codex 对接待办**（CLAUDE.md 已记 + PRD §7 决策 5）：agents-remote 的 Codex 对接可抄 CodexLoom 的 **CodexHost 设计**——`internal/codex` 提供 JSON-RPC client ↔ codex app-server，`thread/resume` + `thread/inject_items` + `turn/start` 三件套。**CodexLoom 已经把 codex app-server 协议吃透了**（`docs/codex-app-server-protocol.md` 11KB），是我们的现成协议参考。
-2. **Developer context 注入**：CodexLoom 的「Prompt + Profile 渲染成原子 `<loom_developer_context>` XML，用 `thread/inject_items` 注入原生 role=developer message」——这是「把人设/规则注入 agent」的干净工程模式。agents-remote 的 claude2 用 stream-json 的 system message 注入，CodexLoom 用 codex app-server 的 developer role message 注入——**两套协议两种注入方式，CodexLoom 给了 codex 侧的现成范式**。
-3. **rollout 文件是真相源**：agents-remote 的 claude2 用 JSONL session 文件当真相源（见 `docs/design/message-replay.md`），CodexLoom 用 codex rollout 文件——**同构**，可对照 rollout 解析方式。
+2. **Developer context 注入**：CodexLoom 的「Prompt + Profile 渲染成原子 `<loom_developer_context>` XML，用 `thread/inject_items` 注入原生 role=developer message」——这是「把人设/规则注入 agent」的干净工程模式。agents-remote 的 claude 用 stream-json 的 system message 注入，CodexLoom 用 codex app-server 的 developer role message 注入——**两套协议两种注入方式，CodexLoom 给了 codex 侧的现成范式**。
+3. **rollout 文件是真相源**：agents-remote 的 claude 用 JSONL session 文件当真相源（见 `docs/design/message-replay.md`），CodexLoom 用 codex rollout 文件——**同构**，可对照 rollout 解析方式。
 
 ### 12.7 ★ 治理外部交付 / Interface Agent——**我们完全没设计的维度，要做「agent 对外服务面」可抄**
 
@@ -670,9 +670,9 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 
 ⚠️ **潜在弱点（与 §12.10 同源）**：CodexLoom 建立在 Codex 上 + ChatGPT 登录——单 provider 锁定。它叫 **Codex**Loom 不是没原因。**它是不是「单 provider 的个人 agent 组织工具」**？部分是——它的 Domain Agent 概念与 provider 无关（理论上可换），但 CodexHost + codex app-server JSON-RPC + ChatGPT 登录这一层是 Codex 特定的。如果 OpenAI/Codex 被双封杀（如 Anthropic/Google 双封杀 OpenClaw，见 opc-product-discussion.md §9 OpenClaw/Hermes 小节），CodexLoom 会跟着死。
 
-### 12.9 ★ compaction 连续性的工程化（Epoch Context Coverage）——**能抄来解决我们 claude2 长会话回放**
+### 12.9 ★ compaction 连续性的工程化（Epoch Context Coverage）——**能抄来解决我们 claude 长会话回放**
 
-**结论**：✅ **强烈建议抄**。Epoch Context Coverage 的「durable source 重注入 + 双证」机制，可直接借鉴解决我们 `docs/research/claude2-replay-performance.md` 长会话回放上下文压缩问题。
+**结论**：✅ **强烈建议抄**。Epoch Context Coverage 的「durable source 重注入 + 双证」机制，可直接借鉴解决我们 `docs/research/claude-replay-performance.md` 长会话回放上下文压缩问题。
 
 证据（epoch-context-coverage.md 全文，✅）：
 - **durable source 五保证**：每个 context epoch 中 Loom Agent Prompt + 完整 Profile + 直接关系快照 + 工作上下文 + 双证标 covered。
@@ -683,14 +683,14 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 - **start lock 串行编译流程**（14 步）：防并发 turn 重复注入。
 - **XML escaping + CDATA-safe splitting**：防 Profile 越权。
 
-**对照 agents-remote claude2**：
-- `docs/research/claude2-replay-performance.md` 我们的长会话回放问题：数据流成本 + 实测数字（客户端已排除，主因在传输）+ 实施路径。
-- `docs/design/message-replay.md` 我们的进程模型：claude2 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流。
-- ⚠️ **我们的现状**：claude2 用 stream-json + `--resume` + relay 双缓冲 + JSONL history，**没有 compaction 后 durable source 重注入机制**——长会话 compaction 后 system prompt / role / 关键长期声明可能丢。
+**对照 agents-remote claude**：
+- `docs/research/claude-replay-performance.md` 我们的长会话回放问题：数据流成本 + 实测数字（客户端已排除，主因在传输）+ 实施路径。
+- `docs/design/message-replay.md` 我们的进程模型：claude 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流。
+- ⚠️ **我们的现状**：claude 用 stream-json + `--resume` + relay 双缓冲 + JSONL history，**没有 compaction 后 durable source 重注入机制**——长会话 compaction 后 system prompt / role / 关键长期声明可能丢。
 
 ⚠️ **OPC 启示（直接工程借鉴）**：
-1. **claude2 长会话 compaction 后重注入 durable source**：抄 CodexLoom 的 Epoch Context Coverage——compaction 后下一 turn 重新覆盖「角色 systemPrompt + 关键长期规则 + 当前组织关系快照」。这解决我们「长会话 compaction 丢角色身份」的潜在问题。
-2. **双证机制（replayable rollout evidence + 同 turn model event）**：我们 claude2 的回放已有 JSONL rollout（`docs/design/message-replay.md`），可加「重注入后观察首个 model event 才标 covered」双证。
+1. **claude 长会话 compaction 后重注入 durable source**：抄 CodexLoom 的 Epoch Context Coverage——compaction 后下一 turn 重新覆盖「角色 systemPrompt + 关键长期规则 + 当前组织关系快照」。这解决我们「长会话 compaction 丢角色身份」的潜在问题。
+2. **双证机制（replayable rollout evidence + 同 turn model event）**：我们 claude 的回放已有 JSONL rollout（`docs/design/message-replay.md`），可加「重注入后观察首个 model event 才标 covered」双证。
 3. **不能照搬的部分**：CodexLoom 是 codex app-server JSON-RPC（thread/inject_items），我们是 Claude CLI stream-json（system message 注入）——注入 wire 通道不同，但「durable source 重注入 + 双证 + per-thread ledger」原则通用。
 
 ### 12.10 OpenAI/Codex 强绑定 vs 我们多 provider 对冲——**CodexLoom 的单 provider 锁定是它的弱点**
@@ -699,7 +699,7 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 
 证据：
 - **CodexLoom 强绑定 Codex**（✅）：仓库名 CodexLoom + README「Built ON Codex」+ CodexHost + codex app-server JSON-RPC + ChatGPT 登录 + rollout 文件格式 codex 特定。
-- **我们多 provider**（✅）：opc-product-discussion.md §9 OpenClaw/Hermes 小节「要预判 provider 条款变动风险（多 provider：Claude/Codex/pi 是对冲）」+ agents-remote 现有 claude/codex/claude2 ProviderProfile + pi-access-options.md 调研。
+- **我们多 provider**（✅）：opc-product-discussion.md §9 OpenClaw/Hermes 小节「要预判 provider 条款变动风险（多 provider：Claude/Codex/pi 是对冲）」+ agents-remote 现有 claude/codex/claude ProviderProfile + pi-access-options.md 调研。
 
 ⚠️ **OPC 启示**：
 1. **多 provider 是对冲 provider 被封杀风险的结构性优势**——OpenClaw 被 Anthropic/Google 双封杀（opc-product-discussion.md §9）是前车之鉴。CodexLoom 若 Codex 被封杀会整个死，我们换 provider 即可。
@@ -760,4 +760,4 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 
 ---
 
-> **PM 一句话总结**：CodexLoom（`yan5xu/codexloom`，Go + React，**Elastic License 2.0**，5 周龄，361 stars / 0 watcher 社区真空，作者 Yanwu / 中文个人开发者，code-relay+ququ+oh-my-ai-company 同主题作品史）是「**把 Codex threads 织成长期在岗的 Domain Agent 组织**」——它**与 OPC PRD 意识形态最接近**（明写 OPC 目标用户 + 不重写 runtime + Profile 作协作契约 + 按需唤醒 + compaction 保连续性 + 拒绝企业多租户），是**编排平台**（非单品爆款），走「**点对点责任路由多 agent**」另一条路（非 Raft 共享 room、非 Paperclip 层级 delegation）。**最强的 3 个印证点**：① Profile 三字段（Identity/Domain/**Scope**）直接补我们 PRD 角色定义缺口（Scope = 边界/越界声明，工程化「偏出强项时说明」）；② Organization/Collaboration/Activity/Directory **四图分离**给我们第二期圆桌 UI 的「声明 vs 活动」分离原则；③ 「**Lead/Internal/Interface Agent 是组织模式非硬编码类型**」与 Multica #1282 + 我们 §7 共性「不写死职能」**三向独立收敛**到品类共识。**最值得抄的 2 个工程借鉴**：① **Epoch Context Coverage**（compaction 后下 turn 重新覆盖 durable source + 双证才 covered + per-thread ledger + at-least-once）——直接借鉴解决我们 claude2 长会话回放上下文压缩问题（`docs/research/claude2-replay-performance.md`）；② **CodexHost + codex app-server JSON-RPC**（thread/resume + thread/inject_items + turn/start 三件套）——我们 Codex 对接待办的现成协议参考（`docs/codex-app-server-protocol.md` 11KB 已吃透）。**最大的 1 个分叉点**：CodexLoom 把「**长期存活 Domain Agent（thread 持久）」当第一期地基**，我们 PRD 第一期选「**任务为执行单元、agent 非常驻（按需 spawn）**」——分叉合理（第一期轻量启动），但 CodexLoom 的「thread 持久 + compaction + Epoch Coverage」给了我们第二期持久化的**另一条路**（不只向量检索），且 Epoch Coverage 可能让我们提前安全上持久 thread。**品类裁决**：编排平台（「点对点责任路由编排」新子类），进 `../design/opc-product-discussion.md` §5 编排老师拼图（在「层级 vs 圆桌」「agent 间通信媒介」「长记忆」「状态焊点」多个子能力上是新老师），**不进 §9 单品爆款**。社区真空（361 stars/0 watcher/1 HN 帖 0 评论/0 Reddit）不妨碍它做老师——文档/运营/作者作品史聚焦度都远超 Avernet，是**值得深度学习源码/设计哲学但不构成短期商业化威胁**的项目。
+> **PM 一句话总结**：CodexLoom（`yan5xu/codexloom`，Go + React，**Elastic License 2.0**，5 周龄，361 stars / 0 watcher 社区真空，作者 Yanwu / 中文个人开发者，code-relay+ququ+oh-my-ai-company 同主题作品史）是「**把 Codex threads 织成长期在岗的 Domain Agent 组织**」——它**与 OPC PRD 意识形态最接近**（明写 OPC 目标用户 + 不重写 runtime + Profile 作协作契约 + 按需唤醒 + compaction 保连续性 + 拒绝企业多租户），是**编排平台**（非单品爆款），走「**点对点责任路由多 agent**」另一条路（非 Raft 共享 room、非 Paperclip 层级 delegation）。**最强的 3 个印证点**：① Profile 三字段（Identity/Domain/**Scope**）直接补我们 PRD 角色定义缺口（Scope = 边界/越界声明，工程化「偏出强项时说明」）；② Organization/Collaboration/Activity/Directory **四图分离**给我们第二期圆桌 UI 的「声明 vs 活动」分离原则；③ 「**Lead/Internal/Interface Agent 是组织模式非硬编码类型**」与 Multica #1282 + 我们 §7 共性「不写死职能」**三向独立收敛**到品类共识。**最值得抄的 2 个工程借鉴**：① **Epoch Context Coverage**（compaction 后下 turn 重新覆盖 durable source + 双证才 covered + per-thread ledger + at-least-once）——直接借鉴解决我们 claude 长会话回放上下文压缩问题（`docs/research/claude-replay-performance.md`）；② **CodexHost + codex app-server JSON-RPC**（thread/resume + thread/inject_items + turn/start 三件套）——我们 Codex 对接待办的现成协议参考（`docs/codex-app-server-protocol.md` 11KB 已吃透）。**最大的 1 个分叉点**：CodexLoom 把「**长期存活 Domain Agent（thread 持久）」当第一期地基**，我们 PRD 第一期选「**任务为执行单元、agent 非常驻（按需 spawn）**」——分叉合理（第一期轻量启动），但 CodexLoom 的「thread 持久 + compaction + Epoch Coverage」给了我们第二期持久化的**另一条路**（不只向量检索），且 Epoch Coverage 可能让我们提前安全上持久 thread。**品类裁决**：编排平台（「点对点责任路由编排」新子类），进 `../design/opc-product-discussion.md` §5 编排老师拼图（在「层级 vs 圆桌」「agent 间通信媒介」「长记忆」「状态焊点」多个子能力上是新老师），**不进 §9 单品爆款**。社区真空（361 stars/0 watcher/1 HN 帖 0 评论/0 Reddit）不妨碍它做老师——文档/运营/作者作品史聚焦度都远超 Avernet，是**值得深度学习源码/设计哲学但不构成短期商业化威胁**的项目。

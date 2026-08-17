@@ -1,14 +1,14 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type {
-  Claude2Attachment,
-  Claude2ControlResponse,
-  Claude2QueueOperation,
+  ClaudeAttachment,
+  ClaudeControlResponse,
+  ClaudeQueueOperation,
   EffortLevel,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
-import { claude2StreamUrl } from "../api/client";
+import { claudeStreamUrl } from "../api/client";
 import { isConnectionFresh } from "./console-model";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
@@ -87,7 +87,7 @@ const _isTaskSystemMessage = (msg: SessionStreamServerMessage): msg is TaskSyste
 export const isSyntheticAssistantMessage = (msg: SessionStreamServerMessage): boolean =>
   msg.type === "assistant" && (msg.message as { model?: string }).model === "<synthetic>";
 
-export const buildAllowAllControlResponse = (requestId: string): Claude2ControlResponse => ({
+export const buildAllowAllControlResponse = (requestId: string): ClaudeControlResponse => ({
   type: "control_response",
   response: {
     subtype: "success",
@@ -246,7 +246,7 @@ export const deriveQueueSource = (content: string | undefined): "user" | "assist
 /** 纯 reducer：按 operation 语义操作 FIFO+LIFO 混合队列 */
 export const applyQueueOperation = (
   state: QueueEntry[],
-  msg: Claude2QueueOperation,
+  msg: ClaudeQueueOperation,
 ): QueueEntry[] => {
   switch (msg.operation) {
     case "enqueue":
@@ -297,7 +297,7 @@ export function resolveAutoPermissionMode(available: readonly string[]): "auto" 
   return available.includes("auto") ? "auto" : "acceptEdits";
 }
 
-export type Claude2Bridge = {
+export type ClaudeBridge = {
   respondToControlRequest: (
     requestId: string,
     updatedInput: Record<string, unknown>,
@@ -325,7 +325,7 @@ export type Claude2Bridge = {
     | null;
 };
 
-export const Claude2BridgeContext = createContext<Claude2Bridge | null>(null);
+export const ClaudeBridgeContext = createContext<ClaudeBridge | null>(null);
 
 const _SKILL_CONTENT_PREFIX = "Base directory for this skill:";
 
@@ -801,7 +801,7 @@ export type AttachmentResult = {
   stateOps?: AttachmentStateOps | null;
 };
 
-function makeAttachmentBubble(subtype: string, raw: Claude2Attachment): ThreadMessageLike {
+function makeAttachmentBubble(subtype: string, raw: ClaudeAttachment): ThreadMessageLike {
   return {
     role: "system",
     content: [{ type: "text", text: `Attachment: ${subtype}` }],
@@ -809,7 +809,7 @@ function makeAttachmentBubble(subtype: string, raw: Claude2Attachment): ThreadMe
   };
 }
 
-export function handleAttachment(msg: Claude2Attachment): AttachmentResult {
+export function handleAttachment(msg: ClaudeAttachment): AttachmentResult {
   const att = msg.attachment;
   if (!att?.type) return { bubble: makeAttachmentBubble("unknown", msg) };
 
@@ -2849,7 +2849,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
     // ═══ Attachment ═══
     if (msg.type === "attachment") {
-      const result = handleAttachment(msg as Claude2Attachment);
+      const result = handleAttachment(msg as ClaudeAttachment);
       if (result.bubble) {
         items.push({
           kind: "attachment",
@@ -3557,7 +3557,7 @@ export function renderChatStream(
   return applyToolLifecycle(messages, turnEndBoundaries, { isResume: !!opts?.isResume }).messages;
 }
 
-export function useClaude2Session(
+export function useClaudeSession(
   projectName: string,
   sessionId: string,
   initialModel?: string,
@@ -3595,7 +3595,7 @@ export function useClaude2Session(
   // bridgeRef lets applyMessageScalarState (defined above the `bridge` useMemo)
   // reach the current onCompact handler the route injected into bridge, without
   // hitting the const TDZ between applyMessageScalarState and bridge.
-  const bridgeRef = useRef<Claude2Bridge | null>(null);
+  const bridgeRef = useRef<ClaudeBridge | null>(null);
 
   // ── Scalar state updater ──────────────────────────────────────────
   // Applies per-message scalar state updates (tasks, model, etc.).
@@ -3726,7 +3726,7 @@ export function useClaude2Session(
       // can_use_tool requests are sent by us, never received, so they never
       // reach this handler.
       if (msg.type === "control_response") {
-        const r = msg as unknown as Claude2ControlResponse;
+        const r = msg as unknown as ClaudeControlResponse;
         const requestId = r.response?.request_id;
         if (!requestId) return;
         const pending = pendingControlRequestsRef.current.get(requestId);
@@ -3800,7 +3800,7 @@ export function useClaude2Session(
 
       // attachment: apply stateOps (bubble is handled by renderChatStream)
       if (msg.type === "attachment") {
-        const result = handleAttachment(msg as Claude2Attachment);
+        const result = handleAttachment(msg as ClaudeAttachment);
         if (result.stateOps) {
           const ops = result.stateOps;
           if (ops.permissionMode) setPermissionMode(ops.permissionMode);
@@ -3861,7 +3861,7 @@ export function useClaude2Session(
         // the catalog useQuery registered against (false ⇒ HMR instance split).
         if (isSocketLoggingEnabled())
           console.log(
-            "[claude2-adapter] skill_catalog_changed hadCached",
+            "[claude-adapter] skill_catalog_changed hadCached",
             queryClient.getQueryData(catalogKey) != null,
           );
         queryClient.invalidateQueries({ queryKey: catalogKey });
@@ -4106,7 +4106,7 @@ export function useClaude2Session(
       const raw = JSON.stringify(data);
       if (isSocketLoggingEnabled()) {
         console.log(
-          `[claude2-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
+          `[claude-adapter] ws send: readyState=${socket.readyState} msg=${raw.slice(0, 200)}`,
         );
       }
       if (socket.readyState === WebSocket.OPEN) {
@@ -4114,7 +4114,7 @@ export function useClaude2Session(
         // 静默掐断未发 close 帧，send 会进黑洞。主动 close 触发 onclose → scheduleReconnect。
         if (!isConnectionFresh(lastPongRef.current)) {
           if (isSocketLoggingEnabled()) {
-            console.log("[claude2-adapter] ws send: half-open detected, closing to reconnect");
+            console.log("[claude-adapter] ws send: half-open detected, closing to reconnect");
           }
           socket.close();
           return;
@@ -4122,7 +4122,7 @@ export function useClaude2Session(
         try {
           socket.send(raw);
         } catch (err) {
-          console.error("[claude2-adapter] ws send error", err);
+          console.error("[claude-adapter] ws send error", err);
         }
       } else if (socket.readyState === WebSocket.CONNECTING) {
         socket.addEventListener(
@@ -4131,7 +4131,7 @@ export function useClaude2Session(
             try {
               socket.send(raw);
             } catch (err) {
-              console.error("[claude2-adapter] ws deferred send error", err);
+              console.error("[claude-adapter] ws deferred send error", err);
             }
           },
           { once: true },
@@ -4144,7 +4144,7 @@ export function useClaude2Session(
     [scheduleReconnect],
   );
 
-  const bridge = useMemo<Claude2Bridge>(
+  const bridge = useMemo<ClaudeBridge>(
     () => ({
       respondToControlRequest(requestId, updatedInput, permissionUpdates) {
         const allowResponse: Record<string, unknown> = {
@@ -4274,7 +4274,7 @@ export function useClaude2Session(
 
     let cancelled = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    const url = claude2StreamUrl(projectName, sessionId);
+    const url = claudeStreamUrl(projectName, sessionId);
 
     // Reset on session change or initial mount; reconnect otherwise.
     if (isSessionChange || connectionVersion === 0) {
@@ -4296,7 +4296,7 @@ export function useClaude2Session(
     socketRef.current = socket;
 
     socket.onopen = () => {
-      console.log("[claude2-adapter] ws open");
+      console.log("[claude-adapter] ws open");
       lastPongRef.current = Date.now();
       setConnected(true);
       // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
@@ -4307,7 +4307,7 @@ export function useClaude2Session(
           // half-open 检测:ping 已发但若距上次 pong 超时,说明对端不回 pong(连接静默断,
           // readyState 仍 OPEN 但数据进黑洞)。主动 close → onclose → scheduleReconnect 自愈。
           if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
-            console.log("[claude2-adapter] pong timeout — closing half-open socket");
+            console.log("[claude-adapter] pong timeout — closing half-open socket");
             socket.close();
           }
         }
@@ -4330,7 +4330,7 @@ export function useClaude2Session(
       const kind = historyBatchRef.current != null ? "history" : "live";
       if (!target) {
         console.error(
-          "[claude2-adapter] compressed batch arrived outside a batch window — dropping",
+          "[claude-adapter] compressed batch arrived outside a batch window — dropping",
         );
         return;
       }
@@ -4343,7 +4343,7 @@ export function useClaude2Session(
             // Mirror handleTextFrame's ws recv log so the (compressed) history
             // and live batches are also visible row-by-row when socket logging
             // is on — otherwise only the text-frame batch markers show up.
-            if (isSocketLoggingEnabled()) console.log("[claude2-adapter] ws recv", parsed);
+            if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", parsed);
             rows++;
           } catch {
             // skip malformed batch line
@@ -4370,7 +4370,7 @@ export function useClaude2Session(
       try {
         const raw = event.data as string;
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
-        if (isSocketLoggingEnabled()) console.log("[claude2-adapter] ws recv", msg);
+        if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", msg);
 
         // ── Batch markers ────────────────────────────────────────────
         // Start markers are transport control — never render.
@@ -4382,7 +4382,7 @@ export function useClaude2Session(
           resetSessionState();
           isResumeRef.current = (msg as { resume: boolean }).resume ?? false;
           if (isSocketLoggingEnabled())
-            console.log("[claude2-adapter] session_init resume=", isResumeRef.current);
+            console.log("[claude-adapter] session_init resume=", isResumeRef.current);
           return;
         }
         // seed_init: replay-time scalar seed (model/permissionMode), sent between
@@ -4406,7 +4406,7 @@ export function useClaude2Session(
           resetArrival();
           historyBatchRef.current = [];
           if (isSocketLoggingEnabled())
-            console.log("[claude2-adapter] history batch start, count=", msg.count);
+            console.log("[claude-adapter] history batch start, count=", msg.count);
           return;
         }
         if (msg.type === "history_end") {
@@ -4440,13 +4440,13 @@ export function useClaude2Session(
             ]);
           }
           if (isSocketLoggingEnabled())
-            console.log("[claude2-adapter] history batch end, processed", batch.length, "messages");
+            console.log("[claude-adapter] history batch end, processed", batch.length, "messages");
           return;
         }
         if (msg.type === "live_start") {
           liveBatchRef.current = [];
           if (isSocketLoggingEnabled())
-            console.log("[claude2-adapter] live batch start, count=", msg.count);
+            console.log("[claude-adapter] live batch start, count=", msg.count);
           return;
         }
         if (msg.type === "live_end") {
@@ -4463,7 +4463,7 @@ export function useClaude2Session(
           // commit, landing loading=false on the same render turns catches up.
           liveEndPendingRef.current = true;
           if (isSocketLoggingEnabled())
-            console.log("[claude2-adapter] live batch end, processed", batch.length, "messages");
+            console.log("[claude-adapter] live batch end, processed", batch.length, "messages");
           return;
         }
 
@@ -4508,7 +4508,7 @@ export function useClaude2Session(
         blobInFlight = true;
         chain = chain
           .then(() => handleBinaryBatch(event.data))
-          .catch((e) => console.error("[claude2-adapter] binary batch error", e))
+          .catch((e) => console.error("[claude-adapter] binary batch error", e))
           .finally(() => {
             blobInFlight = false;
           });
@@ -4517,7 +4517,7 @@ export function useClaude2Session(
       if (blobInFlight) {
         chain = chain
           .then(() => handleTextFrame(event))
-          .catch((e) => console.error("[claude2-adapter] handleFrame error", e));
+          .catch((e) => console.error("[claude-adapter] handleFrame error", e));
         return;
       }
       handleTextFrame(event);
@@ -4533,7 +4533,7 @@ export function useClaude2Session(
     };
 
     socket.onerror = (e) => {
-      console.log("[claude2-adapter] ws error", e);
+      console.log("[claude-adapter] ws error", e);
     };
 
     return () => {

@@ -1,6 +1,6 @@
 import { useContext, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { Claude2BridgeContext } from "../../routes/claude2-adapter";
+import { ClaudeBridgeContext } from "../../routes/claude-adapter";
 import { useT, type TranslateFn, type TranslationKey } from "../../i18n";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus } from "./tool-head";
@@ -27,7 +27,7 @@ function makeToolRenderer(config: {
     const resultStr =
       typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
     const hasResult = resultStr.length > 0 && !isRunning;
-    const bridge = useContext(Claude2BridgeContext);
+    const bridge = useContext(ClaudeBridgeContext);
     const metadata = (rest as Record<string, unknown>).metadata as
       | Record<string, unknown>
       | undefined;
@@ -136,7 +136,7 @@ function makeToolRenderer(config: {
               {permissionDenied ? (
                 <div className={hasPrimary || skillContent ? sectionDivider : ""}>
                   <span className="text-[0.6rem] leading-relaxed text-permission">
-                    {t("claude2.permissionDeniedHint")}
+                    {t("claude.permissionDeniedHint")}
                     {permissionDenied.reason ? `：${permissionDenied.reason}` : ""}
                   </span>
                 </div>
@@ -144,7 +144,7 @@ function makeToolRenderer(config: {
               {isInterrupted ? (
                 <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
                   <span className="text-[0.6rem] text-assistant">
-                    {t("claude2.toolInterruptedHint")}
+                    {t("claude.toolInterruptedHint")}
                   </span>
                 </div>
               ) : footer ? (
@@ -169,21 +169,21 @@ function makeToolRenderer(config: {
           <div className="flex items-center gap-2 rounded-md bg-assistant/10 border border-assistant/25 px-3 py-2 mt-1">
             <span className="h-2 w-2 shrink-0 rounded-full bg-assistant animate-pulse" />
             <span className="text-xs font-medium text-assistant flex-1">
-              {t("claude2.permission.awaiting")}
+              {t("claude.permission.awaiting")}
             </span>
             <button
               type="button"
               className="cursor-pointer rounded-md bg-assistant/10 px-3 py-1 text-xs font-semibold text-assistant hover:bg-assistant/15 active:bg-assistant/20 transition"
               onClick={() => bridge?.respondToControlRequest(controlRequestId, args)}
             >
-              {t("claude2.permission.allow")}
+              {t("claude.permission.allow")}
             </button>
             <button
               type="button"
               className="cursor-pointer rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
               onClick={() => bridge?.cancelControlRequest(controlRequestId)}
             >
-              {t("claude2.permission.deny")}
+              {t("claude.permission.deny")}
             </button>
           </div>
         ) : null}
@@ -287,7 +287,7 @@ function agentFooter(
     <div className="space-y-2">
       {prompt ? (
         <details className="text-xs text-on-surface-muted">
-          <summary className="cursor-pointer">{t("claude2.subagent.prompt")}</summary>
+          <summary className="cursor-pointer">{t("claude.subagent.prompt")}</summary>
           <pre className="mt-1 text-[0.6rem] text-on-surface-soft whitespace-pre-wrap break-all leading-relaxed">
             {prompt}
           </pre>
@@ -295,7 +295,7 @@ function agentFooter(
       ) : null}
       <div className="rounded bg-surface/50 p-2">
         <div className="mb-1 text-[0.55rem] font-semibold uppercase tracking-wide text-user/70">
-          {t("claude2.subagent.output")}
+          {t("claude.subagent.output")}
         </div>
         <pre
           className={`whitespace-pre-wrap break-all text-[0.65rem] leading-relaxed ${isError ? "text-error" : "text-on-surface-soft"}`}
@@ -311,7 +311,7 @@ function agentFooter(
 
 export const BashToolUI = makeToolRenderer({
   icon: "terminal",
-  typeLabel: "claude2.tool.bash",
+  typeLabel: "claude.tool.bash",
   detail: (args) => {
     const desc = typeof args.description === "string" ? args.description.trim() : "";
     if (desc) return desc.slice(0, 80);
@@ -322,7 +322,7 @@ export const BashToolUI = makeToolRenderer({
 
 export const ReadToolUI = makeToolRenderer({
   icon: "read",
-  typeLabel: "claude2.tool.read",
+  typeLabel: "claude.tool.read",
   detail: (args) => {
     const path = typeof args.file_path === "string" ? args.file_path : "";
     return path ? (path.split("/").pop() ?? path) : null;
@@ -331,7 +331,7 @@ export const ReadToolUI = makeToolRenderer({
 
 export const WriteToolUI = makeToolRenderer({
   icon: "write",
-  typeLabel: "claude2.tool.write",
+  typeLabel: "claude.tool.write",
   detail: (args) => {
     const path = typeof args.file_path === "string" ? args.file_path : "";
     return path ? (path.split("/").pop() ?? path) : null;
@@ -340,7 +340,7 @@ export const WriteToolUI = makeToolRenderer({
 
 export const EditToolUI = makeToolRenderer({
   icon: "edit",
-  typeLabel: "claude2.tool.edit",
+  typeLabel: "claude.tool.edit",
   detail: (args) => {
     const path = typeof args.file_path === "string" ? args.file_path : "";
     return path ? (path.split("/").pop() ?? path) : null;
@@ -350,7 +350,7 @@ export const EditToolUI = makeToolRenderer({
 
 export const SkillToolUI = makeToolRenderer({
   icon: "skill",
-  typeLabel: "claude2.tool.skill",
+  typeLabel: "claude.tool.skill",
   detail: (args) => {
     const name = typeof args.skill === "string" ? args.skill : "";
     return name || null;
@@ -376,7 +376,7 @@ function TaskBody({ args }: { args: Record<string, unknown> }) {
 // via makeToolRenderer's badge-null fallback when absent.
 export const TaskToolUI = makeToolRenderer({
   icon: "task",
-  typeLabel: "claude2.tool.task",
+  typeLabel: "claude.tool.task",
   badge: (args) => {
     const subagent = typeof args.subagent_type === "string" ? args.subagent_type : undefined;
     return subagent ?? null;
@@ -395,7 +395,7 @@ export const TaskToolUI = makeToolRenderer({
 // subject; the body carries the longer description.
 export const TaskCreateToolUI = makeToolRenderer({
   icon: "task",
-  typeLabel: "claude2.tool.taskCreate",
+  typeLabel: "claude.tool.taskCreate",
   detail: (args) => {
     const subject = typeof args.subject === "string" ? args.subject.trim() : "";
     return subject ? subject.slice(0, 80) : null;
@@ -406,7 +406,7 @@ export const TaskCreateToolUI = makeToolRenderer({
 // TaskUpdate — mutates a todo row's status. Header shows the target task id.
 export const TaskUpdateToolUI = makeToolRenderer({
   icon: "task",
-  typeLabel: "claude2.tool.taskUpdate",
+  typeLabel: "claude.tool.taskUpdate",
   detail: (args) => {
     const taskId =
       (typeof args.taskId === "string" && args.taskId) ||
@@ -432,7 +432,7 @@ export const AgentToolUI = makeToolRenderer({
 
 export const WebSearchToolUI = makeToolRenderer({
   icon: "webSearch",
-  typeLabel: "claude2.tool.webSearch",
+  typeLabel: "claude.tool.webSearch",
   detail: (args) => {
     const query = typeof args.query === "string" ? args.query : "";
     return query ? query.slice(0, 60) : null;
@@ -441,7 +441,7 @@ export const WebSearchToolUI = makeToolRenderer({
 
 export const WebFetchToolUI = makeToolRenderer({
   icon: "webFetch",
-  typeLabel: "claude2.tool.webFetch",
+  typeLabel: "claude.tool.webFetch",
   detail: (args) => {
     const url = typeof args.url === "string" ? args.url : "";
     try {
@@ -455,7 +455,7 @@ export const WebFetchToolUI = makeToolRenderer({
 
 export const MCPToolRenderer = makeToolRenderer({
   icon: "mcp",
-  typeLabel: "claude2.tool.mcp",
+  typeLabel: "claude.tool.mcp",
   detail: (_args, toolName) => {
     const cleaned = toolName.replace(/^mcp__/, "").replace(/__/g, "/");
     return cleaned;
@@ -464,7 +464,7 @@ export const MCPToolRenderer = makeToolRenderer({
 
 export const GlobToolUI = makeToolRenderer({
   icon: "file",
-  typeLabel: "claude2.tool.glob",
+  typeLabel: "claude.tool.glob",
   detail: (args) => {
     const pattern = typeof args.pattern === "string" ? args.pattern : "";
     return pattern || null;
@@ -473,7 +473,7 @@ export const GlobToolUI = makeToolRenderer({
 
 export const GrepToolUI = makeToolRenderer({
   icon: "search",
-  typeLabel: "claude2.tool.grep",
+  typeLabel: "claude.tool.grep",
   detail: (args) => {
     const pattern = typeof args.pattern === "string" ? args.pattern : "";
     return pattern ? pattern.slice(0, 60) : null;
@@ -482,7 +482,7 @@ export const GrepToolUI = makeToolRenderer({
 
 export const NotebookEditToolUI = makeToolRenderer({
   icon: "notebook",
-  typeLabel: "claude2.tool.notebook",
+  typeLabel: "claude.tool.notebook",
   detail: () => null,
 });
 
@@ -495,13 +495,13 @@ const CommandOutputUI = makeToolRenderer({
 
 const EnterPlanModeToolUI = makeToolRenderer({
   icon: "plan",
-  typeLabel: "claude2.tool.planMode",
+  typeLabel: "claude.tool.planMode",
   detail: () => null,
 });
 
 const GenericToolUI = makeToolRenderer({
   icon: "command",
-  typeLabel: "claude2.tool.generic",
+  typeLabel: "claude.tool.generic",
   detail: (_args, toolName) => toolName,
 });
 

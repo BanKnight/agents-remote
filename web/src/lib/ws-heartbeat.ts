@@ -2,7 +2,7 @@
  * WS 长连接应用层心跳间隔(客户端发起)。
  *
  * 重置 cloudflare edge(~100s)/ 移动 NAT(~60s)/ Bun idleTimeout(120s)三层空闲
- * 超时,防止 terminal/claude2 详情页前台空闲时 WS 被中间层静默断开。浏览器 JS
+ * 超时,防止 terminal/claude 详情页前台空闲时 WS 被中间层静默断开。浏览器 JS
  * 无法发协议层 ping(W3C WebSocket API 无 sendPing),只能发应用层 {type:"ping"}
  * JSON——这是客户端发起心跳的唯一可行形式。
  *

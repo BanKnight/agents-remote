@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test";
 const password = process.env.E2E_PASSWORD ?? "secret";
 const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
 // The workbench's PanelRouter routes panels by inferring the session type
-// from the id prefix ("agent_" / "terminal_"). A claude2 session is an agent
+// from the id prefix ("agent_" / "terminal_"). A claude session is an agent
 // session, so the fake id must carry the "agent_" prefix for the focus route
-// to mount the AgentPanelRouter -> ChatPanel (claude2) instead of a placeholder.
+// to mount the AgentPanelRouter -> ChatPanel (claude) instead of a placeholder.
 const fakeSessionId = "agent_e2e-test-session-windowing";
 
 // Collect browser console errors during the test to catch React runtime errors
@@ -28,7 +28,7 @@ function collectConsoleErrors(page: import("@playwright/test").Page) {
   };
 }
 
-test("Claude2: slash menu renders catalog entries including plugin namespaced commands", async ({
+test("Claude: slash menu renders catalog entries including plugin namespaced commands", async ({
   page,
 }) => {
   const assertNoConsoleErrors = collectConsoleErrors(page);
@@ -70,7 +70,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
           session: {
             id: fakeSessionId,
             projectName,
-            provider: "claude2",
+            provider: "claude",
             displayName: "Claude Agent (e2e-windowing)",
             status: "idle",
             createdAt: new Date().toISOString(),
@@ -85,7 +85,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
   // Mock the agent-session list so the fake session appears in the workbench's
   // active-instance refs (useScopeInstanceOrder). Without this, the Phase 1+
   // workbench's stale-tab prune (refsLoaded gate) removes the focus tab for a
-  // session absent from the list, so the Claude2Chat panel never mounts and
+  // session absent from the list, so the ClaudeChat panel never mounts and
   // the composer/slash-menu never renders.
   await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
     await route.fulfill({
@@ -96,7 +96,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
           {
             id: fakeSessionId,
             projectName,
-            provider: "claude2",
+            provider: "claude",
             displayName: "Claude Agent (e2e-windowing)",
             status: "idle",
             createdAt: new Date().toISOString(),
@@ -122,7 +122,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
             sessionId: fakeSessionId,
             displayName: "Claude Agent (e2e-windowing)",
             status: "idle",
-            provider: "claude2",
+            provider: "claude",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -134,7 +134,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
   // server will error, but the page must render the composer and slash menu
   // anyway. The slash menu is catalog-driven, not WS-driven.
   await page.routeWebSocket(
-    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2-stream`),
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude-stream`),
     (ws) => {
       ws.connectToServer();
     },
@@ -147,7 +147,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
   // project node button being visible before navigating to the session route.
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
 
-  await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2`);
+  await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
   const chatInput = page.getByPlaceholder("Ask Claude...");
   await expect(chatInput).toBeVisible({ timeout: 15_000 });
@@ -166,7 +166,7 @@ test("Claude2: slash menu renders catalog entries including plugin namespaced co
   assertNoConsoleErrors();
 });
 
-test("Claude2: empty catalog does not crash the page or composer", async ({ page }) => {
+test("Claude: empty catalog does not crash the page or composer", async ({ page }) => {
   const assertNoConsoleErrors = collectConsoleErrors(page);
 
   // Mock catalog with empty commands.
@@ -191,7 +191,7 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
           session: {
             id: fakeSessionId,
             projectName,
-            provider: "claude2",
+            provider: "claude",
             displayName: "Claude Agent (e2e-empty-catalog)",
             status: "idle",
             createdAt: new Date().toISOString(),
@@ -214,7 +214,7 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
           {
             id: fakeSessionId,
             projectName,
-            provider: "claude2",
+            provider: "claude",
             displayName: "Claude Agent (e2e-empty-catalog)",
             status: "idle",
             createdAt: new Date().toISOString(),
@@ -238,7 +238,7 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
             sessionId: fakeSessionId,
             displayName: "Claude Agent (e2e-empty-catalog)",
             status: "idle",
-            provider: "claude2",
+            provider: "claude",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -247,7 +247,7 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
   });
 
   await page.routeWebSocket(
-    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2-stream`),
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude-stream`),
     (ws) => {
       ws.connectToServer();
     },
@@ -260,7 +260,7 @@ test("Claude2: empty catalog does not crash the page or composer", async ({ page
   // project node button being visible before navigating to the session route.
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
 
-  await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2`);
+  await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
   const chatInput = page.getByPlaceholder("Ask Claude...");
   await expect(chatInput).toBeVisible({ timeout: 15_000 });

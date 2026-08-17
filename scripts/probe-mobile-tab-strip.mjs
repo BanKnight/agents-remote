@@ -26,7 +26,7 @@ const SESSIONS = {
   "agent_probe-1": {
     id: "agent_probe-1",
     projectName: "proj1",
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent A",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -34,7 +34,7 @@ const SESSIONS = {
   "agent_probe-2": {
     id: "agent_probe-2",
     projectName: "proj1",
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent B",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -42,7 +42,7 @@ const SESSIONS = {
   "agent_probe-3": {
     id: "agent_probe-3",
     projectName: "proj1",
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent C",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -50,7 +50,7 @@ const SESSIONS = {
   "agent_probe-4": {
     id: "agent_probe-4",
     projectName: "proj1",
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent D",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -58,7 +58,7 @@ const SESSIONS = {
   "agent_probe-5": {
     id: "agent_probe-5",
     projectName: "proj1",
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent E",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -68,7 +68,7 @@ const SESSIONS = {
 const NEW_AGENT = {
   id: "agent_probe-9",
   projectName: "proj1",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe New Agent",
   status: "idle",
   createdAt: "2026-07-26T00:00:00.000Z",
@@ -145,7 +145,7 @@ async function setupMocks(page, { sessionIds } = {}) {
     }),
   );
   // 聚焦 session 面板连真实 WS（fake session 不存在 → error，但 panel 容器仍渲染）。
-  await page.routeWebSocket(/claude2-stream/, (ws) => ws.connectToServer());
+  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
 
 /** 预置 V4 layout：proj1 的 session tab 列表 + active（模拟持久化恢复）。 */
@@ -317,7 +317,7 @@ async function run() {
       .click({ timeout: 5000 })
       .catch(() => {});
     await page.waitForTimeout(450);
-    // ActionMenu（移动底部 sheet）：点「Claude」（workbench.createClaude2 两语同「Claude」）。
+    // ActionMenu（移动底部 sheet）：点「Claude」（workbench.createClaude 两语同「Claude」）。
     await page
       .getByText(/^Claude$/, { exact: true })
       .first()

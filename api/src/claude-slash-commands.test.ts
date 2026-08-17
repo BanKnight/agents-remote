@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { resolveSkillSlashCatalog } from "./claude2-slash-commands";
+import { resolveSkillSlashCatalog } from "./claude-slash-commands";
 
 const cleanupDirs = new Set<string>();
 const rmDir = (d: string) => rm(d, { recursive: true, force: true });

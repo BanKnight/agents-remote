@@ -94,7 +94,7 @@ Andrej Karpathy 提出的 **pattern / 方法论**（2026-04），不是一个正
 
 **路 2 — agent IDE/CLI 落地**（Claude Code/Cursor/Codex/Windsurf/Continue/Copilot/Gemini/Aider）：
 - 成熟生态是**两层架构**：committed 项目规则（CLAUDE.md/AGENTS.md/.cursor/rules，**全 B，agent 永不自主写**）+ 个人记忆层（Claude Code auto-memory/Codex `~/.codex/memories`/Windsurf Cascade Memories，**全 A，agent 自主写默认开**）。
-- **关键**：我们 spawn 的 claude2/codex **已各自内置 A 层**（auto-memory / memories）——重造「agent 工作记忆」无差异化。
+- **关键**：我们 spawn 的 claude/codex **已各自内置 A 层**（auto-memory / memories）——重造「agent 工作记忆」无差异化。
 
 **路 3 — agent 记忆框架**（mem0/Letta/Zep/Graphiti/Devin）：
 - mem0/Zep/Graphiti 主流引擎是 **B**（后台 LLM 抽取器，`mem.add(messages)`→系统抽事实，agent 不逐条写）。

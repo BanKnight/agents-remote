@@ -16,7 +16,7 @@ const EXEC =
 const AGENT_A = {
   id: "agent_probe-1",
   projectName: "proj1",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe Agent A",
   status: "idle",
   createdAt: "2026-07-26T00:00:00.000Z",
@@ -24,7 +24,7 @@ const AGENT_A = {
 const AGENT_B = {
   id: "agent_probe-2",
   projectName: "proj2",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe Agent B",
   status: "idle",
   createdAt: "2026-07-26T00:00:00.000Z",

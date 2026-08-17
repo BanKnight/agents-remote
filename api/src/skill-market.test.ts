@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as validate from "./skill-validate";
 import { SettingsStore } from "./settings-store";
-import type { Claude2Runtime } from "./claude2-runtime";
+import type { ClaudeRuntime } from "./claude-runtime";
 import { skillTaskRegistry } from "./skill-tasks";
 
 type CmdResult = { exitCode: number; stdout: string; stderr: string };
@@ -193,13 +193,13 @@ describe("executeInstall", () => {
         throw new Error("unexpected runSkillsCommand call (readback should be FS)");
       });
       const write = mock(() => Promise.resolve());
-      const claude2Runtime = {
+      const claudeRuntime = {
         listAliveRuntimeKeys: () => Promise.resolve(new Set(["s1"])),
         write,
-      } as unknown as Claude2Runtime;
+      } as unknown as ClaudeRuntime;
       const skill = await executeInstall(
         { source: "mattpocock/skills", skillId: "tdd", agent: "claude-code" },
-        { settingsStore: store, claude2Runtime, skillsHome: home },
+        { settingsStore: store, claudeRuntime, skillsHome: home },
       );
       expect(skill.name).toBe("tdd");
       expect(write).toHaveBeenCalledTimes(1);
@@ -234,13 +234,13 @@ describe("uninstallSkill", () => {
   it("uninstalls + reloads", async () => {
     runSkillsCommand.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     const write = mock(() => Promise.resolve());
-    const claude2Runtime = {
+    const claudeRuntime = {
       listAliveRuntimeKeys: () => Promise.resolve(new Set()),
       write,
-    } as unknown as Claude2Runtime;
+    } as unknown as ClaudeRuntime;
     const res = await uninstallSkill(
       { name: "tdd", agent: "claude-code" },
-      { settingsStore: store, claude2Runtime },
+      { settingsStore: store, claudeRuntime },
     );
     expect(res).toEqual({ ok: true });
   });

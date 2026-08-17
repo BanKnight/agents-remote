@@ -42,7 +42,7 @@ iOS 26 真机 standalone（全屏 PWA）下：
 - 缝消失 → `100vh` 在该 iOS 版本不扣 chin → `vh + env 单层避让`方案可行。
 - 缝还在 → `100vh` 也扣 chin → 改用 `position: fixed; inset: 0` 锚定物理 ICB（fixed 相对物理视口，不继承 dvh 容器收缩；`viewport-fit=cover` 把 ICB 扩到物理屏边缘含 chin）。
 
-桌面 / Playwright 下 `dvh = vh = 视口`，不暴露差异；只有 iOS 26 真机 standalone 暴露两者区别。改动前桌面端必须用 Playwright `getBoundingClientRect` 确认无回归（详见 `docs/runbooks/claude2-client-debugging.md` 与 CLAUDE.md 的 CSS 验证铁律）。
+桌面 / Playwright 下 `dvh = vh = 视口`，不暴露差异；只有 iOS 26 真机 standalone 暴露两者区别。改动前桌面端必须用 Playwright `getBoundingClientRect` 确认无回归（详见 `docs/runbooks/claude-client-debugging.md` 与 CLAUDE.md 的 CSS 验证铁律）。
 
 ### 来源
 
@@ -75,7 +75,7 @@ DESIGN.md（`docs/design/DESIGN.md`）是设计系统唯一权威源；`web/src/
 
 ### 来源
 
-- Phase 3（shell 视觉收敛 slate/red/emerald）+ Phase 4（Claude2 角色色 160 处 → 8 token）+ Phase 5（散写全收敛 ~87 处）实践。
+- Phase 3（shell 视觉收敛 slate/red/emerald）+ Phase 4（Claude 角色色 160 处 → 8 token）+ Phase 5（散写全收敛 ~87 处）实践。
 - DESIGN.md L243-285 映射表 + L385 禁散写约束。
 - memory `build-watch-css-not-flushed`、`design-md-authoritative-source`、`verify-css-via-dom-geometry-not-vision`。
 
@@ -173,7 +173,7 @@ state（树/嵌套，唯一真相）
 
 Radix `asChild` 用 `Slot`：它 clone **直接子元素**并把 Trigger 的 toggle / `aria-expanded` / `data-state` / `onClick` / `id` / `ref` merge 进去。关键在「直接子元素」是**一个 React element**：
 
-- 直接子是**原生 DOM**（`<button>`/`<a>`）：Slot clone 后 props 直接落到 DOM，Trigger 生效。`Claude2SessionDetailRoute.tsx` 里 model/mode 选择器 trigger 直接传 `<button>`，所以一直正常。
+- 直接子是**原生 DOM**（`<button>`/`<a>`）：Slot clone 后 props 直接落到 DOM，Trigger 生效。`ClaudeSessionDetailRoute.tsx` 里 model/mode 选择器 trigger 直接传 `<button>`，所以一直正常。
 - 直接子是**自定义组件**（`<SelectorTrigger/>`）：Slot 把 props merge 进**组件的 props**，组件收得到，但若组件**不展开 `{...props}` 且不转发 `ref`**，这些 props 就被吞掉——原生 `<button>` 拿不到 `onClick`/`aria-expanded`，Trigger 永远不挂。现象：button 上 `aria-expanded: null`、`data-state: null`，点击只触发外层 Dialog 不开 popover，无 `dropdown-menu-content` portal。
 
 本项目 `SelectorTrigger` 正是后者：`function SelectorTrigger({ label, disabled }) { return <button .../> }`——既不收 `...rest` 也不接 `ref`，Slot 注入全丢。
@@ -275,7 +275,7 @@ Playwright 探针点 trigger 后查 `aria-expanded` / `data-state`：两者都 `
 ### 相邻发现（不在本次范围，记录待后续单开）
 
 - **断点阈值不一致**：`index.css` `--breakpoint-sm=1024px`（CSS `sm:`/`max-sm:` 阈值）vs `use-is-mobile.ts` `(max-width:639px)`（JS `useIsMobile` 阈值）。~800px 窗口下 ActionMenu 走桌面 popover、⋯ 按钮却已放大（命中 `max-sm:`）——这是「视口断点内部不自洽」的独立问题，影响面广，建议后续单开（统一到 1024 或 640）。
-- **claude2 ActionBar** 纯 `opacity-0 group-hover:opacity-100`（无断点）—— 触屏同样不可见，属 claude2 范围，留后续。
+- **claude ActionBar** 纯 `opacity-0 group-hover:opacity-100`（无断点）—— 触屏同样不可见，属 claude 范围，留后续。
 
 ### 自动化测试局限（Chromium 无法模拟 hover/pointer）
 

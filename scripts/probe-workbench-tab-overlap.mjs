@@ -22,7 +22,7 @@ async function setupMocks(page) {
   const session = {
     id: fakeSessionId,
     projectName,
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent",
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
@@ -52,7 +52,7 @@ async function setupMocks(page) {
     }),
   );
   // WS 路由真实 server（fake session 不存在 → error，但 GroupShell/panel 容器仍渲染，几何可测）。
-  await page.routeWebSocket(/claude2-stream/, (ws) => ws.connectToServer());
+  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
 
 // 测量 GroupHeader.bottom vs panel.top。overlap = GroupHeader.bottom − panel.top（正=遮挡，0=贴合）。

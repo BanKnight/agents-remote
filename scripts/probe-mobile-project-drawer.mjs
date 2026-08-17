@@ -35,7 +35,7 @@ const EXEC =
 const AGENT_A = {
   id: "agent_probe-1",
   projectName: "proj1",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe Agent A",
   status: "idle",
   createdAt: "2026-07-26T00:00:00.000Z",
@@ -43,7 +43,7 @@ const AGENT_A = {
 const AGENT_B = {
   id: "agent_probe-2",
   projectName: "proj2",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe Agent B",
   status: "idle",
   createdAt: "2026-07-26T00:00:00.000Z",
@@ -150,7 +150,7 @@ async function setupMocks(page, { includeProj2 = false, candidates = [] } = {}) 
     );
   }
   // 聚焦 session 面板连真实 WS（fake session 不存在 → error，但 panel 容器仍渲染，几何可测）。
-  await page.routeWebSocket(/claude2-stream/, (ws) => ws.connectToServer());
+  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
 
 async function login(page) {

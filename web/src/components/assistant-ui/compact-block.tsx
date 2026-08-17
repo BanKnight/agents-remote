@@ -28,10 +28,10 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
 
   const triggerLabel =
     trigger === "manual"
-      ? t("claude2.compact.triggerManual")
+      ? t("claude.compact.triggerManual")
       : trigger === "micro"
-        ? t("claude2.compact.triggerMicro")
-        : t("claude2.compact.triggerAuto");
+        ? t("claude.compact.triggerMicro")
+        : t("claude.compact.triggerAuto");
 
   const detailParts: string[] = [triggerLabel];
   if (preTokens != null || postTokens != null) {
@@ -41,16 +41,16 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
   }
   if (durationMs != null) detailParts.push(formatDuration(durationMs));
   if (messagesSummarized != null)
-    detailParts.push(t("claude2.compact.summarized", { count: messagesSummarized }));
+    detailParts.push(t("claude.compact.summarized", { count: messagesSummarized }));
   if (attachments.length > 0)
-    detailParts.push(t("claude2.compact.restored", { count: attachments.length }));
+    detailParts.push(t("claude.compact.restored", { count: attachments.length }));
 
   const header = (
     <div className="flex items-center gap-1.5 text-xs min-w-0">
       <ToolHead
         icon="compact"
         status="completed"
-        badge={t("claude2.compact.title")}
+        badge={t("claude.compact.title")}
         badgeClassName="bg-success/15 text-success"
         detail={detailParts.join(" · ")}
         detailClassName="font-mono text-[0.65rem] font-normal text-on-surface-muted"
@@ -64,7 +64,7 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
       {summaryText ? (
         <div>
           <div className="mb-1 text-[0.6rem] text-success/50">
-            {t("claude2.compact.summaryLabel")}
+            {t("claude.compact.summaryLabel")}
           </div>
           <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap break-all text-xs text-on-surface-soft">
             {summaryText}

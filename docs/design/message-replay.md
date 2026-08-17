@@ -1,6 +1,6 @@
-# Claude2 进程模型与消息回放设计
+# Claude 进程模型与消息回放设计
 
-本文档定义 Claude2 Agent Session 的进程模型与消息管线架构，并与实现保持同步。
+本文档定义 Claude Agent Session 的进程模型与消息管线架构，并与实现保持同步。
 
 > **演进说明**：当前为 Gen 3——直接 `Bun.spawn` 拉起 CLI + 直读 stdout + JSONL 历史缓冲 + 内存 live 缓冲 + 单一 WS 流。它取代了早期的 Gen 2（tmux 进程容器 + `stdout-helper` + turn 文件 + `num_turns` 去重，见 git `7397bd4`→`4336830`）。简化后 CLI 进程存活期不再与 API 解耦，换来更简单的管线；会话状态改由 JSONL 在 `--resume` 时恢复。Gen 2 的机制在末节「已废弃」列出，调试时勿再引用。
 
@@ -28,7 +28,7 @@
 
 `Bun.spawn({ detached: true })`（POSIX `setsid()`）能解进程组耦合，但**单独不够**——pipe 断裂照样杀进程；要把 stdio 也 `ignore` 才彻底脱离，而 stdio 一旦不连 API，CLI 的双向 stream-json 就没了通道。
 
-**唯一彻底解法 = 常驻 supervisor 进程**：在 CLI 与 API 之间插一个 `detached` + `stdio:["ignore","ignore","ignore"]` + `unref()` 的进程，由它持有 CLI 的 stdin/stdout pipe（稳定对端），自己监听 unix socket 让 API 远程驱动。API 重启只断 socket、不动 CLI 的 stdio → CLI 不死。这与 terminal 走 **tmux server** 同构（tmux server 持 PTY 主端，API 只是 attach）；竞品 **orca**（`stablyai/orca`）正是自造了这套 daemon（daemon 持 `@xterm/headless` 权威 buffer + `SerializeAddon` + driver 多端仲裁，详见 [web terminal + tmux attach 调研 §4](../research/web-terminal-tmux-attach.md)）。现有 `Claude2SessionRelay`（history+live 双缓冲 + subscriber fan-out）几乎可原样搬进 supervisor，且因 stream-json 是结构化行，没有 orca 那套终端全态重绘的复杂状态机（alt-screen / 光标 / serialize / 尺寸仲裁全不需要）。
+**唯一彻底解法 = 常驻 supervisor 进程**：在 CLI 与 API 之间插一个 `detached` + `stdio:["ignore","ignore","ignore"]` + `unref()` 的进程，由它持有 CLI 的 stdin/stdout pipe（稳定对端），自己监听 unix socket 让 API 远程驱动。API 重启只断 socket、不动 CLI 的 stdio → CLI 不死。这与 terminal 走 **tmux server** 同构（tmux server 持 PTY 主端，API 只是 attach）；竞品 **orca**（`stablyai/orca`）正是自造了这套 daemon（daemon 持 `@xterm/headless` 权威 buffer + `SerializeAddon` + driver 多端仲裁，详见 [web terminal + tmux attach 调研 §4](../research/web-terminal-tmux-attach.md)）。现有 `ClaudeSessionRelay`（history+live 双缓冲 + subscriber fan-out）几乎可原样搬进 supervisor，且因 stream-json 是结构化行，没有 orca 那套终端全态重绘的复杂状态机（alt-screen / 光标 / serialize / 尺寸仲裁全不需要）。
 
 **为何否决**：
 
@@ -60,7 +60,7 @@ Session Message Pipeline（session 级别，非 connection 级别）:
 
 ### session 级重建
 
-relay 随进程 spawn 一起创建并 `activate()`（`claude2-runtime.ts` `spawnAndStart`），不是每个 WebSocket 连接时。激活时若该 session 有 `claudeSessionId`（resume），从 JSONL 加载历史到 `historyLines`；否则历史为空。之后每个新 WebSocket 连接直接订阅已有 pipeline。
+relay 随进程 spawn 一起创建并 `activate()`（`claude-runtime.ts` `spawnAndStart`），不是每个 WebSocket 连接时。激活时若该 session 有 `claudeSessionId`（resume），从 JSONL 加载历史到 `historyLines`；否则历史为空。之后每个新 WebSocket 连接直接订阅已有 pipeline。
 
 ### 两层缓冲
 
@@ -99,10 +99,10 @@ API 启动 / 新 session
   ├─ spawnAndStart()
   │    ├─ spawnClaudeDirect():  Bun.spawn(claude --output-format stream-json ...)
   │    │     stdin=pipe  stdout=pipe  stderr=pipe  cwd=projectPath
-  │    ├─ new Claude2SessionRelay → relay.activate()
+  │    ├─ new ClaudeSessionRelay → relay.activate()
   │    │     └─ readHistoryFromJsonl() → historyLines（resume 才读）
   │    ├─ readStdout(): 读 proc.stdout 行流 → captureSystemInit + relay.handleStdoutLine
-  │    └─ pipeStderrToFile(): proc.stderr → runDir/claude2-stderr/{session}.log
+  │    └─ pipeStderrToFile(): proc.stderr → runDir/claude-stderr/{session}.log
   │
   ├─ 浏览器 WS 连接 → stream() → relay.addSubscriber(onData)
   │    ├─ emit: session_init{resume}
@@ -113,13 +113,13 @@ API 启动 / 新 session
   └─ CLI 持续输出 → handleStdoutLine() → push liveLines(cap 5000) + broadcast → 所有 subscriber
 ```
 
-`history_start/end`、`live_start/end` 是发给客户端的 batch marker；在 `claude2-stream.ts` 的 `createBatchEmitter` 里，两个 batch 的数据行被切成 ~256KB 块、各自 `gzipSync` 成独立二进制帧发出（详见 [Claude2 Replay 性能](../research/claude2-replay-performance.md)）。
+`history_start/end`、`live_start/end` 是发给客户端的 batch marker；在 `claude-stream.ts` 的 `createBatchEmitter` 里，两个 batch 的数据行被切成 ~256KB 块、各自 `gzipSync` 成独立二进制帧发出（详见 [Claude Replay 性能](../research/claude-replay-performance.md)）。
 
 ## 进程模型
 
 ### spawn
 
-`spawnClaudeDirect()`（`claude2-runtime.ts`）用 `Bun.spawn` 直接拉起 CLI，argv 数组（非 shell 拼接）：
+`spawnClaudeDirect()`（`claude-runtime.ts`）用 `Bun.spawn` 直接拉起 CLI，argv 数组（非 shell 拼接）：
 
 ```
 claude --output-format stream-json --input-format stream-json \
@@ -129,7 +129,7 @@ claude --output-format stream-json --input-format stream-json \
 
 - `stdin/stdout/stderr` 全部 pipe，由 API 直接读写。
 - `--resume <claudeSessionId>`：有历史时恢复，CLI 从自己 JSONL 加载状态。
-- 进程元数据（`Claude2Process`）记 model/permissionMode/claudeSessionId/generation。
+- 进程元数据（`ClaudeProcess`）记 model/permissionMode/claudeSessionId/generation。
 
 ### generation 守卫
 
@@ -137,12 +137,12 @@ claude --output-format stream-json --input-format stream-json \
 
 ### stdin / stderr
 
-- `write()` 直接 `proc.stdin.write(data)`；上游 `claude2-stream.ts` `message()` 把客户端 JSON 加 `\n` 后写入。
-- `pipeStderrToFile()` 把 `proc.stderr` 异步追加到 `runDir/claude2-stderr/<sessionName>.log`（8KB 缓冲），不阻塞主循环，仅供调试。
+- `write()` 直接 `proc.stdin.write(data)`；上游 `claude-stream.ts` `message()` 把客户端 JSON 加 `\n` 后写入。
+- `pipeStderrToFile()` 把 `proc.stderr` 异步追加到 `runDir/claude-stderr/<sessionName>.log`（8KB 缓冲），不阻塞主循环，仅供调试。
 
 ## SessionRelay（服务端核心）
 
-`Claude2SessionRelay`（`session-relay.ts`），每 session 一个实例：
+`ClaudeSessionRelay`（`session-relay.ts`），每 session 一个实例：
 
 ```
 phase: "init" → "active" → "destroyed"
@@ -175,9 +175,9 @@ injectLine(line): broadcast only（不缓冲，用于注入合成消息）
 
 ## system.init 与 turn 边界
 
-- **system.init 捕获**：两路——`claude2-runtime.ts` `captureSystemInitFromLine`（写进程元数据 + `onSystemInit` 回调）；`claude2-stream.ts` realtime 分支（捕获 claudeSessionId/model 写 registry）。`system.init` 与 `result` 都是 **stdout 实时消息，不写入 JSONL**（见 [CLI stream-json 协议](../research/claude-cli-stream-protocol.md) 持久化表）。
+- **system.init 捕获**：两路——`claude-runtime.ts` `captureSystemInitFromLine`（写进程元数据 + `onSystemInit` 回调）；`claude-stream.ts` realtime 分支（捕获 claudeSessionId/model 写 registry）。`system.init` 与 `result` 都是 **stdout 实时消息，不写入 JSONL**（见 [CLI stream-json 协议](../research/claude-cli-stream-protocol.md) 持久化表）。
 - **turn 边界**：持久化 JSONL 里 turn 尾是 `assistant.message.stop_reason === "end_turn"`，**不是** `result`（result 仅在 live 流）。resume 回放的 turn-end 由客户端 `isResume` 标志推导（`applyToolLifecycle` 对所有未收 tool_result 的工具无条件标 interrupted），不依赖 result 边界。
-- **running 状态**（与 tool interrupted 共享同一 resume 不变量，二者是同一棵语义树的两支）：`computeRunningCount` 只在 **live + 瞬时段**计数——`result` 是 stdout-only、不在 history，所以只有 live + 瞬时（都含 `result`）能正确开/关 turn；history 段（JSONL 归档，无 `result`）**永不参与**，否则扫到归档里未闭合的 assistant 会误判为 running（这正是 resume 进入显示假三点动画 + 停止按钮的根因）。resume 进入时 running=false 的依据与 tool interrupted 同源：resume 后 CLI 是新进程，live + 瞬时段无未关闭 turn，并非靠"扫到 result"。详见 `claude2-adapter.ts` `computeRunningCount` docstring。
+- **running 状态**（与 tool interrupted 共享同一 resume 不变量，二者是同一棵语义树的两支）：`computeRunningCount` 只在 **live + 瞬时段**计数——`result` 是 stdout-only、不在 history，所以只有 live + 瞬时（都含 `result`）能正确开/关 turn；history 段（JSONL 归档，无 `result`）**永不参与**，否则扫到归档里未闭合的 assistant 会误判为 running（这正是 resume 进入显示假三点动画 + 停止按钮的根因）。resume 进入时 running=false 的依据与 tool interrupted 同源：resume 后 CLI 是新进程，live + 瞬时段无未关闭 turn，并非靠"扫到 result"。详见 `claude-adapter.ts` `computeRunningCount` docstring。
 
 ## 正常运行时序
 
@@ -185,7 +185,7 @@ injectLine(line): broadcast only（不缓冲，用于注入合成消息）
 1. 浏览器 WS open → ensureRunning（进程已在则复用）→ stream() → addSubscriber
 2. relay 发 session_init → history（resume 时全量 JSONL）→ live（当前 liveLines）
 3. CLI 输出 assistant chunk → readStdout → handleStdoutLine → broadcast → 浏览器实时收到
-4. CLI 输出 result（turn 结束）→ 同上；claude2-stream 注入 ended
+4. CLI 输出 result（turn 结束）→ 同上；claude-stream 注入 ended
 5. CLI 把该 turn 写入 JSONL（归档）→ relay 不重读 JSONL，故不影响已发出的 live
 ```
 
@@ -205,7 +205,7 @@ API 重启：
 
 ## API 端职责对照
 
-| 方法（`claude2-runtime.ts`） | 行为 |
+| 方法（`claude-runtime.ts`） | 行为 |
 |---|---|
 | `spawnClaudeDirect()` | argv 数组 → `Bun.spawn`，全 pipe |
 | `startAgent(metadata)` / `ensureRunning()` | 复用或 spawn + 建 relay + 读 stdout |
@@ -215,11 +215,11 @@ API 重启：
 | `readStdout()` | 读 `proc.stdout` 行流，generation 守卫，喂 relay |
 | `close(session)` | kill proc + `relay.destroy()` |
 
-`claude2-stream.ts`：WS open → `stream()` 订阅 relay；`createBatchEmitter` 在 relay 的 onData 外层做 batch 压缩/分块 + system.init 捕获 + result→ended 注入。WS message → `runtime.write()`。
+`claude-stream.ts`：WS open → `stream()` 订阅 relay；`createBatchEmitter` 在 relay 的 onData 外层做 batch 压缩/分块 + system.init 捕获 + result→ended 注入。WS message → `runtime.write()`。
 
 ## 客户端消息归一化：command-output 的 live/replay 双路径
 
-服务端 relay 是「单一数据源」，但**同一条 slash 命令在 live stdout 与 JSONL replay 上的消息形态不同**。客户端 `normalizeChatStream`（`web/src/routes/claude2-adapter.ts`）负责把两条路径归一到同一个 `command-output` 语义，否则 resume 进入会看到拆成两条/重复的卡片。
+服务端 relay 是「单一数据源」，但**同一条 slash 命令在 live stdout 与 JSONL replay 上的消息形态不同**。客户端 `normalizeChatStream`（`web/src/routes/claude-adapter.ts`）负责把两条路径归一到同一个 `command-output` 语义，否则 resume 进入会看到拆成两条/重复的卡片。
 
 | | 实时流（live stdout + API echo） | 历史回放（JSONL resume） |
 |---|---|---|
@@ -282,11 +282,11 @@ readStdout → processStdoutLine → captureSkillReloadFromLine
 - **后置检测在服务端**（非客户端识别 command-output）：API 是 stdout 权威消费者，符合「单一数据源」。
 - **`skill_catalog_changed` 不带 payload**：服务端只发"catalog 变了"通知，客户端 `invalidateQueries` 重取 REST。复用现有 REST 数据流，零新数据通道；reload-skills 低频，多一次 RTT 无感。服务端回调因此也无需 `getSessionProjectPath` + 主动重扫（纯读无副作用，结果会被客户端 REST 重取覆盖）。
 - **用 `injectLine` 不用 `injectLiveLine`**：catalog 通知是瞬时事件，不进 `liveLines` 被 replay 回放（replay 时 route 重挂载已重取最新 REST）。
-- **`queryClient` 是模块级单例**（`web/src/lib/query-client.ts`）：adapter 在 `applyMessageScalarState` 里直接 import 单例调 `invalidateQueries`，不调 `useQueryClient`——后者要求 `QueryClientProvider` 包裹，会破坏 `useClaude2Session` 的 `renderHook` 测试。单例与 app root 的 `QueryClientProvider` 共用同一实例。
+- **`queryClient` 是模块级单例**（`web/src/lib/query-client.ts`）：adapter 在 `applyMessageScalarState` 里直接 import 单例调 `invalidateQueries`，不调 `useQueryClient`——后者要求 `QueryClientProvider` 包裹，会破坏 `useClaudeSession` 的 `renderHook` 测试。单例与 app root 的 `QueryClientProvider` 共用同一实例。
 
 ## control 协议实现状态
 
-claude2 web 接入的 CLI control 协议范围。CLI 共 21 种 `control_request` subtype（见 [CLI stream-json 协议 · control_request subtype 全表](../research/claude-cli-stream-protocol.md#control_request-subtype-全表)），当前实现状态：
+claude web 接入的 CLI control 协议范围。CLI 共 21 种 `control_request` subtype（见 [CLI stream-json 协议 · control_request subtype 全表](../research/claude-cli-stream-protocol.md#control_request-subtype-全表)），当前实现状态：
 
 **已实现（4）**：
 
@@ -297,7 +297,7 @@ claude2 web 接入的 CLI control 协议范围。CLI 共 21 种 `control_request
 | `set_model` | host→CLI | 模型切换（进程内，CLI 回 `control_response`），失败回退 |
 | `set_permission_mode` | host→CLI | 权限模式切换（进程内），失败回退 |
 
-> `set_model` / `set_permission_mode` 走 stdin `control_request` 在 CLI 进程内切换（不再杀进程重启）；后端 `claude2-stream.ts` 的 `message()` 只透传，subtype 语义在前端 adapter。
+> `set_model` / `set_permission_mode` 走 stdin `control_request` 在 CLI 进程内切换（不再杀进程重启）；后端 `claude-stream.ts` 的 `message()` 只透传，subtype 语义在前端 adapter。
 
 **未实现（17）**：
 
@@ -315,11 +315,11 @@ claude2 web 接入的 CLI control 协议范围。CLI 共 21 种 `control_request
 
 ## 用户消息回显与队列
 
-CLI 在 stream-json 模式**不 echo user、不回执排队状态**（见 [CLI stream-json 协议 · 命令队列与消费语义](../research/claude-cli-stream-protocol.md#命令队列与消费语义)）。为了让用户实时看到自己发送的消息，我们用 `injectLiveLine`（`api/src/claude2-stream.ts`）在发送 user 消息时，向 relay live buffer 注入一条合成 echo（`uuid: injected-<random>`）并广播。
+CLI 在 stream-json 模式**不 echo user、不回执排队状态**（见 [CLI stream-json 协议 · 命令队列与消费语义](../research/claude-cli-stream-protocol.md#命令队列与消费语义)）。为了让用户实时看到自己发送的消息，我们用 `injectLiveLine`（`api/src/claude-stream.ts`）在发送 user 消息时，向 relay live buffer 注入一条合成 echo（`uuid: injected-<random>`）并广播。
 
 **设计决策**：
 
-- **inject 而非本地乐观追加**：user 气泡完全来自这条 injected echo 的 stdout 广播，保证 live / replay 双路径同一来源（subscribe 到 relay 的任意客户端都能看到，含重连的）。前端 `onNew`（`claude2-adapter.ts`）只 `sendToSocket`，不本地追加。
+- **inject 而非本地乐观追加**：user 气泡完全来自这条 injected echo 的 stdout 广播，保证 live / replay 双路径同一来源（subscribe 到 relay 的任意客户端都能看到，含重连的）。前端 `onNew`（`claude-adapter.ts`）只 `sendToSocket`，不本地追加。
 - **`injectLiveLine` 而非 `injectLine`**：echo 要进 live buffer，让重连 / 新 subscriber 也能看到（与瞬时事件用 `injectLine` 的取舍相反）。
 
 **已知限制（不修复）**：turn 进行中追加消息时，UI 可能呈现 `user user thinking` 而非 `user thinking user` 的顺序。
@@ -333,7 +333,7 @@ CLI 在 stream-json 模式**不 echo user、不回执排队状态**（见 [CLI s
 
 ### 背景与目标
 
-history（JSONL 全量）+ live（cap 5000）合起来在长会话下是打开慢的主因（见 [Claude2 Replay 性能](../research/claude2-replay-performance.md)：传输是瓶颈，gzip 已把单批压到 ~1.7s，但不 scale）。**特殊时期**的目标是用 compact 天然形成的边界，把服务端在内存里持有/回放的 history **缩到尾部一个 compact 块**，同时保证客户端断连重连后仍能还原**当前会话标量**（model / permissionMode / skills / slash / mcp）。
+history（JSONL 全量）+ live（cap 5000）合起来在长会话下是打开慢的主因（见 [Claude Replay 性能](../research/claude-replay-performance.md)：传输是瓶颈，gzip 已把单批压到 ~1.7s，但不 scale）。**特殊时期**的目标是用 compact 天然形成的边界，把服务端在内存里持有/回放的 history **缩到尾部一个 compact 块**，同时保证客户端断连重连后仍能还原**当前会话标量**（model / permissionMode / skills / slash / mcp）。
 
 v1 范围（明确不做的事在末尾）：
 - 服务端 init 时只加载 JSONL **尾部一个 compact 块**（最后一个 `compact_boundary` → end）。
@@ -362,7 +362,7 @@ v1 范围（明确不做的事在末尾）：
 
 ### 标量重建：种子 init + 流 fold
 
-**问题**：`system.init` 是 **stdout-only、不在 JSONL**（实测 `subtype:"init"` 在 JSONL 里 = 0）。windowing 后 tail 里没有 init → 客户端断连重连 fold 没有**种子**。客户端 `applyMessageScalarState`（`claude2-adapter.ts`）本来就是**对每条消息做 fold**（processBatch Phase 2），但缺种子时 model/permissionMode/skills/slash/mcp 全空。
+**问题**：`system.init` 是 **stdout-only、不在 JSONL**（实测 `subtype:"init"` 在 JSONL 里 = 0）。windowing 后 tail 里没有 init → 客户端断连重连 fold 没有**种子**。客户端 `applyMessageScalarState`（`claude-adapter.ts`）本来就是**对每条消息做 fold**（processBatch Phase 2），但缺种子时 model/permissionMode/skills/slash/mcp 全空。
 
 **模型 = 事件溯源**：客户端收到 = `[state-init 种子] + [消息流]`；消息流里自带对 state 的 update；客户端 fold 出**当前** state。stale 不是「被接受」，而是「还没 fold 到的那条 update」。
 
@@ -398,10 +398,10 @@ model 与其他 scalar 不同：它有**两个**独立的持久化层面，各�
 
 | 状态源 | 位置 | 服务路径 | 更新时机 |
 |---|---|---|---|
-| 内存 `state.model` | `Claude2Process.model`（进程级） | reconnect 时的 `seed_init` | spawn 后 `system.init`；进程内切换 `<local-command-stdout>` fold（`captureModelFromLine`） |
+| 内存 `state.model` | `ClaudeProcess.model`（进程级） | reconnect 时的 `seed_init` | spawn 后 `system.init`；进程内切换 `<local-command-stdout>` fold（`captureModelFromLine`） |
 | 磁盘 `metadata.model` | `<sessionId>.json` | API 重启 / 关闭重开 spawn 的 `--model` 参数 | 创建 session（`input.model`）；`system.init` 回填（`setClaudeSessionId`）；进程内切换（`setModel`，由 `onModelChange` 触发） |
 
-**变化根源信号 = `<local-command-stdout>Set model to <name> (<id>)</local-command-stdout>`**：进程内 `control_request{set_model}` 切换后 CLI 发出的唯一权威回显——带完整 model id（如 `claude-haiku-4-5-20251001`），且只在真实切换时发（no-op / 失败不发）。`captureModelFromLine`（`api/src/claude2-runtime.ts`）从这条信号**同时**更新两个状态源：fold 内存 `state.model` + 触发 `onModelChange` 回调（`api/src/index.ts` 注册）写磁盘 `metadata.model`（`api/src/session-registry.ts` `setModel`）。单一信号源，两个状态源同步。`control_response{success}` 不带 model id 且 no-op 也发，不适合作为落盘信号。
+**变化根源信号 = `<local-command-stdout>Set model to <name> (<id>)</local-command-stdout>`**：进程内 `control_request{set_model}` 切换后 CLI 发出的唯一权威回显——带完整 model id（如 `claude-haiku-4-5-20251001`），且只在真实切换时发（no-op / 失败不发）。`captureModelFromLine`（`api/src/claude-runtime.ts`）从这条信号**同时**更新两个状态源：fold 内存 `state.model` + 触发 `onModelChange` 回调（`api/src/index.ts` 注册）写磁盘 `metadata.model`（`api/src/session-registry.ts` `setModel`）。单一信号源，两个状态源同步。`control_response{success}` 不带 model id 且 no-op 也发，不适合作为落盘信号。
 
 **为何不「只 respawn 变」**：早期描述把 model 当作"只随 CLI respawn 变化"。但 `control_request{set_model}` 是进程内切换（CLI 不重启、不发新 `system.init`），只发 local-command-stdout 回显。若不 fold 这条信号，内存 `state.model` 停在 spawn 值 → reconnect seed 带过期 model；若不写 `metadata.model`，API 重启 / 关闭重开会用旧值 spawn，用户切换丢失。rewind 是反例佐证：rewind 不发 model 信号 → 两个状态源都保持 → model 维持当前值，印证 model 是进程级 scalar（独立于消息历史），其变化根源是切换信号而非消息流派生。
 
@@ -409,7 +409,7 @@ model 与其他 scalar 不同：它有**两个**独立的持久化层面，各�
 
 | 场景 | 取值来源 | 链路 |
 |---|---|---|
-| reconnect（刷新，不重启 API） | 内存 `state.model` | `buildSeedInitLine` → `seed_init{model}` → 客户端 `setCurrentModel`（`claude2-adapter.ts`） |
+| reconnect（刷新，不重启 API） | 内存 `state.model` | `buildSeedInitLine` → `seed_init{model}` → 客户端 `setCurrentModel`（`claude-adapter.ts`） |
 | API 重启（CLI `--resume` 重拉） | 磁盘 `metadata.model` | `ensureRunning(model=metadata.model)` → `claude --model <metadata.model> --resume` → `system.init` 报告该 model |
 | 关闭 session 重开 | 磁盘 `metadata.model` | 同上（`ensureRunning` 读 metadata） |
 
@@ -426,7 +426,7 @@ model 与其他 scalar 不同：它有**两个**独立的持久化层面，各�
 以下在当前代码中**已不存在**，调试时不要再去找：
 
 - tmux 进程容器（`spawnClaudeInTmux`）、`mkfifo` FIFO stdin
-- `stdout-helper.ts`、`turn_XXX.jsonl` / `claude2-turn/` 目录
+- `stdout-helper.ts`、`turn_XXX.jsonl` / `claude-turn/` 目录
 - turn 文件按 `num_turns` 与 JSONL 去重
 - pipe-pane + socat + Unix socket 实时流
 - relay 的 `messageBuffer` / `replaying_turns` 阶段

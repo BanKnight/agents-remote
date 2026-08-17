@@ -769,7 +769,7 @@ export type WorkbenchGroup = {
  * - `activeGroupId`：当前激活 group（点 tab / 点卡片 / maximize 都设它）；maximized 时它 = maximized。
  *   显式存（不能只从 focusId 反查：minimized 时 tab 不在 layout，反查会崩）。
  * - `maximized`：独占 group 的 groupId（group 级，非 tab 级）；独占时该 group tab 栏仍在可切 tab，
- *   其他 group 用 CSS `hidden` 隐藏（不 unmount，保 WebSocket 长连 / claude2 relay 早消息）。
+ *   其他 group 用 CSS `hidden` 隐藏（不 unmount，保 WebSocket 长连 / claude relay 早消息）。
  */
 export type WorkbenchLayoutV2 = {
   groups: WorkbenchGroup[];
@@ -789,7 +789,7 @@ export const EMPTY_WORKBENCH_LAYOUT_V2: WorkbenchLayoutV2 = {
   maximized: null,
 };
 
-/** 生成 group id（crypto.randomUUID，与 claude2-adapter 一致，无新依赖）。 */
+/** 生成 group id（crypto.randomUUID，与 claude-adapter 一致，无新依赖）。 */
 function createGroupId(): string {
   return crypto.randomUUID();
 }

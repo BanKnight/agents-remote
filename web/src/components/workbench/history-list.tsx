@@ -58,7 +58,7 @@ export function useHistorySessions(projectName: string, range: AgentHistoryRange
       claudeSessionId: string;
       displayName: string;
     }) =>
-      createAgentSession(projectName, "claude2", {
+      createAgentSession(projectName, "claude", {
         claudeSessionId,
         displayName: displayName || undefined,
       }),

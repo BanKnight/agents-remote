@@ -173,7 +173,7 @@ const filesRoute = createRoute({
 // 旧换页模型 detail routes 与旧 /workbench/$scope(/$focusId) 一并 redirect 到新中栏语义
 // 路径。这些 route 无 component（redirect-only，beforeLoad 即 throw，永不渲染）；
 // 旧薄壳 route component（AgentSessionDetailRoute / TerminalSessionDetailRoute /
-// Claude2SessionDetailRoute）已删除，SessionDetail / Claude2Chat 作为 workbench 面板宿主
+// ClaudeSessionDetailRoute）已删除，SessionDetail / ClaudeChat 作为 workbench 面板宿主
 //（embedded）由 instance-panel 直接引用，不再经路由。
 const agentSessionDetailRedirect = createRoute({
   getParentRoute: () => rootRoute,
@@ -186,9 +186,9 @@ const agentSessionDetailRedirect = createRoute({
   },
 });
 
-const claude2SessionDetailRedirect = createRoute({
+const claudeSessionDetailRedirect = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/projects/$projectName/agent-sessions/$sessionId/claude2",
+  path: "/projects/$projectName/agent-sessions/$sessionId/claude",
   beforeLoad: ({ params }) => {
     throw redirect({
       to: "/projects/$key/session/$id",
@@ -286,7 +286,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   settingsRoute,
   agentSessionDetailRedirect,
-  claude2SessionDetailRedirect,
+  claudeSessionDetailRedirect,
   terminalSessionDetailRedirect,
   skillsRedirect,
   skillsSkillFocusRedirect,

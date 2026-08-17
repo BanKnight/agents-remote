@@ -181,9 +181,9 @@ export function MobileProjectDrawer({
     activeSection === "overview"
       ? [
           {
-            label: t("workbench.createClaude2"),
+            label: t("workbench.createClaude"),
             icon: <ShellIcon name="anthropic" />,
-            onSelect: () => create.createAgent("claude2"),
+            onSelect: () => create.createAgent("claude"),
           },
           {
             label: t("workbench.createTerminal"),

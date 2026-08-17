@@ -1,6 +1,6 @@
 # Pi 接入调研（pi-access-options）
 
-本文件沉淀 2026-08-07 关于「接入 pi 作为第四个 agent runtime」的多轮调研，用于后续决策。本文是研究材料，不是最终架构决策；**接入决策尚未做出**，用户仍在评估。承接 [`agent-access-options.md`](./agent-access-options.md)（多 provider 接入路线的延续，pi 作为 claude / codex / claude2 之外的新候选 provider）。
+本文件沉淀 2026-08-07 关于「接入 pi 作为第四个 agent runtime」的多轮调研，用于后续决策。本文是研究材料，不是最终架构决策；**接入决策尚未做出**，用户仍在评估。承接 [`agent-access-options.md`](./agent-access-options.md)（多 provider 接入路线的延续，pi 作为 claude / codex / claude 之外的新候选 provider）。
 
 ## 调研状态
 
@@ -47,7 +47,7 @@
 4. **omp = pi 的协议兼容 fork**：保留 pi 全部集成面（rpc/sdk/extension/jsonl），分叉仅在 UI/命名/认证（`agent.db` vs `auth.json`）。**接入 omp ≈ 接入 pi（技术同构）**，但 omp 有"用 Claude Code OAuth 模拟指纹"的争议行为与 fork 维护成本。
 5. **同类接入方式的因果**：spawn vs 库嵌入的分水岭**不是轻重，是「要不要终端形态」**。要 xterm/PTY → spawn（pi-agent-dashboard）；不要终端、把 agent 当后端 engine → 库嵌入（OpenClaw 嵌 `pi-agent-core`、TelePi 嵌 `pi-coding-agent`）。
 6. **国产案例**：MonkeyCode（长亭科技云端编程平台）的 agent 内核是 OhMyAgent，OhMyAgent 官方自称 Pi-compatible——**国产大厂在用 pi 系做商业云端平台**。其服务端对接方式私有不可见。
-7. **对本项目的初步倾向**：本项目是 terminal-first（Claude2 = spawn + tmux + xterm），按终端形态分水岭落在 spawn 一侧，与 pi-agent-dashboard 同构；**初步倾向路径 B（`pi --mode rpc` spawn）**。但这是倾向，非决策（见 §8）。
+7. **对本项目的初步倾向**：本项目是 terminal-first（Claude = spawn + tmux + xterm），按终端形态分水岭落在 spawn 一侧，与 pi-agent-dashboard 同构；**初步倾向路径 B（`pi --mode rpc` spawn）**。但这是倾向，非决策（见 §8）。
 
 ## 1. pi 是什么
 
@@ -150,16 +150,16 @@
 - **基于 SKILL.md 标准 + skills.sh 市场 + npx skills CLI**。
 
 **本项目 MCP 注入**（`api/src/mcp-injector.ts` + `mcp-hub-server.ts`）：
-- per-runtime 注入器 `McpInjector`，把 hub 连接信息翻译成 spawn argv。`Claude2McpInjector`：`--mcp-config` inline JSON（type:http，连 `http://127.0.0.1:{port}/mcp/{project}`）。注入器注册表 `injectors: Partial<Record<AgentProvider, McpInjector>>`，`buildMcpInjectorForProvider(profile)`——**接入 pi 时这里加 `PiMcpInjector`（若要 MCP）**。
+- per-runtime 注入器 `McpInjector`，把 hub 连接信息翻译成 spawn argv。`ClaudeMcpInjector`：`--mcp-config` inline JSON（type:http，连 `http://127.0.0.1:{port}/mcp/{project}`）。注入器注册表 `injectors: Partial<Record<AgentProvider, McpInjector>>`，`buildMcpInjectorForProvider(profile)`——**接入 pi 时这里加 `PiMcpInjector`（若要 MCP）**。
 - `mcp-hub-server`：loopback HTTP server，`/mcp/{project}`，wiki_* 工具 producer，只给本机 agent 连。
 
 **接入点骨架**（基于 `agent-provider-profiles.ts` / `session-registry.ts` 现有抽象）：
 1. shared（`packages/shared/src/index.ts`）：`AgentProvider` 加 `"pi"`；视情况补 pi 事件/thinking-level 映射类型。
 2. provider profile（`agent-provider-profiles.ts`）：加 `pi` 条目，`capabilities.history` = `"native"`（rpc 路径）或 `"unsupported"`（tmux 路径）。
-3. runtime adapter：写 `PiRuntime implements RuntimeResources`（exists/startAgent/stream/close/listAliveRuntimeKeys）——rpc 路径下 spawn `pi --mode rpc` + RPC 协议对接，与 `Claude2Runtime` 同构。
-4. stream controller：仿 `claude2-stream.ts`（pi 事件 → broadcast + JSONL relay + `addSubscriber` 回放 + `createBatchEmitter`）。大头是 pi `AgentSessionEvent` → 项目 `Claude2StreamServerMessage` 的 normalizer（pi 的 message_update/text_delta/ToolCall/compaction 映射；语义接近 Claude，可参考现有 JSONL 解析）。
+3. runtime adapter：写 `PiRuntime implements RuntimeResources`（exists/startAgent/stream/close/listAliveRuntimeKeys）——rpc 路径下 spawn `pi --mode rpc` + RPC 协议对接，与 `ClaudeRuntime` 同构。
+4. stream controller：仿 `claude-stream.ts`（pi 事件 → broadcast + JSONL relay + `addSubscriber` 回放 + `createBatchEmitter`）。大头是 pi `AgentSessionEvent` → 项目 `ClaudeStreamServerMessage` 的 normalizer（pi 的 message_update/text_delta/ToolCall/compaction 映射；语义接近 Claude，可参考现有 JSONL 解析）。
 5. `index.ts`：实例化 + 接 registry。
-6. web：i18n key、`ShellIcon` 注册 pi logo（已有 Anthropic/OpenAI 厂商 logo 模式）、provider 选择 UI、pi adapter（事件语义接近 claude2，可复用）。
+6. web：i18n key、`ShellIcon` 注册 pi logo（已有 Anthropic/OpenAI 厂商 logo 模式）、provider 选择 UI、pi adapter（事件语义接近 claude，可复用）。
 
 ## 8. 接入路径分析与初步倾向（决策未做）
 
@@ -168,20 +168,20 @@
 | 路径 | 形态 | 体验上限 | 备注 |
 |---|---|---|---|
 | A. 库嵌入 SDK | `import` pi-coding-agent，进程内 `AgentSession` | 结构化、类型安全 | 牺牲进程隔离；与现有 skills 市场范式（扫目录）不一致 |
-| **B. rpc spawn（初步倾向）** | spawn `pi --mode rpc`，stdio JSON | 结构化、进程隔离 | 与 `Claude2Runtime` 同构，relay 复用；pi-agent-dashboard 同构先例 |
+| **B. rpc spawn（初步倾向）** | spawn `pi --mode rpc`，stdio JSON | 结构化、进程隔离 | 与 `ClaudeRuntime` 同构，relay 复用；pi-agent-dashboard 同构先例 |
 | C. tmux passthrough | `pi -p --mode json` 或 TUI + tmux | `history: unsupported` 降级 | pi 有 rpc，不必退回 tmux |
 
 **初步倾向 B，理由（基于公开证据，非定论）**：
-- 本项目 terminal-first（Claude2 = spawn + tmux + xterm），按"终端形态"分水岭天然在 spawn 一侧（§5 因果）。
-- 与 `Claude2Runtime` 范式同构，relay / 回放 / batch emitter 可复用，只需 pi-event normalizer。
+- 本项目 terminal-first（Claude = spawn + tmux + xterm），按"终端形态"分水岭天然在 spawn 一侧（§5 因果）。
+- 与 `ClaudeRuntime` 范式同构，relay / 回放 / batch emitter 可复用，只需 pi-event normalizer。
 - pi-agent-dashboard（唯一形态同构的先例）也是 spawn rpc，有成熟开源实现可逐条对照，降风险。
 - 排除 A：库嵌入牺牲崩溃隔离（多 session 常驻服务器是硬约束），且与现有 skills 市场"扫目录管理"范式不一致；OpenClaw/TelePi 选库嵌入是因不要终端，与本项目不同构。
 - 排除 C：pi 有 rpc，退回 tmux 是 claude/codex 早期无协议时的妥协，无必要。
 - 官方 PiServer/PiClient 先观望（experimental + breaking changes，无成熟项目用）。
 
-**真正的决策点（不是"选不选 spawn"）**：spawn 已被 terminal-first 约束定下；pi 相对 claude2 唯一新增的决策是 **spawn 之上要不要加 pi extension 层（Bridge Extension 模式）**：
-- 不加（纯 rpc spawn）：体验等价 claude2，最小增量。
-- 加（Bridge Extension）：额外拿到交互层控制权（confirm/select 路由到 web），比 claude2 更强，但要维护 extension + WS 桥。
+**真正的决策点（不是"选不选 spawn"）**：spawn 已被 terminal-first 约束定下；pi 相对 claude 唯一新增的决策是 **spawn 之上要不要加 pi extension 层（Bridge Extension 模式）**：
+- 不加（纯 rpc spawn）：体验等价 claude，最小增量。
+- 加（Bridge Extension）：额外拿到交互层控制权（confirm/select 路由到 web），比 claude 更强，但要维护 extension + WS 桥。
 - 初步倾向：第一轮不加，先把第四个 provider 同构落地；extension 层作"pi 增强"单独立项。
 
 **"纳入"扩展生态的分层（决策辅助）**：
@@ -197,7 +197,7 @@
 
 1. **rpc 协议契约**：命令/事件的精确 JSON schema、resume 命令、steer/interrupt 边界（读 `packages/coding-agent/docs/json.md` + `modes/rpc/rpc-mode.ts` 源码实测）。
 2. **ModelRuntime 配置**：pi 统一 LLM API 怎么配 provider/key，能否映射本项目 model tier / 运行时 `switch_model`。
-3. **tool / permission 事件**：`ToolCall` 之外有无 approval/permission 事件，决定能否做 Claude2 那样的权限 UI。
+3. **tool / permission 事件**：`ToolCall` 之外有无 approval/permission 事件，决定能否做 Claude 那样的权限 UI。
 4. **跨 harness skills 目录发现**：一份 SKILL.md 三 provider 共用是否成立（pi 跨目录发现的真实行为）。
 5. **pi MCP adapter extension 成熟度**（若 L2 要 MCP）。
 6. **Bun 兼容性**（若考虑 A 路径备选）：pi 是否依赖 Node 特有 API。
@@ -215,7 +215,7 @@
 ## 11. 后续沉淀候选
 
 verify / 决策后由 `distill-change` 提炼到：
-- `docs/architecture/`：pi provider adapter / PiRuntime 与 Claude2Runtime 的对照边界。
+- `docs/architecture/`：pi provider adapter / PiRuntime 与 ClaudeRuntime 的对照边界。
 - `docs/design/`：pi `AgentSessionEvent` → 项目消息协议的映射设计。
 - `docs/specs/`：pi provider 行为契约（接入后）。
 

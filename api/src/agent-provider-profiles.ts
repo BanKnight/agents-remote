@@ -1,4 +1,4 @@
-import type { AgentProvider, Claude2PermissionMode } from "@agents-remote/shared";
+import type { AgentProvider, ClaudePermissionMode } from "@agents-remote/shared";
 
 export type AgentProviderProfile = {
   provider: AgentProvider;
@@ -9,10 +9,10 @@ export type AgentProviderProfile = {
     history: "unsupported" | "native";
   };
   availableModels?: string[];
-  permissionModes?: Claude2PermissionMode[];
+  permissionModes?: ClaudePermissionMode[];
 };
 
-const readClaude2Models = (): string[] => {
+const readClaudeModels = (): string[] => {
   const env = (process.env.CLAUDE2_MODELS ?? "").trim();
   if (env.length > 0)
     return env
@@ -29,7 +29,7 @@ const readClaude2Models = (): string[] => {
 // 硬编码权威列表 = CLI choices，spawn 只为跟上未来 CLI 版本变化。
 // `default` 不在此列：它是 auto/plan 退出后 CLI 回到的"标准模式"（隐含值，非用户主动选项），
 // 由 auto_mode_exit 自动切回，不出现在 mode 选择菜单。
-const CLAUDE_PERMISSION_MODES: Claude2PermissionMode[] = [
+const CLAUDE_PERMISSION_MODES: ClaudePermissionMode[] = [
   "acceptEdits",
   "auto",
   "bypassPermissions",
@@ -39,26 +39,26 @@ const CLAUDE_PERMISSION_MODES: Claude2PermissionMode[] = [
 ];
 
 // 进程内缓存：api 启动时（index.ts）的首次调用预热，之后所有 detail GET 命中缓存，
-// 避免每次进 claude2 session 都 spawn `claude --help`（实测 ~700ms）。7397bd4 起声明了
+// 避免每次进 claude session 都 spawn `claude --help`（实测 ~700ms）。7397bd4 起声明了
 // 缓存变量却从未赋值，导致每次 detail GET 重复 spawn；此赋值修复该空赋值 bug。
-let cachedPermissionModes: Claude2PermissionMode[] | null = null;
+let cachedPermissionModes: ClaudePermissionMode[] | null = null;
 
 // 纯函数：从 `claude --help` 输出解析 `--permission-mode` 的 choices。choices 跨多行
 // （`(choices: "a",\n "b")`），正则 `[^)]+` 跨行匹配。无 match / 空 → undefined（调用方回退）。
-export function parsePermissionModeChoices(helpText: string): Claude2PermissionMode[] | undefined {
+export function parsePermissionModeChoices(helpText: string): ClaudePermissionMode[] | undefined {
   const match = helpText.match(/--permission-mode[^(]*\(choices:\s*([^)]+)\)/);
   if (!match) return undefined;
   const choices = match[1]
     .split(",")
     .map((s) => s.trim().replace(/^"|"$/g, ""))
-    .filter(Boolean) as Claude2PermissionMode[];
+    .filter(Boolean) as ClaudePermissionMode[];
   return choices.length > 0 ? choices : undefined;
 }
 
-export async function parseClaudePermissionModes(): Promise<Claude2PermissionMode[]> {
+export async function parseClaudePermissionModes(): Promise<ClaudePermissionMode[]> {
   if (cachedPermissionModes) return cachedPermissionModes;
 
-  let result: Claude2PermissionMode[] = CLAUDE_PERMISSION_MODES;
+  let result: ClaudePermissionMode[] = CLAUDE_PERMISSION_MODES;
   try {
     const proc = Bun.spawn({
       cmd: ["claude", "--help"],
@@ -79,6 +79,8 @@ export async function parseClaudePermissionModes(): Promise<Claude2PermissionMod
   return result;
 }
 
+// 一代 claude（历史 tmux 直拉）已被二代实现取代（直拉 CLI + native history），协议层
+// AgentProvider 不再含一代；"claude" 统一指向二代 Claude runtime。
 const profiles: Record<AgentProvider, AgentProviderProfile> = {
   claude: {
     provider: "claude",
@@ -86,8 +88,9 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     command: "claude",
     displayNamePrefix: "Claude Agent",
     capabilities: {
-      history: "unsupported",
+      history: "native",
     },
+    availableModels: readClaudeModels(),
   },
   codex: {
     provider: "codex",
@@ -97,17 +100,6 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     capabilities: {
       history: "unsupported",
     },
-  },
-  claude2: {
-    provider: "claude2",
-    // 对外正式名统一 "Claude"（二代实现已取代一代）；"claude2" 只是协议层 provider id。
-    label: "Claude",
-    command: "claude",
-    displayNamePrefix: "Claude Agent",
-    capabilities: {
-      history: "native",
-    },
-    availableModels: readClaude2Models(),
   },
 };
 

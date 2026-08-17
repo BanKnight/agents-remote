@@ -1,9 +1,9 @@
-// 探针：验证 claude2 composer 卡片内 Stop/Send 的 isEmpty 同步、send 点击不丢焦、selectors
+// 探针：验证 claude composer 卡片内 Stop/Send 的 isEmpty 同步、send 点击不丢焦、selectors
 // 留卡片内（H1/H2/H3/H4 的 React/DOM 部分）。iOS 软键盘行为 Playwright 模拟不了，归真机；
 // 本探针只验桌面可复现的 DOM 行为。
 //
 // 密码由脚本自读（env → config.yaml → api 进程 environ），不进 agent 上下文、不打印值。
-// 用法：node scripts/probe-claude2-composer-toolbar.mjs
+// 用法：node scripts/probe-claude-composer-toolbar.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword, readAppPasswordSource } from "./lib/deploy-config.mjs";
 
@@ -15,7 +15,7 @@ async function setupMocks(page) {
   const session = {
     id: fakeSessionId,
     projectName,
-    provider: "claude2",
+    provider: "claude",
     displayName: "Probe Agent",
     status: "idle",
     createdAt: new Date().toISOString(),
@@ -50,7 +50,7 @@ async function setupMocks(page) {
             sessionId: fakeSessionId,
             displayName: "Probe Agent",
             status: "idle",
-            provider: "claude2",
+            provider: "claude",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -58,7 +58,7 @@ async function setupMocks(page) {
     }),
   );
   // WS 路由真实 server（fake session 不存在 → error，但页面不崩，chatInput 仍渲染）。
-  await page.routeWebSocket(/claude2-stream/, (ws) => ws.connectToServer());
+  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
 
 async function probe(browser, label, contextOptions) {
@@ -74,7 +74,7 @@ async function probe(browser, label, contextOptions) {
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
   await page.getByRole("button", { name: "Unlock console" }).click();
-  await page.goto(`${WEB_ORIGIN}/projects/${projectName}/agent-sessions/${fakeSessionId}/claude2`);
+  await page.goto(`${WEB_ORIGIN}/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
   const textarea = page.locator("[data-composer-float] textarea").first();
   await textarea.waitFor({ state: "visible", timeout: 15000 });

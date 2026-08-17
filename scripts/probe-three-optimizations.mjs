@@ -297,14 +297,14 @@ async function probeMobileFileCwd(useFocus) {
 }
 
 // ── 问题2：权限金色边框批准后清除 + Allow/Deny 按钮 cursor-pointer ─────
-// 走 routeWebSocket 注入最小 claude2-stream 帧序列（不连真实 server）：
+// 走 routeWebSocket 注入最小 claude-stream 帧序列（不连真实 server）：
 //   session_init → assistant(tool_use Bash) → control_request(挂 controlRequestId)
 //   → [断言金边框 ring-assistant 存在 + Allow/Deny cursor=pointer]
 //   → user(tool_result 匹配 tool_use_id) → [断言边框消失]
 // 依赖 adapter 数据管道：control_request 按 request.tool_use_id 给 tool-call part 挂
 // controlRequestId（adapter:2806）；user tool_result 按 tool_use_id 配对 result
 // （adapter:2293/2309）→ needsPermission(result==null && !isInterrupted) 翻 false →
-// SystemChatBubble amberRing/pulseClass 清空（Claude2SessionDetailRoute:1472）。
+// SystemChatBubble amberRing/pulseClass 清空（ClaudeSessionDetailRoute:1472）。
 async function probePermissionBorder() {
   const browser = await chromium.launch();
   try {
@@ -315,14 +315,14 @@ async function probePermissionBorder() {
     await page.waitForTimeout(500);
 
     // 新 workbench 语义：/projects/$key/session/$id → focusId=sessionId → instance-area 打开
-    // Claude2Chat。⚠️ sessionId 必须以 `agent_` 开头（inferSessionTypeFromId）才判 agent session，
+    // ClaudeChat。⚠️ sessionId 必须以 `agent_` 开头（inferSessionTypeFromId）才判 agent session，
     // 否则渲染 PlaceholderPanel（无 WS）。detail 走 getAgentSession(projectName, sessionId)
     // （instance-area useAgentDetail），URL 仍是 /api/projects/<key>/agent-sessions/<id>。
     const fakeSessionId = "agent_probe-permission";
     const session = {
       id: fakeSessionId,
       projectName,
-      provider: "claude2",
+      provider: "claude",
       displayName: "Permission Probe",
       status: "running",
       createdAt: "2026-08-02T00:00:00.000Z",
@@ -341,9 +341,9 @@ async function probePermissionBorder() {
       }),
     );
 
-    // ── mock WS：注入最小 claude2-stream 帧序列 ──────────────────────
+    // ── mock WS：注入最小 claude-stream 帧序列 ──────────────────────
     let socket;
-    await page.routeWebSocket(/claude2-stream/, (ws) => {
+    await page.routeWebSocket(/claude-stream/, (ws) => {
       socket = ws;
       ws.onMessage((msg) => {
         // 客户端只发心跳 ping；探针用 onMessage 确认连接建立（不响应也可，PONG 超时 50s ≫ 探针时长）。
@@ -354,10 +354,10 @@ async function probePermissionBorder() {
     console.log("\n===== 问题2：权限金色边框批准后清除 + 确认按钮 cursor =====");
     // 新 workbench 语义路径（router.tsx：/agent-sessions/... 旧路由已 redirect 到 /projects/$key/session/$id）。
     await page.goto(`${WEB_ORIGIN}/projects/${projectName}/session/${fakeSessionId}`);
-    // 等 WS 路由挂载（routeWebSocket 拦截在导航后生效）+ focus 打开 Claude2Chat。
+    // 等 WS 路由挂载（routeWebSocket 拦截在导航后生效）+ focus 打开 ClaudeChat。
     await page.waitForTimeout(800);
     if (!socket) {
-      record(false, "WebSocket 连接建立（routeWebSocket 未拦截到 claude2-stream）");
+      record(false, "WebSocket 连接建立（routeWebSocket 未拦截到 claude-stream）");
       await ctx.close();
       return;
     }

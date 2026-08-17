@@ -515,9 +515,9 @@ export function sessionStreamUrl(
   return base;
 }
 
-export function claude2StreamUrl(projectName: string, sessionId: string) {
+export function claudeStreamUrl(projectName: string, sessionId: string) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/claude2-stream`;
+  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/claude-stream`;
 }
 
 export function createEchoSocket() {

@@ -21,8 +21,8 @@ import {
   type UninstallSkillRequest,
   type UninstallSkillResponse,
 } from "@agents-remote/shared";
-import { parseFrontmatter } from "./claude2-slash-commands";
-import type { Claude2Runtime } from "./claude2-runtime";
+import { parseFrontmatter } from "./claude-slash-commands";
+import type { ClaudeRuntime } from "./claude-runtime";
 import { jsonError } from "./http-auth";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import type { SettingsStore } from "./settings-store";
@@ -39,12 +39,12 @@ import {
 import { skillTaskRegistry } from "./skill-tasks";
 
 /**
- * skill 路由依赖。claude2Runtime 可选（缺失则跳过装/卸后的 reload，
+ * skill 路由依赖。claudeRuntime 可选（缺失则跳过装/卸后的 reload，
  * 主要用于无 runtime 的单元测试）。
  */
 export type SkillMarketDeps = {
   settingsStore: SettingsStore;
-  claude2Runtime?: Claude2Runtime;
+  claudeRuntime?: ClaudeRuntime;
   /**
    * skill 安装目录的 home 基准（测试注入；生产留空 → os.homedir()）。agent 全局 skills
    * 目录 = `${skillsHome ?? homedir()}/.<agentHome>/skills`（claude-code→.claude、
@@ -285,9 +285,9 @@ export function projectPathErrorStatus(error: ProjectPathError): number {
 
 // ── 执行层：`npx skills add/remove`（只信 exit code，事后 list --json 回读真相） ──
 
-/** 装/卸/更新成功后，遍历活跃 claude2 session 发 /reload-skills，触发现有 catalog 刷新闭环。 */
+/** 装/卸/更新成功后，遍历活跃 claude session 发 /reload-skills，触发现有 catalog 刷新闭环。 */
 export async function reloadAliveSessions(deps: SkillMarketDeps): Promise<void> {
-  const runtime = deps.claude2Runtime;
+  const runtime = deps.claudeRuntime;
   if (!runtime) return;
   let keys: Set<string>;
   try {

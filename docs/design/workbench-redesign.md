@@ -303,7 +303,7 @@ URL 编码语义核心，localStorage 编码个人布局：
 
 - 本文档**演进** [frontend-ui-architecture.md](./frontend-ui-architecture.md) 与 [console-shell.md](./console-shell.md) 的**桌面部分**：单列三层 → 三栏工作台。
 - 移动端从三层单列演化为两层导航（见 §7）；[mobile-session-interaction.md](./mobile-session-interaction.md) 的 session detail 基线（非遮挡输入区、quick key）由 §7 单实例聚焦承接。
-- [message-replay.md](./message-replay.md)、[claude2-provider-protocol.md](./claude2-provider-protocol.md) 等运行态/协议设计**不受布局重设计影响**，实例面板内部的消息渲染、回放管线沿用。
+- [message-replay.md](./message-replay.md)、[claude-provider-protocol.md](./claude-provider-protocol.md) 等运行态/协议设计**不受布局重设计影响**，实例面板内部的消息渲染、回放管线沿用。
 - 设计契约（配色/间距/圆角/safe-area/surface 角色 token）延续 [prototype/guidelines.md](./prototype/guidelines.md) 与 `shellSurfaceClasses`，重设计复用既有 primitive，不另起设计语言。
 - 设计系统的唯一权威源已沉淀为 [DESIGN.md](./DESIGN.md)（Google DESIGN.md 格式）：配色/间距/圆角/safe-area/surface 角色 token 与 component variant 以其为标尺；本节的 primitive 复用约定对应 DESIGN.md 的 variants（`surface-*` / `nav-item-*` / `button-*`），Phase 3 起据此收敛。
 - [prototype/guidelines.md](./prototype/guidelines.md) 的 token 已由 DESIGN.md 接管为权威，prototype HTML 本身（旧三层单列模型）已归档（见 [prototype/index.md](./prototype/index.md)），不再维护。

@@ -13,9 +13,9 @@ import type {
 } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AuthService } from "./auth";
-import { Claude2Runtime } from "./claude2-runtime";
+import { ClaudeRuntime } from "./claude-runtime";
 import { parseClaudePermissionModes } from "./agent-provider-profiles";
-import { Claude2StreamController, handleClaude2StreamUpgrade } from "./claude2-stream";
+import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
 import {
   applyAuthRefresh,
   handleAuthMe,
@@ -57,8 +57,8 @@ type UpgradeServer = {
 };
 
 type FetchHandlerOptions = {
-  claude2Runtime?: Claude2Runtime;
-  claude2StreamController?: Claude2StreamController;
+  claudeRuntime?: ClaudeRuntime;
+  claudeStreamController?: ClaudeStreamController;
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
   projectWikiService?: ProjectWikiService;
@@ -83,7 +83,7 @@ type WebSocketData =
       status: "running" | "idle" | "closed" | "error";
     }
   | {
-      kind: "claude2-stream";
+      kind: "claude-stream";
       sessionType: "agent";
       projectName: string;
       sessionId: string;
@@ -189,7 +189,7 @@ export const createFetchHandler =
       }
       const skillResponse = await handleSkillRoutes(request, url, {
         settingsStore: options.settingsStore,
-        claude2Runtime: options.claude2Runtime,
+        claudeRuntime: options.claudeRuntime,
         projectsRoot: options.projectsRoot,
       });
       if (skillResponse) {
@@ -197,7 +197,7 @@ export const createFetchHandler =
       }
       const skillUpdateResponse = await handleSkillUpdateRoutes(request, url, {
         settingsStore: options.settingsStore,
-        claude2Runtime: options.claude2Runtime,
+        claudeRuntime: options.claudeRuntime,
         projectsRoot: options.projectsRoot,
       });
       if (skillUpdateResponse) {
@@ -224,8 +224,8 @@ export const createFetchHandler =
     }
 
     if (options.projectsRoot && options.sessionRegistry) {
-      if (options.claude2StreamController) {
-        const claude2Upgrade = await handleClaude2StreamUpgrade(
+      if (options.claudeStreamController) {
+        const claudeUpgrade = await handleClaudeStreamUpgrade(
           request,
           url,
           options.projectsRoot,
@@ -233,8 +233,8 @@ export const createFetchHandler =
           server,
         );
 
-        if (claude2Upgrade.matched) {
-          return withRefresh(claude2Upgrade.response);
+        if (claudeUpgrade.matched) {
+          return withRefresh(claudeUpgrade.response);
         }
       }
 
@@ -257,7 +257,7 @@ export const createFetchHandler =
         /^\/api\/projects\/(.+)\/agent-sessions\/(.+)\/skill-slash-catalog$/,
       );
       if (catalogMatch && request.method === "GET") {
-        const { resolveSkillSlashCatalog } = await import("./claude2-slash-commands");
+        const { resolveSkillSlashCatalog } = await import("./claude-slash-commands");
         const { resolveProjectPath, ProjectPathError } = await import("./project-paths");
         try {
           const project = await resolveProjectPath(
@@ -992,7 +992,10 @@ const projectErrorResponse = (error: ProjectServiceError) => {
 };
 
 const sessionNamePrefix = process.env.AGENTS_REMOTE_SESSION_PREFIX ?? "ar";
-const isClaude2SessionName = (sessionName: string) =>
+const isClaudeSessionName = (sessionName: string) =>
+  // 旧前缀 ar-agent-claude2- 兼容：claude2 → claude 改名后存量会话的 runtimeKey 仍是旧段，
+  // 靠此分支保持 attach/close 可达（新会话统一新前缀）。
+  sessionName.startsWith(`${sessionNamePrefix}-agent-claude-`) ||
   sessionName.startsWith(`${sessionNamePrefix}-agent-claude2-`);
 
 export const startApi = async () => {
@@ -1018,7 +1021,7 @@ export const startApi = async () => {
   const stateStore = new StateStore();
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
-  const claude2Runtime = new Claude2Runtime(runtimePaths.runDir, settingsStore, config.mcpPort);
+  const claudeRuntime = new ClaudeRuntime(runtimePaths.runDir, settingsStore, config.mcpPort);
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
   // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
   // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
@@ -1031,18 +1034,18 @@ export const startApi = async () => {
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   const runtime: RuntimeResources = {
     exists: async (sessionName) => {
-      if (isClaude2SessionName(sessionName)) return claude2Runtime.exists(sessionName);
+      if (isClaudeSessionName(sessionName)) return claudeRuntime.exists(sessionName);
       return tmuxRuntime.exists(sessionName);
     },
     close: async (sessionName) => {
-      if (isClaude2SessionName(sessionName)) {
-        return claude2Runtime.close(sessionName);
+      if (isClaudeSessionName(sessionName)) {
+        return claudeRuntime.close(sessionName);
       }
       return tmuxRuntime.close(sessionName);
     },
     startAgent: (metadata) => {
-      if (metadata.provider === "claude2") {
-        return claude2Runtime.startAgent(metadata);
+      if (metadata.provider === "claude") {
+        return claudeRuntime.startAgent(metadata);
       }
       return agentRuntime.startAgent(metadata);
     },
@@ -1050,31 +1053,31 @@ export const startApi = async () => {
     capture: (sessionName) => tmuxRuntime.capture(sessionName),
     attach: (sessionName, onData, onError, opts) =>
       tmuxRuntime.attach(sessionName, onData, onError, opts),
-    // 批量探活：合并 tmux list-sessions（terminal + 非 claude2 agent）与 claude2 进程内存活集合。
+    // 批量探活：合并 tmux list-sessions（terminal + 非 claude agent）与 claude 进程内存活集合。
     // 1 次 list-sessions + 1 次进程内遍历，替代 M 次 has-session。供 SessionRegistry.getAliveKeys。
     listAliveRuntimeKeys: async () => {
-      const [tmuxKeys, claude2Keys] = await Promise.all([
+      const [tmuxKeys, claudeKeys] = await Promise.all([
         tmuxRuntime.listAliveRuntimeKeys(),
-        claude2Runtime.listAliveRuntimeKeys(),
+        claudeRuntime.listAliveRuntimeKeys(),
       ]);
-      return new Set([...tmuxKeys, ...claude2Keys]);
+      return new Set([...tmuxKeys, ...claudeKeys]);
     },
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
   const streamController = new SessionStreamController(runtime, sessionRegistry);
-  const claude2StreamController = new Claude2StreamController(
-    claude2Runtime,
+  const claudeStreamController = new ClaudeStreamController(
+    claudeRuntime,
     runtime,
     sessionRegistry,
   );
 
-  claude2Runtime.setOnSystemInit((sessionId, _runtimeKey, claudeSessionId, model) => {
+  claudeRuntime.setOnSystemInit((sessionId, _runtimeKey, claudeSessionId, model) => {
     void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId, model);
   });
-  claude2Runtime.setOnModelChange((sessionId, model) => {
+  claudeRuntime.setOnModelChange((sessionId, model) => {
     void sessionRegistry.setModel(sessionId, model);
   });
-  claude2Runtime.setOnPermissionModeChange((sessionId, permissionMode) => {
+  claudeRuntime.setOnPermissionModeChange((sessionId, permissionMode) => {
     void sessionRegistry.setPermissionMode(sessionId, permissionMode);
   });
   // Post-hook for /reload-skills: on a successful reload, broadcast
@@ -1082,14 +1085,14 @@ export const startApi = async () => {
   // the REST catalog. Broadcast-only (no payload) — the client's REST fetch is
   // authoritative, so the server needn't re-scan here. See docs/design/
   // message-replay.md 「命令后置处理框架」.
-  claude2Runtime.setOnSkillReload((sessionName) => {
-    claude2Runtime.injectServerLine(
+  claudeRuntime.setOnSkillReload((sessionName) => {
+    claudeRuntime.injectServerLine(
       sessionName,
       JSON.stringify({ type: "system", subtype: "skill_catalog_changed" }),
     );
   });
   // 真实新 stdout 行 → bump updatedAt（「上次活跃时间」）。recordActivity 分钟截断，同分钟短路。
-  claude2Runtime.setOnActivity((sessionId) => {
+  claudeRuntime.setOnActivity((sessionId) => {
     void sessionRegistry.recordActivity(sessionId);
   });
   const projectService = new ProjectService(config.projectsRoot, sessionRegistry);
@@ -1106,8 +1109,8 @@ export const startApi = async () => {
     port: config.apiPort,
     idleTimeout: SKILL_REQUEST_IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(auth, {
-      claude2Runtime,
-      claude2StreamController,
+      claudeRuntime,
+      claudeStreamController,
       projectFilesService,
       projectPagesService,
       projectWikiService,
@@ -1123,9 +1126,9 @@ export const startApi = async () => {
         if (ws.data?.kind === "session-stream") {
           void streamController.open(ws);
         }
-        if (ws.data?.kind === "claude2-stream") {
-          claude2StreamController.open(ws).catch((err) => {
-            console.error("[claude2-stream] open handler error", err);
+        if (ws.data?.kind === "claude-stream") {
+          claudeStreamController.open(ws).catch((err) => {
+            console.error("[claude-stream] open handler error", err);
           });
         }
       },
@@ -1136,8 +1139,8 @@ export const startApi = async () => {
           void streamController.message(ws, message);
           return;
         }
-        if (ws.data?.kind === "claude2-stream") {
-          void claude2StreamController.message(ws, message);
+        if (ws.data?.kind === "claude-stream") {
+          void claudeStreamController.message(ws, message);
           return;
         }
 
@@ -1147,8 +1150,8 @@ export const startApi = async () => {
         if (ws.data?.kind === "session-stream") {
           streamController.close(ws);
         }
-        if (ws.data?.kind === "claude2-stream") {
-          claude2StreamController.close(ws);
+        if (ws.data?.kind === "claude-stream") {
+          claudeStreamController.close(ws);
         }
       },
     },

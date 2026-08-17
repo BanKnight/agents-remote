@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
-  Claude2SessionRelay,
+  ClaudeSessionRelay,
   HISTORY_TAIL_SCAN_BYTES,
   sliceLastCompactBlock,
 } from "./session-relay";
@@ -15,8 +15,8 @@ afterEach(async () => {
   cleanupDirs.clear();
 });
 
-test("Claude2SessionRelay sends history and output batches for a new session", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay sends history and output batches for a new session", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   const systemLine = JSON.stringify({
@@ -70,7 +70,7 @@ test("Claude2SessionRelay sends history and output batches for a new session", a
   relay.destroy();
 });
 
-test("Claude2SessionRelay sends history batch before output batch for resume", async () => {
+test("ClaudeSessionRelay sends history batch before output batch for resume", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-resume-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -96,7 +96,7 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
     },
   });
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
   await relay.handleStdoutLine(bufferLine);
 
@@ -139,8 +139,8 @@ test("Claude2SessionRelay sends history batch before output batch for resume", a
   relay.destroy();
 });
 
-test("Claude2SessionRelay always sends history+output markers even when empty", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay always sends history+output markers even when empty", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   const received: string[] = [];
@@ -163,7 +163,7 @@ test("Claude2SessionRelay always sends history+output markers even when empty", 
   relay.destroy();
 });
 
-test("Claude2SessionRelay handles empty history file for resume", async () => {
+test("ClaudeSessionRelay handles empty history file for resume", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-empty-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -172,7 +172,7 @@ test("Claude2SessionRelay handles empty history file for resume", async () => {
   await mkdir(dirname(jsonlPath), { recursive: true });
   await writeFile(jsonlPath, "");
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
 
   const received: string[] = [];
@@ -191,8 +191,8 @@ test("Claude2SessionRelay handles empty history file for resume", async () => {
   relay.destroy();
 });
 
-test("Claude2SessionRelay broadcasts live output after batch", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay broadcasts live output after batch", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   const live1 = JSON.stringify({
@@ -224,8 +224,8 @@ test("Claude2SessionRelay broadcasts live output after batch", async () => {
   relay.destroy();
 });
 
-test("Claude2SessionRelay injectLine broadcasts but does not enter output", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay injectLine broadcasts but does not enter output", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   const injectedLine = JSON.stringify({
@@ -257,8 +257,8 @@ test("Claude2SessionRelay injectLine broadcasts but does not enter output", asyn
   relay.destroy();
 });
 
-test("Claude2SessionRelay injectLiveLine buffers into liveLines for later subscribers", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay injectLiveLine buffers into liveLines for later subscribers", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   const injectedLine = JSON.stringify({
@@ -321,7 +321,7 @@ const userLine = (uuid: string, text: string) =>
     message: { role: "user", content: [{ type: "text", text }] },
   });
 
-test("Claude2SessionRelay loads only the last compact block from JSONL", async () => {
+test("ClaudeSessionRelay loads only the last compact block from JSONL", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-tail-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -338,7 +338,7 @@ test("Claude2SessionRelay loads only the last compact block from JSONL", async (
   ].join("\n");
   await writeFile(jsonlPath, `${content}\n`);
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
 
   const received: string[] = [];
@@ -363,7 +363,7 @@ test("Claude2SessionRelay loads only the last compact block from JSONL", async (
   relay.destroy();
 });
 
-test("Claude2SessionRelay tail-scan recognizes microcompact_boundary and picks the later of the two", async () => {
+test("ClaudeSessionRelay tail-scan recognizes microcompact_boundary and picks the later of the two", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-tail-micro";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -379,7 +379,7 @@ test("Claude2SessionRelay tail-scan recognizes microcompact_boundary and picks t
   ].join("\n");
   await writeFile(jsonlPath, `${content}\n`);
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
 
   const received: string[] = [];
@@ -404,7 +404,7 @@ test("Claude2SessionRelay tail-scan recognizes microcompact_boundary and picks t
   relay.destroy();
 });
 
-test("Claude2SessionRelay reads the full file when no compact boundary exists", async () => {
+test("ClaudeSessionRelay reads the full file when no compact boundary exists", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-tail-none";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -414,7 +414,7 @@ test("Claude2SessionRelay reads the full file when no compact boundary exists", 
   const content = [userLine("u1", "first"), userLine("u2", "second")].join("\n");
   await writeFile(jsonlPath, `${content}\n`);
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
 
   const received: string[] = [];
@@ -454,7 +454,7 @@ test("sliceLastCompactBlock returns the last block, or null to force a full-read
   expect(sliceLastCompactBlock(Buffer.from(`${boundary.slice(10)}\n${tail}\n`))).toBeNull();
 });
 
-test("Claude2SessionRelay falls back to a full read when the boundary is older than the tail window", async () => {
+test("ClaudeSessionRelay falls back to a full read when the boundary is older than the tail window", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-tail-fallback";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -473,7 +473,7 @@ test("Claude2SessionRelay falls back to a full read when the boundary is older t
   ].join("\n");
   await writeFile(jsonlPath, `${content}\n`);
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
 
   const received: string[] = [];
@@ -499,7 +499,7 @@ test("Claude2SessionRelay falls back to a full read when the boundary is older t
   relay.destroy();
 });
 
-test("Claude2SessionRelay trims history+live buffers on a live compact_boundary", async () => {
+test("ClaudeSessionRelay trims history+live buffers on a live compact_boundary", async () => {
   const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
   const claudeSessionId = "relay-trim-session";
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
@@ -515,7 +515,7 @@ test("Claude2SessionRelay trims history+live buffers on a live compact_boundary"
     message: { id: "m1", role: "assistant", content: [{ type: "text", text: "before compact" }] },
   });
 
-  const relay = new Claude2SessionRelay();
+  const relay = new ClaudeSessionRelay();
   await relay.activate(projectPath, claudeSessionId);
   await relay.handleStdoutLine(liveBefore); // liveLines = [liveBefore]
   // compact arrives in live → old history (disk) + pre-compact live are dropped;
@@ -543,8 +543,8 @@ test("Claude2SessionRelay trims history+live buffers on a live compact_boundary"
   relay.destroy();
 });
 
-test("Claude2SessionRelay.handleStdoutLine reuses a caller-provided parse (no re-parse)", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay.handleStdoutLine reuses a caller-provided parse (no re-parse)", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
   // seed a live line so the trim has something to drop
   await relay.handleStdoutLine(userLine("u-seed", "seed"));
@@ -578,8 +578,8 @@ test("Claude2SessionRelay.handleStdoutLine reuses a caller-provided parse (no re
   relay.destroy();
 });
 
-test("Claude2SessionRelay emits seed init between session_init and history_start", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay emits seed init between session_init and history_start", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   const seedInitLine = JSON.stringify({
@@ -619,8 +619,8 @@ const thinkingTokensLine = (estimatedTokens: number) =>
     estimated_tokens: estimatedTokens,
   });
 
-test("Claude2SessionRelay coalesces consecutive thinking_tokens in the live buffer", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay coalesces consecutive thinking_tokens in the live buffer", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   // Current subscriber — receives every thinking_tokens on the live broadcast.
@@ -665,8 +665,8 @@ test("Claude2SessionRelay coalesces consecutive thinking_tokens in the live buff
   relay.destroy();
 });
 
-test("Claude2SessionRelay does not coalesce thinking_tokens across an intervening message", async () => {
-  const relay = new Claude2SessionRelay();
+test("ClaudeSessionRelay does not coalesce thinking_tokens across an intervening message", async () => {
+  const relay = new ClaudeSessionRelay();
   await relay.activate("", undefined);
 
   await relay.handleStdoutLine(thinkingTokensLine(5));

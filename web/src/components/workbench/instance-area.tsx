@@ -454,7 +454,7 @@ type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
   /**
    * 省略面板自带 header（SessionDetailHeader/ChatHeader 整个不渲染）：透传给
-   * ChatPanel/AgentTerminalPanel/TerminalPanel → Claude2Chat/SessionDetail 的 embeddedHeader。
+   * ChatPanel/AgentTerminalPanel/TerminalPanel → ClaudeChat/SessionDetail 的 embeddedHeader。
    * 桌面右工作区与移动聚焦态都传 true（设计 §11 对齐）：title/projectName 由 group tab 栏 chip
    * + 中栏 tab 行显示，Files/Git/+Terminal/Retry/Close 操作按 §11 去向分别由中栏 tab / 左总览
    * CreateSessionBar / 内容区错误态 Notice / tab ✕ 承担。默认 false（旧路由 ShellLayout 用）。
@@ -463,7 +463,7 @@ type PanelRouterProps = {
 };
 
 /**
- * 单面板路由：按 sessionId 前缀推断类型 → 查详情 → 渲染对应面板（claude2→ChatPanel、
+ * 单面板路由：按 sessionId 前缀推断类型 → 查详情 → 渲染对应面板（claude→ChatPanel、
  * 其他 agent→AgentTerminalPanel、terminal→TerminalPanel）。复用 Stage 1 的嵌入式面板。
  *
  * 右工作区活动组 + 移动单实例聚焦共用：桌面右工作区 GroupHeader 下调一次，
@@ -532,7 +532,7 @@ function AgentPanelRouter({
 }) {
   const detail = useAgentDetail(panelRef);
   if (detail.isLoading) return null;
-  if (detail.data?.session.provider === "claude2") {
+  if (detail.data?.session.provider === "claude") {
     return (
       <ChatPanel
         embeddedHeader={embeddedHeader}
@@ -887,12 +887,11 @@ export function useInstanceInfoActions(
   return { openInfo, holder: infoSheet.holder };
 }
 
-/** Agent provider 全名（claude2 → "Claude"——二代实现已取代一代，对外统一正式名；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
+/** Agent provider 全名（claude → "Claude"——二代实现已取代一代，对外统一正式名；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
 function providerDisplayName(provider: string | undefined): string {
   if (!provider) return "—";
   if (provider === "claude") return "Claude";
   if (provider === "codex") return "Codex";
-  if (provider === "claude2") return "Claude";
   return provider;
 }
 
@@ -1164,9 +1163,9 @@ export function CreateSessionBar({
       cancelLabel={t("cancel")}
       items={[
         {
-          label: t("workbench.createClaude2"),
+          label: t("workbench.createClaude"),
           icon: <ShellIcon name="anthropic" />,
-          onSelect: () => onCreateAgent("claude2"),
+          onSelect: () => onCreateAgent("claude"),
         },
         {
           label: t("workbench.createTerminal"),

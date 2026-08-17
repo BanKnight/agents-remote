@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { useClaude2Session } from "./claude2-adapter";
+import { useClaudeSession } from "./claude-adapter";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
 
@@ -93,9 +93,9 @@ beforeEach(() => {
   setFetch();
 });
 
-describe("useClaude2Session websocket lifecycle", () => {
+describe("useClaudeSession websocket lifecycle", () => {
   test("first live message can arrive without replay markers", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -120,7 +120,7 @@ describe("useClaude2Session websocket lifecycle", () => {
     // and replays twice (historyStart=2, inflated historyRecv).
     let model: string | undefined;
     let permissionMode: string | undefined;
-    const { rerender } = renderHook(() => useClaude2Session("proj", "sess", model, permissionMode));
+    const { rerender } = renderHook(() => useClaudeSession("proj", "sess", model, permissionMode));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
 
     model = "claude-sonnet-4-6";
@@ -131,7 +131,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("empty output batch does not crash or add messages", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -146,7 +146,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("pong heartbeat ack is not rendered into the message stream", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -166,7 +166,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   test("pong timeout closes half-open socket and triggers reconnect", async () => {
     vi.useFakeTimers();
     try {
-      renderHook(() => useClaude2Session("proj", "sess"));
+      renderHook(() => useClaudeSession("proj", "sess"));
       await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
       const socket = MockSocket.instances[0];
       act(() => socket.open());
@@ -191,7 +191,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("handles replay, switch model, and control_request branches", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -215,7 +215,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("compressed history batch decompresses and renders like the text path", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -239,7 +239,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("compressed live batch decompresses and clears loading", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -267,7 +267,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   test("reconnect replays only the missing uuid tail", async () => {
     vi.useFakeTimers();
     try {
-      const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+      const { result } = renderHook(() => useClaudeSession("proj", "sess"));
       await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
       const socket = MockSocket.instances[0];
       act(() => socket.open());
@@ -326,7 +326,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("messages flow through pipeline without errors", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -357,7 +357,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("bridge methods and transport lifecycle keep local state in sync", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -441,7 +441,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("messages after compact flow through pipeline", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -464,7 +464,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("onCancel sends interrupt request", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -477,7 +477,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("live messages flow through pipeline to storeAdapter", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -512,7 +512,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("empty text input is not sent to socket", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -528,7 +528,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   test("initial props hydrate via rerender when values arrive later", async () => {
     const { result, rerender } = renderHook(
       ({ model, permissionMode }: { model?: string; permissionMode?: string }) =>
-        useClaude2Session("proj", "sess", model, permissionMode),
+        useClaudeSession("proj", "sess", model, permissionMode),
       {
         initialProps: { model: undefined, permissionMode: undefined },
       },
@@ -542,7 +542,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("initial props, deferred sends, and empty composer input are handled", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess", "gpt-4.1", "auto"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess", "gpt-4.1", "auto"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
 
@@ -567,7 +567,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("open-path sends hit the immediate send error handler", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -587,7 +587,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("deferred sends hit the open listener error path", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -608,7 +608,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("EnterPlanMode tool_use sets permissionMode to plan", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -629,7 +629,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("permission-mode message sets permissionMode without rendering a bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -649,7 +649,7 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 
   test("ai-title and agent-name are state signals, produce no bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -676,9 +676,9 @@ describe("useClaude2Session websocket lifecycle", () => {
   });
 });
 
-describe("useClaude2Session queue-operation", () => {
+describe("useClaudeSession queue-operation", () => {
   test("live enqueue does not produce bubble, updates inputQueue", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -697,7 +697,7 @@ describe("useClaude2Session queue-operation", () => {
   });
 
   test("enqueue/dequeue/remove/popAll sequence", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -732,7 +732,7 @@ describe("useClaude2Session queue-operation", () => {
   });
 
   test("history replay batch processes queue-operation without bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -759,7 +759,7 @@ describe("useClaude2Session queue-operation", () => {
   test("session reset clears inputQueue", async () => {
     const { result, rerender } = renderHook(
       ({ project, session }: { project: string; session: string }) =>
-        useClaude2Session(project, session),
+        useClaudeSession(project, session),
       { initialProps: { project: "proj", session: "sess" } },
     );
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
@@ -783,7 +783,7 @@ describe("useClaude2Session queue-operation", () => {
     setSocketLoggingEnabled(true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    renderHook(() => useClaude2Session("proj", "sess"));
+    renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -791,13 +791,13 @@ describe("useClaude2Session queue-operation", () => {
     const msg = { type: "queue-operation", operation: "enqueue", content: "/model" } as const;
     act(() => socket.emit(msg as never));
 
-    expect(logSpy).toHaveBeenCalledWith("[claude2-adapter] ws recv", msg);
+    expect(logSpy).toHaveBeenCalledWith("[claude-adapter] ws recv", msg);
     logSpy.mockRestore();
     setSocketLoggingEnabled(false);
   });
 
   test("XML content → assistant source, plain text → user source", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -821,7 +821,7 @@ describe("useClaude2Session queue-operation", () => {
   });
 });
 
-describe("useClaude2Session API error handling", () => {
+describe("useClaudeSession API error handling", () => {
   const apiErrorMsg = (overrides: Record<string, unknown> = {}) =>
     ({
       type: "assistant",
@@ -847,11 +847,11 @@ describe("useClaude2Session API error handling", () => {
       uuid,
     }) as unknown as SessionStreamServerMessage;
 
-  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+  const getMessages = (result: { current: ReturnType<typeof useClaudeSession> }) =>
     result.current.storeAdapter.messages;
 
   test("live: API error after parent attaches to parent bubble, no extra bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -869,7 +869,7 @@ describe("useClaude2Session API error handling", () => {
   });
 
   test("live: error before parent → pending, then resolved when parent arrives", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -886,7 +886,7 @@ describe("useClaude2Session API error handling", () => {
   });
 
   test("history batch: parent + error in same batch → error attaches, no standalone", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -907,7 +907,7 @@ describe("useClaude2Session API error handling", () => {
   });
 
   test("output batch: API error does not create standalone bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -927,7 +927,7 @@ describe("useClaude2Session API error handling", () => {
   });
 
   test("normal external assistant still rendered (no regression)", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -941,12 +941,12 @@ describe("useClaude2Session API error handling", () => {
   });
 });
 
-describe("useClaude2Session batch marker rendering", () => {
-  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+describe("useClaudeSession batch marker rendering", () => {
+  const getMessages = (result: { current: ReturnType<typeof useClaudeSession> }) =>
     result.current.storeAdapter.messages;
 
   test("empty history batch: no messages, no divider", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -961,7 +961,7 @@ describe("useClaude2Session batch marker rendering", () => {
   });
 
   test("empty output batch: no divider", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -976,7 +976,7 @@ describe("useClaude2Session batch marker rendering", () => {
   });
 
   test("history batch with visible assistant → divider after batch", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1000,7 +1000,7 @@ describe("useClaude2Session batch marker rendering", () => {
   });
 
   test("output batch with only queue-operation: no divider", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1017,8 +1017,8 @@ describe("useClaude2Session batch marker rendering", () => {
   });
 });
 
-describe("useClaude2Session tool_result matching (external path)", () => {
-  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+describe("useClaudeSession tool_result matching (external path)", () => {
+  const getMessages = (result: { current: ReturnType<typeof useClaudeSession> }) =>
     result.current.storeAdapter.messages;
 
   const externalToolUseAssistant = (
@@ -1058,7 +1058,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
     }) as unknown as SessionStreamServerMessage;
 
   test("single tool_use → tool_result: no user bubble, tool-call gets result", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1079,7 +1079,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
   });
 
   test("parallel tools: two tool_use in one assistant, two tool_result in one user", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1112,7 +1112,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
   });
 
   test("hybrid text+tool_result: user bubble for text, tool-call gets result", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1146,7 +1146,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
   });
 
   test("tool_result with is_error sets isError on tool-call", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1167,7 +1167,7 @@ describe("useClaude2Session tool_result matching (external path)", () => {
   });
 
   test("unhandled message type renders as visible fallback bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1195,8 +1195,8 @@ describe("useClaude2Session tool_result matching (external path)", () => {
   });
 });
 
-describe("useClaude2Session resume-gated orphan marking", () => {
-  const getMessages = (result: { current: ReturnType<typeof useClaude2Session> }) =>
+describe("useClaudeSession resume-gated orphan marking", () => {
+  const getMessages = (result: { current: ReturnType<typeof useClaudeSession> }) =>
     result.current.storeAdapter.messages;
 
   const externalToolUseAssistant = (
@@ -1236,7 +1236,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
     }) as unknown as SessionStreamServerMessage;
 
   test("resume history: pending tool_use marked orphaned at history_end", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1262,7 +1262,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
   });
 
   test("live (non-resume) history: pending tool_use NOT orphaned", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1288,7 +1288,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
   });
 
   test("resume: tool_use with already-matched result NOT orphaned", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1317,7 +1317,7 @@ describe("useClaude2Session resume-gated orphan marking", () => {
 
 // ── Attachment subtype integration tests ──────────────────────────────
 
-describe("useClaude2Session attachment subtypes", () => {
+describe("useClaudeSession attachment subtypes", () => {
   const attMsg = (subtype: string, fields?: Record<string, unknown>): SessionStreamServerMessage =>
     ({
       type: "attachment",
@@ -1331,7 +1331,7 @@ describe("useClaude2Session attachment subtypes", () => {
     }) as unknown as SessionStreamServerMessage;
 
   test("plan_mode sets permissionMode to plan and adds system bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1349,7 +1349,7 @@ describe("useClaude2Session attachment subtypes", () => {
   });
 
   test("auto_mode_exit sets permissionMode to default", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1362,7 +1362,7 @@ describe("useClaude2Session attachment subtypes", () => {
   });
 
   test("task_reminder updates tasks without adding bubble", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1382,7 +1382,7 @@ describe("useClaude2Session attachment subtypes", () => {
   });
 
   test("mcp_instructions_delta accumulates mcpServers", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1395,7 +1395,7 @@ describe("useClaude2Session attachment subtypes", () => {
   });
 
   test("file adds system bubble with attachmentType", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());
@@ -1412,7 +1412,7 @@ describe("useClaude2Session attachment subtypes", () => {
   });
 
   test("session_init resets mcpServers", async () => {
-    const { result } = renderHook(() => useClaude2Session("proj", "sess"));
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
     act(() => socket.open());

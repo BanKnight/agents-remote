@@ -6,8 +6,8 @@ import {
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
   resolveActivePresetCreds,
-  Claude2Runtime,
-} from "./claude2-runtime";
+  ClaudeRuntime,
+} from "./claude-runtime";
 import type { ClaudeModelMapping, ClaudePreset } from "@agents-remote/shared";
 import type { SettingsStore } from "./settings-store";
 
@@ -22,7 +22,7 @@ test("buildSeedInitLine uses seed_init subtype so server-side init capture skips
     permissionMode: "plan",
   });
   // Critical invariant: distinct subtype "seed_init" (not "init") ⇒ both
-  // claude2-stream onRealtimeRow and runtime captureSystemInitFromLine (which
+  // claude-stream onRealtimeRow and runtime captureSystemInitFromLine (which
   // match subtype === "init") skip this synthetic replay row. The seed never
   // carries session_id and never impersonates a real init.
   expect(parsed).not.toHaveProperty("session_id");
@@ -71,7 +71,7 @@ test("buildSeedInitLine includes modelAlias so reconnect seeds the alias-form cu
 
 test("seed init line is not matched by the real-init capture condition", () => {
   const parsed = JSON.parse(buildSeedInitLine("opus", "plan")!) as Record<string, unknown>;
-  // Mirror claude2-stream onRealtimeRow / runtime captureSystemInitFromLine guard.
+  // Mirror claude-stream onRealtimeRow / runtime captureSystemInitFromLine guard.
   // The seed must NOT satisfy this — it is excluded by subtype, so it can never
   // hijack claudeSessionId/model on replay.
   const isRealInit =
@@ -152,7 +152,7 @@ test("extractModelFromStdoutLine ignores non-user, null, and content-less lines"
 });
 
 test("captureModelFromLine folds state.model and fires onModelChange with the internal sessionId", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: Array<{ sessionId: string; model: string }> = [];
   runtime.setOnModelChange((sessionId, model) => calls.push({ sessionId, model }));
 
@@ -180,7 +180,7 @@ test("captureModelFromLine folds state.model and fires onModelChange with the in
 });
 
 test("captureModelFromLine does not fire onModelChange for non-switch local-command stdout", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: Array<{ sessionId: string; model: string }> = [];
   runtime.setOnModelChange((sessionId, model) => calls.push({ sessionId, model }));
   const internal = runtime as unknown as {
@@ -202,7 +202,7 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
 });
 
 test("capturePermissionModeFromLine folds state.permissionMode and fires onPermissionModeChange with the internal sessionId", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: Array<{ sessionId: string; permissionMode: string }> = [];
   runtime.setOnPermissionModeChange((sessionId, permissionMode) =>
     calls.push({ sessionId, permissionMode }),
@@ -227,7 +227,7 @@ test("capturePermissionModeFromLine folds state.permissionMode and fires onPermi
 });
 
 test("capturePermissionModeFromLine does not fire onPermissionModeChange for a non-mode system.status", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: Array<{ sessionId: string; permissionMode: string }> = [];
   runtime.setOnPermissionModeChange((sessionId, permissionMode) =>
     calls.push({ sessionId, permissionMode }),
@@ -297,7 +297,7 @@ test("extractSkillReloadFromStdoutLine ignores null and content-less lines", () 
 });
 
 test("captureSkillReloadFromLine fires onSkillReload with the sessionName", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: string[] = [];
   runtime.setOnSkillReload((sessionName) => calls.push(sessionName));
 
@@ -320,7 +320,7 @@ test("captureSkillReloadFromLine fires onSkillReload with the sessionName", () =
 });
 
 test("captureSkillReloadFromLine does not fire onSkillReload for non-reload stdout", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: string[] = [];
   runtime.setOnSkillReload((sessionName) => calls.push(sessionName));
 
@@ -347,7 +347,7 @@ test("captureSkillReloadFromLine does not fire onSkillReload for non-reload stdo
 // 确保 relay 回放的 session_init/seedInit 不会误刷新 updatedAt。本测试覆盖：真实新行 → onActivity。
 
 test("processStdoutLine fires onActivity with the internal sessionId for a real new stdout line", async () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: string[] = [];
   runtime.setOnActivity((sessionId) => calls.push(sessionId));
 
@@ -366,7 +366,7 @@ test("processStdoutLine fires onActivity with the internal sessionId for a real 
 });
 
 test("processStdoutLine does not fire onActivity when process state is missing", async () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const calls: string[] = [];
   runtime.setOnActivity((sessionId) => calls.push(sessionId));
 
@@ -383,7 +383,7 @@ test("processStdoutLine does not fire onActivity when process state is missing",
 });
 
 test("processStdoutLine does not fire onActivity when no callback is registered", async () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   // 未调 setOnActivity → onActivity 为 null → 不报错、不触发。
 
   const internal = runtime as unknown as {
@@ -399,7 +399,7 @@ test("processStdoutLine does not fire onActivity when no callback is registered"
 });
 
 test("injectLiveLine forwards the line to the registered relay", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   const injected: string[] = [];
   const fakeRelay = {
     isDestroyed: false,
@@ -414,7 +414,7 @@ test("injectLiveLine forwards the line to the registered relay", () => {
 });
 
 test("injectLiveLine is a no-op when the relay is missing or destroyed", () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   // missing relay — no throw
   expect(() => runtime.injectLiveLine("missing", '{"type":"user"}')).not.toThrow();
 
@@ -579,19 +579,19 @@ const makeSettingsStore = (
 test("resolveControlModel passes alias through verbatim (CLI resolves via env)", async () => {
   // 菜单发 alias（opus/sonnet/haiku/opusplan），服务端原样透传，CLI 经 spawn 注入的
   // ANTHROPIC_DEFAULT_*_MODEL env 解析成具体 ID。不再服务端解析。
-  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
+  const runtime = new ClaudeRuntime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
   expect(await runtime.resolveControlModel("sonnet")).toBe("sonnet");
   expect(await runtime.resolveControlModel("opusplan")).toBe("opusplan");
 });
 
 test("resolveControlModel passes concrete id through (legacy clients)", async () => {
-  const runtime = new Claude2Runtime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
+  const runtime = new ClaudeRuntime(tmpdir(), makeSettingsStore(CONCRETE_MAPPING, true));
   expect(await runtime.resolveControlModel("claude-opus-4-8")).toBe("claude-opus-4-8");
   expect(await runtime.resolveControlModel("claude-sonnet-4-6[1m]")).toBe("claude-sonnet-4-6[1m]");
 });
 
 test("resolveControlModel passes model through when settingsStore absent", async () => {
-  const runtime = new Claude2Runtime(tmpdir());
+  const runtime = new ClaudeRuntime(tmpdir());
   expect(await runtime.resolveControlModel("opus")).toBe("opus");
   expect(await runtime.resolveControlModel(undefined)).toBeUndefined();
 });

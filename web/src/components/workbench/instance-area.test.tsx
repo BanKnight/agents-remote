@@ -56,7 +56,7 @@ afterEach(() => {
 const AGENT_SESSION: AgentSession = {
   id: "agent_probe-cache-1",
   projectName: "proj1",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Cached Name",
   status: "idle",
   createdAt: "2026-08-17T00:00:00.000Z",
@@ -97,7 +97,7 @@ describe("usePanelMeta 列表缓存预填（detail 未回时 tab 首帧即显实
           sessionId: AGENT_SESSION.id,
           displayName: "Overview Name",
           status: "running",
-          provider: "claude2",
+          provider: "claude",
         },
       ],
     };
@@ -128,7 +128,7 @@ describe("usePanelMeta 列表缓存预填（detail 未回时 tab 首帧即显实
     localStorage.setItem(
       "instanceNameMemo",
       JSON.stringify({
-        [AGENT_SESSION.id]: { name: "Memo Name", provider: "claude2", type: "agent" },
+        [AGENT_SESSION.id]: { name: "Memo Name", provider: "claude", type: "agent" },
       }),
     );
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

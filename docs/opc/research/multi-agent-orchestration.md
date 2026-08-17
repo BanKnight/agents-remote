@@ -114,8 +114,8 @@ Agent 当 teammates，分配到 **GitHub issue**（unit of work）：
 - 控制面 / 运行时适配器 / 传输三层分离。
 - `SessionRegistry`（`api/src/session-registry.ts:20-74`）只持 metadata，不持 CLI 命令。
 - `RuntimeResources` 接口（`exists / close / startAgent / startTerminal / capture / attach / listAliveRuntimeKeys`）——**迁移 CF 时换实现的关键接缝**。
-- `ProviderProfile`（`api/src/agent-provider-profiles.ts:82-111`）缝（`claude` / `codex` / `claude2`，含 command / displayName 前缀 / capabilities / 可用模型 / 权限模式）。
-- `Claude2Runtime.spawnClaudeDirect`（`api/src/claude2-runtime.ts:490-529`）argv spawn CLI，**非 tmux**；stdin 直写（无 FIFO）；`--resume claudeSessionId`（L511-513）。
+- `ProviderProfile`（`api/src/agent-provider-profiles.ts:82-111`）缝（`claude` / `codex` / `claude`，含 command / displayName 前缀 / capabilities / 可用模型 / 权限模式）。
+- `ClaudeRuntime.spawnClaudeDirect`（`api/src/claude-runtime.ts:490-529`）argv spawn CLI，**非 tmux**；stdin 直写（无 FIFO）；`--resume claudeSessionId`（L511-513）。
 - `TmuxRuntime`（`api/src/tmux-runtime.ts`）Terminal session 用。
 - `AgentRuntime`（`api/src/agent-runtime.ts:9-41`）经 `ProviderProfile.command` 委托。
 - **中继双缓冲**（`api/src/session-relay.ts:35-115`）：history JSONL + live stdout cap 5000 + 单一 WS 流 + `history_start / live_start` 批处理标记——比 Paperclip fat/thin payload 概念更成熟。
@@ -123,7 +123,7 @@ Agent 当 teammates，分配到 **GitHub issue**（unit of work）：
 - `permissionMode=plan` + `can_use_tool` 审批卡片——已经是「agent 提案 + 用户审批」循环（与 Buzz approval gate / Paperclip Board 同源）。
 - `compact_boundary` / 窗口化 / 标量重建——长会话 context 管理已有基础。
 - `runtimeKey` 格式 `{prefix}-{type}-{provider}-{projectKey}-{id}`，prod `ar-` / e2e `e2e-ar-`。
-- shared DTO（`packages/shared/src/index.ts`）：`AgentProvider` (L323) / `AgentSession` (L698-712) / `Claude2PermissionMode` (L1504-1511, 含 default/acceptEdits/bypassPermissions/plan/auto/dontAsk/manual)。
+- shared DTO（`packages/shared/src/index.ts`）：`AgentProvider` (L323) / `AgentSession` (L698-712) / `ClaudePermissionMode` (L1504-1511, 含 default/acceptEdits/bypassPermissions/plan/auto/dontAsk/manual)。
 
 ## 6. 当前工作假设（编排抽象）
 
@@ -166,7 +166,7 @@ Agent 当 teammates，分配到 **GitHub issue**（unit of work）：
 ## 9. 证据定位（压缩后恢复用）
 
 - **memory**：`/home/deploy/.claude/projects/-home-deploy-workspace-agents-remote/memory/product-direction-opc-multi-agent.md`（含参考项目架构 + 用户心智模型 + 两决策，与本文件 §2-3 重复）。
-- **现状源码**（编排落地报告引用）：`api/src/session-registry.ts`、`api/src/claude2-runtime.ts`、`api/src/tmux-runtime.ts`、`api/src/agent-runtime.ts`、`api/src/session-relay.ts`、`api/src/agent-provider-profiles.ts`、`api/src/skill-tasks.ts`、`packages/shared/src/index.ts`。
+- **现状源码**（编排落地报告引用）：`api/src/session-registry.ts`、`api/src/claude-runtime.ts`、`api/src/tmux-runtime.ts`、`api/src/agent-runtime.ts`、`api/src/session-relay.ts`、`api/src/agent-provider-profiles.ts`、`api/src/skill-tasks.ts`、`packages/shared/src/index.ts`。
 - **架构文档**：`docs/architecture/session-runtime.md`、`docs/architecture/agent-runtime.md`、`docs/design/message-replay.md`。
 - **调研产出**：两份 subagent 报告（一份编排落地方案、一份 CF cloudflare-os + Computer 报告）——见本会话 jsonL。
 - **本会话 jsonL**：`/home/deploy/.claude/projects/-home-deploy-workspace-agents-remote/b14b8973-6b5a-4f1a-8ace-fa530a48e06f.jsonl`（压缩后读此恢复完整对话）。
@@ -179,7 +179,7 @@ Agent 当 teammates，分配到 **GitHub issue**（unit of work）：
 - **`--append-system-prompt <string>`** = 推荐方案。**追加**到默认 system prompt 之后，**保留所有默认 Claude Code 工具/安全能力**。`--print` / `stream-json` / interactive 三模式都可用（interactive 自 v1.0.51 起）。实测 canary：`claude --print --append-system-prompt "ALWAYS respond with PONG-CANARY..." "Reply now."` → `PONG-CANARY`，注入生效。
 - **`--system-prompt <string>`** = **陷阱，别用**。**替换**整个默认 system prompt，移除所有默认工具定义（GitHub issue #19977：「Claude Code 无法作为 agent 或使用工具」）。
 - 还有 file 版本：`--append-system-prompt-file <path>` / `--system-prompt-file`（长角色 prompt 用，绕开 argv ARG_MAX ~2MB 限制）。
-- **现有 `spawnClaudeDirect` argv 结构兼容**（`api/src/claude2-runtime.ts:490-529`）：直接加 `...(systemPrompt ? ["--append-system-prompt", systemPrompt] : [])`，Bun.spawn argv 方式无 shell 转义问题，prompt 内引号/`$VAR`/反引号安全。
+- **现有 `spawnClaudeDirect` argv 结构兼容**（`api/src/claude-runtime.ts:490-529`）：直接加 `...(systemPrompt ? ["--append-system-prompt", systemPrompt] : [])`，Bun.spawn argv 方式无 shell 转义问题，prompt 内引号/`$VAR`/反引号安全。
 - 无文档化长度/token 限制（deepwiki 查 CHANGELOG）。
 
 ### 10.2 Codex CLI（v0.145.0，实测 `--help` + 官方 config reference）
@@ -254,7 +254,7 @@ Agent 当 teammates，分配到 **GitHub issue**（unit of work）：
 
 ```
 CF 控制面（编排层）                         本地执行面（Bun on server）
-  Worker（无状态 API + Cron）                claude2-runtime / codex-runtime
+  Worker（无状态 API + Cron）                claude-runtime / codex-runtime
     ├─ /api/tasks CRUD     ──Tunnel HTTP──▶  tmux / PTY / fs
     └─ scheduled() cron                    dispatcher（拉取 pending task）
   Durable Object（per-workspace 内核）        ◀──WS(outbound)── 本地→DO 上报
@@ -313,7 +313,7 @@ Task 生命周期：Triage → Todo → Ready → InProgress → Blocked → Don
 ### 11.8 开放问题
 
 1. 是否所有 agent 类型都依赖本地 PTY？有无「纯 API agent」可全迁 CF？（决定阶段 3 可行性）
-2. DO 单实例能否扛住单 workspace 多 agent 高频 stdout 流（claude2 已有 batch emitter 压缩/分块可复用，需实测）。
+2. DO 单实例能否扛住单 workspace 多 agent 高频 stdout 流（claude 已有 batch emitter 压缩/分块可复用，需实测）。
 3. 模板版本化与升级（旧 task 引用旧模板版本的兼容策略）。
 4. 跨 workspace agent 共享：多 project 时 agent 是 per-project 还是全局 pool（影响 DO 切分粒度）。
 5. 审批 UI 可发现性（用户何时被通知有 pending approval）——CF Email Workers 可用。
@@ -329,7 +329,7 @@ Task 生命周期：Triage → Todo → Ready → InProgress → Blocked → Don
 - 一个 goal 可产生多次 task（初版/修复/复核），看板追踪 goal 状态，task 是执行记录。
 - **与 agents-remote 现状同构**：`AgentSession`（CLI 进程实例，已有 running/idle/closed/error 状态机）天然对应 `OrchestrationTask`；缺的是上层 `Goal` 实体（看板卡片）。
 
-⚠️ **命名冲突预警**：`packages/shared/src/index.ts` 已有 `AttachmentTaskStatus`/`Claude2TaskStarted`/`AttachmentGoalStatus` 等 = **Claude Code CLI 协议**任务事件（CLI 内部 subagent/task 系统），**非**编排任务。编排实体统一加 `Orchestration` 前缀（`OrchestrationTask`/`OrchestrationGoal`/`OrchestrationRun`）避免混淆。
+⚠️ **命名冲突预警**：`packages/shared/src/index.ts` 已有 `AttachmentTaskStatus`/`ClaudeTaskStarted`/`AttachmentGoalStatus` 等 = **Claude Code CLI 协议**任务事件（CLI 内部 subagent/task 系统），**非**编排任务。编排实体统一加 `Orchestration` 前缀（`OrchestrationTask`/`OrchestrationGoal`/`OrchestrationRun`）避免混淆。
 
 ### 12.1 三参考项目对比
 
@@ -437,17 +437,17 @@ type OrchestrationAutopilot = {
 | approvalPolicy 拦截 | ❌ 新建 | done 转换检查 policy |
 | 定时（fire_at + sweeper） | ❌ 新建 | setTimeout / DO alarm / CF schedule() |
 
-**直接复用（零改动）**：`SessionRegistry`/`Claude2Runtime`/`session-relay`（Task 执行仍走现有 spawn+relay）、`AgentProvider`、`permissionMode=plan`+`can_use_tool` 审批卡片 UI、`WorkbenchPanelRef` 路由、`createBatchEmitter`。
+**直接复用（零改动）**：`SessionRegistry`/`ClaudeRuntime`/`session-relay`（Task 执行仍走现有 spawn+relay）、`AgentProvider`、`permissionMode=plan`+`can_use_tool` 审批卡片 UI、`WorkbenchPanelRef` 路由、`createBatchEmitter`。
 
 **复用率约 20-25%，新建约 75-80%**（goal/task/autopilot 三实体 + ancestry + 状态机 + 持久层 + 看板 UI greenfield）。
 
 ### 12.6 Task ↔ Session 关系
 
 **一个 task 执行过程 = 一个或多个 agent session**：
-- **primary session**：主执行 CLI（claude2 `--resume` claudeSessionId，复用现有 AgentSession + relay 双缓冲）。
+- **primary session**：主执行 CLI（claude `--resume` claudeSessionId，复用现有 AgentSession + relay 双缓冲）。
 - **subagent session**：task 内 CLI spawn 的 subagent（现有 `task_started`/`subagent_type` 协议已捕获）。
 - **terminal session**：task 需终端能力时（复用 TmuxRuntime + TerminalSession）。
-- **resume 语义**：task 跨 daemon 重启 = 复用 claude2 `--resume` + relay 从 JSONL 重建 history（Gen 3 状态级恢复）。**编排 Task 不引入新持久化模型，复用现有 session 级状态级恢复**。
+- **resume 语义**：task 跨 daemon 重启 = 复用 claude `--resume` + relay 从 JSONL 重建 history（Gen 3 状态级恢复）。**编排 Task 不引入新持久化模型，复用现有 session 级状态级恢复**。
 
 ### 12.7 定时任务实现路径
 
@@ -555,7 +555,7 @@ type RoundTableCheckpoint = {
 
 | 方案 | 机制 | 契合度 | 取舍 |
 |------|------|--------|------|
-| **A 重放式注入**（推荐主） | 每条发言 append Room 日志；B 触发时服务端组装「近期 N 条 + 检查点 summary + 白板快照」→ 经 `--append-system-prompt` 或 stdin 首条 user 注入 | **极高**——现有 `Claude2SessionRelay` 就是 fan-out 管线，`historyLines` 从「单 session JSONL」泛化为「Room 事件日志」，`addSubscriber`/`broadcast` 原样复用，`injectLiveLine` 对应「A 发言广播给其他 participant」 | 单管道守住、B 与 A 同源无分叉、reconnect/重放免费；prompt 随讨论增长靠窗口化+检查点压 |
+| **A 重放式注入**（推荐主） | 每条发言 append Room 日志；B 触发时服务端组装「近期 N 条 + 检查点 summary + 白板快照」→ 经 `--append-system-prompt` 或 stdin 首条 user 注入 | **极高**——现有 `ClaudeSessionRelay` 就是 fan-out 管线，`historyLines` 从「单 session JSONL」泛化为「Room 事件日志」，`addSubscriber`/`broadcast` 原样复用，`injectLiveLine` 对应「A 发言广播给其他 participant」 | 单管道守住、B 与 A 同源无分叉、reconnect/重放免费；prompt 随讨论增长靠窗口化+检查点压 |
 | **B 共享白板**（推荐辅） | 发言不进 prompt；agent 用 `readFile`/`writeFile` 工具直接读写白板，自决何时拉 | 中——cf-os `readFile`/`writeFile` + Letta `archival_memory_search` | prompt 永远小、白板可结构化、可 git；**单独不足**——agent 不主动读就看不到最新发言；与 A 配合（白板存活状态/累积，日志存逐条对话） |
 | **C Nostr 事件总线** | 起 Nostr relay，participant 订阅 channel，发言=发事件 | 低——Buzz 原版，但 Nostr 协议复杂度对单机 Bun 是 over-engineering | **不引入**，模式可借协议不必 |
 
@@ -570,7 +570,7 @@ type RoundTableCheckpoint = {
 
 | 层 | 机制 | 业界对应 | 本仓库复用 | 新建 |
 |----|------|---------|-----------|------|
-| **L1 重放/注入** | 最近 N 条逐字消息注入（精确归属 verbatim） | LangGraph checkpointer / cf-os `AiChatMessage` 回放 / ChatGPT 窗口 | ✅ `Claude2SessionRelay` history+live 双缓冲 + `history_start/live_start` 批 | — |
+| **L1 重放/注入** | 最近 N 条逐字消息注入（精确归属 verbatim） | LangGraph checkpointer / cf-os `AiChatMessage` 回放 / ChatGPT 窗口 | ✅ `ClaudeSessionRelay` history+live 双缓冲 + `history_start/live_start` 批 | — |
 | **L2 共享白板** | 结构化活状态（决定/未决/立场/约束/调研），所有 agent 读写，每 turn 注入 | Letta shared block / LangGraph 共享 namespace / cf-os Yjs doc / buzz `~/.buzz` | — | 🆕 `RoundTableWhiteboard` + 镜像 markdown + MCP `read/update_whiteboard` 工具 |
 | **L3 检查点压缩** | prompt 超 85% 预算时 AI 摘要前段 → checkpoint，resume 注入 summary + 后段 | cf-os `CompactionCheckpoint` @85% / letta FIFO summarize / buzz `LlmContextExceeded` shrink / Generative-Agents reflection @importance~150 | ✅ **`compact_boundary` windowing**（已实现：tail-load 最后 compact 块 + live `compact_boundary` 主动 trim + `readLastCompactBlock` + `sliceLastCompactBlock`）+ ✅ `seed_init` 标量重建 | 🆕 Room 级 checkpoint（多 participant 共享一份 summary）+ 触发器从「CLI 自发 compact」升级为「Room 服务端主动 compact」（CLI 在多 participant 场景不自发，因每个 participant 是独立进程看不到全局压力） |
 | **L4 向量检索** | 按「语义」召回更早被压缩的细节 | LangGraph `store.search` / Letta `archival_memory_search` / Mem0 hybrid(vector+BM25+rerank) / cf-os Agent Memory(Vectorize beta) | — | 🆕 **后置，非 MVP**——embed Room 消息 + Generative-Agents 打分（recency 0.99^h + importance 1-10 + relevance cosine）+ Mem0 hybrid + `search_meeting_history(query)` 工具 |
@@ -609,7 +609,7 @@ type RoundTableCheckpoint = {
 
 1. **`--append-system-prompt` 已确认可用**（§10 已答：Claude argv string flag、Codex `developer_instructions`），落地在 `ProviderProfile` adapter `injectRole`。与 `--resume` 共存行为（角色 prompt 每次 resume 是否重传）仍需实测。
 2. **Room 事件日志 vs 各 participant CLI JSONL 关系** ⏳——每个 participant 仍是独立 CLI 进程（有自己 JSONL）；Room 日志是跨 participant 统一源。Room 消息是否写进每个 participant 的 CLI JSONL？还是 Room 日志独立、CLI JSONL 只存该 participant 自己看到并产出的 turn？影响 `--resume`（CLI resume 重建自己 JSONL 非 Room 全貌）。
-3. **串行 turn 与 CLI `--resume` 冲突** ⏳——现有 `Claude2Runtime` 一个 session=一个常驻 CLI 进程。圆桌要 N 个 participant 同时常驻但串行只一个 in-flight。N 个进程常驻等命（内存/Cost）还是按需 spawn（每次 turn spawn+完销毁，`--resume` 接续）？Buzz 用 AgentPool take-and-return（常驻池）；cf-os 单 DO 串行（不常驻多进程）。需决策常驻池大小 + spawn-on-demand 延迟/`--resume` 成本。
+3. **串行 turn 与 CLI `--resume` 冲突** ⏳——现有 `ClaudeRuntime` 一个 session=一个常驻 CLI 进程。圆桌要 N 个 participant 同时常驻但串行只一个 in-flight。N 个进程常驻等命（内存/Cost）还是按需 spawn（每次 turn spawn+完销毁，`--resume` 接续）？Buzz 用 AgentPool take-and-return（常驻池）；cf-os 单 DO 串行（不常驻多进程）。需决策常驻池大小 + spawn-on-demand 延迟/`--resume` 成本。
 4. **白板并发写冲突** ⏳——buzz `buzz mem patch` 带 base-hash 冲突检测；cf-os Yjs CRDT 自动合并。本仓库无 CRDT，选：① CEO 审批串行化（仿 cf-os ApprovalQueue）；② optimistic concurrency + base-hash（仿 buzz patch）；③ 简单 last-wins（圆桌小可接受）。
 5. **CEO 介入模式** ⏳——buzz 默认 `respond_to:owner-only`（CEO=owner 特权）；cf-os CEO=gatekeeper（审批非发言特权）。圆桌产品语义：CEO 是平等 participant 还是有「打断当前 in-flight turn」「强制插队」权？后者需串行队列加「CEO 优先级插队」（打破 `in_flight` 闸）。
 6. **`routingMode` 切换时机** ⏳——buzz 同 channel 不能动态切。圆桌支持「讨论段切 broadcast、提问段切 mention」还是创建时定死？
@@ -638,17 +638,17 @@ type RoundTableCheckpoint = {
 │  └─ 审批（复用 permissionMode=plan + can_use_tool 卡片）            │
 ├─────────────────────────────────────────────────────────────────┤
 │  现有 runtime（零改动，复用）                                      │
-│  └─ SessionRegistry / Claude2Runtime / session-relay /            │
+│  └─ SessionRegistry / ClaudeRuntime / session-relay /            │
 │     compact_boundary / SkillTaskRegistry 范式 / WorkbenchPanelRef  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **关键设计决策（已由调研证实）**：
 1. **双层任务模型**（§12）：`OrchestrationGoal`（看板卡片，长期）× `OrchestrationTask`（执行记录，运行态）——与 `AgentSession` 现状同构。agent 不能直接把 goal 设 done，CEO 审批（Paperclip `executionPolicy`）。
-2. **圆桌 = 三件套**（§13）：单一共享状态源（Room SQLite）+ 串行 turn 队列 + 检查点压缩长记忆。落在现有 `Claude2SessionRelay` + `compact_boundary` 之上，L1/L3 大部分免费。
+2. **圆桌 = 三件套**（§13）：单一共享状态源（Room SQLite）+ 串行 turn 队列 + 检查点压缩长记忆。落在现有 `ClaudeSessionRelay` + `compact_boundary` 之上，L1/L3 大部分免费。
 3. **角色注入**（§10）：Claude `--append-system-prompt`（实测可用）+ Codex `developer_instructions`，`ProviderProfile` adapter `injectRole` 抹平不对称。
 4. **CF 留口子**（§11）：`RuntimeResources` 接缝 + 状态用 SQLite/DO 不用内存 + 通信用 REST/WS 不用 fs。hybrid 形态 B 是务实终态（CLI 需 PTY 是硬障碍）。
-5. **命名**（§12）：编排实体统一 `Orchestration` 前缀，避免与 CLI 协议 `AttachmentTaskStatus`/`Claude2Task*` 混淆。
+5. **命名**（§12）：编排实体统一 `Orchestration` 前缀，避免与 CLI 协议 `AttachmentTaskStatus`/`ClaudeTask*` 混淆。
 
 ### 14.2 第一步最小闭环（用户已对齐「角色 + 任务下发」）
 
@@ -657,7 +657,7 @@ type RoundTableCheckpoint = {
 **Phase 1 内容**：
 1. **AgentProfile + ProviderProfile.injectRole**（§10）：定义 `RoleProfile { id, name, systemPrompt, provider, model? }`；`ProviderProfile` adapter 加 `injectRole(args, env, spawnCtx, role)`——Claude 追加 `--append-system-prompt`，Codex 走 `-c developer_instructions=<TOML string>` 或独立 `--profile` 文件。**先实测 Codex `developer_instructions` 在 v0.145.0 是否生效**（issue #11004）。
 2. **OrchestrationGoal + OrchestrationTask 实体**（§12）：shared DTO + `OrchestrationGoalRegistry`（持久层，先 runDir JSON 对齐 SessionMetadata，DO 留接口）+ `OrchestrationTaskRegistry`（抄 `SkillTaskRegistry` startOrJoin/subscribe/finish 骨架）。
-3. **任务下发端到端**：CEO 在 UI 建 goal（assignee=agent_role）→ 系统触发 `assignment` wake → `OrchestrationTaskRegistry` 起 task → 走现有 `Claude2Runtime.spawnClaudeDirect` spawn CLI（注入角色 systemPrompt）→ relay 复用 → task 完成 agent 自报 → goal 进 in_review → CEO 审批 done。
+3. **任务下发端到端**：CEO 在 UI 建 goal（assignee=agent_role）→ 系统触发 `assignment` wake → `OrchestrationTaskRegistry` 起 task → 走现有 `ClaudeRuntime.spawnClaudeDirect` spawn CLI（注入角色 systemPrompt）→ relay 复用 → task 完成 agent 自报 → goal 进 in_review → CEO 审批 done。
 4. **看板 UI**（桌面 `@dnd-kit/core`，移动端 list-first 按 status 分组，§12.4）：作为 `WorkbenchPanelRef` 第 5 种 kind 接入，复用 group+tab+focus 路由。
 5. **cycle guard**：`createGoal(parentGoalId, assignee)` 检查 assignee 不在祖先链（防环）。
 

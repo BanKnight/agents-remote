@@ -1,6 +1,6 @@
-# Claude2 iOS Safari 键盘与 viewport 问题调研
+# Claude iOS Safari 键盘与 viewport 问题调研
 
-iPhone Safari 上 claude2 session detail 的 composer（输入框）键盘交互问题的根因调研。结论区分「事实」（规范 / WebKit bug / MDN / web.dev / Apple）与「社区经验·弱证据」（Stack Overflow / 博客 / GitHub PR）。
+iPhone Safari 上 claude session detail 的 composer（输入框）键盘交互问题的根因调研。结论区分「事实」（规范 / WebKit bug / MDN / web.dev / Apple）与「社区经验·弱证据」（Stack Overflow / 博客 / GitHub PR）。
 
 ## 现象与实测
 

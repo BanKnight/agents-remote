@@ -320,14 +320,14 @@ export type SaveFileResponse = {
   entry: ProjectFileEntry;
 };
 
-export type AgentProvider = "claude" | "codex" | "claude2";
+export type AgentProvider = "claude" | "codex";
 
 // ── Settings: claude presets + runtime defaults ──────────────────────
 //
 // ClaudePreset = 一套端点凭证（apiKey + baseUrl）+ 该端点的模型映射（modelMapping），
 // 凭证与映射绑定一体；claude runtime 通过 activePresetId 单选激活其中一个（空=不启用，
 // 回退父进程 env）。ClaudeRuntimeConfig = activePresetId + enable1mContext + effort，
-// 是所有新 claude2 session spawn 的全局默认初始值（effort/1m 与端点无关，留运行时级）。
+// 是所有新 claude session spawn 的全局默认初始值（effort/1m 与端点无关，留运行时级）。
 // 预设结构 per-runtime-type：claude 是第一个实例，未来 codex 预设同理念不同格式。
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -740,7 +740,7 @@ export type CreateAgentSessionResponse = {
 
 export type AgentSessionDetailResponse = {
   session: AgentSession;
-  // claude2：model alias 列表（opus/sonnet/haiku + opusplan），switchModel 发 alias，
+  // claude：model alias 列表（opus/sonnet/haiku + opusplan），switchModel 发 alias，
   // 具体 ID 由 CLI 经 ANTHROPIC_DEFAULT_*_MODEL env 解析（对齐 CLI 原生 alias 机制）。
   availableModels?: string[];
   // alias → resolved 具体 ID（含 [1m]，由 modelMapping + enable1mContext 派生），
@@ -829,9 +829,9 @@ export type RenameTerminalSessionResponse = {
   session: TerminalSession;
 };
 
-// -- Claude2 Stream Messages (Claude CLI --output-format stream-json protocol) --
+// -- Claude Stream Messages (Claude CLI --output-format stream-json protocol) --
 
-export type Claude2SystemInit = {
+export type ClaudeSystemInit = {
   type: "system";
   subtype: "init";
   session_id: string;
@@ -855,7 +855,7 @@ export type Claude2SystemInit = {
 // and client render both treat it as a non-init system message: it folds scalars via
 // a dedicated seed_init branch and is never rendered (model / permissionMode surface
 // in the session header).
-export type Claude2SeedInit = {
+export type ClaudeSeedInit = {
   type: "system";
   subtype: "seed_init";
   model?: string;
@@ -868,7 +868,7 @@ export type Claude2SeedInit = {
 // No payload by design: the client invalidates its REST catalog query on receipt
 // rather than trusting an embedded snapshot. See docs/design/message-replay.md
 // 「命令后置处理框架」.
-export type Claude2SkillCatalogChanged = {
+export type ClaudeSkillCatalogChanged = {
   type: "system";
   subtype: "skill_catalog_changed";
 };
@@ -883,7 +883,7 @@ export type SlashCommandDescriptionsResponse = {
   commands: SlashCommandInfo[];
 };
 
-export type Claude2CompactBoundary = {
+export type ClaudeCompactBoundary = {
   type: "system";
   subtype: "compact_boundary" | "microcompact_boundary";
   compactMetadata?: {
@@ -909,7 +909,7 @@ export function isCompactBoundarySubtype(
   return subtype === "compact_boundary" || subtype === "microcompact_boundary";
 }
 
-export type Claude2StatusMessage = {
+export type ClaudeStatusMessage = {
   type: "system";
   subtype: "status";
   status?: string | null;
@@ -918,7 +918,7 @@ export type Claude2StatusMessage = {
   uuid: string;
 };
 
-export type Claude2ThinkingTokens = {
+export type ClaudeThinkingTokens = {
   type: "system";
   subtype: "thinking_tokens";
   estimated_tokens: number;
@@ -927,17 +927,17 @@ export type Claude2ThinkingTokens = {
   uuid: string;
 };
 
-export type Claude2AssistantContent =
+export type ClaudeAssistantContent =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "thinking"; thinking: string; signature: string };
 
-export type Claude2AssistantMessage = {
+export type ClaudeAssistantMessage = {
   type: "assistant";
   message: {
     id: string;
     role: "assistant";
-    content: Claude2AssistantContent[];
+    content: ClaudeAssistantContent[];
     model?: string;
     usage?: { input_tokens: number; output_tokens: number };
   };
@@ -954,7 +954,7 @@ export type Claude2AssistantMessage = {
   sessionId?: string;
 };
 
-export type Claude2ApiRetry = {
+export type ClaudeApiRetry = {
   type: "system";
   subtype: "api_retry";
   attempt: number;
@@ -965,14 +965,14 @@ export type Claude2ApiRetry = {
   session_id: string;
 };
 
-export type Claude2Mode = {
+export type ClaudeMode = {
   type: "mode";
   mode: string;
   session_id?: string;
 };
 
 // attachment 外层信封（所有子类型共享）
-export type Claude2AttachmentEnvelope = {
+export type ClaudeAttachmentEnvelope = {
   type: "attachment";
   uuid: string;
   parentUuid: string | null;
@@ -1252,53 +1252,53 @@ export type AttachmentContent =
   | AttachmentGoalStatus["attachment"];
 
 // 完整 attachment 消息（信封 + 子类型）
-export type Claude2Attachment = Claude2AttachmentEnvelope & {
+export type ClaudeAttachment = ClaudeAttachmentEnvelope & {
   attachment: AttachmentContent;
 };
 
-export type Claude2LastPromptEntry = {
+export type ClaudeLastPromptEntry = {
   type: "last-prompt";
   lastPrompt: string;
   leafUuid?: string;
   sessionId?: string;
 };
 
-export type Claude2PermissionModeEntry = {
+export type ClaudePermissionModeEntry = {
   type: "permission-mode";
-  permissionMode: Claude2PermissionMode;
+  permissionMode: ClaudePermissionMode;
   session_id?: string;
 };
 
-export type Claude2TrackedFileBackup = {
+export type ClaudeTrackedFileBackup = {
   backupFileName?: string;
   version?: number;
   backupTime?: string;
 };
 
-export type Claude2FileHistorySnapshot = {
+export type ClaudeFileHistorySnapshot = {
   type: "file-history-snapshot";
   messageId?: string;
   isSnapshotUpdate?: boolean;
   snapshot?: {
     messageId?: string;
     timestamp?: string;
-    trackedFileBackups?: Record<string, Claude2TrackedFileBackup>;
+    trackedFileBackups?: Record<string, ClaudeTrackedFileBackup>;
   };
 };
 
-export type Claude2AiTitle = {
+export type ClaudeAiTitle = {
   type: "ai-title";
   aiTitle: string;
   sessionId?: string;
 };
 
-export type Claude2AgentName = {
+export type ClaudeAgentName = {
   type: "agent-name";
   agentName: string;
   sessionId?: string;
 };
 
-export type Claude2QueueOperation = {
+export type ClaudeQueueOperation = {
   type: "queue-operation";
   operation: "enqueue" | "dequeue" | "remove" | "popAll";
   timestamp?: string;
@@ -1306,7 +1306,7 @@ export type Claude2QueueOperation = {
   content?: string;
 };
 
-export type Claude2UserMessage = {
+export type ClaudeUserMessage = {
   type: "user";
   message: {
     role: "user";
@@ -1345,7 +1345,7 @@ export type Claude2UserMessage = {
   sessionId?: string;
 };
 
-export type Claude2TaskStarted = {
+export type ClaudeTaskStarted = {
   type: "system";
   subtype: "task_started";
   task_id: string;
@@ -1356,7 +1356,7 @@ export type Claude2TaskStarted = {
   session_id?: string;
 };
 
-export type Claude2TaskUpdated = {
+export type ClaudeTaskUpdated = {
   type: "system";
   subtype: "task_updated";
   task_id: string;
@@ -1367,7 +1367,7 @@ export type Claude2TaskUpdated = {
   session_id?: string;
 };
 
-export type Claude2TaskNotification = {
+export type ClaudeTaskNotification = {
   type: "system";
   subtype: "task_notification";
   task_id: string;
@@ -1378,7 +1378,7 @@ export type Claude2TaskNotification = {
   session_id?: string;
 };
 
-export type Claude2TaskProgress = {
+export type ClaudeTaskProgress = {
   type: "system";
   subtype: "task_progress";
   task_id: string;
@@ -1400,7 +1400,7 @@ export type Claude2TaskProgress = {
 // Auto-mode classifier or permission system rejected a tool call. Realtime-only
 // signal (NOT written to JSONL history). Mounted onto the matching tool-call
 // part as permissionDenied { reasonType, reason } and rendered as a violet banner.
-export type Claude2PermissionDenied = {
+export type ClaudePermissionDenied = {
   type: "system";
   subtype: "permission_denied";
   tool_name?: string;
@@ -1409,7 +1409,7 @@ export type Claude2PermissionDenied = {
   decision_reason?: string;
 };
 
-export type Claude2Result = {
+export type ClaudeResult = {
   type: "result";
   subtype: "success" | "error_max_turns" | "error" | "interrupted";
   session_id: string;
@@ -1446,7 +1446,7 @@ export type Claude2Result = {
 // Answer with control_response on stdin:
 //   {"type":"control_response","request_id":"uuid"}
 //   {"type":"control_response","request_id":"uuid","answers":{"q":"a"}}
-export type Claude2ControlRequest = {
+export type ClaudeControlRequest = {
   type: "control_request";
   request_id: string;
   request: {
@@ -1466,7 +1466,7 @@ export type Claude2ControlRequest = {
 // Clang requires the nested "response" wrapper — the request_id is NOT at
 // top level. See cli/src/claude/sdk/query.ts handleControlRequest() in hapi
 // for the canonical implementation.
-export type Claude2ControlResponse = {
+export type ClaudeControlResponse = {
   type: "control_response";
   response: {
     subtype: "success" | "error";
@@ -1499,9 +1499,9 @@ export type SessionStreamClientMessage =
   | {
       type: "ping";
     }
-  | Claude2StreamClientMessage;
+  | ClaudeStreamClientMessage;
 
-export type Claude2PermissionMode =
+export type ClaudePermissionMode =
   | "default"
   | "acceptEdits"
   | "bypassPermissions"
@@ -1513,7 +1513,7 @@ export type Claude2PermissionMode =
 // Client → server control actions (model switch, permission mode switch, interrupt).
 // These become stdin control_request messages to the CLI; the CLI replies with
 // control_response on stdout. request_id is used to match response to request.
-export type Claude2StreamControlRequest = {
+export type ClaudeStreamControlRequest = {
   type: "control_request";
   request_id: string;
   request:
@@ -1523,14 +1523,14 @@ export type Claude2StreamControlRequest = {
       }
     | {
         subtype: "set_permission_mode";
-        mode: Claude2PermissionMode;
+        mode: ClaudePermissionMode;
       }
     | {
         subtype: "interrupt";
       };
 };
 
-export type Claude2StreamClientMessage =
+export type ClaudeStreamClientMessage =
   | {
       type: "user";
       message: {
@@ -1538,8 +1538,8 @@ export type Claude2StreamClientMessage =
         content: Array<{ type: "text"; text: string }>;
       };
     }
-  | Claude2ControlResponse
-  | Claude2StreamControlRequest
+  | ClaudeControlResponse
+  | ClaudeStreamControlRequest
   | {
       // Per-session runtime effort switch. Unlike set_model/set_permission_mode
       // (in-process control_request), effort has no CLI runtime switch on a
@@ -1551,7 +1551,7 @@ export type Claude2StreamClientMessage =
       effort: EffortLevel;
     }
   | {
-      // 应用层心跳(客户端发起,保活)。服务端 claude2-stream message handler 早返回,
+      // 应用层心跳(客户端发起,保活)。服务端 claude-stream message handler 早返回,
       // 不进业务处理。详见 web/src/lib/ws-heartbeat.ts。
       type: "ping";
     };
@@ -1573,31 +1573,31 @@ export type SessionStreamServerMessage =
       code: ApiErrorCode;
       message: string;
     }
-  | Claude2SystemInit
-  | Claude2SeedInit
-  | Claude2SkillCatalogChanged
-  | Claude2CompactBoundary
-  | Claude2StatusMessage
-  | Claude2ApiRetry
-  | Claude2Mode
-  | Claude2Attachment
-  | Claude2LastPromptEntry
-  | Claude2PermissionModeEntry
-  | Claude2FileHistorySnapshot
-  | Claude2AiTitle
-  | Claude2AgentName
-  | Claude2QueueOperation
-  | Claude2ThinkingTokens
-  | Claude2AssistantMessage
-  | Claude2UserMessage
-  | Claude2TaskStarted
-  | Claude2TaskUpdated
-  | Claude2TaskNotification
-  | Claude2TaskProgress
-  | Claude2PermissionDenied
-  | Claude2Result
-  | Claude2ControlRequest
-  | Claude2ControlResponse
+  | ClaudeSystemInit
+  | ClaudeSeedInit
+  | ClaudeSkillCatalogChanged
+  | ClaudeCompactBoundary
+  | ClaudeStatusMessage
+  | ClaudeApiRetry
+  | ClaudeMode
+  | ClaudeAttachment
+  | ClaudeLastPromptEntry
+  | ClaudePermissionModeEntry
+  | ClaudeFileHistorySnapshot
+  | ClaudeAiTitle
+  | ClaudeAgentName
+  | ClaudeQueueOperation
+  | ClaudeThinkingTokens
+  | ClaudeAssistantMessage
+  | ClaudeUserMessage
+  | ClaudeTaskStarted
+  | ClaudeTaskUpdated
+  | ClaudeTaskNotification
+  | ClaudeTaskProgress
+  | ClaudePermissionDenied
+  | ClaudeResult
+  | ClaudeControlRequest
+  | ClaudeControlResponse
   | {
       type: "history_start";
       count: number;

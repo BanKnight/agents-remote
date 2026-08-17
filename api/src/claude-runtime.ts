@@ -2,7 +2,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ClaudePreset, type EffortLevel } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
-import { Claude2SessionRelay } from "./session-relay";
+import { ClaudeSessionRelay } from "./session-relay";
 import {
   SettingsStore,
   activePresetView,
@@ -17,7 +17,7 @@ type BunSubprocess = ReturnType<typeof Bun.spawn>;
 // Build the scalar seed init line for replay. Carries CURRENT model/permissionMode
 // so the client's scalar fold has a seed (system.init is stdout-only, absent from
 // JSONL/tail). Uses a DISTINCT subtype "seed_init" (not "init") so both server-side
-// init capture (claude2-stream onRealtimeRow + runtime captureSystemInitFromLine,
+// init capture (claude-stream onRealtimeRow + runtime captureSystemInitFromLine,
 // which match subtype === "init") and client render (normalizeChatStream skips it)
 // both ignore it — it only folds scalars via a dedicated seed_init branch; model /
 // permissionMode surface in the session header, no bubble.
@@ -99,7 +99,7 @@ export function extractModelFromStdoutLine(
 // The catalog is filesystem-scanned (not a process scalar), so this returns only
 // a boolean signal — captureSkillReloadFromLine fires onSkillReload so index.ts
 // can broadcast. Pure function so the parse is unit-testable without a
-// Claude2Runtime instance.
+// ClaudeRuntime instance.
 export function extractSkillReloadFromStdoutLine(parsed: Record<string, unknown> | null): boolean {
   if (!parsed) return false;
   const texts: string[] = [];
@@ -115,7 +115,7 @@ export function extractSkillReloadFromStdoutLine(parsed: Record<string, unknown>
   return texts.some((t) => /Reloaded skills:\s+\d+\s+skills/i.test(t));
 }
 
-type Claude2Process = {
+type ClaudeProcess = {
   proc: BunSubprocess;
   generation: number;
   projectPath: string;
@@ -165,9 +165,9 @@ export function resolveActivePresetCreds(
   return { apiKey: preset.apiKey, baseUrl: preset.baseUrl };
 }
 
-export class Claude2Runtime implements RuntimeResources {
-  private readonly processes = new Map<string, Claude2Process>();
-  private readonly relays = new Map<string, Claude2SessionRelay>();
+export class ClaudeRuntime implements RuntimeResources {
+  private readonly processes = new Map<string, ClaudeProcess>();
+  private readonly relays = new Map<string, ClaudeSessionRelay>();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
   private readonly mcpPort?: number;
@@ -327,7 +327,7 @@ export class Claude2Runtime implements RuntimeResources {
   async write(sessionName: string, data: string): Promise<void> {
     const proc = this.processes.get(sessionName);
     if (!proc || proc.proc.exitCode !== null) {
-      throw new Error(`Claude2 process not running for session "${sessionName}"`);
+      throw new Error(`Claude process not running for session "${sessionName}"`);
     }
     const stdin = proc.proc.stdin;
     if (typeof stdin === "number" || !stdin) {
@@ -368,7 +368,7 @@ export class Claude2Runtime implements RuntimeResources {
 
     let relay = this.relays.get(sessionName);
     if (!relay) {
-      relay = new Claude2SessionRelay();
+      relay = new ClaudeSessionRelay();
       this.relays.set(sessionName, relay);
       await relay.activate(proc.projectPath, proc.claudeSessionId).catch(() => {
         this.relays.delete(sessionName);
@@ -392,7 +392,7 @@ export class Claude2Runtime implements RuntimeResources {
   }
 
   async startTerminal(): Promise<void> {
-    throw new Error("Claude2Runtime does not support terminal sessions");
+    throw new Error("ClaudeRuntime does not support terminal sessions");
   }
 
   // ── private ──
@@ -446,7 +446,7 @@ export class Claude2Runtime implements RuntimeResources {
     if (relay) {
       relay.destroy();
     }
-    relay = new Claude2SessionRelay();
+    relay = new ClaudeSessionRelay();
     this.relays.set(sessionName, relay);
     await relay.activate(projectPath, claudeSessionId);
 
@@ -459,13 +459,13 @@ export class Claude2Runtime implements RuntimeResources {
     // Pipe stderr to log file
     const stderr = proc.stderr;
     if (stderr && typeof stderr !== "number") {
-      const stderrLogPath = join(this.runDir, "claude2-stderr", `${sessionName}.log`);
+      const stderrLogPath = join(this.runDir, "claude-stderr", `${sessionName}.log`);
       void pipeStderrToFile(stderr, stderrLogPath);
     }
 
     // Monitor process exit
     void proc.exited.then((code) => {
-      console.log(`[claude2] process exited with code ${code}: ${sessionName}`);
+      console.log(`[claude] process exited with code ${code}: ${sessionName}`);
       if (this.isCurrentGeneration(sessionName, generation)) {
         this.processes.delete(sessionName);
       }
@@ -475,11 +475,11 @@ export class Claude2Runtime implements RuntimeResources {
   /**
    * 构造 MCP hub 注入的 argv 片段(--mcp-config inline JSON)。
    * mcpPort 未配置(0/undefined)或 injector 不可用 → 返回 [],agent 不连 hub(降级,不阻塞 spawn)。
-   * Claude2Runtime 是 claude2 专用,provider 恒为 claude2;injector 注册表供未来 CodexRuntime 复用。
+   * ClaudeRuntime 是 claude 专用,provider 恒为 claude;injector 注册表供未来 CodexRuntime 复用。
    */
   private buildMcpArgs(projectName: string): string[] {
     if (!this.mcpPort || projectName.length === 0) return [];
-    const profile = getAgentProviderProfile("claude2");
+    const profile = getAgentProviderProfile("claude");
     if (!profile) return [];
     const injector = buildMcpInjectorForProvider(profile);
     if (!injector) return [];
@@ -523,7 +523,7 @@ export class Claude2Runtime implements RuntimeResources {
     });
 
     console.log(
-      `[claude2] spawned pid=${proc.pid} session=${sessionName} effort=${effort ?? "inherit"} provider=${provider?.apiKey ? "injected" : "inherit"}`,
+      `[claude] spawned pid=${proc.pid} session=${sessionName} effort=${effort ?? "inherit"} provider=${provider?.apiKey ? "injected" : "inherit"}`,
     );
     return proc;
   }
@@ -543,7 +543,7 @@ export class Claude2Runtime implements RuntimeResources {
   }> {
     const settings = this.settingsStore
       ? await this.settingsStore.read().catch((err) => {
-          console.warn("[claude2] settings read failed, falling back to inherited env:", err);
+          console.warn("[claude] settings read failed, falling back to inherited env:", err);
           return undefined;
         })
       : undefined;
@@ -625,7 +625,7 @@ export class Claude2Runtime implements RuntimeResources {
     this.capturePermissionModeFromLine(sessionName, parsed);
     this.captureModelFromLine(sessionName, parsed);
     this.captureSkillReloadFromLine(sessionName, parsed);
-    console.log(`[claude2-stdout] ${trimmed}`);
+    console.log(`[claude-stdout] ${trimmed}`);
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed && this.isCurrentGeneration(sessionName, generation)) {
       await relay.handleStdoutLine(trimmed, parsed);

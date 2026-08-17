@@ -1,9 +1,9 @@
-// 测进入 Claude2 detail 的服务端耗时分解，回答"是否变慢、慢在哪"。
+// 测进入 Claude detail 的服务端耗时分解，回答"是否变慢、慢在哪"。
 //   GET  agent-session/:id  → getAgentSession + parseClaudePermissionModes(首次 spawn claude --help，后续缓存)
 //                             + settingsStore.read(每次 readFile 读盘，无缓存) + buildAvailableAliases(纯计算)
-//   WS   claude2-stream      → relay.activate(读 JSONL history) → seed_init(含 modelAlias) → history → live
+//   WS   claude-stream      → relay.activate(读 JSONL history) → seed_init(含 modelAlias) → history → live
 // 密码自读（env → config.yaml → /proc/<api-pid>/environ），不进 agent 上下文、不打印值。
-// 用法：node scripts/probe-claude2-detail-perf.mjs
+// 用法：node scripts/probe-claude-detail-perf.mjs
 import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const API = process.env.API_ORIGIN ?? "http://127.0.0.1:43011";
@@ -21,7 +21,7 @@ const { token } = await loginRes.json();
 const auth = { authorization: `Bearer ${token}` };
 console.log("[ok] login");
 
-// 找一个 claude2 session
+// 找一个 claude session
 let session = null;
 let projectName = null;
 for (const p of PROJECTS) {
@@ -30,7 +30,7 @@ for (const p of PROJECTS) {
   });
   if (!r.ok) continue;
   const { sessions } = await r.json();
-  const found = (sessions ?? []).find((s) => s.provider === "claude2");
+  const found = (sessions ?? []).find((s) => s.provider === "claude");
   if (found) {
     session = found;
     projectName = p;
@@ -38,8 +38,8 @@ for (const p of PROJECTS) {
   }
 }
 if (!session) {
-  console.error("未找到 claude2 session，项目：", PROJECTS.join("/"));
-  console.error("（test 项目没有 claude2 session；可先在 test 项目网页里建一个再测）");
+  console.error("未找到 claude session，项目：", PROJECTS.join("/"));
+  console.error("（test 项目没有 claude session；可先在 test 项目网页里建一个再测）");
   process.exit(1);
 }
 console.log(
@@ -76,9 +76,9 @@ console.log(
   `  → 后续稳定值 ≈ getAgentSession + settingsStore.read(读盘) + buildAvailableAliases + 网络`,
 );
 
-// ── WS claude2-stream 首帧延迟 ──
-console.log(`\n=== WS /claude2-stream 首帧延迟（token 走 query）===`);
-const wsUrl = `ws://127.0.0.1:43011/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(session.id)}/claude2-stream?token=${encodeURIComponent(token)}`;
+// ── WS claude-stream 首帧延迟 ──
+console.log(`\n=== WS /claude-stream 首帧延迟（token 走 query）===`);
+const wsUrl = `ws://127.0.0.1:43011/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(session.id)}/claude-stream?token=${encodeURIComponent(token)}`;
 await new Promise((resolve) => {
   const tOpen = { v: 0 };
   const milestones = {};

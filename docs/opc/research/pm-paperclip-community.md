@@ -116,7 +116,7 @@ Paperclip **社区能见度真实且高**（与 Avernet 完全相反）：3 个�
 | **成本爆炸** | HN Glemllksdf 20-30k context + #11253 claude_local 81% thinking_tokens | goal ancestry + heartbeat context 注入累积成本爆炸——**OPC 抄 ≤6 现拼策略必须配套实测 token 预算** |
 | **orchestration 黑箱** | r/aisolobusinesses「just a UI on top of agents」+ r/AI_Agents「black box」 | 编排层抽象对用户透明度不足——**OPC 编排层必须让用户看见 task 流转路径** |
 | **多 agent 并发竞态** | GitHub search 1266 个 race/concurrency issue + #11147/#11148/#11180/#11077 | 并发是结构性难题——**OPC 编排层 checkout 原子性 / 唤醒去重 / cancel 语义必须一上来就扎实** |
-| **adapter 集成脆弱** | #11257 acpx / #11256 CJK / #11230 gemini / #11203 codex / #11214 perimeter | 多 provider 适配是执行面命脉——**OPC runtime 零改动守住 claude2 常驻 CLI 是对的**，不要强假设无状态 spawn |
+| **adapter 集成脆弱** | #11257 acpx / #11256 CJK / #11230 gemini / #11203 codex / #11214 perimeter | 多 provider 适配是执行面命脉——**OPC runtime 零改动守住 claude 常驻 CLI 是对的**，不要强假设无状态 spawn |
 
 **对现有调研的修正**：pm-paperclip.md §A 写的"一条命令起一家公司 / 一期用户旅程"是**官方叙事 + 概念性 walkthrough**（基于 deepwiki + README 推演），**未充分反映社区实战痛点**。建议 §A 补"社区实战痛点"专段（见 §9.5 P0 修正）。
 
@@ -176,7 +176,7 @@ Paperclip **社区能见度真实且高**（与 Avernet 完全相反）：3 个�
 
 **对 agents-remote / OPC 的含义**：
 - ✅ **机制层可学**（社区独立背书安全）：task 即通信 / executionPolicy 双阶段审批 / 预算三级 / PostgreSQL 状态焊 / goal ancestry 现拼策略。
-- ⚠️ **实战层要警惕**（社区戳穿的坑）：① goal ancestry ≤6 仍可能 context 爆炸，**OPC 抄这个策略必须配套实测 token 预算监控**；② 并发竞态是结构性难题，**OPC checkout 原子性 / 唤醒去重 / cancel 语义必须一上来就扎实**（pm-paperclip.md §12 引 3 issue 严重低估，社区实际 1266 个）；③ adapter 集成脆弱是执行面命脉，**OPC runtime 零改动守住 claude2 常驻 CLI 是对的**，不要强假设无状态 spawn；④ "zero-human"是营销话术，**OPC 宣传要避免同坑**。
+- ⚠️ **实战层要警惕**（社区戳穿的坑）：① goal ancestry ≤6 仍可能 context 爆炸，**OPC 抄这个策略必须配套实测 token 预算监控**；② 并发竞态是结构性难题，**OPC checkout 原子性 / 唤醒去重 / cancel 语义必须一上来就扎实**（pm-paperclip.md §12 引 3 issue 严重低估，社区实际 1266 个）；③ adapter 集成脆弱是执行面命脉，**OPC runtime 零改动守住 claude 常驻 CLI 是对的**，不要强假设无状态 spawn；④ "zero-human"是营销话术，**OPC 宣传要避免同坑**。
 
 ## 8. 背书 / 内部数据的可信度（社区信不信）
 
@@ -220,7 +220,7 @@ Paperclip **社区能见度真实且高**（与 Avernet 完全相反）：3 个�
 
 6. **§11「76.6k stars（2026-08）」数字略偏低**——**社区证据（GitHub API 直证）**：2026-08-12 快照 = **77,593 stars**。**修正建议**：§11 改为 "8 月 77.6k"。
 
-7. **§C「adapter 生态广度（claude/codex/gemini/cursor/openclaw/hermes）」需加集成脆弱注**——现有文档把 adapter 列表当能力展示。**社区证据戳穿**：每个 adapter 都有真实外部用户报集成失败——#11257 acpx_turn_failed / #11230 gemini ACP Method not found / #11203 codex MCP never reaches gateway / #11256 CJK mojibake（**OPC 中文场景直接相关**）/ #11214 filesystem perimeter binary。**修正建议**：§C adapter 节加——"adapter 生态广度真实，但每个 adapter 都有真实外部用户报集成失败（#11257 acpx / #11230 gemini / #11203 codex / #11256 CJK 乱码 / #11214 perimeter）。adapter 是 Paperclip 执行面命脉也是脆弱面——agents-remote runtime 零改动守住 claude2 常驻 CLI 是对的，不要强假设 agent 无状态 spawn（与 Paperclip 短窗口模型不同）。"
+7. **§C「adapter 生态广度（claude/codex/gemini/cursor/openclaw/hermes）」需加集成脆弱注**——现有文档把 adapter 列表当能力展示。**社区证据戳穿**：每个 adapter 都有真实外部用户报集成失败——#11257 acpx_turn_failed / #11230 gemini ACP Method not found / #11203 codex MCP never reaches gateway / #11256 CJK mojibake（**OPC 中文场景直接相关**）/ #11214 filesystem perimeter binary。**修正建议**：§C adapter 节加——"adapter 生态广度真实，但每个 adapter 都有真实外部用户报集成失败（#11257 acpx / #11230 gemini / #11203 codex / #11256 CJK 乱码 / #11214 perimeter）。adapter 是 Paperclip 执行面命脉也是脆弱面——agents-remote runtime 零改动守住 claude 常驻 CLI 是对的，不要强假设 agent 无状态 spawn（与 Paperclip 短窗口模型不同）。"
 
 ### 9.3 现有调研**没捕捉到**、应新增的社区洞察
 
@@ -247,7 +247,7 @@ Paperclip **社区能见度真实且高**（与 Avernet 完全相反）：3 个�
 | P0 | pm-paperclip.md | §A 用户旅程 + §11（zero-human） | 加"'zero-human company' 是营销话术，社区实战戳穿需人类深度介入（r/AI_Agents 'empty instructions and rate limits nearly killed it' / r/aisolobusinesses 'overhyped' / flowtivity '23 leads instead of 3' / flowtivity 'Businesses expecting instant results will be disappointed'）；'一条命令起公司' ≠ '一条命令跑起来业务'" |
 | P0 | pm-paperclip.md | 新增 §12.5「社区成熟度信号」 | 记"Paperclip 非社区真空"：77.6k stars / 380 watchers / 外部 issue 高度分散非自产自销 / 外部 contributors 长尾真实 / 3 个独立 Reddit 子版 / 3 篇独立博客长文 / HN 真实成本吐槽。对比 Avernet 社区真空，给"社区反馈是可学的真实信号源"+"成本爆炸/黑箱/并发/adapter 四大坑是编排骨架前车之鉴"启示 |
 | P0 | pm-paperclip.md | §11（76.6k stars） | 数字更新为"8 月 77.6k"（GitHub API 直证 77,593） |
-| P1 | pm-paperclip.md | §C adapter 节 | 加"adapter 生态广度真实但每个 adapter 都有真实集成失败（#11257 acpx / #11230 gemini / #11203 codex / #11256 CJK 乱码 / #11214 perimeter），OPC runtime 零改动守住 claude2 常驻 CLI 是对的" |
+| P1 | pm-paperclip.md | §C adapter 节 | 加"adapter 生态广度真实但每个 adapter 都有真实集成失败（#11257 acpx / #11230 gemini / #11203 codex / #11256 CJK 乱码 / #11214 perimeter），OPC runtime 零改动守住 claude 常驻 CLI 是对的" |
 | P1 | pm-paperclip.md | §12 新增挑战"错误传播放大" | 加"flowtivity 报 23 leads instead of 3 真实事故，多 agent 串联错误传播放大是结构性风险，OPC 编排层必须在 agent 间交接点加 verification gate（参考 Raft builder≠verifier）" |
 | P1 | pm-paperclip.md | §C 预算节 | 加"社区实战报告 token 爆炸发生在 context 注入层而非 run 级，Paperclip 预算三级硬顶管不到 context 注入爆炸，OPC 必须把 token 监控下沉到 prompt 拼装层" |
 | P2 | pm-paperclip.md | §11 增长节 | 加"Paperclip 红在 GitHub star 增长曲线不红在 HN 讨论质量（多个 Show HN 全 ≤6 pts），star 数 ≠ 社区深度讨论质量" |
@@ -314,4 +314,4 @@ Paperclip **社区能见度真实且高**（与 Avernet 完全相反）：3 个�
 
 ### 走查总结一句话
 
-**Paperclip 是「源码可读 + 社区能见度高 + 外部参与真实」的项目——与 Avernet 社区真空完全相反（77.6k stars / 380 watchers / 外部 issue 高度分散非自产自销 / 外部 contributors 长尾真实 / 3 个独立 Reddit 子版 / 3 篇独立博客长文）；pm-paperclip.md 的核心编排抽象判断（task 即通信 / goal ancestry ≤6 现拼 / 双阶段审批 / PostgreSQL 状态焊）全部被社区独立背书可学，但严重低估了 4 大实战痛点（成本爆炸——context 吹到 20-30k + claude_local 81% thinking_tokens / orchestration 黑箱——'just a UI on top of agents' / 多 agent 并发竞态——GitHub 1266 个 race issue 非 3 个 / adapter 集成脆弱——CJK 乱码 + codex MCP 永不达），且 'zero-human company' 是营销话术被社区戳穿（实战需人类深度介入）；OPC 抄机制（task 即通信 + 双阶段审批 + 预算三级）安全，但必须配套 token 预算下沉到 context 注入层 + verification gate 阻断错误传播 + checkout 原子性扎实 + 守住 claude2 常驻 CLI 不强假设无状态 spawn，宣传要避免 'zero-human' 同坑。**
+**Paperclip 是「源码可读 + 社区能见度高 + 外部参与真实」的项目——与 Avernet 社区真空完全相反（77.6k stars / 380 watchers / 外部 issue 高度分散非自产自销 / 外部 contributors 长尾真实 / 3 个独立 Reddit 子版 / 3 篇独立博客长文）；pm-paperclip.md 的核心编排抽象判断（task 即通信 / goal ancestry ≤6 现拼 / 双阶段审批 / PostgreSQL 状态焊）全部被社区独立背书可学，但严重低估了 4 大实战痛点（成本爆炸——context 吹到 20-30k + claude_local 81% thinking_tokens / orchestration 黑箱——'just a UI on top of agents' / 多 agent 并发竞态——GitHub 1266 个 race issue 非 3 个 / adapter 集成脆弱——CJK 乱码 + codex MCP 永不达），且 'zero-human company' 是营销话术被社区戳穿（实战需人类深度介入）；OPC 抄机制（task 即通信 + 双阶段审批 + 预算三级）安全，但必须配套 token 预算下沉到 context 注入层 + verification gate 阻断错误传播 + checkout 原子性扎实 + 守住 claude 常驻 CLI 不强假设无状态 spawn，宣传要避免 'zero-human' 同坑。**

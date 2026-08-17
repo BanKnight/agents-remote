@@ -17,7 +17,7 @@ const EXEC =
 const AGENT = {
   id: "agent_probe-info-1",
   projectName: "proj1",
-  provider: "claude2",
+  provider: "claude",
   displayName: "Probe Info Agent",
   status: "idle",
   createdAt: "2026-08-17T00:00:00.000Z",

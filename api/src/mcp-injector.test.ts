@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { Claude2McpInjector, buildMcpInjectorForProvider } from "./mcp-injector";
+import { ClaudeMcpInjector, buildMcpInjectorForProvider } from "./mcp-injector";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 
-describe("Claude2McpInjector", () => {
-  const injector = new Claude2McpInjector();
+describe("ClaudeMcpInjector", () => {
+  const injector = new ClaudeMcpInjector();
 
-  it("canInject returns true only for claude2 profile", () => {
-    const claude2 = getAgentProviderProfile("claude2")!;
-    expect(injector.canInject(claude2)).toBe(true);
+  it("canInject returns true only for claude profile", () => {
+    const claude = getAgentProviderProfile("claude")!;
+    expect(injector.canInject(claude)).toBe(true);
 
     const codex = getAgentProviderProfile("codex")!;
     expect(injector.canInject(codex)).toBe(false);
@@ -41,9 +41,9 @@ describe("Claude2McpInjector", () => {
 });
 
 describe("buildMcpInjectorForProvider", () => {
-  it("returns Claude2McpInjector for claude2", () => {
-    const injector = buildMcpInjectorForProvider(getAgentProviderProfile("claude2")!);
-    expect(injector).toBeInstanceOf(Claude2McpInjector);
+  it("returns ClaudeMcpInjector for claude", () => {
+    const injector = buildMcpInjectorForProvider(getAgentProviderProfile("claude")!);
+    expect(injector).toBeInstanceOf(ClaudeMcpInjector);
   });
 
   it("returns null for codex (unsupported in base phase)", () => {
