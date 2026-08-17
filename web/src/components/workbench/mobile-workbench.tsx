@@ -354,13 +354,11 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
     projectName: projectName ?? "",
     sessionId: focusId,
   };
-  const projReady = !!projectName;
-  const agentDetail = useAgentDetail(panelRef, projReady && sessionType === "agent");
-  const terminalDetail = useTerminalDetail(panelRef, projReady && sessionType === "terminal");
-  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
-  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
-  const focusDisplayName = agentSession?.displayName ?? terminalSession?.displayName;
-  const infoSheet = useInstanceInfoSheet();
+  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
+    panelRef,
+    sessionType,
+    projectName,
+  );
   const { close, holder: closeHolder } = useCloseSession();
   // files tab 当前目录（localStorage 记忆，按项目 key 分组）：后台被杀/重开停留在上次目录。
   // 切项目用独立 key 隔离（替代旧 derived-state 重置，语义等价且天然不串项目）。
@@ -385,11 +383,66 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   const activePlugin =
     activeTab === "output" ? null : (visiblePlugins.find((p) => p.id === activeTab) ?? null);
 
-  // ℹ sheet 字段装配（UI=f(state)：terminal 无 model/permissionMode/createdAt，不伪造占位行）。
+  const onClose = () => {
+    if (!sessionType) return;
+    void close(panelRef, sessionType, () => void navigateWorkbench(scope));
+  };
+
+  const tabs = [
+    { id: "output" as const, label: t("workbench.tabOutput") },
+    ...visiblePlugins.map((p) => ({ id: p.id, label: t(p.labelKey) })),
+  ];
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MobileFocusHeader
+        activeTab={activeTab}
+        onBack={() => void navigateWorkbench(scope)}
+        onClose={onClose}
+        onInfo={openInfo}
+        onTabSelect={setTab}
+        tabs={tabs}
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {projectName ? (
+          <div className={activePlugin ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
+            <PanelRouter
+              embeddedHeader
+              key={focusId}
+              panelRef={{ kind: "session", projectName, sessionId: focusId }}
+            />
+          </div>
+        ) : null}
+        {activePlugin ? (
+          <Fragment key={projectName ?? "none"}>{activePlugin.render(ctx)}</Fragment>
+        ) : null}
+      </div>
+      {infoHolder}
+      {closeHolder}
+    </div>
+  );
+}
+
+/** ℹ sheet 字段装配共享（MobileFocusBody global 聚焦兜底 + MobileFocusActions 项目聚焦 header）：
+ * agent/terminal 同 hook 同 query key（React Query dedupe 零额外网络），装配单一来源——此前两处
+ * 逐字重复，detail 字段增删须双改。projectName 非必填：global 聚焦可能 undefined（不 push project
+ * 行）；项目聚焦恒 truthy（无条件 push）。terminal 无 model/permissionMode/createdAt，不伪造占位行。 */
+function useInstanceInfoActions(
+  panelRef: SessionPanelRef,
+  sessionType: "agent" | "terminal" | null | undefined,
+  projectName?: string,
+) {
+  const { t } = useT();
+  const infoSheet = useInstanceInfoSheet();
+  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
+  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
+  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
+  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
   const openInfo = () => {
     const fields: InfoField[] = [];
-    if (focusDisplayName) {
-      fields.push({ label: t("session.instanceInfo.name"), value: focusDisplayName });
+    const displayName = agentSession?.displayName ?? terminalSession?.displayName;
+    if (displayName) {
+      fields.push({ label: t("session.instanceInfo.name"), value: displayName });
     }
     if (projectName) {
       fields.push({ label: t("session.instanceInfo.project"), value: projectName });
@@ -430,45 +483,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
     }
     infoSheet.open(t("session.instanceInfo.title"), fields);
   };
-
-  const onClose = () => {
-    if (!sessionType) return;
-    void close(panelRef, sessionType, () => void navigateWorkbench(scope));
-  };
-
-  const tabs = [
-    { id: "output" as const, label: t("workbench.tabOutput") },
-    ...visiblePlugins.map((p) => ({ id: p.id, label: t(p.labelKey) })),
-  ];
-
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <MobileFocusHeader
-        activeTab={activeTab}
-        onBack={() => void navigateWorkbench(scope)}
-        onClose={onClose}
-        onInfo={openInfo}
-        onTabSelect={setTab}
-        tabs={tabs}
-      />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {projectName ? (
-          <div className={activePlugin ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
-            <PanelRouter
-              embeddedHeader
-              key={focusId}
-              panelRef={{ kind: "session", projectName, sessionId: focusId }}
-            />
-          </div>
-        ) : null}
-        {activePlugin ? (
-          <Fragment key={projectName ?? "none"}>{activePlugin.render(ctx)}</Fragment>
-        ) : null}
-      </div>
-      {infoSheet.holder}
-      {closeHolder}
-    </div>
-  );
+  return { openInfo, holder: infoSheet.holder };
 }
 
 /** Agent provider 全名（claude2 → "Claude 2"；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
@@ -563,8 +578,8 @@ function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonPr
 }
 
 type MobileTabHeaderProps<TabId extends string> = {
-  // ◄ 返回按钮：可选，不传则不渲染。二级页面（项目总览 ◄ 回项目列表、聚焦态 ◄ 回列表）
-  // 传 back；一级页面（全局总览）不传，靠底部 tab 切换。
+  // ◄ 返回按钮：可选，不传则不渲染。消费方均聚焦态（session ◄ 回列表、文件 ◄ 回文件树、
+  // skill ◄ 回插件列表）传 back；一级页面（全局总览）不传，靠底部 tab 切换。
   back?: { ariaLabelKey: TranslationKey; onClick: () => void };
   tabs: { id: TabId; label: string }[];
   activeTabId: TabId;
@@ -770,11 +785,16 @@ function MobileProjectWorkbench({
         >
           <div className="h-full shrink-0 basis-[min(88vw,340px)]">
             <MobileProjectDrawer
+              create={create}
+              onCloseInstance={closeInstance}
               onFocusInstance={focusInstance}
               onOpenChange={setDrawerOpen}
               onOpenFile={onOpenFile}
               onOpenGitCompareFile={onOpenGitCompareFile}
               onOpenGitFile={onOpenGitFile}
+              onRenameInstance={(sessionId, type, currentName) =>
+                renameInstance(sessionId, type, currentName, scope.key)
+              }
               open={drawerOpen}
               scope={scope}
             />
@@ -851,7 +871,9 @@ function MobileProjectWorkbench({
                     </div>
                   )
                 ) : (
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  // 浏览态滚动容器：pb-safe-area 对齐 drawer 段主体避让（项目 scope 无底部 nav，
+                  // PWA standalone 下 main=100vh 延伸进 home indicator 区，最后一张卡不被 chin 遮挡）。
+                  <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
                     {isLoading && gridItems.length === 0 ? (
                       <div className="px-3 py-2">
                         <CardGridSkeleton plain />
@@ -917,7 +939,7 @@ function MobileCreateButton({ create }: { create: CreateSessionApi }) {
 }
 
 /** 项目聚焦态 tab 带 trailing：ℹ✕ 胶囊（复用 MobileFocusHeader 同款；ℹ = info sheet、✕ = 关实例）。
- * info 字段装配与 MobileFocusBody 同源（detail query key 一致，React Query dedupe 零额外网络）。 */
+ * info 字段装配走共享 useInstanceInfoActions（与 MobileFocusBody 同源，单一装配来源）。 */
 function MobileFocusActions({
   onClose,
   focusId,
@@ -927,59 +949,14 @@ function MobileFocusActions({
   focusId: string;
   projectName: string;
 }) {
-  const infoSheet = useInstanceInfoSheet();
   const { t } = useT();
   const sessionType = inferSessionTypeFromId(focusId);
   const panelRef: SessionPanelRef = { kind: "session", projectName, sessionId: focusId };
-  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
-  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
-  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
-  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
-  const openInfo = () => {
-    const fields: InfoField[] = [];
-    if (agentSession?.displayName ?? terminalSession?.displayName) {
-      fields.push({
-        label: t("session.instanceInfo.name"),
-        value: (agentSession ?? terminalSession)!.displayName,
-      });
-    }
-    fields.push({ label: t("session.instanceInfo.project"), value: projectName });
-    if (sessionType === "agent" && agentSession) {
-      fields.push({
-        label: t("session.instanceInfo.type"),
-        value: providerDisplayName(agentSession.provider),
-      });
-      if (agentSession.model) {
-        fields.push({ label: t("session.instanceInfo.model"), value: agentSession.model });
-      }
-      if (agentSession.permissionMode) {
-        fields.push({
-          label: t("session.instanceInfo.permission"),
-          value: agentSession.permissionMode,
-        });
-      }
-      if (agentSession.createdAt) {
-        fields.push({
-          label: t("session.instanceInfo.createdAt"),
-          value: formatCreatedAt(agentSession.createdAt),
-        });
-      }
-      fields.push({
-        label: t("session.instanceInfo.status"),
-        value: t(sessionStatusLabel(agentSession.status)),
-      });
-    } else if (sessionType === "terminal" && terminalSession) {
-      fields.push({
-        label: t("session.instanceInfo.type"),
-        value: t("session.instanceInfo.terminal"),
-      });
-      fields.push({
-        label: t("session.instanceInfo.status"),
-        value: t(sessionStatusLabel(terminalSession.status)),
-      });
-    }
-    infoSheet.open(t("session.instanceInfo.title"), fields);
-  };
+  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
+    panelRef,
+    sessionType,
+    projectName,
+  );
   return (
     <>
       <div
@@ -1005,7 +982,7 @@ function MobileFocusActions({
       </div>
       {/* info sheet holder（2026-08-17 修复：此前漏渲染 → ℹ 点击 sheet 永不挂载，对齐桌面
           MobileFocusHeader {infoSheet.holder}）。 */}
-      {infoSheet.holder}
+      {infoHolder}
     </>
   );
 }
@@ -1061,7 +1038,7 @@ function MobileGlobalOverview() {
         title={t("workbench.global")}
       />
       <div className="min-h-0 flex-1">
-        <GlobalProjectsOverview onFocusInstance={focusInstance} />
+        <GlobalProjectsOverview onFocusInstance={focusInstance} renderCreateEntry={false} />
       </div>
       {createProjectDialog}
     </div>

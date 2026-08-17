@@ -19,13 +19,11 @@ import {
 } from "../../routes/workbench-model";
 import {
   CardGridSkeleton,
+  type CreateSessionApi,
   type GridItemCallbacks,
   InstanceGrid,
   instanceToGridItem,
-  useCloseSession,
-  useCreateSession,
   useProjectInstances,
-  useRenameSession,
 } from "./instance-area";
 import { HistoryList, HistoryRangeControl } from "./history-list";
 import { TabButton } from "./right-panel-tabs";
@@ -54,6 +52,12 @@ type MobileProjectDrawerProps = {
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
   /** 分支 compare 点文件 → 开 git compare tab + focus（WorkbenchContent onOpenGitCompareFile，关 drawer）。 */
   onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
+  /** 关实例（父级 closeInstance：close API + confirm + onAfterClose 删 layout tab）。 */
+  onCloseInstance: (sessionId: string, type: "agent" | "terminal") => void;
+  /** 重命名（父级 renameInstance，已绑定 projectName）。 */
+  onRenameInstance: (sessionId: string, type: "agent" | "terminal", currentName: string) => void;
+  /** 新建会话 API（父级 useCreateSession 同源，总览段顶部新建入口）。 */
+  create: CreateSessionApi;
 };
 
 /**
@@ -62,7 +66,7 @@ type MobileProjectDrawerProps = {
  *（三次反馈修正收敛：① 整页含 header tab 带被推；② 页面保持视口宽不压缩仅平移；③ drawer
  * 自身要有滑入动画、关闭时不得两页叠加）——本组件不再是 Radix Dialog portal overlay，而是
  * `MobileProjectWorkbench` 平移行里与页面**并排**的 flex 成员（永不重叠）：drawer 在行首
- * `shrink-0 basis-[min(88vw,340px)]`、页面 `flex-1`（页面 layout 宽 = 视口宽，行总宽 =
+ * `shrink-0 basis-[min(88vw,340px)]`、页面 `w-full shrink-0`（页面 layout 宽 = 视口宽，行总宽 =
  * 340+390）。开合 = 单一 wrapper 整体 `translate-x`（开 0 / 关 -340），drawer 从窗口左缘
  * 滑入 + 页面同步被推右（同速同向刚体），关闭一起回、无叠加。无 scrim；点页面（父级透明
  * 拦截层）关闭；Esc 本组件手动监听（原 Radix dismissable 职责）。drawer 全高含 safe-area
@@ -81,6 +85,9 @@ export function MobileProjectDrawer({
   onOpenFile,
   onOpenGitFile,
   onOpenGitCompareFile,
+  onCloseInstance,
+  onRenameInstance,
+  create,
 }: MobileProjectDrawerProps) {
   const { t } = useT();
   const navigate = useNavigate();
@@ -146,18 +153,14 @@ export function MobileProjectDrawer({
       ? (WORKBENCH_TAB_PLUGINS.find((p) => p.id === activeSection) ?? null)
       : null;
 
-  // 总览段实例数据 + 回调（单一数据管道 useProjectInstances；holders 统一渲染在本组件内）。
-  const { close, holder: closeHolder } = useCloseSession();
-  const { rename, holder: renameHolder } = useRenameSession();
+  // 总览段实例数据 + 回调（单一数据管道 useProjectInstances）。close/rename/create 复用父级
+  //（WorkbenchContent 同源 hooks：confirm/prompt holder 由父级 MobileProjectWorkbench 顶层常驻
+  // 渲染，本组件不重复实例化——2026-08-17 review：此前 drawer 自带三套 hooks + holders 段条件
+  // 渲染，属「holder 更新但未渲染」bug 类隐患，且关实例不删 layout tab）。
   const { instances, isLoading } = useProjectInstances(scope.key);
-  const create = useCreateSession(scope.key);
   const gridCallbacks: GridItemCallbacks = {
-    onClose: (sessionId, type) => {
-      void close({ kind: "session", projectName: scope.key, sessionId }, type);
-    },
-    onRename: (sessionId, type, currentName) => {
-      void rename({ kind: "session", projectName: scope.key, sessionId }, type, currentName);
-    },
+    onClose: onCloseInstance,
+    onRename: onRenameInstance,
     onSelect: (sessionId) => {
       onOpenChange(false);
       onFocusInstance(sessionId);
@@ -357,9 +360,6 @@ export function MobileProjectDrawer({
                   </p>
                 )}
               </div>
-              {closeHolder}
-              {renameHolder}
-              {create.promptHolder}
             </Fragment>
           )}
         </div>

@@ -19,6 +19,9 @@
 //  9. 从 global 总览（/projects）点会话卡 → URL 进该会话所属项目的 project scope
 //     （/projects/proj1/session/agent_probe-1，非旧 global focus /projects/session/$id）+
 //     聚焦态进入 drawer 收起（不遮挡会话）+ tab 带 chip active。
+//  10. 页面段新建 dialog（A1 review 修复）：点「添加根」开 PagesRootDialog → Esc 关（drawer 同步收，
+//      window keydown 无 dialog 守卫）→ ☰ 重开 → 切总览 → 切回页面 → PagesPanel 重挂
+//      （createRequest 仍非零）→ 断言无 dialog 误弹（ref 守卫生效，2026-08-17）。
 //
 // 密码由脚本自读（env → config.yaml → api 进程 environ），不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-mobile-project-drawer.mjs
@@ -113,6 +116,14 @@ async function setupMocks(page, { includeProj2 = false, candidates = [] } = {}) 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ sessions: [] }),
+    }),
+  );
+  // pages 配置（drawer 页面段 PagesPanel query；断言 10 用它渲染空列表态，零真实网络）。
+  await page.route(/\/api\/projects\/proj1\/pages\/config$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ config: { roots: [] } }),
     }),
   );
   if (includeProj2) {
@@ -450,6 +461,54 @@ async function run() {
       .then((c) => (c ?? "").includes("bg-primary/10"));
     record(chip9Active, "tab 带出现该会话 chip 且 active");
     await ctx3.close();
+
+    // ── context 4：断言 10（A1 review 修复：PagesPanel createRequest ref 防重挂误弹）──
+    // 修复前：createRequest 只增计数 + PagesPanel 随段切换卸载重挂 → 重挂时 effect 对着旧非零
+    // 值再跑 → add dialog 无操作自动打开。修复后：ref 初值吃掉 mount 首跑，只有递增才触发。
+    console.log("\n===== 10. 页面段新建 dialog：关闭后切段重挂不误弹 =====");
+    const ctx4 = await browser.newContext(MOBILE_CTX);
+    const page4 = await ctx4.newPage();
+    await setupMocks(page4);
+    await login(page4);
+    await page4.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await waitDrawerVisible(page4);
+    // 切到「页面」段（drawer nav 段按钮）。
+    await page4
+      .getByRole("navigation", { name: "项目侧边栏" })
+      .getByRole("button", { name: "页面" })
+      .click({ timeout: 5000 });
+    await page4.waitForTimeout(300);
+    // 点 drawer 顶部「+」（aria-label=添加页面根）→ ActionMenu sheet → 点「添加根」→
+    // PagesRootDialog 打开（createRequest 递增 → effect 触发 add 模式）。
+    await page4.getByRole("button", { name: "添加页面根" }).click({ timeout: 5000 });
+    await page4.getByRole("menuitem", { name: "添加根" }).click({ timeout: 5000 });
+    // 只统计 open 态 dialog（ActionMenu sheet 关闭后仍留 DOM，data-state=closed 不计入）。
+    const dialog4 = page4.locator('[data-slot="dialog-content"][data-state="open"]');
+    await dialog4.waitFor({ timeout: 5000 });
+    record(true, "点「添加根」后 PagesRootDialog 打开（createRequest 触发 add 模式）");
+    // Esc 关 dialog（drawer 的 window keydown 同步收——无 dialog 守卫，既有行为）。
+    await page4.keyboard.press("Escape");
+    await page4.waitForTimeout(300);
+    record((await dialog4.count()) === 0, "Esc 关闭 PagesRootDialog");
+    // ☰ 重开 drawer（section atom 记忆仍在页面段）→ 切总览 → 切回页面 → PagesPanel 重挂，
+    // createRequest 仍非零 → 断言无 dialog 误弹（ref 守卫生效）。
+    await page4.getByRole("button", { name: "切换侧边栏" }).click({ timeout: 5000 });
+    await waitDrawerVisible(page4);
+    await page4
+      .getByRole("navigation", { name: "项目侧边栏" })
+      .getByRole("button", { name: "总览" })
+      .click({ timeout: 5000 });
+    await page4.waitForTimeout(300);
+    await page4
+      .getByRole("navigation", { name: "项目侧边栏" })
+      .getByRole("button", { name: "页面" })
+      .click({ timeout: 5000 });
+    await page4.waitForTimeout(400);
+    record(
+      (await dialog4.count()) === 0,
+      "切段重挂后无 dialog 误弹（createRequest ref 守卫生效，A1 修复）",
+    );
+    await ctx4.close();
   } finally {
     await browser.close();
   }

@@ -38,14 +38,9 @@ function DialogDescription({ ...props }: React.ComponentProps<typeof DialogPrimi
 
 function DialogContent({
   className,
-  overlayClassName,
   children,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  /** Overlay（scrim）追加类：覆盖默认 bg-black/60 backdrop-blur-sm（cn/twMerge 靠后者胜）。
-   * 左侧 drawer 用 `bg-black/32 backdrop-blur-none`（Material navigation-drawer scrim 32%，DESIGN.md）。 */
-  overlayClassName?: string;
-}) {
+}: React.ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
@@ -53,7 +48,6 @@ function DialogContent({
         className={cn(
           "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
-          overlayClassName,
         )}
       />
       <DialogPrimitive.Content

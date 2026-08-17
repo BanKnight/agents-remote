@@ -4,6 +4,7 @@ import { useT } from "../../i18n";
 import {
   type WorkbenchMiddleTab,
   type WorkbenchScope,
+  type WorkbenchSearch,
   parseGitTabId,
 } from "../../routes/workbench-model";
 import { buildOverviewTabs } from "./workbench-tab-plugin";
@@ -38,6 +39,8 @@ type ProjectLeftPanelProps = {
   onCardDragStart?: CardDragStartHandler;
   /** middle tab [历史] HistoryList 聚焦态（URL focusId）。 */
   focusId?: string;
+  /** middle tab [插件] 项目 skill navigate 保留的 search（?tab/?rightTab/?leftMode 不丢，WorkbenchRoute 组装，透传 PluginsPanel）。 */
+  openSkillSearch?: Partial<WorkbenchSearch>;
 };
 
 /**
@@ -63,6 +66,7 @@ export function ProjectLeftPanel({
   onOpenGitCompareFile,
   onCardDragStart,
   focusId,
+  openSkillSearch,
 }: ProjectLeftPanelProps) {
   const { t } = useT();
   // history tab 时间范围（受控，父级持有避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
@@ -144,7 +148,7 @@ export function ProjectLeftPanel({
     } else if (resolvedTab === "wiki") {
       middleBody = <WikiPanel projectName={scope.key} />;
     } else if (resolvedTab === "plugins") {
-      middleBody = <PluginsPanel projectName={scope.key} />;
+      middleBody = <PluginsPanel openSkillSearch={openSkillSearch} projectName={scope.key} />;
     }
     // resolvedTab === "overview" → middleBody 保持 overview（InstanceLeftOverview 实例总览）。
   }

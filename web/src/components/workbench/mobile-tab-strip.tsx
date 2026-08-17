@@ -18,7 +18,7 @@ type MobileTabStripProps = {
   onSelect: (leafId: string, tabId: string) => void;
   /** tab ✕ = 最小化（removeTabFromLeaf，session 存活）。 */
   onClose: (leafId: string, tabId: string) => void;
-  /** 右侧 slot：聚焦 session 时 ℹ✕ 胶囊；浏览态（无 focus）不传。 */
+  /** 右侧 slot：聚焦 session 时 ℹ✕ 胶囊；浏览态（无 focus）新建按钮；file/git/skill 聚焦不传。 */
   trailing?: ReactNode;
 };
 

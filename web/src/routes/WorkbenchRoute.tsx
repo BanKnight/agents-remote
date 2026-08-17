@@ -739,6 +739,11 @@ function WorkbenchContent({
         onOpenGitCompareFile={onOpenGitCompareFile}
         onOpenGitFile={onOpenGitFile}
         onTabChange={onTabChange}
+        openSkillSearch={{
+          rightTab,
+          tab: tabFromUrl,
+          ...(leftMode !== "auto" ? { leftMode } : {}),
+        }}
         overview={leftOverview}
         scope={scope}
         tab={tab}

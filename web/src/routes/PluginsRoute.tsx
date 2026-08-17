@@ -11,6 +11,7 @@ import type {
 } from "@agents-remote/shared";
 
 import { useT } from "../i18n";
+import type { WorkbenchSearch } from "./workbench-model";
 import { MarkdownString } from "../components/markdown/MarkdownString";
 import {
   ActionButton,
@@ -102,6 +103,7 @@ export function PluginsPanel({
   projectName,
   onOpenSkill,
   onCardDragStart,
+  openSkillSearch,
 }: {
   /**
    * 项目 scope 信号：给定 → 项目工作台插件 tab（skill 写 <project>/.claude/skills、MCP 写
@@ -112,6 +114,9 @@ export function PluginsPanel({
   onOpenSkill?: (name: string) => void;
   /** 拖动源启动（skill 行拖到中栏开 skill tab，WorkbenchContent onCardDragStart）。undefined 退纯点击（移动端不传）。 */
   onCardDragStart?: CardDragStartHandler;
+  /** 项目 scope navigate /projects/$key/skill/$ 保留的 search（?tab/?rightTab/?leftMode 不丢；
+   *  WorkbenchRoute 组装。移动端不传 → 行为不变）。 */
+  openSkillSearch?: Partial<WorkbenchSearch>;
 }) {
   const { t } = useT();
   const navigate = useNavigate();
@@ -125,7 +130,11 @@ export function PluginsPanel({
   // workbench-views §7.7）；全局 scope 走调用方 onOpenSkill（开中栏 skill tab / navigate /plugins/skill/$）。
   const openSkill = (name: string) => {
     if (projectName) {
-      void navigate({ to: "/projects/$key/skill/$", params: { key: projectName, _splat: name } });
+      void navigate({
+        to: "/projects/$key/skill/$",
+        params: { key: projectName, _splat: name },
+        ...(openSkillSearch ? { search: openSkillSearch } : {}),
+      });
     } else {
       onOpenSkill?.(name);
     }

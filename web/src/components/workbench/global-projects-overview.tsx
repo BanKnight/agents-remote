@@ -34,6 +34,9 @@ type GlobalProjectsOverviewProps = {
   onFocusInstance: (sessionId: string) => void;
   /** 桌面拖放源；移动不传。 */
   dragAdapter?: DragSourceAdapter;
+  /** 桌面 header 新建按钮 + dialog 渲染开关（默认 true）。移动端传 false：新建入口/dialog
+   *  单一归属外壳 MobilePageHeader.actions（useCreateProjectDialog），避免双 dialog 挂载。 */
+  renderCreateEntry?: boolean;
 };
 
 /**
@@ -52,6 +55,7 @@ type GlobalProjectsOverviewProps = {
 export function GlobalProjectsOverview({
   onFocusInstance,
   dragAdapter,
+  renderCreateEntry = true,
 }: GlobalProjectsOverviewProps) {
   const { t } = useT();
   const { close, holder: closeHolder } = useCloseSession();
@@ -107,27 +111,33 @@ export function GlobalProjectsOverview({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 桌面专用 header（移动端无 header 行，零残留空条零分割线；移动新建入口在外壳
-          MobilePageHeader.actions，dialog 由 useCreateProjectDialog 提供）。 */}
-      <div className="hidden shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5 lg:flex">
-        <button
-          aria-label={t("home.createProjectAria")}
-          className={actionButtonClasses({
-            compact: true,
-            tone: "accent",
-            className: "hidden lg:inline-flex",
-          })}
-          onClick={openCreate}
-          type="button"
-        >
-          {t("workbench.createMenu")}
-        </button>
-      </div>
+          MobilePageHeader.actions，dialog 由外壳 useCreateProjectDialog 提供——2026-08-17
+          review：移动端 renderCreateEntry=false 时双 dialog 挂载隐患，这里整体不渲染）。
+          renderCreateEntry=false 时 openCreate/dialog 闲置（hooks 规则保持无条件调用）。 */}
+      {renderCreateEntry ? (
+        <>
+          <div className="hidden shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5 lg:flex">
+            <button
+              aria-label={t("home.createProjectAria")}
+              className={actionButtonClasses({
+                compact: true,
+                tone: "accent",
+                className: "hidden lg:inline-flex",
+              })}
+              onClick={openCreate}
+              type="button"
+            >
+              {t("workbench.createMenu")}
+            </button>
+          </div>
+          {dialog}
+        </>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:pb-0">
         {body}
       </div>
       {closeHolder}
       {renameHolder}
-      {dialog}
     </div>
   );
 }

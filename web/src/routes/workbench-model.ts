@@ -332,6 +332,9 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   return result;
 }
 
+/** workbench 路由 URL search（validateWorkbenchSearch 返回类型，全可选字段）：rightTab/tab/gitScope/gitCompare/leftMode。 */
+export type WorkbenchSearch = ReturnType<typeof validateWorkbenchSearch>;
+
 /**
  * workbench 路由上下文（Phase 1 路由重构，设计 workbench-stable-refactor.md）。7 个 workbench
  * 路由塌缩为共享 pathless layout route 下的子路由——layout 组件（WorkbenchLayoutShell）常驻
