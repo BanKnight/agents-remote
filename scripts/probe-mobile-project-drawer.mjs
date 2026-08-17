@@ -509,6 +509,50 @@ async function run() {
       "切段重挂后无 dialog 误弹（createRequest ref 守卫生效，A1 修复）",
     );
     await ctx4.close();
+
+    // ── context 5：断言 11（2026-08-17 项目切换器：drawer 顶部项目名即切换器，点开底部
+    // sheet 项目列表，当前项勾选 disabled，点其他项目直接 navigate 切换，免「返回 → 再进入」）
+    console.log("\n===== 11. 项目切换器：drawer 顶部项目名 → sheet 项目列表 → 直接切项目 =====");
+    const ctx5 = await browser.newContext(MOBILE_CTX);
+    const page5 = await ctx5.newPage();
+    await setupMocks(page5, { includeProj2: true });
+    await login(page5);
+    await page5.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await waitDrawerVisible(page5);
+    // drawer 顶部项目名 button（aria-label=workbench.switchProject「切换项目」）。
+    const switcher5 = page5.getByRole("button", { name: "切换项目" });
+    await switcher5.waitFor({ timeout: 5000 });
+    const triggerText = (await switcher5.textContent()) ?? "";
+    record(
+      triggerText.includes("proj1"),
+      `drawer 顶部项目名可点击（切换器 trigger 显示 proj1：${triggerText.trim()}）`,
+    );
+    await switcher5.click({ timeout: 5000 });
+    // 移动底部 sheet 弹出（OptionMenu 移动形态 = DialogContent sheet；ActionMenu sheet 关闭后
+    // 仍留 DOM，只统计 open 态）。
+    const sheet5 = page5.locator('[data-slot="dialog-content"][data-state="open"]');
+    await sheet5.waitFor({ timeout: 5000 });
+    record(true, "点项目名后底部 sheet 弹出项目列表");
+    // 当前项目 proj1 勾选 disabled（原生 button disabled）+ proj2 可选。
+    const itemProj1 = page5.getByRole("menuitem", { name: "proj1" });
+    await itemProj1.waitFor({ timeout: 5000 });
+    record(await itemProj1.isDisabled(), "sheet 中当前项目 proj1 勾选 disabled（不可重选）");
+    const itemProj2 = page5.getByRole("menuitem", { name: "proj2" });
+    await itemProj2.waitFor({ timeout: 5000 });
+    // 点 proj2 → navigate /projects/proj2（免「返回 → 再进入」）。
+    await itemProj2.click({ timeout: 5000 });
+    await page5.waitForURL(/\/projects\/proj2/, { timeout: 8000 });
+    record(true, "点 proj2 → URL 直接切到 /projects/proj2（免「返回 → 再进入」）");
+    // 切项目 key=scope.key 重挂 → drawer 默认展开（浏览态），顶部显示 proj2。
+    await waitDrawerVisible(page5);
+    const switcherAfter = page5.getByRole("button", { name: "切换项目" });
+    await switcherAfter.waitFor({ timeout: 5000 });
+    const afterText = (await switcherAfter.textContent()) ?? "";
+    record(
+      afterText.includes("proj2"),
+      `切后 drawer 重挂展开 + 顶部显示 proj2（${afterText.trim()}）`,
+    );
+    await ctx5.close();
   } finally {
     await browser.close();
   }

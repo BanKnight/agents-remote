@@ -502,6 +502,7 @@ export const en = {
   "workbench.expandLeft": "Expand left panel",
   "workbench.expandRight": "Expand right panel",
   "workbench.backToProjects": "Back to projects",
+  "workbench.switchProject": "Switch project",
   "workbench.createMenu": "+ Create",
   "workbench.createSessionAria": "New session",
   "workbench.createClaude2": "Claude",

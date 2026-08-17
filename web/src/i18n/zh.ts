@@ -502,6 +502,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.expandLeft": "展开左栏",
   "workbench.expandRight": "展开右栏",
   "workbench.backToProjects": "返回项目列表",
+  "workbench.switchProject": "切换项目",
   "workbench.createMenu": "+ 新建",
   "workbench.createSessionAria": "新建会话",
   "workbench.createClaude2": "Claude",

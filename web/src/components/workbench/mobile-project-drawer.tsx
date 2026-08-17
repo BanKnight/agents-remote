@@ -32,6 +32,7 @@ import {
   WORKBENCH_TAB_PLUGINS,
   type WorkbenchTabPluginContext,
 } from "./workbench-tab-plugin";
+import { ProjectSwitcher } from "./project-switcher";
 
 /** Material navigation-drawer：小屏 ≥88% 视口宽、上限 340px（DESIGN.md navigation-drawer）。
  * Reddit 式 push 刚体联动（2026-08-17 三次修正）：本组件是平移行里与页面并排的 flex 成员
@@ -259,9 +260,10 @@ export function MobileProjectDrawer({
               />
             </svg>
           </button>
-          <span className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-on-surface">
-            {scope.key}
-          </span>
+          <ProjectSwitcher
+            currentProjectName={scope.key}
+            titleClassName="text-sm font-semibold text-on-surface"
+          />
           {/* 按段新建入口（右上角，与 ☰ 对称位）：总览=新建会话 / 文件=新建文件夹·上传 /
                 页面=新建页面根；其他段不渲染。 */}
           {createItems ? (

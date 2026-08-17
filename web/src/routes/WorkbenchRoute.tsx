@@ -21,6 +21,7 @@ import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
+import { ProjectSwitcher } from "../components/workbench/project-switcher";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { PluginsPanel } from "./PluginsRoute";
 import { useT } from "../i18n";
@@ -829,7 +830,10 @@ function ProjectScopeHeaderTitle({
           />
         </svg>
       </button>
-      <span className="min-w-0 truncate">{projectName}</span>
+      <ProjectSwitcher
+        currentProjectName={projectName}
+        titleClassName="text-base font-semibold text-on-surface"
+      />
     </>
   );
 }
