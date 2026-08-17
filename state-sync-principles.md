@@ -1,6 +1,6 @@
 # 全栈状态同步设计原则
 
-本文件记录 client-server 全栈系统中「状态同步」的**通用**设计原则，适用于任意全栈项目。本项目（agents-remote）会话重放领域的特有应用，见 [Claude2 进程模型与消息回放设计](./docs/design/message-replay.md)。
+本文件记录 client-server 全栈系统中「状态同步」的**通用**设计原则，适用于任意全栈项目。本项目（agents-remote）会话重放领域的特有应用，见 [Claude 进程模型与消息回放设计](./docs/design/message-replay.md)。
 
 > ⚙️ 本文件仍在打磨中，作为独立文件维护以便迭代，不直接写进 CLAUDE.md 主体。
 

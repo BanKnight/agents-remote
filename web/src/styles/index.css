@@ -232,7 +232,7 @@ body {
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);
-  /* Content role colors — Claude2 session 消息角色色（docs/design/DESIGN.md Colors 节
+  /* Content role colors — Claude session 消息角色色（docs/design/DESIGN.md Colors 节
      「Content role colors」）。与 primary 操作色正交：区分 assistant / user / permission
      三种消息角色，不承担操作语义。assistant/warning 同 hex、permission/secondary 同 hex
      是刻意——语义独立，分开 token 以便未来按角色独立调色相。*/

@@ -190,7 +190,7 @@ Buzz 的 AgentPool 是**按需 spawn + 池化复用**：1–32 子进程，事�
 
 > ⚠️ **社区走查校准（`pm-buzz-community.md` P0，两条）**：
 > 1. **token 成本校准**——channel-as-memory 的代价是 **token 开销爆炸**:daily.dev 引 YouTube Better Stack walkthrough 实测"一个 greeting 31k tokens"(vs Claude Code 终端 4k),swarm 场景成本"add another agent and it multiplies"。根因是每 turn 重 spawn + 注入 base prompt + 回放 channel history。Buzz 用 LlmContextExceeded 被动截断 + nest 文件产物应对,**无主动检查点压缩**(§8 已记)。OPC 借鉴 channel-as-memory 时必须配套主动压缩(PRD §13 L3 检查点压缩)+ 每轮 token 上限,否则成本不可控。
-> 2. **per-turn spawn 而非常驻 session**——mager.co 真机实测关键发现:"buzz-acp spawns the agent per turn rather than keeping a session alive. Mention, spawn, turn, reply. ...the channel history is the continuity rather than the process." 这与 agents-remote 当前 Claude2 "Bun.spawn 常驻 CLI + --resume"模型是**反向**取舍——Buzz 选了"进程轻 + 上下文重(回放 history)",agents-remote 选了"进程重 + 上下文轻(CLI 内 history)"。两者都有 token 成本问题但形态不同:Buzz 是回放 history 爆炸(31k vs 4k),agents-remote 是长 session 累积爆炸(compact_boundary)。OPC 应明确自己在"per-turn spawn ↔ 常驻 session"光谱的位置。
+> 2. **per-turn spawn 而非常驻 session**——mager.co 真机实测关键发现:"buzz-acp spawns the agent per turn rather than keeping a session alive. Mention, spawn, turn, reply. ...the channel history is the continuity rather than the process." 这与 agents-remote 当前 Claude "Bun.spawn 常驻 CLI + --resume"模型是**反向**取舍——Buzz 选了"进程轻 + 上下文重(回放 history)",agents-remote 选了"进程重 + 上下文轻(CLI 内 history)"。两者都有 token 成本问题但形态不同:Buzz 是回放 history 爆炸(31k vs 4k),agents-remote 是长 session 累积爆炸(compact_boundary)。OPC 应明确自己在"per-turn spawn ↔ 常驻 session"光谱的位置。
 
 ## 7. 派活与编排交互
 

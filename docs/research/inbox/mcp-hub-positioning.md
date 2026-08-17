@@ -43,7 +43,7 @@
 
 注入能力是 runtime 级维度,与能力开关(project 级)正交:
 
-- **Claude2**(`Claude2McpInjector`):直拉 spawn,argv 可扩展,`--mcp-config` inline JSON + `type:"http"`,基座先行。
+- **Claude**(`ClaudeMcpInjector`):直拉 spawn,argv 可扩展,`--mcp-config` inline JSON + `type:"http"`,基座先行。
 - **Codex**:当前走 tmux 非直拉,无 argv 注入抽象 → 基座暂不支持,等 Codex 直拉 runtime 落地加 `CodexMcpInjector`(TOML `-c mcp_servers.<name>...`)。
 - **不加 `--strict-mcp-config`**:避免干扰 agent 已有的 user/project/enterprise MCP 配置(用户可能已有个人 MCP server,strict 会强制忽略;enterprise 场景还会拒跑)。hub 与 agent 现有 MCP 配置并存,工具列表是合集。strict 留待后续按需再开。
 
@@ -53,7 +53,7 @@
 
 ```
 MCP Hub 定位(只立方向)
-  └─ 第一步:MCP hub 基座 —— 无状态 Streamable HTTP server(空壳) + --mcp-config 注入管线(Claude2 先行)
+  └─ 第一步:MCP hub 基座 —— 无状态 Streamable HTTP server(空壳) + --mcp-config 注入管线(Claude 先行)
         └─ wiki 第一个内部能力域(producer 工具 + consumer 渲染)—— 基座之上第一个能力域,验证 hub 设计
               └─ browser 第二个内部能力域 —— 复用 hub,此时提取正式「工作台能力域插件」抽象
 ```

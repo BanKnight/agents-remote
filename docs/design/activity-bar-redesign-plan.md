@@ -88,7 +88,7 @@ Phase 1 把 `/` 桌面分流从 `HomeRoute`（项目列表）改成 `WorkbenchCo
 - 导航前置统一改桌面工作台语义：登录 gate 由 `heading "Projects"` → 左栏项目节点 `button`；进项目 gate → `expect(page).toHaveURL(/\/projects\/\$/)`。
 - Files/Git 检视 tab 与活动栏 `[Files]` 同名冲突，改用 URL 驱动 `?tab=files`/`?tab=git`（URL-visible，避开 role=button 同名歧义）。
 - Terminal 创建流：`+ Create`（`.first()` 选左栏 header 的 CreateSessionBar，避开空实例区域同名 button）→ `menuitem "Terminal"` → `button "Create"`（name prompt confirm）。
-- Claude2 spec（ask-question / windowing ×2）：伪会话 ID 加 `agent_` 前缀（`inferSessionTypeFromId` 要求 `agent_`/`terminal_` 前缀，PanelRouter 才路由到 AgentPanelRouter→ChatPanel；否则渲染 PlaceholderPanel 不发 detail 请求）+ mock 集合 `GET /agent-sessions`（避免 Phase 1+ stale-tab prune 删除不在 refs 中的 focus tab）；displayName 断言改 `getByRole("button", { name, exact: true })` 锁定中栏 tab chip（左总览 InstanceCard 的 accessible name 被状态前缀污染）。
+- Claude spec（ask-question / windowing ×2）：伪会话 ID 加 `agent_` 前缀（`inferSessionTypeFromId` 要求 `agent_`/`terminal_` 前缀，PanelRouter 才路由到 AgentPanelRouter→ChatPanel；否则渲染 PlaceholderPanel 不发 detail 请求）+ mock 集合 `GET /agent-sessions`（避免 Phase 1+ stale-tab prune 删除不在 refs 中的 focus tab）；displayName 断言改 `getByRole("button", { name, exact: true })` 锁定中栏 tab chip（左总览 InstanceCard 的 accessible name 被状态前缀污染）。
 
 验证：`bun run e2e` 7/7 pass。
 

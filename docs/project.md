@@ -159,7 +159,7 @@ agents-remote/
 - [Project Boundary](./architecture/project-boundary.md) — Project 模块、安全路径解析和下游 project-scoped 能力的长期架构边界。
 - [Session Runtime 架构](./architecture/session-runtime.md) — SessionRegistry、runtime metadata、tmux adapter、HTTP/WS stream 和 transport 边界。
 - [Agent Runtime 架构](./architecture/agent-runtime.md) — Agent Runtime、Provider Adapter、TerminalSession 与 capability extension 的长期架构边界。协议细节参见 [Claude CLI stream-json 协议](./research/claude-cli-stream-protocol.md)。
-- [Claude2 进程模型与消息回放设计](./design/message-replay.md) — Claude2 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流的管线设计，含 system.init/turn 边界与 reconnect/API 重启时序。
+- [Claude 进程模型与消息回放设计](./design/message-replay.md) — Claude 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流的管线设计，含 system.init/turn 边界与 reconnect/API 重启时序。
 - [Files 架构](./architecture/file-browser-preview.md) — Files API、safe path 复用、只读 preview union 和文件系统读取边界。
 - [Git Diff 架构](./architecture/git-diff-viewer.md) — Git diff API、Project-safe resolver 复用、只读 Git CLI 命令和 Git DTO 边界。
 - [E2E Quality Baseline 架构](./architecture/e2e-quality-baseline.md) — Playwright + Bun E2E harness、临时环境、真实 tmux/WebSocket smoke 和 artifact 边界。
@@ -169,12 +169,12 @@ agents-remote/
 - [个人部署配置 Runbook](./runbooks/personal-deployment-configuration.md) — 首次配置、环境变量覆盖、启动失败修正和 runtime dir 权限处理流程。
 - [Dev Services Runbook](./runbooks/dev-services.md) — ar-dev tmux session 启动/重启/关闭流程：web 长期跑生产构建（`scripts/ar-dev-web.sh` = preview + build --watch），api 跑 dev，固定端口 43011/43012。
 - [E2E Quality Baseline Runbook](./runbooks/e2e-quality-baseline.md) — 如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
-- [Claude2 客户端调试开关 Runbook](./runbooks/claude-client-debugging.md) — 浏览器运行时调试开关（socket 日志、调试按钮，均默认关闭）的控制范围与切换方法。
+- [Claude 客户端调试开关 Runbook](./runbooks/claude-client-debugging.md) — 浏览器运行时调试开关（socket 日志、调试按钮，均默认关闭）的控制范围与切换方法。
 - [Agent 接入调研](./research/agent-access-options.md) — hapi/remodex/Codex/Claude 接入路线、证据追溯和统一协议可能性调研。
 - [Pi 接入调研](./research/pi-access-options.md) — 第四个 agent runtime「pi」接入调研（决策未做）：pi/omp 本体与接入面、扩展生态、同类接入方式因果（终端形态分水岭）、MonkeyCode→OhMyAgent 国产案例、与本项目基线对照、接入路径初步倾向与纳入分层；承接 agent-access-options.md。
 - [Provider 配置体系对比](./research/provider-config-comparison.md) — Continue / hapi / Claude Code 如何拆「运行时 · provider · 协议 · 模型」四层的调研（决策未做）：Continue 扁平 model 列表 + provider 属性 + AUTODETECT 自动发现、hapi flavor 注册表（AgentRegistry）、Claude Code env 注入；对 agents-remote「preset 耦合四层」现状的耦合点分析与可借鉴方向；承接 agent-access-options.md 与 claude-cli-runtime-config.md 的 provider 配置视角。
 - [插件（Plugin）扩展体系](./research/plugin-extension-system.md) — skill + mcp 两类扩展 × 全局 + 项目两层作用域的方案蓝图（决策已对齐、实现前待调研）：7 项已对齐决策（wrap claude mcp 管理外部 MCP、手写技能挂源可更新、项目工作区 tab 插件入口等）+ 现状盘点 + 后端能力增量与待调研点；承接 skill-marketplace.md 与 mcp-hub-positioning.md。
 - [Claude CLI stream-json 协议](./research/claude-cli-stream-protocol.md) — CLI stdio 协议完整参考：启动参数、消息类型、system.init 字段、control_request 机制、生命周期和集成边界；三维度运行态配置见 [运行态三维度对接](./research/claude-cli-runtime-config.md)。
 - [Claude CLI 运行态三维度对接](./research/claude-cli-runtime-config.md) — model/permission/effort 三个运行态维度各自的默认值决策链、spawn 初始值、stream-json 运行时切换，含 TUI vs 无头能力差异、官方二进制字面量与实测证据、竞品方案（hapi fork）与本项目对接现状。
-- [Claude2 Replay 性能与验收基线](./research/claude-replay-performance.md) — 长会话打开慢的分析依据：数据流成本模型、实测数字（客户端已排除，主因在传输）、实施路径与验收标准。
+- [Claude Replay 性能与验收基线](./research/claude-replay-performance.md) — 长会话打开慢的分析依据：数据流成本模型、实测数字（客户端已排除，主因在传输）、实施路径与验收标准。
 - 数据库参考：当前没有独立数据库 schema；Project 数据模型以 `PROJECTS_ROOT` 目录和 runtime metadata 为主，优先参考 Project/Session 相关规格与架构文档。
