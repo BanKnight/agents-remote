@@ -15,8 +15,6 @@ import { MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
-import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
-import { sessionStatusLabel } from "../../routes/console-model";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
 import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
@@ -45,12 +43,11 @@ import {
   InstanceGrid,
   instanceToGridItem,
   PanelRouter,
-  useAgentDetail,
   useCloseSession,
   useGlobalInstanceCandidates,
+  useInstanceInfoActions,
   useProjectInstances,
   useScopeInstanceOrder,
-  useTerminalDetail,
 } from "./instance-area";
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { MobileProjectDrawer } from "./mobile-project-drawer";
@@ -421,84 +418,6 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       {closeHolder}
     </div>
   );
-}
-
-/** ℹ sheet 字段装配共享（MobileFocusBody global 聚焦兜底 + MobileFocusActions 项目聚焦 header）：
- * agent/terminal 同 hook 同 query key（React Query dedupe 零额外网络），装配单一来源——此前两处
- * 逐字重复，detail 字段增删须双改。projectName 非必填：global 聚焦可能 undefined（不 push project
- * 行）；项目聚焦恒 truthy（无条件 push）。terminal 无 model/permissionMode/createdAt，不伪造占位行。 */
-function useInstanceInfoActions(
-  panelRef: SessionPanelRef,
-  sessionType: "agent" | "terminal" | null | undefined,
-  projectName?: string,
-) {
-  const { t } = useT();
-  const infoSheet = useInstanceInfoSheet();
-  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
-  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
-  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
-  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
-  const openInfo = () => {
-    const fields: InfoField[] = [];
-    const displayName = agentSession?.displayName ?? terminalSession?.displayName;
-    if (displayName) {
-      fields.push({ label: t("session.instanceInfo.name"), value: displayName });
-    }
-    if (projectName) {
-      fields.push({ label: t("session.instanceInfo.project"), value: projectName });
-    }
-    if (sessionType === "agent" && agentSession) {
-      fields.push({
-        label: t("session.instanceInfo.type"),
-        value: providerDisplayName(agentSession.provider),
-      });
-      if (agentSession.model) {
-        fields.push({ label: t("session.instanceInfo.model"), value: agentSession.model });
-      }
-      if (agentSession.permissionMode) {
-        fields.push({
-          label: t("session.instanceInfo.permission"),
-          value: agentSession.permissionMode,
-        });
-      }
-      if (agentSession.createdAt) {
-        fields.push({
-          label: t("session.instanceInfo.createdAt"),
-          value: formatCreatedAt(agentSession.createdAt),
-        });
-      }
-      fields.push({
-        label: t("session.instanceInfo.status"),
-        value: t(sessionStatusLabel(agentSession.status)),
-      });
-    } else if (sessionType === "terminal" && terminalSession) {
-      fields.push({
-        label: t("session.instanceInfo.type"),
-        value: t("session.instanceInfo.terminal"),
-      });
-      fields.push({
-        label: t("session.instanceInfo.status"),
-        value: t(sessionStatusLabel(terminalSession.status)),
-      });
-    }
-    infoSheet.open(t("session.instanceInfo.title"), fields);
-  };
-  return { openInfo, holder: infoSheet.holder };
-}
-
-/** Agent provider 全名（claude2 → "Claude 2"；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
-function providerDisplayName(provider: string | undefined): string {
-  if (!provider) return "—";
-  if (provider === "claude") return "Claude";
-  if (provider === "codex") return "Codex";
-  if (provider === "claude2") return "Claude 2";
-  return provider;
-}
-
-/** createdAt ISO → 本地可读格式（toLocaleString 跟随浏览器 locale，与 navigator.language 检测一致）。 */
-function formatCreatedAt(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 type MobileFocusHeaderProps = {

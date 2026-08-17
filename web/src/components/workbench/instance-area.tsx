@@ -51,6 +51,7 @@ import {
   renameTerminalSession,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
+import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { useT } from "../../i18n";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
@@ -678,6 +679,88 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     };
   }
   return undefined;
+}
+
+/**
+ * ℹ 实例信息字段装配共享（移动端聚焦态 ℹ sheet + 桌面中栏 tab ℹ modal 共用）：agent/terminal
+ * 同 hook 同 query key（React Query dedupe 零额外网络），装配单一来源——此前移动端两处逐字重复，
+ * detail 字段增删须双改。projectName 非必填：global 聚焦可能 undefined（不 push project 行）；
+ * 项目聚焦恒 truthy（无条件 push）。terminal 无 model/permissionMode/createdAt，不伪造占位行。
+ * variant 默认 sheet（移动端底部滑出）；桌面 TabChip 传 "modal"（居中卡片）。
+ */
+export function useInstanceInfoActions(
+  panelRef: SessionPanelRef,
+  sessionType: "agent" | "terminal" | null | undefined,
+  projectName?: string,
+  variant: "sheet" | "modal" = "sheet",
+) {
+  const { t } = useT();
+  const infoSheet = useInstanceInfoSheet();
+  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
+  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
+  const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
+  const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
+  const openInfo = () => {
+    const fields: InfoField[] = [];
+    const displayName = agentSession?.displayName ?? terminalSession?.displayName;
+    if (displayName) {
+      fields.push({ label: t("session.instanceInfo.name"), value: displayName });
+    }
+    if (projectName) {
+      fields.push({ label: t("session.instanceInfo.project"), value: projectName });
+    }
+    if (sessionType === "agent" && agentSession) {
+      fields.push({
+        label: t("session.instanceInfo.type"),
+        value: providerDisplayName(agentSession.provider),
+      });
+      if (agentSession.model) {
+        fields.push({ label: t("session.instanceInfo.model"), value: agentSession.model });
+      }
+      if (agentSession.permissionMode) {
+        fields.push({
+          label: t("session.instanceInfo.permission"),
+          value: agentSession.permissionMode,
+        });
+      }
+      if (agentSession.createdAt) {
+        fields.push({
+          label: t("session.instanceInfo.createdAt"),
+          value: formatCreatedAt(agentSession.createdAt),
+        });
+      }
+      fields.push({
+        label: t("session.instanceInfo.status"),
+        value: t(sessionStatusLabel(agentSession.status)),
+      });
+    } else if (sessionType === "terminal" && terminalSession) {
+      fields.push({
+        label: t("session.instanceInfo.type"),
+        value: t("session.instanceInfo.terminal"),
+      });
+      fields.push({
+        label: t("session.instanceInfo.status"),
+        value: t(sessionStatusLabel(terminalSession.status)),
+      });
+    }
+    infoSheet.open(t("session.instanceInfo.title"), fields, variant);
+  };
+  return { openInfo, holder: infoSheet.holder };
+}
+
+/** Agent provider 全名（claude2 → "Claude 2"；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
+function providerDisplayName(provider: string | undefined): string {
+  if (!provider) return "—";
+  if (provider === "claude") return "Claude";
+  if (provider === "codex") return "Codex";
+  if (provider === "claude2") return "Claude 2";
+  return provider;
+}
+
+/** createdAt ISO → 本地可读格式（toLocaleString 跟随浏览器 locale，与 navigator.language 检测一致）。 */
+function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 /**
@@ -1415,9 +1498,10 @@ type TabChipProps = {
 
 /**
  * group 内单个 tab chip（设计 §7.1，§9 批 6b）：xs 裸 icon marker + 实例名（点击 = 切活动 tab）
- * + ✕（最小化）。active tab ✕ 常显，非 active hover 才显（减少视觉噪音）。usePanelMeta 派生
- * marker（xs 裸 icon）+ label。样式对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：
- * active 用 `bg-primary/10 text-primary` 品牌色，gap/px/py 对齐 nav-item horizontal。
+ * + ℹ（实例信息，仅 session tab）+ ✕（最小化）。active tab ✕ 常显，非 active hover 才显（减少
+ * 视觉噪音）。usePanelMeta 派生 marker（xs 裸 icon）+ label。样式对齐 NavItemContent 设计语言
+ * （DESIGN nav-item 三态）：active 用 `bg-primary/10 text-primary` 品牌色，gap/px/py 对齐
+ * nav-item horizontal。
  *
  * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
  * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
@@ -1443,6 +1527,17 @@ function TabChip({
       : panelRef.kind === "skill"
         ? panelRef.name
         : panelRef.path);
+  // 仅 session tab 有实例信息（file/git/skill 无 session 生命周期，不渲染 ℹ）。装配复用
+  // useInstanceInfoActions（与移动端 ℹ sheet 同源，detail 查询同 query key 零额外网络），
+  // variant="modal" 居中卡片（移动端保持底部 sheet）。
+  const sessionType =
+    panelRef.kind === "session" ? inferSessionTypeFromId(panelRef.sessionId) : undefined;
+  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
+    panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" },
+    sessionType,
+    panelRef.kind === "session" ? panelRef.projectName : undefined,
+    "modal",
+  );
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
       {/* 对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：active 用 primary 品牌色
@@ -1467,6 +1562,21 @@ function TabChip({
           {meta?.marker ?? null}
           <span className="block max-w-[8rem] truncate text-xs font-bold sm:text-sm">{label}</span>
         </button>
+        {panelRef.kind === "session" ? (
+          <button
+            aria-label={t("session.instanceInfo.title")}
+            className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
+              isActive
+                ? "opacity-100"
+                : "opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
+            }`}
+            onClick={openInfo}
+            title={t("session.instanceInfo.title")}
+            type="button"
+          >
+            <ShellIcon className="h-3 w-3" name="info" />
+          </button>
+        ) : null}
         <button
           aria-label={t("workbench.tabMinimize")}
           className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
@@ -1481,6 +1591,7 @@ function TabChip({
           <ShellIcon className="h-3 w-3" name="close" />
         </button>
       </div>
+      {infoHolder}
     </DragSourceCard>
   );
 }
