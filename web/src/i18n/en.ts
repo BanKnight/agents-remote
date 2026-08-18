@@ -324,6 +324,7 @@ export const en = {
   "api.piPresetCreateFailed": "Failed to add Pi preset",
   "api.piPresetUpdateFailed": "Failed to update Pi preset",
   "api.piPresetDeleteFailed": "Failed to delete Pi preset",
+  "api.piProvidersFailed": "Failed to fetch pi providers",
   "api.providerModelsFailed": "Failed to fetch provider models",
   "api.presetCreateFailed": "Failed to add preset",
   "api.presetUpdateFailed": "Failed to update preset",
@@ -625,7 +626,8 @@ export const en = {
     "Global chat sessions run on the active pi preset. Each preset bundles a provider, model, API key, and an optional custom endpoint.",
   "settings.piProvider": "Provider",
   "settings.piProviderHint":
-    "A pi built-in provider id (e.g. anthropic, openai, deepseek) or a custom id for a compatible endpoint.",
+    "Pick a built-in provider below, or type a custom id for a compatible endpoint.",
+  "settings.piProviderPick": "Select built-in provider",
   "settings.piModel": "Model",
   "settings.piModelHint": "The model ID for chat sessions (e.g. claude-sonnet-5).",
   "settings.piPresetsHint":

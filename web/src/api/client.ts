@@ -53,6 +53,7 @@ import type {
   DeleteClaudePresetResponse,
   DeletePiPresetResponse,
   GetSettingsResponse,
+  ListPiProvidersResponse,
   ListProviderModelsResponse,
   PiPresetResponse,
   TestClaudePresetRequest,
@@ -620,6 +621,13 @@ export async function updateClaudeRuntime(
 
 // pi runtime（chat 全局会话运行时，v5 presets 体系）：presets[] + activePresetId。
 // apiKey 永不出 api 进程——POST/PUT 返回 masked，GET（getSettings）同样只带 apiKeyMasked。
+
+// GET /api/settings/runtimes/pi/providers —— pi SDK 内置 provider 枚举（id + 显示名），
+// 供设置弹窗 provider 选择器。无凭证只读；失败走 fetchJson 统一错误映射。
+export async function listPiProviders(): Promise<ListPiProvidersResponse> {
+  return fetchJson("/api/settings/runtimes/pi/providers", "api.piProvidersFailed");
+}
+
 export async function createPiPreset(input: CreatePiPresetRequest): Promise<PiPresetResponse> {
   return fetchJson("/api/settings/runtimes/pi/presets", "api.piPresetCreateFailed", {
     method: "POST",

@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ClaudeModelMapping } from "@agents-remote/shared";
+import type { ClaudeModelMapping, PiProviderInfo } from "@agents-remote/shared";
 import { AuthService } from "./auth";
 import { createFetchHandler } from "./index";
 import { handleSettingsRoutes } from "./settings-routes";
@@ -118,6 +118,48 @@ test("GET /api/settings returns defaults when empty", async () => {
   expect(body.settings.runtimes.claude.effort).toBe("high");
   // v5：pi 键恒存在；presets 空 + activePresetId 空 = 未启用。
   expect(body.settings.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
+});
+
+// ── GET /api/settings/runtimes/pi/providers（内置 provider 枚举）──
+
+test("GET pi providers：注入枚举 → 200 返回 provider 列表", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings/runtimes/pi/providers"),
+    makeUrl("/api/settings/runtimes/pi/providers"),
+    store,
+    {
+      listPiProviders: async (): Promise<PiProviderInfo[]> => [
+        { id: "anthropic", name: "Anthropic" },
+        { id: "openai", name: "OpenAI" },
+      ],
+    },
+  );
+
+  expect(res?.status).toBe(200);
+  expect(await res!.json()).toEqual({
+    providers: [
+      { id: "anthropic", name: "Anthropic" },
+      { id: "openai", name: "OpenAI" },
+    ],
+  });
+});
+
+test("GET pi providers：枚举失败 → 200 降级空数组（前端手填兜底，不 500 阻塞设置弹窗）", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings/runtimes/pi/providers"),
+    makeUrl("/api/settings/runtimes/pi/providers"),
+    store,
+    {
+      listPiProviders: async (): Promise<PiProviderInfo[]> => {
+        throw new Error("SDK enumerate failed");
+      },
+    },
+  );
+
+  expect(res?.status).toBe(200);
+  expect(await res!.json()).toEqual({ providers: [] });
 });
 
 // ── pi runtime（v5 presets 体系）──

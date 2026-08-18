@@ -743,6 +743,17 @@ export type UpdatePiRuntimeResponse = {
   runtime: { activePresetId: string };
 };
 
+// GET /api/settings/runtimes/pi/providers 响应：pi SDK 内置 provider 运行时枚举（id + 显示名）。
+// 无网络、无凭证、只读 SDK 目录；SDK 升级时列表自动跟随，前端不做硬编码。
+export type PiProviderInfo = {
+  id: string;
+  name: string;
+};
+
+export type ListPiProvidersResponse = {
+  providers: PiProviderInfo[];
+};
+
 // ── 全局总览置顶会话（pin）──────────────────────────────────
 // 跨设备共享的置顶 sessionId 列表（迁自前端 localStorage，存 state.yaml overview 模块，
 // 经 StateStore.updateModule("overview") 读写）。

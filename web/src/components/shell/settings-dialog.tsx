@@ -42,6 +42,7 @@ import {
   deleteClaudePreset,
   deletePiPreset,
   getSettings,
+  listPiProviders,
   listPresetModels,
   testPresetModels,
   updateClaudePreset,
@@ -700,6 +701,40 @@ function PiPresetRow({
 }
 
 /**
+ * pi 内置 provider 选择器：枚举 SDK 内置 provider（useQuery 拉取，memo 在 api 侧），
+ * label = 显示名、description = provider id（对齐 model selector「alias + 具体 ID」模式）。
+ * 当前值命中内置 id 时 trigger 显示显示名；否则 fallback（加载中/失败/自定义 id）。
+ */
+function ProviderSelect({
+  value,
+  onChange,
+  fallbackLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  fallbackLabel: string;
+}) {
+  const providersQuery = useQuery({ queryKey: ["pi-providers"], queryFn: listPiProviders });
+  const builtin = providersQuery.data?.providers ?? [];
+  const active = builtin.find((p) => p.id === value.trim());
+  const { t } = useT();
+
+  return (
+    <OptionMenu
+      align="start"
+      cancelLabel={t("cancel")}
+      trigger={<SelectorTrigger label={active?.name ?? fallbackLabel} />}
+      items={builtin.map((p) => ({
+        label: p.name,
+        description: p.id,
+        isActive: p.id === value.trim(),
+        onSelect: () => onChange(p.id),
+      }))}
+    />
+  );
+}
+
+/**
  * pi 预设编辑/新建弹窗。预设 = provider + model + apiKey + 可选 baseUrl/api（自定义兼容端点）。
  * 不做模型发现/测试连接（决策 4：model id 手填）。apiKey 编辑态留空 = 不改（后端回退原 key）；
  * baseUrl 显式空串 = 删除（联动删 api）。api 下拉仅 baseUrl 非空时渲染。
@@ -805,11 +840,21 @@ function PiPresetDialog({
               />
             </Field>
             <Field label={t("settings.piProvider")} hint={t("settings.piProviderHint")}>
-              <ShellInput
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                placeholder="anthropic"
-              />
+              {/* 双入口单 state：内置选择器（label=显示名/description=id）+ 手填自定义 id
+                  （兼容端点）。选内置 → input 同步显示 id；手改 input → trigger 落回 fallback
+                  （除非恰好命中内置）。枚举失败静默降级为手填（provider 列表是可选便利）。 */}
+              <div className="flex flex-col gap-2">
+                <ProviderSelect
+                  value={provider}
+                  onChange={setProvider}
+                  fallbackLabel={t("settings.piProviderPick")}
+                />
+                <ShellInput
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  placeholder="anthropic"
+                />
+              </div>
             </Field>
             <Field label={t("settings.piModel")} hint={t("settings.piModelHint")}>
               <ShellInput

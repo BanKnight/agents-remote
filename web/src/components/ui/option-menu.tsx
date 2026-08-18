@@ -131,7 +131,7 @@ export function OptionMenu({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>{trigger}</DialogTrigger>
         <DialogContent className={MOBILE_SHEET_CLASSES} aria-label={cancelLabel ?? "选择菜单"}>
-          <div role="menu">
+          <div role="menu" className="max-h-[60vh] overflow-y-auto">
             {items.map((item, index) => (
               <button
                 key={`${item.label}-${index}`}
@@ -180,7 +180,12 @@ export function OptionMenu({
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align={align} side="top" sideOffset={4}>
+      <DropdownMenuContent
+        align={align}
+        side="top"
+        sideOffset={4}
+        className="max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto"
+      >
         {items.map((item, index) => (
           <DropdownMenuItem
             key={`${item.label}-${index}`}

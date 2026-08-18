@@ -12,10 +12,12 @@ import {
   type DeleteClaudePresetResponse,
   type DeletePiPresetResponse,
   type GetSettingsResponse,
+  type ListPiProvidersResponse,
   type ListProviderModelsResponse,
   type PiPreset,
   type PiPresetResponse,
   type PiProviderApi,
+  type PiProviderInfo,
   type SettingsState,
   type TestClaudePresetRequest,
   type UpdateClaudePresetRequest,
@@ -26,6 +28,7 @@ import {
   type UpdatePiRuntimeResponse,
 } from "@agents-remote/shared";
 import { jsonError } from "./http-auth";
+import { getCachedPiBuiltinProviders } from "./pi-providers";
 import { listProviderModels } from "./settings-models";
 import { SettingsStore, toMaskedPiPreset, toMaskedPreset } from "./settings-store";
 
@@ -36,7 +39,10 @@ export const handleSettingsRoutes = async (
   request: Request,
   url: URL,
   store: SettingsStore,
+  deps: { listPiProviders?: () => Promise<PiProviderInfo[]> } = {},
 ): Promise<Response | undefined> => {
+  const listPiProviders = deps.listPiProviders ?? getCachedPiBuiltinProviders;
+
   if (url.pathname === "/api/settings" && request.method === "GET") {
     const state = await store.read();
     const claude = state.runtimes.claude;
@@ -233,6 +239,21 @@ export const handleSettingsRoutes = async (
   }
 
   // ── pi runtime（v5 多 provider preset 体系）───────────────────────
+  // GET /api/settings/runtimes/pi/providers —— 枚举 pi SDK 内置 provider（id + 显示名），
+  // 供设置弹窗 provider 选择器使用。无凭证、只读 SDK 目录。枚举失败 200 降级空数组——
+  // 前端手填兜底，不让设置弹窗阻塞（provider 列表是可选便利，非关键路径）。
+  if (url.pathname === "/api/settings/runtimes/pi/providers" && request.method === "GET") {
+    let providers: PiProviderInfo[];
+    try {
+      providers = await listPiProviders();
+    } catch (error) {
+      console.error("[pi-providers] enumerate failed", error);
+      providers = [];
+    }
+    const response: ListPiProvidersResponse = { providers };
+    return Response.json(response);
+  }
+
   // POST /api/settings/runtimes/pi/presets —— 新建 preset。label/provider/apiKey/model 必填；
   // api 仅 baseUrl 非空时有意义（自定义兼容端点），无 baseUrl 传 api → 400。
   if (url.pathname === "/api/settings/runtimes/pi/presets" && request.method === "POST") {

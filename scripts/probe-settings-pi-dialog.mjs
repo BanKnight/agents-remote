@@ -109,6 +109,26 @@ async function run() {
       await dialog.getByText("Provider", { exact: true }).first().isVisible(),
       "Provider 字段 label",
     );
+    // provider 选择器（内置枚举）：trigger 可见 → 点开 → 菜单含内置 provider → 点选
+    // Anthropic → provider input 值同步为 id。桌面 1280×900 走 DropdownMenu popover（body portal，
+    // 用 page 级定位；现有 activePreset 菜单未展开，无 menuitem 冲突）。
+    ok(
+      await dialog.getByRole("button", { name: "Select built-in provider" }).isVisible(),
+      "provider 选择器 trigger（fallback label）",
+    );
+    await dialog.getByRole("button", { name: "Select built-in provider" }).click();
+    ok(
+      await page.getByRole("menuitem", { name: /Anthropic/ }).isVisible(),
+      "选择器菜单含内置 provider（Anthropic，label=显示名）",
+    );
+    await page.getByRole("menuitem", { name: /Anthropic/ }).click();
+    await page.waitForFunction(
+      () => document.querySelector('input[placeholder="anthropic"]')?.value === "anthropic",
+    );
+    ok(
+      (await dialog.locator('input[placeholder="anthropic"]').inputValue()) === "anthropic",
+      "点选内置 provider → input 同步显示 id",
+    );
     ok(await dialog.getByText("Model", { exact: true }).first().isVisible(), "Model 字段 label");
     ok(
       await dialog.getByText("API key", { exact: true }).first().isVisible(),

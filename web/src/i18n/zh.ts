@@ -324,6 +324,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.piPresetCreateFailed": "新增 Pi 预设失败",
   "api.piPresetUpdateFailed": "更新 Pi 预设失败",
   "api.piPresetDeleteFailed": "删除 Pi 预设失败",
+  "api.piProvidersFailed": "获取 pi provider 列表失败",
   "api.providerModelsFailed": "获取 provider 模型列表失败",
   "api.presetCreateFailed": "新增预设失败",
   "api.presetUpdateFailed": "更新预设失败",
@@ -618,8 +619,8 @@ export const zh: Record<TranslationKey, string> = {
   "settings.piHint":
     "全局聊天会话运行在激活的 pi 预设上。每个预设包含 provider、model、API key 和可选的自定义端点。",
   "settings.piProvider": "Provider",
-  "settings.piProviderHint":
-    "pi 内置 provider id（如 anthropic、openai、deepseek）或自定义兼容端点的自定义 id。",
+  "settings.piProviderHint": "从下方选择内置 provider，或为兼容端点手填自定义 id。",
+  "settings.piProviderPick": "选择内置 provider",
   "settings.piModel": "Model",
   "settings.piModelHint": "聊天会话使用的 model ID（如 claude-sonnet-5）。",
   "settings.piPresetsHint":
