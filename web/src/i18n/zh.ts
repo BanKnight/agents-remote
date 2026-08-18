@@ -320,6 +320,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.providerUpdateFailed": "更新 provider 失败",
   "api.providerDeleteFailed": "删除 provider 失败",
   "api.runtimeUpdateFailed": "更新 Claude runtime 失败",
+  "api.piRuntimeUpdateFailed": "更新 Pi 运行时失败",
   "api.providerModelsFailed": "获取 provider 模型列表失败",
   "api.presetCreateFailed": "新增预设失败",
   "api.presetUpdateFailed": "更新预设失败",
@@ -583,6 +584,7 @@ export const zh: Record<TranslationKey, string> = {
   "settings.back": "返回",
   "settings.section.general": "通用",
   "settings.section.claude": "Claude 运行时",
+  "settings.section.pi": "Pi 运行时",
   "theme.label": "外观",
   "theme.hint": "选择明亮或暗黑外观，或跟随系统。",
   "theme.system": "跟随系统",
@@ -608,6 +610,14 @@ export const zh: Record<TranslationKey, string> = {
   "settings.effort": "思考强度",
   "settings.effortHint": "spawn 时注入 CLAUDE_CODE_EFFORT_LEVEL 环境变量。不影响已经在运行的会话。",
   "settings.save": "保存",
+
+  // ── Settings: pi runtime（Phase 2 配置层，chat 全局会话运行时，单块配置） ──
+  "settings.piHint":
+    "全局聊天会话使用的 provider / API key / model。API key 留空表示保留现有 key。",
+  "settings.piProvider": "Provider",
+  "settings.piProviderHint": "提供该模型的厂商（如 anthropic）。",
+  "settings.piModel": "Model",
+  "settings.piModelHint": "聊天会话使用的 model ID（如 claude-sonnet-5）。",
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",

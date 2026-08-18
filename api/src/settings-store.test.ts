@@ -12,6 +12,7 @@ import {
   maskApiKey,
   migrateV1ToV2,
   resolveModelId,
+  toMaskedPi,
   toMaskedPreset,
 } from "./settings-store";
 
@@ -73,7 +74,7 @@ test("corrupt settings.yaml → throws error without echoing apiKey source (secr
   expect(msg).not.toContain("AR-LEAK-MARKER-33333"); // 源码值不回显（机密收口）
 });
 
-test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 3", async () => {
+test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 4", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");
   const store = new SettingsStore({ path });
@@ -106,7 +107,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
   expect(fileStat.mode & 0o077).toBe(0);
 
   const raw = parseYaml(await readFile(path, "utf8"));
-  expect(raw.schemaVersion).toBe(3);
+  expect(raw.schemaVersion).toBe(4);
 });
 
 test("SettingsStore.update applies mutator as read-modify-write", async () => {
@@ -154,6 +155,104 @@ test("SettingsStore.read tolerates v2 partial files (normalizes missing fields)"
   expect(state.runtimes.claude.presets).toEqual([]);
   expect(state.runtimes.claude.effort).toBe("high");
   expect(state.runtimes.claude.activePresetId).toBe("");
+  // pi 缺省 → undefined（未启用）。
+  expect(state.runtimes.pi).toBeUndefined();
+});
+
+// ── pi runtime normalize + mask（Phase 2 配置层）──────────────────────────────
+
+test("normalizeSettings: pi 三项全非空 → 保留；部分/缺 → undefined", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+
+  // 完整 pi → 保留。
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        pi: { provider: "anthropic", apiKey: "sk-pi-abc", model: "claude-sonnet-5" },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const full = await new SettingsStore({ path }).read();
+  expect(full.runtimes.pi).toEqual({
+    provider: "anthropic",
+    apiKey: "sk-pi-abc",
+    model: "claude-sonnet-5",
+  });
+
+  // 部分 pi（缺 model）→ undefined（不半启用）。
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        pi: { provider: "anthropic", apiKey: "sk-pi-abc" },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const partial = await new SettingsStore({ path }).read();
+  expect(partial.runtimes.pi).toBeUndefined();
+});
+
+test("SettingsStore: pi round-trip 落盘 + 0o600 + schemaVersion 4", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  const store = new SettingsStore({ path });
+
+  const state: SettingsState = {
+    runtimes: {
+      claude: {
+        presets: [],
+        activePresetId: "",
+        enable1mContext: false,
+        effort: "high",
+      },
+      pi: { provider: "anthropic", apiKey: "sk-pi-xyz123456", model: "claude-sonnet-5" },
+    },
+    skills: { sources: [] },
+  };
+  await store.write(state);
+
+  const roundTrip = await store.read();
+  expect(roundTrip.runtimes.pi).toEqual(state.runtimes.pi);
+
+  const fileStat = await stat(path);
+  expect(fileStat.mode & 0o077).toBe(0);
+  const raw = parseYaml(await readFile(path, "utf8"));
+  expect(raw.schemaVersion).toBe(4);
+  expect(raw.runtimes.pi.apiKey).toBe("sk-pi-xyz123456");
+});
+
+test("toMaskedPi: apiKey mask + hasApiKey；不泄露原 key", () => {
+  const masked = toMaskedPi({
+    provider: "anthropic",
+    apiKey: "sk-pi-abc123456",
+    model: "claude-sonnet-5",
+  });
+  expect(masked.provider).toBe("anthropic");
+  expect(masked.model).toBe("claude-sonnet-5");
+  expect(masked.hasApiKey).toBe(true);
+  expect(masked.apiKeyMasked).not.toContain("abc123456");
+  expect(masked.apiKeyMasked).toBe(maskApiKey("sk-pi-abc123456"));
+});
+
+test("migrateV1ToV2: 输出无 pi（v1 无 pi 概念，迁移后未启用）", () => {
+  const v2 = migrateV1ToV2({
+    schemaVersion: 1,
+    providers: [{ id: "prov_a", label: "A", apiKey: "sk-a" }],
+    runtimes: { claude: { providerId: "prov_a", modelMapping: CONCRETE_MAPPING } },
+  });
+  expect(v2.runtimes.pi).toBeUndefined();
+});
+
+test("cloneDefaultSettings（read 无文件）: pi undefined", async () => {
+  const dir = await makeTempDir();
+  const state = await new SettingsStore({ path: join(dir, "settings.yaml") }).read();
+  expect(state.runtimes.pi).toBeUndefined();
 });
 
 // ── v1 → v2 迁移（最高风险防线：v1 被 v2 覆盖后不可逆，凭证不能丢）──────────
@@ -315,7 +414,7 @@ test("SettingsStore.read normalizeSkillSources：legacy 补 github、local/git �
   ]);
 });
 
-test("SettingsStore 迁移后 write 持久化为 v3（v1 磁盘被覆盖，providers 顶层消失）", async () => {
+test("SettingsStore 迁移后 write 持久化为 v4（v1 磁盘被覆盖，providers 顶层消失）", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");
   await writeFile(
@@ -329,11 +428,11 @@ test("SettingsStore 迁移后 write 持久化为 v3（v1 磁盘被覆盖，provi
   );
   const store = new SettingsStore({ path });
 
-  // update 触发 read（迁移）+ write（v3 落盘）。
+  // update 触发 read（迁移）+ write（v4 落盘）。
   await store.update((s) => s);
 
   const raw = parseYaml(await readFile(path, "utf8"));
-  expect(raw.schemaVersion).toBe(3);
+  expect(raw.schemaVersion).toBe(4);
   expect(raw.runtimes.claude.presets[0].id).toBe("p1");
   expect(raw.runtimes.claude.presets[0].apiKey).toBe("sk-a");
   expect(raw.providers).toBeUndefined();

@@ -320,6 +320,7 @@ export const en = {
   "api.providerUpdateFailed": "Failed to update provider",
   "api.providerDeleteFailed": "Failed to delete provider",
   "api.runtimeUpdateFailed": "Failed to update Claude runtime",
+  "api.piRuntimeUpdateFailed": "Failed to update Pi runtime",
   "api.providerModelsFailed": "Failed to fetch provider models",
   "api.presetCreateFailed": "Failed to add preset",
   "api.presetUpdateFailed": "Failed to update preset",
@@ -584,6 +585,7 @@ export const en = {
   "settings.back": "Back",
   "settings.section.general": "General",
   "settings.section.claude": "Claude runtime",
+  "settings.section.pi": "Pi runtime",
   "theme.label": "Appearance",
   "theme.hint": "Choose light or dark appearance, or follow system.",
   "theme.system": "System",
@@ -614,6 +616,14 @@ export const en = {
   "settings.saving": "Saving…",
   "settings.saved": "Saved",
   "settings.unsavedChanges": "Unsaved changes",
+
+  // ── Settings: pi runtime（Phase 2 配置层，chat 全局会话运行时，单块配置） ──
+  "settings.piHint":
+    "Provider, API key, and model used by global chat sessions. A blank API key keeps the existing key.",
+  "settings.piProvider": "Provider",
+  "settings.piProviderHint": "The provider serving the model (e.g. anthropic).",
+  "settings.piModel": "Model",
+  "settings.piModelHint": "The model ID for chat sessions (e.g. claude-sonnet-5).",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",

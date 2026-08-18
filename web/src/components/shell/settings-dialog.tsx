@@ -8,6 +8,7 @@ import {
   type CreateClaudePresetRequest,
   type EffortLevel,
   type ListProviderModelsResponse,
+  type PiRuntimeConfigMasked,
   type UpdateClaudePresetRequest,
 } from "@agents-remote/shared";
 
@@ -39,6 +40,7 @@ import {
   testPresetModels,
   updateClaudePreset,
   updateClaudeRuntime,
+  updatePiRuntime,
 } from "../../api/client";
 
 const TIERS: readonly ClaudeModelTier[] = ["default", "opus", "sonnet", "haiku"];
@@ -79,13 +81,15 @@ const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
 };
 
 /** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
-export type SettingsSection = "root" | "claude" | "general";
+export type SettingsSection = "root" | "claude" | "pi" | "general";
 
 /** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
 export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT>["t"]): string => {
   switch (section) {
     case "claude":
       return t("settings.section.claude");
+    case "pi":
+      return t("settings.section.pi");
     case "general":
       return t("settings.section.general");
     default:
@@ -141,6 +145,16 @@ export function SettingsContent({
         />
       );
       break;
+    case "pi":
+      body = (
+        <PiRuntimeContent
+          // key 随 pi 配置变化：保存成功后 remount 重置表单（apiKey 输入清空回 masked 态）。
+          key={`${settings?.runtimes.pi?.provider ?? ""}|${settings?.runtimes.pi?.model ?? ""}|${settings?.runtimes.pi?.apiKeyMasked ?? ""}`}
+          pi={settings?.runtimes.pi}
+          loading={loading}
+        />
+      );
+      break;
     case "general":
       body = <GeneralSection />;
       break;
@@ -165,6 +179,7 @@ function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSectio
     tone: "warning" | "muted";
   }[] = [
     { section: "claude", title: t("settings.section.claude"), icon: "anthropic", tone: "warning" },
+    { section: "pi", title: t("settings.section.pi"), icon: "info", tone: "muted" },
     { section: "general", title: t("settings.section.general"), icon: "info", tone: "muted" },
   ];
   return (
@@ -427,6 +442,116 @@ function ClaudeRuntimeContent({
       </Card>
 
       <PresetListSection presets={claude.presets} loading={loading} />
+    </div>
+  );
+}
+
+// ── pi runtime detail：provider / apiKey / model 单块配置（Phase 2 配置层） ──
+
+/**
+ * pi 运行时段（Phase 2 配置层）：chat 全局会话运行时，单块配置（非 preset 列表）。
+ * 未配置（settings.runtimes.pi undefined）= 未启用。apiKey 只露 masked 指纹：编辑态输入
+ * 留空 = 不改（后端回退已保存 key），placeholder 显示 apiKeyMasked 提示已配置。
+ */
+function PiRuntimeContent({
+  pi,
+  loading = false,
+}: {
+  pi: PiRuntimeConfigMasked | undefined;
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+
+  const [provider, setProvider] = useState(pi?.provider ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState(pi?.model ?? "");
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const savedProvider = pi?.provider ?? "";
+  const savedModel = pi?.model ?? "";
+  const hasSavedKey = !!pi?.hasApiKey;
+  const dirty = !loading && (provider !== savedProvider || model !== savedModel || apiKey !== "");
+  // provider/model 必填；apiKey 新建态必填、编辑态留空可（保留已保存 key）。
+  const canSave =
+    !loading &&
+    provider.trim() !== "" &&
+    model.trim() !== "" &&
+    (apiKey.trim() !== "" || hasSavedKey);
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setError(null);
+    setSaving(true);
+    try {
+      await updatePiRuntime({
+        provider: provider.trim(),
+        model: model.trim(),
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setApiKey("");
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Card className="border border-neutral-line bg-surface ring-0">
+        <CardContent className="flex flex-col gap-4 p-3">
+          <p className="text-xs leading-5 text-on-surface-muted">{t("settings.piHint")}</p>
+
+          <Field label={t("settings.piProvider")} hint={t("settings.piProviderHint")}>
+            <ShellInput
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              placeholder="anthropic"
+              disabled={loading}
+            />
+          </Field>
+
+          <Field label={t("settings.piModel")} hint={t("settings.piModelHint")}>
+            <ShellInput
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="claude-sonnet-5"
+              disabled={loading}
+            />
+          </Field>
+
+          <Field label={t("settings.apiKey")} hint={t("settings.apiKeyHint")}>
+            {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
+            <ShellInput
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={hasSavedKey ? pi?.apiKeyMasked : "sk-ant-..."}
+              autoComplete="off"
+              disabled={loading}
+            />
+          </Field>
+
+          {error && <p className="text-xs text-error">{error}</p>}
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <span className="text-xs text-on-surface-muted">
+              {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
+            </span>
+            <ActionButton
+              tone="accent"
+              onClick={handleSave}
+              disabled={!canSave || !dirty || saving}
+            >
+              {saving ? t("settings.saving") : t("settings.save")}
+            </ActionButton>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

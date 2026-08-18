@@ -82,6 +82,127 @@ test("GET /api/settings returns defaults when empty", async () => {
   expect(body.settings.runtimes.claude.presets).toEqual([]);
   expect(body.settings.runtimes.claude.activePresetId).toBe("");
   expect(body.settings.runtimes.claude.effort).toBe("high");
+  // pi 未配置 → GET 响应不带 pi 键。
+  expect(body.settings.runtimes.pi).toBeUndefined();
+});
+
+// ── pi runtime（Phase 2 配置层）──
+
+test("PUT /api/settings/runtimes/pi 落盘 + 返回 masked；GET 回读 masked、原 key 不出进程", async () => {
+  const store = await makeStore();
+  const put = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", {
+      provider: "anthropic",
+      apiKey: "sk-pi-abc123456",
+      model: "claude-sonnet-5",
+    }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(put?.status).toBe(200);
+  const putBody = await put!.json();
+  expect(putBody.runtime.provider).toBe("anthropic");
+  expect(putBody.runtime.model).toBe("claude-sonnet-5");
+  expect(putBody.runtime.hasApiKey).toBe(true);
+  expect(putBody.runtime.apiKeyMasked).not.toContain("abc123456");
+  expect(putBody.runtime).not.toHaveProperty("apiKey");
+
+  // GET 回读：masked，不带原 key。
+  const get = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings"),
+    makeUrl("/api/settings"),
+    store,
+  );
+  const getBody = await get!.json();
+  expect(getBody.settings.runtimes.pi.apiKeyMasked).toBe(putBody.runtime.apiKeyMasked);
+  expect(getBody.settings.runtimes.pi).not.toHaveProperty("apiKey");
+
+  // 重启（新 store 同 path）回读：配置持久。
+  const store2 = new SettingsStore({ path: store.getPath() });
+  const get2 = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings"),
+    makeUrl("/api/settings"),
+    store2,
+  );
+  const get2Body = await get2!.json();
+  expect(get2Body.settings.runtimes.pi.provider).toBe("anthropic");
+  expect(get2Body.settings.runtimes.pi.model).toBe("claude-sonnet-5");
+});
+
+test("PUT /api/settings/runtimes/pi 缺任一项 → 400", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", {
+      provider: "anthropic",
+      apiKey: "sk-pi-abc",
+    }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(res?.status).toBe(400);
+});
+
+test("PUT pi 编辑态 apiKey 留空 → 保留已保存 key（不覆盖）", async () => {
+  const store = await makeStore();
+  // 先配好带 key 的 pi。
+  await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", {
+      provider: "anthropic",
+      apiKey: "sk-pi-keepme-123456",
+      model: "claude-sonnet-5",
+    }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+
+  // 只改 model，apiKey 留空。
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", {
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+    }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body.runtime.model).toBe("claude-opus-4-8");
+  expect(body.runtime.apiKeyMasked).not.toContain("keepme");
+
+  // 落盘：key 仍是原值（未覆盖为空）。
+  const after = await store.read();
+  expect(after.runtimes.pi?.apiKey).toBe("sk-pi-keepme-123456");
+});
+
+test("PUT pi 保留 claude/skills（展开合并不丢字段）", async () => {
+  const store = await makeStore();
+  // 先 seed 一个 preset + skill source。
+  await seedPreset(store, "p1", { label: "A", apiKey: "sk-a" });
+  await store.update((s) => ({
+    ...s,
+    skills: { sources: [{ id: "src1", type: "github", repo: "o/r" }] },
+  }));
+
+  await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", {
+      provider: "anthropic",
+      apiKey: "sk-pi-abc123456",
+      model: "claude-sonnet-5",
+    }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+
+  const get = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings"),
+    makeUrl("/api/settings"),
+    store,
+  );
+  const body = await get!.json();
+  // claude preset + skills 仍在。
+  expect(body.settings.runtimes.claude.presets).toHaveLength(1);
+  expect(body.settings.skills.sources).toHaveLength(1);
+  expect(body.settings.runtimes.pi).toBeDefined();
 });
 
 // ── POST /presets (create) ──

@@ -56,9 +56,9 @@ test("splitLegacySettings: 缺省/非法 → 默认 settings + 空 overview（�
 
 // ── migrateLegacyUserFiles（providers.json → settings.yaml + state.yaml 一次性迁移）──
 
-// ── settings.yaml v2-with-ui 中间态（C3 产物，ui 还在 SettingsState 顶层）→ state.yaml + settings@v3 ──
+// ── settings.yaml v2-with-ui 中间态（C3 产物，ui 还在 SettingsState 顶层）→ state.yaml + settings@v4 ──
 
-test("migrates settings.yaml v2-with-ui: ui → state.yaml overview, settings rewritten v3", async () => {
+test("migrates settings.yaml v2-with-ui: ui → state.yaml overview, settings rewritten v4", async () => {
   const dir = await makeTempDir();
   const settingsPath = join(dir, "settings.yaml");
   await writeFile(
@@ -78,9 +78,9 @@ test("migrates settings.yaml v2-with-ui: ui → state.yaml overview, settings re
   const overview = await new StateStore({ path: join(dir, "state.yaml") }).readModule("overview");
   expect(overview.pinnedSessions).toEqual(["ar-claude-1", "ar-claude-2"]);
 
-  // settings 重写 v3（磁盘无 ui，presets/effort 保留）
+  // settings 重写 v4（磁盘无 ui，presets/effort 保留）
   const onDisk = parseYaml(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
-  expect(onDisk.schemaVersion).toBe(3);
+  expect(onDisk.schemaVersion).toBe(4);
   expect(onDisk).not.toHaveProperty("ui");
   expect((onDisk.runtimes as { claude: { effort: string } }).claude.effort).toBe("low");
 });

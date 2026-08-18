@@ -10,15 +10,17 @@ import {
   type DeleteClaudePresetResponse,
   type GetSettingsResponse,
   type ListProviderModelsResponse,
+  type PiRuntimeResponse,
   type SettingsState,
   type TestClaudePresetRequest,
   type UpdateClaudePresetRequest,
   type UpdateClaudeRuntimeRequest,
   type UpdateClaudeRuntimeResponse,
+  type UpdatePiRuntimeRequest,
 } from "@agents-remote/shared";
 import { jsonError } from "./http-auth";
 import { listProviderModels } from "./settings-models";
-import { SettingsStore, toMaskedPreset } from "./settings-store";
+import { SettingsStore, toMaskedPreset, toMaskedPi } from "./settings-store";
 
 // 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫。
 // GET 响应里 presets 的 apiKey 全走 toMaskedPreset；原始 key 永不出 api 进程、永不进日志。
@@ -40,6 +42,8 @@ export const handleSettingsRoutes = async (
             enable1mContext: claude.enable1mContext,
             effort: claude.effort,
           },
+          // pi 未配置（undefined）时不带 pi 键 = 未启用。
+          ...(state.runtimes.pi ? { pi: toMaskedPi(state.runtimes.pi) } : {}),
         },
         skills: { sources: state.skills?.sources ?? [] },
       },
@@ -204,6 +208,38 @@ export const handleSettingsRoutes = async (
       throw error;
     }
     const response: UpdateClaudeRuntimeResponse = { runtime: updated.runtimes.claude };
+    return Response.json(response);
+  }
+
+  // PUT /api/settings/runtimes/pi —— pi runtime 配置（provider/apiKey/model，Phase 2 配置层）。
+  // provider/model 必填非空；apiKey 空/缺省 = 保留已保存 key（编辑态留空不改，与 preset PUT
+  // 语义一致），仅新建态无已保存 key 时必填。store.update 用展开合并保留 s 的其它字段
+  //（claude/skills），避免 claude runtime PATCH 那样丢 skills。
+  if (url.pathname === "/api/settings/runtimes/pi" && request.method === "PUT") {
+    const body = await readJson<UpdatePiRuntimeRequest>(request);
+    const provider = body.provider?.trim();
+    const apiKey = body.apiKey?.trim();
+    const model = body.model?.trim();
+    let invalid = false;
+    const updated = await store.update((s) => {
+      const resolvedApiKey = apiKey || s.runtimes.pi?.apiKey || "";
+      if (!provider || !model || !resolvedApiKey) {
+        invalid = true;
+        return s;
+      }
+      return {
+        ...s,
+        runtimes: { ...s.runtimes, pi: { provider, apiKey: resolvedApiKey, model } },
+      };
+    });
+    if (invalid) {
+      return jsonError(
+        "SETTINGS_INVALID",
+        "provider/model are required and apiKey when no key saved",
+        400,
+      );
+    }
+    const response: PiRuntimeResponse = { runtime: toMaskedPi(updated.runtimes.pi!) };
     return Response.json(response);
   }
 

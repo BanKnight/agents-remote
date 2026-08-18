@@ -11,6 +11,8 @@ import {
   type ClaudePresetMasked,
   type ClaudeRuntimeConfig,
   type EffortLevel,
+  type PiRuntimeConfig,
+  type PiRuntimeConfigMasked,
   type SettingsState,
   type SkillSource,
   type SkillSourceType,
@@ -23,10 +25,11 @@ import { summarizeYamlError } from "./yaml-error";
 //
 // schemaVersion：v1 = 旧 providers.json「providers[] + runtime.{providerId,modelMapping}」；
 // v2 = 「runtimes.claude.{presets[], activePresetId, ...}」+ ui（ui.pinnedSessions）；
-// v3 = v2 去 ui（ui 迁到 state.yaml overview 模块，见 state-store.ts）。旧 providers.json
+// v3 = v2 去 ui（ui 迁到 state.yaml overview 模块，见 state-store.ts）；
+// v4 = v3 加 runtimes.pi（chat 模式全局会话运行时配置，Phase 2）。旧 providers.json
 // 由 migrate-legacy-config.ts 的 migrateLegacyUserFiles 一次性迁移（settings@v3 + state@v1，
 // 先写 settings.yaml 权威，再改名 .bak）；read() 保留 v1 分流作兜底（迁移崩溃中断的极端残留）。
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const defaultSettingsPath = () => join(homedir(), ".agents-remote", "settings.yaml");
 
 // 默认 modelMapping = tier alias 字符串本身：不改设置时行为 = 现状（CLI 接受 tier
@@ -209,6 +212,27 @@ export function toMaskedPreset(preset: ClaudePreset): ClaudePresetMasked {
   };
 }
 
+// pi runtime mask（与 toMaskedPreset 同语义）：apiKey 永不出 api 进程，GET 响应只露 masked。
+export function toMaskedPi(pi: PiRuntimeConfig): PiRuntimeConfigMasked {
+  return {
+    provider: pi.provider,
+    apiKeyMasked: maskApiKey(pi.apiKey),
+    hasApiKey: Boolean(pi.apiKey),
+    model: pi.model,
+  };
+}
+
+// pi 宽松规整：三项全为非空 string 才保留，否则 undefined（= 未启用）。部分配置不半启用。
+function normalizePi(input: unknown): PiRuntimeConfig | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const p = input as Record<string, unknown>;
+  const provider = nonEmptyString(p.provider);
+  const apiKey = nonEmptyString(p.apiKey);
+  const model = nonEmptyString(p.model);
+  if (!provider || !apiKey || !model) return undefined;
+  return { provider, apiKey, model };
+}
+
 const nonEmptyString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
@@ -321,6 +345,8 @@ export function normalizeSettings(parsed: unknown): SettingsState {
             : DEFAULT_CLAUDE_RUNTIME.enable1mContext,
         effort: isEffortLevel(claude?.effort) ? claude.effort : DEFAULT_CLAUDE_RUNTIME.effort,
       },
+      // pi 宽松：三项全非空才保留，否则 undefined（未启用）。部分配置不半启用。
+      pi: normalizePi(root.runtimes?.pi),
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
   };

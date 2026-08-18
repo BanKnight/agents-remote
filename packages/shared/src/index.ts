@@ -377,6 +377,35 @@ export type ClaudeRuntimeConfig = {
   effort: EffortLevel;
 };
 
+// ── pi runtime（chat 模式全局会话运行时，Phase 2 配置层 / Phase 3 接入运行时）─────────
+// pi 走 SDK 库嵌入（非 spawn），需 provider/apiKey/model 三件。与 claude preset 体系独立
+//（chat 全局不绑项目，无 preset 多选概念，单一配置块）。未配置（undefined）= pi 未启用，
+// chat 会话创建时由 Phase 3 处理；Phase 2 只落盘配置 + GET mask。
+export type PiRuntimeConfig = {
+  provider: string;
+  apiKey: string;
+  model: string;
+};
+
+export type PiRuntimeConfigMasked = {
+  provider: string;
+  apiKeyMasked: string;
+  hasApiKey: boolean;
+  model: string;
+};
+
+// apiKey 可选：空/缺省 = 保留已保存 key（编辑态留空不改，与 preset PUT 语义一致）。
+// 新建态无已保存 key 时仍必填（后端校验）。
+export type UpdatePiRuntimeRequest = {
+  provider: string;
+  apiKey?: string;
+  model: string;
+};
+
+export type PiRuntimeResponse = {
+  runtime: PiRuntimeConfigMasked;
+};
+
 // ── Skills marketplace ──────────────────────────────────────
 // Skill 包管理：wrap `npx skills` CLI（vercel-labs/skills）做执行，skills.sh /api/search 做发现。
 // 先 Claude，架构支持多 runtime（Codex 后续）——所有 wrap 命令透传 --agent，目录映射交给 CLI。
@@ -584,6 +613,8 @@ export type SettingsState = {
       enable1mContext: boolean;
       effort: EffortLevel;
     };
+    // pi runtime（chat 模式全局会话运行时）：未配置 = undefined（pi 未启用）。Phase 2 配置层。
+    pi?: PiRuntimeConfig;
   };
   // 自定义 skill 源列表（optional；settings-store normalizeSettings 补默认 { sources: [] }）。
   skills?: {
@@ -612,6 +643,8 @@ export type GetSettingsResponse = {
         enable1mContext: boolean;
         effort: EffortLevel;
       };
+      // pi 未配置时缺省（GET 响应不带 pi 键 = 未启用）。
+      pi?: PiRuntimeConfigMasked;
     };
     // 源是公开 GitHub repo，不 mask。
     skills: {

@@ -56,6 +56,8 @@ import type {
   UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
+  UpdatePiRuntimeRequest,
+  PiRuntimeResponse,
   AddMcpServerRequest,
   AddMcpServerResponse,
   AddSkillSourceRequest,
@@ -609,6 +611,16 @@ export async function updateClaudeRuntime(
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input satisfies UpdateClaudeRuntimeRequest),
+  });
+}
+
+// pi runtime（chat 全局会话运行时，Phase 2 配置层）：provider/apiKey/model 三项必填，
+// apiKey 永不出 api 进程——PUT 返回 masked，GET（getSettings）同样只带 apiKeyMasked。
+export async function updatePiRuntime(input: UpdatePiRuntimeRequest): Promise<PiRuntimeResponse> {
+  return fetchJson("/api/settings/runtimes/pi", "api.piRuntimeUpdateFailed", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies UpdatePiRuntimeRequest),
   });
 }
 
