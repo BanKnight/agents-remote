@@ -1,12 +1,12 @@
-// 探针：会话页 Agent/Chat 双模式（设计 workbench-views §3.1，Phase 1）。
+// 探针：会话页 Agent/Chat 双模式（设计 workbench-views §3.1，Phase 1 修正）。
 // 断言（桌面 1280×900 + 移动 390×844，chat-sessions API 走真实后端 43011）：
-//  1. /projects 顶部 mode tab（Agent/Chat），默认 agent（URL 无 ?mode=）。
-//  2. 切 Chat → URL ?mode=chat + ChatOverview 渲染（搜索框/新建/列表）+ 左栏面板隐藏。
+//  1. /projects 左栏标题区 mode tab（Agent/Chat），默认 agent（URL 无 ?mode=）。三栏 shell 在。
+//  2. 切 Chat → URL ?mode=chat + 左栏 body=ChatOverview（搜索框/新建/列表）。三栏 shell 不变、中栏 InstanceArea 仍在。
 //  3. 新建会话 → 占位 detail /chat/$id（notAvailable 文案 + 返回）。
 //  4. 返回列表 → 会话行存在（真实 API round-trip）。
 //  5. 桌面右键行 → 菜单（改名/删除）出现；改名生效。
 //  6. 删除 → confirm → 行消失 + ~/.agents-remote/chat-sessions/ 元数据清理。
-//  7. reload → mode=chat 保持（URL 即真相）；切回 Agent → 网格恢复 + mode 键消失。
+//  7. reload → mode=chat 保持（URL 即真相）；切回 Agent → 左栏 body 换回 GlobalProjectsOverview + mode 键消失。
 //  8. 移动端 header 内 mode tab + chat 列表渲染 + 长按（contextmenu）出菜单。
 // 密码自读不打印。用法：bun scripts/probe-chat-mode.mjs
 import { readdir, rm } from "node:fs/promises";
@@ -67,7 +67,7 @@ async function run() {
       }
     }
 
-    console.log("\n-- 1. mode tab 默认 agent --");
+    console.log("\n-- 1. mode tab 默认 agent（左栏标题区 + 三栏 shell）--");
     await page.goto(`${WEB_ORIGIN}/projects`);
     await page.waitForSelector(
       'div[role="group"][aria-label="Session mode switch"], div[role="group"][aria-label="会话模式切换"]',
@@ -77,12 +77,22 @@ async function run() {
     );
     const tabs = modeTabButtons(page);
     record((await tabs.count()) === 2, "mode tab = Agent + Chat 两个按钮");
+    // mode tab 在左栏 PanelHeader title（第 2 个 aside = 左栏），非中栏顶部。
+    const modeTabInLeftAside = await page.evaluate(() => {
+      const asides = document.querySelectorAll("aside");
+      const left = asides[1];
+      if (!left) return false;
+      return !!left.querySelector(
+        'div[role="group"][aria-label="Session mode switch"], div[role="group"][aria-label="会话模式切换"]',
+      );
+    });
+    record(modeTabInLeftAside, "mode tab 在左栏 PanelHeader 标题区（非中栏顶部）");
     const agentPressed = await tabs.nth(0).getAttribute("aria-pressed");
     const chatPressed = await tabs.nth(1).getAttribute("aria-pressed");
     record(agentPressed === "true" && chatPressed === "false", "默认 agent active");
     record(!new URL(page.url()).searchParams.has("mode"), "默认 URL 无 ?mode=（省略 = agent）");
 
-    console.log("\n-- 2. 切 Chat：URL + ChatOverview + 左栏隐藏 --");
+    console.log("\n-- 2. 切 Chat：左栏 body=ChatOverview + 三栏 shell 不变 --");
     await tabs.nth(1).click();
     await page.waitForTimeout(500);
     record(new URL(page.url()).searchParams.get("mode") === "chat", "URL ?mode=chat");
@@ -92,17 +102,24 @@ async function run() {
           'input[aria-label="搜索对话…"], input[aria-label="Search chats…"], input[type="search"]',
         )
         .count()) === 1,
-      "ChatOverview 搜索框渲染",
+      "左栏 body = ChatOverview 搜索框渲染",
     );
     record(
       (await page.getByRole("button", { name: /新对话|新建对话|New chat/ }).count()) >= 1,
       "新建按钮渲染",
     );
-    const emptyShell = await page.evaluate(() => {
-      const a = document.querySelectorAll("aside")[1];
-      return a ? a.children.length === 0 : false;
+    // chat 模式三栏 shell 不变：左栏 aside 有内容（ChatOverview，非空壳）+ 中栏 section 在。
+    const shellIntact = await page.evaluate(() => {
+      const asides = document.querySelectorAll("aside");
+      const left = asides[1];
+      if (!left) return false;
+      // 左栏非空壳：PanelHeader + body 子节点 ≥ 2。
+      const leftHasContent = left.children.length >= 2;
+      // 中栏 section 存在（第 3 个 grid item）。
+      const section = document.querySelector("main section");
+      return leftHasContent && section !== null;
     });
-    record(emptyShell, "左栏面板隐藏（第 2 个 aside = 空壳占位无内容）");
+    record(shellIntact, "chat 模式三栏 shell 不变（左栏有内容 + 中栏 section 在）");
 
     console.log("\n-- 3. 新建会话 → 占位 detail --");
     await page
@@ -177,7 +194,12 @@ async function run() {
     await tabs2.nth(0).click();
     await page.waitForTimeout(500);
     record(!new URL(page.url()).searchParams.has("mode"), "切回 Agent：mode 键从 URL 消失");
-    record((await page.locator("aside").count()) >= 2, "Agent 模式左栏面板恢复");
+    // 切回 Agent：左栏 body 换回 GlobalProjectsOverview（搜索框消失，项目网格在）。
+    const chatGone =
+      (await page
+        .locator('input[aria-label="搜索对话…"], input[aria-label="Search chats…"]')
+        .count()) === 0;
+    record(chatGone, "切回 Agent：左栏 body 换回 GlobalProjectsOverview（chat 搜索框消失）");
     await ctx.close();
   }
 

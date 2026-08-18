@@ -16,11 +16,10 @@ import {
 } from "../components/workbench/instance-area";
 import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
 import { ChatOverview } from "../components/workbench/chat-overview";
-import { MobileWorkbench } from "../components/workbench/mobile-workbench";
+import { MobileWorkbench, SessionModeTabs } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
-import { ModeTabGroup } from "../components/shell/shell-primitives";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { ProjectSwitcher } from "../components/workbench/project-switcher";
@@ -142,16 +141,6 @@ function WorkbenchContent({
       rightTab,
       tab: next,
       ...(leftMode !== "auto" ? { leftMode } : {}),
-    });
-  };
-  // 一级会话页模式切换（§3.1）：与 onTabChange 同范式透传全部 search 维度；mode=agent 时
-  // 省略 key（省略 = 默认 agent，URL 不带冗余 ?mode=agent）。
-  const onModeChange = (next: WorkbenchMode) => {
-    void navigateWorkbench(scope, focusId, {
-      rightTab,
-      tab: tabFromUrl,
-      ...(leftMode !== "auto" ? { leftMode } : {}),
-      ...(next !== "agent" && { mode: next }),
     });
   };
   // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
@@ -730,14 +719,15 @@ function WorkbenchContent({
     rightPanelCollapsible && !rightCollapsed ? (
       <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
     ) : null;
-  // 一级会话页（§3.1）：global scope + leftMode=auto + 无 focusId 的列表态 = mode tab 语境。
-  // chat 模式整页形态：左栏面板隐藏（leftPanelHidden，不写折叠记忆）、中栏主体换 ChatOverview。
+  // 一级会话页（§3.1，桌面/移动结构对齐）：global scope + leftMode=auto + 无 focusId 的列表态
+  //= mode tab 语境。mode tab 在左栏 PanelHeader title（对齐移动 MobilePageHeader title），
+  // 两种模式都保持三栏 shell + 中栏 InstanceArea 始终在；左栏 body 按 mode 切 Agent/Chat。
   const sessionPage = scope.kind === "global" && leftMode === "auto" && focusId === undefined;
   const chatMode = sessionPage && mode === "chat";
   // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
   //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下
   // leftMode="files"（活动栏 [文件] 入口或其粘性透传态）→ GlobalFilesOverview（全局 rootBrowse 根目录，
-  // leftMode="auto"（活动栏 [项目] 入口或其粘性透传态）→ ProjectLeftPanel(global overview=GlobalProjectsOverview)。
+  // leftMode="auto"（活动栏 [会话] 入口或其粘性透传态）→ 一级会话页：按 mode 切 Agent/Chat body。
   // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
   // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
   const leftOverview =
@@ -756,7 +746,7 @@ function WorkbenchContent({
       />
     );
   const leftPanel =
-    scope.kind === "project" || leftMode === "auto" ? (
+    scope.kind === "project" || (leftMode === "auto" && !chatMode) ? (
       <ProjectLeftPanel
         focusId={focusId}
         onCardDragStart={onCardDragStart}
@@ -773,6 +763,10 @@ function WorkbenchContent({
         scope={scope}
         tab={tab}
       />
+    ) : chatMode ? (
+      // 一级会话页 chat 模式：左栏 body = ChatOverview（绕过 ProjectLeftPanel——global scope 下它
+      // 只是 overview 的纯 wrapper，chat 不需要 middle tab bar，直接渲染列表）。
+      <ChatOverview />
     ) : leftMode === "plugins" ? (
       <PluginsPanel onCardDragStart={onCardDragStart} onOpenSkill={onOpenSkill} />
     ) : (
@@ -802,8 +796,7 @@ function WorkbenchContent({
   return (
     <WorkbenchShell
       activityBar={<ActivityBar />}
-      leftPanel={chatMode ? null : leftPanel}
-      leftPanelHidden={chatMode}
+      leftPanel={leftPanel}
       leftPanelTitle={
         scope.kind === "project" ? (
           <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
@@ -811,6 +804,10 @@ function WorkbenchContent({
           t("nav.plugins")
         ) : leftMode === "files" ? (
           t("nav.files")
+        ) : sessionPage ? (
+          // 一级会话页（§3.1）：左栏标题区 = Agent/Chat mode tab（对齐移动 MobilePageHeader
+          // title），取代原「会话」文案标题。两种模式都显示（切回入口常驻）。
+          <SessionModeTabs mode={mode} />
         ) : (
           t("nav.projects")
         )
@@ -818,32 +815,7 @@ function WorkbenchContent({
       rightPanel={rightPanel}
       rightPanelCollapsible={rightPanelCollapsible}
     >
-      {sessionPage ? (
-        // 一级会话页 mode tab 行（§3.1）：Agent/Chat 互斥分段，常驻中栏顶部（两种模式都
-        // 显示，否则无切回入口）。agent 模式下叠加在现有中栏之上，主体不变。
-        <div className="flex shrink-0 items-center gap-2 border-b border-on-surface/5 px-2 py-1">
-          <ModeTabGroup
-            ariaLabel={t("workbench.modeAria")}
-            onChange={onModeChange}
-            options={[
-              { value: "agent", label: t("workbench.modeAgent") },
-              { value: "chat", label: t("workbench.modeChat") },
-            ]}
-            value={mode}
-          />
-        </div>
-      ) : null}
-      {chatMode ? (
-        <div className="min-h-0 flex-1">
-          <ChatOverview />
-        </div>
-      ) : sessionPage ? (
-        // sessionPage 有 mode tab 行占高：InstanceArea 根是 h-full（100%），需 flex-1 wrapper
-        // 收缩（否则 100% + tab 行溢出 section 被裁底部）。
-        <div className="min-h-0 flex-1">{instanceArea}</div>
-      ) : (
-        instanceArea
-      )}
+      {instanceArea}
       {closeHolder}
       {renameHolder}
       {create.promptHolder}

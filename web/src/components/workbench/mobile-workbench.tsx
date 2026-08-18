@@ -990,10 +990,13 @@ function MobileChatOverview() {
 }
 
 /**
- * 一级会话页 mode tab（§3.1，桌面中栏顶部 / 移动 header title 同一原语 ModeTabGroup）。
- * 切换 navigate 到 global 列表态 URL + `?mode=`（agent 省略 key = 默认）。
+ * 一级会话页 mode tab（§3.1，桌面左栏 PanelHeader title / 移动 header title 同一原语
+ * ModeTabGroup）。切换 navigate 到 global 列表态 URL + `?mode=`（agent 省略 key = 默认）。
+ *
+ * 桌面/移动共用——provider-agnostic（只调 useWorkbenchNavigate + ModeTabGroup），桌面
+ * WorkbenchRoute 左栏标题区与移动 MobilePageHeader title 同引本组件，避免双写漂移。
  */
-function SessionModeTabs({ mode }: { mode: WorkbenchMode }) {
+export function SessionModeTabs({ mode }: { mode: WorkbenchMode }) {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
   const onModeChange = (next: WorkbenchMode) => {
