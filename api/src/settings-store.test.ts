@@ -9,10 +9,12 @@ import {
   activePresetView,
   buildAvailableAliases,
   buildAvailableModels,
+  legacyPiToPresets,
   maskApiKey,
   migrateV1ToV2,
+  migrateV4ToV5,
   resolveModelId,
-  toMaskedPi,
+  toMaskedPiPreset,
   toMaskedPreset,
 } from "./settings-store";
 
@@ -74,7 +76,7 @@ test("corrupt settings.yaml → throws error without echoing apiKey source (secr
   expect(msg).not.toContain("AR-LEAK-MARKER-33333"); // 源码值不回显（机密收口）
 });
 
-test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 4", async () => {
+test("SettingsStore.write then read round-trips and keeps 0o600 file mode + schemaVersion 5", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");
   const store = new SettingsStore({ path });
@@ -95,6 +97,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
         enable1mContext: true,
         effort: "max",
       },
+      pi: { presets: [], activePresetId: "" },
     },
     skills: { sources: [] },
   };
@@ -107,7 +110,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
   expect(fileStat.mode & 0o077).toBe(0);
 
   const raw = parseYaml(await readFile(path, "utf8"));
-  expect(raw.schemaVersion).toBe(4);
+  expect(raw.schemaVersion).toBe(5);
 });
 
 test("SettingsStore.update applies mutator as read-modify-write", async () => {
@@ -155,17 +158,106 @@ test("SettingsStore.read tolerates v2 partial files (normalizes missing fields)"
   expect(state.runtimes.claude.presets).toEqual([]);
   expect(state.runtimes.claude.effort).toBe("high");
   expect(state.runtimes.claude.activePresetId).toBe("");
-  // pi 缺省 → undefined（未启用）。
-  expect(state.runtimes.pi).toBeUndefined();
+  // pi 缺省 → 未启用默认（presets 空 + activePresetId 空）。
+  expect(state.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
 });
 
-// ── pi runtime normalize + mask（Phase 2 配置层）──────────────────────────────
+// ── pi runtime normalize + mask（v5 presets 体系）──────────────────────────────
 
-test("normalizeSettings: pi 三项全非空 → 保留；部分/缺 → undefined", async () => {
+test("normalizeSettings: pi presets 数组 → 过滤非法 + 规整；activePresetId 忠实保留", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");
 
-  // 完整 pi → 保留。
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        pi: {
+          presets: [
+            {
+              id: "p1",
+              label: "内置",
+              provider: "anthropic",
+              apiKey: "sk-pi-abc",
+              model: "claude-sonnet-5",
+            },
+            {
+              id: "p2",
+              label: "Ollama",
+              provider: "ollama",
+              apiKey: "ollama",
+              model: "llama3.1:8b",
+              baseUrl: "http://localhost:11434/v1",
+              api: "openai-completions",
+            },
+            { id: "p3", label: "缺 apiKey" }, // 缺字段 → 过滤
+            { noId: true }, // 无 id → 过滤
+          ],
+          activePresetId: "p2",
+        },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const state = await new SettingsStore({ path }).read();
+  expect(state.runtimes.pi).toEqual({
+    presets: [
+      {
+        id: "p1",
+        label: "内置",
+        provider: "anthropic",
+        apiKey: "sk-pi-abc",
+        model: "claude-sonnet-5",
+      },
+      {
+        id: "p2",
+        label: "Ollama",
+        provider: "ollama",
+        apiKey: "ollama",
+        model: "llama3.1:8b",
+        baseUrl: "http://localhost:11434/v1",
+        api: "openai-completions",
+      },
+    ],
+    activePresetId: "p2",
+  });
+});
+
+test("normalizeSettings: api 无 baseUrl → 丢弃（线协议只对自定义端点有效）", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        pi: {
+          presets: [
+            {
+              id: "p1",
+              label: "A",
+              provider: "anthropic",
+              apiKey: "sk-a",
+              model: "m1",
+              api: "openai-completions", // 无 baseUrl → 丢弃
+            },
+          ],
+          activePresetId: "p1",
+        },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const state = await new SettingsStore({ path }).read();
+  expect(state.runtimes.pi.presets[0]).not.toHaveProperty("api");
+  expect(state.runtimes.pi.presets[0]).not.toHaveProperty("baseUrl");
+});
+
+test("normalizeSettings: 无 presets 键的 object（v4 单块形状）→ legacyPiToPresets 双保险", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  // 绕过 read() 分流的 v4 单块文件（无 schemaVersion 或 schemaVersion 非 4）。
   await writeFile(
     path,
     stringifyYaml({
@@ -176,29 +268,17 @@ test("normalizeSettings: pi 三项全非空 → 保留；部分/缺 → undefine
     }),
     { mode: 0o600 },
   );
-  const full = await new SettingsStore({ path }).read();
-  expect(full.runtimes.pi).toEqual({
+  const state = await new SettingsStore({ path }).read();
+  expect(state.runtimes.pi.presets).toHaveLength(1);
+  expect(state.runtimes.pi.presets[0]).toMatchObject({
     provider: "anthropic",
     apiKey: "sk-pi-abc",
     model: "claude-sonnet-5",
   });
-
-  // 部分 pi（缺 model）→ undefined（不半启用）。
-  await writeFile(
-    path,
-    stringifyYaml({
-      runtimes: {
-        claude: { presets: [] },
-        pi: { provider: "anthropic", apiKey: "sk-pi-abc" },
-      },
-    }),
-    { mode: 0o600 },
-  );
-  const partial = await new SettingsStore({ path }).read();
-  expect(partial.runtimes.pi).toBeUndefined();
+  expect(state.runtimes.pi.activePresetId).toBe(state.runtimes.pi.presets[0].id);
 });
 
-test("SettingsStore: pi round-trip 落盘 + 0o600 + schemaVersion 4", async () => {
+test("SettingsStore: pi round-trip 落盘 + 0o600 + schemaVersion 5", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");
   const store = new SettingsStore({ path });
@@ -211,7 +291,18 @@ test("SettingsStore: pi round-trip 落盘 + 0o600 + schemaVersion 4", async () =
         enable1mContext: false,
         effort: "high",
       },
-      pi: { provider: "anthropic", apiKey: "sk-pi-xyz123456", model: "claude-sonnet-5" },
+      pi: {
+        presets: [
+          {
+            id: "p1",
+            label: "内置",
+            provider: "anthropic",
+            apiKey: "sk-pi-xyz123456",
+            model: "claude-sonnet-5",
+          },
+        ],
+        activePresetId: "p1",
+      },
     },
     skills: { sources: [] },
   };
@@ -223,12 +314,14 @@ test("SettingsStore: pi round-trip 落盘 + 0o600 + schemaVersion 4", async () =
   const fileStat = await stat(path);
   expect(fileStat.mode & 0o077).toBe(0);
   const raw = parseYaml(await readFile(path, "utf8"));
-  expect(raw.schemaVersion).toBe(4);
-  expect(raw.runtimes.pi.apiKey).toBe("sk-pi-xyz123456");
+  expect(raw.schemaVersion).toBe(5);
+  expect(raw.runtimes.pi.presets[0].apiKey).toBe("sk-pi-xyz123456");
 });
 
-test("toMaskedPi: apiKey mask + hasApiKey；不泄露原 key", () => {
-  const masked = toMaskedPi({
+test("toMaskedPiPreset: apiKey mask + hasApiKey；baseUrl/api 条件展开；不泄露原 key", () => {
+  const masked = toMaskedPiPreset({
+    id: "p1",
+    label: "内置",
     provider: "anthropic",
     apiKey: "sk-pi-abc123456",
     model: "claude-sonnet-5",
@@ -238,21 +331,133 @@ test("toMaskedPi: apiKey mask + hasApiKey；不泄露原 key", () => {
   expect(masked.hasApiKey).toBe(true);
   expect(masked.apiKeyMasked).not.toContain("abc123456");
   expect(masked.apiKeyMasked).toBe(maskApiKey("sk-pi-abc123456"));
+  expect(masked).not.toHaveProperty("apiKey");
+  expect(masked).not.toHaveProperty("baseUrl");
+  expect(masked).not.toHaveProperty("api");
+
+  const withUrl = toMaskedPiPreset({
+    id: "p2",
+    label: "Ollama",
+    provider: "ollama",
+    apiKey: "ollama",
+    model: "llama3.1:8b",
+    baseUrl: "http://localhost:11434/v1",
+    api: "openai-completions",
+  });
+  expect(withUrl.baseUrl).toBe("http://localhost:11434/v1");
+  expect(withUrl.api).toBe("openai-completions");
 });
 
-test("migrateV1ToV2: 输出无 pi（v1 无 pi 概念，迁移后未启用）", () => {
+test("migrateV1ToV2: 输出 pi 未启用默认（v1 无 pi 概念）", () => {
   const v2 = migrateV1ToV2({
     schemaVersion: 1,
     providers: [{ id: "prov_a", label: "A", apiKey: "sk-a" }],
     runtimes: { claude: { providerId: "prov_a", modelMapping: CONCRETE_MAPPING } },
   });
-  expect(v2.runtimes.pi).toBeUndefined();
+  expect(v2.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
 });
 
-test("cloneDefaultSettings（read 无文件）: pi undefined", async () => {
+test("cloneDefaultSettings（read 无文件）: pi 未启用默认", async () => {
   const dir = await makeTempDir();
   const state = await new SettingsStore({ path: join(dir, "settings.yaml") }).read();
-  expect(state.runtimes.pi).toBeUndefined();
+  expect(state.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
+});
+
+// ── v4 → v5 迁移（最高风险防线：v4 被 v5 覆盖后不可逆，凭证不能丢）──────────
+
+test("legacyPiToPresets: v4 单块三项全非空 → 单 preset + activePresetId 同 id", () => {
+  const out = legacyPiToPresets(
+    { provider: "anthropic", apiKey: "sk-pi-abc", model: "claude-sonnet-5" },
+    () => "fixed-id",
+  );
+  expect(out).toEqual({
+    presets: [
+      {
+        id: "fixed-id",
+        label: "anthropic",
+        provider: "anthropic",
+        apiKey: "sk-pi-abc",
+        model: "claude-sonnet-5",
+      },
+    ],
+    activePresetId: "fixed-id",
+  });
+});
+
+test("legacyPiToPresets: 部分配置/缺 pi → 空默认（不半启用）", () => {
+  expect(legacyPiToPresets({ provider: "anthropic", apiKey: "sk-a" }, () => "x")).toEqual({
+    presets: [],
+    activePresetId: "",
+  });
+  expect(legacyPiToPresets(undefined, () => "x")).toEqual({ presets: [], activePresetId: "" });
+  expect(legacyPiToPresets("junk", () => "x")).toEqual({ presets: [], activePresetId: "" });
+});
+
+test("migrateV4ToV5: v4 单块 → presets 结构，claude/skills 委托 normalize 保留", () => {
+  const v5 = migrateV4ToV5(
+    {
+      schemaVersion: 4,
+      runtimes: {
+        claude: {
+          presets: [{ id: "cp1", label: "A", apiKey: "sk-a", modelMapping: ALIAS_MAPPING }],
+          activePresetId: "cp1",
+          enable1mContext: false,
+          effort: "high",
+        },
+        pi: { provider: "anthropic", apiKey: "sk-pi-abc", model: "claude-sonnet-5" },
+      },
+      skills: { sources: [{ id: "s1", type: "github", repo: "o/r" }] },
+    },
+    () => "fixed-id",
+  );
+  expect(v5.runtimes.pi).toEqual({
+    presets: [
+      {
+        id: "fixed-id",
+        label: "anthropic",
+        provider: "anthropic",
+        apiKey: "sk-pi-abc",
+        model: "claude-sonnet-5",
+      },
+    ],
+    activePresetId: "fixed-id",
+  });
+  // claude/skills 委托 normalizeSettings 解析，不丢。
+  expect(v5.runtimes.claude.presets).toHaveLength(1);
+  expect(v5.skills?.sources).toHaveLength(1);
+});
+
+test("migrateV4ToV5: 无 pi / 部分 pi → 空默认", () => {
+  const noPi = migrateV4ToV5({ schemaVersion: 4, runtimes: { claude: { presets: [] } } });
+  expect(noPi.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
+
+  const partial = migrateV4ToV5({
+    schemaVersion: 4,
+    runtimes: { claude: { presets: [] }, pi: { provider: "anthropic" } },
+  });
+  expect(partial.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
+});
+
+test("SettingsStore.read 迁移 v4 文件（schemaVersion=4）→ 合成 v5 不落盘", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  const v4 = {
+    schemaVersion: 4,
+    runtimes: {
+      claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
+      pi: { provider: "anthropic", apiKey: "sk-pi-abc", model: "claude-sonnet-5" },
+    },
+  };
+  await writeFile(path, stringifyYaml(v4), { mode: 0o600 });
+
+  const state = await new SettingsStore({ path }).read();
+  expect(state.runtimes.pi.presets).toHaveLength(1);
+  expect(state.runtimes.pi.presets[0].apiKey).toBe("sk-pi-abc");
+  expect(state.runtimes.pi.activePresetId).toBe(state.runtimes.pi.presets[0].id);
+
+  // 迁移是纯内存合成，不主动落盘：磁盘仍是 v4。
+  const raw = parseYaml(await readFile(path, "utf8"));
+  expect(raw.schemaVersion).toBe(4);
 });
 
 // ── v1 → v2 迁移（最高风险防线：v1 被 v2 覆盖后不可逆，凭证不能丢）──────────
@@ -354,12 +559,14 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
   expect(migrateV1ToV2(null)).toEqual({
     runtimes: {
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
+      pi: { presets: [], activePresetId: "" },
     },
     skills: { sources: [] },
   });
   expect(migrateV1ToV2("junk")).toEqual({
     runtimes: {
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
+      pi: { presets: [], activePresetId: "" },
     },
     skills: { sources: [] },
   });
@@ -414,7 +621,7 @@ test("SettingsStore.read normalizeSkillSources：legacy 补 github、local/git �
   ]);
 });
 
-test("SettingsStore 迁移后 write 持久化为 v4（v1 磁盘被覆盖，providers 顶层消失）", async () => {
+test("SettingsStore 迁移后 write 持久化为 v5（v1 磁盘被覆盖，providers 顶层消失）", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");
   await writeFile(
@@ -428,11 +635,11 @@ test("SettingsStore 迁移后 write 持久化为 v4（v1 磁盘被覆盖，provi
   );
   const store = new SettingsStore({ path });
 
-  // update 触发 read（迁移）+ write（v4 落盘）。
+  // update 触发 read（迁移）+ write（v5 落盘）。
   await store.update((s) => s);
 
   const raw = parseYaml(await readFile(path, "utf8"));
-  expect(raw.schemaVersion).toBe(4);
+  expect(raw.schemaVersion).toBe(5);
   expect(raw.runtimes.claude.presets[0].id).toBe("p1");
   expect(raw.runtimes.claude.presets[0].apiKey).toBe("sk-a");
   expect(raw.providers).toBeUndefined();

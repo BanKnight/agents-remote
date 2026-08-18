@@ -12,6 +12,7 @@ import type {
   CreateAgentSessionOptions,
   CreateAgentSessionResult,
 } from "@earendil-works/pi-coding-agent";
+import type { PiPreset, PiProviderApi } from "@agents-remote/shared";
 import type { RuntimeStream } from "./session-registry";
 import { isTerminalPiEvent, toPiEventFrame } from "./pi-events";
 import { PiSessionRelay } from "./pi-relay";
@@ -20,7 +21,30 @@ import type { SettingsStore } from "./settings-store";
 // 决策 8：只读 tools allowlist（禁写工具/扩展工具）。chat 会话只做问答与读取，不 mutate cwd。
 const PI_TOOLS_ALLOWLIST = ["read", "grep", "find", "ls"];
 
-/** pi runtime 未配置（设置 → runtimes.pi 缺失/不完整）。pi-stream 映射 SESSION_NOT_CONFIGURED。 */
+// 自定义兼容端点缺省线协议（preset.api 未配时）。OpenAI 兼容端点最通用。
+const DEFAULT_PI_API: PiProviderApi = "openai-completions";
+
+/**
+ * registerProvider 的 model 定义（ProviderModelConfig）必填项运行时补默认：不做模型发现/
+ * 计费（cost 全 0），reasoning 关闭、纯文本输入，窗口/上限给保守值。preset 只存用户关心
+ * 的字段（id/model），其余由这里补齐。compat 不传（SDK 从 baseUrl 自动探测）。
+ * 注意：provider id 与 pi 内置重名 + baseUrl 时，extension 层会在该会话的 ModelRuntime 内
+ * 覆盖内置 provider 的目录（每会话独立 ModelRuntime——决策 4——无跨会话污染）。
+ */
+function buildPiProviderModel(preset: PiPreset) {
+  return {
+    id: preset.model,
+    name: preset.model,
+    reasoning: false,
+    input: ["text"] as ("text" | "image")[],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 16_384,
+  };
+}
+
+/** pi runtime 未配置（设置 → runtimes.pi 无激活 preset 或激活 preset 不完整）。
+ *  pi-stream 映射 SESSION_NOT_CONFIGURED。 */
 export class PiNotConfiguredError extends Error {
   constructor(message = "pi runtime 未配置") {
     super(message);
@@ -126,7 +150,12 @@ export class PiRuntime {
 
     const settings = await this.settingsStore.read();
     const pi = settings.runtimes?.pi;
-    if (!pi?.provider || !pi.apiKey || !pi.model) {
+    // v5：启用语义 = activePresetId 命中一个 provider/apiKey/model 齐备的 preset。presets
+    // 空 / activePresetId 空 / 未命中 / 字段缺失 → 未启用。
+    const preset = pi?.activePresetId
+      ? pi.presets.find((p) => p.id === pi.activePresetId)
+      : undefined;
+    if (!preset?.provider || !preset.apiKey || !preset.model) {
       throw new PiNotConfiguredError();
     }
 
@@ -142,11 +171,21 @@ export class PiRuntime {
       refreshOnCreate: false,
       allowModelNetwork: false,
     });
+    // 自定义兼容端点（baseUrl 非空）：程序化注册进 catalog（不写 models.json）。先 register
+    // 后 setRuntimeApiKey——先有 provider 条目再做凭证同步（synchronizeCredentialState 才能命中）。
+    // 每会话独立 ModelRuntime（决策 4），注册随会话生命周期，无共享状态。
+    if (preset.baseUrl) {
+      modelRuntime.registerProvider(preset.provider, {
+        baseUrl: preset.baseUrl,
+        api: preset.api ?? DEFAULT_PI_API,
+        models: [buildPiProviderModel(preset)],
+      });
+    }
     // 决策 4：apiKey 内存覆盖（不落 auth.json），且永不进日志。
-    await modelRuntime.setRuntimeApiKey(pi.provider, pi.apiKey);
-    const model = modelRuntime.getModel(pi.provider, pi.model);
+    await modelRuntime.setRuntimeApiKey(preset.provider, preset.apiKey);
+    const model = modelRuntime.getModel(preset.provider, preset.model);
     if (!model) {
-      throw new PiModelNotFoundError(`pi 模型未找到：${pi.provider}/${pi.model}`);
+      throw new PiModelNotFoundError(`pi 模型未找到：${preset.provider}/${preset.model}`);
     }
 
     // 决策 3：resume 目录 = pi-jsonl/<chatId>/（与元数据同根）。continueRecent 读最近文件重建上下文。
@@ -171,7 +210,6 @@ export class PiRuntime {
       sessionManager,
       resourceLoader,
     });
-
     const relay = new PiSessionRelay();
     const unsubscribe = session.subscribe((event) => this.handlePiEvent(chatId, relay, event));
     this.sessions.set(chatId, { session, relay, unsubscribe });

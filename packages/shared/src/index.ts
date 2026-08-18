@@ -377,33 +377,51 @@ export type ClaudeRuntimeConfig = {
   effort: EffortLevel;
 };
 
-// ── pi runtime（chat 模式全局会话运行时，Phase 2 配置层 / Phase 3 接入运行时）─────────
-// pi 走 SDK 库嵌入（非 spawn），需 provider/apiKey/model 三件。与 claude preset 体系独立
-//（chat 全局不绑项目，无 preset 多选概念，单一配置块）。未配置（undefined）= pi 未启用，
-// chat 会话创建时由 Phase 3 处理；Phase 2 只落盘配置 + GET mask。
-export type PiRuntimeConfig = {
+// ── pi runtime（chat 模式全局会话运行时）────────────────────────────
+// pi 走 SDK 库嵌入（非 spawn）。v5 起为多 preset 体系（仿 claude presets）：
+// presets[] + activePresetId。启用语义 = presets 非空 且 activePresetId 命中一个
+// provider/apiKey/model 齐备的 preset；空 = 未启用（chat 会话 stream 出
+// SESSION_NOT_CONFIGURED）。provider 是 pi 内置 provider id（anthropic/openai/
+// deepseek/groq/openrouter...）或自定义 id；自定义 id（或内置 id + baseUrl）=
+// OpenAI/Anthropic 兼容端点（Ollama/vLLM/LM Studio/网关），运行时经
+// modelRuntime.registerProvider 程序化注册（不写 models.json）。
+
+/** 自定义兼容端点的线协议枚举（pi SDK Api 的子集）。UI 默认 openai-completions。 */
+export type PiProviderApi =
+  | "openai-completions"
+  | "openai-responses"
+  | "anthropic-messages"
+  | "google-generative-ai";
+export const PI_PROVIDER_APIS: readonly PiProviderApi[] = [
+  "openai-completions",
+  "openai-responses",
+  "anthropic-messages",
+  "google-generative-ai",
+];
+
+export type PiPreset = {
+  id: string;
+  label: string;
+  /** pi 内置 provider id 或自定义 id（自定义须配 baseUrl）。 */
   provider: string;
   apiKey: string;
+  /** 手填 model id（不做发现/测试连接）。 */
   model: string;
+  /** 非空 = 自定义兼容端点，运行时 registerProvider 注册进 catalog。 */
+  baseUrl?: string;
+  /** 线协议；仅 baseUrl 非空时有效。缺省运行时按 openai-completions 处理。 */
+  api?: PiProviderApi;
 };
 
-export type PiRuntimeConfigMasked = {
-  provider: string;
+export type PiPresetMasked = Omit<PiPreset, "apiKey"> & {
   apiKeyMasked: string;
   hasApiKey: boolean;
-  model: string;
 };
 
-// apiKey 可选：空/缺省 = 保留已保存 key（编辑态留空不改，与 preset PUT 语义一致）。
-// 新建态无已保存 key 时仍必填（后端校验）。
-export type UpdatePiRuntimeRequest = {
-  provider: string;
-  apiKey?: string;
-  model: string;
-};
-
-export type PiRuntimeResponse = {
-  runtime: PiRuntimeConfigMasked;
+/** v5：presets + activePresetId。未启用 = presets 空 或 activePresetId 空/未命中。 */
+export type PiRuntimeConfig = {
+  presets: PiPreset[];
+  activePresetId: string;
 };
 
 // ── Skills marketplace ──────────────────────────────────────
@@ -613,8 +631,8 @@ export type SettingsState = {
       enable1mContext: boolean;
       effort: EffortLevel;
     };
-    // pi runtime（chat 模式全局会话运行时）：未配置 = undefined（pi 未启用）。Phase 2 配置层。
-    pi?: PiRuntimeConfig;
+    // v5：pi 恒存在（非 optional）。空 presets + activePresetId:"" = 未启用。
+    pi: PiRuntimeConfig;
   };
   // 自定义 skill 源列表（optional；settings-store normalizeSettings 补默认 { sources: [] }）。
   skills?: {
@@ -643,8 +661,8 @@ export type GetSettingsResponse = {
         enable1mContext: boolean;
         effort: EffortLevel;
       };
-      // pi 未配置时缺省（GET 响应不带 pi 键 = 未启用）。
-      pi?: PiRuntimeConfigMasked;
+      // v5 起 pi 键恒存在；presets 空 = 未启用。
+      pi: { presets: PiPresetMasked[]; activePresetId: string };
     };
     // 源是公开 GitHub repo，不 mask。
     skills: {
@@ -684,6 +702,45 @@ export type UpdateClaudeRuntimeRequest = {
 
 export type UpdateClaudeRuntimeResponse = {
   runtime: ClaudeRuntimeConfig;
+};
+
+// ── pi preset / runtime 请求响应（v5）──────────────────────────────
+export type CreatePiPresetRequest = {
+  label: string;
+  provider: string;
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+  api?: PiProviderApi;
+};
+
+// apiKey 空/缺省 = 不改（编辑态留空保留原 key，与 claude preset PUT 一致）。
+// baseUrl 显式空串 = 删除（联动删 api）。api 须配有效 baseUrl。
+export type UpdatePiPresetRequest = {
+  label?: string;
+  provider?: string;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  api?: PiProviderApi;
+};
+
+export type PiPresetResponse = {
+  preset: PiPresetMasked;
+};
+
+export type DeletePiPresetResponse = {
+  deleted: true;
+  id: string;
+};
+
+/** PUT /api/settings/runtimes/pi 语义 = activate：只更新 activePresetId（空串 = 停用 pi）。 */
+export type UpdatePiRuntimeRequest = {
+  activePresetId?: string;
+};
+
+export type UpdatePiRuntimeResponse = {
+  runtime: { activePresetId: string };
 };
 
 // ── 全局总览置顶会话（pin）──────────────────────────────────

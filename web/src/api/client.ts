@@ -49,15 +49,19 @@ import type {
   UploadFileResponse,
   ClaudePresetResponse,
   CreateClaudePresetRequest,
+  CreatePiPresetRequest,
   DeleteClaudePresetResponse,
+  DeletePiPresetResponse,
   GetSettingsResponse,
   ListProviderModelsResponse,
+  PiPresetResponse,
   TestClaudePresetRequest,
   UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
+  UpdatePiPresetRequest,
   UpdatePiRuntimeRequest,
-  PiRuntimeResponse,
+  UpdatePiRuntimeResponse,
   AddMcpServerRequest,
   AddMcpServerResponse,
   AddSkillSourceRequest,
@@ -614,9 +618,43 @@ export async function updateClaudeRuntime(
   });
 }
 
-// pi runtime（chat 全局会话运行时，Phase 2 配置层）：provider/apiKey/model 三项必填，
-// apiKey 永不出 api 进程——PUT 返回 masked，GET（getSettings）同样只带 apiKeyMasked。
-export async function updatePiRuntime(input: UpdatePiRuntimeRequest): Promise<PiRuntimeResponse> {
+// pi runtime（chat 全局会话运行时，v5 presets 体系）：presets[] + activePresetId。
+// apiKey 永不出 api 进程——POST/PUT 返回 masked，GET（getSettings）同样只带 apiKeyMasked。
+export async function createPiPreset(input: CreatePiPresetRequest): Promise<PiPresetResponse> {
+  return fetchJson("/api/settings/runtimes/pi/presets", "api.piPresetCreateFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies CreatePiPresetRequest),
+  });
+}
+
+export async function updatePiPreset(
+  id: string,
+  input: UpdatePiPresetRequest,
+): Promise<PiPresetResponse> {
+  return fetchJson(
+    `/api/settings/runtimes/pi/presets/${encodeURIComponent(id)}`,
+    "api.piPresetUpdateFailed",
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input satisfies UpdatePiPresetRequest),
+    },
+  );
+}
+
+export async function deletePiPreset(id: string): Promise<DeletePiPresetResponse> {
+  return fetchJson(
+    `/api/settings/runtimes/pi/presets/${encodeURIComponent(id)}`,
+    "api.piPresetDeleteFailed",
+    { method: "DELETE" },
+  );
+}
+
+// PUT /api/settings/runtimes/pi 语义 = activate：只更新 activePresetId（空串 = 停用 pi）。
+export async function updatePiRuntime(
+  input: UpdatePiRuntimeRequest,
+): Promise<UpdatePiRuntimeResponse> {
   return fetchJson("/api/settings/runtimes/pi", "api.piRuntimeUpdateFailed", {
     method: "PUT",
     headers: { "content-type": "application/json" },

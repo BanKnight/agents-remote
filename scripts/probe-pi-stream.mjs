@@ -33,11 +33,12 @@ const { token } = await loginRes.json();
 const auth = { authorization: `Bearer ${token}` };
 console.log("[ok] login");
 
-// ── 探测 pi 是否已配置 ──
+// ── 探测 pi 是否已配置（v5：presets 非空且 activePresetId 命中） ──
 const settingsRes = await fetch(`${API}/api/settings`, { headers: auth });
 if (!settingsRes.ok) throw new Error(`GET /api/settings failed: ${settingsRes.status}`);
 const settings = await settingsRes.json();
-const piConfigured = !!settings.runtimes?.pi;
+const pi = settings.runtimes?.pi;
+const piConfigured = !!pi && pi.presets?.length > 0 && !!pi.activePresetId;
 
 if (piConfigured) {
   console.log("\n⚠️  runtimes.pi 已配置 —— 未配置路径不可测，本次跳过。");

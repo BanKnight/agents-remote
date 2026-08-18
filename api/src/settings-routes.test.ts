@@ -67,6 +67,40 @@ const seedPreset = (
     },
   }));
 
+const seedPiPreset = (
+  store: SettingsStore,
+  id: string,
+  overrides: Partial<{
+    label: string;
+    provider: string;
+    apiKey: string;
+    model: string;
+    baseUrl: string;
+    api: string;
+  }> = {},
+) =>
+  store.update((s) => ({
+    ...s,
+    runtimes: {
+      ...s.runtimes,
+      pi: {
+        ...s.runtimes.pi,
+        presets: [
+          ...s.runtimes.pi.presets,
+          {
+            id,
+            label: overrides.label ?? "Pi",
+            provider: overrides.provider ?? "anthropic",
+            apiKey: overrides.apiKey ?? "sk-pi-a",
+            model: overrides.model ?? "claude-sonnet-5",
+            ...(overrides.baseUrl ? { baseUrl: overrides.baseUrl } : {}),
+            ...(overrides.api ? { api: overrides.api } : {}),
+          },
+        ],
+      },
+    },
+  }));
+
 // ── GET /api/settings ──
 
 test("GET /api/settings returns defaults when empty", async () => {
@@ -82,30 +116,32 @@ test("GET /api/settings returns defaults when empty", async () => {
   expect(body.settings.runtimes.claude.presets).toEqual([]);
   expect(body.settings.runtimes.claude.activePresetId).toBe("");
   expect(body.settings.runtimes.claude.effort).toBe("high");
-  // pi 未配置 → GET 响应不带 pi 键。
-  expect(body.settings.runtimes.pi).toBeUndefined();
+  // v5：pi 键恒存在；presets 空 + activePresetId 空 = 未启用。
+  expect(body.settings.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
 });
 
-// ── pi runtime（Phase 2 配置层）──
+// ── pi runtime（v5 presets 体系）──
 
-test("PUT /api/settings/runtimes/pi 落盘 + 返回 masked；GET 回读 masked、原 key 不出进程", async () => {
+test("POST /api/settings/runtimes/pi/presets 创建 → 201 masked；GET 回读 masked、原 key 不出进程", async () => {
   const store = await makeStore();
-  const put = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/pi", {
+  const create = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/runtimes/pi/presets", {
+      label: "内置",
       provider: "anthropic",
       apiKey: "sk-pi-abc123456",
       model: "claude-sonnet-5",
     }),
-    makeUrl("/api/settings/runtimes/pi"),
+    makeUrl("/api/settings/runtimes/pi/presets"),
     store,
   );
-  expect(put?.status).toBe(200);
-  const putBody = await put!.json();
-  expect(putBody.runtime.provider).toBe("anthropic");
-  expect(putBody.runtime.model).toBe("claude-sonnet-5");
-  expect(putBody.runtime.hasApiKey).toBe(true);
-  expect(putBody.runtime.apiKeyMasked).not.toContain("abc123456");
-  expect(putBody.runtime).not.toHaveProperty("apiKey");
+  expect(create?.status).toBe(201);
+  const created = await create!.json();
+  expect(created.preset.provider).toBe("anthropic");
+  expect(created.preset.model).toBe("claude-sonnet-5");
+  expect(created.preset.hasApiKey).toBe(true);
+  expect(created.preset.apiKeyMasked).not.toContain("abc123456");
+  expect(created.preset).not.toHaveProperty("apiKey");
+  expect(created.preset.id).toBeTruthy();
 
   // GET 回读：masked，不带原 key。
   const get = await handleSettingsRoutes(
@@ -114,8 +150,8 @@ test("PUT /api/settings/runtimes/pi 落盘 + 返回 masked；GET 回读 masked�
     store,
   );
   const getBody = await get!.json();
-  expect(getBody.settings.runtimes.pi.apiKeyMasked).toBe(putBody.runtime.apiKeyMasked);
-  expect(getBody.settings.runtimes.pi).not.toHaveProperty("apiKey");
+  expect(getBody.settings.runtimes.pi.presets[0].apiKeyMasked).toBe(created.preset.apiKeyMasked);
+  expect(JSON.stringify(getBody)).not.toContain("sk-pi-abc123456");
 
   // 重启（新 store 同 path）回读：配置持久。
   const store2 = new SettingsStore({ path: store.getPath() });
@@ -125,84 +161,187 @@ test("PUT /api/settings/runtimes/pi 落盘 + 返回 masked；GET 回读 masked�
     store2,
   );
   const get2Body = await get2!.json();
-  expect(get2Body.settings.runtimes.pi.provider).toBe("anthropic");
-  expect(get2Body.settings.runtimes.pi.model).toBe("claude-sonnet-5");
+  expect(get2Body.settings.runtimes.pi.presets[0].provider).toBe("anthropic");
+  expect(get2Body.settings.runtimes.pi.presets[0].model).toBe("claude-sonnet-5");
 });
 
-test("PUT /api/settings/runtimes/pi 缺任一项 → 400", async () => {
+test("POST pi preset 支持自定义 baseUrl + api；api 无 baseUrl → 400", async () => {
   const store = await makeStore();
-  const res = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/pi", {
-      provider: "anthropic",
-      apiKey: "sk-pi-abc",
+  const withUrl = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/runtimes/pi/presets", {
+      label: "Ollama",
+      provider: "ollama",
+      apiKey: "ollama",
+      model: "llama3.1:8b",
+      baseUrl: "http://localhost:11434/v1",
+      api: "openai-completions",
     }),
-    makeUrl("/api/settings/runtimes/pi"),
+    makeUrl("/api/settings/runtimes/pi/presets"),
     store,
   );
-  expect(res?.status).toBe(400);
+  expect(withUrl?.status).toBe(201);
+  const created = await withUrl!.json();
+  expect(created.preset.baseUrl).toBe("http://localhost:11434/v1");
+  expect(created.preset.api).toBe("openai-completions");
+
+  // api 给了但 baseUrl 空 → 400（api 只对自定义端点有意义）。
+  const apiNoUrl = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/runtimes/pi/presets", {
+      label: "Bad",
+      provider: "anthropic",
+      apiKey: "sk-x",
+      model: "m1",
+      api: "openai-completions",
+    }),
+    makeUrl("/api/settings/runtimes/pi/presets"),
+    store,
+  );
+  expect(apiNoUrl?.status).toBe(400);
 });
 
-test("PUT pi 编辑态 apiKey 留空 → 保留已保存 key（不覆盖）", async () => {
+test("POST pi preset 缺 label/provider/apiKey/model → 400", async () => {
   const store = await makeStore();
-  // 先配好带 key 的 pi。
-  await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/pi", {
-      provider: "anthropic",
-      apiKey: "sk-pi-keepme-123456",
-      model: "claude-sonnet-5",
-    }),
-    makeUrl("/api/settings/runtimes/pi"),
-    store,
-  );
+  const cases: Record<string, unknown>[] = [
+    { provider: "anthropic", apiKey: "sk-x", model: "m1" }, // 缺 label
+    { label: "A", apiKey: "sk-x", model: "m1" }, // 缺 provider
+    { label: "A", provider: "anthropic", model: "m1" }, // 缺 apiKey
+    { label: "A", provider: "anthropic", apiKey: "sk-x" }, // 缺 model
+  ];
+  for (const body of cases) {
+    const res = await handleSettingsRoutes(
+      makeRequest("POST", "/api/settings/runtimes/pi/presets", body),
+      makeUrl("/api/settings/runtimes/pi/presets"),
+      store,
+    );
+    expect(res?.status).toBe(400);
+  }
+});
 
-  // 只改 model，apiKey 留空。
+test("PUT pi preset: apiKey 留空保留原值；baseUrl 显式空串删除（联动删 api）", async () => {
+  const store = await makeStore();
+  await seedPiPreset(store, "p1", {
+    apiKey: "sk-pi-keepme-123456",
+    baseUrl: "http://localhost:11434/v1",
+    api: "openai-completions",
+  });
+
+  // 只改 model，apiKey 留空 → 保留原 key。
   const res = await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/pi", {
-      provider: "anthropic",
-      model: "claude-opus-4-8",
-    }),
-    makeUrl("/api/settings/runtimes/pi"),
+    makeRequest("PUT", "/api/settings/runtimes/pi/presets/p1", { model: "qwen2.5-coder:7b" }),
+    makeUrl("/api/settings/runtimes/pi/presets/p1"),
     store,
   );
   expect(res?.status).toBe(200);
   const body = await res!.json();
-  expect(body.runtime.model).toBe("claude-opus-4-8");
-  expect(body.runtime.apiKeyMasked).not.toContain("keepme");
+  expect(body.preset.model).toBe("qwen2.5-coder:7b");
+  expect(body.preset.apiKeyMasked).not.toContain("keepme");
+  const afterKeep = await store.read();
+  expect(afterKeep.runtimes.pi.presets[0].apiKey).toBe("sk-pi-keepme-123456");
 
-  // 落盘：key 仍是原值（未覆盖为空）。
-  const after = await store.read();
-  expect(after.runtimes.pi?.apiKey).toBe("sk-pi-keepme-123456");
+  // baseUrl 显式空串 → 删除 baseUrl + 联动删 api。
+  const delUrl = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi/presets/p1", { baseUrl: "" }),
+    makeUrl("/api/settings/runtimes/pi/presets/p1"),
+    store,
+  );
+  expect(delUrl?.status).toBe(200);
+  const afterDel = await store.read();
+  expect(afterDel.runtimes.pi.presets[0]).not.toHaveProperty("baseUrl");
+  expect(afterDel.runtimes.pi.presets[0]).not.toHaveProperty("api");
 });
 
-test("PUT pi 保留 claude/skills（展开合并不丢字段）", async () => {
+test("PUT pi preset 404 when id not found", async () => {
   const store = await makeStore();
-  // 先 seed 一个 preset + skill source。
-  await seedPreset(store, "p1", { label: "A", apiKey: "sk-a" });
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi/presets/missing", { model: "m1" }),
+    makeUrl("/api/settings/runtimes/pi/presets/missing"),
+    store,
+  );
+  expect(res?.status).toBe(404);
+});
+
+test("DELETE pi preset 删除激活 preset → 级联清空 activePresetId（pi 停用）", async () => {
+  const store = await makeStore();
+  await seedPiPreset(store, "p1");
+  await store.update((s) => ({
+    ...s,
+    runtimes: { ...s.runtimes, pi: { ...s.runtimes.pi, activePresetId: "p1" } },
+  }));
+
+  const del = await handleSettingsRoutes(
+    makeRequest("DELETE", "/api/settings/runtimes/pi/presets/p1"),
+    makeUrl("/api/settings/runtimes/pi/presets/p1"),
+    store,
+  );
+  expect(del?.status).toBe(200);
+  expect((await del!.json()).deleted).toBe(true);
+
+  const after = await store.read();
+  expect(after.runtimes.pi.presets).toHaveLength(0);
+  expect(after.runtimes.pi.activePresetId).toBe("");
+});
+
+test("DELETE pi preset 404 when id not found", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("DELETE", "/api/settings/runtimes/pi/presets/missing"),
+    makeUrl("/api/settings/runtimes/pi/presets/missing"),
+    store,
+  );
+  expect(res?.status).toBe(404);
+});
+
+test("PUT /api/settings/runtimes/pi = activate：合法 id 激活；空串停用；未知 id 400", async () => {
+  const store = await makeStore();
+  await seedPiPreset(store, "p1");
+
+  const activate = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", { activePresetId: "p1" }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(activate?.status).toBe(200);
+  expect((await activate!.json()).runtime.activePresetId).toBe("p1");
+
+  const unknown = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", { activePresetId: "nope" }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(unknown?.status).toBe(400);
+
+  const deactivate = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", { activePresetId: "" }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(deactivate?.status).toBe(200);
+  expect((await deactivate!.json()).runtime.activePresetId).toBe("");
+});
+
+test("PUT runtimes/claude 保留 pi presets + skills（applyClaudeRuntimePatch 展开合并回归）", async () => {
+  const store = await makeStore();
+  // 先 seed claude preset + pi preset + skill source。
+  await seedPreset(store, "cp1", { label: "A", apiKey: "sk-a" });
+  await seedPiPreset(store, "pp1", { apiKey: "sk-pi-a" });
   await store.update((s) => ({
     ...s,
     skills: { sources: [{ id: "src1", type: "github", repo: "o/r" }] },
   }));
 
-  await handleSettingsRoutes(
-    makeRequest("PUT", "/api/settings/runtimes/pi", {
-      provider: "anthropic",
-      apiKey: "sk-pi-abc123456",
-      model: "claude-sonnet-5",
-    }),
-    makeUrl("/api/settings/runtimes/pi"),
+  // PUT claude 旋钮（effort）——旧 bug 会清空 pi presets + skills。
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/claude", { effort: "max" }),
+    makeUrl("/api/settings/runtimes/claude"),
     store,
   );
+  expect(res?.status).toBe(200);
 
-  const get = await handleSettingsRoutes(
-    makeRequest("GET", "/api/settings"),
-    makeUrl("/api/settings"),
-    store,
-  );
-  const body = await get!.json();
-  // claude preset + skills 仍在。
-  expect(body.settings.runtimes.claude.presets).toHaveLength(1);
-  expect(body.settings.skills.sources).toHaveLength(1);
-  expect(body.settings.runtimes.pi).toBeDefined();
+  const after = await store.read();
+  expect(after.runtimes.claude.presets).toHaveLength(1);
+  expect(after.runtimes.pi.presets).toHaveLength(1);
+  expect(after.runtimes.pi.activePresetId).toBe("");
+  expect(after.skills?.sources).toHaveLength(1);
 });
 
 // ── POST /presets (create) ──

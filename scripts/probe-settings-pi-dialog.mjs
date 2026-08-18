@@ -1,10 +1,11 @@
-// 探针：设置弹窗 pi 配置区（Phase 2 配置层）——只读验证 UI 接线，不写真实 settings.yaml。
+// 探针：设置弹窗 pi 配置区（v5 presets 体系）——只读验证 UI 接线，不写真实 settings.yaml。
 //
 // 覆盖单测（settings-dialog 无组件单测）测不到的真实浏览器行为：
-//   Radix Dialog 打开 → root view 三胶囊（Claude runtime / Pi runtime / General）→
-//   点 Pi runtime 进 detail → provider / model / apiKey 三输入 + hint + Save 渲染、
-//   Back 返回 root。Save 落盘/重启读回/mask 已由 api 单测覆盖（settings-routes.test.ts
-//   `PUT pi 落盘 + 返回 masked` 等），此处不写盘防污染真实 settings.yaml。
+//   Radix Dialog 打开 → root view 三胶囊 → 点 Pi runtime 进 detail → Active preset 选择器
+//   （None = 停用）+ Add preset 按钮 + 无预设空态 → 打开 PiPresetDialog → 5 输入
+//   （label/provider/model/apiKey/baseUrl）+ api 下拉仅 baseUrl 非空时渲染 → 关闭 → Back 返回
+//   root。Save 落盘/重启读回/mask 已由 api 单测覆盖（settings-routes.test.ts），此处不写盘
+//   防污染真实 settings.yaml。
 //
 // locale=en-US 对齐 nav.settings / settings.section.pi 稳定文案。密码自读不打印。
 // 用法：bun scripts/probe-settings-pi-dialog.mjs
@@ -69,20 +70,41 @@ async function run() {
     ok(await dialog.getByRole("button", { name: "Pi runtime" }).isVisible(), "胶囊 Pi runtime");
     ok(await dialog.getByRole("button", { name: "General" }).isVisible(), "胶囊 General");
 
-    console.log("Part 3: 点 Pi runtime → detail 表单渲染");
+    console.log("Part 3: 点 Pi runtime → detail 渲染（activePreset 选择 + 预设列表）");
     await dialog.getByRole("button", { name: "Pi runtime" }).click();
 
-    // hint（settings.piHint en 文案）——含 "blank API key keeps" 区分于 label。
+    // hint（settings.piHint en 文案）——含 "active pi preset" 区分于 label。
     ok(
       await dialog
-        .getByText("A blank API key keeps the existing key.", { exact: false })
+        .getByText("Global chat sessions run on the active pi preset.", { exact: false })
         .isVisible(),
       "pi hint 文案渲染",
     );
-    // 三个输入：provider / model / apiKey（detail 视图仅此三个 ShellInput）。
+    // Active preset 选择器：无激活时 label = None (pi disabled)。
+    ok(
+      await dialog.getByRole("button", { name: "None (pi disabled)" }).isVisible(),
+      "Active preset 选择器（None = 停用）",
+    );
+    // Add preset 按钮 + 无预设空态。
+    ok(await dialog.getByRole("button", { name: "Add preset" }).isVisible(), "Add preset 按钮");
+    ok(
+      await dialog
+        .getByText("No presets yet. Add one to configure a provider and model.", { exact: false })
+        .isVisible(),
+      "无预设空态文案",
+    );
+    // Save（activePreset 选择 Card 的 Save）。
+    ok(await dialog.getByRole("button", { name: "Save" }).isVisible(), "Save 按钮");
+
+    console.log("Part 4: 打开 PiPresetDialog → 5 输入 + api 下拉随 baseUrl 出现");
+    await dialog.getByRole("button", { name: "Add preset" }).click();
+    // 新建态 dialog：label/provider/model/apiKey/baseUrl 5 个输入框。
     const inputs = dialog.locator("input");
     const count = await inputs.count();
-    ok(count === 3, `pi 表单 3 个输入框（provider/model/apiKey），实际 ${count}`);
+    ok(
+      count === 5,
+      `PiPresetDialog 5 个输入框（label/provider/model/apiKey/baseUrl），实际 ${count}`,
+    );
     ok(
       await dialog.getByText("Provider", { exact: true }).first().isVisible(),
       "Provider 字段 label",
@@ -92,20 +114,31 @@ async function run() {
       await dialog.getByText("API key", { exact: true }).first().isVisible(),
       "API key 字段 label",
     );
-    // placeholder 指纹：provider→anthropic、model→claude-sonnet-5。
     ok(
-      (await dialog.locator('input[placeholder="anthropic"]').count()) === 1,
-      "provider 输入 placeholder=anthropic",
+      await dialog.getByText("Base URL", { exact: true }).first().isVisible(),
+      "Base URL 字段 label",
     );
+    // baseUrl 空 → api 下拉不渲染。
     ok(
-      (await dialog.locator('input[placeholder="claude-sonnet-5"]').count()) === 1,
-      "model 输入 placeholder=claude-sonnet-5",
+      (await dialog.getByRole("button", { name: "Default (openai-completions)" }).count()) === 0,
+      "baseUrl 空时 api 下拉不渲染",
     );
-    // Save + Back。
-    ok(await dialog.getByRole("button", { name: "Save" }).isVisible(), "Save 按钮");
-    ok(await dialog.getByRole("button", { name: "Back" }).isVisible(), "Back 按钮（返回 root）");
+    // 填 baseUrl → api 下拉出现。
+    await dialog
+      .locator('input[placeholder="https://api.example.com"]')
+      .fill("http://localhost:11434/v1");
+    ok(
+      await dialog.getByRole("button", { name: "Default (openai-completions)" }).isVisible(),
+      "填 baseUrl 后 api 下拉出现",
+    );
+    // 关闭 dialog（不保存，防污染真实 settings.yaml）。
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    ok(
+      await dialog.getByRole("button", { name: "Add preset" }).isVisible(),
+      "关闭 PiPresetDialog 后回 detail",
+    );
 
-    console.log("Part 4: Back 返回 root");
+    console.log("Part 5: Back 返回 root");
     await dialog.getByRole("button", { name: "Back" }).click();
     ok(await dialog.getByRole("button", { name: "General" }).isVisible(), "Back 后回 root view");
   } finally {

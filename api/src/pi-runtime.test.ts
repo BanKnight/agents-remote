@@ -16,14 +16,21 @@ const DEFAULT_CLAUDE = {
 } as const;
 
 function makeSettingsStore(pi?: {
-  provider: string;
-  apiKey: string;
-  model: string;
+  presets: {
+    id: string;
+    label: string;
+    provider: string;
+    apiKey: string;
+    model: string;
+    baseUrl?: string;
+    api?: string;
+  }[];
+  activePresetId: string;
 }): SettingsStore {
   const settings: SettingsState = {
     runtimes: {
       claude: { ...DEFAULT_CLAUDE },
-      ...(pi ? { pi } : {}),
+      pi: pi ?? { presets: [], activePresetId: "" },
     },
     skills: { sources: [] },
   };
@@ -95,16 +102,25 @@ function makeCreateSession(stub: ReturnType<typeof makeStubSession>) {
 }
 
 function makeCreateModelRuntime(provider: string, model: string) {
-  const calls: { options: unknown; setKey: [string, string][]; getModel: [string, string][] } = {
+  const calls: {
+    options: unknown;
+    setKey: [string, string][];
+    getModel: [string, string][];
+    registerProvider: [string, unknown][];
+  } = {
     options: undefined,
     setKey: [],
     getModel: [],
+    registerProvider: [],
   };
   return {
     calls,
     factory: async (options: unknown) => {
       calls.options = options;
       return {
+        registerProvider: (p: string, config: unknown) => {
+          calls.registerProvider.push([p, config]);
+        },
         setRuntimeApiKey: async (p: string, k: string) => {
           calls.setKey.push([p, k]);
         },
@@ -117,7 +133,18 @@ function makeCreateModelRuntime(provider: string, model: string) {
   };
 }
 
-const PI_CFG = { provider: "anthropic", apiKey: "sk-test", model: "claude-sonnet-4-5" };
+const PI_CFG = {
+  presets: [
+    {
+      id: "p1",
+      label: "内置",
+      provider: "anthropic",
+      apiKey: "sk-test",
+      model: "claude-sonnet-4-5",
+    },
+  ],
+  activePresetId: "p1",
+};
 
 let tmp: string;
 let baseDir: string;
@@ -137,7 +164,18 @@ afterAll(async () => {
 });
 
 function makeRuntime(opts: {
-  pi?: { provider: string; apiKey: string; model: string };
+  pi?: {
+    presets: {
+      id: string;
+      label: string;
+      provider: string;
+      apiKey: string;
+      model: string;
+      baseUrl?: string;
+      api?: string;
+    }[];
+    activePresetId: string;
+  };
   createModelRuntime?: (options: unknown) => Promise<unknown>;
   createSession?: (options: CreateAgentSessionOptions) => Promise<{ session: AgentSession }>;
   onPiSessionId?: (chatId: string, piSessionId: string) => void;
@@ -197,7 +235,7 @@ describe("PiRuntime.ensureRunning", () => {
   });
 
   test("配置 → createModelRuntime 参数正确（agentDir 隔离 + 不联网）", async () => {
-    const cr = makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model);
+    const cr = makeCreateModelRuntime(PI_CFG.presets[0].provider, PI_CFG.presets[0].model);
     const stub = makeStubSession();
     const cs = makeCreateSession(stub);
     const runtime = makeRuntime({
@@ -213,8 +251,8 @@ describe("PiRuntime.ensureRunning", () => {
       refreshOnCreate: false,
       allowModelNetwork: false,
     });
-    expect(cr.calls.setKey).toEqual([[PI_CFG.provider, PI_CFG.apiKey]]);
-    expect(cr.calls.getModel).toEqual([[PI_CFG.provider, PI_CFG.model]]);
+    expect(cr.calls.setKey).toEqual([[PI_CFG.presets[0].provider, PI_CFG.presets[0].apiKey]]);
+    expect(cr.calls.getModel).toEqual([[PI_CFG.presets[0].provider, PI_CFG.presets[0].model]]);
     expect(cs.calls[0]).toMatchObject({
       cwd: defaultCwd,
       agentDir: join(baseDir, "pi-agent"),
@@ -224,10 +262,161 @@ describe("PiRuntime.ensureRunning", () => {
     expect(cs.calls[0].resourceLoader).toBeDefined();
   });
 
+  test("未配置三态：presets 空 / activePresetId 空 / activePresetId 未命中 → PiNotConfiguredError", async () => {
+    const cases: Parameters<typeof makeRuntime>[0]["pi"][] = [
+      { presets: [], activePresetId: "" },
+      { presets: [PI_CFG.presets[0]], activePresetId: "" },
+      { presets: [PI_CFG.presets[0]], activePresetId: "gone" },
+    ];
+    for (const pi of cases) {
+      let modelRuntimeCalled = false;
+      const runtime = makeRuntime({
+        pi,
+        createModelRuntime: async () => {
+          modelRuntimeCalled = true;
+          return {};
+        },
+      });
+      await expect(runtime.ensureRunning("c1")).rejects.toThrow(PiNotConfiguredError);
+      expect(modelRuntimeCalled).toBe(false);
+    }
+  });
+
+  test("activePresetId 命中但 preset 字段缺失（无 apiKey）→ PiNotConfiguredError", async () => {
+    const runtime = makeRuntime({
+      pi: {
+        presets: [{ id: "p1", label: "A", provider: "anthropic", apiKey: "", model: "m1" }],
+        activePresetId: "p1",
+      },
+    });
+    await expect(runtime.ensureRunning("c1")).rejects.toThrow(PiNotConfiguredError);
+  });
+
+  test("baseUrl 非空 → registerProvider 精确参数（api 缺省 openai-completions + model 默认值）", async () => {
+    const cr = makeCreateModelRuntime("ollama", "llama3.1:8b");
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: {
+        presets: [
+          {
+            id: "p1",
+            label: "Ollama",
+            provider: "ollama",
+            apiKey: "ollama",
+            model: "llama3.1:8b",
+            baseUrl: "http://localhost:11434/v1",
+          },
+        ],
+        activePresetId: "p1",
+      },
+      createModelRuntime: cr.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+
+    expect(cr.calls.registerProvider).toEqual([
+      [
+        "ollama",
+        {
+          baseUrl: "http://localhost:11434/v1",
+          api: "openai-completions",
+          models: [
+            {
+              id: "llama3.1:8b",
+              name: "llama3.1:8b",
+              reasoning: false,
+              input: ["text"],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 128_000,
+              maxTokens: 16_384,
+            },
+          ],
+        },
+      ],
+    ]);
+    // 先 register 后 setRuntimeApiKey（先建 provider 条目再同步凭证）。
+    expect(cr.calls.setKey).toEqual([["ollama", "ollama"]]);
+    expect(cr.calls.getModel).toEqual([["ollama", "llama3.1:8b"]]);
+  });
+
+  test("baseUrl 非空 + 显式 api → registerProvider 透传 api", async () => {
+    const cr = makeCreateModelRuntime("proxy", "claude-opus-4-8");
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: {
+        presets: [
+          {
+            id: "p1",
+            label: "Proxy",
+            provider: "proxy",
+            apiKey: "sk-proxy",
+            model: "claude-opus-4-8",
+            baseUrl: "https://proxy.example.com",
+            api: "anthropic-messages",
+          },
+        ],
+        activePresetId: "p1",
+      },
+      createModelRuntime: cr.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+
+    expect(cr.calls.registerProvider[0][1]).toMatchObject({
+      baseUrl: "https://proxy.example.com",
+      api: "anthropic-messages",
+    });
+  });
+
+  test("baseUrl 空（内置 provider）→ 不调 registerProvider", async () => {
+    const cr = makeCreateModelRuntime(PI_CFG.presets[0].provider, PI_CFG.presets[0].model);
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: cr.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    expect(cr.calls.registerProvider).toEqual([]);
+  });
+
+  test("registerProvider throw → 传播（不吞）", async () => {
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: {
+        presets: [
+          {
+            id: "p1",
+            label: "Bad",
+            provider: "bad",
+            apiKey: "k",
+            model: "m1",
+            baseUrl: "http://localhost:1",
+          },
+        ],
+        activePresetId: "p1",
+      },
+      createModelRuntime: (async () => ({
+        registerProvider: () => {
+          throw new Error("register boom");
+        },
+        setRuntimeApiKey: async () => {},
+        getModel: () => ({ id: "m1", provider: "bad" }),
+      })) as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await expect(runtime.ensureRunning("c1")).rejects.toThrow("register boom");
+  });
+
   test("模型解析不到 → PiModelNotFoundError", async () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
-      pi: { provider: "anthropic", apiKey: "sk", model: "nonexistent" },
+      pi: {
+        presets: [
+          { id: "p1", label: "A", provider: "anthropic", apiKey: "sk", model: "nonexistent" },
+        ],
+        activePresetId: "p1",
+      },
       createModelRuntime: (async () => ({
         setRuntimeApiKey: async () => {},
         getModel: () => undefined,
@@ -242,7 +431,10 @@ describe("PiRuntime.ensureRunning", () => {
     const cs = makeCreateSession(stub);
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: cs.factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -255,7 +447,10 @@ describe("PiRuntime.ensureRunning", () => {
     const backfilled: [string, string][] = [];
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
       onPiSessionId: (id, piSessionId) => backfilled.push([id, piSessionId]),
     });
@@ -269,7 +464,10 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -281,7 +479,10 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -300,7 +501,10 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -321,7 +525,10 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     expect(() => runtime.send("nope", "hi")).toThrow("chat 会话未启动");
@@ -334,7 +541,10 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     });
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -352,7 +562,10 @@ describe("PiRuntime 事件 → relay", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -373,7 +586,10 @@ describe("PiRuntime 事件 → relay", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -390,7 +606,10 @@ describe("PiRuntime 生命周期", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -406,7 +625,10 @@ describe("PiRuntime 生命周期", () => {
     const stub = makeStubSession();
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
     });
     await runtime.ensureRunning("c1");
@@ -424,7 +646,10 @@ describe("PiRuntime 生命周期", () => {
     const activities: string[] = [];
     const runtime = makeRuntime({
       pi: PI_CFG,
-      createModelRuntime: makeCreateModelRuntime(PI_CFG.provider, PI_CFG.model).factory as never,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
       createSession: makeCreateSession(stub).factory as never,
       onActivity: (id) => activities.push(id),
     });

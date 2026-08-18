@@ -321,6 +321,9 @@ export const en = {
   "api.providerDeleteFailed": "Failed to delete provider",
   "api.runtimeUpdateFailed": "Failed to update Claude runtime",
   "api.piRuntimeUpdateFailed": "Failed to update Pi runtime",
+  "api.piPresetCreateFailed": "Failed to add Pi preset",
+  "api.piPresetUpdateFailed": "Failed to update Pi preset",
+  "api.piPresetDeleteFailed": "Failed to delete Pi preset",
   "api.providerModelsFailed": "Failed to fetch provider models",
   "api.presetCreateFailed": "Failed to add preset",
   "api.presetUpdateFailed": "Failed to update preset",
@@ -617,13 +620,27 @@ export const en = {
   "settings.saved": "Saved",
   "settings.unsavedChanges": "Unsaved changes",
 
-  // ── Settings: pi runtime（Phase 2 配置层，chat 全局会话运行时，单块配置） ──
+  // ── Settings: pi runtime（v5 presets 体系，chat 全局会话运行时） ──
   "settings.piHint":
-    "Provider, API key, and model used by global chat sessions. A blank API key keeps the existing key.",
+    "Global chat sessions run on the active pi preset. Each preset bundles a provider, model, API key, and an optional custom endpoint.",
   "settings.piProvider": "Provider",
-  "settings.piProviderHint": "The provider serving the model (e.g. anthropic).",
+  "settings.piProviderHint":
+    "A pi built-in provider id (e.g. anthropic, openai, deepseek) or a custom id for a compatible endpoint.",
   "settings.piModel": "Model",
   "settings.piModelHint": "The model ID for chat sessions (e.g. claude-sonnet-5).",
+  "settings.piPresetsHint":
+    "Each preset bundles a provider, model, API key, and an optional custom endpoint (Ollama/vLLM/LM Studio/gateway). Activate one to use it for new chat sessions.",
+  "settings.piNoPresets": "No presets yet. Add one to configure a provider and model.",
+  "settings.piDeletePresetConfirm":
+    'Delete preset "{{label}}"? If it is active, pi is disabled for new chat sessions.',
+  "settings.piActivePresetHint":
+    "The active preset's provider, model, and API key apply when newly creating chat sessions. Already-open sessions are not affected.",
+  "settings.piActivePresetNone": "None (pi disabled)",
+  "settings.piBaseUrlHint":
+    "Optional. A custom OpenAI/Anthropic-compatible endpoint (e.g. http://localhost:11434/v1 for Ollama).",
+  "settings.piApi": "API protocol",
+  "settings.piApiHint": "Wire protocol for the custom endpoint. Defaults to OpenAI completions.",
+  "settings.piApiDefault": "Default (openai-completions)",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",

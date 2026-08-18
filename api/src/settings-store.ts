@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -5,14 +6,17 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
+  PI_PROVIDER_APIS,
   type ClaudeModelMapping,
   type ClaudeModelTier,
   type ClaudePreset,
   type ClaudePresetMasked,
   type ClaudeRuntimeConfig,
   type EffortLevel,
+  type PiPreset,
+  type PiPresetMasked,
+  type PiProviderApi,
   type PiRuntimeConfig,
-  type PiRuntimeConfigMasked,
   type SettingsState,
   type SkillSource,
   type SkillSourceType,
@@ -29,7 +33,9 @@ import { summarizeYamlError } from "./yaml-error";
 // v4 = v3 加 runtimes.pi（chat 模式全局会话运行时配置，Phase 2）。旧 providers.json
 // 由 migrate-legacy-config.ts 的 migrateLegacyUserFiles 一次性迁移（settings@v3 + state@v1，
 // 先写 settings.yaml 权威，再改名 .bak）；read() 保留 v1 分流作兜底（迁移崩溃中断的极端残留）。
-const SCHEMA_VERSION = 4;
+// v5 = v4 的 runtimes.pi 单块 {provider,apiKey,model} → presets[] + activePresetId（多 provider
+// preset 体系，仿 claude presets；支持自定义 baseUrl 兼容端点）。
+const SCHEMA_VERSION = 5;
 const defaultSettingsPath = () => join(homedir(), ".agents-remote", "settings.yaml");
 
 // 默认 modelMapping = tier alias 字符串本身：不改设置时行为 = 现状（CLI 接受 tier
@@ -50,6 +56,9 @@ export const DEFAULT_CLAUDE_RUNTIME: ClaudeRuntimeConfig = {
   enable1mContext: false,
   effort: "high",
 };
+
+// pi 未启用默认态：presets 空 + activePresetId 空。cloneDefault/migrateV1ToV2/normalize 共用。
+export const DEFAULT_PI_RUNTIME: PiRuntimeConfig = { presets: [], activePresetId: "" };
 
 export type SettingsStoreOptions = { path?: string };
 
@@ -72,6 +81,7 @@ export class SettingsStore {
       const raw = await readFile(this.path, "utf8");
       const parsed = parseYaml(raw);
       if (readSchemaVersion(parsed) === 1) return migrateV1ToV2(parsed);
+      if (readSchemaVersion(parsed) === 4) return migrateV4ToV5(parsed);
       return normalizeSettings(parsed);
     } catch (error) {
       if (isNotFoundError(error)) {
@@ -212,26 +222,94 @@ export function toMaskedPreset(preset: ClaudePreset): ClaudePresetMasked {
   };
 }
 
-// pi runtime mask（与 toMaskedPreset 同语义）：apiKey 永不出 api 进程，GET 响应只露 masked。
-export function toMaskedPi(pi: PiRuntimeConfig): PiRuntimeConfigMasked {
+// pi preset mask（与 toMaskedPreset 同语义）：apiKey 永不出 api 进程，GET 响应只露 masked。
+export function toMaskedPiPreset(preset: PiPreset): PiPresetMasked {
   return {
-    provider: pi.provider,
-    apiKeyMasked: maskApiKey(pi.apiKey),
-    hasApiKey: Boolean(pi.apiKey),
-    model: pi.model,
+    id: preset.id,
+    label: preset.label,
+    provider: preset.provider,
+    model: preset.model,
+    ...(preset.baseUrl === undefined ? {} : { baseUrl: preset.baseUrl }),
+    ...(preset.api === undefined ? {} : { api: preset.api }),
+    apiKeyMasked: maskApiKey(preset.apiKey),
+    hasApiKey: Boolean(preset.apiKey),
   };
 }
 
-// pi 宽松规整：三项全为非空 string 才保留，否则 undefined（= 未启用）。部分配置不半启用。
-function normalizePi(input: unknown): PiRuntimeConfig | undefined {
-  if (!input || typeof input !== "object") return undefined;
+const isPiProviderApi = (value: unknown): value is PiProviderApi =>
+  typeof value === "string" && (PI_PROVIDER_APIS as readonly string[]).includes(value);
+
+// v4 单块 pi → presets 结构（migrateV4ToV5 与 normalizePi 双保险共用）。v4 单块
+// {provider, apiKey, model} 三项全非空才有效（沿用旧「部分配置不半启用」语义）→ 合成单 preset，
+// label 默认 = provider，id 由 createId 生成（可注入供测试断言）。无效/缺 pi → 空默认。
+export function legacyPiToPresets(
+  input: unknown,
+  createId: () => string = randomUUID,
+): PiRuntimeConfig {
+  if (!input || typeof input !== "object") return { ...DEFAULT_PI_RUNTIME };
   const p = input as Record<string, unknown>;
   const provider = nonEmptyString(p.provider);
   const apiKey = nonEmptyString(p.apiKey);
   const model = nonEmptyString(p.model);
-  if (!provider || !apiKey || !model) return undefined;
-  return { provider, apiKey, model };
+  if (!provider || !apiKey || !model) return { ...DEFAULT_PI_RUNTIME };
+  const id = createId();
+  return { presets: [{ id, label: provider, provider, apiKey, model }], activePresetId: id };
 }
+
+// v4 → v5 迁移（纯内存合成，不落盘；仿 migrateV1ToV2 范式）。claude/skills 委托
+// normalizeSettings 解析，pi 单块经 legacyPiToPresets 转 presets。id 由 createId 生成
+// （可注入固定值供测试断言——v4 单块无 id 必须生成）。导出供 settings-store.test.ts 密集
+// 单测覆盖（v4 被 v5 覆盖后不可逆，是最高风险防线）。
+export function migrateV4ToV5(parsed: unknown, createId: () => string = randomUUID): SettingsState {
+  const root = (parsed && typeof parsed === "object" ? parsed : {}) as {
+    runtimes?: { pi?: unknown };
+  };
+  const base = normalizeSettings(parsed);
+  return {
+    ...base,
+    runtimes: {
+      ...base.runtimes,
+      pi: legacyPiToPresets(root.runtimes?.pi, createId),
+    },
+  };
+}
+
+// pi 宽松规整（v5）：object 且有 presets 数组 → filter isPiPreset + normalizePiPreset；
+// 无 presets 键的 object（v4 单块形状，绕过 read() 分流的文件）→ legacyPiToPresets 双保险，
+// 防静默丢 apiKey。activePresetId 忠实保留（不因未命中重置，运行时兜底判未启用）。
+function normalizePi(input: unknown): PiRuntimeConfig {
+  if (!input || typeof input !== "object") return { ...DEFAULT_PI_RUNTIME };
+  const p = input as Record<string, unknown>;
+  if (!Array.isArray(p.presets)) return legacyPiToPresets(input);
+  const presets = p.presets.filter(isPiPreset).map(normalizePiPreset);
+  return {
+    presets,
+    activePresetId: typeof p.activePresetId === "string" ? p.activePresetId : "",
+  };
+}
+
+const isPiPreset = (value: unknown): value is PiPreset =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as PiPreset).id === "string" &&
+  typeof (value as PiPreset).label === "string" &&
+  typeof (value as PiPreset).provider === "string" &&
+  typeof (value as PiPreset).apiKey === "string" &&
+  typeof (value as PiPreset).model === "string";
+
+const normalizePiPreset = (parsed: PiPreset): PiPreset => {
+  const preset: PiPreset = {
+    id: parsed.id,
+    label: parsed.label,
+    provider: parsed.provider,
+    apiKey: parsed.apiKey,
+    model: parsed.model,
+  };
+  if (typeof parsed.baseUrl === "string" && parsed.baseUrl) preset.baseUrl = parsed.baseUrl;
+  // api 无 baseUrl 无意义，丢弃（线协议只对自定义端点有效）。
+  if (isPiProviderApi(parsed.api) && preset.baseUrl) preset.api = parsed.api;
+  return preset;
+};
 
 const nonEmptyString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
@@ -314,6 +392,8 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
           typeof oldRuntime.enable1mContext === "boolean" ? oldRuntime.enable1mContext : false,
         effort: isEffortLevel(oldRuntime.effort) ? oldRuntime.effort : "high",
       },
+      // v1 无 pi 概念 → 未启用默认。
+      pi: { ...DEFAULT_PI_RUNTIME },
     },
     skills: { sources: [] },
   };
@@ -345,7 +425,7 @@ export function normalizeSettings(parsed: unknown): SettingsState {
             : DEFAULT_CLAUDE_RUNTIME.enable1mContext,
         effort: isEffortLevel(claude?.effort) ? claude.effort : DEFAULT_CLAUDE_RUNTIME.effort,
       },
-      // pi 宽松：三项全非空才保留，否则 undefined（未启用）。部分配置不半启用。
+      // v5：pi 恒存在；空 presets + activePresetId:"" = 未启用。
       pi: normalizePi(root.runtimes?.pi),
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
@@ -381,6 +461,7 @@ function cloneDefaultSettings(): SettingsState {
         enable1mContext: DEFAULT_CLAUDE_RUNTIME.enable1mContext,
         effort: DEFAULT_CLAUDE_RUNTIME.effort,
       },
+      pi: { ...DEFAULT_PI_RUNTIME },
     },
     skills: { sources: [] },
   };

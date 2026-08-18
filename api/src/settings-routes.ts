@@ -2,25 +2,32 @@ import { randomUUID } from "node:crypto";
 import {
   CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
+  PI_PROVIDER_APIS,
   type ClaudeModelMapping,
   type ClaudePreset,
   type ClaudeRuntimeConfig,
   type ClaudePresetResponse,
   type CreateClaudePresetRequest,
+  type CreatePiPresetRequest,
   type DeleteClaudePresetResponse,
+  type DeletePiPresetResponse,
   type GetSettingsResponse,
   type ListProviderModelsResponse,
-  type PiRuntimeResponse,
+  type PiPreset,
+  type PiPresetResponse,
+  type PiProviderApi,
   type SettingsState,
   type TestClaudePresetRequest,
   type UpdateClaudePresetRequest,
   type UpdateClaudeRuntimeRequest,
   type UpdateClaudeRuntimeResponse,
+  type UpdatePiPresetRequest,
   type UpdatePiRuntimeRequest,
+  type UpdatePiRuntimeResponse,
 } from "@agents-remote/shared";
 import { jsonError } from "./http-auth";
 import { listProviderModels } from "./settings-models";
-import { SettingsStore, toMaskedPreset, toMaskedPi } from "./settings-store";
+import { SettingsStore, toMaskedPiPreset, toMaskedPreset } from "./settings-store";
 
 // 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫。
 // GET 响应里 presets 的 apiKey 全走 toMaskedPreset；原始 key 永不出 api 进程、永不进日志。
@@ -42,8 +49,11 @@ export const handleSettingsRoutes = async (
             enable1mContext: claude.enable1mContext,
             effort: claude.effort,
           },
-          // pi 未配置（undefined）时不带 pi 键 = 未启用。
-          ...(state.runtimes.pi ? { pi: toMaskedPi(state.runtimes.pi) } : {}),
+          // v5：pi 键恒存在；空 presets + activePresetId:"" = 未启用。
+          pi: {
+            presets: state.runtimes.pi.presets.map(toMaskedPiPreset),
+            activePresetId: state.runtimes.pi.activePresetId,
+          },
         },
         skills: { sources: state.skills?.sources ?? [] },
       },
@@ -198,9 +208,20 @@ export const handleSettingsRoutes = async (
     const body = await readJson<UpdateClaudeRuntimeRequest>(request);
     let updated: SettingsState;
     try {
-      updated = await store.update((s) =>
-        applyClaudeRuntimePatch(s.runtimes.claude, body, s.runtimes.claude.presets),
-      );
+      // mutator 展开合并保留 s 的其它字段（pi/skills）——applyClaudeRuntimePatch 只返回
+      // claude 片段，直接作为返回值会丢 pi presets + skills（现存 bug，随本次修复）。
+      updated = await store.update((s) => {
+        const nextClaude = applyClaudeRuntimePatch(
+          s.runtimes.claude,
+          body,
+          s.runtimes.claude.presets,
+        );
+        // 展开合并保留 presets（applyClaudeRuntimePatch 只返回三个 runtime 旋钮片段）。
+        return {
+          ...s,
+          runtimes: { ...s.runtimes, claude: { ...s.runtimes.claude, ...nextClaude } },
+        };
+      });
     } catch (error) {
       if (error instanceof SettingsValidationError) {
         return jsonError(error.code, error.message, 400);
@@ -211,49 +232,157 @@ export const handleSettingsRoutes = async (
     return Response.json(response);
   }
 
-  // PUT /api/settings/runtimes/pi —— pi runtime 配置（provider/apiKey/model，Phase 2 配置层）。
-  // provider/model 必填非空；apiKey 空/缺省 = 保留已保存 key（编辑态留空不改，与 preset PUT
-  // 语义一致），仅新建态无已保存 key 时必填。store.update 用展开合并保留 s 的其它字段
-  //（claude/skills），避免 claude runtime PATCH 那样丢 skills。
-  if (url.pathname === "/api/settings/runtimes/pi" && request.method === "PUT") {
-    const body = await readJson<UpdatePiRuntimeRequest>(request);
+  // ── pi runtime（v5 多 provider preset 体系）───────────────────────
+  // POST /api/settings/runtimes/pi/presets —— 新建 preset。label/provider/apiKey/model 必填；
+  // api 仅 baseUrl 非空时有意义（自定义兼容端点），无 baseUrl 传 api → 400。
+  if (url.pathname === "/api/settings/runtimes/pi/presets" && request.method === "POST") {
+    const body = await readJson<CreatePiPresetRequest>(request);
+    const label = body.label?.trim();
     const provider = body.provider?.trim();
     const apiKey = body.apiKey?.trim();
     const model = body.model?.trim();
-    let invalid = false;
+    const baseUrl = body.baseUrl?.trim();
+    if (!label) return jsonError("SETTINGS_INVALID", "Preset label is required", 400);
+    if (!provider) return jsonError("SETTINGS_INVALID", "Preset provider is required", 400);
+    if (!apiKey) return jsonError("SETTINGS_INVALID", "Preset API key is required", 400);
+    if (!model) return jsonError("SETTINGS_INVALID", "Preset model is required", 400);
+    const apiError = coercePiApi(body.api, baseUrl);
+    if (apiError) return jsonError("SETTINGS_INVALID", apiError, 400);
+    const preset: PiPreset = {
+      id: randomUUID(),
+      label,
+      provider,
+      apiKey,
+      model,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(baseUrl && body.api ? { api: body.api } : {}),
+    };
+    const updated = await store.update((s) => ({
+      ...s,
+      runtimes: {
+        ...s.runtimes,
+        pi: { ...s.runtimes.pi, presets: [...s.runtimes.pi.presets, preset] },
+      },
+    }));
+    const created = updated.runtimes.pi.presets.find((p) => p.id === preset.id);
+    if (!created) throw new Error("Created pi preset missing from store");
+    const response: PiPresetResponse = { preset: toMaskedPiPreset(created) };
+    return Response.json(response, { status: 201 });
+  }
+
+  const piPresetIdMatch = url.pathname.match(/^\/api\/settings\/runtimes\/pi\/presets\/([^/]+)$/);
+
+  // PUT /api/settings/runtimes/pi/presets/:id —— 编辑 preset。label/provider/model 非空才覆盖；
+  // apiKey 空/缺省 = 不改；baseUrl 显式空串 = 删除（联动删 api）；api 须配有效 baseUrl。
+  if (piPresetIdMatch && request.method === "PUT") {
+    const id = decodeURIComponent(piPresetIdMatch[1]);
+    const body = await readJson<UpdatePiPresetRequest>(request);
+    let missing = false;
+    let invalid = "";
     const updated = await store.update((s) => {
-      const resolvedApiKey = apiKey || s.runtimes.pi?.apiKey || "";
-      if (!provider || !model || !resolvedApiKey) {
-        invalid = true;
+      const existing = s.runtimes.pi.presets.find((p) => p.id === id);
+      if (!existing) {
+        missing = true;
         return s;
       }
+      const effectiveBaseUrl = body.baseUrl !== undefined ? body.baseUrl.trim() : existing.baseUrl;
+      const apiError = coercePiApi(body.api, effectiveBaseUrl);
+      if (apiError) {
+        invalid = apiError;
+        return s;
+      }
+      const presets = s.runtimes.pi.presets.map((p) => {
+        if (p.id !== id) return p;
+        const next: PiPreset = { ...p };
+        if (typeof body.label === "string" && body.label.trim()) next.label = body.label.trim();
+        if (typeof body.provider === "string" && body.provider.trim()) {
+          next.provider = body.provider.trim();
+        }
+        if (typeof body.model === "string" && body.model.trim()) next.model = body.model.trim();
+        // apiKey: undefined/空串 = 不改；非空 = 覆盖（编辑态留空保留原 key）。
+        if (typeof body.apiKey === "string" && body.apiKey.length > 0) next.apiKey = body.apiKey;
+        if (body.baseUrl !== undefined) {
+          if (effectiveBaseUrl) next.baseUrl = effectiveBaseUrl;
+          else {
+            delete next.baseUrl;
+            delete next.api; // baseUrl 删除联动删 api（api 只对自定义端点有意义）
+          }
+        }
+        if (body.api !== undefined && effectiveBaseUrl) next.api = body.api;
+        return next;
+      });
       return {
         ...s,
-        runtimes: { ...s.runtimes, pi: { provider, apiKey: resolvedApiKey, model } },
+        runtimes: { ...s.runtimes, pi: { ...s.runtimes.pi, presets } },
       };
     });
-    if (invalid) {
-      return jsonError(
-        "SETTINGS_INVALID",
-        "provider/model are required and apiKey when no key saved",
-        400,
-      );
+    if (missing) return jsonError("PRESET_NOT_FOUND", "Preset not found", 404);
+    if (invalid) return jsonError("SETTINGS_INVALID", invalid, 400);
+    const preset = updated.runtimes.pi.presets.find((p) => p.id === id);
+    if (!preset) throw new Error("Updated pi preset missing from store");
+    const response: PiPresetResponse = { preset: toMaskedPiPreset(preset) };
+    return Response.json(response);
+  }
+
+  // DELETE /api/settings/runtimes/pi/presets/:id —— 删除 preset。删除激活 preset 级联清空
+  // activePresetId（pi 停用语义：新 chat 会话出 SESSION_NOT_CONFIGURED，区别于 claude 回退 env）。
+  if (piPresetIdMatch && request.method === "DELETE") {
+    const id = decodeURIComponent(piPresetIdMatch[1]);
+    let existed = false;
+    await store.update((s) => {
+      const pi = s.runtimes.pi;
+      existed = pi.presets.some((p) => p.id === id);
+      if (!existed) return s;
+      const presets = pi.presets.filter((p) => p.id !== id);
+      const nextPi =
+        pi.activePresetId === id ? { ...pi, presets, activePresetId: "" } : { ...pi, presets };
+      return { ...s, runtimes: { ...s.runtimes, pi: nextPi } };
+    });
+    if (!existed) return jsonError("PRESET_NOT_FOUND", "Preset not found", 404);
+    const response: DeletePiPresetResponse = { deleted: true, id };
+    return Response.json(response);
+  }
+
+  // PUT /api/settings/runtimes/pi —— 语义 = activate：只更新 activePresetId（空串 = 停用 pi）。
+  if (url.pathname === "/api/settings/runtimes/pi" && request.method === "PUT") {
+    const body = await readJson<UpdatePiRuntimeRequest>(request);
+    const trimmed = body.activePresetId?.trim() ?? "";
+    if (trimmed && !(await store.read()).runtimes.pi.presets.some((p) => p.id === trimmed)) {
+      return jsonError("PRESET_NOT_FOUND", "Preset not found", 400);
     }
-    const response: PiRuntimeResponse = { runtime: toMaskedPi(updated.runtimes.pi!) };
+    const updated = await store.update((s) => ({
+      ...s,
+      runtimes: { ...s.runtimes, pi: { ...s.runtimes.pi, activePresetId: trimmed } },
+    }));
+    const response: UpdatePiRuntimeResponse = {
+      runtime: { activePresetId: updated.runtimes.pi.activePresetId },
+    };
     return Response.json(response);
   }
 
   return undefined;
 };
 
+// 纯函数：pi 线协议校验。api 缺省（undefined）= 不校验（运行时按 openai-completions 处理）；
+// api 给了但 baseUrl 为空 → 错误文案（api 只对自定义端点有意义）。返回 "" = 合法。
+const coercePiApi = (api: PiProviderApi | undefined, baseUrl: string | undefined): string => {
+  if (api === undefined) return "";
+  if (!(PI_PROVIDER_APIS as readonly string[]).includes(api)) {
+    return `Invalid api: ${api}`;
+  }
+  if (!baseUrl) return "api requires a custom baseUrl";
+  return "";
+};
+
 // 纯函数：把 partial patch 合并进当前 claude runtime config，校验失败抛
-// SettingsValidationError（由 route handler 转 400）。返回完整新 SettingsState。
+// SettingsValidationError（由 route handler 转 400）。返回新 ClaudeRuntimeConfig 片段——
+// 调用方 mutator 必须展开合并进完整 state（保留 pi/skills，见 route 层注释）。
 // runtime 级只持 activePresetId/effort/enable1mContext（modelMapping 已下沉 preset）。
 function applyClaudeRuntimePatch(
   current: ClaudeRuntimeConfig,
   body: UpdateClaudeRuntimeRequest,
   presets: ClaudePreset[],
-): SettingsState {
+): ClaudeRuntimeConfig {
   let activePresetId = current.activePresetId;
   let effort = current.effort;
   let enable1mContext = current.enable1mContext;
@@ -280,9 +409,7 @@ function applyClaudeRuntimePatch(
     enable1mContext = body.enable1mContext;
   }
 
-  return {
-    runtimes: { claude: { presets, activePresetId, enable1mContext, effort } },
-  };
+  return { activePresetId, enable1mContext, effort };
 }
 
 class SettingsValidationError extends Error {

@@ -2,14 +2,18 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode, useState } from 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   EFFORT_LEVELS,
+  PI_PROVIDER_APIS,
   type ClaudeModelMapping,
   type ClaudeModelTier,
   type ClaudePresetMasked,
   type CreateClaudePresetRequest,
+  type CreatePiPresetRequest,
   type EffortLevel,
   type ListProviderModelsResponse,
-  type PiRuntimeConfigMasked,
+  type PiPresetMasked,
+  type PiProviderApi,
   type UpdateClaudePresetRequest,
+  type UpdatePiPresetRequest,
 } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
@@ -34,12 +38,15 @@ import { Card, CardContent } from "../ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 import {
   createClaudePreset,
+  createPiPreset,
   deleteClaudePreset,
+  deletePiPreset,
   getSettings,
   listPresetModels,
   testPresetModels,
   updateClaudePreset,
   updateClaudeRuntime,
+  updatePiPreset,
   updatePiRuntime,
 } from "../../api/client";
 
@@ -148,8 +155,9 @@ export function SettingsContent({
     case "pi":
       body = (
         <PiRuntimeContent
-          // key 随 pi 配置变化：保存成功后 remount 重置表单（apiKey 输入清空回 masked 态）。
-          key={`${settings?.runtimes.pi?.provider ?? ""}|${settings?.runtimes.pi?.model ?? ""}|${settings?.runtimes.pi?.apiKeyMasked ?? ""}`}
+          // key 只随 activePresetId 变（preset CRUD 不触发 remount）：用户在激活选择的未保存
+          // 编辑得以保留；激活预设被级联清空时才 remount 重置 state。
+          key={`${settings?.runtimes.pi?.activePresetId ?? ""}`}
           pi={settings?.runtimes.pi}
           loading={loading}
         />
@@ -446,53 +454,38 @@ function ClaudeRuntimeContent({
   );
 }
 
-// ── pi runtime detail：provider / apiKey / model 单块配置（Phase 2 配置层） ──
+// ── pi runtime detail：激活预设 + 预设列表（v5 presets 体系） ──────────
 
 /**
- * pi 运行时段（Phase 2 配置层）：chat 全局会话运行时，单块配置（非 preset 列表）。
- * 未配置（settings.runtimes.pi undefined）= 未启用。apiKey 只露 masked 指纹：编辑态输入
- * 留空 = 不改（后端回退已保存 key），placeholder 显示 apiKeyMasked 提示已配置。
+ * pi 运行时段（v5 presets 体系）：chat 全局会话运行时。顶部 = 激活预设选择（None = 停用，
+ * Save 持久化 activePresetId）；下方 = 预设列表 CRUD（PiPresetListSection，每个预设自带
+ * provider/model/apiKey/baseUrl/api，CRUD 即时持久化）。key 只随 activePresetId 变
+ * （见 SettingsContent），preset CRUD 不触发 remount。
  */
 function PiRuntimeContent({
   pi,
   loading = false,
 }: {
-  pi: PiRuntimeConfigMasked | undefined;
+  pi: { presets: PiPresetMasked[]; activePresetId: string } | undefined;
   loading?: boolean;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
 
-  const [provider, setProvider] = useState(pi?.provider ?? "");
-  const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState(pi?.model ?? "");
+  const [activePresetId, setActivePresetId] = useState(pi?.activePresetId ?? "");
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const savedProvider = pi?.provider ?? "";
-  const savedModel = pi?.model ?? "";
-  const hasSavedKey = !!pi?.hasApiKey;
-  const dirty = !loading && (provider !== savedProvider || model !== savedModel || apiKey !== "");
-  // provider/model 必填；apiKey 新建态必填、编辑态留空可（保留已保存 key）。
-  const canSave =
-    !loading &&
-    provider.trim() !== "" &&
-    model.trim() !== "" &&
-    (apiKey.trim() !== "" || hasSavedKey);
+  const dirty = !loading && activePresetId !== (pi?.activePresetId ?? "");
 
   const handleSave = async () => {
-    if (!canSave) return;
+    if (loading) return;
     setError(null);
     setSaving(true);
     try {
-      await updatePiRuntime({
-        provider: provider.trim(),
-        model: model.trim(),
-        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-      });
+      await updatePiRuntime({ activePresetId });
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setApiKey("");
       setJustSaved(true);
       window.setTimeout(() => setJustSaved(false), 2000);
     } catch (e) {
@@ -502,38 +495,33 @@ function PiRuntimeContent({
     }
   };
 
+  const selectedLabel = activePresetId
+    ? (pi?.presets.find((p) => p.id === activePresetId)?.label ?? activePresetId)
+    : t("settings.piActivePresetNone");
+
   return (
     <div className="flex flex-col gap-3">
       <Card className="border border-neutral-line bg-surface ring-0">
         <CardContent className="flex flex-col gap-4 p-3">
           <p className="text-xs leading-5 text-on-surface-muted">{t("settings.piHint")}</p>
 
-          <Field label={t("settings.piProvider")} hint={t("settings.piProviderHint")}>
-            <ShellInput
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              placeholder="anthropic"
-              disabled={loading}
-            />
-          </Field>
-
-          <Field label={t("settings.piModel")} hint={t("settings.piModelHint")}>
-            <ShellInput
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="claude-sonnet-5"
-              disabled={loading}
-            />
-          </Field>
-
-          <Field label={t("settings.apiKey")} hint={t("settings.apiKeyHint")}>
-            {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
-            <ShellInput
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={hasSavedKey ? pi?.apiKeyMasked : "sk-ant-..."}
-              autoComplete="off"
-              disabled={loading}
+          <Field label={t("settings.activePreset")} hint={t("settings.piActivePresetHint")}>
+            <OptionMenu
+              align="start"
+              cancelLabel={t("cancel")}
+              trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
+              items={[
+                {
+                  label: t("settings.piActivePresetNone"),
+                  isActive: activePresetId === "",
+                  onSelect: () => setActivePresetId(""),
+                },
+                ...(pi?.presets ?? []).map((p) => ({
+                  label: p.label,
+                  isActive: p.id === activePresetId,
+                  onSelect: () => setActivePresetId(p.id),
+                })),
+              ]}
             />
           </Field>
 
@@ -542,17 +530,342 @@ function PiRuntimeContent({
             <span className="text-xs text-on-surface-muted">
               {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
             </span>
-            <ActionButton
-              tone="accent"
-              onClick={handleSave}
-              disabled={!canSave || !dirty || saving}
-            >
+            <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
               {saving ? t("settings.saving") : t("settings.save")}
             </ActionButton>
           </div>
         </CardContent>
       </Card>
+
+      <PiPresetListSection presets={pi?.presets ?? []} loading={loading} />
     </div>
+  );
+}
+
+/**
+ * pi 预设列表段（v5 presets 体系）：Apple Settings grouped Card + 整行 ListRow 点击进编辑；
+ * 新增/编辑走 PiPresetDialog；删除走 confirm + deletePiPreset，即时持久化 + invalidate
+ * settings。删除激活预设的级联清空由后端保证。
+ */
+function PiPresetListSection({
+  presets,
+  loading = false,
+}: {
+  presets: PiPresetMasked[];
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const { confirm, holder: confirmHolder } = useConfirm();
+  const [editing, setEditing] = useState<PiPresetMasked | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: deletePiPreset,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  const handleDelete = async (preset: PiPresetMasked) => {
+    const ok = await confirm({
+      title: t("settings.deletePreset"),
+      message: t("settings.piDeletePresetConfirm", { label: preset.label }),
+      confirmLabel: t("settings.deletePreset"),
+      cancelLabel: t("cancel"),
+      tone: "danger",
+    });
+    if (ok) await deleteMutation.mutateAsync(preset.id);
+  };
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <ShellSectionLabel>{t("settings.presets")}</ShellSectionLabel>
+          <p className="mt-1 text-xs leading-5 text-on-surface-muted">
+            {t("settings.piPresetsHint")}
+          </p>
+        </div>
+        <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
+          {t("settings.addPreset")}
+        </ActionButton>
+      </div>
+
+      <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
+        <CardContent className="p-0">
+          <div className="max-h-72 overflow-y-auto">
+            {loading ? (
+              <div aria-hidden="true" className={listGroupClasses()}>
+                {Array.from({ length: PRESET_SKELETON_ROW_COUNT }, (_, i) => (
+                  <div className="flex h-auto w-full items-center px-3 py-2.5" key={i}>
+                    <span className="flex min-w-0 grow items-center justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="skeleton-shimmer block h-4 w-28 rounded" />
+                        <span className="skeleton-shimmer mt-1.5 block h-3 w-48 rounded" />
+                      </span>
+                      <span className="skeleton-shimmer size-8 shrink-0 rounded-md" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : presets.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-on-surface-muted">{t("settings.piNoPresets")}</p>
+            ) : (
+              <ListGroup ariaLabel={t("settings.presets")}>
+                {presets.map((p) => (
+                  <PiPresetRow
+                    key={p.id}
+                    preset={p}
+                    onEdit={() => setEditing(p)}
+                    onDelete={() => handleDelete(p)}
+                  />
+                ))}
+              </ListGroup>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {(creating || editing) && (
+        <PiPresetDialog
+          preset={editing}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
+      {confirmHolder}
+    </section>
+  );
+}
+
+function PiPresetRow({
+  preset,
+  onEdit,
+  onDelete,
+}: {
+  preset: PiPresetMasked;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useT();
+  const subtitle = (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">
+      <span className="text-on-surface">
+        {preset.provider} / {preset.model}
+      </span>
+      {preset.baseUrl ? <span className="text-on-surface-muted">{preset.baseUrl}</span> : null}
+      {preset.apiKeyMasked ? (
+        <span className="text-on-surface-muted">{preset.apiKeyMasked}</span>
+      ) : null}
+    </span>
+  );
+
+  return (
+    <ListRow
+      title={preset.label}
+      subtitle={subtitle}
+      onClick={onEdit}
+      actions={
+        // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
+        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <ActionMenu
+            align="end"
+            cancelLabel={t("cancel")}
+            trigger={
+              <button
+                type="button"
+                aria-label={t("settings.deletePreset")}
+                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+              >
+                <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.5" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <circle cx="13" cy="8" r="1.5" />
+                </svg>
+              </button>
+            }
+            items={[
+              {
+                label: t("settings.deletePreset"),
+                variant: "destructive",
+                onSelect: onDelete,
+              },
+            ]}
+          />
+        </span>
+      }
+    />
+  );
+}
+
+/**
+ * pi 预设编辑/新建弹窗。预设 = provider + model + apiKey + 可选 baseUrl/api（自定义兼容端点）。
+ * 不做模型发现/测试连接（决策 4：model id 手填）。apiKey 编辑态留空 = 不改（后端回退原 key）；
+ * baseUrl 显式空串 = 删除（联动删 api）。api 下拉仅 baseUrl 非空时渲染。
+ */
+function PiPresetDialog({
+  preset,
+  onClose,
+}: {
+  preset: PiPresetMasked | null;
+  onClose: () => void;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const isEdit = preset !== null;
+
+  const [label, setLabel] = useState(preset?.label ?? "");
+  const [provider, setProvider] = useState(preset?.provider ?? "");
+  const [model, setModel] = useState(preset?.model ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(preset?.baseUrl ?? "");
+  const [api, setApi] = useState<PiProviderApi | undefined>(preset?.api);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const trimmedBaseUrl = baseUrl.trim();
+  const showApiSelect = trimmedBaseUrl !== "";
+
+  const handleSubmit = async () => {
+    setError(null);
+    const trimmedLabel = label.trim();
+    const trimmedProvider = provider.trim();
+    const trimmedModel = model.trim();
+    if (!trimmedLabel) {
+      setError(t("settings.labelHint"));
+      return;
+    }
+    if (!trimmedProvider) {
+      setError(t("settings.piProvider"));
+      return;
+    }
+    if (!trimmedModel) {
+      setError(t("settings.piModel"));
+      return;
+    }
+    if (!isEdit && !apiKey.trim()) {
+      setError(t("settings.apiKey"));
+      return;
+    }
+    setSaving(true);
+    try {
+      if (isEdit && preset) {
+        // apiKey 留空 = 不传 = 不改（后端回退原 key）；baseUrl 显式空串 = 删除（联动删 api）。
+        const input: UpdatePiPresetRequest = {
+          label: trimmedLabel,
+          provider: trimmedProvider,
+          model: trimmedModel,
+          baseUrl: trimmedBaseUrl,
+        };
+        if (apiKey.trim()) input.apiKey = apiKey.trim();
+        if (trimmedBaseUrl && api) input.api = api;
+        await updatePiPreset(preset.id, input);
+      } else {
+        const input: CreatePiPresetRequest = {
+          label: trimmedLabel,
+          provider: trimmedProvider,
+          apiKey: apiKey.trim(),
+          model: trimmedModel,
+        };
+        if (trimmedBaseUrl) {
+          input.baseUrl = trimmedBaseUrl;
+          if (api) input.api = api;
+        }
+        await createPiPreset(input);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <div
+          className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
+          <DialogTitle className="text-base font-semibold text-on-surface">
+            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
+          </DialogDescription>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+            <Field label={t("settings.label")}>
+              <ShellInput
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder={t("settings.labelHint")}
+              />
+            </Field>
+            <Field label={t("settings.piProvider")} hint={t("settings.piProviderHint")}>
+              <ShellInput
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+                placeholder="anthropic"
+              />
+            </Field>
+            <Field label={t("settings.piModel")} hint={t("settings.piModelHint")}>
+              <ShellInput
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="claude-sonnet-5"
+              />
+            </Field>
+            <Field
+              label={t("settings.apiKey")}
+              hint={isEdit ? t("settings.apiKeyHint") : undefined}
+            >
+              {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
+              <ShellInput
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label={t("settings.baseUrl")} hint={t("settings.piBaseUrlHint")}>
+              <ShellInput
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.example.com"
+              />
+            </Field>
+            {showApiSelect && (
+              <Field label={t("settings.piApi")} hint={t("settings.piApiHint")}>
+                <OptionMenu
+                  align="start"
+                  cancelLabel={t("cancel")}
+                  trigger={<SelectorTrigger label={api ?? t("settings.piApiDefault")} />}
+                  items={PI_PROVIDER_APIS.map((value) => ({
+                    label: value,
+                    isActive: value === api,
+                    onSelect: () => setApi(value),
+                  }))}
+                />
+              </Field>
+            )}
+          </div>
+
+          {error && <p className="text-xs text-error">{error}</p>}
+
+          <div className="flex justify-end gap-3">
+            <ActionButton tone="muted" onClick={onClose}>
+              {t("cancel")}
+            </ActionButton>
+            <ActionButton tone="accent" onClick={handleSubmit} disabled={saving}>
+              {saving ? t("settings.saving") : t("settings.save")}
+            </ActionButton>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

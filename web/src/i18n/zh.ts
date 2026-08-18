@@ -321,6 +321,9 @@ export const zh: Record<TranslationKey, string> = {
   "api.providerDeleteFailed": "删除 provider 失败",
   "api.runtimeUpdateFailed": "更新 Claude runtime 失败",
   "api.piRuntimeUpdateFailed": "更新 Pi 运行时失败",
+  "api.piPresetCreateFailed": "新增 Pi 预设失败",
+  "api.piPresetUpdateFailed": "更新 Pi 预设失败",
+  "api.piPresetDeleteFailed": "删除 Pi 预设失败",
   "api.providerModelsFailed": "获取 provider 模型列表失败",
   "api.presetCreateFailed": "新增预设失败",
   "api.presetUpdateFailed": "更新预设失败",
@@ -611,13 +614,27 @@ export const zh: Record<TranslationKey, string> = {
   "settings.effortHint": "spawn 时注入 CLAUDE_CODE_EFFORT_LEVEL 环境变量。不影响已经在运行的会话。",
   "settings.save": "保存",
 
-  // ── Settings: pi runtime（Phase 2 配置层，chat 全局会话运行时，单块配置） ──
+  // ── Settings: pi runtime（v5 presets 体系，chat 全局会话运行时） ──
   "settings.piHint":
-    "全局聊天会话使用的 provider / API key / model。API key 留空表示保留现有 key。",
+    "全局聊天会话运行在激活的 pi 预设上。每个预设包含 provider、model、API key 和可选的自定义端点。",
   "settings.piProvider": "Provider",
-  "settings.piProviderHint": "提供该模型的厂商（如 anthropic）。",
+  "settings.piProviderHint":
+    "pi 内置 provider id（如 anthropic、openai、deepseek）或自定义兼容端点的自定义 id。",
   "settings.piModel": "Model",
   "settings.piModelHint": "聊天会话使用的 model ID（如 claude-sonnet-5）。",
+  "settings.piPresetsHint":
+    "每个预设包含 provider、model、API key 和可选的自定义端点（Ollama/vLLM/LM Studio/网关）。激活后用于新建聊天会话。",
+  "settings.piNoPresets": "暂无预设。新增一个以配置 provider 和 model。",
+  "settings.piDeletePresetConfirm":
+    "删除预设「{{label}}」？若它正在激活，pi 将停用，新建聊天会话不可用。",
+  "settings.piActivePresetHint":
+    "激活预设的 provider、model 和 API key 用于新建聊天会话。已打开的会话不受影响。",
+  "settings.piActivePresetNone": "无（pi 停用）",
+  "settings.piBaseUrlHint":
+    "可选。自定义 OpenAI/Anthropic 兼容端点（如 Ollama 的 http://localhost:11434/v1）。",
+  "settings.piApi": "API 协议",
+  "settings.piApiHint": "自定义端点的线协议。缺省为 OpenAI completions。",
+  "settings.piApiDefault": "默认（openai-completions）",
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",
