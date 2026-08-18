@@ -12,6 +12,7 @@
 
 ### 其他调研
 
+- [agent-vs-chat-modes.md](./agent-vs-chat-modes.md) — 竞品「对话 vs Agent」双模式调研：本质是两种执行引擎（对话=只读信息获取+无工作区无权限层；Agent=写执行+工作区+权限/计划审批+可恢复会话），Proma 本地源码一手证据 + 网络调研 6 产品（OpenWebUI/Continue/Cursor/Cherry/Dify/Claude SDK）六维度对比与统一趋势。
 - [agent-access-options.md](./agent-access-options.md) — 汇总 hapi、remodex、Codex、Claude 与社区反馈对 Agent 接入路线、第一轮真实可用链路和统一协议设计的调研结论。
 - [claude-cli-stream-protocol.md](./claude-cli-stream-protocol.md) — Claude CLI stdio stream-json 协议完整文档：消息类型、system.init 字段、control_request 机制、生命周期和集成方式；三维度运行态配置（model/permission/effort）见 claude-cli-runtime-config.md。
 - [claude-cli-runtime-config.md](./claude-cli-runtime-config.md) — Claude CLI 运行态三维度（model/permission/effort）对接：每维度的默认值决策链、spawn 初始值、stream-json 运行时切换，含 TUI vs 无头能力差异、官方二进制字面量与实测证据、竞品方案（hapi fork）与本项目对接现状。
