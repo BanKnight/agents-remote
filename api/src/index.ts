@@ -37,6 +37,8 @@ import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
 import { ChatSessionRegistry } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
+import { PiRuntime } from "./pi-runtime";
+import { handlePiStreamUpgrade, PiStreamController } from "./pi-stream";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadConfig } from "./config";
@@ -62,6 +64,7 @@ type UpgradeServer = {
 type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
   claudeStreamController?: ClaudeStreamController;
+  piStreamController?: PiStreamController;
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
   projectWikiService?: ProjectWikiService;
@@ -93,6 +96,10 @@ type WebSocketData =
       sessionId: string;
       runtimeKey: string;
       status: "running" | "idle" | "closed" | "error";
+    }
+  | {
+      kind: "pi-stream";
+      chatId: string;
     };
 
 const echoWebSocketData: WebSocketData = { kind: "echo" };
@@ -224,6 +231,21 @@ export const createFetchHandler =
       const stateResponse = await handleStateRoutes(request, url, options.stateStore);
       if (stateResponse) {
         return withRefresh(stateResponse);
+      }
+    }
+
+    // pi-stream upgrade：/api/chat-sessions/:chatId/stream 全局无项目作用域，upgrade 显式鉴权
+    // （401 未认证 / 404 会话不存在），独立于下方 projectsRoot 守卫。
+    if (options.piStreamController && options.chatSessionRegistry) {
+      const piUpgrade = await handlePiStreamUpgrade(
+        request,
+        url,
+        auth,
+        options.chatSessionRegistry,
+        server,
+      );
+      if (piUpgrade.matched) {
+        return withRefresh(piUpgrade.response);
       }
     }
 
@@ -1089,6 +1111,15 @@ export const startApi = async () => {
     runtime,
     sessionRegistry,
   );
+  // pi chat 运行时：进程内 AgentSession，懒启动（首次 WS open）。cwd=PROJECTS_ROOT，
+  // agentDir 隔离在 ~/.agents-remote/pi-agent（决策 7/9）。apiKey 内存覆盖不落盘。
+  const piRuntime = new PiRuntime({
+    settingsStore,
+    baseDir: resolve(homedir(), ".agents-remote"),
+    chatSessionsDir,
+    defaultCwd: config.projectsRoot,
+  });
+  const piStreamController = new PiStreamController(piRuntime, chatSessionRegistry);
 
   claudeRuntime.setOnSystemInit((sessionId, _runtimeKey, claudeSessionId, model) => {
     void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId, model);
@@ -1114,6 +1145,18 @@ export const startApi = async () => {
   claudeRuntime.setOnActivity((sessionId) => {
     void sessionRegistry.recordActivity(sessionId);
   });
+  // pi 事件流 → 元数据同步：piSessionId backfill（幂等只写一次）+ 活动 bump updatedAt（分钟截断）。
+  piRuntime.setOnPiSessionId((chatId, piSessionId) => {
+    chatSessionRegistry.setPiSessionId(chatId, piSessionId);
+  });
+  piRuntime.setOnActivity((chatId) => {
+    void chatSessionRegistry.recordActivityChat(chatId);
+  });
+  // closeChatSession → 销毁进程内 AgentSession + 清理 pi JSONL。hook 失败仅 warn，不阻塞元数据清理。
+  chatSessionRegistry.setCloseHook(async (chatId) => {
+    await piRuntime.close(chatId);
+    await piRuntime.removeSessionFiles(chatId);
+  });
   const projectService = new ProjectService(config.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);
@@ -1130,6 +1173,7 @@ export const startApi = async () => {
     fetch: createFetchHandler(auth, {
       claudeRuntime,
       claudeStreamController,
+      piStreamController,
       projectFilesService,
       projectPagesService,
       projectWikiService,
@@ -1151,6 +1195,11 @@ export const startApi = async () => {
             console.error("[claude-stream] open handler error", err);
           });
         }
+        if (ws.data?.kind === "pi-stream") {
+          piStreamController.open(ws).catch((err) => {
+            console.error("[pi-stream] open handler error", err);
+          });
+        }
       },
       message(ws, message) {
         const raw = message.toString().slice(0, 120);
@@ -1163,6 +1212,10 @@ export const startApi = async () => {
           void claudeStreamController.message(ws, message);
           return;
         }
+        if (ws.data?.kind === "pi-stream") {
+          void piStreamController.message(ws, message);
+          return;
+        }
 
         ws.send(message);
       },
@@ -1172,6 +1225,9 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "claude-stream") {
           claudeStreamController.close(ws);
+        }
+        if (ws.data?.kind === "pi-stream") {
+          piStreamController.close(ws);
         }
       },
     },

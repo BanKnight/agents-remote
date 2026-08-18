@@ -12,11 +12,15 @@ import type { ChatSession, ChatSessionStatus } from "@agents-remote/shared";
  * 的 tmpfs runDir 区分——chat 历史须跨重启保留（pi SessionManager JSONL 也落持久目录）。
  */
 export class ChatSessionRegistry {
+  private static readonly ACTIVITY_MINUTE_MS = 60_000;
+
   private readonly sessionsDir: string;
   private readonly now: () => Date;
   private readonly createId: () => string;
   private indexLoadPromise: Promise<void> | undefined;
   private readonly index = new Map<string, ChatSession>();
+  /** closeChatSession 前置钩子（销毁 pi 进程内 AgentSession + 清理 pi JSONL，Phase 3 接入）。 */
+  private closeHook: ((id: string) => Promise<void> | void) | undefined;
 
   constructor(options: { sessionsDir: string; now?: () => Date; createId?: () => string }) {
     this.sessionsDir = options.sessionsDir;
@@ -96,15 +100,63 @@ export class ChatSessionRegistry {
   }
 
   /**
-   * 关闭 chat 会话：标记 status=closed + 清理元数据文件。Phase 3 接 pi 运行时后，此处还需销毁
-   * 进程内 AgentSession + 清理 pi JSONL 历史（见 pi-stream.ts，Phase 3/4）。
+   * 关闭 chat 会话：先 await closeHook（PiRuntime.close + removeSessionFiles，销毁进程内
+   * AgentSession + 清理 pi JSONL，Phase 3 由 index.ts 注入），再清理元数据。hook 失败仅 warn
+   * 不阻塞清理——用户删除意图优先，元数据残留胜于会话泄漏。
    */
   async closeChatSession(id: string): Promise<ChatSession | undefined> {
     await this.ensureIndexLoaded();
     const session = this.index.get(id);
     if (!session) return undefined;
+    if (this.closeHook) {
+      try {
+        await this.closeHook(id);
+      } catch (error) {
+        console.warn(`[chat-sessions] close hook failed: ${id}`, error);
+      }
+    }
     await this.removeMetadata(id);
     return { ...session, status: "closed" as ChatSessionStatus };
+  }
+
+  /**
+   * closeChatSession 前置钩子注入（镜像 SessionRegistry setOn* 模式，保持 registry 与
+   * pi 运行时解耦）。hook 返回 Promise 时 closeChatSession 会 await。
+   */
+  setCloseHook(hook: (id: string) => Promise<void> | void): void {
+    this.closeHook = hook;
+  }
+
+  /**
+   * piSessionId backfill（Phase 3）：幂等——仅当值变化时更新。先同步更内存 index（list/get 立即可见），
+   * 写盘 fire-and-forget（事件回调路径不阻塞，避免与事件流竞态）。
+   */
+  setPiSessionId(id: string, piSessionId: string): void {
+    if (!piSessionId) return;
+    const session = this.index.get(id);
+    if (!session || session.piSessionId === piSessionId) return;
+    const updated: ChatSession = { ...session, piSessionId };
+    this.index.set(id, updated);
+    void this.writeMetadata(updated).catch((error) => {
+      console.warn(`[chat-sessions] setPiSessionId write failed: ${id}`, error);
+    });
+  }
+
+  /**
+   * 活跃时间戳刷新（pi 事件流每帧触发，镜像 SessionRegistry.recordActivity）：updatedAt 按整分钟
+   * 截断，同分钟短路不写盘，防事件风暴刷磁盘。
+   */
+  async recordActivityChat(id: string): Promise<void> {
+    await this.ensureIndexLoaded();
+    const session = this.index.get(id);
+    if (!session) return;
+    const truncatedMs =
+      Math.floor(this.now().getTime() / ChatSessionRegistry.ACTIVITY_MINUTE_MS) *
+      ChatSessionRegistry.ACTIVITY_MINUTE_MS;
+    const truncatedIso = new Date(truncatedMs).toISOString();
+    if (session.updatedAt === truncatedIso) return;
+    const updated: ChatSession = { ...session, updatedAt: truncatedIso };
+    await this.writeMetadata(updated);
   }
 
   private resolveDisplayName(displayName: string | undefined): string {

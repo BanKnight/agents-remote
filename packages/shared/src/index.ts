@@ -897,6 +897,76 @@ export type CloseChatSessionResponse = {
   session: ChatSession;
 };
 
+// -- Pi Stream Messages（/api/chat-sessions/:id/stream，pi SDK 嵌入运行时）--
+// 设计见 docs/design/workbench-views.md §3.1 与 docs/research/pi-access-options.md §9.1。
+// 传输层与 claude-stream 字节级一致（复用 session_init/history_*/live_*/ended 批处理 markers）；
+// 区别在 payload：pi 发 pi 原生事件（一行一 JSON，message_update 已剥离 partial 快照）。
+// pi 原生事件的具体形状只在 api 端存在（pi SDK 类型，见 api/src/pi-events.ts），shared 只
+// 声明外层帧协议；web 端消费 pi_event 时按需声明局部类型解码（Phase 4 detail adapter）。
+
+export type PiNativeEventShape = {
+  type: string;
+} & Record<string, unknown>;
+
+export type PiEventFrame = {
+  type: "pi_event";
+  event: PiNativeEventShape;
+};
+
+export type PiUserEchoFrame = {
+  type: "pi_user_echo";
+  /** 用户发送且被 pi 接受的 prompt 原文。pi 事件流不回显用户输入，reconnect 需看到。 */
+  text: string;
+  /** 客户端生成、原样带回的本地 uuid，用于把 echo 对齐到已发送消息。 */
+  uuid: string;
+};
+
+export type PiStreamServerMessage =
+  | PiEventFrame
+  | PiUserEchoFrame
+  | {
+      type: "error";
+      code: ApiErrorCode;
+      message: string;
+    }
+  | {
+      type: "session_init";
+      resume: boolean;
+    }
+  | {
+      type: "history_start";
+      count: number;
+    }
+  | {
+      type: "history_end";
+    }
+  | {
+      type: "live_start";
+      count: number;
+    }
+  | {
+      type: "live_end";
+    }
+  | {
+      type: "ended";
+    }
+  | {
+      // 心跳 ack：服务端收到 {type:"ping"} 回此帧（与 claude-stream 同语义）。
+      type: "pong";
+    };
+
+export type PiStreamClientMessage =
+  | {
+      type: "user";
+      text: string;
+    }
+  | {
+      type: "interrupt";
+    }
+  | {
+      type: "ping";
+    };
+
 // -- Claude Stream Messages (Claude CLI --output-format stream-json protocol) --
 
 export type ClaudeSystemInit = {
@@ -1749,7 +1819,8 @@ export type ApiErrorCode =
   | "MCP_ADD_FAILED"
   | "MCP_REMOVE_FAILED"
   | "MCP_UPDATE_FAILED"
-  | "WIKI_SLUG_INVALID";
+  | "WIKI_SLUG_INVALID"
+  | "SESSION_NOT_CONFIGURED";
 
 export type ApiErrorResponse = {
   error: {

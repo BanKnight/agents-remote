@@ -131,3 +131,82 @@ test("parseMetadata 容错: 缺少 id/displayName 字段被跳过", async () => 
   const list = await registry.listChatSessions();
   expect(list).toEqual([]);
 });
+
+test("closeChatSession: closeHook 在 removeMetadata 前 await，hook 顺序可见", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_hook" });
+  await registry.createChatSession();
+  const order: string[] = [];
+  registry.setCloseHook(async (id) => {
+    order.push(`hook:${id}`);
+  });
+  const closed = await registry.closeChatSession("chat_hook");
+  expect(order).toEqual(["hook:chat_hook"]);
+  expect(closed?.status).toBe("closed");
+  const files = await readdir(dir);
+  expect(files).toEqual([]);
+});
+
+test("closeChatSession: hook throw 不阻塞元数据清理", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_hookerr" });
+  await registry.createChatSession();
+  registry.setCloseHook(() => {
+    throw new Error("hook boom");
+  });
+  // console.warn 会输出，但清理必须完成
+  await registry.closeChatSession("chat_hookerr");
+  const files = await readdir(dir);
+  expect(files).toEqual([]);
+});
+
+test("setPiSessionId: backfill 幂等 + 落盘 round-trip", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_backfill" });
+  await registry.createChatSession();
+  registry.setPiSessionId("chat_backfill", "pi-sess-1");
+  // 内存 index 立即可见
+  expect((await registry.getChatSession("chat_backfill"))?.piSessionId).toBe("pi-sess-1");
+  // 等 fire-and-forget 写盘落定
+  await new Promise((r) => setTimeout(r, 20));
+  const raw = await readFile(join(dir, "chat_backfill.json"), "utf8");
+  expect(JSON.parse(raw).piSessionId).toBe("pi-sess-1");
+  // 幂等：同值不重复写（piSessionId 保持 + 文件仍在）
+  registry.setPiSessionId("chat_backfill", "pi-sess-1");
+  expect((await registry.getChatSession("chat_backfill"))?.piSessionId).toBe("pi-sess-1");
+});
+
+test("setPiSessionId: 空值 / 不存在会话 → no-op", async () => {
+  const { registry } = newRegistry();
+  registry.setPiSessionId("chat_nope", "pi-sess-x");
+  registry.setPiSessionId("chat_nope", "");
+  expect(await registry.getChatSession("chat_nope")).toBeUndefined();
+});
+
+test("recordActivityChat: 整分钟截断 + 同分钟短路", async () => {
+  const base = new Date("2026-08-18T00:00:00.000Z");
+  const t1 = new Date("2026-08-18T00:00:30.000Z"); // 同分钟
+  const t2 = new Date("2026-08-18T00:02:10.000Z"); // 跨分钟
+  let t = base;
+  const { registry, dir } = newRegistry({
+    now: () => t,
+    createId: () => "chat_activity",
+  });
+  await registry.createChatSession();
+
+  // 同分钟：updatedAt 不变（截断后 == createdAt 的整分钟值）
+  t = t1;
+  await registry.recordActivityChat("chat_activity");
+  expect((await registry.getChatSession("chat_activity"))?.updatedAt).toBe(base.toISOString());
+
+  // 跨分钟：updatedAt 更新为整分钟截断
+  t = t2;
+  await registry.recordActivityChat("chat_activity");
+  const detail = await registry.getChatSession("chat_activity");
+  expect(detail?.updatedAt).toBe("2026-08-18T00:02:00.000Z");
+  const raw = await readFile(join(dir, "chat_activity.json"), "utf8");
+  expect(JSON.parse(raw).updatedAt).toBe("2026-08-18T00:02:00.000Z");
+});
+
+test("recordActivityChat: 不存在的会话 → no-op", async () => {
+  const { registry } = newRegistry();
+  await registry.recordActivityChat("chat_nope");
+  expect(await registry.getChatSession("chat_nope")).toBeUndefined();
+});

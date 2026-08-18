@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@agents-remote/shared": "workspace:*",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "gray-matter": "^4.0.3",
     "skills": "^1.5.22",
