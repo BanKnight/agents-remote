@@ -96,6 +96,16 @@ test("validateWorkbenchSearch whitelists rightTab, omits key otherwise", () => {
   expect(validateWorkbenchSearch({})).toEqual({});
 });
 
+test("validateWorkbenchSearch whitelists mode (agent|chat), omits key otherwise", () => {
+  expect(validateWorkbenchSearch({ mode: "agent" })).toEqual({ mode: "agent" });
+  expect(validateWorkbenchSearch({ mode: "chat" })).toEqual({ mode: "chat" });
+  expect(validateWorkbenchSearch({ mode: "nope" })).toEqual({});
+  expect(validateWorkbenchSearch({ mode: "chat", tab: "overview" })).toEqual({
+    mode: "chat",
+    tab: "overview",
+  });
+});
+
 // deriveWorkbenchRouteContext 只读 leaf match 的 fullPath/params/search，故测试用最小化 stub。
 const routeLeaf = (
   fullPath: string,

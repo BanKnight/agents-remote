@@ -75,7 +75,15 @@ export function ActionMenu({
 
   if (isMobile) {
     return (
-      <Dialog open={open} onOpenChange={setOpen}>
+      // contextMenuPoint 非空 = 行 onContextMenu（移动长按）触发：受控开 sheet（onOpenChange
+      // false 时经 ctx.close 清 point 回非受控）。触屏无坐标 popover，长按语义 = 开 sheet。
+      <Dialog
+        open={open || contextMenuPoint !== null}
+        onOpenChange={(next) => {
+          if (!next) onContextMenuClose?.();
+          setOpen(next);
+        }}
+      >
         <DialogTrigger asChild>{trigger}</DialogTrigger>
         <DialogContent
           className={cn(

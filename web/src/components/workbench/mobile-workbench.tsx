@@ -11,18 +11,20 @@ import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import { MobilePageHeader, shellSurfaceClasses } from "../shell/shell-primitives";
+import { MobilePageHeader, ModeTabGroup, shellSurfaceClasses } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { GlobalProjectsOverview } from "./global-projects-overview";
+import { ChatOverview } from "./chat-overview";
 import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
 import {
   findTabRefLeaf,
   type WorkbenchLayoutV3,
   type WorkbenchMobileFocusTab,
   type WorkbenchScope,
+  type WorkbenchMode,
   inferSessionTypeFromId,
   parseFileTabId,
   parseSkillTabId,
@@ -66,6 +68,11 @@ type MobileWorkbenchProps = {
    * MobileProjectWorkbench（drawer + tab 带）。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
    */
   leftMode?: "auto" | "files" | "plugins";
+  /**
+   * 一级会话页模式（设计 workbench-views §3.1）：mode=chat 时 global 列表态（leftMode=auto
+   * 无 focus）渲染 MobileChatOverview（mode tab + 搜索/新建/列表）。仅 global scope 有意义。
+   */
+  mode?: WorkbenchMode;
   /** 布局（workbenchLayoutV4，桌面/移动共享打开集合）。project scope tab 带投影数据源。 */
   layout: WorkbenchLayoutV3;
   /** tab 点选 = setActiveTabInLeaf + navigate focus（WorkbenchContent 注入）。 */
@@ -110,6 +117,7 @@ export function MobileWorkbench({
   focusId,
   layout,
   leftMode,
+  mode,
   onCloseTab,
   onOpenFile,
   onOpenGitCompareFile,
@@ -173,6 +181,8 @@ export function MobileWorkbench({
           <MobilePluginsOverview />
         ) : leftMode === "files" ? (
           <MobileFilesOverview />
+        ) : mode === "chat" ? (
+          <MobileChatOverview />
         ) : (
           <MobileGlobalOverview />
         )}
@@ -954,13 +964,53 @@ function MobileGlobalOverview() {
             <ShellIcon className="h-5 w-5" name="plus" />
           </button>
         }
-        title={t("workbench.global")}
+        title={<SessionModeTabs mode="agent" />}
       />
       <div className="min-h-0 flex-1">
         <GlobalProjectsOverview onFocusInstance={focusInstance} renderCreateEntry={false} />
       </div>
       {createProjectDialog}
     </div>
+  );
+}
+
+/**
+ * 移动端 chat 模式主体（§3.1）：header 内 mode tab（SessionModeTabs）+ ChatOverview
+ *（搜索/新建/列表，桌面/移动同一实现）。点列表行 → /chat/$id 全屏聚焦态（独立路由）。
+ */
+function MobileChatOverview() {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <MobilePageHeader title={<SessionModeTabs mode="chat" />} />
+      <div className="min-h-0 flex-1">
+        <ChatOverview />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 一级会话页 mode tab（§3.1，桌面中栏顶部 / 移动 header title 同一原语 ModeTabGroup）。
+ * 切换 navigate 到 global 列表态 URL + `?mode=`（agent 省略 key = 默认）。
+ */
+function SessionModeTabs({ mode }: { mode: WorkbenchMode }) {
+  const { t } = useT();
+  const navigateWorkbench = useWorkbenchNavigate();
+  const onModeChange = (next: WorkbenchMode) => {
+    void navigateWorkbench({ kind: "global" }, undefined, {
+      ...(next !== "agent" && { mode: next }),
+    });
+  };
+  return (
+    <ModeTabGroup
+      ariaLabel={t("workbench.modeAria")}
+      onChange={onModeChange}
+      options={[
+        { value: "agent", label: t("workbench.modeAgent") },
+        { value: "chat", label: t("workbench.modeChat") },
+      ]}
+      value={mode}
+    />
   );
 }
 

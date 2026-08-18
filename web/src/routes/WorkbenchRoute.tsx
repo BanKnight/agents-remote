@@ -15,10 +15,12 @@ import {
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
 import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
+import { ChatOverview } from "../components/workbench/chat-overview";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { ActivityBar } from "../components/shell/activity-bar";
+import { ModeTabGroup } from "../components/shell/shell-primitives";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { ProjectSwitcher } from "../components/workbench/project-switcher";
@@ -30,6 +32,7 @@ import {
   type WorkbenchMiddleTab,
   type WorkbenchPanelRef,
   type WorkbenchInspectionTab,
+  type WorkbenchMode,
   type WorkbenchScope,
   activeTabRefLeaf,
   collectLeaves,
@@ -74,6 +77,7 @@ export function WorkbenchLayoutShell() {
     <WorkbenchContent
       focusId={ctx.focusId}
       leftMode={ctx.leftMode}
+      mode={ctx.mode}
       rightTab={ctx.rightTab}
       scope={ctx.scope}
       tab={ctx.tab}
@@ -87,6 +91,7 @@ function WorkbenchContent({
   scope,
   tab: tabFromUrl,
   leftMode = "auto",
+  mode = "agent",
 }: {
   focusId?: string;
   rightTab?: WorkbenchInspectionTab;
@@ -99,6 +104,10 @@ function WorkbenchContent({
   //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
   // 强制，中栏 tab focus 透传不改（VSCode 式）。
   leftMode?: "auto" | "files" | "plugins";
+  // 一级会话页模式（设计 workbench-views.md §3.1）：agent = 现有三栏会话网格；chat = 全局
+  // 会话列表（不绑项目，pi SDK 嵌入，Phase 1 列表 CRUD + 占位 detail）。URL `?mode=` 维度，
+  // 默认 agent。仅 global scope 一级会话页有意义。
+  mode?: WorkbenchMode;
 }) {
   const { t } = useT();
   const isDesktop = useIsDesktopViewport();
@@ -133,6 +142,16 @@ function WorkbenchContent({
       rightTab,
       tab: next,
       ...(leftMode !== "auto" ? { leftMode } : {}),
+    });
+  };
+  // 一级会话页模式切换（§3.1）：与 onTabChange 同范式透传全部 search 维度；mode=agent 时
+  // 省略 key（省略 = 默认 agent，URL 不带冗余 ?mode=agent）。
+  const onModeChange = (next: WorkbenchMode) => {
+    void navigateWorkbench(scope, focusId, {
+      rightTab,
+      tab: tabFromUrl,
+      ...(leftMode !== "auto" ? { leftMode } : {}),
+      ...(next !== "agent" && { mode: next }),
     });
   };
   // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
@@ -691,6 +710,7 @@ function WorkbenchContent({
         focusId={focusId}
         layout={layout}
         leftMode={leftMode}
+        mode={mode}
         onCloseTab={onCloseTab}
         onOpenFile={onOpenFile}
         onOpenGitCompareFile={onOpenGitCompareFile}
@@ -710,6 +730,10 @@ function WorkbenchContent({
     rightPanelCollapsible && !rightCollapsed ? (
       <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
     ) : null;
+  // 一级会话页（§3.1）：global scope + leftMode=auto + 无 focusId 的列表态 = mode tab 语境。
+  // chat 模式整页形态：左栏面板隐藏（leftPanelHidden，不写折叠记忆）、中栏主体换 ChatOverview。
+  const sessionPage = scope.kind === "global" && leftMode === "auto" && focusId === undefined;
+  const chatMode = sessionPage && mode === "chat";
   // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
   //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下
   // leftMode="files"（活动栏 [文件] 入口或其粘性透传态）→ GlobalFilesOverview（全局 rootBrowse 根目录，
@@ -754,10 +778,32 @@ function WorkbenchContent({
     ) : (
       <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
     );
+  const instanceArea = (
+    <InstanceArea
+      activeZone={activeZone}
+      cancelDrag={cancelDrag}
+      closeInstance={closeInstance}
+      create={create}
+      draggingRef={draggingRef}
+      dragState={dragState}
+      layout={layout}
+      onCardDragStart={onCardDragStart}
+      onCloseTab={onCloseTab}
+      onDrop={onDrop}
+      onResizeSplit={onResizeSplit}
+      onSelectTab={onSelectTab}
+      onSetDragPointer={onSetDragPointer}
+      onToggleMaximize={onToggleMaximize}
+      projectName={ctx.projectKey}
+      refsCount={globalRefs.length}
+      setActiveZone={setActiveZone}
+    />
+  );
   return (
     <WorkbenchShell
       activityBar={<ActivityBar />}
-      leftPanel={leftPanel}
+      leftPanel={chatMode ? null : leftPanel}
+      leftPanelHidden={chatMode}
       leftPanelTitle={
         scope.kind === "project" ? (
           <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
@@ -772,25 +818,32 @@ function WorkbenchContent({
       rightPanel={rightPanel}
       rightPanelCollapsible={rightPanelCollapsible}
     >
-      <InstanceArea
-        activeZone={activeZone}
-        cancelDrag={cancelDrag}
-        closeInstance={closeInstance}
-        create={create}
-        draggingRef={draggingRef}
-        dragState={dragState}
-        layout={layout}
-        onCardDragStart={onCardDragStart}
-        onCloseTab={onCloseTab}
-        onDrop={onDrop}
-        onResizeSplit={onResizeSplit}
-        onSelectTab={onSelectTab}
-        onSetDragPointer={onSetDragPointer}
-        onToggleMaximize={onToggleMaximize}
-        projectName={ctx.projectKey}
-        refsCount={globalRefs.length}
-        setActiveZone={setActiveZone}
-      />
+      {sessionPage ? (
+        // 一级会话页 mode tab 行（§3.1）：Agent/Chat 互斥分段，常驻中栏顶部（两种模式都
+        // 显示，否则无切回入口）。agent 模式下叠加在现有中栏之上，主体不变。
+        <div className="flex shrink-0 items-center gap-2 border-b border-on-surface/5 px-2 py-1">
+          <ModeTabGroup
+            ariaLabel={t("workbench.modeAria")}
+            onChange={onModeChange}
+            options={[
+              { value: "agent", label: t("workbench.modeAgent") },
+              { value: "chat", label: t("workbench.modeChat") },
+            ]}
+            value={mode}
+          />
+        </div>
+      ) : null}
+      {chatMode ? (
+        <div className="min-h-0 flex-1">
+          <ChatOverview />
+        </div>
+      ) : sessionPage ? (
+        // sessionPage 有 mode tab 行占高：InstanceArea 根是 h-full（100%），需 flex-1 wrapper
+        // 收缩（否则 100% + tab 行溢出 section 被裁底部）。
+        <div className="min-h-0 flex-1">{instanceArea}</div>
+      ) : (
+        instanceArea
+      )}
       {closeHolder}
       {renameHolder}
       {create.promptHolder}

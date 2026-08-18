@@ -30,10 +30,13 @@ import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
+import { ChatSessionRegistry } from "./chat-session-registry";
+import { handleChatSessionRoutes } from "./chat-session-routes";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadConfig } from "./config";
@@ -66,6 +69,7 @@ type FetchHandlerOptions = {
   projectService?: ProjectService;
   projectsRoot?: string;
   sessionRegistry?: SessionRegistry;
+  chatSessionRegistry?: ChatSessionRegistry;
   settingsStore?: SettingsStore;
   stateStore?: StateStore;
 };
@@ -284,6 +288,17 @@ export const createFetchHandler =
 
       if (sessionResponse) {
         return withRefresh(sessionResponse);
+      }
+    }
+
+    if (options.chatSessionRegistry) {
+      const chatSessionResponse = await handleChatSessionRoutes(
+        request,
+        url,
+        options.chatSessionRegistry,
+      );
+      if (chatSessionResponse) {
+        return withRefresh(chatSessionResponse);
       }
     }
 
@@ -1064,6 +1079,10 @@ export const startApi = async () => {
     },
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
+  // chat 会话元数据持久目录：~/.agents-remote/chat-sessions/（跨重启保留，非 tmpfs runDir；
+  // 与 pi SessionManager JSONL 历史同持久语义，设计 docs/design/workbench-views.md §3.1）。
+  const chatSessionsDir = resolve(homedir(), ".agents-remote/chat-sessions");
+  const chatSessionRegistry = new ChatSessionRegistry({ sessionsDir: chatSessionsDir });
   const streamController = new SessionStreamController(runtime, sessionRegistry);
   const claudeStreamController = new ClaudeStreamController(
     claudeRuntime,
@@ -1118,6 +1137,7 @@ export const startApi = async () => {
       projectService,
       projectsRoot: config.projectsRoot,
       sessionRegistry,
+      chatSessionRegistry,
       settingsStore,
       stateStore,
     }),

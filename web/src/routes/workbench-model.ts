@@ -43,6 +43,13 @@ export type WorkbenchMiddleTab =
   | "plugins";
 
 /**
+ * 一级会话页的模式（设计 workbench-views.md §3.1，2026-08-18）。`agent` = 现有按项目分段的
+ * 会话网格（不变）；`chat` = 全局会话列表（不绑项目，pi SDK 嵌入运行时，Phase 3 后接入）。
+ * 两种模式互斥，URL `?mode=agent|chat` 是一级 tab，默认 `agent`（省略 = agent）。
+ */
+export type WorkbenchMode = "agent" | "chat";
+
+/**
  * 左右栏宽度基线（rem）。左栏（项目树）沿用 ShellLayout project sidebar 的 13.125rem。
  * 右栏需容纳 FilesPanel browser（19.375rem）+ padding，故宽于左栏；Stage 4 resize
  * gutter 落地后用户可单点调整（MIN/MAX 钳制，避免压溃中栏或自身）。
@@ -259,6 +266,7 @@ export function useWorkbenchNavigate() {
       rightTab?: WorkbenchInspectionTab;
       tab?: WorkbenchMiddleTab;
       leftMode?: "auto" | "files" | "plugins";
+      mode?: WorkbenchMode;
     },
   ) => {
     if (scope.kind === "global") {
@@ -292,6 +300,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   gitScope?: GitDiffScope;
   gitCompare?: string;
   leftMode?: "auto" | "files" | "plugins";
+  mode?: WorkbenchMode;
 } {
   const result: {
     rightTab?: WorkbenchInspectionTab;
@@ -299,6 +308,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     gitScope?: GitDiffScope;
     gitCompare?: string;
     leftMode?: "auto" | "files" | "plugins";
+    mode?: WorkbenchMode;
   } = {};
   if (
     search.rightTab === "files" ||
@@ -328,6 +338,9 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   }
   if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "plugins") {
     result.leftMode = search.leftMode;
+  }
+  if (search.mode === "agent" || search.mode === "chat") {
+    result.mode = search.mode;
   }
   return result;
 }
@@ -367,6 +380,12 @@ export type WorkbenchRouteContext = {
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
   gitCompare?: string;
+  /**
+   * 一级会话页模式（设计 workbench-views.md §3.1）：`agent` = 按项目分段会话网格，`chat` =
+   * 全局会话列表（不绑项目）。URL `?mode=` 维度，默认 `agent`（省略 = agent）。仅 global scope
+   * 一级会话页有意义；project scope / 各 focus 路由透传保留，不影响渲染。
+   */
+  mode?: WorkbenchMode;
 };
 
 /**
@@ -385,6 +404,8 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
+    leftMode?: "auto" | "files" | "plugins";
+    mode?: WorkbenchMode;
   };
   switch (leaf.fullPath) {
     case "/":

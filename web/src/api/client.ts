@@ -81,6 +81,14 @@ import type {
   UpdateSkillResponse,
   WikiIndexResponse,
   WikiPage,
+  ChatSession,
+  ListChatSessionsResponse,
+  CreateChatSessionRequest,
+  CreateChatSessionResponse,
+  ChatSessionDetailResponse,
+  RenameChatSessionRequest,
+  RenameChatSessionResponse,
+  CloseChatSessionResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -426,6 +434,48 @@ export async function renameAgentSession(
     },
   );
 }
+
+// ── Chat sessions（全局，不绑项目，设计 workbench-views.md §3.1）──
+
+const chatSessionsPath = () => "/api/chat-sessions";
+
+const chatSessionPath = (sessionId: string) =>
+  `${chatSessionsPath()}/${encodeURIComponent(sessionId)}`;
+
+export async function listChatSessions(): Promise<ListChatSessionsResponse> {
+  return fetchJson(chatSessionsPath(), "api.chatSessionListFailed");
+}
+
+export async function createChatSession(displayName?: string): Promise<CreateChatSessionResponse> {
+  return fetchJson(chatSessionsPath(), "api.chatSessionCreationFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ displayName } satisfies CreateChatSessionRequest),
+  });
+}
+
+export async function getChatSession(sessionId: string): Promise<ChatSessionDetailResponse> {
+  return fetchJson(chatSessionPath(sessionId), "api.chatSessionDetailFailed");
+}
+
+export async function renameChatSession(
+  sessionId: string,
+  displayName: string,
+): Promise<RenameChatSessionResponse> {
+  return fetchJson(`${chatSessionPath(sessionId)}/rename`, "api.chatSessionRenameFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ displayName } satisfies RenameChatSessionRequest),
+  });
+}
+
+export async function closeChatSession(sessionId: string): Promise<CloseChatSessionResponse> {
+  return fetchJson(`${chatSessionPath(sessionId)}/close`, "api.chatSessionCloseFailed", {
+    method: "POST",
+  });
+}
+
+export type { ChatSession };
 
 export async function listTerminalSessions(
   projectName: string,

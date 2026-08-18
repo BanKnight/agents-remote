@@ -820,6 +820,50 @@ export type RenameTerminalSessionResponse = {
   session: TerminalSession;
 };
 
+// -- Chat Sessions（全局会话，不绑项目，pi SDK 嵌入运行时）--
+// 设计见 docs/design/workbench-views.md §3.1。chat 全局、无 projectName，独立 ChatSessionRegistry
+//（不进现有 SessionRegistry，其按 projectName 分片）。Phase 1 仅元数据 CRUD，Phase 3 接 pi 运行时。
+
+export type ChatSessionStatus = "idle" | "running" | "closed" | "error";
+
+export type ChatSession = {
+  id: string;
+  displayName: string;
+  status: ChatSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  /** pi SessionManager 的 session id（Phase 3 接入后回填，用于定位 pi JSONL 历史）。 */
+  piSessionId?: string;
+};
+
+export type ListChatSessionsResponse = {
+  sessions: ChatSession[];
+};
+
+export type CreateChatSessionRequest = {
+  displayName?: string;
+};
+
+export type CreateChatSessionResponse = {
+  session: ChatSession;
+};
+
+export type ChatSessionDetailResponse = {
+  session: ChatSession;
+};
+
+export type RenameChatSessionRequest = {
+  displayName: string;
+};
+
+export type RenameChatSessionResponse = {
+  session: ChatSession;
+};
+
+export type CloseChatSessionResponse = {
+  session: ChatSession;
+};
+
 // -- Claude Stream Messages (Claude CLI --output-format stream-json protocol) --
 
 export type ClaudeSystemInit = {

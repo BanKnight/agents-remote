@@ -135,6 +135,15 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import("./SettingsRoute"), "SettingsRoute"),
 });
 
+// /chat/$id — chat 会话 detail 独立路由（设计 workbench-views §3.1，Phase 1 占位）。chat 不绑
+// 项目，不进 workbench panel focus 体系（非 InstanceArea panel），故挂 rootRoute 平级自带
+// component（同 settingsRoute 范式）。Phase 4 复用 ClaudeChat UI 形态 + pi 事件流时在此替换。
+const chatSessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat/$id",
+  component: lazyRouteComponent(() => import("./ChatSessionDetailRoute"), "ChatSessionDetailRoute"),
+});
+
 // /plugins — 全局插件（skill + mcp）一级页（对标 cc-switch）。workbench layout 子（同 /files）：
 // 桌面左栏渲染 PluginsPanel（leftMode="plugins"），移动渲染 MobilePluginsOverview（无返回 header）。
 // 子路由不设 component——layout 已渲染全部内容，与 /files 等其它 layout 子一致（仅 URL 匹配 +
@@ -285,6 +294,7 @@ const routeTree = rootRoute.addChildren([
     pluginsSkillFocusRoute,
   ]),
   settingsRoute,
+  chatSessionDetailRoute,
   agentSessionDetailRedirect,
   claudeSessionDetailRedirect,
   terminalSessionDetailRedirect,

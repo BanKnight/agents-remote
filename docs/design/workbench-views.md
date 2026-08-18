@@ -53,6 +53,38 @@
 
 移动线性：项目页（二级）单行 header = ◄ 返回 + tab 横滚区 + 项目名右侧；全局总览（`/global`，一级）header 仅 tab 行（无 ◄ 返回、无标题，靠底部 tab 切换）→ 总览卡片列表（→ 点卡片全屏聚焦态 → 底部一级 nav）。中栏不分左右。聚焦态与项目列表态同款单行 header 结构（tab 在 header 内横滚，不再独立一行）。
 
+## 3.1 会话页 Agent/Chat 双模式 tab（2026-08-18）
+
+一级会话页（`/global`，移动底部 nav「会话」入口、桌面左栏全局节点）顶部加 **Agent / Chat 互斥模式 tab**，是比中栏二级 tab（§4）更高一层的一级会话页模式。两种模式互斥，点 tab 切换。
+
+| 模式 | 呈现 | 数据源 | 会话组织 | 运行时 |
+|------|------|--------|---------|--------|
+| Agent | 现有「按项目分段的单列网格」（§5），不变 | `useGlobalInstanceCandidates` / project sessions | 按项目分段（绑项目） | 现有 claude/codex runtime（不变） |
+| Chat | 全局会话列表（不绑项目）+ 搜索 + 新建 | `useChatSessions`（`/api/chat-sessions`） | 全局（无项目概念） | pi SDK 库嵌入（Phase 3 后接入，Phase 1 占位） |
+
+- **URL `?mode=agent|chat`**：mode 是一级 tab，URL 即真相，默认 `agent`（省略 = agent）。`validateWorkbenchSearch` 加 `mode` 字段白名单（照搬 `tab` 范式）。不加记忆 atom（URL 即真相）。
+- **互斥**：同屏只渲染一个模式主体。Agent 模式渲染 `GroupedProjectsList`（§5，不变）；Chat 模式渲染 `ChatOverview`（搜索框 + 新建按钮 + 会话列表）。
+- **Agent tab 完全不变**：mode tab 只在 Agent 主体之上加一层切换；Agent 模式下中栏二级 tab（总览/历史/文件/Git）、左总览、右工作区、聚焦态、置顶、手风琴分组等全部保持。
+- **Chat 模式布局**：
+  ```
+  桌面（/global，mode=chat）：
+  ┌─────────┬──────────────────────────────┬──────────┐
+  │ 左栏     │ 中栏                          │ 右栏      │
+  │         │ ┌─[Agent][Chat]─────────────┐ │          │
+  │ 导航   │ │ [🔍 搜索对话…]    [+ 新建]  │ │ (留空)   │
+  │  全局   │ │ ┌────────────────────────┐ │ │          │
+  │  会话   │ │ │ 对话 A      3min前 ⋯   │ │ │          │
+  │  设置   │ │ │ 对话 B      昨天  ⋯   │ │ │          │
+  │         │ │ │ ...                    │ │ │          │
+  │         │ │ └────────────────────────┘ │ │          │
+  │         │ └────────────────────────────┘ │          │
+  └─────────┴──────────────────────────────┴──────────┘
+  移动（/global，mode=chat）：header 内 mode tab + 搜索框 + 新建按钮 → 列表（点 → /chat/$id 全屏聚焦态）
+  ```
+- **Chat 会话操作（不显按钮）**：列表行 UI 不展示操作按钮。移动端长按、桌面端右键 → 出菜单（改名/删除），复用 `ActionMenu`（桌面 popover / 移动 sheet）分流。同一 `onContextMenu` 处理程序按视口分流，桌面右键 + 移动长按同一入口（详见 §4 frontend-notes 长按/右键范式）。
+- **Chat detail**：独立路由 `/chat/$id`（不进 `/projects/$key/session/$id`，因 chat 不绑项目）。Phase 1 占位（提示「pi 运行时未接入」）；Phase 4 复用 `ClaudeChat` UI 形态（`useExternalStoreRuntime` provider-agnostic），数据源换 pi 事件流。
+- **一级入口语义**：一级 nav「项目」→「会话」（`nav.projects` 翻译值改，key 名不动，§12.1）；页面标题 `workbench.global` →「会话」。mode tab 之上不再有项目级标题（全局会话页统一标题=「会话」）。
+
 ## 4. 二级导航（4 tab）
 
 桌面中栏顶部 / 移动单行 header 内，统一 4 个 tab。**tab 导航常驻，聚焦/非聚焦都不消失**（修复旧版聚焦态挤掉 tab 导航的问题）。

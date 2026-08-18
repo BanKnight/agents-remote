@@ -470,6 +470,50 @@ export function SegmentedControl<T extends string>({
   );
 }
 
+type ModeTabGroupProps<T extends string> = {
+  ariaLabel: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+};
+
+/**
+ * 一级会话页模式切换 tab（DESIGN.md `mode-tab / mode-tab-active`，设计 workbench-views §3.1）：
+ * Agent/Chat 互斥分段，整页主体互换（区别于 `SegmentedControl` 表单控件）。默认态透明 +
+ * on-surface-muted（融入 tab 条底色）；active 态 `surface-raised` 实色凸起 + on-surface 升档
+ *（对齐 surface-raised 凸起语义）——刻意不用 primary tint（那是中栏二级 tab 的语言，模式是
+ * 更高一层语义，视觉权重用实色凸起区分）。hover `bg-on-surface/5` 同 nav-item。
+ */
+export function ModeTabGroup<T extends string>({
+  ariaLabel,
+  value,
+  onChange,
+  options,
+}: ModeTabGroupProps<T>) {
+  return (
+    <div aria-label={ariaLabel} className="inline-flex items-center gap-0.5" role="group">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            aria-pressed={active}
+            className={`inline-flex cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+              active
+                ? "bg-surface-raised text-on-surface"
+                : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
+            }`}
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 type ListGroupProps = {
   ariaLabel?: string;
   children: ReactNode;

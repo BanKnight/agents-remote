@@ -39,6 +39,12 @@ type WorkbenchShellProps = {
    * project scope 传 true（非聚焦态唤出看 project-scoped inspection）；global 传 false。
    */
   rightPanelCollapsible?: boolean;
+  /**
+   * 强制隐藏左栏面板（aside 不渲染 + 列塌缩 0px），区别于 leftCollapsed atom（用户手动
+   * 折叠记忆，不写它）。用于 chat 模式等「左栏面板语义不适用」的整页形态——切回 agent
+   * 模式恢复用户原折叠态（设计 workbench-views §3.1 chat 模式布局：左栏只剩活动栏导航）。
+   */
+  leftPanelHidden?: boolean;
 };
 
 /**
@@ -55,6 +61,7 @@ export function WorkbenchShell({
   activityBar,
   children,
   leftPanel,
+  leftPanelHidden = false,
   leftPanelTitle,
   rightPanel,
   rightPanelCollapsible,
@@ -69,7 +76,8 @@ export function WorkbenchShell({
   const rightCollapsible = rightPanelCollapsible ?? !!rightPanel;
 
   // grid 列宽：栏收起 → 0px（栏 aside display none + 列塌缩）；展开 → atom 记忆宽度。
-  const leftColumn = leftCollapsed ? "0px" : `${leftWidth}rem`;
+  // leftPanelHidden（chat 模式整页形态）优先于折叠 atom：恒 0px，不写折叠记忆。
+  const leftColumn = leftCollapsed || leftPanelHidden ? "0px" : `${leftWidth}rem`;
   // 右栏列宽：收起 / 不可唤出 → 0px；展开 → atom 记忆宽度。rightPanel null 不决定列宽
   //（由 rightCollapsible 决定）—— 收起态 rightPanel=null 但列保持唤出能力（RailButton 占位）。
   const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `${rightWidth}rem`;
@@ -105,21 +113,28 @@ export function WorkbenchShell({
       >
         {/* 活动栏（第 0 列）：极简容器，视觉由 ActivityBar 自带（bg-surface + border-r + h-full）。 */}
         <aside className="hidden min-h-0 min-w-0 lg:block">{activityBar}</aside>
-        <aside
-          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
-        >
-          <PanelHeader
-            chevron="left"
-            collapseLabel={t("workbench.collapseLeft")}
-            onCollapse={() => setLeftCollapsed(true)}
-            title={leftPanelTitle}
-          />
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{leftPanel}</div>
-          {leftCollapsed ? null : <ColumnResizeGutter onResize={onResizeLeft} side="left" />}
-        </aside>
+        {/* leftPanelHidden 用空壳 aside 占位而非不渲染：grid 是 auto-placement，少一个 item
+            会让中栏 section 落到第 2 列（0px 宽）。空壳保持 grid item 槽位，列宽已由
+            leftColumn=0px 塌缩，无内容无交互。 */}
+        {leftPanelHidden ? (
+          <aside aria-hidden="true" className="hidden min-h-0 min-w-0 lg:block" />
+        ) : (
+          <aside
+            className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
+          >
+            <PanelHeader
+              chevron="left"
+              collapseLabel={t("workbench.collapseLeft")}
+              onCollapse={() => setLeftCollapsed(true)}
+              title={leftPanelTitle}
+            />
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{leftPanel}</div>
+            {leftCollapsed ? null : <ColumnResizeGutter onResize={onResizeLeft} side="left" />}
+          </aside>
+        )}
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-          {leftCollapsed ? (
+          {leftCollapsed && !leftPanelHidden ? (
             <RailButton
               label={t("workbench.expandLeft")}
               onClick={() => setLeftCollapsed(false)}
