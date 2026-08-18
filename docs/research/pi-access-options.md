@@ -7,7 +7,9 @@
 - 调研时间：2026-08-07
 - 触发：用户提议接入 pi（"类似于 claude 的 runtime"），并相继提出对 pi 生态、定制性、同类接入方式、国产案例（MonkeyCode）的疑虑。
 - 结论等级：阶段性研究结论，决策未做。
+- **补充（2026-08-18）**：chat 模式运行时调研——用户新场景（对话/Agent 双模式之对话侧，见 [`agent-vs-chat-modes.md`](./agent-vs-chat-modes.md)），运行时候选 pi vs DeepSeek Harness（dsh），**决策选 pi（库嵌入）、纯调研不做 PoC**；本次为一手源码核实（clone `~/repos/pi`，depth 1），见 §9。
 - 证据分级（重要，落地前请按等级复核）：
+  - **一手源码核实**（2026-08-18）：`earendil-works/pi` clone 到 `~/repos/pi` 直接读源码。SDK 工具裁剪、事件流、prompt 上行契约、Bun 兼容性、session JSONL 路径均已核实（§9）。
   - **一手硬证据**：GitHub API 实查 `chaitin/MonkeyCode` 的 `.gitmodules`；`pi.dev` / `omp.sh` 官方页。
   - **deepwiki 源码索引**：基于 deepwiki 对 pi / omp 仓库的 AI 概括，**非直接读源码**。协议字段、API 形状落地前需 clone 到 `~/repos` 实测。
   - **官方/半官方资料**：pi / omp 官方文档与 wiki、oma-home skills hub。
@@ -203,6 +205,78 @@
 6. **Bun 兼容性**（若考虑 A 路径备选）：pi 是否依赖 Node 特有 API。
 7. **omp 与上游同步节奏**（若选 omp）。
 8. **OpenClaw 库嵌入细节一手核实**（`docs.openclaw.ai`），它是修正 §5 因果的关键反例。
+
+## 9.1 chat 模式运行时：库嵌入路径一手核实（2026-08-18）
+
+**场景**：用户实现「对话（Chat）模式」时选择 pi 作运行时（排除 DeepSeek Harness，因其 TS SDK 仅 subprocess 形态，不满足"无进程代价"约束）。**决策：选 pi、库嵌入、纯调研不做 PoC**。本节约谈 §8 排除 A 路径（库嵌入）的前提——那是对 **agent 会话**场景（多 session 常驻、崩溃隔离硬约束）；chat 模式上下文不同（单个进程内、只读工具、无复杂编排），需重新核实。
+
+**一手核实（clone `~/repos/pi` depth 1，读 `packages/coding-agent/src/core/`）**：
+
+### 三个硬前提
+
+| 前提 | 一手证据 | 结论 |
+|---|---|---|
+| 进程内、无子进程 | `createAgentSession()` 直接 new Agent + AgentSession，in-process（`core/sdk.ts:171`）；核心只 import `node:*` 内置模块（Bun 原生兼容）+ `src/bun/` 目录 | ✅ |
+| 简洁可定制（工具裁剪） | `CreateAgentSessionOptions`：`noTools: "all"\|"builtin"`、`tools` allowlist、`excludeTools` denylist、`customTools`（`core/sdk.ts:61-75`） | ✅ |
+| 崩溃隔离 | 库嵌入共享崩溃空间 | ⚠️ 部分满足（见下） |
+
+### 工具裁剪链路（chat 只读形态 = 「不注册写工具」）
+
+内置工具全集仅 7 个：`ToolName = "read"\|"bash"\|"edit"\|"write"\|"grep"\|"find"\|"ls"`（`core/tools/index.ts:83`）。装配逻辑（`agent-session.ts` `_refreshToolRegistry` L2531-2640）：
+
+```
+tools: ["read","grep","find","ls"]  → allowedToolNames 白名单（isAllowedTool 过滤 registry，含 custom/extensions）
+noTools: "all"                      → 空白名单 → registry 全空（真·零工具）
+excludeTools: ["bash"]              → denylist 后过滤
+```
+
+**chat 只读形态 = `tools: ["read","grep","find","ls"]`**，禁掉 bash/edit/write 三个写工具。这是最硬的权限边界（同 Proma Chat「只给几个函数」策略，见 [`agent-vs-chat-modes.md`](./agent-vs-chat-modes.md)），无需 canUseTool 拦截层。**但白名单在 `createAgentSession` 时固定，不能运行时切换**——chat 固定只读工具集，此限制不构成问题。
+
+### 事件流（`AgentSession.subscribe(listener)` 收 `AgentSessionEvent`）
+
+基底 `AgentEvent`（`packages/agent/src/types.ts:428`）：
+
+- **message 生命周期**：`message_start`（user/assistant/toolResult）→ `message_update`（仅 assistant 流式增量）→ `message_end`
+- **turn 边界**：`turn_start` / `turn_end`
+- **tool 执行**：`tool_execution_start/update/end`
+- **agent 生命周期**：`agent_start` / `agent_end`（携带全量 `messages`）
+
+增量结构 `AssistantMessageEvent`（`packages/ai/src/types.ts:527`）：`text_delta`/`thinking_delta`/`toolcall_delta`（各带 `contentIndex` + 全量 `partial`）。
+
+SDK 层叠加（`AgentSessionEvent` union，`agent-session.ts:142-184`）：`bash_execution_update`（bash 实时增量）、`queue_update`（steer/followUp 队列）、`compaction_start/end`、`agent_settled`、`entry_appended`、`session_info_changed` 等。
+
+**对接本项目**：`subscribe` 是唯一上行入口，把 `AgentSessionEvent` 翻译成现有 `SessionStreamServerMessage` 协议即可——不破坏 `UI = f(state)` 单管道原则。
+
+### prompt 上行契约（流式约束，现成 guard）
+
+`prompt(text, options?)`（`agent-session.ts:1123`）：idle 时直接调用；**streaming 中必须传 `streamingBehavior: "steer" \| "followUp"`，否则 throw**（L1174-1179）。`steer(text)`（L1350）是流式中途引导。这正好约束「运行中发送」的上行语义。
+
+### session 持久化
+
+`SessionManager`（append-only JSONL 树，`session-manager.ts:855`）：`<agentDir>/sessions/--<编码 cwd>--/<ts>_<id>.jsonl`（L953、L476-486）。是 pi 自有 JSONL 格式，**不是 Claude session 格式**——chat 历史若要跨实现复用需写转换层。`buildSessionContext()` 从 JSONL 派生 LLM context。
+
+### 与 dsh（DeepSeek Harness）对比（选型依据）
+
+| | pi | dsh |
+|---|---|---|
+| 形态 | in-process SDK | TS SDK 仅 subprocess（stdio JSON-RPC） |
+| 进程代价 | 无 | 每会话一个子进程 |
+| 工具裁剪 | noTools/tools/excludeTools 一等公民 | 插件机制（"Everything is a Plugin"，Cordis），需自裁 |
+| 权限审批 | — | 未实现（transport 预留） |
+| mid-turn cancel | — | 无 |
+| 成熟度 | 开源成长中（§1） | Developer preview，破坏性变更 |
+
+dsh SDK 仅 subprocess 形态，**不满足「无进程代价」**——这正是用户排除它的原因，调研确认。
+
+### 结论与代价
+
+**pi 库嵌入做 chat 运行时可行**，与 Proma Chat/Agent 双模式同构（Chat = 简化引擎，Agent = 完整 harness）。三个要正视的代价：
+
+1. **崩溃隔离**：进程内共享崩溃空间。对策：把 `createAgentSession` 隔离进独立 module/worker，或接受「pi 会话崩溃 = API 进程崩」。这是库嵌入 vs rpc spawn 的根本权衡。
+2. **工具集固定**：白名单在创建时定死，chat 固定只读工具集不构成问题。
+3. **session 格式是 pi 的 JSONL**：非 Claude 格式，历史复用需转换层。
+
+**建议落地分步（可单独验收）**：P1 `createAgentSession({ tools: ["read","grep","find","ls"] })` + `SessionManager` 跑通最小闭环；P2 `subscribe` 事件 → 项目消息协议翻译层；P3 接入 UI（chat 入口 + 只读消息渲染）。
 
 ## 10. 开放问题
 
