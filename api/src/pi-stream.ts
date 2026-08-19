@@ -108,7 +108,7 @@ export class PiStreamController {
       // user 文本入队（PiRuntime.send 内部排队/立即 prompt）；interrupt 中止 + 清队列。
       // 会话未启动时 send 同步 throw，兜底出错误帧。
       if (parsed.type === "user") {
-        this.piRuntime.send(data.chatId, parsed.text);
+        this.piRuntime.send(data.chatId, parsed.text, parsed.uuid);
         return;
       }
       if (parsed.type === "interrupt") {

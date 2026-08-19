@@ -42,6 +42,7 @@ import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoid
 import {
   COMPOSER_DESKTOP_MIN_WIDTH_PX,
   decideDesktopEnterAction,
+  insertNewlineAtCursor,
   isMobileComposerMode,
 } from "../lib/composer-enter";
 import { measureFrom, timed } from "../lib/perf-trace";
@@ -3068,7 +3069,7 @@ const CHAT_SCROLL_UP_EPS = 2;
 // even when content keeps growing mid-stream.
 const CHAT_BOTTOM_THRESHOLD = 32;
 
-function VirtualizedThreadContent({
+export function VirtualizedThreadContent({
   loading,
   retryInfo,
 }: {
@@ -3751,19 +3752,6 @@ function ComposerWithInterrupt({
   // depending on composer text state, so it races cleanly against insertDirective.
   const api = useAui();
   const composer = useComposerRuntime();
-  // 在 textarea 光标处插入换行（桌面 Cmd+Enter 换行用）。execCommand insertText 触发原生 input
-  // 事件 → 库 onChange → setText，浏览器自动维护光标与撤销栈（受控组件下手动 setText 复位光标不可靠）。
-  const insertNewlineAtCursor = (ta: HTMLTextAreaElement) => {
-    ta.focus();
-    if (document.execCommand("insertText", false, "\n")) return;
-    // 回退：execCommand 不可用时手动 setText + 复位光标到换行后。
-    const start = ta.selectionStart ?? ta.value.length;
-    const end = ta.selectionEnd ?? start;
-    composer.setText(`${ta.value.slice(0, start)}\n${ta.value.slice(end)}`);
-    requestAnimationFrame(() => {
-      ta.selectionStart = ta.selectionEnd = start + 1;
-    });
-  };
   const lastKeyRef = useRef<string>("");
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
@@ -3835,7 +3823,7 @@ function ComposerWithInterrupt({
               // Cmd+Enter 库会当发送，故必须接管并手动插入换行。
               if (e.shiftKey) return;
               e.preventDefault();
-              insertNewlineAtCursor(e.currentTarget);
+              insertNewlineAtCursor(e.currentTarget, (text) => composer.setText(text));
               return;
             }
             // 桌面 plain Enter → 发送。preventDefault 阻断库/默认换行；composer.send() 只查

@@ -563,6 +563,11 @@ export function claudeStreamUrl(projectName: string, sessionId: string) {
   return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/claude-stream`;
 }
 
+export function piChatStreamUrl(chatId: string) {
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/api/chat-sessions/${encodeURIComponent(chatId)}/stream`;
+}
+
 export function createEchoSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${protocol}//${window.location.host}/api/ws/echo`);

@@ -1033,6 +1033,8 @@ export type PiStreamClientMessage =
   | {
       type: "user";
       text: string;
+      /** 客户端生成的本地 uuid（crypto.randomUUID()）：server 原样注入 pi_user_echo，用于把 echo 对齐到已发送消息。 */
+      uuid?: string;
     }
   | {
       type: "interrupt";

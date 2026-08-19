@@ -51,6 +51,34 @@ describe("PiSessionRelay", () => {
     relay.destroy();
   });
 
+  test("loadHistory: addSubscriber 回放定格历史行（history_start count = 实际条数）", () => {
+    const relay = new PiSessionRelay();
+    const histA = piEventLine("message_start");
+    const histB = piEventLine("message_end");
+    relay.loadHistory([histA, histB]);
+    relay.appendAndBroadcast(piEventLine("message_update"));
+
+    const received: string[] = [];
+    relay.addSubscriber(
+      (line) => received.push(line),
+      (err) => {
+        throw err;
+      },
+    );
+    const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
+    expect(messages[1]).toMatchObject({ type: "history_start", count: 2 });
+    expect(messages.slice(2, 4)).toEqual([JSON.parse(histA), JSON.parse(histB)]);
+    expect(messages[4]).toMatchObject({ type: "history_end" });
+    // live batch 只含 live 行（history 不重复进 live）。
+    expect(messages[5]).toMatchObject({ type: "live_start", count: 1 });
+    expect(messages[6]).toEqual(JSON.parse(piEventLine("message_update")));
+    expect(messages[7]).toMatchObject({ type: "live_end" });
+
+    relay.destroy();
+  });
+
   test("appendAndBroadcast: 当前订阅者实时收 + 后续订阅者从 live batch 回放", () => {
     const relay = new PiSessionRelay();
     const live: string[] = [];

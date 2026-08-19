@@ -36,19 +36,28 @@ console.log("[ok] login");
 // ── 探测 pi 是否已配置（v5：presets 非空且 activePresetId 命中） ──
 const settingsRes = await fetch(`${API}/api/settings`, { headers: auth });
 if (!settingsRes.ok) throw new Error(`GET /api/settings failed: ${settingsRes.status}`);
-const settings = await settingsRes.json();
+const settingsBody = await settingsRes.json();
+// 响应外层包 {settings: {runtimes: {...}}}（见 settings-routes GET /api/settings）。
+const settings = settingsBody.settings ?? settingsBody;
 const pi = settings.runtimes?.pi;
 const piConfigured = !!pi && pi.presets?.length > 0 && !!pi.activePresetId;
 
 if (piConfigured) {
   console.log("\n⚠️  runtimes.pi 已配置 —— 未配置路径不可测，本次跳过。");
   console.log(
-    "   live-LLM 流式对话为手动验证域（CLAUDE.md live-stream-only 约定），请用户在网页手动验证：",
+    "   live-LLM 流式对话 + 历史回放为手动验证域（CLAUDE.md live-stream-only 约定），请用户在网页手动验证：",
   );
   console.log("   ① chat 会话点进 detail 发消息；");
   console.log("   ② 断言收到 pi_event（message_start/text_delta）+ pi_user_echo；");
   console.log("   ③ agent_settled → 收 ended；");
   console.log("   ④ GET /api/chat-sessions/:id 显示 piSessionId backfill。");
+  console.log(
+    "   ⑤ 刷新页面 → history_start count>0 + 历史消息帧 + history_end + live 续流（Phase 4 JSONL 回放）；",
+  );
+  console.log("   ⑥ API 重启（tmux 重启 ar-dev api）后重连 → 历史仍在（loadHistory 从磁盘重建）。");
+  console.log(
+    "   历史回放的确定性断言已由 api/src/pi-runtime.test.ts 覆盖（chat-with-history / fresh-chat fixture）。",
+  );
   console.log(`\n${results.length} pass / ${results.length} fail (skipped: configured)`);
   process.exit(0);
 }

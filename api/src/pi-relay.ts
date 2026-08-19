@@ -13,18 +13,19 @@ type Subscriber = {
  * PiSessionRelay —— pi 会话的 relay（设计 docs/design/workbench-views.md §3.1）。
  *
  * 镜像 {@link ClaudeSessionRelay} 的 addSubscriber/broadcast/destroy/reportError 表面，
- * 但 **pi 原生**：Phase 3 历史恒空（不读 pi SessionManager JSONL——回放留 Phase 4），
- * 不 coalesce thinking_tokens（pi 事件流发 thinking_delta，每个都要广播）。
+ * 但 **pi 原生**：不 coalesce thinking_tokens（pi 事件流发 thinking_delta，每个都要广播）。
  *
  * 传输层与 claude 字节级一致（session_init/history_start/end/live_start/end 批处理
  * markers + `ended` 控制帧，由 pi-stream 用 createBatchEmitter 打包），差别只在 payload：
  * pi 发 `{type:"pi_event",...}` / `{type:"pi_user_echo",...}` 原生帧。
  *
- * 不回读磁盘、无 activate 阶段——pi 会话是进程内活体，live buffer 即全部状态。reconnect
- * 只能回放本进程存活期内的行（与 claude "claudeSessionId none" 场景同语义）；跨重启历史
- * 恢复留 Phase 4（pi JSONL 回放）。
+ * 历史回放（Phase 4）：runtime 在 ensureRunning 时 {@link loadHistory} 定格 JSONL 回放行
+ * （activate 时刻语义——之后 JSONL 持续 append 但 historyLines 不刷新，新消息只进 live
+ * buffer；与 claude relay 的 history/live 双缓冲一致）。内存 live buffer 即本进程存活期
+ * 状态，跨重启历史靠 loadHistory 从磁盘重建。
  */
 export class PiSessionRelay {
+  private historyLines: string[] = [];
   private liveLines: string[] = [];
   private subscribers = new Set<Subscriber>();
   private resume = false;
@@ -38,6 +39,11 @@ export class PiSessionRelay {
     this.resume = resume;
   }
 
+  /** 定格历史回放行（ensureRunning 时一次性调用；再次调用覆盖，幂等供测试）。 */
+  loadHistory(lines: string[]): void {
+    this.historyLines = lines;
+  }
+
   addSubscriber(onData: (line: string) => void, onError: (err: Error) => void): RuntimeStream {
     const sub: Subscriber = { onData, onError };
     this.subscribers.add(sub);
@@ -48,10 +54,12 @@ export class PiSessionRelay {
       /* subscriber error shouldn't block replay */
     }
 
-    // Phase 3：历史恒空（pi SessionManager JSONL 回放留 Phase 4）。markers 照发，
-    // 让客户端批处理状态机与 claude 路径共用。
+    // 历史（JSONL 定格行，空目录 → count 0，markers 照发让客户端状态机与 claude 共用）。
     try {
-      onData(JSON.stringify({ type: "history_start", count: 0 }));
+      onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
+      for (const line of this.historyLines) {
+        onData(line);
+      }
       onData(JSON.stringify({ type: "history_end" }));
     } catch {
       /* ignore */
@@ -105,6 +113,7 @@ export class PiSessionRelay {
 
   destroy(): void {
     this.destroyed = true;
+    this.historyLines = [];
     this.liveLines = [];
     this.subscribers.clear();
   }

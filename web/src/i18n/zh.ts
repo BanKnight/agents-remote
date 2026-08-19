@@ -796,6 +796,5 @@ export const zh: Record<TranslationKey, string> = {
   "chat.deleteConfirmTitle": "删除对话？",
   "chat.deleteConfirmMessage": "对话「{{name}}」的历史将一并删除，且不可恢复。",
   "chat.renamePrompt": "对话名称",
-  "chat.notAvailable": "Chat 运行时（pi）将在后续阶段接入。",
   "chat.backToList": "返回对话列表",
 };

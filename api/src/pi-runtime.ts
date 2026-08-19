@@ -15,6 +15,7 @@ import type {
 import type { PiPreset, PiProviderApi } from "@agents-remote/shared";
 import type { RuntimeStream } from "./session-registry";
 import { isTerminalPiEvent, toPiEventFrame } from "./pi-events";
+import { readPiHistoryLines } from "./pi-history";
 import { PiSessionRelay } from "./pi-relay";
 import type { SettingsStore } from "./settings-store";
 
@@ -198,6 +199,9 @@ export class PiRuntime {
 
     // 决策 3：resume 目录 = pi-jsonl/<chatId>/（与元数据同根）。continueRecent 读最近文件重建上下文。
     const sessionManager = SessionManager.continueRecent(this.defaultCwd, sessionDir);
+    // 历史定格（Phase 4）：activate 时刻读 JSONL 合成回放行。空目录（新会话首条消息前
+    // newSession 未落盘）→ 空历史 + resume false，与 claude "claudeSessionId none" 同语义。
+    const historyLines = await readPiHistoryLines(sessionDir);
     // 决策 8：加载 cwd 下 AGENTS.md/CLAUDE.md（noContextFiles:false），禁用扩展/skills/主题/prompt 模板。
     const resourceLoader = new DefaultResourceLoader({
       cwd: this.defaultCwd,
@@ -219,6 +223,8 @@ export class PiRuntime {
       resourceLoader,
     });
     const relay = new PiSessionRelay();
+    relay.loadHistory(historyLines);
+    relay.setResume(historyLines.length > 0);
     const unsubscribe = session.subscribe((event) => this.handlePiEvent(chatId, relay, event));
     this.sessions.set(chatId, { session, relay, unsubscribe });
     this.backfillPiSessionId(chatId, session);

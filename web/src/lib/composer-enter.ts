@@ -25,3 +25,20 @@ export function decideDesktopEnterAction(opts: {
   if (opts.isMac && opts.metaKey) return "newline";
   return "send";
 }
+
+// 在 textarea 光标处插入换行（桌面 Cmd+Enter 换行用）。execCommand insertText 触发原生
+// input 事件 → 库 onChange → setText，浏览器自动维护光标与撤销栈（受控组件下手动 setText
+// 复位光标不可靠）。composer.setText 仅作 execCommand 不可用时的回退。
+export function insertNewlineAtCursor(
+  ta: HTMLTextAreaElement,
+  setText: (text: string) => void,
+): void {
+  ta.focus();
+  if (document.execCommand("insertText", false, "\n")) return;
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? start;
+  setText(`${ta.value.slice(0, start)}\n${ta.value.slice(end)}`);
+  requestAnimationFrame(() => {
+    ta.selectionStart = ta.selectionEnd = start + 1;
+  });
+}

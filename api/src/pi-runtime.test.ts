@@ -508,6 +508,61 @@ describe("PiRuntime.ensureRunning", () => {
     await runtime.ensureRunning("c1");
     expect(backfilled).toEqual([["c1", "pi-sess-1"]]);
   });
+
+  test("历史回放：pi-jsonl/<chatId>/ 有 JSONL → history batch 帧化 + resume true", async () => {
+    // 造真实 fixture：user message entry 落 pi-jsonl/c1/。
+    const sessionDir = join(chatSessionsDir, "pi-jsonl", "chat-with-history");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      join(sessionDir, "2026-01-01_s1.jsonl"),
+      `${JSON.stringify({ type: "session", id: "s1", timestamp: "t", cwd: defaultCwd })}\n` +
+        `${JSON.stringify({
+          type: "message",
+          id: "e1",
+          parentId: null,
+          timestamp: "t",
+          message: { role: "user", content: "past", timestamp: "t" },
+        })}\n`,
+    );
+
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: makeCreateSession(makeStubSession()).factory as never,
+    });
+    await runtime.ensureRunning("chat-with-history");
+    const { frames } = collectStream(runtime, "chat-with-history");
+
+    // session_init resume=true + history_start count=2（start/end 各一）+ user 消息帧。
+    expect(frames[0]).toMatchObject({ type: "session_init", resume: true });
+    expect(frames[1]).toMatchObject({ type: "history_start", count: 2 });
+    expect(frames[2]).toMatchObject({
+      type: "pi_event",
+      event: { type: "message_start", message: { role: "user", content: "past" } },
+    });
+    expect(frames[3]).toMatchObject({ type: "pi_event", event: { type: "message_end" } });
+    expect(frames[4]).toMatchObject({ type: "history_end" });
+  });
+
+  test("历史回放：新会话无 JSONL → history count 0 + resume false", async () => {
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: makeCreateSession(makeStubSession()).factory as never,
+    });
+    await runtime.ensureRunning("fresh-chat");
+    const { frames } = collectStream(runtime, "fresh-chat");
+
+    expect(frames[0]).toMatchObject({ type: "session_init", resume: false });
+    expect(frames[1]).toMatchObject({ type: "history_start", count: 0 });
+    expect(frames[2]).toMatchObject({ type: "history_end" });
+  });
 });
 
 describe("PiRuntime.send / 排队 / 中断", () => {

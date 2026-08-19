@@ -808,6 +808,5 @@ export const en = {
   "chat.deleteConfirmMessage":
     'The history of chat "{{name}}" will be deleted and cannot be recovered.',
   "chat.renamePrompt": "Chat name",
-  "chat.notAvailable": "Chat runtime (pi) will be wired in a later phase.",
   "chat.backToList": "Back to chats",
 } as const;
