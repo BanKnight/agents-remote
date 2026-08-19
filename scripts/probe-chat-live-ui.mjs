@@ -12,6 +12,10 @@ const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const EXEC =
   "/home/deploy/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell";
 
+// firecrawl 工具注册由 FIRECRAWL_API_KEY env 决定（pi-firecrawl-tools：无 key → 空数组，
+// pi 仍可用只读内置工具，不阻塞启动）。有 key 才跑 firecrawl 断言路径；无 key 仅确认启动不受影响。
+const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
+
 const results = [];
 const check = (ok, name, detail = "") => {
   results.push(ok);
@@ -151,6 +155,31 @@ async function run() {
       pageText,
     );
     check(hasAssistantText, "assistant 气泡渲染（含回复文本）", pageText.slice(0, 120));
+
+    // ── firecrawl 工具（有 key 才断言）──
+    // 有 FIRECRAWL_API_KEY → 发 web 搜索 prompt → 等 firecrawl_search tool-call 渲染
+    // （FirecrawlSearchToolUI badge 而非 GenericToolUI）。无 key → 跳过 firecrawl 断言，
+    // 仅确认「凭证缺失不阻塞 pi 启动」这条链路（上面 assistant 气泡渲染已证明 pi 可用）。
+    if (FIRECRAWL_KEY) {
+      await composer.fill("搜一下最新的 AI 资讯");
+      await composer.press("Enter");
+      console.log(`[ok] sent firecrawl prompt（FIRECRAWL_API_KEY 已配）`);
+      // 真实 LLM 自主决定是否调用搜索工具，等至多 25s。
+      let firecrawlBadge = 0;
+      let firecrawlDetail = 0;
+      for (let i = 0; i < 50; i++) {
+        firecrawlBadge = await page.getByText("Firecrawl Search", { exact: true }).count();
+        if (firecrawlBadge > 0) break;
+        await page.waitForTimeout(500);
+      }
+      check(firecrawlBadge > 0, "firecrawl_search 工具调用渲染（FirecrawlSearchToolUI badge）");
+      if (firecrawlBadge > 0) {
+        firecrawlDetail = await page.getByText("最新 AI").count();
+        check(firecrawlDetail > 0, "firecrawl_search detail 渲染（query 文本）");
+      }
+    } else {
+      check(true, "firecrawl 断言跳过（无 FIRECRAWL_API_KEY，pi 启动不受影响）");
+    }
 
     // ── LLM 智能标题（首条消息后一次性生成）──
     check(

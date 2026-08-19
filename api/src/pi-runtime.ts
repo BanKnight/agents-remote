@@ -16,11 +16,18 @@ import type { PiPreset, PiProviderApi } from "@agents-remote/shared";
 import type { RuntimeStream } from "./session-registry";
 import { isTerminalPiEvent, toPiEventFrame } from "./pi-events";
 import { readPiHistoryLines } from "./pi-history";
+import { buildFirecrawlTools } from "./pi-firecrawl-tools";
 import { PiSessionRelay } from "./pi-relay";
 import type { SettingsStore } from "./settings-store";
 
 // 决策 8：只读 tools allowlist（禁写工具/扩展工具）。chat 会话只做问答与读取，不 mutate cwd。
 const PI_TOOLS_ALLOWLIST = ["read", "grep", "find", "ls"];
+
+/** 图片上行输入（对齐 pi ImageContent：base64 data 不含 data: 前缀）。 */
+export type PiImageInput = { data: string; mimeType: string };
+
+/** pendingQueue 条目：text + 可选图片（保持排队语义，flush 时透传 prompt images）。 */
+type PiQueuedMessage = { text: string; images?: PiImageInput[] };
 
 // LLM 标题生成：输入截断 + 输出清洗上限（中文导向提示词，16 字要求 + 30 字硬上限兜底）。
 const TITLE_INPUT_MAX_CHARS = 2_000;
@@ -146,7 +153,7 @@ export class PiRuntime {
   private readonly createModelRuntime: CreateModelRuntimeFn;
   private readonly createSession: CreateSessionFn;
   private readonly sessions = new Map<string, PiSessionEntry>();
-  private readonly pendingQueues = new Map<string, string[]>();
+  private readonly pendingQueues = new Map<string, PiQueuedMessage[]>();
   /** 显式 in-flight 标记：prompt 发起即入，agent_settled / 错误兜底才移除。 */
   private readonly sending = new Set<string>();
   /** 已 backfill piSessionId 的 chatId（值稳定，只写一次，防事件风暴刷磁盘）。 */
@@ -255,12 +262,16 @@ export class PiRuntime {
       noContextFiles: false,
     });
 
+    // firecrawl 工具：env 有 FIRECRAWL_API_KEY → 注册（customTools 是 "in addition to"
+    // 内置工具，与 allowlist 并存）；无 key → 空数组，pi 仍可用只读内置工具，不阻塞启动。
+    const firecrawlTools = buildFirecrawlTools(process.env.FIRECRAWL_API_KEY);
     const { session } = await this.createSession({
       cwd: this.defaultCwd,
       agentDir,
       modelRuntime,
       model,
       tools: PI_TOOLS_ALLOWLIST,
+      customTools: firecrawlTools,
       sessionManager,
       resourceLoader,
     });
@@ -276,7 +287,7 @@ export class PiRuntime {
    * 决策 5 发送：接受消息后立即注入 user echo（决策 6）并入队，然后尝试立即 prompt。
    * 不 await prompt——入队即返回。会话未启动 throw（pi-stream 出 error 帧）。
    */
-  send(chatId: string, text: string, uuid?: string): void {
+  send(chatId: string, text: string, uuid?: string, images?: PiImageInput[]): void {
     const entry = this.sessions.get(chatId);
     if (!entry) {
       throw new Error("chat 会话未启动");
@@ -286,7 +297,7 @@ export class PiRuntime {
       entry.relay.appendAndBroadcast(JSON.stringify({ type: "pi_user_echo", text, uuid }));
     }
     const queue = this.pendingQueues.get(chatId) ?? [];
-    queue.push(text);
+    queue.push({ text, images });
     this.pendingQueues.set(chatId, queue);
     this.flushQueue(chatId);
   }
@@ -380,10 +391,21 @@ export class PiRuntime {
     if (entry.session.isStreaming) return;
     const queue = this.pendingQueues.get(chatId);
     if (!queue || queue.length === 0) return;
-    const text = queue.shift();
-    if (text === undefined) return;
+    const item = queue.shift();
+    if (!item) return;
     this.sending.add(chatId);
-    void entry.session.prompt(text).catch((err) => this.handlePromptError(chatId, entry, err));
+    const options = item.images?.length
+      ? {
+          images: item.images.map((i) => ({
+            type: "image" as const,
+            data: i.data,
+            mimeType: i.mimeType,
+          })),
+        }
+      : undefined;
+    void entry.session
+      .prompt(item.text, options)
+      .catch((err) => this.handlePromptError(chatId, entry, err));
   }
 
   /**

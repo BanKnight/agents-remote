@@ -43,7 +43,7 @@ type PiEventLike = { type: string } & Record<string, unknown>;
 
 /** stub AgentSession：记录调用、可编程 prompt/isStreaming、暴露 emit 驱动订阅回调。 */
 function makeStubSession() {
-  const promptCalls: string[] = [];
+  const promptCalls: { text: string; images?: { data: string; mimeType: string }[] }[] = [];
   const calls = { abort: 0, waitForIdle: 0, dispose: 0, unsubscribe: 0 };
   const state = { isStreaming: false };
   let listener: ((event: PiEventLike) => void) | undefined;
@@ -61,8 +61,11 @@ function makeStubSession() {
         calls.unsubscribe++;
       };
     },
-    prompt: (text: string) => {
-      promptCalls.push(text);
+    prompt: (
+      text: string,
+      options?: { images?: { type: "image"; data: string; mimeType: string }[] },
+    ) => {
+      promptCalls.push({ text, images: options?.images });
       return promptImpl(text);
     },
     abort: async () => {
@@ -290,6 +293,50 @@ describe("PiRuntime.ensureRunning", () => {
     });
     expect(cs.calls[0].sessionManager).toBeDefined();
     expect(cs.calls[0].resourceLoader).toBeDefined();
+  });
+
+  test("FIRECRAWL_API_KEY 存在 → customTools 注册 firecrawl 工具", async () => {
+    const prev = process.env.FIRECRAWL_API_KEY;
+    process.env.FIRECRAWL_API_KEY = "test-key";
+    try {
+      const stub = makeStubSession();
+      const cs = makeCreateSession(stub);
+      const runtime = makeRuntime({
+        pi: PI_CFG,
+        createModelRuntime: makeCreateModelRuntime(
+          PI_CFG.presets[0].provider,
+          PI_CFG.presets[0].model,
+        ).factory as never,
+        createSession: cs.factory as never,
+      });
+      await runtime.ensureRunning("c1");
+      const customTools = cs.calls[0].customTools as { name: string }[] | undefined;
+      expect(customTools?.map((t) => t.name)).toEqual(["firecrawl_search", "firecrawl_scrape"]);
+    } finally {
+      if (prev === undefined) delete process.env.FIRECRAWL_API_KEY;
+      else process.env.FIRECRAWL_API_KEY = prev;
+    }
+  });
+
+  test("FIRECRAWL_API_KEY 缺失 → customTools 空数组（不阻塞 pi 启动）", async () => {
+    const prev = process.env.FIRECRAWL_API_KEY;
+    delete process.env.FIRECRAWL_API_KEY;
+    try {
+      const stub = makeStubSession();
+      const cs = makeCreateSession(stub);
+      const runtime = makeRuntime({
+        pi: PI_CFG,
+        createModelRuntime: makeCreateModelRuntime(
+          PI_CFG.presets[0].provider,
+          PI_CFG.presets[0].model,
+        ).factory as never,
+        createSession: cs.factory as never,
+      });
+      await runtime.ensureRunning("c1");
+      expect(cs.calls[0].customTools).toEqual([]);
+    } finally {
+      if (prev !== undefined) process.env.FIRECRAWL_API_KEY = prev;
+    }
   });
 
   test("未配置三态：presets 空 / activePresetId 空 / activePresetId 未命中 → PiNotConfiguredError", async () => {
@@ -602,7 +649,56 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     });
     await runtime.ensureRunning("c1");
     runtime.send("c1", "hi");
-    expect(stub.promptCalls).toEqual(["hi"]);
+    expect(stub.promptCalls).toEqual([{ text: "hi", images: undefined }]);
+  });
+
+  test("send 带 images → prompt 收到 images（ImageContent 形状）", async () => {
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    runtime.send("c1", "看图", "u-1", [
+      { data: "aGVsbG8=", mimeType: "image/png" },
+      { data: "d29ybGQ=", mimeType: "image/jpeg" },
+    ]);
+    expect(stub.promptCalls).toEqual([
+      {
+        text: "看图",
+        images: [
+          { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+          { type: "image", data: "d29ybGQ=", mimeType: "image/jpeg" },
+        ],
+      },
+    ]);
+  });
+
+  test("send 带 images 排队 → flush 时透传 images", async () => {
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+
+    stub.state.isStreaming = true;
+    runtime.send("c1", "带图", "u-1", [{ data: "aGk=", mimeType: "image/png" }]);
+    expect(stub.promptCalls).toEqual([]); // 排队未抢跑
+
+    stub.state.isStreaming = false;
+    stub.emit({ type: "agent_settled" });
+    expect(stub.promptCalls).toEqual([
+      { text: "带图", images: [{ type: "image", data: "aGk=", mimeType: "image/png" }] },
+    ]);
   });
 
   test("streaming 时 send → 入队不 prompt；agent_settled flush", async () => {
@@ -624,7 +720,7 @@ describe("PiRuntime.send / 排队 / 中断", () => {
     // agent_settled 时 pi finally 已置 isStreaming=false（真实时序）
     stub.state.isStreaming = false;
     stub.emit({ type: "agent_settled" });
-    expect(stub.promptCalls).toEqual(["queued"]);
+    expect(stub.promptCalls).toEqual([{ text: "queued", images: undefined }]);
   });
 
   test("interrupt → abort + waitForIdle + 清空排队项", async () => {

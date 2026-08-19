@@ -7,7 +7,7 @@ import {
   useAuiState,
   useComposerRuntime,
 } from "@assistant-ui/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getChatSession } from "../api/client";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
@@ -17,7 +17,7 @@ import {
   insertNewlineAtCursor,
   isMobileComposerMode,
 } from "../lib/composer-enter";
-import { usePiSession } from "./pi-adapter";
+import { usePiSession, type PiAttachment } from "./pi-adapter";
 import { VirtualizedThreadContent } from "./ClaudeSessionDetailRoute";
 import type { RetryInfo } from "./claude-adapter";
 
@@ -46,7 +46,16 @@ export function ChatSessionDetailRoute() {
   // RetryInfo 是 claude 专属（pi 无重试 UI），传 null——VirtualizedThreadContent 的
   // RetryIndicator 在 null 时 no-op。
   const retryInfo: RetryInfo | null = null;
-  const { runtime, connected, loading, title: liveTitle, onCancel } = usePiSession(id);
+  const {
+    runtime,
+    connected,
+    loading,
+    title: liveTitle,
+    onCancel,
+    attachments,
+    addAttachments,
+    removeAttachment,
+  } = usePiSession(id);
 
   useComposerKeyboardAvoidance();
 
@@ -95,7 +104,13 @@ export function ChatSessionDetailRoute() {
                 style={{ transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))" }}
               >
                 <ComposerPrimitive.Root>
-                  <ComposerWithInterruptPi connected={connected} onCancel={onCancel} />
+                  <ComposerWithInterruptPi
+                    connected={connected}
+                    onCancel={onCancel}
+                    attachments={attachments}
+                    addAttachments={addAttachments}
+                    removeAttachment={removeAttachment}
+                  />
                 </ComposerPrimitive.Root>
               </div>
             </div>
@@ -115,9 +130,15 @@ export function ChatSessionDetailRoute() {
 function ComposerWithInterruptPi({
   connected,
   onCancel,
+  attachments,
+  addAttachments,
+  removeAttachment,
 }: {
   connected: boolean;
   onCancel?: () => void;
+  attachments: PiAttachment[];
+  addAttachments: (files: File[]) => void;
+  removeAttachment: (id: string) => void;
 }) {
   const { t } = useT();
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -135,6 +156,7 @@ function ComposerWithInterruptPi({
       typeof navigator !== "undefined" &&
       /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent),
   );
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const disconnected = !connected;
   const inputDisabled = disconnected;
@@ -143,8 +165,41 @@ function ComposerWithInterruptPi({
   const showSend = hasInput && isMobileComposer && !inputDisabled;
   const showStop = running && !disconnected && !showSend && !!onCancel;
 
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    addAttachments(Array.from(files));
+  };
+
   return (
     <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
+      {attachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2 px-3 pt-2.5">
+          {attachments.map((a) => (
+            <div
+              key={a.id}
+              className="group relative h-14 w-14 overflow-hidden rounded-lg border border-on-surface/10"
+            >
+              <img src={a.previewUrl} alt="" className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => removeAttachment(a.id)}
+                aria-label={t("pi.attachRemove")}
+                title={t("pi.attachRemove")}
+                className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80 cursor-pointer"
+              >
+                <svg aria-hidden="true" className="h-3 w-3" fill="none" viewBox="0 0 16 16">
+                  <path
+                    d="M4 4l8 8M12 4l-8 8"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeWidth={1.5}
+                  />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <ComposerPrimitive.Input
         placeholder={disconnected ? t("claude.disconnected") : t("claude.inputPlaceholder")}
         disabled={inputDisabled}
@@ -168,8 +223,51 @@ function ComposerWithInterruptPi({
           e.preventDefault();
           void composer.send();
         }}
+        onPaste={(e) => {
+          const items = e.clipboardData?.items;
+          if (!items) return;
+          const files: File[] = [];
+          for (const item of items) {
+            if (item.kind !== "file") continue;
+            const file = item.getAsFile();
+            if (file && file.type.startsWith("image/")) files.push(file);
+          }
+          if (files.length > 0) {
+            e.preventDefault();
+            addAttachments(files);
+          }
+        }}
       />
       <div className="flex h-9 items-center gap-2 px-2.5 pb-2 pt-0.5">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label={t("pi.attachAria")}
+          title={t("pi.attach")}
+          disabled={inputDisabled}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface disabled:opacity-40 cursor-pointer"
+        >
+          <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <path
+              d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
         {showStop ? (
           <button
             type="button"

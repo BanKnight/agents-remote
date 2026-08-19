@@ -1042,6 +1042,8 @@ export type PiStreamClientMessage =
       text: string;
       /** 客户端生成的本地 uuid（crypto.randomUUID()）：server 原样注入 pi_user_echo，用于把 echo 对齐到已发送消息。 */
       uuid?: string;
+      /** 图片附件（base64 data 不含 data: 前缀），透传 pi prompt images。 */
+      images?: { data: string; mimeType: string }[];
     }
   | {
       type: "interrupt";

@@ -453,6 +453,69 @@ export const WebFetchToolUI = makeToolRenderer({
   },
 });
 
+// ── Firecrawl tools (pi customTools) ───────────────────────────────────
+
+export const FirecrawlSearchToolUI = makeToolRenderer({
+  icon: "firecrawlSearch",
+  typeLabel: "pi.tool.firecrawlSearch",
+  detail: (args) => {
+    const query = typeof args.query === "string" ? args.query : "";
+    return query ? query.slice(0, 60) : null;
+  },
+});
+
+export const FirecrawlScrapeToolUI = makeToolRenderer({
+  icon: "firecrawlScrape",
+  typeLabel: "pi.tool.firecrawlScrape",
+  detail: (args) => {
+    const url = typeof args.url === "string" ? args.url : "";
+    try {
+      const host = url ? new URL(url).hostname : "";
+      return host || (url ? url.slice(0, 60) : null);
+    } catch {
+      return url ? url.slice(0, 60) : null;
+    }
+  },
+});
+
+// ── pi 内置工具（小写名；read/ls 参数名 path，与 claude Read 的 file_path 不同）──
+
+const PiReadToolUI = makeToolRenderer({
+  icon: "read",
+  typeLabel: "pi.tool.read",
+  detail: (args) => {
+    const path = typeof args.path === "string" ? args.path : "";
+    return path ? (path.split("/").pop() ?? path) : null;
+  },
+});
+
+const PiLsToolUI = makeToolRenderer({
+  icon: "file",
+  typeLabel: "pi.tool.ls",
+  detail: (args) => {
+    const path = typeof args.path === "string" ? args.path : "";
+    return path || null;
+  },
+});
+
+const PiGrepToolUI = makeToolRenderer({
+  icon: "search",
+  typeLabel: "pi.tool.grep",
+  detail: (args) => {
+    const pattern = typeof args.pattern === "string" ? args.pattern : "";
+    return pattern ? pattern.slice(0, 60) : null;
+  },
+});
+
+const PiFindToolUI = makeToolRenderer({
+  icon: "file",
+  typeLabel: "pi.tool.find",
+  detail: (args) => {
+    const pattern = typeof args.pattern === "string" ? args.pattern : "";
+    return pattern || null;
+  },
+});
+
 export const MCPToolRenderer = makeToolRenderer({
   icon: "mcp",
   typeLabel: "claude.tool.mcp",
@@ -532,6 +595,14 @@ toolRegistry.set("slash-command", CommandOutputUI);
 // Codex equivalents (lowercase)
 toolRegistry.set("bash", BashToolUI);
 toolRegistry.set("agent", AgentToolUI);
+// pi built-in tools (lowercase, args differ from claude: read/ls use `path`)
+toolRegistry.set("read", PiReadToolUI);
+toolRegistry.set("ls", PiLsToolUI);
+toolRegistry.set("grep", PiGrepToolUI);
+toolRegistry.set("find", PiFindToolUI);
+// pi firecrawl customTools
+toolRegistry.set("firecrawl_search", FirecrawlSearchToolUI);
+toolRegistry.set("firecrawl_scrape", FirecrawlScrapeToolUI);
 
 export function getToolRenderer(toolName: string): ToolRenderer {
   const exact = toolRegistry.get(toolName);

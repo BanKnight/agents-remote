@@ -50,6 +50,14 @@ type PiEvent = { type: string } & Record<string, unknown>;
 export type PiUserEchoFrame = { type: "pi_user_echo"; text: string; uuid: string };
 export type PiEventFrameMsg = { type: "pi_event"; event: PiEvent };
 
+/** composer 图片附件（base64 data 不含 data: 前缀，发送时透传 user 帧 images）。 */
+export type PiAttachment = {
+  id: string;
+  data: string;
+  mimeType: string;
+  previewUrl: string;
+};
+
 // ── state 模型（raw 日志 + 派生渲染，State/Render 分离）────────────────
 //
 // Pass 1（handleFrame）：全部原始帧进唯一 state 有序日志 `rawMessages`（pi_event /
@@ -229,6 +237,7 @@ export function usePiSession(chatId: string) {
   // LLM 标题（chat_title 帧，live 期推送）。null = 未生成——持久标题由 detail useQuery 的
   // displayName 提供（重启后标题只在 registry 元数据里）。
   const [title, setTitle] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<PiAttachment[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
   const lastPongRef = useRef(0);
   const [connectionVersion, setConnectionVersion] = useState(0);
@@ -486,17 +495,41 @@ export function usePiSession(chatId: string) {
   // Pass 2：渲染列表派生。
   const renderedMessages = useMemo(() => piFramesToThreadMessages(rawMessages), [rawMessages]);
 
+  const addAttachments = useCallback((files: File[]) => {
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const comma = dataUrl.indexOf(",");
+        if (comma === -1) return;
+        const data = dataUrl.slice(comma + 1);
+        setAttachments((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), data, mimeType: file.type, previewUrl: dataUrl },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
   const onNew = useCallback(
     async (message: AppendMessage) => {
       const textContent = (Array.isArray(message.content) ? message.content : [])
         .filter((p) => p.type === "text")
         .map((p) => (p as { text: string }).text)
         .join("\n");
-      if (textContent.trim()) {
-        sendToSocket({ type: "user", text: textContent, uuid: crypto.randomUUID() });
+      const images = attachments.map((a) => ({ data: a.data, mimeType: a.mimeType }));
+      if (textContent.trim() || images.length > 0) {
+        sendToSocket({ type: "user", text: textContent, uuid: crypto.randomUUID(), images });
+        setAttachments([]);
       }
     },
-    [sendToSocket],
+    [sendToSocket, attachments],
   );
 
   const onCancel = useCallback(async () => {
@@ -518,11 +551,15 @@ export function usePiSession(chatId: string) {
 
   return {
     runtime,
+    storeAdapter,
     isRunning,
     connected,
     loading,
     streamError,
     title,
     onCancel,
+    attachments,
+    addAttachments,
+    removeAttachment,
   };
 }

@@ -32,6 +32,12 @@ export const ToolIcons: Record<string, string> = {
   // Web fetch: an arrow downloading into a tray.
   webFetch:
     '<path d="M12 4v10M7 11l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // Firecrawl search: flame with a magnifier ring.
+  firecrawlSearch:
+    '<path d="M12 3c1.5 2.5 4.5 4 4.5 8a4.5 4.5 0 01-9 0c0-1.5.6-2.9 1.6-3.9.3 1 .9 1.6 1.9 1.6 0-2-.4-3.6 1-5.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="17" cy="17" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M19.5 19.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // Firecrawl scrape: flame with a downward grab arrow.
+  firecrawlScrape:
+    '<path d="M12 3c1.5 2.5 4.5 4 4.5 8a4.5 4.5 0 01-9 0c0-1.5.5-2.9 1.5-3.9.3 1 .9 1.6 1.9 1.6-.2-2.7-.5-4 1.1-5.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 12v4M10 14l2 2 2-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   mcp: '<circle cx="5" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="19" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   // Task: a checklist with checkboxes.
   task: '<rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 9h2M8 13h2M8 17h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13 9h3M13 13h3M13 17h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',

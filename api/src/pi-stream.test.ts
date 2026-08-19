@@ -33,6 +33,7 @@ function makeSocket(data: PiWebSocketData) {
 /** stub PiRuntime：记录调用、可编程 ensureRunning 实现、捕获 stream 的 onData/onError。 */
 function makeStubRuntime() {
   const calls = { ensureRunning: 0, stream: 0, send: 0, interrupt: 0, close: 0 };
+  const sendCalls: { chatId: string; text: string; uuid?: string; images?: unknown[] }[] = [];
   const streamCalls: {
     chatId: string;
     onData: (line: string) => void;
@@ -57,8 +58,9 @@ function makeStubRuntime() {
         },
       } satisfies RuntimeStream;
     },
-    send: () => {
+    send: (chatId: string, text: string, uuid?: string, images?: unknown[]) => {
       calls.send++;
+      sendCalls.push({ chatId, text, uuid, images });
     },
     interrupt: async () => {
       calls.interrupt++;
@@ -71,6 +73,7 @@ function makeStubRuntime() {
   return {
     runtime: runtime as unknown as PiRuntime,
     calls,
+    sendCalls,
     streamCalls,
     streamHandles,
     setEnsureRunningImpl(fn: () => Promise<void>) {
@@ -247,7 +250,43 @@ describe("PiStreamController.message", () => {
 
     await controller.message(socket, JSON.stringify({ type: "user", text: "hi" }));
     expect(stub.calls.send).toBe(1);
+    expect(stub.sendCalls[0]).toEqual({
+      chatId: "c1",
+      text: "hi",
+      uuid: undefined,
+      images: undefined,
+    });
     expect(stub.calls.interrupt).toBe(0);
+  });
+
+  test("user 带 images → PiRuntime.send 透传 images", async () => {
+    const stub = makeStubRuntime();
+    const controller = new PiStreamController(stub.runtime, makeRegistry());
+    const { socket } = makeSocket(PI_DATA);
+    await controller.open(socket);
+
+    await controller.message(
+      socket,
+      JSON.stringify({
+        type: "user",
+        text: "看图",
+        uuid: "u-1",
+        images: [
+          { data: "aGVsbG8=", mimeType: "image/png" },
+          { data: "d29ybGQ=", mimeType: "image/jpeg" },
+        ],
+      }),
+    );
+    expect(stub.calls.send).toBe(1);
+    expect(stub.sendCalls[0]).toEqual({
+      chatId: "c1",
+      text: "看图",
+      uuid: "u-1",
+      images: [
+        { data: "aGVsbG8=", mimeType: "image/png" },
+        { data: "d29ybGQ=", mimeType: "image/jpeg" },
+      ],
+    });
   });
 
   test("interrupt → PiRuntime.interrupt", async () => {

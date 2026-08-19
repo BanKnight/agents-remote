@@ -797,4 +797,13 @@ export const zh: Record<TranslationKey, string> = {
   "chat.deleteConfirmMessage": "对话「{{name}}」的历史将一并删除，且不可恢复。",
   "chat.renamePrompt": "对话名称",
   "chat.backToList": "返回对话列表",
+  "pi.attach": "添加图片",
+  "pi.attachAria": "添加图片",
+  "pi.attachRemove": "移除附件",
+  "pi.tool.read": "读取",
+  "pi.tool.ls": "列出",
+  "pi.tool.grep": "搜索",
+  "pi.tool.find": "查找",
+  "pi.tool.firecrawlSearch": "Firecrawl 搜索",
+  "pi.tool.firecrawlScrape": "Firecrawl 抓取",
 };

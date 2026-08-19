@@ -809,4 +809,13 @@ export const en = {
     'The history of chat "{{name}}" will be deleted and cannot be recovered.',
   "chat.renamePrompt": "Chat name",
   "chat.backToList": "Back to chats",
+  "pi.attach": "Attach image",
+  "pi.attachAria": "Attach image",
+  "pi.attachRemove": "Remove attachment",
+  "pi.tool.read": "Read",
+  "pi.tool.ls": "List",
+  "pi.tool.grep": "Grep",
+  "pi.tool.find": "Find",
+  "pi.tool.firecrawlSearch": "Firecrawl Search",
+  "pi.tool.firecrawlScrape": "Firecrawl Scrape",
 } as const;

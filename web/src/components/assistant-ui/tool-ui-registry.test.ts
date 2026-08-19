@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { lineDiff } from "./tool-ui-registry";
+import {
+  FirecrawlSearchToolUI,
+  FirecrawlScrapeToolUI,
+  getToolRenderer,
+  lineDiff,
+} from "./tool-ui-registry";
 
 describe("lineDiff", () => {
   test("identical strings produce only same lines", () => {
@@ -50,5 +55,24 @@ describe("lineDiff", () => {
   test("both empty yields no diff lines", () => {
     const out = lineDiff("", "");
     expect(out).toEqual([]);
+  });
+});
+
+describe("pi tool renderer registry", () => {
+  test("firecrawl tools resolve to dedicated renderers, not GenericToolUI", () => {
+    expect(getToolRenderer("firecrawl_search")).toBe(FirecrawlSearchToolUI);
+    expect(getToolRenderer("firecrawl_scrape")).toBe(FirecrawlScrapeToolUI);
+  });
+
+  test("pi built-in lowercase tools resolve to non-generic renderers", () => {
+    for (const name of ["read", "ls", "grep", "find"]) {
+      expect(getToolRenderer(name)).not.toBe(getToolRenderer("unknown_tool"));
+    }
+  });
+
+  test("unknown tool still falls back to GenericToolUI", () => {
+    const generic = getToolRenderer("definitely_not_a_tool");
+    const generic2 = getToolRenderer("generic_tool");
+    expect(generic).toBe(generic2);
   });
 });
