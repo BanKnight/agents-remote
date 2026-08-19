@@ -42,6 +42,20 @@ describe("toPiEventFrame", () => {
       { type: "text", text: "delta text" },
     ]);
     expect(frame.event.usage).toEqual(usageStub);
+    // web pi-adapter 靠 event.message 做尾部替换（applyPiFrame message_update 读 role）。
+    // 剥 partial 不应连 message 一起剥——丢了渲染数据客户端读 role 会崩。
+    expect(frame.event.message).toEqual({ ...message(), usage: usageStub });
+  });
+
+  test("message_update 保留 message 字段（含 role）——web 渲染链契约", () => {
+    const event = {
+      type: "message_update",
+      message: message("assistant"),
+      assistantMessageEvent: deltaEvent("delta text", true),
+    } as unknown as AgentSessionEvent;
+    const frame = toPiEventFrame(event);
+    expect(frame.event.message).toEqual(message("assistant"));
+    expect((frame.event.message as { role?: string }).role).toBe("assistant");
   });
 
   test("message_update 无 partial 时原样透传（不剥不换）", () => {

@@ -20,19 +20,18 @@ export function toPiEventShape(event: AgentSessionEvent): PiNativeEventShape {
     // turn/agent/agent_settled/tool_execution/compaction/queue_update 等原样透传。
     return event as unknown as PiNativeEventShape;
   }
-  // 与 toJsonEvent 同语义：message_update 剥离 assistantMessageEvent.partial，保留 usage。
+  // 与 toJsonEvent 同语义：message_update 剥离 assistantMessageEvent.partial（累计完整
+  // 快照的冗余拷贝，体量最大）。**message 字段保留**——它是完整累计消息（含 role/content），
+  // web pi-adapter 靠它做尾部替换渲染（applyPiFrame message_update 分支读 event.message）。
+  // 剥离 partial 已达成带宽目标；连 message 一起剥会让客户端无渲染数据、读 role 崩。
   const assistant = event.assistantMessageEvent as Record<string, unknown>;
-  if (!("partial" in assistant)) {
-    return {
-      type: "message_update",
-      usage: (event.message as { usage?: unknown }).usage,
-      assistantMessageEvent: assistant,
-    } as unknown as PiNativeEventShape;
+  const delta = "partial" in assistant ? { ...assistant } : assistant;
+  if ("partial" in delta) {
+    delete (delta as Record<string, unknown>).partial;
   }
-  const delta = { ...assistant };
-  delete delta.partial;
   return {
     type: "message_update",
+    message: event.message,
     usage: (event.message as { usage?: unknown }).usage,
     assistantMessageEvent: delta,
   } as unknown as PiNativeEventShape;
