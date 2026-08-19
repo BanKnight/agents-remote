@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   AssistantRuntimeProvider,
@@ -7,7 +7,7 @@ import {
   useAuiState,
   useComposerRuntime,
 } from "@assistant-ui/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getChatSession } from "../api/client";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
@@ -37,6 +37,7 @@ import type { RetryInfo } from "./claude-adapter";
 export function ChatSessionDetailRoute() {
   const { t } = useT();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { id } = useParams({ from: "/chat/$id" });
   const { data } = useQuery({
     queryKey: ["chat-sessions", id],
@@ -45,12 +46,20 @@ export function ChatSessionDetailRoute() {
   // RetryInfo 是 claude 专属（pi 无重试 UI），传 null——VirtualizedThreadContent 的
   // RetryIndicator 在 null 时 no-op。
   const retryInfo: RetryInfo | null = null;
-  const { runtime, connected, loading, onCancel } = usePiSession(id);
+  const { runtime, connected, loading, title: liveTitle, onCancel } = usePiSession(id);
 
   useComposerKeyboardAvoidance();
 
+  // LLM 标题已落盘 registry 元数据——失效列表 + detail query，列表页 displayName 同步刷新。
+  useEffect(() => {
+    if (liveTitle) {
+      void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+    }
+  }, [liveTitle, queryClient]);
+
   const backToList = () => void navigate({ to: "/projects", search: { mode: "chat" } });
-  const title = data?.session.displayName ?? id;
+  // live 期 chat_title 帧优先（最新）；重连/重启后从元数据 displayName 读。
+  const title = liveTitle ?? data?.session.displayName ?? id;
 
   return (
     <main className="flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-surface pt-[var(--shell-safe-area-top)] text-on-surface">

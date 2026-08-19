@@ -22,6 +22,12 @@ import type { SettingsStore } from "./settings-store";
 // 决策 8：只读 tools allowlist（禁写工具/扩展工具）。chat 会话只做问答与读取，不 mutate cwd。
 const PI_TOOLS_ALLOWLIST = ["read", "grep", "find", "ls"];
 
+// LLM 标题生成：输入截断 + 输出清洗上限（中文导向提示词，16 字要求 + 30 字硬上限兜底）。
+const TITLE_INPUT_MAX_CHARS = 2_000;
+const TITLE_MAX_CHARS = 30;
+const TITLE_SYSTEM_PROMPT =
+  "用不超过 16 个字概括这段对话的主题，只输出标题本身：不要引号、不要标点结尾、不要任何解释。";
+
 // 自定义兼容端点缺省线协议（preset.api 未配时）。OpenAI 兼容端点最通用。
 const DEFAULT_PI_API: PiProviderApi = "openai-completions";
 
@@ -42,6 +48,29 @@ function buildPiProviderModel(preset: PiPreset) {
     contextWindow: 128_000,
     maxTokens: 16_384,
   };
+}
+
+/** pi user message 的 text 提取（string content 或 text block join——与 web userMessageText 同义）。 */
+function extractPiUserText(message: { content?: unknown }): string {
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((c): c is { type: "text"; text: string } => (c as { type?: string })?.type === "text")
+    .map((c) => c.text)
+    .join("\n");
+}
+
+/** LLM 标题输出清洗：trim、去首尾引号、单行化、截断。空结果返回 null（放弃，保持默认名）。 */
+export function sanitizeChatTitle(raw: string): string | null {
+  const cleaned = raw
+    .trim()
+    .replace(/^["'「『]+/, "")
+    .replace(/["'」』]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length === 0) return null;
+  return cleaned.slice(0, TITLE_MAX_CHARS);
 }
 
 /** pi runtime 未配置（设置 → runtimes.pi 无激活 preset 或激活 preset 不完整）。
@@ -74,6 +103,9 @@ type PiSessionEntry = {
   session: AgentSession;
   relay: PiSessionRelay;
   unsubscribe: () => void;
+  /** 标题生成复用的模型句柄（与 session 同凭证链——apiKey 内存覆盖已 set）。 */
+  modelRuntime: ModelRuntime;
+  model: ReturnType<ModelRuntime["getModel"]>;
 };
 
 export type PiRuntimeOptions = {
@@ -119,8 +151,13 @@ export class PiRuntime {
   private readonly sending = new Set<string>();
   /** 已 backfill piSessionId 的 chatId（值稳定，只写一次，防事件风暴刷磁盘）。 */
   private readonly backfilled = new Set<string>();
+  /** 已生成过标题的 chatId（一次性语义：失败也标记，防重复消耗 LLM 调用）。 */
+  private readonly titledChats = new Set<string>();
+  /** 首条 user 消息文本（标题生成输入），per chatId。 */
+  private readonly firstUserText = new Map<string, string>();
   private onPiSessionId?: (chatId: string, piSessionId: string) => void;
   private onActivity?: (chatId: string) => void;
+  private onTitle?: (chatId: string, title: string) => void;
 
   constructor(options: PiRuntimeOptions) {
     this.settingsStore = options.settingsStore;
@@ -139,6 +176,11 @@ export class PiRuntime {
   /** 镜像 claude setOnActivity：活跃时间戳回调（接 registry.recordActivityChat）。 */
   setOnActivity(callback: (chatId: string) => void): void {
     this.onActivity = callback;
+  }
+
+  /** LLM 标题生成回调（接 registry.setChatTitle，默认名守卫在接线处）。 */
+  setOnTitle(callback: (chatId: string, title: string) => void): void {
+    this.onTitle = callback;
   }
 
   /**
@@ -226,7 +268,7 @@ export class PiRuntime {
     relay.loadHistory(historyLines);
     relay.setResume(historyLines.length > 0);
     const unsubscribe = session.subscribe((event) => this.handlePiEvent(chatId, relay, event));
-    this.sessions.set(chatId, { session, relay, unsubscribe });
+    this.sessions.set(chatId, { session, relay, unsubscribe, modelRuntime, model });
     this.backfillPiSessionId(chatId, session);
   }
 
@@ -287,6 +329,8 @@ export class PiRuntime {
     this.pendingQueues.delete(chatId);
     this.sending.delete(chatId);
     this.backfilled.delete(chatId);
+    this.titledChats.delete(chatId);
+    this.firstUserText.delete(chatId);
     try {
       entry.unsubscribe();
     } catch {
@@ -307,11 +351,22 @@ export class PiRuntime {
 
   private handlePiEvent(chatId: string, relay: PiSessionRelay, event: AgentSessionEvent): void {
     relay.appendAndBroadcast(JSON.stringify(toPiEventFrame(event)));
+    if (event.type === "message_start") {
+      const message = (event as { message?: { role?: string; content?: unknown } }).message;
+      if (message?.role === "user" && !this.firstUserText.has(chatId)) {
+        this.firstUserText.set(chatId, extractPiUserText(message).slice(0, TITLE_INPUT_MAX_CHARS));
+      }
+    }
     if (isTerminalPiEvent(event)) {
       // agent_settled 时 isStreaming 已为 false（pi finally 先置 false 再 emit）——可安全 flush。
       relay.broadcastOnly(JSON.stringify({ type: "ended" }));
       this.sending.delete(chatId);
       this.flushQueue(chatId);
+      // 首个 turn 结束 → 一次性生成 LLM 标题（异步不阻塞 ended 帧；失败也标记一次性）。
+      if (this.firstUserText.has(chatId) && !this.titledChats.has(chatId)) {
+        this.titledChats.add(chatId);
+        void this.generateTitle(chatId);
+      }
     }
     this.onActivity?.(chatId);
   }
@@ -344,6 +399,39 @@ export class PiRuntime {
       this.flushQueue(chatId);
     }
     entry.relay.reportError(message);
+  }
+
+  /**
+   * 一次性 LLM 标题生成（agent_settled 后 fire）：completeSimple 独立 completion——不进
+   * AgentSession、不写会话 JSONL、无 tools。成功 → relay 广播 chat_title 帧（live buffer，
+   * reconnect 可见）+ onTitle 回调（registry 落盘，默认名守卫在接线处）。失败静默 warn。
+   */
+  private async generateTitle(chatId: string): Promise<void> {
+    const text = this.firstUserText.get(chatId);
+    const entry = this.sessions.get(chatId);
+    if (!text || !entry?.model) return;
+    try {
+      const result = await entry.modelRuntime.completeSimple(entry.model, {
+        systemPrompt: TITLE_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: text, timestamp: Date.now() }],
+      });
+      const raw =
+        typeof result.content === "string"
+          ? result.content
+          : Array.isArray(result.content)
+            ? result.content
+                .filter((c) => (c as { type?: string })?.type === "text")
+                .map((c) => (c as { text?: string }).text ?? "")
+                .join("")
+            : "";
+      const title = sanitizeChatTitle(raw);
+      if (!title) return;
+      entry.relay.appendAndBroadcast(JSON.stringify({ type: "chat_title", title }));
+      this.onTitle?.(chatId, title);
+    } catch (error) {
+      // 失败静默（标题保持默认名）；titledChats 已标记，不重复消耗 LLM 调用。
+      console.warn(`[pi-runtime] chat title generation failed: ${chatId}`, error);
+    }
   }
 
   private backfillPiSessionId(chatId: string, session: AgentSession): void {

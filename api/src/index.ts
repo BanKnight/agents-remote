@@ -35,7 +35,7 @@ import { join, resolve } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
-import { ChatSessionRegistry } from "./chat-session-registry";
+import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
 import { PiRuntime } from "./pi-runtime";
 import { handlePiStreamUpgrade, PiStreamController } from "./pi-stream";
@@ -1151,6 +1151,15 @@ export const startApi = async () => {
   });
   piRuntime.setOnActivity((chatId) => {
     void chatSessionRegistry.recordActivityChat(chatId);
+  });
+  // LLM 标题落盘（首条 user 消息后一次性生成）：默认名守卫——用户手动改名的会话不覆盖。
+  piRuntime.setOnTitle((chatId, title) => {
+    void (async () => {
+      const session = await chatSessionRegistry.getChatSession(chatId);
+      if (session && session.displayName === DEFAULT_CHAT_TITLE) {
+        chatSessionRegistry.setChatTitle(chatId, title);
+      }
+    })();
   });
   // closeChatSession → 销毁进程内 AgentSession + 清理 pi JSONL。hook 失败仅 warn，不阻塞元数据清理。
   chatSessionRegistry.setCloseHook(async (chatId) => {

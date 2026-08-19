@@ -180,6 +180,28 @@ test("setPiSessionId: 空值 / 不存在会话 → no-op", async () => {
   expect(await registry.getChatSession("chat_nope")).toBeUndefined();
 });
 
+test("setChatTitle: 落盘 round-trip + 幂等 + no-op 边界", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_title" });
+  await registry.createChatSession();
+  expect((await registry.getChatSession("chat_title"))?.displayName).toBe("新对话");
+
+  registry.setChatTitle("chat_title", "问候测试");
+  expect((await registry.getChatSession("chat_title"))?.displayName).toBe("问候测试");
+  // 等 fire-and-forget 写盘落定
+  await new Promise((r) => setTimeout(r, 20));
+  const raw = await readFile(join(dir, "chat_title.json"), "utf8");
+  expect(JSON.parse(raw).displayName).toBe("问候测试");
+
+  // 幂等：同值不重复写
+  registry.setChatTitle("chat_title", "问候测试");
+  expect((await registry.getChatSession("chat_title"))?.displayName).toBe("问候测试");
+
+  // 边界：空标题 / 不存在会话 → no-op
+  registry.setChatTitle("chat_title", "");
+  registry.setChatTitle("chat_nope", "x");
+  expect((await registry.getChatSession("chat_title"))?.displayName).toBe("问候测试");
+});
+
 test("recordActivityChat: 整分钟截断 + 同分钟短路", async () => {
   const base = new Date("2026-08-18T00:00:00.000Z");
   const t1 = new Date("2026-08-18T00:00:30.000Z"); // 同分钟

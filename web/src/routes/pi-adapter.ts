@@ -181,6 +181,16 @@ export function applyPiFrame(raw: PiRawItem[], msg: PiStreamServerMessage): PiRa
       case "message_update":
       case "message_end": {
         const message = event.message as unknown as PiMessage;
+        // user 消息：start 即终态（echo 文本对齐确认 或 message 条目 final:true）。
+        // end 只是流式终态标记——echo + message_start + message_end 三帧都代表同一条
+        // user 消息，若尾部已有其表示则幂等保持，否则追加（无 echo 的 server 侧消息）。
+        // 之前无条件追加导致 message_end{user} 在已确认的 echo 之后又插一条 → 双气泡。
+        if (message.role === "user") {
+          const tail = raw[raw.length - 1];
+          const tailIsUser =
+            tail?.kind === "echo" || (tail?.kind === "message" && tail.message.role === "user");
+          if (tailIsUser) return raw;
+        }
         // 替换尾部同名消息（streaming 累积 → 终态）。仅 assistant 走累积更新——
         // user/toolResult 不流式（start 即终态），连续多条 toolResult 不能互相覆盖。
         if (message.role === "assistant" && raw.length > 0) {
@@ -216,6 +226,9 @@ export function usePiSession(chatId: string) {
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
+  // LLM 标题（chat_title 帧，live 期推送）。null = 未生成——持久标题由 detail useQuery 的
+  // displayName 提供（重启后标题只在 registry 元数据里）。
+  const [title, setTitle] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const lastPongRef = useRef(0);
   const [connectionVersion, setConnectionVersion] = useState(0);
@@ -286,6 +299,11 @@ export function usePiSession(chatId: string) {
       setRawMessages([]);
       setLoading(true);
       setStreamError(null);
+      setTitle(null);
+      return;
+    }
+    if (msg.type === "chat_title") {
+      setTitle(msg.title);
       return;
     }
     if (msg.type === "history_start" || msg.type === "live_start") return;
@@ -504,6 +522,7 @@ export function usePiSession(chatId: string) {
     connected,
     loading,
     streamError,
+    title,
     onCancel,
   };
 }

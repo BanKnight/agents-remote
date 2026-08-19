@@ -995,9 +995,16 @@ export type PiUserEchoFrame = {
   uuid: string;
 };
 
+export type PiChatTitleFrame = {
+  type: "chat_title";
+  /** LLM 生成的会话标题（首条 user 消息后一次性生成）。走 relay live buffer，reconnect 可见；持久化在 registry 元数据 displayName。 */
+  title: string;
+};
+
 export type PiStreamServerMessage =
   | PiEventFrame
   | PiUserEchoFrame
+  | PiChatTitleFrame
   | {
       type: "error";
       code: ApiErrorCode;

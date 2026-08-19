@@ -3,6 +3,9 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChatSession, ChatSessionStatus } from "@agents-remote/shared";
 
+/** 默认会话名（createChatSession 空名回退 + LLM 标题接线守卫「仅默认名才覆盖」共用）。 */
+export const DEFAULT_CHAT_TITLE = "新对话";
+
 /**
  * ChatSessionRegistry —— 全局 chat 会话元数据持久化（设计 docs/design/workbench-views.md §3.1）。
  *
@@ -143,6 +146,21 @@ export class ChatSessionRegistry {
   }
 
   /**
+   * LLM 标题落盘（首条 user 消息后一次性生成）：幂等——值不变短路。**默认名守卫在调用方**
+   * （index.ts onTitle 接线）——用户手动改名的会话不被覆盖。
+   */
+  setChatTitle(id: string, title: string): void {
+    if (!title) return;
+    const session = this.index.get(id);
+    if (!session || session.displayName === title) return;
+    const updated: ChatSession = { ...session, displayName: title };
+    this.index.set(id, updated);
+    void this.writeMetadata(updated).catch((error) => {
+      console.warn(`[chat-sessions] setChatTitle write failed: ${id}`, error);
+    });
+  }
+
+  /**
    * 活跃时间戳刷新（pi 事件流每帧触发，镜像 SessionRegistry.recordActivity）：updatedAt 按整分钟
    * 截断，同分钟短路不写盘，防事件风暴刷磁盘。
    */
@@ -161,7 +179,7 @@ export class ChatSessionRegistry {
 
   private resolveDisplayName(displayName: string | undefined): string {
     const trimmed = displayName?.trim();
-    return trimmed && trimmed.length > 0 ? trimmed : "新对话";
+    return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_CHAT_TITLE;
   }
 
   private async writeMetadata(session: ChatSession): Promise<void> {

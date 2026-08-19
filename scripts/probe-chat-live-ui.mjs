@@ -56,8 +56,9 @@ async function run() {
     await login(page);
 
     // ── 创建 chat + 进 detail ──
+    // 不传 displayName——走默认名「新对话」，LLM 标题落盘守卫（仅默认名可覆盖）才能真实走通。
     const createRes = await page.request.post(`${WEB_ORIGIN}/api/chat-sessions`, {
-      data: { displayName: "chat-live-ui probe" },
+      data: {},
     });
     const { session } = await createRes.json();
     const chatId = session.id;
@@ -80,6 +81,18 @@ async function run() {
 
     // ── 等 assistant 气泡 ──
     await page.waitForTimeout(15000);
+
+    // ── 等 LLM 标题生成（turn 结束后 completeSimple 异步调用，真实 LLM 有几秒延迟）──
+    let titleFrame = null;
+    for (let i = 0; i < 30; i++) {
+      titleFrame = wsRaw.find((f) => f.dir === "recv" && f.text.includes('"chat_title"'));
+      if (titleFrame) break;
+      await page.waitForTimeout(1000);
+    }
+    let headerTitle = "";
+    try {
+      headerTitle = await page.locator("header span.truncate").first().textContent();
+    } catch {}
 
     // user 气泡：echo 确认（乐观 user 气泡出现即渲染链路活了）。
     const userBubbles = await page.getByText(prompt).count();
@@ -138,6 +151,30 @@ async function run() {
       pageText,
     );
     check(hasAssistantText, "assistant 气泡渲染（含回复文本）", pageText.slice(0, 120));
+
+    // ── LLM 智能标题（首条消息后一次性生成）──
+    check(
+      !!titleFrame,
+      "WS recv chat_title 帧",
+      titleFrame ? titleFrame.text.slice(0, 80) : "未收到",
+    );
+    check(
+      !!headerTitle && headerTitle !== "新对话",
+      "header 标题更新（非默认名）",
+      `title="${headerTitle ?? ""}"`,
+    );
+    // 持久化：registry 元数据 displayName 已落盘（关闭前查 API）。
+    let persistedName = "";
+    try {
+      const detailRes = await page.request.get(`${WEB_ORIGIN}/api/chat-sessions/${chatId}`);
+      const body = await detailRes.json();
+      persistedName = body?.session?.displayName ?? "";
+    } catch {}
+    check(
+      persistedName === headerTitle,
+      "标题已落盘 registry 元数据",
+      `displayName="${persistedName}"`,
+    );
 
     // WS 帧摘要（诊断：echo/pi_event 是否到达浏览器）。
     const sent = wsRaw.filter((f) => f.dir === "sent" && f.text.includes('"user"'));

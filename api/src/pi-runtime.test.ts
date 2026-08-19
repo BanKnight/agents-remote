@@ -101,19 +101,26 @@ function makeCreateSession(stub: ReturnType<typeof makeStubSession>) {
   };
 }
 
-function makeCreateModelRuntime(provider: string, model: string, hasConfiguredAuth = false) {
+function makeCreateModelRuntime(
+  provider: string,
+  model: string,
+  hasConfiguredAuth = false,
+  completeSimpleResult?: string,
+) {
   const calls: {
     options: unknown;
     setKey: [string, string][];
     getModel: [string, string][];
     registerProvider: [string, unknown][];
     hasConfiguredAuth: [string][];
+    completeSimple: { systemPrompt?: string; userText: string }[];
   } = {
     options: undefined,
     setKey: [],
     getModel: [],
     registerProvider: [],
     hasConfiguredAuth: [],
+    completeSimple: [],
   };
   return {
     calls,
@@ -133,6 +140,20 @@ function makeCreateModelRuntime(provider: string, model: string, hasConfiguredAu
         getModel: (p: string, m: string) => {
           calls.getModel.push([p, m]);
           return p === provider && m === model ? { id: m, provider: p } : undefined;
+        },
+        completeSimple: async (
+          _model: unknown,
+          context: { systemPrompt?: string; messages: { role: string; content: string }[] },
+        ) => {
+          calls.completeSimple.push({
+            systemPrompt: context.systemPrompt,
+            userText: context.messages[0]?.content ?? "",
+          });
+          return {
+            role: "assistant",
+            content: [{ type: "text", text: completeSimpleResult ?? "测试标题" }],
+            timestamp: 0,
+          };
         },
       } as unknown as ModelRuntime;
     },
@@ -186,6 +207,7 @@ function makeRuntime(opts: {
   createSession?: (options: CreateAgentSessionOptions) => Promise<{ session: AgentSession }>;
   onPiSessionId?: (chatId: string, piSessionId: string) => void;
   onActivity?: (chatId: string) => void;
+  onTitle?: (chatId: string, title: string) => void;
 }) {
   const runtime = new PiRuntime({
     settingsStore: makeSettingsStore(opts.pi),
@@ -197,6 +219,7 @@ function makeRuntime(opts: {
   });
   if (opts.onPiSessionId) runtime.setOnPiSessionId(opts.onPiSessionId);
   if (opts.onActivity) runtime.setOnActivity(opts.onActivity);
+  if (opts.onTitle) runtime.setOnTitle(opts.onTitle);
   return runtime;
 }
 
@@ -217,6 +240,7 @@ const piEventFrames = (frames: PiEventLike[]) =>
     (f) =>
       f.type === "pi_event" ||
       f.type === "pi_user_echo" ||
+      f.type === "chat_title" ||
       f.type === "ended" ||
       f.type === "error",
   );
@@ -762,5 +786,174 @@ describe("PiRuntime 生命周期", () => {
     await runtime.ensureRunning("c1");
     stub.emit({ type: "agent_start" });
     expect(activities).toEqual(["c1"]);
+  });
+});
+
+describe("PiRuntime LLM 标题生成", () => {
+  test("首条 user 消息 + agent_settled → completeSimple 调用 + chat_title 广播 + onTitle 回调", async () => {
+    const stub = makeStubSession();
+    const modelRuntime = makeCreateModelRuntime(
+      PI_CFG.presets[0].provider,
+      PI_CFG.presets[0].model,
+      false,
+      "「问候测试」", // 带引号——验证清洗
+    );
+    const titles: [string, string][] = [];
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: modelRuntime.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+      onTitle: (chatId, title) => titles.push([chatId, title]),
+    });
+    await runtime.ensureRunning("c1");
+    const { frames } = collectStream(runtime, "c1");
+
+    stub.emit({
+      type: "message_start",
+      message: { role: "user", content: "你好，帮我测试", timestamp: 1 },
+    });
+    stub.emit({
+      type: "message_end",
+      message: { role: "user", content: "你好，帮我测试", timestamp: 1 },
+    });
+    stub.emit({ type: "agent_settled" });
+    // generateTitle 异步——等微任务排空。
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(modelRuntime.calls.completeSimple).toHaveLength(1);
+    expect(modelRuntime.calls.completeSimple[0].userText).toBe("你好，帮我测试");
+    expect(modelRuntime.calls.completeSimple[0].systemPrompt).toContain("16 个字");
+    // 引号被清洗。
+    const titleFrames = frames.filter((f) => f.type === "chat_title");
+    expect(titleFrames).toEqual([{ type: "chat_title", title: "问候测试" }]);
+    expect(titles).toEqual([["c1", "问候测试"]]);
+  });
+
+  test("一次性：第二个 turn 的 agent_settled 不再触发 completeSimple", async () => {
+    const stub = makeStubSession();
+    const modelRuntime = makeCreateModelRuntime(
+      PI_CFG.presets[0].provider,
+      PI_CFG.presets[0].model,
+    );
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: modelRuntime.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+
+    stub.emit({
+      type: "message_start",
+      message: { role: "user", content: "第一条", timestamp: 1 },
+    });
+    stub.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 第二轮：首条文本已记录（firstUserText.has 命中），titledChats 已标记 → 不再触发。
+    stub.emit({
+      type: "message_start",
+      message: { role: "user", content: "第二条", timestamp: 2 },
+    });
+    stub.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(modelRuntime.calls.completeSimple).toHaveLength(1);
+    expect(modelRuntime.calls.completeSimple[0].userText).toBe("第一条");
+  });
+
+  test("无 user 消息的 settled（如 resume 续跑）不触发标题生成", async () => {
+    const stub = makeStubSession();
+    const modelRuntime = makeCreateModelRuntime(
+      PI_CFG.presets[0].provider,
+      PI_CFG.presets[0].model,
+    );
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: modelRuntime.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+
+    stub.emit({ type: "agent_start" });
+    stub.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(modelRuntime.calls.completeSimple).toHaveLength(0);
+  });
+
+  test("completeSimple 抛错 → 静默（无 chat_title 帧、无 throw），一次性语义保持", async () => {
+    const stub = makeStubSession();
+    const modelRuntime = makeCreateModelRuntime(
+      PI_CFG.presets[0].provider,
+      PI_CFG.presets[0].model,
+    );
+    // 覆盖 completeSimple 为抛错。
+    const factory = modelRuntime.factory;
+    const failingFactory = async (options: unknown) => {
+      const mr = (await factory(options)) as unknown as Record<string, unknown>;
+      mr.completeSimple = async () => {
+        throw new Error("LLM down");
+      };
+      return mr;
+    };
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: failingFactory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    const { frames } = collectStream(runtime, "c1");
+
+    stub.emit({
+      type: "message_start",
+      message: { role: "user", content: "hello", timestamp: 1 },
+    });
+    stub.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(frames.filter((f) => f.type === "chat_title")).toHaveLength(0);
+    // 二次 settled 仍不重试（失败也标记）。
+    stub.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
+  test("close 后 titledChats/firstUserText 清理——重新 ensureRunning 可再生标题", async () => {
+    const stub = makeStubSession();
+    const modelRuntime = makeCreateModelRuntime(
+      PI_CFG.presets[0].provider,
+      PI_CFG.presets[0].model,
+    );
+    const titles: [string, string][] = [];
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: modelRuntime.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+      onTitle: (chatId, title) => titles.push([chatId, title]),
+    });
+    await runtime.ensureRunning("c1");
+    stub.emit({
+      type: "message_start",
+      message: { role: "user", content: "hi", timestamp: 1 },
+    });
+    stub.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(titles).toHaveLength(1);
+
+    await runtime.close("c1");
+    // 重新拉起（新 entry）→ 首条 user 消息再次生成。
+    const stub2 = makeStubSession();
+    const runtime2 = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: modelRuntime.factory as never,
+      createSession: makeCreateSession(stub2).factory as never,
+    });
+    await runtime2.ensureRunning("c1");
+    stub2.emit({
+      type: "message_start",
+      message: { role: "user", content: "again", timestamp: 1 },
+    });
+    stub2.emit({ type: "agent_settled" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(modelRuntime.calls.completeSimple).toHaveLength(2);
   });
 });

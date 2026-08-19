@@ -58,6 +58,26 @@ describe("applyPiFrame", () => {
     expect(raw[0]).toMatchObject({ kind: "message", message: { role: "user" } });
   });
 
+  test("echo + message_start + message_end{user} 全流 → 仍 1 条 user 表示（不双气泡）", () => {
+    let raw = reduce([
+      echo("hi", "u1"),
+      piEvent({ type: "message_start", message: userMsg("hi") }),
+    ]);
+    expect(raw).toHaveLength(1);
+    raw = applyPiFrame(raw, piEvent({ type: "message_end", message: userMsg("hi") }));
+    // message_end{user} 幂等：已确认 echo 后不再追加——否则渲染出两条 user 气泡。
+    expect(raw).toHaveLength(1);
+    expect(raw[0]).toMatchObject({ kind: "echo", confirmed: true });
+    expect(piFramesToThreadMessages(raw)).toHaveLength(1);
+  });
+
+  test("message_end{user} 尾部是未确认 echo（start 未到）→ 幂等保持不追加", () => {
+    let raw = applyPiFrame([], echo("hi", "m1"));
+    raw = applyPiFrame(raw, piEvent({ type: "message_end", message: userMsg("hi") }));
+    expect(raw).toHaveLength(1);
+    expect(raw[0]).toMatchObject({ kind: "echo", confirmed: false });
+  });
+
   test("assistant message_start → update → end：尾部替换累积（单条目终态）", () => {
     let raw = applyPiFrame(
       [],
