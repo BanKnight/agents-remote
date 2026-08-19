@@ -231,7 +231,7 @@ export function toMaskedPiPreset(preset: PiPreset): PiPresetMasked {
     model: preset.model,
     ...(preset.baseUrl === undefined ? {} : { baseUrl: preset.baseUrl }),
     ...(preset.api === undefined ? {} : { api: preset.api }),
-    apiKeyMasked: maskApiKey(preset.apiKey),
+    apiKeyMasked: maskApiKey(preset.apiKey ?? ""),
     hasApiKey: Boolean(preset.apiKey),
   };
 }
@@ -294,7 +294,7 @@ const isPiPreset = (value: unknown): value is PiPreset =>
   typeof (value as PiPreset).id === "string" &&
   typeof (value as PiPreset).label === "string" &&
   typeof (value as PiPreset).provider === "string" &&
-  typeof (value as PiPreset).apiKey === "string" &&
+  ((value as PiPreset).apiKey === undefined || typeof (value as PiPreset).apiKey === "string") &&
   typeof (value as PiPreset).model === "string";
 
 const normalizePiPreset = (parsed: PiPreset): PiPreset => {
@@ -302,9 +302,10 @@ const normalizePiPreset = (parsed: PiPreset): PiPreset => {
     id: parsed.id,
     label: parsed.label,
     provider: parsed.provider,
-    apiKey: parsed.apiKey,
     model: parsed.model,
   };
+  // apiKey 可选：非空才写入（空/缺省 = 走 SDK 凭证链 auth.json/env）。
+  if (typeof parsed.apiKey === "string" && parsed.apiKey) preset.apiKey = parsed.apiKey;
   if (typeof parsed.baseUrl === "string" && parsed.baseUrl) preset.baseUrl = parsed.baseUrl;
   // api 无 baseUrl 无意义，丢弃（线协议只对自定义端点有效）。
   if (isPiProviderApi(parsed.api) && preset.baseUrl) preset.api = parsed.api;

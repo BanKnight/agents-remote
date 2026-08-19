@@ -101,17 +101,19 @@ function makeCreateSession(stub: ReturnType<typeof makeStubSession>) {
   };
 }
 
-function makeCreateModelRuntime(provider: string, model: string) {
+function makeCreateModelRuntime(provider: string, model: string, hasConfiguredAuth = false) {
   const calls: {
     options: unknown;
     setKey: [string, string][];
     getModel: [string, string][];
     registerProvider: [string, unknown][];
+    hasConfiguredAuth: [string][];
   } = {
     options: undefined,
     setKey: [],
     getModel: [],
     registerProvider: [],
+    hasConfiguredAuth: [],
   };
   return {
     calls,
@@ -123,6 +125,10 @@ function makeCreateModelRuntime(provider: string, model: string) {
         },
         setRuntimeApiKey: async (p: string, k: string) => {
           calls.setKey.push([p, k]);
+        },
+        hasConfiguredAuth: (p: string) => {
+          calls.hasConfiguredAuth.push([p]);
+          return hasConfiguredAuth;
         },
         getModel: (p: string, m: string) => {
           calls.getModel.push([p, m]);
@@ -169,7 +175,7 @@ function makeRuntime(opts: {
       id: string;
       label: string;
       provider: string;
-      apiKey: string;
+      apiKey?: string;
       model: string;
       baseUrl?: string;
       api?: string;
@@ -282,14 +288,59 @@ describe("PiRuntime.ensureRunning", () => {
     }
   });
 
-  test("activePresetId 命中但 preset 字段缺失（无 apiKey）→ PiNotConfiguredError", async () => {
+  test("apiKey 空 + 无已存凭证 + 无 baseUrl → PiNotConfiguredError（凭证链快速失败）", async () => {
+    const cr = makeCreateModelRuntime("anthropic", "m1", false);
     const runtime = makeRuntime({
       pi: {
         presets: [{ id: "p1", label: "A", provider: "anthropic", apiKey: "", model: "m1" }],
         activePresetId: "p1",
       },
+      createModelRuntime: cr.factory as never,
     });
     await expect(runtime.ensureRunning("c1")).rejects.toThrow(PiNotConfiguredError);
+    expect(cr.calls.hasConfiguredAuth).toEqual([["anthropic"]]);
+    expect(cr.calls.setKey).toEqual([]);
+  });
+
+  test("apiKey 空 + 已存凭证（hasConfiguredAuth true）→ 放行，不调 setRuntimeApiKey", async () => {
+    const cr = makeCreateModelRuntime("anthropic", "m1", true);
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: {
+        presets: [{ id: "p1", label: "A", provider: "anthropic", apiKey: "", model: "m1" }],
+        activePresetId: "p1",
+      },
+      createModelRuntime: cr.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    expect(cr.calls.hasConfiguredAuth).toEqual([["anthropic"]]);
+    expect(cr.calls.setKey).toEqual([]);
+  });
+
+  test("apiKey 空 + baseUrl 非空 → 放行（keyless 本地端点），不调 setRuntimeApiKey", async () => {
+    const cr = makeCreateModelRuntime("ollama", "llama3.1:8b", false);
+    const stub = makeStubSession();
+    const runtime = makeRuntime({
+      pi: {
+        presets: [
+          {
+            id: "p1",
+            label: "Ollama",
+            provider: "ollama",
+            apiKey: "",
+            model: "llama3.1:8b",
+            baseUrl: "http://localhost:11434/v1",
+          },
+        ],
+        activePresetId: "p1",
+      },
+      createModelRuntime: cr.factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    expect(cr.calls.hasConfiguredAuth).toEqual([]);
+    expect(cr.calls.setKey).toEqual([]);
   });
 
   test("baseUrl 非空 → registerProvider 精确参数（api 缺省 openai-completions + model 默认值）", async () => {

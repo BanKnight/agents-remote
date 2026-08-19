@@ -254,7 +254,8 @@ export const handleSettingsRoutes = async (
     return Response.json(response);
   }
 
-  // POST /api/settings/runtimes/pi/presets —— 新建 preset。label/provider/apiKey/model 必填；
+  // POST /api/settings/runtimes/pi/presets —— 新建 preset。label/provider/model 必填；
+  // apiKey 可选（空 = 走 SDK 凭证链 auth.json/env，OAuth/keyless 端点合法）；
   // api 仅 baseUrl 非空时有意义（自定义兼容端点），无 baseUrl 传 api → 400。
   if (url.pathname === "/api/settings/runtimes/pi/presets" && request.method === "POST") {
     const body = await readJson<CreatePiPresetRequest>(request);
@@ -265,7 +266,6 @@ export const handleSettingsRoutes = async (
     const baseUrl = body.baseUrl?.trim();
     if (!label) return jsonError("SETTINGS_INVALID", "Preset label is required", 400);
     if (!provider) return jsonError("SETTINGS_INVALID", "Preset provider is required", 400);
-    if (!apiKey) return jsonError("SETTINGS_INVALID", "Preset API key is required", 400);
     if (!model) return jsonError("SETTINGS_INVALID", "Preset model is required", 400);
     const apiError = coercePiApi(body.api, baseUrl);
     if (apiError) return jsonError("SETTINGS_INVALID", apiError, 400);
@@ -273,8 +273,8 @@ export const handleSettingsRoutes = async (
       id: randomUUID(),
       label,
       provider,
-      apiKey,
       model,
+      ...(apiKey ? { apiKey } : {}),
       ...(baseUrl ? { baseUrl } : {}),
       ...(baseUrl && body.api ? { api: body.api } : {}),
     };

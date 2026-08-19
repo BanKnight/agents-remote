@@ -2,10 +2,10 @@
 //
 // 覆盖单测（settings-dialog 无组件单测）测不到的真实浏览器行为：
 //   Radix Dialog 打开 → root view 三胶囊 → 点 Pi runtime 进 detail → Active preset 选择器
-//   （None = 停用）+ Add preset 按钮 + 无预设空态 → 打开 PiPresetDialog → 5 输入
-//   （label/provider/model/apiKey/baseUrl）+ api 下拉仅 baseUrl 非空时渲染 → 关闭 → Back 返回
-//   root。Save 落盘/重启读回/mask 已由 api 单测覆盖（settings-routes.test.ts），此处不写盘
-//   防污染真实 settings.yaml。
+//   （None = 停用）+ Add preset 按钮 + 无预设空态 → 打开 PiPresetDialog → 输入框按 provider
+//   authType 适配（api_key/both/unknown → apiKey 输入框；oauth → 提示块无输入框）+ api 下拉仅
+//   baseUrl 非空时渲染 → 关闭 → Back 返回 root。Save 落盘/重启读回/mask 已由 api 单测覆盖
+//   （settings-routes.test.ts），此处不写盘防污染真实 settings.yaml。
 //
 // locale=en-US 对齐 nav.settings / settings.section.pi 稳定文案。密码自读不打印。
 // 用法：bun scripts/probe-settings-pi-dialog.mjs
@@ -96,14 +96,14 @@ async function run() {
     // Save（activePreset 选择 Card 的 Save）。
     ok(await dialog.getByRole("button", { name: "Save" }).isVisible(), "Save 按钮");
 
-    console.log("Part 4: 打开 PiPresetDialog → 5 输入 + api 下拉随 baseUrl 出现");
+    console.log("Part 4: 打开 PiPresetDialog → 输入框按 provider authType 适配");
     await dialog.getByRole("button", { name: "Add preset" }).click();
-    // 新建态 dialog：label/provider/model/apiKey/baseUrl 5 个输入框。
+    // 新建态 dialog：label/provider/model/apiKey/baseUrl 5 个输入框（未选 provider → unknown → apiKey 渲染）。
     const inputs = dialog.locator("input");
     const count = await inputs.count();
     ok(
       count === 5,
-      `PiPresetDialog 5 个输入框（label/provider/model/apiKey/baseUrl），实际 ${count}`,
+      `PiPresetDialog 初始 5 个输入框（label/provider/model/apiKey/baseUrl），实际 ${count}`,
     );
     ok(
       await dialog.getByText("Provider", { exact: true }).first().isVisible(),
@@ -132,12 +132,45 @@ async function run() {
     ok(await dialog.getByText("Model", { exact: true }).first().isVisible(), "Model 字段 label");
     ok(
       await dialog.getByText("API key", { exact: true }).first().isVisible(),
-      "API key 字段 label",
+      "API key 字段 label（api_key 型 provider）",
     );
     ok(
       await dialog.getByText("Base URL", { exact: true }).first().isVisible(),
       "Base URL 字段 label",
     );
+    // 切到纯 OAuth provider（openai-codex）→ apiKey 输入框消失 + OAuth 提示块出现。
+    // Radix exit 动画期间旧菜单 content 仍挂载，立即点 trigger 会 toggle 关闭——先等菜单
+    // 完全消失再开新菜单。
+    await page.waitForFunction(() => !document.querySelector('[role="menuitem"]'));
+    await dialog.getByRole("button", { name: "Anthropic" }).click();
+    await page.getByRole("menuitem", { name: /OpenAI Codex/ }).waitFor({ state: "visible" });
+    await page.getByRole("menuitem", { name: /OpenAI Codex/ }).click();
+    await page.waitForFunction(
+      () => document.querySelector('input[placeholder="anthropic"]')?.value === "openai-codex",
+    );
+    ok(
+      (await dialog.locator('input[placeholder="anthropic"]').inputValue()) === "openai-codex",
+      "切到 OpenAI Codex → input 同步显示 id",
+    );
+    ok(
+      (await dialog.locator("input").count()) === 4,
+      "OAuth 型 provider → apiKey 输入框消失（剩 label/provider/model/baseUrl 4 个）",
+    );
+    ok(
+      await dialog
+        .getByText("This provider signs in via OAuth subscription.", { exact: false })
+        .isVisible(),
+      "OAuth 提示块出现（piAuthOauthHint）",
+    );
+    // 切回 Anthropic（both 型）→ apiKey 输入框回来。
+    await page.waitForFunction(() => !document.querySelector('[role="menuitem"]'));
+    await dialog.getByRole("button", { name: "OpenAI Codex" }).click();
+    await page.getByRole("menuitem", { name: /Anthropic/ }).waitFor({ state: "visible" });
+    await page.getByRole("menuitem", { name: /Anthropic/ }).click();
+    await page.waitForFunction(
+      () => document.querySelector('input[placeholder="anthropic"]')?.value === "anthropic",
+    );
+    ok((await dialog.locator("input").count()) === 5, "切回 Anthropic → apiKey 输入框回来（5 个）");
     // baseUrl 空 → api 下拉不渲染。
     ok(
       (await dialog.getByRole("button", { name: "Default (openai-completions)" }).count()) === 0,

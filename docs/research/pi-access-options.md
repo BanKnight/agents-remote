@@ -278,6 +278,23 @@ dsh SDK 仅 subprocess 形态，**不满足「无进程代价」**——这正�
 
 **建议落地分步（可单独验收）**：P1 `createAgentSession({ tools: ["read","grep","find","ls"] })` + `SessionManager` 跑通最小闭环；P2 `subscribe` 事件 → 项目消息协议翻译层；P3 接入 UI（chat 入口 + 只读消息渲染）。
 
+### 9.2 provider 认证模型实测（2026-08-19，v5 preset 认证解耦依据）
+
+**pi 的凭证模型是 provider 的全局属性，不属于任何 preset**。SDK 凭证文件 `auth.json`（本项目隔离在 `~/.agents-remote/pi-agent/auth.json`，决策 9）结构为 `Record<providerId, {type:"api_key",key} | {type:"oauth",refresh,access,expires}>`——每 provider 一份，与 preset 的 provider/model 选择正交。参考项目 **pi-agent-dashboard** 正是这个模型：认证区独立于模型选择，按 `flowType` 分「Subscriptions (OAuth) / API Keys」两组渲染。
+
+**40 个内置 provider 的 auth 分布实测**（`Provider.auth` 静态字段推导，本机验证）：
+
+| authType | 数量 | 判定 | 示例 |
+|---|---|---|---|
+| `api_key` | 33 | 有 `auth.apiKey.login`，无 oauth | openai、deepseek |
+| `both` | 6 | oauth + apiKey.login 都有 | anthropic、openrouter、xai、github-copilot、kimi-coding、radius |
+| `oauth` | 1 | 有 oauth，无 apiKey.login（**填 key 无效**） | openai-codex |
+| `unknown` | 0（内置） | 两者皆无（兜底） | 自定义 id（手填 + baseUrl，如 Ollama/vLLM 本地端点 keyless 合法） |
+
+**本项目落地（2026-08-19 commit）**：`PiProviderInfo.authType` 由 `Provider.auth` 静态推导（`oauth` 存在 → `both`/`oauth`；否则 `apiKey.login` → `api_key`；否则 `unknown`）；`preset.apiKey` 改为可选——非空 → `setRuntimeApiKey` 内存覆盖（决策 4，不落盘），空 → 回落 SDK 凭证链（隔离 auth.json → env），内置 provider 无已存凭证则快速失败（`PiNotConfiguredError`），自定义兼容端点（baseUrl 非空）放行（keyless 本地端点合法）。表单按 authType 渲染：`oauth` → 提示块（指引 `pi login` 或手动放置 auth.json），`api_key` → 新建态必填，`both`/`unknown` → 可选。
+
+**本轮不做完整 OAuth 登录流**（dashboard 式 authorize/device-code + 轮询，或直接 spawn `pi login`）——OAuth 凭证靠手动放置隔离 auth.json 或 env，hint 给指引。完整登录流留待后续决策。
+
 ## 10. 开放问题
 
 - pi 成熟度早期 + governance 未定，是否值得作为长期 provider（对冲策略）。

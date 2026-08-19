@@ -241,12 +241,11 @@ test("POST pi preset 支持自定义 baseUrl + api；api 无 baseUrl → 400", a
   expect(apiNoUrl?.status).toBe(400);
 });
 
-test("POST pi preset 缺 label/provider/apiKey/model → 400", async () => {
+test("POST pi preset 缺 label/provider/model → 400；缺 apiKey → 201（可选，走凭证链）", async () => {
   const store = await makeStore();
   const cases: Record<string, unknown>[] = [
     { provider: "anthropic", apiKey: "sk-x", model: "m1" }, // 缺 label
     { label: "A", apiKey: "sk-x", model: "m1" }, // 缺 provider
-    { label: "A", provider: "anthropic", model: "m1" }, // 缺 apiKey
     { label: "A", provider: "anthropic", apiKey: "sk-x" }, // 缺 model
   ];
   for (const body of cases) {
@@ -257,6 +256,21 @@ test("POST pi preset 缺 label/provider/apiKey/model → 400", async () => {
     );
     expect(res?.status).toBe(400);
   }
+
+  // 缺 apiKey（OAuth 订阅 / keyless 本地端点）→ 201，preset 无 apiKey 字段。
+  const res = await handleSettingsRoutes(
+    makeRequest("POST", "/api/settings/runtimes/pi/presets", {
+      label: "OAuth 订阅",
+      provider: "openai-codex",
+      model: "gpt-5",
+    }),
+    makeUrl("/api/settings/runtimes/pi/presets"),
+    store,
+  );
+  expect(res?.status).toBe(201);
+  const created = (await res?.json()) as { preset: { hasApiKey: boolean; apiKeyMasked: string } };
+  expect(created.preset.hasApiKey).toBe(false);
+  expect(created.preset.apiKeyMasked).toBe("");
 });
 
 test("PUT pi preset: apiKey 留空保留原值；baseUrl 显式空串删除（联动删 api）", async () => {

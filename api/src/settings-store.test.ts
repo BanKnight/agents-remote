@@ -191,7 +191,7 @@ test("normalizeSettings: pi presets 数组 → 过滤非法 + 规整；activePre
               baseUrl: "http://localhost:11434/v1",
               api: "openai-completions",
             },
-            { id: "p3", label: "缺 apiKey" }, // 缺字段 → 过滤
+            { id: "p3", label: "OAuth 订阅", provider: "openai-codex", model: "gpt-5" }, // 无 apiKey → 保留（走凭证链）
             { noId: true }, // 无 id → 过滤
           ],
           activePresetId: "p2",
@@ -218,6 +218,12 @@ test("normalizeSettings: pi presets 数组 → 过滤非法 + 规整；activePre
         model: "llama3.1:8b",
         baseUrl: "http://localhost:11434/v1",
         api: "openai-completions",
+      },
+      {
+        id: "p3",
+        label: "OAuth 订阅",
+        provider: "openai-codex",
+        model: "gpt-5",
       },
     ],
     activePresetId: "p2",
@@ -346,6 +352,18 @@ test("toMaskedPiPreset: apiKey mask + hasApiKey；baseUrl/api 条件展开；不
   });
   expect(withUrl.baseUrl).toBe("http://localhost:11434/v1");
   expect(withUrl.api).toBe("openai-completions");
+});
+
+test("toMaskedPiPreset: 无 apiKey → hasApiKey false + apiKeyMasked 空串", () => {
+  const masked = toMaskedPiPreset({
+    id: "p3",
+    label: "OAuth 订阅",
+    provider: "openai-codex",
+    model: "gpt-5",
+  });
+  expect(masked.hasApiKey).toBe(false);
+  expect(masked.apiKeyMasked).toBe("");
+  expect(masked).not.toHaveProperty("apiKey");
 });
 
 test("migrateV1ToV2: 输出 pi 未启用默认（v1 无 pi 概念）", () => {

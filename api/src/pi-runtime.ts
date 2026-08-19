@@ -150,12 +150,13 @@ export class PiRuntime {
 
     const settings = await this.settingsStore.read();
     const pi = settings.runtimes?.pi;
-    // v5：启用语义 = activePresetId 命中一个 provider/apiKey/model 齐备的 preset。presets
-    // 空 / activePresetId 空 / 未命中 / 字段缺失 → 未启用。
+    // v5：启用语义 = activePresetId 命中一个 provider/model 齐备的 preset（apiKey 可选，
+    // 空 = 走 SDK 凭证链 auth.json/env）。presets 空 / activePresetId 空 / 未命中 / 字段缺失
+    // → 未启用。
     const preset = pi?.activePresetId
       ? pi.presets.find((p) => p.id === pi.activePresetId)
       : undefined;
-    if (!preset?.provider || !preset.apiKey || !preset.model) {
+    if (!preset?.provider || !preset.model) {
       throw new PiNotConfiguredError();
     }
 
@@ -181,8 +182,15 @@ export class PiRuntime {
         models: [buildPiProviderModel(preset)],
       });
     }
-    // 决策 4：apiKey 内存覆盖（不落 auth.json），且永不进日志。
-    await modelRuntime.setRuntimeApiKey(preset.provider, preset.apiKey);
+    // 决策 4：apiKey 内存覆盖（不落 auth.json），且永不进日志。preset 未填 apiKey → 回落
+    // SDK 凭证链（隔离 auth.json → env）：内置 provider 无已存凭证则快速失败（而非首个请求
+    // 才炸）；自定义兼容端点（baseUrl 非空）放行——keyless 本地端点合法，需 key 的网关由
+    // 用户自填。
+    if (preset.apiKey) {
+      await modelRuntime.setRuntimeApiKey(preset.provider, preset.apiKey);
+    } else if (!preset.baseUrl && !modelRuntime.hasConfiguredAuth(preset.provider)) {
+      throw new PiNotConfiguredError("pi provider 凭证未配置（preset 未填 apiKey 且无已存凭证）");
+    }
     const model = modelRuntime.getModel(preset.provider, preset.model);
     if (!model) {
       throw new PiModelNotFoundError(`pi 模型未找到：${preset.provider}/${preset.model}`);

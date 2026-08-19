@@ -643,6 +643,11 @@ export const en = {
   "settings.piApi": "API protocol",
   "settings.piApiHint": "Wire protocol for the custom endpoint. Defaults to OpenAI completions.",
   "settings.piApiDefault": "Default (openai-completions)",
+  "settings.piAuthOauthHint":
+    "This provider signs in via OAuth subscription. Leave the API key empty and save, then place credentials in ~/.agents-remote/pi-agent/auth.json or run `pi login` on the server.",
+  "settings.piApiKeyOptionalHint":
+    "Optional. Leave empty to use stored OAuth/environment credentials for this provider.",
+  "settings.piApiKeyLocalHint": "Optional. Leave empty for keyless local endpoints (e.g. Ollama).",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { PiProviderInfo } from "@agents-remote/shared";
+import type { PiProviderAuthType, PiProviderInfo } from "@agents-remote/shared";
 
 // 与 pi-runtime.ts 的 CreateModelRuntimeFn 同形（本地声明，避免跨模块依赖私有类型）。
 type CreateModelRuntimeFn = (options: {
@@ -13,8 +13,18 @@ type CreateModelRuntimeFn = (options: {
 
 const defaultCreateModelRuntime: CreateModelRuntimeFn = (options) => ModelRuntime.create(options);
 
+// 纯函数：从 SDK Provider.auth 静态字段推导认证形态。oauth 存在 → oauth/both；
+// 否则 apiKey.login 存在 → api_key；两者皆无 → unknown（内置 provider 实测无此项，
+// 兜底语义安全）。自定义 id 不在枚举内，前端按 unknown 处理。
+function deriveAuthType(p: {
+  auth?: { apiKey?: { login?: unknown }; oauth?: unknown };
+}): PiProviderAuthType {
+  if (p.auth?.oauth) return p.auth?.apiKey?.login ? "both" : "oauth";
+  return p.auth?.apiKey?.login ? "api_key" : "unknown";
+}
+
 /**
- * 枚举 pi SDK 内置 provider（id + 显示名），供设置弹窗 provider 选择器使用。
+ * 枚举 pi SDK 内置 provider（id + 显示名 + 认证形态），供设置弹窗 provider 选择器使用。
  * 与 pi-runtime 决策 9 同一隔离目录语义（~/.agents-remote/pi-agent），只读、不联网、
  * 不写盘（refreshOnCreate:false / allowModelNetwork:false）。SDK 升级时列表自动跟随，
  * 前端不做硬编码。
@@ -31,7 +41,7 @@ export async function listPiBuiltinProviders(
   });
   return modelRuntime
     .getProviders()
-    .map((p) => ({ id: p.id, name: p.name }))
+    .map((p) => ({ id: p.id, name: p.name, authType: deriveAuthType(p) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

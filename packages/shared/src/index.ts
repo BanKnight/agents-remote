@@ -380,11 +380,11 @@ export type ClaudeRuntimeConfig = {
 // ── pi runtime（chat 模式全局会话运行时）────────────────────────────
 // pi 走 SDK 库嵌入（非 spawn）。v5 起为多 preset 体系（仿 claude presets）：
 // presets[] + activePresetId。启用语义 = presets 非空 且 activePresetId 命中一个
-// provider/apiKey/model 齐备的 preset；空 = 未启用（chat 会话 stream 出
-// SESSION_NOT_CONFIGURED）。provider 是 pi 内置 provider id（anthropic/openai/
-// deepseek/groq/openrouter...）或自定义 id；自定义 id（或内置 id + baseUrl）=
-// OpenAI/Anthropic 兼容端点（Ollama/vLLM/LM Studio/网关），运行时经
-// modelRuntime.registerProvider 程序化注册（不写 models.json）。
+// provider/model 齐备的 preset（apiKey 可选，空 = 走 SDK 凭证链 auth.json/env）；
+// 空 = 未启用（chat 会话 stream 出 SESSION_NOT_CONFIGURED）。provider 是 pi 内置
+// provider id（anthropic/openai/deepseek/groq/openrouter...）或自定义 id；自定义 id
+// （或内置 id + baseUrl）= OpenAI/Anthropic 兼容端点（Ollama/vLLM/LM Studio/网关），
+// 运行时经 modelRuntime.registerProvider 程序化注册（不写 models.json）。
 
 /** 自定义兼容端点的线协议枚举（pi SDK Api 的子集）。UI 默认 openai-completions。 */
 export type PiProviderApi =
@@ -404,7 +404,8 @@ export type PiPreset = {
   label: string;
   /** pi 内置 provider id 或自定义 id（自定义须配 baseUrl）。 */
   provider: string;
-  apiKey: string;
+  /** 可选：空 = 走 SDK 凭证链（隔离 auth.json → env）。OAuth 订阅 provider 与 keyless 本地端点合法留空。 */
+  apiKey?: string;
   /** 手填 model id（不做发现/测试连接）。 */
   model: string;
   /** 非空 = 自定义兼容端点，运行时 registerProvider 注册进 catalog。 */
@@ -705,10 +706,11 @@ export type UpdateClaudeRuntimeResponse = {
 };
 
 // ── pi preset / runtime 请求响应（v5）──────────────────────────────
+// apiKey 可选：空 = 走 SDK 凭证链（auth.json/env），OAuth/keyless 端点合法。
 export type CreatePiPresetRequest = {
   label: string;
   provider: string;
-  apiKey: string;
+  apiKey?: string;
   model: string;
   baseUrl?: string;
   api?: PiProviderApi;
@@ -743,11 +745,15 @@ export type UpdatePiRuntimeResponse = {
   runtime: { activePresetId: string };
 };
 
-// GET /api/settings/runtimes/pi/providers 响应：pi SDK 内置 provider 运行时枚举（id + 显示名）。
+// GET /api/settings/runtimes/pi/providers 响应：pi SDK 内置 provider 运行时枚举（id + 显示名 + 认证形态）。
 // 无网络、无凭证、只读 SDK 目录；SDK 升级时列表自动跟随，前端不做硬编码。
+// authType 由 SDK Provider.auth 静态字段推导（oauth 存在 / apiKey.login 存在），unknown = 自定义 id 不在枚举内。
+export type PiProviderAuthType = "api_key" | "oauth" | "both" | "unknown";
+
 export type PiProviderInfo = {
   id: string;
   name: string;
+  authType: PiProviderAuthType;
 };
 
 export type ListPiProvidersResponse = {

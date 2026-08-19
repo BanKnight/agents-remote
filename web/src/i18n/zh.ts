@@ -636,6 +636,10 @@ export const zh: Record<TranslationKey, string> = {
   "settings.piApi": "API 协议",
   "settings.piApiHint": "自定义端点的线协议。缺省为 OpenAI completions。",
   "settings.piApiDefault": "默认（openai-completions）",
+  "settings.piAuthOauthHint":
+    "该 provider 走 OAuth 订阅登录。API key 留空保存，然后在服务器上执行 `pi login` 或将凭证放入 ~/.agents-remote/pi-agent/auth.json。",
+  "settings.piApiKeyOptionalHint": "可选。留空则使用该 provider 已存的 OAuth/环境凭证。",
+  "settings.piApiKeyLocalHint": "可选。无鉴权本地端点（如 Ollama）可留空。",
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",

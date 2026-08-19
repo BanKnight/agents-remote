@@ -12,6 +12,7 @@ import {
   type ListProviderModelsResponse,
   type PiPresetMasked,
   type PiProviderApi,
+  type PiProviderAuthType,
   type UpdateClaudePresetRequest,
   type UpdatePiPresetRequest,
 } from "@agents-remote/shared";
@@ -700,9 +701,23 @@ function PiPresetRow({
   );
 }
 
+// provider 认证形态的菜单标记文案（对齐 pi-agent-dashboard「Subscriptions (OAuth) / API Keys」分组语义）。
+function piAuthTypeLabel(authType: PiProviderAuthType): string {
+  switch (authType) {
+    case "api_key":
+      return "API key";
+    case "oauth":
+      return "OAuth";
+    case "both":
+      return "API key / OAuth";
+    default:
+      return "";
+  }
+}
+
 /**
  * pi 内置 provider 选择器：枚举 SDK 内置 provider（useQuery 拉取，memo 在 api 侧），
- * label = 显示名、description = provider id（对齐 model selector「alias + 具体 ID」模式）。
+ * label = 显示名、description = provider id + 认证形态标记（对齐 model selector「alias + 具体 ID」模式）。
  * 当前值命中内置 id 时 trigger 显示显示名；否则 fallback（加载中/失败/自定义 id）。
  */
 function ProviderSelect({
@@ -724,12 +739,15 @@ function ProviderSelect({
       align="start"
       cancelLabel={t("cancel")}
       trigger={<SelectorTrigger label={active?.name ?? fallbackLabel} />}
-      items={builtin.map((p) => ({
-        label: p.name,
-        description: p.id,
-        isActive: p.id === value.trim(),
-        onSelect: () => onChange(p.id),
-      }))}
+      items={builtin.map((p) => {
+        const authLabel = piAuthTypeLabel(p.authType);
+        return {
+          label: p.name,
+          description: authLabel ? `${p.id} · ${authLabel}` : p.id,
+          isActive: p.id === value.trim(),
+          onSelect: () => onChange(p.id),
+        };
+      })}
     />
   );
 }
@@ -759,6 +777,12 @@ function PiPresetDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // 当前 provider 的认证形态（决定 apiKey 输入框渲染与必填校验）。与 ProviderSelect 同
+  // queryKey 缓存命中，零重复请求；枚举失败/自定义 id → unknown（apiKey 可选）。
+  const providersQuery = useQuery({ queryKey: ["pi-providers"], queryFn: listPiProviders });
+  const activeAuthType =
+    providersQuery.data?.providers.find((p) => p.id === provider.trim())?.authType ?? "unknown";
+
   const trimmedBaseUrl = baseUrl.trim();
   const showApiSelect = trimmedBaseUrl !== "";
 
@@ -779,7 +803,8 @@ function PiPresetDialog({
       setError(t("settings.piModel"));
       return;
     }
-    if (!isEdit && !apiKey.trim()) {
+    // 新建态 apiKey 必填仅限纯 API-key 型 provider；OAuth/both/unknown 可留空（走凭证链）。
+    if (!isEdit && activeAuthType === "api_key" && !apiKey.trim()) {
       setError(t("settings.apiKey"));
       return;
     }
@@ -863,18 +888,34 @@ function PiPresetDialog({
                 placeholder="claude-sonnet-5"
               />
             </Field>
-            <Field
-              label={t("settings.apiKey")}
-              hint={isEdit ? t("settings.apiKeyHint") : undefined}
-            >
-              {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
-              <ShellInput
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
-                autoComplete="off"
-              />
-            </Field>
+            {activeAuthType === "oauth" ? (
+              <Field label={t("settings.apiKey")}>
+                <div className="rounded-lg border border-neutral-line/40 bg-surface-raised px-3 py-2 text-xs text-on-surface-muted">
+                  {t("settings.piAuthOauthHint")}
+                </div>
+              </Field>
+            ) : (
+              <Field
+                label={t("settings.apiKey")}
+                hint={
+                  isEdit
+                    ? t("settings.apiKeyHint")
+                    : activeAuthType === "api_key"
+                      ? undefined
+                      : activeAuthType === "both"
+                        ? t("settings.piApiKeyOptionalHint")
+                        : t("settings.piApiKeyLocalHint")
+                }
+              >
+                {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
+                <ShellInput
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
+                  autoComplete="off"
+                />
+              </Field>
+            )}
             <Field label={t("settings.baseUrl")} hint={t("settings.piBaseUrlHint")}>
               <ShellInput
                 value={baseUrl}
