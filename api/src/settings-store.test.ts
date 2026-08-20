@@ -230,6 +230,60 @@ test("normalizeSettings: pi presets 数组 → 过滤非法 + 规整；activePre
   });
 });
 
+test("normalizeSettings: pi.firecrawlApiKey 非空保留；空/缺省不写入", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        pi: {
+          presets: [
+            {
+              id: "p1",
+              label: "A",
+              provider: "anthropic",
+              apiKey: "sk-a",
+              model: "m1",
+            },
+          ],
+          activePresetId: "p1",
+          firecrawlApiKey: "fc-secret-123",
+        },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const state = await new SettingsStore({ path }).read();
+  expect(state.runtimes.pi.firecrawlApiKey).toBe("fc-secret-123");
+
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        pi: {
+          presets: [
+            {
+              id: "p1",
+              label: "A",
+              provider: "anthropic",
+              apiKey: "sk-a",
+              model: "m1",
+            },
+          ],
+          activePresetId: "p1",
+          firecrawlApiKey: "",
+        },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const blank = await new SettingsStore({ path }).read();
+  expect(blank.runtimes.pi).not.toHaveProperty("firecrawlApiKey");
+});
+
 test("normalizeSettings: api 无 baseUrl → 丢弃（线协议只对自定义端点有效）", async () => {
   const dir = await makeTempDir();
   const path = join(dir, "settings.yaml");

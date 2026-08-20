@@ -26,6 +26,7 @@ function makeSettingsStore(pi?: {
     api?: string;
   }[];
   activePresetId: string;
+  firecrawlApiKey?: string;
 }): SettingsStore {
   const settings: SettingsState = {
     runtimes: {
@@ -289,54 +290,42 @@ describe("PiRuntime.ensureRunning", () => {
     expect(cs.calls[0]).toMatchObject({
       cwd: defaultCwd,
       agentDir: join(baseDir, "pi-agent"),
-      tools: ["read", "grep", "find", "ls"],
+      tools: ["read", "grep", "find", "ls", "firecrawl_search", "firecrawl_scrape"],
     });
     expect(cs.calls[0].sessionManager).toBeDefined();
     expect(cs.calls[0].resourceLoader).toBeDefined();
   });
 
-  test("FIRECRAWL_API_KEY 存在 → customTools 注册 firecrawl 工具", async () => {
-    const prev = process.env.FIRECRAWL_API_KEY;
-    process.env.FIRECRAWL_API_KEY = "test-key";
-    try {
-      const stub = makeStubSession();
-      const cs = makeCreateSession(stub);
-      const runtime = makeRuntime({
-        pi: PI_CFG,
-        createModelRuntime: makeCreateModelRuntime(
-          PI_CFG.presets[0].provider,
-          PI_CFG.presets[0].model,
-        ).factory as never,
-        createSession: cs.factory as never,
-      });
-      await runtime.ensureRunning("c1");
-      const customTools = cs.calls[0].customTools as { name: string }[] | undefined;
-      expect(customTools?.map((t) => t.name)).toEqual(["firecrawl_search", "firecrawl_scrape"]);
-    } finally {
-      if (prev === undefined) delete process.env.FIRECRAWL_API_KEY;
-      else process.env.FIRECRAWL_API_KEY = prev;
-    }
+  test("settings.firecrawlApiKey 存在 → customTools 注册 firecrawl 工具", async () => {
+    const stub = makeStubSession();
+    const cs = makeCreateSession(stub);
+    const runtime = makeRuntime({
+      pi: { ...PI_CFG, firecrawlApiKey: "test-key" },
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: cs.factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    const customTools = cs.calls[0].customTools as { name: string }[] | undefined;
+    expect(customTools?.map((t) => t.name)).toEqual(["firecrawl_search", "firecrawl_scrape"]);
   });
 
-  test("FIRECRAWL_API_KEY 缺失 → customTools 空数组（不阻塞 pi 启动）", async () => {
-    const prev = process.env.FIRECRAWL_API_KEY;
-    delete process.env.FIRECRAWL_API_KEY;
-    try {
-      const stub = makeStubSession();
-      const cs = makeCreateSession(stub);
-      const runtime = makeRuntime({
-        pi: PI_CFG,
-        createModelRuntime: makeCreateModelRuntime(
-          PI_CFG.presets[0].provider,
-          PI_CFG.presets[0].model,
-        ).factory as never,
-        createSession: cs.factory as never,
-      });
-      await runtime.ensureRunning("c1");
-      expect(cs.calls[0].customTools).toEqual([]);
-    } finally {
-      if (prev !== undefined) process.env.FIRECRAWL_API_KEY = prev;
-    }
+  test("settings.firecrawlApiKey 缺省 → customTools 仍注册（匿名限额模式，不阻塞 pi 启动）", async () => {
+    const stub = makeStubSession();
+    const cs = makeCreateSession(stub);
+    const runtime = makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: cs.factory as never,
+    });
+    await runtime.ensureRunning("c1");
+    const customTools = cs.calls[0].customTools as { name: string }[] | undefined;
+    expect(customTools?.map((t) => t.name)).toEqual(["firecrawl_search", "firecrawl_scrape"]);
   });
 
   test("未配置三态：presets 空 / activePresetId 空 / activePresetId 未命中 → PiNotConfiguredError", async () => {

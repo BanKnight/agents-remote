@@ -282,9 +282,13 @@ function normalizePi(input: unknown): PiRuntimeConfig {
   const p = input as Record<string, unknown>;
   if (!Array.isArray(p.presets)) return legacyPiToPresets(input);
   const presets = p.presets.filter(isPiPreset).map(normalizePiPreset);
+  // firecrawlApiKey 可选：非空才写入（空/缺省 = 匿名限额模式，firecrawl 工具仍注册）。
+  const firecrawlApiKey =
+    typeof p.firecrawlApiKey === "string" && p.firecrawlApiKey ? p.firecrawlApiKey : undefined;
   return {
     presets,
     activePresetId: typeof p.activePresetId === "string" ? p.activePresetId : "",
+    ...(firecrawlApiKey ? { firecrawlApiKey } : {}),
   };
 }
 

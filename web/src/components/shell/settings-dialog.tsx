@@ -15,6 +15,7 @@ import {
   type PiProviderAuthType,
   type UpdateClaudePresetRequest,
   type UpdatePiPresetRequest,
+  type UpdatePiRuntimeRequest,
 } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
@@ -468,26 +469,38 @@ function PiRuntimeContent({
   pi,
   loading = false,
 }: {
-  pi: { presets: PiPresetMasked[]; activePresetId: string } | undefined;
+  pi:
+    | { presets: PiPresetMasked[]; activePresetId: string; firecrawlApiKeyMasked?: string }
+    | undefined;
   loading?: boolean;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
 
   const [activePresetId, setActivePresetId] = useState(pi?.activePresetId ?? "");
+  const [firecrawlKey, setFirecrawlKey] = useState("");
+  const [firecrawlClearing, setFirecrawlClearing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = !loading && activePresetId !== (pi?.activePresetId ?? "");
+  const hasFirecrawlKey = Boolean(pi?.firecrawlApiKeyMasked);
+  const firecrawlDirty = (firecrawlClearing && hasFirecrawlKey) || firecrawlKey.trim() !== "";
+  const dirty = !loading && (activePresetId !== (pi?.activePresetId ?? "") || firecrawlDirty);
 
   const handleSave = async () => {
     if (loading) return;
     setError(null);
     setSaving(true);
     try {
-      await updatePiRuntime({ activePresetId });
+      const input: UpdatePiRuntimeRequest = { activePresetId };
+      // firecrawl key 语义：清除 → 空串（移除）；非空 → 新 key；空 + 未清除 → 不改。
+      if (firecrawlClearing) input.firecrawlApiKey = "";
+      else if (firecrawlKey.trim()) input.firecrawlApiKey = firecrawlKey.trim();
+      await updatePiRuntime(input);
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setFirecrawlKey("");
+      setFirecrawlClearing(false);
       setJustSaved(true);
       window.setTimeout(() => setJustSaved(false), 2000);
     } catch (e) {
@@ -525,6 +538,29 @@ function PiRuntimeContent({
                 })),
               ]}
             />
+          </Field>
+
+          <Field label={t("settings.firecrawlKey")} hint={t("settings.firecrawlKeyHint")}>
+            <div className="flex gap-2">
+              <ShellInput
+                value={firecrawlKey}
+                onChange={(e) => setFirecrawlKey(e.target.value)}
+                placeholder={
+                  hasFirecrawlKey ? pi?.firecrawlApiKeyMasked : t("settings.firecrawlKeyBlank")
+                }
+                autoComplete="off"
+              />
+              {hasFirecrawlKey && !firecrawlClearing ? (
+                <ActionButton tone="muted" onClick={() => setFirecrawlClearing(true)}>
+                  {t("settings.clear")}
+                </ActionButton>
+              ) : null}
+              {firecrawlClearing ? (
+                <ActionButton tone="muted" onClick={() => setFirecrawlClearing(false)}>
+                  {t("cancel")}
+                </ActionButton>
+              ) : null}
+            </div>
           </Field>
 
           {error && <p className="text-xs text-error">{error}</p>}

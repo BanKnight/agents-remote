@@ -30,7 +30,7 @@ import {
 import { jsonError } from "./http-auth";
 import { getCachedPiBuiltinProviders } from "./pi-providers";
 import { listProviderModels } from "./settings-models";
-import { SettingsStore, toMaskedPiPreset, toMaskedPreset } from "./settings-store";
+import { SettingsStore, maskApiKey, toMaskedPiPreset, toMaskedPreset } from "./settings-store";
 
 // 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫。
 // GET 响应里 presets 的 apiKey 全走 toMaskedPreset；原始 key 永不出 api 进程、永不进日志。
@@ -55,10 +55,11 @@ export const handleSettingsRoutes = async (
             enable1mContext: claude.enable1mContext,
             effort: claude.effort,
           },
-          // v5：pi 键恒存在；空 presets + activePresetId:"" = 未启用。
+          // v5：pi 键恒存在；空 presets + activePresetId:"" = 未启用。firecrawl key 只露 masked。
           pi: {
             presets: state.runtimes.pi.presets.map(toMaskedPiPreset),
             activePresetId: state.runtimes.pi.activePresetId,
+            firecrawlApiKeyMasked: maskApiKey(state.runtimes.pi.firecrawlApiKey ?? ""),
           },
         },
         skills: { sources: state.skills?.sources ?? [] },
@@ -365,18 +366,32 @@ export const handleSettingsRoutes = async (
   }
 
   // PUT /api/settings/runtimes/pi —— 语义 = activate：只更新 activePresetId（空串 = 停用 pi）。
+  // firecrawlApiKey 同请求更新：undefined = 不改；空串 = 删除；非空 = 设置（key 不出 api 进程）。
+  // activePresetId 同三态：undefined = 不改；显式空串 = 停用；非空 = 激活（须命中 preset）。
   if (url.pathname === "/api/settings/runtimes/pi" && request.method === "PUT") {
     const body = await readJson<UpdatePiRuntimeRequest>(request);
-    const trimmed = body.activePresetId?.trim() ?? "";
-    if (trimmed && !(await store.read()).runtimes.pi.presets.some((p) => p.id === trimmed)) {
-      return jsonError("PRESET_NOT_FOUND", "Preset not found", 400);
-    }
-    const updated = await store.update((s) => ({
-      ...s,
-      runtimes: { ...s.runtimes, pi: { ...s.runtimes.pi, activePresetId: trimmed } },
-    }));
+    let invalid: "PRESET_NOT_FOUND" | "" = "";
+    const updated = await store.update((s) => {
+      const pi = s.runtimes.pi;
+      const nextActive =
+        body.activePresetId === undefined ? pi.activePresetId : body.activePresetId.trim();
+      if (nextActive && !pi.presets.some((p) => p.id === nextActive)) {
+        invalid = "PRESET_NOT_FOUND";
+        return s;
+      }
+      const patched = { ...pi, activePresetId: nextActive };
+      // firecrawlApiKey 三态：undefined = 不改；空串（trim 后） = 删除；非空 = 设置。
+      if (body.firecrawlApiKey !== undefined) {
+        patched.firecrawlApiKey = body.firecrawlApiKey.trim() || undefined;
+      }
+      return { ...s, runtimes: { ...s.runtimes, pi: patched } };
+    });
+    if (invalid) return jsonError(invalid, "Preset not found", 400);
     const response: UpdatePiRuntimeResponse = {
-      runtime: { activePresetId: updated.runtimes.pi.activePresetId },
+      runtime: {
+        activePresetId: updated.runtimes.pi.activePresetId,
+        firecrawlApiKeyMasked: maskApiKey(updated.runtimes.pi.firecrawlApiKey ?? ""),
+      },
     };
     return Response.json(response);
   }

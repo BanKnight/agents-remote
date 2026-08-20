@@ -2,17 +2,18 @@ import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 
-// firecrawl REST 包装（pi customTools，决策：不走 MCP 体系）。凭证 = FIRECRAWL_API_KEY env，
-// 缺失 → 不注册工具（pi 仍可用只读内置工具），绝不阻塞 pi 启动。
+// firecrawl REST 包装（pi customTools，决策：不走 MCP 体系）。凭证 = settings.runtimes.pi
+// .firecrawlApiKey（pi-runtime ensureRunning 传入），缺失 → 不注册工具（pi 仍可用只读内置
+// 工具），绝不阻塞 pi 启动。
 const FIRECRAWL_BASE_URL = "https://api.firecrawl.dev/v2";
 const FIRECRAWL_TIMEOUT_MS = 30_000;
 
 type FirecrawlSearchParams = { query: string; limit?: number };
 type FirecrawlScrapeParams = { url: string };
 
-/** firecrawl REST 请求：Bearer 认证 + 30s 超时。非 2xx / 网络错误 → throw（execute 转 error content）。 */
+/** firecrawl REST 请求：可选 Bearer 认证（无 key = 匿名限额模式）+ 30s 超时。非 2xx / 网络错误 → throw（execute 转 error content）。 */
 async function firecrawlFetch(
-  apiKey: string,
+  apiKey: string | undefined,
   path: string,
   body: unknown,
   signal?: AbortSignal,
@@ -25,8 +26,8 @@ async function firecrawlFetch(
     const res = await fetch(`${FIRECRAWL_BASE_URL}${path}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -41,10 +42,13 @@ async function firecrawlFetch(
   }
 }
 
-/** search 结果 → 文本 content（markdown 优先，回退 content/description）。 */
+/** search 结果 → 文本 content。v2 /search 真实形状为 `data: { web: [...] }`（项含
+ *  title/description/url，无 markdown）；兼容历史 `data: [...]` 数组。文本源 markdown
+ *  → content → description 依次回退。 */
 function searchResultsToText(data: unknown): string {
-  if (!Array.isArray(data)) return "";
-  return data
+  const items = Array.isArray(data) ? data : (data as { web?: unknown })?.web;
+  if (!Array.isArray(items)) return "";
+  return items
     .map((item: Record<string, unknown>) => {
       const md = item.markdown ?? item.content ?? item.description;
       return typeof md === "string" ? md : "";
@@ -54,13 +58,12 @@ function searchResultsToText(data: unknown): string {
 }
 
 /**
- * 构建 firecrawl 工具集（pi customTools）。apiKey 空 → 空数组（凭证缺失不阻塞 pi 启动）。
- * 两个工具：firecrawl_search（web 搜索）+ firecrawl_scrape（单页抓取）。失败显式返回
- * error content（对齐 OPC「adapter 层显式错误传播」横切警示，非静默 fallback）。
+ * 构建 firecrawl 工具集（pi customTools）。apiKey 可选：有 → Bearer 认证；无 → 匿名限额
+ * 模式（firecrawl 无 key 也能触发，只是限流更低）。工具恒注册，不阻塞 pi 启动。
+ * 两个工具：firecrawl_search（web 搜索）+ firecrawl_scrape（单页抓取）。失败 key 返回
+ * Error content（对齐「adapter 层显式错误传播」规范，不静默 fallback）。
  */
 export function buildFirecrawlTools(apiKey: string | undefined): ToolDefinition[] {
-  if (!apiKey) return [];
-
   const search = defineTool({
     name: "firecrawl_search",
     label: "Firecrawl Search",

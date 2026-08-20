@@ -423,6 +423,8 @@ export type PiPresetMasked = Omit<PiPreset, "apiKey"> & {
 export type PiRuntimeConfig = {
   presets: PiPreset[];
   activePresetId: string;
+  /** 工具层凭证（firecrawl web 搜索/抓取），跨 preset 共享。可选：填 key 提升限额，缺失 = 匿名限额（工具恒注册）。 */
+  firecrawlApiKey?: string;
 };
 
 // ── Skills marketplace ──────────────────────────────────────
@@ -662,8 +664,8 @@ export type GetSettingsResponse = {
         enable1mContext: boolean;
         effort: EffortLevel;
       };
-      // v5 起 pi 键恒存在；presets 空 = 未启用。
-      pi: { presets: PiPresetMasked[]; activePresetId: string };
+      // v5 起 pi 键恒存在；presets 空 = 未启用。firecrawlApiKey 只露 masked（同 apiKey 语义）。
+      pi: { presets: PiPresetMasked[]; activePresetId: string; firecrawlApiKeyMasked: string };
     };
     // 源是公开 GitHub repo，不 mask。
     skills: {
@@ -736,13 +738,15 @@ export type DeletePiPresetResponse = {
   id: string;
 };
 
-/** PUT /api/settings/runtimes/pi 语义 = activate：只更新 activePresetId（空串 = 停用 pi）。 */
+/** PUT /api/settings/runtimes/pi 语义 = activate：只更新 activePresetId（空串 = 停用 pi）。
+ * firecrawlApiKey 可同请求更新：undefined = 不改，空串 = 删除，非空 = 设置。 */
 export type UpdatePiRuntimeRequest = {
   activePresetId?: string;
+  firecrawlApiKey?: string;
 };
 
 export type UpdatePiRuntimeResponse = {
-  runtime: { activePresetId: string };
+  runtime: { activePresetId: string; firecrawlApiKeyMasked: string };
 };
 
 // GET /api/settings/runtimes/pi/providers 响应：pi SDK 内置 provider 运行时枚举（id + 显示名 + 认证形态）。

@@ -644,6 +644,11 @@ export const zh: Record<TranslationKey, string> = {
     "该 provider 走 OAuth 订阅登录。API key 留空保存，然后在服务器上执行 `pi login` 或将凭证放入 ~/.agents-remote/pi-agent/auth.json。",
   "settings.piApiKeyOptionalHint": "可选。留空则使用该 provider 已存的 OAuth/环境凭证。",
   "settings.piApiKeyLocalHint": "可选。无鉴权本地端点（如 Ollama）可留空。",
+  "settings.firecrawlKey": "Firecrawl API key",
+  "settings.firecrawlKeyHint":
+    "可选。联网搜索/抓取工具恒可用；填 key 提升额度与稳定性，留空则匿名限额调用。留空保存 = 保持现有 key 不变；清空保存 = 移除。",
+  "settings.firecrawlKeyBlank": "无（匿名限额）",
+  "settings.clear": "清除",
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",

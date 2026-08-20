@@ -652,6 +652,11 @@ export const en = {
   "settings.piApiKeyOptionalHint":
     "Optional. Leave empty to use stored OAuth/environment credentials for this provider.",
   "settings.piApiKeyLocalHint": "Optional. Leave empty for keyless local endpoints (e.g. Ollama).",
+  "settings.firecrawlKey": "Firecrawl API key",
+  "settings.firecrawlKeyHint":
+    "Optional. Web search/scrape tools always available; a key raises limits, empty uses anonymous quota. Leave blank to keep the existing key unchanged; clear and save to remove it.",
+  "settings.firecrawlKeyBlank": "None (anonymous)",
+  "settings.clear": "Clear",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",

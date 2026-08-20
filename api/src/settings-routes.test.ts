@@ -116,8 +116,12 @@ test("GET /api/settings returns defaults when empty", async () => {
   expect(body.settings.runtimes.claude.presets).toEqual([]);
   expect(body.settings.runtimes.claude.activePresetId).toBe("");
   expect(body.settings.runtimes.claude.effort).toBe("high");
-  // v5：pi 键恒存在；presets 空 + activePresetId 空 = 未启用。
-  expect(body.settings.runtimes.pi).toEqual({ presets: [], activePresetId: "" });
+  // v5：pi 键恒存在；presets 空 + activePresetId 空 = 未启用；firecrawl key 无 → masked 空串。
+  expect(body.settings.runtimes.pi).toEqual({
+    presets: [],
+    activePresetId: "",
+    firecrawlApiKeyMasked: "",
+  });
 });
 
 // ── GET /api/settings/runtimes/pi/providers（内置 provider 枚举）──
@@ -373,6 +377,46 @@ test("PUT /api/settings/runtimes/pi = activate：合法 id 激活；空串停用
   );
   expect(deactivate?.status).toBe(200);
   expect((await deactivate!.json()).runtime.activePresetId).toBe("");
+});
+
+test("PUT /api/settings/runtimes/pi firecrawl key：设置 → masked；缺省不改；清空移除", async () => {
+  const store = await makeStore();
+  await seedPiPreset(store, "p1");
+
+  // 设置 key：响应 masked，落盘非 masked。
+  const set = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", {
+      activePresetId: "p1",
+      firecrawlApiKey: "fc-super-secret-42",
+    }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(set?.status).toBe(200);
+  const setBody = (await set!.json()) as { runtime: { firecrawlApiKeyMasked: string } };
+  expect(setBody.runtime.firecrawlApiKeyMasked).toContain("...");
+  expect(setBody.runtime.firecrawlApiKeyMasked).not.toContain("secret");
+  expect((await store.read()).runtimes.pi.firecrawlApiKey).toBe("fc-super-secret-42");
+
+  // 缺省（undefined）→ 不改（key 保留）。
+  const noop = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", { activePresetId: "p1" }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(noop?.status).toBe(200);
+  expect((await store.read()).runtimes.pi.firecrawlApiKey).toBe("fc-super-secret-42");
+
+  // 空串 → 移除（只传 firecrawl 字段，activePresetId 缺省 = 不改，不得被清空）。
+  const remove = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/pi", { firecrawlApiKey: "" }),
+    makeUrl("/api/settings/runtimes/pi"),
+    store,
+  );
+  expect(remove?.status).toBe(200);
+  const after = await store.read();
+  expect(after.runtimes.pi).not.toHaveProperty("firecrawlApiKey");
+  expect(after.runtimes.pi.activePresetId).toBe("p1");
 });
 
 test("PUT runtimes/claude 保留 pi presets + skills（applyClaudeRuntimePatch 展开合并回归）", async () => {

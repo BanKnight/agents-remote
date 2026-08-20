@@ -28,9 +28,12 @@ const okJson = (body: unknown) =>
     headers: { "Content-Type": "application/json" },
   });
 
-test("buildFirecrawlTools: apiKey 空 → 空数组（凭证缺失不阻塞）", () => {
-  expect(buildFirecrawlTools(undefined)).toEqual([]);
-  expect(buildFirecrawlTools("")).toEqual([]);
+test("buildFirecrawlTools: apiKey 空 → 仍注册两工具（匿名限额模式，不阻塞）", () => {
+  const tools = buildFirecrawlTools(undefined);
+  expect(tools).toHaveLength(2);
+  expect(tools.map((t) => t.name)).toEqual(["firecrawl_search", "firecrawl_scrape"]);
+  const tools2 = buildFirecrawlTools("");
+  expect(tools2).toHaveLength(2);
 });
 
 test("buildFirecrawlTools: 有 key → 两个工具，name/parameters 形状正确", () => {
@@ -64,6 +67,25 @@ test("buildFirecrawlTools: 有 key → 两个工具，name/parameters 形状正�
   expect(scrapeSchema.properties.url).toMatchObject({ type: "string" });
 });
 
+test("firecrawl_search execute: 无 key → 匿名模式，请求不带 Authorization 头", async () => {
+  const tools = buildFirecrawlTools(undefined);
+  const search = tools[0];
+  mockFetch((url, init) => {
+    expect(url).toBe("https://api.firecrawl.dev/v2/search");
+    expect(init.headers).not.toHaveProperty("Authorization");
+    expect(JSON.parse(String(init.body))).toEqual({ query: "hello", limit: 5 });
+    return okJson({ data: [{ markdown: "## Anonymous result" }] });
+  });
+  const result = await search.execute(
+    "call-1",
+    { query: "hello" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+  expect(result.content[0]).toEqual({ type: "text", text: "## Anonymous result" });
+});
+
 test("firecrawl_search execute: 成功 → markdown 拼接 text content", async () => {
   const tools = buildFirecrawlTools("test-key");
   const search = tools[0];
@@ -94,6 +116,30 @@ test("firecrawl_search execute: 成功 → markdown 拼接 text content", async 
     },
   ]);
   expect(result.details).toEqual({ query: "hello" });
+});
+
+test("firecrawl_search execute: v2 真实形状 data.web（title/description/url，无 markdown）", async () => {
+  const tools = buildFirecrawlTools("test-key");
+  const search = tools[0];
+  mockFetch(() =>
+    okJson({
+      success: true,
+      data: {
+        web: [
+          { url: "https://a.example", title: "Result A", description: "desc a" },
+          { url: "https://b.example", title: "Result B" },
+        ],
+      },
+    }),
+  );
+  const result = await search.execute(
+    "call-1",
+    { query: "hello" },
+    undefined,
+    undefined,
+    {} as never,
+  );
+  expect(result.content).toEqual([{ type: "text", text: "desc a" }]);
 });
 
 test("firecrawl_search execute: limit 透传", async () => {

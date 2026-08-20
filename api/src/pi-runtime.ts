@@ -262,15 +262,17 @@ export class PiRuntime {
       noContextFiles: false,
     });
 
-    // firecrawl 工具：env 有 FIRECRAWL_API_KEY → 注册（customTools 是 "in addition to"
-    // 内置工具，与 allowlist 并存）；无 key → 空数组，pi 仍可用只读内置工具，不阻塞启动。
-    const firecrawlTools = buildFirecrawlTools(process.env.FIRECRAWL_API_KEY);
+    // firecrawl 工具：settings.runtimes.pi.firecrawlApiKey（配置体系同 preset apiKey，非 env）→
+    // 恒注册（customTools 与内置工具并存；无 key = 匿名限额模式，不阻塞启动）。SDK 的
+    // _refreshToolRegistry 会把 customTools 与内置工具一起过 tools 白名单过滤——白名单必须
+    // 含 firecrawl 工具名，否则被滤掉（实测模型看不到 firecrawl_search）。
+    const firecrawlTools = buildFirecrawlTools(pi?.firecrawlApiKey);
     const { session } = await this.createSession({
       cwd: this.defaultCwd,
       agentDir,
       modelRuntime,
       model,
-      tools: PI_TOOLS_ALLOWLIST,
+      tools: [...PI_TOOLS_ALLOWLIST, ...firecrawlTools.map((tool) => tool.name)],
       customTools: firecrawlTools,
       sessionManager,
       resourceLoader,
