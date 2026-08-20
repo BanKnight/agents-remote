@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 const password = process.env.E2E_PASSWORD ?? "secret";
-const chatId = "e2e-chat-session-1";
+// id 必须带 `chat_` 前缀：桌面中栏打开靠 workbench focus effect 的 `focusId.startsWith("chat_")`
+// 判定 chat（无前缀会被当 agent/terminal session 处理、找不到 projectName 而不开 tab）。
+const chatId = "chat_e2e-1";
 const displayName = "Pi Chat (e2e)";
 
 // Collect browser console errors during the test to catch React runtime errors
@@ -140,8 +142,12 @@ test("Chat: session list + detail render pi stream frames with firecrawl tool-ca
   const listRow = page.getByText(displayName, { exact: true });
   await expect(listRow).toBeVisible({ timeout: 15_000 });
 
-  // Enter the chat detail → pi stream frames drive the render.
+  // 桌面端点 chat 行 → 中栏打开（workbench focus URL /projects/session/chat_xxx，带
+  // ?mode=chat 保持 Chat 模式 tab），非移动端全屏 /chat/$id。
   await listRow.click();
+  await expect(page).toHaveURL(new RegExp(`/projects/session/${chatId}(\\?mode=chat)?$`), {
+    timeout: 15_000,
+  });
 
   // user echo bubble + assistant text + firecrawl tool badge (FirecrawlSearchToolUI,
   // badge = "Firecrawl Search", not the GenericToolUI "Tool" label).

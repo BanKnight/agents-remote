@@ -565,6 +565,18 @@ export type SessionPanelRef = {
 };
 
 /**
+ * chat 会话面板引用（pi chat 桌面中栏打开，2026-08-20）。chat 是 global 会话（无 projectName——
+ * 从 service 侧 chat-session-registry 独立管理，非 agent/terminal runtime）；tab 可嵌任意 scope
+ * 的 group（像 file tab 无 scope gate）。tabId = `chat_${uuid}` 前缀天然与 agent_/terminal_ 互斥，
+ * 直接用 sessionId 当 tabId（与 session tab 同约定，去重安全）。不 gen 进 SessionType——
+ * chat 不是 agent/terminal 之外的第三类 runtime，属另一种会话语义，故独立 kind。
+ */
+export type ChatPanelRef = {
+  kind: "chat";
+  sessionId: string;
+};
+
+/**
  * 文件预览面板引用（设计 workbench-stable-refactor Phase 3）。path = **全路径**（含项目名前缀，
  * 如 `"demo/src/index.ts"`）——全局/项目点同一文件复用同一 tab（tabIdOf = `file_${path}` 去重）。
  * 不带 projectName 字段：FileTabPreview 内部用 `resolveRootBrowseTarget(path)` 解析项目名 +
@@ -601,7 +613,12 @@ export type SkillPanelRef = {
  * file tab 的 tabId = `file_${path}`、git scope tab = `git_${scope}/${path}`、git compare tab =
  * `gitcmp_${base}~${compare}/${path}`（R5）、skill tab = `skill_${name}`（前缀互斥）。
  */
-export type WorkbenchPanelRef = SessionPanelRef | FilePanelRef | GitPanelRef | SkillPanelRef;
+export type WorkbenchPanelRef =
+  | SessionPanelRef
+  | ChatPanelRef
+  | FilePanelRef
+  | GitPanelRef
+  | SkillPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
 export type LegacyPanelRef = {
@@ -618,6 +635,7 @@ export type LegacyPanelRef = {
  */
 export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "session") return ref.sessionId;
+  if (ref.kind === "chat") return ref.sessionId;
   if (ref.kind === "file") return `file_${ref.path}`;
   if (ref.kind === "skill") return `skill_${ref.name}`;
   return ref.mode === "compare"
@@ -704,6 +722,7 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
         };
   }
   if (ref.kind === "skill") return { kind: "skill", name: ref.name };
+  if (ref.kind === "chat") return { kind: "chat", sessionId: ref.sessionId };
   return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
 }
 

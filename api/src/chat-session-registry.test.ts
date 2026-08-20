@@ -232,3 +232,89 @@ test("recordActivityChat: 不存在的会话 → no-op", async () => {
   await registry.recordActivityChat("chat_nope");
   expect(await registry.getChatSession("chat_nope")).toBeUndefined();
 });
+
+test("setPinned: 置顶落盘 + round-trip + 不动 updatedAt", async () => {
+  const fixedNow = new Date("2026-08-18T00:00:00Z");
+  const later = new Date("2026-08-18T02:00:00Z");
+  let t = fixedNow;
+  const { registry, dir } = newRegistry({
+    now: () => t,
+    createId: () => "chat_pin",
+  });
+  await registry.createChatSession("置顶测试");
+  t = later;
+  const pinned = await registry.setPinned("chat_pin", true);
+  expect(pinned?.pinned).toBe(true);
+  // 管理操作不更新 updatedAt
+  expect(pinned?.updatedAt).toBe(fixedNow.toISOString());
+  // 落盘 round-trip
+  const raw = await readFile(join(dir, "chat_pin.json"), "utf8");
+  expect(JSON.parse(raw).pinned).toBe(true);
+  const r2 = new ChatSessionRegistry({ sessionsDir: dir });
+  expect((await r2.getChatSession("chat_pin"))?.pinned).toBe(true);
+});
+
+test("setPinned: 取消置顶清字段 + 幂等短路 + 不存在 → undefined", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_unpin" });
+  await registry.createChatSession();
+  await registry.setPinned("chat_unpin", true);
+  const unpinned = await registry.setPinned("chat_unpin", false);
+  expect(unpinned?.pinned).toBe(false);
+  // 幂等：同值短路（返回同 session，不再写盘）
+  const again = await registry.setPinned("chat_unpin", false);
+  expect(again?.pinned).toBe(false);
+  const raw = await readFile(join(dir, "chat_unpin.json"), "utf8");
+  expect(JSON.parse(raw).pinned).toBe(false);
+  // 不存在 → undefined
+  expect(await registry.setPinned("chat_nope", true)).toBeUndefined();
+});
+
+test("setArchived: 归档落盘 + round-trip + 不动 updatedAt", async () => {
+  const fixedNow = new Date("2026-08-18T00:00:00Z");
+  let t = fixedNow;
+  const { registry, dir } = newRegistry({
+    now: () => t,
+    createId: () => "chat_arch",
+  });
+  await registry.createChatSession("归档测试");
+  const archived = await registry.setArchived("chat_arch", "2026-08-20T00:00:00Z");
+  expect(archived?.archivedAt).toBe("2026-08-20T00:00:00Z");
+  // 管理操作不更新 updatedAt
+  expect(archived?.updatedAt).toBe(fixedNow.toISOString());
+  const raw = await readFile(join(dir, "chat_arch.json"), "utf8");
+  expect(JSON.parse(raw).archivedAt).toBe("2026-08-20T00:00:00Z");
+  const r2 = new ChatSessionRegistry({ sessionsDir: dir });
+  expect((await r2.getChatSession("chat_arch"))?.archivedAt).toBe("2026-08-20T00:00:00Z");
+});
+
+test("setArchived: 恢复（null）清字段 + 幂等短路", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_restore" });
+  await registry.createChatSession();
+  await registry.setArchived("chat_restore", "2026-08-20T00:00:00Z");
+  const restored = await registry.setArchived("chat_restore", null);
+  expect(restored?.archivedAt).toBeUndefined();
+  // 幂等：null 短路
+  const again = await registry.setArchived("chat_restore", null);
+  expect(again?.archivedAt).toBeUndefined();
+  // 落盘无 archivedAt key（undefined 被 JSON.stringify 省略）
+  const raw = await readFile(join(dir, "chat_restore.json"), "utf8");
+  expect("archivedAt" in JSON.parse(raw)).toBe(false);
+  expect(await registry.setArchived("chat_nope", null)).toBeUndefined();
+});
+
+test("parseMetadata: pinned/archivedAt 缺失字段兼容（旧 JSON）", async () => {
+  const { registry, dir } = newRegistry({ createId: () => "chat_legacy" });
+  await registry.createChatSession();
+  // 模拟旧版本 JSON（无 pinned/archivedAt）
+  const legacy = {
+    id: "chat_legacy2",
+    displayName: "旧会话",
+    status: "idle",
+    createdAt: "2026-08-18T00:00:00Z",
+    updatedAt: "2026-08-18T00:00:00Z",
+  };
+  await writeFile(join(dir, "chat_legacy2.json"), JSON.stringify(legacy), { mode: 0o600 });
+  const session = await registry.getChatSession("chat_legacy2");
+  expect(session?.pinned).toBeUndefined();
+  expect(session?.archivedAt).toBeUndefined();
+});

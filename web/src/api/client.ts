@@ -96,6 +96,7 @@ import type {
   RenameChatSessionRequest,
   RenameChatSessionResponse,
   CloseChatSessionResponse,
+  UpdateChatSessionResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -478,6 +479,30 @@ export async function renameChatSession(
 
 export async function closeChatSession(sessionId: string): Promise<CloseChatSessionResponse> {
   return fetchJson(`${chatSessionPath(sessionId)}/close`, "api.chatSessionCloseFailed", {
+    method: "POST",
+  });
+}
+
+export async function pinChatSession(sessionId: string): Promise<UpdateChatSessionResponse> {
+  return fetchJson(`${chatSessionPath(sessionId)}/pin`, "api.chatSessionPinFailed", {
+    method: "POST",
+  });
+}
+
+export async function unpinChatSession(sessionId: string): Promise<UpdateChatSessionResponse> {
+  return fetchJson(`${chatSessionPath(sessionId)}/unpin`, "api.chatSessionUnpinFailed", {
+    method: "POST",
+  });
+}
+
+export async function archiveChatSession(sessionId: string): Promise<UpdateChatSessionResponse> {
+  return fetchJson(`${chatSessionPath(sessionId)}/archive`, "api.chatSessionArchiveFailed", {
+    method: "POST",
+  });
+}
+
+export async function unarchiveChatSession(sessionId: string): Promise<UpdateChatSessionResponse> {
+  return fetchJson(`${chatSessionPath(sessionId)}/unarchive`, "api.chatSessionUnarchiveFailed", {
     method: "POST",
   });
 }

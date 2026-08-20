@@ -48,6 +48,7 @@ import {
   fetchOverview,
   fetchOverviewSubtitles,
   getAgentSession,
+  getChatSession,
   getTerminalSession,
   listAgentSessions,
   listTerminalSessions,
@@ -69,6 +70,7 @@ import {
   statusToTone,
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
+import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { SkillTabPreview } from "../../routes/PluginsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
@@ -511,6 +513,11 @@ function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
       />
     );
   }
+  // chat tab 渲染 ChatSessionDetailBody（embedded：无独立全屏/返回 header，thread 直接嵌
+  // 中栏 flex-col；tab 名由 usePanelMeta chat 分支提供）。
+  if (panelRef.kind === "chat") {
+    return <ChatSessionDetailBody id={panelRef.sessionId} embedded />;
+  }
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
     return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
@@ -647,6 +654,14 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     queryFn: fetchOverview,
     queryKey: ["overview"],
   });
+  // chat tab 的 displayName（LLM 标题已写回 registry 元数据）；chat 是 global 会话，无
+  // projectName session detail 可查（agent/terminal 的 useAgentDetail/useTerminalDetail 会 404），
+  // 单独按 /api/chat-sessions/:id 取。enabled 按 kind==="chat"，非 chat 时 key 固定空 id 零网络。
+  const chat = useQuery({
+    enabled: panelRef.kind === "chat",
+    queryKey: ["chat-sessions", panelRef.kind === "chat" ? panelRef.sessionId : ""],
+    queryFn: () => getChatSession(panelRef.kind === "chat" ? panelRef.sessionId : ""),
+  });
   // sidecar 实例名记忆（第三层兜底 + 权威写回）：detail/列表缓存全 miss（刷新后 layout 恢复
   // tab、缓存未热）时读 localStorage 记忆显名字（免闪 id）；拿到权威 session 时写回记忆。
   // 读用 useAtomValue（jotai storage atom 同步出 localStorage 初值）；写走下方
@@ -687,6 +702,21 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
           className="inline-flex shrink-0 items-center text-on-surface-muted"
         >
           <ShellIcon className="h-4 w-4" name="file" />
+        </span>
+      ),
+    };
+  }
+  if (panelRef.kind === "chat") {
+    // chat 会话 meta：displayName（LLM 标题已写回元数据）+ 聊天气泡 marker；pi chat 无
+    // agent/terminal 生命周期，无 statusDot。
+    return {
+      label: chat.data?.session.displayName || panelRef.sessionId,
+      marker: (
+        <span
+          aria-hidden="true"
+          className="inline-flex shrink-0 items-center text-on-surface-muted"
+        >
+          <ShellIcon className="h-4 w-4" name="chat" />
         </span>
       ),
     };
@@ -1664,7 +1694,9 @@ function TabChip({
       ? panelRef.sessionId.slice(0, 12)
       : panelRef.kind === "skill"
         ? panelRef.name
-        : panelRef.path);
+        : panelRef.kind === "chat"
+          ? panelRef.sessionId.slice(0, 12)
+          : panelRef.path);
   // 仅 session tab 有实例信息（file/git/skill 无 session 生命周期，不渲染 ℹ）。装配复用
   // useInstanceInfoActions（与移动端 ℹ sheet 同源，detail 查询同 query key 零额外网络），
   // variant="modal" 居中卡片（移动端保持底部 sheet）。
@@ -2253,7 +2285,9 @@ function DragGhost({
       ? panelRef.sessionId.slice(0, 12)
       : panelRef.kind === "skill"
         ? panelRef.name
-        : panelRef.path);
+        : panelRef.kind === "chat"
+          ? panelRef.sessionId.slice(0, 12)
+          : panelRef.path);
   return (
     <div
       ref={ghostRef}

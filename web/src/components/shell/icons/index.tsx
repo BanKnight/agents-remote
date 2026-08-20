@@ -1,5 +1,8 @@
 import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
+import archive from "./archive.svg?raw";
+import check from "./check.svg?raw";
+import chat from "./chat.svg?raw";
 import closeIcon from "./close.svg?raw";
 import edit from "./edit.svg?raw";
 import ellipsis from "./ellipsis.svg?raw";
@@ -26,8 +29,11 @@ import trash from "./trash.svg?raw";
 import upload from "./upload.svg?raw";
 
 const svgMap: Record<string, string> = {
+  archive,
   "agent-nav": agentNav,
   anthropic,
+  check,
+  chat,
   close: closeIcon,
   edit,
   ellipsis,

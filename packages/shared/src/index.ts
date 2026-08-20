@@ -941,6 +941,10 @@ export type ChatSession = {
   updatedAt: string;
   /** pi SessionManager 的 session id（Phase 3 接入后回填，用于定位 pi JSONL 历史）。 */
   piSessionId?: string;
+  /** 置顶（列表置顶组，管理操作不更新 updatedAt）。可选，旧 JSON 无此字段。 */
+  pinned?: boolean;
+  /** 归档时间戳（列表归档折叠组）；null/缺失 = 未归档。 */
+  archivedAt?: string;
 };
 
 export type ListChatSessionsResponse = {
@@ -968,6 +972,10 @@ export type RenameChatSessionResponse = {
 };
 
 export type CloseChatSessionResponse = {
+  session: ChatSession;
+};
+
+export type UpdateChatSessionResponse = {
   session: ChatSession;
 };
 

@@ -124,7 +124,9 @@ function MobileTabChip({
       ? item.ref.sessionId.slice(0, 12)
       : item.ref.kind === "skill"
         ? item.ref.name
-        : item.ref.path);
+        : item.ref.kind === "chat"
+          ? item.ref.sessionId.slice(0, 12)
+          : item.ref.path);
   return (
     <div
       className={`group/tab flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition ${

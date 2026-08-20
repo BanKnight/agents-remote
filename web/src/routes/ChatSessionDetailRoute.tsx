@@ -23,22 +23,40 @@ import type { RetryInfo } from "./claude-adapter";
 
 /**
  * Chat 会话 detail（设计 workbench-views §3.1，Phase 4 接线）。`/chat/$id` 独立路由
- *（rootRoute 平级，同 settingsRoute 范式）——chat 不绑项目，不进 workbench panel focus
- * 体系（非 InstanceArea panel、不依赖 layout 保活）；移动端「全屏聚焦态」由本页全屏渲染
- * 呈现（无底部 nav、无返回 header 栏之外的 chrome）。
+ *（rootRoute 平级，同 settingsRoute 范式）——chat 不绑项目；桌面端由 workbench focus 体系
+ * 在中栏打开（ChatPanelRef{kind:"chat"}），移动端「全屏聚焦态」由本页全屏渲染呈现（无底部
+ * nav、无返回 header 栏之外的 chrome）。
  *
- * 复用 `ClaudeChat` UI 形态（`useExternalStoreRuntime` provider-agnostic）：渲染链复用
- * `VirtualizedThreadContent`（turn 虚拟化 + sticky-bottom + ChatSkeleton），数据源换
- * `/api/chat-sessions/:id/stream`（pi 事件流 → usePiSession storeAdapter），历史走 pi
- * SessionManager JSONL 回放。composer 镜像 `ComposerWithInterrupt` 卡片结构，砍三 selector
- * 与 slash catalog（pi 不暴露 model/permission/effort 运行态切换、无 slash 命令面），
- * 保留发送/中断/Stop-Send 互斥 + 桌面/移动 Enter 决策 + iOS 键盘避让。
+ * Route wrapper 极薄：仅 useParams 取 id，渲染
+ * {@link ChatSessionDetailBody}（embedded=false 时带全屏 `<main>` + header）。嵌入式
+ *（中栏 `kind:"chat"` tab）走 `ChatSessionDetailBody embedded`——跳过 `<main>`/header，
+ * 直接渲染 runtime + thread + composer；hooks 全在 body 持有（route 层不调，避免 conditional
+ * hooks），useComposerKeyboardAvoidance / usePiSession 不因 embedded 与否条件调用。
  */
 export function ChatSessionDetailRoute() {
+  const { id } = useParams({ from: "/chat/$id" });
+  return <ChatSessionDetailBody id={id} />;
+}
+
+/**
+ * Chat 会话 detail 主体（embedded 可选）。复用 `ClaudeChat` UI 形态
+ *（`useExternalStoreRuntime` provider-agnostic）：渲染链复用 `VirtualizedThreadContent`
+ *（turn 虚拟化 + sticky-bottom + ChatSkeleton），数据源 `/api/chat-sessions/:id/stream`
+ *（pi 事件流 → usePiSession storeAdapter），历史走 pi SessionManager JSONL 回放。composer
+ * 镜像 `ComposerWithInterrupt` 卡片结构，砍三 selector 与 slash catalog（pi 不暴露
+ * model/permission/effort 运行态切换、无 slash 命令面），保留发送/中断/Stop-Send 互斥 +
+ * 桌面/移动 Enter 决策 + iOS 键盘避让。沙发调用方须 `flex min-h-0 flex-1 flex-col overflow-hidden`。
+ */
+export function ChatSessionDetailBody({
+  id,
+  embedded = false,
+}: {
+  id: string;
+  embedded?: boolean;
+}) {
   const { t } = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { id } = useParams({ from: "/chat/$id" });
   const { data } = useQuery({
     queryKey: ["chat-sessions", id],
     queryFn: () => getChatSession(id),
@@ -70,6 +88,40 @@ export function ChatSessionDetailRoute() {
   // live 期 chat_title 帧优先（最新）；重连/重启后从元数据 displayName 读。
   const title = liveTitle ?? data?.session.displayName ?? id;
 
+  const threadBody = (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+          <div
+            data-composer-float
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
+          >
+            <div
+              className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
+              style={{ transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))" }}
+            >
+              <ComposerPrimitive.Root>
+                <ComposerWithInterruptPi
+                  connected={connected}
+                  onCancel={onCancel}
+                  attachments={attachments}
+                  addAttachments={addAttachments}
+                  removeAttachment={removeAttachment}
+                />
+              </ComposerPrimitive.Root>
+            </div>
+          </div>
+        </ThreadPrimitive.Root>
+      </div>
+    </AssistantRuntimeProvider>
+  );
+
+  if (embedded) {
+    // 中栏 `kind:"chat"` tab：无独立全屏/返回 header（tab chip 提供名字），直接嵌 thread。
+    return <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{threadBody}</div>;
+  }
+
   return (
     <main className="flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-surface pt-[var(--shell-safe-area-top)] text-on-surface">
       <header className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-3">
@@ -91,32 +143,7 @@ export function ChatSessionDetailRoute() {
         </button>
         <span className="min-w-0 flex-1 truncate text-base font-semibold">{title}</span>
       </header>
-      <AssistantRuntimeProvider runtime={runtime}>
-        <div className="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
-          <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
-            <div
-              data-composer-float
-              className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
-            >
-              <div
-                className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
-                style={{ transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))" }}
-              >
-                <ComposerPrimitive.Root>
-                  <ComposerWithInterruptPi
-                    connected={connected}
-                    onCancel={onCancel}
-                    attachments={attachments}
-                    addAttachments={addAttachments}
-                    removeAttachment={removeAttachment}
-                  />
-                </ComposerPrimitive.Root>
-              </div>
-            </div>
-          </ThreadPrimitive.Root>
-        </div>
-      </AssistantRuntimeProvider>
+      {threadBody}
     </main>
   );
 }

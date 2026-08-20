@@ -219,6 +219,11 @@ function WorkbenchContent({
           scope: gitParsed.scope,
         });
       }
+      // chat 会话是 global（无 projectName），focusId=`chat_${uuid}` 前缀互斥。必须在
+      // projectName 解析前判定——session focus 的 `!projectName → return prev` 会拦掉 chat。
+      if (focusId.startsWith("chat_")) {
+        return ensureTabOpenLeaf(prev, { kind: "chat", sessionId: focusId });
+      }
       const projectName =
         scope.kind === "project"
           ? scope.key
@@ -242,8 +247,11 @@ function WorkbenchContent({
     for (const leaf of collectLeaves(layout.root)) {
       for (const t of leaf.tabs) {
         // file/git tab 不参与 stale prune（无生命周期，刷新保留，设计 §6 决策 19 / 阶段 3）；
-        // session tab 用 sessionId 判定。
-        if (t.kind === "file" || t.kind === "git" || t.kind === "skill") continue;
+        // session tab 用 sessionId 判定。chat 会话列表独立管理，无 globalRefs 对应，同样跳过
+        // ——否则刷新后 chat tab 被误判 stale 清光（关会话后的残留 tab 由用户关 tab 处理，与
+        // agent/terminal 同语义）。
+        if (t.kind === "file" || t.kind === "git" || t.kind === "skill" || t.kind === "chat")
+          continue;
         // 当前聚焦 session tab 不 prune：create/resume navigate 先行时 globalRefs（overview）
         // 尚未追上新 session，focus effect 刚开的 tab 会被误判 stale 删掉。focusId 是「用户正在看」
         // 的语义边界——它在 refs 之外只是暂态（overview 后台刷新会追上），不该据此清 tab。
@@ -508,6 +516,12 @@ function WorkbenchContent({
         void navigateWorkbench(scope, active.sessionId, search);
         return;
       }
+      if (active.kind === "chat") {
+        // chat 是 global 会话（无 projectName），focus URL 用 sessionId 即可——focus effect
+        // 据此重开 chat tab；保当前 scope（chat 无处改写左栏，与 skill 分支同模式）。
+        void navigateWorkbench(scope, active.sessionId, search);
+        return;
+      }
       if (active.kind === "file") {
         const { projectName, path } = splitFilePath(active.path);
         // 同 scope 才走 file URL；跨项目 file 无法在当前 project URL 下表达，清 focus 保 scope。
@@ -600,6 +614,15 @@ function WorkbenchContent({
         void navigateToSkill(ref.name);
         return;
       }
+      if (ref?.kind === "chat") {
+        // chat 是 global 会话（无 projectName）：保 scope，focus URL=sessionId（focus effect 据此重开）。
+        navigateWorkbench(scope, ref.sessionId, {
+          rightTab,
+          tab: tabFromUrl,
+          ...(leftMode !== "auto" ? { leftMode } : {}),
+        });
+        return;
+      }
       if (ref) navigateSession(ref);
     },
     [
@@ -652,6 +675,13 @@ function WorkbenchContent({
         void navigateToGitCompareFile(ref.projectName, ref.base, ref.compare, ref.path);
       else void navigateToGitFile(ref.projectName, ref.scope, ref.path);
     } else if (ref.kind === "skill") void navigateToSkill(ref.name);
+    else if (ref.kind === "chat")
+      // chat 无 projectName：保 scope，focus URL=sessionId（与 onSelectTab chat 分支同模式）。
+      navigateWorkbench(scope, ref.sessionId, {
+        rightTab,
+        tab: tabFromUrl,
+        ...(leftMode !== "auto" ? { leftMode } : {}),
+      });
   }, [
     dragState,
     activeZone,
@@ -662,6 +692,11 @@ function WorkbenchContent({
     navigateToGitFile,
     navigateToGitCompareFile,
     navigateToSkill,
+    navigateWorkbench,
+    scope,
+    rightTab,
+    tabFromUrl,
+    leftMode,
   ]);
   const cancelDrag = useCallback(() => {
     setDragState(null);

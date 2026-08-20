@@ -78,6 +78,8 @@ test("tabIdOf: session/file/git/skill 各 kind 编码（skill = skill_${name}，
   );
   // skill tab：tabId = skill_${name}（agent 维度不编码，当前单 agent claude-code，YAGNI）
   expect(tabIdOf({ kind: "skill", name: "tdd" })).toBe("skill_tdd");
+  // chat 会话：tabId = sessionId（无 projectName；chat_ 前缀与 agent_/terminal_ 互斥去重安全）
+  expect(tabIdOf({ kind: "chat", sessionId: "chat_abc" })).toBe("chat_abc");
 });
 
 test("parseSkillTabId: skill_${name} → name；非 skill tabId → null", () => {

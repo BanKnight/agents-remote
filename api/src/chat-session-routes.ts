@@ -6,6 +6,7 @@ import type {
   ListChatSessionsResponse,
   RenameChatSessionRequest,
   RenameChatSessionResponse,
+  UpdateChatSessionResponse,
 } from "@agents-remote/shared";
 import { jsonError } from "./http-auth";
 import type { ChatSessionRegistry } from "./chat-session-registry";
@@ -19,6 +20,8 @@ import type { ChatSessionRegistry } from "./chat-session-registry";
  * - `GET    /api/chat-sessions/:id`       → detail
  * - `POST   /api/chat-sessions/:id/rename`→ rename
  * - `POST   /api/chat-sessions/:id/close` → close（Phase 1 删元数据；Phase 3+ 销毁 pi 运行时）
+ * - `POST   /api/chat-sessions/:id/{pin,unpin,archive,unarchive}` → 管理 action（置顶/归档，
+ *   批量由客户端逐条调用，无 batch 端点）
  *
  * 返回 `undefined` 表示不匹配，由 index.ts 继续向后 dispatch（同 handleSessionRoutes 契约）。
  */
@@ -73,6 +76,22 @@ export const handleChatSessionRoutes = async (
     return Response.json(response);
   }
 
+  if (request.method === "POST") {
+    // 管理 action（pin/unpin/archive/unarchive）——统一表驱动，批量由客户端逐条调用。
+    const action = matchManagementAction(url.pathname);
+    if (action) {
+      let session;
+      if (action === "pin") session = await registry.setPinned(match.id, true);
+      else if (action === "unpin") session = await registry.setPinned(match.id, false);
+      else if (action === "archive")
+        session = await registry.setArchived(match.id, new Date().toISOString());
+      else session = await registry.setArchived(match.id, null);
+      if (!session) return jsonError("SESSION_NOT_FOUND", "Chat session not found", 404);
+      const response: UpdateChatSessionResponse = { session };
+      return Response.json(response);
+    }
+  }
+
   return undefined;
 };
 
@@ -87,10 +106,29 @@ const matchChatSessionRoute = (pathname: string): { id?: string } | undefined =>
     const id = decodePathSegment(segments[2]);
     return id ? { id } : undefined;
   }
-  // /api/chat-sessions/:id/{rename,close}
-  if (segments.length === 4 && (segments[3] === "rename" || segments[3] === "close")) {
+  // /api/chat-sessions/:id/{rename,close,pin,unpin,archive,unarchive}
+  if (
+    segments.length === 4 &&
+    (segments[3] === "rename" ||
+      segments[3] === "close" ||
+      segments[3] === "pin" ||
+      segments[3] === "unpin" ||
+      segments[3] === "archive" ||
+      segments[3] === "unarchive")
+  ) {
     const id = decodePathSegment(segments[2]);
     return id ? { id } : undefined;
+  }
+  return undefined;
+};
+
+type ChatManagementAction = "pin" | "unpin" | "archive" | "unarchive";
+
+/** 匹配管理 action 后缀（白名单判定，非白名单返回 undefined 由外层继续 dispatch）。 */
+const matchManagementAction = (pathname: string): ChatManagementAction | undefined => {
+  const suffix = pathname.split("/").filter(Boolean).at(-1);
+  if (suffix === "pin" || suffix === "unpin" || suffix === "archive" || suffix === "unarchive") {
+    return suffix;
   }
   return undefined;
 };

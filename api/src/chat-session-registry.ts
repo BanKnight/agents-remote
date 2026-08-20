@@ -177,6 +177,34 @@ export class ChatSessionRegistry {
     await this.writeMetadata(updated);
   }
 
+  /**
+   * 置顶/取消置顶（列表置顶组）。管理操作不更新 updatedAt（保持排序语义——置顶组内仍按
+   * updatedAt 排，活跃组不受影响）。幂等：值不变短路。
+   */
+  async setPinned(id: string, pinned: boolean): Promise<ChatSession | undefined> {
+    await this.ensureIndexLoaded();
+    const session = this.index.get(id);
+    if (!session) return undefined;
+    if (session.pinned === pinned) return session;
+    const updated: ChatSession = { ...session, pinned };
+    await this.writeMetadata(updated);
+    return updated;
+  }
+
+  /**
+   * 归档/恢复（列表归档折叠组）。archivedAt 存时间戳（archived 组按它降序）；恢复传 null。
+   * 管理操作不更新 updatedAt。幂等：值不变短路。
+   */
+  async setArchived(id: string, archivedAt: string | null): Promise<ChatSession | undefined> {
+    await this.ensureIndexLoaded();
+    const session = this.index.get(id);
+    if (!session) return undefined;
+    if ((session.archivedAt ?? null) === archivedAt) return session;
+    const updated: ChatSession = { ...session, archivedAt: archivedAt ?? undefined };
+    await this.writeMetadata(updated);
+    return updated;
+  }
+
   private resolveDisplayName(displayName: string | undefined): string {
     const trimmed = displayName?.trim();
     return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_CHAT_TITLE;
@@ -217,6 +245,8 @@ export class ChatSessionRegistry {
       createdAt: typeof obj.createdAt === "string" ? obj.createdAt : new Date(0).toISOString(),
       updatedAt: typeof obj.updatedAt === "string" ? obj.updatedAt : new Date(0).toISOString(),
       piSessionId: typeof obj.piSessionId === "string" ? obj.piSessionId : undefined,
+      pinned: typeof obj.pinned === "boolean" ? obj.pinned : undefined,
+      archivedAt: typeof obj.archivedAt === "string" ? obj.archivedAt : undefined,
     };
   }
 
