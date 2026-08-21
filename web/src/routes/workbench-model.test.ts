@@ -36,6 +36,7 @@ import {
   resizeSplitChildren,
   setActiveTabInLeaf,
   splitFilePath,
+  stickyWorkbenchSearch,
   tabIdOf,
   toggleLeafMaximize,
   validateLayoutV3,
@@ -140,6 +141,40 @@ test("deriveWorkbenchRouteContext: global focus /projects/session/$id → focusI
   ).toEqual({
     scope: { kind: "global" },
     focusId: "agent_abc",
+  });
+});
+
+test("deriveWorkbenchRouteContext: chat focus 兜底 mode=chat（URL mode 键丢失时左栏保持 chat 语境）", () => {
+  // focusId=chat_* 且 URL 无 mode → 派生层补 mode=chat（chat 只在 chat 模式创建/打开的不变式）。
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "chat_abc" })),
+  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "chat" });
+  // URL 显式 mode 优先（不覆盖）。
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/projects/session/$id", { id: "chat_abc" }, { mode: "agent" }),
+    ),
+  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "agent" });
+  // 非 chat focus 不补。
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "agent_abc" })),
+  ).toEqual({ scope: { kind: "global" }, focusId: "agent_abc" });
+});
+
+test("stickyWorkbenchSearch: 全正交维合并 + 默认值省略（URL 即真相约定）", () => {
+  // 全维度非默认 → 全写键。
+  expect(
+    stickyWorkbenchSearch({ rightTab: "git", tab: "files", leftMode: "files", mode: "chat" }),
+  ).toEqual({ rightTab: "git", tab: "files", leftMode: "files", mode: "chat" });
+  // 默认值（leftMode=auto / mode=agent）与 undefined 省略 → 键不写（URL 省略 = 默认/回退记忆）。
+  expect(
+    stickyWorkbenchSearch({ rightTab: undefined, tab: undefined, leftMode: "auto", mode: "agent" }),
+  ).toEqual({});
+  expect(stickyWorkbenchSearch({})).toEqual({});
+  // 部分透传：只带非默认维。
+  expect(stickyWorkbenchSearch({ tab: "overview", mode: "chat" })).toEqual({
+    tab: "overview",
+    mode: "chat",
   });
 });
 

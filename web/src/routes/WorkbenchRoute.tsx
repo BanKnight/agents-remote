@@ -46,6 +46,7 @@ import {
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
+  stickyWorkbenchSearch,
   splitFilePath,
   toggleLeafMaximize,
   useIsDesktopViewport,
@@ -112,8 +113,19 @@ function WorkbenchContent({
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
-  // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。
-  const backToProjects = () => void navigate({ to: "/projects" });
+  // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。粘性透传 search（含
+  // mode）——用户离开会话页时的模式在返回后保持。
+  const backToProjects = () =>
+    void navigateWorkbench(
+      { kind: "global" },
+      undefined,
+      stickyWorkbenchSearch({
+        rightTab,
+        tab: tabFromUrl,
+        leftMode,
+        mode,
+      }),
+    );
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
   // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件只读，
   // 写入由 WorkbenchShell（RailButton 唤出 / onCollapse 收起）负责。纯手动控制，持久化到
@@ -129,19 +141,19 @@ function WorkbenchContent({
   // TanStack Router navigate 整体替换 search 对象（非 merge），若只传单键会丢失其他维 ——
   // 违反设计 §13「tab/rightTab 正交」。用 URL 原始值（而非解析值）合并。
   const onRightTabChange = (rightTabNext: WorkbenchInspectionTab) => {
-    void navigateWorkbench(scope, focusId, {
-      rightTab: rightTabNext,
-      tab: tabFromUrl,
-      ...(leftMode !== "auto" ? { leftMode } : {}),
-    });
+    void navigateWorkbench(
+      scope,
+      focusId,
+      stickyWorkbenchSearch({ rightTab: rightTabNext, tab: tabFromUrl, leftMode, mode }),
+    );
   };
   const onTabChange = (next: WorkbenchMiddleTab) => {
     setRememberedMiddleTab(next);
-    void navigateWorkbench(scope, focusId, {
-      rightTab,
-      tab: next,
-      ...(leftMode !== "auto" ? { leftMode } : {}),
-    });
+    void navigateWorkbench(
+      scope,
+      focusId,
+      stickyWorkbenchSearch({ rightTab, tab: next, leftMode, mode }),
+    );
   };
   // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
   // 中栏边缘 RailButton 唤出，RightPanelTabs onCollapse 收起。旧实现 setRightCollapsed(!focusId)
@@ -298,17 +310,16 @@ function WorkbenchContent({
       if (ref.kind !== "session") return;
       const navScope: WorkbenchScope =
         scope.kind === "project" ? { kind: "project", key: ref.projectName } : scope;
-      // 与 onRightTabChange/onTabChange 同模式：传完整 {tab,rightTab,leftMode}（URL 原始值）。
-      // navigateWorkbench 整体替换 search 对象，不传则会清空 tab/rightTab/leftMode ——点中栏
-      // tab 会把左栏 tab（?tab=files）等正交维一起冲掉。用 URL 原始值合并，只换 focusId。
-      // leftMode 粘性透传（files/plugins 写，非 auto）：中栏 tab 切换不改左栏模式（VSCode 式）。
-      void navigateWorkbench(navScope, ref.sessionId, {
-        rightTab,
-        tab: tabFromUrl,
-        ...(leftMode !== "auto" ? { leftMode } : {}),
-      });
+      // 粘性透传全部正交 search 维（rightTab/tab/leftMode/mode，stickyWorkbenchSearch 统一
+      // 合并）——navigateWorkbench 整体替换 search 对象，漏带任一维即从 URL 丢状态（mode 曾
+      // 因手抄合并漏掉，点中栏 tab 后 chat 模式丢失、左栏语境被打掉）。
+      void navigateWorkbench(
+        navScope,
+        ref.sessionId,
+        stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+      );
     },
-    [navigateWorkbench, scope, rightTab, tabFromUrl, leftMode],
+    [navigateWorkbench, scope, rightTab, tabFromUrl, leftMode, mode],
   );
   const focusPanel = useCallback(
     (ref: WorkbenchPanelRef) => {
@@ -362,25 +373,17 @@ function WorkbenchContent({
         void navigate({
           to: "/projects/$key/file/$",
           params: { key: projectName, _splat: path },
-          search: {
-            rightTab,
-            tab: tabFromUrl,
-            ...(leftMode !== "auto" ? { leftMode } : {}),
-          },
+          search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
         });
         return;
       }
       void navigate({
         to: "/files/file/$",
         params: { _splat: fullPath },
-        search: {
-          rightTab,
-          tab: tabFromUrl,
-          ...(leftMode !== "auto" ? { leftMode } : {}),
-        },
+        search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, leftMode],
+    [navigate, scope, rightTab, tabFromUrl, leftMode, mode],
   );
   // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
   //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
@@ -400,15 +403,14 @@ function WorkbenchContent({
       void navigate({
         to: "/projects/$key/git/$",
         params: { key: projectName, _splat: path },
+        // gitScope 是路由特定维度，在 sticky 基础上追加。
         search: {
-          rightTab,
-          tab: tabFromUrl,
+          ...stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
           gitScope: scope,
-          ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, leftMode],
+    [navigate, rightTab, tabFromUrl, leftMode, mode],
   );
   // compare 模式 git tab focus URL：与 navigateToGitFile 同路由（/projects/$key/git/$），
   // search 用 gitCompare（编码 `${base}~${compare}`）替代 gitScope，两者互斥。
@@ -419,14 +421,12 @@ function WorkbenchContent({
         to: "/projects/$key/git/$",
         params: { key: projectName, _splat: path },
         search: {
-          rightTab,
-          tab: tabFromUrl,
+          ...stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
           gitCompare: `${base}~${compare}`,
-          ...(leftMode !== "auto" ? { leftMode } : {}),
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, leftMode],
+    [navigate, rightTab, tabFromUrl, leftMode, mode],
   );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
   const onOpenGitFile = useCallback(
@@ -459,25 +459,17 @@ function WorkbenchContent({
         void navigate({
           to: "/projects/$key/skill/$",
           params: { key: scope.key, _splat: name },
-          search: {
-            rightTab,
-            tab: tabFromUrl,
-            ...(leftMode !== "auto" ? { leftMode } : {}),
-          },
+          search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
         });
         return;
       }
       void navigate({
         to: "/plugins/skill/$",
         params: { _splat: name },
-        search: {
-          rightTab,
-          tab: tabFromUrl,
-          ...(leftMode !== "auto" ? { leftMode } : {}),
-        },
+        search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, leftMode],
+    [navigate, scope, rightTab, tabFromUrl, leftMode, mode],
   );
   // Manage tab 点已装 skill 行 → 中栏开/激活 skill tab + focus（对标 onOpenFile）。skill ref
   //（kind:"skill", name）全局去重（tabId=skill_${name}），无 project scope gate（同 file）。
@@ -502,11 +494,7 @@ function WorkbenchContent({
       update(() => next);
       if (focusId !== tabId) return;
       const active = activeTabRefLeaf(next);
-      const search = {
-        rightTab,
-        tab: tabFromUrl,
-        ...(leftMode !== "auto" ? { leftMode } : {}),
-      };
+      const search = stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode });
       if (!active) {
         // 无剩余 tab：清 focus，保 scope（避免 focus effect 把刚关的 tab 再 ensure 回来）。
         void navigateWorkbench(scope, undefined, search);
@@ -616,11 +604,11 @@ function WorkbenchContent({
       }
       if (ref?.kind === "chat") {
         // chat 是 global 会话（无 projectName）：保 scope，focus URL=sessionId（focus effect 据此重开）。
-        navigateWorkbench(scope, ref.sessionId, {
-          rightTab,
-          tab: tabFromUrl,
-          ...(leftMode !== "auto" ? { leftMode } : {}),
-        });
+        navigateWorkbench(
+          scope,
+          ref.sessionId,
+          stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+        );
         return;
       }
       if (ref) navigateSession(ref);
@@ -630,6 +618,11 @@ function WorkbenchContent({
       focusId,
       layout,
       scope,
+      navigateWorkbench,
+      rightTab,
+      tabFromUrl,
+      leftMode,
+      mode,
       navigateToFile,
       navigateToGitFile,
       navigateToGitCompareFile,
@@ -677,11 +670,11 @@ function WorkbenchContent({
     } else if (ref.kind === "skill") void navigateToSkill(ref.name);
     else if (ref.kind === "chat")
       // chat 无 projectName：保 scope，focus URL=sessionId（与 onSelectTab chat 分支同模式）。
-      navigateWorkbench(scope, ref.sessionId, {
-        rightTab,
-        tab: tabFromUrl,
-        ...(leftMode !== "auto" ? { leftMode } : {}),
-      });
+      navigateWorkbench(
+        scope,
+        ref.sessionId,
+        stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+      );
   }, [
     dragState,
     activeZone,
@@ -697,6 +690,7 @@ function WorkbenchContent({
     rightTab,
     tabFromUrl,
     leftMode,
+    mode,
   ]);
   const cancelDrag = useCallback(() => {
     setDragState(null);
@@ -754,10 +748,16 @@ function WorkbenchContent({
     rightPanelCollapsible && !rightCollapsed ? (
       <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
     ) : null;
-  // 一级会话页（§3.1，桌面/移动结构对齐）：global scope + leftMode=auto + 无 focusId 的列表态
-  //= mode tab 语境。mode tab 在左栏 PanelHeader title（对齐移动 MobilePageHeader title），
-  // 两种模式都保持三栏 shell + 中栏 InstanceArea 始终在；左栏 body 按 mode 切 Agent/Chat。
-  const sessionPage = scope.kind === "global" && leftMode === "auto" && focusId === undefined;
+  // 一级会话页（§3.1，桌面/移动结构对齐）：global scope + leftMode=auto 恒为会话页语境，
+  // **与 focusId 解耦**——中栏聚焦（session/chat/file/git/skill 任何 tab）是正交维度，不改左栏
+  //（VSCode 式，同 leftMode 粘性语义）。mode tab 常驻左栏 PanelHeader title（对齐移动
+  // MobilePageHeader title），不掉回「会话」文案标题；左栏 body 按 mode 切（chat → ChatOverview，
+  // agent → ProjectLeftPanel 项目总览）。chat 聚焦时 mode 由 deriveWorkbenchRouteContext 兜底
+  //（focusId=chat_* ⇒ mode=chat），URL mode 键丢失也不掉语境。
+  // 两种模式都保持三栏 shell + 中栏 InstanceArea 始终在。
+  // ⚠️ 新增中栏 tab 类型时不要在此按 focusId 前缀加分支——左栏语境只由 scope/leftMode/mode
+  // 决定，tab 类型差异全部收敛在 focus effect 与 PanelRouter。
+  const sessionPage = scope.kind === "global" && leftMode === "auto";
   const chatMode = sessionPage && mode === "chat";
   // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
   //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下

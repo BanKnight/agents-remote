@@ -6,6 +6,8 @@ import { useT } from "../../i18n";
 import { cn } from "../../lib/utils";
 import {
   mergeProjectsWithCandidates,
+  stickyWorkbenchSearch,
+  useWorkbenchRouteContext,
   type GlobalInstanceCandidate,
   type WorkbenchPanelRef,
   workbenchProjectGroupsCollapsedAtom,
@@ -265,6 +267,7 @@ function GroupedProjectsList({
 }: GroupedProjectsListProps) {
   const { t } = useT();
   const navigate = useNavigate();
+  const routeCtx = useWorkbenchRouteContext();
   const queryClient = useQueryClient();
   const { confirm, holder: confirmHolder } = useConfirm();
   const deleteMutation = useMutation({
@@ -310,8 +313,15 @@ function GroupedProjectsList({
     });
     if (ok) deleteMutation.mutate(projectName);
   };
-  const enterProject = (name: string) =>
-    void navigate({ to: "/projects/$key", params: { key: name } });
+  // 进项目透传粘性 search（rightTab/tab/leftMode/mode）——navigate 整体替换 search，漏带即丢；
+  // mode 透传保证「chat 模式进项目 → 返回会话页」仍回 chat（返回入口 backToProjects 同透传）。
+  const enterProject = (name: string) => {
+    void navigate({
+      to: "/projects/$key",
+      params: { key: name },
+      search: stickyWorkbenchSearch(routeCtx),
+    });
+  };
 
   // 统一 sections 列表（置顶 + 项目 groups），每个 section 按自身展开态 + 上下邻居态算
   // Apple 动态圆角 + 上边界（inset grouped 范式，2026-08-10）：

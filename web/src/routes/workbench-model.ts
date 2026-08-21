@@ -349,6 +349,34 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
 export type WorkbenchSearch = ReturnType<typeof validateWorkbenchSearch>;
 
 /**
+ * 粘性 search 合并（navigate 调用点统一入口）。TanStack navigate **整体替换** search 对象
+ *（非 merge），workbench 各正交维度（rightTab/tab/leftMode/mode）必须每次显式带全，漏带即
+ * 从 URL 丢状态。历史上各调用点手写 `{ rightTab, tab, ...(leftMode !== "auto" && { leftMode }) }`
+ * 展开——新增 search 维度（如 mode）要改 N 个调用点，新 tab 类型的 focus 导航再手抄一遍，
+ * 漏抄一处该维度就丢（mode 曾因此从中栏 tab 切换路径全部丢失）。收敛于此：新增维度或新增
+ * tab 类型的 focus 导航只改/只调这一处。
+ *
+ * 默认值省略约定与 URL 即真相一致：leftMode=auto / mode=agent 不写键（URL 省略 = 默认）；
+ * rightTab/tab 值为 undefined 时不写键（回退各自记忆 atom）。路由特定维度（gitScope/gitCompare）
+ * 不在此——由调用点在展开本函数结果后追加。
+ */
+export function stickyWorkbenchSearch(input: {
+  rightTab?: WorkbenchInspectionTab;
+  tab?: WorkbenchMiddleTab;
+  leftMode?: "auto" | "files" | "plugins";
+  mode?: WorkbenchMode;
+}): WorkbenchSearch {
+  return {
+    ...(input.rightTab !== undefined ? { rightTab: input.rightTab } : {}),
+    ...(input.tab !== undefined ? { tab: input.tab } : {}),
+    ...(input.leftMode !== undefined && input.leftMode !== "auto"
+      ? { leftMode: input.leftMode }
+      : {}),
+    ...(input.mode !== undefined && input.mode !== "agent" ? { mode: input.mode } : {}),
+  };
+}
+
+/**
  * workbench 路由上下文（Phase 1 路由重构，设计 workbench-stable-refactor.md）。7 个 workbench
  * 路由塌缩为共享 pathless layout route 下的子路由——layout 组件（WorkbenchLayoutShell）常驻
  * 不卸载，进出项目只 swap 子路由匹配；scope/focusId 由 layout **从 URL 派生**（单一数据管道，
@@ -433,8 +461,13 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
         ...s,
       };
     }
-    case "/projects/session/$id":
-      return { scope: { kind: "global" }, focusId: p.id, ...s };
+    case "/projects/session/$id": {
+      // mode 兜底：chat 会话聚焦（focusId=chat_*）⇒ mode=chat（chat 只在 chat 模式创建/打开，
+      // 数据不变式）。URL mode 键因故丢失（手工构造 URL / 旧入口漏透传）时左栏仍保持 chat
+      // 语境——派生层兜底而非渲染层 per-type 特判。
+      const chatFallback = p.id?.startsWith("chat_") ? ("chat" as const) : undefined;
+      return { scope: { kind: "global" }, focusId: p.id, ...s, mode: s.mode ?? chatFallback };
+    }
     case "/projects/$key":
       return { scope: { kind: "project", key: p.key ?? "" }, focusId: undefined, ...s };
     case "/projects/$key/session/$id":
