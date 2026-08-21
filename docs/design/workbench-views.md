@@ -84,6 +84,16 @@
 - **Chat detail**：独立路由 `/chat/$id`（不进 `/projects/$key/session/$id`，因 chat 不绑项目）。Phase 1 占位（提示「pi 运行时未接入」）；Phase 4 复用 `ClaudeChat` UI 形态（`useExternalStoreRuntime` provider-agnostic），数据源换 pi 事件流。
 - **一级入口语义**：一级 nav「项目」→「会话」（`nav.projects` 翻译值改，key 名不动，§12.1）；页面标题 `workbench.global` →「会话」。一级会话页左栏标题区 = mode tab（替代原「会话」文案标题），其上不再有项目级标题。
 
+### 3.1.1 会话生命周期与空闲回收（2026-08-21）
+
+用户语义：**真正发起（首条消息落盘）才算构建起对话**；离开后停转的会话运行时应销毁，防资源单调上涨。服务端单一空闲回收器（`api/src/chat-idle-recycler.ts`，index.ts 启动接线）统一承载，前端零改动。
+
+- **空会话语义**：`pi-jsonl/<chatId>/` 目录内无文件 = 从未真正发起对话（pi SDK 首条消息前不落盘 JSONL；ensureRunning 只 mkdir 空目录）。空会话（点「新建」即落元数据但无消息）在创建 **3 分钟**（`EMPTY_SESSION_TTL_MS`）后自动 `closeChatSession` 删元数据、清出列表——列表只呈现真对话。createdAt 年龄门槛防误删「WS 正在 ensureRunning 中」的新会话；存量脏数据（历史空「新对话」行）首次扫描即清理。
+- **运行时空闲回收**：有消息的会话闲置 **10 分钟**（`IDLE_RECYCLE_MS`）后 `piRuntime.close(chatId)` dispose AgentSession（进程内 SDK 对象 + 每会话 ModelRuntime + relay live buffer）。**历史不丢**——元数据 + JSONL 保留，重进 `ensureRunning` 从 JSONL resume（与 claude `--resume` 同语义）。「闲置」判据 = 最后活跃（`updatedAt`，`recordActivityChat` 分钟截断维护）超阈值且非 active。
+- **active 定义（不回收）**：`chatRuntimeState(chatId)` = `"none" | "active" | "idle"`——无 entry → none；`isStreaming || pendingQueues/sending 非空 || relay.hasSubscribers` → active（有人连着看 / turn 在跑不回收，多端 fan-out 靠订阅者保活）；否则 idle。
+- **扫描节奏**：`SCAN_INTERVAL_MS` 60s 一轮扫 registry 全量；回收失败（close/dispose 抛错）仅 warn，下轮重试。列表刷新靠前端 TanStack Query focus/重进 refetch，不做服务端推送。
+- **参数注入**：`startChatIdleRecycler({ piRuntime, registry, chatSessionsDir, intervalMs?, emptyTtlMs?, idleMs?, now? })` 全可注入（测试假时钟）；测试环境不启动。
+
 ## 4. 二级导航（4 tab）
 
 桌面中栏顶部 / 移动单行 header 内，统一 4 个 tab。**tab 导航常驻，聚焦/非聚焦都不消失**（修复旧版聚焦态挤掉 tab 导航的问题）。

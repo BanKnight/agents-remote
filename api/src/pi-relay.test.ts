@@ -176,4 +176,16 @@ describe("PiSessionRelay", () => {
     relay.reportError(new Error("after-destroy"));
     expect(received).toHaveLength(5); // 仅初始 5 个 marker 帧，无追加
   });
+
+  test("hasSubscribers: addSubscriber 前后 + close 后", () => {
+    const relay = new PiSessionRelay();
+    expect(relay.hasSubscribers).toBe(false);
+    const stream = relay.addSubscriber(
+      () => {},
+      () => {},
+    );
+    expect(relay.hasSubscribers).toBe(true);
+    stream.close();
+    expect(relay.hasSubscribers).toBe(false);
+  });
 });

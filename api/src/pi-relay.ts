@@ -122,6 +122,11 @@ export class PiSessionRelay {
     return this.destroyed;
   }
 
+  /** 有订阅者（有人连着看）——chat-idle-recycler 的 active 判据之一。 */
+  get hasSubscribers(): boolean {
+    return this.subscribers.size > 0;
+  }
+
   private capLive(): void {
     if (this.liveLines.length > LIVE_BUFFER_CAP) {
       this.liveLines = this.liveLines.slice(-LIVE_BUFFER_CAP);

@@ -37,6 +37,7 @@ import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
 import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
+import { startChatIdleRecycler } from "./chat-idle-recycler";
 import { PiRuntime } from "./pi-runtime";
 import { handlePiStreamUpgrade, PiStreamController } from "./pi-stream";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
@@ -1166,6 +1167,9 @@ export const startApi = async () => {
     await piRuntime.close(chatId);
     await piRuntime.removeSessionFiles(chatId);
   });
+  // chat 会话空闲回收（设计 workbench-views §3.1.1）：空会话 3min 后清出列表 + idle 运行时
+  // 10min 后 dispose（历史保留，重进 resume）。startApi 内启动——测试走 createFetchHandler 不经过。
+  startChatIdleRecycler({ piRuntime, registry: chatSessionRegistry, chatSessionsDir });
   const projectService = new ProjectService(config.projectsRoot, sessionRegistry);
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);

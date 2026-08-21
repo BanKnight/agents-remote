@@ -362,6 +362,26 @@ export class PiRuntime {
     await rm(join(this.chatSessionsDir, "pi-jsonl", chatId), { recursive: true, force: true });
   }
 
+  /**
+   * chat 会话运行态查询（chat-idle-recycler 判据）：
+   * "none" 无 entry；"active" = isStreaming || 队列/sending 非空 || relay 有订阅者
+   * （turn 在跑 / 有人连着看，不回收——多端 fan-out 靠订阅者保活）；"idle" = entry 在
+   * 但停转且无人看（回收窗口）。
+   */
+  chatRuntimeState(chatId: string): "none" | "active" | "idle" {
+    const entry = this.sessions.get(chatId);
+    if (!entry) return "none";
+    if (
+      entry.session.isStreaming ||
+      entry.relay.hasSubscribers ||
+      (this.pendingQueues.get(chatId)?.length ?? 0) > 0 ||
+      this.sending.has(chatId)
+    ) {
+      return "active";
+    }
+    return "idle";
+  }
+
   private handlePiEvent(chatId: string, relay: PiSessionRelay, event: AgentSessionEvent): void {
     relay.appendAndBroadcast(JSON.stringify(toPiEventFrame(event)));
     if (event.type === "message_start") {

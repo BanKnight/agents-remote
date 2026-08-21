@@ -874,6 +874,64 @@ describe("PiRuntime 生命周期", () => {
   });
 });
 
+describe("PiRuntime.chatRuntimeState", () => {
+  const makeReadyRuntime = (stub: ReturnType<typeof makeStubSession>) =>
+    makeRuntime({
+      pi: PI_CFG,
+      createModelRuntime: makeCreateModelRuntime(
+        PI_CFG.presets[0].provider,
+        PI_CFG.presets[0].model,
+      ).factory as never,
+      createSession: makeCreateSession(stub).factory as never,
+    });
+
+  test("none：无 entry", async () => {
+    const runtime = makeReadyRuntime(makeStubSession());
+    expect(runtime.chatRuntimeState("unknown")).toBe("none");
+  });
+
+  test("idle：entry 在、isStreaming false、无订阅者、无排队", async () => {
+    const runtime = makeReadyRuntime(makeStubSession());
+    await runtime.ensureRunning("c1");
+    expect(runtime.chatRuntimeState("c1")).toBe("idle");
+  });
+
+  test("active：isStreaming true", async () => {
+    const stub = makeStubSession();
+    const runtime = makeReadyRuntime(stub);
+    await runtime.ensureRunning("c1");
+    stub.state.isStreaming = true;
+    expect(runtime.chatRuntimeState("c1")).toBe("active");
+  });
+
+  test("active：relay 有订阅者（有人连着看）", async () => {
+    const runtime = makeReadyRuntime(makeStubSession());
+    await runtime.ensureRunning("c1");
+    const stream = runtime.stream(
+      "c1",
+      () => {},
+      () => {},
+    );
+    expect(runtime.chatRuntimeState("c1")).toBe("active");
+    stream.close();
+    expect(runtime.chatRuntimeState("c1")).toBe("idle");
+  });
+
+  test("active：队列有待发消息", async () => {
+    const stub = makeStubSession();
+    stub.setPromptImpl(
+      () =>
+        new Promise(() => {
+          /* 挂起模拟长 turn：flushQueue 后 sending 持有 */
+        }),
+    );
+    const runtime = makeReadyRuntime(stub);
+    await runtime.ensureRunning("c1");
+    runtime.send("c1", "hi");
+    expect(runtime.chatRuntimeState("c1")).toBe("active");
+  });
+});
+
 describe("PiRuntime LLM 标题生成", () => {
   test("首条 user 消息 + agent_settled → completeSimple 调用 + chat_title 广播 + onTitle 回调", async () => {
     const stub = makeStubSession();
