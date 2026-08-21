@@ -10,17 +10,39 @@
 //  4. 切回 Chat → 点已有会话行聚焦：mode tab + 搜索框仍保持（行点击路径同断言）。
 //  5. chat 模式 + file tab 聚焦（/files/file/...?mode=chat）：mode tab + ChatOverview 保持。
 //  6. agent 模式聚焦态（/projects/session/agent_*）：mode tab 常驻（agent 高亮），左栏项目总览。
+// ⚠️ 数据安全（正式环境纪律）：探针只创建/删除**自己**的会话——创建后立即 rename 加
+// `probe-focus-` 标记前缀，清理只按标记识别（含上次崩溃残留），绝不 close/删除用户真实会话。
 // 密码自读不打印。用法：bun scripts/probe-chat-focus-header.mjs
-import { readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const EXEC =
   "/home/deploy/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell";
-const CHAT_SESSIONS_DIR = join(homedir(), ".agents-remote", "chat-sessions");
+// 探针会话标记前缀：创建后立即 rename 加此前缀，清理只按标记识别（绝不碰用户会话）。
+const PROBE_MARKER = "probe-focus-";
+
+// 清理探针标记的会话（含上次崩溃残留）；返回清理数。只按 displayName 标记识别。
+async function closeProbeSessions(request) {
+  const res = await request.get(`${WEB_ORIGIN}/api/chat-sessions`);
+  if (!res.ok()) return 0;
+  const { sessions } = await res.json();
+  let n = 0;
+  for (const sess of sessions) {
+    if (!sess.displayName.startsWith(PROBE_MARKER)) continue;
+    await request.post(`${WEB_ORIGIN}/api/chat-sessions/${sess.id}/close`);
+    n += 1;
+  }
+  return n;
+}
+
+// 新建会话立即加标记名（rename API），纳入探针可识别范围。
+async function markSessionFromUrl(request, url) {
+  const chatId = new URL(url).pathname.split("/").pop();
+  await request.post(`${WEB_ORIGIN}/api/chat-sessions/${chatId}/rename`, {
+    data: { displayName: `${PROBE_MARKER}${Date.now()}` },
+  });
+}
 
 const MODE_TAB_GROUP =
   'div[role="group"][aria-label="Session mode switch"], div[role="group"][aria-label="会话模式切换"]';
@@ -66,16 +88,10 @@ async function run() {
   const page = await ctx.newPage();
   await login(page);
 
-  // 清残留（上轮探针超时退出可能留下会话）：GET list → 逐个 POST close。
+  // 清残留：只清探针标记的会话（上轮超时退出可能留下），绝不碰用户真实会话。
   {
-    const res = await page.request.get(`${WEB_ORIGIN}/api/chat-sessions`);
-    if (res.ok()) {
-      const { sessions } = await res.json();
-      for (const sess of sessions) {
-        await page.request.post(`${WEB_ORIGIN}/api/chat-sessions/${sess.id}/close`);
-      }
-      if (sessions.length > 0) console.log(`  （清残留 ${sessions.length} 个）`);
-    }
+    const cleaned = await closeProbeSessions(page.request);
+    if (cleaned > 0) console.log(`  （清理探针标记残留 ${cleaned} 个）`);
   }
 
   console.log("\n-- 1. 前置态：/projects?mode=chat 列表态 --");
@@ -90,6 +106,8 @@ async function run() {
     .first()
     .click();
   await page.waitForURL(/\/projects\/session\/chat_/, { timeout: 8000 });
+  // UI 新建的会话立即加探针标记名（rename API），纳入本探针可清理范围。
+  await markSessionFromUrl(page.request, page.url());
   record(
     /\/projects\/session\/chat_[^/?]+/.test(new URL(page.url()).pathname),
     `URL 聚焦 chat tab（${new URL(page.url()).pathname}）`,
@@ -120,11 +138,12 @@ async function run() {
   console.log("\n-- 4. 切回 Chat → 点会话行聚焦：同断言保持 --");
   await modeTabButtons(page).nth(1).click();
   await page.waitForSelector(SEARCH_BOX, { timeout: 8000 });
+  // 行名 = 探针标记名（场景 2 rename 过；refetch 未及时完成时兼容旧默认名）。
   const row = page
     .locator('div[aria-label="对话列表"], div[aria-label="Chat list"]')
-    .getByRole("button", { name: /新对话|新建对话|New chat/ })
+    .getByRole("button", { name: new RegExp(`${PROBE_MARKER}|新对话|新建对话|New chat`) })
     .first();
-  record((await row.count()) === 1, "会话行存在（新建的会话在列表）");
+  record((await row.count()) === 1, "会话行存在（探针标记会话在列表）");
   await row.click();
   await page.waitForURL(/\/projects\/session\/chat_/, { timeout: 8000 });
   record(await modeTabInLeftAside(page), "行点击聚焦后 mode tab 仍在左栏标题区");
@@ -152,31 +171,12 @@ async function run() {
     "agent 聚焦左栏 body = 项目总览（agent 模式语义）",
   );
 
-  // 清理：close 探针产生的会话。
-  {
-    const res = await page.request.get(`${WEB_ORIGIN}/api/chat-sessions`);
-    if (res.ok()) {
-      const { sessions } = await res.json();
-      for (const sess of sessions) {
-        await page.request.post(`${WEB_ORIGIN}/api/chat-sessions/${sess.id}/close`);
-      }
-    }
-  }
+  // 清理：只 close 探针标记的会话（绝不碰用户真实会话），并复查无标记残留。
+  const cleanedEnd = await closeProbeSessions(page.request);
+  console.log("\n===== 探针残留复查 =====");
+  const residual = await closeProbeSessions(page.request);
+  record(residual === 0, `无探针标记会话残留（本轮清理 ${cleanedEnd} 个，复查 ${residual} 个）`);
   await ctx.close();
-
-  console.log("\n===== 后端元数据目录 =====");
-  let files = [];
-  try {
-    files = await readdir(CHAT_SESSIONS_DIR);
-  } catch {
-    /* 目录不存在 = 无残留 */
-  }
-  if (files.length > 0) {
-    await rm(CHAT_SESSIONS_DIR, { recursive: true, force: true });
-    record(true, `清理残留元数据 ${files.length} 个（探针自愈）`);
-  } else {
-    record(true, "无残留元数据（close 已同步清理磁盘）");
-  }
 
   await browser.close();
   console.log(`\n${allPass ? "✅ ALL PASS" : "❌ FAIL"}`);

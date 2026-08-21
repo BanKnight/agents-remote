@@ -8,17 +8,40 @@
 //  6. 删除 → confirm → 行消失 + ~/.agents-remote/chat-sessions/ 元数据清理。
 //  7. reload → mode=chat 保持（URL 即真相）；切回 Agent → 左栏 body 换回 GlobalProjectsOverview + mode 键消失。
 //  8. 移动端 header 内 mode tab + chat 列表渲染 + 长按（contextmenu）出菜单。
+// ⚠️ 数据安全（正式环境纪律）：探针只创建/删除**自己**的会话——创建后立即 rename 加
+// `probe-mode-` 标记前缀，清理与行定位只按标记识别（含上次崩溃残留），绝不 close/删除/
+// 改名用户真实会话（行 selector 若按「新对话」默认名匹配会误伤用户同名会话）。
 // 密码自读不打印。用法：bun scripts/probe-chat-mode.mjs
-import { readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const EXEC =
   "/home/deploy/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell";
-const CHAT_SESSIONS_DIR = join(homedir(), ".agents-remote", "chat-sessions");
+// 探针会话标记前缀：创建后立即 rename 加此前缀，清理只按标记识别（绝不碰用户会话）。
+const PROBE_MARKER = "probe-mode-";
+
+// 清理探针标记的会话（含上次崩溃残留）；返回清理数。只按 displayName 标记识别。
+async function closeProbeSessions(request) {
+  const res = await request.get(`${WEB_ORIGIN}/api/chat-sessions`);
+  if (!res.ok()) return 0;
+  const { sessions } = await res.json();
+  let n = 0;
+  for (const sess of sessions) {
+    if (!sess.displayName.startsWith(PROBE_MARKER)) continue;
+    await request.post(`${WEB_ORIGIN}/api/chat-sessions/${sess.id}/close`);
+    n += 1;
+  }
+  return n;
+}
+
+// UI 新建后调用：从当前 URL 解析 chat id 并 rename 加标记名，纳入探针可识别范围。
+async function markSessionFromUrl(request, url) {
+  const chatId = new URL(url).pathname.split("/").pop();
+  await request.post(`${WEB_ORIGIN}/api/chat-sessions/${chatId}/rename`, {
+    data: { displayName: `${PROBE_MARKER}${Date.now()}` },
+  });
+}
 
 let allPass = true;
 function record(ok, label) {
@@ -55,16 +78,10 @@ async function run() {
     const page = await ctx.newPage();
     await login(page);
 
-    // 清残留（上轮探针超时退出可能留下会话）：GET list → 逐个 POST close。
+    // 清残留：只清探针标记的会话（上轮超时退出可能留下），绝不碰用户真实会话。
     {
-      const res = await page.request.get(`${WEB_ORIGIN}/api/chat-sessions`);
-      if (res.ok()) {
-        const { sessions } = await res.json();
-        for (const sess of sessions) {
-          await page.request.post(`${WEB_ORIGIN}/api/chat-sessions/${sess.id}/close`);
-        }
-        if (sessions.length > 0) console.log(`  （清残留 ${sessions.length} 个）`);
-      }
+      const cleaned = await closeProbeSessions(page.request);
+      if (cleaned > 0) console.log(`  （清理探针标记残留 ${cleaned} 个）`);
     }
 
     console.log("\n-- 1. mode tab 默认 agent（左栏标题区 + 三栏 shell）--");
@@ -126,6 +143,9 @@ async function run() {
       .getByRole("button", { name: /新对话|新建对话|New chat/ })
       .first()
       .click();
+    await page.waitForURL(/chat_/, { timeout: 8000 });
+    // UI 新建的会话立即加探针标记名（rename API），纳入本探针可清理范围。
+    await markSessionFromUrl(page.request, page.url());
     await page.waitForTimeout(800);
     record(
       /\/chat\/[^/]+$/.test(new URL(page.url()).pathname),
@@ -138,27 +158,32 @@ async function run() {
 
     console.log("\n-- 4. 返回列表 → 会话行存在 --");
     await page.getByRole("button", { name: /返回对话列表|Back to chats/ }).click();
-    await page.waitForTimeout(1200);
-    const row = page
-      .locator('div[aria-label="对话列表"], div[aria-label="Chat list"]')
-      .getByRole("button", { name: /新对话|新建对话|New chat/ });
-    record((await row.count()) >= 1, "会话行「新对话」存在（真实 API round-trip）");
+    // 只按探针标记名定位行（等 rename 后 refetch）；绝不按「新对话」默认名匹配——
+    // 那会误伤用户自己的同名会话（后续右键改名/删除会落到用户会话上）。
+    const list = page.locator('div[aria-label="对话列表"], div[aria-label="Chat list"]');
+    const row = list.getByRole("button", { name: new RegExp(PROBE_MARKER) }).first();
+    let rowFound = true;
+    try {
+      await row.waitFor({ timeout: 8000 });
+    } catch {
+      rowFound = false;
+    }
+    record(rowFound, "会话行（探针标记会话）存在（真实 API round-trip）");
+    if (!rowFound) throw new Error("探针标记会话行未出现——中止以避免误操作用户会话");
 
     console.log("\n-- 5. 桌面右键 → 菜单 + 改名 --");
-    await row.first().click({ button: "right" });
+    await row.click({ button: "right" });
     await page.waitForTimeout(300);
     const menuRename = page.getByRole("menuitem", { name: /改名|重命名|Rename/ });
     record((await menuRename.count()) === 1, "右键菜单出「改名」项");
     await menuRename.click();
     await page.waitForTimeout(300);
     const promptInput = page.locator("[data-prompt-input]");
-    await promptInput.fill("探针会话A");
+    await promptInput.fill(`${PROBE_MARKER}A`);
     await promptInput.press("Enter");
     await page.waitForTimeout(600);
-    const renamedRow = page
-      .locator('div[aria-label="对话列表"], div[aria-label="Chat list"]')
-      .getByRole("button", { name: /探针会话A|probe-chat-a/ });
-    record((await renamedRow.count()) === 1, "改名生效（行文本 = 探针会话A）");
+    const renamedRow = list.getByRole("button", { name: `${PROBE_MARKER}A` });
+    record((await renamedRow.count()) === 1, `改名生效（行文本 = ${PROBE_MARKER}A）`);
 
     console.log("\n-- 6. 右键删除 → confirm → 行消失 --");
     await renamedRow.first().click({ button: "right" });
@@ -171,10 +196,7 @@ async function run() {
       .click();
     await page.waitForTimeout(600);
     record(
-      (await page
-        .locator('div[aria-label="对话列表"], div[aria-label="Chat list"]')
-        .getByRole("button", { name: /探针会话A|probe-chat-a/ })
-        .count()) === 0,
+      (await list.getByRole("button", { name: `${PROBE_MARKER}A` }).count()) === 0,
       "删除后行消失",
     );
 
@@ -200,6 +222,9 @@ async function run() {
         .locator('input[aria-label="搜索对话…"], input[aria-label="Search chats…"]')
         .count()) === 0;
     record(chatGone, "切回 Agent：左栏 body 换回 GlobalProjectsOverview（chat 搜索框消失）");
+    // 兜底清理：只清探针标记会话（改名/删除步骤异常时残留的），绝不碰用户真实会话。
+    const cleanedDesktop = await closeProbeSessions(page.request);
+    if (cleanedDesktop > 0) console.log(`  （兜底清理探针标记会话 ${cleanedDesktop} 个）`);
     await ctx.close();
   }
 
@@ -239,22 +264,31 @@ async function run() {
       .getByRole("button", { name: /新对话|新建对话|New chat/ })
       .first()
       .click();
+    await page.waitForURL(/chat_/, { timeout: 8000 });
+    // UI 新建的会话立即加探针标记名（rename API），纳入本探针可清理范围。
+    await markSessionFromUrl(page.request, page.url());
     await page.waitForTimeout(800);
     record(/\/chat\/[^/]+$/.test(new URL(page.url()).pathname), "新建 → /chat/$id 全屏聚焦态");
     // 长按 = contextmenu（移动浏览器长按触发）；占位 detail 无列表，返回后验证。
     await page.getByRole("button", { name: /返回对话列表|Back to chats/ }).click();
-    await page.waitForTimeout(600);
-    const mRow = page
-      .locator('div[aria-label="对话列表"], div[aria-label="Chat list"]')
-      .getByRole("button", { name: /新对话|新建对话|New chat/ })
-      .first();
+    // 只按探针标记名定位行（等 rename 后 refetch）；绝不按「新对话」默认名匹配。
+    const mList = page.locator('div[aria-label="对话列表"], div[aria-label="Chat list"]');
+    const mRow = mList.getByRole("button", { name: new RegExp(PROBE_MARKER) }).first();
+    let mRowFound = true;
+    try {
+      await mRow.waitFor({ timeout: 8000 });
+    } catch {
+      mRowFound = false;
+    }
+    record(mRowFound, "移动会话行（探针标记会话）存在");
+    if (!mRowFound) throw new Error("探针标记会话行未出现——中止以避免误操作用户会话");
     await mRow.dispatchEvent("contextmenu");
     await page.waitForTimeout(400);
     record(
       (await page.getByRole("menuitem", { name: /改名|重命名|Rename/ }).count()) >= 1,
       "contextmenu（长按同源）出菜单",
     );
-    // 清理：删除探针会话。
+    // 清理：删除探针标记会话。
     await page.getByRole("menuitem", { name: /删除|Delete/ }).click();
     await page.waitForTimeout(300);
     await page
@@ -262,22 +296,14 @@ async function run() {
       .last()
       .click();
     await page.waitForTimeout(600);
+    // 兜底清理 + 复查：只清/查探针标记会话，绝不碰用户真实会话。
+    const cleanedMobile = await closeProbeSessions(page.request);
+    const residual = await closeProbeSessions(page.request);
+    record(
+      residual === 0,
+      `无探针标记会话残留（兜底清理 ${cleanedMobile} 个，复查 ${residual} 个）`,
+    );
     await ctx.close();
-  }
-
-  // ── 后端元数据清理核对（探针自愈：清空所有残留，正常应已为空）───────────────
-  console.log("\n===== 后端元数据目录 =====");
-  let files = [];
-  try {
-    files = await readdir(CHAT_SESSIONS_DIR);
-  } catch {
-    /* 目录不存在 = 无残留 */
-  }
-  if (files.length > 0) {
-    await rm(CHAT_SESSIONS_DIR, { recursive: true, force: true });
-    record(true, `清理残留元数据 ${files.length} 个（探针自愈）`);
-  } else {
-    record(true, "无残留元数据（删除已同步清理磁盘）");
   }
 
   await browser.close();
