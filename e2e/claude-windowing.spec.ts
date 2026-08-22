@@ -130,13 +130,25 @@ test("Claude: slash menu renders catalog entries including plugin namespaced com
     });
   });
 
-  // Route WebSocket to the real server — the fake session doesn't exist so the
-  // server will error, but the page must render the composer and slash menu
-  // anyway. The slash menu is catalog-driven, not WS-driven.
+  // Mock the WebSocket entirely (no connectToServer): the fake session doesn't
+  // exist on the server (upgrade → 404), and since 7c2f975 the composer is
+  // disabled while disconnected. A fully-mocked WS makes the page-side socket
+  // open (→ connected → composer enabled). Reply "pong" to the client heartbeat
+  // so the half-open self-heal never closes the mock socket. The slash menu is
+  // catalog-driven, not WS-driven.
   await page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude-stream`),
     (ws) => {
-      ws.connectToServer();
+      ws.onMessage((data) => {
+        try {
+          const msg = JSON.parse(String(data)) as { type?: string };
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+          }
+        } catch {
+          /* non-JSON frames ignored */
+        }
+      });
     },
   );
 
@@ -246,10 +258,21 @@ test("Claude: empty catalog does not crash the page or composer", async ({ page 
     });
   });
 
+  // Fully-mocked WS (same as above): connected composer for the empty-catalog
+  // crash check; pong keeps the heartbeat half-open detector satisfied.
   await page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude-stream`),
     (ws) => {
-      ws.connectToServer();
+      ws.onMessage((data) => {
+        try {
+          const msg = JSON.parse(String(data)) as { type?: string };
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+          }
+        } catch {
+          /* non-JSON frames ignored */
+        }
+      });
     },
   );
 

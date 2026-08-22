@@ -140,10 +140,10 @@ test("entering project keeps ProjectLeftPanel (scope priority over activity bar 
   await expect(page).toHaveURL(/\/files$/);
   await expect(leftPanelFiles(page)).toBeVisible();
 
-  // 回全局项目总览再进项目：[项目] → /projects → 点项目卡片 → /projects/$key。设计 Phase 2：
+  // 回全局会话总览再进项目：[会话] → /projects → 点项目卡片 → /projects/$key。设计 Phase 2：
   // project scope 左栏恒走 ProjectLeftPanel（scope 优先），用户诉求"进项目左栏不再不变"——
   // 不再停留在全局文件树。
-  await activityBar(page).getByRole("button", { name: "Projects", exact: true }).click();
+  await activityBar(page).getByRole("button", { name: "Sessions", exact: true }).click();
   await expect(page).toHaveURL(/\/projects$/);
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
@@ -173,10 +173,10 @@ test("project ↔ /files: WorkbenchShell <main> stays mounted (review 收口, no
     if (main) main.setAttribute("data-e2e-shell-persist", "1");
   });
 
-  // project → /files（活动栏 [文件]）→ /projects（活动栏 [项目]）→ /projects/$key（点项目卡片）。
+  // project → /files（活动栏 [文件]）→ /projects（活动栏 [会话]）→ /projects/$key（点项目卡片）。
   await activityBar(page).getByRole("button", { name: "Files", exact: true }).click();
   await expect(page).toHaveURL(/\/files$/);
-  await activityBar(page).getByRole("button", { name: "Projects", exact: true }).click();
+  await activityBar(page).getByRole("button", { name: "Sessions", exact: true }).click();
   await expect(page).toHaveURL(/\/projects$/);
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));

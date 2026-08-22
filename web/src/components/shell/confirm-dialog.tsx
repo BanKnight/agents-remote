@@ -18,36 +18,53 @@ type ConfirmConfig = {
 
 type PendingConfirm = ConfirmConfig & {
   resolve: (value: boolean) => void;
+  /** 本轮 confirm 序号：延迟卸载只清同一轮，窗口期内重开新 confirm 不误删。 */
+  seq: number;
 };
+
+/**
+ * 受控关闭 → 延迟卸载的间隔：先 open=false 让 Radix 走正常 dismiss 路径
+ * （exit 动画 + DismissableLayer 清理还原 body pointer-events 锁），等动画播完
+ * 再移除组件。立即卸载（open 态直接 setPending(null)）会与 DismissableLayer
+ * 清理序竞态，偶发 body 残留 `pointer-events: none`（整页不可点，e2e 实测）。
+ * 与 prompt-dialog.tsx 同模式同修。300ms 覆盖桌面 fade-out 与移动 sheet 动画。
+ */
+const DIALOG_UNMOUNT_DELAY_MS = 300;
 
 export function useConfirm() {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const [open, setOpen] = useState(false);
   const resolveRef = useRef<((value: boolean) => void) | null>(null);
+  const seqRef = useRef(0);
 
   const confirm = useCallback((config: ConfirmConfig) => {
     return new Promise<boolean>((resolve) => {
+      seqRef.current += 1;
       resolveRef.current = resolve;
-      setPending({ ...config, resolve });
+      setPending({ ...config, resolve, seq: seqRef.current });
+      setOpen(true);
     });
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    resolveRef.current?.(true);
+  const settle = useCallback((value: boolean) => {
+    resolveRef.current?.(value);
     resolveRef.current = null;
-    setPending(null);
+    setOpen(false);
+    const seq = seqRef.current;
+    setTimeout(() => {
+      setPending((p) => (p?.seq === seq ? null : p));
+    }, DIALOG_UNMOUNT_DELAY_MS);
   }, []);
 
-  const handleCancel = useCallback(() => {
-    resolveRef.current?.(false);
-    resolveRef.current = null;
-    setPending(null);
-  }, []);
+  const handleConfirm = useCallback(() => settle(true), [settle]);
+  const handleCancel = useCallback(() => settle(false), [settle]);
 
   const holder = pending ? (
     <ConfirmDialog
       cancelLabel={pending.cancelLabel}
       confirmLabel={pending.confirmLabel}
       message={pending.message}
+      open={open}
       title={pending.title}
       tone={pending.tone}
       onCancel={handleCancel}
@@ -64,12 +81,10 @@ function ConfirmDialog({
   message,
   onCancel,
   onConfirm,
+  open,
   title,
   tone,
-}: ConfirmConfig & {
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
+}: ConfirmConfig & { onCancel: () => void; onConfirm: () => void; open: boolean }) {
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -82,7 +97,7 @@ function ConfirmDialog({
           ? "text-primary"
           : "text-on-surface-soft";
     return (
-      <Dialog defaultOpen onOpenChange={(open) => !open && onCancel()}>
+      <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
         <DialogContent
           className={cn(
             "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
@@ -117,7 +132,7 @@ function ConfirmDialog({
   }
 
   return (
-    <Dialog defaultOpen onOpenChange={(open) => !open && onCancel()}>
+    <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
       <DialogContent>
         <div
           className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}

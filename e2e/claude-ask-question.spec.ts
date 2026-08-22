@@ -80,15 +80,28 @@ test("Claude: session detail renders with mocked REST data", async ({ page }) =>
     });
   });
 
-  // Route the WebSocket to the real server — the fake session doesn't exist
-  // so the server will return an error, but the page must handle it without
-  // crashing.  (Playwright's routeWebSocket does not support injecting mock
-  // messages reliably; the full AskUserQuestion rendering is tested via
+  // Mock the WebSocket entirely (no connectToServer): the fake session doesn't
+  // exist on the server (upgrade → 404), and since 7c2f975 the composer is
+  // disabled with an "Establishing connection…" placeholder while disconnected
+  // (onopen/onclose-driven). A fully-mocked WS makes the page-side socket open
+  // (→ connected=true → "Ask Claude..." placeholder). Reply "pong" to the
+  // client heartbeat so the half-open self-heal never closes the mock socket.
+  // (Playwright's routeWebSocket does not support injecting mock messages
+  // reliably; the full AskUserQuestion rendering is tested via
   // loadMessagesFromRaw unit tests in claude-adapter.test.ts.)
   await page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/claude-stream`),
     (ws) => {
-      ws.connectToServer();
+      ws.onMessage((data) => {
+        try {
+          const msg = JSON.parse(String(data)) as { type?: string };
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+          }
+        } catch {
+          /* non-JSON frames ignored */
+        }
+      });
     },
   );
 

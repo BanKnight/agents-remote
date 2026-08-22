@@ -32,14 +32,25 @@ test("authenticated user can browse Project files and preview text and images", 
 
   await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
   await expect(files.getByRole("button", { name: /README\.md/ }).first()).toBeVisible();
-  // Dot-files and dot-directories are excluded from file listing
-  await expect(files.getByRole("button", { name: /\.config/ })).not.toBeVisible();
-  await expect(files.getByRole("button", { name: /\.env/ })).not.toBeVisible();
+  // Dot-files stay visible (fd424ff 最小黑名单：只藏 .git，其余 dot 项让用户能检查
+  // 插件配置文件)；.git 是唯一黑名单项，不出现在列表。每行有 row div + actions
+  // trigger 两个带名字的 button，用 .first() 规避 strict mode。
+  await expect(files.getByRole("button", { name: /\.config/ }).first()).toBeVisible();
+  await expect(files.getByRole("button", { name: /\.env\.example/ }).first()).toBeVisible();
+  await expect(files.getByRole("button", { name: /\.git$/ })).toHaveCount(0);
 
   const rootNames = await files
     .locator("[data-list-row-title]")
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
-  expect(rootNames.slice(0, 4)).toEqual(["src", "logo.svg", "notes.txt", "README.md"]);
+  // 目录在前（.config/src），文件按 localeCompare（.env.example 首位）。
+  expect(rootNames).toEqual([
+    ".config",
+    "src",
+    ".env.example",
+    "logo.svg",
+    "notes.txt",
+    "README.md",
+  ]);
 
   await files.getByRole("button", { name: /src/ }).first().click();
   await expect(files.getByRole("button", { name: /index\.ts/ }).first()).toBeVisible();
