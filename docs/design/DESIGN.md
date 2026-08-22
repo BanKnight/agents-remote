@@ -614,6 +614,12 @@ web terminal（`SessionDetailRoute.tsx` `XtermOutput`，claude 与 terminal 会�
 | 极短乐观更新（<500ms） | **不改**（保持当前态） | 重命名、排序 |
 | 连接丢失 / 长时加载 | **overlay 或全屏文案** | WebSocket 断线、auth 检查 |
 
+**Terminal 连接 overlay 契约**（`TerminalStatusOverlay`，SessionDetailRoute）：连接状态 overlay 有两个正交维度——**遮罩维**（是否全屏遮罩挡住已渲染终端内容）与**结构维**（spinner + 文案的内容形态）。两维独立取值，**降级只降遮罩维，不换结构维**：
+
+- **connecting 首次加载**（终端无内容）：全屏遮罩（`bg-surface-inset/70 backdrop-blur-sm`）+ 居中 `TerminalStatusSpinner lg` + 文案——无既有内容可看，遮罩防闪烁。
+- **connecting 重连**（终端已有内容）：**同构居中 spinner + 文案，仅去全屏遮罩**——内容容器自身给贴身轻背景（rounded + padding + `bg-surface-inset/70 backdrop-blur-sm`）保证叠在任意终端内容上可读，位置仍居中，不挡四周已渲染内容。禁止降级成另一套形态（顶部 pill / 去 spinner）——同一状态两种形态是视觉不统一的来源。
+- **error / ended 终态**：顶部 pill（tone 色 border + 文案，无 spinner）——终态提示是低强度常驻信息，pill 足够，与 transient 重连的视觉层级刻意区分。
+
 ### 正面表述哲学
 
 - **页面 owns loading**：loading 态由具体页面/section 自管，路由/全局层不叠加平行 pending 动画。

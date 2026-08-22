@@ -1147,13 +1147,14 @@ function XtermOutput({
   }, [connectionStatus, onResize]);
 
   const { t } = useT();
-  // 重连 overlay 降级:connecting 时若终端已有内容(非首次加载),不挡已渲染内容——
-  // 强制 animated:false 走轻量 pill(顶部小标签),对齐 claude 静默重连。首次加载(无内容)
-  // 维持全屏 spinner。terminalDataRef 是 ref,但本处随 connectionStatus 重渲染时读取实时正确。
+  // 重连 overlay 降级只降遮罩维:connecting 时若终端已有内容(非首次加载),不铺全屏
+  // 遮罩挡已渲染内容,但 spinner + 文案的结构与首连一致(居中同构,见 DESIGN.md
+  // Terminal 连接 overlay 契约)。terminalDataRef 是 ref,但本处随 connectionStatus
+  // 重渲染时读取实时正确。
   const baseOverlay = terminalOverlay(connectionStatus, t);
   const overlay =
     baseOverlay?.animated && terminalDataRef.current !== null
-      ? { ...baseOverlay, animated: false }
+      ? { ...baseOverlay, scrim: false }
       : baseOverlay;
 
   useEffect(() => {
@@ -1546,6 +1547,8 @@ function XtermOutput({
 
 type TerminalOverlayState = {
   animated?: boolean;
+  /** animated 分支的遮罩维：true（首连，终端无内容）铺全屏遮罩；false（重连降级）仅贴身轻背景，spinner 结构不变。 */
+  scrim?: boolean;
   tone: "accent" | "danger" | "muted";
   title: string;
 };
@@ -1557,11 +1560,27 @@ function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
     muted: "border-neutral-line/40 bg-surface-inset/60 text-on-surface-soft shadow-black/20",
   } satisfies Record<TerminalOverlayState["tone"], string>;
 
+  // connecting = transient 态：居中 spinner + 文案（重连降级仅去全屏遮罩，结构不变，
+  // 见 DESIGN.md Terminal 连接 overlay 契约）；error/ended = 终态：顶部 pill。
   if (overlay.animated) {
-    return (
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface-inset/70 backdrop-blur-sm">
+    const content = (
+      <>
         <TerminalStatusSpinner size="lg" />
         <span className="text-xs font-semibold tracking-wide text-primary">{overlay.title}</span>
+      </>
+    );
+    if (overlay.scrim === false) {
+      return (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-surface-inset/70 px-6 py-5 backdrop-blur-sm">
+            {content}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface-inset/70 backdrop-blur-sm">
+        {content}
       </div>
     );
   }
