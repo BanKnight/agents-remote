@@ -133,6 +133,13 @@ type ClaudeProcess = {
 // Plan Mode=OPUS env，见官方 model-config §环境变量）。enable1mContext 时 opus/sonnet
 // 带 [1m]（haiku 不带——CLI MODEL_ALIASES 无 haiku[1m]）。无 view（无激活预设）→ 不注入，
 // CLI 回落自身默认。apiKey 只在此处从 provider 读出写进 env，不进任何日志/状态。导出供测试。
+//
+// host-managed 标志：有 provider 时同时设 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST。CLI 启动
+// 会把 ~/.claude/settings.json env 块 Object.assign 进 process.env（无条件覆盖 spawn 注入
+// 值——用户历史遗留的 ANTHROPIC_BASE_URL/AUTH_TOKEN 会把激活预设盖回旧端点）；该标志让
+// CLI 从 settings env 块剔除全部 provider 变量（BASE_URL/AUTH_TOKEN/API_KEY/DEFAULT_*_MODEL），
+// 保住宿主注入。无 provider 不设——用户自己经 CLI settings 管端点的用法不受影响。
+// 机制见 docs/research/claude-cli-runtime-config.md §env 覆盖优先级。
 export function buildSpawnEnv(
   effort: EffortLevel | undefined,
   provider: { apiKey: string; baseUrl?: string } | undefined,
@@ -141,7 +148,10 @@ export function buildSpawnEnv(
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...parentEnv };
   if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
-  if (provider?.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
+  if (provider?.apiKey) {
+    env.ANTHROPIC_API_KEY = provider.apiKey;
+    env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";
+  }
   if (provider?.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
   if (view) {
     const { resolved } = buildAvailableAliases(view);

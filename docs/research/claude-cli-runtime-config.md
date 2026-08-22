@@ -180,9 +180,36 @@
 
 ---
 
+## env 覆盖优先级与 host-managed 逃生门（2026-08-22 实测定位的坑）
+
+### 现象
+
+宿主 spawn 注入 `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_DEFAULT_*_MODEL` 后，CLI 实际仍走旧端点/旧凭证——进程 environ 已确认是新值，行为却是旧值。
+
+### 机制（CLI 源码：`restored-src/src/utils/managedEnv.ts`）
+
+CLI 启动时会把 settings 的 `env` 块 **`Object.assign(process.env, ...)` 无条件覆盖**——用户 `~/.claude/settings.json` 历史遗留的 `env.ANTHROPIC_BASE_URL` / `env.ANTHROPIC_AUTH_TOKEN` 等会**盖掉宿主 spawn 注入的值**（spawn env 优先级低于 settings env 块）。应用分两步：`applySafeConfigEnvironmentVariables`（信任前，用户级 settings 已生效）+ `applyConfigEnvironmentVariables`（信任后，含项目级全量生效）。
+
+### 逃生门：`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`
+
+进程 env 里设该变量（任意非空值）→ CLI 从 settings env 块**剔除全部 provider 变量**（`withoutHostManagedProviderVars` + `isProviderManagedEnvVar`）：
+
+- 端点：`ANTHROPIC_BASE_URL`（含 BEDROCK/VERTEX/FOUNDRY 变体）
+- 凭证：`ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`CLAUDE_CODE_OAUTH_TOKEN` 等
+- 模型映射：`ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`（含 `_DESCRIPTION`/`_NAME`/`_SUPPORTED_CAPABILITIES` 变体）、`ANTHROPIC_SMALL_FAST_MODEL`
+- provider 选择：`CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`
+
+语义即「宿主接管 provider 管理」——settings 不再覆盖这些键，宿主 spawn 注入值存活。
+
+### 本项目落地
+
+`buildSpawnEnv`（`api/src/claude-runtime.ts`）：**有激活预设**（注入 apiKey）时同时设 `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`；**无激活预设**不设——用户自己在 `~/.claude/settings.json` 管端点的用法不受影响（CLI 回落自身 settings，现状不变）。
+
+---
+
 ## 证据来源
 
 - **官方二进制字面量扫描**：`node_modules/.bun/@anthropic-ai+claude-code-linux-x64@2.1.160/.../claude`（242MB 编译 ELF，`rg -a` 扒字面量）——`set_effort` 不存在、`set_session_config` 不存在、`getEffort`×16、`effortLevel`×24、`CLAUDE_CODE_EFFORT_LEVEL`×14、`xhigh`×141、`/effort` 用法串、`disableSlashCommands` 默认 false、`cmd_local_jsx_headless` + `% isn't available in this environment.` 模板。
 - **实测**：`spawn claude --input-format stream-json --output-format stream-json`，发 `/effort high`，对照 `--print` 与交互式两种——均回 synthetic 零调用响应 `/effort isn't available in this environment.`。
 - **参考实现源码**：`~/repos/hapi`（tiann/hapi）`cli/src/claude/runClaude.ts`、`cli/src/claude/session.ts`、`cli/src/claude/effort.ts`、`hub/src/web/routes/sessions.ts`、`hub/src/sync/sessionModel.test.ts`。
-- **deepwiki**：anthropics/claude-code（`/effort` 用法、`CLAUDE_EFFORT` hooks env、skill frontmatter effort、Opus 4.8 default high）、tiann/hapi（`set-session-config` RPC 全链路）。
+- **deepwiki**：anthropics/claude-code（`/effort` 用法、`CLAUDE_EFFORT` hooks env、skill frontmatter effort、Opus 4.8 default high）、tiann/hapi（`set-session-config` RPC 全链路）、ChinaSiro/claude-code-sourcemap（`managedEnv.ts` env 覆盖机制 + `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` 剔除列表）。
