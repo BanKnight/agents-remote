@@ -435,6 +435,7 @@ test("buildSpawnEnv inherits parent env without injecting when effort/provider a
   const env = buildSpawnEnv(undefined, undefined, { PATH: "/usr/bin" });
   expect(env).toEqual({ PATH: "/usr/bin" });
   expect(env.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
+  expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
   // 无 provider 不设 host-managed 标志——用户经 ~/.claude/settings.json 自管端点不受影响。
@@ -449,7 +450,10 @@ test("buildSpawnEnv injects CLAUDE_CODE_EFFORT_LEVEL from effort", () => {
 
 test("buildSpawnEnv injects provider apiKey and baseUrl", () => {
   const env = buildSpawnEnv(undefined, { apiKey: "sk-ant-xxx", baseUrl: "https://gw.example" }, {});
-  expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-xxx");
+  // 凭证注入 AUTH_TOKEN（Bearer 形态）：API_KEY 有 CLI customApiKeyResponses consent 门槛，
+  // 无头 spawn 无人批准 → CLI 弃用 key → 网关 401 "API key required"（见 buildSpawnEnv 注释）。
+  expect(env.ANTHROPIC_AUTH_TOKEN).toBe("sk-ant-xxx");
+  expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   expect(env.ANTHROPIC_BASE_URL).toBe("https://gw.example");
   // 有 provider 时设 host-managed 标志：CLI 据此从自身 settings env 块剔除 provider
   // 变量（BASE_URL/AUTH_TOKEN 等），防历史遗留配置覆盖宿主注入。
@@ -458,7 +462,7 @@ test("buildSpawnEnv injects provider apiKey and baseUrl", () => {
 
 test("buildSpawnEnv omits baseUrl when provider has only apiKey", () => {
   const env = buildSpawnEnv(undefined, { apiKey: "sk-ant-xxx" }, {});
-  expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-xxx");
+  expect(env.ANTHROPIC_AUTH_TOKEN).toBe("sk-ant-xxx");
   expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
 });
 

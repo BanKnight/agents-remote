@@ -140,6 +140,11 @@ type ClaudeProcess = {
 // CLI 从 settings env 块剔除全部 provider 变量（BASE_URL/AUTH_TOKEN/API_KEY/DEFAULT_*_MODEL），
 // 保住宿主注入。无 provider 不设——用户自己经 CLI settings 管端点的用法不受影响。
 // 机制见 docs/research/claude-cli-runtime-config.md §env 覆盖优先级。
+//
+// 凭证注入用 ANTHROPIC_AUTH_TOKEN（Bearer 形态）而非 ANTHROPIC_API_KEY：CLI 2.1.2xx 对
+// API_KEY 有 customApiKeyResponses consent 门槛——key hash 未在 ~/.claude.json approved 列表
+// 时（无头 spawn 无人批准）CLI 返回 key:null，请求零鉴权头，网关回 "API key required"。
+// AUTH_TOKEN 是一等鉴权源、无此门槛，且官方 API 与各类网关通吃（Bearer）。
 export function buildSpawnEnv(
   effort: EffortLevel | undefined,
   provider: { apiKey: string; baseUrl?: string } | undefined,
@@ -149,7 +154,7 @@ export function buildSpawnEnv(
   const env: Record<string, string | undefined> = { ...parentEnv };
   if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
   if (provider?.apiKey) {
-    env.ANTHROPIC_API_KEY = provider.apiKey;
+    env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";
   }
   if (provider?.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;

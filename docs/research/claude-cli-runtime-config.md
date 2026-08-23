@@ -205,6 +205,16 @@ CLI 启动时会把 settings 的 `env` 块 **`Object.assign(process.env, ...)` �
 
 `buildSpawnEnv`（`api/src/claude-runtime.ts`）：**有激活预设**（注入 apiKey）时同时设 `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`；**无激活预设**不设——用户自己在 `~/.claude/settings.json` 管端点的用法不受影响（CLI 回落自身 settings，现状不变）。
 
+### 第二层坑：`ANTHROPIC_API_KEY` 的 customApiKeyResponses consent 门槛（2026-08-23 resume 实测定位）
+
+**现象**：host-managed 修复后（env 注入确认为新值），resume 会话仍报 `401 {"error":"API key required for remote API access"}`。网关侧复现：该文案**只在请求零鉴权头**时出现——CLI 发出的请求没带任何凭证。
+
+**机制**（CLI 2.1.212 二进制，`customApiKeyResponses` 字面量）：CLI 对 `ANTHROPIC_API_KEY` 有**用户批准门槛**——key hash 必须在 `~/.claude.json` 的 `customApiKeyResponses.approved` 列表里才会被采用；未批准时走交互式弹窗 "Detected a custom API key in your environment. Do you want to use this API key?"。无头 spawn（stream-json、非 TTY）无人批准 → `key:null, source:"none"` → 请求零鉴权头。**`ANTHROPIC_AUTH_TOKEN` 无此门槛**（一等 Bearer 鉴权源，与 apiKeyHelper/OAuth 并列）——这也是用户在 `~/.claude/settings.json` env 块手配 `ANTHROPIC_AUTH_TOKEN` 一直可用的原因。
+
+**修复**：宿主注入凭证统一用 `ANTHROPIC_AUTH_TOKEN`（Bearer 形态）。官方 API 与各类网关（9router/new-api 系）对 Bearer 的兼容性 ≥ x-api-key。**注意版本**：2.1.160 二进制无此机制、2.1.212 有——node_modules 内置版本与系统 PATH 版本可能不一致，扫描验证时必须用 `which claude` 实际解析到的二进制。
+
+> 排查时易混的网关行为：9router 对「无鉴权头」回 `401 "API key required for remote API access"`、对「key 无上游凭证/模型名未命中」回 `404 "No active credentials for provider: anthropic"`——401 ≠ key 错，401 = 根本没带 key。
+
 ---
 
 ## 证据来源
