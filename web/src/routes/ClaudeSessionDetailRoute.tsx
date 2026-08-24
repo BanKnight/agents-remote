@@ -768,7 +768,10 @@ function FullscreenReader({
   return (
     <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="fixed inset-0 z-[100] max-w-none w-full translate-x-0 translate-y-0 flex flex-col bg-surface-inset/95 backdrop-blur-sm"
+        // sm:max-w-none 必须：DialogContent base 的 sm:max-w-lg 是 sm-variant 组，无 variant
+        // 的 max-w-none 经 twMerge 去不掉它 → 桌面端被钳到 512px 且贴左缘（inset-0 干掉
+        // left-1/2 后不再居中）。全屏语义需全断点解除 max-w。
+        className="fixed inset-0 z-[100] max-w-none sm:max-w-none w-full translate-x-0 translate-y-0 flex flex-col bg-surface-inset/95 backdrop-blur-sm"
         style={{
           paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
           paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
