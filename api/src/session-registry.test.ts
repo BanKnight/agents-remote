@@ -270,7 +270,7 @@ test("SessionRegistry.renameAgentSession persists new displayName to metadata", 
   expect(metadata.type).toBe("agent");
 });
 
-test("SessionRegistry.setAgentAutoRetryMessage persists and scopes by project", async () => {
+test("SessionRegistry.setAgentAutoRetryConfig persists and scopes by project", async () => {
   const registry = new SessionRegistry({
     runDir,
     now: fixedNow,
@@ -278,30 +278,35 @@ test("SessionRegistry.setAgentAutoRetryMessage persists and scopes by project", 
   });
 
   const agent = await registry.createAgentSession({ project, provider: "claude" });
-  const updated = await registry.setAgentAutoRetryMessage(project.name, agent.id, "请继续");
+  const cfg = {
+    enabled: true,
+    message: "请继续",
+    delayMs: 60_000,
+    maxPerWindow: 3,
+    windowMs: 1_800_000,
+  };
+  const updated = await registry.setAgentAutoRetryConfig(project.name, agent.id, cfg);
 
-  expect(updated?.autoRetryMessage).toBe("请继续");
+  expect(updated?.autoRetry).toEqual(cfg);
   const metadata = JSON.parse(
     await readFile(join(runDir, "sessions", "agent_autoretry1234.json"), "utf8"),
   );
-  expect(metadata.autoRetryMessage).toBe("请继续");
+  expect(metadata.autoRetry).toEqual(cfg);
   expect(metadata.updatedAt).toBe(fixedNow().toISOString());
 
-  // 空串 = 关闭（写空值而非删字段，GET 侧 AgentSession.autoRetryMessage 为 ""）。
-  await registry.setAgentAutoRetryMessage(project.name, agent.id, "");
+  // enabled:false = 关闭（完整 config 落盘，非删字段）。
+  await registry.setAgentAutoRetryConfig(project.name, agent.id, { ...cfg, enabled: false });
   const cleared = JSON.parse(
     await readFile(join(runDir, "sessions", "agent_autoretry1234.json"), "utf8"),
   );
-  expect(cleared.autoRetryMessage).toBe("");
+  expect(cleared.autoRetry.enabled).toBe(false);
 
   // 跨 project / 缺失 session 返回 undefined。
-  expect(await registry.setAgentAutoRetryMessage("other", agent.id, "不应写")).toBeUndefined();
-  expect(
-    await registry.setAgentAutoRetryMessage(project.name, "nonexistent", "无"),
-  ).toBeUndefined();
+  expect(await registry.setAgentAutoRetryConfig("other", agent.id, cfg)).toBeUndefined();
+  expect(await registry.setAgentAutoRetryConfig(project.name, "nonexistent", cfg)).toBeUndefined();
 });
 
-test("SessionRegistry.getAgentAutoRetryMessage reads by sessionId without project scope", async () => {
+test("SessionRegistry.getAgentAutoRetryConfig reads by sessionId without project scope", async () => {
   const registry = new SessionRegistry({
     runDir,
     now: fixedNow,
@@ -309,12 +314,19 @@ test("SessionRegistry.getAgentAutoRetryMessage reads by sessionId without projec
   });
 
   const agent = await registry.createAgentSession({ project, provider: "claude" });
-  expect(await registry.getAgentAutoRetryMessage(agent.id)).toBeUndefined();
+  expect(await registry.getAgentAutoRetryConfig(agent.id)).toBeUndefined();
 
-  await registry.setAgentAutoRetryMessage(project.name, agent.id, "继续任务");
-  expect(await registry.getAgentAutoRetryMessage(agent.id)).toBe("继续任务");
+  const cfg = {
+    enabled: true,
+    message: "继续任务",
+    delayMs: 60_000,
+    maxPerWindow: 3,
+    windowMs: 1_800_000,
+  };
+  await registry.setAgentAutoRetryConfig(project.name, agent.id, cfg);
+  expect(await registry.getAgentAutoRetryConfig(agent.id)).toEqual(cfg);
   // 缺失 session → undefined（不抛错）。
-  expect(await registry.getAgentAutoRetryMessage("nonexistent")).toBeUndefined();
+  expect(await registry.getAgentAutoRetryConfig("nonexistent")).toBeUndefined();
 });
 
 test("SessionRegistry.renameTerminalSession persists and scopes by project", async () => {

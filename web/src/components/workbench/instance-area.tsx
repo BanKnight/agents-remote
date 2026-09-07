@@ -17,11 +17,13 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tansta
 import type {
   AgentProvider,
   AgentSession,
+  ClaudeAutoRetryConfig,
   ListAgentSessionsResponse,
   ListTerminalSessionsResponse,
   OverviewResponse,
   TerminalSession,
 } from "@agents-remote/shared";
+import { AUTO_RETRY_DEFAULT } from "@agents-remote/shared";
 import {
   type DropZone,
   type GlobalInstanceCandidate,
@@ -54,7 +56,7 @@ import {
   listTerminalSessions,
   renameAgentSession,
   renameTerminalSession,
-  updateAutoRetryMessage,
+  updateAutoRetryConfig,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
@@ -905,12 +907,14 @@ export function useInstanceInfoActions(
           wrap: true,
         });
       }
-      // 自动重试消息（claude 专用，见 useAutoRetryEditor）：未配置显示关闭态。
+      // 自动重试配置（claude 专用，见 useAutoRetryEditor）：关闭态显示「关闭」。
       if (agentSession.provider === "claude") {
         fields.push({
           label: t("session.autoRetry.label"),
-          value: agentSession.autoRetryMessage || t("session.autoRetry.off"),
-          wrap: Boolean(agentSession.autoRetryMessage),
+          value: agentSession.autoRetry?.enabled
+            ? agentSession.autoRetry.message
+            : t("session.autoRetry.off"),
+          wrap: Boolean(agentSession.autoRetry?.enabled && agentSession.autoRetry.message),
         });
       }
     } else if (sessionType === "terminal" && terminalSession) {
@@ -940,14 +944,15 @@ export function useInstanceInfoActions(
 }
 
 /**
- * 自动重试消息编辑流程（claude agent 专用，2026-09-07）：info sheet「编辑」入口 →
- * textarea Dialog 预填当前 autoRetryMessage → 保存调 updateAutoRetryMessage API →
- * invalidate detail/list（与 useRenameSession 同模式）。空串=关闭。
+ * 自动重试配置编辑流程（claude agent 专用，2026-09-07）：info sheet「编辑」入口 →
+ * Dialog（开关 + 单行文案 + 参数）预填当前 autoRetry config（缺省 = 默认关 + i18n 默认文案）
+ * → 保存调 updateAutoRetryConfig API → invalidate detail/list（与 useRenameSession 同模式）。
  */
 function useAutoRetryEditor(panelRef: SessionPanelRef) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
+  const [config, setConfig] = useState<ClaudeAutoRetryConfig | null>(null);
 
   const openEditor = () => {
     const session = queryClient.getQueryData<{ session: AgentSession }>([
@@ -956,13 +961,21 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
       "agent-sessions",
       panelRef.sessionId,
     ])?.session;
-    setValue(session?.autoRetryMessage ?? "");
+    // 无配置 = 默认关 + 按 UI 语言预填默认文案（服务端存具体字符串不做 i18n）。
+    setConfig(
+      session?.autoRetry ?? {
+        ...AUTO_RETRY_DEFAULT,
+        enabled: false,
+        message: t("session.autoRetry.defaultMessage"),
+      },
+    );
     setOpen(true);
   };
 
   const save = async () => {
+    if (!config) return;
     try {
-      await updateAutoRetryMessage(panelRef.projectName, panelRef.sessionId, value.trim());
+      await updateAutoRetryConfig(panelRef.projectName, panelRef.sessionId, config);
     } catch {
       // 路由已返回错误码；与 useRenameSession 同策略：不额外提示，失效缓存自愈。
     }
@@ -978,30 +991,49 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
     setOpen(false);
   };
 
-  const holder = open ? (
-    <AutoRetryEditorDialog
-      initialValue={value}
-      onCancel={() => setOpen(false)}
-      onSave={save}
-      onValueChange={setValue}
-    />
-  ) : null;
+  const holder =
+    open && config ? (
+      <AutoRetryEditorDialog
+        config={config}
+        onCancel={() => setOpen(false)}
+        onChange={setConfig}
+        onSave={save}
+      />
+    ) : null;
 
   return { openEditor, holder };
 }
 
+// UI 参数单位换算：分钟（用户可读）↔ ms（存储/协议）。maxPerWindow 无量纲直接用。
+const AUTO_RETRY_MINUTE_MS = 60_000;
+
 function AutoRetryEditorDialog({
-  initialValue,
+  config,
   onCancel,
+  onChange,
   onSave,
-  onValueChange,
 }: {
-  initialValue: string;
+  config: ClaudeAutoRetryConfig;
   onCancel: () => void;
+  onChange: (config: ClaudeAutoRetryConfig) => void;
   onSave: () => void;
-  onValueChange: (v: string) => void;
 }) {
   const { t } = useT();
+  const inputClasses =
+    "w-full rounded-lg border border-neutral-line bg-surface-inset px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none";
+  const numberInputClasses =
+    "w-full rounded-lg border border-neutral-line bg-surface-inset px-2 py-1.5 text-sm text-on-surface focus:border-primary focus:outline-none";
+
+  // 开关打开时文案为空 → 预填默认（首次启用即有合理值；关闭不改文案）。
+  const toggleEnabled = (enabled: boolean) => {
+    onChange({
+      ...config,
+      enabled,
+      message:
+        enabled && !config.message.trim() ? t("session.autoRetry.defaultMessage") : config.message,
+    });
+  };
+
   return (
     <Dialog defaultOpen onOpenChange={(next) => !next && onCancel()}>
       <DialogContent>
@@ -1009,18 +1041,90 @@ function AutoRetryEditorDialog({
           className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
           <h2 className="text-base font-semibold text-on-surface">{t("session.autoRetry.edit")}</h2>
-          <p className="mt-1 text-xs text-on-surface-soft">{t("session.autoRetry.description")}</p>
-          <textarea
-            autoFocus
-            className="mt-3 w-full resize-none rounded-lg border border-neutral-line bg-surface-inset px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted/60 focus:border-primary focus:outline-none"
-            defaultValue={initialValue}
-            onChange={(e) => onValueChange(e.target.value)}
-            placeholder={t("session.autoRetry.placeholder")}
-            rows={3}
-          />
+          {/* switch 行（形态对齐 settings-dialog 的 role="switch" toggle）。 */}
+          <button
+            aria-checked={config.enabled}
+            className="mt-3 flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40"
+            onClick={() => toggleEnabled(!config.enabled)}
+            role="switch"
+            type="button"
+          >
+            <span className="text-sm font-semibold text-on-surface">
+              {t("session.autoRetry.enable")}
+            </span>
+            <span
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${config.enabled ? "bg-primary" : "bg-surface-inset"}`}
+            >
+              <span
+                className={`inline-block size-5 transform rounded-full bg-on-surface shadow transition ${config.enabled ? "translate-x-[1.375rem] bg-on-primary" : "translate-x-0.5"}`}
+              />
+            </span>
+          </button>
+          {/* 单行文案 + 参数行（enabled 时才可编辑；关闭态置灰保留值）。 */}
+          <div className={config.enabled ? "" : "pointer-events-none opacity-50"}>
+            <input
+              className={inputClasses}
+              onChange={(e) => onChange({ ...config, message: e.target.value })}
+              placeholder={t("session.autoRetry.defaultMessage")}
+              type="text"
+              value={config.message}
+            />
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <label className="block">
+                <span className="block text-xs text-on-surface-soft">
+                  {t("session.autoRetry.delayLabel")}
+                </span>
+                <input
+                  className={numberInputClasses}
+                  inputMode="numeric"
+                  min={1}
+                  onChange={(e) =>
+                    onChange({
+                      ...config,
+                      delayMs: Number(e.target.value) * AUTO_RETRY_MINUTE_MS,
+                    })
+                  }
+                  type="number"
+                  value={config.delayMs / AUTO_RETRY_MINUTE_MS}
+                />
+              </label>
+              <label className="block">
+                <span className="block text-xs text-on-surface-soft">
+                  {t("session.autoRetry.maxLabel")}
+                </span>
+                <input
+                  className={numberInputClasses}
+                  inputMode="numeric"
+                  min={1}
+                  onChange={(e) => onChange({ ...config, maxPerWindow: Number(e.target.value) })}
+                  type="number"
+                  value={config.maxPerWindow}
+                />
+              </label>
+              <label className="block">
+                <span className="block text-xs text-on-surface-soft">
+                  {t("session.autoRetry.windowLabel")}
+                </span>
+                <input
+                  className={numberInputClasses}
+                  inputMode="numeric"
+                  min={1}
+                  onChange={(e) =>
+                    onChange({
+                      ...config,
+                      windowMs: Number(e.target.value) * AUTO_RETRY_MINUTE_MS,
+                    })
+                  }
+                  type="number"
+                  value={config.windowMs / AUTO_RETRY_MINUTE_MS}
+                />
+              </label>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-on-surface-soft">{t("session.autoRetry.description")}</p>
           <div className="mt-4 flex justify-end gap-3">
             <button
-              className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 ${shellSurfaceClasses.workspace} text-on-surface-soft`}
+              className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 text-on-surface-soft ${shellSurfaceClasses.workspace}`}
               onClick={onCancel}
               type="button"
             >

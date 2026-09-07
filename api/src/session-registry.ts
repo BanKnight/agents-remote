@@ -3,6 +3,7 @@ import type {
   AgentSession,
   AgentSessionStatus,
   ApiErrorCode,
+  ClaudeAutoRetryConfig,
   EffortLevel,
   OverviewCandidate,
   SessionType,
@@ -35,8 +36,8 @@ export type SessionMetadata = {
   modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
-  /** 自动重试注入消息（claude）：上游报错停下后延迟注入的自定义文案；空/缺省=关闭。 */
-  autoRetryMessage?: string;
+  /** 自动重试注入配置（claude）；缺省 = 默认关。 */
+  autoRetry?: ClaudeAutoRetryConfig;
 };
 
 export type RuntimeStream = {
@@ -293,13 +294,13 @@ export class SessionRegistry {
     await this.writeMetadata(updated);
   }
 
-  // Persist the claude auto-retry injection message (empty string = disabled).
-  // Read fresh at injection time by ClaudeRuntime's autoRetryMessageProvider.
+  // Persist the claude auto-retry injection config (enabled:false = off).
+  // Read fresh at schedule time by ClaudeRuntime's autoRetryConfigProvider.
   // Symmetric to renameAgentSession (project-scoped getMetadata validation).
-  async setAgentAutoRetryMessage(
+  async setAgentAutoRetryConfig(
     projectName: string,
     sessionId: string,
-    autoRetryMessage: string,
+    autoRetry: ClaudeAutoRetryConfig,
   ): Promise<AgentSession | undefined> {
     const metadata = await this.getMetadata(projectName, "agent", sessionId);
 
@@ -309,20 +310,20 @@ export class SessionRegistry {
 
     const updated: SessionMetadata = {
       ...metadata,
-      autoRetryMessage,
+      autoRetry,
       updatedAt: this.now().toISOString(),
     };
     await this.writeMetadata(updated);
     return agentSessionFromMetadata(updated);
   }
 
-  // Read the claude auto-retry injection message by sessionId only (no project
-  // scope, no runtime probe) — called from ClaudeRuntime's injection timer for
-  // an already-live process; getAgentMetadata's keepIfRuntimeExists probing and
+  // Read the claude auto-retry injection config by sessionId only (no project
+  // scope, no runtime probe) — called from ClaudeRuntime's schedule for an
+  // already-live process; getAgentMetadata's keepIfRuntimeExists probing and
   // its projectName requirement don't fit that call site.
-  async getAgentAutoRetryMessage(sessionId: string): Promise<string | undefined> {
+  async getAgentAutoRetryConfig(sessionId: string): Promise<ClaudeAutoRetryConfig | undefined> {
     await this.ensureLoaded();
-    return this.index.get(sessionId)?.autoRetryMessage;
+    return this.index.get(sessionId)?.autoRetry;
   }
 
   async countSessions(projectName: string) {
@@ -897,7 +898,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   permissionMode: metadata.permissionMode,
   effort: metadata.effort,
   claudeSessionId: metadata.claudeSessionId,
-  autoRetryMessage: metadata.autoRetryMessage,
+  autoRetry: metadata.autoRetry,
   updatedAt: metadata.updatedAt,
 });
 

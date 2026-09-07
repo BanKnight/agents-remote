@@ -42,6 +42,7 @@ import type {
   RenameFileResponse,
   RenameSessionRequest,
   RenameTerminalSessionResponse,
+  ClaudeAutoRetryConfig,
   UpdateAutoRetryRequest,
   UpdateAutoRetryResponse,
   SaveFileRequest,
@@ -445,10 +446,10 @@ export async function renameAgentSession(
   );
 }
 
-export async function updateAutoRetryMessage(
+export async function updateAutoRetryConfig(
   projectName: string,
   sessionId: string,
-  autoRetryMessage: string,
+  config: ClaudeAutoRetryConfig,
 ): Promise<UpdateAutoRetryResponse> {
   return fetchJson(
     `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/auto-retry`,
@@ -456,7 +457,7 @@ export async function updateAutoRetryMessage(
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ autoRetryMessage } satisfies UpdateAutoRetryRequest),
+      body: JSON.stringify({ config } satisfies UpdateAutoRetryRequest),
     },
   );
 }

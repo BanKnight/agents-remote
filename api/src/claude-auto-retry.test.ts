@@ -1,16 +1,33 @@
 import { expect, test } from "bun:test";
+import type { ClaudeAutoRetryConfig } from "@agents-remote/shared";
 import {
   AUTO_RETRY_DELAY_MS,
+  AUTO_RETRY_DELAY_MS_MAX,
+  AUTO_RETRY_DELAY_MS_MIN,
   AUTO_RETRY_MAX_PER_WINDOW,
+  AUTO_RETRY_MAX_PER_WINDOW_MAX,
+  AUTO_RETRY_MAX_PER_WINDOW_MIN,
   AUTO_RETRY_WINDOW_MS,
+  AUTO_RETRY_WINDOW_MS_MAX,
+  AUTO_RETRY_WINDOW_MS_MIN,
   buildAutoRetryEchoLine,
   buildAutoRetryUserLine,
   canInject,
   ClaudeAutoRetryWatch,
   isErrorResultLine,
   isNormalAssistantLine,
+  normalizeAutoRetryConfig,
   pruneWindow,
 } from "./claude-auto-retry";
+
+const config = (overrides?: Partial<ClaudeAutoRetryConfig>): ClaudeAutoRetryConfig => ({
+  enabled: true,
+  message: "请继续",
+  delayMs: AUTO_RETRY_DELAY_MS,
+  maxPerWindow: AUTO_RETRY_MAX_PER_WINDOW,
+  windowMs: AUTO_RETRY_WINDOW_MS,
+  ...overrides,
+});
 
 // ── 纯函数：协议行形状（docs/research/claude-cli-stream-protocol.md 实测样本）──
 
@@ -94,9 +111,59 @@ test("buildAutoRetryEchoLine 带 isUserInput + synthetic uuid（对齐用户消�
   expect(String(parsed.uuid)).toMatch(/^injected-/);
 });
 
+test("normalizeAutoRetryConfig：合法值原样、出格值 clamp、非法形状补默认", () => {
+  const now = {
+    enabled: true,
+    message: " 继续任务 ",
+    delayMs: 120_000,
+    maxPerWindow: 5,
+    windowMs: 600_000,
+  };
+  expect(normalizeAutoRetryConfig(now)).toEqual({ ...now, message: "继续任务" });
+
+  // 出格值 clamp 到边界。
+  expect(normalizeAutoRetryConfig({ ...now, delayMs: 1 }).delayMs).toBe(AUTO_RETRY_DELAY_MS_MIN);
+  expect(normalizeAutoRetryConfig({ ...now, delayMs: 99_999_999 }).delayMs).toBe(
+    AUTO_RETRY_DELAY_MS_MAX,
+  );
+  expect(normalizeAutoRetryConfig({ ...now, maxPerWindow: 0 }).maxPerWindow).toBe(
+    AUTO_RETRY_MAX_PER_WINDOW_MIN,
+  );
+  expect(normalizeAutoRetryConfig({ ...now, maxPerWindow: 999 }).maxPerWindow).toBe(
+    AUTO_RETRY_MAX_PER_WINDOW_MAX,
+  );
+  expect(normalizeAutoRetryConfig({ ...now, windowMs: 1 }).windowMs).toBe(AUTO_RETRY_WINDOW_MS_MIN);
+  expect(normalizeAutoRetryConfig({ ...now, windowMs: 999_999_999 }).windowMs).toBe(
+    AUTO_RETRY_WINDOW_MS_MAX,
+  );
+
+  // 非法形状：enabled 强转 false、数值缺失补默认（NaN/undefined/字符串都算非法）。
+  const fallback = normalizeAutoRetryConfig({
+    enabled: "yes",
+    message: 42,
+    delayMs: "fast",
+    maxPerWindow: Number.NaN,
+    windowMs: undefined,
+  });
+  expect(fallback.enabled).toBe(false);
+  expect(fallback.message).toBe("");
+  expect(fallback.delayMs).toBe(AUTO_RETRY_DELAY_MS);
+  expect(fallback.maxPerWindow).toBe(AUTO_RETRY_MAX_PER_WINDOW);
+  expect(fallback.windowMs).toBe(AUTO_RETRY_WINDOW_MS);
+
+  // 完全非 object 的 payload 兜底为默认关。
+  expect(normalizeAutoRetryConfig(undefined)).toEqual({
+    enabled: false,
+    message: "",
+    delayMs: AUTO_RETRY_DELAY_MS,
+    maxPerWindow: AUTO_RETRY_MAX_PER_WINDOW,
+    windowMs: AUTO_RETRY_WINDOW_MS,
+  });
+});
+
 // ── 状态机：error → 延迟注入 → 正常 assistant 归零；限次；清理 ──
 // 定时器用短 delayMs（TICK_MS=10）走真实 setTimeout，验证完整 fire 链路；
-// 生产默认 60s（AUTO_RETRY_DELAY_MS）只是常量替换，语义不变。
+// 生产 delayMs 来自 config（默认 60s）只是数值替换，语义不变。
 const TICK_MS = 10;
 
 type Harness = {
@@ -106,25 +173,27 @@ type Harness = {
 };
 
 const harness = (
-  message: string | undefined,
+  configOrUndefined: ClaudeAutoRetryConfig | undefined,
   overrides?: { maxPerWindow?: number; delayMs?: number },
 ): Harness => {
   const clock = { now: 1_000_000 };
   const injections: string[] = [];
   const watch = new ClaudeAutoRetryWatch({
-    getMessage: () => message,
+    getConfig: () => {
+      const c = configOrUndefined;
+      if (!c) return undefined;
+      return { ...c, ...overrides };
+    },
     inject: (_sessionName, stdinLine) => {
       injections.push(stdinLine);
     },
     now: () => clock.now,
-    delayMs: TICK_MS,
-    ...overrides,
   });
   return { watch, clock, injections };
 };
 
-test("error result 后未到延迟不注入；到达后注入自定义消息", async () => {
-  const h = harness("请继续");
+test("error result 后未到延迟不注入；到达后注入配置文案", async () => {
+  const h = harness(config({ delayMs: TICK_MS }));
   h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
   expect(h.injections).toHaveLength(0); // 未到延迟
 
@@ -137,7 +206,7 @@ test("error result 后未到延迟不注入；到达后注入自定义消息", a
 });
 
 test("error result 后正常 assistant 先到 → 待发定时器作废（不注入）", async () => {
-  const h = harness("请继续");
+  const h = harness(config({ delayMs: TICK_MS }));
   h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
   h.watch.handleStdoutLine("s1", "sess1", { type: "assistant", model: "claude-sonnet-4-6" });
   await Bun.sleep(TICK_MS * 3);
@@ -145,7 +214,7 @@ test("error result 后正常 assistant 先到 → 待发定时器作废（不注
 });
 
 test("注入后正常 assistant 回复 → 成功，计数归零", async () => {
-  const h = harness("请继续");
+  const h = harness(config({ delayMs: TICK_MS }));
   h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
   await Bun.sleep(TICK_MS * 3);
   expect(h.injections).toHaveLength(1);
@@ -165,22 +234,32 @@ test("注入后正常 assistant 回复 → 成功，计数归零", async () => {
   expect(h.watch["states"].get("s1")?.awaitingSuccess).toBe(false);
 });
 
-test("配置为空（未配置）→ 定时器触发但不注入，不记时间戳", async () => {
-  const h = harness(undefined);
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
-  await Bun.sleep(TICK_MS * 3);
-  expect(h.injections).toHaveLength(0);
-  // 未注入则不占用窗口额度。
-  expect(h.watch["states"].get("s1")?.injectionTimestamps).toEqual([]);
+test("默认关：未配置 / enabled:false / 文案为空 → 完全不调度", async () => {
+  for (const c of [
+    undefined,
+    config({ enabled: false }),
+    config({ message: "" }),
+    config({ message: "   " }),
+  ]) {
+    const h = harness(c);
+    h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+    await Bun.sleep(TICK_MS * 3);
+    expect(h.injections).toHaveLength(0);
+    // 不调度 → 状态里无 pending timer。
+    expect(h.watch["states"].get("s1")?.pendingTimer).toBeNull();
+    h.watch.destroySession("s1");
+  }
 });
 
 test("pending 存在时重复 error 不叠加调度；用户介入 cancelPending 取消", async () => {
-  const h = harness("请继续");
+  const h = harness(config({ delayMs: TICK_MS }));
   h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  await Bun.sleep(1); // schedule 为 async：等 getConfig 走完才有 pendingTimer
   const firstTimer = h.watch["states"].get("s1")?.pendingTimer;
   expect(firstTimer).not.toBeNull();
 
   h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  await Bun.sleep(1);
   expect(h.watch["states"].get("s1")?.pendingTimer).toBe(firstTimer); // 不叠加
 
   h.watch.cancelPending("s1");
@@ -189,19 +268,42 @@ test("pending 存在时重复 error 不叠加调度；用户介入 cancelPending
   expect(h.injections).toHaveLength(0);
 });
 
-test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
+test("async getConfig 的 await 间隙内重复 error 不叠加调度（scheduling 防重）", async () => {
   const clock = { now: 1_000_000 };
   const injections: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const watch = new ClaudeAutoRetryWatch({
-    getMessage: () => "请继续",
+    getConfig: () => gate.then(() => config({ delayMs: TICK_MS })),
     inject: (_s, line) => {
       injections.push(line);
     },
     now: () => clock.now,
-    delayMs: TICK_MS,
-    maxPerWindow: 2,
   });
   watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  release();
+  await Bun.sleep(TICK_MS * 3);
+  // 只应有 1 个 pending timer → 1 次注入。
+  expect(injections).toHaveLength(1);
+});
+
+test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
+  const clock = { now: 1_000_000 };
+  const injections: string[] = [];
+  const watch = new ClaudeAutoRetryWatch({
+    // 大 delay：断言窗口语义时定时器不触发，排除 fire 干扰。
+    getConfig: () => config({ delayMs: 100_000, maxPerWindow: 2 }),
+    inject: (_s, line) => {
+      injections.push(line);
+    },
+    now: () => clock.now,
+  });
+  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  await Bun.sleep(1); // 让 schedule 的 async getConfig 走完
   const state = watch["states"].get("s1")!;
   // 手动灌满窗口（模拟已注入 2 次，绕过 pending 定时器干扰）。
   if (state.pendingTimer) clearTimeout(state.pendingTimer);
@@ -209,17 +311,22 @@ test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
   state.injectionTimestamps = [clock.now - 1000, clock.now - 500];
 
   watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  await Bun.sleep(1);
   expect(state.pendingTimer).toBeNull(); // 窗口满 → 不调度
+  expect(injections).toHaveLength(0);
 
   // 窗口滑过 → 恢复资格。
   clock.now += AUTO_RETRY_WINDOW_MS + 1;
   watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  await Bun.sleep(1);
   expect(state.pendingTimer).not.toBeNull();
+  watch.destroySession("s1");
 });
 
 test("destroySession 清理 pending 定时器（close/respawn/proc.exited 生命周期点）", async () => {
-  const h = harness("请继续");
+  const h = harness(config({ delayMs: TICK_MS }));
   h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  await Bun.sleep(0);
   expect(h.watch["states"].get("s1")?.pendingTimer).not.toBeNull();
 
   h.watch.destroySession("s1");
@@ -231,12 +338,12 @@ test("destroySession 清理 pending 定时器（close/respawn/proc.exited 生命
 });
 
 test("正常 assistant 在无状态时（未报错）是 no-op，不建状态", () => {
-  const h = harness("请继续");
+  const h = harness(config({ delayMs: TICK_MS }));
   h.watch.handleStdoutLine("s1", "sess1", { type: "assistant", model: "claude-sonnet-4-6" });
   expect(h.watch["states"].has("s1")).toBe(false);
 });
 
-test("生产默认常量：延迟 60s / 窗口 30min / 上限 3 次", () => {
+test("生产默认常量：延迟 60s / 窗口 30min / 上限 3 次（AUTO_RETRY_DEFAULT 同源）", () => {
   expect(AUTO_RETRY_DELAY_MS).toBe(60_000);
   expect(AUTO_RETRY_WINDOW_MS).toBe(30 * 60_000);
   expect(AUTO_RETRY_MAX_PER_WINDOW).toBe(3);

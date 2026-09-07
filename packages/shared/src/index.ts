@@ -818,8 +818,8 @@ export type AgentSession = {
   permissionMode?: string;
   effort?: EffortLevel;
   claudeSessionId?: string;
-  /** 自动重试注入消息（claude）：上游报错停下后延迟注入给 agent 的自定义文案；空/缺省=关闭。 */
-  autoRetryMessage?: string;
+  /** 自动重试注入配置（claude）；缺省 = 默认关。 */
+  autoRetry?: ClaudeAutoRetryConfig;
   lastAssistantMessage?: string;
   updatedAt?: string;
 };
@@ -925,10 +925,32 @@ export type RenameSessionRequest = {
   displayName: string;
 };
 
-// -- Session 自动重试注入配置（claude agent 专用；空串=关闭） --
+// -- Session 自动重试注入配置（claude agent 专用） --
+
+/** claude 自动重试注入配置：上游报错停下后延迟 delayMs 注入 message 让 agent 继续。 */
+export type ClaudeAutoRetryConfig = {
+  /** 显式开关（默认关——enabled:false/未配置完全不调度）。 */
+  enabled: boolean;
+  /** 注入文案（启用时必非空；UI 侧按语言预填默认文案，服务端存具体字符串不做 i18n）。 */
+  message: string;
+  /** 报错停下 → 注入的延迟。 */
+  delayMs: number;
+  /** 滚动窗口内最大注入次数。 */
+  maxPerWindow: number;
+  /** 滚动窗口长度。 */
+  windowMs: number;
+};
+
+// client/server 同源默认值（message 默认在 client 侧由 i18n 决定，不在此定义）。
+export const AUTO_RETRY_DEFAULT = {
+  enabled: false,
+  delayMs: 60_000,
+  maxPerWindow: 3,
+  windowMs: 30 * 60_000,
+} as const;
 
 export type UpdateAutoRetryRequest = {
-  autoRetryMessage: string;
+  config: ClaudeAutoRetryConfig;
 };
 
 export type UpdateAutoRetryResponse = {

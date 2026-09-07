@@ -1146,9 +1146,9 @@ export const startApi = async () => {
   claudeRuntime.setOnActivity((sessionId) => {
     void sessionRegistry.recordActivity(sessionId);
   });
-  // 自动重试注入配置源：注入时刻从 metadata fresh 读 autoRetryMessage（空/缺省=不注入）。
-  claudeRuntime.setAutoRetryMessageProvider((sessionId) =>
-    sessionRegistry.getAgentAutoRetryMessage(sessionId),
+  // 自动重试注入配置源：调度时刻从 metadata fresh 读 config（缺省/enabled:false=不调度）。
+  claudeRuntime.setAutoRetryConfigProvider((sessionId) =>
+    sessionRegistry.getAgentAutoRetryConfig(sessionId),
   );
   // pi 事件流 → 元数据同步：piSessionId backfill（幂等只写一次）+ 活动 bump updatedAt（分钟截断）。
   piRuntime.setOnPiSessionId((chatId, piSessionId) => {

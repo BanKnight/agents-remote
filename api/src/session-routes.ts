@@ -25,6 +25,7 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
+import { normalizeAutoRetryConfig } from "./claude-auto-retry";
 import { activePresetView, buildAvailableAliases, type SettingsStore } from "./settings-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
@@ -233,13 +234,11 @@ const handleAgentSessionRoute = async (
   }
 
   if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/auto-retry")) {
+    // normalizeAutoRetryConfig 兜底非预期 body 形状（clamp 出格值/补默认），不 400。
     const body = await readJson<UpdateAutoRetryRequest>(request);
+    const config = normalizeAutoRetryConfig(body.config);
 
-    const session = await registry.setAgentAutoRetryMessage(
-      project.name,
-      sessionId,
-      typeof body.autoRetryMessage === "string" ? body.autoRetryMessage : "",
-    );
+    const session = await registry.setAgentAutoRetryConfig(project.name, sessionId, config);
 
     if (!session) {
       return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);

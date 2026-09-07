@@ -1,6 +1,10 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type ClaudePreset, type EffortLevel } from "@agents-remote/shared";
+import {
+  type ClaudeAutoRetryConfig,
+  type ClaudePreset,
+  type EffortLevel,
+} from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import { ClaudeSessionRelay } from "./session-relay";
 import {
@@ -198,9 +202,11 @@ export class ClaudeRuntime implements RuntimeResources {
   // 真实新 stdout 行 = session 活动 → bump updatedAt。只在 processStdoutLine（真实新行入口）
   // 触发，不在 onRealtimeRow/relay 回放触发（回放的 session_init/seedInit 会误刷新 updatedAt）。
   private onActivity: ((sessionId: string) => void) | null = null;
-  // 自动重试注入配置源（index.ts 从 SessionRegistry metadata 读 autoRetryMessage）。
-  private autoRetryMessageProvider:
-    | ((sessionId: string) => string | undefined | Promise<string | undefined>)
+  // 自动重试注入配置源（index.ts 从 SessionRegistry metadata 读 autoRetry config）。
+  private autoRetryConfigProvider:
+    | ((
+        sessionId: string,
+      ) => ClaudeAutoRetryConfig | undefined | Promise<ClaudeAutoRetryConfig | undefined>)
     | null = null;
   // 自动重试状态机：报错停下 → 延迟注入自定义消息（claude-auto-retry.ts）。
   private readonly autoRetry: ClaudeAutoRetryWatch;
@@ -210,7 +216,7 @@ export class ClaudeRuntime implements RuntimeResources {
     this.settingsStore = settingsStore;
     this.mcpPort = mcpPort;
     this.autoRetry = new ClaudeAutoRetryWatch({
-      getMessage: (_sessionName, sessionId) => this.autoRetryMessageProvider?.(sessionId),
+      getConfig: (_sessionName, sessionId) => this.autoRetryConfigProvider?.(sessionId),
       inject: (sessionName, stdinLine, echoLine) => {
         void this.write(sessionName, stdinLine).catch(() => {
           // 进程已死/已销毁——注入尽力而为，定时器随 destroySession 清理。
@@ -242,10 +248,12 @@ export class ClaudeRuntime implements RuntimeResources {
     this.onActivity = cb;
   }
 
-  setAutoRetryMessageProvider(
-    cb: (sessionId: string) => string | undefined | Promise<string | undefined>,
+  setAutoRetryConfigProvider(
+    cb: (
+      sessionId: string,
+    ) => ClaudeAutoRetryConfig | undefined | Promise<ClaudeAutoRetryConfig | undefined>,
   ) {
-    this.autoRetryMessageProvider = cb;
+    this.autoRetryConfigProvider = cb;
   }
 
   getSessionState(sessionName: string) {
