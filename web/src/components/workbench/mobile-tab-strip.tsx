@@ -13,6 +13,8 @@ type MobileTabStripItem = {
 type MobileTabStripProps = {
   tabs: MobileTabStripItem[];
   activeTabId?: string;
+  /** ◄ 返回项目列表（与 drawer 左上角返回等价；恒常显示，设计 workbench-views §7.7）。 */
+  onBack: () => void;
   /** ☰ drawer 开关（项目 scope 恒有）。 */
   onToggleSidebar: () => void;
   onSelect: (leafId: string, tabId: string) => void;
@@ -34,6 +36,7 @@ type MobileTabStripProps = {
 export function MobileTabStrip({
   tabs,
   activeTabId,
+  onBack,
   onToggleSidebar,
   onSelect,
   onClose,
@@ -84,6 +87,22 @@ export function MobileTabStrip({
         type="button"
       >
         <ShellIcon className="h-5 w-5" name="menu" />
+      </button>
+      <button
+        aria-label={t("project.backToProjects")}
+        className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+        onClick={onBack}
+        type="button"
+      >
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+          <path
+            d="M15 18l-6-6 6-6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          />
+        </svg>
       </button>
       <div
         ref={scrollRef}

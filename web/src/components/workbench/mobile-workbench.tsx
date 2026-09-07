@@ -621,6 +621,8 @@ function MobileProjectWorkbench({
 }: MobileProjectWorkbenchProps) {
   const { t } = useT();
   const navigateWorkbench = useWorkbenchNavigate();
+  // tab 带 ◄ 返回项目列表（与 drawer 左上角返回等价，设计 workbench-views §7.7）。
+  const navigate = useNavigate();
   // 进入项目 drawer 默认态：浏览态（无 focusId）= 展开总览段（设计决策 ①「进入项目默认展开侧边栏」，
   // 会话列表即入口）；聚焦态（带 focusId，如从 global 总览点会话卡进入）= 收起——用户已明确要看
   // 会话，drawer 总览段是多余遮挡（2026-08-16 迭代）。key={scope.key} 切项目重挂才重新评估；
@@ -744,6 +746,9 @@ function MobileProjectWorkbench({
               <MobileTabStrip
                 activeTabId={focusId}
                 onClose={handleCloseTab}
+                onBack={() => {
+                  void navigate({ to: "/" });
+                }}
                 onSelect={onSelectTab}
                 onToggleSidebar={() => setDrawerOpen(true)}
                 tabs={stripItems}
