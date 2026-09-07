@@ -42,6 +42,8 @@ import type {
   RenameFileResponse,
   RenameSessionRequest,
   RenameTerminalSessionResponse,
+  UpdateAutoRetryRequest,
+  UpdateAutoRetryResponse,
   SaveFileRequest,
   SaveFileResponse,
   SlashCommandDescriptionsResponse,
@@ -439,6 +441,22 @@ export async function renameAgentSession(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ displayName } satisfies RenameSessionRequest),
+    },
+  );
+}
+
+export async function updateAutoRetryMessage(
+  projectName: string,
+  sessionId: string,
+  autoRetryMessage: string,
+): Promise<UpdateAutoRetryResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/auto-retry`,
+    "api.agentSessionAutoRetryFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ autoRetryMessage } satisfies UpdateAutoRetryRequest),
     },
   );
 }

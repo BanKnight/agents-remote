@@ -35,6 +35,8 @@ export type SessionMetadata = {
   modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
+  /** 自动重试注入消息（claude）：上游报错停下后延迟注入的自定义文案；空/缺省=关闭。 */
+  autoRetryMessage?: string;
 };
 
 export type RuntimeStream = {
@@ -289,6 +291,38 @@ export class SessionRegistry {
       updatedAt: this.now().toISOString(),
     };
     await this.writeMetadata(updated);
+  }
+
+  // Persist the claude auto-retry injection message (empty string = disabled).
+  // Read fresh at injection time by ClaudeRuntime's autoRetryMessageProvider.
+  // Symmetric to renameAgentSession (project-scoped getMetadata validation).
+  async setAgentAutoRetryMessage(
+    projectName: string,
+    sessionId: string,
+    autoRetryMessage: string,
+  ): Promise<AgentSession | undefined> {
+    const metadata = await this.getMetadata(projectName, "agent", sessionId);
+
+    if (!metadata) {
+      return undefined;
+    }
+
+    const updated: SessionMetadata = {
+      ...metadata,
+      autoRetryMessage,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(updated);
+    return agentSessionFromMetadata(updated);
+  }
+
+  // Read the claude auto-retry injection message by sessionId only (no project
+  // scope, no runtime probe) — called from ClaudeRuntime's injection timer for
+  // an already-live process; getAgentMetadata's keepIfRuntimeExists probing and
+  // its projectName requirement don't fit that call site.
+  async getAgentAutoRetryMessage(sessionId: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    return this.index.get(sessionId)?.autoRetryMessage;
   }
 
   async countSessions(projectName: string) {
@@ -863,6 +897,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   permissionMode: metadata.permissionMode,
   effort: metadata.effort,
   claudeSessionId: metadata.claudeSessionId,
+  autoRetryMessage: metadata.autoRetryMessage,
   updatedAt: metadata.updatedAt,
 });
 

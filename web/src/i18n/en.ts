@@ -116,6 +116,13 @@ export const en = {
   "session.instanceInfo.permission": "Permission",
   "session.instanceInfo.createdAt": "Created",
   "session.instanceInfo.resumeId": "Resume ID",
+  "session.autoRetry.label": "Auto-retry message",
+  "session.autoRetry.off": "Off",
+  "session.autoRetry.edit": "Edit auto-retry message",
+  "session.autoRetry.description":
+    "When the agent stops on an upstream error, this message is sent automatically after 1 minute to let it continue. At most 3 times per 30 minutes; a normal reply resets the count. Leave empty to disable.",
+  "session.autoRetry.placeholder": "e.g. Please continue with the current task",
+  "session.autoRetry.save": "Save",
   "session.connectionError": "Connection failed",
 
   // ── Files ────────────────────────────────────────────────────
@@ -305,6 +312,7 @@ export const en = {
   "api.agentSessionDetailFailed": "Agent session detail failed",
   "api.agentSessionCloseFailed": "Agent session close failed",
   "api.agentSessionRenameFailed": "Failed to rename agent session",
+  "api.agentSessionAutoRetryFailed": "Failed to update auto-retry message",
   "api.terminalSessionListFailed": "Terminal session list failed",
   "api.terminalSessionCreationFailed": "Terminal session creation failed",
   "api.terminalSessionDetailFailed": "Terminal session detail failed",

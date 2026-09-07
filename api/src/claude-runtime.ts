@@ -11,6 +11,7 @@ import {
 } from "./settings-store";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
+import { ClaudeAutoRetryWatch } from "./claude-auto-retry";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -197,11 +198,26 @@ export class ClaudeRuntime implements RuntimeResources {
   // 真实新 stdout 行 = session 活动 → bump updatedAt。只在 processStdoutLine（真实新行入口）
   // 触发，不在 onRealtimeRow/relay 回放触发（回放的 session_init/seedInit 会误刷新 updatedAt）。
   private onActivity: ((sessionId: string) => void) | null = null;
+  // 自动重试注入配置源（index.ts 从 SessionRegistry metadata 读 autoRetryMessage）。
+  private autoRetryMessageProvider:
+    | ((sessionId: string) => string | undefined | Promise<string | undefined>)
+    | null = null;
+  // 自动重试状态机：报错停下 → 延迟注入自定义消息（claude-auto-retry.ts）。
+  private readonly autoRetry: ClaudeAutoRetryWatch;
 
   constructor(runDir: string, settingsStore?: SettingsStore, mcpPort?: number) {
     this.runDir = runDir;
     this.settingsStore = settingsStore;
     this.mcpPort = mcpPort;
+    this.autoRetry = new ClaudeAutoRetryWatch({
+      getMessage: (_sessionName, sessionId) => this.autoRetryMessageProvider?.(sessionId),
+      inject: (sessionName, stdinLine, echoLine) => {
+        void this.write(sessionName, stdinLine).catch(() => {
+          // 进程已死/已销毁——注入尽力而为，定时器随 destroySession 清理。
+        });
+        this.injectLiveLine(sessionName, echoLine);
+      },
+    });
   }
 
   setOnSystemInit(
@@ -224,6 +240,12 @@ export class ClaudeRuntime implements RuntimeResources {
 
   setOnActivity(cb: (sessionId: string) => void) {
     this.onActivity = cb;
+  }
+
+  setAutoRetryMessageProvider(
+    cb: (sessionId: string) => string | undefined | Promise<string | undefined>,
+  ) {
+    this.autoRetryMessageProvider = cb;
   }
 
   getSessionState(sessionName: string) {
@@ -275,6 +297,7 @@ export class ClaudeRuntime implements RuntimeResources {
       proc.proc.kill();
       this.processes.delete(sessionName);
     }
+    this.autoRetry.destroySession(sessionName);
 
     const relay = this.relays.get(sessionName);
     if (relay) {
@@ -320,6 +343,7 @@ export class ClaudeRuntime implements RuntimeResources {
       }
 
       this.processes.delete(sessionName);
+      this.autoRetry.destroySession(sessionName);
       const relay = this.relays.get(sessionName);
       if (relay) {
         relay.destroy();
@@ -349,6 +373,9 @@ export class ClaudeRuntime implements RuntimeResources {
       throw new Error(`stdin not available for session "${sessionName}"`);
     }
     stdin.write(data);
+    // 真实用户/控制输入介入 → 取消待发的自动重试注入（不与用户输入叠加）。
+    // 自身注入也走 write，但触发时 pendingTimer 已置 null，此调用为 no-op。
+    this.autoRetry.cancelPending(sessionName);
   }
 
   // Buffer a line into the relay's live cache + broadcast, so a user-message
@@ -483,6 +510,7 @@ export class ClaudeRuntime implements RuntimeResources {
       console.log(`[claude] process exited with code ${code}: ${sessionName}`);
       if (this.isCurrentGeneration(sessionName, generation)) {
         this.processes.delete(sessionName);
+        this.autoRetry.destroySession(sessionName);
       }
     });
   }
@@ -640,6 +668,11 @@ export class ClaudeRuntime implements RuntimeResources {
     this.capturePermissionModeFromLine(sessionName, parsed);
     this.captureModelFromLine(sessionName, parsed);
     this.captureSkillReloadFromLine(sessionName, parsed);
+    this.autoRetry.handleStdoutLine(
+      sessionName,
+      this.processes.get(sessionName)?.sessionId ?? "",
+      parsed,
+    );
     console.log(`[claude-stdout] ${trimmed}`);
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed && this.isCurrentGeneration(sessionName, generation)) {

@@ -818,6 +818,8 @@ export type AgentSession = {
   permissionMode?: string;
   effort?: EffortLevel;
   claudeSessionId?: string;
+  /** 自动重试注入消息（claude）：上游报错停下后延迟注入给 agent 的自定义文案；空/缺省=关闭。 */
+  autoRetryMessage?: string;
   lastAssistantMessage?: string;
   updatedAt?: string;
 };
@@ -921,6 +923,16 @@ export type CloseTerminalSessionResponse = {
 
 export type RenameSessionRequest = {
   displayName: string;
+};
+
+// -- Session 自动重试注入配置（claude agent 专用；空串=关闭） --
+
+export type UpdateAutoRetryRequest = {
+  autoRetryMessage: string;
+};
+
+export type UpdateAutoRetryResponse = {
+  session: AgentSession;
 };
 
 export type RenameAgentSessionResponse = {

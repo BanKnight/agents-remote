@@ -17,6 +17,8 @@ import type {
   RenameSessionRequest,
   RenameAgentSessionResponse,
   RenameTerminalSessionResponse,
+  UpdateAutoRetryRequest,
+  UpdateAutoRetryResponse,
 } from "@agents-remote/shared";
 import { listAgentHistory, getLastAssistantMessage, projectToSlug } from "./agent-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
@@ -227,6 +229,23 @@ const handleAgentSessionRoute = async (
     }
 
     const response: RenameAgentSessionResponse = { session };
+    return Response.json(response);
+  }
+
+  if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/auto-retry")) {
+    const body = await readJson<UpdateAutoRetryRequest>(request);
+
+    const session = await registry.setAgentAutoRetryMessage(
+      project.name,
+      sessionId,
+      typeof body.autoRetryMessage === "string" ? body.autoRetryMessage : "",
+    );
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+
+    const response: UpdateAutoRetryResponse = { session };
     return Response.json(response);
   }
 

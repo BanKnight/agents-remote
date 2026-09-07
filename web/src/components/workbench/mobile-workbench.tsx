@@ -361,11 +361,11 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
     projectName: projectName ?? "",
     sessionId: focusId,
   };
-  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
-    panelRef,
-    sessionType,
-    projectName,
-  );
+  const {
+    openInfo,
+    holder: infoHolder,
+    autoRetryEditorHolder,
+  } = useInstanceInfoActions(panelRef, sessionType, projectName);
   const { close, holder: closeHolder } = useCloseSession();
   // files tab 当前目录（localStorage 记忆，按项目 key 分组）：后台被杀/重开停留在上次目录。
   // 切项目用独立 key 隔离（替代旧 derived-state 重置，语义等价且天然不串项目）。
@@ -425,6 +425,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
         ) : null}
       </div>
       {infoHolder}
+      {autoRetryEditorHolder}
       {closeHolder}
     </div>
   );
@@ -886,11 +887,11 @@ function MobileFocusActions({
   const { t } = useT();
   const sessionType = inferSessionTypeFromId(focusId);
   const panelRef: SessionPanelRef = { kind: "session", projectName, sessionId: focusId };
-  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
-    panelRef,
-    sessionType,
-    projectName,
-  );
+  const {
+    openInfo,
+    holder: infoHolder,
+    autoRetryEditorHolder,
+  } = useInstanceInfoActions(panelRef, sessionType, projectName);
   return (
     <>
       <div
@@ -917,6 +918,7 @@ function MobileFocusActions({
       {/* info sheet holder（2026-08-17 修复：此前漏渲染 → ℹ 点击 sheet 永不挂载，对齐桌面
           MobileFocusHeader {infoSheet.holder}）。 */}
       {infoHolder}
+      {autoRetryEditorHolder}
     </>
   );
 }

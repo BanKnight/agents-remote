@@ -116,6 +116,13 @@ export const zh: Record<TranslationKey, string> = {
   "session.instanceInfo.permission": "权限",
   "session.instanceInfo.createdAt": "创建时间",
   "session.instanceInfo.resumeId": "恢复 ID",
+  "session.autoRetry.label": "自动重试消息",
+  "session.autoRetry.off": "关闭",
+  "session.autoRetry.edit": "编辑自动重试消息",
+  "session.autoRetry.description":
+    "Agent 因上游报错停下后，1 分钟后自动发送此消息让它继续；30 分钟内最多 3 次，收到正常回复即计数归零。留空表示关闭。",
+  "session.autoRetry.placeholder": "例如：请继续当前任务",
+  "session.autoRetry.save": "保存",
   "session.connectionError": "连接失败",
 
   // ── Files ────────────────────────────────────────────────────
@@ -305,6 +312,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.agentSessionDetailFailed": "Agent 会话详情获取失败",
   "api.agentSessionCloseFailed": "Agent 会话关闭失败",
   "api.agentSessionRenameFailed": "Agent 会话重命名失败",
+  "api.agentSessionAutoRetryFailed": "自动重试消息更新失败",
   "api.terminalSessionListFailed": "Terminal 会话列表获取失败",
   "api.terminalSessionCreationFailed": "Terminal 会话创建失败",
   "api.terminalSessionDetailFailed": "Terminal 会话详情获取失败",

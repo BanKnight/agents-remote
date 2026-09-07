@@ -54,6 +54,7 @@ import {
   listTerminalSessions,
   renameAgentSession,
   renameTerminalSession,
+  updateAutoRetryMessage,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
@@ -77,6 +78,7 @@ import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { ActionMenu } from "../ui/action-menu";
+import { Dialog, DialogContent } from "../ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -857,6 +859,7 @@ export function useInstanceInfoActions(
 ) {
   const { t } = useT();
   const infoSheet = useInstanceInfoSheet();
+  const autoRetryEditor = useAutoRetryEditor(panelRef);
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
   const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
   const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
@@ -902,6 +905,14 @@ export function useInstanceInfoActions(
           wrap: true,
         });
       }
+      // 自动重试消息（claude 专用，见 useAutoRetryEditor）：未配置显示关闭态。
+      if (agentSession.provider === "claude") {
+        fields.push({
+          label: t("session.autoRetry.label"),
+          value: agentSession.autoRetryMessage || t("session.autoRetry.off"),
+          wrap: Boolean(agentSession.autoRetryMessage),
+        });
+      }
     } else if (sessionType === "terminal" && terminalSession) {
       fields.push({
         label: t("session.instanceInfo.type"),
@@ -912,9 +923,121 @@ export function useInstanceInfoActions(
         value: t(sessionStatusLabel(terminalSession.status)),
       });
     }
-    infoSheet.open(t("session.instanceInfo.title"), fields, variant);
+    // claude agent session 提供编辑入口（footer slot）；terminal/其他 provider 纯展示。
+    const footer =
+      sessionType === "agent" && agentSession?.provider === "claude" ? (
+        <button
+          className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold text-primary transition active:bg-primary/10 ${shellSurfaceClasses.workspace}`}
+          onClick={autoRetryEditor.openEditor}
+          type="button"
+        >
+          {t("session.autoRetry.edit")}
+        </button>
+      ) : undefined;
+    infoSheet.open(t("session.instanceInfo.title"), fields, variant, footer);
   };
-  return { openInfo, holder: infoSheet.holder };
+  return { openInfo, holder: infoSheet.holder, autoRetryEditorHolder: autoRetryEditor.holder };
+}
+
+/**
+ * 自动重试消息编辑流程（claude agent 专用，2026-09-07）：info sheet「编辑」入口 →
+ * textarea Dialog 预填当前 autoRetryMessage → 保存调 updateAutoRetryMessage API →
+ * invalidate detail/list（与 useRenameSession 同模式）。空串=关闭。
+ */
+function useAutoRetryEditor(panelRef: SessionPanelRef) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+
+  const openEditor = () => {
+    const session = queryClient.getQueryData<{ session: AgentSession }>([
+      "projects",
+      panelRef.projectName,
+      "agent-sessions",
+      panelRef.sessionId,
+    ])?.session;
+    setValue(session?.autoRetryMessage ?? "");
+    setOpen(true);
+  };
+
+  const save = async () => {
+    try {
+      await updateAutoRetryMessage(panelRef.projectName, panelRef.sessionId, value.trim());
+    } catch {
+      // 路由已返回错误码；与 useRenameSession 同策略：不额外提示，失效缓存自愈。
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["projects", panelRef.projectName, "agent-sessions"],
+      }),
+    ]);
+    setOpen(false);
+  };
+
+  const holder = open ? (
+    <AutoRetryEditorDialog
+      initialValue={value}
+      onCancel={() => setOpen(false)}
+      onSave={save}
+      onValueChange={setValue}
+    />
+  ) : null;
+
+  return { openEditor, holder };
+}
+
+function AutoRetryEditorDialog({
+  initialValue,
+  onCancel,
+  onSave,
+  onValueChange,
+}: {
+  initialValue: string;
+  onCancel: () => void;
+  onSave: () => void;
+  onValueChange: (v: string) => void;
+}) {
+  const { t } = useT();
+  return (
+    <Dialog defaultOpen onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent>
+        <div
+          className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
+          <h2 className="text-base font-semibold text-on-surface">{t("session.autoRetry.edit")}</h2>
+          <p className="mt-1 text-xs text-on-surface-soft">{t("session.autoRetry.description")}</p>
+          <textarea
+            autoFocus
+            className="mt-3 w-full resize-none rounded-lg border border-neutral-line bg-surface-inset px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-muted/60 focus:border-primary focus:outline-none"
+            defaultValue={initialValue}
+            onChange={(e) => onValueChange(e.target.value)}
+            placeholder={t("session.autoRetry.placeholder")}
+            rows={3}
+          />
+          <div className="mt-4 flex justify-end gap-3">
+            <button
+              className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 ${shellSurfaceClasses.workspace} text-on-surface-soft`}
+              onClick={onCancel}
+              type="button"
+            >
+              {t("cancel")}
+            </button>
+            <button
+              className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold text-primary transition active:bg-primary/10 ${shellSurfaceClasses.workspace}`}
+              onClick={onSave}
+              type="button"
+            >
+              {t("session.autoRetry.save")}
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /** Agent provider 全名（claude → "Claude"——二代实现已取代一代，对外统一正式名；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
@@ -1702,7 +1825,11 @@ function TabChip({
   // variant="modal" 居中卡片（移动端保持底部 sheet）。
   const sessionType =
     panelRef.kind === "session" ? inferSessionTypeFromId(panelRef.sessionId) : undefined;
-  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
+  const {
+    openInfo,
+    holder: infoHolder,
+    autoRetryEditorHolder,
+  } = useInstanceInfoActions(
     panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" },
     sessionType,
     panelRef.kind === "session" ? panelRef.projectName : undefined,
@@ -1762,6 +1889,7 @@ function TabChip({
         </button>
       </div>
       {infoHolder}
+      {autoRetryEditorHolder}
     </DragSourceCard>
   );
 }

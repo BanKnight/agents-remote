@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { Dialog, DialogContent } from "../ui/dialog";
 import { shellSurfaceClasses } from "./shell-primitives";
@@ -21,11 +21,13 @@ type PendingInfo = {
   fields: InfoField[];
   title: string;
   variant: InfoSheetVariant;
+  /** 可选 footer slot（如「编辑」入口按钮）。本组件只渲染，不感知语义。 */
+  footer?: ReactNode;
 };
 
 /**
  * 实例信息弹窗（移动端聚焦态 ℹ 按钮 + 桌面中栏 tab ℹ 按钮共用）。仿 useConfirm holder 模式：
- * 调用方 `const { open, holder } = useInstanceInfoSheet()`，`open(title, fields, variant?)` 触发，
+ * 调用方 `const { open, holder } = useInstanceInfoSheet()`，`open(title, fields, variant?, footer?)` 触发，
  * `{holder}` 渲染到组件树。形态由 variant 决定——`sheet`（默认）= 移动端底部滑出
  * （`fixed inset-x-0 bottom-0 rounded-t-2xl`，手指可达 + safe-area 单点消费）；`modal` = 桌面端
  * 居中卡片（对齐 ConfirmDialog 桌面形态，`rounded-2xl p-5`）。backdrop 点击 / Esc 关闭。
@@ -35,12 +37,17 @@ export function useInstanceInfoSheet() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const open = useCallback(
-    (title: string, fields: InfoField[], variant: InfoSheetVariant = "sheet") => {
+    (
+      title: string,
+      fields: InfoField[],
+      variant: InfoSheetVariant = "sheet",
+      footer?: ReactNode,
+    ) => {
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
-      setPending({ fields, title, variant });
+      setPending({ fields, title, variant, footer });
     },
     [],
   );
@@ -59,6 +66,7 @@ export function useInstanceInfoSheet() {
   const holder = pending ? (
     <InfoSheetDialog
       fields={pending.fields}
+      footer={pending.footer}
       onClose={close}
       title={pending.title}
       variant={pending.variant}
@@ -70,10 +78,30 @@ export function useInstanceInfoSheet() {
 
 function InfoSheetDialog({
   fields,
+  footer,
   onClose,
   title,
   variant,
 }: PendingInfo & { onClose: () => void }) {
+  const body = (
+    <>
+      <h2 className="text-base font-semibold text-on-surface">{title}</h2>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+        {fields.map((field) => (
+          <div className="contents" key={field.label}>
+            <dt className="text-xs text-on-surface-soft">{field.label}</dt>
+            <dd
+              className={`text-xs font-medium text-on-surface ${field.wrap ? "break-all" : "truncate"}`}
+            >
+              {field.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {footer ? <div className="mt-3">{footer}</div> : null}
+    </>
+  );
+
   if (variant === "modal") {
     return (
       <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
@@ -81,19 +109,7 @@ function InfoSheetDialog({
           <div
             className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
           >
-            <h2 className="text-base font-semibold text-on-surface">{title}</h2>
-            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
-              {fields.map((field) => (
-                <div className="contents" key={field.label}>
-                  <dt className="text-xs text-on-surface-soft">{field.label}</dt>
-                  <dd
-                    className={`text-xs font-medium text-on-surface ${field.wrap ? "break-all" : "truncate"}`}
-                  >
-                    {field.value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            {body}
           </div>
         </DialogContent>
       </Dialog>
@@ -107,19 +123,7 @@ function InfoSheetDialog({
           className={`w-full max-w-md rounded-t-2xl border-t border-neutral-line/60 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
           <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-on-surface/15" aria-hidden="true" />
-          <h2 className="text-base font-semibold text-on-surface">{title}</h2>
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
-            {fields.map((field) => (
-              <div className="contents" key={field.label}>
-                <dt className="text-xs text-on-surface-soft">{field.label}</dt>
-                <dd
-                  className={`text-xs font-medium text-on-surface ${field.wrap ? "break-all" : "truncate"}`}
-                >
-                  {field.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {body}
         </div>
       </DialogContent>
     </Dialog>
