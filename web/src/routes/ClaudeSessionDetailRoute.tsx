@@ -2029,18 +2029,22 @@ function ApprovalTray({
 }) {
   const { t } = useT();
   const bridge = useContext(ClaudeBridgeContext);
-  const locateIndex = useAuiState((s) => {
-    const compute = () => {
-      const map = new Map<string, number>();
-      for (let i = 0; i < s.thread.messages.length; i++) {
-        const custom = (s.thread.messages[i]?.metadata?.custom ?? {}) as Record<string, unknown>;
-        const id = custom.toolCallId;
-        if (typeof id === "string") map.set(id, i);
-      }
-      return map;
-    };
-    return compute();
-  });
+  // 点击定位：toolCallId → message index。useAuiState selector 只产出
+  // primitive 签名字符串（getSnapshot 稳定），map 由 useMemo 从签名派生。
+  const toolCallIdSignature = useAuiState((s) =>
+    JSON.stringify(
+      s.thread.messages.flatMap((m, i) => {
+        const custom = (m.metadata?.custom ?? {}) as Record<string, unknown>;
+        return typeof custom.toolCallId === "string" ? [[custom.toolCallId, i]] : [];
+      }),
+    ),
+  );
+  const locateIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [id, i] of JSON.parse(toolCallIdSignature) as [string, number][]) map.set(id, i);
+    return map;
+  }, [toolCallIdSignature]);
+  const locateToolCall = (toolCallId: string): number | null => locateIndex.get(toolCallId) ?? null;
   return (
     <div
       aria-label={t("claude.approval.trayAriaLabel")}
@@ -2054,7 +2058,7 @@ function ApprovalTray({
             <button
               type="button"
               onClick={() => {
-                const index = locateIndex.get(item.toolCallId);
+                const index = locateToolCall(item.toolCallId);
                 if (index != null) onLocate(index);
               }}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
@@ -3365,31 +3369,45 @@ export function VirtualizedThreadContent({
     };
   }, [scrollerApi, scrollToMessage]);
 
-  const runningAgents = useAuiState((s) => {
+  // useAuiState selector 必须返回 referentially stable 值（useSyncExternalStore
+  // Object.is 比较）——这里只产出 primitive 签名字符串，数组由 useMemo 派生。
+  const runningAgentsSignature = useAuiState((s) => {
     const compute = () =>
-      s.thread.messages
-        .map((m, index) => {
-          const custom = (m.metadata?.custom ?? {}) as AgentContainerCustom;
-          if (custom.systemMessageType !== "agent-container") return null;
-          const st = deriveStatus({
-            hasTail: custom.tailResult != null,
-            isError: custom.tailIsError === true,
-            isInterrupted: custom.isInterrupted === true,
-          });
-          if (st !== "running") return null;
-          return {
-            index,
-            subagentType: custom.subagentType ?? "Agent",
-            description: custom.description ?? "",
-          };
-        })
-        .filter(
-          (c): c is { index: number; subagentType: string; description: string } => c !== null,
-        );
+      JSON.stringify(
+        s.thread.messages
+          .map((m, index) => {
+            const custom = (m.metadata?.custom ?? {}) as AgentContainerCustom;
+            if (custom.systemMessageType !== "agent-container") return null;
+            if (
+              deriveStatus({
+                hasTail: custom.tailResult != null,
+                isError: custom.tailIsError === true,
+                isInterrupted: custom.isInterrupted === true,
+              }) !== "running"
+            ) {
+              return null;
+            }
+            return {
+              index,
+              subagentType: custom.subagentType ?? "Agent",
+              description: custom.description ?? "",
+            };
+          })
+          .filter((c) => c !== null),
+      );
     return isPerfTraceEnabled()
-      ? timed("runningAgents", compute, s.thread.messages.length)
+      ? timed("runningAgentsSignature", compute, s.thread.messages.length)
       : compute();
   });
+  const runningAgents = useMemo(
+    () =>
+      JSON.parse(runningAgentsSignature) as {
+        index: number;
+        subagentType: string;
+        description: string;
+      }[],
+    [runningAgentsSignature],
+  );
 
   // ── Render ────────────────────────────────────────────────────────
   const items = virtualizer.getVirtualItems();
