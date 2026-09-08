@@ -516,6 +516,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude.permission.awaiting": "等待确认",
   "claude.permission.allow": "允许",
   "claude.permission.deny": "拒绝",
+  "claude.approval.trayAriaLabel": "待审批事项",
+  "claude.agent.runningAriaLabel": "运行中的子 Agent",
   "claude.subagent.prompt": "提示词",
   "claude.subagent.output": "子 Agent 输出",
   "claude.retry.attempt": "重试 {{attempt}}/{{max}}",

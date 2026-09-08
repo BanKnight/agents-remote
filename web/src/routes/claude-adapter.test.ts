@@ -4,6 +4,7 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 import {
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
+  collectPendingApprovals,
   isSyntheticAssistantMessage,
   computeRunningCount,
   convertContentToBubble,
@@ -4462,5 +4463,106 @@ describe("background_tasks_changed (Bash run_in_background)", () => {
     ]);
     expect(items).toHaveLength(0);
     expect(items.every((i) => i.kind !== "fallback")).toBe(true);
+  });
+});
+
+// ── collectPendingApprovals（聚合审批托盘数据）──
+// 纯函数层直接构造 ChatStreamItem（controlRequestId / result / isInterrupted /
+// bodyParentToolUseId 都是 normalize/render 层盖章的产物，不重跑管线）；管线级
+// 配对（control_request → part.controlRequestId）另有一条集成用例走 normalizeChatStream。
+describe("collectPendingApprovals", () => {
+  const toolPart = (overrides: Partial<NormalizedPart>): NormalizedPart =>
+    ({
+      type: "tool-call",
+      toolName: "Bash",
+      toolCallId: "tu-1",
+      args: { command: "ls" },
+      argsText: '{"command":"ls"}',
+      ...overrides,
+    }) as NormalizedPart;
+
+  const assistantItem = (
+    parts: NormalizedPart[],
+    bodyParentToolUseId: string | null = null,
+  ): ChatStreamItem => ({
+    kind: "assistant",
+    messageId: "m1",
+    parts,
+    apiErrors: [],
+    sourceUuids: [],
+    _rawSnapshots: [],
+    bodyParentToolUseId,
+  });
+
+  test("顶层待审批工具 → 无 owner，args 原样带出", () => {
+    const items = [assistantItem([toolPart({ toolCallId: "tu-1", controlRequestId: "req-1" })])];
+    const approvals = collectPendingApprovals(items);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toEqual({
+      controlRequestId: "req-1",
+      toolCallId: "tu-1",
+      toolName: "Bash",
+      args: { command: "ls" },
+    });
+  });
+
+  test("body 内待审批工具 → owner = 所属 Agent part 的 subagent_type/description", () => {
+    const agentPart = toolPart({
+      toolCallId: "tu-agent",
+      toolName: "Task",
+      args: { subagent_type: "writer", description: "写文档" },
+    });
+    const bodyPart = toolPart({
+      toolCallId: "tu-2",
+      toolName: "Write",
+      args: { file_path: "a.md" },
+      controlRequestId: "req-2",
+    });
+    const items = [assistantItem([agentPart]), assistantItem([bodyPart], "tu-agent")];
+    const approvals = collectPendingApprovals(items);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.owner).toEqual({ subagentType: "writer", description: "写文档" });
+    expect(approvals[0]?.toolName).toBe("Write");
+  });
+
+  test("result 已到 → 不收集；isInterrupted → 不收集", () => {
+    const items = [
+      assistantItem([
+        toolPart({ toolCallId: "tu-done", controlRequestId: "req-0", result: "done" }),
+        toolPart({ toolCallId: "tu-int", controlRequestId: "req-1", isInterrupted: true }),
+        toolPart({ toolCallId: "tu-live", controlRequestId: "req-2" }),
+      ]),
+    ];
+    const approvals = collectPendingApprovals(items);
+    expect(approvals.map((a) => a.toolCallId)).toEqual(["tu-live"]);
+  });
+
+  test("ExitPlanMode / AskUserQuestion 排除（复杂审批 UI 不进托盘）", () => {
+    const items = [
+      assistantItem([
+        toolPart({ toolCallId: "tu-1", toolName: "ExitPlanMode", controlRequestId: "req-1" }),
+        toolPart({ toolCallId: "tu-2", toolName: "AskUserQuestion", controlRequestId: "req-2" }),
+        toolPart({ toolCallId: "tu-3", toolName: "Bash", controlRequestId: "req-3" }),
+      ]),
+    ];
+    const approvals = collectPendingApprovals(items);
+    expect(approvals.map((a) => a.toolName)).toEqual(["Bash"]);
+  });
+
+  test("空输入 / 无 pending → 空数组（托盘不渲染）", () => {
+    expect(collectPendingApprovals([])).toEqual([]);
+    expect(collectPendingApprovals([assistantItem([toolPart({})])])).toEqual([]);
+  });
+
+  test("集成：normalizeChatStream 配对 control_request 后能收集到 pending", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [
+        { type: "tool_use", id: "tu-x", name: "Bash", input: { command: "rm -rf" } },
+      ]),
+      controlRequest("req-x", "Bash", "tu-x", { command: "rm -rf" }),
+    ]);
+    const approvals = collectPendingApprovals(items);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ controlRequestId: "req-x", toolCallId: "tu-x" });
   });
 });

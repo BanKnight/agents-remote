@@ -516,6 +516,8 @@ export const en = {
   "claude.permission.awaiting": "Awaiting confirmation",
   "claude.permission.allow": "Allow",
   "claude.permission.deny": "Deny",
+  "claude.approval.trayAriaLabel": "Pending approvals",
+  "claude.agent.runningAriaLabel": "Running sub-agents",
   "claude.subagent.prompt": "Prompt",
   "claude.subagent.output": "Sub-agent output",
   "claude.retry.attempt": "Retry {{attempt}}/{{max}}",

@@ -621,6 +621,70 @@ export function deriveStatus(input: {
   return "running";
 }
 
+// ── Pending approvals (aggregated permission tray) ───────────────────
+// Pure projection over chatStream: every tool-call awaiting a permission
+// control_request (controlRequestId stamped, no result, not interrupted).
+// This is the same predicate makeToolRenderer's needsPermission renders
+// inline — the tray is a second projection of the same data (UI = f(state)),
+// not a separate pipeline. ExitPlanMode / AskUserQuestion are excluded:
+// their approval UIs carry extra decisions (mode selection / answer
+// submission) that a one-click tray row can't express; their composer-blocked
+// semantics remain covered by pendingInteraction.
+export type PendingApproval = {
+  controlRequestId: string;
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  /** 所属 subagent（body 内工具）；顶层工具为 undefined。 */
+  owner?: { subagentType?: string; description?: string };
+};
+
+export function collectPendingApprovals(chatStream: ChatStreamItem[]): PendingApproval[] {
+  // Pass 1: agent part meta (toolCallId → subagent_type/description) so body
+  // tools can be attributed to their owning subagent.
+  const agentMeta = new Map<string, { subagentType?: string; description?: string }>();
+  for (const item of chatStream) {
+    if (item.kind !== "assistant") continue;
+    for (const part of item.parts) {
+      if (
+        part.type === "tool-call" &&
+        AGENT_TOOL_NAMES.has(part.toolName) &&
+        !agentMeta.has(part.toolCallId)
+      ) {
+        agentMeta.set(part.toolCallId, {
+          subagentType:
+            typeof part.args.subagent_type === "string" ? part.args.subagent_type : undefined,
+          description:
+            typeof part.args.description === "string" ? part.args.description : undefined,
+        });
+      }
+    }
+  }
+
+  // Pass 2: collect pending permission tool-calls; owner from the item's
+  // bodyParentToolUseId (body items carry their Agent tool_use id there).
+  const approvals: PendingApproval[] = [];
+  for (const item of chatStream) {
+    if (item.kind !== "assistant") continue;
+    for (const part of item.parts) {
+      if (part.type !== "tool-call") continue;
+      if (!part.controlRequestId || part.result || part.isInterrupted) continue;
+      if (part.toolName === "ExitPlanMode" || part.toolName === "AskUserQuestion") continue;
+      const ownerMeta = item.bodyParentToolUseId
+        ? agentMeta.get(item.bodyParentToolUseId)
+        : undefined;
+      approvals.push({
+        controlRequestId: part.controlRequestId,
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        args: part.args,
+        ...(ownerMeta ? { owner: ownerMeta } : {}),
+      });
+    }
+  }
+  return approvals;
+}
+
 // ── Agent container tail envelope ────────────────────────────────────
 // The Agent tool_result's tool_use_result envelope carries final stats +
 // full content. Pure projection parsed once in Pass 2: stats (everything
@@ -4602,6 +4666,11 @@ export function useClaudeSession(
     return false;
   }, [chatStream]);
 
+  // Aggregated permission tray data (same predicate family as
+  // pendingInteraction but enumerable + permission-tools-only; see
+  // collectPendingApprovals).
+  const pendingApprovals = useMemo(() => collectPendingApprovals(chatStream), [chatStream]);
+
   const onNew = useCallback(
     async (message: AppendMessage) => {
       const textContent = (Array.isArray(message.content) ? message.content : [])
@@ -4680,6 +4749,7 @@ export function useClaudeSession(
     sessionLeafUuid,
     retryInfo,
     pendingInteraction,
+    pendingApprovals,
     /**
      * 原始消息数组 ref（chat 版 terminalDataRef，Phase 5 缩略预览数据源）。当前 raw state 的
      * ref 镜像（useEffect 同步），供 SplitPanel header 在 AssistantRuntimeProvider 外读取末 2 行

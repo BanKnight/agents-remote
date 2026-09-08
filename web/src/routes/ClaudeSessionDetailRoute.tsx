@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
 } from "react";
 import {
   AuiIf,
@@ -73,6 +74,7 @@ import {
   resolveAutoPermissionMode,
   sortTasks,
   type AgentContainerStatus,
+  type PendingApproval,
   type AgentTailStats,
   type ApiErrorAttachment,
   type PermissionUpdate,
@@ -413,6 +415,7 @@ export function ClaudeChat({
     tasks,
     retryInfo,
     pendingInteraction,
+    pendingApprovals,
     opusplanActive,
   } = useClaudeSession(
     projectName,
@@ -450,6 +453,10 @@ export function ClaudeChat({
     null,
   );
   const [tasksExpanded, setTasksExpanded] = useAtom(tasksExpandedAtom);
+
+  // Approval-tray → chat 跳转句柄：VirtualizedThreadContent 挂载时填充
+  // scrollToMessage（unpin + 定位 turn），卸载时清空。
+  const scrollerApiRef = useRef<{ scrollToMessage: (messageIndex: number) => void } | null>(null);
 
   const compactState: CompactState = useMemo(
     () => ({
@@ -575,7 +582,11 @@ export function ClaudeChat({
                   ) : null}
 
                   <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+                    <VirtualizedThreadContent
+                      loading={loading}
+                      retryInfo={retryInfo}
+                      scrollerApi={scrollerApiRef}
+                    />
 
                     <CompactIndicator />
                     <div
@@ -602,6 +613,14 @@ export function ClaudeChat({
                             onToggle={() => setTasksExpanded((v) => !v)}
                           />
                         )}
+                        {pendingApprovals.length > 0 ? (
+                          <ApprovalTray
+                            approvals={pendingApprovals}
+                            onLocate={(messageIndex) =>
+                              scrollerApiRef.current?.scrollToMessage(messageIndex)
+                            }
+                          />
+                        ) : null}
                         <ComposerPrimitive.Unstable_TriggerPopoverRoot>
                           <ComposerPrimitive.Root>
                             <ComposerWithInterrupt
@@ -1870,6 +1889,13 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
     isError: custom.tailIsError === true,
     isInterrupted: custom.isInterrupted === true,
   });
+  // Complete agents auto-collapse their body (they're the bulk of scroll
+  // height when many run in parallel); running stays expanded so streaming
+  // output is visible. Mirror of AskUserQuestionCard's result-arrival collapse.
+  const [bodyExpanded, setBodyExpanded] = useState(status === "running");
+  useEffect(() => {
+    if (status !== "running") setBodyExpanded(false);
+  }, [status]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const prevScrollTopRef = useRef(0);
@@ -1938,7 +1964,11 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
 
   return (
     <div className="my-1 rounded-lg border border-neutral-line/60 bg-surface-raised/30">
-      <div className="flex items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5">
+      {/* head 行可点击切换 body 折叠（div 而非 button：trailing 里有按钮，禁 button 嵌套）。 */}
+      <div
+        onClick={() => setBodyExpanded(!bodyExpanded)}
+        className="flex cursor-pointer items-center gap-2 rounded-t-lg bg-surface-raised/60 px-3 pt-1.5 pb-2 sm:px-5"
+      >
         <ToolHead
           icon="agent"
           iconClassName="text-user"
@@ -1946,10 +1976,22 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
           badgeClassName="bg-neutral-line/60 text-on-surface-soft"
           detail={custom.description ?? (status === "running" ? "Working..." : "Agent")}
           status={status === "complete" ? null : status}
-          trailing={<RawDebugTooltip custom={custom} className="-mr-1" />}
+          trailing={
+            <>
+              {bodyIndices.length > 0 && !bodyExpanded ? (
+                <span className="text-[0.6rem] text-on-surface-muted">
+                  {bodyIndices.length} msgs
+                </span>
+              ) : null}
+              <RawDebugTooltip custom={custom} className="-mr-1" />
+            </>
+          }
         />
+        <span aria-hidden="true" className="ml-1 shrink-0 text-[0.6rem] text-on-surface-muted">
+          {bodyExpanded ? "▾" : "▸"}
+        </span>
       </div>
-      {bodyIndices.length > 0 ? (
+      {bodyIndices.length > 0 && bodyExpanded ? (
         <div ref={bodyRef} className="max-h-96 overflow-y-auto">
           {bodyIndices.map((i) => (
             <MessageRouter key={i} index={i} renderAbsorbed />
@@ -1965,6 +2007,94 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
         tailContent={custom.tailContent}
         tailRawMessages={custom.tailRawMessages}
       />
+    </div>
+  );
+}
+
+// ── Aggregated approval tray ──────────────────────────────────────────
+// Second projection of the same pending-permission data the inline bars in
+// makeToolRenderer render (makeToolRenderer reads metadata.controlRequestId;
+// the tray reads collectPendingApprovals over chatStream — same predicate).
+// Lets the user approve/deny sub-agent tool calls from one fixed spot
+// instead of scrolling into each Agent body; row body click jumps to the
+// original card. ExitPlanMode / AskUserQuestion are excluded upstream
+// (complex approval UIs — see collectPendingApprovals).
+function ApprovalTray({
+  approvals,
+  onLocate,
+}: {
+  approvals: PendingApproval[];
+  /** 定位到待审批工具所在消息（messageIndex）；index → turn → scrollToIndex 由 route 层完成。 */
+  onLocate: (messageIndex: number) => void;
+}) {
+  const { t } = useT();
+  const bridge = useContext(ClaudeBridgeContext);
+  const locateIndex = useAuiState((s) => {
+    const compute = () => {
+      const map = new Map<string, number>();
+      for (let i = 0; i < s.thread.messages.length; i++) {
+        const custom = (s.thread.messages[i]?.metadata?.custom ?? {}) as Record<string, unknown>;
+        const id = custom.toolCallId;
+        if (typeof id === "string") map.set(id, i);
+      }
+      return map;
+    };
+    return compute();
+  });
+  return (
+    <div
+      aria-label={t("claude.approval.trayAriaLabel")}
+      className="mb-1 rounded-lg border border-assistant/25 bg-assistant/10 px-2 py-1"
+    >
+      {approvals.map((item) => {
+        const firstArg = Object.values(item.args)[0];
+        const argSummary = typeof firstArg === "string" ? firstArg.slice(0, 80) : item.toolName;
+        return (
+          <div key={item.controlRequestId} className="flex min-w-0 items-center gap-2 px-1 py-1">
+            <button
+              type="button"
+              onClick={() => {
+                const index = locateIndex.get(item.toolCallId);
+                if (index != null) onLocate(index);
+              }}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+              title={t("claude.permission.awaiting")}
+            >
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-assistant" />
+              {item.owner?.subagentType ? (
+                <span className="shrink-0 rounded bg-neutral-line/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-on-surface-soft">
+                  {item.owner.subagentType}
+                </span>
+              ) : null}
+              {item.owner?.description ? (
+                <span className="shrink-0 truncate text-[0.65rem] font-medium text-assistant/70">
+                  {item.owner.description}
+                </span>
+              ) : null}
+              <span className="shrink-0 text-[0.65rem] font-semibold text-assistant">
+                {item.toolName}
+              </span>
+              <span className="min-w-0 truncate text-[0.65rem] text-on-surface-muted">
+                {argSummary}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer rounded-md bg-assistant/10 px-3 py-1 text-xs font-semibold text-assistant hover:bg-assistant/15 active:bg-assistant/20 transition"
+              onClick={() => bridge?.respondToControlRequest(item.controlRequestId, item.args)}
+            >
+              {t("claude.permission.allow")}
+            </button>
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
+              onClick={() => bridge?.cancelControlRequest(item.controlRequestId)}
+            >
+              {t("claude.permission.deny")}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -3075,10 +3205,14 @@ const CHAT_BOTTOM_THRESHOLD = 32;
 export function VirtualizedThreadContent({
   loading,
   retryInfo,
+  scrollerApi,
 }: {
   loading: boolean;
   retryInfo: RetryInfo | null;
+  /** 命令式跳转句柄（route 层审批托盘定位用）：scrollToMessage(unpin + 定位到所在 turn)。 */
+  scrollerApi?: MutableRefObject<{ scrollToMessage: (messageIndex: number) => void } | null>;
 }) {
+  const { t } = useT();
   // ── Turn builder ──────────────────────────────────────────────────
   // Absorbed Agent body children report a non-user role so they never split
   // a turn (they belong to their parent Agent's turn, rendered inside it).
@@ -3203,12 +3337,90 @@ export function VirtualizedThreadContent({
     setShowScrollButton(false);
   }, [stickToBottom]);
 
+  // ── Running-subagent overview bar ─────────────────────────────────
+  // Projection over thread.messages: every agent-container still running.
+  // Clicking a chip unpins + scrolls to its owning turn (turn lookup by
+  // message index; scrollToIndex only works unpinned because scrollToFn
+  // drops offsets while sticky).
+  const turnsRef = useRef(turns);
+  turnsRef.current = turns;
+  const scrollToMessage = useCallback(
+    (messageIndex: number) => {
+      const turnIdx = turnsRef.current.findIndex(
+        (turn) => turn.startIndex <= messageIndex && messageIndex < turn.endIndex,
+      );
+      if (turnIdx < 0) return;
+      stickyRef.current = false; // unpin: scrollToFn drops offsets while sticky
+      setShowScrollButton(true);
+      virtualizer.scrollToIndex(turnIdx, { align: "start" });
+    },
+    [virtualizer],
+  );
+
+  useEffect(() => {
+    if (!scrollerApi) return;
+    scrollerApi.current = { scrollToMessage };
+    return () => {
+      scrollerApi.current = null;
+    };
+  }, [scrollerApi, scrollToMessage]);
+
+  const runningAgents = useAuiState((s) => {
+    const compute = () =>
+      s.thread.messages
+        .map((m, index) => {
+          const custom = (m.metadata?.custom ?? {}) as AgentContainerCustom;
+          if (custom.systemMessageType !== "agent-container") return null;
+          const st = deriveStatus({
+            hasTail: custom.tailResult != null,
+            isError: custom.tailIsError === true,
+            isInterrupted: custom.isInterrupted === true,
+          });
+          if (st !== "running") return null;
+          return {
+            index,
+            subagentType: custom.subagentType ?? "Agent",
+            description: custom.description ?? "",
+          };
+        })
+        .filter(
+          (c): c is { index: number; subagentType: string; description: string } => c !== null,
+        );
+    return isPerfTraceEnabled()
+      ? timed("runningAgents", compute, s.thread.messages.length)
+      : compute();
+  });
+
   // ── Render ────────────────────────────────────────────────────────
   const items = virtualizer.getVirtualItems();
 
   return (
-    <div className="relative flex-1 min-h-0 overflow-hidden">
-      <div ref={scrollerRef} className="h-full overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5">
+    <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
+      {runningAgents.length > 0 ? (
+        <div
+          aria-label={t("claude.agent.runningAriaLabel")}
+          className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-neutral-line/40 bg-surface/80 px-3 py-1.5 sm:px-5"
+        >
+          {runningAgents.map((agent) => (
+            <button
+              key={agent.index}
+              type="button"
+              onClick={() => scrollToMessage(agent.index)}
+              className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-full bg-user/10 px-2 py-0.5 text-[0.65rem] text-user transition hover:bg-user/15"
+            >
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-user" />
+              <span className="shrink-0 font-semibold">{agent.subagentType}</span>
+              {agent.description ? (
+                <span className="min-w-0 truncate text-user/70">{agent.description}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div
+        ref={scrollerRef}
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5"
+      >
         {/* Skeleton shows while turns===0 (nothing painted yet). loading is
             flipped false by a deferred effect on the render after live_end, so
             it stays true through the one-frame window where assistant-ui hasn't
