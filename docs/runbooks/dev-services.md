@@ -41,44 +41,48 @@ scripts/ar-dev-web.sh
 
 ### 人在 tmux 内手动重启
 
-在对应 window/pane 直接操作：
+window 的 pane 进程**无 shell 包裹**（创建 window 时命令直接作为 pane 进程跑），`C-c` 杀掉进程后 pane 变 dead——里面没有 shell 可以再输入命令。因此人工重启同样走 `respawn-pane`（在任意 tmux 提示符，或 `C-b :` 命令提示符内执行）：
 
-- **api**：`C-c` → `bun run --filter @agents-remote/api dev`。
-- **web**：`C-c`（脚本 trap 会清 watch）→ `scripts/ar-dev-web.sh`。
-- **强制重建 web**：`C-c` 后重跑脚本（首步全量 build）。
+- **api**：`respawn-pane -k -t ar-dev:api 'bun run --filter @agents-remote/api dev'`
+- **web**：`respawn-pane -k -t ar-dev:web 'scripts/ar-dev-web.sh'`
+- **强制重建 web**：respawn web 即可（脚本首步就是全量 build）。
 
 ### 从外部通过 tmux 重启（脚本 / agent）
 
 > 🔴 **红线：只重启目标 window 内的服务进程，绝不杀 tmux 本身。**
-> 禁止 `tmux kill-server`、`tmux kill-session -t ar-dev`、`kill <tmux-server-pid>`，也不要用 `tmux kill-window` 当作重启手段——服务进程退出后 `remain-on-exit off`（本项目默认，见 `~/.tmux.conf` 未设）已会自动关闭 window，再去 kill window/session 只会把整个开发环境连带毁掉。**重启 = 让目标进程重新跑起来，不是 = 摧毁 window/session。**
+> 禁止 `tmux kill-server`、`tmux kill-session -t ar-dev`、`kill <tmux-server-pid>`，也不要把 `tmux kill-window` 当作重启手段——它只该用于清理已 dead 的堆积 window（见第 5 步）。**重启 = 让目标进程重新跑起来，不是 = 摧毁 window/session。**
 
-脆弱点（踩过的坑）：window **index 会变**（增删 window、renumber、或进程退出导致 window 自动关闭后），硬编码 `ar-dev:0` 作 target 会在「list 完到 send-keys 之间」的任意时刻失效，报 `can't find window: 0`。因此：
+背景（2026-09-08 起）：`~/.tmux.conf` 已持久化 `set -g remain-on-exit on`——服务进程退出后 window **保留为 dead pane**（`dead=1`，可继续 `capture-pane` 看退出前日志），不再自动关闭。此前「进程退出 → window 自动关闭」是 `remain-on-exit off`（tmux 默认）时代的行为，runbook 曾据此以 `send-keys C-c` 为标准重启方式；**现已废弃**——dead pane 里没有 shell，`send-keys` 无处落地，必须 `respawn-pane`。
+
+脆弱点（踩过的坑）：window **index 会变**（增删 window、renumber），硬编码 `ar-dev:0` 作 target 会在「list 完到 respawn 之间」的任意时刻失效，报 `can't find window: 0`。因此：
 
 1. **用 window name 作 target，不用 index**。name（`api`/`web`）稳定；启动 window 时务必用 `tmux new-window -n api` / `-n web` 固定 name。
 
-2. **send-keys 前即时确认 target 存在**，不要复用几步之前的旧 list 结果（中间隔真实等待时间，状态可能已变）：
+2. **操作前即时确认 target 状态**，不要复用几步之前的旧 list 结果（中间隔真实等待时间，状态可能已变）。`dead=0` 活、`dead=1` 死，两者都可 `respawn-pane`：
 
    ```bash
-   tmux list-windows -t ar-dev -F '#{window_name} #{pane_current_command}'
+   tmux list-windows -t ar-dev -F '#{window_name} #{pane_current_command} dead=#{pane_dead}'
    # 应能看到 api / web
    ```
 
-3. **确认存在后按 name 发 C-c 再重启**：
+3. **标准重启 = `respawn-pane -k`**（一步完成：杀旧进程 + 同 window 重跑新命令；cwd 继承 window 创建时的 `-c`）：
 
    ```bash
-   tmux send-keys -t ar-dev:api C-c
-   sleep 2
-   tmux send-keys -t ar-dev:api 'bun run --filter @agents-remote/api dev' Enter
+   tmux respawn-pane -k -t ar-dev:api 'bun run --filter @agents-remote/api dev'
+   tmux respawn-pane -k -t ar-dev:web 'scripts/ar-dev-web.sh'
    ```
 
-4. **target window 不存在时（进程已退出 → window 被 `remain-on-exit off` 自动关闭）→ 用 `new-window` 重建，不要 kill 任何东西**：
+4. **target window 不存在时**（tmux server 重启过 / session 整个没了）→ `new-session` / `new-window` 重建，不要 kill 任何东西：
 
    ```bash
-   tmux new-window -t ar-dev -n api -c /home/deploy/workspace/agents-remote \
+   tmux new-session -d -s ar-dev -n api -c /home/deploy/workspace/agents-remote \
      'bun run --filter @agents-remote/api dev'
+   tmux new-window -t ar-dev -n web -c /home/deploy/workspace/agents-remote 'scripts/ar-dev-web.sh'
    ```
 
-   `send-keys` 报 `can't find window: api` 本身是无害信号——它说明 tmux 找不到 target 而拒绝发 keys，**没有**真正发出去；此时进程早已不在，直接走 `new-window`。
+   `respawn-pane`/`send-keys` 报 `can't find window: api` 本身是无害信号——它说明 tmux 找不到 target 而拒绝执行，**没有**真正发出；此时按本步重建即可。
+
+5. **dead window 堆积清理**：`remain-on-exit on` 的代价是死 window 会保留堆积。确认 pane 已 dead（`dead=1`）后才可 `tmux kill-window -t ar-dev:<name>` 清理；活 window 仍走第 3 步 respawn。
 
 ## 关闭 / 清理孤儿
 
