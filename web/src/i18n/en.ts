@@ -119,6 +119,7 @@ export const en = {
   "session.autoRetry.label": "Auto-retry",
   "session.autoRetry.off": "Off",
   "session.autoRetry.edit": "Edit auto-retry",
+  "session.autoRetry.editShort": "Edit",
   "session.autoRetry.enable": "Auto-retry",
   "session.autoRetry.defaultMessage": "Network error just now — please continue",
   "session.autoRetry.delayLabel": "Delay (min)",

@@ -907,14 +907,20 @@ export function useInstanceInfoActions(
           wrap: true,
         });
       }
-      // 自动重试配置（claude 专用，见 useAutoRetryEditor）：关闭态显示「关闭」。
+      // 自动重试（claude 专用）：行内开关 + 编辑按钮（2026-09-09 用户反馈：原纯文本行
+      // 改操作面直出——开关即切即存，编辑进参数 Dialog）。组件自订阅 query，
+      // 快照 fields 不影响其响应数据变化。
       if (agentSession.provider === "claude") {
         fields.push({
           label: t("session.autoRetry.label"),
-          value: agentSession.autoRetry?.enabled
-            ? agentSession.autoRetry.message
-            : t("session.autoRetry.off"),
-          wrap: Boolean(agentSession.autoRetry?.enabled && agentSession.autoRetry.message),
+          value: "",
+          action: (
+            <AutoRetrySheetAction
+              onEdit={autoRetryEditor.openEditor}
+              projectName={panelRef.projectName}
+              sessionId={panelRef.sessionId}
+            />
+          ),
         });
       }
     } else if (sessionType === "terminal" && terminalSession) {
@@ -927,18 +933,8 @@ export function useInstanceInfoActions(
         value: t(sessionStatusLabel(terminalSession.status)),
       });
     }
-    // claude agent session 提供编辑入口（footer slot）；terminal/其他 provider 纯展示。
-    const footer =
-      sessionType === "agent" && agentSession?.provider === "claude" ? (
-        <button
-          className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold text-primary transition active:bg-primary/10 ${shellSurfaceClasses.workspace}`}
-          onClick={autoRetryEditor.openEditor}
-          type="button"
-        >
-          {t("session.autoRetry.edit")}
-        </button>
-      ) : undefined;
-    infoSheet.open(t("session.instanceInfo.title"), fields, variant, footer);
+    // claude 的编辑入口已并入自动重试行内（编辑按钮）；terminal/其他 provider 纯展示无 footer。
+    infoSheet.open(t("session.instanceInfo.title"), fields, variant);
   };
   return { openInfo, holder: infoSheet.holder, autoRetryEditorHolder: autoRetryEditor.holder };
 }
@@ -947,6 +943,8 @@ export function useInstanceInfoActions(
  * 自动重试配置编辑流程（claude agent 专用，2026-09-07）：info sheet「编辑」入口 →
  * Dialog（开关 + 单行文案 + 参数）预填当前 autoRetry config（缺省 = 默认关 + i18n 默认文案）
  * → 保存调 updateAutoRetryConfig API → invalidate detail/list（与 useRenameSession 同模式）。
+ * 2026-09-09 起 info sheet 行内还有轻量开关（switchAutoRetry）：点击直接切换保存，
+ * 失败显示错误 + 回滚 UI 态——语义同 AutoRetryEditorDialog 内开关，同一配置的两种操作面。
  */
 function useAutoRetryEditor(panelRef: SessionPanelRef) {
   const { t } = useT();
@@ -1007,6 +1005,81 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
     ) : null;
 
   return { openEditor, holder };
+}
+
+/**
+ * info sheet 行内操作面（开关 + 编辑按钮）。独立组件而非 openInfo 时构建的静态 JSX：
+ * sheet 的 fields 是打开时刻的快照，静态 JSX 捕获旧闭包——点击开关后 sheet 内开关不会
+ * 响应数据变化。本组件内部自订阅 detail query（与 useAgentDetail 同 queryKey 共享缓存），
+ * mutation 成功 invalidate 后开关实时反映最新 enabled，失败 UI 自动回到服务端真值。
+ */
+function AutoRetrySheetAction({
+  projectName,
+  sessionId,
+  onEdit,
+}: {
+  projectName: string;
+  sessionId: string;
+  onEdit: () => void;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const detailKey = ["projects", projectName, "agent-sessions", sessionId] as const;
+  const enabled = useQuery({
+    queryKey: detailKey,
+    queryFn: () => getAgentSession(projectName, sessionId),
+    retry: false,
+    staleTime: 60_000,
+    select: (data) => data.session.autoRetry?.enabled === true,
+  }).data;
+
+  const toggle = useMutation({
+    mutationFn: (next: boolean) => {
+      const session = queryClient.getQueryData<{ session: AgentSession }>(detailKey)?.session;
+      // 关闭态无 config 时启用 → 预填默认文案；已有 config 保持其余字段只切 enabled。
+      const config: ClaudeAutoRetryConfig = session?.autoRetry
+        ? { ...session.autoRetry, enabled: next }
+        : {
+            ...AUTO_RETRY_DEFAULT,
+            enabled: next,
+            message: t("session.autoRetry.defaultMessage"),
+          };
+      return updateAutoRetryConfig(projectName, sessionId, config);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ exact: true, queryKey: detailKey });
+    },
+  });
+
+  const toggling = toggle.isPending;
+  return (
+    <span className="flex items-center justify-end gap-2">
+      <button
+        aria-checked={enabled}
+        aria-label={t("session.autoRetry.label")}
+        className="flex cursor-pointer items-center disabled:cursor-default disabled:opacity-60"
+        disabled={toggling}
+        onClick={() => toggle.mutate(!enabled)}
+        role="switch"
+        type="button"
+      >
+        <span
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enabled ? "bg-primary" : "bg-surface-inset"}`}
+        >
+          <span
+            className={`inline-block size-5 transform rounded-full shadow transition ${enabled ? "translate-x-[1.375rem] bg-on-primary" : "translate-x-0.5 bg-on-surface"}`}
+          />
+        </span>
+      </button>
+      <button
+        className={`cursor-pointer rounded-lg px-2 py-1 text-xs font-bold text-primary transition active:bg-primary/10 ${shellSurfaceClasses.workspace}`}
+        onClick={onEdit}
+        type="button"
+      >
+        {t("session.autoRetry.editShort")}
+      </button>
+    </span>
+  );
 }
 
 // UI 参数单位换算：分钟（用户可读）↔ ms（存储/协议）。maxPerWindow 无量纲直接用。

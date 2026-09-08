@@ -7,11 +7,14 @@ import { shellSurfaceClasses } from "./shell-primitives";
  * 信息字段（两列表格的一行）：label 弱化色右对齐，value 主体色左对齐 truncate。
  * value 由调用方装配（已 i18n + 格式化），本组件不区分语义。wrap=true 时 value 不 truncate、
  * break-all 完整换行显示（长 ID 类值，如 resume id 的 UUID，供用户核对/复制）。
+ * value 与 action 互斥；action 行（如自动重试的开关+编辑按钮）value 为空时渲染。
  */
 export type InfoField = {
   label: string;
   value: string;
   wrap?: boolean;
+  /** action 行内容（开关/按钮等交互元素）；渲染在 dd 位置，value 被忽略。 */
+  action?: ReactNode;
 };
 
 /** 信息弹窗形态：sheet = 移动端底部滑出；modal = 桌面端居中卡片。 */
@@ -93,7 +96,7 @@ function InfoSheetDialog({
             <dd
               className={`text-xs font-medium text-on-surface ${field.wrap ? "break-all" : "truncate"}`}
             >
-              {field.value}
+              {field.action ?? field.value}
             </dd>
           </div>
         ))}

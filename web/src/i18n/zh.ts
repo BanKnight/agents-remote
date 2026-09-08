@@ -119,6 +119,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.autoRetry.label": "自动重试",
   "session.autoRetry.off": "关闭",
   "session.autoRetry.edit": "编辑自动重试",
+  "session.autoRetry.editShort": "编辑",
   "session.autoRetry.enable": "自动重试",
   "session.autoRetry.defaultMessage": "刚刚网络错误，请继续",
   "session.autoRetry.delayLabel": "延迟（分钟）",
