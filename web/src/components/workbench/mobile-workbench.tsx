@@ -42,6 +42,7 @@ import {
   CardGridSkeleton,
   type CreateSessionApi,
   type GridItemCallbacks,
+  AutoRetryHeaderButton,
   InstanceGrid,
   instanceToGridItem,
   PanelRouter,
@@ -409,6 +410,15 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
         onInfo={openInfo}
         onTabSelect={setTab}
         tabs={tabs}
+        trailingExtra={
+          sessionType === "agent" && projectName ? (
+            <AutoRetryHeaderButton
+              projectName={projectName}
+              sessionId={focusId}
+              variant="capsule"
+            />
+          ) : null
+        }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {projectName ? (
@@ -438,6 +448,8 @@ type MobileFocusHeaderProps = {
   onInfo: () => void;
   onClose: () => void;
   onTabSelect: (id: WorkbenchMobileFocusTab) => void;
+  /** 胶囊内前置的额外操作（如 claude 自动重试开关）；null 不渲染。 */
+  trailingExtra?: ReactNode;
 };
 
 /**
@@ -453,6 +465,7 @@ function MobileFocusHeader({
   onInfo,
   onClose,
   onTabSelect,
+  trailingExtra,
 }: MobileFocusHeaderProps) {
   const { t } = useT();
   return (
@@ -466,6 +479,7 @@ function MobileFocusHeader({
           className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
           role="group"
         >
+          {trailingExtra}
           <button
             aria-label={t("session.instanceInfo.title")}
             className="flex h-8 w-8 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"

@@ -1008,20 +1008,11 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
 }
 
 /**
- * info sheet 行内操作面（开关 + 编辑按钮）。独立组件而非 openInfo 时构建的静态 JSX：
- * sheet 的 fields 是打开时刻的快照，静态 JSX 捕获旧闭包——点击开关后 sheet 内开关不会
- * 响应数据变化。本组件内部自订阅 detail query（与 useAgentDetail 同 queryKey 共享缓存），
- * mutation 成功 invalidate 后开关实时反映最新 enabled，失败 UI 自动回到服务端真值。
+ * 自动重试开关共享逻辑（会话头部按钮 + info sheet 行内操作面共用）：enabled 从 detail
+ * query select 派生（primitive，同 queryKey dedupe 零额外网络）；toggle 读缓存当前 config
+ * 只切 enabled（无 config 时按 UI 语言预填默认文案），成功 invalidate detail。
  */
-function AutoRetrySheetAction({
-  projectName,
-  sessionId,
-  onEdit,
-}: {
-  projectName: string;
-  sessionId: string;
-  onEdit: () => void;
-}) {
+function useAutoRetryToggle(projectName: string, sessionId: string) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const detailKey = ["projects", projectName, "agent-sessions", sessionId] as const;
@@ -1032,7 +1023,6 @@ function AutoRetrySheetAction({
     staleTime: 60_000,
     select: (data) => data.session.autoRetry?.enabled === true,
   }).data;
-
   const toggle = useMutation({
     mutationFn: (next: boolean) => {
       const session = queryClient.getQueryData<{ session: AgentSession }>(detailKey)?.session;
@@ -1050,24 +1040,90 @@ function AutoRetrySheetAction({
       await queryClient.invalidateQueries({ exact: true, queryKey: detailKey });
     },
   });
+  return { enabled, toggle };
+}
 
-  const toggling = toggle.isPending;
+/**
+ * 会话头部 icon-only 自动重试开关（高频操作前置，2026-09-09：用户反馈 ℹ sheet 路径太深、
+ * 面板操作麻烦）。rotate 图标 = 重试语义；enabled 常显高亮 primary（用户主动开启的功能
+ * 要一直可见），off 态样式同 ℹ✕（非 active hover 才显）。点击即切即存，pending 置灰。
+ * 仅 claude agent session 渲染（provider 未加载前不渲染，避免闪现）。
+ */
+export function AutoRetryHeaderButton({
+  projectName,
+  sessionId,
+  variant,
+}: {
+  projectName: string;
+  sessionId: string;
+  /** tab = 桌面 TabChip icon 按钮（h-4）；capsule = 移动聚焦 header 胶囊按钮（h-8）。 */
+  variant: "tab" | "capsule";
+}) {
+  const { t } = useT();
+  const { enabled, toggle } = useAutoRetryToggle(projectName, sessionId);
+  const session = useAgentDetail({ kind: "session", projectName, sessionId }).data?.session;
+  if (session?.provider !== "claude") return null;
+  const on = enabled === true;
+  const className =
+    variant === "tab"
+      ? `inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition hover:bg-on-surface/10 active:bg-on-surface/10 ${
+          on
+            ? "text-primary"
+            : "text-on-surface-muted hover:text-on-surface opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
+        }`
+      : `flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-on-surface/5 active:bg-on-surface/10 ${
+          on ? "text-primary" : "text-on-surface-soft hover:text-on-surface"
+        }`;
   return (
-    <span className="flex items-center justify-end gap-2">
+    <button
+      aria-checked={on}
+      aria-label={t("session.autoRetry.label")}
+      className={`${className} disabled:cursor-default disabled:opacity-60`}
+      disabled={toggle.isPending}
+      onClick={() => toggle.mutate(!on)}
+      role="switch"
+      title={t("session.autoRetry.label")}
+      type="button"
+    >
+      <ShellIcon className={variant === "tab" ? "h-3 w-3" : "h-4 w-4"} name="rotate" />
+    </button>
+  );
+}
+
+/**
+ * info sheet 行内操作面（开关 + 编辑按钮）。独立组件而非 openInfo 时构建的静态 JSX：
+ * sheet 的 fields 是打开时刻的快照，静态 JSX 捕获旧闭包——点击开关后 sheet 内开关不会
+ * 响应数据变化。经 useAutoRetryToggle 自订阅 detail query，mutation 成功 invalidate 后
+ * 开关实时反映最新 enabled，失败 UI 自动回到服务端真值。
+ */
+function AutoRetrySheetAction({
+  projectName,
+  sessionId,
+  onEdit,
+}: {
+  projectName: string;
+  sessionId: string;
+  onEdit: () => void;
+}) {
+  const { t } = useT();
+  const { enabled, toggle } = useAutoRetryToggle(projectName, sessionId);
+  const on = enabled === true;
+  return (
+    <span className="flex items-center gap-2">
       <button
-        aria-checked={enabled}
+        aria-checked={on}
         aria-label={t("session.autoRetry.label")}
         className="flex cursor-pointer items-center disabled:cursor-default disabled:opacity-60"
-        disabled={toggling}
-        onClick={() => toggle.mutate(!enabled)}
+        disabled={toggle.isPending}
+        onClick={() => toggle.mutate(!on)}
         role="switch"
         type="button"
       >
         <span
-          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enabled ? "bg-primary" : "bg-surface-inset"}`}
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-primary" : "bg-surface-inset"}`}
         >
           <span
-            className={`inline-block size-5 transform rounded-full shadow transition ${enabled ? "translate-x-[1.375rem] bg-on-primary" : "translate-x-0.5 bg-on-surface"}`}
+            className={`inline-block size-5 transform rounded-full shadow transition ${on ? "translate-x-[1.375rem] bg-on-primary" : "translate-x-0.5 bg-on-surface"}`}
           />
         </span>
       </button>
@@ -2049,19 +2105,28 @@ function TabChip({
           <span className="block max-w-[8rem] truncate text-xs font-bold sm:text-sm">{label}</span>
         </button>
         {panelRef.kind === "session" ? (
-          <button
-            aria-label={t("session.instanceInfo.title")}
-            className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
-              isActive
-                ? "opacity-100"
-                : "opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
-            }`}
-            onClick={openInfo}
-            title={t("session.instanceInfo.title")}
-            type="button"
-          >
-            <ShellIcon className="h-3 w-3" name="info" />
-          </button>
+          <>
+            {sessionType === "agent" && panelRef.kind === "session" ? (
+              <AutoRetryHeaderButton
+                projectName={panelRef.projectName}
+                sessionId={panelRef.sessionId}
+                variant="tab"
+              />
+            ) : null}
+            <button
+              aria-label={t("session.instanceInfo.title")}
+              className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
+                isActive
+                  ? "opacity-100"
+                  : "opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
+              }`}
+              onClick={openInfo}
+              title={t("session.instanceInfo.title")}
+              type="button"
+            >
+              <ShellIcon className="h-3 w-3" name="info" />
+            </button>
+          </>
         ) : null}
         <button
           aria-label={t("workbench.tabMinimize")}
