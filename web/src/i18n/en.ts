@@ -127,6 +127,7 @@ export const en = {
   "session.autoRetry.description":
     "When the agent stops on an upstream error, send the message below automatically after the delay to let it continue. At most N injections per rolling window; a normal reply resets the count.",
   "session.autoRetry.save": "Save",
+  "session.autoRetry.saveFailed": "Save failed — please try again",
   "session.connectionError": "Connection failed",
 
   // ── Files ────────────────────────────────────────────────────

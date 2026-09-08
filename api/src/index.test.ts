@@ -365,6 +365,56 @@ test("createFetchHandler closes sessions through Project-scoped action routes", 
   expect((await list.json()).sessions).toEqual([]);
 });
 
+test("createFetchHandler persists auto-retry config through the action route", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  await handler(
+    new Request("http://localhost/api/projects/demo/agent-sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ provider: "claude" }),
+    }),
+    { upgrade: () => false },
+  );
+  const post = await handler(
+    new Request("http://localhost/api/projects/demo/agent-sessions/agent_test123456/auto-retry", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        config: {
+          enabled: true,
+          message: "continue please",
+          delayMs: 120_000,
+          maxPerWindow: 5,
+          windowMs: 3_600_000,
+        },
+      }),
+    }),
+    { upgrade: () => false },
+  );
+  const postBody = await post.json();
+  const detail = await handler(
+    new Request("http://localhost/api/projects/demo/agent-sessions/agent_test123456", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  const detailBody = await detail.json();
+
+  expect(post.status).toBe(200);
+  expect(postBody.session.autoRetry).toEqual({
+    enabled: true,
+    message: "continue please",
+    delayMs: 120_000,
+    maxPerWindow: 5,
+    windowMs: 3_600_000,
+  });
+  // 落盘后 detail 回读一致（写走 writeMetadata + index，读走 agentSessionFromMetadata）。
+  expect(detailBody.session.autoRetry).toEqual(postBody.session.autoRetry);
+});
+
 test("createFetchHandler serves Project-scoped file browsing and preview", async () => {
   await mkdir(join(root, "demo", "src"), { recursive: true });
   await mkdir(join(root, "demo", ".config")); // 非黑名单 dot 目录 → 可见

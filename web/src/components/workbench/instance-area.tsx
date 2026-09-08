@@ -953,6 +953,7 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [config, setConfig] = useState<ClaudeAutoRetryConfig | null>(null);
+  const [saveError, setSaveError] = useState(false);
 
   const openEditor = () => {
     const session = queryClient.getQueryData<{ session: AgentSession }>([
@@ -969,15 +970,18 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
         message: t("session.autoRetry.defaultMessage"),
       },
     );
+    setSaveError(false);
     setOpen(true);
   };
 
   const save = async () => {
     if (!config) return;
+    // 失败显式提示 + 保持对话框打开（否则失败看起来像成功，用户重开发现没生效）。
     try {
       await updateAutoRetryConfig(panelRef.projectName, panelRef.sessionId, config);
     } catch {
-      // 路由已返回错误码；与 useRenameSession 同策略：不额外提示，失效缓存自愈。
+      setSaveError(true);
+      return;
     }
     await Promise.all([
       queryClient.invalidateQueries({
@@ -995,6 +999,7 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
     open && config ? (
       <AutoRetryEditorDialog
         config={config}
+        saveError={saveError}
         onCancel={() => setOpen(false)}
         onChange={setConfig}
         onSave={save}
@@ -1009,11 +1014,13 @@ const AUTO_RETRY_MINUTE_MS = 60_000;
 
 function AutoRetryEditorDialog({
   config,
+  saveError,
   onCancel,
   onChange,
   onSave,
 }: {
   config: ClaudeAutoRetryConfig;
+  saveError: boolean;
   onCancel: () => void;
   onChange: (config: ClaudeAutoRetryConfig) => void;
   onSave: () => void;
@@ -1122,6 +1129,11 @@ function AutoRetryEditorDialog({
             </div>
           </div>
           <p className="mt-2 text-xs text-on-surface-soft">{t("session.autoRetry.description")}</p>
+          {saveError ? (
+            <p className="mt-1 text-xs font-medium text-error" role="alert">
+              {t("session.autoRetry.saveFailed")}
+            </p>
+          ) : null}
           <div className="mt-4 flex justify-end gap-3">
             <button
               className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 text-on-surface-soft ${shellSurfaceClasses.workspace}`}

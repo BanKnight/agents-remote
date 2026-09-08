@@ -127,6 +127,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.autoRetry.description":
     "Agent 因上游报错停下后，延迟指定时长自动发送下方消息让它继续；滚动窗口内最多注入 N 次，收到正常回复即计数归零。",
   "session.autoRetry.save": "保存",
+  "session.autoRetry.saveFailed": "保存失败，请重试",
   "session.connectionError": "连接失败",
 
   // ── Files ────────────────────────────────────────────────────

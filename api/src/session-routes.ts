@@ -359,12 +359,11 @@ const matchSessionRoute = (pathname: string) => {
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }
 
-  if (segments.length === 6 && segments[5] === "close") {
-    const sessionId = decodePathSegment(segments[4]);
-    return sessionId ? { projectName, resource, sessionId } : undefined;
-  }
-
-  if (segments.length === 6 && segments[5] === "rename") {
+  // 6 段 = session/{action}；terminal-sessions 的 auto-retry 由 handler fall-through 404。
+  if (
+    segments.length === 6 &&
+    (segments[5] === "close" || segments[5] === "rename" || segments[5] === "auto-retry")
+  ) {
     const sessionId = decodePathSegment(segments[4]);
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }
