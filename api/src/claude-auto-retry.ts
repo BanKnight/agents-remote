@@ -32,8 +32,11 @@ export const AUTO_RETRY_WINDOW_MS_MAX = 86_400_000;
 
 type ParsedLine = Record<string, unknown> | null;
 
+// CLI 两种错误信封（v2.1.212 实测）：① 配置类错误 subtype:"error" + is_error:true；
+// ② API 传输类错误（EOF/超时）subtype:"success" + is_error:true + result:"API Error: ..."——
+// 信封层 success 但内容层报错，客户端 adapter 同款判定（只看 is_error，不看 subtype）。
 export function isErrorResultLine(parsed: ParsedLine): boolean {
-  return parsed?.type === "result" && parsed.subtype === "error";
+  return parsed?.type === "result" && parsed.is_error === true;
 }
 
 export function isNormalAssistantLine(parsed: ParsedLine): boolean {

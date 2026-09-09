@@ -29,11 +29,29 @@ const config = (overrides?: Partial<ClaudeAutoRetryConfig>): ClaudeAutoRetryConf
   ...overrides,
 });
 
+// 真实协议错误 result 行（docs/research/claude-cli-stream-protocol.md + novels 实测）：
+// 配置类错误 subtype:"error"、API 传输类错误 subtype:"success"——内容层都带 is_error:true。
+const ERROR_RESULT = { type: "result", subtype: "error", is_error: true };
+
 // ── 纯函数：协议行形状（docs/research/claude-cli-stream-protocol.md 实测样本）──
 
-test("isErrorResultLine 只命中 result error，api_retry/interrupted/success 不触发", () => {
+test("isErrorResultLine 按内容层 is_error 判定（两种信封），api_retry/interrupted/纯 success 不触发", () => {
+  // 信封①：配置类错误 subtype:"error" + is_error:true（协议文档实测样本）。
   expect(isErrorResultLine({ type: "result", subtype: "error", is_error: true })).toBe(true);
+  // 信封②：API 传输类错误（v2.1.212 novels 实测）subtype:"success" + is_error:true +
+  // result:"API Error: unexpected EOF"——客户端 adapter 同款只看 is_error。
+  expect(
+    isErrorResultLine({
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      api_error_status: null,
+      result: "API Error: unexpected EOF",
+      stop_reason: "stop_sequence",
+    }),
+  ).toBe(true);
   expect(isErrorResultLine({ type: "result", subtype: "error_max_turns" })).toBe(false);
+  // 纯 success（is_error 缺省）不触发——正常结束不得注入。
   expect(isErrorResultLine({ type: "result", subtype: "success" })).toBe(false);
   expect(isErrorResultLine({ type: "result", subtype: "interrupted" })).toBe(false);
   // system/api_retry 是 CLI 自重试（成功则 result success），不是「报错停下」。
@@ -194,7 +212,7 @@ const harness = (
 
 test("error result 后未到延迟不注入；到达后注入配置文案", async () => {
   const h = harness(config({ delayMs: TICK_MS }));
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   expect(h.injections).toHaveLength(0); // 未到延迟
 
   await Bun.sleep(TICK_MS * 3);
@@ -207,7 +225,7 @@ test("error result 后未到延迟不注入；到达后注入配置文案", asyn
 
 test("error result 后正常 assistant 先到 → 待发定时器作废（不注入）", async () => {
   const h = harness(config({ delayMs: TICK_MS }));
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   h.watch.handleStdoutLine("s1", "sess1", { type: "assistant", model: "claude-sonnet-4-6" });
   await Bun.sleep(TICK_MS * 3);
   expect(h.injections).toHaveLength(0);
@@ -215,7 +233,7 @@ test("error result 后正常 assistant 先到 → 待发定时器作废（不注
 
 test("注入后正常 assistant 回复 → 成功，计数归零", async () => {
   const h = harness(config({ delayMs: TICK_MS }));
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(TICK_MS * 3);
   expect(h.injections).toHaveLength(1);
 
@@ -242,7 +260,7 @@ test("默认关：未配置 / enabled:false / 文案为空 → 完全不调度",
     config({ message: "   " }),
   ]) {
     const h = harness(c);
-    h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+    h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
     await Bun.sleep(TICK_MS * 3);
     expect(h.injections).toHaveLength(0);
     // 不调度 → 状态里无 pending timer。
@@ -253,12 +271,12 @@ test("默认关：未配置 / enabled:false / 文案为空 → 完全不调度",
 
 test("pending 存在时重复 error 不叠加调度；用户介入 cancelPending 取消", async () => {
   const h = harness(config({ delayMs: TICK_MS }));
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(1); // schedule 为 async：等 getConfig 走完才有 pendingTimer
   const firstTimer = h.watch["states"].get("s1")?.pendingTimer;
   expect(firstTimer).not.toBeNull();
 
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(1);
   expect(h.watch["states"].get("s1")?.pendingTimer).toBe(firstTimer); // 不叠加
 
@@ -282,9 +300,9 @@ test("async getConfig 的 await 间隙内重复 error 不叠加调度（scheduli
     },
     now: () => clock.now,
   });
-  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
-  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
-  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   release();
   await Bun.sleep(TICK_MS * 3);
   // 只应有 1 个 pending timer → 1 次注入。
@@ -302,7 +320,7 @@ test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
     },
     now: () => clock.now,
   });
-  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(1); // 让 schedule 的 async getConfig 走完
   const state = watch["states"].get("s1")!;
   // 手动灌满窗口（模拟已注入 2 次，绕过 pending 定时器干扰）。
@@ -310,14 +328,14 @@ test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
   state.pendingTimer = null;
   state.injectionTimestamps = [clock.now - 1000, clock.now - 500];
 
-  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(1);
   expect(state.pendingTimer).toBeNull(); // 窗口满 → 不调度
   expect(injections).toHaveLength(0);
 
   // 窗口滑过 → 恢复资格。
   clock.now += AUTO_RETRY_WINDOW_MS + 1;
-  watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(1);
   expect(state.pendingTimer).not.toBeNull();
   watch.destroySession("s1");
@@ -325,7 +343,7 @@ test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
 
 test("destroySession 清理 pending 定时器（close/respawn/proc.exited 生命周期点）", async () => {
   const h = harness(config({ delayMs: TICK_MS }));
-  h.watch.handleStdoutLine("s1", "sess1", { type: "result", subtype: "error" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(0);
   expect(h.watch["states"].get("s1")?.pendingTimer).not.toBeNull();
 

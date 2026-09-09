@@ -1260,7 +1260,7 @@ CLI 在 `--output-format stream-json` 模式下**不会**将用户输入回显�
 | `subtype`            | `"success"` \| `"interrupted"` \| `"error"` \| `"error_max_turns"` | 结果类型（**信封层**）                                                                        |
 | `session_id`         | string                                                             | 会话 UUID                                                                                     |
 | `uuid`               | string?                                                            | 消息唯一标识（result 带有 `uuid` 但**不写入 JSONL**，是 `uuid` 持久化规则的例外，见持久化章节） |
-| `is_error`           | boolean?                                                           | 是否错误（`subtype: "error"` 时为 true）                                                      |
+| `is_error`           | boolean?                                                           | 是否错误。**错误判定的权威字段**（不看 `subtype`）：两种信封实测——① 配置类错误 `subtype: "error"` + `is_error: true`（如 Model not found）；② API 传输类错误（v2.1.212 实测 unexpected EOF）`subtype: "success"` + `is_error: true` + `result: "API Error: ..."` + `api_error_status: null`，信封层 success 但内容层报错，turn 正常结束（进程存活等待下一条输入） |
 | `result`             | string?                                                            | 错误消息文本（`is_error: true` 时）                                                           |
 | `api_error_status`   | number?                                                            | API 错误 HTTP 状态码（`subtype: "error"` 时；观测值）                                          |
 | `stop_reason`        | string?                                                            | **模型层**停止原因（`"end_turn"` / `"tool_use"` …），与 assistant `message.stop_reason` 同义  |
@@ -1315,8 +1315,11 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 // 用户中断
 { "type": "result", "subtype": "interrupted", "num_turns": 3, "session_id": "..." }
 
-// API 错误
+// API 错误（配置类）
 { "type": "result", "subtype": "error", "is_error": true, "result": "Model not found: claude-unknown", "session_id": "..." }
+
+// API 错误（传输类，v2.1.212 实测 unexpected EOF）——信封层 success 但内容层报错：
+{ "type": "result", "subtype": "success", "is_error": true, "api_error_status": null, "result": "API Error: unexpected EOF", "stop_reason": "stop_sequence", "session_id": "..." }
 ```
 
 **处理方法**：
