@@ -1,10 +1,13 @@
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useContext, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import PrismLight from "react-syntax-highlighter/dist/esm/prism-light";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useT } from "../../i18n";
 import { useTheme } from "../../theme";
+import { ShellIcon } from "../shell/icons";
+import { ImageLightbox } from "../ui/image-lightbox";
 import { KNOWN_LANGUAGES } from "./prism-languages";
+import { HtmlRenderContext } from "./markdown-components";
 
 // 代码块统一容器：Prism 高亮 + 顶部语言标签 + hover 复制按钮 + 横向滚动。
 // 高亮引擎隔离在此组件内；聊天流与 Files 预览两条管线都汇聚到这里，视觉完全一致。
@@ -33,12 +36,31 @@ export type CodeBlockProps = {
   language: string | undefined;
 };
 
+// 可「渲染」的代码块语言：svg → lightbox（dataUrl，<img> 呈现脚本不执行）；
+// html/htm → HtmlRenderContext 回调（工作台 render tab，sandbox iframe）。
+const RENDERABLE_LANGUAGES = new Set(["svg", "html", "htm"]);
+
 export function CodeBlock({ code, language }: CodeBlockProps) {
   const { t } = useT();
   const { resolved } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [svgPreviewOpen, setSvgPreviewOpen] = useState(false);
+  const onRenderHtml = useContext(HtmlRenderContext);
   const known = language !== undefined && KNOWN_LANGUAGES.has(language);
   const label = language ?? "text";
+  const normalized = language?.toLowerCase() ?? "";
+  const renderable = RENDERABLE_LANGUAGES.has(normalized);
+  // html 渲染需要工作台动作（context）；无 Provider（如 Files md 预览）按钮隐藏。
+  // svg 渲染本地可完成（dataUrl → lightbox），恒可用。
+  const canRender = normalized === "svg" || (renderable && onRenderHtml != null);
+
+  const onRender = () => {
+    if (normalized === "svg") {
+      setSvgPreviewOpen(true);
+      return;
+    }
+    onRenderHtml?.(code);
+  };
 
   const onCopy = () => {
     void navigator.clipboard.writeText(code).then(
@@ -60,15 +82,28 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
         <span className="text-[0.55rem] font-medium uppercase tracking-wider text-on-surface-muted">
           {label}
         </span>
-        <button
-          type="button"
-          className="pointer-events-auto cursor-pointer rounded p-1 text-on-surface-muted transition hover:bg-surface-raised/40 hover:text-on-surface-soft"
-          aria-label={copyLabel}
-          title={copyLabel}
-          onClick={onCopy}
-        >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        </button>
+        <div className="pointer-events-auto flex items-center gap-0.5">
+          {canRender ? (
+            <button
+              type="button"
+              className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:bg-surface-raised/40 hover:text-primary"
+              aria-label={t("markdown.render")}
+              title={t("markdown.render")}
+              onClick={onRender}
+            >
+              <ShellIcon className="h-3 w-3" name="eye" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:bg-surface-raised/40 hover:text-on-surface-soft"
+            aria-label={copyLabel}
+            title={copyLabel}
+            onClick={onCopy}
+          >
+            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          </button>
+        </div>
       </div>
       {known ? (
         <PrismLight
@@ -84,6 +119,13 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           <code style={CODE_STYLE}>{code}</code>
         </pre>
       )}
+      {svgPreviewOpen ? (
+        <ImageLightbox
+          alt={label}
+          src={`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(code)))}`}
+          onOpenChange={setSvgPreviewOpen}
+        />
+      ) : null}
     </div>
   );
 }

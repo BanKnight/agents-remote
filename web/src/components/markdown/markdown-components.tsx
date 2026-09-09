@@ -1,11 +1,25 @@
+import { createContext } from "react";
 import type { Components } from "react-markdown";
 import { CodeBlock } from "./CodeBlock";
+import { ImageThumb } from "../ui/image-lightbox";
 
 // react-markdown / assistant-ui 共用的 components override。
 //
 // pre override 是两条管线的统一点：从 hast AST 提取 code 文本 + 语言标记，
 // 一律渲染 <CodeBlock>，使聊天流气泡、tool_result、ExitPlanMode、AskUserQuestion preview
 // 与 Files 预览的代码块视觉完全一致。table/th/td 保持与原聊天流一致的紧凑表格样式。
+// img override：图片缩略图 + lightbox（ImageViewer 手势），聊天流与 Files md 预览共用。
+//
+// HtmlRenderContext：CodeBlock 的 html「渲染」按钮回调（→ 工作台 render tab）。
+// 模块级 MARKDOWN_COMPONENTS 内组件经 useContext 响应 Provider——聊天流在
+// ClaudeSessionDetailRoute 根部 Provider 提供开启动作；Files md 预览无 Provider，
+// 按钮自然隐藏（html 代码块在文件预览里有 render mode 兜底，无需跳 tab）。
+export const HtmlRenderContext = createContext<((html: string) => void) | null>(null);
+
+function MarkdownImage({ src, alt }: { src: string; alt: string }) {
+  if (!src) return null;
+  return <ImageThumb alt={alt} src={src} />;
+}
 
 type HastNode = {
   type?: string;
@@ -84,6 +98,8 @@ export const MARKDOWN_COMPONENTS: Components = {
   td: ({ children }) => (
     <td className="border border-neutral-line px-2 py-1 text-on-surface-soft">{children}</td>
   ),
+  img: ({ src, alt }) =>
+    typeof src === "string" ? <MarkdownImage alt={alt ?? ""} src={src} /> : null,
   pre: ({ children, node }) => {
     const extracted = extractCodeBlock(node as unknown as HastNode | undefined);
     if (!extracted) return <pre>{children}</pre>;

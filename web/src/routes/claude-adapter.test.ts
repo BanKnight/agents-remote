@@ -2765,7 +2765,7 @@ describe("extractToolResults", () => {
   test("extracts tool_use_id, content, isError from string content", () => {
     const msg = user([{ type: "tool_result", tool_use_id: "tu-1", content: "hello" }]);
     const results = extractToolResults(msg);
-    expect(results).toEqual([{ toolUseId: "tu-1", content: "hello", isError: false }]);
+    expect(results).toEqual([{ toolUseId: "tu-1", content: "hello", isError: false, images: [] }]);
   });
 
   test("joins array-of-text content with newlines", () => {
@@ -2786,7 +2786,9 @@ describe("extractToolResults", () => {
       },
     } as unknown as SessionStreamServerMessage;
     const results = extractToolResults(msg);
-    expect(results).toEqual([{ toolUseId: "tu-1", content: "line1\nline2", isError: false }]);
+    expect(results).toEqual([
+      { toolUseId: "tu-1", content: "line1\nline2", isError: false, images: [] },
+    ]);
   });
 
   test("empty content falls back to 'Tool result'", () => {
@@ -2831,6 +2833,81 @@ describe("extractToolResults", () => {
     expect(results[0]?.toolUseId).toBe("tu-a");
     expect(results[1]?.toolUseId).toBe("tu-b");
   });
+
+  test("collects base64 image blocks into images (dataUrl)", () => {
+    const msg = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-1",
+            content: [
+              { type: "text", text: "Read 1 image" },
+              {
+                type: "image",
+                source: { type: "base64", media_type: "image/png", data: "QUJD" },
+              },
+            ],
+          },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const results = extractToolResults(msg);
+    expect(results).toEqual([
+      {
+        toolUseId: "tu-1",
+        content: "Read 1 image",
+        isError: false,
+        images: [{ mediaType: "image/png", dataUrl: "data:image/png;base64,QUJD" }],
+      },
+    ]);
+  });
+
+  test("image-only tool_result keeps placeholder text + images", () => {
+    const msg = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-1",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "WFla" } },
+            ],
+          },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const results = extractToolResults(msg);
+    expect(results[0]?.content).toBe("Tool result");
+    expect(results[0]?.images).toEqual([
+      { mediaType: "image/jpeg", dataUrl: "data:image/jpeg;base64,WFla" },
+    ]);
+  });
+
+  test("non-base64 image source (url) is not collected", () => {
+    const msg = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-1",
+            content: [
+              { type: "text", text: "shot" },
+              { type: "image", source: { type: "url", url: "https://x/y.png" } },
+            ],
+          },
+        ],
+      },
+    } as unknown as SessionStreamServerMessage;
+    const results = extractToolResults(msg);
+    expect(results[0]?.images).toEqual([]);
+  });
 });
 
 describe("applyToolResultsToMessages", () => {
@@ -2846,7 +2923,7 @@ describe("applyToolResultsToMessages", () => {
   test("matches tool_result to tool-call and sets result", () => {
     const messages = [makeToolCallBubble("tu-1")];
     const results: ExtractedToolResult[] = [
-      { toolUseId: "tu-1", content: "file contents", isError: false },
+      { toolUseId: "tu-1", content: "file contents", isError: false, images: [] },
     ];
     const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
     expect(appliedCount).toBe(1);
@@ -2857,7 +2934,7 @@ describe("applyToolResultsToMessages", () => {
   test("sets isError when is_error is true", () => {
     const messages = [makeToolCallBubble("tu-1")];
     const results: ExtractedToolResult[] = [
-      { toolUseId: "tu-1", content: "failed", isError: true },
+      { toolUseId: "tu-1", content: "failed", isError: true, images: [] },
     ];
     const { messages: applied } = applyToolResultsToMessages(messages, results);
     const content = applied[0]?.content as Array<{ isError?: boolean }>;
@@ -2871,7 +2948,7 @@ describe("applyToolResultsToMessages", () => {
       makeToolCallBubble("tu-target"),
     ];
     const results: ExtractedToolResult[] = [
-      { toolUseId: "tu-old", content: "old result", isError: false },
+      { toolUseId: "tu-old", content: "old result", isError: false, images: [] },
     ];
     const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
     expect(appliedCount).toBe(1);
@@ -2905,8 +2982,8 @@ describe("applyToolResultsToMessages", () => {
       },
     ];
     const results: ExtractedToolResult[] = [
-      { toolUseId: "tu-a", content: "result A", isError: false },
-      { toolUseId: "tu-b", content: "result B", isError: false },
+      { toolUseId: "tu-a", content: "result A", isError: false, images: [] },
+      { toolUseId: "tu-b", content: "result B", isError: false, images: [] },
     ];
     const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
     expect(appliedCount).toBe(2);
@@ -2918,7 +2995,7 @@ describe("applyToolResultsToMessages", () => {
   test("returns unchanged reference + appliedCount 0 when no match", () => {
     const messages = [makeToolCallBubble("tu-1")];
     const results: ExtractedToolResult[] = [
-      { toolUseId: "tu-missing", content: "orphan", isError: false },
+      { toolUseId: "tu-missing", content: "orphan", isError: false, images: [] },
     ];
     const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
     expect(appliedCount).toBe(0);
@@ -2948,7 +3025,7 @@ describe("applyToolResultsToMessages", () => {
       },
     ];
     const results: ExtractedToolResult[] = [
-      { toolUseId: "tu-heal", content: "late result", isError: false },
+      { toolUseId: "tu-heal", content: "late result", isError: false, images: [] },
     ];
     const { messages: applied, appliedCount } = applyToolResultsToMessages(messages, results);
     expect(appliedCount).toBe(1);

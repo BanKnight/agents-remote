@@ -261,8 +261,15 @@ function WorkbenchContent({
         // file/git tab 不参与 stale prune（无生命周期，刷新保留，设计 §6 决策 19 / 阶段 3）；
         // session tab 用 sessionId 判定。chat 会话列表独立管理，无 globalRefs 对应，同样跳过
         // ——否则刷新后 chat tab 被误判 stale 清光（关会话后的残留 tab 由用户关 tab 处理，与
-        // agent/terminal 同语义）。
-        if (t.kind === "file" || t.kind === "git" || t.kind === "skill" || t.kind === "chat")
+        // agent/terminal 同语义）。render tab 瞬态（normalizeRef 恢复时已剔除，运行期不可能
+        // 出现在 layout 之外的位置），同跳过防御。
+        if (
+          t.kind === "file" ||
+          t.kind === "git" ||
+          t.kind === "skill" ||
+          t.kind === "chat" ||
+          t.kind === "render"
+        )
           continue;
         // 当前聚焦 session tab 不 prune：create/resume navigate 先行时 globalRefs（overview）
         // 尚未追上新 session，focus effect 刚开的 tab 会被误判 stale 删掉。focusId 是「用户正在看」
@@ -541,6 +548,12 @@ function WorkbenchContent({
         // skill URL 固定 global（/plugins/skill/$）；仅当前已是 global 才导航，否则保 project scope。
         if (scope.kind === "global") void navigateToSkill(active.name);
         else void navigateWorkbench(scope, undefined, search);
+        return;
+      }
+      if (active.kind === "render") {
+        // render tab 无 URL 语义（瞬态、内容内存 atom）：清 focus 保 scope，避免 focus effect
+        // 把旧 session tab 又 ensure 回来抢占活动位。
+        void navigateWorkbench(scope, undefined, search);
       }
     },
     [
@@ -611,6 +624,15 @@ function WorkbenchContent({
         );
         return;
       }
+      if (ref?.kind === "render") {
+        // render tab 无 URL 语义：清 focus 保 scope（与 onCloseTab render 分支同模式）。
+        void navigateWorkbench(
+          scope,
+          undefined,
+          stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+        );
+        return;
+      }
       if (ref) navigateSession(ref);
     },
     [
@@ -673,6 +695,13 @@ function WorkbenchContent({
       navigateWorkbench(
         scope,
         ref.sessionId,
+        stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+      );
+    else if (ref.kind === "render")
+      // render tab 无 URL 语义：清 focus 保 scope（与 onSelectTab render 分支同模式）。
+      void navigateWorkbench(
+        scope,
+        undefined,
         stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
       );
   }, [

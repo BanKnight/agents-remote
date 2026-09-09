@@ -1,7 +1,8 @@
 import { useContext, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { ClaudeBridgeContext } from "../../routes/claude-adapter";
+import { ClaudeBridgeContext, type ExtractedImage } from "../../routes/claude-adapter";
 import { useT, type TranslateFn, type TranslationKey } from "../../i18n";
+import { ImageThumb } from "../ui/image-lightbox";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus } from "./tool-head";
 
@@ -26,6 +27,10 @@ function makeToolRenderer(config: {
     const isInterrupted = (rest as Record<string, unknown>).isInterrupted === true;
     const resultStr =
       typeof result === "string" ? result : result != null ? JSON.stringify(result, null, 2) : "";
+    const resultImages = (rest as Record<string, unknown>).resultImages as
+      | ExtractedImage[]
+      | undefined;
+    const hasImages = !isRunning && (resultImages?.length ?? 0) > 0;
     const hasResult = resultStr.length > 0 && !isRunning;
     const bridge = useContext(ClaudeBridgeContext);
     const metadata = (rest as Record<string, unknown>).metadata as
@@ -92,6 +97,7 @@ function makeToolRenderer(config: {
       hasPrimary ||
       Boolean(skillContent) ||
       hasResult ||
+      hasImages ||
       isInterrupted ||
       Boolean(permissionDenied);
     const sectionDivider = `mt-2 border-t pt-2 ${accentDivider}`;
@@ -123,6 +129,15 @@ function makeToolRenderer(config: {
           {hasContent ? (
             <>
               {primaryNode}
+              {hasImages ? (
+                <div className={hasPrimary ? sectionDivider : "mt-2 flex flex-col gap-2"}>
+                  <div className="flex flex-wrap gap-2">
+                    {resultImages!.map((img, i) => (
+                      <ImageThumb alt={`${toolName} result ${i + 1}`} key={i} src={img.dataUrl} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {skillContent ? (
                 <div className={hasPrimary ? sectionDivider : ""}>
                   <span className="text-[0.55rem] font-semibold uppercase tracking-wide text-permission/70">
@@ -134,7 +149,7 @@ function makeToolRenderer(config: {
                 </div>
               ) : null}
               {permissionDenied ? (
-                <div className={hasPrimary || skillContent ? sectionDivider : ""}>
+                <div className={hasPrimary || hasImages || skillContent ? sectionDivider : ""}>
                   <span className="text-[0.6rem] leading-relaxed text-permission">
                     {t("claude.permissionDeniedHint")}
                     {permissionDenied.reason ? `：${permissionDenied.reason}` : ""}
@@ -142,18 +157,18 @@ function makeToolRenderer(config: {
                 </div>
               ) : null}
               {isInterrupted ? (
-                <div className={`${hasPrimary || skillContent ? sectionDivider : ""}`}>
+                <div className={`${hasPrimary || hasImages || skillContent ? sectionDivider : ""}`}>
                   <span className="text-[0.6rem] text-assistant">
                     {t("claude.toolInterruptedHint")}
                   </span>
                 </div>
               ) : footer ? (
-                <div className={hasPrimary || skillContent ? sectionDivider : ""}>
+                <div className={hasPrimary || hasImages || skillContent ? sectionDivider : ""}>
                   {footer(resultStr, args, isError, t)}
                 </div>
               ) : hasResult ? (
                 <div
-                  className={`max-h-48 overflow-y-auto ${hasPrimary || skillContent ? sectionDivider : ""}`}
+                  className={`max-h-48 overflow-y-auto ${hasPrimary || hasImages || skillContent ? sectionDivider : ""}`}
                 >
                   <pre
                     className={`whitespace-pre-wrap break-all text-[0.6rem] leading-relaxed ${isError ? "text-error" : "text-on-surface-soft"}`}

@@ -39,6 +39,7 @@ import {
   rankGlobalInstances,
   tabIdOf,
   useIsDesktopViewport,
+  workbenchRenderContentAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import { DragSourceCard } from "./drag-source";
@@ -522,6 +523,11 @@ function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
   if (panelRef.kind === "chat") {
     return <ChatSessionDetailBody id={panelRef.sessionId} embedded />;
   }
+  // render tab 渲染 HtmlRenderPanel（聊天流 ```html 代码块「渲染」落点，sandbox iframe
+  // srcDoc；内容在 workbenchRenderContentAtom，刷新即失——normalizeRef 已在恢复时剔除）。
+  if (panelRef.kind === "render") {
+    return <HtmlRenderPanel id={panelRef.id} />;
+  }
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
     return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
@@ -533,6 +539,32 @@ function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
 }
 
 export const PanelRouter = memo(PanelRouterBase);
+
+/**
+ * render tab 主体：从 workbenchRenderContentAtom 读 id → html，sandbox iframe srcDoc 渲染
+ * （对齐 Files 预览 HTML 的 sandbox 语义，allow-scripts 脚本可执行、无同源权限）。bg-white：
+ * 渲染产物通常面向白底。内容瞬态（内存 atom），刷新后 atom 清空 + tab 被剔除，空态兜底。
+ */
+function HtmlRenderPanel({ id }: { id: string }) {
+  const { t } = useT();
+  const contents = useAtomValue(workbenchRenderContentAtom);
+  const html = contents[id];
+  if (!html) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-on-surface-muted">
+        {t("workbench.renderTabEmpty")}
+      </div>
+    );
+  }
+  return (
+    <iframe
+      className="h-full w-full border-0 bg-white"
+      sandbox="allow-scripts"
+      srcDoc={html}
+      title={t("workbench.renderTab")}
+    />
+  );
+}
 
 function AgentPanelRouter({
   panelRef,
@@ -721,6 +753,21 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
           className="inline-flex shrink-0 items-center text-on-surface-muted"
         >
           <ShellIcon className="h-4 w-4" name="chat" />
+        </span>
+      ),
+    };
+  }
+  if (panelRef.kind === "render") {
+    // render tab marker 对齐 file/skill（h-4 w-4 裸 icon）；label = 固定 i18n 文案（内容瞬态
+    // 无 identity，无 session 生命周期，无 statusDot）。
+    return {
+      label: t("workbench.renderTab"),
+      marker: (
+        <span
+          aria-hidden="true"
+          className="inline-flex shrink-0 items-center text-on-surface-muted"
+        >
+          <ShellIcon className="h-4 w-4" name="file" />
         </span>
       ),
     };
@@ -2064,7 +2111,9 @@ function TabChip({
         ? panelRef.name
         : panelRef.kind === "chat"
           ? panelRef.sessionId.slice(0, 12)
-          : panelRef.path);
+          : panelRef.kind === "render"
+            ? t("workbench.renderTab")
+            : panelRef.path);
   // 仅 session tab 有实例信息（file/git/skill 无 session 生命周期，不渲染 ℹ）。装配复用
   // useInstanceInfoActions（与移动端 ℹ sheet 同源，detail 查询同 query key 零额外网络），
   // variant="modal" 居中卡片（移动端保持底部 sheet）。
@@ -2669,7 +2718,9 @@ function DragGhost({
         ? panelRef.name
         : panelRef.kind === "chat"
           ? panelRef.sessionId.slice(0, 12)
-          : panelRef.path);
+          : panelRef.kind === "render"
+            ? t("workbench.renderTab")
+            : panelRef.path);
   return (
     <div
       ref={ghostRef}

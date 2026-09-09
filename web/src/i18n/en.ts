@@ -181,6 +181,7 @@ export const en = {
   // ── Markdown (shared code block) ─────────────────────────────
   "markdown.copy": "Copy code",
   "markdown.copied": "Copied",
+  "markdown.render": "Render preview",
 
   // ── Git ──────────────────────────────────────────────────────
   "git.loading": "Loading Git changes...",
@@ -558,6 +559,8 @@ export const en = {
   "workbench.tabPages": "Pages",
   "workbench.tabWiki": "Wiki",
   "workbench.tabPlugins": "Plugins",
+  "workbench.renderTab": "HTML Render",
+  "workbench.renderTabEmpty": "Render content expired (transient tab is lost after reload).",
   "workbench.modeAgent": "Agent",
   "workbench.modeChat": "Chat",
   "workbench.modeAria": "Session mode switch",

@@ -51,6 +51,8 @@ import { useIsMobile } from "../lib/use-is-mobile";
 import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { consoleSections, tasksExpandedAtom } from "./console-model";
+import { HtmlRenderContext } from "../components/markdown/markdown-components";
+import { useOpenRenderTab } from "./workbench-model";
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
@@ -76,6 +78,7 @@ import {
   type AgentContainerStatus,
   type PendingApproval,
   type AgentTailStats,
+  type ExtractedImage,
   type ApiErrorAttachment,
   type PermissionUpdate,
   type RetryInfo,
@@ -424,6 +427,10 @@ export function ClaudeChat({
     detail.data?.session.permissionMode,
   );
 
+  // 聊天流 ```html 代码块「渲染」→ 工作台 render tab（sandbox iframe）。瞬态：
+  // 内容在内存 atom，刷新即失（normalizeRef 恢复时剔除 render tab）。
+  const openRenderTab = useOpenRenderTab();
+
   // Effort has no in-process CLI switch on a direct-pull host: the server
   // relaunches the CLI (--resume + new CLAUDE_CODE_EFFORT_LEVEL) and reconnects
   // the stream. Warn when a turn is running (it gets interrupted), then switch
@@ -563,102 +570,105 @@ export function ClaudeChat({
           <PermissionModesContext.Provider value={availablePermissionModes}>
             <LiveThinkingTokensContext.Provider value={liveThinkingTokens}>
               <ClaudeCompactContext.Provider value={compactState}>
-                <div
-                  className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-                >
-                  {detail.error instanceof Error ? (
-                    <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
-                        {detail.error.message}
-                      </p>
-                    </div>
-                  ) : null}
-                  {closeSession.error instanceof Error ? (
-                    <div className="shrink-0 px-3 py-2">
-                      <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
-                        {closeSession.error.message}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <VirtualizedThreadContent
-                      loading={loading}
-                      retryInfo={retryInfo}
-                      scrollerApi={scrollerApiRef}
-                    />
-
-                    <CompactIndicator />
-                    <div
-                      data-composer-float
-                      // pb 恒含 env(safe-area-inset-bottom) 避让 home indicator——focus 前后 padding 不变，
-                      // 避免 textarea 获焦瞬间因 pb 骤减引发 layout shift。曾用 focus-within:pb- 在获焦时
-                      // 去掉 safe-area 给外部工具栏让位，工具栏回退后该变体成了纯 layout shift 源：iOS 26
-                      // 真机 env≈34px，获焦时 pb 从 42px→8px，absolute bottom-0 锚定使容器顶部+textarea 下移
-                      // 34px，iOS WebKit 据此 ~50% 取消键盘触发（边框亮=focus 成功，键盘不弹）。键盘弹起后
-                      // --composer-keyboard-offset 把浮动区抬到键盘上方，pb 自然成为卡片与键盘间距。桌面 lg:pb-2.5 收尾覆盖。
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
-                    >
-                      <div
-                        className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
-                        style={{
-                          transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))",
-                        }}
-                      >
-                        {tasks.length > 0 && (
-                          <TaskPanel
-                            collapsed={!tasksExpanded}
-                            t={t}
-                            tasks={tasks}
-                            onToggle={() => setTasksExpanded((v) => !v)}
-                          />
-                        )}
-                        {pendingApprovals.length > 0 ? (
-                          <ApprovalTray
-                            approvals={pendingApprovals}
-                            onLocate={(messageIndex) =>
-                              scrollerApiRef.current?.scrollToMessage(messageIndex)
-                            }
-                          />
-                        ) : null}
-                        <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                          <ComposerPrimitive.Root>
-                            <ComposerWithInterrupt
-                              opusplanActive={opusplanActive}
-                              currentModel={currentModel}
-                              currentResolved={resolvedModel ?? session?.model}
-                              availableModels={availableModels}
-                              availableModelResolved={availableModelResolved}
-                              modelSwitchVersion={modelSwitchVersion}
-                              permissionMode={permissionMode}
-                              availablePermissionModes={availablePermissionModes}
-                              projectName={projectName}
-                              sessionId={sessionId}
-                              compactStatus={compactStatus}
-                              pendingInteraction={pendingInteraction}
-                              connected={connected}
-                              onCancel={storeAdapter.onCancel}
-                              currentEffort={session?.effort}
-                              onSelectEffort={onSelectEffort}
-                            />
-                          </ComposerPrimitive.Root>
-                        </ComposerPrimitive.Unstable_TriggerPopoverRoot>
-                        {aiTitle ? (
-                          <div className="mt-1 flex justify-end px-1">
-                            <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant whitespace-nowrap">
-                              {agentName ? (
-                                <span className="mr-1.5 font-semibold text-assistant/60">
-                                  {agentName}
-                                </span>
-                              ) : null}
-                              {aiTitle}
-                            </span>
-                          </div>
-                        ) : null}
+                <HtmlRenderContext.Provider value={openRenderTab}>
+                  <div
+                    className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+                  >
+                    {detail.error instanceof Error ? (
+                      <div className="shrink-0 px-3 py-2">
+                        <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
+                          {detail.error.message}
+                        </p>
                       </div>
-                    </div>
-                  </ThreadPrimitive.Root>
-                </div>
+                    ) : null}
+                    {closeSession.error instanceof Error ? (
+                      <div className="shrink-0 px-3 py-2">
+                        <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
+                          {closeSession.error.message}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                      <VirtualizedThreadContent
+                        loading={loading}
+                        retryInfo={retryInfo}
+                        scrollerApi={scrollerApiRef}
+                      />
+
+                      <CompactIndicator />
+                      <div
+                        data-composer-float
+                        // pb 恒含 env(safe-area-inset-bottom) 避让 home indicator——focus 前后 padding 不变，
+                        // 避免 textarea 获焦瞬间因 pb 骤减引发 layout shift。曾用 focus-within:pb- 在获焦时
+                        // 去掉 safe-area 给外部工具栏让位，工具栏回退后该变体成了纯 layout shift 源：iOS 26
+                        // 真机 env≈34px，获焦时 pb 从 42px→8px，absolute bottom-0 锚定使容器顶部+textarea 下移
+                        // 34px，iOS WebKit 据此 ~50% 取消键盘触发（边框亮=focus 成功，键盘不弹）。键盘弹起后
+                        // --composer-keyboard-offset 把浮动区抬到键盘上方，pb 自然成为卡片与键盘间距。桌面 lg:pb-2.5 收尾覆盖。
+                        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
+                      >
+                        <div
+                          className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
+                          style={{
+                            transform:
+                              "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))",
+                          }}
+                        >
+                          {tasks.length > 0 && (
+                            <TaskPanel
+                              collapsed={!tasksExpanded}
+                              t={t}
+                              tasks={tasks}
+                              onToggle={() => setTasksExpanded((v) => !v)}
+                            />
+                          )}
+                          {pendingApprovals.length > 0 ? (
+                            <ApprovalTray
+                              approvals={pendingApprovals}
+                              onLocate={(messageIndex) =>
+                                scrollerApiRef.current?.scrollToMessage(messageIndex)
+                              }
+                            />
+                          ) : null}
+                          <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                            <ComposerPrimitive.Root>
+                              <ComposerWithInterrupt
+                                opusplanActive={opusplanActive}
+                                currentModel={currentModel}
+                                currentResolved={resolvedModel ?? session?.model}
+                                availableModels={availableModels}
+                                availableModelResolved={availableModelResolved}
+                                modelSwitchVersion={modelSwitchVersion}
+                                permissionMode={permissionMode}
+                                availablePermissionModes={availablePermissionModes}
+                                projectName={projectName}
+                                sessionId={sessionId}
+                                compactStatus={compactStatus}
+                                pendingInteraction={pendingInteraction}
+                                connected={connected}
+                                onCancel={storeAdapter.onCancel}
+                                currentEffort={session?.effort}
+                                onSelectEffort={onSelectEffort}
+                              />
+                            </ComposerPrimitive.Root>
+                          </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                          {aiTitle ? (
+                            <div className="mt-1 flex justify-end px-1">
+                              <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant whitespace-nowrap">
+                                {agentName ? (
+                                  <span className="mr-1.5 font-semibold text-assistant/60">
+                                    {agentName}
+                                  </span>
+                                ) : null}
+                                {aiTitle}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </ThreadPrimitive.Root>
+                  </div>
+                </HtmlRenderContext.Provider>
               </ClaudeCompactContext.Provider>
             </LiveThinkingTokensContext.Provider>
           </PermissionModesContext.Provider>
@@ -1486,6 +1496,7 @@ function SystemChatBubble() {
       toolName,
       argsText,
       result: custom?.result as string | undefined,
+      resultImages: custom?.resultImages as ExtractedImage[] | undefined,
       status:
         custom?.result != null || custom?.isError === true
           ? { type: "complete" as const }
@@ -1805,6 +1816,7 @@ type AgentContainerCustom = {
   subagentType?: string;
   description?: string;
   tailResult?: string;
+  tailResultImages?: ExtractedImage[];
   tailIsError?: boolean;
   tailStats?: AgentTailStats;
   tailContent?: string;
@@ -1823,6 +1835,7 @@ function AgentTailBar({
   status,
   progress,
   tailResult,
+  tailResultImages,
   tailIsError,
   tailStats,
   tailContent,
@@ -1831,6 +1844,7 @@ function AgentTailBar({
   status: AgentContainerStatus;
   progress: AgentContainerCustom["progress"];
   tailResult?: string;
+  tailResultImages?: ExtractedImage[];
   tailIsError?: boolean;
   tailStats?: AgentTailStats;
   tailContent?: string;
@@ -1856,6 +1870,11 @@ function AgentTailBar({
           </div>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
+          {showTail && (tailResultImages?.length ?? 0) > 0 ? (
+            <span className="text-[0.65rem] text-on-surface-muted">
+              {tailResultImages!.length} image{tailResultImages!.length > 1 ? "s" : ""}
+            </span>
+          ) : null}
           {showTail && content ? (
             <button
               type="button"
@@ -2002,6 +2021,7 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
         status={status}
         progress={custom.progress}
         tailResult={custom.tailResult}
+        tailResultImages={custom.tailResultImages}
         tailIsError={custom.tailIsError}
         tailStats={custom.tailStats}
         tailContent={custom.tailContent}

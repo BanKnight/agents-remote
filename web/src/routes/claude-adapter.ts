@@ -1158,13 +1158,17 @@ export function threadMessageHasToolCallId(msg: ThreadMessageLike, toolUseId: st
   );
 }
 
+/** tool_result 内的 image block（base64）→ dataUrl，供 tool 卡片缩略图渲染。 */
+export type ExtractedImage = { mediaType: string; dataUrl: string };
+
 export type ExtractedToolResult = {
   toolUseId: string;
   content: string;
   isError: boolean;
+  images: ExtractedImage[];
 };
 
-/** Extract tool_result blocks from a user message into {toolUseId, content, isError}. */
+/** Extract tool_result blocks from a user message into {toolUseId, content, isError, images}. */
 export function extractToolResults(msg: SessionStreamServerMessage): ExtractedToolResult[] {
   if (msg.type !== "user") return [];
   const content = msg.message.content;
@@ -1176,17 +1180,33 @@ export function extractToolResults(msg: SessionStreamServerMessage): ExtractedTo
     if (typeof toolUseId !== "string") continue;
     const c = block.content;
     const texts: string[] = [];
+    const images: ExtractedImage[] = [];
     if (typeof c === "string") {
       texts.push(c);
     } else if (Array.isArray(c)) {
       for (const item of c as Array<Record<string, unknown>>) {
         if (item.type === "text" && typeof item.text === "string") texts.push(item.text);
+        // image block（Read 读图 / 截图工具）：base64 → dataUrl 带给渲染层；
+        // 非 base64 source（url 等）不在此管道。
+        if (
+          item.type === "image" &&
+          (item.source as Record<string, unknown> | undefined)?.type === "base64" &&
+          typeof (item.source as Record<string, unknown>).media_type === "string" &&
+          typeof (item.source as Record<string, unknown>).data === "string"
+        ) {
+          const source = item.source as { media_type: string; data: string };
+          images.push({
+            mediaType: source.media_type,
+            dataUrl: `data:${source.media_type};base64,${source.data}`,
+          });
+        }
       }
     }
     results.push({
       toolUseId,
       content: texts.join("\n") || "Tool result",
       isError: !!block.is_error,
+      images,
     });
   }
   return results;
@@ -1224,6 +1244,7 @@ export function applyToolResultsToMessages(
           ...(part as Record<string, unknown>),
           result: r.content,
           ...(r.isError ? { isError: true } : {}),
+          ...(r.images.length > 0 ? { resultImages: r.images } : {}),
         };
         // Self-heal: a late result overrides a premature interrupted mark
         delete update.isInterrupted;
@@ -1681,6 +1702,8 @@ export type NormalizedPart =
       args: Record<string, unknown>;
       argsText: string;
       result?: string;
+      /** tool_result content 内的 image block（base64 → dataUrl），tool 卡片缩略图渲染。 */
+      resultImages?: ExtractedImage[];
       isError?: boolean;
       isInterrupted?: boolean;
       skillContent?: string;
@@ -2386,6 +2409,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
                       ...p,
                       result: tr.content,
                       ...(tr.isError ? { isError: true } : {}),
+                      ...(tr.images.length > 0 ? { resultImages: tr.images } : {}),
                     }
                   : p,
               );
@@ -3218,6 +3242,7 @@ export function renderChatStream(
                 args: part.args,
                 argsText: part.argsText,
                 tailResult: part.result,
+                ...(part.resultImages ? { tailResultImages: part.resultImages } : {}),
                 tailIsError: part.isError === true,
                 tailStats: tail?.stats,
                 tailContent: tail?.content ?? part.result,
@@ -3292,6 +3317,7 @@ export function renderChatStream(
                 args: part.args,
                 argsText: part.argsText,
                 result: part.result,
+                ...(part.resultImages ? { resultImages: part.resultImages } : {}),
                 isError: part.isError,
                 isInterrupted: part.isInterrupted,
                 skillContent: part.skillContent,

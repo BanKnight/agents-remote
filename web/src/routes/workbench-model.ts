@@ -1,6 +1,6 @@
-import { useAtom } from "jotai";
+import { atom, useAtom, useSetAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMatches, useNavigate, type AnyRouteMatch } from "@tanstack/react-router";
 import type {
   AgentProvider,
@@ -641,6 +641,16 @@ export type SkillPanelRef = {
 };
 
 /**
+ * HTML 渲染面板引用（聊天流富媒体，2026-09-10）。id = tabId 本身（`render_${uuid}`）。
+ * 瞬态内容：html 存内存 atom（workbenchRenderContentAtom），不持久化——normalizeRef 不识别
+ * render（刷新丢弃，focus 回原 session 自洽），stale prune 同款跳过。无 URL focus 路由。
+ */
+export type RenderPanelRef = {
+  kind: "render";
+  id: string;
+};
+
+/**
  * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git/skill tab 同处 group+tab。
  * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
  * file tab 的 tabId = `file_${path}`、git scope tab = `git_${scope}/${path}`、git compare tab =
@@ -651,7 +661,8 @@ export type WorkbenchPanelRef =
   | ChatPanelRef
   | FilePanelRef
   | GitPanelRef
-  | SkillPanelRef;
+  | SkillPanelRef
+  | RenderPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
 export type LegacyPanelRef = {
@@ -669,6 +680,7 @@ export type LegacyPanelRef = {
 export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "session") return ref.sessionId;
   if (ref.kind === "chat") return ref.sessionId;
+  if (ref.kind === "render") return ref.id;
   if (ref.kind === "file") return `file_${ref.path}`;
   if (ref.kind === "skill") return `skill_${ref.name}`;
   return ref.mode === "compare"
@@ -733,8 +745,10 @@ export function parseGitTabId(
 }
 
 /** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。
- *  git ref 保留 mode（旧 V3 数据有 scope 无 mode → 视为 scope 模式补全 mode:"scope"）。 */
-export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
+ *  git ref 保留 mode（旧 V3 数据有 scope 无 mode → 视为 scope 模式补全 mode:"scope"）。
+ *  render ref **不识别 → null 丢弃**：瞬态内容（html 在内存 atom），刷新后消失，
+ *  focus 回原 session 自洽——持久化恢复一个空 render tab 反而是坏状态。 */
+export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef | null {
   if (ref.kind === "file") return { kind: "file", path: ref.path };
   if (ref.kind === "git") {
     return ref.mode === "compare"
@@ -756,6 +770,7 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef {
   }
   if (ref.kind === "skill") return { kind: "skill", name: ref.name };
   if (ref.kind === "chat") return { kind: "chat", sessionId: ref.sessionId };
+  if (ref.kind === "render") return null;
   return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
 }
 
@@ -1704,9 +1719,14 @@ function normalizeLayoutV3(layout: WorkbenchLayoutV3): WorkbenchLayoutV3 {
   return { ...layout, root: normalizeTree(layout.root) };
 }
 
-/** 递归遍历 TreeNode，规范化所有 leaf 的 tabs（split 节点不含 ref）。 */
+/** 递归遍历 TreeNode，规范化所有 leaf 的 tabs（split 节点不含 ref）；normalizeRef 返 null
+ *  （瞬态 render tab）→ 从持久化恢复中剔除。 */
 function normalizeTree(node: TreeNode): TreeNode {
-  if (node.kind === "leaf") return { ...node, tabs: node.tabs.map(normalizeRef) };
+  if (node.kind === "leaf")
+    return {
+      ...node,
+      tabs: node.tabs.map(normalizeRef).filter((t): t is WorkbenchPanelRef => t !== null),
+    };
   return { ...node, children: node.children.map(normalizeTree) };
 }
 
@@ -1817,3 +1837,22 @@ export const instanceNameMemoAtom = atomWithLocalOnlyStorage<InstanceNameMemo>(
   "instanceNameMemo",
   {},
 );
+
+// ── render tab（聊天流 ```html 代码块「渲染」的工作台落点）────────────────────
+// 瞬态：内容存内存（刷新即失，normalizeRef 已在持久化恢复时剔除 render tab），无 URL 路由
+// ——focusId 停留原 session，刷新后 tab 消失、回原 session 自洽。
+export const workbenchRenderContentAtom = atom<Record<string, string>>({});
+
+/** 打开一个 render tab：生成随机 id → 写内容 atom → ensureTabOpenLeaf。桌面/移动共用。 */
+export function useOpenRenderTab() {
+  const setLayout = useSetAtom(workbenchLayoutAtom);
+  const setContents = useSetAtom(workbenchRenderContentAtom);
+  return useCallback(
+    (html: string) => {
+      const id = `render_${crypto.randomUUID()}`;
+      setContents((prev) => ({ ...prev, [id]: html }));
+      setLayout((prev) => ensureTabOpenLeaf(prev, { kind: "render", id }));
+    },
+    [setLayout, setContents],
+  );
+}

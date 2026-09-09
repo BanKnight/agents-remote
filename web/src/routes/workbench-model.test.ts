@@ -27,6 +27,7 @@ import {
   mergeProjectsWithCandidates,
   migrateLegacyLayout,
   migrateV2ToV3,
+  normalizeRef,
   parseSkillTabId,
   parseWorkbenchScope,
   projectTabStrip,
@@ -984,4 +985,25 @@ test("ensureTabOpenLeaf: 空树 → 新建首个 leaf", () => {
   const r = ensureTabOpenLeaf(EMPTY_WORKBENCH_LAYOUT_V3, ref("p", "a"));
   expect(shape(r.root)).toBe("(a)");
   expect(r.activeGroupId).not.toBeNull();
+});
+
+// ── render tab（瞬态：tabId=id 原样、持久化恢复时被 normalizeRef 剔除）────────
+
+test("tabIdOf + ensureTabOpenLeaf: render tab 用 id 原样编码，可开可激活", () => {
+  expect(tabIdOf({ kind: "render", id: "render_x" })).toBe("render_x");
+  const l = v3({ root: leaf("g1", ["a"]), activeGroupId: "g1" });
+  const r = ensureTabOpenLeaf(l, { kind: "render", id: "render_x" });
+  expect((r.root as LeafNode).tabs.map((t) => tabIdOf(t))).toEqual(["a", "render_x"]);
+  expect((r.root as LeafNode).activeTabId).toBe("render_x");
+  // 已在 → 激活不重复开
+  const again = ensureTabOpenLeaf(r, { kind: "render", id: "render_x" });
+  expect((again.root as LeafNode).tabs.map((t) => tabIdOf(t))).toEqual(["a", "render_x"]);
+});
+
+test("normalizeRef: render ref → null（瞬态内容不落盘，持久化恢复时被 normalizeTree 剔除）", () => {
+  // 持久化恢复链：storage.getItem → normalizeLayoutV3 → normalizeTree → normalizeRef。
+  // render 的 html 在内存 atom（刷新即失），恢复一个空 render tab 是坏状态 → null 丢弃；
+  // 其余 kind 原样保留（session 抽样对照）。
+  expect(normalizeRef({ kind: "render", id: "render_x" })).toBeNull();
+  expect(normalizeRef(ref("p", "a"))).toEqual(ref("p", "a"));
 });

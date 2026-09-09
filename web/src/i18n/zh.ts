@@ -181,6 +181,7 @@ export const zh: Record<TranslationKey, string> = {
   // ── Markdown（共享代码块） ────────────────────────────────────
   "markdown.copy": "复制代码",
   "markdown.copied": "已复制",
+  "markdown.render": "渲染预览",
 
   // ── Git ──────────────────────────────────────────────────────
   "git.loading": "正在加载 Git 变更...",
@@ -557,6 +558,8 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.tabPages": "页面",
   "workbench.tabWiki": "Wiki",
   "workbench.tabPlugins": "插件",
+  "workbench.renderTab": "HTML 渲染",
+  "workbench.renderTabEmpty": "渲染内容已失效（瞬态 tab 刷新后不保留）。",
   "workbench.modeAgent": "Agent",
   "workbench.modeChat": "Chat",
   "workbench.modeAria": "会话模式切换",

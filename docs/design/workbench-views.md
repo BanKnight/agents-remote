@@ -160,9 +160,9 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 - **初始态**：进入 scope 时，右工作区默认空态（§14），不自动铺首个实例——用户主动点左总览卡片或拖卡片才打开（避免「最小化最后 tab → 又被自动重开」的循环）。URL 带 `focusId` 进入时，由 focus effect 兜底在活动 group 开对应 tab。scope 无活跃实例 → 右工作区空态（§14）。
 - **活动 group**：同一时刻有且仅有一个活动 group（`activeGroupId`，显式存布局）。点 group 任意处激活：点 tab 栏某 tab = 切该 tab 为 active 并激活该 group；点 group 其他空白处 = 仅激活该 group，不改 active tab。URL `focusId` = 活动 group 的活动 tab sessionId，用于反查与右栏 inspection 跟随。
 
-### 7.1.1 中栏 tab 的 4 种 kind（WorkbenchPanelRef）
+### 7.1.1 中栏 tab 的 6 种 kind（WorkbenchPanelRef）
 
-中栏 tab 不止 session 一种——`WorkbenchPanelRef` 是 4 种 kind 的联合，统一走 group+tab 两级模型 + focus URL + PanelRouter 分发，差异只在标识/URL/内容/生命周期：
+中栏 tab 不止 session 一种——`WorkbenchPanelRef` 是 6 种 kind 的联合，统一走 group+tab 两级模型 + focus URL + PanelRouter 分发，差异只在标识/URL/内容/生命周期：
 
 | kind | 标识字段 | tabId | focus URL | 内容（PanelRouter 分发） | 生命周期 |
 |------|----------|-------|-----------|--------------------------|----------|
@@ -170,9 +170,25 @@ InstanceGrid 的 grid item 必须有 `min-width: 0`。grid item 默认 `min-widt
 | file | 文件全路径 | `file_${全路径}` | `/files/file/$`（全局）/`/projects/$key/file/$`（项目） | `FileTabPreview` 可编辑预览（source/render toggle + save） | 无（刷新保留，prune 跳过） |
 | git | git diff 文件 | `git_${scope}/${path}` | `/projects/$key/git/$` + `?gitScope` | `GitFileDiffPanel` 只读 unified diff | 无 |
 | skill | skill 名 | `skill_${name}` | `/skills/skill/$` | `SkillTabPreview` 只读 SKILL.md 预览 | 无 |
+| chat | pi chat 会话 | `sessionId` | `/chat/$id`（scope 保持） | `ChatSessionDetailBody` embedded thread | 无（prune 跳过） |
+| render | 随机 id（`render_${uuid}`） | `id` 原样 | **无**（切到 render tab 清 focus 保 scope） | `HtmlRenderPanel` sandbox iframe srcDoc | **瞬态**（内容内存 atom，刷新消失） |
 
-- **session tab 是主语义**（实例 output）；file/git/skill tab 是辅助浏览——无 session 生命周期，kill 不 prune、刷新保留（prune effect 对 `t.kind === file/git/skill` 跳过，§7.4）。
+- **session tab 是主语义**（实例 output）；file/git/skill tab 是辅助浏览——无 session 生命周期，kill 不 prune、刷新保留（prune effect 对 `t.kind === file/git/skill` 跳过，§7.4）。chat/render 同跳过（chat 会话列表独立管理；render 瞬态、运行期不可能出现在 prune 目标里，防御性跳过）。
 - **skill tab**（第 4 种，2026-07-18 新增）：技能市场 Manage tab 点已装 skill 行 → 中栏开 skill tab，完整对标 file tab 模式（focus effect 开/激活 tab + `/skills/skill/$` focus URL + PanelRouter 分发 + 移动 MobileSkillFocus）。`SkillPanelRef = {kind:"skill"; name}`，agent 维度不进 tabId（当前单 agent claude-code，`DEFAULT_SKILL_AGENT`，YAGNI）；`SkillTabPreview` 只读渲染本地 SKILL.md（`useSkillPreview` + `MarkdownString`，无编辑无保存，区别于 FileTabPreview 可编辑）。**不带 h4 标题栏**——SKILL.md 正文自带 `# H1` 标题，再加 h4 会重复（区别于 FilePreviewPanel 保留 h4：文件正文不带 `# 标题` 不重复）；section 直接从 loading/error/markdown 内容开始。移动端 `MobileSkillFocus` 浮窗式 focus 全屏主体（非 Radix Dialog），header 走 `MobileTabHeader` + **胶囊款 ✕ 操作区**（`inline-flex rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5` 容器 + `h-7 w-7` button，与 `MobileFocusHeader` session 聚焦态 / `FilePreviewPanel` 项目文件详情同款，§7 单行 header ℹ✕ 胶囊契约）；`MobileFileFocus` 同步对齐胶囊款（修全局文件浮窗 ✕ 曾用裸 `h-9 w-9` 与项目文件详情不一致）。leftMode 继承 `?leftMode`（从 /skills 进来=skills 保技能管理左栏，中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。
+- **render tab**（第 6 种，2026-09-10 新增）：聊天流 ```html/```htm 代码块「渲染预览」按钮（DESIGN.md code-block 条目）的工作台落点。`RenderPanelRef = {kind:"render"; id}`（id = `render_${crypto.randomUUID()}`，即 tabId）。**瞬态语义**：html 内容存内存 jotai atom（`workbenchRenderContentAtom`，id → html，不持久化）；`normalizeRef` 对 render 返 null——持久化恢复时剔除（刷新后内容已失，恢复一个空白 tab 是坏状态，focus 回原 session 自洽）。**无 URL 路由**：`useOpenRenderTab()`（workbench-model）只写 atom + `ensureTabOpenLeaf`，不 navigate；切到 render tab 的三处 focus 分发（onCloseTab/onSelectTab/onDrop）都清 focus 保 scope。入口：`HtmlRenderContext`（markdown-components 导出）Provider 挂 ClaudeSessionDetailRoute 根部，`CodeBlock` 渲染按钮经 context 调 `useOpenRenderTab()`；无 Provider 的场景（Files md 预览）按钮隐藏。渲染：`HtmlRenderPanel`（instance-area）`<iframe sandbox="allow-scripts" srcDoc>`（对齐 Files 预览 HTML sandbox 语义，脚本可执行、无同源权限；bg-white 面向渲染产物白底；不做 CSS 内联——聊天产物是自包含 HTML，无 project 目录上下文）。同一 html 重复点开新 tab（id 随机，首版不做内容去重）。
+
+### 7.1.2 聊天流富媒体渲染（2026-09-10）
+
+Claude 聊天流三类富媒体，三条渲染管道、同类单管道（UI = f(state)），表现对齐 Files 已有能力（ImageViewer 手势 / sandbox iframe）：
+
+| 内容 | 来源 | 管道 | 呈现 |
+|------|------|------|------|
+| 图片 | tool_result image block（base64）/ markdown `![]()` | adapter `extractToolResults` 收集 image block → `resultImages` 链路；`MARKDOWN_COMPONENTS` 加 `img` override（MarkdownImage → ImageThumb，聊天流气泡与 Files md 预览两管线共用同一份 override） | 气泡内缩略图（max-h 256px）→ 点击开 lightbox（`ui/image-lightbox.tsx`：Dialog 全屏 + 零改动 ImageViewer 全手势，DESIGN.md image-lightbox 条目） |
+| SVG | ```svg 代码块 | CodeBlock「渲染预览」按钮（`ShellIcon eye`） | code → `data:image/svg+xml;base64` dataUrl → lightbox（`<img>` 呈现 SVG 脚本不执行，零 XSS 面），恒可用不依赖 Provider |
+| HTML | ```html/```htm 代码块 | 同上按钮 → `HtmlRenderContext` 回调（markdown-components 导出，Provider 挂 ClaudeSessionDetailRoute 根部，value = `useOpenRenderTab()`） | 工作台 render tab（§7.1.1 第 6 种，sandbox iframe srcDoc）；无 Provider 场景按钮隐藏 |
+
+- **tool 卡片缩略图行**：`tool-ui-registry` `makeToolRenderer` 在 result `<pre>` 之前渲染 `resultImages`（flex-wrap gap-2，全部 26 工具自动获得，无需逐个改）；image-only result 保留占位文本 + images 不退化。运行中（isRunning）不渲染缩略图（result 未落定）。
+- **移动端与桌面同管道**：lightbox 走 Radix Dialog 全屏（Esc/✕ 关闭），ImageViewer 手势（pinch/滚轮/双击/旋转）触屏鼠标统一；render tab 在移动聚焦态 tab 横滚带与 file tab 同机制切换。
 
 ### 7.2 tab 操作语义表（核心）
 
