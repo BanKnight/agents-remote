@@ -57,7 +57,12 @@ export function ImageLightbox({
     <Dialog onOpenChange={onOpenChange} open>
       <DialogContent
         aria-label={alt}
-        className="inset-0 flex translate-x-0 translate-y-0 flex-col max-w-none border-0 bg-black/95 p-0"
+        // 全屏形态三件套缺一不可（对齐 FullscreenReader，ClaudeSessionDetailRoute:800 注释）：
+        // ① inset-0 经 twMerge 干掉 base 的 left-1/2 top-1/2（纯 CSS 源顺序 inset-0 输给
+        //    left-1/2 → 盒子从 50% 拉伸 → 偏左）；② translate-x-0/y-0 中和 -translate-1/2；
+        // ③ sm:max-w-none 必须——base 的 sm:max-w-lg 是 sm-variant 组，无 variant 的
+        //    max-w-none 去不掉它 → 桌面被钳到 512px（256→512 之间表现为内容偏左）。
+        className="fixed inset-0 z-[100] max-w-none sm:max-w-none w-full translate-x-0 translate-y-0 flex flex-col border-0 bg-black/95 p-0"
       >
         <button
           aria-label={t("session.close")}
