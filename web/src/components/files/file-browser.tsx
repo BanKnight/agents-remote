@@ -519,7 +519,38 @@ export function FileSaveButton({
 
 // ── PreviewBody ───────────────────────────────────────────────────
 
-// CodeMirror chunk（按需加载）首次挂载前的占位，视觉与编辑器容器一致；precache 命中下瞬时。
+// srcDoc iframe（sandbox）没有项目目录 base URL，HTML 内相对资源引用无法解析。
+// 相对 stylesheet/img 统一解析成项目内路径、经 preview API 取回内联；
+// 外链(http/https://)、协议相对(//)、data:、#anchor 不是本地文件，保持原样。
+export const STYLESHEET_LINK_RE =
+  /<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["'][^>]*>/gi;
+// \s 而非 \b：\b 会把 data-src 的 src 段当词边界命中。
+export const IMG_TAG_RE = /<img\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>/gi;
+
+// 文档所在目录 dir + 相对引用 → 项目内相对路径；非本地引用返回 null。
+export const localAssetProjectPath = (dir: string, ref: string): string | null => {
+  if (
+    !ref ||
+    ref.startsWith("http") ||
+    ref.startsWith("//") ||
+    ref.startsWith("data:") ||
+    ref.startsWith("#")
+  ) {
+    return null;
+  }
+  return dir + (ref.startsWith("./") ? ref.slice(2) : ref);
+};
+
+const IMG_SRC_ATTR_RE = /\ssrc=("[^"]*"|'[^']*')/;
+
+// img 标签内 src 属性值替换为 dataUrl（保留其余属性，引号统一双引号）。
+// IMG_SRC_ATTR_RE 的 \s 参与匹配（防 data-src 误命中），替换串须补回该空格。
+export const rewriteImgSrc = (tag: string, dataUrl: string): string =>
+  tag.replace(IMG_SRC_ATTR_RE, () => ` src="${dataUrl}"`);
+
+const previewUrl = (projectName: string, path: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/files/preview?path=${encodeURIComponent(path)}`;
+
 function CodeEditorFallback() {
   const { t } = useT();
   return (
@@ -552,21 +583,15 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
       ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
       : "";
 
-    const inlineStylesheets = async () => {
-      const linkRe = /<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["'][^>]*>/gi;
-      const matches = [...preview.content.matchAll(linkRe)];
-      const relativeLinks = matches.filter(
-        ([, href]) =>
-          !href.startsWith("http") && !href.startsWith("//") && !href.startsWith("data:"),
-      );
+    const inlineLocalAssets = async () => {
       let html = preview.content;
-      await Promise.all(
-        relativeLinks.map(async ([fullTag, href]) => {
-          const cssPath = href.startsWith("./") ? dir + href.slice(2) : dir + href;
+
+      const stylesheetJobs = [...preview.content.matchAll(STYLESHEET_LINK_RE)].map(
+        async ([fullTag, href]) => {
+          const cssPath = localAssetProjectPath(dir, href);
+          if (cssPath === null) return;
           try {
-            const res = await fetch(
-              `/api/projects/${encodeURIComponent(preview.projectName)}/files/preview?path=${encodeURIComponent(cssPath)}`,
-            );
+            const res = await fetch(previewUrl(preview.projectName, cssPath));
             if (!res.ok) return;
             const data = (await res.json()) as { type: string; content?: string };
             if (data.type === "text" && data.content) {
@@ -575,12 +600,29 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
           } catch {
             // leave the link tag as-is if fetch fails
           }
-        }),
+        },
       );
+
+      const imgJobs = [...preview.content.matchAll(IMG_TAG_RE)].map(async ([fullTag, src]) => {
+        const imgPath = localAssetProjectPath(dir, src);
+        if (imgPath === null) return;
+        try {
+          const res = await fetch(previewUrl(preview.projectName, imgPath));
+          if (!res.ok) return;
+          const data = (await res.json()) as { type: string; dataUrl?: string };
+          if (data.type === "image" && data.dataUrl) {
+            html = html.replace(fullTag, rewriteImgSrc(fullTag, data.dataUrl));
+          }
+        } catch {
+          // leave the img tag as-is if fetch fails
+        }
+      });
+
+      await Promise.all([...stylesheetJobs, ...imgJobs]);
       if (!cancelled) setInlinedHtml(html);
     };
 
-    void inlineStylesheets();
+    void inlineLocalAssets();
     return () => {
       cancelled = true;
     };

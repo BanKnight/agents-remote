@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  IMG_TAG_RE,
   defaultRenderMode,
   joinRootBrowseDirectoryPath,
+  localAssetProjectPath,
   resolveRootBrowseTarget,
+  rewriteImgSrc,
 } from "./file-browser";
 
 describe("defaultRenderMode", () => {
@@ -40,6 +43,52 @@ describe("resolveRootBrowseTarget", () => {
       projectName: "lang-partner",
       relativePath: "src/components",
     });
+  });
+});
+
+describe("localAssetProjectPath", () => {
+  test("相对引用 → 拼上文档所在目录（./ 前缀剥掉）", () => {
+    expect(localAssetProjectPath("", "diagram.svg")).toBe("diagram.svg");
+    expect(localAssetProjectPath("assets/", "diagram.svg")).toBe("assets/diagram.svg");
+    expect(localAssetProjectPath("assets/", "./diagram.svg")).toBe("assets/diagram.svg");
+  });
+
+  test("外链 / 协议相对 / data: / 锚点 / 空 → null（非本地文件）", () => {
+    expect(localAssetProjectPath("assets/", "https://cdn.example/x.svg")).toBeNull();
+    expect(localAssetProjectPath("assets/", "http://cdn.example/x.svg")).toBeNull();
+    expect(localAssetProjectPath("assets/", "//cdn.example/x.svg")).toBeNull();
+    expect(localAssetProjectPath("assets/", "data:image/png;base64,AAAA")).toBeNull();
+    expect(localAssetProjectPath("assets/", "#top")).toBeNull();
+    expect(localAssetProjectPath("assets/", "")).toBeNull();
+  });
+});
+
+describe("IMG_TAG_RE", () => {
+  test("提取 img src 值（属性顺序无关、大小写不敏感、自闭合）", () => {
+    const html = `<html><body>
+      <img alt="a" src="a.svg" width="10">
+      <IMG SRC="B.PNG">
+      <img class="x" src='c.png'/>
+      <img src="https://ext.example/d.png">
+    </body></html>`;
+    const srcs = [...html.matchAll(IMG_TAG_RE)].map((m) => m[1] ?? "");
+    expect(srcs).toEqual(["a.svg", "B.PNG", "c.png", "https://ext.example/d.png"]);
+  });
+
+  test("data-src 的 src 段不被误当 src 属性", () => {
+    const html = `<img data-src="decoy" src="real.png">`;
+    expect([...html.matchAll(IMG_TAG_RE)].map((m) => m[1] ?? "")).toEqual(["real.png"]);
+  });
+});
+
+describe("rewriteImgSrc", () => {
+  test("src 属性值替换为 dataUrl，其余属性保留（单双引号均可）", () => {
+    expect(
+      rewriteImgSrc(`<img alt="a" src="a.svg" width="10">`, "data:image/svg+xml;base64,AA=="),
+    ).toBe(`<img alt="a" src="data:image/svg+xml;base64,AA==" width="10">`);
+    expect(rewriteImgSrc(`<img src='a.png'>`, "data:image/png;base64,AA==")).toBe(
+      `<img src="data:image/png;base64,AA==">`,
+    );
   });
 });
 
