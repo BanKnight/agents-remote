@@ -3,8 +3,9 @@ import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ClaudeBridgeContext, type ExtractedImage } from "../../routes/claude-adapter";
 import { useT, type TranslateFn, type TranslationKey } from "../../i18n";
 import { ImageThumb } from "../ui/image-lightbox";
+import { formatDuration } from "../../lib/utils";
 import { CollapsibleSection } from "./collapsible-section";
-import { ToolHead, type ToolHeadStatus } from "./tool-head";
+import { ToolHead, type ToolHeadStatus, ToolIcon } from "./tool-head";
 
 function makeToolRenderer(config: {
   icon: string;
@@ -52,6 +53,13 @@ function makeToolRenderer(config: {
       typeof metadata?.permissionDenied === "object" && metadata.permissionDenied != null
         ? (metadata.permissionDenied as { reasonType?: string; reason?: string })
         : null;
+    // tool_progress{heartbeat}: 运行中工具的已耗时（服务端每 30s 一帧覆盖更新）。
+    // 只在 running 态显示——completed 后旧值无意义且会和 chars 计数抢同一个
+    // trailing 槽位。
+    const heartbeatElapsedSeconds =
+      typeof metadata?.heartbeatElapsedSeconds === "number"
+        ? (metadata.heartbeatElapsedSeconds as number)
+        : undefined;
 
     const toolStatus: ToolHeadStatus | null = isRunning
       ? "running"
@@ -115,7 +123,12 @@ function makeToolRenderer(config: {
               detail={detailText}
               status={toolStatus}
               trailing={
-                !expanded && hasResult ? (
+                isRunning && heartbeatElapsedSeconds !== undefined ? (
+                  <span className="flex shrink-0 items-center gap-1 tabular-nums text-[0.6rem] text-on-surface-muted">
+                    <ToolIcon name="history" className="h-3 w-3" />
+                    {formatDuration(heartbeatElapsedSeconds * 1000)}
+                  </span>
+                ) : !expanded && hasResult ? (
                   <span className="truncate text-[0.6rem] text-on-surface-muted">
                     {resultStr.length > 1024
                       ? `${(resultStr.length / 1024).toFixed(1)}k`

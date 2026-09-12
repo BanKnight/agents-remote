@@ -1507,6 +1507,7 @@ function SystemChatBubble() {
         skillContent: custom?.skillContent,
         controlRequestId,
         permissionDenied: custom?.permissionDenied,
+        heartbeatElapsedSeconds: custom?.heartbeatElapsedSeconds as number | undefined,
       },
     } as Record<string, unknown>;
     const ToolUI = CustomUI;
@@ -2995,7 +2996,6 @@ type ModelChangeCustom = {
   systemMessageType: "model-change";
   echoLabel?: string;
 };
-
 function ModelChangeGlyph({ className }: { className?: string }) {
   return (
     <svg
@@ -3026,6 +3026,39 @@ function ModelChangeNotice({ headIndex }: { headIndex: number }) {
       <ModelChangeGlyph />
       <span className="shrink-0 text-[0.6rem] font-medium text-assistant/70">
         {t("claude.model.changed", { model: custom.echoLabel ?? "" })}
+      </span>
+      <div className="flex-1 border-t border-assistant-deep/30" />
+    </div>
+  );
+}
+
+type VcsChangeCustom = {
+  systemMessageType: "vcs-change";
+  vcsKind: string;
+  branch?: string;
+};
+
+// system{vcs_state_changed}: the agent ran a git op in-session (commit/push/
+// merge/rebase). Live-only signal (CLI does not write it to JSONL), so this row
+// appears while the session is live and is absent from replay — same class as
+// ModeChangeNotice. vcsKind is an OPEN enum: render the raw value rather than
+// switching exhaustively, so a future kind degrades to a readable label.
+function VcsChangeNotice({ headIndex }: { headIndex: number }) {
+  const { t } = useT();
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as VcsChangeCustom,
+  );
+  return (
+    <div className="flex w-full items-center gap-2 px-3 sm:px-5 py-1.5">
+      <div className="flex-1 border-t border-assistant-deep/30" />
+      <span className="shrink-0 text-assistant">
+        <ShellIcon name="git-nav" />
+      </span>
+      <span className="shrink-0 text-[0.6rem] font-medium text-assistant/70">
+        {t("claude.vcs.changed", {
+          kind: custom.vcsKind,
+          branch: custom.branch ? ` · ${custom.branch}` : "",
+        })}
       </span>
       <div className="flex-1 border-t border-assistant-deep/30" />
     </div>
@@ -3200,6 +3233,7 @@ function MessageRouter({
   if (custom?.systemMessageType === "command-output")
     return <CommandOutputCard headIndex={index} />;
   if (custom?.systemMessageType === "model-change") return <ModelChangeNotice headIndex={index} />;
+  if (custom?.systemMessageType === "vcs-change") return <VcsChangeNotice headIndex={index} />;
   if (custom?.systemMessageType === "compact-progress") return <CompactProgress />;
   if (custom?.systemMessageType === "compact-abort")
     return (

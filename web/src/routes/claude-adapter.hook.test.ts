@@ -5,6 +5,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaudeSession } from "./claude-adapter";
+import { queryClient } from "../lib/query-client";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
 
@@ -1428,5 +1429,43 @@ describe("useClaudeSession attachment subtypes", () => {
     });
 
     expect(result.current.mcpServers).toEqual([]);
+  });
+});
+
+describe("useClaudeSession vcs_state_changed (Git query refresh)", () => {
+  test("vcs_state_changed invalidates Git workspace queries, renders one lightweight row", async () => {
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    try {
+      act(() => {
+        socket.emit({ type: "live_start", count: 0 } as SessionStreamServerMessage);
+        socket.emit({ type: "live_end" } as SessionStreamServerMessage);
+        socket.emit({
+          type: "system",
+          subtype: "vcs_state_changed",
+          kind: "commit",
+          branch: "main",
+          uuid: "vcs-hook-1",
+        } as unknown as SessionStreamServerMessage);
+      });
+
+      // Git workspace data must refresh without a manual reload.
+      const invalidatedKeys = invalidateSpy.mock.calls.map((c) =>
+        JSON.stringify((c[0] as { queryKey?: unknown })?.queryKey),
+      );
+      expect(invalidatedKeys).toContain(JSON.stringify(["projects", "proj", "git"]));
+
+      // And the stream carries the lightweight vcs-change row.
+      const customTypes = result.current.storeAdapter.messages.map(
+        (m) => (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType,
+      );
+      expect(customTypes).toContain("vcs-change");
+    } finally {
+      invalidateSpy.mockRestore();
+    }
   });
 });

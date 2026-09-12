@@ -156,6 +156,7 @@ export class ClaudeSessionRelay {
         "task_started",
         "task_updated",
         "task_notification",
+        "vcs_state_changed",
       ]);
       if (subtype && !knownSubtypes.has(subtype)) {
         console.log(
@@ -237,6 +238,11 @@ export class ClaudeSessionRelay {
   // NOTE: only the replay buffer folds; broadcast still sends every line so the
   // live "Thinking… (N tokens)" animation can show each incremental value.
   private appendLive(line: string, parsed: Record<string, unknown> | null): void {
+    // tool_progress（heartbeat 等）是瞬态进度信号：实时 broadcast（handleStdoutLine
+    // 里与 appendLive 并列调用）但不进 liveLines——重连重放不应携带过期的
+    // elapsed 值，CLI 也不把它写 JSONL（history 侧天然没有）。语义 =「在线即见、
+    // 错过不补」，与 thinking_tokens 折叠同理都是对 capped replay 缓冲的保护。
+    if (parsed?.type === "tool_progress") return;
     if (parsed?.type === "system" && parsed.subtype === "thinking_tokens") {
       const last = this.liveLines[this.liveLines.length - 1];
       if (last !== undefined && isThinkingTokensLine(last)) {

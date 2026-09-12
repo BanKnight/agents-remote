@@ -3471,6 +3471,16 @@ describe("handleAttachment", () => {
     expect(resultDone.bubble).toBeDefined();
   });
 
+  test("total_tokens_reminder renders nothing (model-facing budget reminder)", () => {
+    const result = handleAttachment(
+      attachment("total_tokens_reminder", {
+        text: "<total_tokens>15000000 tokens left</total_tokens>",
+      }),
+    );
+    expect(result.bubble).toBeUndefined();
+    expect(result.stateOps).toBeUndefined();
+  });
+
   test("unknown subtype returns placeholder bubble", () => {
     const result = handleAttachment(attachment("future-subtype"));
     expect(result.bubble).toBeDefined();
@@ -4641,5 +4651,142 @@ describe("collectPendingApprovals", () => {
     const approvals = collectPendingApprovals(items);
     expect(approvals).toHaveLength(1);
     expect(approvals[0]).toMatchObject({ controlRequestId: "req-x", toolCallId: "tu-x" });
+  });
+});
+
+describe("tool_progress (CLI 2.1.268 live-only 进度信号)", () => {
+  const toolProgress = (over: Record<string, unknown>): SessionStreamServerMessage =>
+    ({
+      type: "tool_progress",
+      tool_use_id: "call-x-heartbeat-0",
+      tool_name: "Bash",
+      parent_tool_use_id: "call-x",
+      elapsed_time_seconds: 30,
+      ...over,
+    }) as unknown as SessionStreamServerMessage;
+
+  test("heartbeat 不产气泡，按 parent_tool_use_id 把耗时挂到 tool-call part", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [{ type: "tool_use", id: "call-x", name: "Bash", input: { command: "ls" } }]),
+      toolProgress({ heartbeat: true }),
+    ]);
+    // 心跳帧本身不产 item（不是 fallback debug 气泡）
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const asst = items.find((i) => i.kind === "assistant") as
+      | Extract<ChatStreamItem, { kind: "assistant" }>
+      | undefined;
+    const part = asst?.parts.find((p) => p.type === "tool-call");
+    expect(
+      part && "heartbeatElapsedSeconds" in part ? part.heartbeatElapsedSeconds : undefined,
+    ).toBe(30);
+  });
+
+  test("连续 heartbeat 覆盖更新（非累积）", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [{ type: "tool_use", id: "call-x", name: "Bash", input: {} }]),
+      toolProgress({ heartbeat: true, elapsed_time_seconds: 30 }),
+      toolProgress({
+        heartbeat: true,
+        elapsed_time_seconds: 60,
+        tool_use_id: "call-x-heartbeat-1",
+      }),
+    ]);
+    const asst = items.find((i) => i.kind === "assistant") as Extract<
+      ChatStreamItem,
+      { kind: "assistant" }
+    >;
+    const part = asst.parts.find((p) => p.type === "tool-call");
+    expect(
+      part && "heartbeatElapsedSeconds" in part ? part.heartbeatElapsedSeconds : undefined,
+    ).toBe(60);
+  });
+
+  test("非 heartbeat 变体（bash_progress 等）静默 skip，不产气泡", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [{ type: "tool_use", id: "call-x", name: "Bash", input: {} }]),
+      toolProgress({ heartbeat: undefined, tool_name: "Bash" }),
+    ]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const asst = items.find((i) => i.kind === "assistant") as Extract<
+      ChatStreamItem,
+      { kind: "assistant" }
+    >;
+    const part = asst.parts.find((p) => p.type === "tool-call");
+    expect(part && "heartbeatElapsedSeconds" in part).toBe(false);
+  });
+
+  test("heartbeat 无 parent_tool_use_id 时安全跳过（不崩、不产 item）", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [{ type: "tool_use", id: "call-x", name: "Bash", input: {} }]),
+      toolProgress({ heartbeat: true, parent_tool_use_id: null }),
+    ]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+  });
+});
+
+describe("system:vcs_state_changed (CLI 2.1.268 live-only git 通知)", () => {
+  const vcsChanged = (kind: string, branch?: string): SessionStreamServerMessage =>
+    ({
+      type: "system",
+      subtype: "vcs_state_changed",
+      kind,
+      ...(branch !== undefined ? { branch } : {}),
+    }) as unknown as SessionStreamServerMessage;
+
+  test("产 vcs-change 轻量行（kind + branch），不进 fallback debug 气泡", () => {
+    const items = normalizeChatStream([vcsChanged("commit", "main")]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const vcs = items.find((i) => i.kind === "vcs-change") as
+      | Extract<ChatStreamItem, { kind: "vcs-change" }>
+      | undefined;
+    expect(vcs).toBeDefined();
+    expect(vcs?.vcsKind).toBe("commit");
+    expect(vcs?.branch).toBe("main");
+  });
+
+  test("未知 kind（开放枚举）原样携带，不崩", () => {
+    const items = normalizeChatStream([vcsChanged("cherry-pick")]);
+    const vcs = items.find((i) => i.kind === "vcs-change") as Extract<
+      ChatStreamItem,
+      { kind: "vcs-change" }
+    >;
+    expect(vcs.vcsKind).toBe("cherry-pick");
+    expect(vcs.branch).toBeUndefined();
+  });
+
+  test("renderChatStream 投影为 systemMessageType=vcs-change 的 system 行", () => {
+    const messages = renderChatStream(normalizeChatStream([vcsChanged("push", "main")]));
+    const row = messages.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "vcs-change",
+    );
+    expect(row).toBeDefined();
+    const custom = row?.metadata?.custom as Record<string, unknown>;
+    expect(custom.vcsKind).toBe("push");
+    expect(custom.branch).toBe("main");
+  });
+});
+
+describe("atis-latch / total_tokens_reminder (CLI 2.1.268 JSONL 噪音静默)", () => {
+  test("atis-latch 顶层帧不产任何 item（CLI resume 自消费的内部锁存）", () => {
+    const items = normalizeChatStream([
+      { type: "atis-latch", atis: "", sessionId: "s1" } as unknown as SessionStreamServerMessage,
+      assistant("a1", [{ type: "text", text: "hi" }]),
+    ]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    expect(items.some((i) => i.kind === "assistant")).toBe(true);
+  });
+
+  test("total_tokens_reminder attachment 不产气泡（海量帧不污染回放）", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [{ type: "text", text: "hi" }]),
+      attachment("total_tokens_reminder", {
+        text: "<total_tokens>15000000 tokens left</total_tokens>",
+      }),
+    ]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "attachment")).toHaveLength(0);
+    expect(items.some((i) => i.kind === "assistant")).toBe(true);
   });
 });

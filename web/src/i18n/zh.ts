@@ -440,6 +440,9 @@ export const zh: Record<TranslationKey, string> = {
   "claude.backgroundTask": "后台任务",
   "claude.mode.changed": "已切换到 {{mode}}",
   "claude.model.changed": "模型 · {{model}}",
+  // vcs_state_changed: 会话内 git 操作。{{kind}} 是开放枚举（commit/push/merge/
+  // rebase，官方会加新 kind）——原样显示不翻译。
+  "claude.vcs.changed": "Git {{kind}}{{branch}}",
   "claude.command.title": "命令",
   "claude.command.args": "参数",
   "claude.command.input": "输入",

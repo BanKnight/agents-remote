@@ -964,6 +964,11 @@ export function handleAttachment(msg: ClaudeAttachment): AttachmentResult {
     case "goal_status":
       return { bubble: makeAttachmentBubble(att.type, msg) };
 
+    // total_tokens_reminder: model-facing token budget reminder that the CLI
+    // injects before every API call. Purely internal — renders nothing.
+    case "total_tokens_reminder":
+      return {};
+
     default:
       // Unknown subtype — placeholder bubble with subtype name
       return { bubble: makeAttachmentBubble((att as { type: string }).type, msg) };
@@ -1721,6 +1726,11 @@ export type NormalizedPart =
         lastToolName?: string;
         usage: { total_tokens: number; tool_uses: number; duration_ms: number };
       };
+      // tool_progress{heartbeat}: 运行中工具的已耗时秒数（CLI 每 30s 心跳覆盖
+      // 更新，按 parent_tool_use_id 关联；tool_use_id 是合成 id 不参与匹配）。
+      // 仅 running 态渲染（completed 后旧值残留无意义），独立于 subagent 的
+      // progress 形状，两种信号不打架。
+      heartbeatElapsedSeconds?: number;
       // system{permission_denied}: classifier/permission auto-deny of this tool
       // call. Violet banner; coexists with isError result (red), not interchangeable.
       permissionDenied?: { reasonType?: string; reason?: string };
@@ -1828,6 +1838,17 @@ export type ChatStreamItem =
   | {
       kind: "mode-change";
       mode: string;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
+      // system{vcs_state_changed}: agent 在会话内执行了 git 操作（commit/push/
+      // merge/rebase，kind 为开放枚举未知值原样显示）。Live-only 信号（CLI 不写
+      // JSONL，刷新后消失）——渲染为居中分隔线轻量行（VcsChangeNotice）；Git
+      // 面板数据刷新由 applyMessageScalarState → invalidateQueries 负责。
+      kind: "vcs-change";
+      vcsKind: string;
+      branch?: string;
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
@@ -2773,6 +2794,21 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         // 未知 status 变体 → 继续落到下方既有 fallback（保持现状）。
       }
 
+      // VcsStateChanged: agent 在会话内执行了 git 操作。产轻量系统行（live-only，
+      // replay 无此帧）；kind 是开放枚举，未知值原样携带不猜。Git 面板刷新由
+      // applyMessageScalarState 负责（invalidateQueries），本分支只管渲染投影。
+      if (subtype === "vcs_state_changed") {
+        const v = msg as unknown as { kind?: unknown; branch?: unknown };
+        items.push({
+          kind: "vcs-change",
+          vcsKind: typeof v.kind === "string" && v.kind ? v.kind : "unknown",
+          branch: typeof v.branch === "string" && v.branch ? v.branch : undefined,
+          sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+          _rawSnapshots: [msg],
+        });
+        continue;
+      }
+
       // CLI slash-command / bash output messages emitted as system subtype
       // local_command on JSONL replay. Convert them to command-output items so
       // the merge pass can combine them with the preceding command-input echo.
@@ -2958,6 +2994,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // mode-change notice comes from system.status{permissionMode} instead.
     if (msg.type === "permission-mode") continue;
 
+    // atis-latch: CLI-internal session state latch, consumed by the CLI itself
+    // on resume (last-wins merge). No chat value — skip silently.
+    if (msg.type === "atis-latch") continue;
+
     // control_request: attach request_id as controlRequestId to the matching
     // tool-call part. Same pattern as tool_result and task_progress above.
     if (msg.type === "control_request") {
@@ -3000,6 +3040,40 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         ?.response;
       const isEmpty = !inner || Object.keys(inner).length === 0;
       if (isEmpty || inner.mode !== undefined || inner.model !== undefined) continue;
+    }
+
+    // tool_progress: CLI 瞬态进度信号家族（CLI v2.1.268+，live-only 不写 JSONL）。
+    // heartbeat 变体每 30s 一帧，tool_use_id 是合成 id（`${parent}-heartbeat-N`），
+    // 按 parent_tool_use_id 反查 tool-call part 挂已耗时秒数（覆盖更新，不累积）。
+    // 其余变体（bash_progress/repl_call/agent_api_retry）当前无 UI 价值，静默
+    // skip 不落 fallback——服务端 relay 也不把它们写进 liveLines（错过不补）。
+    if (msg.type === "tool_progress") {
+      const tp = msg as unknown as {
+        heartbeat?: boolean;
+        parent_tool_use_id?: string | null;
+        elapsed_time_seconds?: number;
+      };
+      const parentToolUseId = tp.parent_tool_use_id;
+      if (tp.heartbeat && parentToolUseId) {
+        const elapsed = typeof tp.elapsed_time_seconds === "number" ? tp.elapsed_time_seconds : 0;
+        for (let i = items.length - 1; i >= 0; i--) {
+          const item = items[i];
+          if (item.kind !== "assistant") continue;
+          const partIdx = item.parts.findIndex(
+            (p) => p.type === "tool-call" && p.toolCallId === parentToolUseId,
+          );
+          if (partIdx >= 0) {
+            item.parts = item.parts.map((p, j) =>
+              j === partIdx && p.type === "tool-call"
+                ? { ...p, heartbeatElapsedSeconds: elapsed }
+                : p,
+            );
+            pushPartRaw(parentToolUseId, msg);
+            break;
+          }
+        }
+      }
+      continue;
     }
 
     // ═══ Other (fallback) ═══
@@ -3325,6 +3399,9 @@ export function renderChatStream(
                 toolMessageId,
                 toolIndent: hasTextParts,
                 ...(part.progress ? { progress: part.progress } : {}),
+                ...(part.heartbeatElapsedSeconds !== undefined
+                  ? { heartbeatElapsedSeconds: part.heartbeatElapsedSeconds }
+                  : {}),
                 ...(part.permissionDenied ? { permissionDenied: part.permissionDenied } : {}),
                 ...(part.backgroundTask ? { backgroundTask: part.backgroundTask } : {}),
               };
@@ -3462,6 +3539,22 @@ export function renderChatStream(
               _rawMessages: item._rawSnapshots,
               systemMessageType: "mode-change",
               mode: item.mode,
+            },
+          },
+        });
+        break;
+      }
+      case "vcs-change": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "vcs-change",
+              vcsKind: item.vcsKind,
+              branch: item.branch,
             },
           },
         });
@@ -3955,6 +4048,19 @@ export function useClaudeSession(
             queryClient.getQueryData(catalogKey) != null,
           );
         queryClient.invalidateQueries({ queryKey: catalogKey });
+        return;
+      }
+
+      // system.vcs_state_changed: agent 在会话内执行了 git 操作（commit/push/
+      // merge/rebase）。Invalidate the Git workspace queries so status/log/
+      // ahead-behind/diff reflect the new state without manual refresh. The
+      // in-stream notice is a normalize-time vcs-change item; this branch only
+      // owns the data refresh.
+      if (msg.type === "system" && sm.subtype === "vcs_state_changed") {
+        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "git"] });
+        queryClient.invalidateQueries({
+          queryKey: ["projects", projectName, "workbench-git-left"],
+        });
         return;
       }
 

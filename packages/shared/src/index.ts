@@ -1254,9 +1254,11 @@ export type ClaudeAttachmentEnvelope = {
   version?: string;
   gitBranch?: string;
   slug?: string;
+  // CLI 渲染后注入模型的 system-reminder 块（部分子类型携带，UI 不消费）
+  rendered?: { content: string }[];
 };
 
-// attachment 子类型（23 种，按 domain 分组）
+// attachment 子类型（24 种，按 domain 分组）
 
 export type AttachmentMcpInstructionsDelta = {
   attachment: {
@@ -1494,6 +1496,15 @@ export type AttachmentGoalStatus = {
   };
 };
 
+// token 预算提醒（CLI 内部转 isMeta user 消息注入模型；text 为
+// "<total_tokens>N tokens left</total_tokens>"，海量出现且 UI 零价值 → 客户端静默过滤）
+export type AttachmentTotalTokensReminder = {
+  attachment: {
+    type: "total_tokens_reminder";
+    text: string;
+  };
+};
+
 export type AttachmentContent =
   | AttachmentMcpInstructionsDelta["attachment"]
   | AttachmentSkillListing["attachment"]
@@ -1518,7 +1529,8 @@ export type AttachmentContent =
   | AttachmentOpenedFileInIde["attachment"]
   | AttachmentSelectedLinesInIde["attachment"]
   | AttachmentDiagnostics["attachment"]
-  | AttachmentGoalStatus["attachment"];
+  | AttachmentGoalStatus["attachment"]
+  | AttachmentTotalTokensReminder["attachment"];
 
 // 完整 attachment 消息（信封 + 子类型）
 export type ClaudeAttachment = ClaudeAttachmentEnvelope & {
@@ -1536,6 +1548,14 @@ export type ClaudePermissionModeEntry = {
   type: "permission-mode";
   permissionMode: ClaudePermissionMode;
   session_id?: string;
+};
+
+// CLI 内部会话状态锁存（atis 校验为单行可打印 ASCII）；无 uuid/timestamp，
+// JSONL merge 策略 last-wins，CLI resume 时自消费——UI 零价值 → 客户端静默 skip
+export type ClaudeAtisLatch = {
+  type: "atis-latch";
+  atis?: string;
+  sessionId?: string;
 };
 
 export type ClaudeTrackedFileBackup = {
@@ -1676,6 +1696,41 @@ export type ClaudePermissionDenied = {
   tool_use_id?: string;
   decision_reason_type?: string;
   decision_reason?: string;
+};
+
+// Transient in-tool progress signals (CLI v2.1.268+). Realtime-only family
+// (NOT written to JSONL history): tool_heartbeat (every 30s while a tool
+// runs — heartbeat:true, synthetic tool_use_id `${parentToolUseId}-heartbeat-N`),
+// bash/powershell_progress output lines, repl_tool_call, agent_api_retry.
+// The REAL tool-call id lives in parent_tool_use_id (tool_use_id is synthetic);
+// heartbeat elapsed mounts onto that tool-call part. Non-heartbeat variants are
+// currently skipped by the client.
+export type ClaudeToolProgress = {
+  type: "tool_progress";
+  tool_use_id: string;
+  tool_name: string;
+  parent_tool_use_id: string | null;
+  elapsed_time_seconds: number;
+  task_id?: string;
+  heartbeat?: boolean;
+  repl_call?: { inner_tool_name: string; inner_tool_input?: Record<string, unknown> };
+  session_id?: string;
+  uuid?: string;
+};
+
+// A git mutation performed by the agent in-session (commit/push/merge/rebase).
+// Realtime-only signal (NOT written to JSONL history). Drives a lightweight
+// in-stream system row + invalidates the Git workspace queries. kind is an
+// OPEN enum by design — the CLI schema notes "New kinds may be added", so the
+// client must render unknown kinds from the raw value, never switch exhaustively.
+export type ClaudeVcsStateChanged = {
+  type: "system";
+  subtype: "vcs_state_changed";
+  kind: "commit" | "push" | "merge" | "rebase" | (string & {});
+  branch?: string;
+  cwd?: string;
+  session_id?: string;
+  uuid?: string;
 };
 
 export type ClaudeResult = {
@@ -1852,6 +1907,7 @@ export type SessionStreamServerMessage =
   | ClaudeAttachment
   | ClaudeLastPromptEntry
   | ClaudePermissionModeEntry
+  | ClaudeAtisLatch
   | ClaudeFileHistorySnapshot
   | ClaudeAiTitle
   | ClaudeAgentName
@@ -1864,6 +1920,8 @@ export type SessionStreamServerMessage =
   | ClaudeTaskNotification
   | ClaudeTaskProgress
   | ClaudePermissionDenied
+  | ClaudeToolProgress
+  | ClaudeVcsStateChanged
   | ClaudeResult
   | ClaudeControlRequest
   | ClaudeControlResponse

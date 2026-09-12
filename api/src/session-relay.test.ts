@@ -703,3 +703,79 @@ test("ClaudeSessionRelay does not coalesce thinking_tokens across an intervening
 
   relay.destroy();
 });
+
+// tool_progress 是瞬态进度信号（CLI 2.1.268+，不写 JSONL）：广播给在线订阅者，
+// 但不进 liveLines——重连重放不应携带过期心跳。语义 =「在线即见、错过不补」。
+test("ClaudeSessionRelay broadcasts tool_progress but keeps it out of liveLines", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const assistantLine = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-a-live",
+    message: { id: "msg_live", role: "assistant", content: [{ type: "text", text: "working" }] },
+  });
+  const heartbeatLine = JSON.stringify({
+    type: "tool_progress",
+    tool_use_id: "call-x-heartbeat-0",
+    tool_name: "Bash",
+    parent_tool_use_id: "call-x",
+    elapsed_time_seconds: 30,
+    heartbeat: true,
+  });
+
+  // Online subscriber: receives BOTH lines as they are broadcast.
+  const online: string[] = [];
+  relay.addSubscriber(
+    (line) => online.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  await relay.handleStdoutLine(assistantLine);
+  await relay.handleStdoutLine(heartbeatLine);
+  expect(online).toContain(heartbeatLine);
+
+  // Late subscriber: replays liveLines — the heartbeat must NOT be there.
+  const replay: string[] = [];
+  relay.addSubscriber(
+    (line) => replay.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = replay.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const liveStart = messages.findIndex((m) => m.type === "live_start");
+  const liveEnd = messages.findIndex((m) => m.type === "live_end");
+  const liveMessages = replay.slice(liveStart + 1, liveEnd);
+  expect(liveMessages).toEqual([assistantLine]);
+
+  relay.destroy();
+});
+
+// vcs_state_changed 是已知 subtype（避免 [relay] unknown system subtype 日志噪音），
+// 且和普通 live 行一样进入 liveLines 回放。
+test("ClaudeSessionRelay treats vcs_state_changed as a known subtype and replays it", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const vcsLine = JSON.stringify({
+    type: "system",
+    subtype: "vcs_state_changed",
+    kind: "commit",
+    branch: "main",
+    uuid: "vcs-1",
+  });
+  await relay.handleStdoutLine(vcsLine);
+
+  const replay: string[] = [];
+  relay.addSubscriber(
+    (line) => replay.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  expect(replay).toContain(vcsLine);
+
+  relay.destroy();
+});

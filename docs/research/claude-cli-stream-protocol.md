@@ -10,7 +10,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 
 - **CLI stdout 实时流**：`system.*` / `assistant` / `user` / `result` / `control_request` / `control_response` / `mode`
 - **CLI stdin 输入**：`user` / `control_request` / `control_response` / `keep_alive` / `update_environment_variables`（5 种顶层 type；`interrupt` / `set_model` / `set_permission_mode` 等是 `control_request` 的 subtype，详见 [control_request subtype 全表](#control_request-subtype-全表)）
-- **JSONL 磁盘文件独有**：`attachment` / `last-prompt` / `ai-title` / `agent-name` / `permission-mode` / `mode` / `file-history-snapshot` / `queue-operation` / `custom-title`
+- **JSONL 磁盘文件独有**：`attachment` / `last-prompt` / `ai-title` / `agent-name` / `permission-mode` / `mode` / `file-history-snapshot` / `queue-operation` / `custom-title` / `atis-latch`
 
 其中 `system.*` 目前已知包含 `system.init`、`system.status`、`system.compact_boundary` / `system.microcompact_boundary`、`system.api_retry`、`system.api_error`、`system.turn_duration`、`system.thinking_tokens`、`system.task_started` / `system.task_updated` / `system.task_notification` / `system.task_progress`、`system.background_tasks_changed`、`system.local_command`，以及运行时控制信号（`permission_denied`）。JSONL 独有类型是独立的顶层类型（如 `type: "attachment"`），**不是** `system` 子类型。
 
@@ -52,6 +52,8 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | `system` | `background_tasks_changed` | 后台任务集合变更（Bash run_in_background，注入 Bash tool-card） | 否 | 是 | 否 |
 | `system` | `permission_denied` | 自动权限拒绝 | 否 | 是 | 是 |
 | `system` | `turn_duration` | turn 耗时统计 | 是 | 是 | 是 |
+| `system` | `vcs_state_changed` | agent 在会话内执行 git 操作（commit/push/merge/rebase） | 否 | 是 | 否（2026-09 发现，CLI 2.1.268+） |
+| `tool_progress` | `tool_heartbeat` / `bash_progress` / `repl_call` / `agent_api_retry` | 工具运行中的瞬态进度信号（heartbeat 每 30s） | 否 | 是 | 否（2026-09 发现，CLI 2.1.268+） |
 | `assistant` | 见下方 [assistant content 子类型](#assistant-messagecontent-子类型) | AI 回复流 | 是 | 是 | 是 |
 | `user` | 见下方 [user 消息变体](#user-消息变体) | 用户输入 / 工具结果 / CLI 内部消息 | 是 | 是 | 是 |
 | `result` | `success` / `error` / `interrupted` / `error_max_turns` | turn 结束 | 否 | 是 | 是 |
@@ -85,6 +87,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | `file-history-snapshot` | 文件追踪系统快照 | `messageId`, `snapshot`, `isSnapshotUpdate` | 低 — 恢复文件编辑历史 |
 | `queue-operation` | CLI 输入队列操作（入队/出队/移除/清空），`content` 为入队内容 | `operation`, `content?`, `timestamp`, `sessionId` | 低 — 调试输入管道 |
 | `custom-title` | 用户自定义标题 | `customTitle` | 低 — 会话重命名记录 |
+| `atis-latch` | CLI 内部会话状态锁存（CLI 2.1.268+，极简信封无 uuid/timestamp） | `atis`, `sessionId` | **无** — CLI resume 时自身 last-wins 消费，UI 零价值 |
 
 ### 顶层辅助字段
 
@@ -400,6 +403,27 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 
 ---
 
+#### `atis-latch` — CLI 内部会话状态锁存（CLI 2.1.268+，UI 零价值）
+
+**含义**：CLI 内部的会话状态锁存，`atis` 字段校验为单行可打印 ASCII（`^[\x21-\x7e]*$`）。CLI 二进制中它与 `permission-mode` / `isolation-latch` / `worktree-state` / `cost-state` / `queue-operation` 并列于 merge 策略表（`"atis-latch": "last-wins"`）——resume 时 CLI 自身按 last-wins 消费（相关符号 `atisLatchAtEntry` / `conversationAtisLatch` / `atisLatch()` / `replaceAtisLatch()`）。
+
+**形态特征**：极简信封——**无 `uuid` / `timestamp` / `parentUuid`**（区别于其他所有 JSONL 顶层类型），仅 `{type, atis, sessionId}` 三字段。
+
+**Resume 恢复**：无价值（对我们）— CLI 自消费的内部状态，我们不实现对应锁存语义，UI 也不需要。
+
+示例：
+```json
+{ "type": "atis-latch", "atis": "", "sessionId": "70996967-9597-4473-bf27-0dfcd410e264" }
+```
+
+**处理语义**（agents-remote）：
+
+| 实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI |
+|---|---|---|---|
+| 不出现在 CLI stdout（JSONL-only） | — | 顶层帧 → `normalizeChatStream` 静默 skip（仿 `last-prompt` / `permission-mode` 先例） | 无（不渲染） |
+
+---
+
 #### `mode` — CLI 运行时心跳（非 permission mode 信号）
 
 **含义**：CLI 内部运行时心跳。从 111 条真实 `type: "mode"` 消息（11/53 session 文件）统计，`mode` 字段**永远为 `"normal"`**。它不是 permission mode 变更信号 — permission mode 的权威来源是 `system.init.permissionMode`（启动时）和 `permissionMode` 字段（写在 `type: "user"` 消息上，记录每次用户输入时的权限模式）。
@@ -466,6 +490,91 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
    - 回放时不展示中间动画，但最终 token 总数仍要 attach 到 reasoning part
 5. 真正的 thinking 文本内容仍然来自 assistant `content` 中的 `{ type: "thinking", thinking: "...", signature: "..." }`
 6. `thinking_tokens` 本身不生成新的 UI part；它只是为同 turn 的 reasoning part 提供 token metadata
+
+---
+
+#### `tool_progress` — 工具运行中的瞬态进度信号（CLI 2.1.268+）
+
+**含义**：工具执行期间的进度信号家族，**顶层 `type`**（不是 `system` 子类型）。发现于 CLI 2.1.268（2026-09）；**不写入 JSONL**（二进制里历史遍历有 `if(type==="tool_progress")continue;` 跳过分支，真实会话 JSONL grep 0 命中）——纯 live-only 瞬态信号。
+
+**家族成员**（同一 schema，靠字段区分）：
+
+| 变体 | 识别 | 含义 |
+|---|---|---|
+| `tool_heartbeat` | `heartbeat: true` | 工具运行中每 30s 一帧（长命令期间持续） |
+| `bash_progress` / `powershell_progress` | `tool_name: "Bash"/"PowerShell"`，无 heartbeat | 输出行进度 |
+| `repl_tool_call` | `repl_call: {inner_tool_name, inner_tool_input}` | REPL 内嵌套调用 |
+| `agent_api_retry` | `tool_name` 为 agent 名 | 子 agent API 重试 |
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"tool_progress"` | 顶层消息类型 |
+| `tool_use_id` | string | **合成 id**：`${parentToolUseId}-heartbeat-N`（**不是**真实 tool_use id） |
+| `tool_name` | string | 工具名（`Bash` / `PowerShell` / `REPL` / agent 名） |
+| `parent_tool_use_id` | string \| null | **真实** tool_use id，关联用此字段 |
+| `elapsed_time_seconds` | number | 已耗时（heartbeat 累计值，覆盖更新非增量） |
+| `task_id` | string? | 后台任务关联 |
+| `heartbeat` | boolean? | heartbeat 变体标记 |
+| `repl_call` | object? | REPL 变体载荷 |
+| `session_id` / `uuid` | string? | 会话/uuid |
+
+```json
+{
+  "type": "tool_progress",
+  "tool_use_id": "call_xxx-heartbeat-0",
+  "tool_name": "Bash",
+  "parent_tool_use_id": "call_xxx",
+  "elapsed_time_seconds": 30,
+  "heartbeat": true,
+  "session_id": "...",
+  "uuid": "..."
+}
+```
+
+**处理方法**：
+
+1. **服务端 relay**：**broadcast 但不进 `liveLines`**（`session-relay.ts` `appendLive` 早退）——瞬态进度「在线即见、错过不补」，重连重放不携带过期心跳（否则长命令会往 10000 上限的 replay 缓冲灌垃圾）。
+2. **客户端 normalize**：heartbeat 变体 → 按 `parent_tool_use_id`（**非** `tool_use_id`）反查 tool-call part，挂 `heartbeatElapsedSeconds`（覆盖更新）；**不产聊天气泡**。非 heartbeat 变体静默 skip（当前无 UI 价值）。
+3. **渲染**：tool 卡片 running 态在 `ToolHead` 的 `trailing` 槽显示耗时（`formatDuration(elapsed*1000)`）；completed/interrupted/error 不显示。
+4. 关联铁律：**`tool_use_id` 是合成 id，永远用 `parent_tool_use_id` 做 part 匹配**。
+
+---
+
+#### `system.vcs_state_changed` — agent 会话内 git 操作通知（CLI 2.1.268+）
+
+**含义**：agent 在会话内执行了 git 变更操作。发现于 CLI 2.1.268（2026-09）；**不写入 JSONL**——纯 live-only 瞬态信号。
+
+**字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"system"` | 消息类型 |
+| `subtype` | `"vcs_state_changed"` | 子类型 |
+| `kind` | `"commit"\|"push"\|"merge"\|"rebase"\|string` | **开放枚举**，schema 注明「New kinds may be added」 |
+| `branch` | string? | 分支名 |
+| `cwd` | string? | 工作目录 |
+| `session_id` / `uuid` | string? | 会话/uuid |
+
+```json
+{
+  "type": "system",
+  "subtype": "vcs_state_changed",
+  "kind": "commit",
+  "branch": "main",
+  "cwd": "/path/to/project",
+  "session_id": "...",
+  "uuid": "..."
+}
+```
+
+**处理方法**：
+
+1. **服务端 relay**：作为已知 subtype 记入 `knownSubtypes`（消 `[relay] unknown system subtype` 日志噪音）；与普通 live 行一致进 `liveLines` 回放。
+2. **客户端标量**：`applyMessageScalarState` 里 `invalidateQueries(["projects", projectName, "git"])` + `["projects", projectName, "workbench-git-left"]`——Git 工作区数据自动刷新（commit/push 后 status/log/ahead-behind 不再陈旧）。
+3. **客户端渲染**：normalize 产 `vcs-change` item（live-only），renderChatStream 投成 `systemMessageType: "vcs-change"` 的 system 行 → `VcsChangeNotice` 居中分隔线轻量行（git 图标 + `Git {kind} · {branch}`）。
+4. **kind 开放枚举**：渲染原样字符串（`t("claude.vcs.changed", {kind})`），**不 switch 穷举**——未来新 kind 自然降级为可读标签而非崩溃/空白。
 
 ---
 
@@ -1974,6 +2083,8 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 | `control_request` | 交互式权限提示 | 无 | 交互式实时消息，当前 turn 结束后即无意义 |
 | `control_response` | 控制动作响应（`set_model` / `set_permission_mode` / `interrupt` 的 CLI 回执） | 无 | 交互式实时消息，CLI 进程内切换标量后回 |
 | `system/permission_denied` | 自动权限拒绝 | 低 | 2026-06 新发现的类型，字段: `decision_reason`, `decision_reason_type`, `message`, `tool_name`, `tool_use_id` |
+| `tool_progress` | 工具运行中瞬态进度（heartbeat/bash_progress/repl_call/agent_api_retry） | 无 | 2026-09 新发现（CLI 2.1.268+）。纯瞬态：relay broadcast 但不进 liveLines；客户端 heartbeat 变体挂 tool-call part 的已耗时 |
+| `system/vcs_state_changed` | agent 会话内 git 操作（commit/push/merge/rebase） | 无 | 2026-09 新发现（CLI 2.1.268+）。触发 Git 工作区 query invalidate + 流内轻量行；kind 为开放枚举 |
 
 ### JSONL 独有（CLI stdout 不输出）
 
@@ -1985,7 +2096,7 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 | 类型 | 含义 | Resume 恢复价值 |
 |---|---|---|
-| `attachment` (23 种子类型) | 运行时附件：MCP 指令、skill 列表、命令权限、模式变更等 | **核心** — 可完整重建 MCP servers、skills、slash command 权限、plan/auto 模式状态 |
+| `attachment` (24 种子类型) | 运行时附件：MCP 指令、skill 列表、命令权限、模式变更等 | **核心** — 可完整重建 MCP servers、skills、slash command 权限、plan/auto 模式状态 |
 | `last-prompt` | 上次用户 prompt 文本 | **高** — 可用作 UI 输入回显或 draft 恢复 |
 | `user.permissionMode` | 每条 user 消息上的 permission mode 快照 | **高** — 恢复每个 turn 的 permission mode 上下文（153 条样本） |
 | `permission-mode` | 权限模式变更独立事件 | 中 — 恢复 permission mode 显示（仅 7 条样本） |
@@ -1994,7 +2105,7 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 ---
 
-#### `attachment` — 运行时附件（23 种子类型）
+#### `attachment` — 运行时附件（24 种子类型）
 
 **含义**：`attachment` 是 CLI 运行时的非对话内容记录。它记录 MCP 服务器指令变更、skill 列表更新、命令权限、模式切换、文件编辑等运行时状态。**每条 attachment 都是对某个状态的增量更新**。
 
@@ -2015,6 +2126,7 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 | `entrypoint` | string | 入口（`"cli"` / `"sdk-ts"`） |
 | `version` | string | CLI 版本号 |
 | `slug` | string? | 可选 slug |
+| `rendered` | {content: string}[]? | CLI 渲染后注入模型的 system-reminder 块（部分子类型携带；本会话 184 帧、横跨 20 个子类型） |
 
 **时机**：每种 attachment 子类型在对应事件发生时写入 JSONL。attachment 只在 JSONL 中存在，CLI stdout **不输出**。
 
@@ -2684,6 +2796,36 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
   }
 }
 ```
+
+---
+
+**`total_tokens_reminder`** — Token 预算提醒（CLI 2.1.268+，UI 零价值）
+
+**含义**：CLI 在每次 API 调用前注入给模型的 token 预算提醒，内部转为 `isMeta` user 消息。`text` 即 `<total_tokens>N tokens left</total_tokens>` 字面载体；信封级 `rendered` 数组记录 CLI 渲染后的 `<system-reminder>` 块。**海量存在**——是 attachment 中最高频的子类型（本会话 123 条 attachment 中 119 条是它），replay 不加过滤会渲染成占位气泡洪水。
+
+**Resume 恢复**：无价值 — 纯模型上下文管理信号，对 UI 与 resume 均无意义。
+
+示例：
+```json
+{
+  "parentUuid": "d38bb6e9-d0bb-4e6a-8e67-f85ee3ebb369",
+  "isSidechain": false,
+  "attachment": { "type": "total_tokens_reminder", "text": "<total_tokens>15000000 tokens left</total_tokens>" },
+  "type": "attachment",
+  "uuid": "9465260e-f838-4e2c-a13d-eddcae308b73",
+  "timestamp": "2026-09-12T05:08:41.444Z",
+  "rendered": [{ "content": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>" }],
+  "userType": "external",
+  "entrypoint": "sdk-cli",
+  "version": "2.1.268"
+}
+```
+
+**处理语义**（agents-remote）：
+
+| 实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI |
+|---|---|---|---|
+| 不出现在 CLI stdout（JSONL-only） | — | attachment 帧 → `handleAttachment` 静默过滤（空 return） | 无（不渲染） |
 
 ---
 

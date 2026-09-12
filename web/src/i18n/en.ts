@@ -440,6 +440,9 @@ export const en = {
   "claude.backgroundTask": "Background task",
   "claude.mode.changed": "Switched to {{mode}}",
   "claude.model.changed": "Model · {{model}}",
+  // vcs_state_changed: git op the agent ran in-session. {{kind}} is an OPEN enum
+  // (commit/push/merge/rebase, new kinds may be added) — render it raw.
+  "claude.vcs.changed": "Git {{kind}}{{branch}}",
   "claude.command.title": "Command",
   "claude.command.args": "ARGS",
   "claude.command.input": "INPUT",
