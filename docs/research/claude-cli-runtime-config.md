@@ -67,8 +67,12 @@
 
 ### Q1 默认值从何而来
 
-- **`permissions.defaultMode`**：会话级默认模式，取值 `default` / `acceptEdits` / `plan` / `bypassPermissions`。
+- **`permissions.defaultMode`**：会话级默认模式，取值 `default` / `acceptEdits` / `plan` / `auto` / `dontAsk` / `bypassPermissions`（Manual 模式的 config 值是 `default`，CLI v2.1.200+ 接受 `manual` 别名）。
 - **`permissions.allow` / `ask` / `deny` 规则列表**：每次工具调用按 **`deny → ask → allow → defaultMode`** 首条命中裁决。
+- **`permissions.useAutoModeDuringPlan`**（默认 `true`）：plan 模式期间 auto mode 分类器可用时，非只读 shell 命令交分类器裁决（approve 放行 / reject 拦截）而不是弹人工审批。各受信 settings 源 `!== false` 即生效（opt-out 键）。
+- **`permissions.disableAutoMode: "disable"`**：整体禁用 auto mode（从 Shift+Tab 循环移除、`--permission-mode auto` 回落 default）。
+- **plan × auto 语义**（官方 permission-modes 文档）：plan 模式 = 只读操作自动放行 + 「auto mode 可用时分类器已批准的命令也运行」。file-write 仍是 plan 硬 ask（`Cannot write to … while in plan mode`），ExitPlanMode 审批保留——这是 plan 模式本意。
+- **⚠️ v2.1.212–v2.1.217 版本 bug**（官方明文记录）：无 bypass permissions 的会话对每个非只读命令一律人工审批，**无论 auto mode 是否可用**——`useAutoModeDuringPlan` 机制存在但被压死。v2.1.218 起修复。本项目曾 pin 2.1.212 恰好落在坏区间（"进入 plan 经常要人工审批"的根因），2026-09-12 升级 2.1.268 解决。
 - 规则声明位置：项目 `.claude/settings.json` 覆盖用户 `~/.claude/settings.json`。
 - `--permission-mode` flag 只设 `defaultMode`，不改规则列表。
 
@@ -83,6 +87,8 @@
 
 - **本项目已实现**：`switchPermissionMode`，按 `request_id` 匹配，success 确认、error 回退 priorMode。
 - **ExitPlanMode** 走另一条路：经 `control_response` 的 `permission_updates:[{type:"setMode", mode:"plan", destination:"session"}]`（非独立 control_request）。
+- **v2.1.212 vs 2.1.268 实测差异**（headless stream-json）：2.1.212 下 `set_permission_mode` 无响应超时（headless 上下文未注册 `onSetPermissionMode` 回调，错误串 "set_permission_mode is not supported in this context (onSetPermissionMode callback not registered)"，回调只在 TUI REPL 上下文注册）；**2.1.268 修复**——headless 下 spawn 后立即发 `set_permission_mode{mode:"plan"}` 收到 `control_response success` + `system.status{permissionMode:"plan"}` echo + 后续 `system.init` 帧也回显 plan（探针实测）。注意 control_response 的 `request_id` 在 headless 下回 `undefined`（不回带），配对不能只依赖它，`system.status` echo 是可靠切换信号。
+- **stream-json input 模式时序注意**：CLI 在收到首条 stdin 消息前不发 `system.init`——依赖「先等 init 再发 control_request」的顺序会死锁；control_request 可在 spawn 后立即写入，CLI 会缓冲处理。
 
 ---
 

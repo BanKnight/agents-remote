@@ -1598,11 +1598,13 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 
 **关键**：`request_id` 与对应 `control_request.request_id` 相同，客户端据此匹配请求与响应。
 
+> ⚠️ **v2.1.268 headless 实测**：`set_permission_mode` 的 `control_response` 顶层 `request_id` 可能回 `undefined`（不回带），按 request_id 匹配会失配。`system.status{permissionMode}` echo 是切换成功的可靠信号（生产 `setPermissionMode` 已靠它落 metadata）。另注意版本差异：**2.1.212 的 headless stream-json 上下文未注册 `onSetPermissionMode` 回调**（错误串 "set_permission_mode is not supported in this context (onSetPermissionMode callback not registered)"，回调只在 TUI REPL 上下文注册），切模式请求无响应超时；**2.1.268 修复**——spawn 后立即发 `set_permission_mode{mode:"plan"}` 正常 success。详见 [运行态三维度对接 · permission Q3](./claude-cli-runtime-config.md)。
+
 **处理方法**：
 
 1. `set_model` 成功 → 确认模型切换，递增 `modelSwitchVersion` 以强制 tool UI 重新渲染
 2. `set_model` 失败 → 回退模型选择到之前的值，显示 error 信息
-3. `set_permission_mode` 成功 → 确认权限模式切换
+3. `set_permission_mode` 成功 → 确认权限模式切换（以 `system.status` echo 为准）
 4. `set_permission_mode` 失败 → 回退权限模式
 5. `interrupt` 成功 → 关闭当前 running turn（等价于 `result.interrupted`）
 
