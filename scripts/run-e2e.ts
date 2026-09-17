@@ -51,7 +51,11 @@ const main = async () => {
   const apiUrl = `http://127.0.0.1:${apiPort}`;
   const webUrl = `http://127.0.0.1:${webPort}`;
 
-  const api = spawnLogged(["bun", "run", "--filter", "@agents-remote/api", "dev"], apiLogPath, {
+  // 直接以包目录为 cwd 启动 script（不走 `bun run --filter`——force install 后实测该
+  // 路径 vite 静默挂起无输出，包内 `bun run dev` 正常；直跑也少一层 bun run 中间进程，
+  // 孤儿化面更小）。
+  const packageDir = (name: "api" | "web") => join(import.meta.dir, "..", name);
+  const api = spawnLogged(["bun", "--watch", "src/index.ts"], packageDir("api"), apiLogPath, {
     API_PORT: String(apiPort),
     APP_PASSWORD: password,
     PROJECTS_ROOT: projectsRoot,
@@ -60,18 +64,8 @@ const main = async () => {
     MCP_PORT: String(mcpPort),
   });
   const web = spawnLogged(
-    [
-      "bun",
-      "run",
-      "--filter",
-      "@agents-remote/web",
-      "dev",
-      "--",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(webPort),
-    ],
+    ["bun", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(webPort)],
+    packageDir("web"),
     webLogPath,
     {
       WEB_API_PROXY_TARGET: apiUrl,
@@ -101,8 +95,8 @@ const main = async () => {
       throw new Error(`Playwright exited with ${exitCode}`);
     }
   } finally {
-    api.kill();
-    web.kill();
+    killProcessGroup(api);
+    killProcessGroup(web);
     await Promise.allSettled([api.exited, web.exited]);
     await cleanupTmuxSessions("e2e-ar-");
     await rm(tempRoot, { force: true, recursive: true });
@@ -126,13 +120,33 @@ const git = async (projectPath: string, args: string[]) => {
   }
 };
 
-const spawnLogged = (cmd: string[], logPath: string, env: Record<string, string>) => {
+const spawnLogged = (cmd: string[], cwd: string, logPath: string, env: Record<string, string>) => {
   return Bun.spawn({
     cmd,
+    cwd,
     env: { ...process.env, ...env },
     stderr: Bun.file(logPath),
     stdout: Bun.file(logPath),
+    // 独立进程组：`bun run --filter` 会再 fork 内层 server（bun --watch / vite），
+    // 普通 kill() 只杀外层、内层孤儿化（实测历轮 E2E 累积 11 个 api 孤儿吃掉 ~1.3GB
+    // 内存，swap 打满后 chromium 被杀 → 大面积 context 崩溃）。detached 让整棵树独立
+    // 成组，finally 里按 -pgid 整组回收。
+    detached: true,
   });
+};
+
+/** 杀整个进程组（负 PID = 组内全部；detached 子进程是其组长）。 */
+const killProcessGroup = (proc: ReturnType<typeof spawnLogged>) => {
+  try {
+    process.kill(-proc.pid, "SIGTERM");
+  } catch {
+    // 组已不存在（正常退出）——兜底单杀，忽略错误。
+    try {
+      proc.kill();
+    } catch {
+      /* 已退出 */
+    }
+  }
 };
 
 const waitForUrl = async (url: string, label: string) => {
