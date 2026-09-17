@@ -32,6 +32,8 @@ export type SessionMetadata = {
   /** 最后活动时间：create/rename/setModel 等元数据操作写入，活动时由 recordActivity 按整分钟截断刷新。 */
   updatedAt: string;
   claudeSessionId?: string;
+  /** ACP session id（acp provider）：agent 侧生成，spawn+loadSession 恢复用（setAcpSessionId 回写）。 */
+  acpSessionId?: string;
   model?: string;
   modelAlias?: string;
   permissionMode?: string;
@@ -98,6 +100,8 @@ type CreateAgentSessionInput = {
   provider: AgentProvider;
   displayName?: string;
   claudeSessionId?: string;
+  /** omp（ACP）历史恢复：agent 侧 session id，spawn 时经 session/load 全量回放。 */
+  acpSessionId?: string;
   model?: string;
   permissionMode?: string;
   effort?: EffortLevel;
@@ -244,6 +248,20 @@ export class SessionRegistry {
     await this.writeMetadata(updated);
   }
 
+  // ACP session id backfill：startAgent 内 session/new 返回后回调写入（镜像
+  // setClaudeSessionId；API 重启后 spawn+loadSession 恢复会话靠它）。
+  async setAcpSessionId(sessionId: string, acpSessionId: string): Promise<void> {
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
+    if (!metadata) return;
+    const updated: SessionMetadata = {
+      ...metadata,
+      acpSessionId,
+      updatedAt: this.now().toISOString(),
+    };
+    await this.writeMetadata(updated);
+  }
+
   // Persist a mid-session model switch to metadata.model, so API restart /
   // session reopen spawns the CLI with the switched model (the --model arg in
   // claude-runtime spawnClaudeDirect). Triggered via ClaudeRuntime onModelChange
@@ -345,6 +363,18 @@ export class SessionRegistry {
     for (const m of metadata) {
       if (m.provider === "claude" && m.claudeSessionId) {
         map.set(m.claudeSessionId, m.id);
+      }
+    }
+    return map;
+  }
+
+  /** omp 历史判活：acpSessionId → 活跃 agent session id（与 getActiveClaudeSessionMap 同型）。 */
+  async getActiveAcpSessionMap(projectName: string): Promise<Map<string, string>> {
+    const metadata = await this.listMetadata("agent", projectName);
+    const map = new Map<string, string>();
+    for (const m of metadata) {
+      if (m.provider === "omp" && m.acpSessionId) {
+        map.set(m.acpSessionId, m.id);
       }
     }
     return map;
@@ -465,6 +495,7 @@ export class SessionRegistry {
       provider: input.provider,
       displayName: input.displayName,
       claudeSessionId: input.claudeSessionId,
+      acpSessionId: input.acpSessionId,
       model: input.model,
       permissionMode: input.permissionMode,
       effort: input.effort,
@@ -630,6 +661,7 @@ export class SessionRegistry {
     provider?: AgentProvider;
     displayName?: string;
     claudeSessionId?: string;
+    acpSessionId?: string;
     model?: string;
     permissionMode?: string;
     effort?: EffortLevel;
@@ -649,6 +681,7 @@ export class SessionRegistry {
       createdAt: timestamp,
       updatedAt: timestamp,
       claudeSessionId: input.claudeSessionId,
+      acpSessionId: input.acpSessionId,
       model: input.model,
       modelAlias: input.model,
       permissionMode: input.permissionMode,
@@ -681,6 +714,13 @@ export class SessionRegistry {
     }
 
     if (metadata.provider === "claude" && metadata.claudeSessionId) {
+      return metadata;
+    }
+    // omp（ACP）同 claude：runtime 是进程内对象（非 tmux），API 重启后 alive/exists 均不命中，
+    // 但 acpSessionId 可 loadSession 恢复 → 保留（Phase 1 存量 provider "acp" 已由 parseMetadata
+    // 归一化为 "omp"，此分支同样接住）。缺 acpSessionId 的 omp 会话（spawn 未完成）不保留——
+    // 与 claude 无 claudeSessionId 时同语义，无恢复抓手。
+    if (metadata.provider === "omp" && metadata.acpSessionId) {
       return metadata;
     }
 
@@ -787,7 +827,11 @@ export const createRuntimeKey = (
   sessionId: string,
 ) => {
   const projectKey = safeProjectKey(projectName);
-  const providerPart = type === "agent" ? provider : undefined;
+  // provider 段承载 **transport 家族**（非 CLI 名）：omp → "acp"。这样同一协议的多个 CLI
+  // 共享一段（isAcpSessionName / attach / close 按段判定），且 provider 改名（acp→omp）
+  // 不影响既有会话的 runtimeKey。见 AgentProviderTransport 注释。
+  const providerPart =
+    type === "agent" ? (getAgentProviderProfile(provider)?.transport ?? provider) : undefined;
   const prefix = process.env.AGENTS_REMOTE_SESSION_PREFIX ?? "ar";
   return [prefix, type, providerPart, projectKey, sessionId.slice(0, 12)].filter(Boolean).join("-");
 };
@@ -834,6 +878,13 @@ const parseMetadata = (raw: string): SessionMetadata | undefined => {
   // alive/exists 均不命中）会被当死会话误删 metadata 文件（2026-08-18 改名误删事故）。
   if (rawParsed.provider === "claude2") {
     rawParsed.provider = "claude";
+  }
+  // provider 正名：ACP 是协议不是 CLI，存量 metadata 里 provider 值为 "acp"（Phase 1 PoC
+  // 只有 omp 一个 ACP CLI 时用协议名当 provider）。改名后归一化为 "omp"——内存层归一，
+  // 不重写磁盘（runtimeKey 段本就是 transport "acp"，无需改）。不归一则 provider 白名单/
+  // AgentPanelRouter 分流失配、acp 会话被当未知 provider。
+  if (rawParsed.provider === "acp") {
+    rawParsed.provider = "omp";
   }
   const parsed = rawParsed as Partial<SessionMetadata>;
 
@@ -898,6 +949,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   permissionMode: metadata.permissionMode,
   effort: metadata.effort,
   claudeSessionId: metadata.claudeSessionId,
+  acpSessionId: metadata.acpSessionId,
   autoRetry: metadata.autoRetry,
   updatedAt: metadata.updatedAt,
 });

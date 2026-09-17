@@ -181,6 +181,11 @@ function ProjectRowActions({ deletePending, onDelete, projectName }: ProjectRowA
             onSelect: () => createAgent("claude"),
           },
           {
+            icon: <ShellIcon className="size-4" name="agent-nav" />,
+            label: t("workbench.createOmp"),
+            onSelect: () => createAgent("omp"),
+          },
+          {
             icon: <ShellIcon className="size-4" name="terminal" />,
             label: t("workbench.createTerminal"),
             onSelect: createTerminal,

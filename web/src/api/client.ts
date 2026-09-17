@@ -56,10 +56,13 @@ import type {
   DeleteClaudePresetResponse,
   DeletePiPresetResponse,
   GetSettingsResponse,
+  ListAgentProvidersResponse,
   ListPiProvidersResponse,
   ListProviderModelsResponse,
   PiPresetResponse,
   TestClaudePresetRequest,
+  UpdateAcpRuntimeRequest,
+  UpdateAcpRuntimeResponse,
   UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
@@ -379,6 +382,8 @@ export async function createAgentSession(
   provider: AgentProvider,
   opts?: {
     claudeSessionId?: string;
+    /** omp (ACP) session id——resume 经 session/load 全量回放历史。 */
+    acpSessionId?: string;
     displayName?: string;
     model?: string;
     permissionMode?: string;
@@ -390,6 +395,7 @@ export async function createAgentSession(
     body: JSON.stringify({
       provider,
       claudeSessionId: opts?.claudeSessionId,
+      acpSessionId: opts?.acpSessionId,
       displayName: opts?.displayName,
       model: opts?.model,
       permissionMode: opts?.permissionMode,
@@ -607,6 +613,11 @@ export function claudeStreamUrl(projectName: string, sessionId: string) {
   return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/claude-stream`;
 }
 
+export function acpStreamUrl(projectName: string, sessionId: string) {
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/acp-stream`;
+}
+
 export function piChatStreamUrl(chatId: string) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${globalThis.location.host}/api/chat-sessions/${encodeURIComponent(chatId)}/stream`;
@@ -717,6 +728,25 @@ export async function updatePiRuntime(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input satisfies UpdatePiRuntimeRequest),
   });
+}
+
+// ACP runtime（per-provider 凭据切片）：PUT 更新指定 provider 的 apiKey/baseUrl。
+// apiKey 空/缺省 = 不改；baseUrl 显式空串 = 删除（回退官方端点）。响应只带该 provider
+// 的 masked 切片（原始 key 不出 api 进程）。
+export async function updateAcpRuntime(
+  input: UpdateAcpRuntimeRequest,
+): Promise<UpdateAcpRuntimeResponse> {
+  return fetchJson("/api/settings/runtimes/acp", "api.acpRuntimeUpdateFailed", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies UpdateAcpRuntimeRequest),
+  });
+}
+
+// GET /api/agent-providers —— profile 注册表只读投影（settings UI per-provider 渲染源；
+// 新 ACP CLI 注册后自动跟随）。
+export async function fetchAgentProviders(): Promise<ListAgentProvidersResponse> {
+  return fetchJson("/api/agent-providers", "api.agentProvidersFailed");
 }
 
 // 发现模型：后端用该预设凭证请求 /v1/models。上游凭证问题返回 HTTP 200 + {ok:false}

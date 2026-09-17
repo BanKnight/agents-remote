@@ -4,6 +4,7 @@ import { getAgentProviderProfile, parsePermissionModeChoices } from "./agent-pro
 test("getAgentProviderProfile returns internal Claude and Codex profiles", () => {
   expect(getAgentProviderProfile("claude")).toEqual({
     provider: "claude",
+    transport: "claude",
     label: "Claude",
     command: "claude",
     displayNamePrefix: "Claude Agent",
@@ -14,11 +15,30 @@ test("getAgentProviderProfile returns internal Claude and Codex profiles", () =>
   });
   expect(getAgentProviderProfile("codex")).toEqual({
     provider: "codex",
+    transport: "codex",
     label: "Codex",
     command: "codex",
     displayNamePrefix: "Codex Agent",
     capabilities: {
       history: "unsupported",
+    },
+  });
+});
+
+test("omp profile 走 acp transport（provider 粒度 = CLI，transport = 协议家族）", () => {
+  expect(getAgentProviderProfile("omp")).toEqual({
+    provider: "omp",
+    transport: "acp",
+    label: "omp",
+    command: "omp",
+    displayNamePrefix: "OMP Agent",
+    capabilities: {
+      history: "native",
+    },
+    // 凭据注入声明：env 变量名是 CLI 固有属性（omp 的 anthropic 形态）；切片未配置时
+    // 不注入，回落 omp 自身凭证链（provider 平权，不借用其它 runtime 的配置）。
+    credentials: {
+      env: { apiKey: "ANTHROPIC_API_KEY", baseUrl: "ANTHROPIC_BASE_URL" },
     },
   });
 });

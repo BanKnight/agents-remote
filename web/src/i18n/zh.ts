@@ -340,6 +340,8 @@ export const zh: Record<TranslationKey, string> = {
   "api.providerDeleteFailed": "删除 provider 失败",
   "api.runtimeUpdateFailed": "更新 Claude runtime 失败",
   "api.piRuntimeUpdateFailed": "更新 Pi 运行时失败",
+  "api.acpRuntimeUpdateFailed": "更新 ACP 运行时失败",
+  "api.agentProvidersFailed": "Agent provider 列表加载失败",
   "api.piPresetCreateFailed": "新增 Pi 预设失败",
   "api.piPresetUpdateFailed": "更新 Pi 预设失败",
   "api.piPresetDeleteFailed": "删除 Pi 预设失败",
@@ -542,6 +544,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.createSessionAria": "新建会话",
   "workbench.createClaude": "Claude",
   "workbench.createCodex": "Codex",
+  "workbench.createOmp": "omp",
   "workbench.createTerminal": "终端",
   "workbench.instancesAria": "实例",
   "workbench.noInstances": "暂无实例，用上方按钮创建。",
@@ -615,6 +618,7 @@ export const zh: Record<TranslationKey, string> = {
   "settings.section.general": "通用",
   "settings.section.claude": "Claude 运行时",
   "settings.section.pi": "Pi 运行时",
+  "settings.section.acp": "ACP Agent",
   "theme.label": "外观",
   "theme.hint": "选择明亮或暗黑外观，或跟随系统。",
   "theme.system": "跟随系统",
@@ -671,6 +675,13 @@ export const zh: Record<TranslationKey, string> = {
     "可选。联网搜索/抓取工具恒可用；填 key 提升额度与稳定性，留空则匿名限额调用。留空保存 = 保持现有 key 不变；清空保存 = 移除。",
   "settings.firecrawlKeyBlank": "无（匿名限额）",
   "settings.clear": "清除",
+
+  // ── Settings: acp runtime（per-provider 凭据切片） ─────────────
+  "settings.acpHint":
+    "通过 ACP（Agent Client Protocol）接入的 agent。凭据在 agent 进程启动时注入，改动对新建会话生效。",
+  "settings.acpBaseUrlHint": "可选。自定义 Anthropic 兼容端点；清空保存 = 回退官方端点。",
+  "settings.acpApiKeyBlank": "未配置",
+  "settings.acpEnvHint": "注入 env:",
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",

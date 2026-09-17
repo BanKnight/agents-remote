@@ -181,8 +181,10 @@ export async function listAgentHistory(
   const entries = partials
     .filter((p): p is HistoryPartial => p !== null)
     .map((p) => {
-      const activeSessionId = activeClaudeSessionMap.get(p.claudeSessionId);
+      // claude 条目的 claudeSessionId 由文件名派生、恒有值（shared 类型因 omp 条目改 optional）。
+      const activeSessionId = activeClaudeSessionMap.get(p.claudeSessionId ?? "");
       return {
+        provider: "claude" as const,
         claudeSessionId: p.claudeSessionId,
         title: p.title,
         firstMessage: p.firstMessage,

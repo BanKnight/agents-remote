@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   EFFORT_LEVELS,
   PI_PROVIDER_APIS,
+  type AcpCredentialsMasked,
+  type AcpRuntimeConfigMasked,
+  type AgentProviderInfo,
   type ClaudeModelMapping,
   type ClaudeModelTier,
   type ClaudePresetMasked,
@@ -13,6 +16,7 @@ import {
   type PiPresetMasked,
   type PiProviderApi,
   type PiProviderAuthType,
+  type UpdateAcpRuntimeRequest,
   type UpdateClaudePresetRequest,
   type UpdatePiPresetRequest,
   type UpdatePiRuntimeRequest,
@@ -43,10 +47,12 @@ import {
   createPiPreset,
   deleteClaudePreset,
   deletePiPreset,
+  fetchAgentProviders,
   getSettings,
   listPiProviders,
   listPresetModels,
   testPresetModels,
+  updateAcpRuntime,
   updateClaudePreset,
   updateClaudeRuntime,
   updatePiPreset,
@@ -91,7 +97,7 @@ const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
 };
 
 /** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
-export type SettingsSection = "root" | "claude" | "pi" | "general";
+export type SettingsSection = "root" | "claude" | "pi" | "acp" | "general";
 
 /** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
 export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT>["t"]): string => {
@@ -100,6 +106,8 @@ export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT
       return t("settings.section.claude");
     case "pi":
       return t("settings.section.pi");
+    case "acp":
+      return t("settings.section.acp");
     case "general":
       return t("settings.section.general");
     default:
@@ -166,6 +174,9 @@ export function SettingsContent({
         />
       );
       break;
+    case "acp":
+      body = <AcpRuntimeSection acp={settings?.runtimes.acp} loading={loading} />;
+      break;
     case "general":
       body = <GeneralSection />;
       break;
@@ -191,6 +202,7 @@ function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSectio
   }[] = [
     { section: "claude", title: t("settings.section.claude"), icon: "anthropic", tone: "warning" },
     { section: "pi", title: t("settings.section.pi"), icon: "info", tone: "muted" },
+    { section: "acp", title: t("settings.section.acp"), icon: "info", tone: "muted" },
     { section: "general", title: t("settings.section.general"), icon: "info", tone: "muted" },
   ];
   return (
@@ -465,6 +477,152 @@ function ClaudeRuntimeContent({
  * provider/model/apiKey/baseUrl/api，CRUD 即时持久化）。key 只随 activePresetId 变
  * （见 SettingsContent），preset CRUD 不触发 remount。
  */
+/**
+ * ACP 运行时段（per-provider 凭据切片）：provider 列表来自 GET /api/agent-providers
+ * （profile 注册表投影——新 ACP CLI 注册后此列表自动跟随，UI 零改动），每个
+ * transport=acp 的 provider 渲染一张凭据卡（AcpRuntimeContent，独立保存）。枚举失败
+ * 显示错误文本（凭据表单不可盲写 provider）。
+ */
+function AcpRuntimeSection({
+  acp,
+  loading = false,
+}: {
+  acp: AcpRuntimeConfigMasked | undefined;
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  const providersQuery = useQuery({
+    queryKey: ["agent-providers"],
+    queryFn: fetchAgentProviders,
+  });
+  if (providersQuery.isError) {
+    return (
+      <p className="text-xs text-error">
+        {providersQuery.error instanceof Error
+          ? providersQuery.error.message
+          : t("api.agentProvidersFailed")}
+      </p>
+    );
+  }
+  const acpProviders = providersQuery.data?.providers.filter((p) => p.transport === "acp") ?? [];
+  return (
+    <div className="flex flex-col gap-3">
+      {acpProviders.map((info) => (
+        <AcpRuntimeContent
+          // key 随加载完成态变（loading → loaded remount 回填 baseUrl 初值）；保存成功后
+          // masked 值刷新也走同 key（hasApiKey/baseUrl 未变则不 remount，不清用户输入）。
+          key={`${info.provider}|${Boolean(acp?.[info.provider]?.hasApiKey)}|${acp?.[info.provider]?.baseUrl ?? ""}`}
+          info={info}
+          credentials={acp?.[info.provider]}
+          loading={loading}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * ACP 单 provider 凭据卡：apiKey + baseUrl 保存（无 preset 列表——command/模型切换预设
+ * 留 Phase 2）。apiKey 语义同 claude/pi preset PUT：留空 = 不改（masked 占位提示现有
+ * key）；baseUrl 明文回填，清空保存 = 删除（回退官方端点）。保存走 updateAcpRuntime
+ * （带 provider），成功 invalidate settings 刷 masked 值。hint 按 profile 投影增强：
+ * 注入 env 变量名（技术标识不翻译）。凭据 provider 平权：切片未配置 = 走 agent 自身
+ * 凭证链，不借用其它 runtime 的配置。
+ */
+function AcpRuntimeContent({
+  info,
+  credentials,
+  loading = false,
+}: {
+  info: AgentProviderInfo;
+  credentials: AcpCredentialsMasked | undefined;
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(credentials?.baseUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasApiKey = Boolean(credentials?.hasApiKey);
+  const baseUrlDirty = baseUrl.trim() !== (credentials?.baseUrl ?? "");
+  const dirty = !loading && (apiKey.trim() !== "" || baseUrlDirty);
+
+  const handleSave = async () => {
+    if (loading) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const input: UpdateAcpRuntimeRequest = { provider: info.provider };
+      // apiKey：非空 = 覆盖；空 = 不改（编辑态留空保留原 key）。
+      if (apiKey.trim()) input.apiKey = apiKey.trim();
+      // baseUrl：显式传值（含空串 = 删除）；未改 = 不传。
+      if (baseUrlDirty) input.baseUrl = baseUrl.trim();
+      await updateAcpRuntime(input);
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setApiKey("");
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // env 注入名（CLI 固有，来自 profile 投影；无 credentials 声明的 provider 不显示）。
+  const envNames = [info.credentialsEnv?.apiKeyEnv, info.credentialsEnv?.baseUrlEnv]
+    .filter((v) => typeof v === "string" && v.length > 0)
+    .join(" / ");
+
+  return (
+    <Card className="border border-neutral-line bg-surface ring-0">
+      <CardContent className="flex flex-col gap-4 p-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium text-on-surface">{info.label}</p>
+          <p className="text-xs leading-5 text-on-surface-muted">{t("settings.acpHint")}</p>
+          {envNames ? (
+            <p className="text-xs leading-5 text-on-surface-muted">
+              {t("settings.acpEnvHint")} <span className="font-mono">{envNames}</span>
+            </p>
+          ) : null}
+        </div>
+
+        <Field label={t("settings.apiKey")} hint={t("settings.apiKeyHint")}>
+          <ShellInput
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={hasApiKey ? credentials?.apiKeyMasked : t("settings.acpApiKeyBlank")}
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label={t("settings.baseUrl")} hint={t("settings.acpBaseUrlHint")}>
+          <ShellInput
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.anthropic.com"
+            autoComplete="off"
+          />
+        </Field>
+
+        {error && <p className="text-xs text-error">{error}</p>}
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="text-xs text-on-surface-muted">
+            {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
+          </span>
+          <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
+            {saving ? t("settings.saving") : t("settings.save")}
+          </ActionButton>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function PiRuntimeContent({
   pi,
   loading = false,

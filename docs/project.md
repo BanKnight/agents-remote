@@ -171,6 +171,7 @@ agents-remote/
 - [E2E Quality Baseline Runbook](./runbooks/e2e-quality-baseline.md) — 如何运行、验证和排查登录到 Terminal Session 的自动化 E2E quality baseline。
 - [Claude 客户端调试开关 Runbook](./runbooks/claude-client-debugging.md) — 浏览器运行时调试开关（socket 日志、调试按钮，均默认关闭）的控制范围与切换方法。
 - [Agent 接入调研](./research/agent-access-options.md) — hapi/remodex/Codex/Claude 接入路线、证据追溯和统一协议可能性调研。
+- [ACP agent 接入调研](./research/acp-agent-integration.md) — ACP（Agent Client Protocol）接入调研（决策待确认）：竞品接入方式盘点（编排层未收敛 ACP、逐家 wrapper 仍是主流）、协议本体与 agent 端支持矩阵、buzz 源码 ACP 客户端第一手经验、本项目「第三管道通用 acp provider」三阶段接入规划提案；承接 agent-access-options.md。
 - [Pi 接入调研](./research/pi-access-options.md) — 第四个 agent runtime「pi」接入调研（决策未做）：pi/omp 本体与接入面、扩展生态、同类接入方式因果（终端形态分水岭）、MonkeyCode→OhMyAgent 国产案例、与本项目基线对照、接入路径初步倾向与纳入分层；承接 agent-access-options.md。
 - [Provider 配置体系对比](./research/provider-config-comparison.md) — Continue / hapi / Claude Code 如何拆「运行时 · provider · 协议 · 模型」四层的调研（决策未做）：Continue 扁平 model 列表 + provider 属性 + AUTODETECT 自动发现、hapi flavor 注册表（AgentRegistry）、Claude Code env 注入；对 agents-remote「preset 耦合四层」现状的耦合点分析与可借鉴方向；承接 agent-access-options.md 与 claude-cli-runtime-config.md 的 provider 配置视角。
 - [插件（Plugin）扩展体系](./research/plugin-extension-system.md) — skill + mcp 两类扩展 × 全局 + 项目两层作用域的方案蓝图（决策已对齐、实现前待调研）：7 项已对齐决策（wrap claude mcp 管理外部 MCP、手写技能挂源可更新、项目工作区 tab 插件入口等）+ 现状盘点 + 后端能力增量与待调研点；承接 skill-marketplace.md 与 mcp-hub-positioning.md。

@@ -27,6 +27,19 @@ const ActiveDot = (
 const HISTORY_SKELETON_ROW_COUNT = 3;
 
 /**
+ * 历史条目的 provider 归一（缺省 claude，兼容存量响应）。条目归属由 provider 决定：
+ * 同一类型（历史 session）的渲染/恢复只有这一条管道，provider 只作为条目自身属性参与分流。
+ */
+function entryProvider(entry: AgentHistoryEntry): "claude" | "omp" {
+  return entry.provider ?? "claude";
+}
+
+/** 条目在其 provider 下的原生 session id（React key / 无标题时的兜底显示名）。 */
+function entryNativeId(entry: AgentHistoryEntry): string {
+  return (entryProvider(entry) === "omp" ? entry.acpSessionId : entry.claudeSessionId) ?? "";
+}
+
+/**
  * 历史 session 加载骨架（复用 ListRowSkeleton，与真实 ListRow 行高对齐，plain divide-y 连续行）。
  * 首次拉取 pending 时占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格
  *（CardGridSkeleton）形态不同：历史是紧凑连续行，卡片是高卡。
@@ -51,15 +64,12 @@ export function useHistorySessions(projectName: string, range: AgentHistoryRange
     staleTime: 5_000,
   });
   const resumeSession = useMutation({
-    mutationFn: ({
-      claudeSessionId,
-      displayName,
-    }: {
-      claudeSessionId: string;
-      displayName: string;
-    }) =>
-      createAgentSession(projectName, "claude", {
-        claudeSessionId,
+    // 输入 = 一条历史条目的语义单元（resume「这条历史」），provider 差异收敛在内部：
+    // claude → claudeSessionId（--resume）；omp → acpSessionId（session/load 全量回放）。
+    mutationFn: ({ entry, displayName }: { entry: AgentHistoryEntry; displayName: string }) =>
+      createAgentSession(projectName, entry.provider ?? "claude", {
+        claudeSessionId: entry.claudeSessionId,
+        acpSessionId: entry.acpSessionId,
         displayName: displayName || undefined,
       }),
     onSuccess: async (data) => {
@@ -143,7 +153,7 @@ export function HistoryList({
       title: t("session.namePrompt.resumeTitle"),
     }).then((name) => {
       if (name !== null) {
-        resume({ claudeSessionId: entry.claudeSessionId, displayName: name });
+        resume({ entry, displayName: name });
       }
     });
   };
@@ -179,7 +189,7 @@ export function HistoryList({
               active={entry.hasActiveSession && entry.activeSessionId === focusId}
               entry={entry}
               isResuming={isResuming}
-              key={entry.claudeSessionId}
+              key={entryNativeId(entry)}
               onClick={() => handleClick(entry)}
             />
           ))}
@@ -199,14 +209,14 @@ type HistorySessionNodeProps = {
 
 function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessionNodeProps) {
   const { t } = useT();
-  const displayTitle = entry.title ?? entry.firstMessage ?? entry.claudeSessionId.slice(0, 8);
+  const displayTitle = entry.title ?? entry.firstMessage ?? entryNativeId(entry).slice(0, 8);
   const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
   const description = isResuming
     ? t("project.historyResuming")
     : [time, entry.fileSize > 0 ? formatBytes(entry.fileSize) : null].filter(Boolean).join(" · ");
   return (
     <ListRow
-      marker={sessionMarker("agent", "claude", "sm")}
+      marker={sessionMarker("agent", entryProvider(entry), "sm")}
       meta={entry.hasActiveSession ? ActiveDot : undefined}
       onClick={() => {
         if (!isResuming) onClick();

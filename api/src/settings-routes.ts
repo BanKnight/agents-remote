@@ -3,6 +3,7 @@ import {
   CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
   PI_PROVIDER_APIS,
+  type AcpRuntimeConfig,
   type ClaudeModelMapping,
   type ClaudePreset,
   type ClaudeRuntimeConfig,
@@ -12,6 +13,7 @@ import {
   type DeleteClaudePresetResponse,
   type DeletePiPresetResponse,
   type GetSettingsResponse,
+  type ListAgentProvidersResponse,
   type ListPiProvidersResponse,
   type ListProviderModelsResponse,
   type PiPreset,
@@ -20,6 +22,8 @@ import {
   type PiProviderInfo,
   type SettingsState,
   type TestClaudePresetRequest,
+  type UpdateAcpRuntimeRequest,
+  type UpdateAcpRuntimeResponse,
   type UpdateClaudePresetRequest,
   type UpdateClaudeRuntimeRequest,
   type UpdateClaudeRuntimeResponse,
@@ -27,10 +31,18 @@ import {
   type UpdatePiRuntimeRequest,
   type UpdatePiRuntimeResponse,
 } from "@agents-remote/shared";
+import { getAgentProviderProfile, listAgentProviderInfo } from "./agent-provider-profiles";
 import { jsonError } from "./http-auth";
 import { getCachedPiBuiltinProviders } from "./pi-providers";
 import { listProviderModels } from "./settings-models";
-import { SettingsStore, maskApiKey, toMaskedPiPreset, toMaskedPreset } from "./settings-store";
+import {
+  SettingsStore,
+  maskApiKey,
+  toMaskedAcpCredentials,
+  toMaskedAcpRuntime,
+  toMaskedPiPreset,
+  toMaskedPreset,
+} from "./settings-store";
 
 // 所有 /api/settings/* 经 index.ts 的 requireHttpAuth 统一守卫。
 // GET 响应里 presets 的 apiKey 全走 toMaskedPreset；原始 key 永不出 api 进程、永不进日志。
@@ -61,6 +73,7 @@ export const handleSettingsRoutes = async (
             activePresetId: state.runtimes.pi.activePresetId,
             firecrawlApiKeyMasked: maskApiKey(state.runtimes.pi.firecrawlApiKey ?? ""),
           },
+          acp: toMaskedAcpRuntime(state.runtimes.acp),
         },
         skills: { sources: state.skills?.sources ?? [] },
       },
@@ -392,6 +405,55 @@ export const handleSettingsRoutes = async (
         activePresetId: updated.runtimes.pi.activePresetId,
         firecrawlApiKeyMasked: maskApiKey(updated.runtimes.pi.firecrawlApiKey ?? ""),
       },
+    };
+    return Response.json(response);
+  }
+
+  // GET /api/agent-providers —— profile 注册表只读投影（settings UI 的 per-provider 驱动源；
+  // 新 ACP CLI 注册后 UI 自动跟随）。不暴露 command。
+  if (url.pathname === "/api/agent-providers" && request.method === "GET") {
+    const response: ListAgentProvidersResponse = { providers: listAgentProviderInfo() };
+    return Response.json(response);
+  }
+
+  // PUT /api/settings/runtimes/acp —— per-provider 凭据切片。apiKey 空/缺省 = 不改（编辑态
+  // 留空保留原 key，同 claude/pi preset PUT）；baseUrl 显式空串 = 删除（回退官方端点），
+  // 非空 = 设置；作用域收敛到 body.provider 切片。provider 须为注册表中 transport=acp 的
+  // provider（profile 驱动，防把凭据写进不存在/非 ACP 的切片）。响应只回该 provider 的
+  // masked 切片（原始 key 永不出 api 进程）。
+  if (url.pathname === "/api/settings/runtimes/acp" && request.method === "PUT") {
+    const body = await readJson<UpdateAcpRuntimeRequest>(request);
+    if (getAgentProviderProfile(body.provider)?.transport !== "acp") {
+      return jsonError("SETTINGS_INVALID", `Unknown ACP provider: ${String(body.provider)}`, 400);
+    }
+    const updated = await store.update((s) => {
+      const current = s.runtimes.acp[body.provider] ?? {};
+      // apiKey 三态：undefined/空串 = 保留原值（可能无原值 = 未配置）；非空 = 覆盖。
+      const apiKey =
+        typeof body.apiKey === "string" && body.apiKey.length > 0
+          ? { apiKey: body.apiKey }
+          : current.apiKey
+            ? { apiKey: current.apiKey }
+            : {};
+      // baseUrl 三态：undefined = 不改；显式空串（trim 后） = 删除；非空 = 设置。
+      const baseUrl =
+        body.baseUrl === undefined
+          ? current.baseUrl
+            ? { baseUrl: current.baseUrl }
+            : {}
+          : body.baseUrl.trim()
+            ? { baseUrl: body.baseUrl.trim() }
+            : {};
+      const merged = { ...apiKey, ...baseUrl };
+      const next: AcpRuntimeConfig = { ...s.runtimes.acp };
+      // 空切片不落键（未配置 = 键缺省，与 normalize 语义一致）。
+      if (merged.apiKey || merged.baseUrl) next[body.provider] = merged;
+      else delete next[body.provider];
+      return { ...s, runtimes: { ...s.runtimes, acp: next } };
+    });
+    const response: UpdateAcpRuntimeResponse = {
+      provider: body.provider,
+      runtime: toMaskedAcpCredentials(updated.runtimes.acp[body.provider] ?? {}),
     };
     return Response.json(response);
   }

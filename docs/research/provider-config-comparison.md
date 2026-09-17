@@ -77,6 +77,14 @@ hapi 的三层拆法：**运行时 = flavor 注册表**（可扩展、注册式�
 
 `settings.json` 的 `env` 注入（`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）+ model alias 映射。**无「provider」概念**，协议/凭证全在 env，模型在 modelMapping。是三者中最简单的，但只服务单 provider 场景。
 
+## lobe-chat：中央注册表 + 统一 keyVaults（2026-09-16 补充）
+
+> 补充动机：ACP/omp 接入后 settings 出现第三个 runtime 配置块（claude presets / pi presets / acp 切片），每家 shape、masked 函数、PUT 路由、前端 section 各写一份——接入面扩大时有「配置混乱而膨胀」的风险，故补查 lobe-chat 的多 provider 组织方式（deepwiki 源码索引，非本地 clone）。
+
+- **中央 provider 注册表**：`ModelProvider` enum（`packages/model-bank/src/const/modelProvider.ts`）+ `DEFAULT_MODEL_PROVIDER_LIST`（`packages/model-bank/src/modelProviders/index.ts`）——provider 是数据条目数组，加一个 provider = 加一条注册表数据，泛化逻辑统一走 `genServerAiProvidersConfig`（`apps/server/src/globalConfig/genServerAiProviderConfig.ts`）+ provider-specific override。
+- **统一凭据 schema（keyVaults）**：所有 provider 的凭据收敛为 `AiProviderKeyVaultsSchema`（`packages/model-bank/src/types/aiProvider.ts`）——共性 {apiKey, baseURL}，provider 特有字段靠继承扩展（AzureOpenAIKeyVault 加 endpoint/apiVersion，Bedrock 换 accessKeyId/region）。凭据（keyVaults，加密存储）与运营设置（`AiProviderSettings`：authType/modelEditable/sdkType 等）**分开放**，运行时 `initModelRuntimeFromDB` 解密后组装 payload。
+- **与 agents-remote 现状对照**：`runtimes.acp` 的 {apiKey, baseUrl} 最小切片 ≈ keyVaults 同构，方向一致；膨胀风险在「每 runtime 手写一套 masked/normalize/PUT/前端 section」的**机械重复**，而非字段本身。Phase 2 若 runtime 数量继续涨，可把「凭据切片 + masked + PUT 校验」收敛成统一的 credentials 块（per-runtime 继承扩展），呼应 hapi AgentRegistry 的运行时注册表方向。
+
 ## 对 agents-remote 的启示
 
 ### 现状的耦合点
@@ -112,9 +120,10 @@ hapi 的三层拆法：**运行时 = flavor 注册表**（可扩展、注册式�
 
 ## 证据分级与开放问题
 
-- 证据分级：Continue 侧为源码实证（上述文件行号）；hapi 侧为源码实证（registry/flavor/session 结构）；Claude Code 侧为已知事实（settings.json env 机制，未在本轮深挖源码）。
+- 证据分级：Continue 侧为源码实证（上述文件行号）；hapi 侧为源码实证（registry/flavor/session 结构）；Claude Code 侧为已知事实（settings.json env 机制，未在本轮深挖源码）；lobe-chat 侧为 deepwiki 源码索引（文件路径，未逐行本地验证）。
 - 开放问题：
   1. agents-remote 是否要演进到「扁平 model 列表 + provider 属性」模型？还是保持「preset 自包含」的现状，仅扩展 tier 手填（本次已做）？
   2. 若演进，`ProviderProtocol` 是否从两档（anthropic / openai-compatible）扩展为「一组 openai-compatible + 默认 baseUrl 的数据条目」（Continue 式）？
   3. 若支持多运行时，是否引入 hapi 式 AgentRegistry（flavor 注册表），与 provider 层解耦？
+  4. runtime 配置块是否收敛为统一 credentials schema（lobe keyVaults 式：共性 {apiKey, baseUrl} + per-runtime 继承扩展），消掉 per-runtime 手写的 masked/normalize/PUT/前端 section 重复？
 - 承接：本文补充 [agent-access-options.md](./agent-access-options.md)（Agent 接入路线调研）与 [claude-cli-runtime-config.md](./claude-cli-runtime-config.md)（运行态三维度对接）的 provider 配置视角。

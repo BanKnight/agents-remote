@@ -934,6 +934,18 @@ export function sessionMarker(
   provider?: AgentProvider,
   size: "xs" | "sm" | "lg" = "sm",
 ): ReactNode {
+  // provider 图标/tone 分档：codex→openai/success、omp（ACP 类 CLI）→agent-nav/accent、
+  // 其余（claude/未知）→anthropic/accent。omp 用 agent-nav 与创建菜单入口同图标。
+  const isOmp = provider === "omp";
+  const iconName =
+    type === "terminal"
+      ? "terminal"
+      : provider === "codex"
+        ? "openai"
+        : isOmp
+          ? "agent-nav"
+          : "anthropic";
+  const tone = provider === "codex" ? "success" : "accent";
   if (size === "xs") {
     // 裸 icon：tone 用文字色，无 IconMarker 方框（tab 场景与 label 同高，视觉平衡）。
     const toneText =
@@ -942,8 +954,6 @@ export function sessionMarker(
         : provider === "codex"
           ? "text-success"
           : "text-primary";
-    const iconName =
-      type === "terminal" ? "terminal" : provider === "codex" ? "openai" : "anthropic";
     return (
       <span aria-hidden="true" className={`inline-flex shrink-0 items-center ${toneText}`}>
         <ShellIcon className="h-4 w-4" name={iconName} />
@@ -959,8 +969,8 @@ export function sessionMarker(
     );
   }
   return (
-    <IconMarker size={size} tone={provider === "codex" ? "success" : "accent"}>
-      <ShellIcon className={iconClass} name={provider === "codex" ? "openai" : "anthropic"} />
+    <IconMarker size={size} tone={tone}>
+      <ShellIcon className={iconClass} name={iconName} />
     </IconMarker>
   );
 }

@@ -12,9 +12,11 @@ import type {
   WikiIndexResponse,
 } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
+import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
+import { AcpStreamController, handleAcpStreamUpgrade } from "./acp-stream";
 import { AuthService } from "./auth";
 import { ClaudeRuntime } from "./claude-runtime";
-import { parseClaudePermissionModes } from "./agent-provider-profiles";
+import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
 import {
   applyAuthRefresh,
@@ -65,6 +67,7 @@ type UpgradeServer = {
 type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
   claudeStreamController?: ClaudeStreamController;
+  acpStreamController?: AcpStreamController;
   piStreamController?: PiStreamController;
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
@@ -101,6 +104,13 @@ type WebSocketData =
   | {
       kind: "pi-stream";
       chatId: string;
+    }
+  | {
+      kind: "acp-stream";
+      sessionId: string;
+      runtimeKey: string;
+      projectPath: string;
+      acpSessionId?: string;
     };
 
 const echoWebSocketData: WebSocketData = { kind: "echo" };
@@ -262,6 +272,20 @@ export const createFetchHandler =
 
         if (claudeUpgrade.matched) {
           return withRefresh(claudeUpgrade.response);
+        }
+      }
+
+      if (options.acpStreamController) {
+        const acpUpgrade = await handleAcpStreamUpgrade(
+          request,
+          url,
+          options.projectsRoot,
+          options.sessionRegistry,
+          server,
+        );
+
+        if (acpUpgrade.matched) {
+          return withRefresh(acpUpgrade.response);
         }
       }
 
@@ -1035,6 +1059,10 @@ const isClaudeSessionName = (sessionName: string) =>
   // 靠此分支保持 attach/close 可达（新会话统一新前缀）。
   sessionName.startsWith(`${sessionNamePrefix}-agent-claude-`) ||
   sessionName.startsWith(`${sessionNamePrefix}-agent-claude2-`);
+// ACP 会话 runtimeKey 段（createRuntimeKey 的 provider 段 = "acp"）；进程内 runtime，
+// 存量兼容无需旧前缀。
+const isAcpSessionName = (sessionName: string) =>
+  sessionName.startsWith(`${sessionNamePrefix}-agent-acp-`);
 
 export const startApi = async () => {
   const config = await loadConfig();
@@ -1060,6 +1088,15 @@ export const startApi = async () => {
   const tmuxRuntime = new TmuxRuntime(runtimePaths.runDir);
   const agentRuntime = new AgentRuntime(tmuxRuntime);
   const claudeRuntime = new ClaudeRuntime(runtimePaths.runDir, settingsStore, config.mcpPort);
+  // ACP provider 运行时（Phase 1 PoC）：spawn `omp acp` + 官方 SDK 建连，帧透传进
+  // PiSessionRelay。stderr 日志在 runDir/acp-stderr/。凭据走 resolveAcpCredentials
+  // 回退链（acp 切片 → claude 激活预设，每次 spawn 前读、热更新即时生效；apiKey 只在
+  // buildAcpSpawnEnv 写进 env，不进日志）。
+  const acpRuntime = new AcpRuntime({
+    runDir: runtimePaths.runDir,
+    resolveCredentials: async (provider) =>
+      resolveAcpCredentials(await settingsStore.read(), provider),
+  });
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
   // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
   // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
@@ -1073,11 +1110,15 @@ export const startApi = async () => {
   const runtime: RuntimeResources = {
     exists: async (sessionName) => {
       if (isClaudeSessionName(sessionName)) return claudeRuntime.exists(sessionName);
+      if (isAcpSessionName(sessionName)) return acpRuntime.exists(sessionName);
       return tmuxRuntime.exists(sessionName);
     },
     close: async (sessionName) => {
       if (isClaudeSessionName(sessionName)) {
         return claudeRuntime.close(sessionName);
+      }
+      if (isAcpSessionName(sessionName)) {
+        return acpRuntime.close(sessionName);
       }
       return tmuxRuntime.close(sessionName);
     },
@@ -1085,20 +1126,31 @@ export const startApi = async () => {
       if (metadata.provider === "claude") {
         return claudeRuntime.startAgent(metadata);
       }
+      // 按 transport 家族分流（provider 是 CLI 名，omp/claude/codex；ACP 类 CLI 共享此分支）。
+      if (metadata.provider && getAgentProviderProfile(metadata.provider)?.transport === "acp") {
+        return acpRuntime.startAgent({
+          sessionId: metadata.id,
+          runtimeKey: metadata.runtimeKey,
+          provider: metadata.provider,
+          projectPath: metadata.projectPath,
+          acpSessionId: metadata.acpSessionId,
+        });
+      }
       return agentRuntime.startAgent(metadata);
     },
     startTerminal: (metadata) => tmuxRuntime.startTerminal(metadata),
     capture: (sessionName) => tmuxRuntime.capture(sessionName),
     attach: (sessionName, onData, onError, opts) =>
       tmuxRuntime.attach(sessionName, onData, onError, opts),
-    // 批量探活：合并 tmux list-sessions（terminal + 非 claude agent）与 claude 进程内存活集合。
-    // 1 次 list-sessions + 1 次进程内遍历，替代 M 次 has-session。供 SessionRegistry.getAliveKeys。
+    // 批量探活：合并 tmux list-sessions（terminal + 非 claude agent）与 claude/acp 进程内存活集合。
+    // 1 次 list-sessions + 2 次进程内遍历，替代 M 次 has-session。供 SessionRegistry.getAliveKeys。
     listAliveRuntimeKeys: async () => {
-      const [tmuxKeys, claudeKeys] = await Promise.all([
+      const [tmuxKeys, claudeKeys, acpKeys] = await Promise.all([
         tmuxRuntime.listAliveRuntimeKeys(),
         claudeRuntime.listAliveRuntimeKeys(),
+        acpRuntime.listAliveRuntimeKeys(),
       ]);
-      return new Set([...tmuxKeys, ...claudeKeys]);
+      return new Set([...tmuxKeys, ...claudeKeys, ...acpKeys]);
     },
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
@@ -1121,6 +1173,15 @@ export const startApi = async () => {
     defaultCwd: config.projectsRoot,
   });
   const piStreamController = new PiStreamController(piRuntime, chatSessionRegistry);
+  // acp sessionId backfill（session/new 返回后回写 metadata；API 重启 loadSession 恢复靠它）
+  // + 活动 bump（真实 update 唯一入口，loadSession 回放不经它——镜像 claude processStdoutLine）。
+  acpRuntime.setOnAcpSessionId((sessionId, acpSessionId) => {
+    void sessionRegistry.setAcpSessionId(sessionId, acpSessionId);
+  });
+  acpRuntime.setOnActivity((sessionId) => {
+    void sessionRegistry.recordActivity(sessionId);
+  });
+  const acpStreamController = new AcpStreamController(acpRuntime);
 
   claudeRuntime.setOnSystemInit((sessionId, _runtimeKey, claudeSessionId, model) => {
     void sessionRegistry.setClaudeSessionId(sessionId, claudeSessionId, model);
@@ -1190,6 +1251,7 @@ export const startApi = async () => {
     fetch: createFetchHandler(auth, {
       claudeRuntime,
       claudeStreamController,
+      acpStreamController,
       piStreamController,
       projectFilesService,
       projectPagesService,
@@ -1212,6 +1274,11 @@ export const startApi = async () => {
             console.error("[claude-stream] open handler error", err);
           });
         }
+        if (ws.data?.kind === "acp-stream") {
+          acpStreamController.open(ws).catch((err) => {
+            console.error("[acp-stream] open handler error", err);
+          });
+        }
         if (ws.data?.kind === "pi-stream") {
           piStreamController.open(ws).catch((err) => {
             console.error("[pi-stream] open handler error", err);
@@ -1229,6 +1296,10 @@ export const startApi = async () => {
           void claudeStreamController.message(ws, message);
           return;
         }
+        if (ws.data?.kind === "acp-stream") {
+          void acpStreamController.message(ws, message);
+          return;
+        }
         if (ws.data?.kind === "pi-stream") {
           void piStreamController.message(ws, message);
           return;
@@ -1242,6 +1313,9 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "claude-stream") {
           claudeStreamController.close(ws);
+        }
+        if (ws.data?.kind === "acp-stream") {
+          acpStreamController.close(ws);
         }
         if (ws.data?.kind === "pi-stream") {
           piStreamController.close(ws);

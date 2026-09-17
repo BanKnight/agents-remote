@@ -1,13 +1,29 @@
-import type { AgentProvider, ClaudePermissionMode } from "@agents-remote/shared";
+import type {
+  AgentProvider,
+  AgentProviderInfo,
+  AgentProviderTransport,
+  ClaudePermissionMode,
+} from "@agents-remote/shared";
+
+/** transport=acp 的 provider：spawn env 凭据注入声明（CLI 固有属性，非用户配置）。
+ *  env 变量名随 CLI 而异（omp 消费 ANTHROPIC_*；其它 ACP CLI 各有自家 env），是共性
+ *  注入机制与 per-CLI 差异之间唯一的声明点。凭据 provider 平权：各 agent 只消费自己的
+ *  settings 切片，切片全空回落 agent 自身凭证链，不借用其它 runtime 的配置。 */
+export type AgentProviderCredentialsSpec = {
+  env: { apiKey: string; baseUrl?: string };
+};
 
 export type AgentProviderProfile = {
   provider: AgentProvider;
+  /** 协议/传输家族——分流点判定用（非 CLI 名）。类型定义在 shared（web 枚举投影消费）。 */
+  transport: AgentProviderTransport;
   label: string;
   command: string;
   displayNamePrefix: string;
   capabilities: {
     history: "unsupported" | "native";
   };
+  credentials?: AgentProviderCredentialsSpec;
   availableModels?: string[];
   permissionModes?: ClaudePermissionMode[];
 };
@@ -72,6 +88,7 @@ export async function parseClaudePermissionModes(): Promise<ClaudePermissionMode
 const profiles: Record<AgentProvider, AgentProviderProfile> = {
   claude: {
     provider: "claude",
+    transport: "claude",
     label: "Claude",
     command: "claude",
     displayNamePrefix: "Claude Agent",
@@ -84,11 +101,32 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
   },
   codex: {
     provider: "codex",
+    transport: "codex",
     label: "Codex",
     command: "codex",
     displayNamePrefix: "Codex Agent",
     capabilities: {
       history: "unsupported",
+    },
+  },
+  // omp（Oh My Pi CLI）：走 ACP 协议对接（transport "acp"，`omp acp` 子命令）。ACP 是协议
+  // 家族而非 provider——未来接其它 ACP CLI 各加一条 profile（transport 同为 "acp"），
+  // transport 层实现（AcpRuntime/流式帧/前端面板）共享。Phase 2 再做 settings 预设/
+  // 自定义 command。history "native"：omp 广告 loadSession:true（session/load 全量回放），
+  // 跨 API 重启可恢复。credentials：omp 原生消费 ANTHROPIC_*（anthropic 形态，非官方
+  // baseUrl 自动 Authorization: Bearer <key>）；切片未配置时不注入，回落 omp 自身凭证链
+  // （OAuth → login key → env → stored api_key）。
+  omp: {
+    provider: "omp",
+    transport: "acp",
+    label: "omp",
+    command: "omp",
+    displayNamePrefix: "OMP Agent",
+    capabilities: {
+      history: "native",
+    },
+    credentials: {
+      env: { apiKey: "ANTHROPIC_API_KEY", baseUrl: "ANTHROPIC_BASE_URL" },
     },
   },
 };
@@ -100,3 +138,22 @@ export const getAgentProviderProfile = (provider: AgentProvider | undefined) => 
 
   return profiles[provider];
 };
+
+/** GET /api/agent-providers 投影：注册表 → 只读 UI 信息（不含 command；credentials 声明
+ *  平铺成 credentialsEnv 供凭据表单 hint 与 per-provider 渲染）。 */
+export const listAgentProviderInfo = (): AgentProviderInfo[] =>
+  Object.values(profiles).map((p) => ({
+    provider: p.provider,
+    label: p.label,
+    transport: p.transport,
+    displayNamePrefix: p.displayNamePrefix,
+    capabilities: p.capabilities,
+    ...(p.credentials
+      ? {
+          credentialsEnv: {
+            apiKeyEnv: p.credentials.env.apiKey,
+            ...(p.credentials.env.baseUrl ? { baseUrlEnv: p.credentials.env.baseUrl } : {}),
+          },
+        }
+      : {}),
+  }));

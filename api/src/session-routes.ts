@@ -21,6 +21,7 @@ import type {
   UpdateAutoRetryResponse,
 } from "@agents-remote/shared";
 import { listAgentHistory, getLastAssistantMessage, projectToSlug } from "./agent-history";
+import { listOmpHistory } from "./omp-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
@@ -42,8 +43,21 @@ export const handleSessionRoutes = async (
     try {
       const range = parseHistoryRange(url.searchParams.get("range"));
       const project = await resolveProjectPath(projectsRoot, historyMatch.projectName);
-      const activeMap = await registry.getActiveClaudeSessionMap(project.name);
-      const entries = await listAgentHistory(project.path, activeMap, range);
+      // 两路历史（claude JSONL + omp JSONL）合流，按 lastActivityAt 统一降序——前端历史 tab
+      // 是单一列表，provider 只影响 marker 图标与 resume 分流（不分组、不分区）。
+      const [claudeActiveMap, acpActiveMap] = await Promise.all([
+        registry.getActiveClaudeSessionMap(project.name),
+        registry.getActiveAcpSessionMap(project.name),
+      ]);
+      const [claudeEntries, ompEntries] = await Promise.all([
+        listAgentHistory(project.path, claudeActiveMap, range),
+        listOmpHistory(project.path, acpActiveMap, range),
+      ]);
+      const entries = [...claudeEntries, ...ompEntries].sort((a, b) =>
+        (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(
+          a.lastActivityAt ?? a.startedAt ?? "",
+        ),
+      );
       const response: ListAgentHistoryResponse = { entries, range };
       return Response.json(response);
     } catch (error) {
@@ -101,7 +115,9 @@ const handleAgentSessionRoute = async (
   if (!sessionId && request.method === "POST") {
     const body = await readJson<CreateAgentSessionRequest>(request);
 
-    if (body.provider !== "claude" && body.provider !== "codex") {
+    // 白名单由 profile 注册表驱动（不再手写 provider union）——加一个 provider = 注册表加
+    // 一条 profile，此处零改动。
+    if (!body.provider || !getAgentProviderProfile(body.provider)) {
       return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Agent provider is required", 400);
     }
 
@@ -150,6 +166,7 @@ const handleAgentSessionRoute = async (
           provider: body.provider,
           displayName: normalizeDisplayName(body.displayName),
           claudeSessionId: body.claudeSessionId,
+          acpSessionId: body.acpSessionId,
           model,
           permissionMode,
           effort,

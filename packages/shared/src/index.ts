@@ -320,7 +320,15 @@ export type SaveFileResponse = {
   entry: ProjectFileEntry;
 };
 
-export type AgentProvider = "claude" | "codex";
+// provider 粒度 = CLI（一个 CLI 一个 id），不是协议。ACP 是一个 transport/protocol
+// 家族（`omp` 走 ACP；未来其它 ACP CLI 各自加 id），协议层实现由 profile.transport
+// 决定，不体现在 provider 值上。存量会话 metadata 里的旧值 "acp" 在 parseMetadata
+// 归一化为 "omp"（见 api/src/session-registry.ts）。
+export type AgentProvider = "claude" | "codex" | "omp";
+
+// provider 的协议/传输家族——provider 粒度 = CLI，transport 才是「用什么协议对接」。
+// 原定义在 api/src/agent-provider-profiles.ts，因 web 消费 agent-providers 枚举投影下沉 shared。
+export type AgentProviderTransport = "claude" | "codex" | "acp";
 
 // ── Settings: claude presets + runtime defaults ──────────────────────
 //
@@ -426,6 +434,28 @@ export type PiRuntimeConfig = {
   /** 工具层凭证（firecrawl web 搜索/抓取），跨 preset 共享。可选：填 key 提升限额，缺失 = 匿名限额（工具恒注册）。 */
   firecrawlApiKey?: string;
 };
+
+// ── acp runtime（Phase 1 ACP PoC；per-provider 凭据切片）─────────────────────
+// 共性/差异分离：切片结构 {apiKey?, baseUrl?} 是跨 ACP CLI 的共性（masked/PUT 语义/
+// spawn env 注入机制全共享）；差异（注入的 env 变量名、是否回退 claude preset）由
+// api 侧 AgentProviderProfile.credentials 声明（omp 消费 ANTHROPIC_*，env 名是 CLI
+// 固有属性不进用户配置）。键 = 注册表中 transport=acp 的 provider（normalize 保证
+// 合法）。单套凭据 per CLI（非 preset 数组）：多套切换留 Phase 2 per-provider 渐进。
+// apiKey 空 = 未配置，spawn 回退 agent 自身凭证链/父 env。
+export type AcpCredentials = {
+  apiKey?: string;
+  baseUrl?: string;
+};
+
+export type AcpCredentialsMasked = {
+  apiKeyMasked: string;
+  hasApiKey: boolean;
+  baseUrl?: string;
+};
+
+export type AcpRuntimeConfig = Partial<Record<AgentProvider, AcpCredentials>>;
+
+export type AcpRuntimeConfigMasked = Partial<Record<AgentProvider, AcpCredentialsMasked>>;
 
 // ── Skills marketplace ──────────────────────────────────────
 // Skill 包管理：wrap `npx skills` CLI（vercel-labs/skills）做执行，skills.sh /api/search 做发现。
@@ -636,6 +666,8 @@ export type SettingsState = {
     };
     // v5：pi 恒存在（非 optional）。空 presets + activePresetId:"" = 未启用。
     pi: PiRuntimeConfig;
+    // Phase 1 凭据最小切片（恒存在；apiKey 缺省 = 未配置，回退父 env）。
+    acp: AcpRuntimeConfig;
   };
   // 自定义 skill 源列表（optional；settings-store normalizeSettings 补默认 { sources: [] }）。
   skills?: {
@@ -666,6 +698,7 @@ export type GetSettingsResponse = {
       };
       // v5 起 pi 键恒存在；presets 空 = 未启用。firecrawlApiKey 只露 masked（同 apiKey 语义）。
       pi: { presets: PiPresetMasked[]; activePresetId: string; firecrawlApiKeyMasked: string };
+      acp: AcpRuntimeConfigMasked;
     };
     // 源是公开 GitHub repo，不 mask。
     skills: {
@@ -732,6 +765,35 @@ export type UpdatePiPresetRequest = {
 export type PiPresetResponse = {
   preset: PiPresetMasked;
 };
+
+// ── acp runtime 请求响应（per-provider 凭据切片）────────────────────
+// provider 必填且须为注册表中 transport=acp 的 provider（路由校验）。apiKey 空/缺省 =
+// 不改（编辑态留空保留原 key，与 claude/pi preset PUT 一致）；baseUrl 显式空串 = 删除，
+// 非空 = 设置。响应只回该 provider 的 masked 切片（原始 key 不出 api 进程）。
+export type UpdateAcpRuntimeRequest = {
+  provider: AgentProvider;
+  apiKey?: string;
+  baseUrl?: string;
+};
+
+export type UpdateAcpRuntimeResponse = {
+  provider: AgentProvider;
+  runtime: AcpCredentialsMasked;
+};
+
+// GET /api/agent-providers —— profile 注册表只读投影（settings UI 的 per-provider 驱动源；
+// 新 ACP CLI 注册后 UI 自动跟随）。不暴露 command。credentialsEnv 供凭据表单 hint
+// （env 名是技术标识不翻译）。
+export type AgentProviderInfo = {
+  provider: AgentProvider;
+  label: string;
+  transport: AgentProviderTransport;
+  displayNamePrefix: string;
+  capabilities: { history: "unsupported" | "native" };
+  credentialsEnv?: { apiKeyEnv: string; baseUrlEnv?: string };
+};
+
+export type ListAgentProvidersResponse = { providers: AgentProviderInfo[] };
 
 export type DeletePiPresetResponse = {
   deleted: true;
@@ -818,6 +880,8 @@ export type AgentSession = {
   permissionMode?: string;
   effort?: EffortLevel;
   claudeSessionId?: string;
+  /** ACP session id（acp provider）：agent 侧生成的不透明 sess_xxx 标识，spawn+loadSession 恢复用。 */
+  acpSessionId?: string;
   /** 自动重试注入配置（claude）；缺省 = 默认关。 */
   autoRetry?: ClaudeAutoRetryConfig;
   lastAssistantMessage?: string;
@@ -845,6 +909,8 @@ export type CreateAgentSessionRequest = {
   permissionMode?: string;
   /** Resume an existing Claude CLI session */
   claudeSessionId?: string;
+  /** Resume an existing omp (ACP) session — 经 session/load 全量回放历史。 */
+  acpSessionId?: string;
 };
 
 export type CreateAgentSessionResponse = {
@@ -875,8 +941,13 @@ export type CloseAgentSessionResponse = {
 export type AgentHistoryRange = "week" | "biweekly" | "all";
 
 export type AgentHistoryEntry = {
-  /** Claude CLI session UUID (JSONL filename without extension) */
-  claudeSessionId: string;
+  /** 该历史条目归属的 provider（决定 resume 时新建哪种实例、列表 marker 图标）。
+   *  缺省视为 "claude"（存量响应兼容）。 */
+  provider?: "claude" | "omp";
+  /** Claude CLI session UUID (JSONL filename without extension)；claude 条目专用。 */
+  claudeSessionId?: string;
+  /** omp session id（= omp JSONL 文件名 uuid 段，loadSession 恢复用）；omp 条目专用。 */
+  acpSessionId?: string;
   /** AI-generated title (last ai-title entry), or null */
   title: string | null;
   /** First user message text, truncated */
@@ -887,7 +958,7 @@ export type AgentHistoryEntry = {
   lastActivityAt: string | null;
   /** JSONL session file size in bytes */
   fileSize: number;
-  /** Whether an active agent instance is linked to this Claude session */
+  /** Whether an active agent instance is linked to this history session */
   hasActiveSession: boolean;
   /** Agent session ID when hasActiveSession is true */
   activeSessionId?: string;
@@ -1090,6 +1161,81 @@ export type PiStreamClientMessage =
       uuid?: string;
       /** 图片附件（base64 data 不含 data: 前缀），透传 pi prompt images。 */
       images?: { data: string; mimeType: string }[];
+    }
+  | {
+      type: "interrupt";
+    }
+  | {
+      type: "ping";
+    };
+
+// -- ACP Stream Messages（/api/projects/:p/agent-sessions/:id/acp-stream，通用 ACP provider）--
+// 传输层与 pi/claude 字节级一致（复用 session_init/history_*/live_*/ended 批处理 markers）；
+// payload 发 acp_event 原生透传帧。Route A 决策（docs/research/acp-agent-integration.md §6）：
+// 不翻译成 claude 帧族，pi 式独立帧族 + 前端最小 acp-adapter。ACP update 的具体形状只在
+// api 端存在（官方 @agentclientprotocol/sdk schema 类型），shared 只声明外层帧协议；web 端
+// 消费 acp_event 时按需声明局部类型解码（acp-adapter.ts）。
+
+export type AcpNativeEventShape = {
+  /** ACP session/update 的 discriminator（user_message_chunk / tool_call / plan …）。 */
+  sessionUpdate?: string;
+} & Record<string, unknown>;
+
+export type AcpEventFrame = {
+  type: "acp_event";
+  event: AcpNativeEventShape;
+};
+
+export type AcpUserEchoFrame = {
+  type: "acp_user_echo";
+  /** 用户发送且被 runtime 接受的 prompt 原文。ACP update 流不回显用户输入，reconnect 需看到。 */
+  text: string;
+  /** 客户端生成、原样带回的本地 uuid，用于把 echo 对齐到已发送消息。 */
+  uuid: string;
+};
+
+export type AcpStreamServerMessage =
+  | AcpEventFrame
+  | AcpUserEchoFrame
+  | {
+      type: "error";
+      code: ApiErrorCode;
+      message: string;
+    }
+  | {
+      type: "session_init";
+      resume: boolean;
+    }
+  | {
+      type: "history_start";
+      count: number;
+    }
+  | {
+      type: "history_end";
+    }
+  | {
+      type: "live_start";
+      count: number;
+    }
+  | {
+      type: "live_end";
+    }
+  | {
+      // turn 边界（session/prompt 响应到达）：与 claude result→ended / pi agent_settled→ended
+      // 同语义。stopReason 保真透传（end_turn/refusal/max_tokens/…），瞬态帧不进 live 缓冲。
+      type: "ended";
+      stopReason?: string;
+    }
+  | {
+      type: "pong";
+    };
+
+export type AcpStreamClientMessage =
+  | {
+      type: "user";
+      text: string;
+      /** 客户端生成的本地 uuid（crypto.randomUUID()）：server 原样注入 acp_user_echo。 */
+      uuid?: string;
     }
   | {
       type: "interrupt";

@@ -73,7 +73,7 @@ import {
   type ShellTone,
   statusToTone,
 } from "../shell/shell-primitives";
-import { AgentTerminalPanel, ChatPanel, TerminalPanel } from "./instance-panel";
+import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { SkillTabPreview } from "../../routes/PluginsRoute";
@@ -583,6 +583,11 @@ function AgentPanelRouter({
         sessionId={panelRef.sessionId}
       />
     );
+  }
+  // ACP transport 类 provider（当前只有 omp）→ AcpPanel。按 transport 判定：加其它 ACP CLI
+  // 只需注册表加 profile，此处跟随（当前用显式 provider 名，多 ACP CLI 时改查 profile.transport）。
+  if (detail.data?.session.provider === "omp") {
+    return <AcpPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   if (detail.data?.session) {
     return (
@@ -1337,6 +1342,7 @@ function providerDisplayName(provider: string | undefined): string {
   if (!provider) return "—";
   if (provider === "claude") return "Claude";
   if (provider === "codex") return "Codex";
+  if (provider === "omp") return "omp";
   return provider;
 }
 
@@ -1611,6 +1617,11 @@ export function CreateSessionBar({
           label: t("workbench.createClaude"),
           icon: <ShellIcon name="anthropic" />,
           onSelect: () => onCreateAgent("claude"),
+        },
+        {
+          label: t("workbench.createOmp"),
+          icon: <ShellIcon name="agent-nav" />,
+          onSelect: () => onCreateAgent("omp"),
         },
         {
           label: t("workbench.createTerminal"),

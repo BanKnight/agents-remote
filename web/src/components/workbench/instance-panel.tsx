@@ -1,4 +1,5 @@
 import { ClaudeChat } from "../../routes/ClaudeSessionDetailRoute";
+import { AcpChatPanel } from "../../routes/AcpSessionDetailRoute";
 import { SessionDetail } from "../../routes/SessionDetailRoute";
 
 type PanelProps = {
@@ -50,6 +51,14 @@ export function AgentTerminalPanel({ projectName, sessionId, embeddedHeader }: P
       sessionType="agent"
     />
   );
+}
+
+/**
+ * ACP（Agent Client Protocol）实例面板（Phase 1 PoC）：embedded 聊天形态（pi 同构——
+ * 无 header，tab chip 提供名字），thread 复用 VirtualizedThreadContent，composer 无附件。
+ */
+export function AcpPanel({ projectName, sessionId }: PanelProps) {
+  return <AcpChatPanel projectName={projectName} sessionId={sessionId} />;
 }
 
 /**

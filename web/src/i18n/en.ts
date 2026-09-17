@@ -340,6 +340,8 @@ export const en = {
   "api.providerDeleteFailed": "Failed to delete provider",
   "api.runtimeUpdateFailed": "Failed to update Claude runtime",
   "api.piRuntimeUpdateFailed": "Failed to update Pi runtime",
+  "api.acpRuntimeUpdateFailed": "Failed to update ACP runtime",
+  "api.agentProvidersFailed": "Failed to load agent providers",
   "api.piPresetCreateFailed": "Failed to add Pi preset",
   "api.piPresetUpdateFailed": "Failed to update Pi preset",
   "api.piPresetDeleteFailed": "Failed to delete Pi preset",
@@ -542,6 +544,7 @@ export const en = {
   "workbench.createSessionAria": "New session",
   "workbench.createClaude": "Claude",
   "workbench.createCodex": "Codex",
+  "workbench.createOmp": "omp",
   "workbench.createTerminal": "Terminal",
   "workbench.instancesAria": "Instances",
   "workbench.noInstances": "No instances yet — create one above.",
@@ -616,6 +619,7 @@ export const en = {
   "settings.section.general": "General",
   "settings.section.claude": "Claude runtime",
   "settings.section.pi": "Pi runtime",
+  "settings.section.acp": "ACP agents",
   "theme.label": "Appearance",
   "theme.hint": "Choose light or dark appearance, or follow system.",
   "theme.system": "System",
@@ -679,6 +683,14 @@ export const en = {
     "Optional. Web search/scrape tools always available; a key raises limits, empty uses anonymous quota. Leave blank to keep the existing key unchanged; clear and save to remove it.",
   "settings.firecrawlKeyBlank": "None (anonymous)",
   "settings.clear": "Clear",
+
+  // ── Settings: acp runtime（per-provider 凭据切片） ─────────────
+  "settings.acpHint":
+    "Agents connected via the Agent Client Protocol (ACP). Credentials are injected into the agent process at spawn; changes apply to newly started sessions.",
+  "settings.acpBaseUrlHint":
+    "Optional. A custom Anthropic-compatible endpoint. Clear and save to fall back to the official endpoint.",
+  "settings.acpApiKeyBlank": "Not configured",
+  "settings.acpEnvHint": "Injected env:",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",

@@ -10,6 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.4.0",
     "@agents-remote/shared": "workspace:*",
     "@earendil-works/pi-coding-agent": "^0.84.2",
     "@modelcontextprotocol/sdk": "^1.30.0",

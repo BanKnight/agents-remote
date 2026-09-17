@@ -186,6 +186,11 @@ export function MobileProjectDrawer({
             onSelect: () => create.createAgent("claude"),
           },
           {
+            label: t("workbench.createOmp"),
+            icon: <ShellIcon name="agent-nav" />,
+            onSelect: () => create.createAgent("omp"),
+          },
+          {
             label: t("workbench.createTerminal"),
             icon: <ShellIcon name="terminal" />,
             onSelect: create.createTerminal,

@@ -14,6 +14,7 @@
 
 - [agent-vs-chat-modes.md](./agent-vs-chat-modes.md) — 竞品「对话 vs Agent」双模式调研：本质是两种执行引擎（对话=只读信息获取+无工作区无权限层；Agent=写执行+工作区+权限/计划审批+可恢复会话），Proma 本地源码一手证据 + 网络调研 6 产品（OpenWebUI/Continue/Cursor/Cherry/Dify/Claude SDK）六维度对比与统一趋势。
 - [agent-access-options.md](./agent-access-options.md) — 汇总 hapi、remodex、Codex、Claude 与社区反馈对 Agent 接入路线、第一轮真实可用链路和统一协议设计的调研结论。
+- [acp-agent-integration.md](./acp-agent-integration.md) — ACP（Agent Client Protocol）agent 接入调研：当前主流竞品接入方式盘点（结论：编排层未收敛到 ACP，主流仍是逐家 wrapper，ACP 是长尾通用后备）、ACP 协议本体（v1 方法集/session load-resume 语义/v2 draft）、agent 端支持矩阵、buzz 本地源码 ACP 客户端第一手工程经验（协议怪癖+双超时+权限 fail-closed）、本项目三阶段接入规划提案（待确认）；承接 agent-access-options.md。
 - [claude-cli-stream-protocol.md](./claude-cli-stream-protocol.md) — Claude CLI stdio stream-json 协议完整文档：消息类型、system.init 字段、control_request 机制、生命周期和集成方式；三维度运行态配置（model/permission/effort）见 claude-cli-runtime-config.md。
 - [claude-cli-runtime-config.md](./claude-cli-runtime-config.md) — Claude CLI 运行态三维度（model/permission/effort）对接：每维度的默认值决策链、spawn 初始值、stream-json 运行时切换，含 TUI vs 无头能力差异、官方二进制字面量与实测证据、竞品方案（hapi fork）与本项目对接现状。
 - [claude-replay-performance.md](./claude-replay-performance.md) — Claude 长会话打开慢的性能分析与验收基线：数据流成本模型、实测数字（客户端已排除，主因在传输）、实施路径与验收标准。

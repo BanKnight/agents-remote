@@ -29,6 +29,7 @@
       "name": "@agents-remote/api",
       "version": "0.0.0",
       "dependencies": {
+        "@agentclientprotocol/sdk": "^1.4.0",
         "@agents-remote/shared": "workspace:*",
         "@earendil-works/pi-coding-agent": "^0.84.2",
         "@modelcontextprotocol/sdk": "^1.30.0",
@@ -95,6 +96,8 @@
     },
   },
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.4.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg=="],
+
     "@agents-remote/api": ["@agents-remote/api@workspace:api"],
 
     "@agents-remote/shared": ["@agents-remote/shared@workspace:packages/shared"],

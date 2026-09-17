@@ -13,7 +13,9 @@ import {
   maskApiKey,
   migrateV1ToV2,
   migrateV4ToV5,
+  normalizeAcp,
   resolveModelId,
+  toMaskedAcpRuntime,
   toMaskedPiPreset,
   toMaskedPreset,
 } from "./settings-store";
@@ -98,6 +100,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
         effort: "max",
       },
       pi: { presets: [], activePresetId: "" },
+      acp: {},
     },
     skills: { sources: [] },
   };
@@ -420,6 +423,51 @@ test("toMaskedPiPreset: 无 apiKey → hasApiKey false + apiKeyMasked 空串", (
   expect(masked).not.toHaveProperty("apiKey");
 });
 
+// ── acp 凭据切片（per-provider）───────────────────────────────────────────
+
+test("toMaskedAcpRuntime: per-provider mask + hasApiKey；baseUrl 条件展开；不泄露原 key", () => {
+  const masked = toMaskedAcpRuntime({
+    omp: { apiKey: "sk-acp-abc123456", baseUrl: "https://gw.example.com" },
+  });
+  expect(masked.omp?.hasApiKey).toBe(true);
+  expect(masked.omp?.apiKeyMasked).toBe(maskApiKey("sk-acp-abc123456"));
+  expect(masked.omp?.apiKeyMasked).not.toContain("abc123456");
+  expect(masked.omp?.baseUrl).toBe("https://gw.example.com");
+  expect(masked.omp).not.toHaveProperty("apiKey");
+
+  // 无 baseUrl → 键不出现（默认端点 = agent 自身凭证链语义）。
+  const noUrl = toMaskedAcpRuntime({ omp: { apiKey: "sk-acp-abc123456" } });
+  expect(noUrl.omp).not.toHaveProperty("baseUrl");
+
+  // 空配置（normalize 后常态）→ 空 map。
+  const empty = toMaskedAcpRuntime({});
+  expect(empty).toEqual({});
+});
+
+test("normalizeAcp: 旧单套形状迁入 omp；新形状按 provider 键控过滤", () => {
+  // 旧形状（Phase 1 顶层单套）→ 整体迁入 omp 键（存量 settings.yaml 保真迁移）。
+  expect(normalizeAcp({ apiKey: "sk-a", baseUrl: "https://gw.example.com" })).toEqual({
+    omp: { apiKey: "sk-a", baseUrl: "https://gw.example.com" },
+  });
+  expect(normalizeAcp({ apiKey: "sk-a" })).toEqual({ omp: { apiKey: "sk-a" } });
+
+  // 新形状：omp 键保留；非 acp transport 的注册 provider（claude/codex）与乱键丢弃。
+  expect(normalizeAcp({ omp: { apiKey: "sk-a", baseUrl: "" } })).toEqual({
+    omp: { apiKey: "sk-a" },
+  });
+  expect(normalizeAcp({ omp: { apiKey: "sk-a" }, claude: { apiKey: "sk-c" } })).toEqual({
+    omp: { apiKey: "sk-a" },
+  });
+  expect(normalizeAcp({ gemini: { apiKey: "sk-g" }, unrelated: "x" })).toEqual({});
+
+  // 空串丢弃；纯空白 length>0 保留（nonEmptyString 语义，与 pi preset normalize 一致）。
+  expect(normalizeAcp({ omp: { apiKey: "", baseUrl: "" } })).toEqual({});
+  expect(normalizeAcp({ omp: { apiKey: "  " } })).toEqual({ omp: { apiKey: "  " } });
+  expect(normalizeAcp({ omp: { apiKey: 123, baseUrl: null } })).toEqual({});
+  expect(normalizeAcp(undefined)).toEqual({});
+  expect(normalizeAcp("nope")).toEqual({});
+});
+
 test("migrateV1ToV2: 输出 pi 未启用默认（v1 无 pi 概念）", () => {
   const v2 = migrateV1ToV2({
     schemaVersion: 1,
@@ -632,6 +680,7 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
     runtimes: {
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
       pi: { presets: [], activePresetId: "" },
+      acp: {},
     },
     skills: { sources: [] },
   });
@@ -639,6 +688,7 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
     runtimes: {
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
       pi: { presets: [], activePresetId: "" },
+      acp: {},
     },
     skills: { sources: [] },
   });

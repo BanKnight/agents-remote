@@ -122,6 +122,36 @@ test("GET /api/settings returns defaults when empty", async () => {
     activePresetId: "",
     firecrawlApiKeyMasked: "",
   });
+  // acp 凭据切片 per-provider；未配置 → omp 键缺省（空 map，normalize 不落空键）。
+  expect(body.settings.runtimes.acp).toEqual({});
+});
+
+// ── GET /api/agent-providers（profile 注册表只读投影）──
+
+test("GET agent-providers：返回注册表投影（omp 带 credentialsEnv；不含 command）", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("GET", "/api/agent-providers"),
+    makeUrl("/api/agent-providers"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = (await res!.json()) as { providers: Array<Record<string, unknown>> };
+  const byId = new Map(body.providers.map((p) => [p.provider as string, p]));
+  expect(byId.size).toBe(3);
+  const omp = byId.get("omp");
+  expect(omp).toMatchObject({
+    label: "omp",
+    transport: "acp",
+    displayNamePrefix: "OMP Agent",
+    credentialsEnv: { apiKeyEnv: "ANTHROPIC_API_KEY", baseUrlEnv: "ANTHROPIC_BASE_URL" },
+  });
+  // claude/codex 无 credentials 声明 → 不出现凭据字段。
+  expect(byId.get("claude")).toMatchObject({ transport: "claude" });
+  expect(byId.get("claude")).not.toHaveProperty("credentialsEnv");
+  expect(byId.get("codex")).not.toHaveProperty("credentialsEnv");
+  // 全列表不暴露 command（spawn 命令是 api 侧实现细节）。
+  expect(JSON.stringify(body)).not.toContain('"command"');
 });
 
 // ── GET /api/settings/runtimes/pi/providers（内置 provider 枚举）──
@@ -417,6 +447,115 @@ test("PUT /api/settings/runtimes/pi firecrawl key：设置 → masked；缺省�
   const after = await store.read();
   expect(after.runtimes.pi).not.toHaveProperty("firecrawlApiKey");
   expect(after.runtimes.pi.activePresetId).toBe("p1");
+});
+
+// ── PUT /api/settings/runtimes/acp（per-provider 凭据切片）──
+
+test("PUT acp runtime: 设置 omp apiKey/baseUrl → masked 回显；GET 回读原 key 不出进程", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", {
+      provider: "omp",
+      apiKey: "sk-acp-abc123456",
+      baseUrl: "https://gw.example.com",
+    }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = (await res!.json()) as {
+    provider: string;
+    runtime: { hasApiKey: boolean; apiKeyMasked: string; baseUrl?: string };
+  };
+  expect(body.provider).toBe("omp");
+  expect(body.runtime.hasApiKey).toBe(true);
+  expect(body.runtime.apiKeyMasked).not.toContain("abc123456");
+  expect(body.runtime.baseUrl).toBe("https://gw.example.com");
+
+  // GET 回读：omp 键恒存在、只露 masked，原始 key 不出现在任何响应里。
+  const get = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings"),
+    makeUrl("/api/settings"),
+    store,
+  );
+  const getBody = (await get!.json()) as { settings: { runtimes: { acp: unknown } } };
+  expect(getBody.settings.runtimes.acp).toEqual({
+    omp: {
+      hasApiKey: true,
+      apiKeyMasked: body.runtime.apiKeyMasked,
+      baseUrl: "https://gw.example.com",
+    },
+  });
+  expect(JSON.stringify(getBody)).not.toContain("abc123456");
+});
+
+test("PUT acp runtime: provider 非法/非 acp transport → 400（profile 驱动校验）", async () => {
+  const store = await makeStore();
+  // 未注册的 provider id → 400。
+  const unknown = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", { provider: "gemini", apiKey: "sk-x" }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+  expect(unknown?.status).toBe(400);
+  // 注册了但 transport 非 acp（claude 凭据走自己的 presets 体系）→ 400。
+  const claude = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", { provider: "claude", apiKey: "sk-x" }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+  expect(claude?.status).toBe(400);
+  // 两个请求都不落盘。
+  expect(await store.read()).toMatchObject({ runtimes: { acp: {} } });
+});
+
+test("PUT acp runtime: apiKey 空/缺省 = 保留原值；baseUrl 显式空串 = 删除；空请求 = 全不改", async () => {
+  const store = await makeStore();
+  await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", {
+      provider: "omp",
+      apiKey: "sk-acp-keep",
+      baseUrl: "https://gw.example.com",
+    }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+
+  // 只改 baseUrl（apiKey 缺省 = 保留）。
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", {
+      provider: "omp",
+      baseUrl: "https://gw2.example.com",
+    }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+  const body = (await res!.json()) as { runtime: { hasApiKey: boolean; baseUrl?: string } };
+  expect(body.runtime.hasApiKey).toBe(true);
+  expect(body.runtime.baseUrl).toBe("https://gw2.example.com");
+  // masked 断言区分不了「保留」与「清空」——直接读盘确认原 apiKey 原样保留。
+  expect((await store.read()).runtimes.acp.omp?.apiKey).toBe("sk-acp-keep");
+
+  // baseUrl 显式空串 = 删除（回退官方端点）；apiKey 仍保留。
+  const del = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", { provider: "omp", baseUrl: "" }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+  const delBody = (await del!.json()) as { runtime: Record<string, unknown> };
+  expect(delBody.runtime.hasApiKey).toBe(true);
+  expect(delBody.runtime).not.toHaveProperty("baseUrl");
+
+  // 空请求（{provider}）= 全不改。
+  const noop = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/acp", { provider: "omp" }),
+    makeUrl("/api/settings/runtimes/acp"),
+    store,
+  );
+  const noopBody = (await noop!.json()) as { runtime: Record<string, unknown> };
+  expect(noopBody.runtime.hasApiKey).toBe(true);
+  expect(noopBody.runtime).not.toHaveProperty("baseUrl");
+  expect((await store.read()).runtimes.acp.omp?.apiKey).toBe("sk-acp-keep");
 });
 
 test("PUT runtimes/claude 保留 pi presets + skills（applyClaudeRuntimePatch 展开合并回归）", async () => {

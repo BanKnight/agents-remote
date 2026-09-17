@@ -7,6 +7,11 @@ import {
   CLAUDE_MODEL_TIERS,
   EFFORT_LEVELS,
   PI_PROVIDER_APIS,
+  type AcpCredentials,
+  type AcpCredentialsMasked,
+  type AcpRuntimeConfig,
+  type AcpRuntimeConfigMasked,
+  type AgentProvider,
   type ClaudeModelMapping,
   type ClaudeModelTier,
   type ClaudePreset,
@@ -21,6 +26,7 @@ import {
   type SkillSource,
   type SkillSourceType,
 } from "@agents-remote/shared";
+import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { summarizeYamlError } from "./yaml-error";
 
 // settings.yaml 与 config.yaml 同目录（~/.agents-remote/），统一 YAML 格式。settings-store
@@ -236,6 +242,58 @@ export function toMaskedPiPreset(preset: PiPreset): PiPresetMasked {
   };
 }
 
+// acp 凭据 mask（per-provider，同 apiKey 语义：key 永不出 api 进程，只露 masked 指纹供
+// 前端判断；baseUrl 非机密，明文回显）。
+export function toMaskedAcpCredentials(credentials: AcpCredentials): AcpCredentialsMasked {
+  return {
+    apiKeyMasked: maskApiKey(credentials.apiKey ?? ""),
+    hasApiKey: Boolean(credentials.apiKey),
+    ...(credentials.baseUrl === undefined ? {} : { baseUrl: credentials.baseUrl }),
+  };
+}
+
+export function toMaskedAcpRuntime(config: AcpRuntimeConfig): AcpRuntimeConfigMasked {
+  return Object.fromEntries(
+    Object.entries(config).map(([provider, credentials]) => [
+      provider,
+      toMaskedAcpCredentials(credentials),
+    ]),
+  );
+}
+
+// 单切片宽松规整：apiKey/baseUrl 非空字符串才保留（其余输入丢弃，结构恒合法）。
+function normalizeAcpCredentials(input: unknown): AcpCredentials {
+  if (!input || typeof input !== "object") return {};
+  const p = input as Record<string, unknown>;
+  const apiKey = nonEmptyString(p.apiKey);
+  const baseUrl = nonEmptyString(p.baseUrl);
+  return {
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+  };
+}
+
+// acp 凭据切片宽松规整（per-provider，双保险式兼容旧形状）：
+// - 旧形状（顶层带 apiKey/baseUrl 的 Phase 1 单套切片）→ 整体迁入 omp 键（读时归一，
+//   首次 PUT 落盘固化——纯内存，无版本迁移手术；omp 是唯一 acp transport provider）。
+// - 新形状：只保留注册表中 transport=acp 的 provider 键（乱键/claude/codex 键丢弃），
+//   每键宽松规整，空切片不落键。
+export function normalizeAcp(input: unknown): AcpRuntimeConfig {
+  if (!input || typeof input !== "object") return {};
+  const p = input as Record<string, unknown>;
+  if (nonEmptyString(p.apiKey) || nonEmptyString(p.baseUrl)) {
+    const legacy = normalizeAcpCredentials(p);
+    return legacy.apiKey || legacy.baseUrl ? { omp: legacy } : {};
+  }
+  const out: AcpRuntimeConfig = {};
+  for (const [key, value] of Object.entries(p)) {
+    if (getAgentProviderProfile(key as AgentProvider)?.transport !== "acp") continue;
+    const credentials = normalizeAcpCredentials(value);
+    if (credentials.apiKey || credentials.baseUrl) out[key as AgentProvider] = credentials;
+  }
+  return out;
+}
+
 const isPiProviderApi = (value: unknown): value is PiProviderApi =>
   typeof value === "string" && (PI_PROVIDER_APIS as readonly string[]).includes(value);
 
@@ -397,8 +455,9 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
           typeof oldRuntime.enable1mContext === "boolean" ? oldRuntime.enable1mContext : false,
         effort: isEffortLevel(oldRuntime.effort) ? oldRuntime.effort : "high",
       },
-      // v1 无 pi 概念 → 未启用默认。
+      // v1 无 pi 概念 → 未启用默认；acp 凭据切片同步补缺。
       pi: { ...DEFAULT_PI_RUNTIME },
+      acp: {},
     },
     skills: { sources: [] },
   };
@@ -432,6 +491,8 @@ export function normalizeSettings(parsed: unknown): SettingsState {
       },
       // v5：pi 恒存在；空 presets + activePresetId:"" = 未启用。
       pi: normalizePi(root.runtimes?.pi),
+      // Phase 1 凭据切片恒存在；{} = 未配置。
+      acp: normalizeAcp(root.runtimes?.acp),
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
   };
@@ -467,6 +528,7 @@ function cloneDefaultSettings(): SettingsState {
         effort: DEFAULT_CLAUDE_RUNTIME.effort,
       },
       pi: { ...DEFAULT_PI_RUNTIME },
+      acp: {},
     },
     skills: { sources: [] },
   };

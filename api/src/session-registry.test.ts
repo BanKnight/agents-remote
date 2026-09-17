@@ -480,6 +480,88 @@ test("SessionRegistry normalizes legacy claude2 provider on metadata load (renam
   expect(sessions[0].claudeSessionId).toBe("claude-legacy-session-abc");
 });
 
+test("SessionRegistry normalizes legacy acp provider to omp on metadata load (Phase 1 PoC compat)", async () => {
+  // ACP 是协议不是 CLI：Phase 1 PoC 用 provider "acp" 创建的存量 omp 会话 metadata，加载时
+  // 内存归一化为 "omp"——不归一则 provider 白名单/omp 保留分支不命中，会被当死会话误删。
+  const legacy = {
+    schemaVersion: 1,
+    id: "agent_legacyacp789",
+    projectName: project.name,
+    projectPath: project.path,
+    type: "agent",
+    provider: "acp",
+    displayName: "OMP Agent legacyacp",
+    status: "running",
+    // runtimeKey provider 段 = transport 家族 "acp"（omp 正名前创建的 key 段相同）→ 不需重写。
+    runtimeKey: "ar-agent-acp-hello-world-8f3a2b1c-agent_legacyacp789",
+    createdAt: "2026-09-15T00:00:00.000Z",
+    updatedAt: "2026-09-15T00:00:00.000Z",
+    acpSessionId: "omp-legacy-session-abc",
+  };
+  await mkdir(join(runDir, "sessions"), { recursive: true });
+  await writeFile(
+    join(runDir, "sessions", "agent_legacyacp789.json"),
+    JSON.stringify(legacy, null, 2),
+  );
+
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  const sessions = await registry.listAgentSessions(project.name);
+
+  // 归一化 → omp 保留分支命中，会话不被误删；acpSessionId 原样保留。
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0].provider).toBe("omp");
+  expect(sessions[0].acpSessionId).toBe("omp-legacy-session-abc");
+});
+
+test("createRuntimeKey 的 provider 段承载 transport 家族（omp → acp）", () => {
+  // omp 会话 key 段 = "acp"（与 Phase 1 存量一致，isAcpSessionName/存量 metadata 零改动）。
+  expect(createRuntimeKey("hello world", "agent", "omp", "agent_1234567890abcdef")).toStartWith(
+    "ar-agent-acp-",
+  );
+  // claude/codex transport 与 provider 同名，段不变。
+  expect(createRuntimeKey("hello world", "agent", "claude", "agent_1234567890abcdef")).toStartWith(
+    "ar-agent-claude-",
+  );
+});
+
+test("SessionRegistry 透传 acpSessionId 进 metadata 并对外呈现（omp 默认 displayName）", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_acpresume1234",
+  });
+
+  const session = await registry.createAgentSession({
+    project,
+    provider: "omp",
+    acpSessionId: "omp-session-uuid-1",
+    displayName: "恢复的历史会话",
+  });
+
+  expect(session.provider).toBe("omp");
+  expect(session.acpSessionId).toBe("omp-session-uuid-1");
+  expect(session.displayName).toBe("恢复的历史会话");
+  // metadata 落盘含 acpSessionId（持久层，API 重启后 ensureRunning loadSession 依赖它）。
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_acpresume1234.json"), "utf8"),
+  );
+  expect(metadata.acpSessionId).toBe("omp-session-uuid-1");
+  expect(metadata.runtimeKey).toStartWith("ar-agent-acp-");
+});
+
 test("SessionRegistry listAllCandidates aggregates across projects without subtitle", async () => {
   const captureCalls: string[] = [];
   const registry = new SessionRegistry({
