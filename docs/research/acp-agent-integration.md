@@ -10,8 +10,8 @@
 - 竞品盘点：完成（Vibe Kanban / Happy / OpenCode / Crush / omnara / Conductor / Terragon / Goose / Zed / Paseo + 云端 BYOA 群 + ACP 原生编排层）。
 - 协议调研：完成（v1 stable + v2 draft + TS SDK + agent 端 41 条目录 + client 生态）。
 - buzz 源码深挖：完成（`crates/buzz-acp` ~3.7 万行，协议怪癖 + 工程结构血泪清单）。
-- LobeChat 补充调研：完成（非 ACP-first：旗舰走厂商原生协议，ACP 手写客户端只覆盖 5 家无 SDK 第三方）。
-- **接入规划：提案已给出（§6），待用户确认后进入实现。**
+- LobeChat 补充调研：完成（非 ACP-first：旗舰走厂商原生协议，ACP 手写客户端只覆盖 5 家无 SDK 第三方；2026-09-18 deepwiki 补核实：code agent 与普通聊天**共享同一产品入口与聊天界面**，分叉只在 transport 层）。
+- **接入规划：提案已给出（§6），Phase 1 已落地**（omp ACP provider + per-provider settings 凭据切片 + provider 平权，commit ee113f5）；Phase 3 模型/配置切换完成 omp 第一手核实并具体化（§6.5）。
 
 ## 1 核心结论（TL;DR）
 
@@ -262,6 +262,31 @@ buzz-acp 是无人值守 ACP harness（接 goose/codex-acp/claude-agent-acp/herm
 - **v2 在途**：pin v1；SDK dual-version 示例在，迁移成本可控。
 - **session/list 与我们 AgentSession 模型的关系**：ACP session 由我们 metadata 持有（`acpSessionId`），不用 session/list 做发现（Phase 3 再评估）。
 - 单 commit/阶段独立可回退；Phase 1 只加文件不触碰现有管道。
+
+### 6.5 Phase 3 具体化：模型/配置透传与切换（2026-09-18 omp 第一手核实）
+
+**omp 广告什么**（`~/repos/oh-my-pi/packages/coding-agent/src/modes/acp/acp-agent.ts` `#buildConfigOptions`，一手源码）：`session/new`、`session/load`、`session/set_config_option` 的响应及 `config_option_update` 通知均携带 `configOptions[]`，omp 广告三个 select 项：
+
+- `Mode`（category=mode）：plan/edit 等模式，`options[{value, name, description}]`；
+- `Model`（category=model）：`currentValue` + `options[{value=modelId, name, description="provider/id"}]`；**仅在 `models.length > 0` 时广告**——凭据不可用时连此项都没有（选择器为空即凭据问题信号，与 2026-09-17「删回退后 omp 模型列表为空」事件互证）；
+- `Thinking`（category=thought_level）：off / auto / 可用级别。
+
+**怎么切**：`session/set_config_option {sessionId, id, value}` → omp 端 `#setModelById` → `session.setModel(model)`（未知 modelId 报错）；变更经响应的 `configOptions` 回传 + `config_option_update` 通知广播。
+
+**设计决策**：
+
+1. **设置层不加模型字段**——模型是 agent 自身资产（默认模型归 agent 自身配置体系），配置面位置在会话 detail：透传 `configOptions` + 选择器（与 claude `switch_model` 同位）。
+2. **一次性改动全 ACP 受益**——configOptions 捕获/透传/选择器做在通用 acp 管道，未来 gemini/kimi 等 profile 接入即自带模型/模式/thinking 切换，无 per-CLI 增量。
+3. Phase 3 余项：usage_update、plan 帧、slash 命令、双超时熔断、v2 draft 跟踪。
+
+**未来新 CLI 接入决策树**（配置视角完整路径，收口结论同步见 [provider-config-comparison.md](./provider-config-comparison.md) 收口节）：
+
+| 形态 | 路径 | 边际成本 |
+|---|---|---|
+| 支持 ACP（未来大多数） | 注册表加 profile 声明（command / 凭据 env 名 / label），管道与凭据卡全复用 | 一条声明 + **一次真机验证**（buzz 血泪：验证不可省） |
+| 有结构化协议无 ACP | 逐家写管道（codex app-server 先例，业界三家同选） | 数百行，仅对足够重要的 CLI |
+| 仅终端形态 | tmux 降级（`capabilities.history: "unsupported"`） | 最小，体验降级 |
+| 非 CLI、纯 chat/complete 端点 | chat 轨另立项（模型列表 AUTODETECT 配置面） | 新 transport，非新产品入口（LobeChat 实证：入口与界面统一，分叉在 transport 层） |
 
 ## 7 证据索引
 

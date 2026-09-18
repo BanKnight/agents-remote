@@ -2,7 +2,7 @@
 
 > 调研动机：agents-remote 的 Claude 运行时 preset 把「运行时（哪个 agent 用、spawn 什么命令）+ provider（端点/凭证）+ 协议（anthropic vs openai-compatible）+ 模型映射（4-tier → model ID）」**全耦合在一个 preset** 里，只有 claude 一种。用户困惑「其他 agent 项目怎么拆这几层」，故对比 Continue / hapi / Claude Code 三家的 provider 配置设计，为「每个 provider 手动添加模型」「Codex 运行时支持」等未来方向提供参考。
 >
-> 状态：**决策未做**。仅调研沉淀，供后续设计参考。证据分级见文末。
+> 状态：**部分收口（2026-09-18）**——开放问题 4 已落地（per-provider 凭据切片），配置问题的统一答案已收口（见「2026-09-18 收口」节），开放问题 1-3 由收口结论给出方向性回答。证据分级见文末。
 
 ## TL;DR（结论先行）
 
@@ -102,6 +102,22 @@ hapi 的三层拆法：**运行时 = flavor 注册表**（可扩展、注册式�
 - **如果要支持多运行时**：hapi 的 `AgentRegistry`（flavor 注册表）是可借鉴的运行时层扩展点，与 provider 层解耦。
 - **协议字段去留**：之前清理掉的 `settings.protocol` 系列死 key（「决定 /v1/models 的 header、不影响 spawn」）若走「provider 类型内隐协议」路线，确实不需要用户显式选协议——印证了清理合理性。
 
+## 2026-09-18 收口：配置问题的统一答案
+
+多轮讨论（模型选择 / 多协议接入 / 竞品如何维护众多 CLI）的最终收口，直接回答「接入任意形态的 agent，配置到底怎么配」：
+
+**配置分三块，各自解法不同，不进同一个大表单：**
+
+1. **凭据（跟谁认证）——全 provider 共用一套形状**。共性 `{apiKey, baseUrl}` + per-provider 差异声明（注入的 env 变量名等）。lobe 以此覆盖 40+ 模型厂商，证明该形状通吃 CLI / ACP / 纯 API 各种形态。本项目已落地（开放问题 4，commit ee113f5）。
+2. **模型（用什么脑子）——归属取决于 loop 在谁手里**，这是配置问题真正的分叉点：
+   - **CLI/ACP agent：模型不是配置项**。模型列表是 agent 自身资产——我们不配、不维护，设置层不加模型字段；要做的只是把 agent 广告（ACP `configOptions` / claude 自有 alias）透传到会话 detail + 会话级切换（与 claude `switch_model` 同位）。配置面 = 零。
+   - **chat/complete 端点（loop 在宿主）：模型是核心配置**。endpoint + key + 模型列表；模型列表用 Continue AUTODETECT 模式（贴 key → 实时拉取 → 挑）。本项目 `settings-models.ts` 的 `listProviderModels` 与 Continue `fetchModels` 结构同构，chat 轨立项时直接复用该模式。
+3. **接入（怎么启动）——代码声明，非用户配置**。command / transport / env 注入名在 profile 注册表（`agent-provider-profiles.ts`）声明；用户最多选 ACP 预设或自定义 command。
+
+**一句话**：凭据共性一套形状，模型按 loop 归属分流。未来新 CLI 的边际成本 = 一条 profile 声明 + 一次真机验证（ACP agent 质量参差，验证不可省）；重要到值得深度集成的才开原生管道（claude/codex 先例）。
+
+**理念对照**（「provider 理念还是模型理念」）：接 agent CLI 的产品（Vibe Kanban / Happy / Paseo / hapi / 我们）用 provider 注册表理念，模型下放给 CLI 自管（编排层最多记录 CLI 报上来的模型名）；直调模型 API 的产品（Continue / OpenCode / Crush / omnara 新）用模型理念，loop 与模型管理归宿主。成熟产品（Goose / OpenCode / Paseo / LobeChat）最终双轨并存、各自维护。LobeChat 实证（deepwiki 一手，2026-09-18）：两条轨**共享同一产品入口与聊天界面**（code agent 走同一 agent 创建菜单与 `/agent/<id>` 路由），分叉只在 transport/执行层——本项目未来加 chat 轨的正确形态也是「多一条 transport」，不是多一个产品入口。
+
 ## 证据定位
 
 | 证据 | 位置 |
@@ -121,9 +137,9 @@ hapi 的三层拆法：**运行时 = flavor 注册表**（可扩展、注册式�
 ## 证据分级与开放问题
 
 - 证据分级：Continue 侧为源码实证（上述文件行号）；hapi 侧为源码实证（registry/flavor/session 结构）；Claude Code 侧为已知事实（settings.json env 机制，未在本轮深挖源码）；lobe-chat 侧为 deepwiki 源码索引（文件路径，未逐行本地验证）。
-- 开放问题：
-  1. agents-remote 是否要演进到「扁平 model 列表 + provider 属性」模型？还是保持「preset 自包含」的现状，仅扩展 tier 手填（本次已做）？
-  2. 若演进，`ProviderProtocol` 是否从两档（anthropic / openai-compatible）扩展为「一组 openai-compatible + 默认 baseUrl 的数据条目」（Continue 式）？
-  3. 若支持多运行时，是否引入 hapi 式 AgentRegistry（flavor 注册表），与 provider 层解耦？
-  4. runtime 配置块是否收敛为统一 credentials schema（lobe keyVaults 式：共性 {apiKey, baseUrl} + per-runtime 继承扩展），消掉 per-runtime 手写的 masked/normalize/PUT/前端 section 重复？
+- 开放问题（2026-09-18 收口状态）：
+  1. 是否演进到「扁平 model 列表 + provider 属性」？→ **方向性回答**：CLI/ACP agent 轨**不**引入——模型归 agent 自管，只透传 + 会话级切换；扁平列表 + AUTODETECT 属于未来 chat 轨（直调 loop）的配置面，届时才采用 Continue 模式。
+  2. `ProviderProtocol` 是否扩展为「数据条目」（Continue 式）？→ **随 1**：CLI 轨不需要协议字段（协议由 transport 决定）；chat 轨按 Continue「provider 类型内隐协议」处理（协议是 provider 类型决定的，非用户可选字段）。
+  3. 是否引入 hapi 式 AgentRegistry？→ **已落地**：`agent-provider-profiles.ts` 的 profile 注册表即其同构（provider = CLI 粒度，transport = 协议家族），与凭据/模型层解耦。
+  4. runtime 配置块收敛为统一 credentials schema？→ **✅ 已落地**（2026-09-17，commit ee113f5）：`runtimes.acp` 收敛为 per-provider 凭据切片（keyVaults 式共性 `{apiKey, baseUrl}` + profile 声明差异 env 名），masked / PUT 校验 / 前端凭据卡单份机制。
 - 承接：本文补充 [agent-access-options.md](./agent-access-options.md)（Agent 接入路线调研）与 [claude-cli-runtime-config.md](./claude-cli-runtime-config.md)（运行态三维度对接）的 provider 配置视角。
