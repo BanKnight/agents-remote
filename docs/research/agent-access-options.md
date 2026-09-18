@@ -598,7 +598,7 @@ remodex 社区反馈中提到的 skills/plugins 可见性不足，应理解为�
 
 ## 后续沉淀候选
 
-verify 后可由 `distill-change` 提炼到：
+verify 后可沉淀到：
 
 - `docs/architecture/`：Agent Runtime / Provider Adapter / Unified Session Protocol 架构。
 - `docs/design/`：AgentSession、TerminalSession、thread/turn/event 的长期设计。

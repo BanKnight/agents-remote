@@ -7,8 +7,9 @@ test-results/
 .env
 .env.*
 !.env.example
-.claude/handsoff/
+.claude/handoff/snapshots/
 .claude/worktrees/
-.claude/skills/
+# assistant-ui skills 安装机制生成的 symlink，指向 gitignored 的 .agents/skills/
+.claude/skills/observability
 .codegraph/
 .agents/

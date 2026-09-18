@@ -38,7 +38,7 @@ agents-remote/
 ├── e2e/              # Playwright 端到端测试：真实浏览器用户路径从这里开始找
 ├── scripts/          # 开发与验证脚本：E2E harness、临时环境编排等从这里开始找
 ├── docs/             # 长期参考文档：specs/design/architecture/runbooks/research 按任务类型加载
-├── .workflow/        # 工作流运行态：由 workflow 技能维护，业务开发通常只读取当前 change 上下文
+├── .claude/          # agent harness：constitution/rules/GTD/handoff/reviewer subagents/skills
 └── package.json      # Bun workspace 与根级质量门禁入口
 ```
 

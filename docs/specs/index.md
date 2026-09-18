@@ -20,7 +20,3 @@
 - [service-access-boundary](./service-access-boundary/spec.md) — 定义 `web`/`api` 服务拆分、统一同域入口、`/api` HTTP/WebSocket 路径和部署层职责边界。
 - [session-runtime](./session-runtime/spec.md) — 定义 Agent/Terminal Session 的身份分层、runtime metadata、tmux resource、reconnect、close、Terminal workspace instances list 和 Project-scoped shell/provider 会话行为契约。
 - [workspace-foundation](./workspace-foundation/spec.md) — 定义第一轮 monorepo 工作区、Bun 命令面、前端基础、共享类型边界和基础质量入口。
-
-## 文档
-
-- [workflow-skills-overview.md](./workflow-skills-overview.md) — 汇总当前规划中的阶段型工作流技能与不分阶段的通用技能。
