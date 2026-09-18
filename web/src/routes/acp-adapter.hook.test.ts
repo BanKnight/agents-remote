@@ -80,6 +80,18 @@ async function openSession() {
 const acpEvent = (event: Record<string, unknown>) =>
   ({ type: "acp_event", event }) as unknown as AcpStreamServerMessage;
 
+const configFrame = (configOptions: Record<string, unknown>[]) =>
+  ({ type: "acp_config", configOptions }) as unknown as AcpStreamServerMessage;
+
+const MODEL_OPTIONS = [
+  {
+    value: "anthropic/claude-opus-4-8",
+    name: "Opus 4.8",
+    description: "anthropic/claude-opus-4-8",
+  },
+  { value: "anthropic/claude-sonnet-4-8", name: "Sonnet 4.8" },
+];
+
 describe("useAcpSession WS 生命周期", () => {
   test("开场握手：open → live_end 置 loading=false；messages 为空", async () => {
     const { result } = await openSession();
@@ -211,5 +223,89 @@ describe("useAcpSession 数据流", () => {
       await result.current.onCancel();
     });
     expect(socket.sent.some((s) => s.includes('"type":"interrupt"'))).toBe(true);
+  });
+});
+
+describe("useAcpSession 会话配置（configOptions）", () => {
+  test("acp_config 帧 → 折叠为 configOptions 标量；setConfig 发送 set_config wire 形状", async () => {
+    const { result, socket } = await openSession();
+
+    socket.emit(
+      configFrame([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          currentValue: "anthropic/claude-opus-4-8",
+          options: MODEL_OPTIONS,
+        },
+      ]),
+    );
+    await waitFor(() => expect(result.current.configOptions).toHaveLength(1));
+    expect(result.current.configOptions[0]).toMatchObject({
+      id: "model",
+      currentValue: "anthropic/claude-opus-4-8",
+    });
+
+    await act(async () => {
+      result.current.setConfig("model", "anthropic/claude-sonnet-4-8");
+    });
+    const sent = socket.sent.find((s) => s.includes('"type":"set_config"'));
+    expect(sent).toBeDefined();
+    expect(JSON.parse(sent!)).toEqual({
+      type: "set_config",
+      configId: "model",
+      value: "anthropic/claude-sonnet-4-8",
+    });
+  });
+
+  test("config_option_update 通知 → 折叠 latest-wins，且不进 raw 消息日志", async () => {
+    const { result, socket } = await openSession();
+
+    socket.emit(
+      configFrame([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          currentValue: "anthropic/claude-opus-4-8",
+          options: MODEL_OPTIONS,
+        },
+      ]),
+    );
+    await waitFor(() => expect(result.current.configOptions).toHaveLength(1));
+
+    socket.emit(
+      acpEvent({
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            currentValue: "anthropic/claude-sonnet-4-8",
+            options: MODEL_OPTIONS,
+          },
+        ],
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.configOptions[0].currentValue).toBe("anthropic/claude-sonnet-4-8"),
+    );
+    // 消息列表长度不变（折叠进标量，不进 raw 日志）。
+    expect(result.current.storeAdapter.messages).toHaveLength(0);
+  });
+
+  test("session_init 重置 configOptions（重连基线清空）", async () => {
+    const { result, socket } = await openSession();
+    socket.emit(
+      configFrame([
+        { id: "model", name: "Model", type: "select", currentValue: "x", options: MODEL_OPTIONS },
+      ]),
+    );
+    await waitFor(() => expect(result.current.configOptions).toHaveLength(1));
+
+    socket.emit({ type: "session_init", resume: false } as AcpStreamServerMessage);
+    await waitFor(() => expect(result.current.configOptions).toHaveLength(0));
   });
 });

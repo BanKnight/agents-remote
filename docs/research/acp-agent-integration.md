@@ -11,7 +11,7 @@
 - 协议调研：完成（v1 stable + v2 draft + TS SDK + agent 端 41 条目录 + client 生态）。
 - buzz 源码深挖：完成（`crates/buzz-acp` ~3.7 万行，协议怪癖 + 工程结构血泪清单）。
 - LobeChat 补充调研：完成（非 ACP-first：旗舰走厂商原生协议，ACP 手写客户端只覆盖 5 家无 SDK 第三方；2026-09-18 deepwiki 补核实：code agent 与普通聊天**共享同一产品入口与聊天界面**，分叉只在 transport 层）。
-- **接入规划：提案已给出（§6），Phase 1 已落地**（omp ACP provider + per-provider settings 凭据切片 + provider 平权，commit ee113f5）；Phase 3 模型/配置切换完成 omp 第一手核实并具体化（§6.5）。
+- **接入规划：提案已给出（§6），Phase 1 已落地**（omp ACP provider + per-provider settings 凭据切片 + provider 平权，commit ee113f5）；**Phase 3 的模型/配置透传与切换已落地**（§6.5：通用 acp 管道透传 agent 广告的 configOptions + 会话级 set_config 切换，omp 实证）。
 
 ## 1 核心结论（TL;DR）
 
@@ -278,6 +278,18 @@ buzz-acp 是无人值守 ACP harness（接 goose/codex-acp/claude-agent-acp/herm
 1. **设置层不加模型字段**——模型是 agent 自身资产（默认模型归 agent 自身配置体系），配置面位置在会话 detail：透传 `configOptions` + 选择器（与 claude `switch_model` 同位）。
 2. **一次性改动全 ACP 受益**——configOptions 捕获/透传/选择器做在通用 acp 管道，未来 gemini/kimi 等 profile 接入即自带模型/模式/thinking 切换，无 per-CLI 增量。
 3. Phase 3 余项：usage_update、plan 帧、slash 命令、双超时熔断、v2 draft 跟踪。
+
+**已落地实现（2026-09-18）**——上述两条设计决策的直接兑现：
+
+| 环节 | 位置 | 机制 |
+|---|---|---|
+| 配置态入流 | `acp-runtime.ts` `injectConfigFrame` | `session/new`/`loadSession`/`setSessionConfigOption` 响应的 `configOptions` 非空 → `acp_config` 帧入 relay live 缓冲（load 路径在 history 之后，回放序 = history → config）；空数组不注入 → 前端无选择器，**空态即凭据/能力信号** |
+| 上行切换 | `acp-stream.ts` `set_config` 分支 → `AcpRuntime.setConfigOption` | `conn.setSessionConfigOption({sessionId, configId, value})`（套 `ACP_RPC_TIMEOUT_MS`）→ 响应回灌帧；错误上抛转 `SESSION_RUNTIME_ERROR` 错误帧（claude `set_model` 同语义） |
+| agent 自发变更 | 既有 `handleSessionUpdate` 全变体透传 | omp 的 `config_option_update` 通知**已经**是 `acp_event` 帧，前端消费即可（无需新增管道） |
+| 前端折叠 | `acp-adapter.ts` `decodeAcpConfigOptions` + hook 标量 state | 宽进解码（非 select 型/缺字段丢弃）；`acp_config` 帧与 `config_option_update` 通知都折叠进 latest-wins 标量，**不进 raw 消息日志**；`session_init` 重置 |
+| 选择器 | `AcpSessionDetailRoute.tsx` `AcpConfigSelector` | 每项一个 `OptionMenu`（桌面 popover / 移动 sheet 自适应），trigger = `{option.name}·{当前项 name}`（ACP config 语义无产品内建认知，前缀提供上下文）；label/描述全是 agent 数据，不 i18n |
+
+configOptions **不持久化** metadata：它是 runtime 态，每次 spawn/load 响应自带最新，无跨重启语义需要。非 select 型（boolean 等）当前丢弃不渲染——omp 全为 select，有需求再加。
 
 **未来新 CLI 接入决策树**（配置视角完整路径，收口结论同步见 [provider-config-comparison.md](./provider-config-comparison.md) 收口节）：
 

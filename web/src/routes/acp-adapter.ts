@@ -37,6 +37,48 @@ type AcpToolCallUpdate = {
   content?: AcpToolCallContent[];
 };
 
+/** 会话配置选项（model/mode/thinking…，agent 广告的原生形状局部解码）。label/描述全是
+ *  agent 数据，不 i18n。 */
+export type AcpConfigOption = {
+  id: string;
+  name: string;
+  currentValue?: string;
+  options: { value: string; name: string; description?: string }[];
+};
+
+/** 宽进解码（字段漂移防御）：只收 select 型（type 缺省同 select——omp 当前全为 select）；
+ *  id/name 必需，options 元素缺 value/name 丢弃，清空后整项丢弃（空菜单选择器是噪音）。 */
+export function decodeAcpConfigOptions(raw: readonly Record<string, unknown>[]): AcpConfigOption[] {
+  const out: AcpConfigOption[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const { type, id, name, currentValue, options } = item;
+    if (type !== undefined && type !== "select") continue;
+    if (typeof id !== "string" || !id || typeof name !== "string" || !name) continue;
+    const decoded: AcpConfigOption["options"] = [];
+    if (Array.isArray(options)) {
+      for (const o of options) {
+        if (typeof o !== "object" || o === null) continue;
+        const rec = o as Record<string, unknown>;
+        if (typeof rec.value !== "string" || typeof rec.name !== "string") continue;
+        decoded.push({
+          value: rec.value,
+          name: rec.name,
+          ...(typeof rec.description === "string" ? { description: rec.description } : {}),
+        });
+      }
+    }
+    if (decoded.length === 0) continue;
+    out.push({
+      id,
+      name,
+      ...(typeof currentValue === "string" ? { currentValue } : {}),
+      options: decoded,
+    });
+  }
+  return out;
+}
+
 // ── state 模型（raw 日志 + 派生渲染，State/Render 分离——CLAUDE.md 数据流原则）──────
 //
 // Pass 1（applyAcpFrame）：帧进唯一 state 有序日志 AcpRawItem[]，标量 state（isRunning）由
@@ -313,6 +355,8 @@ export function acpFramesToThreadMessages(raw: AcpRawItem[]): ThreadMessageLike[
 
 export function useAcpSession(projectName: string, sessionId: string) {
   const [rawMessages, setRawMessages] = useState<AcpRawItem[]>([]);
+  // 会话配置选项（latest-wins 标量，不进 raw 消息日志——同 claude 的 model/tasks）。
+  const [configOptions, setConfigOptions] = useState<AcpConfigOption[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -385,6 +429,7 @@ export function useAcpSession(projectName: string, sessionId: string) {
   const handleFrame = useCallback((msg: AcpStreamServerMessage) => {
     if (msg.type === "session_init") {
       setRawMessages([]);
+      setConfigOptions([]);
       setLoading(true);
       setStreamError(null);
       return;
@@ -408,6 +453,25 @@ export function useAcpSession(projectName: string, sessionId: string) {
       setIsRunning(false);
       return;
     }
+    if (msg.type === "acp_config") {
+      // agent 广告的全量 configOptions（session/new|load|set_config_option 响应）。
+      const frame = msg as unknown as { configOptions?: Record<string, unknown>[] };
+      setConfigOptions(
+        decodeAcpConfigOptions(Array.isArray(frame.configOptions) ? frame.configOptions : []),
+      );
+      return;
+    }
+    if (msg.type === "acp_event") {
+      const event = (msg as unknown as { event: Record<string, unknown> }).event;
+      if (event?.sessionUpdate === "config_option_update") {
+        // agent 侧自发变更：latest-wins 折叠，不进 raw 消息日志。
+        const options = Array.isArray(event.configOptions)
+          ? (event.configOptions as Record<string, unknown>[])
+          : [];
+        setConfigOptions(decodeAcpConfigOptions(options));
+        return;
+      }
+    }
     setRawMessages((prev) => applyAcpFrame(prev, msg));
   }, []);
 
@@ -416,6 +480,7 @@ export function useAcpSession(projectName: string, sessionId: string) {
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     // 每次连接重置（session_init 分支也会清，这里是 pre-open 基线）。
     setRawMessages([]);
+    setConfigOptions([]);
     setConnected(false);
     setLoading(true);
 
@@ -584,6 +649,14 @@ export function useAcpSession(projectName: string, sessionId: string) {
     sendToSocket({ type: "interrupt" });
   }, [sendToSocket]);
 
+  // 会话配置切换（model/mode/thinking…）：错误由服务端转 error 帧 → streamError。
+  const setConfig = useCallback(
+    (configId: string, value: string) => {
+      sendToSocket({ type: "set_config", configId, value });
+    },
+    [sendToSocket],
+  );
+
   const storeAdapter = useMemo<ExternalStoreAdapter<ThreadMessageLike>>(
     () => ({
       messages: renderedMessages,
@@ -604,6 +677,8 @@ export function useAcpSession(projectName: string, sessionId: string) {
     connected,
     loading,
     streamError,
+    configOptions,
+    setConfig,
     onCancel,
   };
 }

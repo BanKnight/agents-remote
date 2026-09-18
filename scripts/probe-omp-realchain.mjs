@@ -1,12 +1,15 @@
-// 探针：omp（ACP）provider 正名 + 历史 + 样式对齐 真链路验证（ar-dev 常驻服务 43011/43012）。
+// 探针：omp（ACP）provider 正名 + 历史 + configOptions 切换 + 样式对齐 真链路验证
+// （ar-dev 常驻服务 43011/43012）。
 // 覆盖：
 //  1. [REST] 存量迁移归一：legacy runtimeKey "-agent-acp-" 会话在列表/详情中 provider 归一为 "omp"。
 //  2. [REST] omp 历史合流：agent-history 含 provider "omp" 条目（acpSessionId 携带）。
 //  3. [REST] 创建 omp 会话：provider=omp、runtimeKey 段=acp、acpSessionId spawn 后回填。
-//  4. [Browser] 真实 omp turn：echo 气泡 → 工具卡片带边框/圆角（DOM 几何，非截图）+
+//  4. [Browser] configOptions 透传与切换：WS 流收到 acp_config（agent 广告 model 选择器）→
+//     发 set_config 切 model → 帧 currentvalue 变化 + 页面选择器 trigger 同步 → 切回原值。
+//  5. [Browser] 真实 omp turn：echo 气泡 → 工具卡片带边框/圆角（DOM 几何，非截图）+
 //     runtimeBody 容器背景（bg-surface-inset/15）。
-//  5. [REST] 历史判活：活跃 omp 会话出现在 acp activeMap（hasActiveSession true）。
-//  6. [Browser] 历史点击恢复：close 后历史行点击 → 命名确认 → 新实例 session/load 回放可见，
+//  6. [REST] 历史判活：活跃 omp 会话出现在 acp activeMap（hasActiveSession true）。
+//  7. [Browser] 历史点击恢复：close 后历史行点击 → 命名确认 → 新实例 session/load 回放可见，
 //     acpSessionId 与原会话一致。
 // 密码自读不打印（scripts/lib/deploy-config.mjs）；只清理 displayName 以 "[probe-omp]" 标记的
 // 自建会话（含崩溃残留）。用法：bun scripts/probe-omp-realchain.mjs
@@ -136,6 +139,40 @@ try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   await page.addInitScript(() => localStorage.setItem("lang", "en"));
+
+  // 页面真实 WS 捕获 + 原始帧收集（goto 前注册）：
+  // - Playwright 的 page.on("websocket") 对象只读（无 send()），上行必须用页面自己的
+  //   真实 WebSocket 实例——initScript 包一层构造函数把实例挂到 window（acp-adapter
+  //   用 new WebSocket(...) 创建，捕获到的即它持有并消费的那个）。
+  // - 下行帧同理：包装后的实例上挂 framereceived 收集器，解码后的文本推给 __wsFrames。
+  await page.addInitScript(() => {
+    const Native = window.WebSocket;
+    window.__acpSockets = [];
+    window.__wsFrames = [];
+    class TracedWebSocket extends Native {
+      constructor(...args) {
+        super(...args);
+        window.__acpSockets.push(this);
+        this.addEventListener("message", async (ev) => {
+          const data = ev.data;
+          try {
+            if (typeof data === "string") {
+              window.__wsFrames.push(data);
+            } else {
+              // createBatchEmitter gzip 分块（块边界=行边界）：浏览器侧解压。
+              const ds = new DecompressionStream("gzip");
+              const text = await new Response(new Blob([data]).stream().pipeThrough(ds)).text();
+              window.__wsFrames.push(text);
+            }
+          } catch {
+            /* 非 gzip 二进制忽略 */
+          }
+        });
+      }
+    }
+    window.WebSocket = TracedWebSocket;
+  });
+
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
   await page.getByRole("button", { name: "Unlock console" }).click();
@@ -145,6 +182,108 @@ try {
   const input = page.getByPlaceholder("Ask Claude...");
   await input.waitFor({ state: "visible", timeout: 30_000 });
   check(true, "omp 面板挂载 + composer 可用");
+
+  // ── 4. configOptions 透传与切换（页面内 WS 原始帧，计划 §门禁3）──
+  // 帧序扫描 acp_config（响应回灌）与 acp_event.config_option_update（omp 主动推），
+  // 取最新的 model 项状态。帧读取走页面 window.__wsFrames（TracedWebSocket 收集的实时缓冲）。
+  const latestModelOption = async () =>
+    page.evaluate(() => {
+      const allText = (window.__wsFrames ?? []).join("\n");
+      let cur = null;
+      for (const line of allText.split("\n")) {
+        if (!line.trim()) continue;
+        let m;
+        try {
+          m = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        const opts =
+          m.type === "acp_config" && Array.isArray(m.configOptions)
+            ? m.configOptions
+            : m.type === "acp_event" && m.event?.sessionUpdate === "config_option_update"
+              ? m.event.configOptions
+              : null;
+        const found = opts?.find((o) => o.id === "model");
+        if (found) cur = found;
+      }
+      return cur;
+    });
+  const waitModelOption = async (pred, label, timeoutMs = 30_000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const model = await latestModelOption();
+      if (model && pred(model)) return model;
+      await sleep(300);
+    }
+    throw new Error(`config wait timeout: ${label}`);
+  };
+  const sendConfig = (configId, value) =>
+    page.evaluate(
+      ([id, v]) => {
+        const socket = (window.__acpSockets ?? []).find((s) => s.readyState === 1);
+        if (!socket) throw new Error("no open acp socket");
+        socket.send(JSON.stringify({ type: "set_config", configId: id, value: v }));
+        return true;
+      },
+      [configId, value],
+    );
+
+  let configModel = null;
+  try {
+    configModel = await waitModelOption(
+      (m) => Array.isArray(m.options) && m.options.length > 0,
+      "initial acp_config",
+    );
+  } catch {}
+  check(
+    !!configModel,
+    "WS 流收到 acp_config（agent 广告 model 选择器）",
+    configModel ? `current=${configModel.currentValue}` : "no model option in frames",
+  );
+
+  if (configModel) {
+    const original = configModel.currentValue;
+    const switchTo = configModel.options.find((o) => o.value !== original)?.value;
+    const switchName = configModel.options.find((o) => o.value === switchTo)?.name;
+    if (switchTo) {
+      let switched = null;
+      try {
+        await sendConfig("model", switchTo);
+        switched = await waitModelOption(
+          (m) => m.currentValue === switchTo,
+          `switch to ${switchTo}`,
+        );
+      } catch {}
+      check(
+        !!switched,
+        "set_config 切换 model → 帧流 currentValue 变化",
+        switched ? `original=${original} → ${switchTo}` : `no change (original=${original})`,
+      );
+
+      // 页面选择器 trigger 同步（页面 React 消费同一帧流；名称取帧第一手数据）。
+      const triggerText = `${configModel.name}·${switchName}`;
+      const triggerSeen = await page
+        .getByRole("button")
+        .filter({ hasText: triggerText })
+        .first()
+        .waitFor({ state: "visible", timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false);
+      check(triggerSeen, "composer 底部选择器 trigger 同步切换", triggerText);
+
+      let restored = false;
+      try {
+        await sendConfig("model", original);
+        await waitModelOption((m) => m.currentValue === original, "restore original");
+        restored = true;
+      } catch {}
+      check(restored, "set_config 切回原 model", original ?? "unknown");
+    } else {
+      check(false, "model 仅一个选项，无法验证切换", JSON.stringify(configModel.options));
+    }
+  }
+
   await input.fill(PROMPT);
   await input.press("Enter");
   await page.getByText(PROMPT).first().waitFor({ state: "visible", timeout: 15_000 });

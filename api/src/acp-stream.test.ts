@@ -21,8 +21,10 @@ type StreamSocket = {
 
 /** stub AcpRuntime：记录调用、可编程 ensureRunning 实现、捕获 stream 的 onData/onError。 */
 function makeStubRuntime() {
-  const calls = { ensureRunning: 0, stream: 0, write: 0, interrupt: 0, close: 0 };
+  const calls = { ensureRunning: 0, stream: 0, write: 0, interrupt: 0, close: 0, setConfig: 0 };
   const writeCalls: { runtimeKey: string; text: string; uuid?: string }[] = [];
+  const setConfigCalls: { runtimeKey: string; configId: string; value: string }[] = [];
+  let setConfigImpl: () => Promise<void> = async () => {};
   const streamCalls: {
     runtimeKey: string;
     onData: (line: string) => void;
@@ -54,6 +56,11 @@ function makeStubRuntime() {
     interrupt: async () => {
       calls.interrupt++;
     },
+    setConfigOption: async (runtimeKey: string, configId: string, value: string) => {
+      calls.setConfig++;
+      setConfigCalls.push({ runtimeKey, configId, value });
+      await setConfigImpl();
+    },
     close: async () => {
       calls.close++;
     },
@@ -63,10 +70,14 @@ function makeStubRuntime() {
     runtime: runtime as unknown as AcpRuntime,
     calls,
     writeCalls,
+    setConfigCalls,
     streamCalls,
     streamHandles,
     setEnsureRunningImpl(fn: () => Promise<void>) {
       ensureRunningImpl = fn;
+    },
+    setSetConfigImpl(fn: () => Promise<void>) {
+      setConfigImpl = fn;
     },
   };
 }
@@ -337,6 +348,51 @@ describe("AcpStreamController.message", () => {
     await controller.message(socket, JSON.stringify({ type: "interrupt" }));
     expect(stub.calls.interrupt).toBe(1);
     expect(stub.calls.write).toBe(0);
+  });
+
+  test("set_config → runtime.setConfigOption(runtimeKey, configId, value)", async () => {
+    const stub = makeStubRuntime();
+    const controller = new AcpStreamController(stub.runtime);
+    const { socket } = makeSocket(acpData);
+    await controller.open(socket);
+
+    await controller.message(
+      socket,
+      JSON.stringify({
+        type: "set_config",
+        configId: "model",
+        value: "anthropic/claude-sonnet-4-8",
+      }),
+    );
+    expect(stub.calls.setConfig).toBe(1);
+    expect(stub.setConfigCalls[0]).toEqual({
+      runtimeKey: "k1",
+      configId: "model",
+      value: "anthropic/claude-sonnet-4-8",
+    });
+    expect(stub.calls.write).toBe(0);
+  });
+
+  test("set_config 抛错（agent 拒绝/超时）→ SESSION_RUNTIME_ERROR 错误帧", async () => {
+    const stub = makeStubRuntime();
+    stub.setSetConfigImpl(async () => {
+      throw new Error("unknown config option");
+    });
+    const controller = new AcpStreamController(stub.runtime);
+    const { socket, sent } = makeSocket(acpData);
+    await controller.open(socket);
+    sent.length = 0;
+
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "set_config", configId: "model", value: "nope" }),
+    );
+    expect(stub.calls.setConfig).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0])).toMatchObject({
+      type: "error",
+      code: "SESSION_RUNTIME_ERROR",
+    });
   });
 
   test("非法 JSON → 错误帧", async () => {

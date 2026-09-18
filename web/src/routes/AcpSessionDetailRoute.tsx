@@ -14,7 +14,8 @@ import {
   insertNewlineAtCursor,
   isMobileComposerMode,
 } from "../lib/composer-enter";
-import { useAcpSession } from "./acp-adapter";
+import { OptionMenu } from "../components/ui/option-menu";
+import { useAcpSession, type AcpConfigOption } from "./acp-adapter";
 import { VirtualizedThreadContent } from "./ClaudeSessionDetailRoute";
 import type { RetryInfo } from "./claude-adapter";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -34,7 +35,10 @@ export function AcpChatPanel({
   projectName: string;
   sessionId: string;
 }) {
-  const { runtime, connected, loading, onCancel } = useAcpSession(projectName, sessionId);
+  const { runtime, connected, loading, configOptions, setConfig, onCancel } = useAcpSession(
+    projectName,
+    sessionId,
+  );
 
   useComposerKeyboardAvoidance();
 
@@ -57,7 +61,12 @@ export function AcpChatPanel({
               style={{ transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))" }}
             >
               <ComposerPrimitive.Root>
-                <ComposerWithInterruptAcp connected={connected} onCancel={onCancel} />
+                <ComposerWithInterruptAcp
+                  connected={connected}
+                  configOptions={configOptions}
+                  onSetConfig={setConfig}
+                  onCancel={onCancel}
+                />
               </ComposerPrimitive.Root>
             </div>
           </div>
@@ -68,14 +77,20 @@ export function AcpChatPanel({
 }
 
 /**
- * ACP composer：镜像 `ComposerWithInterruptPi` 卡片结构，砍附件按钮（Phase 1 文本 only）
- * 与 selectors。Stop/Send 互斥、桌面/移动 Enter 决策复用同款逻辑。
+ * ACP composer：镜像 `ComposerWithInterruptPi` 卡片结构，砍附件按钮（Phase 1 文本 only）。
+ * 底部行首渲染 agent 广告的会话配置选择器（model/mode/thinking…，OptionMenu 桌面
+ * popover / 移动 sheet 自适应，trigger 布局照抄 claude ModelSelector 先例）。Stop/Send
+ * 互斥、桌面/移动 Enter 决策复用同款逻辑。
  */
 function ComposerWithInterruptAcp({
   connected,
+  configOptions,
+  onSetConfig,
   onCancel,
 }: {
   connected: boolean;
+  configOptions: AcpConfigOption[];
+  onSetConfig: (configId: string, value: string) => void;
   onCancel?: () => void;
 }) {
   const { t } = useT();
@@ -129,6 +144,14 @@ function ComposerWithInterruptAcp({
         }}
       />
       <div className="flex h-9 items-center gap-2 px-2.5 pb-2 pt-0.5">
+        {!disconnected &&
+          configOptions.map((option) => (
+            <AcpConfigSelector
+              key={option.id}
+              option={option}
+              onSelect={(value) => onSetConfig(option.id, value)}
+            />
+          ))}
         {showStop ? (
           <button
             type="button"
@@ -162,5 +185,59 @@ function ComposerWithInterruptAcp({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * 单个会话配置选择器（agent 广告的一个 config option → OptionMenu）。label/描述全是
+ * agent 数据（不 i18n）；trigger = `{option.name}·{当前项 name}`——ACP config 语义
+ * （mode/thinking 等）无 claude 那样的产品内建认知，前缀提供上下文；currentValue 不在
+ * options 里时只显示 option.name（不猜测当前项）。trigger 布局照抄 claude ModelSelector。
+ */
+function AcpConfigSelector({
+  option,
+  onSelect,
+}: {
+  option: AcpConfigOption;
+  onSelect: (value: string) => void;
+}) {
+  const { t } = useT();
+  const current = option.options.find((o) => o.value === option.currentValue);
+  return (
+    <OptionMenu
+      accent="user"
+      align="start"
+      cancelLabel={t("cancel")}
+      trigger={
+        <button
+          type="button"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user hover:text-user hover:bg-surface-raised/50 transition cursor-pointer"
+        >
+          <span className="min-w-0 truncate">
+            {current ? `${option.name}·${current.name}` : option.name}
+          </span>
+          <svg
+            className="h-3 w-3 shrink-0 opacity-60"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      }
+      items={option.options.map((o) => ({
+        label: o.name,
+        description: o.description,
+        isActive: o.value === option.currentValue,
+        onSelect: () => onSelect(o.value),
+      }))}
+    />
   );
 }

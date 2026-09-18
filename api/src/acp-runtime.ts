@@ -226,8 +226,9 @@ export class AcpRuntime {
         // sessionUpdate 回调到达，用「先收集后定格」区分 history 段与 live 段。
         const historyLines: string[] = [];
         this.historyCollectors.set(target.runtimeKey, historyLines);
+        let loaded: Awaited<ReturnType<typeof conn.loadSession>>;
         try {
-          await withTimeout(
+          loaded = await withTimeout(
             conn.loadSession({
               sessionId: target.acpSessionId,
               cwd: target.projectPath,
@@ -242,6 +243,8 @@ export class AcpRuntime {
         entry.acpSessionId = target.acpSessionId;
         relay.loadHistory(historyLines);
         relay.setResume(historyLines.length > 0);
+        // 配置态（model/mode/thinking…）注入 live 缓冲首行——回放序 = history → config。
+        this.injectConfigFrame(entry, loaded.configOptions);
       } else {
         const created = await withTimeout(
           conn.newSession({ cwd: target.projectPath, mcpServers: [] }),
@@ -252,6 +255,9 @@ export class AcpRuntime {
         relay.loadHistory([]);
         relay.setResume(false);
         this.onAcpSessionId?.(target.sessionId, created.sessionId);
+        // 行先入 liveLines 再注册 entry（后连订阅者回放可见）；ensureRunning 幂等早退
+        // 保证每进程生命周期只注入一次。
+        this.injectConfigFrame(entry, created.configOptions);
       }
 
       this.sessions.set(target.runtimeKey, entry);
@@ -291,6 +297,23 @@ export class AcpRuntime {
     } catch {
       // 连接可能已死，不阻断（relay error 由进程退出路径上报）。
     }
+  }
+
+  /** 会话配置切换（model/mode/thinking…）：session/set_config_option。响应携带最新全量
+   *  configOptions → acp_config 帧回灌 relay（在线广播 + 重连回放）；agent 侧自发变更
+   *  走 config_option_update 通知（handleSessionUpdate 已透传为 acp_event）。错误上抛
+   *  由 stream controller 转错误帧（claude set_model 同语义）。 */
+  async setConfigOption(runtimeKey: string, configId: string, value: string): Promise<void> {
+    const entry = this.sessions.get(runtimeKey);
+    if (!entry) {
+      throw new Error("acp session not running");
+    }
+    const response = await withTimeout(
+      entry.conn.setSessionConfigOption({ sessionId: entry.acpSessionId, configId, value }),
+      ACP_RPC_TIMEOUT_MS,
+      "acp setSessionConfigOption",
+    );
+    this.injectConfigFrame(entry, response.configOptions);
   }
 
   /** 订阅 relay 流（acp-stream 的 startStream 入口；open 先 ensureRunning，entry 必在）。 */
@@ -373,6 +396,17 @@ export class AcpRuntime {
     if (!entry) return;
     entry.relay.appendAndBroadcast(line);
     this.onActivity?.(entry.sessionId);
+  }
+
+  /** session/new|load|set_config_option 响应的 configOptions → acp_config 帧入 relay
+   *  live 缓冲（在线广播 + 重连回放）。只在非空数组时注入——agent 未广告配置（或模型
+   *  列表为空，如凭据未配置）→ 无帧 → 前端无选择器，空态即凭据/能力信号。 */
+  private injectConfigFrame(
+    entry: AcpSessionEntry,
+    configOptions: readonly unknown[] | null | undefined,
+  ): void {
+    if (!configOptions || configOptions.length === 0) return;
+    entry.relay.appendAndBroadcast(JSON.stringify({ type: "acp_config", configOptions }));
   }
 
   /** stderr 泵到 runDir/acp-stderr/<runtimeKey>.log（镜像 claude-stderr 布局；诊断用）。 */

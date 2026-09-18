@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { AcpStreamServerMessage } from "@agents-remote/shared";
-import { applyAcpFrame, acpFramesToThreadMessages, type AcpRawItem } from "./acp-adapter";
+import {
+  applyAcpFrame,
+  acpFramesToThreadMessages,
+  decodeAcpConfigOptions,
+  type AcpRawItem,
+} from "./acp-adapter";
 
 // 帧构造 helper（与 shared AcpStreamServerMessage 形状对齐）。
 const acpEvent = (event: Record<string, unknown>): AcpStreamServerMessage =>
@@ -193,5 +198,69 @@ describe("acpFramesToThreadMessages", () => {
     expect(toolCardCustom(acpFramesToThreadMessages(raw)[0]).result).toBe(
       "--- src/a.ts\nconst a = 1;",
     );
+  });
+});
+
+describe("decodeAcpConfigOptions", () => {
+  test("select 与 type 缺省项收下；id/name/currentValue/description 正确解码", () => {
+    const decoded = decodeAcpConfigOptions([
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "anthropic/claude-opus-4-8",
+        options: [
+          {
+            value: "anthropic/claude-opus-4-8",
+            name: "Opus 4.8",
+            description: "anthropic/claude-opus-4-8",
+          },
+          { value: "anthropic/claude-sonnet-4-8", name: "Sonnet 4.8" },
+        ],
+      },
+      {
+        id: "mode",
+        name: "Mode",
+        currentValue: "build",
+        options: [{ value: "build", name: "Build" }],
+      },
+    ]);
+    expect(decoded).toHaveLength(2);
+    expect(decoded[0]).toEqual({
+      id: "model",
+      name: "Model",
+      currentValue: "anthropic/claude-opus-4-8",
+      options: [
+        {
+          value: "anthropic/claude-opus-4-8",
+          name: "Opus 4.8",
+          description: "anthropic/claude-opus-4-8",
+        },
+        { value: "anthropic/claude-sonnet-4-8", name: "Sonnet 4.8" },
+      ],
+    });
+    expect(decoded[1].currentValue).toBe("build");
+    expect(decoded[1].options[0].description).toBeUndefined();
+  });
+
+  test("丢弃：非 select 型 / 缺 id·name / options 非数组或清空 / options 元素缺 value·name", () => {
+    const decoded = decodeAcpConfigOptions([
+      { id: "flag", name: "Flag", type: "boolean", currentValue: true, options: [] },
+      { name: "no id", options: [{ value: "a", name: "A" }] },
+      { id: "no-name", options: [{ value: "a", name: "A" }] },
+      { id: "no-options", name: "NoOptions" },
+      { id: "empty-options", name: "Empty", options: [] },
+      {
+        id: "bad-elements",
+        name: "Bad",
+        options: [{ value: "a" }, { name: "B" }, "junk", null, { value: "ok", name: "Keep" }],
+      },
+    ]);
+    expect(decoded).toHaveLength(1);
+    expect(decoded[0]).toMatchObject({
+      id: "bad-elements",
+      options: [{ value: "ok", name: "Keep" }],
+    });
   });
 });

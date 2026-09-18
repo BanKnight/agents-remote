@@ -31,6 +31,13 @@ const request = (method, params) => {
 const sessionUpdate = (update) =>
   notify("session/update", { sessionId: "acp-sess-1", update });
 
+// configOptions 广告面（对齐 omp：mode/model 两个 select，model currentValue 可切）。
+const configState = {
+  mode: { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "build", options: [{ value: "build", name: "Build" }, { value: "plan", name: "Plan" }] },
+  model: { id: "model", name: "Model", category: "model", type: "select", currentValue: "anthropic/claude-opus-4-8", options: [{ value: "anthropic/claude-opus-4-8", name: "Opus 4.8", description: "anthropic/claude-opus-4-8" }, { value: "anthropic/claude-sonnet-4-8", name: "Sonnet 4.8", description: "anthropic/claude-sonnet-4-8" }] }
+};
+const buildConfigOptions = () => [configState.mode, configState.model];
+
 async function handlePrompt(msg) {
   const text = msg.params.prompt[0].text;
   if (text.startsWith("@env")) {
@@ -85,12 +92,12 @@ function handleLine(line) {
       send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } });
       break;
     case "session/new":
-      send({ jsonrpc: "2.0", id: msg.id, result: { sessionId: "acp-sess-1" } });
+      send({ jsonrpc: "2.0", id: msg.id, result: { sessionId: "acp-sess-1", configOptions: buildConfigOptions() } });
       break;
     case "session/load":
       sessionUpdate({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "replayed one" } });
       sessionUpdate({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "replayed two" } });
-      send({ jsonrpc: "2.0", id: msg.id, result: {} });
+      send({ jsonrpc: "2.0", id: msg.id, result: { configOptions: buildConfigOptions() } });
       break;
     case "session/prompt":
       void handlePrompt(msg);
@@ -99,6 +106,17 @@ function handleLine(line) {
       cancelled = true;
       sessionUpdate({ sessionUpdate: "tool_call_update", toolCallId: "cancel-mark", status: "completed" });
       break;
+    case "session/set_config_option": {
+      // 已知 configId：更新 currentValue 并回最新全量；未知：回 {}（无 configOptions——
+      // 覆盖「响应不带配置 → 不回灌帧」守卫）。
+      if (msg.params.configId === "model") {
+        configState.model.currentValue = msg.params.value;
+        send({ jsonrpc: "2.0", id: msg.id, result: { configOptions: buildConfigOptions() } });
+      } else {
+        send({ jsonrpc: "2.0", id: msg.id, result: {} });
+      }
+      break;
+    }
   }
 }
 
@@ -220,6 +238,16 @@ describe("AcpRuntime（fake omp 集成）", () => {
     ).toBe(true);
     // 真实 update（非回放）bump activity。
     expect(activities).toContain("s1");
+    // session/new 响应的 configOptions → live 段 acp_config 帧（重连回放可见）。
+    const configFrame = ms.find((m) => m.type === "acp_config") as
+      | { configOptions: Array<Record<string, unknown>> }
+      | undefined;
+    expect(configFrame).toBeDefined();
+    expect(
+      configFrame?.configOptions.some(
+        (o) => o.id === "model" && o.currentValue === "anthropic/claude-opus-4-8",
+      ),
+    ).toBe(true);
 
     await runtime.close("k1");
   });
@@ -244,6 +272,11 @@ describe("AcpRuntime（fake omp 集成）", () => {
       .map((m) => (m as { event: { content: { text: string } } }).event.content.text);
     expect(replayed).toEqual(["replayed one", "replayed two"]);
     expect(ms[4]).toMatchObject({ type: "history_end" });
+    // load 响应的 configOptions → live 段 acp_config，回放序 = history 段之后。
+    const liveIdx = ms.findIndex((m) => m.type === "live_start");
+    const configIdx = ms.findIndex((m) => m.type === "acp_config");
+    expect(liveIdx).toBeGreaterThan(4);
+    expect(configIdx).toBeGreaterThan(liveIdx);
 
     await runtime.close("k2");
   });
@@ -305,11 +338,50 @@ describe("AcpRuntime（fake omp 集成）", () => {
   test("write 未运行 session → throw；close 后 exists=false 且 listAliveRuntimeKeys 为空", async () => {
     const { runtime } = makeRuntime();
     expect(() => runtime.write("nope", "hi")).toThrow("acp session not running");
+    await expect(runtime.setConfigOption("nope", "model", "x")).rejects.toThrow(
+      "acp session not running",
+    );
 
     await runtime.startAgent({ sessionId: "s6", runtimeKey: "k6", provider: "omp", projectPath });
     await runtime.close("k6");
     await expect(runtime.exists("k6")).resolves.toBe(false);
     await expect(runtime.listAliveRuntimeKeys()).resolves.toEqual(new Set());
+  });
+
+  test("setConfigOption：session/set_config_option → 响应 configOptions 回灌 acp_config（currentValue 已更新）", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({ sessionId: "s8", runtimeKey: "k8", provider: "omp", projectPath });
+
+    const lines = collectStream(runtime, "k8");
+    await waitFor(() => parse(lines).some((m) => m.type === "acp_config"), "initial config frame");
+    await runtime.setConfigOption("k8", "model", "anthropic/claude-sonnet-4-8");
+
+    await waitFor(
+      () => parse(lines).filter((m) => m.type === "acp_config").length >= 2,
+      "switch config frame",
+    );
+    const configFrames = parse(lines).filter((m) => m.type === "acp_config");
+    const last = configFrames[configFrames.length - 1] as {
+      configOptions: Array<Record<string, unknown>>;
+    };
+    expect(last.configOptions.find((o) => o.id === "model")?.currentValue).toBe(
+      "anthropic/claude-sonnet-4-8",
+    );
+
+    await runtime.close("k8");
+  });
+
+  test("setConfigOption 未知 configId：agent 响应无 configOptions → 不回灌帧", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({ sessionId: "s9", runtimeKey: "k9", provider: "omp", projectPath });
+
+    const lines = collectStream(runtime, "k9");
+    await waitFor(() => parse(lines).some((m) => m.type === "acp_config"), "initial config frame");
+    await runtime.setConfigOption("k9", "nonexistent", "x");
+    // setConfigOption resolve = fake 响应已处理（注入与否同步决定），计数即终态。
+    expect(parse(lines).filter((m) => m.type === "acp_config").length).toBe(1);
+
+    await runtime.close("k9");
   });
 
   test("resolveCredentials → spawn env 注入 ANTHROPIC_API_KEY（fake agent 子进程回显）", async () => {

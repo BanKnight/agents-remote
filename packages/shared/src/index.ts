@@ -1194,9 +1194,18 @@ export type AcpUserEchoFrame = {
   uuid: string;
 };
 
+export type AcpConfigFrame = {
+  type: "acp_config";
+  /** agent 广告的会话配置选项（model/mode/thinking…，session/new|load|set_config_option
+   *  响应的全量 configOptions）——原样透传（acp_event 同约定：原生 payload 形状由官方
+   *  SDK 定义，web 端局部解码 + 字段漂移宽进防御）。 */
+  configOptions: Record<string, unknown>[];
+};
+
 export type AcpStreamServerMessage =
   | AcpEventFrame
   | AcpUserEchoFrame
+  | AcpConfigFrame
   | {
       type: "error";
       code: ApiErrorCode;
@@ -1239,6 +1248,14 @@ export type AcpStreamClientMessage =
     }
   | {
       type: "interrupt";
+    }
+  | {
+      // 会话配置切换（model/mode/thinking…）：session/set_config_option。value 取自
+      // agent 广告的 options[].value；服务端转发 agent，最新全量 configOptions 经
+      // acp_config 帧回灌（切错 configId/值由 agent 报错 → 错误帧）。
+      type: "set_config";
+      configId: string;
+      value: string;
     }
   | {
       type: "ping";

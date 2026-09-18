@@ -120,13 +120,18 @@ export class AcpStreamController {
         send(socket, { type: "pong" });
         return;
       }
-      // user 文本 → runtime.write（注入 acp_user_echo + 单飞 prompt/排队）；interrupt → cancel。
+      // user 文本 → runtime.write（注入 acp_user_echo + 单飞 prompt/排队）；interrupt → cancel；
+      // set_config → session/set_config_option（模型/模式切换，响应经 acp_config 帧回灌）。
       if (parsed.type === "user") {
         this.acpRuntime.write(data.runtimeKey, parsed.text, parsed.uuid);
         return;
       }
       if (parsed.type === "interrupt") {
         await this.acpRuntime.interrupt(data.runtimeKey);
+        return;
+      }
+      if (parsed.type === "set_config") {
+        await this.acpRuntime.setConfigOption(data.runtimeKey, parsed.configId, parsed.value);
         return;
       }
     } catch (error) {
