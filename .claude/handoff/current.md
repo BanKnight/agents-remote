@@ -14,7 +14,7 @@ harness 改造完成并经 22router 对照复审：全部结构到位、精髓�
 ## 关键决策（本阶段不可丢）
 
 - handoff 由模型主动 `/handoff save` 维护（写前归档 snapshots/），hook 只做纯 bash cat 注入（SessionStart + PreCompact 双保险）。
-- **Claude Code hook 输入走 stdin JSON，无 CLAUDE_TOOL_INPUT/CLAUDE_TOOL_NAME 环境变量**（2026-09-19 探针实证）；22router 的 posttooluse hook 同病未修，用户要求时直接套本项目的 stdin 版。
+- **Claude Code hook 输入走 stdin JSON，无 CLAUDE_TOOL_INPUT/CLAUDE_TOOL_NAME 环境变量**（2026-09-19 探针实证）；22router 的 posttooluse hook 同病，已按用户指示移植 stdin 版修复（实测通过，改动留在 22router 工作区未提交）。
 - harness 结构文件入库；`.claude/handoff/snapshots/` 与 `.claude/worktrees/` 不入库；assistant-ui 的 `observability` symlink 单独 gitignore。
 - 旧 workflow 记忆采用「归档而非硬删」：移入 `memory/archived-20260919/`，删 MEMORY.md 索引即不再加载。
 
@@ -23,7 +23,7 @@ harness 改造完成并经 22router 对照复审：全部结构到位、精髓�
 - ✅ harness 主体（constitution / rules / GTD / handoff / 5 skills / 4 reviewers / 3 hooks）提交 `db5b0fd`
 - ✅ 三项实测（SessionStart 注入、/handoff save、/gtd inbox）+ 13 条旧 workflow 记忆归档，提交 `ee735c5`
 - ✅ 对照 22router 复审：修复 posttooluse-format.sh stdin 协议（端到端复测过）+ 补 rules/supply-chain.md（≥7 天门、pre-alpha 换库优先）+ check-deps/security-reviewer/CLAUDE.md 引用闭环，提交 `fa17a51`（四门禁全绿）
-- ⏳ 无进行中；可选跟进：22router 的同款 hook 修复（用户未授权，不动）
+- ✅ 22router 同款 hook 已修（stdin 版移植 + 探针/防御实测通过，2026-09-19 用户授权）；改动在 22router 工作区，未提交（等用户指示）
 
 ## 阻塞 / 风险
 
