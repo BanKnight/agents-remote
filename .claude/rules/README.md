@@ -13,6 +13,7 @@
 | `engineering.md` | 通用工程原则：克制新增、理解机制再调参、第三方库 bug 调试顺序、参考实现研究法 |
 | `dev-environment.md` | dev 服务纪律：tmux 命名、固定端口、web=prod/api=dev、进程归属 |
 | `verification.md` | 验证纪律：每增量 self-check、commit 前全门禁、E2E 时机、CSS 落盘硬闸 |
+| `supply-chain.md` | 依赖供应链：发布 ≥7 天、pre-alpha 换库优先、`/check-deps` 用法 |
 
 ## 进化流程（/evolve）
 

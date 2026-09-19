@@ -35,6 +35,7 @@
 - **确认后才动**：初始化、部署、删除、外发等不可逆动作前必须征得用户确认。
 - **上下文不丢**：到达里程碑、阶段性收尾、或感知将 compact 时，主动 `/handoff save`。
 - **质量门**：commit 前 pre-commit 全门禁（format:check / lint / typecheck / test，0 warning）；实现完成后经相关 reviewer subagent 审查（触发表见 `rules/agent-workflow.md`）。
+- **供应链**：新增/升级依赖前先 `/check-deps`——发布 <7 天降级到次新，pre-alpha 换库优先（见 `rules/supply-chain.md`）。
 - **安全边界**：Project-scoped 输入必须过 Project-safe resolver；系统命令一律 argv 数组；密钥不入库、不回显。
 - **工具优先**：理解代码用 codegraph（`codegraph_explore`）；调研用 tvly；库文档用 Context7；验证用 DOM 几何硬数据（禁截图/vision 验证 UI）。
 - **dev 服务**：web=prod build、api=dev，tmux `ar-*` 命名、固定端口，进程必须在 tmux 内管理（见 `rules/dev-environment.md`）。

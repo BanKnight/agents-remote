@@ -5,7 +5,7 @@ description: 依赖供应链体检。查指定包（或 package.json 全部依�
 
 # check-deps — 供应链体检（Loop）
 
-依据：constitution 第 3/5 条质量与进化底线；规则细节见 `.claude/rules/verification.md`。
+依据：`.claude/rules/supply-chain.md`（发布 ≥7 天，pre-alpha 换库优先）。
 
 ## /check-deps [包名...]
 

@@ -17,6 +17,7 @@ description: 审查安全边界：PROJECTS_ROOT 路径逃逸、命令注入、�
 
 - 用 codegraph 追踪输入从 API 边界到文件系统/进程的完整路径。
 - 读相关规则：`../constitution.md` 第 4 条；`docs/architecture/project-boundary.md`。
+- 涉及新增/升级依赖时：对照 `../rules/supply-chain.md`（发布 ≥7 天、来源可信、typosquatting）。
 - 输出：按严重度排序的发现清单，每条给出 `文件:行`、威胁场景（具体输入 → 具体后果）、修复建议。
 
 ## 原则
