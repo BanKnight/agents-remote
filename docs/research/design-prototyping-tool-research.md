@@ -79,7 +79,7 @@ Reddit 讨论常把三个不同物种混在一起,先分派才好对比:
 
 ✅ 确证(`prompts/system.ts` L1-31/L397-424、`design-systems/` 实际目录、`prompts/panel.ts` L21-34)
 
-**对本项目的意义**:本项目的 `docs/design/DESIGN.md` 已经是这套哲学的轻量版(权威设计标尺)。OpenDesign 把它工程化成了「design system 目录 + token 契约 + prompt composer 注入」。**最值得借鉴的是 token-contract 机制**(把 CSS :root 变量解析成可校验契约),而非 DESIGN.md 文本本身。
+**对本项目的意义**:本项目的 `docs/design-v1/DESIGN.md` 已经是这套哲学的轻量版(权威设计标尺)。OpenDesign 把它工程化成了「design system 目录 + token 契约 + prompt composer 注入」。**最值得借鉴的是 token-contract 机制**(把 CSS :root 变量解析成可校验契约),而非 DESIGN.md 文本本身。
 
 ### 3.2 skills + CLI + MCP 三件套
 

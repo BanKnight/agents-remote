@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>14 · 浮层（添加 MCP 服务器 sheet）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（底衬 = 插件 Tab 压暗 + sheet） */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.h-row{display:flex;align-items:flex-end;justify-content:space-between;margin:46px 16px 0}
+.h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
+.mrow{margin:0 16px 10px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;
+      height:44px;display:flex;align-items:center;padding:0 16px;font-size:14.5px;font-weight:600;color:var(--ink-1)}
+.mrow .live{margin-left:auto;font-size:11px;color:var(--c-success-text);font-weight:600}
+.dim{top:60px}
+.sheet{padding-bottom:16px}
+.tabseg{display:flex;border-radius:10px;background:var(--bg-elevated2);padding:3px;margin-top:12px}
+.tabseg span{flex:1;text-align:center;padding:6px 0;font-size:13px;color:var(--ink-2);border-radius:8px}
+.tabseg .on{background:var(--bg-elevated3);color:var(--ink-1);font-weight:600}
+.klabel{font-size:12px;color:var(--ink-2);margin:14px 0 6px}
+.kfield{height:38px;border-radius:10px;background:var(--bg-elevated2);
+        border:1px solid color-mix(in srgb,var(--c-primary) 60%,transparent);
+        display:flex;align-items:center;padding:0 14px;font-size:14px;color:var(--ink-1)}
+.kfield .caret{width:1.5px;height:16px;background:var(--c-primary);margin-left:2px}
+.kfield.mono{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px}
+.kfield.plain{border-color:var(--sep);color:var(--ink-2)}
+.kfield .add{margin-left:auto;font-size:12px;color:var(--c-primary)}
+.krow{display:flex;align-items:center;font-size:12px;color:var(--ink-2);margin-top:14px}
+.krow .v{margin-left:auto;font-size:12.5px;color:var(--ink-1)}
+.kbtns{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.kbtns .c{width:110px;height:34px;border-radius:17px;border:1px solid var(--sep-strong);
+          display:flex;align-items:center;justify-content:center;font-size:13.5px;color:var(--ink-1);cursor:pointer}
+.kbtns .p{font-size:13.5px;font-weight:600;color:var(--c-primary);display:flex;align-items:center;cursor:pointer}
+.snote{margin-top:10px;text-align:center;font-size:11px;color:var(--ink-2)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <!-- 底衬：插件 Tab（压暗） -->
+  <div>
+    <div class="h-row"><h1>插件</h1></div>
+    <div class="sect" style="font-size:13px;font-weight:600;color:var(--ink-2);margin:12px 16px 6px">MCP 服务器 · 2</div>
+    <div class="mrow">context7<span class="live">● 已连接</span></div>
+  </div>
+  <div class="dim"></div>
+
+  <!-- 半屏 sheet：添加 MCP 服务器 -->
+  <div class="sheet" data-symbol="sheet">
+    <div class="grab"></div>
+    <div class="shd"><h2>添加 MCP 服务器</h2></div>
+
+    <div class="klabel">名称</div>
+    <div class="kfield">sentry-mcp<span class="caret"></span></div>
+
+    <div class="klabel">传输类型</div>
+    <div class="tabseg"><span class="on">命令 (stdio)</span><span>URL (SSE)</span></div>
+
+    <div class="klabel">启动命令</div>
+    <div class="kfield mono">npx -y sentry-mcp</div>
+
+    <div class="klabel">环境变量（密钥存服务器）</div>
+    <div class="kfield mono plain">SENTRY_TOKEN=••••••••••<span class="add">添加 +</span></div>
+
+    <div class="krow"><span>作用域</span><span class="v">全局 ›</span></div>
+
+    <div class="kbtns">
+      <span class="c">取消</span>
+      <span class="p">添加并连接 ›</span>
+    </div>
+    <div class="snote">添加后自动连接并列出工具；失败显示错误并可重试</div>
+  </div>
+
+  <div class="tabbar" style="position:absolute;left:0;right:0;bottom:0;margin-top:0;z-index:11">
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home" style="z-index:12"></div>
+
+  <!-- 编号 pin（相对 stage）：① 入口 ② 传输联动 ③ 密钥脱敏 ④ 自动连接 -->
+  <span class="pin" style="left:100px;top:34px;z-index:20">1</span>
+  <span class="pin" style="left:350px;top:472px;z-index:20">2</span>
+  <span class="pin" style="left:350px;top:548px;z-index:20">3</span>
+  <span class="pin" style="left:310px;top:640px;z-index:20">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>增：MCP 组 ＋ / ⋯ → 添加（13 详情页 ⋯ 也有编辑）</li>
+    <li><b>②</b>传输类型：命令 (stdio) 或 URL (SSE)；字段随类型切换</li>
+    <li><b>③</b>密钥写服务器、脱敏回显；作用域决定注入给哪些会话</li>
+    <li><b>④</b>添加后自动连接并列出工具；失败 = 详情页红点 + 重试</li>
+  </ol>
+</div>
+
+</body></html>

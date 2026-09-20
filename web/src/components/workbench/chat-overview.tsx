@@ -54,7 +54,7 @@ export function groupChatSessions(sessions: ChatSession[]): {
 }
 
 /**
- * Chat 模式主体（设计 docs/design/workbench-views.md §3.1，2026-08-18）。global scope 下
+ * Chat 模式主体（设计 docs/design-v1/workbench-views.md §3.1，2026-08-18）。global scope 下
  * Agent/Chat 双模式 tab 切到 Chat 时渲染于中栏：搜索框 + 新建按钮 + 全局会话列表（不绑项目）。
  *
  * 会话管理增强（2026-08-20）：分组（置顶优先 + 活跃 updatedAt 降序 + 底部归档折叠组）+ 多选

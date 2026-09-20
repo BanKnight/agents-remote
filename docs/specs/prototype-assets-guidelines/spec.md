@@ -4,13 +4,13 @@
 
 ## Purpose
 
-- 为 `docs/design/prototype/` 下 HTML 原型资产、总览入口、截图基线和设计规范建立长期可验证契约，避免后续 UI alignment 误用截图来源、viewport、页面结构或跨页面 token/component 基础。
+- 为 `docs/design-v1/prototype/` 下 HTML 原型资产、总览入口、截图基线和设计规范建立长期可验证契约，避免后续 UI alignment 误用截图来源、viewport、页面结构或跨页面 token/component 基础。
 
 ## Requirements
 
 ### Requirement: Overview SHALL group every standalone prototype page with desktop and mobile iframe previews
 
-`docs/design/prototype/overview.html` SHALL present each standalone prototype page as its own review section, and each section SHALL contain exactly two iframe previews: one desktop preview and one mobile preview for the same page.
+`docs/design-v1/prototype/overview.html` SHALL present each standalone prototype page as its own review section, and each section SHALL contain exactly two iframe previews: one desktop preview and one mobile preview for the same page.
 
 #### Scenario: Overview covers the current prototype page set
 
@@ -31,7 +31,7 @@ The prototype overview SHALL document and behave as a visual review entry for co
 
 ### Requirement: Guidelines SHALL define concrete reusable visual tokens and component specs
 
-`docs/design/prototype/guidelines.md` SHALL define concrete values for reusable prototype design tokens and component specs, including colors, sizes, shadows, spacing, radii, typography, navigation, surfaces, rows, buttons, status pills, inputs, terminal/code panels, and other cross-page primitives present in the prototypes.
+`docs/design-v1/prototype/guidelines.md` SHALL define concrete values for reusable prototype design tokens and component specs, including colors, sizes, shadows, spacing, radii, typography, navigation, surfaces, rows, buttons, status pills, inputs, terminal/code panels, and other cross-page primitives present in the prototypes.
 
 #### Scenario: Prototype implementer reads visual values
 
@@ -41,7 +41,7 @@ The prototype overview SHALL document and behave as a visual review entry for co
 
 ### Requirement: Guidelines SHALL define desktop and mobile viewport standards
 
-`docs/design/prototype/guidelines.md` SHALL state the standard desktop and mobile viewport sizes used for prototype screenshots and alignment review.
+`docs/design-v1/prototype/guidelines.md` SHALL state the standard desktop and mobile viewport sizes used for prototype screenshots and alignment review.
 
 #### Scenario: Screenshot viewport is selected
 
@@ -51,7 +51,7 @@ The prototype overview SHALL document and behave as a visual review entry for co
 
 ### Requirement: Guidelines SHALL define responsive layout requirements
 
-`docs/design/prototype/guidelines.md` SHALL define the responsive requirements for desktop, mobile direct secondary pages, and mobile deep/detail pages, including navigation placement, safe-area handling, content scroll behavior, and when bottom navigation must be hidden.
+`docs/design-v1/prototype/guidelines.md` SHALL define the responsive requirements for desktop, mobile direct secondary pages, and mobile deep/detail pages, including navigation placement, safe-area handling, content scroll behavior, and when bottom navigation must be hidden.
 
 #### Scenario: Mobile direct and deep states are compared
 
@@ -71,13 +71,13 @@ Prototype pages SHALL avoid scattering duplicated cross-page structure, style va
 
 ### Requirement: Prototype screenshots SHALL be refreshed to match the latest standards
 
-The `docs/design/prototype/screenshots/` assets SHALL be refreshed for all standalone prototype pages using the documented desktop and mobile viewport standards, and the screenshots index SHALL describe the updated assets.
+The `docs/design-v1/prototype/screenshots/` assets SHALL be refreshed for all standalone prototype pages using the documented desktop and mobile viewport standards, and the screenshots index SHALL describe the updated assets.
 
 #### Scenario: Screenshot baseline is updated
 
 - **WHEN** the prototype assets and guidelines are updated
-- **THEN** every standalone prototype page has an updated desktop and mobile screenshot in `docs/design/prototype/screenshots/`
-- **AND** `docs/design/prototype/screenshots/index.md` lists the refreshed screenshots with accurate descriptions
+- **THEN** every standalone prototype page has an updated desktop and mobile screenshot in `docs/design-v1/prototype/screenshots/`
+- **AND** `docs/design-v1/prototype/screenshots/index.md` lists the refreshed screenshots with accurate descriptions
 
 ### Requirement: Prototype indexes SHALL reflect the refined asset model
 
@@ -85,12 +85,12 @@ The prototype documentation indexes SHALL describe the refined relationship betw
 
 #### Scenario: Reader enters prototype docs
 
-- **WHEN** a reader opens `docs/design/prototype/index.md` or `docs/design/prototype/screenshots/index.md`
+- **WHEN** a reader opens `docs/design-v1/prototype/index.md` or `docs/design-v1/prototype/screenshots/index.md`
 - **THEN** the reader can determine which files are standalone page prototypes, which file is the overview/review entry, where the standards live, and where the official screenshots are stored
 
 ## Notes
 
-- Concrete token, component, viewport, responsive, foundation and screenshot-source details live in `docs/design/prototype/guidelines.md` and `docs/design/prototype/index.md`.
+- Concrete token, component, viewport, responsive, foundation and screenshot-source details live in `docs/design-v1/prototype/guidelines.md` and `docs/design-v1/prototype/index.md`.
 - This spec does not require `overview.html` to match formal screenshot viewport dimensions; overview iframe sizing is review-only.
 
 ## 来源

@@ -1037,7 +1037,7 @@ export type RenameTerminalSessionResponse = {
 };
 
 // -- Chat Sessions（全局会话，不绑项目，pi SDK 嵌入运行时）--
-// 设计见 docs/design/workbench-views.md §3.1。chat 全局、无 projectName，独立 ChatSessionRegistry
+// 设计见 docs/design-v1/workbench-views.md §3.1。chat 全局、无 projectName，独立 ChatSessionRegistry
 //（不进现有 SessionRegistry，其按 projectName 分片）。Phase 1 仅元数据 CRUD，Phase 3 接 pi 运行时。
 
 export type ChatSessionStatus = "idle" | "running" | "closed" | "error";
@@ -1089,7 +1089,7 @@ export type UpdateChatSessionResponse = {
 };
 
 // -- Pi Stream Messages（/api/chat-sessions/:id/stream，pi SDK 嵌入运行时）--
-// 设计见 docs/design/workbench-views.md §3.1 与 docs/research/pi-access-options.md §9.1。
+// 设计见 docs/design-v1/workbench-views.md §3.1 与 docs/research/pi-access-options.md §9.1。
 // 传输层与 claude-stream 字节级一致（复用 session_init/history_*/live_*/ended 批处理 markers）；
 // 区别在 payload：pi 发 pi 原生事件（一行一 JSON，message_update 已剥离 partial 快照）。
 // pi 原生事件的具体形状只在 api 端存在（pi SDK 类型，见 api/src/pi-events.ts），shared 只
@@ -1298,7 +1298,7 @@ export type ClaudeSeedInit = {
 // /reload-skills succeeded). Broadcast-only — never buffered into liveLines/history
 // (reconnects re-fetch via REST), so it reaches only currently-connected clients.
 // No payload by design: the client invalidates its REST catalog query on receipt
-// rather than trusting an embedded snapshot. See docs/design/message-replay.md
+// rather than trusting an embedded snapshot. See docs/design-v1/message-replay.md
 // 「命令后置处理框架」.
 export type ClaudeSkillCatalogChanged = {
   type: "system";

@@ -134,7 +134,7 @@ const defaultCreateModelRuntime: CreateModelRuntimeFn = (options) => ModelRuntim
 const defaultCreateSession: CreateSessionFn = (options) => createAgentSession(options);
 
 /**
- * PiRuntime —— chat 模式的进程内 pi AgentSession 运行时（设计 docs/design/workbench-views.md §3.1）。
+ * PiRuntime —— chat 模式的进程内 pi AgentSession 运行时（设计 docs/design-v1/workbench-views.md §3.1）。
  *
  * 与 claude 的 ClaudeRuntime 不同：pi 不是 spawn CLI，而是 SDK 库嵌入（决策 4 每会话新建
  * ModelRuntime，读当前 settings.runtimes.pi；已活会话不受配置变更影响）。会话是活体——

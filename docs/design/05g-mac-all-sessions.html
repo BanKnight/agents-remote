@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>05g · Mac（全部会话作用域）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（列宽与页私布局；共享组件全部在 components.css 桌面段） */
+.win{display:flex;flex-direction:column;height:calc(100% - 2px)}
+.wbody{display:flex;flex:1;min-height:0}
+.side{width:250px}
+.pcenter{width:360px;flex:none}
+.pterm{width:300px;flex:none}
+.pinsp{flex:1}
+.chips{padding:8px 12px 0;gap:6px}
+.pane .stream{gap:12px;padding:10px 14px 0}
+.scope{margin:6px 2px 0}
+.pmark{width:12px;height:12px;flex:none;color:var(--ink-2)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stagewin">
+  <div class="win">
+    <div class="tbar"><span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span><span class="t">agents-remote — agents-web</span></div>
+    <div class="wbody">
+
+      <!-- Sidebar：全部会话作用域 -->
+      <div class="side sidewin">
+        <div class="ghead"><span class="tt">会话</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
+        <div class="seg4 mini scope"><span>项目</span><span class="on">全部</span></div>
+        <div class="microlabel" style="margin:10px 6px 2px">置顶</div>
+        <div class="srow2 inst selrow" style="font-weight:600;color:var(--ink-1)"><span class="pmark"><svg viewBox="-10 -10 20 20" style="stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M-2.5,-9 h5 v5.5 l3,3.5 v1.5 h-4.5 v4.5 l-1,1.2 -1,-1.2 v-4.5 h-4.5 v-1.5 l3,-3.5 z"/></svg></span>支付联调脚本<span class="live off">infra-scripts</span></div>
+        <div class="microlabel" style="margin:10px 6px 2px">AGENTS-WEB · 2</div>
+        <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dot2" style="background:var(--c-success)"></span>claude·auth</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dot2" style="border:1.4px solid var(--ink-2)"></span>codex·api</div>
+        <div class="microlabel" style="margin:10px 6px 2px">INFRA-SCRIPTS · 1</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dot2" style="border:1.4px solid var(--ink-2)"></span>deploy-fix</div>
+        <div class="microlabel" style="margin:10px 6px 2px">DOCS-WIKI · 0</div>
+        <div class="srow2 inst" style="color:var(--ink-3);font-size:12px">暂无活跃会话</div>
+        <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+      </div>
+
+      <!-- 中栏：跨项目会话（infra-scripts） -->
+      <div class="pane pcenter">
+        <div class="tabstrip">
+          <span class="tb"><span class="dot" style="background:var(--c-success)"></span>claude·auth</span>
+          <span class="tb on"><span class="dot" style="background:var(--c-success)"></span>支付联调脚本</span>
+          <span class="plus" data-symbol="plus"></span>
+          <span class="moreic" style="margin-left:auto" title="分屏"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-6.5" width="18" height="13" rx="3"/><path d="M3.5,-6.5 V6.5"/></svg></span>
+        </div>
+        <div class="chips">
+          <span class="chip" style="height:24px">opus ▾</span><span class="chip" style="height:24px">auto ▾</span>
+          <span class="chip" style="height:24px">effort·hi ▾</span><span class="rtry">⟳</span><span class="badge2">⚠ 1</span>
+        </div>
+        <div class="stream" style="flex:1 1 auto;min-height:0;overflow:hidden">
+          <div class="task" style="font-size:13px"><b style="color:var(--c-primary)">›</b>&nbsp; 加固部署脚本：失败自动重试并推送日志</div>
+          <div class="plain">先补重试与超时，再接日志上报：</div>
+          <div class="card" style="padding:8px 12px"><span class="t" style="font-size:12px;display:flex;align-items:center;gap:6px"><svg class="icn" style="width:12px;height:12px" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg>bash · ./deploy.sh --retry</span><span class="m">12.8s <b style="color:var(--c-success-text)">✓</b></span></div>
+          <div class="stat2">✓ 上一回合 · 3 轮 · $0.11 · 4.2k tok · 47s</div>
+        </div>
+        <div class="tray" style="margin:12px;flex-wrap:wrap;row-gap:6px">
+          <span class="w">⚠ 1 项待审批</span>
+          <span style="margin-left:auto;display:flex;gap:8px"><span class="btn ghost" style="padding:4px 10px">拒绝</span><span class="btn ok" style="padding:4px 10px">允许</span></span>
+          <span class="c" style="flex-basis:100%">git push --force origin main</span>
+        </div>
+        <div class="input" style="margin:0 12px 18px">
+          <span class="stop" style="width:28px;height:28px"><i style="width:8px;height:8px"></i></span>
+          <span class="field" style="height:36px;font-size:13px">插话补充指令…</span>
+          <span class="send" style="width:26px;height:26px"></span>
+        </div>
+      </div>
+
+      <!-- 终端窗格 -->
+      <div class="pane pterm">
+        <div class="grip">⋮⋮</div>
+        <div class="tabstrip">
+          <span class="tb on" style="font-family:ui-monospace,Consolas,monospace"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg>&gt;_ term·2</span>
+          <span class="moreic" style="margin-left:auto"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg></span>
+        </div>
+        <div class="tterm">
+          <div><span class="p">$</span> ssh srv-01</div>
+          <div class="tdim">last login: 今天 09:12</div>
+          <div><span class="p">$</span> <span class="cursor"></span></div>
+        </div>
+        <div class="tfoot">bash · srv-01 · 80×24 · 断线内容不丢</div>
+      </div>
+
+      <!-- Inspector：infra-scripts 检视 -->
+      <div class="pane pinsp">
+        <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
+        <div class="seg4"><span>文件</span><span class="on">Git</span><span>Wiki</span><span>历史</span></div>
+        <div class="grow" style="font-family:ui-monospace,Consolas,monospace;font-weight:600"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><circle cx="-5.5" cy="-6" r="2.4"/><circle cx="-5.5" cy="6" r="2.4"/><circle cx="5.5" cy="-3" r="2.4"/><path d="M-5.5,-3.6 V3.6"/><path d="M5.5,-0.6 C5.5,3.2 -5.5,1.4 -5.5,3.6"/></svg>main ↑0 ↓0<span style="margin-left:auto;font-weight:400;color:var(--ink-2)">工作区 2</span></div>
+        <div class="grow"><span class="badge M">M</span><span class="p">deploy.sh</span></div>
+        <div class="grow"><span class="badge U">??</span><span class="p" style="color:var(--ink-2)">run.log</span></div>
+        <div class="addbtn">＋ 加开终端实例</div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="sbar">
+      <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 4 实例运行中 ·
+      <span style="color:var(--c-warning);font-weight:600">3 项待审批 ›</span>
+      <span style="margin-left:auto">今日 $3.29 · 88.4k tok</span>
+    </div>
+  </div>
+
+  <!-- 编号 pin：① 作用域切换 ② 分组列表 ③ 置顶 ④ 跨项目窗格 -->
+  <span class="pin" style="left:130px;top:196px">1</span>
+  <span class="pin" style="left:150px;top:278px">2</span>
+  <span class="pin" style="left:150px;top:172px">3</span>
+  <span class="pin" style="left:492px;top:44px">4</span>
+  <span class="pin" style="left:262px;top:42px">5</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>Sidebar 作用域切换：项目 / 全部（iPad/Mac 专属；iPhone 维持 项目 → 会话 层级，规格「核心组件单例、两种呈现」）。<b>项目 = 05 现状</b>：仅当前所选项目的实例区（AGENT 会话 / TERMINAL / CHAT·PI 分组，随项目组选中行切换）；<b>全部 = 本图</b>：跨项目分组列表</span></li>
+    <li><b>②</b>全部模式：按项目分组列出所有会话，行带项目限定符防重名；置顶仍最前（③）；原「其他项目 · 活跃」组由分组列表取代（一功能一入口）</li>
+    <li><b>③</b>置顶语义不变：固定在会话列表最顶部（与手机 02 全局活动同一条数据）</li>
+    <li><b>④</b>中栏可混开多项目会话（配合 ① 分屏各自独立）；托盘随会话走，全局聚合仍在状态栏（05f）</li>
+    <li><b>⑤</b>动线：点列表行 → 中栏新开 tab 并激活（左 tab = 此前打开的 claude·auth，点回即切）；重名 tab 自动加项目后缀；Mac 分屏 = 每窗格独立 tab 条</li>
+  </ol>
+</div>
+
+</body></html>

@@ -1,6 +1,10 @@
-# design 索引
+# design-v1 索引（历史归档）
 
-本层用于沉淀工作流、技能体系与设计模型等长期设计文档。
+> ⚠️ **本目录是 v1 设计体系的历史归档（2026-09-20 归档），不再是权威标尺。**
+> 新 UI 设计权威 = `docs/design/`（agents-remote-design v1.3 设计包：`design_spec.md` + `tokens.json` + `assets/components.css`）+ `docs/design/redesign-v2.md`（重构总纲与决策日志）。
+> 本层文档仅作历史参考，其中的 token 体系（深色 Server Agent Console、`#7dd3fc` primary、Geist 字体）已被新设计取代；描述消息回放/进程模型等**非视觉机制**的文档（如 `message-replay.md`、`agent-session-model.md`、`claude-provider-protocol.md`）的机制结论仍然有效，引用时注意区分。
+
+本层原为 v1 设计权威（`docs/design/`），用于沉淀工作流、技能体系与设计模型等长期设计文档。
 
 ## 子目录
 

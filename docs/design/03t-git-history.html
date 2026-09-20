@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03t · 深度页（提交历史）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;font-size:14px;display:flex;align-items:center;justify-content:center}
+.meta{padding:8px 16px 0;font-size:11.5px;color:var(--ink-2)}
+.dlg{font-size:12px;font-weight:600;color:var(--ink-2);margin:14px 16px 2px}
+.crow{display:flex;align-items:baseline;gap:8px;padding:8px 16px 0}
+.crow .h{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;color:var(--c-primary)}
+.crow .m{font-size:13px;font-weight:600;color:var(--ink-1)}
+.csub{padding:3px 16px 10px 40px;font-size:11px;color:var(--ink-2);border-bottom:1px solid var(--sep-row)}
+.loadmore{font-size:11px;color:var(--ink-3);text-align:center;margin-top:16px}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">Git 检视</span>
+      <h1>提交历史</h1>
+      <span style="width:52px"></span>
+    </div>
+
+    <div class="meta">main · 共 186 次提交</div>
+
+    <div class="dlg">今天</div>
+    <div class="crow"><span class="h">a3f9c21</span><span class="m">passkey migration (#42)</span></div>
+    <div class="csub">✦ claude·auth · 6 文件 · 2 小时前</div>
+    <div class="dlg">昨天</div>
+    <div class="crow"><span class="h">7b2e884</span><span class="m">fix session leak</span></div>
+    <div class="csub">li · 3 文件 · 昨天 18:42</div>
+    <div class="crow"><span class="h">e19d0c3</span><span class="m">update retry config</span></div>
+    <div class="csub">✦ codex·api · 2 文件 · 昨天 15:07</div>
+    <div class="dlg">本周</div>
+    <div class="crow"><span class="h">c41d90f</span><span class="m">ci: add e2e</span></div>
+    <div class="csub">li · 5 文件 · 3 天前</div>
+    <div class="crow"><span class="h">b77a1f0</span><span class="m">init passkey tests</span></div>
+    <div class="csub">✦ claude·auth · 3 文件 · 4 天前</div>
+
+    <div class="loadmore">上滑加载更早提交</div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 入口 ② 日期分组 ③ ✦ 来源 ④ 上滑加载 -->
+    <span class="pin" style="left:120px;top:60px">1</span>
+    <span class="pin" style="left:80px;top:140px">2</span>
+    <span class="pin" style="left:350px;top:196px">3</span>
+    <span class="pin" style="left:200px;top:500px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>从 Git 工具「全部历史」进入（顶部返回式，‹ 回 Git 列表）</li>
+    <li><b>②</b>按日期分组；行 = hash + 提交信息 + 作者/时间；上滑加载更早</li>
+    <li><b>③</b>作者标注来源：✦ = Agent 会话提交（哪个会话一目了然）</li>
+    <li><b>④</b>点提交行 → 提交详情（03u）</li>
+  </ol>
+</div>
+
+</body></html>

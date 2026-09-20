@@ -4,7 +4,7 @@ import { parseSessionEntries } from "@earendil-works/pi-coding-agent";
 import type { SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 
 /**
- * pi JSONL 历史回放（设计 docs/design/workbench-views.md §3.1 Phase 4）。
+ * pi JSONL 历史回放（设计 docs/design-v1/workbench-views.md §3.1 Phase 4）。
  *
  * 读 `chat-sessions/pi-jsonl/<chatId>/` 下的 session JSONL，把 message entry 合成与 live 流
  * 同形的 `pi_event` 帧（`message_start` + `message_end` 成对，同一 message）——**单一管道

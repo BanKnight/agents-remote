@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>07 · L1 设置 — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center}
+.sect{font-size:12px;font-weight:600;color:var(--ink-2);margin:14px 16px 6px;letter-spacing:.4px}
+.sgroup{margin:0 16px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:0 16px}
+.srow{display:flex;align-items:center;height:44px;font-size:14.5px;color:var(--ink-1)}
+.srow + .srow{border-top:1px solid var(--sep-row)}
+.srow .v{margin-left:auto;font-size:13px;color:var(--ink-2)}
+.srow .v.ok{color:var(--c-success-text)}
+.srow .v.mono{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px}
+.srow .ar{font-size:12px;color:var(--ink-3);margin-left:2px}
+.logout{margin:14px 16px 0;height:44px;border-radius:16px;background:var(--bg-elevated);border:1px solid var(--sep);
+        display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:600;
+        color:var(--c-danger);cursor:pointer}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>设置</h1>
+      <span style="width:52px"></span>
+    </div>
+
+    <div class="sect">通用</div>
+    <div class="sgroup">
+      <div class="srow">外观<span class="v">跟随系统<span class="ar">›</span></span></div>
+      <div class="srow">语言<span class="v">跟随系统<span class="ar">›</span></span></div>
+    </div>
+
+    <div class="sect">RUNTIME 预设（新建实例时可选）</div>
+    <div class="sgroup">
+      <div class="srow">Claude 模型预设<span class="v">opus / sonnet / haiku<span class="ar">›</span></span></div>
+      <div class="srow">Pi Provider<span class="v">openai<span class="ar">›</span></span></div>
+      <div class="srow">Firecrawl API Key<span class="v">已设置<span class="ar">›</span></span></div>
+    </div>
+
+    <div class="sect">自动重试默认（会话 ℹ 可覆盖）</div>
+    <div class="sgroup">
+      <div class="srow">次数上限<span class="v">3 次</span></div>
+      <div class="srow">重试间隔<span class="v">45 秒（指数退避）</span></div>
+      <div class="srow">重发文案<span class="v mono">「请继续」</span></div>
+    </div>
+
+    <div class="sect">服务器</div>
+    <div class="sgroup">
+      <div class="srow"><span style="font-family:ui-monospace,'SF Mono',Consolas,monospace">srv-01.example.com</span><span class="ar" style="margin-left:auto">›</span></div>
+      <div class="srow">PWA<span class="v ok">已安装 · v1.2.0</span></div>
+    </div>
+
+    <div class="logout">退出登录…</div>
+
+    <div class="tabbar">
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 入口 ② 外观/语言 ③ 全局默认可覆盖 ④ 密钥脱敏/退出 -->
+    <span class="pin" style="left:120px;top:60px">1</span>
+    <span class="pin" style="left:350px;top:128px">2</span>
+    <span class="pin" style="left:350px;top:230px">3</span>
+    <span class="pin" style="left:330px;top:588px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>入口：项目页 ⚙ push（桌面 = Sidebar 底部）；‹ 返回项目</li>
+    <li><b>②</b>外观：跟随系统 / 浅色 / 深色；语言同 —— 覆盖系统默认</li>
+    <li><b>③</b>Runtime 预设与重试默认是全局默认值，会话 ℹ 面板可按会话覆盖</li>
+    <li><b>④</b>密钥脱敏显示；退出登录需确认（清 token，不清服务端数据）</li>
+  </ol>
+</div>
+
+</body></html>

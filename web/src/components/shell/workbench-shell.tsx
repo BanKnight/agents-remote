@@ -42,7 +42,7 @@ type WorkbenchShellProps = {
 };
 
 /**
- * 三栏工作台外壳（设计文档 docs/design/workbench-redesign.md §2）。
+ * 三栏工作台外壳（设计文档 docs/design-v1/workbench-redesign.md §2）。
  *
  * 桌面常驻三栏 grid：左栏（项目树）/ 中栏（实例区）/ 右栏（inspection tab）。
  * 左右栏可收起（atom 持久化），收起后该侧消失、中栏对应边缘出现唤出按钮；

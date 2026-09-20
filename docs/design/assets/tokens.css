@@ -1,0 +1,89 @@
+/* ============================================================
+   agents-remote · tokens.css —— 颜色唯一事实源（HTML 轨）
+   与 tokens.json 一一对应：:root = 深色（产品主主题），
+   html[data-theme="light"] = 浅色覆盖。语义名两态一致，换值不换名。
+   禁止在任何页面写死 HEX；新颜色先进 tokens.json 再进这里。
+   ============================================================ */
+:root{
+  /* brand / semantic */
+  --c-primary:#0A84FF;
+  --c-success:#30D158;        --c-success-text:#30D158;
+  --c-warning:#FF9F0A;        --c-warning-text:#FF9F0A;
+  --c-danger:#FF453A;
+  --c-pin:#BF5AF2;
+  --scrim:rgba(0,0,0,.45);
+  /* neutral 底 */
+  --bg-base:#000000;          /* 页面分组底 */
+  --bg-canvas:#000000;        /* 工作区 / 输出流底 */
+  --bg-elevated:#1C1C1E;      /* 卡片 / 列表 / sheet */
+  --bg-elevated2:#2C2C2E;     /* 嵌套卡 / chips / 表单字段 */
+  --bg-elevated3:#3A3A3C;     /* 分段控件容器 / 禁用钮 */
+  --bg-tabbar:#1C1C1E;
+  --bg-sidebar:#1C1C1F;
+  --bg-inspector:#101013;
+  --seg-track:#1C1C1E;        --seg-thumb:#3A3A3C;  /* 分段控件：容器底/滑块（=tokens.json fillSegmented/segmentedThumb） */
+  --bg-codeblock:#0D0D0F;
+  --bg-tabstrip:#141417;
+  --menu:#2C2C2E;
+  /* ink */
+  --ink-title:#FFFFFF;
+  --ink-1:#F2F2F7;            /* 一级正文 */
+  --ink-2:#98989F;            /* 辅助 / 未激活 Tab / 占位 */
+  --ink-3:#48484A;            /* 极弱提示 / 冻结文字 */
+  /* 分隔与填充 */
+  --sep:#38383A;  --sep-strong:#48484A;  --sep-row:#2C2C2E;
+  --fill-search:#1C1C1E;  --fill-segmented:#1C1C1E;  --segmented-thumb:#3A3A3C;
+  --fill-selected:rgba(10,132,255,.22);  /* Sidebar 选中行 */
+  /* 彩色衬底（低透明 tint） */
+  --tint-blue:rgba(10,132,255,.16);
+  --tint-green:rgba(48,209,88,.10);
+  --tint-orange:rgba(255,159,10,.13);
+  --tint-purple:rgba(191,90,242,.14);
+  --tint-red:rgba(255,69,58,.12);
+  --tint-diff-green:rgba(48,209,88,.10);
+  /* 派生（HTML 轨渲染专用，不在 tokens.json） */
+  --sb-ink:#F2F2F7;           /* 状态栏/顶部墨色 = ink-1 */
+  --backdrop:#3A3A3C;         /* 舞台外衬底 */
+  --term-ink:#D8D8DC;         /* 终端正文 */
+  --on-accent:#FFFFFF;        /* 实心主色钮上的文字 */
+  --on-success:#0A0A0A;       /* 实心成功钮上的文字（绿底黑字两态皆可读） */
+  --home-indicator:rgba(255,255,255,.80);
+}
+html[data-theme="light"]{
+  --c-primary:#007AFF;
+  --c-success:#34C759;        --c-success-text:#28A745;
+  --c-warning:#FF9F0A;        --c-warning-text:#E08600;
+  --c-danger:#FF3B30;
+  --c-pin:#AF52DE;
+  --scrim:rgba(0,0,0,.40);
+  --bg-base:#F2F2F7;
+  --bg-canvas:#FFFFFF;
+  --bg-elevated:#FFFFFF;
+  --bg-elevated2:#F2F2F7;
+  --bg-elevated3:#E9E9EB;
+  --bg-tabbar:#F8F8F8;
+  --bg-sidebar:#F2F2F4;
+  --bg-inspector:#FAFAFB;
+  --seg-track:#E9E9EB;        --seg-thumb:#FFFFFF;
+  --bg-codeblock:#F6F6F8;
+  --bg-tabstrip:#ECECF0;
+  --menu:#FFFFFF;
+  --ink-title:#000000;
+  --ink-1:#1C1C1E;
+  --ink-2:#8E8E93;
+  --ink-3:#C7C7CC;
+  --sep:#E5E5EA;  --sep-strong:#D1D1D6;  --sep-row:#F0F0F2;
+  --fill-search:#E9E9EB;  --fill-segmented:#E9E9EB;  --segmented-thumb:#FFFFFF;
+  --fill-selected:#DCEDFF;
+  --tint-blue:rgba(0,122,255,.12);
+  --tint-green:rgba(52,199,89,.12);
+  --tint-orange:rgba(255,159,10,.12);
+  --tint-purple:rgba(175,82,222,.12);
+  --tint-red:rgba(255,59,48,.10);
+  --tint-diff-green:rgba(52,199,89,.12);
+  --sb-ink:#1C1C1E;
+  --backdrop:#D8D8DC;
+  --term-ink:#1C1C1E;
+  --on-accent:#FFFFFF;
+  --home-indicator:rgba(0,0,0,.85);
+}

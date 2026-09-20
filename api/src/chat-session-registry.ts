@@ -7,7 +7,7 @@ import type { ChatSession, ChatSessionStatus } from "@agents-remote/shared";
 export const DEFAULT_CHAT_TITLE = "新对话";
 
 /**
- * ChatSessionRegistry —— 全局 chat 会话元数据持久化（设计 docs/design/workbench-views.md §3.1）。
+ * ChatSessionRegistry —— 全局 chat 会话元数据持久化（设计 docs/design-v1/workbench-views.md §3.1）。
  *
  * 与 {@link SessionRegistry} 的区别：chat 会话**全局、不绑项目**，故无 projectName 分片、无
  * runtime 探活（pi 进程内会话存活由 PiRuntime 管，Phase 3 接入；Phase 1 仅元数据 CRUD）。

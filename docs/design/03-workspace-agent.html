@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03 · 工作台页（观察态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.sub{margin:6px 16px 0;padding:6px 12px;border-radius:9px;background:var(--tint-green);
+     font-size:12px;font-weight:600;color:var(--c-success-text);display:flex;justify-content:space-between}
+.subc{border-radius:12px;background:var(--tint-green);
+      border:1px solid color-mix(in srgb,var(--c-success) 40%,transparent);
+      padding:9px 12px;font-size:13px;font-weight:600;color:var(--ink-1);display:flex;align-items:center;gap:8px}
+.subc .st{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--c-success-text)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+  <div class="page">
+
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2">
+      <div class="pills">
+        <span class="pill on"><span class="dot run"></span>claude·auth</span>
+        <span class="pill"><span class="dot ring" style="width:6px;height:6px"></span>codex·api</span>
+        <span class="pill" style="font-family:ui-monospace,Consolas,monospace;font-size:11px">&gt;_ term·1</span>
+      </div>
+      <span class="plus" title="新建实例" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
+      <span class="ticon" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+    </div>
+
+    <div class="chips">
+      <span class="chip">✦ opus · plan · hi</span>
+      <span class="sep"></span>
+      <span class="ic" data-symbol="arrow.clockwise" style="width:20px"><svg viewBox="-10 -10 20 20" style="stroke:var(--c-success)"><path d="M7.3,0 A7.3,7.3 0 1 1 5.16,-5.16"/><path d="M5.16,-9 V-5.16 H1.3"/></svg></span>
+      <span style="font-size:10.5px;color:var(--ink-2)">自动重试开</span>
+    </div>
+
+    <div class="sub"><span>▸ 2 个子 agent 运行中 · 点按跳转</span><span>›</span></div>
+
+    <div class="stream">
+      <div class="task">把 auth 模块迁移到 passkeys，跑通全部测试</div>
+      <div class="card"><span class="t">bash · npm run test</span><span class="m">4.2s</span><span class="ok">✓</span></div>
+      <div class="card"><span class="t">edit · src/auth/passkey.ts</span><span class="ok" style="font-size:11px">+48</span><span class="ok" style="color:var(--c-danger);font-weight:600;font-size:11px">−12</span><span class="ok">✓</span></div>
+      <div class="think">✦ 思考 · 14s ›</div>
+      <div class="subc">▸ 子 agent · test-runner<span class="st">运行中</span></div>
+      <div class="card"><span class="t">grep · 'verifyToken'</span><span class="ok" style="color:var(--c-warning)">⟳</span></div>
+      <div class="stat">✓ 上一回合 · 6 轮 · $0.42 · 18.2k tok · 3m12s</div>
+    </div>
+
+    <div class="tray">
+      <span class="w" style="display:flex;align-items:center;gap:5px"><svg width="14" height="13" viewBox="-10 -10 20 20" style="display:block"><path d="M0,-9 L9.5,7.5 H-9.5 z" fill="none" style="stroke:var(--c-warning-text)" stroke-width="1.7"/><path d="M0,-3.2 V1.8" style="stroke:var(--c-warning-text)" stroke-width="1.7" fill="none"/><circle cx="0" cy="4.6" r="1.1" style="fill:var(--c-warning-text)" stroke="none"/></svg>2 项待审批</span>
+      <span class="c">bash · curl … · git push</span>
+      <span class="btn ghost">拒绝</span><span class="btn ok">允许</span>
+    </div>
+
+    <div class="input">
+      <span class="stop"><i></i></span>
+      <span class="field">插话补充指令…</span>
+      <span class="send"></span>
+    </div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① pill ② 运行chip ③ 子agent条 ④ 审批托盘 -->
+    <span class="pin" style="left:120px;top:130px">1</span>
+    <span class="pin" style="left:56px;top:168px">2</span>
+    <span class="pin" style="left:210px;top:206px">3</span>
+    <span class="pin" style="left:340px;top:712px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>实例 pill 横滑区：点击切换、长按出操作菜单；尾部 ＋ = 新建实例 sheet（不移动、不销毁输出流）</li>
+    <li><b>②</b>运行摘要 chip：点开 = 模型 / 权限模式 / effort / 自动重试 完整配置（与 ℹ 面板同数据）</li>
+    <li><b>③</b>子 agent 概览条：点按跳到对应子 agent；卡片点头部展开，完成自动折叠</li>
+    <li><b>④</b>审批托盘：逐条 允许/拒绝；标题点击 = 审批中心（跨会话聚合）</li>
+  </ol>
+</div>
+
+</body></html>

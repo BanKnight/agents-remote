@@ -17,7 +17,7 @@ import { ShellIcon } from "./icons";
 
 /**
  * Shell surface/tone role layer. Values reference DESIGN tokens
- * (docs/design/DESIGN.md, Google DESIGN.md format) via Tailwind v4 @theme inline
+ * (docs/design-v1/DESIGN.md, Google DESIGN.md format) via Tailwind v4 @theme inline
  * utilities — surface-* / on-surface-* / neutral-line / primary / secondary /
  * success / warning / error. `shellSurfaceClasses` and the `*ToneClasses` map
  * to DESIGN.md component variants (surface-*, nav-item-*, button-*, chip-*,

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>07m · Mac 设置 — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（列宽与页私布局；共享组件全部在 components.css 桌面段） */
+.win{display:flex;flex-direction:column;height:calc(100% - 2px)}
+.wbody{display:flex;flex:1;min-height:0}
+.side{width:250px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.mhead{display:flex;align-items:center;padding:10px 20px 0}
+.mhead h1{font-size:17px;font-weight:700;color:var(--ink-1)}
+.col{flex:1;overflow:hidden;padding:10px 0 0;display:flex;flex-direction:column;gap:12px;
+     width:560px;margin:0 auto}
+.grplabel{font-size:12px;font-weight:600;color:var(--ink-2);margin:0 2px}
+.scard{background:var(--bg-elevated);border:1px solid var(--sep);border-radius:12px;padding:2px 14px}
+.setrow{display:flex;align-items:center;gap:10px;height:36px}
+.setrow + .setrow{border-top:1px solid var(--sep-row)}
+.setrow .lb{flex:1;font-size:13.5px;color:var(--ink-1)}
+.setrow .v{font-size:12.5px;color:var(--ink-2)}
+.setrow .v.mono{font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.setrow .v.ok{color:var(--c-success-text)}
+.setrow .ar{font-size:12px;color:var(--ink-3)}
+.seg3{width:240px}
+.dot2{width:7px;height:7px;border-radius:50%;flex:none}
+.logout{height:40px;border-radius:12px;background:var(--bg-elevated);border:1px solid var(--sep);
+        display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:600;color:var(--c-danger)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stagewin">
+  <div class="win">
+    <div class="tbar"><span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span><span class="t">agents-remote — 设置</span></div>
+    <div class="wbody">
+
+      <!-- Sidebar（设置激活） -->
+      <div class="side sidewin">
+        <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+        <div class="dsep" style="margin:8px 0"></div>
+        <div class="seg4 scope"><span class="on">项目</span><span>全部</span></div>
+        <div class="ghead"><span class="tt">实例 · agents-web</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dot2" style="background:var(--c-success)"></span>claude·auth</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dot2" style="border:1.4px solid var(--ink-2)"></span>codex·api</div>
+        <div class="srow2 inst" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink-2)"><span class="dicon"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span>term·1</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="message"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>pi·chat</div>
+        <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg></span>插件</span><span class="on"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+      </div>
+
+      <!-- 主区：设置（居中表单列） -->
+      <div class="main">
+        <div class="mhead"><h1>设置</h1></div>
+        <div class="col">
+          <div class="grplabel">外观</div>
+          <div class="scard">
+            <div class="setrow"><span class="lb">主题</span>
+              <div class="seg4 seg3" style="margin:0"><span class="on">跟随系统</span><span>浅色</span><span>深色</span></div></div>
+            <div class="setrow"><span class="lb">语言</span><span class="v">简体中文 ▾</span></div>
+          </div>
+          <div class="grplabel">Runtime 预设（新会话默认）</div>
+          <div class="scard">
+            <div class="setrow"><span class="lb">模型预设</span><span class="v">opus ▾</span></div>
+            <div class="setrow"><span class="lb">权限模式</span><span class="v">plan ▾</span></div>
+            <div class="setrow"><span class="lb">Effort</span><span class="v">hi ▾</span></div>
+          </div>
+          <div class="grplabel">自动重试默认（会话 ℹ 可覆盖）</div>
+          <div class="scard">
+            <div class="setrow"><span class="lb">次数上限</span><span class="v">3 次</span></div>
+            <div class="setrow"><span class="lb">重试间隔</span><span class="v">45 秒（指数退避）</span></div>
+            <div class="setrow"><span class="lb">重发文案</span><span class="v mono">「请继续」</span></div>
+          </div>
+          <div class="grplabel">服务器</div>
+          <div class="scard">
+            <div class="setrow"><span class="lb mono" style="font-family:ui-monospace,'SF Mono',Consolas,monospace">srv-01.example.com</span><span class="ar" style="margin-left:auto">›</span></div>
+            <div class="setrow"><span class="lb">PWA</span><span class="v ok">已安装 · v1.2.0</span></div>
+            <div class="setrow"><span class="lb">访问令牌</span><span class="v mono">srv-01_••••••••••••（脱敏）</span></div>
+          </div>
+          <div class="logout">退出登录…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编号 pin：① 入口 ② 外观/语言 ③ 全局默认可覆盖 ④ 密钥脱敏/退出 -->
+  <span class="pin" style="left:150px;top:660px">1</span>
+  <span class="pin" style="left:560px;top:170px">2</span>
+  <span class="pin" style="left:560px;top:310px">3</span>
+  <span class="pin" style="left:560px;top:700px">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>入口：桌面 = Sidebar 底部「设置」（本页）；iPhone = 项目页 ⚙ push</span></li>
+    <li><b>②</b><span>外观：跟随系统 / 浅色 / 深色（与图集主题开关同一份记忆）；语言覆盖系统默认</span></li>
+    <li><b>③</b><span>Runtime 预设与重试默认是全局默认值，会话 ℹ 面板可按会话覆盖</span></li>
+    <li><b>④</b><span>访问令牌脱敏显示；退出登录需确认（清 token，不清服务端数据）</span></li>
+    <li><b>⑤</b><span>视图切换原则：本页仅遮盖主区——工作台与会话 tab 原样保留，点侧栏任一会话行（或再点「设置」）即回工作台，零销毁</span></li>
+  </ol>
+</div>
+
+</body></html>

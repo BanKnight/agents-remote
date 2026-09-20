@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03r · 深度页（单文件 diff）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;font-size:14px;display:flex;align-items:center;justify-content:center;
+        font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.meta{padding:8px 16px 8px;font-size:11.5px;color:var(--ink-2);border-bottom:1px solid var(--sep-row)}
+.meta .add{color:var(--c-success-text);font-weight:600}
+.meta .del{color:var(--c-danger);font-weight:600}
+.diff{background:var(--bg-codeblock);padding:8px 0;
+      font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;line-height:20px}
+.hunk{color:var(--ink-2);padding:4px 12px}
+.dl{display:flex;align-items:baseline}
+.dl .no{width:30px;flex:none;text-align:right;padding-right:8px;color:var(--ink-3)}
+.dl .tx{white-space:pre;color:var(--term-ink)}
+.dl .sign{width:14px;flex:none;font-weight:700}
+.dl.add{background:var(--tint-diff-green)} .dl.add .sign{color:var(--c-success-text)}
+.dl.del{background:var(--tint-red)} .dl.del .sign{color:var(--c-danger)}
+.jump{position:absolute;right:16px;bottom:200px;padding:6px 14px;border-radius:15px;
+      background:var(--tint-blue);border:1px solid color-mix(in srgb,var(--c-primary) 55%,transparent);
+      font-size:12px;font-weight:600;color:var(--c-primary);z-index:8}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">Git 检视</span>
+      <h1>passkey.ts</h1>
+      <span style="width:52px"></span>
+    </div>
+
+    <div class="meta">main ← 工作区 · <span class="add">+48</span> <span class="del">−12</span> · 2 个代码块</div>
+
+    <div class="diff">
+      <div class="hunk">@@ -12,6 +12,9 @@</div>
+      <div class="dl"><span class="no">12</span><span class="sign del">-</span><span class="tx"> if (password) {</span></div>
+      <div class="dl"><span class="no">12</span><span class="sign add">+</span><span class="tx"> if (passkey) {</span></div>
+      <div class="dl add"><span class="no">13</span><span class="sign add">+</span><span class="tx">   const ok = await verify(pk)</span></div>
+      <div class="dl add"><span class="no">14</span><span class="sign add">+</span><span class="tx">   return issueToken(user)</span></div>
+      <div class="dl"><span class="no">15</span><span class="sign"> </span><span class="tx">  }</span></div>
+      <div class="dl"><span class="no">16</span><span class="sign"> </span><span class="tx">  return next()</span></div>
+      <div class="hunk" style="margin-top:8px">@@ -40,4 +43,6 @@</div>
+      <div class="dl del"><span class="no">40</span><span class="sign del">-</span><span class="tx"> const RETRY = 3</span></div>
+      <div class="dl add"><span class="no">43</span><span class="sign add">+</span><span class="tx"> const RETRY = 5</span></div>
+      <div class="dl add"><span class="no">44</span><span class="sign add">+</span><span class="tx"> const RETRY_BACKOFF = 45_000</span></div>
+      <div class="dl"><span class="no">45</span><span class="sign"> </span><span class="tx"> export const config = {</span></div>
+    </div>
+
+    <div class="jump">下一个改动 ›</div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 入口 ② unified 红删绿增 ③ 下一个改动 ④ 双栏行号 -->
+    <span class="pin" style="left:120px;top:60px">1</span>
+    <span class="pin" style="left:350px;top:206px">2</span>
+    <span class="pin" style="left:300px;top:628px">3</span>
+    <span class="pin" style="left:320px;top:80px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>从 Git 工具的文件行点入（顶部返回式，‹ 回 Git 列表）</li>
+    <li><b>②</b>unified diff：红 = 删除、绿 = 新增，双栏行号对照旧/新文件</li>
+    <li><b>③</b>「下一个改动」逐块跳转；桌面端同一数据在右栏 Inspector（05）</li>
+    <li><b>④</b>对比基准见顶部：main ← 工作区（未提交改动）</li>
+  </ol>
+</div>
+
+</body></html>

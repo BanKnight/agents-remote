@@ -167,7 +167,7 @@ Agent 当 teammates，分配到 **GitHub issue**（unit of work）：
 
 - **memory**：`/home/deploy/.claude/projects/-home-deploy-workspace-agents-remote/memory/product-direction-opc-multi-agent.md`（含参考项目架构 + 用户心智模型 + 两决策，与本文件 §2-3 重复）。
 - **现状源码**（编排落地报告引用）：`api/src/session-registry.ts`、`api/src/claude-runtime.ts`、`api/src/tmux-runtime.ts`、`api/src/agent-runtime.ts`、`api/src/session-relay.ts`、`api/src/agent-provider-profiles.ts`、`api/src/skill-tasks.ts`、`packages/shared/src/index.ts`。
-- **架构文档**：`docs/architecture/session-runtime.md`、`docs/architecture/agent-runtime.md`、`docs/design/message-replay.md`。
+- **架构文档**：`docs/architecture/session-runtime.md`、`docs/architecture/agent-runtime.md`、`docs/design-v1/message-replay.md`。
 - **调研产出**：两份 subagent 报告（一份编排落地方案、一份 CF cloudflare-os + Computer 报告）——见本会话 jsonL。
 - **本会话 jsonL**：`/home/deploy/.claude/projects/-home-deploy-workspace-agents-remote/b14b8973-6b5a-4f1a-8ace-fa530a48e06f.jsonl`（压缩后读此恢复完整对话）。
 - **工具**：tvly CLI（`export TAVILY_API_KEY="$(cat /home/deploy/.config/tokens/tavily-cli.txt | tr -d '[:space:]')"`）、deepwiki MCP（ask_question）、gh CLI（账号 BanKnight，五个参考项目从 star 确认身份）。

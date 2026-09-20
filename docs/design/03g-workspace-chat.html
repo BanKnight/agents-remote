@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03g · 工作台页（Chat(Pi) 实例态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.pill svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.chat{flex:1;overflow:hidden;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.bub{max-width:72%;border-radius:18px;padding:10px 14px;font-size:13.5px;line-height:1.5;color:var(--ink-1)}
+.bub.me{align-self:flex-end;background:var(--tint-blue);
+        border:1px solid color-mix(in srgb,var(--c-primary) 30%,transparent)}
+.bub.pi{align-self:flex-start;background:var(--bg-elevated);border:1px solid var(--sep);
+        color:var(--term-ink);font-size:13px}
+.dots{align-self:flex-start;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:18px;
+      padding:14px 16px;display:flex;gap:6px}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
+.cstat{font-size:11.5px;color:var(--ink-2);padding:0 4px}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2">
+      <div class="pills">
+        <span class="pill"><span class="dot run"></span>claude·auth</span>
+        <span class="pill on" style="gap:5px"><svg viewBox="-10 -10 20 20" data-symbol="message"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg>pi·chat</span>
+      </div>
+      <span class="plus" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
+      <span class="ticon" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+    </div>
+
+    <div class="chips">
+      <span class="chip" style="gap:5px">pi · provider <span style="font-size:10px;color:var(--ink-2)">▾</span></span>
+    </div>
+
+    <div class="chat">
+      <div class="bub me">帮我看下这个报错</div>
+      <div class="bub pi">看了日志，是 rate limit 触发。<br>建议把重试间隔调到 45s。</div>
+      <div class="bub me">好，帮我改配置</div>
+      <div class="bub pi">已改 .env：RETRY_INTERVAL=45</div>
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="cstat">今天 · 32 条 · 约 1.2k tok</div>
+    </div>
+
+    <div class="input">
+      <span class="field">发消息…</span>
+      <span class="send"></span>
+    </div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 高亮圈：激活 pill（相对 stage 定位） -->
+    <span class="ring" style="left:163px;top:79px;width:44px;height:44px"></span>
+
+    <!-- 编号 pin：① 气泡流 ② provider chip ③ ⋯ 关闭入口 ④ 托盘位（无） -->
+    <span class="pin" style="left:140px;top:292px">1</span>
+    <span class="pin" style="left:70px;top:134px">2</span>
+    <span class="pin" style="left:338px;top:52px">3</span>
+    <span class="pin" style="left:300px;top:668px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>Pi 会话：气泡式轻量对话（用户右蓝、Pi 左灰），非 terminal-first</li>
+    <li><b>②</b>chips 只有 provider 选择；长按 pill：置顶 / 重命名 / 关闭</li>
+    <li><b>③</b>关闭后进历史「已结束」，可恢复（与 Agent 会话同一规则）</li>
+    <li><b>④</b>无审批托盘 / 子 agent（Chat 无工具执行权限）——pin 标在其本应出现的位置</li>
+  </ol>
+</div>
+
+</body></html>

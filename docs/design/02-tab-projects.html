@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>02 · 项目 Tab — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（Tab 页：状态栏/Tab Bar 绝对定位，内容上滚） */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.page{display:block;height:auto;position:relative;padding:4px 16px 0}
+.tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
+        background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.h-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:46px}
+.h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
+.h-ic{display:flex;gap:14px;padding-bottom:8px}
+.h-ic svg{width:22px;height:22px;stroke:var(--ink-1);fill:none;stroke-width:1.8;
+          stroke-linecap:round;stroke-linejoin:round;cursor:pointer}
+.search{margin-top:8px;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
+        align-items:center;gap:8px;padding:0 12px;font-size:15px;color:var(--ink-2)}
+.gcard{margin-top:14px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:4px 12px}
+.sec{font-size:13px;font-weight:600;color:var(--ink-2);margin:18px 0 6px;display:flex;justify-content:space-between}
+.sec .r{color:var(--c-success-text)}
+.ap-row{display:flex;align-items:center;gap:8px;margin:8px 0;border-radius:10px;background:var(--tint-orange);padding:9px 10px}
+.ap-row .tx{flex:1;font-size:13px;font-weight:600;color:var(--c-warning-text)}
+.act-row{display:flex;align-items:center;gap:8px;padding:9px 2px}
+.act-row .n{flex:1;font-size:14px;font-weight:600;color:var(--ink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-row .d{font-size:11.5px;color:var(--ink-2)}
+.meta{display:flex;align-items:center;gap:6px}
+.meta .tm{font-size:11px;color:var(--ink-2)}
+.tchip{font-size:9.5px;font-weight:600;padding:2.5px 8px;border-radius:9px;background:var(--bg-elevated2);color:var(--ink-2)}
+.tchip.tag{background:var(--tint-purple);color:var(--c-pin)}
+.tchip.live{background:var(--tint-green);color:var(--c-success-text)}
+.tchip.off{background:color-mix(in srgb,var(--ink-2) 14%,transparent);color:var(--ink-2)}
+.pj-row{display:flex;align-items:center;gap:10px;padding:11px 2px}
+.pj-row .ic{width:30px;height:30px;border-radius:8px;background:var(--tint-blue);
+            display:flex;align-items:center;justify-content:center;flex:none}
+.pj-row .ic svg{width:17px;height:17px;stroke:var(--c-primary);fill:none;stroke-width:1.8}
+.pj-row .ic.off{background:color-mix(in srgb,var(--ink-2) 12%,transparent)} .pj-row .ic.off svg{stroke:var(--ink-2)}
+.pj-row .tx{flex:1;min-width:0}
+.pj-row .tx .n{display:block;font-size:16px;font-weight:600;color:var(--ink-1);white-space:nowrap}
+.pj-row .tx .d{display:block;font-size:11.5px;color:var(--ink-2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.pj-row .tchip{flex:none;margin-left:auto}
+.see-all{text-align:center;font-size:12.5px;color:var(--c-primary);padding:10px 0 2px}
+.rline{border-top:1px solid var(--sep-row);margin:0 12px}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="h-row">
+      <h1>项目</h1>
+      <div class="h-ic">
+        <svg viewBox="-10 -10 20 20" data-symbol="plus"><path d="M0,-6.5 V6.5 M-6.5,0 H6.5"/></svg>
+        <svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg>
+      </div>
+    </div>
+
+    <div class="search">搜索项目与会话</div>
+
+    <div class="sec"><span>全局活动</span><span class="r">● 3 进行中</span></div>
+    <div class="gcard">
+      <div class="ap-row" data-symbol="exclamationmark.triangle">
+        <svg width="15" height="14" viewBox="-10 -10 20 20" style="flex:none"><path d="M0,-9 L9.5,7.5 H-9.5 z" fill="none" style="stroke:var(--c-warning-text)" stroke-width="1.7"/><path d="M0,-3.2 V1.8" style="stroke:var(--c-warning-text)" stroke-width="1.7" fill="none"/></svg>
+        <span class="tx">3 项待审批 · 集中处理<span style="float:right;font-weight:700">›</span></span>
+      </div>
+      <div class="act-row">
+        <span class="dot" style="width:7px;height:7px;background:var(--c-success);flex:none"></span>
+        <span class="n">用户中心重构… <span class="tchip tag">置顶</span></span>
+        <span class="meta"><span class="tm">2 分钟前</span></span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-2);margin:-4px 0 8px 25px">正在跑 npm test · 第 7 轮 <span class="tchip">agents-web</span></div>
+      <div class="rline"></div>
+      <div class="act-row">
+        <span class="dot" style="width:7px;height:7px;background:var(--c-warning);flex:none"></span>
+        <span class="n">支付联调脚本</span>
+        <span class="meta"><span class="tm">5 分钟前</span></span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-2);margin:-4px 0 8px 25px">2 项待审批 · git push <span class="tchip">infra-scripts</span></div>
+      <div class="see-all">查看全部活动 ›</div>
+    </div>
+
+    <div class="sec"><span>项目 · 3</span></div>
+    <div class="gcard" style="padding:2px 12px">
+      <div class="pj-row">
+        <span class="ic" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">agents-web</span><span class="d">2 实例 · 最近：passkey 迁移（2 分钟前）</span></span>
+        <span class="tchip live">● 2</span>
+      </div>
+      <div class="rline" style="margin:0"></div>
+      <div class="pj-row">
+        <span class="ic" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">infra-scripts</span><span class="d">1 实例 · 最近：支付联调（5 分钟前）</span></span>
+        <span class="tchip live">● 1</span>
+      </div>
+      <div class="rline" style="margin:0"></div>
+      <div class="pj-row">
+        <span class="ic off" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">docs-wiki</span><span class="d">空闲 · 最近活动 1 小时前</span></span>
+        <span class="tchip off">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabbar">
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <span class="pin" style="left:340px;top:70px">1</span>
+  <span class="pin" style="left:120px;top:246px">2</span>
+  <span class="pin" style="left:304px;top:70px">3</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>⚙ 设置：push 进入（桌面 = Sidebar 底部）；语言 / 外观 / Runtime 预设</li>
+    <li><b>②</b>全局活动：审批入口行 + 会话行（状态点 + 摘要 + 项目 chip）；置顶紫标固定最顶</li>
+    <li><b>③</b>＋ 新建 / 采用项目 → sheet；项目行点入 → 工作台（摘要 = 最近会话活动）</li>
+  </ol>
+</div>
+
+</body></html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03p · 工作台（Wiki 检视工具态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.wsearch{flex:none;display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:15px;
+      background:var(--bg-elevated);border:1px solid var(--sep);font-size:11.5px;color:var(--ink-2)}
+.ticon.hl{background:var(--bg-elevated3);border-radius:6px;padding:4px}
+.ticon.hl svg{stroke:var(--ink-1)}
+.tgrp{display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer}
+.tgrp .tw{font-size:11px;color:var(--ink-3);width:12px}
+.tgrp .n{font-size:14px;font-weight:600;color:var(--ink-1);flex:1}
+.tgrp .c{font-size:10.5px;color:var(--ink-2)}
+.wpg{display:flex;align-items:center;gap:10px;padding:9px 0 9px 22px;font-size:13.5px;color:var(--ink-1);cursor:pointer}
+.wpg + .wpg{border-top:1px solid var(--sep-row)}
+.wpg .st{margin-left:auto;font-size:10.5px;color:var(--ink-2)}
+.wpg .ref{width:14px;height:14px;border-radius:50%;background:var(--tint-purple);flex:none;
+          display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--c-pin)}
+.wpg.sel{font-weight:600}
+.wpg .refnote{font-size:11px;color:var(--ink-2);width:100%;margin-top:2px}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;margin-top:16px}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2">
+      <div class="pills">
+        <span class="wsearch"><svg width="13" height="13" viewBox="-10 -10 20 20" style="flex:none"><circle cx="-2" cy="-2" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M2,2 L7,7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>搜索知识库全文</span>
+      </div>
+      <span class="plus" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
+      <span class="ticon hl" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:4px">
+      <div class="tgrp"><span class="tw">▸</span><span class="n">上手指南</span><span class="c">4 页</span></div>
+      <div class="tgrp"><span class="tw">▾</span><span class="n">架构决策</span><span class="c">3 页</span></div>
+      <div style="margin-top:4px">
+        <div class="wpg"><span class="st" style="margin-left:auto;order:2">5 月 12 日</span><span style="order:1">认证方案选型</span></div>
+        <div class="wpg sel" style="display:block">
+          <div style="display:flex;align-items:center;gap:8px"><span>passkey 迁移计划</span><span class="ref">✦</span><span class="st">2 小时前</span></div>
+          <div class="refnote">claude·auth 正在引用此页作为上下文</div>
+        </div>
+        <div class="wpg"><span class="st" style="margin-left:auto;order:2">4 月 28 日</span><span style="order:1">密码回退策略</span></div>
+      </div>
+      <div class="tgrp"><span class="tw">▸</span><span class="n">运维手册</span><span class="c">6 页</span></div>
+      <div class="cap">点页面 → 阅读页：正文 +「让 Agent 读这篇」</div>
+    </div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 高亮图标 ② ✦ 可引用 ③ 引用来源标注 ④ v1 只读 ⑤ 桌面同组件 -->
+    <span class="pin" style="left:344px;top:60px">1</span>
+    <span class="pin" style="left:285px;top:270px">2</span>
+    <span class="pin" style="left:350px;top:310px">3</span>
+    <span class="pin" style="left:280px;top:436px">4</span>
+    <span class="pin" style="left:120px;top:530px">5</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>行2 工具图标原位高亮；再点当前图标返回会话（现场不动）</li>
+    <li><b>②</b>✦ = 可让 Agent 引用：阅读页有「让 Agent 读这篇」→ 注入当前会话上下文</li>
+    <li><b>③</b>页面树 + 全文搜索；被会话引用中的页面标注引用来源</li>
+    <li><b>④</b>v1 只读：编辑在源文件（仓库 markdown）进行，此处刷新即见</li>
+    <li><b>⑤</b>桌面端同一组件呈现在检视分段的 Wiki 页（见 05 / 05c）</li>
+  </ol>
+</div>
+
+</body></html>

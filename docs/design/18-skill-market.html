@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>18 · 市场（技能 浏览·搜索·安装）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.page{display:block;height:auto;position:relative}
+.tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
+        background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:52px 16px 8px}
+.nav .back{color:var(--c-primary);font-size:15px}
+.nav h1{font-size:17px;font-weight:600;color:var(--ink-1)}
+.nav .gear{width:22px;height:22px;stroke:var(--ink-1);fill:none;stroke-width:1.7;cursor:pointer}
+.tabseg{display:flex;margin:0 16px;height:34px;border-radius:10px;background:var(--fill-segmented);padding:3px}
+.tabseg span{flex:1;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--ink-2);cursor:pointer}
+.tabseg .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
+.chips{display:flex;gap:8px;margin:12px 16px 0;align-items:center}
+.chip2{font-size:12px;font-weight:600;padding:5px 14px;border-radius:15px;cursor:pointer;
+       border:1px solid var(--sep);color:var(--ink-2);background:var(--bg-elevated)}
+.chip2.on{background:var(--c-primary);border-color:var(--c-primary);color:var(--on-accent)}
+.chips .mg{margin-left:auto;font-size:11px;color:var(--c-primary)}
+.msearch{margin:12px 16px 0;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
+         align-items:center;gap:8px;padding:0 12px;font-size:14px;color:var(--ink-2)}
+.mcard{margin:10px 16px 0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:14px;padding:10px 14px}
+.mcard .r1{display:flex;align-items:center;gap:8px;font-family:ui-monospace,'SF Mono',Consolas,monospace;
+           font-size:13.5px;font-weight:600;color:var(--ink-1)}
+.mcard .ver{font-size:10px;font-weight:600;color:var(--c-primary);background:var(--tint-blue);
+            border-radius:9px;padding:2px 9px}
+.mcard .src{margin-left:auto;font-size:10px;color:var(--ink-2);background:var(--bg-elevated2);
+            border-radius:9px;padding:3px 10px}
+.mcard .d2{font-size:11.5px;color:var(--ink-2);margin-top:5px}
+.mcard .r3{display:flex;justify-content:flex-end;margin-top:2px}
+.btn2{font-size:12px;font-weight:600;padding:5px 18px;border-radius:13px;cursor:pointer;
+      background:var(--c-primary);color:var(--on-accent)}
+.mcard .prog{height:4px;border-radius:2px;background:var(--bg-elevated3);margin-top:10px;overflow:hidden}
+.mcard .prog i{display:block;height:100%;width:42%;background:var(--c-primary)}
+.mcard .pct{font-size:11px;color:var(--c-primary);text-align:right;margin-top:4px}
+.installed{margin-left:auto;font-size:11.5px;color:var(--c-success-text);font-weight:600}
+.mfoot{margin:14px 16px 0;text-align:center;font-size:11px;color:var(--ink-3)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">‹ 插件</span>
+      <h1>技能市场</h1>
+      <svg class="gear" viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg>
+    </div>
+
+    <div class="tabseg"><span>MCP 服务器</span><span class="on">技能</span></div>
+
+    <div class="chips">
+      <span class="chip2 on">官方精选</span><span class="chip2">skills.sh</span><span class="chip2">我的源</span>
+      <span class="mg">管理源 ›</span>
+    </div>
+
+    <div class="msearch">搜索技能</div>
+
+    <div class="mcard">
+      <div class="r1">docs-writer<span class="src">社区</span></div>
+      <div class="d2">从代码生成项目文档 · 3.2k 安装</div>
+      <div class="r3"><span class="btn2">安装</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">commit-msg<span class="ver">✓ 官方</span></div>
+      <div class="d2">规范提交信息生成 · 5.6k 安装</div>
+      <div class="r3"><span class="btn2">安装</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">flaky-test-hunter</div>
+      <div class="prog"><i></i></div>
+      <div class="pct">42%</div>
+    </div>
+    <div class="mcard">
+      <div class="r1">release-notes<span class="installed">✓ 已安装</span></div>
+      <div class="d2">发布说明生成 · 点名称 → 详情</div>
+    </div>
+
+    <div class="mfoot">来源与类型绑定：技能市场不含 MCP 源，反之亦然</div>
+  </div>
+
+  <div class="tabbar">
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 编号 pin：① 双市场 tab ② 卡结构 ③ 安装→审计 ④ 名称→详情/管理源 -->
+  <span class="pin" style="left:120px;top:130px">1</span>
+  <span class="pin" style="left:350px;top:250px">2</span>
+  <span class="pin" style="left:352px;top:262px">3</span>
+  <span class="pin" style="left:200px;top:352px">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>两个市场：MCP 服务器 / 技能 —— 源与类型绑定，切 tab 时来源 chips 随之变化</li>
+    <li><b>②</b>卡 = 名称（mono）+ 来源分级徽标 + 工具数/安装量 +〔安装〕</li>
+    <li><b>③</b>〔安装〕→ 审计卡（16）→ 卡内进度 → ✓ 已安装；✕ 取消单个</li>
+    <li><b>④</b>点名称 → 详情（13）；⚙ 管理源（15）</li>
+  </ol>
+</div>
+
+</body></html>

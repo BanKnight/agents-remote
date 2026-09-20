@@ -82,12 +82,12 @@
 
 ### Requirement: Prototype visual hierarchy is the default product reference
 
-系统 SHALL 在不违背文本文档、澄清意图、安全边界和长期架构约束的前提下，以 `docs/design/prototype.png` 的暗色移动端控制台气质作为第一轮布局密度和视觉层级参考，但所有用户可见元素命名、页面概念与操作文案必须映射到本项目自己的 Project、Agent Session、Terminal、Files、Git 等领域术语。
+系统 SHALL 在不违背文本文档、澄清意图、安全边界和长期架构约束的前提下，以 `docs/design-v1/prototype.png` 的暗色移动端控制台气质作为第一轮布局密度和视觉层级参考，但所有用户可见元素命名、页面概念与操作文案必须映射到本项目自己的 Project、Agent Session、Terminal、Files、Git 等领域术语。
 
 #### Scenario: Implementer chooses shell layout details
 
 - **WHEN** 实现者需要决定顶部项目上下文、会话卡片、状态标签或底部输入区域的呈现优先级
-- **THEN** 默认参考 `docs/design/prototype.png` 的信息层级和暗色控制台气质
+- **THEN** 默认参考 `docs/design-v1/prototype.png` 的信息层级和暗色控制台气质
 - **AND** 不把原型中的通用页面元素、占位命名或示例文案直接带入最终产品
 
 #### Scenario: Prototype conflicts with written constraints

@@ -93,4 +93,4 @@ flowchart LR
 - change：implement-agent-provider-experience
 - verify 证据：`.workflow/changes/implement-agent-provider-experience/verify.md`
 - related spec：`docs/specs/agent-provider-experience/spec.md`
-- related design：`docs/design/agent-provider-experience.md`
+- related design：`docs/design-v1/agent-provider-experience.md`

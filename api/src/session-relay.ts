@@ -76,7 +76,7 @@ export class ClaudeSessionRelay {
     // Scalar seed init: replayed before history so the client's scalar fold has a
     // seed even though system.init is stdout-only (absent from JSONL/tail). Must
     // follow session_init (client resets on session_init) and precede history_start
-    // (else it'd be gzipped into the batch). See docs/design/message-replay.md.
+    // (else it'd be gzipped into the batch). See docs/design-v1/message-replay.md.
     if (seedInitLine) {
       try {
         onData(seedInitLine);

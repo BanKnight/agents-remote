@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>11 · 浮层（审批中心：跨会话聚合）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（底衬 = 项目 Tab 压暗 + 审批中心 sheet） */
+.h-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:46px;padding:0 16px}
+.h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
+.h-ic{display:flex;gap:14px;padding-bottom:8px}
+.h-ic svg{width:22px;height:22px;stroke:var(--ink-1);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.search{margin:8px 16px 0;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
+        align-items:center;gap:8px;padding:0 12px;font-size:15px;color:var(--ink-2)}
+.gcard{margin:14px 16px 0;height:198px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px}
+.sec{font-size:13px;font-weight:600;color:var(--ink-2);margin:18px 16px 6px}
+.cnt{font-size:11.5px;font-weight:600;color:var(--c-warning-text);background:var(--tint-orange);
+     border-radius:11px;padding:3px 10px}
+.all{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--c-primary);cursor:pointer}
+.acard{margin-top:10px;background:var(--bg-elevated2);border-radius:12px;padding:10px 12px}
+.acard .r1{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-1)}
+.acard .pj{margin-left:auto;font-size:9.5px;color:var(--ink-2);background:var(--bg-elevated);
+           border-radius:8.5px;padding:3px 10px;white-space:nowrap}
+.acard .cmd{margin-top:8px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;
+            color:var(--term-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acard .cmd.hot{color:var(--c-danger)}
+.acard .r3{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
+.sfoot{margin-top:12px;text-align:center;font-size:10.5px;color:var(--ink-2);padding-bottom:4px}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <!-- 底衬：项目 Tab（压暗） -->
+  <div style="position:relative">
+    <div class="h-row">
+      <h1>项目</h1>
+      <div class="h-ic">
+        <svg viewBox="-10 -10 20 20" data-symbol="plus"><path d="M0,-6.5 V6.5 M-6.5,0 H6.5"/></svg>
+        <svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg>
+      </div>
+    </div>
+    <div class="search">搜索项目与会话</div>
+    <div class="gcard"></div>
+    <div class="sec">项目 · 3</div>
+  </div>
+  <div class="dim" style="top:170px"></div>
+
+  <!-- 审批中心 sheet -->
+  <div class="sheet" data-symbol="sheet">
+    <div class="grab"></div>
+    <div class="shd">
+      <h2>审批中心</h2>
+      <span class="cnt">3 待审批</span>
+      <span class="all" data-symbol="checkmark.circle.2">全部允许 ›</span>
+    </div>
+
+    <div class="acard">
+      <div class="r1"><span class="dot run"></span>claude·auth<span class="pj">agents-web</span></div>
+      <div class="cmd">bash · curl https://api.example.com…</div>
+      <div class="r3"><span class="btn ghost">拒绝</span><span class="btn ok">允许</span></div>
+    </div>
+
+    <div class="acard">
+      <div class="r1"><span class="dot run"></span>支付联调脚本<span class="pj">infra-scripts</span></div>
+      <div class="cmd hot">git push --force origin main</div>
+      <div class="r3"><span class="btn ghost">拒绝</span><span class="btn ok">允许</span></div>
+    </div>
+
+    <div class="acard">
+      <div class="r1"><span class="dot run"></span>codex·api<span class="pj">agents-web</span></div>
+      <div class="cmd">rm -rf node_modules/.cache</div>
+      <div class="r3"><span class="btn ghost">拒绝</span><span class="btn ok">允许</span></div>
+    </div>
+
+    <div class="sfoot">处理完自动通知对应会话继续 · 点卡片跳到会话位置 · 全部允许需确认</div>
+  </div>
+
+  <div class="tabbar" style="position:absolute;left:0;right:0;bottom:0;margin-top:0;z-index:11">
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 高亮圈：全部允许（需二次确认）（相对 stage 定位） -->
+  <span class="ring" style="left:286px;top:293px;width:44px;height:44px;z-index:15"></span>
+
+  <!-- 编号 pin：① 跨会话卡 ② 强写高亮 ③ 全部允许 ④ 入口 -->
+  <span class="pin" style="left:250px;top:430px;z-index:20">1</span>
+  <span class="pin" style="left:300px;top:545px;z-index:20">2</span>
+  <span class="pin" style="left:332px;top:302px;z-index:20">3</span>
+  <span class="pin" style="left:28px;top:636px;z-index:20">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>跨会话聚合：每卡 = 会话来源 + 项目归属 + 待审操作（mono）</li>
+    <li><b>②</b>强写操作（push --force / rm -rf）命令红色高亮，先看再批</li>
+    <li><b>③</b>全部允许需二次确认；逐条处理后自动通知对应会话继续</li>
+    <li><b>④</b>入口：全局活动橙色入口行（02）/ 工作台托盘标题点击；桌面=状态栏</li>
+  </ol>
+</div>
+
+</body></html>

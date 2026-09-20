@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agents-remote · UI/UX 设计图集 v1.2</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<style>
+/* 图集自身布局（颜色全部走 tokens.css，跟随主题开关） */
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-base);color:var(--ink-1);
+     font-family:system-ui,-apple-system,'SF Pro Text','PingFang SC','Microsoft YaHei',sans-serif;
+     line-height:1.4;padding:0 20px 64px}
+.wrap{max-width:1080px;margin:0 auto}
+.bar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg-base) 88%,transparent);
+     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+     border-bottom:1px solid var(--sep);margin:0 -20px;padding:14px 20px 12px}
+.barin{display:flex;align-items:center;justify-content:space-between;gap:16px}
+h1{font-size:24px;font-weight:800;margin:0 0 2px}
+h1 span{color:var(--ink-2);font-size:14px;font-weight:600;margin-left:8px}
+.sub{color:var(--ink-2);font-size:14px;margin:0 0 6px}
+.badge{display:inline-block;font-size:12px;font-weight:600;color:var(--c-warning-text);
+       border:1px solid var(--c-warning);border-radius:9px;padding:2px 10px;margin-bottom:4px}
+/* 主题分段控件（切换 = 全图联动：iframe postMessage + SVG 换浅色变体） */
+.segc{display:flex;background:var(--fill-segmented);border-radius:10px;padding:3px;flex:none}
+.segc span{padding:6px 18px;border-radius:8px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;user-select:none}
+.segc span.on{background:var(--segmented-thumb);color:var(--ink-1)}
+h2{font-size:17px;font-weight:700;margin:40px 0 2px;color:var(--ink-title)}
+h3{font-size:13px;font-weight:700;margin:22px 0 2px;color:var(--ink-2)}
+.flow{color:var(--ink-2);font-size:13px;margin:0 0 14px}
+.flow b{color:var(--c-primary);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+figure{margin:0 0 28px;background:var(--bg-elevated);border:1px solid var(--sep);
+       border-radius:16px;overflow:hidden}
+figure.phone{max-width:560px;margin-left:auto;margin-right:auto}
+figure img,.svgbox svg{display:block;width:100%;height:auto}
+figcaption{padding:10px 16px 14px;font-size:13px;color:var(--ink-2);border-top:1px solid var(--sep)}
+figcaption code{font-size:11px;color:var(--ink-2);background:var(--bg-elevated2);
+                border-radius:4px;padding:1px 6px;display:inline-block;margin-top:4px}
+.tag{display:inline-block;font-size:11px;font-weight:700;color:var(--c-primary);
+     background:var(--tint-blue);border-radius:6px;padding:2px 8px;margin-right:8px;vertical-align:1px}
+.tag.t-multi{color:var(--c-success-text);background:var(--tint-green)}
+.tag.t-light{color:var(--c-pin);background:var(--tint-purple)}
+.tok{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 28px}
+.tok figure{margin:0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:12px;overflow:hidden}
+.tok .sw2{height:44px}
+.tok figcaption{padding:6px 10px;font-size:11px;border-top:none}
+.tok code{background:transparent;padding:0}
+a{color:var(--c-primary);text-decoration:none}
+.fit{width:100%;overflow:hidden}
+.fit iframe{border:0;display:block;transform-origin:0 0}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="bar"><div class="wrap barin">
+  <div>
+    <h1>agents-remote · UI/UX 设计图集 <span>v1.2</span></h1>
+    <p class="sub">远程调度与观察 AI Agent · iPhone / iPad / Mac 三端同构 · 规格书见 <a href="design_spec.md">design_spec.md</a></p>
+    <span class="badge">1 张 SVG（图解轨）+ 50 页 HTML 轨 · 主题开关全图联动 · 结构确认版</span>
+  </div>
+  <div class="segc" id="seg" title="切换全部页面与图的主题">
+    <span data-t="dark" class="on">深色</span><span data-t="light">浅色</span>
+  </div>
+</div></header>
+
+<div class="wrap">
+  <h2>一、结构总览</h2>
+  <p class="flow">阅读动线：L0 → L1 → L2 → L3；箭头颜色区分跳转方式（蓝 push / 绿 cover / 橙 sheet / 紫 跨项目直达）</p>
+  <figure>
+    <div class="svgbox"><img src="01-ia-flow.svg" alt="" data-swap></div>
+    <figcaption><span class="tag">第 0 步</span>信息架构总图：3 层 + 临时面板；两市场（MCP / 技能）源与类型绑定。<br><code>01-ia-flow.svg</code> · 图解轨（无浅色变体）</figcaption>
+  </figure>
+
+  <h2>二、分层页面（L0 / L1）</h2>
+  <p class="flow">阅读动线：登录 → 建/采用项目 → 项目 Tab（全局活动 + 审批入口 + 项目列表）→ 插件（双市场入口）→ 全局文件 → 设置</p>
+  <div class="grid">
+    <figure>
+      <iframe src="06-login.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L0 · 登录</span>单密码 + 服务器地址；token 免登直达上次位置；双语入口；无 Tab Bar。<br><code>06-login.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="08-sheet-new-project.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 新建/采用</span>新建目录 or 扫描采用已有目录；成功 → push 进工作台空态。<br><code>08-sheet-new-project.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure class="phone">
+      <iframe src="02-tab-projects.html" loading="lazy" style="width:100%;height:1085px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 项目 Tab</span>全局活动纵向列表（审批入口行 + 置顶紫标 + 状态点摘要）+ 项目行带最近活动摘要。<br><code>02-tab-projects.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure class="phone">
+      <iframe src="02c-pill-context-menu.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">会话操作</span>长按 pill（桌面右键）：取消置顶 / 重命名 / 关闭会话（确认式）；新增走 ＋。<br><code>02c-pill-context-menu.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="09-tab-plugins.html" loading="lazy" style="width:100%;height:1130px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 插件</span>作用域切换 + MCP/技能列表 + 市场两入口（MCP 市场 / 技能市场）+ 管理源 ›。<br><code>09-tab-plugins.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure class="phone">
+      <iframe src="10-tab-files-global.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 全局文件</span>文件组件的全局作用域（服务器根）；项目根带 live 标，点项目文件夹进工作台。<br><code>10-tab-files-global.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure class="phone">
+      <iframe src="07-settings.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 设置</span>外观/语言 · Runtime 预设 · 自动重试默认 · 服务器/PWA · 退出（确认）；密钥脱敏。<br><code>07-settings.html</code> · HTML 轨</figcaption>
+    </figure>
+  </div>
+
+  <h2>三、状态矩阵（工作台页 · 单列）</h2>
+  <p class="flow">阅读动线：骨架 03 → ① 空闲 → ② 出错+自动重试 → ③ 子 agent 展开 → ④ 空态 → ⑤ 断线 → 浮层（新建 / ℹ / 切换 / 历史 / 审批中心）→ 工具与深度（Git → 历史 → 提交 → 分支；文件 → 搜索 → 操作 → 新建 → 上传 → 预览 → diff；Wiki → 阅读）。所有状态共用同一页面骨架。</p>
+
+  <h3>骨架</h3>
+  <figure class="phone">
+    <iframe src="03-workspace-agent.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">骨架 · 观察态</span>常驻 3 行（导航/实例+工具/运行摘要）+ terminal-first 输出流 + 审批托盘；标题 ▾ 切项目。<br><code>03-workspace-agent.html</code> · HTML 轨</figcaption>
+  </figure>
+
+  <h3>生命周期与连接</h3>
+  <figure class="phone">
+    <iframe src="03c-workspace-idle.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 空闲</span>灰点、绿色完成横幅；运行中才有停止键；push / Tab 直达差异见注④。<br><code>03c-workspace-idle.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03d-workspace-error.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 出错</span>红点 + 错误红卡 + 自动重试倒计时条（取消 / 立即重试）；配置在 ℹ。<br><code>03d-workspace-error.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03e-subagent-expanded.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 子 agent 展开</span>嵌套工具卡缩进一级、同一组件；概览条可跳转；审批仍聚合到托盘。<br><code>03e-subagent-expanded.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03h-workspace-empty.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 空态</span>Tab 直达无返回键；无实例不渲染 pill 条；项目级工具仍可用。<br><code>03h-workspace-empty.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03i-workspace-offline.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 断线</span>顶部横幅 + 全部冻结变灰但不销毁；输入禁用；重连按缺口回放。<br><code>03i-workspace-offline.html</code> · HTML 轨</figcaption>
+  </figure>
+
+  <h3>实例类型</h3>
+  <figure class="phone">
+    <iframe src="03f-workspace-terminal.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">实例 · 终端</span>tmux 实例：无模型 chips；上滑看历史，「↓ 实时」回底；无审批托盘。<br><code>03f-workspace-terminal.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03g-workspace-chat.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">实例 · Chat(Pi)</span>气泡式轻量对话；置顶 / 重命名 / 关闭；无审批、无子 agent。<br><code>03g-workspace-chat.html</code> · HTML 轨</figcaption>
+  </figure>
+
+  <h3>浮层</h3>
+  <figure class="phone">
+    <iframe src="03j-sheet-new-instance.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 新建实例</span>+Claude / +OMP / +Codex / 终端 / Chat；模型预设来自设置；下滑关闭零影响。<br><code>03j-sheet-new-instance.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03k-sheet-instance-info.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 实例信息 ℹ</span>元信息 + 运行配置 + 自动重试；重命名 / 置顶 / 关闭（确认式）。<br><code>03k-sheet-instance-info.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03l-sheet-project-switch.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 切换</span>标题 ▾：按项目分组的活跃会话，点会话一步切换（原 2 跳变 1 跳）；切换零销毁。<br><code>03l-sheet-project-switch.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03n-sheet-session-history.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 会话历史</span>入口在 ⋯ 菜单；过滤 全部/进行中/已结束；点已结束会话即恢复并回放。<br><code>03n-sheet-session-history.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="11-approval-center.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 审批中心</span>跨会话聚合待审批：逐条 允许/拒绝、全部允许（确认）、强写操作红色高亮、点卡跳会话。<br><code>11-approval-center.html</code> · HTML 轨</figcaption>
+  </figure>
+
+  <h3>工具与深度页</h3>
+  <figure class="phone">
+    <iframe src="03m-workspace-git-tool.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · Git 检视</span>工具图标原位高亮互切（Git/文件/Wiki）；再点当前图标回会话；底部通向历史/分支。<br><code>03m-workspace-git-tool.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03t-git-history.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 提交历史</span>从「全部历史」进入：按日期分组、hash + 信息 + 作者（✦ = Agent 会话提交）。<br><code>03t-git-history.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03u-git-commit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 提交详情</span>提交信息 + 来源标注 + 变更文件列表；点文件 → diff（对比基准 = 本次提交）。<br><code>03u-git-commit.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03v-git-branches.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 分支列表</span>当前分支置顶 + 领先/落后统计；已合并置灰；只读边界：切换/合并交给 Agent。<br><code>03v-git-branches.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03o-workspace-files-tool.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 文件检视</span>浏览 + 查 + 增删改 + 预览；工具图标原位高亮互切；内容编辑交给 Agent。<br><code>03o-workspace-files-tool.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03x-file-search.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 文件搜索</span>行 2 内容头变搜索框，项目内文件名子串过滤，结果带路径与时间。<br><code>03x-file-search.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03w-file-actions.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 文件操作</span>长按文件行：预览 / 重命名 / 移动到… / 删除（确认 + 未提交警示）；桌面右键同款。<br><code>03w-file-actions.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03y-file-create.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 新建</span>文件 / 文件夹二选一，默认当前目录，重名行内提示；创建后刷新并选中。<br><code>03y-file-create.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03z-file-upload.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 上传</span>⋯ 菜单 / 长按文件夹「上传到此」/ 桌面拖拽；队列进度、同名冲突三选。<br><code>03z-file-upload.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03q-preview-file.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 文件预览</span>从文件列表点入：行号 + 只读渲染，⋯ 可直达 Git diff；‹ 返回列表原位置。<br><code>03q-preview-file.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03r-preview-diff.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 单文件 diff</span>从 Git 行点入：unified 红删绿增、双栏行号、「下一个改动」逐块跳转。<br><code>03r-preview-diff.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03p-workspace-wiki-tool.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · Wiki 检视</span>页面树 + 全文搜索；✦ 页面可「让 Agent 读这篇」注入当前会话上下文；v1 只读。<br><code>03p-workspace-wiki-tool.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure class="phone">
+    <iframe src="03s-wiki-reader.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · Wiki 阅读</span>正文渲染 +「让 Agent 读这篇」→ 注入会话上下文；相关页面互跳。<br><code>03s-wiki-reader.html</code> · HTML 轨</figcaption>
+  </figure>
+
+  <h2>四、市场体系（插件 Tab 深度）</h2>
+  <p class="flow">阅读动线：插件 Tab 市场两入口 → 选市场（MCP / 技能，源与类型绑定）→ 浏览/搜索 → 审计 → 安装 → 已安装管理。</p>
+  <div class="grid">
+    <figure>
+      <iframe src="17-market-browse.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">市场 · MCP</span>来源 chips（官方精选 / Registry / 私有源）+ 搜索；卡含 可安装/安装中/已安装 三态。<br><code>17-market-browse.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="18-skill-market.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">市场 · 技能</span>源 = 官方精选 / skills.sh / 私有源（无 Registry）；卡含 来源分级与安装量。<br><code>18-skill-market.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="16-install-audit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 安装审计</span>市场点「安装」→ 审计 sheet：来源分级、版本与校验和、权限声明、工具预览。<br><code>16-install-audit.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="12-skill-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">深度 · 技能详情</span>更新卡内确认变更 → 后台安装不打断会话；注入能力清单；卸载需确认。<br><code>12-skill-detail.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="13-mcp-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">深度 · MCP 详情</span>连接状态/重启、命令与脱敏密钥、注入工具清单、注入范围；移除需确认。<br><code>13-mcp-detail.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="14-mcp-add.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 添加 MCP</span>传输类型（stdio/SSE）字段联动、密钥脱敏、作用域、添加后自动连接。<br><code>14-mcp-add.html</code> · HTML 轨</figcaption>
+    </figure>
+    <figure>
+      <iframe src="15-market-sources.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L3 · 市场源管理</span>三层源：官方精选（内置）/ Registry / skills.sh / 私有源；纯内网模式。<br><code>15-market-sources.html</code> · HTML 轨</figcaption>
+    </figure>
+  </div>
+
+  <h2>五、多端适配（同一数据，只换容器）</h2>
+  <p class="flow">iPad = 三栏；Mac = Sidebar + 可分屏 + Inspector；含 审批中心 / 历史模式 / 浮层样式 / 文件菜单 的桌面形态。</p>
+  <figure>
+    <div class="fit" style="height:944px"><iframe src="04-ipad-workspace.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad</span>侧栏项目/实例（实例区下方橙色审批行）· 中栏会话（无返回键）· 右栏只读检视 4 段（文件/Git/Wiki/历史）。<br><code>04-ipad-workspace.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:800px"><iframe src="05-mac-workspace.html" loading="lazy" style="width:1288px;height:952px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac</span>可分屏多窗格；Inspector 出 diff；Sidebar「其他项目 · 活跃」跨项目切换；状态栏审批入口。<br><code>05-mac-workspace.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:773px"><iframe src="05f-mac-approval-center.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 审批中心</span>状态栏「N 项待审批」点击 → Popover；卡片与手机审批中心（11）同数据同组件。<br><code>05f-mac-approval-center.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:773px"><iframe src="05c-mac-history-sidebar.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 历史模式</span>时钟把 Sidebar 实例区切换为历史列表（过滤 + 恢复）；iPhone 为 sheet（03n）。<br><code>05c-mac-history-sidebar.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:823px"><iframe src="05g-mac-all-sessions.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 全部会话</span>Sidebar 作用域切换（项目/全部）：项目 = 05 现状实例区，全部 = 跨项目分组列表；点行 → 中栏新开会话 tab（可跨项目混开）。<br><code>05g-mac-all-sessions.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:823px"><iframe src="10-mac-files-global.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 全局文件</span>Sidebar「全局文件」直入；作用域 全局/本项目；与项目文件工具同一组件。<br><code>10-mac-files-global.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:823px"><iframe src="09-mac-plugins.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 插件</span>Sidebar「插件」直入；作用域 全局/本项目·agents-web ▾；MCP / 已安装技能 / 市场两入口。<br><code>09-mac-plugins.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:823px"><iframe src="07-mac-settings.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 设置</span>Sidebar「设置」直入；居中表单列：外观三态（与主题开关同源）/ Runtime 预设 / 重试默认 / 服务器（令牌脱敏）/ 退出。<br><code>07-mac-settings.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:800px"><iframe src="05d-mac-popover-new-instance.html" loading="lazy" style="width:1288px;height:952px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 浮层样式</span>桌面浮层 = Popover（锚点弹出、不遮罩窗口）：新建实例（含 OMP）/ ℹ / 运行配置。<br><code>05d-mac-popover-new-instance.html</code> · HTML 轨</figcaption>
+  </figure>
+  <figure>
+    <div class="fit" style="height:773px"><iframe src="05e-mac-inspector-file-menu.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 文件操作</span>检视文件分段右键（iPad 长按）：预览 / 重命名 / 移动 / 上传 / 删除；拖拽进右栏即上传。<br><code>05e-mac-inspector-file-menu.html</code> · HTML 轨</figcaption>
+  </figure>
+
+  <h2>六、主题机制</h2>
+  <p class="flow">顶部「深色 / 浅色」开关 = 全图联动：HTML 轨经 postMessage 换 <code>&lt;html data-theme&gt;</code>。<b>全部 50 页页面原型均为运行时双主题——点开关即可预览任意页面的浅色形态，因此不产浅色样例图</b>；图解轨 01 为唯一深色静态图。命名规则（数字段后插 x + <code>-light</code>）仅供未来新增 SVG 图解使用，无变体自动回退深色。</p>
+  <h2>七、方法论 / Token / 单源机制</h2>
+  <p class="flow">唯一事实源 = <a href="tokens.json">tokens.json</a>（语义名两态一致，换值不换名）；实现侧禁止散落 HEX。组件单源 = <code>assets/components.css</code>（改一处，全部 HTML 轨页生效）；颜色单源 = <code>assets/tokens.css</code>；主题联动 = <code>assets/theme.js</code>（postMessage + localStorage 双通道）。</p>
+  <div class="tok">
+    <figure><div class="sw2" style="background:#007AFF"></div><figcaption>--c-primary<br><code>#007AFF / #0A84FF</code></figcaption></figure>
+    <figure><div class="sw2" style="background:#34C759"></div><figcaption>--c-success<br><code>#34C759 / #30D158</code></figcaption></figure>
+    <figure><div class="sw2" style="background:#FF9F0A"></div><figcaption>--c-warning<br><code>#FF9F0A / #FF9F0A</code></figcaption></figure>
+    <figure><div class="sw2" style="background:#FF3B30"></div><figcaption>--c-danger<br><code>#FF3B30 / #FF453A</code></figcaption></figure>
+    <figure><div class="sw2" style="background:#AF52DE"></div><figcaption>--c-pin<br><code>#AF52DE / #BF5AF2</code></figcaption></figure>
+    <figure><div class="sw2" style="background:#F2F2F7;border-bottom:1px solid #555"></div><figcaption>--bg-base<br><code>#F2F2F7 / #000</code></figcaption></figure>
+    <figure><div class="sw2" style="background:#FFFFFF;border-bottom:1px solid #555"></div><figcaption>--bg-elevated<br><code>#FFF / #1C1C1E</code></figcaption></figure>
+    <figure><div class="sw2" style="background:linear-gradient(90deg,#F2F2F7 50%,#000 50%)"></div><figcaption>--ink<br><code>#1C1C1E / #F2F2F7</code></figcaption></figure>
+  </div>
+  <p class="sub">方法论：双轨制（页面=HTML 轨 / 图解=SVG 轨）· 基准端原则（iPhone 先行）· 一功能一入口 · 只读边界（结构操作入工具，内容编辑归 Agent）· 状态点语言（绿运行/灰空闲/红出错）· 单源组件（components.css 改一处全生效）· 主题联动（index 开关 → iframe postMessage + SVG 变体换图）· <b>HTML 轨阅读约定：每页 = stage 舞台（元素旁挂编号 pin）＋ 下方「编号说明」面板，序号一一对应</b> · 增量确认节奏。</p>
+</div>
+
+<script>
+/* ===== 图集主题控制器：自身换肤 + iframe 广播 + SVG 浅色变体换图 ===== */
+var mode = 'dark';
+try { var s = localStorage.getItem('adr-theme'); if (s === 'light' || s === 'dark') mode = s; } catch (e) {}
+/* URL 参数优先：index.html?theme=light（QA / 分享链接） */
+try { var q = new URLSearchParams(location.search).get('theme'); if (q === 'light' || q === 'dark') mode = q; } catch (e) {}
+
+/* 浅色变体命名规则：开头的数字段后插 x，尾部加 -light（02-tab-projects → 02x-tab-projects-light） */
+function lightName(src) {
+  return src.replace(/^(\d+[a-z]*)(-[^\/]*?)(\.svg)$/i, function (m, num, rest, ext) { return num + 'x' + rest + '-light' + ext; });
+}
+
+function applyMode(m) {
+  mode = m;
+  document.documentElement.dataset.theme = m;
+  document.querySelectorAll('#seg span').forEach(function (el) { el.classList.toggle('on', el.dataset.t === m); });
+  /* 1) 所有 iframe 页面广播 */
+  document.querySelectorAll('iframe').forEach(function (f) {
+    try { f.contentWindow.postMessage({ type: 'adr-theme', theme: m }, '*'); } catch (e) {}
+  });
+  /* 2) SVG 图换浅色变体；变体不存在时 onerror 回退深色 */
+  document.querySelectorAll('img[data-swap]').forEach(function (img) {
+    if (m === 'light') {
+      if (!img.dataset.darkSrc) img.dataset.darkSrc = img.getAttribute('src');
+      var light = lightName(img.dataset.darkSrc);
+      if (img.getAttribute('src') !== light) {
+        img.onerror = function () { img.onerror = null; img.src = img.dataset.darkSrc; };
+        img.src = light;
+      }
+    } else if (img.dataset.darkSrc) {
+      img.onerror = null;
+      img.src = img.dataset.darkSrc;
+    }
+  });
+}
+
+/* iframe 就绪后补发当前主题（解决 loading=lazy 晚加载） */
+window.addEventListener('message', function (ev) {
+  if ((ev.data || {}).type === 'adr-theme-ready') {
+    document.querySelectorAll('iframe').forEach(function (f) {
+      try { f.contentWindow.postMessage({ type: 'adr-theme', theme: mode }, '*'); } catch (e) {}
+    });
+  }
+});
+
+document.querySelectorAll('#seg span').forEach(function (el) {
+  el.addEventListener('click', function () {
+    applyMode(el.dataset.t);
+    try { localStorage.setItem('adr-theme', el.dataset.t); } catch (e) {}
+  });
+});
+
+applyMode(mode);
+</script>
+</body></html>

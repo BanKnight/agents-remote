@@ -307,7 +307,7 @@ dsh SDK 仅 subprocess 形态，**不满足「无进程代价」**——这正�
 
 verify / 决策后可沉淀到：
 - `docs/architecture/`：pi provider adapter / PiRuntime 与 ClaudeRuntime 的对照边界。
-- `docs/design/`：pi `AgentSessionEvent` → 项目消息协议的映射设计。
+- `docs/design-v1/`：pi `AgentSessionEvent` → 项目消息协议的映射设计。
 - `docs/specs/`：pi provider 行为契约（接入后）。
 
 ## 参考来源

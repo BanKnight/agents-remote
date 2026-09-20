@@ -5,7 +5,7 @@ import type { ChatSessionRegistry } from "./chat-session-registry";
 import type { PiRuntime } from "./pi-runtime";
 
 /**
- * chat 会话空闲回收器（设计 docs/design/workbench-views.md §3.1.1）。
+ * chat 会话空闲回收器（设计 docs/design-v1/workbench-views.md §3.1.1）。
  *
  * 单一定时器统一承载两个语义：
  * - **空会话清理**：`pi-jsonl/<chatId>/` 无文件 = 从未真正发起对话（pi 首条消息前不落盘），

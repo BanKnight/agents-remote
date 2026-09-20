@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>06 · L0 登录（全屏 cover 门）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（L0：无 Tab Bar） */
+.logo{width:72px;height:72px;border-radius:18px;background:var(--c-primary);margin:150px auto 0;
+      display:flex;align-items:center;justify-content:center}
+.logo svg{width:40px;height:40px;stroke:var(--on-accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.brand{text-align:center;margin-top:18px}
+.brand h1{font-size:22px;font-weight:700;color:var(--ink-title)}
+.brand p{font-size:13px;color:var(--ink-2);margin-top:4px}
+.form{margin:56px 20px 0}
+.form label{display:block;font-size:12px;color:var(--ink-2);margin:16px 0 6px}
+.field{height:44px;border-radius:12px;background:var(--bg-elevated);border:1px solid var(--sep);
+       display:flex;align-items:center;padding:0 16px;font-size:14px;color:var(--ink-1);
+       font-family:ui-monospace,'SF Mono',Consolas,monospace;justify-content:space-between}
+.field .ar{color:var(--ink-3);font-family:inherit}
+.login{display:block;height:46px;border-radius:23px;background:var(--c-primary);margin-top:20px;
+       line-height:46px;text-align:center;font-size:16px;font-weight:600;color:var(--on-accent);cursor:pointer}
+.hint{margin-top:12px;text-align:center;font-size:12px;color:var(--ink-2)}
+.foot{position:absolute;left:20px;right:20px;bottom:52px;display:flex;align-items:center;
+      justify-content:space-between;font-size:12.5px}
+.foot .lang{color:var(--c-primary);font-weight:600}
+.foot .pwa{color:var(--ink-2)}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="logo" data-symbol="terminal"><svg viewBox="-10 -10 20 20"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg></div>
+  <div class="brand"><h1>agents-remote</h1><p>远程调度与观察你的 AI Agent</p></div>
+
+  <div class="form">
+    <label>服务器</label>
+    <div class="field">srv-01.example.com<span class="ar">›</span></div>
+    <label>访问密码</label>
+    <div class="field">••••••••••</div>
+    <span class="login">登录</span>
+    <div class="hint">登录一次后本机免密 · 直达上次位置</div>
+  </div>
+
+  <div class="foot">
+    <span class="lang">中文 ›</span>
+    <span class="pwa">添加到主屏幕获得全屏体验</span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 高亮圈：登录（相对 stage） -->
+  <span class="ring" style="left:167px;top:582px;width:56px;height:56px"></span>
+
+  <!-- 编号 pin：① 服务器 ② 免登 ③ 登录 ④ 语言/PWA -->
+  <span class="pin" style="left:360px;top:342px">1</span>
+  <span class="pin" style="left:310px;top:466px">2</span>
+  <span class="pin" style="left:250px;top:592px">3</span>
+  <span class="pin" style="left:60px;top:604px">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>服务器 = 部署地址（点 › 可选历史记录）；同一服务器多端共用账号</li>
+    <li><b>②</b>登录成功 → 本机存 token 免密；再次打开直达上次位置（铁律：状态不销毁）</li>
+    <li><b>③</b>登录 = 全屏 cover 进入 L1；无 Tab Bar（L0 无导航概念）</li>
+    <li><b>④</b>语言 中/EN；PWA 安装提示仅 Web 端显示（原生端无此行）</li>
+  </ol>
+</div>
+
+</body></html>

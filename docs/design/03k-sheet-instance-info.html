@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03k · 浮层（实例信息 ℹ sheet）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.chips{position:relative;z-index:5}
+.task{position:relative;z-index:5}
+.krow{display:flex;align-items:center;padding:11px 0;font-size:13px}
+.krow + .krow{border-top:1px solid var(--sep-row)}
+.krow .k{color:var(--ink-2)}
+.krow .v{margin-left:auto;color:var(--ink-1);display:flex;align-items:center;gap:2px}
+.krow .v .ar{font-size:12px;color:var(--ink-3)}
+.krow .v.mono{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:12px}
+.krow .v .ok{color:var(--c-success-text)}
+.acts{display:flex;justify-content:space-between;padding:14px 0 4px;margin-top:6px;border-top:1px solid var(--sep-row)}
+.acts span{font-size:14px;font-weight:600;cursor:pointer}
+.kfoot{font-size:11px;color:var(--ink-2);padding-top:6px}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2">
+      <div class="pills">
+        <span class="pill on"><span class="dot run"></span>claude·auth</span>
+      </div>
+      <span class="plus" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
+      <span class="ticon" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:14px">
+      <div class="task">把 auth 模块迁移到 passkeys…</div>
+    </div>
+
+    <div class="dim" style="top:67px"></div>
+
+    <!-- 半屏 sheet：实例信息 -->
+    <div class="sheet" style="padding-bottom:14px" data-symbol="sheet">
+      <div class="grab"></div>
+      <div class="shd"><h2>claude·auth</h2></div>
+      <div style="font-size:12px;font-weight:600;color:var(--c-success-text);margin-top:2px">● 运行中 · 已 12 分钟</div>
+      <div style="border-top:1px solid var(--sep-row);margin-top:10px"></div>
+
+      <div class="krow"><span class="k">模型</span><span class="v">opus<span class="ar">›</span></span></div>
+      <div class="krow"><span class="k">权限模式</span><span class="v">plan<span class="ar">›</span></span></div>
+      <div class="krow"><span class="k">推理 effort</span><span class="v">high<span class="ar">›</span></span></div>
+      <div class="krow"><span class="k">自动重试</span><span class="v"><span class="ok">开</span> · 3 次 · 45s ·「请继续」</span></div>
+      <div class="krow"><span class="k">会话目录</span><span class="v mono">~/srv/agents-web</span></div>
+      <div class="krow"><span class="k">累计</span><span class="v">6 轮 · $1.28 · 52k tok</span></div>
+
+      <div class="acts">
+        <span style="color:var(--c-primary)" data-symbol="pencil">重命名</span>
+        <span style="color:var(--c-pin)" data-symbol="pin">置顶</span>
+        <span style="color:var(--c-danger)" data-symbol="xmark">关闭会话…</span>
+      </div>
+      <div class="kfoot">关闭需二次确认；历史保留，可重新打开继续</div>
+    </div>
+
+    <div class="tabbar" style="position:absolute;left:0;right:0;bottom:0;margin-top:0;z-index:11">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home" style="z-index:12"></div>
+
+    <!-- 高亮圈：ℹ 入口（相对 stage） -->
+    <span class="ring" style="left:322px;top:24px;width:28px;height:28px"></span>
+
+    <!-- 编号 pin：① ℹ 入口 ② 模型行 ③ 自动重试 ④ 关闭动作 -->
+    <span class="pin" style="left:344px;top:26px;z-index:20">1</span>
+    <span class="pin" style="left:350px;top:420px;z-index:20">2</span>
+    <span class="pin" style="left:350px;top:526px;z-index:20">3</span>
+    <span class="pin" style="left:318px;top:626px;z-index:20">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>ℹ 在导航栏：会话级元信息与配置（运行态 chips 的高配版）</li>
+    <li><b>②</b>模型 / 权限 / effort 与会话内 chips 是同一数据，改这里同步</li>
+    <li><b>③</b>自动重试：开关、次数上限、间隔、固定文案（对应错误态倒计时条）</li>
+    <li><b>④</b>关闭会话确认式；置顶后出现在项目 Tab 全局总览，可跨项目直达</li>
+  </ol>
+</div>
+
+</body></html>

@@ -26,7 +26,7 @@ type BunSubprocess = ReturnType<typeof Bun.spawn>;
 // which match subtype === "init") and client render (normalizeChatStream skips it)
 // both ignore it — it only folds scalars via a dedicated seed_init branch; model /
 // permissionMode surface in the session header, no bubble.
-// See docs/design/message-replay.md 「特殊时期 history 缩容」.
+// See docs/design-v1/message-replay.md 「特殊时期 history 缩容」.
 export function buildSeedInitLine(
   model?: string,
   permissionMode?: string,
@@ -721,7 +721,7 @@ export class ClaudeRuntime implements RuntimeResources {
 
   // Fold current permissionMode from live stdout so the replay seed init carries
   // the CURRENT mode (system.init is spawn-time; permission-mode/system.status
-  // messages update it mid-session). See docs/design/message-replay.md. The same
+  // messages update it mid-session). See docs/design-v1/message-replay.md. The same
   // signal also persists the switch to metadata.permissionMode via
   // onPermissionModeChange, so an API restart (--resume) spawns the CLI with
   // the switched mode. Symmetric to captureModelFromLine.

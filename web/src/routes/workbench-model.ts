@@ -10,7 +10,7 @@ import type {
 } from "@agents-remote/shared";
 
 /**
- * 工作台作用域 —— URL 的语义核心（见 docs/design/workbench-redesign.md §1/§7）。
+ * 工作台作用域 —— URL 的语义核心（见 docs/design-v1/workbench-redesign.md §1/§7）。
  * project 作用域 `/projects/$key`、global 作用域 `/projects`（项目总览语义，决策 22；聚焦实例追加 `/session/$id`）。
  *
  * - `project`：限定单个项目。左栏树聚焦该项目，实例区只承载该项目的实例。
@@ -1741,7 +1741,7 @@ function normalizeTree(node: TreeNode): TreeNode {
  * 不用 createJSONStorage（其返回 `Storage<T> | AsyncStorage<T>` 联合，atom 值含 Promise）。SSR（无
  * localStorage）getItem 返 initialValue（atom 用初始值 hydration）。迁移后 V4 存在，后续读取走
  * 首分支不再迁移。layout 持久化跨刷新恢复（设计 §7.6）；V4 单一 layout 跨 scope 稳定（VSCode 式，
- * 见 docs/design/workbench-layout-fix.md）。
+ * 见 docs/design-v1/workbench-layout-fix.md）。
  */
 const workbenchLayoutStorage = {
   getItem: (key: string, initialValue: WorkbenchLayoutV3): WorkbenchLayoutV3 => {

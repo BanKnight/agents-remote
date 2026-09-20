@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>12 · 深度页（技能详情）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.page{display:block;height:auto;position:relative}
+.tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
+        background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:52px 16px 8px}
+.nav .back{color:var(--c-primary);font-size:15px}
+.nav h1{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:15px;color:var(--ink-1)}
+.nav .more{font-size:15px;font-weight:700;color:var(--ink-1);letter-spacing:2px}
+.dtitle{display:flex;align-items:center;gap:8px;padding:6px 16px 0;font-size:17px;font-weight:700;color:var(--ink-1)}
+.dchips{display:flex;gap:8px;margin-left:auto}
+.dchip{font-size:11px;font-weight:600;border-radius:10px;padding:3px 10px}
+.dchip.up{background:var(--tint-orange);color:var(--c-warning-text)}
+.dchip.en{background:var(--tint-green);color:var(--c-success-text)}
+.dmeta{padding:4px 16px 0;font-size:11.5px;color:var(--ink-2)}
+.ddesc{padding:12px 16px 0;font-size:13px;color:var(--term-ink);line-height:1.7}
+.upcard{margin:14px 16px 0;border-radius:14px;background:var(--tint-orange);
+        border:1px solid color-mix(in srgb,var(--c-warning) 40%,transparent);padding:10px 14px}
+.upcard .t{font-size:13px;font-weight:600;color:var(--c-warning-text)}
+.upcard .t small{font-weight:400;color:var(--ink-2);margin-left:8px}
+.upcard ul{list-style:none;margin-top:8px}
+.upcard li{font-size:12px;color:var(--ink-1);line-height:1.9}
+.upcard .tm{font-size:10.5px;color:var(--ink-2);text-align:right;margin-top:4px}
+.sect{font-size:12px;font-weight:600;color:var(--ink-2);margin:16px 16px 4px}
+.arow{padding:9px 16px;font-size:13px;color:var(--ink-1);background:var(--bg-elevated);
+      border:1px solid var(--sep);border-radius:10px;margin:0 16px 8px}
+.cta{display:block;margin:16px 16px 0;height:44px;border-radius:22px;background:var(--c-primary);
+     line-height:44px;text-align:center;font-size:14.5px;font-weight:600;color:var(--on-accent);cursor:pointer}
+.ctanote{margin:8px 16px 0;text-align:center;font-size:11px;color:var(--ink-2)}
+.rm{display:block;margin:16px 16px 0;height:42px;border-radius:14px;border:1px solid color-mix(in srgb,var(--c-danger) 60%,transparent);
+    line-height:40px;text-align:center;font-size:14px;font-weight:600;color:var(--c-danger);cursor:pointer}
+.rmnote{margin:8px 16px 0;text-align:center;font-size:11px;color:var(--ink-2)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">‹ 已安装技能</span>
+      <h1>code-review</h1>
+      <span class="more">⋯</span>
+    </div>
+
+    <div class="dtitle">代码审查技能<span class="dchips"><span class="dchip up">有更新</span><span class="dchip en">已启用</span></span></div>
+    <div class="dmeta">v2.3.1 · 来源:官方 · 全局作用域</div>
+    <div class="ddesc">提交前自动审查代码变更：风格、潜在缺陷、测试覆盖建议，并输出审查报告。</div>
+
+    <div class="upcard">
+      <div class="t">更新内容 <small>v2.3.1 → v2.4.0</small></div>
+      <ul>
+        <li>• 新增：Rust / Go 语言支持</li>
+        <li>• 优化：大型 diff 的分块审查策略</li>
+        <li>• 修复：中文路径下报告生成失败</li>
+      </ul>
+      <div class="tm">发布于 3 天前</div>
+    </div>
+
+    <div class="sect">注入给 Agent 的能力</div>
+    <div class="arow">读取 Git diff 与提交历史</div>
+    <div class="arow">在工作区运行只读命令</div>
+
+    <span class="cta">确认更新到 v2.4.0</span>
+    <div class="ctanote">更新后台进行，进行中的会话不受影响；新版本下次运行生效</div>
+
+    <span class="rm">卸载…</span>
+    <div class="rmnote">卸载需确认；test-runner 依赖本技能时将一并提示</div>
+  </div>
+
+  <div class="tabbar">
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 编号 pin：① 入口 ② 更新确认 ③ 卸载 ④ 作用域 -->
+  <span class="pin" style="left:80px;top:60px">1</span>
+  <span class="pin" style="left:350px;top:170px">2</span>
+  <span class="pin" style="left:350px;top:508px">3</span>
+  <span class="pin" style="left:80px;top:92px">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>从插件 Tab 技能卡点入（市场卡同源；按钮为「安装」）</li>
+    <li><b>②</b>更新 = 卡内确认变更内容 → 确认更新；后台安装不打断会话</li>
+    <li><b>③</b>卸载需确认；被其他技能依赖时将一并提示</li>
+    <li><b>④</b>作用域 = 所有项目可用；「本项目」列表中标来源为全局推荐</li>
+  </ol>
+</div>
+
+</body></html>

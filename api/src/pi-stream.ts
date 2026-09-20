@@ -23,7 +23,7 @@ type StreamSocket = {
 };
 
 /**
- * pi-stream WS 控制器（设计 docs/design/workbench-views.md §3.1）。镜像 claude-stream 的
+ * pi-stream WS 控制器（设计 docs/design-v1/workbench-views.md §3.1）。镜像 claude-stream 的
  * 接线（createBatchEmitter 压缩分块 + batch markers 状态机），但运行时是进程内 pi
  * AgentSession（PiRuntime）而非 spawn CLI。
  *

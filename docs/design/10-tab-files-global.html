@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>10 · L1 全局文件 Tab — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（Tab 页） */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.page{display:block;height:auto;position:relative}
+.tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
+        background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.h-row{display:flex;align-items:flex-end;justify-content:space-between;margin:46px 16px 0}
+.h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
+.crumbrow{display:flex;align-items:center;margin:10px 16px 0;gap:6px;
+          font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.crumbrow .c1{font-size:11.5px;font-weight:600;color:var(--ink-1)}
+.crumbrow .c2{font-size:11px;color:var(--ink-2);font-family:inherit}
+.crumbrow .plus{margin-left:auto;position:static}
+.fcard{margin:14px 16px 0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:2px 16px}
+.frow{display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer}
+.frow + .frow{border-top:1px solid var(--sep-row)}
+.frow .ic{width:30px;height:30px;border-radius:8px;background:var(--tint-blue);flex:none;
+          display:flex;align-items:center;justify-content:center}
+.frow .ic svg{width:17px;height:17px;stroke:var(--c-primary);fill:none;stroke-width:1.8}
+.frow .ic.off{background:color-mix(in srgb,var(--ink-2) 12%,transparent)}
+.frow .ic.off svg{stroke:var(--ink-2)}
+.frow .tx{flex:1;min-width:0}
+.frow .n{display:block;font-size:14.5px;font-weight:600;color:var(--ink-1)}
+.frow .d{display:block;font-size:11px;color:var(--ink-2);margin-top:2px}
+.frow .live{font-size:11px;font-weight:600;color:var(--c-success-text)}
+.frow .live.off{color:var(--ink-2);font-weight:400}
+.file{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:13.5px;cursor:pointer}
+.file + .file{border-top:1px solid var(--sep-row)}
+.file .p{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1);flex:1}
+.file .tm{font-size:11px;color:var(--ink-2)}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;margin:14px 16px 0}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="h-row"><h1>文件</h1></div>
+
+    <div class="crumbrow">
+      <span class="c1">srv-01 /</span><span class="c2">· 服务器根目录</span>
+      <span class="plus" data-symbol="plus"></span>
+    </div>
+
+    <div class="fcard">
+      <div class="frow">
+        <span class="ic" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">agents-web</span><span class="d">5 实例 · 项目根目录</span></span>
+        <span class="live">● 2</span>
+      </div>
+      <div class="frow">
+        <span class="ic" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">infra-scripts</span><span class="d">3 实例 · 项目根目录</span></span>
+        <span class="live">● 1</span>
+      </div>
+      <div class="frow">
+        <span class="ic off" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">docs-wiki</span><span class="d">空闲 · 最近活动 3 天前</span></span>
+        <span class="live off">—</span>
+      </div>
+    </div>
+
+    <div class="fcard" style="margin-top:10px">
+      <div class="file"><span class="p">README.md</span><span class="tm">上周</span></div>
+      <div class="file"><span class="p">.env</span><span class="tm">3 天前</span></div>
+    </div>
+
+    <div class="cap">点项目文件夹 → 进入其工作台；其余与项目文件工具同能力</div>
+  </div>
+
+  <div class="tabbar">
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 编号 pin：① 面包屑作用域 ② 项目根 live 标 ③ 根下散文件 ④ ＋ 上传/新建 -->
+  <span class="pin" style="left:60px;top:148px">1</span>
+  <span class="pin" style="left:350px;top:236px">2</span>
+  <span class="pin" style="left:290px;top:394px">3</span>
+  <span class="pin" style="left:368px;top:148px">4</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>与项目文件工具同一组件，作用域 = 服务器根目录（铁律 3）</li>
+    <li><b>②</b>项目根目录带 live 标与实例数；点项目文件夹 → 进入其工作台</li>
+    <li><b>③</b>操作同项目文件工具：搜索 / 预览 / 结构管理 / 上传（03w/03x/03y/03z）</li>
+    <li><b>④</b>＋ = 新建 / 上传（到当前作用域）；桌面端 = Sidebar「全局文件」（05）</li>
+  </ol>
+</div>
+
+</body></html>

@@ -10,7 +10,7 @@ type Subscriber = {
 };
 
 /**
- * PiSessionRelay —— pi 会话的 relay（设计 docs/design/workbench-views.md §3.1）。
+ * PiSessionRelay —— pi 会话的 relay（设计 docs/design-v1/workbench-views.md §3.1）。
  *
  * 镜像 {@link ClaudeSessionRelay} 的 addSubscriber/broadcast/destroy/reportError 表面，
  * 但 **pi 原生**：不 coalesce thinking_tokens（pi 事件流发 thinking_delta，每个都要广播）。

@@ -1,0 +1,224 @@
+/* ============================================================
+   agents-remote · components.css —— HTML 轨共享组件（单源）
+   改任何组件只改这里；页面里只允许放"仅本页出现"的样式。
+   依赖 assets/tokens.css（颜色全部走 var()，两主题自动成立）。
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--backdrop);color:var(--ink-1);padding:24px;
+     font-family:system-ui,-apple-system,'SF Pro Text','PingFang SC','Microsoft YaHei',sans-serif}
+
+/* ---- 手机舞台（390×844 + 12px 黑边 r54 + 灵动岛 + Home 指示条） ---- */
+.stage{position:relative;width:390px;height:844px;margin:0 auto;background:var(--bg-base);
+       border:12px solid #000;border-radius:54px;overflow:hidden;color:var(--ink-1)}
+.island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:120px;height:34px;
+        background:#000;border-radius:20px;z-index:9}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;
+      border-radius:3px;background:var(--home-indicator);z-index:9}
+.status{display:flex;justify-content:space-between;align-items:center;
+        padding:14px 28px 6px;font-size:15px;font-weight:600;color:var(--sb-ink)}
+.status .sb-r{display:flex;gap:4px;align-items:center}
+.page{display:flex;flex-direction:column;height:calc(100% - 44px)}
+
+/* ---- 导航行 ---- */
+.nav{display:flex;align-items:center;justify-content:space-between;padding:6px 16px}
+.nav h1,.nv-t{font-size:17px;font-weight:600}
+.back{color:var(--c-primary);font-size:15px;display:flex;align-items:center;gap:2px}
+.back::before{content:'';width:10px;height:10px;border-left:2.2px solid var(--c-primary);
+              border-bottom:2.2px solid var(--c-primary);transform:rotate(45deg);margin-right:4px}
+.nv-t{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.sw{display:inline-block;width:8px;height:8px;border-right:1.8px solid var(--ink-2);
+    border-bottom:1.8px solid var(--ink-2);transform:rotate(45deg) translateY(-2px)}  /* 标题▾ */
+.ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+.ic svg{width:20px;height:20px;stroke:var(--ink-2);fill:none;stroke-width:1.8;
+        stroke-linecap:round;stroke-linejoin:round}
+
+/* ---- 行2：实例 pill + 工具组 ---- */
+.row2{display:flex;align-items:center;gap:6px;padding:8px 16px;overflow:hidden}
+.pills{display:flex;gap:8px;flex:1;min-width:0;overflow:hidden}
+.pill{flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;
+      background:var(--bg-elevated);border:1px solid var(--sep);font-size:12px;color:var(--ink-2);white-space:nowrap}
+.pill.on{background:var(--tint-blue);border-color:color-mix(in srgb,var(--c-primary) 55%,transparent);
+         color:var(--ink-1);font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.run{background:var(--c-success)}
+.dot.idle{background:var(--ink-2)}
+.dot.err{background:var(--c-danger)}
+.dot.ring{background:none;border:1.4px solid var(--ink-2)}
+.plus{flex:none;width:20px;height:20px;position:relative;color:var(--c-primary)}  /* 裸＋字形（iOS 惯例），弃用蓝底圆钮 */
+.plus::before,.plus::after{content:"";position:absolute;left:50%;top:50%;background:currentColor;border-radius:1px}
+.plus::before{width:12px;height:1.8px;transform:translate(-50%,-50%)}
+.plus::after{width:1.8px;height:12px;transform:translate(-50%,-50%)}
+.sep{width:1px;height:18px;background:var(--sep)}
+.ticon{flex:none;cursor:pointer}
+.ticon svg{width:19px;height:19px;stroke:var(--ink-2);fill:none;stroke-width:1.8;
+           stroke-linecap:round;stroke-linejoin:round;display:block}
+
+/* ---- 行3：运行摘要 chips ---- */
+.chips{display:flex;align-items:center;gap:8px;padding:6px 16px}
+.chip{height:24px;display:inline-flex;align-items:center;padding:0 10px;border-radius:12px;
+      background:var(--bg-elevated);border:1px solid var(--sep);font-size:11.5px;color:var(--ink-1)}
+
+/* ---- 输出流 ---- */
+.stream{flex:1;overflow:hidden;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.task{border-radius:12px;background:var(--tint-blue);
+      border:1px solid color-mix(in srgb,var(--c-primary) 30%,transparent);
+      padding:10px 12px;font-size:13.5px;color:var(--ink-1)}
+.card{border-radius:12px;background:var(--bg-elevated);border:1px solid var(--sep);
+      padding:9px 12px;display:flex;align-items:center;gap:8px;font-size:12.5px}
+.card .t{flex:1;font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1)}
+.card .m{font-size:11px;color:var(--ink-2)}
+.ok{color:var(--c-success-text);font-weight:700}
+.think{font-size:12.5px;font-style:italic;color:var(--ink-2);padding:0 4px}
+.stat{font-size:11.5px;color:var(--ink-2);padding:0 4px}
+
+/* ---- 审批托盘 / 按钮 ---- */
+.tray{margin:12px 16px 0;border-radius:14px;background:var(--tint-orange);
+      border:1px solid color-mix(in srgb,var(--c-warning) 50%,transparent);
+      padding:8px 12px;display:flex;align-items:center;gap:8px}
+.tray .w{font-size:13px;font-weight:600;color:var(--c-warning-text)}
+.tray .c{flex:1;font-size:10.5px;font-family:ui-monospace,Consolas,monospace;color:var(--ink-2)}
+.btn{border-radius:13px;padding:5px 12px;font-size:12px;cursor:pointer;flex:none}
+.btn.ghost{border:1px solid var(--ink-2);color:var(--ink-1)}
+.btn.ok{background:var(--c-success);color:var(--on-success);font-weight:600}
+
+.input{margin:12px 16px 18px;display:flex;align-items:center;gap:8px;position:relative}  /* 发送键叠在输入框内（iMessage 式） */
+.field{flex:1;height:40px;border-radius:20px;background:var(--bg-elevated);border:1px solid var(--sep);
+       display:flex;align-items:center;padding:0 46px 0 14px;font-size:14px;color:var(--ink-2)}  /* 右留 46px 给叠入的发送键 */
+.stop{flex:none;width:32px;height:32px;border-radius:50%;background:color-mix(in srgb,var(--c-danger) 16%,transparent);
+      border:1px solid color-mix(in srgb,var(--c-danger) 60%,transparent);
+      display:flex;align-items:center;justify-content:center}
+.stop i{width:10px;height:10px;border-radius:2.5px;background:var(--c-danger)}
+.send{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;
+      background:var(--c-primary);display:flex;align-items:center;justify-content:center}
+.send::before{content:"↑";color:var(--on-accent);font-size:16px;line-height:1;font-weight:600;
+              font-family:system-ui,-apple-system,"SF Pro Text",sans-serif}  /* ↑ 箭头，弃用双伪元素拼形 */
+
+/* ---- Tab Bar（4 Tab：项目/工作台/文件/插件；流内版，02 页有绝对定位覆写） ---- */
+.tabbar{margin-top:auto;display:flex;justify-content:space-around;align-items:center;
+        background:var(--bg-elevated);border-top:1px solid var(--sep);padding:10px 0 24px}
+.tb{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--ink-2);cursor:pointer}  /* 移动端 Tab Bar；桌面 .tabstrip .tb 复用同名必须覆写 flex-direction:row */
+.tb svg{width:24px;height:24px;stroke:var(--ink-2);fill:none;stroke-width:1.8;
+        stroke-linecap:round;stroke-linejoin:round}
+.tb.on{color:var(--c-primary)} .tb.on svg{stroke:var(--c-primary)} .tb.on .lb{font-weight:600}
+
+/* ---- 浮层原语（半屏 sheet：dim / sheet / 抓手 / sheet 头） ---- */
+.dim{position:absolute;left:0;right:0;bottom:100px;background:var(--scrim);z-index:10}  /* top 由页面按遮盖范围指定 */
+.sheet{position:absolute;left:10px;right:10px;bottom:114px;background:var(--bg-elevated);
+       border:1px solid var(--sep);border-radius:20px;padding:0 20px 12px;z-index:11}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--ink-3);margin:12px auto 10px}
+.shd{display:flex;align-items:center;gap:10px}
+.shd h2{font-size:17px;font-weight:600;color:var(--ink-1)}
+
+/* ---- 桌面 stage（iPad 全屏 / Mac 窗口；手机用 .stage） ---- */
+.stagepad{position:relative;width:1180px;height:820px;margin:0 auto;background:var(--bg-base);
+          overflow:hidden;color:var(--ink-1)}
+.stagewin{position:relative;width:1240px;height:710px;margin:0 auto;background:var(--bg-base);
+          border:1.5px solid var(--sep-strong);border-radius:14px;overflow:hidden;color:var(--ink-1)}
+.tbar{height:52px;background:var(--bg-sidebar);display:flex;align-items:center;justify-content:center;
+      position:relative;border-bottom:1px solid var(--sep)}
+.lights{position:absolute;left:16px;top:50%;transform:translateY(-50%);display:flex;gap:15px}
+.lights i{width:13px;height:13px;border-radius:50%}  /* 设备红绿灯固定色（非 token，同黑边） */
+.lights .r{background:#FF5F57}.lights .y{background:#FEBC2E}.lights .g{background:#28C840}
+.tbar .t{font-size:13px;font-weight:600;color:var(--ink-2)}
+.sbar{height:28px;background:var(--bg-inspector);display:flex;align-items:center;gap:8px;
+      padding:0 14px;font-size:11.5px;color:var(--ink-2)}
+.sidewin{background:var(--bg-sidebar)}          /* Sidebar 材质底 */
+.selrow{background:var(--fill-selected);border-radius:9px}  /* Sidebar 选中行 */
+.dsep{border-top:1px solid var(--sep-row)}
+.glabel{font-size:12px;font-weight:600;color:var(--ink-2)}
+.microlabel{font-size:10.5px;color:var(--ink-3);letter-spacing:.3px}
+/* 桌面 Sidebar 分组头（左图标 + 标题 + 右 ＋）与行图标 */
+.ghead{display:flex;align-items:center;gap:6px;margin:8px 4px}
+.ghead .tt{font-size:12px;font-weight:600;color:var(--ink-2)}
+.ghead .clk{width:14px;height:14px;stroke:var(--c-primary);fill:none;stroke-width:1.7;stroke-linecap:round;flex:none}
+.ghead .plus{width:18px;height:18px;color:var(--ink-2)}  /* macOS 侧栏 ＋ 灰；间距档 6px，禁双 auto 分离 */
+.ghead .tt + .plus{margin-left:auto}  /* 仅"标题+＋"型组头才右推；与时钟成对时紧邻 */
+.dicon{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.dicon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}  /* 笔画 2：20 盒映射 16px 后有效 ~1.6px，避免发虚 */
+.footnav span{display:flex;align-items:center;gap:8px}
+.footnav{border-top:1px solid var(--sep-row);padding-top:12px}
+
+/* ---- 桌面分段控件（4 段；选中项内缩 2px，不占满工具条高——iOS/macOS segmented 惯例） ---- */
+.seg4{display:flex;height:32px;padding:2px;border-radius:10px;background:var(--seg-track);border:1px solid var(--sep);margin:10px 14px 0;flex:none}
+.seg4 span{flex:1;display:flex;align-items:center;justify-content:center;font-size:12.5px;color:var(--ink-2);border-radius:8px}
+.seg4 .on{background:var(--seg-thumb);color:var(--ink-1);font-weight:600}
+.seg4.mini{height:26px;border:0;font-size:12px}  /* Sidebar 内轻量变体：视图切换用，无描边 */
+.seg4.mini span{font-size:12px;border-radius:6px}
+
+/* ---- 桌面共享组件（Mac/iPad = 同一 UI 的响应式；页面只留列宽与页私布局） ---- */
+.icn{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.side{flex:none;background:var(--bg-sidebar);border-right:1px solid var(--sep);padding:8px 10px;position:relative}  /* 宽度页自定：Mac 250 / iPad 260 */
+.srow2{display:flex;align-items:center;gap:8px;height:34px;padding:0 8px;font-size:14px;color:var(--ink-1)}  /* 侧栏行用主文字色；term-ink 仅限终端正文 */
+.srow2 .live{margin-left:auto;font-size:11px;font-weight:600;color:var(--c-success-text)}
+.srow2 .live.off{color:var(--ink-2);font-weight:400}
+.srow2.inst{height:34px;font-size:13px}
+.dot2{width:7px;height:7px;border-radius:50%;flex:none}
+.otherlbl{font-size:10.5px;font-weight:600;color:var(--c-warning-text);margin:10px 6px 2px}
+.others{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;font-size:13px;color:var(--ink-1)}
+.others .ar{margin-left:auto;font-size:10.5px;color:var(--ink-3)}
+.footnav{position:absolute;left:10px;bottom:12px;font-size:13.5px;color:var(--ink-1);display:flex;flex-direction:column;gap:14px}
+.footnav .on{color:var(--c-primary);font-weight:600}  /* Sidebar 功能入口激活态（文件/插件/设置页） */
+.pane{display:flex;flex-direction:column;border-right:1px solid var(--sep);min-width:0;position:relative}
+.tabstrip{height:32px;background:var(--bg-tabstrip);display:flex;align-items:center;padding:0 12px;gap:16px;flex:none;
+          border-bottom:1px solid var(--sep)}
+.tabstrip .tb{display:flex;flex-direction:row;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2);height:100%;position:relative}
+.tabstrip .tb.on{color:var(--ink-1);font-weight:600}
+.tabstrip .tb.on::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2.5px;border-radius:1px;background:var(--c-primary)}
+.tabstrip .tb .dot{width:6px;height:6px;border-radius:50%}
+.tabstrip .plus{width:20px;height:20px}
+.tabstrip .moreic{display:flex;align-items:center;color:var(--ink-2)}
+.rtry{color:var(--c-success-text);font-size:16px;font-weight:700;line-height:1;padding:0 3px}
+.badge2{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--c-warning-text);background:var(--tint-orange);
+        border-radius:12px;padding:3px 11px}
+.plain{font-size:13px;color:var(--term-ink);padding:0 2px}
+.stat2{font-size:11px;color:var(--ink-2);padding:0 2px}
+.grip{position:absolute;left:-8px;top:44%;width:15px;height:30px;border-radius:8px;background:var(--bg-elevated3);
+      border:1px solid var(--sep);display:flex;align-items:center;justify-content:center;color:var(--ink-2);
+      font-size:9px;letter-spacing:-1.5px;z-index:5}
+.tterm{flex:1;overflow:hidden;padding:10px 14px;font-family:ui-monospace,"SF Mono",Consolas,monospace;
+       font-size:12px;line-height:22px;color:var(--term-ink)}
+.tterm .p{color:var(--c-success-text)}
+.tterm .tdim{color:var(--ink-2)}
+.cursor{display:inline-block;width:8px;height:15px;background:var(--c-success);vertical-align:-2px}
+.tfoot{font-size:11px;color:var(--ink-3);font-family:ui-monospace,Consolas,monospace;padding:0 14px 8px}
+.glabel2{font-size:12.5px;font-weight:600;color:var(--ink-2);padding:10px 14px 2px;display:flex;align-items:center}
+.glabel2 .clps{margin-left:auto;color:var(--c-primary);font-weight:700;font-size:14px}
+.badge{width:18px;height:15px;border-radius:3px;display:flex;align-items:center;justify-content:center;
+       font-size:9.5px;font-weight:600;flex:none;font-family:ui-monospace,Consolas,monospace}  /* 桌面尺寸；移动端 22×19 页自定 */
+.badge.M{background:var(--tint-orange);color:var(--c-warning-text)}
+.badge.A{background:var(--tint-green);color:var(--c-success-text)}
+.badge.U{background:color-mix(in srgb,var(--ink-2) 16%,transparent);color:var(--ink-2)}
+.grow{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:12.5px}
+.grow .p{font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--ink-1)}
+.diffhead{display:flex;align-items:center;gap:8px;padding:10px 14px 6px;font-family:ui-monospace,Consolas,monospace;
+          font-size:11.5px;color:var(--ink-2)}
+.diffhead .add{color:var(--c-success-text);font-weight:600}
+.diffhead .del{color:var(--c-danger);font-weight:600}
+.dcode{margin:0 14px;border-radius:10px;background:var(--bg-codeblock);border:1px solid var(--sep);padding:8px 0;
+       font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:11px;line-height:18px;overflow:hidden}
+.dcode .hunk{color:var(--ink-2);padding:2px 12px}
+.dcode .dl{display:flex;gap:6px;padding:0 14px}
+.dcode .dl .sign{width:10px;flex:none;font-weight:700}
+.dcode .dl.add{background:var(--tint-diff-green)} .dcode .dl.add .sign{color:var(--c-success-text)}
+.dcode .dl.del{background:var(--tint-red)} .dcode .dl.del .sign{color:var(--c-danger)}
+.dcode .tx{color:var(--term-ink);white-space:pre}
+.addbtn{margin:12px 14px 0;height:34px;border:1px solid var(--sep-strong);border-radius:10px;display:flex;
+        align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--c-primary)}
+.tree{margin:12px 14px 0;font-size:13px;color:var(--ink-1)}  /* 作用域限定：移动端 .trow/.frow 是另一种列表行组件 */
+.tree .trow{display:flex;align-items:center;gap:5px;padding:6px 8px}
+.tree .tw{color:var(--ink-3);font-size:11px;width:12px;flex:none}
+.tree .frow{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:12.5px;color:var(--term-ink);
+            padding:6px 8px 6px 30px;display:flex;align-items:center;gap:5px}
+.tree .frow.sel{background:var(--fill-selected);border-radius:8px}
+
+/* ---- 编号 pin + 说明面板 ---- */
+.pin{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--c-primary);color:#fff;
+     font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;z-index:20;
+     box-shadow:0 0 0 2px color-mix(in srgb,var(--c-primary) 35%,transparent)}
+.hring{position:absolute;border:1.8px dashed var(--c-pin);border-radius:50%;pointer-events:none;z-index:15}
+.panel{max-width:760px;margin:24px auto 0;background:var(--bg-elevated);border:1px solid var(--sep);
+       border-radius:12px;padding:14px 18px}
+.panel h4{font-size:13px;color:var(--ink-2);font-weight:600;margin-bottom:8px}
+.panel ol{list-style:none;display:flex;flex-direction:column;gap:6px}
+.panel li{font-size:13px;color:var(--ink-2);display:flex;gap:8px;align-items:baseline}
+.panel li b{color:var(--c-primary);font-weight:700;flex:none}

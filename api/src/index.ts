@@ -1155,7 +1155,7 @@ export const startApi = async () => {
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
   // chat 会话元数据持久目录：~/.agents-remote/chat-sessions/（跨重启保留，非 tmpfs runDir；
-  // 与 pi SessionManager JSONL 历史同持久语义，设计 docs/design/workbench-views.md §3.1）。
+  // 与 pi SessionManager JSONL 历史同持久语义，设计 docs/design-v1/workbench-views.md §3.1）。
   const chatSessionsDir = resolve(homedir(), ".agents-remote/chat-sessions");
   const chatSessionRegistry = new ChatSessionRegistry({ sessionsDir: chatSessionsDir });
   const streamController = new SessionStreamController(runtime, sessionRegistry);
@@ -1195,7 +1195,7 @@ export const startApi = async () => {
   // Post-hook for /reload-skills: on a successful reload, broadcast
   // skill_catalog_changed to current subscribers so clients invalidate + re-fetch
   // the REST catalog. Broadcast-only (no payload) — the client's REST fetch is
-  // authoritative, so the server needn't re-scan here. See docs/design/
+  // authoritative, so the server needn't re-scan here. See docs/design-v1/
   // message-replay.md 「命令后置处理框架」.
   claudeRuntime.setOnSkillReload((sessionName) => {
     claudeRuntime.injectServerLine(

@@ -636,7 +636,7 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 ⚠️ **OPC 启示（直接工程借鉴）**：
 1. **Codex 对接待办**（CLAUDE.md 已记 + PRD §7 决策 5）：agents-remote 的 Codex 对接可抄 CodexLoom 的 **CodexHost 设计**——`internal/codex` 提供 JSON-RPC client ↔ codex app-server，`thread/resume` + `thread/inject_items` + `turn/start` 三件套。**CodexLoom 已经把 codex app-server 协议吃透了**（`docs/codex-app-server-protocol.md` 11KB），是我们的现成协议参考。
 2. **Developer context 注入**：CodexLoom 的「Prompt + Profile 渲染成原子 `<loom_developer_context>` XML，用 `thread/inject_items` 注入原生 role=developer message」——这是「把人设/规则注入 agent」的干净工程模式。agents-remote 的 claude 用 stream-json 的 system message 注入，CodexLoom 用 codex app-server 的 developer role message 注入——**两套协议两种注入方式，CodexLoom 给了 codex 侧的现成范式**。
-3. **rollout 文件是真相源**：agents-remote 的 claude 用 JSONL session 文件当真相源（见 `docs/design/message-replay.md`），CodexLoom 用 codex rollout 文件——**同构**，可对照 rollout 解析方式。
+3. **rollout 文件是真相源**：agents-remote 的 claude 用 JSONL session 文件当真相源（见 `docs/design-v1/message-replay.md`），CodexLoom 用 codex rollout 文件——**同构**，可对照 rollout 解析方式。
 
 ### 12.7 ★ 治理外部交付 / Interface Agent——**我们完全没设计的维度，要做「agent 对外服务面」可抄**
 
@@ -685,12 +685,12 @@ CodexLoom 属于 §9「**编排平台**」品类，与 Raft / todos.dev / Averne
 
 **对照 agents-remote claude**：
 - `docs/research/claude-replay-performance.md` 我们的长会话回放问题：数据流成本 + 实测数字（客户端已排除，主因在传输）+ 实施路径。
-- `docs/design/message-replay.md` 我们的进程模型：claude 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流。
+- `docs/design-v1/message-replay.md` 我们的进程模型：claude 直拉 CLI（`Bun.spawn`，非 tmux）+ JSONL history / 内存 live 双缓冲 relay + 单一 WS 流。
 - ⚠️ **我们的现状**：claude 用 stream-json + `--resume` + relay 双缓冲 + JSONL history，**没有 compaction 后 durable source 重注入机制**——长会话 compaction 后 system prompt / role / 关键长期声明可能丢。
 
 ⚠️ **OPC 启示（直接工程借鉴）**：
 1. **claude 长会话 compaction 后重注入 durable source**：抄 CodexLoom 的 Epoch Context Coverage——compaction 后下一 turn 重新覆盖「角色 systemPrompt + 关键长期规则 + 当前组织关系快照」。这解决我们「长会话 compaction 丢角色身份」的潜在问题。
-2. **双证机制（replayable rollout evidence + 同 turn model event）**：我们 claude 的回放已有 JSONL rollout（`docs/design/message-replay.md`），可加「重注入后观察首个 model event 才标 covered」双证。
+2. **双证机制（replayable rollout evidence + 同 turn model event）**：我们 claude 的回放已有 JSONL rollout（`docs/design-v1/message-replay.md`），可加「重注入后观察首个 model event 才标 covered」双证。
 3. **不能照搬的部分**：CodexLoom 是 codex app-server JSON-RPC（thread/inject_items），我们是 Claude CLI stream-json（system message 注入）——注入 wire 通道不同，但「durable source 重注入 + 双证 + per-thread ledger」原则通用。
 
 ### 12.10 OpenAI/Codex 强绑定 vs 我们多 provider 对冲——**CodexLoom 的单 provider 锁定是它的弱点**

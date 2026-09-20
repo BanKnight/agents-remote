@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>09 · L1 插件 Tab — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（Tab 页：状态栏/Tab Bar 绝对定位） */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.page{display:block;height:auto;position:relative}
+.tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
+        background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.h-row{display:flex;align-items:flex-end;justify-content:space-between;margin:46px 16px 0}
+.h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
+.segc{display:flex;margin:14px 16px 0;height:32px;border-radius:10px;background:var(--fill-segmented);padding:3px}
+.segc span{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer}
+.segc .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
+.segc .caret{font-size:9px}
+.search{margin:12px 16px 0;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
+        align-items:center;gap:8px;padding:0 12px;font-size:15px;color:var(--ink-2)}
+.sect{font-size:13px;font-weight:600;color:var(--ink-2);margin:16px 16px 6px;display:flex;align-items:center}
+.sect .r{margin-left:auto;font-size:11px;color:var(--c-primary);font-weight:600}
+.pcard{margin:0 16px 10px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:10px 16px}
+.pcard .r1{display:flex;align-items:center;font-size:14.5px;font-weight:600;color:var(--ink-1)}
+.pcard .live{margin-left:auto;font-size:11px;color:var(--c-success-text)}
+.pcard .upd{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--c-primary);
+            background:var(--tint-blue);border-radius:9px;padding:2px 10px}
+.pcard .d2{font-size:11.5px;color:var(--ink-2);margin-top:3px}
+.mrow{margin:0 16px 10px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;
+      height:44px;display:flex;align-items:center;padding:0 16px}
+.mrow .n{font-size:14.5px;font-weight:600;color:var(--ink-1)}
+.mrow .c{margin-left:auto;font-size:11px;color:var(--ink-2)}
+.mrow .ar{font-size:12px;color:var(--ink-3);margin-left:6px}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="h-row"><h1>插件</h1></div>
+
+    <div class="segc">
+      <span class="on">全局</span>
+      <span>本项目 · agents-web <span class="caret">▾</span></span>
+    </div>
+
+    <div class="search">搜索技能与 MCP</div>
+
+    <div class="sect"><span style="display:flex;align-items:center;gap:8px">MCP 服务器 · 2<span class="plus" style="position:static;width:20px;height:20px" data-symbol="plus"></span></span></div>
+    <div class="pcard">
+      <div class="r1">context7<span class="live">● 已连接</span></div>
+      <div class="d2">文档查询 · 3 个工具</div>
+    </div>
+    <div class="pcard">
+      <div class="r1">firecrawl<span class="live">● 已连接</span></div>
+      <div class="d2">网页抓取 · 2 个工具</div>
+    </div>
+
+    <div class="sect"><span>已安装技能 · 3</span></div>
+    <div class="pcard">
+      <div class="r1">code-review<span class="upd">有更新</span></div>
+      <div class="d2">提交前自动代码审查 · 来源:官方</div>
+    </div>
+    <div class="pcard">
+      <div class="r1">test-runner</div>
+      <div class="d2">测试失败自动归因 · 来源:官方</div>
+    </div>
+    <div class="pcard">
+      <div class="r1">deploy-check</div>
+      <div class="d2">部署前检查清单 · 来源:社区</div>
+    </div>
+
+    <div class="sect"><span>市场</span><span class="r">管理源 ›</span></div>
+    <div class="mrow"><span class="n">MCP 市场</span><span class="c">42 个服务器</span><span class="ar">›</span></div>
+    <div class="mrow"><span class="n">技能市场</span><span class="c">28 个技能</span><span class="ar">›</span></div>
+  </div>
+
+  <div class="tabbar">
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 编号 pin：① 作用域 ② ▾ 切换器 ③ 有更新 ④ ＋ 添加 MCP ⑤ 市场两入口 ⑥ 空态引导 -->
+  <span class="pin" style="left:90px;top:186px">1</span>
+  <span class="pin" style="left:330px;top:186px">2</span>
+  <span class="pin" style="left:280px;top:506px">3</span>
+  <span class="pin" style="left:322px;top:272px">4</span>
+  <span class="pin" style="left:130px;top:646px">5</span>
+  <span class="pin" style="left:40px;top:760px">6</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>作用域切换：全局 / 本项目；本项目 = 全局记忆的当前项目（与工作台同源）</li>
+    <li><b>②</b>点「本项目」段进入项目作用域；段上 ▾ 打开切换器（03l）换项目</li>
+    <li><b>③</b>技能/MCP 卡点入 → 详情（12 / 13）；「有更新」在详情内确认</li>
+    <li><b>④</b>＋ = 添加 MCP 表单（14）；作用域决定注入给哪些会话</li>
+    <li><b>⑤</b>市场两入口：MCP 市场 / 技能市场（17 / 18）；管理源 ›（15）</li>
+    <li><b>⑥</b>从未选项目时：本段为空态引导「去工作台选择项目」；桌面=Sidebar 同源</li>
+  </ol>
+</div>
+
+</body></html>

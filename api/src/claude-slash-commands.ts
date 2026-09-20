@@ -194,7 +194,7 @@ function userSkillsDir(): string {
  * system.init lists names only; this reads SKILL.md / command frontmatter for the
  * real descriptions the CLI itself uses, so the slash menu shows meaningful text
  * even under windowing (where system.init may be absent from the replayed tail).
- * See docs/design/message-replay.md 「特殊时期 history 缩容」.
+ * See docs/design-v1/message-replay.md 「特殊时期 history 缩容」.
  *
  * `userDirs` overrides the scan roots for hermetic testing:
  *   - commands/skills: user-level dirs

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03j · 浮层（新建实例 sheet）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.chips{position:relative;z-index:5}
+.task{position:relative;z-index:5}
+.slabel{font-size:11px;color:var(--ink-2);margin:14px 0 2px}
+.srow{display:flex;align-items:center;gap:14px;padding:9px 0}
+.tile{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+.tile svg{width:19px;height:19px;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.srow .tx{flex:1}
+.srow .n{font-size:15px;font-weight:600;color:var(--ink-1)}
+.srow .d{font-size:12px;color:var(--ink-2);margin-top:2px}
+.srow .ar{font-size:14px;color:var(--ink-3)}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2">
+      <div class="pills">
+        <span class="pill on"><span class="dot run"></span>claude·auth</span>
+        <span class="pill"><span class="dot ring" style="width:6px;height:6px"></span>codex·api</span>
+      </div>
+      <span class="plus" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
+      <span class="ticon" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+    </div>
+
+    <div class="chips">
+      <span class="chip" style="gap:5px">opus <span style="font-size:10px;color:var(--ink-2)">▾</span></span>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:14px">
+      <div class="task">把 auth 模块迁移到 passkeys…</div>
+    </div>
+
+    <div class="dim" style="top:67px"></div>
+
+    <!-- 半屏 sheet：新建实例 -->
+    <div class="sheet" style="padding-bottom:16px" data-symbol="sheet">
+      <div class="grab"></div>
+      <div class="shd"><h2>新建实例</h2><span style="margin-left:auto;font-size:12px;color:var(--ink-2)">agents-web</span></div>
+
+      <div class="slabel">AGENT 会话</div>
+      <div class="srow">
+        <span class="tile" style="background:var(--tint-blue)"><svg viewBox="-10 -10 20 20" data-symbol="sparkles" style="stroke:var(--c-pin)"><path d="M0,-6.5 C0.7,-2.6 2.6,-0.7 6.5,0 C2.6,0.7 0.7,2.6 0,6.5 C-0.7,2.6 -2.6,0.7 -6.5,0 C-2.6,-0.7 -0.7,-2.6 0,-6.5 z"/></svg></span>
+        <span class="tx"><span class="n">＋ Claude 会话</span><span class="d" style="display:block">模型预设 · opus</span></span>
+        <span class="ar">›</span>
+      </div>
+      <div class="srow">
+        <span class="tile" style="background:var(--tint-orange)"><svg viewBox="-10 -10 20 20" data-symbol="bolt" style="stroke:var(--c-warning)"><path d="M1.5,-8 L-5,1 h4 l-1,7 6.5,-9 h-4 z"/></svg></span>
+        <span class="tx"><span class="n">＋ OMP 会话</span><span class="d" style="display:block">新运行时 · beta</span></span>
+        <span class="ar">›</span>
+      </div>
+      <div class="srow">
+        <span class="tile" style="background:color-mix(in srgb,var(--ink-2) 12%,transparent)"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2" style="stroke:var(--ink-2)"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg></span>
+        <span class="tx"><span class="n">＋ Codex 会话</span><span class="d" style="display:block">默认预设</span></span>
+        <span class="ar">›</span>
+      </div>
+
+      <div class="slabel">TERMINAL · CHAT</div>
+      <div class="srow">
+        <span class="tile" style="background:var(--tint-green)"><svg viewBox="-10 -10 20 20" data-symbol="terminal" style="stroke:var(--c-success)"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg></span>
+        <span class="tx"><span class="n">终端（tmux）</span><span class="d" style="display:block">断线内容不丢</span></span>
+        <span class="ar">›</span>
+      </div>
+      <div class="srow">
+        <span class="tile" style="background:var(--tint-purple)"><svg viewBox="-10 -10 20 20" data-symbol="message" style="stroke:var(--c-pin)"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>
+        <span class="tx"><span class="n">Chat（Pi）</span><span class="d" style="display:block">轻量对话</span></span>
+        <span class="ar">›</span>
+      </div>
+    </div>
+
+    <div class="tabbar" style="position:absolute;left:0;right:0;bottom:0;margin-top:0;z-index:11">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home" style="z-index:12"></div>
+
+    <!-- 编号 pin（相对 stage）：① ＋入口 ② 模型预设 ③ 下滑关闭 ④ pill 尾激活 ⑤ 运行时扩展 -->
+    <span class="pin" style="left:293px;top:76px;z-index:20">1</span>
+    <span class="pin" style="left:210px;top:404px;z-index:20">2</span>
+    <span class="pin" style="left:340px;top:310px;z-index:20">3</span>
+    <span class="pin" style="left:180px;top:76px;z-index:20">4</span>
+    <span class="pin" style="left:210px;top:460px;z-index:20">5</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>入口：pill 条尾部「＋ 新建」（见 03 工具行）；空态主按钮同款 sheet</li>
+    <li><b>②</b>Agent 可选模型预设；预设清单来自 设置 → Runtime 预设</li>
+    <li><b>③</b>下滑关闭 sheet：底下会话照常运行，一个字都不丢</li>
+    <li><b>④</b>创建后新实例出现在 pill 条尾并自动激活</li>
+    <li><b>⑤</b>运行时清单随插件扩展；摘要 chip 内容按运行时适配</li>
+  </ol>
+</div>
+
+</body></html>

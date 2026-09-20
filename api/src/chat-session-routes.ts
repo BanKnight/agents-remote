@@ -12,7 +12,7 @@ import { jsonError } from "./http-auth";
 import type { ChatSessionRegistry } from "./chat-session-registry";
 
 /**
- * chat-sessions 路由处理（设计 docs/design/workbench-views.md §3.1）。
+ * chat-sessions 路由处理（设计 docs/design-v1/workbench-views.md §3.1）。
  *
  * 路由（flat，照搬 session-routes.ts 范式）：
  * - `GET    /api/chat-sessions`           → list

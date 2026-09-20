@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03s · 深度页（Wiki 阅读）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;font-size:14px;display:flex;align-items:center;justify-content:center}
+.wmeta{padding:6px 16px 0;font-size:11.5px;color:var(--ink-2)}
+.readbtn{margin:10px 16px 0;height:32px;border-radius:16px;background:var(--tint-purple);
+         border:1px solid color-mix(in srgb,var(--c-pin) 50%,transparent);
+         display:flex;align-items:center;justify-content:center;gap:8px;
+         font-size:12.5px;font-weight:600;color:var(--c-pin);cursor:pointer}
+.wlink{margin:8px 16px 0;text-align:right;font-size:12px;color:var(--c-primary)}
+.article{padding:10px 16px 0}
+.article h3{font-size:15px;font-weight:700;color:var(--ink-title);margin:14px 0 6px}
+.article p{font-size:13px;color:var(--term-ink);line-height:1.6}
+.article ul{list-style:none;padding:0}
+.article li{font-size:13px;color:var(--term-ink);line-height:1.7}
+.codeblock{margin:8px 0;border-radius:10px;background:var(--bg-codeblock);border:1px solid var(--sep);
+           padding:8px 12px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11px;
+           line-height:18px;color:var(--term-ink)}
+.rel{padding:14px 16px 0;font-size:13px;color:var(--c-primary);font-weight:600}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;margin-top:14px}
+.ring{position:absolute;border:1.8px dashed var(--c-pin);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">架构决策</span>
+      <h1>passkey 迁移计划</h1>
+      <span style="width:52px"></span>
+    </div>
+
+    <div class="wmeta">更新 2 小时前 · infra 维护 · v3</div>
+    <div class="readbtn" data-symbol="sparkles">✦ 让 Agent 读这篇</div>
+    <div class="wlink">复制链接</div>
+
+    <div class="article">
+      <h3>背景</h3>
+      <p>现有密码登录在移动端转化率低，且维护成本高；决定迁移到 passkeys。</p>
+      <h3>决策</h3>
+      <ul>
+        <li>• 全平台接入 webauthn，保留密码回退</li>
+        <li>• 回退路径需要二次邮件验证</li>
+        <li>• 会话签发统一走 issueToken()</li>
+      </ul>
+      <div class="codeblock">const ok = await verify(pk)<br>return issueToken(user)</div>
+      <h3>影响</h3>
+      <p>session.ts 的登录分支全部重写；测试覆盖新增 passkey 用例。</p>
+    </div>
+
+    <div class="rel">相关：密码回退策略 ›</div>
+    <div class="cap">—— 正文只读 · 编辑在源文件 ——</div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 高亮圈：让 Agent 读这篇（相对 stage） -->
+    <span class="ring" style="left:96px;top:118px;width:52px;height:52px"></span>
+
+    <!-- 编号 pin：① 返回列表 ② 读这篇 ③ 相关互跳 ④ 只读 -->
+    <span class="pin" style="left:120px;top:60px">1</span>
+    <span class="pin" style="left:170px;top:130px">2</span>
+    <span class="pin" style="left:230px;top:564px">3</span>
+    <span class="pin" style="left:200px;top:598px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>从 Wiki 列表点入（顶部返回式，‹ 回列表原位置）</li>
+    <li><b>②</b>「让 Agent 读这篇」→ 选会话注入上下文；流顶部出现引用卡</li>
+    <li><b>③</b>相关页面互跳；v1 只读：编辑在源文件进行，此处刷新即见</li>
+    <li><b>④</b>只读边界同 Git：结构操作之外的一切编辑都在源文件进行</li>
+  </ol>
+</div>
+
+</body></html>

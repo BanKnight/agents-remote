@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>05c · Mac（历史模式 Sidebar）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+.scope{margin:6px 2px 0}
+/* 仅本页样式（列宽与页私布局；共享组件全部在 components.css 桌面段） */
+.win{display:flex;flex-direction:column;height:calc(100% - 2px)}
+.wbody{display:flex;flex:1;min-height:0}
+.side{width:250px}
+.pcenter{width:360px;flex:none}
+.pterm{width:300px;flex:none}
+.pinsp{flex:1}
+.chips{padding:8px 12px 0;gap:6px}
+.pane .stream{gap:12px;padding:10px 14px 0}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stagewin">
+  <div class="win">
+    <div class="tbar"><span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span><span class="t">agents-remote — agents-web</span></div>
+    <div class="wbody">
+
+      <!-- Sidebar：时钟切到「会话历史」模式 -->
+      <div class="side sidewin">
+        <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+        <div class="dsep" style="margin:8px 0"></div>
+        <div style="display:flex;align-items:center;gap:6px;margin:8px 4px">
+          <svg width="14" height="14" viewBox="-10 -10 20 20" style="stroke:var(--c-primary);fill:none;stroke-width:1.7;stroke-linecap:round;flex:none"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg>
+          <span style="font-size:13px;font-weight:600;color:var(--c-primary)">会话历史 · agents-web</span>
+        </div>
+        <div class="seg4 mini scope"><span class="on">项目</span><span>全部</span></div>
+        <div style="display:flex;gap:6px;margin:0 2px 8px">
+          <span style="font-size:11.5px;font-weight:600;color:var(--ink-1);background:var(--bg-elevated3);border-radius:12px;padding:3px 12px">全部</span>
+          <span style="font-size:11.5px;color:var(--ink-2);border:1px solid var(--sep-strong);border-radius:12px;padding:3px 12px">已结束</span>
+        </div>
+        <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dot2" style="background:var(--c-success)"></span>claude·auth<span style="margin-left:auto;font-size:10.5px;color:var(--c-success-text)">运行中</span></div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dot2" style="border:1.4px solid var(--ink-2)"></span>codex·api<span style="margin-left:auto;font-size:10.5px">空闲</span></div>
+        <div class="srow2 inst" style="display:block;height:auto;padding:6px 8px"><span style="display:flex;align-items:center;color:var(--ink-1)"><span style="color:var(--c-success-text);font-weight:700;margin-right:4px">✓</span>refactor-auth<span style="margin-left:auto;font-size:10.5px;color:var(--ink-2)">已结束 · 昨天</span></span><span style="display:block;font-size:10.5px;color:var(--ink-2);margin-top:2px">24 轮 · $1.86 · 点按恢复</span></div>
+        <div class="srow2 inst" style="color:var(--ink-1)"><span style="color:var(--c-success-text);font-weight:700;margin-right:4px">✓</span>flaky-test-hunt<span style="margin-left:auto;font-size:10.5px;color:var(--ink-2)">已结束 · 3 天前</span></div>
+        <div style="font-size:10.5px;color:var(--ink-3);margin:8px 6px">再次点时钟返回活跃实例列表</div>
+        <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+      </div>
+
+      <!-- 会话窗格 -->
+      <div class="pane pcenter">
+        <div class="tabstrip">
+          <span class="tb on"><span class="dot" style="background:var(--c-success)"></span>claude·auth</span>
+          <span class="tb">codex·api</span>
+          <span class="plus" data-symbol="plus"></span>
+          <span class="moreic" style="margin-left:auto" title="分屏"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-6.5" width="18" height="13" rx="3"/><path d="M3.5,-6.5 V6.5"/></svg></span>
+        </div>
+        <div class="chips">
+          <span class="chip" style="height:24px">opus ▾</span><span class="chip" style="height:24px">auto ▾</span>
+          <span class="chip" style="height:24px">effort·hi ▾</span><span class="rtry">⟳</span><span class="badge2">⚠ 2</span>
+        </div>
+        <div class="stream" style="flex:1 1 auto;min-height:0;overflow:hidden">
+          <div class="task" style="font-size:13px"><b style="color:var(--c-primary)">›</b>&nbsp; 把 auth 模块迁移到 passkeys，跑通全部测试</div>
+          <div class="plain">先梳理现有鉴权调用点，再分三步迁移：</div>
+          <div class="card" style="padding:8px 12px"><span class="t" style="font-size:12px;display:flex;align-items:center;gap:6px"><svg class="icn" style="width:12px;height:12px" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg>bash · npm run test</span><span class="m"><b style="color:var(--c-success-text)">✓</b></span></div>
+          <div class="stat2">✓ 上一回合 · 6 轮 · $0.42 · 18.2k tok · 3m12s</div>
+        </div>
+      </div>
+
+      <!-- 终端窗格 -->
+      <div class="pane pterm">
+        <div class="tabstrip">
+          <span class="tb on" style="font-family:ui-monospace,Consolas,monospace"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg>&gt;_ term·1</span>
+          <span class="moreic" style="margin-left:auto"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg></span>
+        </div>
+        <div class="tterm">
+          <div><span class="p">$</span> tmux attach -t dev</div>
+          <div><span class="p">$</span> npm run dev</div>
+          <div class="tdim">VITE v5.0 ready in 312 ms</div>
+          <div><span class="p">$</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+
+      <!-- Inspector：Git 检视 -->
+      <div class="pane pinsp">
+        <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
+        <div class="seg4"><span>文件</span><span class="on">Git</span><span>Wiki</span><span>历史</span></div>
+        <div class="grow" style="font-family:ui-monospace,Consolas,monospace;font-weight:600"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><circle cx="-5.5" cy="-6" r="2.4"/><circle cx="-5.5" cy="6" r="2.4"/><circle cx="5.5" cy="-3" r="2.4"/><path d="M-5.5,-3.6 V3.6"/><path d="M5.5,-0.6 C5.5,3.2 -5.5,1.4 -5.5,3.6"/></svg>main ↑2 ↓0<span style="margin-left:auto;font-weight:400;color:var(--ink-2)">工作区 4</span></div>
+        <div class="grow"><span class="badge M">M</span><span class="p">src/auth/passkey.ts</span></div>
+        <div class="grow"><span class="badge M">M</span><span class="p">src/session.ts</span></div>
+        <div class="grow"><span class="badge A">A</span><span class="p">tests/passkey.test.ts</span></div>
+        <div class="grow"><span class="badge U">??</span><span class="p" style="color:var(--ink-2)">.env.local</span></div>
+        <div class="diffhead">DIFF · passkey.ts<span class="add" style="margin-left:auto">+48</span><span class="del">−12</span></div>
+        <div class="dcode">
+          <div class="hunk">@@ -12,6 +12,9 @@</div>
+          <div class="dl"><span class="sign"> </span><span class="tx">  verifySession(req)</span></div>
+          <div class="dl del"><span class="sign">-</span><span class="tx"> if (password) {</span></div>
+          <div class="dl add"><span class="sign">+</span><span class="tx"> if (passkey) {</span></div>
+          <div class="dl add"><span class="sign">+</span><span class="tx">   const ok = await verify(pk)</span></div>
+          <div class="dl add"><span class="sign">+</span><span class="tx">   return issueToken(user)</span></div>
+          <div class="dl"><span class="sign"> </span><span class="tx">}</span></div>
+          <div class="dl"><span class="sign"> </span><span class="tx">return next()</span></div>
+        </div>
+        <div class="addbtn">＋ 加开终端实例</div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="sbar">
+      <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 3 实例运行中 · <span style="color:var(--c-warning);font-weight:600">2 项待审批 ›</span>
+      <span style="margin-left:auto">今日 $3.18 · 84.2k tok</span>
+    </div>
+  </div>
+
+  <!-- 高亮圈：时钟入口（相对 stage 内沿） -->
+  <span class="hring" style="left:20px;top:206px;width:26px;height:26px;border-color:var(--c-primary)"></span>
+
+  <!-- 编号 pin：① 时钟切历史 ② 已结束恢复 -->
+  <span class="pin" style="left:170px;top:224px">1</span>
+  <span class="pin" style="left:150px;top:390px">2</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    
+<li><b>①</b><span>作用域切换（项目/全部）下的历史列表；三端历史：iPhone = ⋯ → sheet（03n）；Mac/iPad = 时钟把 Sidebar 实例区切换为历史列表（本图）——同一数据，三种容器</span></li>
+    <li><b>②</b>点「已结束」→ 在工作区开窗格并完整回放，可继续对话（恢复 ≠ 新会话）；运行中的直接点击即跳转</li>
+  </ol>
+</div>
+
+</body></html>

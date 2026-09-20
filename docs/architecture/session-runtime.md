@@ -78,5 +78,5 @@ flowchart LR
 
 - change：design-session-runtime-boundaries
 - verify 证据：`.workflow/changes/design-session-runtime-boundaries/verify.md`
-- related design：`docs/design/session-runtime-boundaries.md`
+- related design：`docs/design-v1/session-runtime-boundaries.md`
 - related spec：`docs/specs/session-runtime/spec.md`

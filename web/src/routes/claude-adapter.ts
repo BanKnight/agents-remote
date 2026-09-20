@@ -479,7 +479,7 @@ const findMissingTailByUuid = (
  * running indicator). Multiple assistant deltas in the same response count as
  * one, not N.
  *
- * Segment scope (see docs/design/message-replay.md "服务端状态"):
+ * Segment scope (see docs/design-v1/message-replay.md "服务端状态"):
  * - history (JSONL archive): NEVER scanned. `result` is stdout-only and never
  *   persisted to JSONL, so history has no turn-close signal. Scanning it would
  *   leave waitingForAnswer stuck true on any archive ending in an assistant
@@ -3210,7 +3210,7 @@ export function renderChatStream(
   // compacted-away content is dropped here, at the render/projection layer —
   // rawMessages (state) stay intact. Mirrors the server's tail-load so a long
   // session renders one bounded block regardless of how many compacts ran.
-  // See docs/design/message-replay.md 「特殊时期 history 缩容」.
+  // See docs/design-v1/message-replay.md 「特殊时期 history 缩容」.
   let lastCompactIdx = -1;
   for (let i = items.length - 1; i >= 0; i--) {
     if (items[i].kind === "compact-block") {

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>05e · Mac 检视（文件右键菜单）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（列宽与页私布局；共享组件全部在 components.css 桌面段） */
+.win{display:flex;flex-direction:column;height:calc(100% - 2px)}
+.wbody{display:flex;flex:1;min-height:0}
+.side{width:250px}
+.pcenter{flex:1}
+.pinsp{flex:none;width:320px;border-right:0}
+/* 右键菜单（本页私）：右缘贴窗缘，同原稿裁切 */
+.cmenu{position:absolute;left:170px;top:150px;width:176px;background:var(--menu);border:1px solid var(--sep-strong);
+       border-radius:10px;box-shadow:0 8px 24px color-mix(in srgb,#000 25%,transparent);z-index:20}
+.cmenu > div{display:flex;align-items:center;gap:7px;padding:8px 14px;font-size:13px;color:var(--ink-1)}
+.cmenu > div + div{border-top:1px solid var(--sep)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stagewin">
+  <div class="win">
+    <div class="tbar"><span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span><span class="t">agents-remote — agents-web</span></div>
+    <div class="wbody">
+
+      <!-- Sidebar -->
+      <div class="side sidewin">
+        <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+        <div class="dsep" style="margin:8px 0"></div>
+        <div class="ghead"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="tt">实例 · agents-web</span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dot2" style="background:var(--c-success)"></span>claude·auth</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dot2" style="border:1.4px solid var(--ink-2)"></span>codex·api</div>
+        <div class="srow2 inst" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink-2)"><span class="dicon"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span>term·1</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="message"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>pi·chat</div>
+        <div class="dsep" style="margin:8px 0"></div>
+        <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+      </div>
+
+      <!-- 中栏：本图聚焦检视文件分段，留空 -->
+      <div class="pane pcenter"></div>
+
+      <!-- Inspector：文件分段 + 右键菜单 -->
+      <div class="pane pinsp">
+        <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
+        <div class="seg4"><span class="on">文件</span><span>Git</span><span>Wiki</span><span>历史</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 14px 0">
+          <span style="flex:1;height:32px;border-radius:10px;background:var(--bg-elevated2);display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;color:var(--ink-2)"><svg class="icn" style="width:12px;height:12px" viewBox="-10 -10 20 20"><circle cx="-1.5" cy="-1.5" r="5.5"/><path d="M2.8,2.8 L7,7"/></svg>搜索文件名</span>
+          <span style="color:var(--c-primary);font-weight:700;font-size:15px">＋</span>
+        </div>
+        <div class="tree">
+          <div class="trow"><span class="tw">▾</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>src</div>
+          <div class="trow" style="padding-left:22px"><span class="tw">▾</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>auth</div>
+          <div class="frow sel"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> passkey.ts</div>
+          <div class="frow"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> session.ts</div>
+          <div class="frow"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> middleware.ts</div>
+          <div class="trow" style="padding-left:22px"><span class="tw">▸</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>tests</div>
+        </div>
+        <div style="position:absolute;left:16px;right:16px;bottom:12px;font-size:11px;color:var(--ink-3);line-height:1.6">拖拽文件到右栏 = 上传到当前目录</div>
+        <!-- 右键菜单（右缘贴窗缘，同原稿裁切） -->
+        <div class="cmenu">
+          <div><svg class="icn" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg>打开预览</div>
+          <div><svg class="icn" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/></svg>重命名</div>
+          <div><svg class="icn" viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>移动到…</div>
+          <div><span style="color:var(--c-primary);font-weight:700;width:14px;text-align:center">＋</span>上传文件…</div>
+          <div style="color:var(--c-danger);font-weight:600"><span style="width:14px;text-align:center">✕</span>删除…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="sbar">
+      <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 3 实例运行中 · <span style="color:var(--c-warning);font-weight:600">2 项待审批 ›</span>
+      <span style="margin-left:auto">今日 $3.18 · 84.2k tok</span>
+    </div>
+  </div>
+
+  <!-- 高亮圈：右键点（passkey.ts 行内） -->
+  <span class="hring" style="left:1045px;top:206px;width:26px;height:26px;border-color:var(--c-primary)"></span>
+
+  <!-- 编号 pin：① 右键行 ② 菜单五项/上传 -->
+  <span class="pin" style="left:860px;top:214px">1</span>
+  <span class="pin" style="left:1030px;top:420px">2</span>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>右键文件行（iPad 长按）= 与手机同款菜单：预览 / 重命名 / 移动 / 上传 / 删除</li>
+    <li><b>②</b>上传：菜单「上传文件…」或拖拽进右栏（目标 = 当前目录）；Git 段无改动显示空态「工作区干净」</li>
+  </ol>
+</div>
+
+</body></html>

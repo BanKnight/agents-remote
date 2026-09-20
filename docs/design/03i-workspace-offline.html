@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03i · 工作台页（断线重连态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.offbanner{display:flex;align-items:center;gap:8px;padding:9px 16px;background:var(--tint-orange)}
+.offbanner .tx{flex:1;font-size:12.5px;font-weight:600;color:var(--c-warning-text)}
+.offbanner .retry{font-size:11.5px;color:var(--c-warning-text);
+                  border:1px solid color-mix(in srgb,var(--c-warning) 60%,transparent);
+                  border-radius:12px;padding:3px 10px;cursor:pointer}
+.offbanner svg{width:14px;height:13px;flex:none}
+.cap{font-size:11px;color:var(--ink-3);text-align:center}
+.faded{opacity:0.45}
+.send.dis{background:var(--bg-elevated3)}
+</style>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="offbanner">
+      <svg width="15" height="14" viewBox="-10 -10 20 20"><path d="M0,-9 L9.5,7.5 H-9.5 z" fill="none" style="stroke:var(--c-warning-text)" stroke-width="1.7"/><path d="M0,-3.2 V1.8" style="stroke:var(--c-warning-text)" stroke-width="1.7" fill="none"/><circle cx="0" cy="4.6" r="1.1" style="fill:var(--c-warning-text)" stroke="none"/></svg>
+      <span class="tx">连接已断开 · 自动重连中（第 2 次）</span>
+      <span class="retry">立即重试</span>
+    </div>
+
+    <div class="nav">
+      <span class="back">项目</span>
+      <span class="nv-t">agents-web <span class="sw"></span></span>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2 faded">
+      <div class="pills">
+        <span class="pill on"><span class="dot idle"></span>claude·auth</span>
+        <span class="pill"><span class="dot ring" style="width:6px;height:6px"></span>codex·api</span>
+        <span class="pill" style="font-family:ui-monospace,Consolas,monospace;font-size:11px">&gt;_ term·1</span>
+      </div>
+      <span class="plus" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
+      <span class="ticon" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+    </div>
+
+    <div class="chips faded">
+      <span class="chip">✦ opus · plan · hi</span>
+      <span class="ic" data-symbol="arrow.clockwise" style="width:20px"><svg viewBox="-10 -10 20 20" style="stroke:var(--ink-2)"><path d="M7.3,0 A7.3,7.3 0 1 1 5.16,-5.16"/><path d="M5.16,-9 V-5.16 H1.3"/></svg></span>
+      <span style="font-size:10.5px;color:var(--ink-2)">自动重试开</span>
+    </div>
+
+    <div class="stream faded">
+      <div class="task">把 auth 模块迁移到 passkeys，跑通全部测试</div>
+      <div class="card"><span class="t">bash · npm run test</span><span class="ok">✓</span></div>
+      <div class="cap">—— 离线中 · 此后内容将在重连后补齐 ——</div>
+    </div>
+
+    <div class="tray faded">
+      <span class="w">2 项待审批</span>
+      <span class="c">重连后可操作</span>
+    </div>
+
+    <div class="input">
+      <span class="field" style="color:var(--ink-3)">离线中 · 暂不能发送</span>
+      <span class="send dis"></span>
+    </div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <span class="pin" style="left:180px;top:100px">1</span>
+    <span class="pin" style="left:120px;top:136px">2</span>
+    <span class="pin" style="left:330px;top:712px">3</span>
+    <span class="pin" style="left:46px;top:100px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>断线横幅在导航区上方（全局性）；重连成功自动消失</li>
+    <li><b>②</b>pill / 运行摘要 / 托盘全部冻结变灰 —— 但不销毁</li>
+    <li><b>③</b>输入禁用；重连后按缺口回放（断线期间的输出不丢）</li>
+    <li><b>④</b>自动重连指数退避（1s→2s→4s…），可手动「立即重试」</li>
+  </ol>
+</div>
+
+</body></html>
