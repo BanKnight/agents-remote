@@ -1,15 +1,15 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-20（UI v2 重构沉淀批次完成：目录迁移 + 总纲 + harness 标尺；下一步 M0。触发：里程碑沉淀）。
+> 最后更新：2026-09-20（M0 设计基座完成 + code-reviewer 通过 + 4 项加固；下一步 M1 组件化层。触发：里程碑完成）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-UI v2 重构启动：v1.3 设计包已就位 `docs/design/`（唯一权威）、v1 归档 `docs/design-v1/`、23 条决策日志与 M0–M10 里程碑计划沉淀进 `docs/design/redesign-v2.md`、harness 标尺已切换；接下来开工 M0 设计基座。
+UI v2 重构 M0（设计基座）已完成并过 review：token 映射表落总纲附录、散落 token 机检脚本（report 模式，基线 HEX 15/色阶 0）、e2e 基线 29/29 绿；下一步 M1 组件化层（token 换底 + 原语重建 + 图标移植 + 双主题机制）。
 
 ## 本 session 焦点
 
-M0：①v1→v2 token 映射表（总纲附录）②`scripts/ar-verify-tokens.mjs` 机检脚本 ③e2e 基线跑绿。
+M1：①`tokens.css` 语义变量做新 `@theme inline` 基座（shadcn vars 对齐，:root=dark 基准 + `data-theme="light"` 覆盖）②components.css 原语重建（pill/chip/sheet/seg4/side/pane/tabbar…）③30+ 图标按内嵌 SVG path 移植 ④`data-theme` 双主题机制 ⑤移除 Geist。验收：双主题全成立 + 四门禁 + design-reviewer 过。
 
 ## 关键决策（本阶段不可丢）
 
@@ -20,12 +20,9 @@ M0：①v1→v2 token 映射表（总纲附录）②`scripts/ar-verify-tokens.mj
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ 目录迁移：`docs/design → docs/design-v1`（归档声明已加）、v1.3 设计包 → `docs/design/`、zip 留 design-v1
-- ✅ 旧路径引用批量改指 design-v1（api/web/shared 注释 + docs 各层）+ 活引用更新（CLAUDE.md/docs/index.md/index.css 头部）
-- ✅ `docs/design/redesign-v2.md` 总纲（决策日志/铁律映射/盘点/锚点/里程碑）+ `docs/design/index.md` 新索引
-- ✅ harness：rules/frontend.md 与 design-reviewer 标尺切设计包三件套；verification.md 加散落 token 机检条目（M0 落地脚本）
-- ✅ GTD：projects/ui-redesign-v2.md + next-actions M0 动作
-- ⬜ M0 → M10（总纲 §6）
+- ✅ 沉淀批次（commit `b669b57`+`742ed83`）：目录迁移（design→design-v1 归档、v1.3 设计包→docs/design）、旧路径引用改指 design-v1、redesign-v2.md 总纲（D1-D23 决策日志+里程碑）、docs/design/index.md、harness 标尺切设计包三件套、GTD 项目卡
+- ✅ M0 设计基座（commit `3bd16cb`+`f386325`）：①token 映射表（总纲附录，M1 施工图）②`scripts/ar-verify-tokens.mjs`（report 基线 HEX 15/色阶 0；code-reviewer 通过 + 4 项加固：side 变体/白名单 sep/symlink 防护/cwd 锚定）③e2e 基线 29/29 绿
+- ⬜ M1 → M10（总纲 §6 状态列滚动更新）
 
 ## 阻塞 / 风险
 
