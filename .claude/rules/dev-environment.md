@@ -15,4 +15,5 @@
 - **bun --watch / vite build --watch 偶发不重启**：dev 进程跑旧代码但能响应；改源码后行为像没改时先查 `ps etime` vs 源码 mtime。
 - **vite build --watch 漏 CSS 落盘**：治本方案与交付 checklist 见 `frontend-notes.md` §10；改 web 包内文件后必跑 `node scripts/ar-verify-css.mjs`（见 `verification.md`）。
 - **测试内存上限**：跑 `bun test` 须限内存 ≤2G（systemd-run/ulimit）；renderHook 绝不进 waitFor 回调。
+- **e2e 内存限制用 cgroup 不用 ulimit -v**：`bun run e2e` 自起 vite（rolldown WASM 要 reserve 数 GB 虚拟地址），`ulimit -v` 2G/4G 都会 `WebAssembly.instantiate` OOM；用 `systemd-run --scope --user -p MemoryMax=2G bun run e2e`（2026-09-20 实测 29/29 绿）。
 - **验证用测试项目**：验证别在 agents-remote 正式项目创建 session，用 `PROJECTS_ROOT` 下的 test 项目。
