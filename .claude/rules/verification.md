@@ -27,6 +27,16 @@ node scripts/ar-verify-css.mjs
 - 与 format/lint/typecheck/test 同级，无条件跑——DOM 结构断言对 CSS 完全盲（详见 `frontend-notes.md` §2、§10）。
 - 交付 checklist：`curl -sI localhost:43012/assets/<css> | grep content-type` 必须 `text/css`；`text/html` 则 touch `web/src/main.tsx` + 轮询到 text/css 再交付。
 
+## 散落 token 机检（UI v2 起）
+
+```bash
+bun scripts/ar-verify-tokens.mjs
+```
+
+- 触发：UI v2 重构（`docs/design/redesign-v2.md` M1 换底后）改 web 包内任何 UI 文件后跑；M0 落地脚本，落地前此条 pending。
+- 检查：web/src 中散落 HEX（`#0A84FF` 等）与裸 Tailwind 色阶（`bg-cyan-300`、`text-slate-400`）——UI 样式只能走 tokens.json 语义 token；白名单限 `styles/index.css`（token 物化层）等声明文件。
+- 模式：M0–M1 过渡期 report-only（报告不计 fail），M1 换底完成后收紧为硬闸（有违例即 fail）。
+
 ## 验证证据
 
 - CSS/布局视觉改动用 `getComputedStyle`/`getBoundingClientRect` 硬数据验证，不靠 vision 读截图（用户禁止截图/vision 验证 UI）。

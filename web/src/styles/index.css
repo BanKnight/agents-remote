@@ -1,5 +1,7 @@
-/* Design system authoritative source: docs/design/DESIGN.md (Google DESIGN.md format).
-   DESIGN tokens materialized here: colors (surface, on-surface, neutral-line, code,
+/* Design system: v1 tokens（docs/design-v1/DESIGN.md）— 当前实现基线，v2 重构迁移中。
+   新设计权威 = docs/design/（design_spec.md + tokens.json + assets/components.css），
+   迁移总纲见 docs/design/redesign-v2.md（M1 换底后本文件改为物化 v2 token）。
+   v1 tokens materialized here: colors (surface, on-surface, neutral-line, code,
    secondary violet, success, warning, error), radius (DESIGN scale + shell-desktop
    and shell-mobile), font-mono. shadcn theme vars (:root and .dark) hex-aligned to
    DESIGN semantics. See DESIGN.md "Migration & Mapping" 节. */
@@ -45,7 +47,7 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  /* DESIGN semantic color vars — LIGHT theme（docs/design/DESIGN.md「Light theme tokens」）。
+  /* DESIGN semantic color vars — LIGHT theme（docs/design-v1/DESIGN.md「Light theme tokens」）。
      :root = light，.dark 覆盖 dark 值。@theme inline 用 var() 引用这些 vars，使
      bg-surface-* / text-on-surface-* / border-neutral-line 等 utility 按 <html>.dark
      class cascade 切换（与 shadcn :root/.dark 同机制，in-repo 已验证）。*/
@@ -212,7 +214,7 @@ body {
   --color-foreground: var(--foreground);
   --color-background: var(--background);
   /* DESIGN.md semantic color namespace — var() 引用 :root(light)/.dark(dark) 的 semantic
-     vars（docs/design/DESIGN.md「Light theme tokens」）。@theme inline 内联 var() 引用，
+     vars（docs/design-v1/DESIGN.md「Light theme tokens」）。@theme inline 内联 var() 引用，
      使 bg-surface-* / text-on-surface-* / border-neutral-line / bg-secondary(violet) 等
      utility 按 <html>.dark cascade 切换。新代码用这些 utility，勿散写裸 Tailwind。
      primary 走 shadcn 映射（--color-primary: var(--primary)），不在此重复。*/
@@ -232,7 +234,7 @@ body {
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);
-  /* Content role colors — Claude session 消息角色色（docs/design/DESIGN.md Colors 节
+  /* Content role colors — Claude session 消息角色色（docs/design-v1/DESIGN.md Colors 节
      「Content role colors」）。与 primary 操作色正交：区分 assistant / user / permission
      三种消息角色，不承担操作语义。assistant/warning 同 hex、permission/secondary 同 hex
      是刻意——语义独立，分开 token 以便未来按角色独立调色相。*/
@@ -244,7 +246,7 @@ body {
   --color-user-deep: var(--user-deep);
   --color-permission: var(--permission);
   --color-permission-soft: var(--permission-soft);
-  /* Radius — DESIGN scale（docs/design/DESIGN.md Shapes）。方案 A：覆写衍生比例
+  /* Radius — DESIGN scale（docs/design-v1/DESIGN.md Shapes）。方案 A：覆写衍生比例
      对齐 DESIGN 档；移除无对应档的 3xl/4xl（业务无 rounded-3xl，badge 4xl→full）；
      新增 frame 专用 shell-*。*/
   --radius-sm: calc(var(--radius) * 0.6); /* 6px */
@@ -258,7 +260,7 @@ body {
 
 .dark {
   color-scheme: dark;
-  /* DESIGN semantic color vars — DARK theme（docs/design/DESIGN.md frontmatter normative 基准）。
+  /* DESIGN semantic color vars — DARK theme（docs/design-v1/DESIGN.md frontmatter normative 基准）。
      覆盖 :root light 值；@theme inline utility 经 var() 引用自动跟随。*/
   --primary: #7dd3fc; /* Glacier Cyan */
   --surface-base: #080b10;

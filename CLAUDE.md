@@ -26,7 +26,8 @@
 | `.claude/skills/` | `/handoff` `/gtd` `/evolve` `/onboard` `/check-deps` |
 | `docs/AGENTS.md` | 长期文档治理规则（进入 docs/ 前必须读取） |
 | `docs/project.md` | 项目认知 big picture（渐进式补全） |
-| `docs/design/DESIGN.md` | 设计系统唯一权威标尺（token + component variant） |
+| `docs/design/design_spec.md` | UI 设计系统唯一权威标尺（v1.3 设计包：spec + tokens.json 数值源 + assets/components.css 组件单源） |
+| `docs/design/redesign-v2.md` | UI v2 重构总纲（决策日志 + 里程碑计划 + 现状锚点）；v1 体系归档于 `docs/design-v1/` |
 | `docs/runbooks/dev-services.md` | ar-dev 常驻服务启停流程（固定端口 43011/43012） |
 
 ## 关键约定
