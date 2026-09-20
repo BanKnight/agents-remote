@@ -16,32 +16,43 @@
 //   bun scripts/ar-verify-tokens.mjs           # report：打印违例，exit 0（M0-M1 过渡期）
 //   bun scripts/ar-verify-tokens.mjs --strict  # strict：有违例 exit 1（硬闸，M1 后启用）
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 
-const WEB_SRC = join(process.cwd(), "web", "src");
+// 以脚本自身位置锚定仓库根，不受调用 cwd 影响。
+const REPO_ROOT = join(import.meta.dir, "..");
+const WEB_SRC = join(REPO_ROOT, "web", "src");
 const WHITELIST_DIRS = [join(WEB_SRC, "styles")];
 
 // #RRGGBB / #RRGGBBAA / #RGB / #RGBA（\b 防止吃进更长的标识符）。
 const HEX_RE = /#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{8}\b|#[0-9a-fA-F]{3,4}\b/g;
 
-// 裸 Tailwind 色阶 utility（色名-档位，透明度后缀一并算）。white/black/transparent/current 不拦
-// （中性无色相，且 legacy 代码常见，收紧时机由 M1 换底统一裁决）。色名后必须跟档位或边界
-// （负向前瞻 (?![\w-])）：避免把 v1 语义 utility（如 border-neutral-line）误判成裸色阶。
+// 裸 Tailwind 色阶 utility（色名-档位，透明度后缀一并算）。边框族带可选 side 段
+// （border-x/-t/…、divide-x/y、ring-offset），漏掉会让 side 变体（border-x-cyan-300）
+// 静默绕闸。white/black/transparent/current 不拦——transparent/current 真中性；
+// white/black 在双主题下同样会绕过换底，列入 M1 启用 --strict 时的收紧清单。
+// 色名后必须跟档位或边界（负向前瞻 (?![\w-])）：避免把 v1 语义 utility
+// （如 border-neutral-line）误判成裸色阶。
 const SCALE_RE =
-  /\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|shadow|decoration|divide|accent|caret|placeholder)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?(?:\/\d{1,3})?(?![\w-])/g;
+  /\b(?:bg|text|fill|stroke|from|to|via|shadow|decoration|accent|caret|placeholder|border(?:-[trblxyse])?|divide(?:-[xy])?|ring(?:-offset)?|outline)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?(?:\/\d{1,3})?(?![\w-])/g;
 
 function* walkFiles(dir) {
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    const st = statSync(p);
-    if (st.isDirectory()) yield* walkFiles(p);
-    else if (/\.(ts|tsx|css)$/.test(name) && !/\.test\./.test(name)) yield p;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return; // 无权限/已消失的目录：跳过，不让机检裸栈崩溃。
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue; // 不追 symlink（循环/坏链防护）。
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) yield* walkFiles(p);
+    else if (/\.(ts|tsx|css)$/.test(entry.name) && !/\.test\./.test(entry.name)) yield p;
   }
 }
 
 function isWhitelisted(file) {
-  return WHITELIST_DIRS.some((d) => file.startsWith(d));
+  return WHITELIST_DIRS.some((d) => file.startsWith(d + sep)); // sep 防前缀误伤（styles2 ≠ styles）。
 }
 
 function scan() {
@@ -53,7 +64,8 @@ function scan() {
     const rel = relative(process.cwd(), file);
     const lines = readFileSync(file, "utf8").split("\n");
     lines.forEach((line, i) => {
-      // 注释行豁免（文档注释引用 HEX 不是样式违例；JSX {/* */} 与块注释 * 续行同豁免）。
+      // 整行注释豁免（文档注释引用 HEX 不是样式违例；JSX {/* */} 与块注释 * 续行同豁免）。
+      // 注意：豁免仅限行首标记——行尾注释内的 HEX 仍会报， strict 前如有误伤再升级为剥行内注释。
       const t = line.trim();
       if (t.startsWith("//") || t.startsWith("/*") || t.startsWith("*") || t.startsWith("{/*"))
         return;
@@ -79,6 +91,10 @@ function scan() {
 }
 
 const strict = process.argv.includes("--strict");
+if (!existsSync(WEB_SRC)) {
+  console.error(`✗ 未找到 ${WEB_SRC}——请在仓库根目录运行（或检查 web/src 是否存在）`);
+  process.exit(1);
+}
 const { scanned, violations } = scan();
 const hexCount = violations.filter((v) => v.kind === "HEX").length;
 const scaleCount = violations.length - hexCount;
