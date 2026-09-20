@@ -42,3 +42,10 @@ bun scripts/ar-verify-tokens.mjs
 - CSS/布局视觉改动用 `getComputedStyle`/`getBoundingClientRect` 硬数据验证，不靠 vision 读截图（用户禁止截图/vision 验证 UI）。
 - 消息/协议类问题把客户端日志、服务端日志、原始 JSONL 作为验收材料的一部分（见 `claude-debugging.md`）。
 - 仅实时流出现的行为（需 mock WS 帧）不写浏览器探针，交付说明列手动验证 checklist 交用户。
+
+## 大段代码替换的写入纪律（来源：UI v2 M3 实战，2026-09-21）
+
+- **触发**：需要替换 ≥15 行的 JSX/代码块时。
+- **动作**：不用 Edit 工具做整段大替换（同 session 实测多次注入乱码——占位词、错路径、残缺行混入 new_string），改用 python 脚本锚点定位整段替换（`src.index(锚点)` 定界 + 切片拼接），替换后 Read 回读 + typecheck 确认。
+- **判定**：Edit 报「old_string not found」或 PostToolUse 后文件行为怪异时，先 Read 实际内容再动手；连续两次写入同一文件失败就停，恢复（`git checkout --`）后换方法，不硬试第三次。
+- Edit 单行/小步替换（≤5 行）不受此限，仍用内置工具。
